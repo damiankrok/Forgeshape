@@ -1,16 +1,22 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.15.0  
+**Status Version:** 0.15.1  
 **Updated:** 2026-08-19  
-**Last Stage:** Gate P0 — Local Git Baseline + NDK r29 Migration + 16 KB Compatibility  
-**Result:** COMPLETE (16 KB *runtime* evidence UNVERIFIED — no safe 16 KB target exists)  
+**Last Stage:** Stage 015A — UI/UX Audit + Architecture Decision Pack  
+**Result:** COMPLETE — DECISION REQUIRED  
 **Current Phase:** Phase 1 — Native Viewport  
 **Workspace:** `D:\TRAVELAPPS\ForgeShape`  
-**Next Stage:** Stage 015 — UI/UX Architecture Foundation
+**Next Stage:** Owner UI Architecture Decision for Stage 015B
 
-Gate P0 was a toolchain/process gate, not a product-feature stage. No product
-behaviour changed and no product source file was touched: the entire migration
-diff is one line in `app/build.gradle`.
+Stage 015A was an audit and design stage. **No product behaviour changed and no
+product source file was touched** — the diff is one new document, four audit
+screenshots and this file. The previous stage, Gate P0, was likewise
+toolchain-only (NDK r27 → r29, one line in `app/build.gradle`).
+
+The decision pack is at
+[`docs/ui/UX_ARCHITECTURE_DECISION_PACK.md`](docs/ui/UX_ARCHITECTURE_DECISION_PACK.md).
+Six owner decisions are listed in its §12 and are summarised below; Stage 015B
+cannot start until D1, D2 and D3 are answered.
 
 ## Product Direction
 
@@ -1263,6 +1269,92 @@ Shaders: GLSL in `app/src/main/cpp/shaders/`, compiled ahead of time by the
 NDK `glslc` in CMake using `-mfmt=c`; the emitted C initializer lists are
 `#include`d into the renderer, so no SPIR-V asset is loaded at runtime.
 
+## Stage 015A — UI/UX Audit + Architecture Decision Pack
+
+Audit and design only. Deliverable:
+`docs/ui/UX_ARCHITECTURE_DECISION_PACK.md`. Nothing in that document is
+implemented, and `PRODUCT.md` was deliberately not updated — it describes only
+runtime-verified behaviour, and a proposal is not behaviour.
+
+### Measured audit facts (`emulator-5558`, `uiautomator` hierarchy dumps)
+
+| | portrait 411×914 dp | landscape 914×411 dp | compact 360×640 dp |
+| --- | --- | --- | --- |
+| `SurfaceView` | `[0,0][1080,2400]` | `[0,0][2400,1080]` | `[0,0][720,1280]` |
+| Construction panel | `[0,0][1080,1175]` | `[0,0][2400,1080]` | `[0,0][720,~880]` |
+| viewport unoccluded | 51 % | **0 %** | ~31 % |
+| status line | visible | **clipped off-screen** | visible |
+
+- **Landscape is a hard failure, not a degradation.** The panel measures to the
+  full window, the model is entirely occluded, and the status line — the only
+  channel for validation messages and the stale-source warning — lays out below
+  the window bottom with no `ScrollView` anywhere in the Android layer to reach
+  it. Evidence:
+  `artifacts/stage015a_audit_landscape_panel_covers_screen.png`.
+- **No configuration handling exists.** `configChanges` absorbs
+  `orientation|screenSize|screenLayout|density` and there is no
+  `onConfigurationChanged`. Grep across the Android layer:
+  `onConfigurationChanged` 0, `getResources().getConfiguration` 0,
+  `ORIENTATION_LANDSCAPE` 0, `screenWidthDp` 0, `ScrollView` 0.
+- **No window-inset handling exists.** `WindowInsets` 0,
+  `setOnApplyWindowInsetsListener` 0. Survives only because the deprecated
+  fullscreen theme hides the system bars; `targetSdk` 36 makes edge-to-edge the
+  platform default, so this is latent, not hypothetical.
+- **No stable identifiers.** `setId` appears twice, both `RadioGroup` internals,
+  which is why every runtime verification since Stage 007 has been driven by
+  screen coordinates and why `README.md` carries a pixel table. There are zero
+  automated tests of the Android layer. `setContentDescription` *is* populated on
+  7 control families and is a usable bridge.
+- Android layer is 2223 lines of Java; `ConstructionPanelView` alone is **1041**.
+- **The portrait IME case works** and is a deliberate strength to preserve:
+  top-anchored panel + `adjustPan` keeps fields and model both visible and never
+  resizes the window (which would rebuild the swapchain per keystroke session).
+  Evidence: `artifacts/stage015a_audit_ime_portrait.png`.
+
+### Mobbin Pro usage
+
+Four searches across 3D/AR scene editors, canvas/drawing tools, photo editors and
+destructive-action confirmations (~20 screens examined). Adopted *structurally*,
+never visually: segmented one-parameter-at-a-time editing (Depop *Adjust*),
+persistent mode row + transient contextual selection actions (Depop, IKEA room
+planner), inspector as a bottom sheet over a live canvas (Photoroom), thin
+mode-independent top strip for undo/redo (Photoroom, Genie), and
+consequence-stating verb-labelled destructive confirmations (Alta, Posh).
+Rejected: thumbnail carousels, full-height modal editors, floating draggable
+palettes, drawer-as-primary-navigation. **Nomad Sculpt was not studied for
+imitation and nothing is reproduced from it or from any Mobbin screen.**
+
+### Recommendation
+
+- **Shell:** Option **B — Rail + Contextual Inspector**, the only direction that
+  solves landscape by spending *width* rather than rationing height, and the only
+  one with real reserved homes for hierarchy, gizmos and multi-object. Strongest
+  alternative is **Option A — Docked Inspector**, markedly cheaper and lower risk.
+  **The recommendation flips to A if ForgeShape is phone-only** — which is why the
+  device question is the load-bearing decision.
+- **Toolkit:** **structured Views**, not Compose. Decisive evidence: the project
+  has **zero runtime dependencies** — no `dependencies { }` block at all,
+  `android.useAndroidX=false`, 0 Kotlin files. Compose would add Kotlin, AndroidX,
+  a compiler plugin and 30+ artifacts, and would layer its pointer pipeline over
+  the most carefully proven behaviour in the product (raw `MotionEvent` → JNI and
+  the Sculpt gesture arbitration). Espresso's test artifacts are
+  `androidTest`-only and ship nothing in the product APK.
+- **Native arbitration is preserved unchanged** — `g_strokePending`, the 8 px
+  arming threshold and pending-then-promote are not touched by any option.
+
+### Owner decisions required before Stage 015B
+
+| | Decision | Recommendation |
+| --- | --- | --- |
+| D1 | Shell direction: A / B / C | **B** (A is the strong cheaper alternative) |
+| D2 | Primary device: phone / tablet / both | **load-bearing** — phone-only flips D1 to A |
+| D3 | Views or Compose | **Views** |
+| D4 | Export: a mode or a top-strip action | either; affects reserved homes |
+| D5 | Confirmation before re-Freeze discards sculpt work | **yes** |
+| D6 | Stylus pressure in 015B | **no** — read `getToolType` only |
+
+D1, D2 and D3 block Stage 015B. D4–D6 can be answered with it.
+
 ## Tests / Verification (Gate P0, target `emulator-5558`)
 
 Runtime evidence is from AVD `ForgeShape_Stage006` / `emulator-5558`, confirmed
@@ -2343,22 +2435,33 @@ New in Stage 006:
 
 ## Next Recommended Stage
 
-**Stage 015 — UI/UX Architecture Foundation**
+**Owner UI Architecture Decision for Stage 015B**
 
-Gate P0 changed no product behaviour, so the product argument Stage 014 left
-behind is untouched and is recorded below rather than discarded — the owner
-redirected the next stage to the UI/UX foundation, and this file names exactly
-one next stage, so that is the one. The Plane primitive and the per-kind
-coverage cleanup remain the strongest *geometry* candidates whenever geometry
-resumes.
+Stage 015A ends deliberately before implementation. Two of its six questions are
+not engineering preferences that a stage can settle on evidence — they are
+product decisions. **D2 (primary device)** changes the answer to **D1 (shell
+direction)**: Option B earns its rail and three-pane layout on a tablet and does
+not earn them on a 411 dp phone, where Option A is cheaper and lower risk for the
+same landscape fix. Choosing B on the owner's behalf would be choosing a device
+story on the owner's behalf.
 
-What the gate itself contributes to that decision is small and worth stating:
-the Android layer is now the only part of the product with no test of any kind
-and no verified contract beyond screenshots, and it is the layer that just
-forced the most manual work in this gate. Nine native suites and 992 checks ran
-themselves; every UI assertion had to be driven by hand through `input tap`.
+**D3 (Views or Compose)** is recommended firmly — Views — because the evidence is
+one-sided: the project has zero runtime dependencies today, and Compose would add
+a second language, AndroidX and 30+ artifacts while placing the most carefully
+proven behaviour in the product under a pointer pipeline it does not control. It
+is listed as a decision only because it commits the project's dependency posture
+for years, which is the owner's call to ratify.
 
-### Why Plane and the coverage cleanup were the geometry candidates
+What the audit contributes regardless of the answers: **landscape is currently
+broken, not merely cramped**, and the Android layer remains the only part of the
+product with no automated test of any kind. Nine native suites and 992 checks run
+themselves; every UI assertion in every stage so far has been driven by hand
+through screen coordinates. Tests T8 (viewport ≥ 55 % unoccluded at four window
+sizes) and T9 (a drag inside a panel produces no camera change and no
+`SculptRevision`) are the two that would have caught what this audit found by
+hand, and they should land with the shell rather than after it.
+
+### Why Plane and the coverage cleanup remain the geometry candidates
 
 Stage 014 answered the question Stage 013 posed about the Construction side: is
 the per-kind repetition honest, or a registry trying to be born? Two more
