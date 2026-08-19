@@ -1,0 +1,5 @@
+// ForgeShape root build script.
+// Only standard Android build tooling. No third-party runtime dependencies.
+plugins {
+    id 'com.android.application' version '8.13.2' apply false
+}

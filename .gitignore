@@ -1,0 +1,64 @@
+# ForgeShape — repository ignore rules.
+#
+# Rule: generated output, machine-local configuration and transient tool state
+# are ignored. Source, shaders, tests, repository documentation, the Gradle
+# wrapper and the referenced evidence artifacts are versioned.
+
+# --- Gradle build output and local caches ---
+/build/
+/app/build/
+.gradle/
+gradle-app.setting
+local.gradle.properties
+
+# --- CMake / NDK generated output ---
+/app/.cxx/
+.cxx/
+.externalNativeBuild/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+
+# --- Machine-local SDK/NDK configuration ---
+local.properties
+/keystore.properties
+*.jks
+*.keystore
+
+# --- Packaged application output ---
+*.apk
+*.aab
+*.ap_
+*.dex
+*.so.dbg
+
+# --- Android Studio / IntelliJ local state ---
+.idea/
+*.iml
+*.ipr
+*.iws
+/out/
+captures/
+.navigation/
+
+# --- Claude Code / tool-local transient state ---
+/.claude/scheduled_tasks.lock
+/.claude/settings.local.json
+
+# --- Transient logs and emulator/device-local scratch ---
+*.log
+/logs/
+/scratch/
+/tmp/
+hs_err_pid*
+*.hprof
+
+# --- OS noise ---
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+
+# NOTE: /artifacts/ is deliberately NOT ignored. PROJECT_STATUS.md and PRODUCT.md
+# cite those screenshots by filename as the runtime evidence for accepted stages,
+# so they are versioned repository content rather than transient output.
