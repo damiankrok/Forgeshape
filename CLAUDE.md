@@ -77,6 +77,38 @@ frame.
   a `PrimitiveKind` or a transform, and no Construction parameter may ever be
   reconstructed from sculpt vertices. Adopting a changed Construction shape into
   the sculpt mesh is always an explicit user act, never automatic.
+- **The domain is platform-neutral; the Android layer is an adapter.** Android is
+  the first and only production platform, and no Apple target, Metal backend,
+  MoltenVK dependency, Xcode project or cross-platform UI framework is
+  authorized. But Construction, geometry, sculpt, picking, camera and selection
+  code stays platform-neutral C++: no `View`, `Activity`, `MotionEvent`,
+  `Surface`, `jobject` or other Android/JNI type may become domain truth, they
+  stop at `forgeshape_jni.cpp`, input crosses the boundary as platform-neutral
+  semantic samples (`forgeshape_input.h`), and the renderer's platform-surface
+  coupling stays one explicit seam. Do not build a portability abstraction for a
+  platform that has no target — keep the seams where they are.
+
+## Naming and comments
+
+- **Owner-facing documentation** uses plain descriptive names first, with any
+  shorthand in parentheses after it. A reader must never need project-history
+  jargon.
+- **Production code** uses responsibility-based names that say what the type or
+  function owns or does. No stage numbers in production names. Avoid `Manager`,
+  `Handler`, `Layer`, `Thing` and `Generic` unless the full name makes the
+  responsibility genuinely clear. One domain concept has one canonical term.
+- **The UI vocabulary is fixed:** *Editor Workspace* (the whole editor UI),
+  *Global Toolbar* (mode-independent top/global controls), *Tool Rail* (the edge
+  tool selector), *Property Inspector* (the contextual exact-value panel),
+  *Construction Body* (an editable CAD-like object), *Frozen Sculpt Mesh* (the
+  polygon mesh created by Freeze).
+- **Comments explain why**, plus ownership, units, lifecycle and constraints —
+  never obvious syntax. Worth a comment: why the Android UI must not become
+  geometry truth, why a transform-only edit publishes no `MeshRevision`, why a
+  pointer gesture is consumed before JNI, why a platform-neutral input boundary
+  exists.
+- Do not mass-rename working code to satisfy this. Rename when already touching
+  the area, or when an ambiguity is a real maintenance risk.
 
 ## Documentation ownership
 

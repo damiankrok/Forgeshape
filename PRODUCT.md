@@ -535,3 +535,50 @@ are not implemented — there is exactly one selectable object.
 Two-finger twist/roll, inertia, camera presets, orthographic camera,
 focus-on-selection, long-press selection, grid, gizmos, modelling,
 UV, export, save/load and undo are not implemented.
+
+## Accepted product direction — decided, not built
+
+Everything above this line is behaviour verified at runtime. Everything below it
+is **direction the owner has accepted and nothing else**: none of it exists, none
+of it can be tried, and it is recorded here only so the product's intended shape
+is not carried in someone's head. The decisions themselves are in
+`PROJECT_STATUS.md`.
+
+**A Construction Body will be able to start from a sketch as well as from a
+primitive.** Today the only way to make a shape is to choose one of the five
+exact primitives and type its dimensions. The accepted direction adds a second
+starting point: draw a closed 2D profile on a plane — lines and polylines,
+rectangles, circles, with a grid, snapping and exact typed values — and extrude it
+into a body. Sketching is a way of constructing, not a separate place to be: it
+stays inside Construction, and the same exactness rule applies, so a sketch
+dimension and an extrusion distance are authored values of the same kind as a box
+width and are never inferred back from the geometry they produced.
+
+The workflow is meant to be **repeatable** rather than a one-shot: several
+sketches, on different planes and eventually on flat faces of an existing body,
+building a shape up in steps that remain editable Construction history.
+
+**The first extrusion will create a new body.** Extruding to *add* material to an
+existing body, or to *cut* material out of it, is accepted as required direction
+but depends on boolean infrastructure that does not exist, so it comes after that
+and not before it.
+
+None of this changes what Freeze means. Construction and sculpting stay two
+separate representations of the one object, and moving from the first to the
+second stays something the user asks for explicitly. A sketch or an extrusion is
+Construction work, and it can no more be altered by sculpting than a box's width
+can.
+
+**Apple devices are a future direction, not current support.** ForgeShape is an
+Android application and runs nowhere else. The owner's decision is that it must
+stay *portable* to Apple platforms later — which is an internal constraint on how
+the code is arranged, described in `ARCHITECTURE.md` — not a claim that an
+iPhone, iPad or Apple Pencil is supported today. Nothing in the product targets
+them.
+
+**Stylus support is a design constraint, not a feature yet.** ForgeShape must
+stay comfortable with a stylus — an S Pen today, an Apple Pencil in whatever
+comes later — and that shapes how the interface is laid out. It is not a feature
+in the product: nothing anywhere reads pressure, tilt, hover or which kind of
+pointer is touching the screen, so a stylus is simply another pointer and changes
+nothing about a brush stroke.

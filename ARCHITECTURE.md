@@ -119,6 +119,35 @@ forgeshape_jni.cpp            render thread, ANativeWindow ownership,
 | Vulkan, presentation, geometry upload | `Renderer` | it never interprets input and owns no identity |
 | Vector/matrix math | `forgeshape_math.h` | no GLM or other third-party math |
 
+## Platform boundary
+
+Android is the **first production platform and the only one that exists**. There
+is no Apple target, no Xcode project, no Metal backend, no MoltenVK and no
+cross-platform UI framework, and none is authorized. What follows is a constraint
+on how this codebase is arranged, not a claim about where it runs.
+
+**The domain is platform-neutral C++ and the Android layer is an adapter over
+it.** This is already true and is now binding rather than incidental:
+
+| | rule |
+| --- | --- |
+| Domain code | Construction, geometry, sculpt, picking, camera and selection stay platform-neutral C++17. `forgeshape_camera`, `forgeshape_construction`, `forgeshape_transform`, `forgeshape_picking`, `forgeshape_selection`, `forgeshape_mesh` and `forgeshape_sculpt` contain no JNI, Android, Vulkan, renderer or UI type — that is asserted throughout the ownership table above and must stay asserted |
+| Android types | `View`, `Activity`, `MotionEvent`, `Surface`, `jobject` and every other Android or JNI type may never become domain truth. They reach exactly as far as `forgeshape_jni.cpp` and stop |
+| The Android UI | is a platform shell/adapter. It owns draft, presentation and layout state and nothing else, and reads authoritative state back from native code rather than assuming it |
+| Input | crosses the boundary as **semantic, platform-neutral** data. `forgeshape_input.h`'s `TouchAction`/`TouchPointer` is that boundary today; it is the type that would grow pressure, tilt, hover and tool type, and the reason a pointer sample is translated out of Android's vocabulary in `forgeshape_jni.cpp` rather than carried inward |
+| Platform services | future file, storage and system services get narrow boundaries of their own, for the same reason input has one |
+| Renderer coupling | the renderer's dependency on a platform surface stays **explicit and local**: `forgeshape_jni.cpp` owns the `ANativeWindow` and hands it over, and `Renderer` never creates or releases one. That single visible seam is what a second backend would be added beside |
+
+The practical test is one question: *if this file had to compile on a platform
+that has no Android, what would break?* For everything below `forgeshape_jni.cpp`
+the answer must stay "nothing".
+
+This is deliberately **not** an abstraction layer. No renderer interface, no
+platform façade, no `#ifdef` for an operating system that has no target — a
+portability layer built before there is a second platform is a guess, and a wrong
+one is more expensive than the port. What is required is only that the seams stay
+where they are and that nothing new crosses them.
+
 ## Android layer
 
 `ForgeShapeSurfaceView` is a plain `android.view.SurfaceView` (no Compose, no

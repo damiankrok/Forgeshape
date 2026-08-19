@@ -1,22 +1,159 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.15.2  
-**Updated:** 2026-08-19  
-**Last Stage:** Stage 015A-R — Nomad-first UI/UX Re-audit + Sketch/Extrude Shell Concept  
-**Result:** COMPLETE — DECISION REQUIRED  
+**Status Version:** 0.15.3  
+**Updated:** 2026-08-20  
+**Last Stage:** Owner Decision Baseline for Stage 015B — recorded product, UI and architecture decisions  
+**Result:** COMPLETE  
 **Current Phase:** Phase 1 — Native Viewport  
 **Workspace:** `D:\TRAVELAPPS\ForgeShape`  
-**Next Stage:** Owner UI Architecture Decision for Stage 015B
+**Next Stage:** Stage 015B — UI/UX Architecture Foundation Implementation
 
-Stage 015A-R was an audit and design revision. **No product behaviour changed and
-no product source or build file was touched** — the diff is the revised decision
-pack, four wireframes and this file. The previous stage, Gate P0, was likewise
-toolchain-only (NDK r27 → r29, one line in `app/build.gradle`).
+This stage recorded owner decisions and changed nothing else. **No product
+behaviour changed and no product source or build file was touched** — the diff is
+this file, `PRODUCT.md`, `ARCHITECTURE.md` and `CLAUDE.md`. The previous stage,
+015A-R, was an audit and design revision and was likewise source-free; the one
+before it, Gate P0, was toolchain-only (NDK r27 → r29, one line in
+`app/build.gradle`).
 
 The decision pack is at
 [`docs/ui/UX_ARCHITECTURE_DECISION_PACK.md`](docs/ui/UX_ARCHITECTURE_DECISION_PACK.md).
-Six owner decisions are listed in its §18 and summarised below; Stage 015B cannot
-start until D1 is answered.
+It remains a **proposal document**; what the owner actually approved is recorded
+below and that record — not the pack — is authoritative. Stage 015B is no longer
+blocked.
+
+## Owner Decision Baseline
+
+**Active owner decisions are identified by `UI-OWNER-*`, `ARCH-OWNER-*`,
+`INPUT-OWNER-*` and `DOC-OWNER-*`. The historical `D1`–`D6` tables recorded under
+Stage 015A and Stage 015A-R are superseded and non-authoritative.** They are
+retained for traceability only. No stage gate, acceptance table or preflight may
+refer to a bare `D1`, `D2`, … again; a decision is cited by its full identifier.
+
+Recorded 2026-08-20. Nothing in this section is implemented — it states what was
+decided, not what the product does.
+
+| ID | Decision | Approved value |
+| --- | --- | --- |
+| UI-OWNER-01 | Shell family | **Forge Shell** |
+| UI-OWNER-02 | Device scope | **phone + tablet** |
+| UI-OWNER-03 | Export placement | **global action** |
+| UI-OWNER-04 | Sketch + Extrude MVP direction | **approved and expanded as an iterative CAD workflow** |
+| UI-OWNER-05 | Confirmation before a destructive re-Freeze | **yes** |
+| UI-OWNER-06 | Stylus pressure in Stage 015B | **no — deferred to a later dedicated Sculpt stage** |
+| ARCH-OWNER-01 | Future Apple portability | **required architectural constraint** |
+| INPUT-OWNER-01 | Stylus-first interaction | **required product/architecture constraint** |
+| DOC-OWNER-01 | Clear naming and code comments | **required documentation/maintainability rule** |
+
+### UI-OWNER-01 — Shell family: Forge Shell
+
+A modernized Nomad-like, viewport-first shell. Sculpt uses direct edge controls
+and a tool rail. Construction reuses the same shell language with a contextual
+exact-value inspector. One shell; mode and tool decide content, never structure.
+
+### UI-OWNER-02 — Device scope: phone + tablet
+
+Stage 015B implements adaptive compact / medium / expanded behaviour **now**,
+rather than deferring the expanded class. The same conceptual workflow runs on
+Galaxy Ultra-class phones and on tablets; a tablet may dock more surfaces, but
+must not become desktop-CAD clutter.
+
+### UI-OWNER-03 — Export placement: global action
+
+Construction, Sculpt and UV remain **editing contexts**. Export is not one of
+them: it is a global action that later opens a dedicated export/output surface.
+
+### UI-OWNER-04 — Sketch + Extrude: approved as an iterative CAD workflow
+
+Approved product direction, **not implemented and not part of Stage 015B
+geometry**. A Construction Body may begin either from an exact primitive **or**
+from a 2D sketch. The accepted direction is:
+
+- standard sketch planes, with sketch creation on planar Construction faces later;
+- multiple sketches on different planes and faces;
+- Line/Polyline, Rectangle, Circle, and select/delete;
+- grid and snap;
+- exact numeric entry wherever applicable;
+- closed-profile detection and validation;
+- repeated Sketch → Extrude workflows;
+- the first Extrude vertical slice supports **New Body**;
+- Extrude **Add** and **Cut** become required integration **after** boolean
+  infrastructure exists;
+- the result stays Construction source and history until an explicit Freeze to
+  Sculpt.
+
+**This approval is not permission for** a full geometric constraint solver,
+assemblies, NURBS, engineering drawings, Revolve, Fillet, Chamfer or Shell. Each
+of those needs its own separate approval.
+
+### UI-OWNER-05 — Destructive re-Freeze is confirmed
+
+A confirmation is required **only** when existing Frozen Sculpt Mesh edits would
+actually be replaced or discarded. A normal Resume Sculpt has no confirmation —
+it destroys nothing, and guarding it would train the user to dismiss the guard
+that matters.
+
+### UI-OWNER-06 — Stylus pressure deferred
+
+Pressure is out of scope for Stage 015B and waits for a dedicated Sculpt stage.
+Stage 015B must still be stylus-friendly and must preserve a clean path for later
+pressure, tilt and hover input — see INPUT-OWNER-01.
+
+### ARCH-OWNER-01 — Android first, Apple-portable by construction
+
+Android remains the **first production platform**. From now on:
+
+- Construction, Geometry, Sculpt and domain code stay platform-neutral C++;
+- Android `View`/`Activity`/JNI types never become domain truth;
+- the Android UI is a platform **shell/adapter**, not the product;
+- input crossing the platform boundary moves toward semantic, platform-neutral
+  pointer/tool samples;
+- future file and platform services sit behind narrow boundaries;
+- renderer/platform-surface coupling stays explicit, so an Apple backend can be
+  added later without unpicking the domain.
+
+**Not authorized now:** an iOS/iPadOS application, an Xcode project, a Metal
+backend, a MoltenVK dependency, or migration to a cross-platform UI framework.
+
+A future Apple UI may be native to Apple; sharing Android View code is **not** a
+goal. The Apple render path — a native Metal/metal-cpp backend, or the MoltenVK
+portability path — is deliberately undecided and belongs to a later
+evidence-based spike.
+
+### INPUT-OWNER-01 — Stylus-first interaction
+
+ForgeShape must stay comfortable for finger input, for an Android stylus/S Pen on
+Galaxy Ultra-class devices, for Android tablets, and for a future Apple Pencil.
+That means:
+
+- touch targets stay practical for both a stylus tip and a fingertip;
+- the shell does not unnecessarily cover the model;
+- gesture ownership between viewport, chrome and tool is explicit;
+- the future semantic input boundary can carry pressure, tilt, hover and tool
+  type;
+- Stage 015B does **not** yet change Sculpt deformation from pressure.
+
+### DOC-OWNER-01 — Clear naming and code comments
+
+Recorded as a durable rule in `CLAUDE.md`. In short: owner-facing documentation
+uses plain descriptive names first with shorthand in parentheses; production code
+uses responsibility-based names, with no stage numbers and no vague `Manager` /
+`Handler` / `Layer` nouns; one domain concept has one canonical term; comments
+explain **why**, ownership, units, lifecycle or constraints, never obvious syntax.
+
+The preferred vocabulary for the new UI is:
+
+| Term | Means |
+| --- | --- |
+| **Editor Workspace** | the whole editor UI |
+| **Global Toolbar** | mode-independent top/global controls |
+| **Tool Rail** | the edge tool selector |
+| **Property Inspector** | the contextual exact-value panel |
+| **Construction Body** | an editable CAD-like object |
+| **Frozen Sculpt Mesh** | the polygon mesh created by Freeze |
+
+Existing working code is **not** mass-renamed for this. Renames happen when the
+relevant area is being touched anyway, or when an ambiguity is a real maintenance
+risk.
 
 ## Product Direction
 
@@ -1399,7 +1536,13 @@ gestures are specified to be decided **on Down, below the JNI boundary**, exactl
 like the sculpt probe, and never in Java. Chrome-owned gestures — rail, edge
 sliders, inspector, hierarchy — never reach the viewport.
 
-### Owner decisions required before Stage 015B
+### Owner decisions required before Stage 015B — SUPERSEDED
+
+**Historical, non-authoritative.** These bare `D1`–`D6` identifiers were answered
+and replaced on 2026-08-20 by the `UI-OWNER-*` / `ARCH-OWNER-*` /
+`INPUT-OWNER-*` / `DOC-OWNER-*` decisions at the top of this file. The table is
+kept only so the question this stage asked is still legible. Nothing may cite a
+bare `D` number.
 
 | | Decision | Recommendation |
 | --- | --- | --- |
@@ -1410,7 +1553,8 @@ sliders, inspector, hierarchy — never reach the viewport.
 | D5 | Confirmation before re-Freeze discards sculpt work | **yes** |
 | D6 | Stylus pressure in 015B | **no** — read `getToolType` only |
 
-D1 blocks Stage 015B. D2 shapes its scope. D3–D6 can be answered alongside.
+At the time: D1 blocked Stage 015B, D2 shaped its scope, D3–D6 could be answered
+alongside. All of them are now answered.
 
 ### Measured audit facts (`emulator-5558`, `uiautomator` hierarchy dumps)
 
@@ -1478,7 +1622,13 @@ imitation and nothing is reproduced from it or from any Mobbin screen.**
 - **Native arbitration is preserved unchanged** — `g_strokePending`, the 8 px
   arming threshold and pending-then-promote are not touched by any option.
 
-### Owner decisions required before Stage 015B
+### Owner decisions required before Stage 015B — SUPERSEDED
+
+**Historical, non-authoritative**, and doubly so: this first-issue table's `D1`–`D6`
+do not even mean the same things as the 015A-R table's. That numbering collision
+is exactly why bare `D` numbers were retired in favour of the `UI-OWNER-*` /
+`ARCH-OWNER-*` / `INPUT-OWNER-*` / `DOC-OWNER-*` identifiers recorded at the top
+of this file.
 
 | | Decision | Recommendation |
 | --- | --- | --- |
@@ -1489,7 +1639,7 @@ imitation and nothing is reproduced from it or from any Mobbin screen.**
 | D5 | Confirmation before re-Freeze discards sculpt work | **yes** |
 | D6 | Stylus pressure in 015B | **no** — read `getToolType` only |
 
-D1, D2 and D3 block Stage 015B. D4–D6 can be answered with it.
+At the time: D1, D2 and D3 blocked Stage 015B; D4–D6 could be answered with it.
 
 ## Tests / Verification (Gate P0, target `emulator-5558`)
 
@@ -2571,30 +2721,30 @@ New in Stage 006:
 
 ## Next Recommended Stage
 
-**Owner UI Architecture Decision for Stage 015B**
+**Stage 015B — UI/UX Architecture Foundation Implementation**
 
-Stage 015A-R ends deliberately before implementation. The recommendation is now
-much less hedged than the first issue's: with the reference class corrected, one
-shell family is clearly right for a product whose identity is *mobile sculptor
-first with an exact CAD layer in the same viewport*, and it is recommended
-without equivocation. What remains genuinely the owner's is **D1** — whether to
-build that shell or the cheaper Single Sheet, which fixes the landscape defect
-for materially less work while giving up the sculpt-first feel. That is a product
-judgement about what ForgeShape is meant to feel like, not an engineering
-comparison a stage can settle.
+The decision baseline is now recorded, so 015B starts with no open question about
+what to build. It builds the **Forge Shell** (UI-OWNER-01) as an adaptive
+compact/medium/expanded Editor Workspace (UI-OWNER-02), with Export as a global
+action (UI-OWNER-03), a confirmation on a genuinely destructive re-Freeze
+(UI-OWNER-05) and none on Resume, no stylus pressure (UI-OWNER-06), and reserved
+but visibly disabled homes for the Sketch/Extrude workflow (UI-OWNER-04). It is a
+UI stage: no geometry, no Sketch, no Extrude, no boolean, no Apple target.
 
-**D2 (primary device)** no longer flips the recommendation — the Forge Shell is
-phone-first by construction and scales up — but it decides whether 015B builds
-the expanded class (docked hierarchy and inspector, WF-4) now or defers it, so it
-shapes the scope of the very next stage.
+Two constraints now bind it that did not bind earlier stages. ARCH-OWNER-01 means
+the shell is a platform adapter and may not become domain truth — anything 015B
+appears to need from native code that is not already exposed is a signal it is
+drifting into the domain. INPUT-OWNER-01 means the shell must be usable with a
+stylus and must not close the door on pressure, tilt, hover and tool type, even
+though it consumes none of them yet.
 
-What the audit contributes regardless of the answers: **landscape is currently
-broken, not merely cramped**, and the Android layer remains the only part of the
-product with no automated test of any kind. Nine native suites and 992 checks run
-themselves; every UI assertion in every stage so far has been driven by hand
-through screen coordinates. Tests U9 (viewport floor and reachability at four
-window sizes) and U10 (a drag on any chrome surface produces no camera change and
-no `SculptRevision`) are the two that would have caught what this audit found by
+What the audit contributes regardless: **landscape is currently broken, not
+merely cramped**, and the Android layer remains the only part of the product with
+no automated test of any kind. Nine native suites and 992 checks run themselves;
+every UI assertion in every stage so far has been driven by hand through screen
+coordinates. Tests U9 (viewport floor and reachability at four window sizes) and
+U10 (a drag on any chrome surface produces no camera change and no
+`SculptRevision`) are the two that would have caught what the audit found by
 hand, and they should land with the shell rather than after it.
 
 ### Why Plane and the coverage cleanup remain the geometry candidates
