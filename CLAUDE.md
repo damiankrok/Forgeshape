@@ -125,6 +125,13 @@ One durable fact has exactly one primary owner.
 Never document a feature as implemented unless it is runtime-verified. Unverified
 paths are reported as UNVERIFIED, not as behaviour.
 
+**Size rule.** Core live docs must remain below 2000 physical lines each. Prefer
+the file-specific target budgets — `PROJECT_STATUS.md` 500-800, `ARCHITECTURE.md`
+700-1000, `PRODUCT.md` 300-450, `README.md` 150-250, `CLAUDE.md` 120-180. When
+adding new facts, replace superseded or duplicated prose instead of appending a
+new historical chapter. Use Git history for old stage detail; do not create a
+shadow history Markdown file.
+
 ## Android / Vulkan safety
 
 - The emulator dies if launched as a child of a tool shell. Spawn it detached

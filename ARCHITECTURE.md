@@ -23,55 +23,39 @@ ForgeShapeActivity            Android lifecycle, hosts the FrameLayout root,
         |        |
 ForgeShapeSurfaceView         Surface lifecycle + raw pointer forwarding
         |                     (no camera state, no matrices, no Vulkan)
-        |
 NativeViewport (JNI decls)
-        |  JNI
+        |  JNI  -- Android/JNI types stop HERE --
 forgeshape_jni.cpp            render thread, ANativeWindow ownership,
         |                     MotionEvent -> TouchAction translation,
-        |                     Camera + Selection ownership + locking
+        |                     Camera + Selection ownership + locking,
+        |                     stroke-vs-navigation arbitration,
+        |                     publishActiveRepresentation
         |
-        +----------------> CameraController      (camera + gesture truth)
-        |                        |
-        |                   CameraSnapshot (view, proj, eye, target, pose)
-        |                        |
-        +----------------> SelectionController   (tap decision + selected id)
-        |                        |  on a valid tap
-        |                        v
-        |                   pickScene() -> Picking (ray build, ray/triangle)
-        |                        |              ^
-        |                        |              | current mesh snapshot
-        |                        v              |
-        |                   ObjectId or none    |
-        |                        |              |
-        |                  bool "draw highlight"|
-        |                        |              |
-        |                        |     ConstructionObject      SculptSession
-        |                        |              |   ObjectId       ProductMode
-        |                        |              |                  SculptTool
-        |                        |              |                  SculptStroke
-        |                        |              |   PrimitiveKind    Construction
-        |                        |              |   ConstructionBox    | Sculpt
-        |                        |              |   ConstructionCylinder    |
-        |                        |              |   ConstructionSphere      |
-        |                        |              |   ConstructionCone        |
-        |                        |              |   ConstructionCapsule     |
-        |                        |              |   ConstructionTransform   |
-        |                        |              |  generateMesh()      SculptMesh
-        |                        |              |   [LOCAL space]      [LOCAL,
-        |                        |              |          |            copied
-        |                        |              |          Freeze  -->  at Freeze,
-        |                        |              |                       own rev]
-        |                        |              |                           |
-        |                        |              +-- the ACTIVE one is published --+
-        |                        |              v
-        |                        |         MeshStore  (immutable revisions,
-        |                        |              |      monotonic, latest-wins)
-        |                        |              |
-        |                        |         modelMatrix() / inverseModelMatrix()
-        |                        v              v
-        +----------------> Renderer              (Vulkan, frame loop, upload)
-                                 |
-                            ANativeWindow -> VkSurfaceKHR -> swapchain
+        +--> CameraController -> CameraSnapshot (view, proj, eye, target, pose)
+        |
+        +--> SelectionController -- on a valid tap --> pickScene() -> Picking
+        |         |                                        ^  (ray build,
+        |         v                                        |   ray/triangle)
+        |    ObjectId or none -> bool "draw highlight"     | current snapshot
+        |                                                  |
+        |    ConstructionObject                 SculptSession
+        |      ObjectId, PrimitiveKind,           ProductMode, SculptTool,
+        |      the five Construction*             SculptStroke (one kernel)
+        |      primitives,                          |
+        |      ConstructionTransform                |
+        |        |                                  |
+        |        generateMesh() [LOCAL] --Freeze--> SculptMesh [LOCAL copy,
+        |        |                                  own SculptRevision]
+        |        |                                  |
+        |        +---- the ACTIVE one is published -+
+        |        v                                  |
+        |    MeshStore (immutable revisions, monotonic, latest-wins)
+        |        |                                  |
+        |    modelMatrix() / inverseModelMatrix()   |
+        v        v                                  v
+      Renderer  (Vulkan, frame loop, upload; owns no geometry truth)
+        |
+   ANativeWindow -> VkSurfaceKHR -> swapchain
 ```
 
 ## Ownership
@@ -91,11 +75,7 @@ forgeshape_jni.cpp            render thread, ANativeWindow ownership,
 | Whether a one-finger Down becomes a stroke or a navigation | `g_strokePending` in `forgeshape_jni.cpp`, using `SculptSession::hitsSculptMesh` | Java decides none of it; the probe cannot mutate the mesh |
 | mm/cm/m ↔ meter conversion and number formatting | `LengthUnit` | the domain never sees a display unit |
 | Identity, which primitive is active, every primitive's parameters, and placement | `ConstructionObject` (`forgeshape_construction.{h,cpp}`) | it is ONE object, not a registry, a list, a scene graph or a hierarchy |
-| Exact box W/H/D and its local mesh | `ConstructionBox` | — |
-| Exact cylinder diameter/height and its local mesh | `ConstructionCylinder` | radial segment count is fixed, not a parameter |
-| Exact sphere diameter and its local mesh | `ConstructionSphere` | meridian and stack counts are fixed, not parameters |
-| Exact cone bottom diameter/height and its local mesh | `ConstructionCone` | the apex radius is zero by definition, not a parameter; there is no top diameter and no frustum |
-| Exact capsule diameter/**total** height and its local mesh | `ConstructionCapsule` | the cylindrical middle is derived and never stored, exactly as a radius is |
+| Each primitive's exact parameters and its deterministic **local**-space mesh | `ConstructionBox` (W/H/D), `ConstructionCylinder` and `ConstructionSphere` (diameter…), `ConstructionCone` (bottom diameter, height), `ConstructionCapsule` (diameter, **total** height) | no JNI/Android/Vulkan/renderer/UI types. Tessellation counts are fixed, not parameters. A radius, and the capsule's cylindrical middle, are derived and never stored. The cone's apex radius is zero by definition: no top diameter, no frustum. The mesh, the GPU and the picker own no parameter |
 | The one radial-segment and latitude-stack count every round primitive is drawn with | `kPrimitiveRadialSegments` / `kPrimitiveLatitudeStacks` (`forgeshape_construction.h`) | no generator writes down a segment count of its own |
 | The capsule's `totalHeight >= diameter` relation | `validateCapsuleMeters` | the UI restates none of it; it is a domain rule, not an input check |
 | Which parameters belong to which primitive | `PrimitiveSpec`'s payload variant | no caller reads a primitive's numbers as another's; the kind is derived from the payload, not stored beside it |
@@ -111,12 +91,9 @@ forgeshape_jni.cpp            render thread, ANativeWindow ownership,
 | Platform-neutral touch event data | `forgeshape_input.h` | one shared type, not an input framework |
 | Tap-vs-navigation decision, selected `ObjectId` | `SelectionController` | renderer and camera own no selection |
 | Screen ray, ray/triangle, nearest hit | `forgeshape_picking.{h,cpp}` | no JNI/Android/Vulkan/renderer types |
-| Local-space mesh generation from exact parameters | `ConstructionBox` / `ConstructionCylinder` / `ConstructionSphere` / `ConstructionCone` / `ConstructionCapsule` | no JNI/Android/Vulkan/renderer/UI types; the mesh, the GPU and the picker own no parameter |
 | Current CPU mesh, revisions, validation | `MeshStore` / `RuntimeMesh` (`forgeshape_mesh.{h,cpp}`) | no JNI/Android/Vulkan types; owns no GPU resource |
-| Baseline cube numbers | `forgeshape_demo_mesh.{h,cpp}` | not read by the renderer or the picker any more |
-| DEBUG mesh fixtures | `forgeshape_mesh_fixtures.{h,cpp}` | test infrastructure, not product geometry |
-| Vulkan mesh buffers, staging, upload | `Renderer` | it owns no CPU mesh and mutates none |
-| Vulkan, presentation, geometry upload | `Renderer` | it never interprets input and owns no identity |
+| Baseline cube numbers, and the DEBUG mesh fixtures | `forgeshape_demo_mesh.{h,cpp}`, `forgeshape_mesh_fixtures.{h,cpp}` | test infrastructure, not product geometry, and not on any startup path |
+| Vulkan, presentation, and every mesh buffer, staging and upload | `Renderer` | it owns no CPU mesh and mutates none, interprets no input and owns no identity |
 | Vector/matrix math | `forgeshape_math.h` | no GLM or other third-party math |
 
 ## Platform boundary
@@ -127,7 +104,7 @@ cross-platform UI framework, and none is authorized. What follows is a constrain
 on how this codebase is arranged, not a claim about where it runs.
 
 **The domain is platform-neutral C++ and the Android layer is an adapter over
-it.** This is already true and is now binding rather than incidental:
+it.**
 
 | | rule |
 | --- | --- |
@@ -154,7 +131,6 @@ where they are and that nothing new crosses them.
 AndroidX). Its whole contribution to navigation is `onTouchEvent`, which copies
 the masked action, the id of any lifting pointer, and each pointer's stable id
 and view-local x/y into preallocated arrays, then makes one JNI call.
-
 `GestureDetector` / `ScaleGestureDetector` are deliberately unused: they would
 move camera semantics into the Android layer.
 
@@ -175,39 +151,34 @@ Frozen Sculpt Mesh is the thing being worked on.
 Both panels swallow every touch inside their bounds that none of their own
 controls takes (`onTouchEvent` returns `true`), so an unclaimed touch on a panel
 can never fall through and orbit the camera — or, in Sculpt Mode, deform the
-model while reaching for a slider. Touches outside its bounds never reach
-it and navigate normally. In the other direction, `ACTION_DOWN` on the viewport
+model while reaching for a slider. Touches outside their bounds never reach them
+and navigate normally. In the other direction, `ACTION_DOWN` on the viewport
 pulls focus and the soft keyboard away from any field being edited, so navigation
 never happens "through" a focused editor.
 
 The panel is at the **top** deliberately: the soft keyboard rises from the
-bottom, so with `windowSoftInputMode="adjustPan"` neither the fields nor the box
-is covered and the window is never resized — which would otherwise rebuild the
-swapchain on every keystroke session.
+bottom, so with `windowSoftInputMode="adjustPan"` neither the fields nor the
+model is covered and the window is never resized — which would otherwise rebuild
+the swapchain on every keystroke session.
 
 ### Properties UI ownership boundary
 
 `ConstructionPanelView` holds exactly three pieces of state: the text in its
 fields, the selected display unit, and a **draft** primitive kind. It holds no
 parameter, no authoritative kind and no transform. Everything it shows is read
-from native code (`NativeViewport.constructionPrimitive` and
-`NativeViewport.boxTransform`) at construction and again on every resume, and the
-only way it can change anything is to submit a whole section at once and accept
-the verdict.
+from native code at construction and again on every resume, and the only way it
+can change anything is to submit a whole section at once and accept the verdict.
 
-The shape selector is the draft: it swaps which parameter fields are on
-screen and nothing else. The object's kind changes only when Apply Shape reads
-the drafted primitive's own fields and calls **that primitive's own native
-method**, so there is no window in which the object is a cylinder carrying box
-dimensions and no point at which a value travels in a slot whose meaning depends
-on a separate kind. `refreshFromNative` resets the draft to the object's real
-kind, so the selector can never be left claiming a shape the object is not.
-
-Exactly one parameter row is on screen at a time, and it is always the drafted
-kind's, so no field on screen can be read as another primitive's parameter.
-Every primitive's fields are kept populated and converted, including the hidden
-ones, so an inactive draft does not silently change meaning while it is off
-screen.
+The shape selector is the draft: it swaps which parameter fields are on screen
+and nothing else. The object's kind changes only when Apply Shape reads the
+drafted primitive's own fields and calls **that primitive's own native method**,
+so there is no window in which the object is a cylinder carrying box dimensions.
+`refreshFromNative` resets the draft to the object's real kind, so the selector
+can never be left claiming a shape the object is not. Exactly one parameter row
+is on screen at a time and it is always the drafted kind's, so no field on screen
+can be read as another primitive's parameter; every primitive's fields are kept
+populated and converted, including the hidden ones, so an inactive draft does not
+silently change meaning while it is off screen.
 
 Shape and placement have separate Apply buttons — *Apply Shape* and *Apply
 Transform* — because they are separate truths with different consequences: one
@@ -235,19 +206,17 @@ unit switching is lossless and a value re-entered in a different unit produces
 the identical `double` — which is why re-applying the same box in a different
 unit reports `Unchanged`. Meter values are rendered through
 `BigDecimal.valueOf(double)` (shortest round-tripping decimal), shifted, and
-printed with trailing zeros stripped and no grouping separator.
-
-Parsing accepts `.` or `,` as the decimal separator. The fields use a numeric IME
-via `setRawInputType` combined with a `DigitsKeyListener` accepting
-`0123456789.,-`, so a comma and a minus sign are typeable. The minus matters
-twice over: a negative coordinate or angle is an ordinary value that must be
-enterable, and a negative *dimension* must be enterable so it can be visibly
+printed with trailing zeros stripped and no grouping separator. Parsing accepts
+`.` or `,` as the decimal separator; the fields use a numeric IME via
+`setRawInputType` plus a `DigitsKeyListener` accepting `0123456789.,-`. The minus
+matters twice over: a negative coordinate or angle is an ordinary value that must
+be enterable, and a negative *dimension* must be enterable so it can be visibly
 refused rather than being unreachable.
 
 ## JNI boundary
 
-Five lifecycle methods, one input method and six Construction methods on
-`NativeViewport`:
+Five lifecycle methods, one input method, eight Construction methods and eight
+sculpt methods on `NativeViewport`:
 
 ```
 start()
@@ -259,16 +228,12 @@ touchEvent(int action, int actionPointerId, int pointerCount,
            int[] ids, float[] xs, float[] ys, int viewWidth, int viewHeight)
 
 constructionPrimitive(double[] outState)                   // read shape
-
 applyConstructionBox(double widthMeters,                   // submit a box
                      double heightMeters, double depthMeters)
-applyConstructionCylinder(double diameterMeters,           // submit a cylinder
-                          double heightMeters)
-applyConstructionSphere(double diameterMeters)             // submit a sphere
-applyConstructionCone(double bottomDiameterMeters,         // submit a cone
-                      double heightMeters)
-applyConstructionCapsule(double diameterMeters,            // submit a capsule
-                         double totalHeightMeters)
+applyConstructionCylinder(double diameterMeters, double heightMeters)
+applyConstructionSphere(double diameterMeters)
+applyConstructionCone(double bottomDiameterMeters, double heightMeters)
+applyConstructionCapsule(double diameterMeters, double totalHeightMeters)
 
 boxTransform(double[] outPositionRotation)                 // read placement
 applyBoxTransform(double px, double py, double pz,         // submit placement
@@ -295,39 +260,34 @@ is, so nothing there is positional-by-kind either.
 nothing, depending on an int" is a boundary that only documentation can keep
 correct. Each method's parameter list *is* that primitive's parameter list, so
 Java cannot ask for a cylinder while sending box dimensions, cannot put a height
-where a depth belongs, and has no second or third number to get wrong when asking
-for a sphere.
+where a depth belongs, and has no spare number to get wrong when asking for a
+sphere.
 
 Every length crosses in meters and every angle in degrees, so no display unit and
-no radian ever reaches native code.
+no radian ever reaches native code. Writing carries a whole section in one call
+and returns a status code (`APPLY_APPLIED`, `APPLY_UNCHANGED`, or one of the
+`APPLY_REJECTED_*` reasons). There is no `setWidth`, no `setRotationX`, no
+`setKind`, no separate `publish`, and no way for Java to observe or produce a
+half-applied state. Nothing is ever measured back from the mesh, from GPU data or
+from a model matrix.
 
-The eight sculpt methods follow the same shape: Java may **request** a mode or a
-tool and is then told what is actually active, and it reads the brush back rather
-than assuming its slider mapping was honoured. There is no method that sets a
-vertex, no method that starts a stroke and no method that carries geometry across
-the boundary in either direction — a stroke is driven entirely by the existing
+The sculpt methods follow the same shape: Java may **request** a mode or a tool
+and is then told what is actually active, and it reads the brush back rather than
+assuming its slider mapping was honoured. There is no method that sets a vertex,
+no method that starts a stroke and no method that carries geometry across the
+boundary in either direction — a stroke is driven entirely by the existing
 `touchEvent` path, and the geometry it produces reaches the GPU through
 `MeshStore` exactly as every other revision does. In particular there is no
 method for the arbitration: whether a Down becomes a stroke is decided below the
 boundary, where the mesh actually is.
 
-These six Construction methods are the whole contract. Reading fills a
-caller-allocated array; there is no other direction — nothing is measured from
-the mesh, from GPU data or from a model matrix. Writing carries a whole section
-in one call and returns a status code (`APPLY_APPLIED`, `APPLY_UNCHANGED`, or one
-of the `APPLY_REJECTED_*` reasons). There is no `setWidth`, no `setRotationX`, no
-`setKind`, no separate `publish`, and no way for Java to observe or produce a
-half-applied state.
-
 Below the boundary all five shape methods build the matching typed
 `PrimitiveSpec` and go straight into `applyConstructionPrimitive`, so the
 per-kind split is a boundary shape only: the update-then-publish rule still has
-exactly one implementation.
-
-The JNI layer adds logging and that status code and nothing else: it does not
-decide validity, does not decide whether to publish, and never touches
-`MeshStore` or the transform. The DEBUG primitive driver calls the same function,
-so there is exactly one implementation of the rule in the process.
+exactly one implementation. The JNI layer adds logging and the status code and
+nothing else — it does not decide validity, does not decide whether to publish,
+and never touches `MeshStore` or the transform. The DEBUG primitive driver calls
+the same function.
 
 The transform path reuses the same `APPLY_*` vocabulary.
 `APPLY_REJECTED_NOT_POSITIVE` simply cannot occur there, because zero and
@@ -341,26 +301,23 @@ dropped rather than forwarded.
 ## Camera ownership
 
 `CameraController` (`forgeshape_camera.{h,cpp}`) is the single source of camera
-truth and contains no JNI, Android or Vulkan types. It owns:
-
-- `target` (orbit centre), `yaw`, `pitch`, `distance`;
-- FOV, near and far planes;
-- viewport width/height, and therefore projection aspect;
-- the gesture state machine (mode, tracked pointer ids, anchors).
-
-It produces a `CameraSnapshot` — view matrix, projection matrix, eye, target and
-pose scalars — which is the only thing the renderer ever sees.
+truth and contains no JNI, Android or Vulkan types. It owns `target` (orbit
+centre), `yaw`, `pitch`, `distance`; FOV, near and far planes; viewport
+width/height and therefore projection aspect; and the gesture state machine
+(mode, tracked pointer ids, anchors). It produces a `CameraSnapshot` — view
+matrix, projection matrix, eye, target and pose scalars — which is the only thing
+the renderer ever sees.
 
 Gesture rule: every touch event recomputes the set of pointers that are still
 down, sorted by pointer id. If that set differs from the tracked one, the
 controller re-anchors and applies **no** delta; deltas are applied only on Move
-events whose pointer set is unchanged. This is what makes 1↔2 pointer
-transitions and MotionEvent index reordering jump-free.
+events whose pointer set is unchanged. This is what makes 1↔2 pointer transitions
+and MotionEvent index reordering jump-free.
 
 ## Canonical winding and culling
 
-A triangle's vertices are ordered **counter-clockwise when the triangle is
-viewed from outside the surface**, in right-handed world space. Equivalently the
+A triangle's vertices are ordered **counter-clockwise when the triangle is viewed
+from outside the surface**, in right-handed world space. Equivalently the
 geometric normal `N = (v1 - v0) x (v2 - v0)` points away from the solid, and a
 triangle is front-facing to a ray when `dot(N, rayDirection) < 0`.
 
@@ -374,10 +331,10 @@ frontFace = VK_FRONT_FACE_CLOCKWISE
 ```
 
 CPU picking accepts front faces only, under the same rule, so what can be picked
-is exactly what the rasterizer draws. The self-tests assert the convention on all
-12 demo cube triangles, and assert that a ray fired from inside the cube misses
-under front-face-only picking; that is what keeps the data, the rasterizer and
-the picker from drifting apart.
+is exactly what the rasterizer draws. The self-tests assert the convention
+triangle by triangle, and assert that a ray fired from inside a closed solid
+misses under front-face-only picking; that is what keeps the data, the rasterizer
+and the picker from drifting apart.
 
 ## Construction domain
 
@@ -397,7 +354,7 @@ object what it is:
   parameters;
 - a `ConstructionTransform` holding its placement.
 
-There is exactly one of these. It is emphatically **not** a registry: there is no
+There is exactly one of these. It is emphatically **not** a registry: no
 container, no list, no parent, no child, no create and no delete, and the
 process-scoped `constructionObject()` is the only instance the product has.
 
@@ -429,17 +386,14 @@ makes reading one as the other impossible rather than merely discouraged.
 `kind()` is **derived** from the payload's alternative index rather than stored
 next to it, so the tag and the data cannot disagree; a `static_assert` pins the
 variant's alternative order to `PrimitiveKind`'s enumerator order. Access is
-typed: `box()`, `cylinder()` and `sphere()` each return a pointer that is null
-unless the spec really is that primitive, so reading the wrong one is a null
-check away rather than silent nonsense. Specs are built only through
-`forBox` / `forCylinder` / `forSphere`, so a request always says what it is by
-construction.
-
-`ConstructionObject::spec()` therefore returns only the **active** primitive's
-parameters. The remembered parameters of the inactive ones are still reachable —
-through `box()`, `cylinder()` and `sphere()` — but only by asking for that
-primitive by name, which is exactly what the panel's draft display does and
-nothing else needs.
+typed — `box()`, `cylinder()`, `sphere()`, `cone()` and `capsule()` each return a
+pointer that is null unless the spec really is that primitive — and specs are
+built only through the matching `forBox` … `forCapsule`, so a request always says
+what it is by construction and reading the wrong one is a null check away rather
+than silent nonsense. `ConstructionObject::spec()` therefore returns only the
+**active** primitive's parameters; the remembered parameters of the inactive ones
+are reachable only by asking for that primitive by name, which is exactly what
+the panel's draft display does and nothing else needs.
 
 ### Source-of-truth hierarchy
 
@@ -470,241 +424,109 @@ named `...Meters` at every boundary (`Meters`, `widthMeters()`,
 `diameterMeters()`, `BoxDimensionsMeters`, `CylinderDimensionsMeters`).
 `RuntimeMesh` positions are **derived `float`** data.
 
-The cylinder's authoritative parameter is its **diameter**, because that is what
-a drawing and a caliper give you. `radiusMeters()` exists but is derived on
-demand and never stored.
+Curved primitives are authored by **diameter**, because that is what a drawing
+and a caliper give you. `radiusMeters()` exists but is derived on demand and
+never stored — as is the capsule's cylindrical middle.
 
 mm/cm/m exist **only** above the JNI boundary, in `LengthUnit` and
 `ConstructionPanelView`. Every value crossing into native code is already in
 meters, and no native type, function or log line names a display unit. The unit a
 dimension was typed in is therefore unrecoverable from domain state — which is
-correct: it is not part of what the box is.
+correct: it is not part of what the object is.
 
-### Box generation
+### Primitive representation
 
-The box is centred on the local origin and axis-aligned: its 8 corners are
-exactly `(±width/2, ±height/2, ±depth/2)` with no offset term, so the centre is
-the origin by construction rather than by arithmetic that could drift. Its 36
-`uint32_t` indices are a fixed table in the canonical ForgeShape winding
-(counter-clockwise seen from outside), the same convention the pipeline and CPU
-picking already share. Generation is a pure deterministic function of the
-parameters, so identical parameters always produce identical vertices.
+`N = kPrimitiveRadialSegments` (32) and `S = kPrimitiveLatitudeStacks` (16) are
+the one owner of how finely every round primitive is divided; each generator
+names those constants rather than writing down a count of its own, so a capsule's
+hemispherical end is provably the same tessellation as a sphere's —
+`kCapsuleHemisphereBands` is literally `S / 2`. `R` below is the capsule's ring
+count, `S`.
 
-Vertex colour is **derived presentation data**, not Construction truth: it exists
-because `RuntimeMesh` carries a colour channel and a per-corner gradient makes
-orientation readable. No dimension is ever recovered from it.
+| Primitive | Authoritative parameters | Axis and origin | Tessellation | Vertices : indices |
+| --- | --- | --- | --- | --- |
+| Box | width, height, depth | axis-aligned, centred on local origin | none — a fixed index table | 8 : 36 |
+| Cylinder | diameter, height | axis local +Y, centred | `N` radial segments | `2N+2` = 66 : `12N` = 384 |
+| Sphere | diameter | centred | `N` meridians × `S` stacks | `(S-1)N+2` = 482 : `2N(S-1)`·3 = 2880 |
+| Cone | bottom diameter, height | axis local +Y, base at `-h/2`, apex at `+h/2` | `N` radial segments | `N+2` = 34 : `6N` = 192 |
+| Capsule | diameter, **total** height | axis local +Y, centred | `N` meridians × `R` rings | `RN+2` = 514 : `6NR` = 3072 |
 
-Because the topology is constant, a box dimension change publishes a same-count
-revision (8 vertices / 36 indices), which the Stage 006 capacity policy reuses
-without recreating a buffer.
+Invariants every generator shares:
 
-### Cylinder generation
+- **Bounds are exact, not approximate.** The four cardinal directions (and the
+  sphere's and capsule's equator/seam rings) are **written down rather than
+  computed**: `cos(pi/2)` in floating point is about 6.1e-17, not 0, and that
+  error would make the generated bounds not quite the radius. `N` is divisible by
+  four so those directions always land on real vertices, and `S` is even so
+  exactly one ring falls **on** the equator plane rather than straddling it. The
+  two exact factors are multiplied in `double` before the single conversion to
+  `float`. The self-tests assert exact equality on all six bounds, not a
+  tolerance, across shapes as extreme as 40 m × 0.01 m.
+- **Winding is the canonical convention above** — side normals radially outward,
+  cap normals along the axis — so sides and caps alike survive back-face culling,
+  and closure is asserted directly (every directed edge exactly once with its
+  reverse present, and `V - E + F = 2`, which fails on a hole, a duplicated
+  triangle or a triangle wound the wrong way round). **No degenerate triangles**:
+  a pole or an apex is one vertex fanned to its adjacent ring, never a collapsed
+  ring, because the collapsed form produces `N` zero-area triangles that are
+  invisible but real and noise in every winding, area and validation check.
+- **Generation is a pure deterministic function of the parameters**, so identical
+  parameters always produce identical vertices.
+- **Tessellation is fixed and not exposed.** It is a rendering detail of an exact
+  shape, not a property of it; exposing it would put the approximation into
+  authored state, where it would have to be persisted, versioned and validated
+  like a real parameter. Between two ring vertices the surface is a flat facet,
+  so a picked point on a curved side lies between `radius * cos(pi/N)` and
+  `radius` from the axis (`radius * cos(pi/N)^2` on a sphere). That is the
+  tessellation showing through; the *parameters* stay exact, and no dimension is
+  ever reconstructed from mesh floats.
+- **Vertex colour is derived presentation data**, not Construction truth: it
+  exists because `RuntimeMesh` carries a colour channel and a gradient makes
+  orientation readable, and no dimension is ever recovered from it. `RuntimeMesh`
+  carries **no normals** and the renderer does no lighting, so per-primitive
+  shading hardness is not expressible today.
 
-The cylinder is centred on the local origin with its axis along **local +Y**, so
-its extents are exactly `±height/2` in Y and `±diameter/2` in X and Z.
+Three cases need more than the table says:
 
-Tessellation is **fixed at 32 radial segments** and is deliberately not a
-parameter. It is a rendering detail of an exact shape, not a property of it: a
-user who could set it would be authoring the approximation rather than the
-cylinder. 32 is divisible by four, which matters — see below.
+**The cone's base is closed** and its apex is a true point. The apex radius is
+zero by definition and is not a parameter: no top diameter and no frustum,
+because a truncated cone is a different shape rather than a cone with an extra
+number. Concretely the side triangle is the cylinder's `(b0, t1, b1)` with the
+top ring collapsed to the apex; its `(b0, t0, t1)` partner is the one that would
+have been degenerate, so it simply does not exist. The base fan is the cylinder's
+bottom cap unchanged, and `V - E + F = 2` is what would fail if the base were
+left open.
 
-Vertex layout, shared by the side wall and both caps:
+**The capsule's cylindrical middle is not a special case in the index loop.**
+Rings run from the north pole downward; the first `kCapsuleHemisphereBands` are
+the top hemisphere and the rest the bottom, and the middle is simply the band
+between the two seam rings, generated by the same code as every other band. It is
+centred on the origin, so its ends sit at `±(totalHeight-diameter)/2`, and the
+poles are written down from the authoritative **total** height rather than
+accumulated as `middle/2 + radius`.
 
-```
-[0, N)      bottom ring, y = -height/2
-[N, 2N)     top ring,    y = +height/2
-2N          bottom cap centre
-2N + 1      top cap centre
-```
-
-so the counts are `2N + 2` vertices (66) and `12N` indices (384): two triangles
-per segment for the side wall, one per segment for each cap fan. Every ring
-vertex is referenced exactly five times — three by the side wall, two by a cap
-fan — and each centre exactly `N` times, which accounts for the whole index
-buffer and is asserted by the self-tests.
-
-The four cardinal directions are **written down rather than computed**.
-`cos(pi/2)` in floating point is about 6.1e-17, not 0, and that error would make
-the generated X/Z bounds not quite the radius. Because N is divisible by four,
-those four directions always land on real ring vertices, so the bounds come out
-exactly `±diameter/2`. The self-tests assert exact equality, not a tolerance.
-
-Winding follows the same canonical convention as the box — counter-clockwise seen
-from outside — with side normals pointing radially outward, the top cap's at +Y
-and the bottom cap's at −Y. That is what makes the sides and *both* caps survive
-back-face culling, and the self-tests check it with the same
-`meshObeysCanonicalWinding` predicate the box uses, plus a ray fired from inside
-that must miss.
-
-Between two ring vertices the surface is a flat facet, so a picked point on the
-side lies between `radius * cos(pi/N)` and `radius` from the axis. That is the
-tessellation showing through, not an error: the *parameters* remain exact.
-
-### Sphere generation
-
-The sphere is centred on the local origin, so its extents are exactly
-`±diameter/2` on all three axes. The authoritative parameter is the **diameter**,
-for the same reason as the cylinder's; `radiusMeters()` is derived on demand and
-never stored.
-
-Tessellation is fixed at **32 meridians and 16 latitude stacks**, and is not a
-parameter, for the same reason the cylinder's is not. 32 is divisible by four, so
-the four cardinal meridians land on real vertices; 16 is even, so exactly one
-ring falls **on** the equator rather than straddling it.
-
-Vertex layout:
-
-```
-ring r in [0, 15), meridian j in [0, 32):
-    index r * 32 + j      theta = pi * (r + 1) / 16, counted from the north pole
-15 * 32                   north pole, y = +radius
-15 * 32 + 1               south pole, y = -radius
-```
-
-so the counts are `15 * 32 + 2` = 482 vertices and `2N(S-1)` = 960 triangles =
-2880 indices: two triangles per quad in each of the 14 full bands, plus one fan
-triangle per meridian at each pole.
-
-Each pole is **one vertex fanned to its adjacent ring**, not a collapsed row of a
-quad grid. The collapsed form produces 32 zero-area triangles at each pole —
-invisible, but real, and noise in every winding, area and validation check. The
-self-tests assert that no triangle is degenerate and that no triangle repeats a
-vertex.
-
-The equator and the four cardinal directions are **written down rather than
-computed**, exactly as the cylinder's cardinal directions are, and the two exact
-factors are multiplied in double before the single conversion to float. That is
-what makes the X and Z bounds exactly `±radius` instead of one rounding short,
-and the poles make the Y bounds exactly `±radius` too. The self-tests assert
-exact equality on all six bounds, on the four equator samples and on both poles.
-
-Winding follows the same canonical convention as the box and the cylinder: the
-band ordering is the cylinder's side-wall ordering with "lower ring" and "upper
-ring" in the same roles, and the two pole fans are its two cap fans. Closure is
-asserted directly — every directed edge appears exactly once and its reverse
-exists, and `V - E + F = 2` — which fails on a hole, on a duplicated triangle and
-on a triangle wound the wrong way round.
-
-As with the cylinder, the drawn surface is inscribed in the exact one, so a
-picked point lies between `radius * cos(pi/32)^2` and `radius` from the centre.
-The *parameter* stays exact, and no diameter is ever reconstructed from mesh
-floats.
-
-### Shared tessellation
-
-`kPrimitiveRadialSegments` (32) and `kPrimitiveLatitudeStacks` (16) are the one
-owner of how finely every round primitive is divided. The cylinder, the sphere,
-the cone and the capsule all name those constants rather than writing down a
-count of their own, so they cannot drift apart and a capsule's hemispherical end
-is provably the same tessellation as a sphere's — `kCapsuleHemisphereBands` is
-literally `kPrimitiveLatitudeStacks / 2`.
-
-Both are fixed and not exposed, for the reason each generator already gave
-individually: they are a rendering detail of an exact shape, not a property of
-it, and exposing them would put the approximation into authored state where it
-would have to be persisted, versioned and validated like a real parameter.
-
-32 is divisible by four so the four cardinal directions land on real vertices;
-16 is even so a hemisphere is exactly half of it and one ring falls on the
-equator plane rather than straddling it. Every exactness claim below depends on
-those two facts.
-
-### Cone generation
-
-The cone is centred on the local origin with its axis along **local +Y**: the
-base is at `y = -height/2`, the apex at `y = +height/2`, so the extents are
-exactly `±height/2` in Y and `±bottomDiameter/2` in X and Z. The base is
-**closed**.
-
-The authoritative parameters are the **bottom diameter** and the height. The apex
-radius is **zero by definition** and is not a parameter: there is deliberately no
-top diameter and no frustum, because a truncated cone is a different shape rather
-than a cone with an extra number.
-
-```
-[0, N)      base ring, y = -height/2
-N           base centre
-N + 1       apex,      y = +height/2
-```
-
-so the counts are `N + 2` = 34 vertices and `6N` = 192 indices: one side triangle
-and one base-fan triangle per segment. Each ring vertex is referenced exactly
-four times — twice by the two side triangles it borders and twice by the two
-base-fan triangles — which accounts for the whole index buffer.
-
-The apex is **one vertex fanned to the base ring**, exactly as a sphere's pole
-is, not a collapsed top ring. The collapsed form produces N zero-area triangles
-at the tip: invisible, but real, and noise in every winding, area and validation
-check. Concretely the side triangle is the cylinder's `(b0, t1, b1)` with the top
-ring collapsed to the apex; its `(b0, t0, t1)` partner is the one that would have
-been degenerate, so it simply does not exist here.
-
-The four cardinal directions are written down rather than computed, exactly as
-the cylinder's are, so the X and Z bounds are exactly `±bottomDiameter/2`. The
-base fan is the cylinder's bottom cap unchanged, with its outward normal at −Y;
-the side normals tilt outward and upward. Closure is asserted directly — every
-directed edge appears once with its reverse present, and `V - E + F = 2` — which
-is what would fail if the base were left open.
-
-### Capsule generation
-
-The capsule is centred on the local origin with its axis along **local +Y**. Its
-authoritative parameters are the **diameter** and the **total** height — ends
-included, which is what a caliper measures. Both the radius (`diameter/2`) and
-the cylindrical middle (`totalHeight - diameter`) are **derived and never
-stored**, for the same reason a radius never is: they are not what the user
-measured.
-
-The middle is centred on the origin too, so its ends sit at
-`y = ±(totalHeight - diameter)/2`, and each hemispherical end caps that end at
-the same radius. The extents are therefore exactly `±diameter/2` in X and Z and
-`±totalHeight/2` in Y.
-
-```
-ring r in [0, R), meridian j in [0, N):   index r * N + j
-R * N                                     north pole, y = +totalHeight/2
-R * N + 1                                 south pole, y = -totalHeight/2
-```
-
-Rings run from the north pole downward. The first `kCapsuleHemisphereBands` are
-the top hemisphere, the last of those being the **top seam ring**; the rest are
-the bottom hemisphere, the first of those being the **bottom seam ring**.
-
-The cylindrical middle is therefore **not a special case in the index loop at
-all**: it is simply the band between ring `H-1` and ring `H`, generated by the
-same code as every other band. `R` rings plus two poles is `R - 1` quad bands
-plus two pole fans, so the counts are `R * N + 2` vertices and `6 * N * R`
-indices — 514 and 3072 for a capsule with a middle.
-
-**The equality case.** `totalHeight == diameter` is valid and describes a capsule
-with no middle, which is a sphere. It is generated as one: the two seam rings are
-**the same ring**, `R` is one smaller, that band does not exist, and the result
-is exactly the sphere's 482 : 2880 topology. That is what keeps the equality case
-free of a duplicated zero-length ring and of zero-area triangles, and it is
-asserted at compile time rather than left as a coincidence — a `static_assert`
-pins `kCapsuleSphericalVertexCount` and `kCapsuleSphericalIndexCount` to one
-fewer ring and one fewer band. Topology is therefore a deterministic function of
-the parameters, not a constant: the two forms are the two sides of one exact
-double comparison with nothing in between.
-
-The seam bands use a written-down `cos = 0, sin = 1` for the same reason the
-sphere's equator does, so a seam ring lands exactly on `±middle/2` at exactly the
-full radius; the poles are written down from the authoritative **total** height
-rather than accumulated as `middle/2 + radius`, so the Y bounds are exact rather
-than a rounding away. Winding, band ordering and pole fans are the sphere's,
-unchanged.
+**The capsule equality case is a sphere, and is generated as one.**
+`totalHeight == diameter` is valid and describes a capsule with no middle: the
+two seam rings are **the same ring**, `R` is one smaller, that band does not
+exist, and the result is exactly the sphere's 482 : 2880. That is what keeps the
+degenerate case free of a duplicated zero-length ring and of zero-area triangles,
+and a `static_assert` pins it rather than leaving it to coincidence. Capsule
+topology is therefore a deterministic *function* of the parameters rather than a
+constant — the two sides of one exact `double` comparison with nothing in
+between — which also makes the capsule the one primitive whose edit can change a
+vertex count and so trigger a buffer growth.
 
 ### The capsule relation, and float resolvability
 
-The capsule is the first primitive whose two parameters are **related** rather
-than independent, so it is the first with validation beyond the per-length rule.
-`validateCapsuleMeters` owns both halves:
+The capsule is the only primitive whose two parameters are **related** rather
+than independent, so it is the only one with validation beyond the per-length
+rule. `validateCapsuleMeters` owns both halves:
 
 - `totalHeight >= diameter`, because the two hemispherical ends alone are already
-  `diameter` tall. Violating it reports `DimensionValidation::RelationInvalid`,
-  a reason distinct from `NotPositive` because "0.5 m is not a length" and "0.5 m
-  is too short to be this capsule's total height" are different problems and
-  deserve different messages. It surfaces at the JNI boundary as
+  `diameter` tall. Violating it reports `DimensionValidation::RelationInvalid`, a
+  reason distinct from `NotPositive` because "0.5 m is not a length" and "0.5 m is
+  too short to be this capsule's total height" are different problems and deserve
+  different messages. It surfaces at the JNI boundary as
   `APPLY_REJECTED_RELATION`.
 - **float resolvability**: the generated positions must not merely be finite,
   they must be far enough apart to describe the shape. A 1e30 m capsule 1e-6 m
@@ -712,25 +534,26 @@ than independent, so it is the first with validation beyond the per-length rule.
   single float, which would be a mesh of zero-area triangles. The check compares
   the pole against the first ring below it — the smallest latitude step anywhere
   on a hemisphere, so resolving it resolves all of them — and refuses the request
-  as `NotRepresentable` rather than publishing geometry no parameter set could
-  usefully produce.
+  as `NotRepresentable`. This is the one validation coupled to the tessellation
+  constant, deliberately: the question it asks is "can this shape be built at this
+  fidelity".
 
 The UI restates neither half. It refuses only what it can name from the text
 alone (blank, non-numeric, non-positive), and the relation is reported back to it
-as an ordinary rejection, which is why the capsule's message is the only one
-that names two fields at once.
+as an ordinary rejection.
 
 ### Update and invalid-update behaviour
 
 `ConstructionObject::setPrimitive` reports `Applied`, `Unchanged` or `Rejected`:
 
-- **Rejected** — a parameter that is not finite, not positive, or whose derived
-  `float` half-extent would be zero or non-finite. This **fails closed**: every
-  value the request carries is validated before anything at all is written, so a
-  bad depth cannot leave a half-applied width behind *and a bad diameter cannot
-  leave the kind switched*. The previous kind, parameters, transform and mesh revision all
-  stand. The only limits are physical validity and float representability — there
-  is no arbitrary product size policy.
+- **Rejected** — a parameter that is not finite, not positive, whose derived
+  `float` half-extent would be zero or non-finite, or that violates the capsule
+  relation. This **fails closed**: every value the request carries is validated
+  before anything at all is written, so a bad depth cannot leave a half-applied
+  width behind *and a bad diameter cannot leave the kind switched*. The previous
+  kind, parameters, transform and mesh revision all stand. The only limits are
+  physical validity and float representability — there is no arbitrary product
+  size policy.
 - **Unchanged** — the request is valid, the kind matches and every relevant
   parameter matches. Nothing is written and no revision is published, so a
   redundant edit cannot cost a mesh revision or a GPU upload.
@@ -754,8 +577,8 @@ validates and compares whichever parameters the request actually contains.
 
 Callers therefore decide nothing. The product UI path (for all five primitives)
 and the DEBUG driver all go through it, so there is exactly one implementation of
-the rule in the process. `publishConstructionObject` remains separately callable for
-the startup publish, which changes no parameter.
+the rule in the process. `publishConstructionObject` remains separately callable
+for the startup publish, which changes no parameter.
 
 The atomicity that matters is preserved by construction: nothing is written
 unless every relevant value is valid, and no caller can observe a changed shape
@@ -774,9 +597,8 @@ does not create a new object; it changes what this object is.
 
 `forgeshape_transform.{h,cpp}` owns **where** the object is; the primitive
 parameters own **what** it is. They are separate truths on purpose, and neither
-reads the other. Since Stage 010 both are held by the same
-`ConstructionObject`, so they cannot become inconsistent about which object they
-describe.
+reads the other. Both are held by the same `ConstructionObject`, so they cannot
+become inconsistent about which object they describe.
 
 ```
 active primitive parameters (double meters) -> LOCAL geometry -> MeshStore -> GPU
@@ -788,10 +610,9 @@ The published `RuntimeMesh` is the object's geometry in **object space**. The
 transform never touches it. That is the whole point: moving or rotating the
 object changes one derived 4×4 matrix and nothing else — no vertex is rewritten,
 no `MeshRevision` is published and no GPU upload happens. `ConstructionTransform`
-could not publish one if it wanted to; it has no access to `MeshStore`.
-
-The independence runs both ways: a shape change republishes the mesh and leaves
-the placement exactly as it was, including across any switch among the five kinds.
+could not publish one if it wanted to; it has no access to `MeshStore`. The
+independence runs both ways: a shape change republishes the mesh and leaves the
+placement exactly as it was, including across any switch among the five kinds.
 
 ### Unit contract
 
@@ -804,10 +625,9 @@ and never to rotation.
 ### Axis and Euler convention
 
 Right-handed world space, **+Y up**, column-vector math (`p' = M * p`), storage
-column-major. A positive angle rotates by the **right-hand rule**.
-
-Rotations compose in **local X → Y → Z** order, which for column vectors is
-written right to left:
+column-major. A positive angle rotates by the **right-hand rule**. Rotations
+compose in **local X → Y → Z** order, which for column vectors is written right
+to left:
 
 ```
 Model    = T * Rz * Ry * Rx
@@ -824,10 +644,10 @@ rotation itself, so they cannot drift apart. The inverse is composed from the
 authoritative values rather than inverted numerically, which is exact for a rigid
 transform and cannot disagree with the model it undoes.
 
-The self-tests assert the convention directly: `Rx(+90)` takes +Y to +Z, `Ry(+90)`
-takes +Z to +X, `Rz(+90)` takes +X to +Y, the X-then-Y composition lands where
-only the documented order puts it, and `Model * Model⁻¹` is the identity in both
-directions.
+The self-tests assert the convention directly: `Rx(+90)` takes +Y to +Z,
+`Ry(+90)` takes +Z to +X, `Rz(+90)` takes +X to +Y, the X-then-Y composition
+lands where only the documented order puts it, and `Model * Model⁻¹` is the
+identity in both directions.
 
 ### Rotation values are not canonicalized
 
@@ -862,19 +682,6 @@ space.
 This is what keeps "what is drawn" and "what is pickable" identical under a
 transform, with no second collision representation to keep in sync.
 
-### Debug fixture boundary
-
-`forgeshape_mesh_fixtures` remains DEBUG test infrastructure and is no longer on
-any startup path. Product geometry at startup comes from `ConstructionObject`.
-The debug key hook can still publish a fixture over the object's revision — that
-is exactly what makes it a *test* path, and it compiles to a no-op in release.
-
-The debug hook also carries a bounded primitive driver (four fixed box states,
-including one deliberately invalid one). It is not the product edit path — that
-is `ConstructionPanelView` — but it is not a parallel implementation either: it
-calls the same `applyPrimitive` entry point, and it compiles to a no-op in
-release.
-
 ## Sculpt domain
 
 `forgeshape_sculpt.{h,cpp}` owns the second representation of the one object and
@@ -897,36 +704,35 @@ These are separate truths and neither writes to the other:
   currently generated local mesh wholesale. Nothing is shared, so no sculpt edit
   can reach back into Construction data, and the Construction Source can still
   regenerate its own mesh at any moment.
-- **A sculpt edit changes no parameter.** It cannot: the sculpt module has no
-  mutable access to `ConstructionObject`, and the only mutation `SculptMesh`
-  offers is a single vertex POSITION. There is no API here that can add, remove
-  or reorder a vertex or touch an index, so topology is preserved by
-  construction rather than by discipline.
-- **Nothing reconstructs a parameter from sculpt vertices.** That direction does
-  not exist here, exactly as it does not exist from the Construction mesh.
+- **A sculpt edit changes no parameter, no kind and no transform.** It cannot:
+  the sculpt module has no mutable access to `ConstructionObject`, and the only
+  mutation `SculptMesh` offers is a single vertex POSITION. No API here can add,
+  remove or reorder a vertex or touch an index, so topology is preserved by
+  construction rather than by discipline. **Nothing reconstructs a parameter from
+  sculpt vertices** either; that direction does not exist, exactly as it does not
+  exist from the Construction mesh.
 - The transform is deliberately **not** duplicated. Both representations are
   local geometry under the one `ConstructionTransform`, so the object sits in
   exactly the same place in either mode and there is no second placement to keep
   in sync.
-
-`SculptRevision` is emphatically not a `MeshRevision`. `MeshStore`'s revisions
-are minted by the publication path and count every published snapshot of
-whichever representation is active; a `SculptRevision` counts changes to *this*
-mesh and restarts at 1 on every Freeze. Neither is derived from the other and
-they cannot be compared.
+- `SculptRevision` is emphatically **not** a `MeshRevision`. `MeshStore`'s
+  revisions count every published snapshot of whichever representation is active;
+  a `SculptRevision` counts changes to *this* mesh and restarts at 1 on every
+  Freeze. Neither is derived from the other and they cannot be compared.
 
 ### Mode ownership
 
 `SculptSession` owns `ProductMode` — `Construction` or `Sculpt` — plus the one
-`SculptMesh`, the brush settings and the live stroke. It is process-scoped, like
-the camera, the selection, the mesh store and the Construction object.
+`SculptMesh`, the active `SculptTool`, the brush settings and the live stroke. It
+is process-scoped, like the camera, the selection, the mesh store and the
+Construction object.
 
 The mode is **native state**. The Android UI may request a change through
 `freezeToSculpt` / `enterSculptMode` / `enterConstructionMode` and is then told
-what the mode actually is; `ForgeShapeActivity.syncMode()` reads
-`productMode()` back rather than assuming its request succeeded, so a refused
-request (entering Sculpt with nothing frozen) cannot leave a panel on screen that
-lies about what is being edited.
+what the mode actually is; `ForgeShapeActivity.syncMode()` reads `productMode()`
+back rather than assuming its request succeeded, so a refused request (entering
+Sculpt with nothing frozen) cannot leave a panel on screen that lies about what
+is being edited. The active tool is read back the same way.
 
 - **Freeze to Sculpt** snapshots the current Construction local mesh, creates the
   Frozen Sculpt Mesh with the same `ObjectId`, and enters Sculpt mode.
@@ -965,19 +771,17 @@ consumers cannot end up looking at different representations.
 Sculpt topology never changes — `SculptMesh` can only move a vertex — so the
 index buffer a Freeze copied is the index buffer for the life of that frozen
 mesh. `SculptTopology` is therefore built **once, in `freezeFrom`**, and reused by
-every stroke and every move; nothing rebuilds it per MOVE, and the self-tests
+every stroke and every move; nothing rebuilds it per Move, and the self-tests
 assert that its build count stays at 1 across a whole stroke.
 
-It stores exactly the two things this stage needs, in flat CSR arrays: each
-vertex's **1-ring vertex neighbours** and its **incident triangles**. Neighbour
-lists are sorted and deduplicated, because a shared edge is seen once from each
-of its two triangles and without the dedup every interior neighbour would be
-weighted double in a mean. Out-of-range indices are skipped rather than trusted
-and no vertex is ever its own neighbour, so a neighbour list can never contain
-something a caller would dereference out of bounds.
-
-It is deliberately **not** a half-edge structure. Half-edges are the right shape
-for *changing* topology, and nothing here can change topology.
+It stores exactly two things, in flat CSR arrays: each vertex's **1-ring vertex
+neighbours** and its **incident triangles**. Neighbour lists are sorted and
+deduplicated, because a shared edge is seen once from each of its two triangles
+and without the dedup every interior neighbour would be weighted double in a
+mean. Out-of-range indices are skipped rather than trusted and no vertex is ever
+its own neighbour. It is deliberately **not** a half-edge structure: half-edges
+are the right shape for *changing* topology, and nothing here can change
+topology.
 
 `computeVertexNormals` produces **area-weighted** normals from the CURRENT
 positions: each triangle contributes its unnormalized `(v1-v0) x (v2-v0)` — the
@@ -989,16 +793,15 @@ invented axis, so a normal-based brush simply does not move it. Every value
 written is finite.
 
 **When normals are recomputed:** the cache is marked dirty by every accepted
-`setVertexPosition` and recomputed on the next read. That is the whole rule. So
-they are recomputed at most once per batch of position writes — in practice once
-per brush move that changed something — and never per frame, never per vertex and
-never when nothing has moved.
+`setVertexPosition` and recomputed on the next read. That is the whole rule — at
+most once per batch of position writes, in practice once per brush move that
+changed something, and never per frame and never when nothing has moved.
 
 ### The brush kernel
 
 `SculptStroke` is the one kernel. It captures everything on DOWN and then holds
-it fixed for the whole stroke: the **active tool**, the affected vertex set, their
-falloff weights, their starting positions and **starting normals**, the
+it fixed for the whole stroke: the **active tool**, the affected vertex set,
+their falloff weights, their starting positions and **starting normals**, the
 world-space camera plane, the world-per-pixel scale at the hit depth and the
 inverse model transform.
 
@@ -1032,10 +835,13 @@ Deliberate properties of the kernel, shared by all four tools:
   snapshot's own projection term (`proj.m[5] = -1/tan(fovY/2)`); nothing here
   restates `kFovYRadians` or the aspect.
 - The **affected set is fixed at stroke start**, so a vertex cannot wander into
-  or out of the brush mid-stroke and a stroke stays one coherent deformation.
+  or out of the brush mid-stroke and a stroke stays one coherent deformation. It
+  is found by a linear scan, like picking; there is no spatial acceleration.
 - The falloff is `w = (1 - (d/r)^2)^2`: 1 at the centre, 0 at and beyond the rim,
   with zero derivative at both ends, so a stroke leaves no crease at the edge.
   One function, `sculptFalloff`, used by every tool.
+- A brush that would capture **no** vertex starts no stroke, exactly as a miss
+  does.
 - **Radius and strength are shared by every tool.** There is no per-tool copy of
   either, so switching tools never changes how big or how strong the brush is.
   Both are **clamped**, not refused: a slider cannot produce a brush that does
@@ -1043,8 +849,8 @@ Deliberate properties of the kernel, shared by all four tools:
 - A stroke **holds the tool it began with**. Changing the session's tool
   mid-stroke changes what the next stroke will be, never what this one is.
 - A cancelled stroke is a stroke that **stopped**, not one that is undone.
-  Positions already written stay written; there is no undo in this stage and a
-  partial one invented here would be worse.
+  Positions already written stay written; there is no undo, and a partial one
+  invented here would be worse.
 
 ### The four tools
 
@@ -1055,9 +861,9 @@ Deliberate properties of the kernel, shared by all four tools:
 | Smooth | pointer **path length** | toward the 1-ring neighbour mean | yes |
 | Inflate | pointer **path length** | each vertex's normal **right now** | yes |
 
-**Grab** is position-driven and unchanged from Stage 012: every Move recomputes
-`base + delta * weight` rather than accumulating, so the result depends only on
-where the finger *is*, never on how many events it took to get there.
+**Grab** is position-driven: every Move recomputes `base + delta * weight` rather
+than accumulating, so the result depends only on where the finger *is*, never on
+how many events it took to get there.
 
 The other three are **path-driven**, and that is the whole of the accumulation
 rule. For each move, `travelFraction = pointer travel this move / brush radius`,
@@ -1073,26 +879,22 @@ of the event rate: the same finger path always deposits, relaxes or expands the
 same amount whether Android delivered it in five events or fifty, a stationary
 finger does nothing at all, and there is no timer and no per-event dab. `amount`
 is clamped to one local radius per move, so a teleporting pointer cannot produce
-an unbounded displacement.
+an unbounded displacement. `kNormalBrushGain` (0.35), `kSmoothGain` (1.0) and
+`kMaxSmoothLambda` (0.9) are chosen defaults, not derived constants; the low gain
+is why a short stroke with a large brush reads as doing very little.
 
-**Clay is deposition.** Every affected vertex moves along the direction it faced
-when the finger landed — a direction field captured once and held fixed for the
-stroke, exactly as the affected set and the weights are. The stroke lays down a
-coherent slab in one consistent set of directions, so repeated passes make it
-taller without changing what it is.
-
-**Inflate is expansion.** It re-reads the vertex normals from the CURRENT
-positions on every move, so each vertex expands along the surface as the surface
-changes. On a bulge that is already forming the flank normals have tilted
-outward, so Inflate widens and rounds the bulge instead of extruding it along the
-directions it started with.
-
-That is the whole difference, and it is a difference in the formula rather than
-in a constant: Clay reads `baseNormal`, Inflate reads `mesh.vertexNormals()`. It
-is directly observable — a clayed vertex's *total* displacement stays exactly
-parallel to the normal it started with however many moves it took, while an
-inflated vertex's leaves that axis as soon as the surface has moved — and the
-self-tests assert both halves with thresholds three orders of magnitude apart.
+**Clay is deposition and Inflate is expansion**, and the difference between them
+is in the formula rather than in a constant: Clay reads `baseNormal` — a
+direction field captured once on Down and held fixed, exactly as the affected set
+and the weights are — so it lays down a coherent slab in one consistent set of
+directions. Inflate reads `mesh.vertexNormals()`, recomputed from the CURRENT
+positions on every move, so on a bulge that is already forming the flank normals
+have tilted outward and Inflate widens and rounds it instead of extruding along
+the directions it started with. It is directly observable: a clayed vertex's
+*total* displacement stays exactly parallel to the normal it started with however
+many moves it took, while an inflated vertex's leaves that axis as soon as the
+surface has moved. The self-tests assert both halves with thresholds three orders
+of magnitude apart.
 
 **Smooth is bounded interpolation, never extrapolation:**
 
@@ -1107,21 +909,21 @@ why no clamp on the result is needed to keep it finite. Every target is computed
 from a coherent snapshot of the current positions **before** anything is written
 (Jacobi, not Gauss-Seidel), so the outcome cannot depend on the order the
 affected set happens to be in. Only affected vertices are written; neighbours
-outside the brush are read and never modified.
-
-Inflate snapshots its normals the same way and for the same reason.
+outside the brush are read and never modified. Inflate snapshots its normals the
+same way and for the same reason.
 
 ### Sculpt-mode gesture rule and arbitration
 
-One finger that goes **down on the Frozen Sculpt Mesh** is a brush stroke and owns
-the whole gesture; one finger that goes down anywhere else navigates exactly as
-it always has. Two-finger pan and pinch are untouched. Whether the finger landed
-on the mesh is decided **once, on Down, and never revisited**, so a stroke cannot
-turn into an orbit half way through a drag as the finger crosses the silhouette.
+One finger that goes **down on the Frozen Sculpt Mesh** is a brush stroke and
+owns the whole gesture; one finger that goes down anywhere else navigates exactly
+as it always has. Two-finger pan and pinch are untouched. Whether the finger
+landed on the mesh is decided **once, on Down, and never revisited**, so a stroke
+cannot turn into an orbit half way through a drag as the finger crosses the
+silhouette.
 
-What *is* deferred is whether the gesture is a stroke at all. A one-finger Down on
-the mesh is ambiguous when it arrives — it is either the start of a stroke or the
-first of two fingers — so the rule is **pending-then-promote**:
+What *is* deferred is whether the gesture is a stroke at all. A one-finger Down
+on the mesh is ambiguous when it arrives — it is either the start of a stroke or
+the first of two fingers — so the rule is **pending-then-promote**:
 
 | event | result |
 | --- | --- |
@@ -1141,7 +943,9 @@ deferral free: the hit, the affected set and the falloff weights are exactly wha
 they would have been had the stroke begun on Down. Because the camera re-anchors
 on any pointer-set change, handing it an abandoned gesture produces no jump; and
 because the selection never saw the Down, an abandoned gesture cannot select or
-clear either.
+clear either. While a stroke owns the gesture, neither `CameraController` nor
+`SelectionController` sees the event at all, which is what makes a brush gesture
+structurally unable to orbit, select or clear.
 
 The 8 px threshold sits deliberately between touch jitter and the 24 px tap slop,
 so a stroke still starts long before the gesture would stop being a tap. The
@@ -1149,10 +953,6 @@ residual it accepts is stated rather than hidden: a first finger that
 *deliberately drags more than 8 px* before the second one lands does commit a
 stroke. That is a gesture the user drove as a stroke, and closing it completely
 would require a buffered or undoable stroke, which does not exist yet.
-
-While a stroke owns the gesture, neither `CameraController` nor
-`SelectionController` sees the event at all, which is what makes a brush gesture
-structurally unable to orbit, select or clear.
 
 `g_grabbing` and `g_strokePending` in `forgeshape_jni.cpp` are gesture routing
 only, guarded by `g_stateMutex` alongside the camera and the selection. Like
@@ -1166,11 +966,11 @@ process-scoped.
 Android or Vulkan types and holds no GPU resource.
 
 `RuntimeMesh` is one **immutable** published revision: an object id, a revision
-number, interleaved `MeshVertex` (position + colour) data and `uint32_t`
-indices. The only way to build one is `createRuntimeMesh`, which validates
-first, so a `RuntimeMesh` that exists has already been proven usable. Consumers
-hold it through a `shared_ptr<const RuntimeMesh>`, so a pick in progress keeps
-reading its own revision even while a newer one is published.
+number, interleaved `MeshVertex` (position + colour) data and `uint32_t` indices.
+The only way to build one is `createRuntimeMesh`, which validates first, so a
+`RuntimeMesh` that exists has already been proven usable. Consumers hold it
+through a `shared_ptr<const RuntimeMesh>`, so a pick in progress keeps reading
+its own revision even while a newer one is published.
 
 `MeshStore` is the single publication point and is process-scoped. It mints
 monotonically increasing revisions, and:
@@ -1186,14 +986,18 @@ monotonically increasing revisions, and:
   observations are **coalesced away**, deliberately: that is what bounds the GPU
   upload path.
 
+The publication path is synchronous and republishes the whole mesh, which is
+O(vertices) per sculpt move regardless of how few vertices the brush touched.
+That is measured as free at these sizes and is the known cost to compare a future
+partial-update or async path against.
+
 ### Index width
 
-The runtime and render paths use **32-bit indices**
-(`uint32_t` / `VK_INDEX_TYPE_UINT32`) as of Stage 006. The bootstrap cube's
-16-bit indices would have structurally capped every future mesh at 65,535
-vertices, and there is no measured benefit to 16-bit at these sizes; the CPU
-`TriangleMeshView` and the GPU index buffer now agree on one width, so they
-cannot drift.
+The runtime and render paths use **32-bit indices** (`uint32_t` /
+`VK_INDEX_TYPE_UINT32`). 16-bit indices would structurally cap every mesh at
+65,535 vertices, and there is no measured benefit at these sizes; the CPU
+`TriangleMeshView` and the GPU index buffer agree on one width, so they cannot
+drift.
 
 ## GPU mesh upload
 
@@ -1201,10 +1005,10 @@ cannot drift.
 destroy, and performs all of them on the render thread. Publishers never touch
 Vulkan.
 
-Steady-state vertex and index buffers are **DEVICE_LOCAL** with
-`TRANSFER_DST` usage. They are written through one reused **HOST_VISIBLE**
-staging buffer that carries the vertex block followed by the index block, copied
-in a single command buffer with one memory barrier
+Steady-state vertex and index buffers are **DEVICE_LOCAL** with `TRANSFER_DST`
+usage. They are written through one reused **HOST_VISIBLE** staging buffer that
+carries the vertex block followed by the index block, copied in a single command
+buffer with one memory barrier
 (`TRANSFER_WRITE` → `VERTEX_ATTRIBUTE_READ | INDEX_READ`).
 
 Capacity policy (`growCapacityBytes`, pure arithmetic, self-tested):
@@ -1220,17 +1024,19 @@ Capacity policy (`growCapacityBytes`, pure arithmetic, self-tested):
 Before a mesh buffer is overwritten or retired, the renderer waits on **its own
 frame fences** — all `kMaxFramesInFlight` of them — so no submitted frame can
 still be reading it. The transfer itself is submitted with a dedicated upload
-fence that is waited on before the staging buffer or the upload command buffer
-is reused. A retired buffer is therefore destroyed only after every frame that
-could reference it has finished, and exactly one vertex buffer and one index
-buffer are live at any time.
+fence that is waited on before the staging buffer or the upload command buffer is
+reused. A retired buffer is therefore destroyed only after every frame that could
+reference it has finished, and exactly one vertex buffer and one index buffer are
+live at any time. Retired buffers are freed inline after that fence wait rather
+than through a deferred-destruction queue, which is what makes the wait
+necessary.
 
 The mesh update path deliberately calls **neither `vkDeviceWaitIdle` nor
-`vkQueueWaitIdle`**. Those remain only where they already were: process
-teardown, surface detach and swapchain rebuild.
+`vkQueueWaitIdle`**. Those remain only where they already were: process teardown,
+surface detach and swapchain rebuild.
 
-Mesh buffers are device-scoped, not surface-scoped: a Surface swap does not
-touch them, so the uploaded revision survives home/resume with no re-upload.
+Mesh buffers are device-scoped, not surface-scoped: a Surface swap does not touch
+them, so the uploaded revision survives home/resume with no re-upload.
 
 ## Picking and selection
 
@@ -1241,23 +1047,20 @@ into a world-space ray, and intersects that ray with indexed triangles
 truth. It contains no JNI, Android, Vulkan or renderer types, decides no object
 identity, and uses no GPU id buffer.
 
-`pickScene` intersects the **current CPU mesh snapshot** from `MeshStore` —
-never Vulkan buffer memory — and takes the object id from the store rather than
-from the geometry. Picking is a linear scan; there is no spatial acceleration.
-
-Because that snapshot is the box generated from the current parameters, picking
-automatically follows a dimension change with no separate collision
-representation to keep in sync: a tap on the top face of a 0.42 m tall box
-reports a hit at y = 0.2100.
+`pickScene` intersects the **current CPU mesh snapshot** from `MeshStore` — never
+Vulkan buffer memory — and takes the object id from the store rather than from
+the geometry. Because that snapshot is whichever representation is active,
+generated from the current parameters or sculpted, picking automatically follows
+an edit with no separate collision representation to keep in sync. Picking is a
+linear scan; there is no spatial acceleration.
 
 `SelectionController` (`forgeshape_selection.{h,cpp}`) owns the selected
 `ObjectId` and the tap-versus-navigation decision. `ObjectId` is an opaque
 `uint64_t` minted by this layer: never a pointer, list index, Vulkan/renderer
 handle or display name, so it survives buffer recreation and Surface swaps.
-`kNoObject == 0` means nothing is selected; the bootstrap cube is `1`.
-
-Stage 005 is a selection *foundation*: exactly one selectable object, no
-hierarchy, no scene graph, no multi-select.
+`kNoObject == 0` means nothing is selected; the one object is `1`. This is a
+selection *foundation*: exactly one selectable object, no hierarchy, no scene
+graph, no multi-select.
 
 ## Tap versus orbit
 
@@ -1283,21 +1086,16 @@ cannot select or clear on release.
 
 `Renderer` (`forgeshape_renderer.{h,cpp}`) owns the Vulkan instance, device,
 queues, surface, swapchain, depth resources, render pass, pipeline, command
-buffers, synchronization and the geometry buffers. It exposes `setCamera(const
-CameraSnapshot&)` and `setModelTransform(const Mat4&)` and consumes both
-verbatim; it derives no camera pose, builds no rotation, owns no Euler
-convention and interprets no pointer data.
+buffers, synchronization and the geometry buffers. It exposes
+`setCamera(const CameraSnapshot&)` and `setModelTransform(const Mat4&)` and
+consumes both verbatim; it derives no camera pose, builds no rotation, owns no
+Euler convention and interprets no pointer data.
 
-The mesh vertices are the box's **local** geometry and never move. Where the box
-appears comes from the model transform, where the viewer stands comes from the
-camera snapshot, and the renderer only composes them:
-
-```
-mvp = proj * view * model
-```
-
-So a screen-space change is always attributable: the camera moved, or the object
-did.
+The mesh vertices are the object's **local** geometry and never move. Where the
+object appears comes from the model transform, where the viewer stands comes from
+the camera snapshot, and the renderer only composes them as
+`mvp = proj * view * model` — so a screen-space change is always attributable:
+the camera moved, or the object did.
 
 Its only selection input is `setSelectionHighlight(bool)` — pure visual state,
 delivered to the fragment shader as a tint push constant. The renderer is never
@@ -1308,13 +1106,12 @@ diverge.
 
 ## Threading
 
-- Android UI thread: surface callbacks, `onTouchEvent` → JNI, the Construction
-  panel and both its Applies, Construction publication, every brush stroke and
-  its per-move sculpt publication, and DEBUG mesh fixture publication.
-  `ConstructionObject` — its kind, every primitive's parameters and its
-  transform — and `SculptSession` are both mutated from this thread only, which
-  is why neither carries a mutex of its own; `MeshStore` has one and is what the
-  render thread reads.
+- Android UI thread: surface callbacks, `onTouchEvent` → JNI, both panels and
+  both Applies, Construction publication, every brush stroke and its per-move
+  sculpt publication, and DEBUG mesh fixture publication. `ConstructionObject` —
+  its kind, every primitive's parameters and its transform — and `SculptSession`
+  are both mutated from this thread only, which is why neither carries a mutex of
+  its own; `MeshStore` has one and is what the render thread reads.
 - Render thread (owned by `forgeshape_jni.cpp`): Vulkan work, presentation and
   every mesh buffer create/copy/destroy.
 - One short-lived thread per DEBUG stress run, which publishes CPU revisions and
@@ -1322,113 +1119,87 @@ diverge.
 
 `MeshStore` has its own mutex, held only long enough to swap or copy a
 `shared_ptr` — never across a GPU copy, and never together with the camera and
-selection mutex in a way that could invert. A publisher never blocks a frame,
-and the render thread's mesh upload happens outside `g_stateMutex` entirely.
+selection mutex in a way that could invert. A publisher never blocks a frame, and
+the render thread's mesh upload happens outside `g_stateMutex` entirely.
 
 `g_stateMutex` guards the single `CameraController`, the single
-`SelectionController` and the single `ConstructionTransform` together. The UI
-thread mutates all three under it; a tap resolves its pick against the camera
-snapshot *and* the transform and updates the selection under one lock hold, so
-they can never be seen out of step. The render thread takes the camera snapshot,
-the derived model matrix and the selection highlight flag under the same lock
-immediately before each `drawFrame()`, so a frame can never be drawn with the
-camera from one transform state and the model from another.
+`SelectionController` and the single `ConstructionTransform` together, plus the
+gesture-routing flags. The UI thread mutates them under it; a tap resolves its
+pick against the camera snapshot *and* the transform and updates the selection
+under one lock hold, so they can never be seen out of step. The render thread
+takes the camera snapshot, the derived model matrix and the selection highlight
+flag under the same lock immediately before each `drawFrame()`, so a frame can
+never be drawn with the camera from one transform state and the model from
+another.
 
 ## Lifecycle contract
 
 The `CameraController`, the `SelectionController`, the `MeshStore`, the
 `ConstructionObject` and the `SculptSession` are all process-scoped and outlive
 every Surface: camera pose, selected `ObjectId`, the active primitive, its
-authoritative parameters, its authoritative placement, the current mesh
-revision, the active product mode and every sculpted vertex survive home/resume
-and swapchain recreation. There is
-no rehydration step, because nothing was discarded — the GPU mesh buffers are
-device-scoped and are not destroyed when the Surface goes away, so a resume
-re-presents the same revision without re-uploading it. Gesture tracking is separate — camera anchors and tap
-candidacy are both reset on `ACTION_CANCEL`, on `surfaceDestroyed` and on
-`surfaceCreated`, and a live brush stroke and any pending one are cancelled with them — so a Surface
-swap can never leave a stale touch anchor, a half-finished tap or a
-half-finished stroke behind, and never disturbs what is selected or what has
-been sculpted. Neither camera
+authoritative parameters, its authoritative placement, the current mesh revision,
+the active product mode, the active tool and every sculpted vertex survive
+home/resume and swapchain recreation. There is no rehydration step, because
+nothing was discarded — the GPU mesh buffers are device-scoped and are not
+destroyed when the Surface goes away, so a resume re-presents the same revision
+without re-uploading it. Nothing survives a process restart, because there is no
+save, no load and no undo.
+
+Gesture tracking is separate: camera anchors and tap candidacy are both reset on
+`ACTION_CANCEL`, on `surfaceDestroyed` and on `surfaceCreated`, and a live brush
+stroke and any pending one are cancelled with them — so a Surface swap can never
+leave a stale touch anchor, a half-finished tap or a half-finished stroke behind,
+and never disturbs what is selected or what has been sculpted. Neither camera
 state nor selected identity is stored inside swapchain or surface resources.
 
-## Boundary to future work
+`surfaceDestroyed` blocks until native code has released the `ANativeWindow`, so
+the render thread can never touch a destroyed window.
 
-The Sculpt domain is a **vertical slice**, not a sculpt core. It sits beside the
-renderer, not inside it — `Renderer` consumes geometry and a `CameraSnapshot` and
-owns neither — and it is a *producer* of `MeshStore` revisions exactly as the
-five primitives already are, which is why the upload path below `MeshStore` did
-not have to change to accommodate it.
+## Current boundaries
 
-What it deliberately is not: there are **four** tools behind one kernel, and no
-brush framework — no brush base class, no registry, no reflection and no plugin
-surface. A fifth tool is another enum case, another `apply*` and another button;
-that is a visible, deliberate cost, and it is the right one until something needs
-brushes to be data rather than code. There is no remesh, no subdivision, no
-dynamic topology and no way to change a vertex count at all; no sculpt undo and
-no stroke history; no symmetry, no masking and no layers; no stylus pressure or
-tilt; no brush presets; and exactly **one** Frozen Sculpt Mesh, for the one
-object. The stroke publishes through the existing synchronous upload path and
-does not have an uploader of its own — measured across 25 strokes and 1,170
-uploads, every one reused capacity and none stalled, so there is nothing here to
-optimise on evidence.
+What the architecture deliberately does **not** contain, because each of these
+is a stage of its own and naming them is what stops one arriving by accident:
 
-`SculptTopology` carries adjacency for a **fixed** topology and nothing more. It
-is not a mesh library and not a step toward one: it has no edge collapse, no
-split, no flip and no incremental update, because the only thing that can happen
-to a frozen mesh is that a vertex moves.
-
-`ConstructionObject` is **one** object and deliberately not a primitive
-framework: there is no primitive base class, no polymorphism, no registry, no
-property metadata, no reflection, no plugin surface, no second Construction
-object, no hierarchy, and no create or delete. A further primitive is another
-member, another `PrimitiveKind` case, another variant alternative and another
-per-kind JNI method — that is a deliberate, visible cost, and it is the right one
-until a real reason to generalise appears. It is visible precisely because it is
-spelled out once per primitive rather than hidden behind a registry that would have to be
-persisted, versioned and validated. What must NOT happen is a registry sneaking in as "just a
-vector of objects": multi-object is a stage of its own, with selection,
-identity-minting and lifetime consequences this design has not paid for.
-
-Shape and transform editing exist; **scale** does not, and neither does a gizmo.
-`ConstructionTransform` is deliberately rigid — rotation and translation only —
-which is exactly what lets the picker use an exact composed inverse and keep the
-ray's distance in world units. Adding scale breaks both of those and is a domain
-change, not a matrix change.
-
-The shared radial segment and latitude stack counts are fixed and are not
-exposed. Making them editable would put the approximation into the product's
-authored state, where it would then have to be persisted, versioned and validated
-like a real parameter.
-
-A consequence worth naming: the capsule's cylindrical middle is a **single band**
-between its two seam rings, however long that middle is — exactly as the
-cylinder's side wall has been since Stage 010. The shape, its bounds and its
-picking are all exact regardless, but the middle carries no interior rings, so a
-small sculpt brush placed there has very few vertices to capture. That is a
-tessellation-fidelity limitation, not a correctness one, and closing it means
-subdividing the middle by length, which is a stage of its own.
-
-`ConstructionPanelView` is one panel for one object, not a property-editor
-framework: there is no property model, no binding layer, no editor registry and
-no second inspected object. Its primitive selector holds a *draft* kind and
-changes nothing until Apply Shape.
-
-`RuntimeMesh` is the smallest representation that lets geometry change at
-runtime — **not** the Geometry Core and **not** the Construction mesh format. It
-carries positions, colours and indices, and nothing else: no normals, no UVs, no
-material, no topology adjacency, no history.
-
-`forgeshape_demo_mesh` is the bootstrap cube's numbers only. Since Stage 006
-neither the renderer nor the picker reads it, and since Stage 007 it is not on
-any startup path; it is the source data for the baseline debug fixture.
-
-`forgeshape_mesh_fixtures` is **DEBUG TEST INFRASTRUCTURE**, not product
-geometry. Its baseline / deformed / spherified-box fixtures exist to prove the
-upload path, are reachable only through a debug-only key hook that compiles to a
-no-op in release, and are deliberately absent from `PRODUCT.md`. They are not
-primitives, not a Construction feature and not a sculpting feature.
-
-`SelectionController` holds a single `ObjectId`. Multi-object selection,
-hierarchy and a scene graph are deliberately absent, and picking must stay out of
-`CameraController`.
+- **No brush framework.** Four tools behind one kernel; a fifth is another enum
+  case, another `apply*` and another button — a visible, deliberate cost, and the
+  right one until something needs brushes to be data rather than code. No remesh,
+  no subdivision, no dynamic topology, no sculpt undo or stroke history, no
+  symmetry, masking or layers, no stylus pressure or tilt, no brush presets, and
+  exactly **one** Frozen Sculpt Mesh for the one object.
+- **No mesh library.** `SculptTopology` carries adjacency for a fixed topology
+  and nothing more: no edge collapse, split, flip or incremental update, because
+  the only thing that can happen to a frozen mesh is that a vertex moves.
+- **No primitive framework.** No primitive base class, polymorphism, registry,
+  property metadata, reflection or plugin surface; no second Construction object,
+  no hierarchy, no create and no delete. A further primitive costs another
+  member, another `PrimitiveKind` case, another variant alternative and another
+  per-kind JNI method. What must NOT happen is a registry sneaking in as "just a
+  vector of objects": multi-object is a stage of its own, with selection,
+  identity-minting and lifetime consequences this design has not paid for.
+- **No scale and no gizmo.** `ConstructionTransform` is deliberately rigid —
+  rotation and translation only — which is exactly what lets the picker use an
+  exact composed inverse and keep the ray's distance in world units. Adding scale
+  breaks both and is a domain change, not a matrix change.
+- **No editable tessellation.** A consequence worth naming: the capsule's
+  cylindrical middle is a **single band** between its two seam rings however long
+  that middle is, exactly as the cylinder's side wall is. Shape, bounds and
+  picking stay exact, but that middle carries no interior rings, so a small
+  sculpt brush placed there has very few vertices to capture — a
+  tessellation-fidelity limitation, not a correctness one.
+- **No property-editor framework.** `ConstructionPanelView` is one panel for one
+  object: no property model, no binding layer, no editor registry, no second
+  inspected object. Both panels are fixed `WRAP_CONTENT` blocks with no scroll
+  and no collapse, and there is no configuration or window-inset handling in the
+  Android layer at all.
+- **`RuntimeMesh` is not a Construction mesh format**, and the debug paths are
+  not product. `RuntimeMesh` carries positions, colours and indices and nothing
+  else: no normals, no UVs, no material, no adjacency, no history.
+  `forgeshape_demo_mesh` is the bootstrap cube's numbers only and
+  `forgeshape_mesh_fixtures` is DEBUG test infrastructure reachable only through
+  a key hook that compiles to a no-op in release; neither is a primitive, a
+  Construction feature or a sculpting feature, and both are deliberately absent
+  from `PRODUCT.md`. That hook is not a parallel implementation either: its
+  bounded primitive driver (four fixed box states, one deliberately invalid)
+  calls the same `applyPrimitive` entry point, and its ability to publish a
+  fixture over the object's current revision is exactly what makes it a *test*
+  path.
