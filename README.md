@@ -10,7 +10,7 @@ Android shell + ForgeShape-owned viewport + native C++ Vulkan renderer. No game 
 | JDK | 21 (Android Studio JBR, `JAVA_HOME`) |
 | Android SDK platform | android-36 (`compileSdk 36`) |
 | Android build tools | 36.1.0 |
-| Android NDK | 27.2.12479018 |
+| Android NDK | 29.0.14206865 (pinned; install with `sdkmanager --install "ndk;29.0.14206865"`) |
 | CMake | 3.22.1 (SDK-provided) |
 | Gradle | 8.14.3 (wrapper) |
 | Android Gradle Plugin | 8.13.2 |
@@ -114,6 +114,14 @@ adb -s <serial> shell input swipe 540 1194 880 1194 900  # a stroke on the mesh
 The Sculpt panel gained a tool row in Stage 013, so its bottom edge is now at
 about **y 610** (it was 470) and the sliders moved from y 229 / 330 to
 **y 372 / 473**. Stage 012 scripts need the new coordinates.
+
+**Stroke the mesh on a dense primitive.** The swipe above logs
+`STROKE_PENDING` → `STROKE_ABANDONED:navigation` on a frozen **box**, and that
+is correct behaviour, not a bug: a box has 8 vertices, all at its corners, so a
+120 px brush at the centre of a face captures none, and a brush that would
+capture no vertex starts no stroke. Freeze a sphere (482 v) or a capsule
+(514 v) before driving a stroke for evidence, or widen the radius. Verified
+under both NDK r27 and r29, so it is not toolchain-dependent.
 
 Tapping a `SeekBar` sets it, so a slider is driven with a single `input tap`; the
 value native code actually kept is logged and is the authority, as is the tool:

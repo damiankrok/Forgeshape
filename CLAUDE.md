@@ -18,12 +18,24 @@ adb -s <serial> logcat -s ForgeShape:V
 
 APK: `app/build/outputs/apk/debug/app-debug.apk`
 
-Success tokens in logcat: `FORGESHAPE_NATIVE_VIEWPORT_OK`,
-`FORGESHAPE_CAMERA_SELFTEST_OK`, `FORGESHAPE_PICKING_SELFTEST_OK`,
-`FORGESHAPE_DYNAMIC_MESH_SELFTEST_OK`, `FORGESHAPE_CONSTRUCTION_BOX_SELFTEST_OK`,
-`FORGESHAPE_CONE_CAPSULE_SELFTEST_OK`,
-`FORGESHAPE_SCULPT_BRUSH_KERNEL_SELFTEST_OK`.
+A clean debug launch emits **nine** `*_SELFTEST_OK` tokens, then
+`FORGESHAPE_NATIVE_VIEWPORT_OK`. All nine, in emission order:
+
+```
+FORGESHAPE_CAMERA_SELFTEST_OK
+FORGESHAPE_PICKING_SELFTEST_OK
+FORGESHAPE_DYNAMIC_MESH_SELFTEST_OK
+FORGESHAPE_CONSTRUCTION_BOX_SELFTEST_OK
+FORGESHAPE_CONSTRUCTION_TRANSFORM_SELFTEST_OK
+FORGESHAPE_CONSTRUCTION_PRIMITIVE_SELFTEST_OK
+FORGESHAPE_CONSTRUCTION_SPHERE_SELFTEST_OK
+FORGESHAPE_CONE_CAPSULE_SELFTEST_OK
+FORGESHAPE_SCULPT_BRUSH_KERNEL_SELFTEST_OK
+```
+
 Failures: `FORGESHAPE_NATIVE_VIEWPORT_FAIL:*` and the matching `*_SELFTEST_FAIL`.
+Grep for `FAIL` alone over-matches: some passing check *names* contain "fails"
+(`invalid_revision_fails_closed`). Match `_SELFTEST_FAIL` or `_FAIL:`.
 
 Enlarge the log ring buffer (`adb -s <serial> logcat -G 16M`) before capturing
 startup evidence: the default buffer drops part of the self-test output and it
@@ -39,8 +51,13 @@ frame.
   that owns the viewport or render loop is prohibited in the product.
 - **No third-party runtime, rendering, math or input library.** Math lives in
   `app/src/main/cpp/forgeshape_math.h`. No GLM.
-- **Do not initialize Git at the repository root.** No commits, branches,
-  remotes, pushes or global Git config changes. Non-mutating checks are fine.
+- **Git is local only.** The root repository exists (initialized in Gate P0 with
+  owner approval). Commits and branches are allowed. **No remote, no push, no
+  GitHub repository, and no global Git config changes** — the committer identity
+  lives in `.git/config` alone. Never commit generated build output.
+- **The NDK is pinned to `29.0.14206865`** in `app/build.gradle`. Do not bump it,
+  do not use an r30 beta, and do not broadly upgrade AGP, Gradle, the JDK or
+  CMake as a side effect of anything else.
 - **Read `PROJECT_STATUS.md` first, and update it yourself** before reporting a
   stage complete. It records only verified current facts and names exactly one
   next stage.

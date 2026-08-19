@@ -1,12 +1,16 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.14.0  
+**Status Version:** 0.15.0  
 **Updated:** 2026-08-19  
-**Last Stage:** Stage 014 — Exact Cone + Capsule  
-**Result:** COMPLETE  
+**Last Stage:** Gate P0 — Local Git Baseline + NDK r29 Migration + 16 KB Compatibility  
+**Result:** COMPLETE (16 KB *runtime* evidence UNVERIFIED — no safe 16 KB target exists)  
 **Current Phase:** Phase 1 — Native Viewport  
 **Workspace:** `D:\TRAVELAPPS\ForgeShape`  
-**Next Stage:** Stage 015 — Plane + Primitive Coverage Cleanup
+**Next Stage:** Stage 015 — UI/UX Architecture Foundation
+
+Gate P0 was a toolchain/process gate, not a product-feature stage. No product
+behaviour changed and no product source file was touched: the entire migration
+diff is one line in `app/build.gradle`.
 
 ## Product Direction
 
@@ -21,13 +25,25 @@ other general-purpose engine that owns the viewport or render loop.
 - Android SDK at `C:\Users\damia\AppData\Local\Android\Sdk`.
 - SDK platforms installed: android-33/34/35/36/36.1.
 - Build tools installed: 27.0.0, 33.0.3, 35.0.0, 35.0.1, 36.1.0.
-- NDK installed: 25.2.9519653, 27.2.12479018.
+- NDK installed: 25.2.9519653, 27.2.12479018, **29.0.14206865** (installed in
+  Gate P0 with owner approval, via `sdkmanager --install "ndk;29.0.14206865"`).
+- **The project is pinned to NDK `29.0.14206865`** (`app/build.gradle`
+  `ndkVersion`). r30 beta is prohibited. The historical baseline was r27.2.12479018.
 - SDK CMake installed: 3.22.1, 4.1.2.
 - Gradle distributions cached: 8.7, 8.13, 8.14.3. AGP 8.13.2 cached.
 - `glslc` present at `<ndk>/shader-tools/windows-x86_64/glslc.exe`.
 - Only one Android system image is installed:
   `system-images;android-36.1;google_apis_playstore;x86_64`.
-- ForgeShape root Git is NOT initialized (deferred, intentional).
+- ForgeShape root Git **is initialized** as of Gate P0 (owner-approved, local
+  only). There is no remote, nothing has been pushed, and no global Git config
+  was written — the committer identity lives in `.git/config` alone. Before the
+  gate there was no `.git` anywhere in the workspace and no `~/.gitconfig`.
+  - baseline commit `5d386f03e7b33de47ea717a4a1d629231b073b56` —
+    `baseline: accepted Stage 014`, 171 files.
+  - `.gitignore` excludes Gradle/CMake/NDK output, `.cxx`, `.gradle`, IDE state,
+    `local.properties`, APK/AAB output and tool-local scratch. It deliberately
+    does **not** ignore `artifacts/`, because this file and `PRODUCT.md` cite
+    those screenshots by filename as stage evidence.
 - No Godot/GDExtension files remain in the workspace.
 
 ### Android runtime targets
@@ -1247,6 +1263,144 @@ Shaders: GLSL in `app/src/main/cpp/shaders/`, compiled ahead of time by the
 NDK `glslc` in CMake using `-mfmt=c`; the emitted C initializer lists are
 `#include`d into the renderer, so no SPIR-V asset is loaded at runtime.
 
+## Tests / Verification (Gate P0, target `emulator-5558`)
+
+Runtime evidence is from AVD `ForgeShape_Stage006` / `emulator-5558`, confirmed
+by `adb emu avd name`, with ForgeShape confirmed as `topResumedActivity` before
+every evidence-sensitive action. Every `adb` command named the serial
+explicitly. The reserved (`Medium_Phone_API_36.1`) and contended
+(`ForgeShape_Stage004`) AVDs were never addressed, started, stopped or
+reconfigured. The crash buffer was empty for the whole gate.
+
+### Toolchain, before and after
+
+| | before | after |
+| --- | --- | --- |
+| NDK | 27.2.12479018 | **29.0.14206865** |
+| AGP | 8.13.2 | unchanged |
+| Gradle wrapper | 8.14.3 | unchanged |
+| SDK CMake | 3.22.1 | unchanged |
+| compile / target / min SDK | 36 / 36 / 26 | unchanged |
+| build tools | 36.1.0 | unchanged |
+| ABI filter | `x86_64` only | unchanged |
+| C++ standard / STL | C++17 / `c++_static` | unchanged |
+| native linker options | none declared | unchanged |
+| packaged `.so` | one: `lib/x86_64/libforgeshape_native.so` | unchanged |
+
+`compileDebugJavaWithJavac`, `buildCMakeDebug[x86_64]` and `packageDebug` all
+succeeded on the first attempt under r29. **No migration fix was required** —
+not a source change, not a CMake change, not a Gradle change, not a flag. The
+whole migration is one line.
+
+### Regression under r29
+
+One clean launch of the r29 build ran all nine debug self-test suites, in order,
+with **992 checks and zero failures**:
+
+| suite | checks |
+| --- | --- |
+| `FORGESHAPE_CAMERA_SELFTEST_OK` | 38 |
+| `FORGESHAPE_PICKING_SELFTEST_OK` | 94 |
+| `FORGESHAPE_DYNAMIC_MESH_SELFTEST_OK` | 91 |
+| `FORGESHAPE_CONSTRUCTION_BOX_SELFTEST_OK` | 100 |
+| `FORGESHAPE_CONSTRUCTION_TRANSFORM_SELFTEST_OK` | 94 |
+| `FORGESHAPE_CONSTRUCTION_PRIMITIVE_SELFTEST_OK` | 75 |
+| `FORGESHAPE_CONSTRUCTION_SPHERE_SELFTEST_OK` | 105 |
+| `FORGESHAPE_CONE_CAPSULE_SELFTEST_OK` | 163 |
+| `FORGESHAPE_SCULPT_BRUSH_KERNEL_SELFTEST_OK` | 232 |
+
+followed by `FORGESHAPE_MESH_UPLOAD_OK` and `FORGESHAPE_NATIVE_VIEWPORT_OK`.
+Zero `*_SELFTEST_FAIL`, zero `*_VIEWPORT_FAIL`, zero `_FAIL:` tokens for the
+whole gate; crash buffer empty.
+
+### Integration smoke under r29
+
+- **Construction Apply.** Cone 1.6 m × 2.4 m →
+  `CONSTRUCTION_PUBLISHED:8:34:192 kind=cone` and exactly one
+  `MESH_UPLOAD_OK:8:34:192` — the Stage 014 cone topology unchanged. Selecting
+  Cone in the shape selector beforehand produced **zero** native log lines.
+- **Transform-only edit publishes nothing.** Pos (1,0,0) m, Rot (0,0,30)° →
+  one `CONSTRUCTION_TRANSFORM` line, **0** publishes and **0** uploads,
+  revision held at 8 (`gatep0_cone_transformed_r29.png`).
+- **Picking on the transformed cone is exact.** A tap returned
+  `PICK_HIT:1:6 at=(1.6413,-0.2165,0.3484)`. Carried into local space by
+  `Rz(-30)` about (1,0,0) that is y = −0.5082, where the exact cone radius
+  (1.2 − y)/3 = 0.56938, against a measured radial distance of 0.56683 —
+  ratio 0.99552, inside the facet band `cos(pi/32)` = 0.99518. A tap off the
+  silhouette gave `PICK_MISS` and cleared the selection.
+- **Freeze to Sculpt.** Sphere ⌀2 m → `PUBLISHED:8:482:2880 kind=sphere`, then
+  `SCULPT_FROZEN:482:2880 sculptRev=1 objectId=1` — same `ObjectId`
+  (`gatep0_sphere_frozen_before_stroke_r29.png`).
+- **One real brush stroke.** A single-finger Grab drag injected through the
+  on-device `uinput` tool: `STROKE_PENDING` → `STROKE_BEGIN:grab:16
+  radiusLocal=0.4162` → 24 `STROKE_MOVE` lines with `sculptRev` advancing
+  monotonically 2…25 → `STROKE_END sculptRev=25`. Every published revision was
+  `482:2880` and every upload said `reuse` — topology fixed and no buffer
+  reallocated, exactly as the fixed-topology contract requires. The Y component
+  of every displacement was exactly `0.0000` for a horizontal drag, and the X/Z
+  components grew monotonically: Grab is position-driven, as documented.
+- **Construction ↔ Sculpt preservation.** Back to Construction republished
+  `kind=sphere sphere dia=2.000000m` — the authoritative parameter is
+  bit-identical after 25 sculpt revisions — while `SCULPT_STATE` still reported
+  `frozen=1 sculptRev=25 strokes=1 stale=0`
+  (`gatep0_construction_source_preserved_r29.png`). Resume Sculpt re-entered at
+  `sculptRev=25` **without** re-freezing.
+- **`normalRecomputes=1` for 24 moves**, so the dirty-flagged normal cache is
+  still recomputing per batch rather than per event or per frame.
+- **HOME / resume.** The process survived (same pid), the Vulkan viewport was
+  rebuilt (`FORGESHAPE_NATIVE_VIEWPORT_OK` after resume), and the sculpted mesh
+  came back in Sculpt mode. The before-HOME and after-resume screenshots are
+  **byte-identical** (md5 `86e3c42e8bb4365e82b6bde4c24d91d9`), which is a
+  stronger statement than "looks the same"
+  (`gatep0_sculpt_after_resume_r29.png`).
+
+### 16 KB page-size compatibility
+
+| evidence | result |
+| --- | --- |
+| ForgeShape-owned source/config audit for `PAGE_SIZE`, `getpagesize`, `sysconf`, `mmap`, page-alignment assumptions and custom linker page-size options | **none found**. The only literal `4096` in the tree is a Vulkan buffer-capacity figure in `forgeshape_mesh_selftest.cpp`, which is a byte count and not a page size. No `-Wl,-z,max-page-size`, no `jniLibs` or `useLegacyPackaging` override. |
+| packaged `.so` inventory | exactly **one**, ForgeShape-owned: `lib/x86_64/libforgeshape_native.so`. There is no third-party native library in the APK at all. |
+| ELF LOAD alignment, r27 (baseline) | `0x1000` on all three LOAD segments — **4 KB, not 16 KB compatible** |
+| ELF LOAD alignment, r29 | `0x4000` on all three LOAD segments — **16 KB compatible** |
+| `zipalign -c -P 16 -v 4 app-debug.apk` | **Verification successful**; the `.so` is stored uncompressed at offset 32768 |
+| normal (4 KB) runtime smoke | **PASS** — the whole integration smoke above ran on `emulator-5558`, which reports `getconf PAGE_SIZE` = 4096 |
+| 16 KB runtime smoke | **UNVERIFIED** — see below |
+
+The r27 → r29 alignment change is the substantive result of the gate: the
+project genuinely was not 16 KB compatible at the ELF level before it, and is
+now, with no source change.
+
+**Why 16 KB runtime evidence is UNVERIFIED.** The only Android runtime available
+to ForgeShape is `emulator-5558`, and it reports a 4096-byte page. The only
+system image installed on this machine is
+`system-images;android-36.1;google_apis_playstore;x86_64`, which is a 4 KB
+image. Proving the 16 KB runtime needs
+**`system-images;android-36.1;google_apis_playstore_ps16k;x86_64`** (available
+in `sdkmanager`, not installed), plus an AVD created from it. The gate forbids
+silently installing a system image, so this was not done and no PASS was
+fabricated. Static, ELF and APK-package compatibility stand on their own
+evidence above.
+
+### Verification matrix
+
+| ID | Result | Evidence |
+| --- | --- | --- |
+| GIT-01 | PASS | no `.git` anywhere in the workspace before the gate; initialized only after inventory and a secret scan |
+| GIT-02 | PASS | 171 files staged: 66 source/doc/wrapper + 105 cited artifacts. Ignored: `build/`, `app/build/`, `app/.cxx/`, `.gradle/`, `.claude/`, `local.properties` |
+| GIT-03 | PASS | `5d386f03e7b33de47ea717a4a1d629231b073b56` — `baseline: accepted Stage 014` |
+| NDK-01 | PASS | before/after table above |
+| NDK-02 | PASS | `ndkVersion '29.0.14206865'`; `app/.cxx` CMake cache resolves to that toolchain |
+| NDK-03 | PASS | `:app:clean :app:assembleDebug` BUILD SUCCESSFUL, 41 tasks, zero migration fixes |
+| NDK-04 | PASS | 9 suites, 992 checks, 0 failures, 0 FAIL tokens |
+| NDK-05 | PASS | integration smoke above, on `emulator-5558` |
+| P16-01 | PASS | source/config audit above |
+| P16-02 | PASS | one `.so`, `0x4000` LOAD alignment on all segments |
+| P16-03 | PASS | `zipalign -c -P 16 -v 4` → Verification successful |
+| P16-04 | PASS | normal-runtime smoke, empty crash buffer |
+| P16-05 | **UNVERIFIED** | no safe 16 KB runtime exists; exact image named above |
+| GIT-04 | PASS | migration committed separately; working tree clean afterwards |
+| WF-01 | PASS | audit performed; see Technical Debt |
+
 ## Tests / Verification (Stage 014, target `emulator-5558`)
 
 All CC-* and REG-01/02 evidence below is from one installed/running app
@@ -1837,6 +1991,23 @@ audited for foreign input and had none.
 
 ## Known Issues / Blockers
 
+- **16 KB page-size runtime behaviour is UNVERIFIED.** Static, ELF and APK
+  evidence all pass, but no 16 KB Android runtime is available to ForgeShape.
+  Closing this needs
+  `system-images;android-36.1;google_apis_playstore_ps16k;x86_64` and an AVD
+  created from it. Not a defect — an unmeasured dimension.
+- **Test-harness note, not a product defect:** `adb shell input swipe` and
+  `adb shell input motionevent` do reach the viewport, but a Grab stroke driven
+  by them on a **sparse** frozen mesh logs `STROKE_PENDING` →
+  `STROKE_ABANDONED:navigation` and never promotes. The cause is the documented
+  rule that a brush capturing **no vertex** starts no stroke: a frozen box has 8
+  vertices, all at its corners, so a 120 px brush at the centre of a face
+  captures none. Verified identically under **both** r27 and r29, so it is not
+  an r29 regression, and it is not the arbitration misfiring. Strokes for
+  evidence should be driven on a dense primitive (sphere 482 v, capsule 514 v)
+  or with a larger radius. The README's Stage 013 recipe
+  (`input swipe 540 1194 880 1194 900`) reproduces the abandon on the default
+  box and should be read with this in mind.
 - `AVD Medium_Phone_API_36.1` / `emulator-5554` is reserved by another program
   and unavailable to ForgeShape until the owner removes the constraint.
 - `emulator-5556` is shared in practice: another program runs
@@ -2172,7 +2343,22 @@ New in Stage 006:
 
 ## Next Recommended Stage
 
-**Stage 015 — Plane + Primitive Coverage Cleanup**
+**Stage 015 — UI/UX Architecture Foundation**
+
+Gate P0 changed no product behaviour, so the product argument Stage 014 left
+behind is untouched and is recorded below rather than discarded — the owner
+redirected the next stage to the UI/UX foundation, and this file names exactly
+one next stage, so that is the one. The Plane primitive and the per-kind
+coverage cleanup remain the strongest *geometry* candidates whenever geometry
+resumes.
+
+What the gate itself contributes to that decision is small and worth stating:
+the Android layer is now the only part of the product with no test of any kind
+and no verified contract beyond screenshots, and it is the layer that just
+forced the most manual work in this gate. Nine native suites and 992 checks ran
+themselves; every UI assertion had to be driven by hand through `input tap`.
+
+### Why Plane and the coverage cleanup were the geometry candidates
 
 Stage 014 answered the question Stage 013 posed about the Construction side: is
 the per-kind repetition honest, or a registry trying to be born? Two more
