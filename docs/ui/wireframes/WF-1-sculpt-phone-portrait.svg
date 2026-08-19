@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 411 914" width="411" height="914" font-family="Inter, Roboto, 'Segoe UI', sans-serif">
+  <title>ForgeShape WF-1 — Sculpt, phone portrait (411 x 914 dp)</title>
+  <desc>Original ForgeShape wireframe. Not production UI. Sculpt-first shell: full-bleed viewport, left-edge Radius/Strength, right-edge tool rail, thin global strip, contextual bar, hide-UI affordance.</desc>
+
+  <defs>
+    <linearGradient id="vp" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#10151C"/><stop offset="1" stop-color="#080B10"/>
+    </linearGradient>
+    <radialGradient id="clay" cx="0.38" cy="0.32" r="0.78">
+      <stop offset="0" stop-color="#8FA6C4"/><stop offset="0.55" stop-color="#54677F"/><stop offset="1" stop-color="#2B3646"/>
+    </radialGradient>
+    <linearGradient id="track" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#4C8FD8"/><stop offset="1" stop-color="#7FB5EE"/>
+    </linearGradient>
+  </defs>
+
+  <!-- viewport -->
+  <rect width="411" height="914" fill="url(#vp)"/>
+
+  <!-- ============ model + brush cursor ============ -->
+  <ellipse cx="205" cy="500" rx="132" ry="128" fill="url(#clay)"/>
+  <path d="M258 452 q34 26 20 62 q-30 -14 -44 -30 z" fill="#A9BDD6" opacity="0.55"/>
+  <ellipse cx="205" cy="640" rx="96" ry="14" fill="#000" opacity="0.35"/>
+  <!-- live brush radius indicator, drawn at the true screen radius -->
+  <circle cx="248" cy="470" r="60" fill="none" stroke="#EAF2FC" stroke-width="1.5" stroke-dasharray="5 5" opacity="0.9"/>
+  <circle cx="248" cy="470" r="2.5" fill="#EAF2FC" opacity="0.9"/>
+
+  <!-- ============ global strip ============ -->
+  <rect x="0" y="0" width="411" height="46" fill="#12171F" opacity="0.94"/>
+  <line x1="0" y1="46" x2="411" y2="46" stroke="#2A3441"/>
+  <rect x="12" y="11" width="24" height="24" rx="7" fill="#1C2430" stroke="#2A3441"/>
+  <path d="M25 17 l-6 6 l6 6" fill="none" stroke="#8B99AC" stroke-width="1.8" stroke-linecap="round"/>
+  <text x="44" y="27" fill="#8B99AC" font-size="12">Untitled</text>
+
+  <!-- mode chip: the only place Construction/Sculpt/UV lives -->
+  <rect x="146" y="10" width="120" height="26" rx="13" fill="#1B2735" stroke="#4C8FD8"/>
+  <circle cx="161" cy="23" r="3.5" fill="#4C8FD8"/>
+  <text x="171" y="27" fill="#E8EDF4" font-size="12" font-weight="600">Sculpt</text>
+  <path d="M251 20 l4 5 l4 -5" fill="none" stroke="#8B99AC" stroke-width="1.6" stroke-linecap="round"/>
+
+  <path d="M295 18 a8 8 0 1 0 3 12" fill="none" stroke="#8B99AC" stroke-width="1.8" stroke-linecap="round"/>
+  <path d="M295 18 l-4 -3 l0 6 z" fill="#8B99AC"/>
+  <path d="M327 18 a8 8 0 1 1 -3 12" fill="none" stroke="#48525F" stroke-width="1.8" stroke-linecap="round"/>
+  <path d="M327 18 l4 -3 l0 6 z" fill="#48525F"/>
+  <circle cx="359" cy="23" r="1.6" fill="#8B99AC"/><circle cx="366" cy="23" r="1.6" fill="#8B99AC"/><circle cx="373" cy="23" r="1.6" fill="#8B99AC"/>
+  <rect x="382" y="11" width="22" height="24" rx="6" fill="#1C2430" stroke="#2A3441"/><rect x="386" y="15" width="14" height="16" rx="3" fill="none" stroke="#8B99AC" stroke-width="1.4"/><line x1="392" y1="15" x2="392" y2="31" stroke="#8B99AC" stroke-width="1.4"/>
+
+  <!-- ============ left edge: Radius + Strength ============ -->
+  <rect x="10" y="96" width="64" height="470" rx="20" fill="#121820" opacity="0.72"/>
+
+  <rect x="15" y="104" width="24" height="18" rx="6" fill="#1C2430"/>
+  <text x="27" y="117" fill="#E8EDF4" font-size="9" text-anchor="middle" font-weight="600">120</text>
+  <rect x="45" y="104" width="24" height="18" rx="6" fill="#1C2430"/>
+  <text x="57" y="117" fill="#E8EDF4" font-size="9" text-anchor="middle" font-weight="600">.60</text>
+
+  <!-- Radius track -->
+  <rect x="24" y="132" width="6" height="392" rx="3" fill="#26303C"/>
+  <rect x="24" y="290" width="6" height="234" rx="3" fill="url(#track)"/>
+  <circle cx="27" cy="290" r="11" fill="#EAF2FC"/><circle cx="27" cy="290" r="4" fill="#4C8FD8"/>
+  <text x="27" y="546" fill="#8B99AC" font-size="9" text-anchor="middle" letter-spacing="0.6">RAD</text>
+
+  <!-- Strength track -->
+  <rect x="54" y="132" width="6" height="392" rx="3" fill="#26303C"/>
+  <rect x="54" y="368" width="6" height="156" rx="3" fill="url(#track)"/>
+  <circle cx="57" cy="368" r="11" fill="#EAF2FC"/><circle cx="57" cy="368" r="4" fill="#4C8FD8"/>
+  <text x="57" y="546" fill="#8B99AC" font-size="9" text-anchor="middle" letter-spacing="0.6">STR</text>
+
+  <!-- ============ right edge: tool rail ============ -->
+  <rect x="337" y="96" width="64" height="316" rx="20" fill="#121820" opacity="0.86"/>
+
+  <!-- Grab (active) -->
+  <rect x="343" y="102" width="52" height="72" rx="14" fill="#20456E" stroke="#4C8FD8" stroke-width="1.5"/>
+  <circle cx="369" cy="128" r="10" fill="none" stroke="#EAF2FC" stroke-width="1.8"/>
+  <path d="M369 118 l0 -6 M369 138 l0 6 M359 128 l-6 0 M379 128 l6 0" stroke="#EAF2FC" stroke-width="1.8" stroke-linecap="round"/>
+  <text x="369" y="163" fill="#EAF2FC" font-size="10" text-anchor="middle" font-weight="600">Grab</text>
+
+  <!-- Clay -->
+  <rect x="343" y="180" width="52" height="72" rx="14" fill="#182029"/>
+  <path d="M355 216 q14 -18 28 0" fill="none" stroke="#9FB0C6" stroke-width="1.8" stroke-linecap="round"/><path d="M369 190 l0 12 M365 198 l4 5 l4 -5" fill="none" stroke="#9FB0C6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="369" y="241" fill="#9FB0C6" font-size="10" text-anchor="middle">Clay</text>
+
+  <!-- Smooth -->
+  <rect x="343" y="258" width="52" height="72" rx="14" fill="#182029"/>
+  <path d="M355 292 q7 -12 14 0 q7 12 14 0" fill="none" stroke="#9FB0C6" stroke-width="1.8" stroke-linecap="round"/>
+  <text x="369" y="319" fill="#9FB0C6" font-size="10" text-anchor="middle">Smooth</text>
+
+  <!-- Inflate -->
+  <rect x="343" y="336" width="52" height="72" rx="14" fill="#182029"/>
+  <circle cx="369" cy="362" r="8" fill="none" stroke="#9FB0C6" stroke-width="1.8"/>
+  <path d="M369 348 l0 -5 M369 376 l0 5 M355 362 l-5 0 M383 362 l5 0" stroke="#9FB0C6" stroke-width="1.6" stroke-linecap="round" opacity="0.8"/>
+  <text x="369" y="397" fill="#9FB0C6" font-size="10" text-anchor="middle">Inflate</text>
+
+  <!-- hide-UI affordance, pinned under the rail -->
+  <rect x="349" y="424" width="40" height="40" rx="14" fill="#121820" opacity="0.86" stroke="#2A3441"/>
+  <path d="M362 436 l7 8 l-7 8 M373 436 l7 8 l-7 8" fill="none" stroke="#8B99AC" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- ============ contextual bar (only what this tool/state needs) ============ -->
+  <rect x="14" y="806" width="383" height="52" rx="16" fill="#121820" opacity="0.94" stroke="#2A3441"/>
+  <circle cx="38" cy="832" r="7" fill="none" stroke="#7BD88F" stroke-width="1.6"/>
+  <path d="M35 832 l2.5 2.5 l4.5 -5" fill="none" stroke="#7BD88F" stroke-width="1.6" stroke-linecap="round"/>
+  <text x="54" y="829" fill="#E8EDF4" font-size="11.5">Frozen mesh · 482 vertices</text>
+  <text x="54" y="844" fill="#8B99AC" font-size="10">One finger on the model sculpts · elsewhere orbits</text>
+  <rect x="300" y="817" width="84" height="30" rx="10" fill="#1C2430" stroke="#3A4552"/>
+  <text x="342" y="836" fill="#E7C26B" font-size="10.5" text-anchor="middle">Freeze again…</text>
+
+  <!-- annotation frame -->
+  <rect x="0.5" y="0.5" width="410" height="913" fill="none" stroke="#4C8FD8" stroke-width="1" opacity="0.25"/>
+</svg>

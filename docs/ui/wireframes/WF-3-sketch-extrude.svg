@@ -1,0 +1,182 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 986" width="880" height="986" font-family="Inter, Roboto, 'Segoe UI', sans-serif">
+  <title>ForgeShape WF-3 — Sketch and Extrude (phone portrait, two steps)</title>
+  <desc>Original ForgeShape wireframe. Not production UI, and no geometry is implemented. Left: sketching a closed profile on a standard plane with exact dimension feedback. Right: profile selected, on-canvas extrusion handle and exact distance chip.</desc>
+
+  <defs>
+    <linearGradient id="vp" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#10151C"/><stop offset="1" stop-color="#080B10"/>
+    </linearGradient>
+    <linearGradient id="solid" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6E86A6"/><stop offset="1" stop-color="#3A4C68"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="880" height="986" fill="#0A0D12"/>
+
+  <!-- ================= STEP 1 : SKETCH ================= -->
+  <g transform="translate(14,58)">
+    <rect width="411" height="914" rx="6" fill="url(#vp)"/>
+
+    <!-- sketch plane grid, viewed normal-on after the auto-align step -->
+    <g opacity="0.42" stroke="#3A4A5E" stroke-width="1">
+      <path d="M40 250 H371 M40 290 H371 M40 330 H371 M40 370 H371 M40 410 H371 M40 450 H371 M40 490 H371 M40 530 H371 M40 570 H371 M40 610 H371"/>
+      <path d="M60 240 V620 M100 240 V620 M140 240 V620 M180 240 V620 M220 240 V620 M260 240 V620 M300 240 V620 M340 240 V620"/>
+    </g>
+    <g opacity="0.75" stroke="#4C8FD8" stroke-width="1.3">
+      <path d="M40 430 H371"/><path d="M180 240 V620"/>
+    </g>
+
+    <!-- closed rectangular profile with snapped corners -->
+    <rect x="100" y="330" width="200" height="140" fill="#4C8FD8" fill-opacity="0.14" stroke="#7FB5EE" stroke-width="2.2"/>
+    <g fill="#EAF2FC" stroke="#4C8FD8" stroke-width="1.4">
+      <rect x="96" y="326" width="8" height="8"/><rect x="296" y="326" width="8" height="8"/>
+      <rect x="96" y="466" width="8" height="8"/><rect x="296" y="466" width="8" height="8"/>
+    </g>
+
+    <!-- live exact dimension feedback -->
+    <g stroke="#E7C26B" stroke-width="1.2">
+      <path d="M100 312 H300"/><path d="M100 308 V316"/><path d="M300 308 V316"/>
+      <path d="M318 330 V470"/><path d="M314 330 H322"/><path d="M314 470 H322"/>
+    </g>
+    <rect x="166" y="296" width="68" height="22" rx="7" fill="#2A2416" stroke="#E7C26B"/>
+    <text x="200" y="311" fill="#E7C26B" font-size="11" text-anchor="middle" font-family="ui-monospace, monospace">60 mm</text>
+    <rect x="326" y="389" width="68" height="22" rx="7" fill="#2A2416" stroke="#E7C26B"/>
+    <text x="360" y="404" fill="#E7C26B" font-size="11" text-anchor="middle" font-family="ui-monospace, monospace">40 mm</text>
+
+    <!-- global strip -->
+    <rect x="0" y="0" width="411" height="46" rx="6" fill="#12171F" opacity="0.94"/>
+    <line x1="0" y1="46" x2="411" y2="46" stroke="#2A3441"/>
+    <rect x="12" y="11" width="24" height="24" rx="7" fill="#1C2430" stroke="#2A3441"/>
+    <path d="M25 17 l-6 6 l6 6" fill="none" stroke="#8B99AC" stroke-width="1.8" stroke-linecap="round"/>
+    <rect x="126" y="10" width="160" height="26" rx="13" fill="#1B2735" stroke="#4C8FD8"/>
+    <circle cx="141" cy="23" r="3.5" fill="#4C8FD8"/>
+    <text x="151" y="27" fill="#E8EDF4" font-size="12" font-weight="600">Construction</text>
+    <path d="M310 18 a8 8 0 1 0 3 12" fill="none" stroke="#8B99AC" stroke-width="1.8" stroke-linecap="round"/>
+    <path d="M310 18 l-4 -3 l0 6 z" fill="#8B99AC"/>
+    <circle cx="372" cy="23" r="1.6" fill="#8B99AC"/><circle cx="379" cy="23" r="1.6" fill="#8B99AC"/><circle cx="386" cy="23" r="1.6" fill="#8B99AC"/>
+
+    <!-- sub-mode banner: which plane, and the way out -->
+    <rect x="14" y="58" width="383" height="34" rx="11" fill="#161C25" opacity="0.96" stroke="#4C8FD8"/>
+    <text x="30" y="79" fill="#E8EDF4" font-size="11.5">Sketch on</text>
+    <rect x="92" y="64" width="86" height="22" rx="7" fill="#20456E" stroke="#4C8FD8"/>
+    <text x="135" y="79" fill="#EAF2FC" font-size="10.5" text-anchor="middle" font-weight="600">Front plane</text>
+    <text x="190" y="79" fill="#5A6878" font-size="9.5">Top · Right · face…</text>
+    <rect x="326" y="64" width="60" height="22" rx="7" fill="#1C2430" stroke="#3A4552"/>
+    <text x="356" y="79" fill="#9FB0C6" font-size="10.5" text-anchor="middle">Exit</text>
+
+    <!-- right rail: sketch tools -->
+    <rect x="337" y="480" width="64" height="238" rx="20" fill="#121820" opacity="0.86"/>
+    <rect x="343" y="486" width="52" height="56" rx="14" fill="#182029"/>
+    <path d="M356 518 l26 -20" stroke="#9FB0C6" stroke-width="1.8" stroke-linecap="round"/>
+    <text x="369" y="534" fill="#9FB0C6" font-size="9" text-anchor="middle">Line</text>
+    <rect x="343" y="548" width="52" height="56" rx="14" fill="#20456E" stroke="#4C8FD8" stroke-width="1.5"/>
+    <rect x="357" y="562" width="24" height="17" fill="none" stroke="#EAF2FC" stroke-width="1.8"/>
+    <text x="369" y="596" fill="#EAF2FC" font-size="9" text-anchor="middle" font-weight="600">Rect</text>
+    <rect x="343" y="610" width="52" height="56" rx="14" fill="#182029"/>
+    <circle cx="369" cy="630" r="10" fill="none" stroke="#9FB0C6" stroke-width="1.8"/>
+    <text x="369" y="658" fill="#9FB0C6" font-size="9" text-anchor="middle">Circle</text>
+    <rect x="343" y="672" width="52" height="40" rx="14" fill="#182029"/>
+    <path d="M361 686 l16 12 M377 686 l-16 12" stroke="#9FB0C6" stroke-width="1.7" stroke-linecap="round"/>
+
+    <!-- contextual bar: snap + exact numeric entry + validation -->
+    <rect x="14" y="806" width="383" height="90" rx="16" fill="#121820" opacity="0.96" stroke="#2A3441"/>
+    <circle cx="36" cy="832" r="7" fill="none" stroke="#7BD88F" stroke-width="1.6"/>
+    <path d="M33 832 l2.5 2.5 l4.5 -5" fill="none" stroke="#7BD88F" stroke-width="1.6" stroke-linecap="round"/>
+    <text x="52" y="836" fill="#7BD88F" font-size="11">Profile closed — 4 segments</text>
+    <rect x="300" y="818" width="84" height="28" rx="9" fill="#20456E" stroke="#4C8FD8"/>
+    <text x="342" y="836" fill="#EAF2FC" font-size="10.5" text-anchor="middle">Snap ⌗ on</text>
+
+    <g font-size="9" fill="#8B99AC">
+      <text x="28" y="864">W</text><text x="140" y="864">H</text>
+    </g>
+    <rect x="42" y="852" width="82" height="30" rx="9" fill="#1B222C" stroke="#39434F"/>
+    <text x="54" y="872" fill="#E8EDF4" font-size="12" font-family="ui-monospace, monospace">60</text>
+    <rect x="154" y="852" width="82" height="30" rx="9" fill="#1B222C" stroke="#39434F"/>
+    <text x="166" y="872" fill="#E8EDF4" font-size="12" font-family="ui-monospace, monospace">40</text>
+    <rect x="244" y="852" width="40" height="30" rx="9" fill="#1C2430" stroke="#3A4552"/>
+    <text x="264" y="872" fill="#9FB0C6" font-size="10.5" text-anchor="middle">mm</text>
+    <rect x="296" y="852" width="88" height="30" rx="9" fill="#1C2430" stroke="#3A4552"/>
+    <text x="340" y="872" fill="#9FB0C6" font-size="10.5" text-anchor="middle">Done sketch</text>
+  </g>
+
+  <!-- ================= STEP 2 : EXTRUDE ================= -->
+  <g transform="translate(455,58)">
+    <rect width="411" height="914" rx="6" fill="url(#vp)"/>
+
+    <g opacity="0.3" stroke="#3A4A5E" stroke-width="1">
+      <path d="M40 330 H371 M40 370 H371 M40 410 H371 M40 450 H371 M40 490 H371 M40 530 H371 M40 570 H371 M40 610 H371"/>
+      <path d="M60 320 V620 M100 320 V620 M140 320 V620 M180 320 V620 M220 320 V620 M260 320 V620 M300 320 V620 M340 320 V620"/>
+    </g>
+
+    <!-- extruded preview body rising off the profile -->
+    <polygon points="100,330 300,330 340,286 140,286" fill="#7C93B2" opacity="0.9"/>
+    <polygon points="300,330 340,286 340,426 300,470" fill="#465C7C" opacity="0.9"/>
+    <polygon points="100,330 300,330 300,470 100,470" fill="url(#solid)" opacity="0.95"/>
+    <rect x="100" y="330" width="200" height="140" fill="none" stroke="#7FB5EE" stroke-width="2.2"/>
+    <g stroke="#7FB5EE" stroke-width="1.4" opacity="0.85" stroke-dasharray="4 4">
+      <path d="M100 330 L140 286"/><path d="M300 330 L340 286"/><path d="M300 470 L340 426"/>
+    </g>
+
+    <!-- on-canvas extrusion handle -->
+    <path d="M200 330 L200 214" stroke="#E7C26B" stroke-width="2.4"/>
+    <path d="M200 200 l-11 18 l22 0 z" fill="#E7C26B"/>
+    <circle cx="200" cy="330" r="5" fill="#E7C26B"/>
+    <rect x="222" y="228" width="92" height="30" rx="9" fill="#2A2416" stroke="#E7C26B" stroke-width="1.4"/>
+    <text x="268" y="248" fill="#E7C26B" font-size="13" text-anchor="middle" font-family="ui-monospace, monospace" font-weight="600">25 mm</text>
+    <text x="222" y="276" fill="#8B99AC" font-size="9.5">drag the arrow, or type the exact distance</text>
+
+    <!-- global strip -->
+    <rect x="0" y="0" width="411" height="46" rx="6" fill="#12171F" opacity="0.94"/>
+    <line x1="0" y1="46" x2="411" y2="46" stroke="#2A3441"/>
+    <rect x="12" y="11" width="24" height="24" rx="7" fill="#1C2430" stroke="#2A3441"/>
+    <path d="M25 17 l-6 6 l6 6" fill="none" stroke="#8B99AC" stroke-width="1.8" stroke-linecap="round"/>
+    <rect x="126" y="10" width="160" height="26" rx="13" fill="#1B2735" stroke="#4C8FD8"/>
+    <circle cx="141" cy="23" r="3.5" fill="#4C8FD8"/>
+    <text x="151" y="27" fill="#E8EDF4" font-size="12" font-weight="600">Construction</text>
+    <path d="M310 18 a8 8 0 1 0 3 12" fill="none" stroke="#8B99AC" stroke-width="1.8" stroke-linecap="round"/>
+    <path d="M310 18 l-4 -3 l0 6 z" fill="#8B99AC"/>
+    <circle cx="372" cy="23" r="1.6" fill="#8B99AC"/><circle cx="379" cy="23" r="1.6" fill="#8B99AC"/><circle cx="386" cy="23" r="1.6" fill="#8B99AC"/>
+
+    <rect x="14" y="58" width="383" height="34" rx="11" fill="#161C25" opacity="0.96" stroke="#4C8FD8"/>
+    <text x="30" y="79" fill="#E8EDF4" font-size="11.5">Extrude</text>
+    <text x="94" y="79" fill="#5A6878" font-size="10">profile on Front plane · 60 × 40 mm</text>
+    <rect x="326" y="64" width="60" height="22" rx="7" fill="#1C2430" stroke="#3A4552"/>
+    <text x="356" y="79" fill="#9FB0C6" font-size="10.5" text-anchor="middle">Cancel</text>
+
+    <!-- right rail: Extrude now active and immediately available -->
+    <rect x="337" y="480" width="64" height="160" rx="20" fill="#121820" opacity="0.86"/>
+    <rect x="343" y="486" width="52" height="56" rx="14" fill="#182029"/>
+    <rect x="357" y="500" width="24" height="17" fill="none" stroke="#9FB0C6" stroke-width="1.8"/>
+    <text x="369" y="534" fill="#9FB0C6" font-size="9" text-anchor="middle">Rect</text>
+    <rect x="343" y="548" width="52" height="72" rx="14" fill="#20456E" stroke="#4C8FD8" stroke-width="1.5"/>
+    <rect x="357" y="578" width="24" height="13" fill="none" stroke="#EAF2FC" stroke-width="1.8"/>
+    <path d="M369 574 l0 -14 M365 564 l4 -4 l4 4" fill="none" stroke="#EAF2FC" stroke-width="1.8" stroke-linecap="round"/>
+    <text x="369" y="609" fill="#EAF2FC" font-size="9" text-anchor="middle" font-weight="600">Extrude</text>
+
+    <!-- contextual bar: distance + operation + commit -->
+    <rect x="14" y="806" width="383" height="90" rx="16" fill="#121820" opacity="0.96" stroke="#2A3441"/>
+    <text x="28" y="830" fill="#8B99AC" font-size="9.5">Distance</text>
+    <rect x="28" y="836" width="104" height="34" rx="10" fill="#1B222C" stroke="#4C8FD8"/>
+    <text x="42" y="859" fill="#E8EDF4" font-size="13" font-family="ui-monospace, monospace">25</text>
+    <rect x="140" y="836" width="40" height="34" rx="10" fill="#1C2430" stroke="#3A4552"/>
+    <text x="160" y="859" fill="#9FB0C6" font-size="10.5" text-anchor="middle">mm</text>
+
+    <!-- New body / Add / Cut — Add and Cut reserved for later booleans -->
+    <rect x="190" y="836" width="120" height="34" rx="10" fill="#1B222C" stroke="#39434F"/>
+    <rect x="192" y="838" width="52" height="30" rx="8" fill="#20456E" stroke="#4C8FD8"/>
+    <text x="218" y="858" fill="#EAF2FC" font-size="9.5" text-anchor="middle" font-weight="600">New</text>
+    <text x="262" y="858" fill="#4A545F" font-size="9.5" text-anchor="middle">Add</text>
+    <text x="294" y="858" fill="#4A545F" font-size="9.5" text-anchor="middle">Cut</text>
+
+    <rect x="318" y="836" width="66" height="34" rx="10" fill="#2E6DB4" stroke="#4C8FD8"/>
+    <text x="351" y="858" fill="#FFFFFF" font-size="11.5" text-anchor="middle" font-weight="600">Create</text>
+  </g>
+
+  <!-- step captions -->
+  <text x="14" y="34" fill="#E8EDF4" font-size="15" font-weight="600">1 · Sketch a closed profile on a standard plane</text>
+  <text x="14" y="52" fill="#5A6878" font-size="10.5">Sketch ▸ pick plane ▸ view aligns normal ▸ draw ▸ exact values ▸ closed-profile check</text>
+  <text x="455" y="34" fill="#E8EDF4" font-size="15" font-weight="600">2 · Select the profile and extrude it</text>
+  <text x="455" y="52" fill="#5A6878" font-size="10.5">Extrude is immediately available ▸ drag the arrow, or type the distance ▸ Create body</text>
+
+  <text x="14" y="980" fill="#4A545F" font-size="10">PROPOSAL ONLY — no sketch or extrude geometry exists in ForgeShape. Add / Cut are reserved for later booleans.</text>
+</svg>

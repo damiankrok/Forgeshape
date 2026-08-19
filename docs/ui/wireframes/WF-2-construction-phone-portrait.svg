@@ -1,0 +1,153 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 411 914" width="411" height="914" font-family="Inter, Roboto, 'Segoe UI', sans-serif">
+  <title>ForgeShape WF-2 — Construction, phone portrait (411 x 914 dp)</title>
+  <desc>Original ForgeShape wireframe. Not production UI. Same shell language as Sculpt: thin global strip, right tool rail switched to Construction tools, contextual inspector at peek detent carrying exact dimensions, mode menu open showing the Freeze seam.</desc>
+
+  <defs>
+    <linearGradient id="vp" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#10151C"/><stop offset="1" stop-color="#080B10"/>
+    </linearGradient>
+    <linearGradient id="face1" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6E86A6"/><stop offset="1" stop-color="#3E5170"/>
+    </linearGradient>
+    <linearGradient id="face2" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#54677F"/><stop offset="1" stop-color="#33445C"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="411" height="914" fill="url(#vp)"/>
+
+  <!-- ============ model: selected box ============ -->
+  <g>
+    <polygon points="120,430 250,392 320,432 190,474" fill="url(#face1)"/>
+    <polygon points="120,430 190,474 190,568 120,524" fill="url(#face2)"/>
+    <polygon points="190,474 320,432 320,526 190,568" fill="#46597A"/>
+    <!-- selection highlight -->
+    <polygon points="120,430 250,392 320,432 190,474 120,430" fill="none" stroke="#4C8FD8" stroke-width="2"/>
+    <polygon points="120,430 190,474 190,568 120,524 120,430" fill="none" stroke="#4C8FD8" stroke-width="2"/>
+    <polygon points="190,474 320,432 320,526 190,568 190,474" fill="none" stroke="#4C8FD8" stroke-width="2"/>
+    <g fill="#EAF2FC" stroke="#4C8FD8">
+      <rect x="116" y="426" width="8" height="8"/><rect x="246" y="388" width="8" height="8"/>
+      <rect x="316" y="428" width="8" height="8"/><rect x="186" y="564" width="8" height="8"/>
+      <rect x="116" y="520" width="8" height="8"/><rect x="316" y="522" width="8" height="8"/>
+    </g>
+  </g>
+  <ellipse cx="215" cy="590" rx="94" ry="12" fill="#000" opacity="0.3"/>
+
+  <!-- ============ global strip ============ -->
+  <rect x="0" y="0" width="411" height="46" fill="#12171F" opacity="0.94"/>
+  <line x1="0" y1="46" x2="411" y2="46" stroke="#2A3441"/>
+  <rect x="12" y="11" width="24" height="24" rx="7" fill="#1C2430" stroke="#2A3441"/>
+  <path d="M25 17 l-6 6 l6 6" fill="none" stroke="#8B99AC" stroke-width="1.8" stroke-linecap="round"/>
+  <text x="44" y="27" fill="#8B99AC" font-size="12">Untitled</text>
+
+  <rect x="126" y="10" width="160" height="26" rx="13" fill="#1B2735" stroke="#4C8FD8"/>
+  <circle cx="141" cy="23" r="3.5" fill="#4C8FD8"/>
+  <text x="151" y="27" fill="#E8EDF4" font-size="12" font-weight="600">Construction</text>
+  <path d="M267 21 l4 5 l4 -5" fill="none" stroke="#4C8FD8" stroke-width="1.8" stroke-linecap="round"/>
+
+  <path d="M310 18 a8 8 0 1 0 3 12" fill="none" stroke="#8B99AC" stroke-width="1.8" stroke-linecap="round"/>
+  <path d="M310 18 l-4 -3 l0 6 z" fill="#8B99AC"/>
+  <path d="M342 18 a8 8 0 1 1 -3 12" fill="none" stroke="#48525F" stroke-width="1.8" stroke-linecap="round"/>
+  <path d="M342 18 l4 -3 l0 6 z" fill="#48525F"/>
+  <circle cx="372" cy="23" r="1.6" fill="#8B99AC"/><circle cx="379" cy="23" r="1.6" fill="#8B99AC"/><circle cx="386" cy="23" r="1.6" fill="#8B99AC"/>
+
+  <!-- ============ mode menu, shown OPEN: this is where the Freeze seam lives ============ -->
+  <rect x="126" y="52" width="212" height="168" rx="14" fill="#161C25" stroke="#2A3441"/>
+  <rect x="132" y="58" width="200" height="34" rx="9" fill="#20456E" stroke="#4C8FD8"/>
+  <circle cx="147" cy="75" r="3.5" fill="#4C8FD8"/>
+  <text x="158" y="79" fill="#EAF2FC" font-size="11.5" font-weight="600">Construction</text>
+  <text x="316" y="79" fill="#4C8FD8" font-size="12" text-anchor="end">✓</text>
+
+  <rect x="132" y="96" width="200" height="40" rx="9" fill="#1C2430"/>
+  <text x="158" y="112" fill="#E8EDF4" font-size="11.5">Sculpt</text>
+  <text x="158" y="126" fill="#7BD88F" font-size="9.5">Resume — 482 v frozen</text>
+  <circle cx="147" cy="116" r="3.5" fill="#5A6878"/>
+
+  <text x="158" y="156" fill="#5A6878" font-size="11.5">UV</text>
+  <text x="316" y="156" fill="#4A545F" font-size="9" text-anchor="end">not yet</text>
+  <circle cx="147" cy="152" r="3.5" fill="#3A4552"/>
+
+  <line x1="138" y1="170" x2="326" y2="170" stroke="#2A3441"/>
+  <text x="158" y="192" fill="#8B99AC" font-size="11.5">Export…</text>
+  <path d="M143 184 l0 8 M139 188 l4 -4 l4 4" fill="none" stroke="#8B99AC" stroke-width="1.5" stroke-linecap="round"/>
+  <text x="316" y="192" fill="#4A545F" font-size="9" text-anchor="end">owner decision D3</text>
+
+  <!-- ============ right rail: Construction tools ============ -->
+  <rect x="337" y="252" width="64" height="392" rx="20" fill="#121820" opacity="0.86"/>
+
+  <!-- Select (active) -->
+  <rect x="343" y="258" width="52" height="72" rx="14" fill="#20456E" stroke="#4C8FD8" stroke-width="1.5"/>
+  <path d="M362 274 l0 24 l6 -7 l4 9 l4 -2 l-4 -9 l9 0 z" fill="none" stroke="#EAF2FC" stroke-width="1.7" stroke-linejoin="round"/>
+  <text x="369" y="319" fill="#EAF2FC" font-size="10" text-anchor="middle" font-weight="600">Select</text>
+
+  <!-- Primitive -->
+  <rect x="343" y="336" width="52" height="72" rx="14" fill="#182029"/>
+  <polygon points="358,362 369,356 380,362 369,368" fill="none" stroke="#9FB0C6" stroke-width="1.6" stroke-linejoin="round"/>
+  <path d="M358 362 l0 10 l11 6 l11 -6 l0 -10" fill="none" stroke="#9FB0C6" stroke-width="1.6" stroke-linejoin="round"/>
+  <path d="M369 368 l0 10" stroke="#9FB0C6" stroke-width="1.4"/>
+  <text x="369" y="397" fill="#9FB0C6" font-size="10" text-anchor="middle">Shape</text>
+
+  <!-- Move / gizmo (reserved) -->
+  <rect x="343" y="414" width="52" height="72" rx="14" fill="#151B23"/>
+  <path d="M369 428 l0 24 M357 440 l24 0" stroke="#5A6878" stroke-width="1.7" stroke-linecap="round"/>
+  <path d="M369 426 l-4 5 l8 0 z M369 454 l-4 -5 l8 0 z" fill="#5A6878"/>
+  <text x="369" y="475" fill="#5A6878" font-size="10" text-anchor="middle">Move</text>
+
+  <!-- Sketch (reserved) -->
+  <rect x="343" y="492" width="52" height="72" rx="14" fill="#151B23"/>
+  <path d="M357 522 l16 -16 l6 6 l-16 16 l-8 2 z" fill="none" stroke="#5A6878" stroke-width="1.6" stroke-linejoin="round"/>
+  <text x="369" y="553" fill="#5A6878" font-size="10" text-anchor="middle">Sketch</text>
+
+  <!-- Extrude (reserved) -->
+  <rect x="343" y="570" width="52" height="72" rx="14" fill="#151B23"/>
+  <rect x="358" y="600" width="22" height="12" fill="none" stroke="#5A6878" stroke-width="1.6"/>
+  <path d="M369 598 l0 -14 M365 588 l4 -4 l4 4" fill="none" stroke="#5A6878" stroke-width="1.6" stroke-linecap="round"/>
+  <text x="369" y="631" fill="#5A6878" font-size="10" text-anchor="middle">Extrude</text>
+
+  <!-- hide UI -->
+  <rect x="349" y="656" width="40" height="40" rx="14" fill="#121820" opacity="0.86" stroke="#2A3441"/>
+  <path d="M362 668 l7 8 l-7 8 M373 668 l7 8 l-7 8" fill="none" stroke="#8B99AC" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- ============ contextual inspector — PEEK detent, ~24% of height ============ -->
+  <rect x="0" y="694" width="411" height="220" rx="20" fill="#131922" opacity="0.97"/>
+  <line x1="0" y1="694" x2="411" y2="694" stroke="#2A3441"/>
+  <rect x="188" y="702" width="36" height="4" rx="2" fill="#3A4552"/>
+
+  <!-- header: which primitive, and the chooser -->
+  <rect x="14" y="716" width="112" height="30" rx="10" fill="#1C2430" stroke="#3A4552"/>
+  <text x="30" y="736" fill="#E8EDF4" font-size="12" font-weight="600">Box</text>
+  <path d="M108 729 l4 5 l4 -5" fill="none" stroke="#8B99AC" stroke-width="1.6" stroke-linecap="round"/>
+  <text x="136" y="736" fill="#5A6878" font-size="10">Cylinder · Sphere · Cone · Capsule</text>
+
+  <!-- unit chips -->
+  <rect x="300" y="716" width="97" height="30" rx="10" fill="#1C2430" stroke="#3A4552"/>
+  <text x="316" y="736" fill="#5A6878" font-size="11">mm</text>
+  <text x="345" y="736" fill="#5A6878" font-size="11">cm</text>
+  <rect x="366" y="720" width="26" height="22" rx="7" fill="#20456E" stroke="#4C8FD8"/>
+  <text x="379" y="736" fill="#EAF2FC" font-size="11" text-anchor="middle" font-weight="600">m</text>
+
+  <!-- exact dimension fields -->
+  <g font-size="9.5" fill="#8B99AC">
+    <text x="14" y="768">Width</text><text x="147" y="768">Height</text><text x="280" y="768">Depth</text>
+  </g>
+  <rect x="14" y="774" width="120" height="40" rx="10" fill="#1B222C" stroke="#39434F"/>
+  <text x="28" y="800" fill="#E8EDF4" font-size="14" font-family="ui-monospace, monospace">2</text>
+  <rect x="147" y="774" width="120" height="40" rx="10" fill="#1B222C" stroke="#39434F"/>
+  <text x="161" y="800" fill="#E8EDF4" font-size="14" font-family="ui-monospace, monospace">1</text>
+  <rect x="280" y="774" width="117" height="40" rx="10" fill="#1B222C" stroke="#39434F"/>
+  <text x="294" y="800" fill="#E8EDF4" font-size="14" font-family="ui-monospace, monospace">0.5</text>
+
+  <!-- Transform section, collapsed: separate truth, separate commit -->
+  <rect x="14" y="826" width="230" height="34" rx="10" fill="#181F28" stroke="#2A3441"/>
+  <path d="M28 839 l5 5 l5 -5" fill="none" stroke="#8B99AC" stroke-width="1.6" stroke-linecap="round"/>
+  <text x="48" y="847" fill="#9FB0C6" font-size="11">Transform</text>
+  <text x="120" y="847" fill="#5A6878" font-size="10" font-family="ui-monospace, monospace">0,0,0 m · 0,0,0°</text>
+
+  <rect x="256" y="826" width="141" height="34" rx="10" fill="#2E6DB4" stroke="#4C8FD8"/>
+  <text x="326" y="847" fill="#FFFFFF" font-size="12" text-anchor="middle" font-weight="600">Apply Shape</text>
+
+  <!-- status / validation lives INSIDE the inspector, never off-screen -->
+  <text x="14" y="884" fill="#8B99AC" font-size="10.5">Shape and placement are separate — each has its own Apply.</text>
+
+  <rect x="0.5" y="0.5" width="410" height="913" fill="none" stroke="#4C8FD8" stroke-width="1" opacity="0.25"/>
+</svg>

@@ -1,22 +1,22 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.15.1  
+**Status Version:** 0.15.2  
 **Updated:** 2026-08-19  
-**Last Stage:** Stage 015A — UI/UX Audit + Architecture Decision Pack  
+**Last Stage:** Stage 015A-R — Nomad-first UI/UX Re-audit + Sketch/Extrude Shell Concept  
 **Result:** COMPLETE — DECISION REQUIRED  
 **Current Phase:** Phase 1 — Native Viewport  
 **Workspace:** `D:\TRAVELAPPS\ForgeShape`  
 **Next Stage:** Owner UI Architecture Decision for Stage 015B
 
-Stage 015A was an audit and design stage. **No product behaviour changed and no
-product source file was touched** — the diff is one new document, four audit
-screenshots and this file. The previous stage, Gate P0, was likewise
+Stage 015A-R was an audit and design revision. **No product behaviour changed and
+no product source or build file was touched** — the diff is the revised decision
+pack, four wireframes and this file. The previous stage, Gate P0, was likewise
 toolchain-only (NDK r27 → r29, one line in `app/build.gradle`).
 
 The decision pack is at
 [`docs/ui/UX_ARCHITECTURE_DECISION_PACK.md`](docs/ui/UX_ARCHITECTURE_DECISION_PACK.md).
-Six owner decisions are listed in its §12 and are summarised below; Stage 015B
-cannot start until D1, D2 and D3 are answered.
+Six owner decisions are listed in its §18 and summarised below; Stage 015B cannot
+start until D1 is answered.
 
 ## Product Direction
 
@@ -1269,12 +1269,148 @@ Shaders: GLSL in `app/src/main/cpp/shaders/`, compiled ahead of time by the
 NDK `glslc` in CMake using `-mfmt=c`; the emitted C initializer lists are
 `#include`d into the renderer, so no SPIR-V asset is loaded at runtime.
 
-## Stage 015A — UI/UX Audit + Architecture Decision Pack
+## Stage 015A-R — Nomad-first re-audit + Sketch/Extrude shell concept
 
 Audit and design only. Deliverable:
-`docs/ui/UX_ARCHITECTURE_DECISION_PACK.md`. Nothing in that document is
-implemented, and `PRODUCT.md` was deliberately not updated — it describes only
-runtime-verified behaviour, and a proposal is not behaviour.
+`docs/ui/UX_ARCHITECTURE_DECISION_PACK.md`, revised in place, plus four original
+wireframes. Nothing in them is implemented. `PRODUCT.md` and `ARCHITECTURE.md`
+were deliberately not updated: a proposal is not behaviour, and no architecture
+direction has been accepted yet.
+
+### Why the revision was needed
+
+The first issue of the pack was technically sound and **structurally wrong**. Its
+measured audit findings were correct and are retained in full (below). Its option
+set was not: it was extrapolated from consumer, commerce and photo-editing apps,
+because that is what a general UI-pattern library contains, and it therefore
+optimised for *forms over a canvas* rather than for *a tool in the hand over a
+model*. The owner rejected that basis.
+
+The revision replaces the reference class — primary structural reference is now
+the mobile sculpting workspace as exemplified by Nomad Sculpt, used structurally
+only, with Shapr3D-like sketch/extrude efficiency as the secondary interaction
+reference — and adds **Sketch + Extrude as planned MVP scope** that the shell
+must reserve real homes for.
+
+### Wireframes (original, proposal only, not production UI)
+
+| | Path |
+| --- | --- |
+| WF-1 Sculpt, phone portrait | `docs/ui/wireframes/WF-1-sculpt-phone-portrait.svg` |
+| WF-2 Construction, phone portrait | `docs/ui/wireframes/WF-2-construction-phone-portrait.svg` |
+| WF-3 Sketch + Extrude, two steps | `docs/ui/wireframes/WF-3-sketch-extrude.svg` |
+| WF-4 Tablet landscape 1280×800 | `docs/ui/wireframes/WF-4-tablet-landscape.svg` |
+
+### Recommended shell
+
+**Forge Shell — edge rails + contextual inspector.** A thin 48 dp global strip
+carrying the mode chip, undo/redo and hierarchy access; a full-bleed viewport
+beneath it; **Radius and Strength as two vertical sliders on the left edge**, always
+live in Sculpt; a **right-edge tool rail** with icon+label and an unmistakable
+active state; one **contextual surface** at the bottom whose content is a function
+of mode, tool and selection; and a **hide-UI affordance** that collapses the chrome
+to a bare viewport. Construction uses the identical shell with the rail switched
+to Select / Shape / Move / Sketch / Extrude and the contextual surface becoming a
+detented inspector holding the exact fields, the unit chips and the separate
+*Apply Shape* / *Apply Transform* commits. Freeze lives on the mode seam, so
+"resume" and "re-freeze" stop looking like the same button.
+
+Projected unoccluded viewport, phone portrait: **≈78 % in Sculpt, ≈68 % in
+Construction at peek detent**, against 51 % today and 0 % in landscape.
+
+The single strong alternative is **Single Sheet** — one bottom sheet with three
+detents carrying everything, no edge rails. Cheaper and with no viewport-overlay
+risk, but it puts Radius and Strength behind a detent, which is the most-used
+interaction in Sculpt.
+
+### Sketch + Extrude — planned, not implemented
+
+Sketch is a **Construction tool/sub-mode**, not a top-level mode. The designed
+flow is: Construction → Sketch → pick a standard plane (planar-face entry
+reserved) → view aligns normal → draw → exact numeric values → closed-profile
+validation → select profile → Extrude immediately available → drag an on-canvas
+arrow or type the exact distance → create a Construction body. Reserved scope is
+only Line/Polyline, Rectangle, Circle, select/delete, grid/snap and exact numeric
+entry; Add/Cut are drawn disabled for later booleans. **No geometry, no solver,
+no assemblies, no NURBS. Nothing of this is implemented.**
+
+### Mobbin Pro usage — and an honest gap
+
+Five searches under the required filter (3D/sculpt/CAD, drawing/painting, stylus
+creative tools). Reported plainly in the pack: **Mobbin's library contains no
+mobile 3D sculpting application and no CAD or parametric-sketch application.**
+Searches for a sculpting workspace returned a travel-book viewer, a screen-time
+app and a link-in-bio editor; searches for CAD dimension entry returned banking
+and clothing-size forms. That is precisely why Nomad Sculpt — observed directly,
+not via Mobbin — is the primary structural reference.
+
+Mobbin contributed one primary reference class (Procreate Pocket: full-bleed
+canvas, left-edge continuous slider, thin top strip, tabbed overflow sheet) and
+two supplementary ones (Obsidian canvas: right-edge rail plus selection-attached
+contextual toolbar; ChatGPT image select: an edge brush-size slider that previews
+the size it sets). Consumer/commerce screens were demoted to micro-interaction
+evidence only.
+
+### Retained technical findings (unchanged, measured on `emulator-5558`)
+
+| | portrait 411×914 dp | landscape 914×411 dp | compact 360×640 dp |
+| --- | --- | --- | --- |
+| `SurfaceView` | `[0,0][1080,2400]` | `[0,0][2400,1080]` | `[0,0][720,1280]` |
+| Construction panel | `[0,0][1080,1175]` | `[0,0][2400,1080]` | `[0,0][720,~880]` |
+| viewport unoccluded | 51 % | **0 %** | ~31 % |
+| status line | visible | **clipped off-screen** | visible |
+
+- **Landscape is a hard failure, not a degradation** — the panel measures to the
+  full window, the model is entirely occluded, and the status line (the only
+  channel for validation and the stale-source warning) falls below the window
+  bottom with **no `ScrollView` anywhere in the Android layer** to reach it.
+  Evidence: `artifacts/stage015a_audit_landscape_panel_covers_screen.png`.
+- **No responsive architecture** — `configChanges` absorbs
+  `orientation|screenSize|screenLayout|density`, and `onConfigurationChanged` 0,
+  `getResources().getConfiguration` 0, `ORIENTATION_LANDSCAPE` 0,
+  `screenWidthDp` 0, `ScrollView` 0.
+- **No `WindowInsets` handling** — 0 occurrences; latent under `targetSdk` 36.
+- **Almost no stable IDs** — `setId` twice in 2223 lines; `setContentDescription`
+  *is* on 7 control families and is the immediate test bridge.
+- **No Android UI automation at all.**
+- **The monolithic panels do not scale** — `ConstructionPanelView` is 1041 of
+  2223 lines.
+- **The portrait IME case works** and is preserved deliberately.
+
+### Views vs Compose — unchanged
+
+**Structured Views.** Re-verified: no `dependencies { }` block at all,
+`android.useAndroidX=false`, 0 Kotlin files. Compose would add Kotlin, AndroidX,
+a compiler plugin and 30+ artifacts, and would layer its pointer pipeline over
+the raw `MotionEvent` → JNI path and the Sculpt gesture arbitration. The pack
+specifies what modernising the Views means concretely: resource-backed
+dimensions/colours/styles, stable IDs, reusable components (`ToolRailView`,
+`EdgeSliderView`, `InspectorSheetView`, `NumericFieldRow`, `ModeChipView`), one
+explicit UI state holder, `WindowInsets`, width/height adaptive logic, and
+splitting the 1041-line panel class.
+
+### Gesture and state
+
+Native geometry and product state remain authoritative; the UI owns draft,
+presentation and layout state only. The proven native arbitration is preserved
+unchanged — `g_strokePending`, the 8 px arming threshold, pending-then-promote,
+and the `hitsSculptMesh` probe. Future Sketch-draw, Extrude-handle and gizmo
+gestures are specified to be decided **on Down, below the JNI boundary**, exactly
+like the sculpt probe, and never in Java. Chrome-owned gestures — rail, edge
+sliders, inspector, hierarchy — never reach the viewport.
+
+### Owner decisions required before Stage 015B
+
+| | Decision | Recommendation |
+| --- | --- | --- |
+| D1 | Adopt the Forge Shell (edge rails + contextual inspector)? | **yes**; Single Sheet is the cheaper alternative |
+| D2 | Primary device: phone / tablet / both | decides whether 015B builds the expanded class now |
+| D3 | Export: global action or top-level mode | depends on export scope; both defensible |
+| D4 | Confirm the Sketch/Extrude MVP boundary | as proposed |
+| D5 | Confirmation before re-Freeze discards sculpt work | **yes** |
+| D6 | Stylus pressure in 015B | **no** — read `getToolType` only |
+
+D1 blocks Stage 015B. D2 shapes its scope. D3–D6 can be answered alongside.
 
 ### Measured audit facts (`emulator-5558`, `uiautomator` hierarchy dumps)
 
@@ -2437,28 +2573,28 @@ New in Stage 006:
 
 **Owner UI Architecture Decision for Stage 015B**
 
-Stage 015A ends deliberately before implementation. Two of its six questions are
-not engineering preferences that a stage can settle on evidence — they are
-product decisions. **D2 (primary device)** changes the answer to **D1 (shell
-direction)**: Option B earns its rail and three-pane layout on a tablet and does
-not earn them on a 411 dp phone, where Option A is cheaper and lower risk for the
-same landscape fix. Choosing B on the owner's behalf would be choosing a device
-story on the owner's behalf.
+Stage 015A-R ends deliberately before implementation. The recommendation is now
+much less hedged than the first issue's: with the reference class corrected, one
+shell family is clearly right for a product whose identity is *mobile sculptor
+first with an exact CAD layer in the same viewport*, and it is recommended
+without equivocation. What remains genuinely the owner's is **D1** — whether to
+build that shell or the cheaper Single Sheet, which fixes the landscape defect
+for materially less work while giving up the sculpt-first feel. That is a product
+judgement about what ForgeShape is meant to feel like, not an engineering
+comparison a stage can settle.
 
-**D3 (Views or Compose)** is recommended firmly — Views — because the evidence is
-one-sided: the project has zero runtime dependencies today, and Compose would add
-a second language, AndroidX and 30+ artifacts while placing the most carefully
-proven behaviour in the product under a pointer pipeline it does not control. It
-is listed as a decision only because it commits the project's dependency posture
-for years, which is the owner's call to ratify.
+**D2 (primary device)** no longer flips the recommendation — the Forge Shell is
+phone-first by construction and scales up — but it decides whether 015B builds
+the expanded class (docked hierarchy and inspector, WF-4) now or defers it, so it
+shapes the scope of the very next stage.
 
 What the audit contributes regardless of the answers: **landscape is currently
 broken, not merely cramped**, and the Android layer remains the only part of the
 product with no automated test of any kind. Nine native suites and 992 checks run
 themselves; every UI assertion in every stage so far has been driven by hand
-through screen coordinates. Tests T8 (viewport ≥ 55 % unoccluded at four window
-sizes) and T9 (a drag inside a panel produces no camera change and no
-`SculptRevision`) are the two that would have caught what this audit found by
+through screen coordinates. Tests U9 (viewport floor and reachability at four
+window sizes) and U10 (a drag on any chrome surface produces no camera change and
+no `SculptRevision`) are the two that would have caught what this audit found by
 hand, and they should land with the shell rather than after it.
 
 ### Why Plane and the coverage cleanup remain the geometry candidates
