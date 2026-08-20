@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ForgeShape runs edge-to-edge on purpose.
+
+  The previous theme was Theme.Material.NoActionBar.Fullscreen, whose
+  windowFullscreen flag simply hid the system bars. Under targetSdk 36 that
+  flag is deprecated and edge-to-edge is the platform default, so the app was
+  relying on behaviour the platform no longer guarantees, which is exactly
+  why it had no WindowInsets handling and would have collided with a cutout.
+
+  The replacement is honest about it: the window draws behind transparent
+  system bars, the Vulkan SurfaceView keeps the whole window (it is never
+  inset, padded or resized by any layout decision), and the interactive chrome
+  is padded off the bars and cutouts by EditorWorkspaceView's inset listener.
+-->
+<resources>
+    <style name="Theme.ForgeShape" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowBackground">@android:color/black</item>
+    </style>
+</resources>

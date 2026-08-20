@@ -1,0 +1,170 @@
+package com.forgeshape.app;
+
+/**
+ * The adaptive layout decision for the Editor Workspace, as a pure function of
+ * the current <b>window</b> size.
+ *
+ * <p>Window size, never display size and never orientation: split-window,
+ * free-form and a resized foldable are then the same rule as a rotation, and a
+ * phone-landscape window and a small floating window get the same treatment
+ * because they are the same problem.
+ *
+ * <p><b>Units are density-independent pixels throughout.</b> Nothing here takes
+ * a physical pixel, so no layout decision can be accidentally calibrated to one
+ * device's 1080x2400 panel — which is precisely how the previous shell came to
+ * be verified in portrait only.
+ *
+ * <p>This class holds no Android type on purpose: the decision is arithmetic,
+ * so it is unit-testable on the JVM without a device, and the numbers below can
+ * be argued about in one place instead of being scattered through view code.
+ */
+enum WorkspaceLayoutMode {
+
+    /** A phone in portrait, or any narrow window. */
+    COMPACT,
+    /** A large phone in landscape, a small tablet, or a half-screen split. */
+    MEDIUM,
+    /** A tablet: wide enough to dock a panel beside the model and tall enough
+     *  that doing so is worth it. */
+    EXPANDED;
+
+    /** Below this window width the workspace is {@link #COMPACT}. */
+    static final int MEDIUM_MIN_WIDTH_DP = 600;
+
+    /** A window narrower than this can never be {@link #EXPANDED}. */
+    static final int EXPANDED_MIN_WIDTH_DP = 840;
+
+    /**
+     * Below this window height a bottom sheet is not affordable.
+     *
+     * <p>This single threshold is what fixes the landscape failure. Phone
+     * landscape measured 411 dp of height, and a bottom-anchored inspector in
+     * that window either covers the model completely or pushes its own status
+     * line off-screen — both of which happened. Under this height the inspector
+     * moves to the side, where the cost is width, which a landscape window has
+     * in abundance.
+     *
+     * <p>It also gates {@link #EXPANDED}: a 914 x 411 dp phone in landscape is
+     * wide enough to look like a tablet by width alone, and it is not one.
+     * Docking a permanent panel in a window that short would re-create the
+     * defect in a new place.
+     */
+    static final int LOW_HEIGHT_MAX_DP = 480;
+
+    /** Where the Property Inspector sits for a given window. */
+    enum InspectorPlacement {
+        /** Anchored to the bottom edge, overlaying the viewport. */
+        BOTTOM_SHEET,
+        /** Anchored to the trailing edge, overlaying the viewport. */
+        SIDE_OVERLAY,
+        /** Anchored to the trailing edge, laid out beside the model. */
+        SIDE_DOCK
+    }
+
+    static WorkspaceLayoutMode forWindow(int widthDp, int heightDp) {
+        if (widthDp >= EXPANDED_MIN_WIDTH_DP && heightDp >= LOW_HEIGHT_MAX_DP) {
+            return EXPANDED;
+        }
+        if (widthDp >= MEDIUM_MIN_WIDTH_DP) {
+            return MEDIUM;
+        }
+        return COMPACT;
+    }
+
+    /**
+     * Chooses where the Property Inspector goes.
+     *
+     * <p>An expanded window docks it: there is enough width that a panel beside
+     * the model costs the model nothing it needs. Otherwise the window's height
+     * decides — a short window can only afford chrome at its sides.
+     */
+    InspectorPlacement inspectorPlacement(int heightDp) {
+        if (this == EXPANDED) {
+            return InspectorPlacement.SIDE_DOCK;
+        }
+        return heightDp < LOW_HEIGHT_MAX_DP
+                ? InspectorPlacement.SIDE_OVERLAY
+                : InspectorPlacement.BOTTOM_SHEET;
+    }
+
+    /**
+     * Whether the Tool Rail is laid out beside the viewport rather than over it.
+     *
+     * <p>Only an expanded window can pay for this. On a phone the rail overlays
+     * the edge, which is what keeps the model full-bleed; the rail is narrow and
+     * translucent precisely because it is standing on the picture.
+     */
+    boolean railDocked() {
+        return this == EXPANDED;
+    }
+
+    /**
+     * Whether the Property Inspector opens expanded rather than collapsed.
+     *
+     * <p>A compact or short window opens collapsed, so the first thing on
+     * screen is the model and the viewport floor below is met with room to
+     * spare. A roomy window opens it, because there the exact values cost the
+     * model nothing worth having. This is a starting point only —
+     * {@link EditorUiState} remembers what the user chose from then on, and does
+     * not re-open a panel someone deliberately collapsed just because the
+     * window changed shape.
+     */
+    boolean inspectorStartsExpanded(int heightDp) {
+        return this != COMPACT && heightDp >= LOW_HEIGHT_MAX_DP;
+    }
+
+    // -----------------------------------------------------------------------
+    // Chrome sizing
+    //
+    // These exist as arithmetic rather than as fixed dimens because the chrome
+    // budget is the thing this stage is accountable for. Every one of them is
+    // both an absolute cap (so chrome never grows silly on a large window) and
+    // a proportion (so chrome never eats a small one). The proportions are
+    // chosen to keep the unoccluded viewport at or near 60 % of the window in
+    // compact and medium windows even with the inspector fully open.
+    // -----------------------------------------------------------------------
+
+    /** Tallest a bottom-sheet inspector may be; its body scrolls beyond this. */
+    static int bottomSheetMaxHeightDp(int windowHeightDp) {
+        return clamp(Math.round(windowHeightDp * 0.30f), 160, 300);
+    }
+
+    /** Widest a side-overlay inspector may be; its body scrolls beyond this. */
+    static int sideOverlayWidthDp(int windowWidthDp) {
+        return clamp(Math.round(windowWidthDp * 0.33f), 240, 300);
+    }
+
+    /** Widest a docked inspector may be. */
+    static int sideDockWidthDp(int windowWidthDp) {
+        return clamp(Math.round(windowWidthDp * 0.28f), 260, 320);
+    }
+
+    /**
+     * How wide a side-placed inspector is once collapsed: its toggle plus the
+     * panel's own padding, and nothing else.
+     *
+     * <p>A side panel has to give back <b>width</b> when it collapses. Hiding
+     * only its body would leave a full-height column of chrome standing on the
+     * model and collapsing it would buy the viewport nothing, which is not what
+     * a collapse control promises.
+     */
+    static final int SIDE_COLLAPSED_WIDTH_DP = 68;
+
+    /**
+     * The Global Toolbar's height.
+     *
+     * <p>A short window gets one row with the status message inline; a tall one
+     * gets the message its own full-width line beneath the controls, where a
+     * long rejection reason is readable. Either way the message is <b>always</b>
+     * laid out inside the window — an off-screen status line was the reason
+     * validation messages and the stale-source warning were unreachable in
+     * landscape.
+     */
+    static boolean statusInlineWithControls(int heightDp) {
+        return heightDp < LOW_HEIGHT_MAX_DP;
+    }
+
+    private static int clamp(int value, int min, int max) {
+        return value < min ? min : (value > max ? max : value);
+    }
+}

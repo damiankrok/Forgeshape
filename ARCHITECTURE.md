@@ -9,17 +9,22 @@ runtime, rendering, math or input library participates in the running product.
 ## Layer map
 
 ```
-ForgeShapeActivity            Android lifecycle, hosts the FrameLayout root,
-        |                     shows the panel for the mode NATIVE code is in
+ForgeShapeActivity            Android lifecycle, edge-to-edge window
         |
-        +-- ConstructionPanelView field text + display unit + validation msgs
-        |        |                (presentation/input ONLY - owns no parameter,
-        |        |                 no kind and no transform)
-        |        |  LengthUnit    exact BigDecimal mm/cm/m <-> meters
+        +-- EditorWorkspaceView   the whole editor UI: adaptive layout, window
+        |        |                insets, chrome visibility, and the surfaces
+        |        |                for the mode NATIVE code is in
+        |        |  EditorUiState      drafts / presentation / layout ONLY
+        |        |  WorkspaceLayoutMode window-dp breakpoints (no Android type)
         |        |
-        +-- SculptPanelView    tool selector + brush sliders + the way back
-        |        |             (presentation/input ONLY - owns no vertex, no
-        |        |              brush value, no tool and no mode)
+        |        +-- GlobalToolbarView   context, mode seam, status, Export (rsvd)
+        |        +-- ToolRailView        sculpt brushes | Construction editors
+        |        +-- BrushEdgeControlsView  direct Radius + Strength (Sculpt)
+        |        +-- PropertyInspectorView  contextual, collapsible, scrolling
+        |                 +-- ConstructionShapeEditorView   what the object IS
+        |                 +-- ConstructionPlacementEditorView  where it SITS
+        |                 +-- SculptContextView   mesh state + guarded re-Freeze
+        |        |  LengthUnit    exact BigDecimal mm/cm/m <-> meters
         |        |
 ForgeShapeSurfaceView         Surface lifecycle + raw pointer forwarding
         |                     (no camera state, no matrices, no Vulkan)
@@ -62,10 +67,12 @@ forgeshape_jni.cpp            render thread, ANativeWindow ownership,
 
 | Concern | Owner | Explicitly NOT an owner |
 | --- | --- | --- |
-| Activity lifecycle, view tree composition | `ForgeShapeActivity` | — |
-| Shape/transform field text, display unit, the *draft* primitive kind, input validation messages | `ConstructionPanelView` | it owns no parameter, no kind, no transform, no mesh and no publish decision |
-| Brush slider positions, which tool button looks active, and the sculpt status text | `SculptPanelView` | it owns no vertex, no brush value, no tool and no mode; it reads all four back from native state |
-| Which panel is on screen | `ForgeShapeActivity.syncMode()` | it decides nothing — it *reads* `NativeViewport.productMode()` |
+| Activity lifecycle, edge-to-edge window | `ForgeShapeActivity` | — |
+| Which surfaces are on screen, adaptive layout, window insets, chrome visibility | `EditorWorkspaceView` | it decides no mode — `syncFromNative()` *reads* `NativeViewport.productMode()` and builds from that |
+| Display unit, the *draft* primitive kind, the Construction rail selection, inspector detent, chrome-hidden | `EditorUiState` | every field is safe to lose; none of them can change the model |
+| The window-dp breakpoints and chrome sizing rules | `WorkspaceLayoutMode` | it holds no Android type and reads no state; it is arithmetic |
+| Shape/transform field text and input validation messages | `ConstructionShapeEditorView`, `ConstructionPlacementEditorView` | neither owns a parameter, a kind, a transform, a mesh or a publish decision |
+| Brush slider positions, which rail entry looks active, the sculpt mesh summary | `BrushEdgeControlsView`, `ToolRailView`, `SculptContextView` | none owns a vertex, a brush value, a tool or a mode; all four are read back from native state |
 | The active product mode, the one Frozen Sculpt Mesh, the active tool, the brush and the live stroke | `SculptSession` (`forgeshape_sculpt.{h,cpp}`) | Java owns none of these; the renderer owns no sculpt truth |
 | Frozen local vertex/index data and its `SculptRevision` | `SculptMesh` | it is NOT Construction truth and no parameter is ever read back out of it |
 | 1-ring adjacency and incident triangles of the frozen mesh | `SculptTopology` | built once per Freeze, never per move; it is not a half-edge mesh and cannot change topology |
@@ -134,55 +141,105 @@ and view-local x/y into preallocated arrays, then makes one JNI call.
 `GestureDetector` / `ScaleGestureDetector` are deliberately unused: they would
 move camera semantics into the Android layer.
 
-### Viewport / panel composition
+### Editor Workspace composition
 
-The Activity's content view is a `FrameLayout` holding the `SurfaceView` and,
-added after it so they draw and receive touches first, `ConstructionPanelView`
-and `SculptPanelView`, both anchored to the top. All are plain framework views
-built in code — no Compose, no AndroidX, no resource layouts, no design system,
-no toolbar or drawer.
+The Activity's content view is `EditorWorkspaceView`, a `FrameLayout` with three
+children in z-order:
 
-Exactly one panel is visible, and which one is decided by native state:
-`syncMode()` reads `NativeViewport.productMode()` and shows the matching panel.
-In Sculpt Mode the shape and transform editors are therefore not merely disabled
-but **absent**, so nothing on screen can edit the Construction Source while the
-Frozen Sculpt Mesh is the thing being worked on.
+1. the `SurfaceView`, at the **whole window size**;
+2. `chromeRoot`, a transparent, non-clickable vertical `LinearLayout` holding
+   every interactive surface;
+3. `overlayRoot`, holding only the restore chip that survives chrome being
+   hidden.
 
-Both panels swallow every touch inside their bounds that none of their own
-controls takes (`onTouchEvent` returns `true`), so an unclaimed touch on a panel
-can never fall through and orbit the camera — or, in Sculpt Mode, deform the
-model while reaching for a slider. Touches outside their bounds never reach them
-and navigate normally. In the other direction, `ACTION_DOWN` on the viewport
-pulls focus and the soft keyboard away from any field being edited, so navigation
-never happens "through" a focused editor.
+Inside `chromeRoot`: `GlobalToolbarView` at the top, then a weighted horizontal
+row carrying `BrushEdgeControlsView` (leading edge, Sculpt only), a weighted gap
+where the model lives, and the `ToolRailView` inside a `ScrollView` (trailing
+edge). `PropertyInspectorView` is placed either after that row (bottom sheet) or
+inside it (side placement) — see below. All are plain framework views built in
+code from `res/values` resources; no Compose, no AndroidX in the product, no
+design system, no drawer.
 
-The panel is at the **top** deliberately: the soft keyboard rises from the
-bottom, so with `windowSoftInputMode="adjustPan"` neither the fields nor the
-model is covered and the window is never resized — which would otherwise rebuild
-the swapchain on every keystroke session.
+**The Vulkan viewport is full-bleed and stays that way.** No layout decision
+insets, pads or resizes the `SurfaceView`; window insets are applied to
+`chromeRoot` and `overlayRoot` only. Nothing in the Android layer can therefore
+cause a swapchain rebuild, and renderer ownership of the surface is untouched.
 
-### Properties UI ownership boundary
+Which surfaces exist is decided by **native state**: `syncFromNative()` reads
+`NativeViewport.productMode()`, the sculpt state and the active tool, and builds
+from that — never from what was last tapped. In Sculpt Mode the shape and
+transform editors are therefore not merely disabled but **absent**, and in
+Construction the brush controls are absent, so nothing on screen can edit the
+representation that is not being worked on.
 
-`ConstructionPanelView` holds exactly three pieces of state: the text in its
-fields, the selected display unit, and a **draft** primitive kind. It holds no
-parameter, no authoritative kind and no transform. Everything it shows is read
-from native code at construction and again on every resume, and the only way it
-can change anything is to submit a whole section at once and accept the verdict.
+Every chrome surface swallows every touch inside its bounds that none of its own
+controls takes (`onTouchEvent` returns `true`). Because the viewport is a
+sibling *below* them, and Android never offers a consumed event to a sibling
+underneath, a touch on chrome provably cannot orbit the camera or — in Sculpt
+Mode — deform the model while reaching for a slider. In the other direction,
+`ACTION_DOWN` on the viewport pulls focus and the soft keyboard away from any
+field being edited, so navigation never happens "through" a focused editor.
 
-The shape selector is the draft: it swaps which parameter fields are on screen
-and nothing else. The object's kind changes only when Apply Shape reads the
-drafted primitive's own fields and calls **that primitive's own native method**,
-so there is no window in which the object is a cylinder carrying box dimensions.
-`refreshFromNative` resets the draft to the object's real kind, so the selector
-can never be left claiming a shape the object is not. Exactly one parameter row
-is on screen at a time and it is always the drafted kind's, so no field on screen
-can be read as another primitive's parameter; every primitive's fields are kept
-populated and converted, including the hidden ones, so an inactive draft does not
-silently change meaning while it is off screen.
+### Adaptive layout and window insets
 
-Shape and placement have separate Apply buttons — *Apply Shape* and *Apply
-Transform* — because they are separate truths with different consequences: one
-republishes the mesh, the other cannot. One button doing both would hide that.
+`WorkspaceLayoutMode` is the whole adaptive decision, as arithmetic on **window**
+dp — never display size and never orientation, so a rotation, a split-window
+resize and a free-form drag all take one path. It holds no Android type and is
+unit-tested on the JVM.
+
+| window | class | inspector |
+| --- | --- | --- |
+| width < 600 dp | `COMPACT` | bottom sheet, capped at 30 % of window height |
+| 600–839 dp, or any width with height < 480 dp | `MEDIUM` | bottom sheet, or **side overlay** when height < 480 dp |
+| ≥ 840 dp wide **and** ≥ 480 dp tall | `EXPANDED` | docked side panel, ≤ 28 % of width |
+
+The height gate is what fixes the landscape failure, twice over: a short window
+never gets a bottom sheet, and a 914 × 411 dp phone in landscape is not
+classified as a tablet merely because it is wide. The inspector's body always
+scrolls, its bottom-sheet height is capped in `onMeasure`, and a side placement
+narrows to its toggle when collapsed — a panel that hid only its body would give
+the model back nothing.
+
+The decision runs at the top of `EditorWorkspaceView.onMeasure`, not in
+`onSizeChanged`: a surface added or re-parented during the layout pass is
+measured against the previous pass and laid out at zero height. It is idempotent,
+so it converges within one traversal. `configChanges` is kept and widened with
+`smallestScreenSize` so no window change destroys the Vulkan surface;
+`onConfigurationChanged` discards the cached window and re-runs the decision.
+
+The app is edge-to-edge (`Theme.ForgeShape`, `setDecorFitsSystemWindows(false)`),
+replacing the deprecated fullscreen theme that merely hid the system bars.
+`setOnApplyWindowInsetsListener` applies `systemBars | displayCutout` — and the
+`ime()` inset, which replaces rather than adds to the navigation bar — as padding
+to the chrome containers. `windowSoftInputMode` is `adjustResize`: with
+decor-fits off the window is **not** resized, so the keyboard arrives as an inset
+the chrome absorbs and the surface is untouched.
+
+### Property Inspector ownership boundary
+
+`EditorUiState` is the closed list of what the UI may remember: display unit,
+draft primitive kind, which Construction editor the rail points at, inspector
+detent per mode, and chrome-hidden. Every field is safe to lose — kill the
+process and the object is exactly what it was. Anything that would change the
+model if it were wrong belongs in native code instead.
+
+The primitive chooser is a **draft**: it swaps which parameter fields are on
+screen and nothing else. The object's kind changes only when Apply Shape reads
+the drafted primitive's own fields and calls **that primitive's own native
+method**, so there is no window in which the object is a cylinder carrying box
+dimensions. `refreshFromNative` resets the draft to the object's real kind, so
+the chooser can never be left claiming a shape the object is not. Exactly one
+parameter row is on screen at a time and it is always the drafted kind's; every
+primitive's fields are kept populated and converted, including the hidden ones,
+so an inactive draft does not silently change meaning while it is off screen.
+
+Shape and placement live in **separate inspector bodies with separate Apply
+buttons** — *Apply Shape* and *Apply Transform* — because they are separate
+truths with different consequences: one republishes the mesh, the other cannot.
+One button doing both would hide that. The Construction Tool Rail chooses which
+body is on screen; that choice is UI layout state, makes no native call, and
+deliberately does not refresh the editors, so a half-typed value in the other
+section survives.
 
 Consequently:
 
@@ -212,6 +269,43 @@ printed with trailing zeros stripped and no grouping separator. Parsing accepts
 matters twice over: a negative coordinate or angle is an ordinary value that must
 be enterable, and a negative *dimension* must be enterable so it can be visibly
 refused rather than being unreachable.
+
+### The destructive-act guard
+
+Three mode transitions live in the Global Toolbar and exactly one is on screen:
+*Freeze to Sculpt* while no Frozen Sculpt Mesh exists, *Resume Sculpt* once one
+does, *Back to Construction* while sculpting. None is guarded, and none needs to
+be: the first can discard nothing, and the second and third discard nothing.
+
+The one irreversible act in the product is **re-Freeze**, which rebuilds the
+sculpt mesh from the current Construction shape and throws away what was
+sculpted into the old one. It lives in the Sculpt inspector as *Freeze again…*
+and it confirms **only when the native stroke count is non-zero** — re-freezing a
+mesh no stroke has touched replaces a copy with an identical copy, and confirming
+that would train the user to dismiss the dialog that matters. Cancel makes no
+native call at all.
+
+### Android UI verification boundary
+
+The native self-tests own geometry and math; the runtime smoke owns the
+Vulkan/input bridge; the Android suites own shell behaviour, control visibility
+and the UI→native call contract. **No Java test asserts a rendered pixel.**
+
+- `src/test` (JVM, JUnit only): `WorkspaceLayoutMode`, `EditorUiState` and
+  `LengthUnit` — the three pieces deliberately free of Android types.
+- `src/androidTest` (instrumentation): every control is reached by its stable
+  semantic id from `res/values/ids.xml`; no assertion depends on a screen
+  coordinate. Espresso is deliberately absent — the assertions are view state,
+  measured geometry and touch consumption, read directly from the view tree.
+
+Two techniques carry most of the weight. "A UI action changed nothing" is
+asserted by comparing a **bit-identical** snapshot of the native primitive,
+transform and sculpt arrays across the action. "Chrome does not leak a gesture"
+is asserted by dispatching a drag to the surface and requiring it to return
+`true`, which is the guarantee, plus the native sculpt revision and stroke count
+being unchanged. The camera has no read-back across JNI, so camera immobility is
+proven at runtime instead, by a pixel-identical viewport region across a chrome
+drag.
 
 ## JNI boundary
 
@@ -428,8 +522,8 @@ Curved primitives are authored by **diameter**, because that is what a drawing
 and a caliper give you. `radiusMeters()` exists but is derived on demand and
 never stored — as is the capsule's cylindrical middle.
 
-mm/cm/m exist **only** above the JNI boundary, in `LengthUnit` and
-`ConstructionPanelView`. Every value crossing into native code is already in
+mm/cm/m exist **only** above the JNI boundary, in `LengthUnit` and the two
+Construction inspector bodies. Every value crossing into native code is already in
 meters, and no native type, function or log line names a display unit. The unit a
 dimension was typed in is therefore unrecoverable from domain state — which is
 correct: it is not part of what the object is.
@@ -729,10 +823,10 @@ Construction object.
 
 The mode is **native state**. The Android UI may request a change through
 `freezeToSculpt` / `enterSculptMode` / `enterConstructionMode` and is then told
-what the mode actually is; `ForgeShapeActivity.syncMode()` reads `productMode()`
-back rather than assuming its request succeeded, so a refused request (entering
-Sculpt with nothing frozen) cannot leave a panel on screen that lies about what
-is being edited. The active tool is read back the same way.
+what the mode actually is; `EditorWorkspaceView.syncFromNative()` reads
+`productMode()` back rather than assuming its request succeeded, so a refused
+request (entering Sculpt with nothing frozen) cannot leave surfaces on screen
+that lie about what is being edited. The active tool is read back the same way.
 
 - **Freeze to Sculpt** snapshots the current Construction local mesh, creates the
   Frozen Sculpt Mesh with the same `ObjectId`, and enters Sculpt mode.
@@ -1186,11 +1280,15 @@ is a stage of its own and naming them is what stops one arriving by accident:
   picking stay exact, but that middle carries no interior rings, so a small
   sculpt brush placed there has very few vertices to capture — a
   tessellation-fidelity limitation, not a correctness one.
-- **No property-editor framework.** `ConstructionPanelView` is one panel for one
-  object: no property model, no binding layer, no editor registry, no second
-  inspected object. Both panels are fixed `WRAP_CONTENT` blocks with no scroll
-  and no collapse, and there is no configuration or window-inset handling in the
-  Android layer at all.
+- **No property-editor framework.** The Property Inspector is three hand-written
+  bodies for one object: no property model, no binding layer, no editor registry,
+  no reflection, no second inspected object. `NumericPropertyRow` and
+  `UnitChipsView` are components, not a framework — they know what a labelled
+  number and a unit are, and nothing about primitives.
+- **No hierarchy surface.** The Editor Workspace has a Global Toolbar, one Tool
+  Rail and one Property Inspector. There is no object browser, no history panel
+  and no docked second inspector, because there is one object with two
+  representations and nothing to browse.
 - **`RuntimeMesh` is not a Construction mesh format**, and the debug paths are
   not product. `RuntimeMesh` carries positions, colours and indices and nothing
   else: no normals, no UVs, no material, no adjacency, no history.

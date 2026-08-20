@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The Editor Workspace palette.
+
+  Evolved from the colours the two provisional panels carried inline, so the
+  shell still reads as the same application. One accent only: it means "active
+  tool" or "primary commit" and nothing else, which is what keeps the active
+  Tool Rail entry unmistakable.
+-->
+<resources>
+    <!-- Chrome surfaces. Opaque where text sits on them, translucent only over
+         the viewport where the model behind stays informative. -->
+    <color name="chrome_surface">#F2131922</color>
+    <color name="chrome_overlay">#E6121820</color>
+    <color name="chrome_hairline">#FF2A3441</color>
+
+    <!-- Controls. -->
+    <color name="control_surface">#FF1C2430</color>
+    <color name="control_surface_pressed">#FF243040</color>
+    <color name="control_border">#FF3A4757</color>
+
+    <!-- The single accent: active state and primary commit. -->
+    <color name="accent">#FF4C8FD8</color>
+    <color name="accent_fill">#FF20456E</color>
+    <color name="accent_border">#A64C8FD8</color>
+
+    <!-- Text. Disabled stays legible enough to read a reserved feature's name,
+         because a reserved control the user cannot read is just noise. -->
+    <color name="text_primary">#FFE8EDF4</color>
+    <color name="text_secondary">#FF8B99AC</color>
+    <color name="text_disabled">#FF5C6875</color>
+
+    <!-- Verdicts and measurements. -->
+    <color name="text_success">#FF7BD88F</color>
+    <color name="text_error">#FFFF8A7A</color>
+    <color name="text_measure">#FFE7C26B</color>
+
+    <color name="slider_track">#FF232C39</color>
+    <color name="slider_fill">#FF4C8FD8</color>
+</resources>

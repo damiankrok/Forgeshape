@@ -20,14 +20,40 @@ added to the scene.
 The object comes up as a box, **2.0 m wide × 1.0 m high × 0.5 m deep**, centred
 at the world origin and unrotated, so it is visibly not a cube.
 
+## The Editor Workspace
+
+The editor is one workspace, and the model is the largest thing in it. A thin
+**Global Toolbar** across the top says what is being edited, carries the one
+control that crosses between constructing and sculpting, and shows every status
+and error message. A **Tool Rail** stands at the trailing edge. A **Property
+Inspector** at the bottom edge — at the side when the window is short or wide —
+carries the exact values, and it collapses to a single strip when the model is
+what matters. A control in the toolbar hides all of it at once, leaving the bare
+model and one chip to bring it back.
+
+The same three regions are there in both modes. What changes is what they carry,
+never where they are.
+
+Touching any of that chrome never moves the camera and never sculpts: a control
+owns its own gesture completely. Touching the viewport anywhere else navigates
+exactly as it always has.
+
+The workspace re-arranges itself for the window it is in — a phone in portrait, a
+phone in landscape, a split-screen half, a tablet — and the arrangement is
+decided by the window's size, not by the device or the orientation. The model
+stays visible in all of them. On a tablet the inspector docks beside the model
+instead of over it, and the controls do not grow: only the viewport does.
+
 ## Choosing and sizing the shape
 
-A compact panel across the top of the viewport carries a **Shape** selector —
-Box, Cylinder, Sphere, Cone and Capsule — the selected shape's dimensions, a
-display unit (**mm**, **cm** or **m**) shared by every length, and an **Apply
-Shape** button. Only the selected shape's fields are on screen, so nothing on the
-panel can be mistaken for another shape's dimension. It also carries the object's
-position and rotation, described further down. The rest of the viewport stays
+The Tool Rail in Construction carries **Shape** and **Place**, plus **Sketch**
+and **Extrude**, which are drawn but clearly not available. Choosing Shape puts a
+**primitive chooser** — Box, Cylinder, Sphere, Cone and Capsule — the chosen
+shape's dimensions, a display unit (**mm**, **cm** or **m**) shared by every
+length, and an **Apply Shape** button into the Property Inspector. Only the
+chosen shape's fields are on screen, so nothing in the inspector can be mistaken
+for another shape's dimension. Choosing Place puts the object's position and
+rotation there instead, described further down. The rest of the viewport stays
 visible and usable while editing.
 
 The numbers in the fields are always the object's real dimensions, read from the
@@ -97,7 +123,7 @@ dimensions are submitted together, and the result is one of three things.
   nothing happens at all. This is judged by the actual shape and size, not by the
   text: 125 × 250 × 75 cm and the same box written as 1.25 × 2.5 × 0.75 m both
   report Unchanged.
-- **Rejected** — the panel shows what is wrong and the object does not change.
+- **Rejected** — the status line shows what is wrong and the object does not change.
   Not the dimensions that were fine, not the shape, and not where it sits.
 
 ### Choosing a display unit
@@ -125,9 +151,9 @@ number". The object keeps the shape, size and place it already had.
 
 ## Moving and rotating the object
 
-Below the shape fields the same panel carries the object's **placement**: a
-Position X/Y/Z in the shared display unit, a Rotation X/Y/Z in degrees, and a
-separate **Apply Transform** button.
+Choosing **Place** in the Tool Rail puts the object's **placement** in the
+Property Inspector: a Position X/Y/Z in the shared display unit, a Rotation
+X/Y/Z in degrees, and a separate **Apply Transform** button.
 
 The object starts at position 0, 0, 0 m with rotation 0, 0, 0°. Placement belongs
 to the object, not to the shape, so it survives any change of shape untouched —
@@ -179,27 +205,42 @@ The object can be **sculpted** — pulled around by hand — as well as construc
 from exact numbers. Those are two different ways of describing the same object,
 and ForgeShape keeps both.
 
-### Freeze to Sculpt, and the Sculpt panel
+### Freeze to Sculpt, and the Sculpt workspace
 
-**Freeze to Sculpt**, at the bottom of the properties panel, takes the shape as
-it currently stands and makes a sculptable copy of it, then switches to Sculpt
-Mode. Nothing about the Construction Body changes: its shape, its dimensions and
-its placement are exactly what they were, and they are still there when Sculpt
-Mode is left. Freezing changes nothing visible — the picture on screen before and
-after pressing the button is identical, pixel for pixel.
+**Freeze to Sculpt**, in the Global Toolbar, takes the shape as it currently
+stands and makes a sculptable copy of it, then switches to Sculpt Mode. Nothing
+about the Construction Body changes: its shape, its dimensions and its placement
+are exactly what they were, and they are still there when Sculpt Mode is left.
+Freezing changes nothing visible — the picture on screen before and after
+pressing the button is identical, pixel for pixel.
 
-Sculpt Mode replaces the properties panel with a compact strip carrying the four
-tools — **Grab**, **Clay**, **Smooth** and **Inflate** — a **Radius**, a
-**Strength**, and the way back. The shape and placement fields are not merely
-greyed out; they are not there, because in Sculpt Mode there is nothing on screen
-that edits the constructed shape.
+That button says **Freeze to Sculpt** only while nothing has been frozen yet.
+Once there is a sculpted mesh it says **Resume Sculpt** instead, because those
+are genuinely different acts and the wording is the only thing that tells them
+apart before they happen: freezing starts from the constructed shape, resuming
+goes back to the sculpting exactly as it was left.
 
-One tool is highlighted, and it is always the one that is actually active:
-tapping a tool asks for it and the panel then shows what it got. A line below the
-sliders says what the finger will do with the tool that is in hand. Choosing a
-tool changes nothing about the model — nothing is redrawn or rebuilt, no
+In Sculpt Mode the Tool Rail carries the four tools — **Grab**, **Clay**,
+**Smooth** and **Inflate** — and a **Radius** and a **Strength** sit directly at
+the opposite edge, always on screen, adjustable without opening anything. The
+shape and placement fields are not merely greyed out; they are not there, because
+in Sculpt Mode there is nothing on screen that edits the constructed shape.
+
+One tool is filled and outlined, and it is always the one that is actually
+active: tapping a tool asks for it and the rail then shows what it got. The
+status line says what the finger will do with the tool that is in hand. Choosing
+a tool changes nothing about the model — nothing is redrawn or rebuilt, no
 sculpting is lost, and the Radius and Strength stay where they were, because they
 belong to the brush rather than to the tool.
+
+The Property Inspector in Sculpt Mode carries what the sculpted mesh currently
+is, the stale-source warning when there is one, and **Freeze again…** — the one
+act in ForgeShape that cannot be undone. Pressing it when sculpting has actually
+been done asks first, in a message that says how many strokes will be discarded
+and labels the button with what it does rather than *OK*. Cancelling changes
+nothing at all. Pressing it on a mesh nothing has been done to just freezes,
+because there is nothing to lose and a warning that cries wolf is worse than no
+warning.
 
 ### One finger on the model sculpts; anywhere else navigates
 
@@ -282,8 +323,8 @@ discards sculpting.
 ### Changing the shape after freezing
 
 Changing the constructed shape while a sculpted version exists never touches the
-sculpting. The Sculpt panel says so — it reports that the shape changed after the
-freeze and that the sculpt has been kept as it is — and leaves the decision
+sculpting. The Sculpt inspector says so — it reports that the shape changed after
+the freeze and that the sculpt has been kept as it is — and leaves the decision
 alone: Freeze to Sculpt again to start from the new shape, or carry on sculpting
 what is already there. ForgeShape does not transfer sculpting onto a new shape by
 itself, and does not throw sculpting away without being asked.
@@ -295,7 +336,7 @@ copy always has exactly as many points and faces as the shape it was frozen from
 through every stroke of every tool. It changes only the sculpted copy — after
 working over an object with all four tools, going back to Construction shows the
 constructed shape at exactly its original dimensions in exactly its original
-place, the picture identical and the numbers in the panel unchanged.
+place, the picture identical and the numbers in the inspector unchanged.
 
 What can be tapped follows the sculpting, not the constructed shape: on a
 sculpted sphere, a point out on a raised protrusion is part of the model and can
@@ -307,10 +348,11 @@ is no undo.
 
 ## Viewport navigation
 
-Touches that land on the properties panel stay in the panel: dragging across it
-never orbits, pans or zooms, and never selects. Everything outside the panel is
-the viewport. Touching the viewport also ends any text edit — focus and the
-keyboard come back to the model.
+Touches that land on any chrome surface — the Global Toolbar, the Tool Rail, the
+brush controls, the Property Inspector — stay there: dragging across one never
+orbits, pans, zooms, selects or sculpts. Everything else is the viewport, which
+runs edge to edge under all of it. Touching the viewport also ends any text edit
+— focus and the keyboard come back to the model.
 
 Navigation never moves the object. Unless its transform is changed, it stays
 exactly where it is and everything the user sees move is the camera, which orbits
@@ -372,8 +414,8 @@ The object's shape, its size, its position and rotation, its identity, the chose
 display unit, which mode is active, which sculpt tool is in hand, every sculpted
 deformation, the camera pose and the selection all survive sending ForgeShape to
 the home screen and resuming it — the viewport comes back pixel-identical. On
-resume the panel for the active mode is shown and every field, slider and tool
-button is rewritten from what the object actually is, so anything half-typed or
+resume the surfaces for the active mode are shown and every field, slider and
+tool is rewritten from what the object actually is, so anything half-typed or
 refused before leaving is replaced by the truth.
 
 The object's identity is stable across a shape change: turning the box into a
@@ -397,8 +439,15 @@ than one, an object list or outliner, lasso and box selection, and anything that
 acts on the selection (moving, editing, deleting) are not implemented.
 
 Two-finger twist/roll, inertia, camera presets, orthographic camera,
-focus-on-selection, long-press selection, grid, modelling, UV, export, save/load
-and undo are not implemented.
+focus-on-selection, long-press selection, grid, modelling, UV, save/load and undo
+are not implemented.
+
+**Sketch, Extrude and Export have visible homes and no implementation.** They
+appear in the Editor Workspace — Sketch and Extrude in the Construction Tool
+Rail, Export in the Global Toolbar — drawn so they can be read and clearly not
+available, and pressing them does nothing. They are there so the workspace does
+not change shape when they arrive; nothing about them works today. Nothing in the
+workspace exports anything.
 
 ## Accepted product direction — decided, not built
 

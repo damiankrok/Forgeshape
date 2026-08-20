@@ -38,6 +38,39 @@ gradlew.bat :app:assembleDebug
 
 APK: `app/build/outputs/apk/debug/app-debug.apk`
 
+## Test
+
+```
+gradlew.bat :app:testDebugUnitTest         # JVM: layout rules, UI state, units
+gradlew.bat :app:connectedDebugAndroidTest # on-device: Editor Workspace UI
+```
+
+The instrumented suite needs exactly one attached target and installs its own
+APKs; when several are attached, detach or stop the others first, because the
+Gradle task has no `-s <serial>` equivalent. It **uninstalls the app when it
+finishes**, so reinstall before taking runtime evidence.
+
+To run one class:
+
+```
+gradlew.bat :app:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.forgeshape.app.EditorWorkspaceLayoutTest"
+```
+
+The layout suite logs its measurements as `FORGESHAPE_UI_VIEWPORT` lines, so the
+unoccluded-viewport percentage for the window it ran in is in logcat, not only in
+a pass/fail. It adapts to the window it finds itself in, so running it under a
+display override is a genuine expanded-layout run:
+
+```
+adb -s <serial> shell wm size 1280x800 && adb -s <serial> shell wm density 160
+... run the suite ...
+adb -s <serial> shell wm density reset && adb -s <serial> shell wm size reset
+```
+
+Test-only dependencies (JUnit, `androidx.test` core/runner/ext-junit) are
+`test`/`androidTest` scope and are packaged into the test APK only. The product
+APK still has no runtime dependency of any kind.
+
 ## Install and run
 
 When more than one emulator/device is attached, always target one explicitly
@@ -99,30 +132,35 @@ See `PRODUCT.md` for the full gesture contract.
 
 ## Editing the object
 
-The panel across the top of the viewport edits the object's **shape** (Box,
-Cylinder, Sphere, Cone or Capsule, and that shape's dimensions) and its
-**placement** (position X/Y/Z, rotation X/Y/Z), with a separate Apply for each.
-Pick a display unit (mm / cm / m) for lengths — rotation is always degrees —
-type the values, and press the matching Apply. Nothing changes until then,
-including moving the shape selector. Touches on the panel never move the camera.
+The Construction **Tool Rail** chooses what the **Property Inspector** edits:
+*Shape* (Box, Cylinder, Sphere, Cone or Capsule, and that shape's dimensions) or
+*Place* (position X/Y/Z, rotation X/Y/Z), each with its own Apply. Pick a display
+unit (mm / cm / m) for lengths — rotation is always degrees — type the values,
+and press the matching Apply. Nothing changes until then, including choosing a
+primitive. Touches on any chrome surface never move the camera.
 
-**Freeze to Sculpt** copies the object's current Construction mesh into a Frozen
-Sculpt Mesh and switches to Sculpt Mode, which replaces the Construction panel
-with a strip carrying a four-tool selector (**Grab**, **Clay**, **Smooth**,
-**Inflate**), a Radius slider, a Strength slider and **Back to Construction**.
-**Resume Sculpt** returns to the frozen mesh without re-freezing; only Freeze
-discards prior deformation. Radius and Strength are shared by all four tools.
+**Freeze to Sculpt** in the Global Toolbar copies the object's current
+Construction mesh into a Frozen Sculpt Mesh and switches to Sculpt Mode, where
+the rail carries **Grab**, **Clay**, **Smooth** and **Inflate**, and Radius and
+Strength are edge sliders at the opposite side. Once a mesh exists that toolbar
+button reads **Resume Sculpt**, which returns to it without re-freezing; only
+*Freeze again…* in the Sculpt inspector discards prior deformation, and it
+confirms first when there is deformation to lose. Radius and Strength are shared
+by all four tools.
 
-The Android layer exposes almost no stable view ids, so UI-driven verification
-is done with `adb shell input tap/swipe/text` at coordinates read from a live
-`uiautomator dump` for the device under test. Do not copy coordinates from an
-older run: the panels change height as rows are added, and a stale tap lands in
-the wrong control or misses the viewport entirely. Sliders are `SeekBar`s, so
-one `input tap` sets one; the value native code actually kept is logged and is
+Every control has a stable semantic id in `res/values/ids.xml`. Drive UI-based
+verification by resolving those ids from a live `uiautomator dump` and tapping
+the resulting bounds — never by reusing coordinates from an older run, because
+the workspace re-arranges itself per window. Note that `uiautomator dump` omits
+views scrolled out of the Property Inspector's `ScrollView`: scroll the inspector
+before looking for `apply_shape` or `apply_transform`.
+
+The brush sliders are a custom control, so one `input tap` on the track sets the
+value from its y position; the value native code actually kept is logged and is
 the authority, not the tap position.
 
-While the soft keyboard is up, a viewport tap must land **below the panel and
-above the keyboard** or it never reaches the `SurfaceView` — focus stays in the
+While the soft keyboard is up, a viewport tap must land clear of the inspector
+and above the keyboard or it never reaches the `SurfaceView` — focus stays in the
 text field and a following `keyevent` types a digit instead of doing what was
 intended, which looks exactly like a command that did not run.
 
@@ -135,7 +173,7 @@ evidence, or widen the radius.
 
 ## Log vocabulary
 
-Construction applies log with a label (`ui` for the panel path):
+Construction applies log with a label (`ui` for the Property Inspector path):
 
 ```
 FORGESHAPE_CONSTRUCTION_PRIMITIVE:<label> kind=<..> <params>       shape applied
@@ -203,7 +241,7 @@ a no-op in release.
 | 16 | deliberately invalid box update — must be rejected |
 
 The box driver goes through the same native `applyPrimitive` entry point the
-panel uses, so it is a bounded driver rather than a parallel implementation. A
+inspector uses, so it is a bounded driver rather than a parallel implementation. A
 field keeps input focus after typing and swallows these number keys — tap the
 viewport first to hand focus back.
 

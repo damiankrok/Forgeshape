@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Editor Workspace metrics.
+
+  Every touch target here is at or above 44 dp in its short dimension. That is
+  the stylus-first constraint (INPUT-OWNER-01) expressed as a number: an S Pen
+  tip is precise, a fingertip is not, and the shell has to stay usable with
+  both without growing a second set of controls.
+-->
+<resources>
+    <!-- Global Toolbar. One strip; its height is the only chrome height the
+         viewport pays for at the top. -->
+    <dimen name="toolbar_height">48dp</dimen>
+    <dimen name="toolbar_padding_horizontal">10dp</dimen>
+    <dimen name="toolbar_gap">8dp</dimen>
+
+    <!-- Tool Rail. 52 x 64 dp per entry: comfortably past the 44 dp floor with
+         room for a label under the glyph, because icon-only costs learning. -->
+    <dimen name="rail_item_width">56dp</dimen>
+    <dimen name="rail_item_height">64dp</dimen>
+    <dimen name="rail_item_gap">4dp</dimen>
+    <dimen name="rail_padding">6dp</dimen>
+    <dimen name="rail_glyph_size">17sp</dimen>
+    <dimen name="rail_label_size">10sp</dimen>
+
+    <!-- Brush edge controls: the two continuously-varied Sculpt values. The
+         track is deliberately wider than it looks so a thumb can find it. -->
+    <dimen name="brush_column_width">52dp</dimen>
+    <dimen name="brush_slider_height">200dp</dimen>
+    <dimen name="brush_slider_min_height">120dp</dimen>
+    <dimen name="brush_track_width">10dp</dimen>
+    <dimen name="brush_thumb_radius">11dp</dimen>
+    <dimen name="brush_gap">10dp</dimen>
+
+    <!-- Property Inspector. -->
+    <dimen name="inspector_handle_height">44dp</dimen>
+    <dimen name="inspector_padding">12dp</dimen>
+    <dimen name="inspector_side_width">320dp</dimen>
+    <dimen name="inspector_side_overlay_width">360dp</dimen>
+    <dimen name="inspector_max_sheet_height">300dp</dimen>
+
+    <!-- Controls. -->
+    <dimen name="control_height">44dp</dimen>
+    <dimen name="control_corner">7dp</dimen>
+    <dimen name="control_border_width">1dp</dimen>
+    <dimen name="control_border_active_width">2dp</dimen>
+    <dimen name="control_padding_horizontal">14dp</dimen>
+    <dimen name="chip_padding_horizontal">12dp</dimen>
+
+    <dimen name="row_gap">8dp</dimen>
+    <dimen name="row_gap_small">4dp</dimen>
+    <dimen name="section_gap">12dp</dimen>
+
+    <dimen name="text_title">14sp</dimen>
+    <dimen name="text_body">14sp</dimen>
+    <dimen name="text_label">11sp</dimen>
+    <dimen name="text_status">12sp</dimen>
+    <dimen name="text_field">16sp</dimen>
+</resources>

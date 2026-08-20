@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Stable semantic view identifiers for the Editor Workspace.
+
+  These exist so verification names a control by what it DOES rather than by
+  where it happens to sit. Every runtime check before this stage was driven by
+  screen coordinates, which is why a layout change silently invalidated the
+  pixel tables twice. A name here is part of the test contract: renaming one
+  breaks tests on purpose, moving the control breaks nothing.
+-->
+<resources>
+    <!-- Shell -->
+    <item name="editor_workspace" type="id" />
+    <item name="viewport_surface" type="id" />
+
+    <!-- Global Toolbar -->
+    <item name="global_toolbar" type="id" />
+    <item name="editing_context_label" type="id" />
+    <item name="freeze_to_sculpt" type="id" />
+    <item name="resume_sculpt" type="id" />
+    <item name="back_to_construction" type="id" />
+    <item name="export_action" type="id" />
+    <item name="hide_ui_toggle" type="id" />
+    <item name="restore_ui_chip" type="id" />
+    <item name="status_message" type="id" />
+
+    <!-- Tool Rail. One rail view; its entries differ by mode. -->
+    <item name="tool_rail" type="id" />
+    <item name="tool_rail_grab" type="id" />
+    <item name="tool_rail_clay" type="id" />
+    <item name="tool_rail_smooth" type="id" />
+    <item name="tool_rail_inflate" type="id" />
+    <item name="tool_rail_shape" type="id" />
+    <item name="tool_rail_place" type="id" />
+    <item name="tool_rail_sketch" type="id" />
+    <item name="tool_rail_extrude" type="id" />
+
+    <!-- Direct Sculpt brush controls -->
+    <item name="brush_edge_controls" type="id" />
+    <item name="brush_radius_slider" type="id" />
+    <item name="brush_strength_slider" type="id" />
+    <item name="brush_radius_value" type="id" />
+    <item name="brush_strength_value" type="id" />
+
+    <!-- Property Inspector -->
+    <item name="property_inspector" type="id" />
+    <item name="inspector_toggle" type="id" />
+    <item name="inspector_title" type="id" />
+    <item name="inspector_scroll" type="id" />
+    <item name="inspector_body" type="id" />
+
+    <!-- Construction: shape -->
+    <item name="primitive_chooser" type="id" />
+    <item name="primitive_option_box" type="id" />
+    <item name="primitive_option_cylinder" type="id" />
+    <item name="primitive_option_sphere" type="id" />
+    <item name="primitive_option_cone" type="id" />
+    <item name="primitive_option_capsule" type="id" />
+    <item name="primitive_row_box" type="id" />
+    <item name="primitive_row_cylinder" type="id" />
+    <item name="primitive_row_sphere" type="id" />
+    <item name="primitive_row_cone" type="id" />
+    <item name="primitive_row_capsule" type="id" />
+    <item name="field_box_width" type="id" />
+    <item name="field_box_height" type="id" />
+    <item name="field_box_depth" type="id" />
+    <item name="field_cylinder_diameter" type="id" />
+    <item name="field_cylinder_height" type="id" />
+    <item name="field_sphere_diameter" type="id" />
+    <item name="field_cone_diameter" type="id" />
+    <item name="field_cone_height" type="id" />
+    <item name="field_capsule_diameter" type="id" />
+    <item name="field_capsule_total_height" type="id" />
+    <item name="apply_shape" type="id" />
+
+    <!-- Construction: placement -->
+    <item name="field_pos_x" type="id" />
+    <item name="field_pos_y" type="id" />
+    <item name="field_pos_z" type="id" />
+    <item name="field_rot_x" type="id" />
+    <item name="field_rot_y" type="id" />
+    <item name="field_rot_z" type="id" />
+    <item name="apply_transform" type="id" />
+
+    <!-- Display unit. Shared by both Construction inspector bodies. -->
+    <item name="unit_chips" type="id" />
+    <item name="unit_chip_mm" type="id" />
+    <item name="unit_chip_cm" type="id" />
+    <item name="unit_chip_m" type="id" />
+
+    <!-- Sculpt context -->
+    <item name="sculpt_mesh_summary" type="id" />
+    <item name="stale_source_warning" type="id" />
+    <item name="freeze_again" type="id" />
+</resources>

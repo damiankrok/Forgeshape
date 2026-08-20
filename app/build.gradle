@@ -15,6 +15,10 @@ android {
         versionCode 1
         versionName '0.3.0'
 
+        // Instrumentation only. The runner ships in the test APK, never in the
+        // product APK.
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+
         // Stage 003 targets only the available runtime target (x86_64 emulator).
         ndk {
             abiFilters 'x86_64'
@@ -48,4 +52,26 @@ android {
     }
 }
 
-// No runtime dependencies: no AndroidX, no engine, no third-party renderer/math library.
+// The product still has NO runtime dependency: no AndroidX, no engine, no
+// third-party renderer, math, UI or input library. Everything below is scoped
+// to `test` (JVM) or `androidTest` (instrumentation) and is packaged into the
+// test APK only, never into app-debug.apk.
+//
+// The JVM set is JUnit alone, and it covers the layout arithmetic and the
+// UI-owned state, both of which are deliberately free of Android types so they
+// can be argued about without a device.
+//
+// The instrumentation set is the smallest that gives an on-device JUnit4
+// runner and an Activity harness. Espresso is deliberately NOT here: the UI
+// assertions this stage needs are view state, measured geometry and
+// touch-consumption, all of which are read directly from the view tree by
+// stable id, and Espresso would add a large transitive graph to express the
+// same thing less precisely.
+dependencies {
+    testImplementation 'junit:junit:4.13.2'
+
+    androidTestImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test:core:1.6.1'
+    androidTestImplementation 'androidx.test:runner:1.6.1'
+    androidTestImplementation 'androidx.test.ext:junit:1.2.1'
+}

@@ -7,16 +7,29 @@
         android:required="true" />
 
     <application
-        android:label="ForgeShape"
+        android:label="@string/app_name"
         android:hasCode="true"
         android:allowBackup="false">
 
+        <!--
+          configChanges is kept and widened, deliberately. Letting the system
+          recreate the Activity on a rotation or a split-window resize would
+          destroy and rebuild the Vulkan surface every time the window changed
+          shape; EditorWorkspaceView re-runs its own layout decision instead.
+          smallestScreenSize is added for the free-form and split-window cases,
+          which the previous list did not cover.
+
+          adjustResize replaces adjustPan: with decorFitsSystemWindows(false)
+          the window is not resized, the keyboard arrives as an IME inset that
+          the chrome consumes as padding, and the SurfaceView is untouched,
+          which panning could not guarantee for a side-placed inspector.
+        -->
         <activity
             android:name=".ForgeShapeActivity"
             android:exported="true"
-            android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen"
-            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|density"
-            android:windowSoftInputMode="adjustPan">
+            android:theme="@style/Theme.ForgeShape"
+            android:configChanges="orientation|screenSize|smallestScreenSize|keyboardHidden|screenLayout|density"
+            android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

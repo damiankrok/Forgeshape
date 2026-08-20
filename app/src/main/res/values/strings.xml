@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Every user-visible string in the Editor Workspace.
+
+  Kept here rather than inline so the wording of a load-bearing message (the
+  stale-source warning, the destructive re-Freeze confirmation, a rejection
+  reason) can be reviewed in one place instead of hunted through view code.
+-->
+<resources>
+    <string name="app_name">ForgeShape</string>
+
+    <!-- Global Toolbar -->
+    <string name="context_construction">Construction</string>
+    <string name="context_sculpt">Sculpt</string>
+    <string name="freeze_to_sculpt">Freeze to Sculpt</string>
+    <string name="resume_sculpt">Resume Sculpt</string>
+    <string name="back_to_construction">Back to Construction</string>
+    <string name="export">Export</string>
+    <string name="export_reserved_note">Export is not implemented yet.</string>
+    <string name="hide_ui">Hide UI</string>
+    <string name="show_ui">Show UI</string>
+
+    <!-- Tool Rail -->
+    <string name="tool_rail">Tool Rail</string>
+    <string name="tool_grab">Grab</string>
+    <string name="tool_clay">Clay</string>
+    <string name="tool_smooth">Smooth</string>
+    <string name="tool_inflate">Inflate</string>
+    <string name="tool_shape">Shape</string>
+    <string name="tool_place">Place</string>
+    <string name="tool_sketch">Sketch</string>
+    <string name="tool_extrude">Extrude</string>
+    <string name="reserved_not_implemented">%1$s is reserved and not implemented yet.</string>
+
+    <!-- Brush -->
+    <string name="brush_radius">Radius</string>
+    <string name="brush_strength">Strength</string>
+
+    <!-- Property Inspector -->
+    <string name="property_inspector">Property Inspector</string>
+    <string name="inspector_collapse">Collapse Property Inspector</string>
+    <string name="inspector_expand">Expand Property Inspector</string>
+    <string name="inspector_shape_title">Shape</string>
+    <string name="inspector_place_title">Placement</string>
+    <string name="inspector_sculpt_title">Sculpt</string>
+
+    <!-- Construction -->
+    <string name="primitive_box">Box</string>
+    <string name="primitive_cylinder">Cylinder</string>
+    <string name="primitive_sphere">Sphere</string>
+    <string name="primitive_cone">Cone</string>
+    <string name="primitive_capsule">Capsule</string>
+    <string name="apply_shape">Apply Shape</string>
+    <string name="apply_transform">Apply Transform</string>
+    <string name="label_width">Width</string>
+    <string name="label_height">Height</string>
+    <string name="label_depth">Depth</string>
+    <string name="label_diameter">Diameter</string>
+    <string name="label_total_height">Total Height</string>
+    <string name="label_pos_x">Pos X</string>
+    <string name="label_pos_y">Pos Y</string>
+    <string name="label_pos_z">Pos Z</string>
+    <string name="label_rot_x">Rot X</string>
+    <string name="label_rot_y">Rot Y</string>
+    <string name="label_rot_z">Rot Z</string>
+    <string name="section_position">Position (%1$s)</string>
+    <string name="section_rotation">Rotation (degrees)</string>
+    <string name="unit_selector">Display unit</string>
+
+    <!-- Sculpt context -->
+    <string name="freeze_again">Freeze again…</string>
+    <string name="sculpt_mesh_summary">Frozen mesh: %1$d vertices · %2$s</string>
+    <string name="sculpt_gesture_rule">One finger on the model — %1$s; elsewhere it orbits.</string>
+    <string name="stale_source_warning">The Construction shape changed after this Freeze. Your sculpt is kept as it is — Freeze again to start from the new shape.</string>
+
+    <!-- Destructive re-Freeze confirmation. Names the consequence, and the
+         button carries the verb rather than "OK". -->
+    <string name="freeze_confirm_title">Replace the sculpted mesh?</string>
+    <string name="freeze_confirm_message">Freezing again rebuilds the sculpt mesh from the current Construction shape. The %1$d sculpt %2$s already made will be discarded. This cannot be undone.</string>
+    <string name="freeze_confirm_stroke">stroke</string>
+    <string name="freeze_confirm_strokes">strokes</string>
+    <string name="freeze_confirm_action">Discard and freeze</string>
+    <string name="cancel">Cancel</string>
+
+    <!-- Status messages -->
+    <string name="status_construction_hint">Shape and placement — edit exact values, then Apply.</string>
+    <string name="status_showing">Showing the current %1$s in %2$s.</string>
+    <string name="status_unit_display_only">Showing %1$s — display only, nothing applied.</string>
+    <string name="status_unit_unparsed">Showing %1$s — a field is not a number and was left as typed.</string>
+    <string name="status_draft_kind">%1$s selected — press Apply Shape to change the object.</string>
+    <string name="status_shape_applied">Shape applied — %1$s</string>
+    <string name="status_shape_unchanged">Shape unchanged — already %1$s</string>
+    <string name="status_transform_applied">Transform applied — %1$s</string>
+    <string name="status_transform_unchanged">Transform unchanged — already %1$s</string>
+    <string name="reject_not_positive">Rejected: every dimension must be greater than 0. Object unchanged.</string>
+    <string name="reject_not_finite">Rejected: a value is not a finite length. Object unchanged.</string>
+    <string name="reject_not_representable">Rejected: a value is too large or too small to build. Object unchanged.</string>
+    <string name="reject_relation">Rejected: Total Height cannot be less than Diameter — the two rounded ends alone are that tall. Object unchanged.</string>
+    <string name="reject_shape_other">Rejected: ForgeShape could not build that shape. Object unchanged.</string>
+    <string name="reject_transform_not_representable">Rejected: a value is too large to place. Transform unchanged.</string>
+    <string name="reject_transform_other">Rejected: a value is not a finite number. Transform unchanged.</string>
+    <string name="field_empty">%1$s is empty — enter a number.</string>
+    <string name="field_not_a_number">%1$s is not a number: \"%2$s\".</string>
+    <string name="field_not_positive">%1$s must be greater than 0 %2$s.</string>
+    <string name="status_frozen">Frozen for sculpting — the Construction %1$s is kept.</string>
+    <string name="status_freeze_failed">Could not freeze this shape for sculpting. Object unchanged.</string>
+    <string name="status_nothing_frozen">Nothing has been frozen yet — press Freeze to Sculpt first.</string>
+    <string name="status_tool_selected">%1$s: %2$s.</string>
+    <string name="status_brush">Brush: radius %1$s, strength %2$s.</string>
+
+    <string name="hint_grab">drag the surface with your finger</string>
+    <string name="hint_clay">deposit material outward as you drag</string>
+    <string name="hint_smooth">even out roughness as you drag</string>
+    <string name="hint_inflate">expand the surface outward as you drag</string>
+</resources>

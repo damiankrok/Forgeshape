@@ -77,6 +77,15 @@ frame.
   a `PrimitiveKind` or a transform, and no Construction parameter may ever be
   reconstructed from sculpt vertices. Adopting a changed Construction shape into
   the sculpt mesh is always an explicit user act, never automatic.
+- **The Vulkan viewport is full-bleed; only chrome is inset.** The `SurfaceView`
+  gets the whole window, and no layout decision, window inset or IME may inset,
+  pad or resize it — that would change the render target and rebuild the
+  swapchain for a problem about where buttons are drawn. Insets go on the chrome
+  containers.
+- **Every UI control has a stable semantic id, and verification uses it.** Ids
+  live in `res/values/ids.xml` and name what a control *does*. No test and no
+  evidence script may locate a control by screen coordinate: the workspace
+  re-arranges itself per window, so a coordinate is only ever true for one run.
 - **The domain is platform-neutral; the Android layer is an adapter.** Android is
   the first and only production platform, and no Apple target, Metal backend,
   MoltenVK dependency, Xcode project or cross-platform UI framework is

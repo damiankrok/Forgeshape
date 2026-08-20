@@ -1,27 +1,37 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.15.4
+**Status Version:** 0.16.0
 **Updated:** 2026-08-20
 **Result:** COMPLETE
 **Current Phase:** Phase 1 — Native Viewport
 **Workspace:** `D:\TRAVELAPPS\ForgeShape`
-**Accepted implementation baseline:** Stage 014 (`5d386f0`), plus the NDK r29
-migration (Gate P0) and the owner decision baseline (`dd98e01`)
-**Next Stage:** Stage 015B — UI/UX Architecture Foundation Implementation
+**Accepted implementation baseline:** Stage 015B — Main Editor Interface
+(Editor Workspace), on top of Stage 014, the NDK r29 migration (Gate P0) and the
+owner decision baseline
+**Next Stage:** Stage 016 — Plane + Primitive Coverage Cleanup
 
 This is a current snapshot, not a chronology. Per-stage verification chapters,
 superseded environment states and old next-stage recommendations live in Git
 history and are deliberately not repeated here.
 
-Nothing since Stage 014 has changed product behaviour. Gate P0 was toolchain-only
-(one line in `app/build.gradle`), Stage 015A-R was an audit and design revision,
-and the owner decision baseline was documentation only.
+Stage 015B replaced the two provisional Android panels with the approved
+responsive **Editor Workspace**. It changed **no native code at all** — the diff
+touches no file under `app/src/main/cpp` — so every geometry, camera, picking,
+transform and sculpt behaviour below JNI is bit-for-bit the accepted Stage 014
+behaviour. What changed is the Android shell, its resources, its tests, and the
+window/inset configuration around it.
 
 ## Owner Decision Baseline
 
 Active owner decisions are identified by `UI-OWNER-*`, `ARCH-OWNER-*`,
-`INPUT-OWNER-*` and `DOC-OWNER-*`. Recorded 2026-08-20. **Nothing in this section
-is implemented** — it states what was decided, not what the product does.
+`INPUT-OWNER-*` and `DOC-OWNER-*`. Recorded 2026-08-20.
+
+**Implemented by Stage 015B:** UI-OWNER-01 (the shell), UI-OWNER-02 (compact /
+medium / expanded), UI-OWNER-03 (Export as a global action, drawn and reserved),
+UI-OWNER-05 (the destructive re-Freeze guard) and UI-OWNER-06 (stylus-friendly,
+no pressure). **Still decisions only, not behaviour:** UI-OWNER-04 — Sketch and
+Extrude have visible, disabled homes in the Tool Rail and no implementation
+whatsoever.
 
 The historical bare `D1`–`D6` tables from Stage 015A and Stage 015A-R are
 **superseded and non-authoritative**, and the two tables did not even mean the
@@ -175,7 +185,17 @@ Android touch path. `PRODUCT.md` owns the user-facing description.
 | Sculpt topology fixed; buffers reused, never reallocated during a stroke | VERIFIED |
 | Construction Source bit-identical after sculpting with all four tools | VERIFIED |
 | Lifecycle: shape, placement, identity, unit, mode, tool, sculpt, camera and selection survive home/resume with no re-upload | VERIFIED |
+| Editor Workspace: Global Toolbar, Tool Rail, Property Inspector, direct brush controls | VERIFIED |
+| Adaptive layout: compact portrait, phone landscape, expanded/tablet, decided by window dp | VERIFIED |
+| Landscape occlusion: 0 % unoccluded viewport → **60.1 %**, status line on screen | VERIFIED |
+| Inspector collapse and chrome hide restore viewport area (57.5 % → 82.6 % → 100 %) | VERIFIED |
+| Edge-to-edge with WindowInsets on chrome only; IME never resizes the Vulkan surface | VERIFIED |
+| Every chrome surface consumes its own gesture; viewport pixel-identical across chrome drags | VERIFIED |
+| Freeze / Resume wording follows whether a Frozen Sculpt Mesh exists | VERIFIED |
+| Destructive re-Freeze confirms only when strokes would be discarded; Cancel is inert | VERIFIED |
+| Stable semantic ids on every control; 32 instrumented + 22 JVM tests | VERIFIED |
 | 16 KB page-size runtime behaviour | **UNVERIFIED** — see Known Issues |
+| Landscape *rendering* (as opposed to layout) | **DEFECTIVE** — see Known Issues |
 
 ## Self-test suite
 
@@ -196,10 +216,43 @@ NDK r29:
 | `FORGESHAPE_SCULPT_BRUSH_KERNEL_SELFTEST_OK` | 232 |
 
 followed by `FORGESHAPE_MESH_UPLOAD_OK` and `FORGESHAPE_NATIVE_VIEWPORT_OK`.
+Re-run clean at Stage 015B: **992 checks, zero failures, empty crash buffer.**
+
+## Android UI suites
+
+Added by Stage 015B; the first automated tests the Android layer has ever had.
 Build and verification commands are in `README.md`.
+
+| suite | scope | tests |
+| --- | --- | --- |
+| `WorkspaceLayoutModeTest` (JVM) | breakpoints, placement, chrome sizing arithmetic | 9 |
+| `EditorUiStateTest` (JVM) | what the UI may remember, and what it refuses | 8 |
+| `LengthUnitTest` (JVM) | exact mm/cm/m round-tripping and parse refusal | 5 |
+| `EditorWorkspaceControlsTest` | UI-01/02/03/04/05/06/13 — control sets, fields, validation, freeze wording, tools, presentation-only actions | 17 |
+| `EditorWorkspaceLayoutTest` | UI-07/08/09/12 — measured viewport floor, landscape, expanded, collapse | 6 |
+| `EditorWorkspaceGestureTest` | UI-10/11 — chrome gesture ownership, IME | 5 |
+| `EditorWorkspaceLifecycleTest` | UI-14 — HOME/resume rebuilt from native truth | 3 |
+
+**54 tests, zero failures.** No Java test asserts a rendered pixel; every control
+is reached by its stable semantic id and no assertion uses a screen coordinate.
 
 ## Current evidence summary
 
+- **Stage 015B acceptance** (`emulator-5558`, clean install, empty crash
+  buffer): nine self-test suites green; 54 Android tests green; the measured
+  unoccluded viewport at 411×914 dp is **82.6 %** collapsed and 57.5 % with the
+  inspector fully open, at 914×411 dp landscape **60.1 %** (against 0 % before),
+  and at 1280×800 dp **69.0 %** open / 85.2 % collapsed; a sphere applied and a
+  transform applied through the real touch path, the transform publishing **no
+  revision and no upload**; unit switching mm→cm→m→m exact (0.5 m ↔ 500 mm ↔
+  50 cm) with zero native calls; a real Grab stroke on a 482-vertex sphere
+  (35 moves, topology fixed at 482:2880, every upload `reuse`); three chrome
+  drags leaving the viewport region **pixel-identical** and minting no sculpt
+  revision; the re-Freeze confirmation naming "1 sculpt stroke" with Cancel
+  leaving the mesh pixel-identical and making no native call; Resume Sculpt
+  preserving `sculptRev=36` with the stale-source warning shown; and HOME/resume
+  returning a pixel-identical viewport with no re-upload. Screenshots are under
+  `artifacts/stage015b_*`.
 - **Stage 014 acceptance** (`emulator-5558`, one pid, empty crash buffer): the
   cone and capsule happy paths, closed-base and hemisphere picking measured at
   the pixel against the exact radius, the capsule relation rejection, no-op and
@@ -231,31 +284,50 @@ Build and verification commands are in `README.md`.
   `system-images;android-36.1;google_apis_playstore_ps16k;x86_64` and an AVD
   created from it, and installing a system image is not authorized. Not a defect
   — an unmeasured dimension.
-- **Landscape is a hard failure, not a degradation.** The Construction panel
-  measures to the full window, the model is entirely occluded (0 % viewport
-  unoccluded at 914×411 dp against 51 % in portrait), and the status line — the
-  only channel for validation messages and the stale-source warning — lays out
-  below the window bottom with no `ScrollView` anywhere in the Android layer to
-  reach it. `configChanges` absorbs `orientation|screenSize|screenLayout|density`
-  and there is no `onConfigurationChanged` and no `WindowInsets` handling at all;
-  under `targetSdk` 36 the inset gap is latent rather than hypothetical. The
-  portrait IME case works and is a deliberate strength to preserve. Stage 015B
-  owns this.
-- **The Android layer has no automated test of any kind**, and almost no stable
-  view ids (`setId` appears twice, both `RadioGroup` internals). Every UI
-  assertion so far has been driven by hand through screen coordinates.
-  `setContentDescription` *is* populated on 7 control families and is the
-  immediate test bridge.
+- **Landscape *rendering* is anisotropic — a pre-existing renderer defect that
+  Stage 015B made visible for the first time.** With the display rotated 90°, the
+  model is drawn stretched horizontally and crushed vertically; a 2 × 1 × 0.5 m
+  box measures roughly 426 × 102 px where an isotropic projection would give
+  ~224 × 194. It is **not** a projection-aspect bug (`mat4Perspective` and
+  `Camera::setViewport` are correct, and the swapchain, depth buffer and pipeline
+  are all rebuilt at 2400×1080) and it does **not** occur at a non-rotated
+  window: the same suite at `wm size 1280x800` renders correctly. The evidence
+  points at swapchain **pre-rotation**: `forgeshape_renderer.cpp` sets
+  `info.preTransform = caps.currentTransform`, which promises Vulkan that the
+  application will render pre-rotated content, and nothing then applies a
+  rotation to the projection. Nobody could have seen this before, because
+  landscape was 100 % occluded until this stage. Stage 015B changed no native
+  code and deliberately did not fix it: the fix is in the renderer, which this
+  stage may not touch. It needs a stage of its own.
+- **The `EditorWorkspaceView` layout decision runs inside `onMeasure`.** That is
+  deliberate and documented — running it in `onSizeChanged` measures newly added
+  chrome against the previous pass and lays it out at zero height, which is
+  exactly the bug that was hit and fixed during this stage — but mutating the
+  view tree during measure is unusual enough to be worth naming. It is
+  idempotent and converges in one traversal.
+- **A horizontal drag along the Property Inspector header toggles it.** The
+  header is a full-width clickable row, and Android's default click detection
+  fires on `ACTION_UP` while the pointer is still inside the view's bounds,
+  regardless of how far it travelled. Harmless — the gesture never reaches the
+  viewport — but it reads as a stray toggle. Not fixed, to avoid hand-written
+  touch handling on a surface whose touch-opacity is load-bearing.
 - **Test-harness note, not a product defect:** a stroke driven at the centre of a
   face of a frozen **box** logs `STROKE_PENDING` → `STROKE_ABANDONED:navigation`
   and never promotes, because a box has 8 vertices, all at its corners, and a
   brush that would capture no vertex starts no stroke. Reproduced identically
   under r27 and r29. Drive evidence strokes on a dense primitive (sphere 482 v,
   capsule 514 v) or widen the radius.
-- **A viewport tap while the soft keyboard is up** must land below the panel and
-  above the keyboard or it never reaches the `SurfaceView`; focus stays in the
-  text field and a following `keyevent` types a digit instead. Looks exactly like
-  a command that did not run. Test-harness issue only.
+- **A viewport tap while the soft keyboard is up** must land clear of the
+  Property Inspector and above the keyboard or it never reaches the
+  `SurfaceView`; focus stays in the text field and a following `keyevent` types a
+  digit instead. Looks exactly like a command that did not run. Test-harness
+  issue only.
+- **`uiautomator dump` omits inspector content scrolled out of view**, so a
+  script that looks for `apply_shape` without scrolling the inspector first gets
+  `MISSING` and reads like a lost control. Scroll, then resolve the id.
+- **`connectedDebugAndroidTest` uninstalls the app when it finishes**, and it has
+  no `-s <serial>` equivalent. Reinstall before taking runtime evidence, and run
+  it with exactly one target attached.
 - **The default logcat ring buffer drops part of the startup self-test output.**
   Run `adb -s <serial> logcat -G 16M` first.
 - **The Android emulator dies if launched as a child of a tool shell**; spawn it
@@ -321,20 +393,33 @@ tessellation constant. Capsule topology is a function of its parameters (514 :
 3072, or 482 : 2880 at equality), which is deliberate and is also the only case
 where a shape edit can change a vertex count and trigger a buffer growth.
 
-**Android layer.** Both panels build their view trees in code with hard-coded
-colours and spacing, because the project ships no resource layouts or theme; both
-are fixed `WRAP_CONTENT` blocks with no scroll and no collapse, verified at
-1080×2400 portrait only; and `SculptPanelView` duplicates `ConstructionPanelView`'s
-styling helpers (two panels is not yet a reason for a shared base — a third
-would be). `ConstructionPanelView` is 1041 of the Android layer's 2223 lines. The
-panel's top edge can hide part of the object and there is no focus-on-selection,
-camera framing helper or viewport inset. Focus handling is minimal: a field keeps
-focus after a rejected Apply and keeps swallowing hardware/`adb` number keys
-until the viewport is touched. The panel refreshes from native truth on resume,
-discarding any half-typed edit — deliberate, but a future edit-session or undo
-feature will need a model for it. `LengthUnit.format` strips trailing zeros, so
-2.0 m displays as `2`; exact and unambiguous, but a future significant-figures
-policy will replace it.
+**Android layer.** The workspace still builds its view trees in code — colours,
+dimensions, strings and ids are resources, but there are no XML layouts, so the
+structure is only readable by reading Java. The Property Inspector has two
+detents (collapsed / expanded) rather than the three the UI architecture pack
+proposed; the third would only matter once a body is long enough that a partial
+peek is useful. Chrome regions are placed by nested `LinearLayout` weights rather
+than a constraint solver, which is why the rail sits in a `ScrollView` instead of
+being able to compress. There is no focus-on-selection and no camera framing
+helper. Focus handling is minimal: a field keeps focus after a rejected Apply and
+keeps swallowing hardware/`adb` number keys until the viewport is touched. The
+inspector refreshes from native truth on resume and after any Apply, discarding a
+half-typed edit — deliberate, but a future edit-session or undo feature will need
+a model for it. `LengthUnit.format` strips trailing zeros, so 2.0 m displays as
+`2`; exact and unambiguous, but a future significant-figures policy will replace
+it. The Tool Rail's glyphs are Unicode geometric characters rather than drawable
+assets, so they depend on the platform font.
+
+**Android test infrastructure.** `androidTest` is the project's only AndroidX,
+and `android.useAndroidX=true` is now set for it — a build-configuration change
+that adds nothing to the product APK, which still has no runtime dependency of
+any kind. The instrumented suites share one process, so native state (in
+particular *whether anything has ever been frozen*) carries across tests; the
+freeze-wording test therefore asserts the state machine from whatever state it
+finds rather than assuming a pristine process, and the pristine branch is covered
+by running the suite on a clean install. There is no camera read-back across JNI,
+so "a chrome gesture did not move the camera" is proven by runtime screenshot
+comparison rather than by an automated assertion.
 
 **Transform and math.** `modelMatrix()` / `inverseModelMatrix()` recompute six
 trig calls per frame and per pick, for a value that only changes on Apply. The
@@ -370,11 +455,23 @@ been deferred to avoid churning unrelated code. There is still no checked-in
 | `gradlew(.bat)`, `gradle/wrapper/*` | Gradle 8.14.3 wrapper |
 | `app/build.gradle` | Android app module config, SDK/NDK/CMake/ABI pinning |
 | `app/src/main/AndroidManifest.xml` | App/activity declaration, Vulkan feature requirement |
-| `app/src/main/java/.../ForgeShapeActivity.java` | Android lifecycle, `FrameLayout` root composition, resume refresh, `syncMode()` |
+| `app/src/main/java/.../ForgeShapeActivity.java` | Android lifecycle, edge-to-edge window, resume refresh, DEBUG key hook |
 | `app/src/main/java/.../ForgeShapeSurfaceView.java` | Viewport surface, forwards lifecycle + raw pointer state, takes focus back from an editor |
-| `app/src/main/java/.../ConstructionPanelView.java` | Shape and placement field text, display unit, DRAFT primitive kind, validation messages, Apply Shape and Apply Transform. Owns no parameter, no authoritative kind and no transform |
-| `app/src/main/java/.../SculptPanelView.java` | Sculpt Mode strip: tool selector, shared Radius and Strength sliders, Back to Construction. Owns no vertex, no brush value, no tool and no mode — it reads all four back from native state |
+| `app/src/main/java/.../EditorWorkspaceView.java` | The whole editor UI: region composition, adaptive layout, window insets, chrome visibility, mode/tool wiring, and `syncFromNative()`. Owns no product state |
+| `app/src/main/java/.../WorkspaceLayoutMode.java` | Window-dp breakpoints, inspector placement and chrome sizing, as arithmetic. No Android type |
+| `app/src/main/java/.../EditorUiState.java` | The closed list of UI-owned state: display unit, draft kind, rail selection, detent per mode, chrome-hidden |
+| `app/src/main/java/.../GlobalToolbarView.java` | Editing context, the three mutually exclusive mode transitions, reserved Export, chrome hide, and the one status message |
+| `app/src/main/java/.../ToolRailView.java` | The edge tool selector for either mode, including reserved entries. Selects; decides nothing |
+| `app/src/main/java/.../BrushEdgeControlsView.java`, `VerticalSliderView.java` | Direct Radius and Strength, and the custom vertical control behind them. Own no brush value |
+| `app/src/main/java/.../PropertyInspectorView.java` | Contextual, collapsible, scrolling container with a measured height cap. Owns no value |
+| `app/src/main/java/.../ConstructionShapeEditorView.java` | Primitive chooser, that primitive's exact fields, unit chips, Apply Shape. Owns field text and a DRAFT kind only |
+| `app/src/main/java/.../ConstructionPlacementEditorView.java` | Position/rotation fields, unit chips, Apply Transform. Owns field text only |
+| `app/src/main/java/.../SculptContextView.java` | Frozen-mesh summary, stale-source warning, and the guarded re-Freeze |
+| `app/src/main/java/.../InspectorHost.java`, `NumericPropertyRow.java`, `UnitChipsView.java`, `EditorControlStyles.java` | The four small shared pieces: what a body may ask of the workspace, one labelled exact field, the mm/cm/m selector, and the one place controls get their look |
 | `app/src/main/java/.../LengthUnit.java` | Exact `BigDecimal` mm/cm/m ↔ meter conversion, parsing and formatting |
+| `app/src/main/res/values/*` | `ids.xml` (the stable semantic id contract), `dimens.xml`, `colors.xml`, `strings.xml`, `themes.xml` (edge-to-edge) |
+| `app/src/test/java/...` | JVM suites: layout arithmetic, UI-owned state, unit conversion |
+| `app/src/androidTest/java/...` | Instrumented Editor Workspace suites plus `WorkspaceTestSupport` (native snapshots, drag consumption, exact chrome-union viewport measurement) |
 | `app/src/main/java/.../NativeViewport.java` | JNI declarations, library load, `APPLY_*` / `SCULPT_*` status codes, `MODE_*`, `TOOL_*` |
 | `app/src/main/cpp/forgeshape_jni.cpp` | JNI boundary, render thread, `ANativeWindow`, MotionEvent→`TouchAction`, camera + selection locking, stroke arbitration, `publishActiveRepresentation` |
 | `app/src/main/cpp/forgeshape_input.h` | Platform-neutral touch event data (`TouchAction`, `TouchPointer`) |
@@ -399,24 +496,22 @@ been deferred to avoid churning unrelated code. There is still no checked-in
 
 ## Next Stage
 
-**Stage 015B — UI/UX Architecture Foundation Implementation**
+**Stage 016 — Plane + Primitive Coverage Cleanup**
 
-The decision baseline is recorded, so 015B starts with no open question about
-what to build. It builds the **Forge Shell** (UI-OWNER-01) as an adaptive
-compact/medium/expanded Editor Workspace (UI-OWNER-02), with Export as a global
-action (UI-OWNER-03), a confirmation on a genuinely destructive re-Freeze and
-none on Resume (UI-OWNER-05), no stylus pressure (UI-OWNER-06), and reserved but
-visibly disabled homes for the Sketch/Extrude workflow (UI-OWNER-04). It is a UI
-stage: no geometry, no Sketch, no Extrude, no boolean, no Apple target.
+The Editor Workspace is in place and every control it needs for a sixth primitive
+already exists — the chooser lays out in rows of three, so a Plane costs one more
+chip, one more parameter row, one more `primitive_row_*` id and one more case in
+`UI-02`, and no shell change at all. That is the point of having built the shell
+first.
 
-Two constraints bind it that did not bind earlier stages. ARCH-OWNER-01 means the
-shell is a platform adapter and may not become domain truth — anything 015B
-appears to need from native code that is not already exposed is a signal it is
-drifting into the domain. INPUT-OWNER-01 means the shell must be usable with a
-stylus and must not close the door on pressure, tilt, hover and tool type, even
-though it consumes none of them yet.
+The debt this stage should settle while it is in the area is named under
+*Primitive surface* above: `ConstructionObject::setPrimitive` still dispatches
+with an if-else chain over typed accessors rather than a `std::visit`, which is
+the one place a new primitive can be forgotten without a compile error, and a
+Plane is exactly the primitive that would slip through it. A sixth primitive is
+also the point at which "four parallel edits per primitive" should become a
+decision rather than a habit.
 
-Two tests should land with the shell rather than after it, because they are what
-would have caught by machine what the audit found by hand: **U9** — viewport
-floor and reachability at four window sizes — and **U10** — a drag on any chrome
-surface produces no camera change and no `SculptRevision`.
+**The landscape rendering defect is not this stage's work and must not be folded
+into it.** It is a renderer change (swapchain pre-rotation), it has nothing to do
+with primitives, and it deserves its own stage with its own evidence.
