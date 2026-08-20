@@ -1367,11 +1367,26 @@ bool Renderer::createPipeline() {
     raster.polygonMode = VK_POLYGON_MODE_FILL;
     // Canonical ForgeShape convention (forgeshape_picking.h): triangles are
     // counter-clockwise seen from outside the solid in right-handed world space.
-    // The projection's Y flip mirrors that into framebuffer space, so the front
-    // face is the CLOCKWISE one here. CPU picking uses the same convention, so
-    // what is pickable is exactly what is drawn.
+    // CPU picking uses the same convention, so what is pickable is exactly what
+    // is drawn — and that agreement is the point of stating it in one place.
+    //
+    // COUNTER_CLOCKWISE, and the reason is worth writing down because the
+    // opposite was shipped and looked plausible. Vulkan classifies a triangle by
+    // the sign of its signed area in framebuffer coordinates, and the
+    // projection's Y flip (mat4Perspective's negated m[5]) is already what
+    // carries a view-space counter-clockwise triangle to the sign Vulkan calls
+    // COUNTER_CLOCKWISE. Naming CLOCKWISE here "to account for the Y flip"
+    // double-counts it: the flip is in the matrix, not in this enum.
+    //
+    // Getting this backwards does not blank the viewport, which is what made it
+    // survive review — a closed solid still fills exactly the same silhouette.
+    // It quietly draws the FAR walls instead of the near ones, so every convex
+    // primitive renders as the inside of itself and reads as a concave interior
+    // corner. Measured on the default box: with BACK/CLOCKWISE the three visible
+    // faces were -X, -Z and -Y at luminance 0.387 / 0.333 / 0.264; the three
+    // that should be visible are +Y, +Z and +X at 0.832 / 0.559 / 0.310.
     raster.cullMode = VK_CULL_MODE_BACK_BIT;
-    raster.frontFace = VK_FRONT_FACE_CLOCKWISE;
+    raster.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     raster.lineWidth = 1.0f;
 
     VkPipelineMultisampleStateCreateInfo multisample{};
@@ -1414,7 +1429,7 @@ bool Renderer::createPipeline() {
     FS_VK_CHECK(vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1, &info, nullptr, &pipeline_),
                 "vkCreateGraphicsPipelines");
     FS_LOGI("Graphics pipeline created (depth test LESS, depth write on, "
-            "cull BACK, frontFace CLOCKWISE)");
+            "cull BACK, frontFace COUNTER_CLOCKWISE)");
     return true;
 }
 

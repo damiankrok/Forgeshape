@@ -24,7 +24,8 @@ const float kCornerColors[kBoxVertexCount][3] = {
 
 // Canonical box topology: every triangle is counter-clockwise seen from OUTSIDE
 // the solid, which is the convention documented in forgeshape_picking.h and
-// enforced by the pipeline's VK_CULL_MODE_BACK_BIT / VK_FRONT_FACE_CLOCKWISE.
+// enforced by the pipeline's VK_CULL_MODE_BACK_BIT /
+// VK_FRONT_FACE_COUNTER_CLOCKWISE.
 // The corner ordering above is what makes this table correct, so the two must
 // be read together.
 const uint32_t kBoxIndices[kBoxIndexCount] = {

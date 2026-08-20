@@ -1,28 +1,110 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.18.0
-**Updated:** 2026-08-20
+**Status Version:** 0.19.0
+**Updated:** 2026-08-21
 **Result:** COMPLETE
 **Current Phase:** Phase 1 — Native Viewport
 **Workspace:** `D:\TRAVELAPPS\ForgeShape`
-**Accepted implementation baseline:** Stage 015C — viewport shading and surface
-readability, on top of Platform Fix P2 (rotated-landscape renderer orientation),
-Stage 015B (Editor Workspace), Stage 014, the NDK r29 migration (Gate P0) and the
-owner decision baseline
+**Accepted implementation baseline:** Stage 015C-R — viewport surface readability
+(inverted front-face culling fixed), on top of Stage 015C (shading), Platform Fix
+P2 (rotated-landscape renderer orientation), Stage 015B (Editor Workspace),
+Stage 014, the NDK r29 migration (Gate P0) and the owner decision baseline
 **Next Stage:** Stage 016 — Plane + Primitive Coverage Cleanup
 
 This is a current snapshot, not a chronology. Per-stage verification chapters,
 superseded environment states and old next-stage recommendations live in Git
 history and are deliberately not repeated here.
 
-Stage 015C replaced the debug-looking per-vertex rainbow with readable lit
-geometry. It adds a **derived, render-only** normal layer between the
-authoritative mesh and Vulkan, one centralized crease policy, two shading models
-(Studio Solid and MatCap), Smooth/Faceted display, a compact display control in
-the Global Toolbar, and a tenth native self-test suite. No Construction, sculpt,
-picking, camera or transform behaviour changed. Platform Fix P2 before it closed
-the rotated-landscape rendering defect, and Stage 015B before that replaced the
-two provisional Android panels with the approved responsive **Editor Workspace**.
+Stage 015C-R fixed the defect that made every convex primitive read as a hollow
+interior: the graphics pipeline named `VK_FRONT_FACE_CLOCKWISE`, which inverted
+back-face culling, so the viewport drew each solid's **far** walls instead of its
+near ones. It also adds a ten-part direction test family (`NOR-01`..`NOR-10`) to
+the render-shading suite, because every check that existed measured which axis a
+normal lay on and none measured which way it pointed.
+
+Stage 015C before it replaced the debug-looking per-vertex rainbow with readable
+lit geometry: a **derived, render-only** normal layer between the authoritative
+mesh and Vulkan, one centralized crease policy, two shading models (Studio Solid
+and MatCap), Smooth/Faceted display, a compact display control in the Global
+Toolbar, and a tenth native self-test suite. No Construction, sculpt, picking,
+camera or transform behaviour changed in either stage. Platform Fix P2 closed the
+rotated-landscape rendering defect, and Stage 015B replaced the two provisional
+Android panels with the approved responsive **Editor Workspace**.
+
+## Stage 015C-R — root cause, convention and evidence
+
+**Root cause, proven by measurement rather than inspection.** With
+`cullMode = BACK` and `frontFace = CLOCKWISE`, the three faces visible on the
+default box measured luminance **0.3874 / 0.3331 / 0.2639**. Those are the
+computed Studio Solid values for the **−X, −Z and −Y** faces (0.3864 / 0.3335 /
+0.2647) — the three that face away from the camera. The three that should have
+been visible are **+Y, +Z, +X** at 0.8324 / 0.5587 / 0.3095. For a closed convex
+solid a far face can only reach a pixel if the near face was culled, so culling
+was inverted. After the fix the same pixels measure **0.8327 and 0.5588**, which
+match the +Y and +Z predictions to four decimals.
+
+**Why it survived Stage 015C review.** Inverted culling does not blank the
+viewport and does not change the silhouette — a closed solid fills exactly the
+same outline either way. It only swaps which surface of that outline is drawn, so
+it presents as a *shading* complaint ("the box looks concave") rather than as a
+rasterizer defect, and it sends the investigation into the light rig.
+
+**The obligatory winding / normal / raster convention, stated once.**
+
+| Layer | Rule |
+| --- | --- |
+| Source triangles | counter-clockwise seen from **outside** the solid, right-handed world space |
+| Geometric normal | `N = (v1 − v0) × (v2 − v0)`, points away from the solid |
+| Render normals | derived one-way from a published `RuntimeMesh`; outward everywhere |
+| Model → view normals | upper-left 3×3 of `view * model`, valid because both factors are rigid |
+| Projection | `forgeshape_math.h` flips Y **in the matrix** for Vulkan clip space |
+| Pipeline | `cullMode = VK_CULL_MODE_BACK_BIT`, `frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE` |
+| Picking | front faces only, same rule, so what is pickable is what is drawn |
+
+The projection's Y flip is **already applied** by the time Vulkan classifies a
+triangle. Compensating for it a second time in `frontFace` is the mistake this
+stage removed.
+
+**Hypotheses tested and rejected**, each by a check that would have failed:
+source winding wrong (`NOR-01`), render normal generation wrong or sign-flipped
+(`NOR-02`..`NOR-07`), hard-edge duplication reordering a triangle (`NOR-08`),
+model→view normal transform losing a sign or needing an inverse-transpose
+(`NOR-09`), display modes mutating source truth or picking (`NOR-10`), and the
+Studio light rig being internally inconsistent — its computed face values match
+the rendered pixels to four decimals in **both** the broken and the fixed build,
+which is what proves the rig was never the defect. **No geometry, no normal
+generation and no light constant was changed.**
+
+**Direction tests (`NOR-01`..`NOR-10`), all green.** They live in the
+render-shading suite, which grew 158 → 207 checks. The family exists because
+every pre-existing normal check measured an axis or a magnitude and therefore
+passed unchanged on a mesh whose normals had all been negated;
+`nor_outwardness_fails_on_global_normal_flip` asserts on all five primitives that
+the new measurement does invert, so the suite cannot regress into that blind spot
+again.
+
+**Verification.** Ten self-test suites green (**1199 checks, zero failures**);
+26 JVM tests green; **40 instrumented tests green, zero failures** — including
+the IME test that was previously recorded as a pre-existing failure, so that
+entry is retired. Runtime on `emulator-5558`: Box / Cylinder / Cone / Capsule
+applied through the real touch path with the native `CONSTRUCTION_PUBLISHED` line
+confirming the primitive before every capture, picking (`PICK_HIT` on a
+near-side, front-facing point), Freeze, a real 11-move Grab stroke, Studio,
+MatCap, Smooth, Faceted, HOME/resume and rotated landscape (`2400x1080`, aspect
+2.2222, one swapchain rebuild).
+
+**Performance.** A stationary run of **3371 presented frames** (frame 18989 →
+22360) moved the render-data rebuild count **61 → 62**, and that single rebuild
+is the Smooth toggle used to close the measurement. Zero rebuilds while
+stationary, no revision minted by any display change, no buffer growth and no
+swapchain churn. The fix is one pipeline enumerator and costs nothing.
+
+**Visual evidence**, under `artifacts/stage015cr_*` (`emulator-5558`, foreground
+confirmed before each capture): the before/after pair on the same default box
+(`_00_box_studio_smooth_before` vs `_01_box_studio_smooth_after`), then Box
+MatCap Smooth, Box Studio Faceted, Cylinder Studio Smooth, Cone Studio Smooth
+after an explicit Apply, Capsule MatCap, the sculpted mesh after a real Grab, and
+rotated landscape.
 
 ## Owner Decision Baseline
 
@@ -215,7 +297,7 @@ Android touch path. `PRODUCT.md` owns the user-facing description.
 ## Self-test suite
 
 Ten debug-only native suites run once from `NativeViewport.start()` — never per
-frame — and total **1150 checks, zero failures** at the accepted baseline under
+frame — and total **1199 checks, zero failures** at the accepted baseline under
 NDK r29:
 
 | suite token | checks |
@@ -229,14 +311,23 @@ NDK r29:
 | `FORGESHAPE_CONSTRUCTION_SPHERE_SELFTEST_OK` | 105 |
 | `FORGESHAPE_CONE_CAPSULE_SELFTEST_OK` | 163 |
 | `FORGESHAPE_SCULPT_BRUSH_KERNEL_SELFTEST_OK` | 232 |
-| `FORGESHAPE_RENDER_SHADING_SELFTEST_OK` | 158 |
+| `FORGESHAPE_RENDER_SHADING_SELFTEST_OK` | 207 |
 
 followed by `FORGESHAPE_MESH_UPLOAD_OK` and `FORGESHAPE_NATIVE_VIEWPORT_OK`.
-The tenth suite is new in Stage 015C and covers the crease policy, all five
-primitives' Smooth contracts and the capsule equality case, Faceted, NaN/Inf and
-fail-closed behaviour, determinism, the render-data rebuild policy, the generated
-MatCap asset, the display settings, and the proof that building render data
-leaves the authoritative `RuntimeMesh` bit-identical.
+The tenth suite covers the crease policy, all five primitives' Smooth contracts
+and the capsule equality case, Faceted, NaN/Inf and fail-closed behaviour,
+determinism, the render-data rebuild policy, the generated MatCap asset, the
+display settings, and the proof that building render data leaves the
+authoritative `RuntimeMesh` bit-identical.
+
+Stage 015C-R added the **direction family** to it, `NOR-01`..`NOR-10`: source
+winding on all five primitives, outward render normals per primitive, Faceted
+orientation against the source triangle, duplication-preserves-winding, the
+model→view normal transform under six representative placements, and display
+modes proven inert against picking and revisions. Its guard check
+`nor_outwardness_fails_on_global_normal_flip` asserts the measurement inverts
+under a global `normal *= -1`, which is the property the rest of the suite
+lacked.
 
 Three further non-per-frame diagnostics exist. `FORGESHAPE_SURFACE_CONFIG` (one
 per swapchain creation) and `FORGESHAPE_CAMERA_VIEWPORT` (one per
@@ -266,21 +357,33 @@ Build and verification commands are in `README.md`.
 every control is reached by its stable semantic id and no assertion uses a screen
 coordinate.
 
-**One instrumented test fails, and it is pre-existing and environmental.**
+**All 40 instrumented tests pass as of Stage 015C-R** on `emulator-5558`.
+
+One of them is **environment-dependent, in both directions**, and that is worth
+keeping on the record rather than deleting now that it is green.
 `EditorWorkspaceGestureTest.ui11_theImeLeavesTheFieldAndTheCommitPathUsableAndTheSurfaceUntouched`
-fails at its own precondition guard — "the soft keyboard did not appear, so this
-case proves nothing" — because no soft keyboard shows on `emulator-5558`, with or
-without `settings put secure show_ime_with_hard_keyboard 1`. Confirmed by running
-that suite on the untouched baseline `87119bd`, where it fails identically. It is
-a device-capability gap in the harness, not a defect and not a Stage 015C
-regression.
+opens with a precondition guard — "the soft keyboard did not appear, so this case
+proves nothing" — and at the Stage 015C baseline that guard failed, because no
+soft keyboard showed on that emulator session. It appeared in this one and the
+case passed on its merits. Nothing in the test or the product changed between the
+two runs, so treat a future failure of this one case as a harness symptom to
+confirm against the current baseline before calling it a regression.
 
 ## Current evidence summary
 
+- **Stage 015C-R acceptance** (`emulator-5558`, clean install): ten self-test
+  suites green (**1199 checks, zero failures**, including `NOR-01`..`NOR-10`);
+  26 JVM tests green; **40 instrumented tests green, zero failures**. The
+  measured before/after and the stationary-frame proof are in the Stage 015C-R
+  chapter at the top of this file. **The default appearance changed again**: a
+  convex primitive now shows its near faces, so the cold-start box reads as a
+  solid with a bright top, a mid front and a dark end instead of as a hollow
+  corner (`artifacts/stage015cr_00_box_studio_smooth_before` vs
+  `artifacts/stage015cr_01_box_studio_smooth_after`).
 - **Stage 015C acceptance** (`emulator-5558`, clean install, empty crash buffer):
-  ten self-test suites green (**1150 checks, zero failures**); 26 JVM tests green;
-  40 instrumented tests with the one pre-existing IME failure described above.
-  **The default appearance changed**: the per-vertex rainbow is gone and the
+  ten self-test suites green (1150 checks at that baseline, zero failures);
+  26 JVM tests green; 40 instrumented tests with the one environment-dependent
+  IME case described above. **The default appearance changed**: the per-vertex rainbow is gone and the
   viewport comes up in neutral Studio Solid, with the old appearance still
   reachable in a debuggable build as the Debug chip (the before/after pair is
   `stage015c_00` vs `stage015c_03`). **Render counts, measured through the real
@@ -467,6 +570,26 @@ required shading is complete without them.
   different points in a session may not compare.
 
 ## Technical Debt
+
+**The selection tint costs about half the surface's form contrast, measured.**
+Selection is a whole-object tint mixed over the final shaded colour at
+`alpha = 0.55` (`kSelectedTint` in `forgeshape_renderer.cpp`). On the default box
+that takes the three visible faces from luminance 0.832 / 0.559 / 0.310 —
+a 2.69x spread with clear steps between adjacent faces — to 0.739 / 0.616 /
+0.504, a 1.47x spread whose face-to-face steps drop from ~0.26 to ~0.11, with
+every face pushed into the same saturated orange so hue carries no form cue
+either. A Construction Body is selected for the whole time the user is editing
+it, so this is the state the object is normally *worked* in.
+
+This is **not** the Stage 015C-R defect and was not touched by it: the inverted
+culling was a separate, larger fault that the numbers above are measured after
+fixing. It is recorded because it is a real, quantified readability cost, and
+because the obvious repair is small — compose selection as a per-channel gain on
+the shaded colour (`shaded * mix(vec3(1.0), tint, a)`) instead of a lerp toward a
+flat colour, which preserves the luminance ratios between faces exactly while
+leaving the object unmistakably orange. That is a deliberate change to a
+user-visible convention, so it belongs to a stage that owns it, not to a fix
+whose scope was culling.
 
 **Sculpt cost model.** Sculpt publication is synchronous and republishes the
 whole mesh per move — O(vertices) regardless of how few the brush touched — and

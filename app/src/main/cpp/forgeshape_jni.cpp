@@ -349,7 +349,7 @@ void runSculptSelfTestsAndLog() {
 
 void runRenderMeshSelfTestsAndLog() {
 #ifndef NDEBUG
-    constexpr int kMaxRenderMeshChecks = 256;
+    constexpr int kMaxRenderMeshChecks = 512;
     static forgeshape::RenderMeshSelfTestResult results[kMaxRenderMeshChecks];
     const int count = forgeshape::runRenderMeshSelfTests(results, kMaxRenderMeshChecks);
     int failed = 0;

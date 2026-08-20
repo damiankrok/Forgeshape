@@ -415,20 +415,30 @@ from outside the surface**, in right-handed world space. Equivalently the
 geometric normal `N = (v1 - v0) x (v2 - v0)` points away from the solid, and a
 triangle is front-facing to a ray when `dot(N, rayDirection) < 0`.
 
-The projection in `forgeshape_math.h` flips Y for Vulkan clip space, which
-mirrors screen-space winding, so the same convention appears **clockwise in
-framebuffer coordinates**. The pipeline therefore uses
+The projection in `forgeshape_math.h` flips Y for Vulkan clip space. That flip
+lives **in the matrix** and is already applied by the time Vulkan classifies a
+triangle, so it must not be compensated for a second time in the pipeline enum.
+The pipeline uses
 
 ```
 cullMode  = VK_CULL_MODE_BACK_BIT
-frontFace = VK_FRONT_FACE_CLOCKWISE
+frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE
 ```
 
 CPU picking accepts front faces only, under the same rule, so what can be picked
 is exactly what the rasterizer draws. The self-tests assert the convention
-triangle by triangle, and assert that a ray fired from inside a closed solid
-misses under front-face-only picking; that is what keeps the data, the rasterizer
-and the picker from drifting apart.
+triangle by triangle (`NOR-01`), assert that render normals and the model→view
+normal transform stay outward (`NOR-02`..`NOR-09`), and assert that a ray fired
+from inside a closed solid misses under front-face-only picking; that is what
+keeps the data, the rasterizer and the picker from drifting apart.
+
+**Naming this `VK_FRONT_FACE_CLOCKWISE` double-counts the Y flip** and inverts
+culling. It does not blank the viewport — a closed solid still fills exactly the
+same silhouette — it draws the solid's far walls instead of its near ones, so
+every convex primitive renders as the inside of itself and reads as a concave
+interior corner. It also silently splits the renderer from the picker, which
+stays correct. Stage 015C-R fixed exactly this; the measurement is in
+`PROJECT_STATUS.md`.
 
 ## Construction domain
 

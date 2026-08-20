@@ -26,9 +26,12 @@ The object is drawn as neutral grey clay, lit from the upper left with a soft
 fill and a restrained sheen. The light travels with the camera, so orbiting never
 makes a face appear to change: if the shading changes, the *shape* changed.
 
-The point of it is that form is readable. A box shows six flat faces with genuine
-hard corners and no rounded edges, and its left and right faces are clearly
-different values rather than the same grey. A cylinder's side is smooth while its
+The point of it is that form is readable. Every shape reads as a **solid seen
+from outside** — the surface facing you is the one you see, and a standard
+three-quarter view of a box looks like a box sitting in front of you, never like
+the inside of an open corner. A box shows six flat faces with genuine hard
+corners and no rounded edges, and its left and right faces are clearly different
+values rather than the same grey. A cylinder's side is smooth while its
 end caps stay flat, with a crisp rim between them. A sphere is continuously
 smooth all over, including at the poles. A cone has a smooth side, a flat base, a
 sharp rim, and a clean point at the top. A capsule is smooth from end to end, with

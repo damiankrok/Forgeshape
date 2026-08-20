@@ -32,10 +32,17 @@ namespace forgeshape {
 // and it points away from the solid. A triangle is front-facing to a ray when
 // dot(N, rayDirection) < 0.
 //
-// The renderer's Y-flipped Vulkan projection mirrors screen-space winding, so
-// the same convention appears CLOCKWISE in framebuffer coordinates; the
-// pipeline therefore uses VK_FRONT_FACE_CLOCKWISE with VK_CULL_MODE_BACK_BIT.
-// CPU picking and the rasterizer consequently agree on what is visible.
+// The pipeline uses VK_FRONT_FACE_COUNTER_CLOCKWISE with VK_CULL_MODE_BACK_BIT,
+// so CPU picking and the rasterizer agree on what is visible: a triangle this
+// header calls front-facing is a triangle the GPU draws.
+//
+// That agreement was broken until Stage 015C-R. The pipeline named CLOCKWISE on
+// the reasoning that the projection's Y flip mirrors screen-space winding — but
+// the flip lives in the matrix and is already accounted for by the time Vulkan
+// classifies the triangle, so naming CLOCKWISE counted it twice and culled the
+// NEAR faces of every solid. Picking was correct throughout; the rasterizer was
+// the half that disagreed, which is why the defect looked like a shading problem
+// rather than a picking one.
 
 struct Ray {
     Vec3 origin;     // world space

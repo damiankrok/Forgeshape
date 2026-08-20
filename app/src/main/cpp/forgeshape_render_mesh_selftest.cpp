@@ -10,6 +10,10 @@
 #include "forgeshape_matcap.h"
 #include "forgeshape_math.h"
 #include "forgeshape_mesh.h"
+// NOR-10 proves a display change cannot be observed by picking, which means
+// running the real picking query against the authoritative mesh rather than
+// asserting the intention in prose.
+#include "forgeshape_picking.h"
 #include "forgeshape_render_mesh.h"
 
 namespace forgeshape {
@@ -103,6 +107,105 @@ uint32_t countNormalsWithAxisMagnitude(const RenderMeshData& data, int axis, flo
         }
     }
     return count;
+}
+
+// ---------------------------------------------------------------------------
+// Outward-direction helpers (the NOR checks)
+// ---------------------------------------------------------------------------
+//
+// Every check above this point measures a normal's AXIS or its MAGNITUDE, and
+// every one of them survives multiplying the whole mesh by -1: counting four
+// normals per box face counts +X and -X the same way, and "axis aligned" says
+// nothing about which way along the axis. Sign is the one property a lighting
+// defect would actually corrupt, and until these helpers existed nothing
+// asserted it.
+//
+// The reference is always the same: all five primitives are CONVEX solids, so
+// for any point strictly inside them, a correctly oriented surface normal at a
+// point p satisfies dot(n, p - interior) > 0. That single statement covers a box
+// corner, a cylinder cap centre, a cone apex and a sphere pole without one
+// per-primitive special case, and it is exactly the property that inverts when
+// a normal is flipped.
+
+// The centre of the mesh's axis-aligned bounds. For a convex primitive centred
+// on its local axis this is strictly interior, which is all the outwardness test
+// needs it to be.
+Vec3 boundsCentre(const ConstructionMesh& source) {
+    Vec3 lo{source.vertices[0].position[0], source.vertices[0].position[1],
+            source.vertices[0].position[2]};
+    Vec3 hi = lo;
+    for (const MeshVertex& v : source.vertices) {
+        lo.x = std::fmin(lo.x, v.position[0]);
+        lo.y = std::fmin(lo.y, v.position[1]);
+        lo.z = std::fmin(lo.z, v.position[2]);
+        hi.x = std::fmax(hi.x, v.position[0]);
+        hi.y = std::fmax(hi.y, v.position[1]);
+        hi.z = std::fmax(hi.z, v.position[2]);
+    }
+    return vec3Scale(vec3Add(lo, hi), 0.5f);
+}
+
+// One SOURCE triangle's geometric normal, computed exactly the way the render
+// mesh builder computes it: cross(p1 - p0, p2 - p0), which is outward only when
+// the triangle is wound counter-clockwise seen from outside.
+Vec3 sourceTriangleNormal(const ConstructionMesh& source, uint32_t triangle) {
+    const MeshVertex& a = source.vertices[source.indices[triangle * 3 + 0]];
+    const MeshVertex& b = source.vertices[source.indices[triangle * 3 + 1]];
+    const MeshVertex& c = source.vertices[source.indices[triangle * 3 + 2]];
+    const Vec3 p0{a.position[0], a.position[1], a.position[2]};
+    const Vec3 p1{b.position[0], b.position[1], b.position[2]};
+    const Vec3 p2{c.position[0], c.position[1], c.position[2]};
+    return vec3Normalize(vec3Cross(vec3Sub(p1, p0), vec3Sub(p2, p0)));
+}
+
+Vec3 sourceTriangleCentroid(const ConstructionMesh& source, uint32_t triangle) {
+    Vec3 sum{0.0f, 0.0f, 0.0f};
+    for (uint32_t corner = 0; corner < 3; ++corner) {
+        const MeshVertex& v = source.vertices[source.indices[triangle * 3 + corner]];
+        sum = vec3Add(sum, Vec3{v.position[0], v.position[1], v.position[2]});
+    }
+    return vec3Scale(sum, 1.0f / 3.0f);
+}
+
+// NOR-01's measurement: the worst dot(faceNormal, centre -> face centroid) over
+// every triangle in a source mesh. Positive everywhere means every triangle is
+// wound counter-clockwise seen from outside; one reversed triangle drags this
+// negative.
+float worstSourceWinding(const ConstructionMesh& source) {
+    const Vec3 interior = boundsCentre(source);
+    float worst = 1.0f;
+    const uint32_t triangles = static_cast<uint32_t>(source.indices.size()) / 3;
+    for (uint32_t t = 0; t < triangles; ++t) {
+        const Vec3 n = sourceTriangleNormal(source, t);
+        const Vec3 outward = vec3Normalize(vec3Sub(sourceTriangleCentroid(source, t), interior));
+        worst = std::fmin(worst, vec3Dot(n, outward));
+    }
+    return worst;
+}
+
+// The same measurement on RENDER normals: the worst agreement between a render
+// vertex's shading normal and the outward direction at its position. Sign-
+// sensitive by construction, which is what makes the whole NOR family fail on a
+// global `normal *= -1`.
+float worstRenderOutwardness(const RenderMeshData& data, const Vec3& interior) {
+    float worst = 1.0f;
+    for (const RenderVertex& v : data.vertices) {
+        const Vec3 outward = vec3Normalize(vec3Sub(positionOf(v), interior));
+        worst = std::fmin(worst, vec3Dot(normalOf(v), outward));
+    }
+    return worst;
+}
+
+// A copy with every normal inverted. Used to prove the outwardness measurement
+// is actually sign-sensitive rather than accidentally passing.
+RenderMeshData withInvertedNormals(const RenderMeshData& data) {
+    RenderMeshData flipped = data;
+    for (RenderVertex& v : flipped.vertices) {
+        v.normal[0] = -v.normal[0];
+        v.normal[1] = -v.normal[1];
+        v.normal[2] = -v.normal[2];
+    }
+    return flipped;
 }
 
 // ---------------------------------------------------------------------------
@@ -870,6 +973,434 @@ void checkDeformationFollows(Recorder& r) {
                 cache.data().sourceVertexCount == kSphereVertexCount);
 }
 
+// ---------------------------------------------------------------------------
+// NOR-01 .. NOR-10 — direction, not just axis
+// ---------------------------------------------------------------------------
+
+// NOR-01: every SOURCE triangle of every primitive is wound counter-clockwise
+// seen from outside. This is the root of the whole chain: the render mesh's face
+// normal is cross(p1 - p0, p2 - p0), the pipeline's back-face culling reads the
+// same winding, and picking's front-face test reads it a third time. If this
+// check fails, nothing downstream can be trusted and no shading fix would be
+// the real repair.
+void checkSourceWinding(Recorder& r) {
+    r.check("nor01_box_source_winding_outward", worstSourceWinding(defaultBox()) > 0.0f);
+    r.check("nor01_cylinder_source_winding_outward", worstSourceWinding(defaultCylinder()) > 0.0f);
+    r.check("nor01_sphere_source_winding_outward", worstSourceWinding(defaultSphere()) > 0.0f);
+    r.check("nor01_cone_source_winding_outward", worstSourceWinding(defaultCone()) > 0.0f);
+    r.check("nor01_capsule_source_winding_outward", worstSourceWinding(defaultCapsule()) > 0.0f);
+    r.check("nor01_capsule_equality_source_winding_outward",
+            worstSourceWinding(sphericalCapsule()) > 0.0f);
+
+    // The box is small enough to state exactly: all twelve triangles, each face
+    // normal on its own axis and pointing away from the centre.
+    //
+    // The outward test is `> 0`, not `close to 1`, and the default box is why:
+    // it is 2 x 1 x 0.5 m, and each face is split into two triangles whose
+    // CENTROIDS sit well off the face centre. Centre -> centroid is therefore a
+    // slanted direction, not the face normal — on the +Z face it agrees with
+    // the normal only to about 0.56. Requiring near-agreement would be asserting
+    // that the box is a cube. The sign is the whole claim.
+    const ConstructionMesh box = defaultBox();
+    uint32_t outwardTriangles = 0;
+    for (uint32_t t = 0; t < kBoxIndexCount / 3; ++t) {
+        const Vec3 n = sourceTriangleNormal(box, t);
+        const Vec3 outward =
+            vec3Normalize(vec3Sub(sourceTriangleCentroid(box, t), boundsCentre(box)));
+        if (isAxisAligned(n) && vec3Dot(n, outward) > 0.0f) {
+            ++outwardTriangles;
+        }
+    }
+    r.check("nor01_box_all_12_triangles_outward", outwardTriangles == kBoxIndexCount / 3);
+}
+
+// NOR-02 .. NOR-06: the SIGN of every render normal, per primitive.
+//
+// `worstRenderOutwardness` is one statement covering all of them, so each
+// primitive here adds only what is specific to it.
+void checkRenderNormalsOutward(Recorder& r) {
+    // NOR-02: the box, whose six planar faces must be six DIRECTIONS, not three
+    // axes. The pre-existing box check counts four normals per axis sign but
+    // never ties a sign to a position, so it passes on an inside-out box.
+    const ConstructionMesh box = defaultBox();
+    RenderMeshData boxData;
+    if (!build(box, SurfaceShading::Smooth, &boxData)) {
+        r.check("nor02_box_builds", false);
+    } else {
+        r.check("nor02_box_builds", true);
+        r.check("nor02_box_render_normals_outward",
+                worstRenderOutwardness(boxData, boundsCentre(box)) > 0.0f);
+
+        // Six axis directions, four vertices each, and each vertex's normal
+        // agrees in sign with the corner it sits on: a +X normal only ever
+        // appears on a corner with a positive x.
+        uint32_t signedDirection[6] = {0, 0, 0, 0, 0, 0};
+        bool signMatchesCorner = true;
+        for (const RenderVertex& v : boxData.vertices) {
+            for (int axis = 0; axis < 3; ++axis) {
+                if (nearly(v.normal[axis], 1.0f)) {
+                    ++signedDirection[axis * 2 + 0];
+                    if (!(v.position[axis] > 0.0f)) signMatchesCorner = false;
+                } else if (nearly(v.normal[axis], -1.0f)) {
+                    ++signedDirection[axis * 2 + 1];
+                    if (!(v.position[axis] < 0.0f)) signMatchesCorner = false;
+                }
+            }
+        }
+        bool sixOutwardAxes = true;
+        for (uint32_t count : signedDirection) {
+            if (count != 4) sixOutwardAxes = false;
+        }
+        r.check("nor02_box_six_outward_axes_four_each", sixOutwardAxes);
+        r.check("nor02_box_normal_sign_matches_corner_sign", signMatchesCorner);
+
+        // No mixed sign within one planar face: the four vertices sharing a
+        // face direction must have identical normals, or the face would be lit
+        // as if it were folded.
+        bool planarFacesUniform = true;
+        for (int axis = 0; axis < 3; ++axis) {
+            for (int sign = -1; sign <= 1; sign += 2) {
+                for (const RenderVertex& v : boxData.vertices) {
+                    if (!nearly(v.normal[axis], static_cast<float>(sign))) continue;
+                    for (int other = 0; other < 3; ++other) {
+                        if (other != axis && !nearly(v.normal[other], 0.0f)) {
+                            planarFacesUniform = false;
+                        }
+                    }
+                }
+            }
+        }
+        r.check("nor02_box_no_mixed_sign_on_a_planar_face", planarFacesUniform);
+    }
+
+    // NOR-03: the cylinder. Side radial OUTWARD, top cap +Y, bottom cap -Y.
+    const ConstructionMesh cylinder = defaultCylinder();
+    RenderMeshData cylinderData;
+    if (!build(cylinder, SurfaceShading::Smooth, &cylinderData)) {
+        r.check("nor03_cylinder_builds", false);
+    } else {
+        r.check("nor03_cylinder_builds", true);
+        r.check("nor03_cylinder_render_normals_outward",
+                worstRenderOutwardness(cylinderData, boundsCentre(cylinder)) > 0.0f);
+
+        bool sideOutward = true;
+        bool capsSigned = true;
+        for (const RenderVertex& v : cylinderData.vertices) {
+            const Vec3 p = positionOf(v);
+            if (std::fabs(v.normal[1]) < 0.001f) {
+                const Vec3 radial = vec3Normalize(Vec3{p.x, 0.0f, p.z});
+                if (!(vec3Dot(normalOf(v), radial) > 0.999f)) sideOutward = false;
+            } else {
+                // A cap normal must point away from the cap it sits on.
+                if (!((p.y > 0.0f && nearly(v.normal[1], 1.0f)) ||
+                      (p.y < 0.0f && nearly(v.normal[1], -1.0f)))) {
+                    capsSigned = false;
+                }
+            }
+        }
+        r.check("nor03_cylinder_side_radial_outward", sideOutward);
+        r.check("nor03_cylinder_top_plus_y_bottom_minus_y", capsSigned);
+    }
+
+    // NOR-04: the sphere. Every normal in the outward hemisphere about the
+    // centre — the strictest form of "not inside out" a closed surface has.
+    const ConstructionMesh sphere = defaultSphere();
+    RenderMeshData sphereData;
+    if (!build(sphere, SurfaceShading::Smooth, &sphereData)) {
+        r.check("nor04_sphere_builds", false);
+    } else {
+        r.check("nor04_sphere_builds", true);
+        r.check("nor04_sphere_render_normals_outward",
+                worstRenderOutwardness(sphereData, boundsCentre(sphere)) > 0.0f);
+        r.check("nor04_sphere_normals_in_outward_hemisphere",
+                minimumRadialAgreement(sphereData) > 0.999f);
+    }
+
+    // NOR-05: the cone. Lateral and base outward, and an apex that is finite
+    // and on the axis rather than an arbitrary member of its fan.
+    const ConstructionMesh cone = defaultCone();
+    RenderMeshData coneData;
+    if (!build(cone, SurfaceShading::Smooth, &coneData)) {
+        r.check("nor05_cone_builds", false);
+    } else {
+        r.check("nor05_cone_builds", true);
+        r.check("nor05_cone_render_normals_outward",
+                worstRenderOutwardness(coneData, boundsCentre(cone)) > 0.0f);
+
+        bool lateralOutward = true;
+        bool baseDownward = true;
+        bool apexFinite = false;
+        for (const RenderVertex& v : coneData.vertices) {
+            const Vec3 p = positionOf(v);
+            const Vec3 n = normalOf(v);
+            const bool onAxis = nearly(p.x, 0.0f) && nearly(p.z, 0.0f);
+            if (nearly(n.y, -1.0f)) {
+                if (!(p.y < 0.0f) && !onAxis) baseDownward = false;
+            } else if (onAxis && p.y > 0.0f) {
+                apexFinite = isUnit(n) && nearly(n.y, 1.0f);
+            } else {
+                // A lateral normal points out from the axis AND upward along
+                // the slope; both signs matter.
+                const Vec3 radial = vec3Normalize(Vec3{p.x, 0.0f, p.z});
+                if (!(vec3Dot(n, radial) > 0.0f) || !(n.y > 0.0f)) lateralOutward = false;
+            }
+        }
+        r.check("nor05_cone_side_outward_and_upslope", lateralOutward);
+        r.check("nor05_cone_base_outward_downward", baseDownward);
+        r.check("nor05_cone_apex_finite_and_stable", apexFinite);
+    }
+
+    // NOR-06: the capsule, including the equality case the generator turns into
+    // a sphere.
+    const ConstructionMesh capsule = defaultCapsule();
+    RenderMeshData capsuleData;
+    if (!build(capsule, SurfaceShading::Smooth, &capsuleData)) {
+        r.check("nor06_capsule_builds", false);
+    } else {
+        r.check("nor06_capsule_builds", true);
+        r.check("nor06_capsule_render_normals_outward",
+                worstRenderOutwardness(capsuleData, boundsCentre(capsule)) > 0.0f);
+        r.check("nor06_capsule_normals_finite", renderMeshIsFinite(capsuleData) &&
+                                                    allNormalsUnit(capsuleData));
+    }
+
+    const ConstructionMesh equality = sphericalCapsule();
+    RenderMeshData equalityData;
+    if (!build(equality, SurfaceShading::Smooth, &equalityData)) {
+        r.check("nor06_capsule_equality_builds", false);
+    } else {
+        r.check("nor06_capsule_equality_builds", true);
+        r.check("nor06_capsule_equality_render_normals_outward",
+                worstRenderOutwardness(equalityData, boundsCentre(equality)) > 0.0f);
+        r.check("nor06_capsule_equality_normals_finite",
+                renderMeshIsFinite(equalityData) && allNormalsUnit(equalityData));
+    }
+}
+
+// NOR-07: Faceted normals are the SOURCE triangle's own orientation, not merely
+// "one normal per triangle". A faceted build that agreed within a triangle but
+// disagreed with the winding would light every face backwards while passing
+// every flatness check.
+void checkFacetedOrientation(Recorder& r) {
+    const ConstructionMesh meshes[5] = {defaultBox(), defaultCylinder(), defaultSphere(),
+                                        defaultCone(), defaultCapsule()};
+    bool allMatch = true;
+    bool allOutward = true;
+    for (const ConstructionMesh& source : meshes) {
+        RenderMeshData data;
+        if (!build(source, SurfaceShading::Faceted, &data)) {
+            allMatch = false;
+            continue;
+        }
+        const Vec3 interior = boundsCentre(source);
+        const uint32_t triangles = static_cast<uint32_t>(source.indices.size()) / 3;
+        for (uint32_t t = 0; t < triangles; ++t) {
+            const Vec3 expected = sourceTriangleNormal(source, t);
+            const Vec3 actual = normalOf(data.vertices[t * 3]);
+            if (!(vec3Dot(expected, actual) > 0.999f)) allMatch = false;
+            const Vec3 outward = vec3Normalize(vec3Sub(sourceTriangleCentroid(source, t), interior));
+            if (!(vec3Dot(actual, outward) > 0.0f)) allOutward = false;
+        }
+    }
+    r.check("nor07_faceted_matches_source_triangle_orientation", allMatch);
+    r.check("nor07_faceted_normals_outward", allOutward);
+}
+
+// NOR-08: hard-edge duplication is a REMAP, so the drawn triangles keep the
+// source's vertex positions in the source's order — and therefore the source's
+// winding. Splitting a corner for shading must never reorder a triangle, which
+// would silently invert culling for that face.
+void checkDuplicationPreservesWinding(Recorder& r) {
+    const ConstructionMesh source = defaultBox();
+    RenderMeshData data;
+    if (!build(source, SurfaceShading::Smooth, &data)) {
+        r.check("nor08_duplication_builds", false);
+        return;
+    }
+    r.check("nor08_duplication_builds", true);
+    r.check("nor08_render_vertices_exceed_source",
+            data.vertexCount() > data.sourceVertexCount);
+    r.check("nor08_index_count_identical", data.indexCount() == data.sourceIndexCount);
+
+    bool sameCorners = true;
+    bool sameWinding = true;
+    for (uint32_t c = 0; c < data.indexCount(); ++c) {
+        const MeshVertex& sv = source.vertices[source.indices[c]];
+        const RenderVertex& rv = data.vertices[data.indices[c]];
+        for (int axis = 0; axis < 3; ++axis) {
+            if (!nearly(sv.position[axis], rv.position[axis])) sameCorners = false;
+        }
+    }
+    for (uint32_t t = 0; t < data.indexCount() / 3; ++t) {
+        const Vec3 a = positionOf(data.vertices[data.indices[t * 3 + 0]]);
+        const Vec3 b = positionOf(data.vertices[data.indices[t * 3 + 1]]);
+        const Vec3 c = positionOf(data.vertices[data.indices[t * 3 + 2]]);
+        const Vec3 rendered = vec3Normalize(vec3Cross(vec3Sub(b, a), vec3Sub(c, a)));
+        if (!(vec3Dot(rendered, sourceTriangleNormal(source, t)) > 0.999f)) sameWinding = false;
+    }
+    r.check("nor08_render_corners_are_source_corners", sameCorners);
+    r.check("nor08_render_winding_matches_source", sameWinding);
+}
+
+// NOR-09: the model -> view normal transform, replicated EXACTLY as the renderer
+// builds it (forgeshape_renderer.cpp, recordCommandBuffer) so this proves the
+// shipped arithmetic and not a second implementation of it.
+//
+// The claim being proved is end to end: after an arbitrary rigid placement and
+// an arbitrary camera, a surface normal in view space still points away from the
+// object's interior in view space. Nothing about the shading rig can be judged
+// until that holds, and it is the last place a sign could be lost.
+void checkNormalTransform(Recorder& r) {
+    const ConstructionMesh box = defaultBox();
+    RenderMeshData data;
+    if (!build(box, SurfaceShading::Smooth, &data)) {
+        r.check("nor09_transform_fixture", false);
+        return;
+    }
+    r.check("nor09_transform_fixture", true);
+
+    struct Placement {
+        float rotX, rotY, rotZ;
+        Vec3 translation;
+        Vec3 eye;
+    };
+    // Representative rather than exhaustive: identity, each axis alone, and one
+    // combined rotation with a translation and an off-axis camera.
+    const Placement placements[6] = {
+        {0.0f, 0.0f, 0.0f, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 8.2f}},
+        {1.1f, 0.0f, 0.0f, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 8.2f}},
+        {0.0f, 2.3f, 0.0f, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 8.2f}},
+        {0.0f, 0.0f, -0.9f, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 8.2f}},
+        {0.6f, -1.4f, 0.35f, {1.5f, -0.75f, 2.0f}, {4.1f, 3.6f, 6.2f}},
+        {-2.7f, 0.8f, 2.2f, {-3.0f, 1.25f, -0.5f}, {-5.0f, -2.5f, 4.0f}},
+    };
+
+    bool signPreserved = true;
+    bool lengthPreserved = true;
+    bool visibleFacesFaceViewer = false;
+
+    for (const Placement& p : placements) {
+        const Mat4 model =
+            mat4Multiply(mat4Translation(p.translation),
+                         mat4Multiply(mat4RotationZ(p.rotZ),
+                                      mat4Multiply(mat4RotationY(p.rotY), mat4RotationX(p.rotX))));
+        const Mat4 view = mat4LookAt(p.eye, Vec3{0.0f, 0.0f, 0.0f}, Vec3{0.0f, 1.0f, 0.0f});
+        const Mat4 modelView = mat4Multiply(view, model);
+
+        // The renderer's exact row extraction: storage is column-major, so row r
+        // is {m[0*4+r], m[1*4+r], m[2*4+r]}.
+        Vec3 rows[3];
+        for (int row = 0; row < 3; ++row) {
+            rows[row] = Vec3{modelView.m[0 * 4 + row], modelView.m[1 * 4 + row],
+                             modelView.m[2 * 4 + row]};
+        }
+
+        // The object's interior reference, carried into view space by the same
+        // transform, so "outward" means the same thing on both sides.
+        const Vec3 interiorView = mat4TransformPoint(modelView, boundsCentre(box));
+
+        for (const RenderVertex& v : data.vertices) {
+            const Vec3 n = normalOf(v);
+            // The vertex stage, verbatim.
+            const Vec3 viewNormal{vec3Dot(rows[0], n), vec3Dot(rows[1], n), vec3Dot(rows[2], n)};
+            const Vec3 viewPosition = mat4TransformPoint(modelView, positionOf(v));
+            const Vec3 outward = vec3Normalize(vec3Sub(viewPosition, interiorView));
+
+            if (!(vec3Dot(viewNormal, outward) > 0.0f)) signPreserved = false;
+            // A rigid transform cannot change a normal's length; if it ever
+            // does, an inverse-transpose became necessary and this shortcut is
+            // no longer valid.
+            if (!nearly(std::sqrt(vec3Dot(viewNormal, viewNormal)), 1.0f)) lengthPreserved = false;
+            // Studio Solid's rim term and the MatCap's disc mapping both assume
+            // a drawn surface has a positive view-space z. At least one face
+            // must satisfy that, or the object would be invisible.
+            if (viewNormal.z > 0.5f) visibleFacesFaceViewer = true;
+        }
+    }
+
+    r.check("nor09_model_to_view_preserves_outward_sign", signPreserved);
+    r.check("nor09_model_to_view_preserves_unit_length", lengthPreserved);
+    r.check("nor09_camera_facing_surfaces_have_positive_view_z", visibleFacesFaceViewer);
+}
+
+// NOR-10: display modes are presentation. Switching shading model rebuilds
+// nothing at all, switching surface shading rebuilds only RENDER data, and
+// neither can be observed by picking or by a revision.
+void checkDisplayModesAreInert(Recorder& r) {
+    const ConstructionMesh source = defaultSphere();
+    MeshStore store(kConstructionBoxObjectId);
+    const MeshRevision revision =
+        store.publish(source.vertices.data(), static_cast<uint32_t>(source.vertices.size()),
+                      source.indices.data(), static_cast<uint32_t>(source.indices.size()));
+    const RuntimeMeshPtr mesh = store.current();
+    if (!mesh || revision == kNoMeshRevision) {
+        r.check("nor10_display_fixture", false);
+        return;
+    }
+    r.check("nor10_display_fixture", true);
+
+    // A ray straight down the -Z axis at the sphere: the picking answer must be
+    // byte-identical before and after every display change.
+    const Ray ray{Vec3{0.0f, 0.0f, 4.0f}, Vec3{0.0f, 0.0f, -1.0f}};
+    const TriangleHit before = pickTriangleMesh(ray, mesh->triangleView(), /*frontFacesOnly=*/true);
+    r.check("nor10_picking_hits_before_display_change", before.hit);
+
+    RenderMeshCache cache;
+    cache.refresh(*mesh, SurfaceShading::Smooth);
+    const uint64_t afterFirstBuild = cache.rebuildCount();
+
+    DisplaySettingsStore display;
+    // Studio Solid <-> MatCap is a fragment-stage uniform: it does not even
+    // reach the cache, which is why the refresh below still reports "cached".
+    display.setShadingModel(ShadingModel::MatCap);
+    display.setShadingModel(ShadingModel::StudioSolid);
+    display.setShadingModel(ShadingModel::MatCap);
+    r.check("nor10_shading_model_never_rebuilds_geometry",
+            !cache.refresh(*mesh, SurfaceShading::Smooth) &&
+                cache.rebuildCount() == afterFirstBuild);
+
+    display.setSurfaceShading(SurfaceShading::Faceted);
+    r.check("nor10_surface_shading_rebuilds_render_data_only",
+            cache.refresh(*mesh, SurfaceShading::Faceted) &&
+                cache.rebuildCount() == afterFirstBuild + 1);
+
+    const TriangleHit after = pickTriangleMesh(ray, mesh->triangleView(), /*frontFacesOnly=*/true);
+    r.check("nor10_picking_unchanged_by_display",
+            after.hit == before.hit && after.triangleIndex == before.triangleIndex &&
+                nearly(after.t, before.t));
+    r.check("nor10_source_revision_unchanged", mesh->revision() == revision &&
+                                                   store.currentRevision() == revision &&
+                                                   store.publishedCount() == 1);
+}
+
+// The guard that makes every check above mean something.
+//
+// A suite that measures only axes and magnitudes passes unchanged on a mesh
+// whose normals have all been multiplied by -1 — which is precisely the defect
+// class the NOR family exists to catch. This proves the measurement inverts, so
+// a future regression cannot hide behind it.
+void checkFlipIsDetected(Recorder& r) {
+    const ConstructionMesh fixtures[5] = {defaultBox(), defaultCylinder(), defaultSphere(),
+                                          defaultCone(), defaultCapsule()};
+    bool everyFlipCaught = true;
+    bool everyUnflippedPasses = true;
+    for (const ConstructionMesh& source : fixtures) {
+        RenderMeshData data;
+        if (!build(source, SurfaceShading::Smooth, &data)) {
+            everyUnflippedPasses = false;
+            continue;
+        }
+        const Vec3 interior = boundsCentre(source);
+        if (!(worstRenderOutwardness(data, interior) > 0.0f)) everyUnflippedPasses = false;
+        // The same measurement on the inverted copy must go negative.
+        if (!(worstRenderOutwardness(withInvertedNormals(data), interior) < 0.0f)) {
+            everyFlipCaught = false;
+        }
+    }
+    r.check("nor_outwardness_passes_on_correct_normals", everyUnflippedPasses);
+    r.check("nor_outwardness_fails_on_global_normal_flip", everyFlipCaught);
+}
+
 }  // namespace
 
 int runRenderMeshSelfTests(RenderMeshSelfTestResult* out, int max) {
@@ -891,6 +1422,16 @@ int runRenderMeshSelfTests(RenderMeshSelfTestResult* out, int max) {
     checkMatCapAsset(r);
     checkDisplaySettings(r);
     checkDeformationFollows(r);
+
+    // The direction family. Everything above measures where a normal lies;
+    // these measure which way it points, and the last one proves they can tell.
+    checkSourceWinding(r);
+    checkRenderNormalsOutward(r);
+    checkFacetedOrientation(r);
+    checkDuplicationPreservesWinding(r);
+    checkNormalTransform(r);
+    checkDisplayModesAreInert(r);
+    checkFlipIsDetected(r);
 
     return r.n;
 }
