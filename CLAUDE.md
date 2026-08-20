@@ -160,5 +160,14 @@ shadow history Markdown file.
   tooling is allowed; installing or updating SDK/NDK/JDK/system images is not.
 - `surfaceDestroyed` must block until native code has released the
   `ANativeWindow`. Never let the render thread touch a destroyed window.
+- **One orientation convention: render in Android window orientation.** The
+  swapchain requests an identity `preTransform` and takes its extent from the
+  window, so window size, camera viewport, projection aspect, swapchain image and
+  picking all share one coordinate space. Do not pre-rotate, do not transpose an
+  extent, and do not add a display rotation to a matrix. The convention makes
+  `VK_SUBOPTIMAL_KHR` the expected steady state on a rotated display, so the
+  frame loop must **not** rebuild the swapchain on it — rebuild on
+  `VK_ERROR_OUT_OF_DATE_KHR` and on the explicit resize request only. Ignoring
+  this rebuilds the swapchain every frame while the device is rotated.
 - Shaders are compiled ahead of time by the NDK `glslc` in CMake. No shader
   compiler ships at runtime.

@@ -2,6 +2,7 @@
 
 #include <android/log.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cstring>
 
@@ -729,6 +730,44 @@ bool Renderer::createSwapchain() {
         extent.width = static_cast<uint32_t>(ANativeWindow_getWidth(window_));
         extent.height = static_cast<uint32_t>(ANativeWindow_getHeight(window_));
     }
+
+    // ------------------------------------------------------------------------
+    // THE orientation convention (there is exactly one, see ARCHITECTURE.md).
+    //
+    // ForgeShape always renders in Android window orientation: the swapchain
+    // image is the size of the window the user sees, and the presentation
+    // engine -- not this renderer -- performs any display rotation. That keeps
+    // one coordinate space from the SurfaceView through the camera viewport and
+    // projection aspect to the swapchain image and to picking.
+    //
+    // The alternative, pre-rotation, requires imageExtent in the display's
+    // PRE-transform (panel) space, which is the transpose of the window when the
+    // transform is 90 or 270 degrees. Declaring preTransform = currentTransform
+    // while passing the window-space extent -- what this renderer did before --
+    // makes SurfaceFlinger rotate a 2400x1080 buffer into a 1080x2400 layout and
+    // then stretch it back to the 2400x1080 window, an anisotropic scale of
+    // (2400/1080, 1080/2400). That was the rotated-landscape defect: the extent
+    // space, not the projection, was the inconsistent convention.
+    //
+    // Identity is a supported transform on every Android presentation engine
+    // this targets, and requesting it costs one compositor rotation, which is
+    // what every non-pre-rotated Android application already pays.
+    VkSurfaceTransformFlagBitsKHR preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+    if ((caps.supportedTransforms & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR) == 0) {
+        // No identity available: fall back to the engine's own transform rather
+        // than fail to present. The extent stays in the space that transform
+        // maps FROM, so the image is never stretched; a 90/270 surface would
+        // then be presented rotated, which is visible and diagnosable from
+        // FORGESHAPE_SURFACE_CONFIG below.
+        preTransform = caps.currentTransform;
+        if (preTransform & (VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR |
+                            VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR |
+                            VK_SURFACE_TRANSFORM_HORIZONTAL_MIRROR_ROTATE_90_BIT_KHR |
+                            VK_SURFACE_TRANSFORM_HORIZONTAL_MIRROR_ROTATE_270_BIT_KHR)) {
+            std::swap(extent.width, extent.height);
+        }
+    }
+
     if (extent.width == 0 || extent.height == 0) {
         FS_LOGI("Swapchain skipped: zero-sized surface");
         return false;
@@ -772,7 +811,7 @@ bool Renderer::createSwapchain() {
     info.imageExtent = extent;
     info.imageArrayLayers = 1;
     info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-    info.preTransform = caps.currentTransform;
+    info.preTransform = preTransform;
     info.compositeAlpha = compositeAlpha;
     info.presentMode = VK_PRESENT_MODE_FIFO_KHR;  // always supported
     info.clipped = VK_TRUE;
@@ -787,9 +826,28 @@ bool Renderer::createSwapchain() {
         info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
     }
 
+    // Durable, non-per-frame orientation diagnostic: one line per swapchain
+    // creation. Everything needed to audit the orientation convention end to
+    // end -- Android window size, what the presentation engine reports, and
+    // what this renderer chose -- is in this single token, so a rotation
+    // regression never needs temporary instrumentation again.
+    FS_LOGI("FORGESHAPE_SURFACE_CONFIG window=%dx%d currentExtent=%ux%u "
+            "currentTransform=0x%x supportedTransforms=0x%x chosenExtent=%ux%u preTransform=0x%x",
+            ANativeWindow_getWidth(window_), ANativeWindow_getHeight(window_),
+            caps.currentExtent.width, caps.currentExtent.height,
+            static_cast<unsigned>(caps.currentTransform),
+            static_cast<unsigned>(caps.supportedTransforms), extent.width, extent.height,
+            static_cast<unsigned>(info.preTransform));
+
     FS_VK_CHECK(vkCreateSwapchainKHR(device_, &info, nullptr, &swapchain_), "vkCreateSwapchainKHR");
     swapchainFormat_ = chosen.format;
     swapchainExtent_ = extent;
+    // Deliberately rendering unrotated into a rotated surface makes the
+    // presentation engine report VK_SUBOPTIMAL_KHR forever. That is the chosen
+    // convention working as intended, not a stale swapchain, so the frame loop
+    // must not treat it as a rebuild request -- doing so rebuilds the swapchain
+    // every single frame for as long as the device is rotated.
+    expectSuboptimal_ = (preTransform != caps.currentTransform);
 
     uint32_t actualCount = 0;
     FS_VK_CHECK(vkGetSwapchainImagesKHR(device_, swapchain_, &actualCount, nullptr), "vkGetSwapchainImagesKHR");
@@ -1201,10 +1259,15 @@ bool Renderer::drawFrame() {
     VkResult acquire = vkAcquireNextImageKHR(device_, swapchain_, UINT64_MAX,
                                              imageAvailable_[currentFrame_], VK_NULL_HANDLE,
                                              &imageIndex);
-    if (acquire == VK_ERROR_OUT_OF_DATE_KHR || acquire == VK_SUBOPTIMAL_KHR) {
+    if (acquire == VK_ERROR_OUT_OF_DATE_KHR) {
         needsSwapchainRebuild_ = true;
-        if (acquire == VK_ERROR_OUT_OF_DATE_KHR) {
-            return true;
+        return true;
+    } else if (acquire == VK_SUBOPTIMAL_KHR) {
+        // Suboptimal-but-usable. Rebuild only when it is NOT the expected
+        // consequence of the identity-pre-transform convention; a real size
+        // change arrives as OUT_OF_DATE or as an explicit requestResize().
+        if (!expectSuboptimal_) {
+            needsSwapchainRebuild_ = true;
         }
     } else if (acquire != VK_SUCCESS) {
         FS_LOGE("vkAcquireNextImageKHR -> %d", (int)acquire);
@@ -1244,9 +1307,10 @@ bool Renderer::drawFrame() {
     present.pImageIndices = &imageIndex;
 
     VkResult presented = vkQueuePresentKHR(presentQueue_, &present);
-    if (presented == VK_ERROR_OUT_OF_DATE_KHR || presented == VK_SUBOPTIMAL_KHR) {
+    if (presented == VK_ERROR_OUT_OF_DATE_KHR ||
+        (presented == VK_SUBOPTIMAL_KHR && !expectSuboptimal_)) {
         needsSwapchainRebuild_ = true;
-    } else if (presented != VK_SUCCESS) {
+    } else if (presented != VK_SUCCESS && presented != VK_SUBOPTIMAL_KHR) {
         FS_LOGE("vkQueuePresentKHR -> %d", (int)presented);
         FS_FAIL("vkQueuePresentKHR");
         return false;

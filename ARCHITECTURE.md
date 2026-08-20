@@ -1198,6 +1198,52 @@ current revision and uploads it only if it differs from the uploaded one, so
 render and pick geometry both follow the same published revision and cannot
 diverge.
 
+### Surface orientation convention
+
+There is exactly one orientation convention, and it is this: **ForgeShape always
+renders in Android window orientation.** The swapchain image is the size of the
+window the user sees, and any display rotation is performed by the presentation
+engine, never by this renderer.
+
+Concretely, `Renderer::createSwapchain` requests
+`preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR` whenever identity appears
+in `caps.supportedTransforms`, and takes `imageExtent` from `caps.currentExtent`,
+which on Android is the window's own width and height. So one coordinate space —
+the Android window — runs unbroken through `SurfaceView` size, the camera
+viewport and projection aspect (`CameraController::setViewport`), the swapchain
+image, the Vulkan viewport and scissor, and the screen pixel that picking turns
+into a ray. Nothing anywhere transposes width and height, and no matrix carries a
+display rotation.
+
+ForgeShape deliberately does **not** pre-rotate. Pre-rotation would require
+`imageExtent` in the display's *pre-transform* (panel) space, which is the
+transpose of the window at 90° and 270°, plus a matching clip-space rotation and
+a camera aspect to match. Declaring `preTransform = caps.currentTransform` while
+passing the window-space extent — which is what the renderer did until this was
+fixed — is the inconsistent combination: SurfaceFlinger rotates the 2400×1080
+buffer into a 1080×2400 layout and then stretches it back onto the 2400×1080
+window, an anisotropic scale of (2400/1080, 1080/2400). That, and not the
+projection, was the rotated-landscape defect; `mat4Perspective` and
+`CameraController::setViewport` were correct throughout.
+
+The cost of the convention is one compositor rotation on a rotated display, which
+is what every non-pre-rotated Android application already pays. Its consequence
+is that `vkAcquireNextImageKHR` and `vkQueuePresentKHR` report
+`VK_SUBOPTIMAL_KHR` for as long as the device is rotated — the surface's
+transform is genuinely not the one the swapchain declared. That is the convention
+working, not a stale swapchain, so the frame loop must not rebuild on it:
+`Renderer::expectSuboptimal_` records when the declared pre-transform differs
+from the surface's own, and suboptimal is ignored in exactly that case. Rebuilds
+still happen on `VK_ERROR_OUT_OF_DATE_KHR` and on the explicit `requestResize()`
+that `surfaceChanged` raises, which is how every real size change arrives. Losing
+this distinction rebuilds the swapchain on every single frame while rotated.
+
+One non-per-frame `FORGESHAPE_SURFACE_CONFIG` line per swapchain creation records
+the window size, `currentExtent`, `currentTransform`, `supportedTransforms`, the
+chosen extent and the chosen `preTransform`, so the whole chain is auditable from
+a log without adding instrumentation; `FORGESHAPE_CAMERA_VIEWPORT` is its
+companion for the camera half.
+
 ## Threading
 
 - Android UI thread: surface callbacks, `onTouchEvent` → JNI, both panels and

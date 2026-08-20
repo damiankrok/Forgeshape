@@ -185,6 +185,12 @@ private:
     // Purely visual: "tint the cube because something is selected".
     bool selectionHighlight_ = false;
 
+    // True when this swapchain deliberately declared a pre-transform the surface
+    // does not currently use (the identity-pre-transform orientation
+    // convention), which makes VK_SUBOPTIMAL_KHR the expected steady state
+    // rather than a rebuild request. Set by createSwapchain().
+    bool expectSuboptimal_ = false;
+
     bool needsSwapchainRebuild_ = false;
     bool presentedThisSession_ = false;
     uint64_t frameIndex_ = 0;

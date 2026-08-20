@@ -114,6 +114,29 @@ Grepping for `FAIL` alone over-matches, because some passing check *names*
 contain "fails" — match `_SELFTEST_FAIL` or `_FAIL:`. The self-tests are
 debug-only and run once from `NativeViewport.start()`; none runs per frame.
 
+### Checking orientation and surface geometry
+
+Two further tokens make the renderer's orientation chain auditable from a log.
+Neither is per frame: one `FORGESHAPE_SURFACE_CONFIG` line is emitted per
+swapchain creation, and one `FORGESHAPE_CAMERA_VIEWPORT` line per
+`surfaceChanged`.
+
+```
+adb -s <serial> logcat -d -s ForgeShape:V | grep -E "SURFACE_CONFIG|CAMERA_VIEWPORT"
+```
+
+```
+FORGESHAPE_SURFACE_CONFIG window=2400x1080 currentExtent=2400x1080 \
+    currentTransform=0x2 supportedTransforms=0x1ff chosenExtent=2400x1080 preTransform=0x1
+FORGESHAPE_CAMERA_VIEWPORT view=2400x1080 aspect=2.2222
+```
+
+`chosenExtent` must always equal the window size and `preTransform` must be `0x1`
+(identity) — see the orientation convention in `ARCHITECTURE.md`. A
+`currentTransform` of `0x2` or `0x8` simply means the display is rotated. Count
+the lines as well as reading them: a handful per orientation change is healthy,
+one per frame means the swapchain is being rebuilt in a loop.
+
 ## Interacting with the viewport
 
 One finger drags to orbit, two fingers drag to pan, and pinching zooms. A short

@@ -44,6 +44,12 @@ decided by the window's size, not by the device or the orientation. The model
 stays visible in all of them. On a tablet the inspector docks beside the model
 instead of over it, and the controls do not grow: only the viewport does.
 
+Turning the phone changes how much of the model you can see, never what shape it
+is. A sphere is a circle on screen in portrait and a circle in landscape, and a
+box keeps its proportions in both; rotating the device only makes the picture
+larger or smaller, and never stretches it one way. What you can tap follows what
+you see, so a tap that hits the model in portrait hits it in landscape too.
+
 ## Choosing and sizing the shape
 
 The Tool Rail in Construction carries **Shape** and **Place**, plus **Sketch**

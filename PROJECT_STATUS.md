@@ -1,25 +1,25 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.16.0
+**Status Version:** 0.17.0
 **Updated:** 2026-08-20
 **Result:** COMPLETE
 **Current Phase:** Phase 1 — Native Viewport
 **Workspace:** `D:\TRAVELAPPS\ForgeShape`
-**Accepted implementation baseline:** Stage 015B — Main Editor Interface
-(Editor Workspace), on top of Stage 014, the NDK r29 migration (Gate P0) and the
-owner decision baseline
+**Accepted implementation baseline:** Platform Fix P2 — rotated-landscape
+renderer orientation, on top of Stage 015B (Editor Workspace), Stage 014, the
+NDK r29 migration (Gate P0) and the owner decision baseline
 **Next Stage:** Stage 016 — Plane + Primitive Coverage Cleanup
 
 This is a current snapshot, not a chronology. Per-stage verification chapters,
 superseded environment states and old next-stage recommendations live in Git
 history and are deliberately not repeated here.
 
-Stage 015B replaced the two provisional Android panels with the approved
-responsive **Editor Workspace**. It changed **no native code at all** — the diff
-touches no file under `app/src/main/cpp` — so every geometry, camera, picking,
-transform and sculpt behaviour below JNI is bit-for-bit the accepted Stage 014
-behaviour. What changed is the Android shell, its resources, its tests, and the
-window/inset configuration around it.
+Platform Fix P2 closed the rotated-landscape rendering defect that Stage 015B
+recorded and could not fix. It is a **renderer-only** change: three edits in
+`forgeshape_renderer.{h,cpp}` plus one diagnostic line in `forgeshape_jni.cpp`,
+and no change to geometry, Construction, sculpt, picking, camera or the Android
+layer. Stage 015B before it replaced the two provisional Android panels with the
+approved responsive **Editor Workspace** and changed no native code at all.
 
 ## Owner Decision Baseline
 
@@ -194,8 +194,10 @@ Android touch path. `PRODUCT.md` owns the user-facing description.
 | Freeze / Resume wording follows whether a Frozen Sculpt Mesh exists | VERIFIED |
 | Destructive re-Freeze confirms only when strokes would be discarded; Cancel is inert | VERIFIED |
 | Stable semantic ids on every control; 32 instrumented + 22 JVM tests | VERIFIED |
+| Correct geometric proportions in portrait, physical 90° landscape and a non-rotated wide window | VERIFIED |
+| One orientation convention: identity pre-transform, swapchain image = window | VERIFIED |
+| Rotation mutates no Construction or Sculpt state and triggers no mesh upload | VERIFIED |
 | 16 KB page-size runtime behaviour | **UNVERIFIED** — see Known Issues |
-| Landscape *rendering* (as opposed to layout) | **DEFECTIVE** — see Known Issues |
 
 ## Self-test suite
 
@@ -216,7 +218,11 @@ NDK r29:
 | `FORGESHAPE_SCULPT_BRUSH_KERNEL_SELFTEST_OK` | 232 |
 
 followed by `FORGESHAPE_MESH_UPLOAD_OK` and `FORGESHAPE_NATIVE_VIEWPORT_OK`.
-Re-run clean at Stage 015B: **992 checks, zero failures, empty crash buffer.**
+Re-run clean at Platform Fix P2: **992 checks, zero failures, empty crash
+buffer.** Two further non-per-frame diagnostics exist for the orientation chain,
+`FORGESHAPE_SURFACE_CONFIG` (one per swapchain creation) and
+`FORGESHAPE_CAMERA_VIEWPORT` (one per `surfaceChanged`); `README.md` documents
+how to read them.
 
 ## Android UI suites
 
@@ -238,6 +244,41 @@ is reached by its stable semantic id and no assertion uses a screen coordinate.
 
 ## Current evidence summary
 
+- **Platform Fix P2 acceptance** (`emulator-5558`, cold boot, clean install,
+  empty crash buffer): nine self-test suites green (992 checks, zero failures);
+  54 Android tests green (22 JVM, 32 instrumented). **Root cause proven, not
+  assumed.** The recorded chain in rotated landscape was window 2400×1080,
+  `currentExtent` 2400×1080, `currentTransform` `0x2` (ROTATE_90),
+  `supportedTransforms` `0x1ff`, chosen extent 2400×1080, `preTransform` `0x2`,
+  camera viewport 2400×1080, aspect 2.2222. The first inconsistent convention was
+  the **swapchain extent space**, not the projection: declaring a 90° pre-
+  transform obliges the image to be in pre-transform (panel) space, so
+  SurfaceFlinger rotated the 2400×1080 buffer to 1080×2400 and stretched it back
+  to the window, scaling by (2400/1080, 1080/2400). That model predicts a
+  2 × 1 × 0.5 m box at 427 × 98 px; it measured **428 × 98**, against 218 × 192
+  when correct. The fix requests an identity pre-transform. Measured with the
+  same object and camera in every configuration: portrait 484 × 427 px
+  (ratio 1.1335), rotated landscape **218 × 192** (1.1354), non-rotated
+  1280 × 800 wide window 162 × 142 (1.1408) — the pose-fixed invariant
+  `bboxWidth / screenHeight` agreeing at 0.2017 / 0.2019 / 0.2025, inside 0.5 %.
+  Portrait and the wide window are **pixel-identical to their pre-fix
+  measurements**. A default sphere measures **269 × 269 px in portrait and
+  121 × 121 px in rotated landscape — ratio exactly 1.0000 in both**, against a
+  predicted 121.05. Two landscape↔portrait round trips restored portrait
+  bit-identically with no stale extent and no crash. Picking stays aligned with
+  what is drawn: in rotated landscape a tap at the rendered box silhouette's
+  centre hits local z = 0.2500, exactly the 0.5 m box's face, and a tap at the
+  transformed sphere's centre lands 0.4975 m from its centre against an exact
+  0.5 m radius (0.5 % inside, the expected 482-vertex faceting inset). Five
+  orientation changes plus a HOME/resume published **no mesh revision, triggered
+  no upload and started no stroke**, and left the rendered sculpted mesh
+  pixel-identical. Real smoke through the touch path in rotated landscape:
+  sphere applied (482 : 2880), a transform-only edit publishing nothing, Freeze,
+  a real 66-move Grab stroke capturing 439 of 482 vertices with topology fixed
+  and every upload `reuse`, Back to Construction and Resume Sculpt. The Editor
+  Workspace lays out correctly in both orientations with `viewport_surface` still
+  full-bleed at `[0,0][2400,1080]`. Screenshots are under
+  `artifacts/platformfixp2_*`.
 - **Stage 015B acceptance** (`emulator-5558`, clean install, empty crash
   buffer): nine self-test suites green; 54 Android tests green; the measured
   unoccluded viewport at 411×914 dp is **82.6 %** collapsed and 57.5 % with the
@@ -284,21 +325,6 @@ is reached by its stable semantic id and no assertion uses a screen coordinate.
   `system-images;android-36.1;google_apis_playstore_ps16k;x86_64` and an AVD
   created from it, and installing a system image is not authorized. Not a defect
   — an unmeasured dimension.
-- **Landscape *rendering* is anisotropic — a pre-existing renderer defect that
-  Stage 015B made visible for the first time.** With the display rotated 90°, the
-  model is drawn stretched horizontally and crushed vertically; a 2 × 1 × 0.5 m
-  box measures roughly 426 × 102 px where an isotropic projection would give
-  ~224 × 194. It is **not** a projection-aspect bug (`mat4Perspective` and
-  `Camera::setViewport` are correct, and the swapchain, depth buffer and pipeline
-  are all rebuilt at 2400×1080) and it does **not** occur at a non-rotated
-  window: the same suite at `wm size 1280x800` renders correctly. The evidence
-  points at swapchain **pre-rotation**: `forgeshape_renderer.cpp` sets
-  `info.preTransform = caps.currentTransform`, which promises Vulkan that the
-  application will render pre-rotated content, and nothing then applies a
-  rotation to the projection. Nobody could have seen this before, because
-  landscape was 100 % occluded until this stage. Stage 015B changed no native
-  code and deliberately did not fix it: the fix is in the renderer, which this
-  stage may not touch. It needs a stage of its own.
 - **The `EditorWorkspaceView` layout decision runs inside `onMeasure`.** That is
   deliberate and documented — running it in `onSizeChanged` measures newly added
   chrome against the previous pass and lays it out at zero height, which is
@@ -437,9 +463,22 @@ at sculpt sizes. Retired GPU buffers are freed inline after the fence wait rathe
 than through a deferred-destruction queue, which is what makes the synchronous
 wait necessary. One redundant swapchain rebuild occurs at startup and again on
 each resume, because `surfaceChanged` arrives immediately after `surfaceCreated`
-(cosmetic). Carried and untouched: static viewport and scissor, no `oldSwapchain`
-handling, no validation layers, a single global viewport, and a selection
-highlight that is a whole-object tint rather than an outline.
+(cosmetic). The identity-pre-transform orientation convention costs one
+compositor rotation while the display is rotated — the same cost every
+non-pre-rotated Android application pays, and not measurable here — but on a
+tiled mobile GPU true pre-rotation is the cheaper path, so this is the one
+renderer decision that a future performance stage might revisit; it would have to
+move the extent, the clip-space rotation and the camera aspect together.
+`createSwapchain`'s fallback for a presentation engine that does **not** support
+an identity transform is **UNVERIFIED**: it exists because declaring identity
+when it is absent from `supportedTransforms` would be invalid usage, not because
+anything can reach it — `emulator-5558` reports `supportedTransforms=0x1ff`, so
+identity is always available and the branch has never executed. Its extent swap
+for 90/270 is reasoned from the Vulkan pre-transform contract, not measured, and
+it would present rotated content. Carried and untouched: static viewport and
+scissor, no `oldSwapchain` handling,
+no validation layers, a single global viewport, and a selection highlight that is
+a whole-object tint rather than an outline.
 
 **Naming and test infrastructure.** `kConstructionBoxObjectId` and
 `kDemoCubeObjectId` are the same value under two names and are now doubly
@@ -512,6 +551,6 @@ Plane is exactly the primitive that would slip through it. A sixth primitive is
 also the point at which "four parallel edits per primitive" should become a
 decision rather than a habit.
 
-**The landscape rendering defect is not this stage's work and must not be folded
-into it.** It is a renderer change (swapchain pre-rotation), it has nothing to do
-with primitives, and it deserves its own stage with its own evidence.
+The rotated-landscape rendering defect that previously blocked the area is
+**closed** by Platform Fix P2 and is not part of this stage. Stage 016 is
+primitives only: it must not touch the renderer's orientation convention.

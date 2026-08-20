@@ -1304,7 +1304,11 @@ Java_com_forgeshape_app_NativeViewport_surfaceChanged(JNIEnv*, jclass, jint widt
         std::lock_guard<std::mutex> cameraLock(g_stateMutex);
         g_camera.setViewport(width, height);
     }
+    // Companion to FORGESHAPE_SURFACE_CONFIG: the other half of the orientation
+    // chain, the viewport the camera actually projects with. Not per frame.
     FS_LOGI("JNI: surfaceChanged %dx%d", width, height);
+    FS_LOGI("FORGESHAPE_CAMERA_VIEWPORT view=%dx%d aspect=%.4f", width, height,
+            height > 0 ? static_cast<double>(width) / static_cast<double>(height) : 0.0);
 }
 
 JNIEXPORT void JNICALL
