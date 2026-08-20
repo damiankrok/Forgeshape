@@ -1,25 +1,28 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.17.0
+**Status Version:** 0.18.0
 **Updated:** 2026-08-20
 **Result:** COMPLETE
 **Current Phase:** Phase 1 — Native Viewport
 **Workspace:** `D:\TRAVELAPPS\ForgeShape`
-**Accepted implementation baseline:** Platform Fix P2 — rotated-landscape
-renderer orientation, on top of Stage 015B (Editor Workspace), Stage 014, the
-NDK r29 migration (Gate P0) and the owner decision baseline
+**Accepted implementation baseline:** Stage 015C — viewport shading and surface
+readability, on top of Platform Fix P2 (rotated-landscape renderer orientation),
+Stage 015B (Editor Workspace), Stage 014, the NDK r29 migration (Gate P0) and the
+owner decision baseline
 **Next Stage:** Stage 016 — Plane + Primitive Coverage Cleanup
 
 This is a current snapshot, not a chronology. Per-stage verification chapters,
 superseded environment states and old next-stage recommendations live in Git
 history and are deliberately not repeated here.
 
-Platform Fix P2 closed the rotated-landscape rendering defect that Stage 015B
-recorded and could not fix. It is a **renderer-only** change: three edits in
-`forgeshape_renderer.{h,cpp}` plus one diagnostic line in `forgeshape_jni.cpp`,
-and no change to geometry, Construction, sculpt, picking, camera or the Android
-layer. Stage 015B before it replaced the two provisional Android panels with the
-approved responsive **Editor Workspace** and changed no native code at all.
+Stage 015C replaced the debug-looking per-vertex rainbow with readable lit
+geometry. It adds a **derived, render-only** normal layer between the
+authoritative mesh and Vulkan, one centralized crease policy, two shading models
+(Studio Solid and MatCap), Smooth/Faceted display, a compact display control in
+the Global Toolbar, and a tenth native self-test suite. No Construction, sculpt,
+picking, camera or transform behaviour changed. Platform Fix P2 before it closed
+the rotated-landscape rendering defect, and Stage 015B before that replaced the
+two provisional Android panels with the approved responsive **Editor Workspace**.
 
 ## Owner Decision Baseline
 
@@ -197,12 +200,22 @@ Android touch path. `PRODUCT.md` owns the user-facing description.
 | Correct geometric proportions in portrait, physical 90° landscape and a non-rotated wide window | VERIFIED |
 | One orientation convention: identity pre-transform, swapchain image = window | VERIFIED |
 | Rotation mutates no Construction or Sculpt state and triggers no mesh upload | VERIFIED |
+| Studio Solid replaces the per-vertex rainbow as the default appearance | VERIFIED |
+| Derived render-only normals; source RuntimeMesh and picking untouched | VERIFIED |
+| One 40° crease policy gives all five primitives their hard/smooth contracts | VERIFIED |
+| Smooth ↔ Faceted is presentation only, on the same source revision | VERIFIED |
+| ForgeShape-generated MatCap from view-space normals; one preset, no asset file | VERIFIED |
+| Studio ↔ MatCap rebuilds no geometry and uploads nothing | VERIFIED |
+| Sculpt deformation relights immediately; no stale lighting, no NaN | VERIFIED |
+| Selection stays obvious and form stays readable in both shading modes | VERIFIED |
+| Display settings are native-owned and survive HOME/resume | VERIFIED |
+| No per-frame normal or render-data rebuild: 4448 frames, 2 rebuilds | VERIFIED |
 | 16 KB page-size runtime behaviour | **UNVERIFIED** — see Known Issues |
 
 ## Self-test suite
 
-Nine debug-only native suites run once from `NativeViewport.start()` — never per
-frame — and totalled **992 checks, zero failures** at the accepted baseline under
+Ten debug-only native suites run once from `NativeViewport.start()` — never per
+frame — and total **1150 checks, zero failures** at the accepted baseline under
 NDK r29:
 
 | suite token | checks |
@@ -216,13 +229,21 @@ NDK r29:
 | `FORGESHAPE_CONSTRUCTION_SPHERE_SELFTEST_OK` | 105 |
 | `FORGESHAPE_CONE_CAPSULE_SELFTEST_OK` | 163 |
 | `FORGESHAPE_SCULPT_BRUSH_KERNEL_SELFTEST_OK` | 232 |
+| `FORGESHAPE_RENDER_SHADING_SELFTEST_OK` | 158 |
 
 followed by `FORGESHAPE_MESH_UPLOAD_OK` and `FORGESHAPE_NATIVE_VIEWPORT_OK`.
-Re-run clean at Platform Fix P2: **992 checks, zero failures, empty crash
-buffer.** Two further non-per-frame diagnostics exist for the orientation chain,
-`FORGESHAPE_SURFACE_CONFIG` (one per swapchain creation) and
-`FORGESHAPE_CAMERA_VIEWPORT` (one per `surfaceChanged`); `README.md` documents
-how to read them.
+The tenth suite is new in Stage 015C and covers the crease policy, all five
+primitives' Smooth contracts and the capsule equality case, Faceted, NaN/Inf and
+fail-closed behaviour, determinism, the render-data rebuild policy, the generated
+MatCap asset, the display settings, and the proof that building render data
+leaves the authoritative `RuntimeMesh` bit-identical.
+
+Three further non-per-frame diagnostics exist. `FORGESHAPE_SURFACE_CONFIG` (one
+per swapchain creation) and `FORGESHAPE_CAMERA_VIEWPORT` (one per
+`surfaceChanged`) audit the orientation chain; `FORGESHAPE_RENDER_MESH_BUILD` (one
+per accepted geometry or surface-shading change) reports source vs render counts,
+the rebuild count and the frame counter. `README.md` documents how to read all
+three.
 
 ## Android UI suites
 
@@ -238,12 +259,53 @@ Build and verification commands are in `README.md`.
 | `EditorWorkspaceLayoutTest` | UI-07/08/09/12 — measured viewport floor, landscape, expanded, collapse | 6 |
 | `EditorWorkspaceGestureTest` | UI-10/11 — chrome gesture ownership, IME | 5 |
 | `EditorWorkspaceLifecycleTest` | UI-14 — HOME/resume rebuilt from native truth | 3 |
+| `DisplaySettingsContractTest` (JVM) | the shading/surface index contract across JNI | 4 |
+| `EditorWorkspaceDisplayTest` | SHD-13/15/16 — display ids, presentation-only, resume | 8 |
 
-**54 tests, zero failures.** No Java test asserts a rendered pixel; every control
-is reached by its stable semantic id and no assertion uses a screen coordinate.
+**66 tests** (26 JVM, 40 instrumented). No Java test asserts a rendered pixel;
+every control is reached by its stable semantic id and no assertion uses a screen
+coordinate.
+
+**One instrumented test fails, and it is pre-existing and environmental.**
+`EditorWorkspaceGestureTest.ui11_theImeLeavesTheFieldAndTheCommitPathUsableAndTheSurfaceUntouched`
+fails at its own precondition guard — "the soft keyboard did not appear, so this
+case proves nothing" — because no soft keyboard shows on `emulator-5558`, with or
+without `settings put secure show_ime_with_hard_keyboard 1`. Confirmed by running
+that suite on the untouched baseline `87119bd`, where it fails identically. It is
+a device-capability gap in the harness, not a defect and not a Stage 015C
+regression.
 
 ## Current evidence summary
 
+- **Stage 015C acceptance** (`emulator-5558`, clean install, empty crash buffer):
+  ten self-test suites green (**1150 checks, zero failures**); 26 JVM tests green;
+  40 instrumented tests with the one pre-existing IME failure described above.
+  **The default appearance changed**: the per-vertex rainbow is gone and the
+  viewport comes up in neutral Studio Solid, with the old appearance still
+  reachable in a debuggable build as the Debug chip (the before/after pair is
+  `stage015c_00` vs `stage015c_03`). **Render counts, measured through the real
+  touch path** and matching the self-test's predictions exactly: box
+  `8:36 → 24:36`, cylinder `66:384 → 130:384`, sphere `482:2880 → 482:2880`, cone
+  `34:192 → 66:192`, capsule `514:3072 → 514:3072`, faceted sphere
+  `482:2880 → 2880:2880`. A fully smooth closed surface has no crease to split
+  on, so its render mesh is exactly its source topology. **The no-per-frame-
+  rebuild proof is a direct measurement**: `rebuilds=2 frame=4448` — over 4448
+  presented frames including eight camera-orbit gestures and three shading-model
+  changes, the render mesh was rebuilt twice (once at startup, once for an
+  applied sphere), and grepping the log during camera motion and Studio↔MatCap
+  churn returns **zero** `RENDER_MESH_BUILD` and **zero** `MESH_UPLOAD_OK` lines.
+  A Smooth↔Faceted round trip on **one unchanged source revision** moved the
+  render count 24 → 36 → 24 with `src=8:36` throughout. A real 5-move Grab stroke
+  on a frozen sphere relit the pulled lobe immediately with a visible crease and
+  no stale shading; the render count drifted 482 → 492 as the deformation created
+  genuine creases, and **every one of the 54 uploads in the session was `reuse`
+  with the buffer-grow count flat**. Selection stays unmistakable and the form
+  stays readable in both modes. In rotated landscape the orientation chain is
+  unchanged from P2 (`chosenExtent=2400x1080`, `preTransform=0x1`, viewport
+  2400×1080, aspect 2.2222), `viewport_surface` is still full-bleed at
+  `[0,0][2400,1080]`, the sphere renders circular and rotation triggered no
+  rebuild and no upload. Screenshots are under `artifacts/stage015c_*`, with
+  `artifacts/stage015c_shading_comparison.md` as the comparison sheet.
 - **Platform Fix P2 acceptance** (`emulator-5558`, cold boot, clean install,
   empty crash buffer): nine self-test suites green (992 checks, zero failures);
   54 Android tests green (22 JVM, 32 instrumented). **Root cause proven, not
@@ -315,6 +377,35 @@ is reached by its stable semantic id and no assertion uses a screen coordinate.
   no third-party native library in the APK. Normal (4 KB) runtime smoke PASS.
   **16 KB runtime remains UNVERIFIED.**
 - Runtime evidence screenshots are retained under `artifacts/`.
+
+## Display-control motion, and what was rejected
+
+Motion research for the display popover used Mobbin Pro against creative and
+canvas applications on iOS. Five patterns were worth having an opinion about:
+
+| Pattern | Seen in | Decision |
+| --- | --- | --- |
+| Popover **grows from the control that opened it**, rather than sliding in from a screen edge | Craft (line style), Apple Mail (shapes), Freeform | **Adopted.** 120 ms scale-plus-fade from the anchor corner; it reads as belonging to the button instead of arriving from nowhere. |
+| **Selection feedback in place** — the chip repaints, the surface does not move, re-animate or close | Freeform's alignment settings toggles checkmarks across three frames with the menu stationary | **Adopted.** This is the one that matters: comparing Studio against MatCap means switching repeatedly, and a panel that re-animated on each choice would make it feel like four separate acts. |
+| **Non-modal, stays open** across several changes | Craft, Freeform | **Adopted.** Dismissed only by tapping Display again, or by hiding chrome. |
+| **Grouped labelled chip rows** rather than one long list | eBay "Edit Scene" (Material / Shadow), Photoroom (Shadow / Backdrop / Size) | **Adopted as layout**, not as styling: two groups, Shading and Surface. |
+| **Live preview thumbnails** with a check badge per option | Photoroom | **Rejected.** A rendered thumbnail per shading mode needs a second offscreen render target, for a two-option choice whose result is already filling the screen behind the panel. |
+| **Bottom sheet with drag detents** | Canva, Play, Unfold | **Rejected for this control.** A sheet covers the model, which is the thing being judged. ForgeShape already has a Property Inspector for sheet-shaped content. |
+
+Nothing decorative was taken. There is no continuous or looping model animation,
+no motion on the viewport itself, and no animation anywhere on the path of a
+pointer sample. Both animations are interruptible, and a zero system animator
+duration scale — the platform's own reduce-motion signal — skips them outright
+rather than shortening them.
+
+**The §12 readability enhancement is deliberately deferred.** Neither candidate
+was implemented. A selected-object outline needs either a second pass over the
+geometry or a screen-space depth/normal edge filter, and the latter is the start
+of the post-processing framework this stage is told not to build; cheap cavity
+shading from a screen-space depth derivative is the same problem, and the
+vertex-based alternative would expose triangle structure in Smooth mode, which
+the stage explicitly forbids. Neither is a small addition to what exists, and the
+required shading is complete without them.
 
 ## Known Issues / Blockers
 
@@ -480,6 +571,42 @@ scissor, no `oldSwapchain` handling,
 no validation layers, a single global viewport, and a selection highlight that is
 a whole-object tint rather than an outline.
 
+**Documentation size.** Every core document is inside the 2000-line hard limit,
+but three are over their preferred target budgets and this stage pushed all three
+further: `ARCHITECTURE.md` 1529 against a 700–1000 target, `PRODUCT.md` 561
+against 300–450, `README.md` 320 against 150–250. (`PROJECT_STATUS.md` 706 and
+`CLAUDE.md` 180 are inside theirs.) Every addition here is a new fact about a new
+subsystem rather than a historical chapter, so nothing was appended that Git
+history should have held instead — but the overshoot is real and predates this
+stage, and closing it means compacting prose that has nothing to do with shading.
+That is a deliberate deferral, not an oversight: bundling a documentation rewrite
+into a rendering stage is exactly the unrelated-debt mixing the rules forbid.
+
+**Shading and render data.** The crease policy is a single global angle. It is
+correct for every primitive ForgeShape has, but it is a *policy*, not a per-object
+property: a future imported or sketched body that genuinely wants a different
+threshold has nowhere to say so, and the honest fix is a per-object crease value
+rather than a second constant. Render data is rebuilt whole on every accepted
+change, including every sculpt move — 0.56–0.73 ms for a 482-vertex mesh, free at
+these sizes, and the same O(vertices) shape as the sculpt publication it rides on;
+both want the same missing partial-update path. The renderer keeps a per-frame
+gate *and* `RenderMeshCache` keeps its own, so the cache's skipped-refresh counter
+reads zero forever in production and is exercised only by the self-tests; it is
+deliberately not logged, but the duplication is real. Colour still travels in
+`RenderVertex` purely so the debug source-colour mode has something to draw,
+costing 12 bytes per render vertex in a build where nothing else reads it — the
+primitive generators' per-vertex rainbow is likewise now dead data on the product
+path, retained rather than deleted so the before/after comparison stays one tap
+away. Studio Solid and the MatCap are authored **directly in display space**,
+because the swapchain is `R8G8B8A8_UNORM` and every colour in ForgeShape (the
+clear colour, the debug vertex colours) already is; there is no linear workflow,
+and introducing one is a PBR-stage decision that has to move all of them at once.
+The MatCap is regenerated from scratch on every device creation rather than
+cached, which is 64 KiB of trivial arithmetic and has never been measured, but it
+is work repeated for a constant. Selection remains a whole-object tint rather
+than an outline; the §12 readability enhancement (outline or cavity) was
+**explicitly deferred** — see below.
+
 **Naming and test infrastructure.** `kConstructionBoxObjectId` and
 `kDemoCubeObjectId` are the same value under two names and are now doubly
 misnamed: the object is not always a box and never was a demo cube. Renaming has
@@ -499,7 +626,8 @@ been deferred to avoid churning unrelated code. There is still no checked-in
 | `app/src/main/java/.../EditorWorkspaceView.java` | The whole editor UI: region composition, adaptive layout, window insets, chrome visibility, mode/tool wiring, and `syncFromNative()`. Owns no product state |
 | `app/src/main/java/.../WorkspaceLayoutMode.java` | Window-dp breakpoints, inspector placement and chrome sizing, as arithmetic. No Android type |
 | `app/src/main/java/.../EditorUiState.java` | The closed list of UI-owned state: display unit, draft kind, rail selection, detent per mode, chrome-hidden |
-| `app/src/main/java/.../GlobalToolbarView.java` | Editing context, the three mutually exclusive mode transitions, reserved Export, chrome hide, and the one status message |
+| `app/src/main/java/.../GlobalToolbarView.java` | Editing context, the three mutually exclusive mode transitions, reserved Export, the Display control, chrome hide, and the one status message |
+| `app/src/main/java/.../DisplaySettingsPopoverView.java` | The compact display popover: Shading (Studio / MatCap / Debug) and Surface (Smooth / Faceted), with short interruptible open/close motion that honours the system animator scale. Owns no state |
 | `app/src/main/java/.../ToolRailView.java` | The edge tool selector for either mode, including reserved entries. Selects; decides nothing |
 | `app/src/main/java/.../BrushEdgeControlsView.java`, `VerticalSliderView.java` | Direct Radius and Strength, and the custom vertical control behind them. Own no brush value |
 | `app/src/main/java/.../PropertyInspectorView.java` | Contextual, collapsible, scrolling container with a measured height cap. Owns no value |
@@ -521,17 +649,43 @@ been deferred to avoid churning unrelated code. There is still no checked-in
 | `app/src/main/cpp/forgeshape_picking.{h,cpp}` | Screen→world ray, `transformRayToLocal`, ray/triangle, nearest hit, winding check |
 | `app/src/main/cpp/forgeshape_selection.{h,cpp}` | `ObjectId`, `SelectionController`, tap-vs-navigation, `pickScene` |
 | `app/src/main/cpp/forgeshape_object_id.h` | `ObjectId` type and reserved values, shared by the mesh and selection layers |
-| `app/src/main/cpp/forgeshape_mesh.{h,cpp}` | `RuntimeMesh` (immutable revision), `MeshStore`, validation, capacity policy, upload diagnostics |
+| `app/src/main/cpp/forgeshape_mesh.{h,cpp}` | `RuntimeMesh` (immutable revision), `MeshStore`, validation, capacity policy, upload diagnostics including source-vs-render counts |
+| `app/src/main/cpp/forgeshape_render_mesh.{h,cpp}` | Derived render geometry: `RenderVertex` (position + normal + colour), `SurfaceShading`, THE crease policy (`kCreaseAngleDegrees`), per-vertex crease grouping with render-only duplication, and `RenderMeshCache`'s rebuild gate. Presentation only |
+| `app/src/main/cpp/forgeshape_matcap.{h,cpp}` | The one ForgeShape-owned MatCap, computed at device init from the closed-form model in that file. No asset, no decoder, one preset |
+| `app/src/main/cpp/forgeshape_display.{h,cpp}` | `ShadingModel`, the process-scoped `DisplaySettingsStore`, and the UI index mapping. Presentation state, never truth |
 | `app/src/main/cpp/forgeshape_renderer.{h,cpp}` | Vulkan renderer, frame loop, camera snapshot + model transform + selection highlight consumer |
 | `app/src/main/cpp/forgeshape_math.h` | Minimal self-owned vec3/mat4. No GLM |
 | `app/src/main/cpp/forgeshape_demo_mesh.{h,cpp}` | Baseline cube numbers; source data for the baseline debug fixture only |
 | `app/src/main/cpp/forgeshape_mesh_fixtures.{h,cpp}` | DEBUG test fixtures (baseline / same-topology / larger / stress step) |
-| `app/src/main/cpp/forgeshape_*_selftest.{h,cpp}` | The nine debug-only deterministic suites: camera, picking, mesh, construction (box), transform, primitive, sphere, cone/capsule, sculpt brush kernel |
-| `app/src/main/cpp/shaders/cube.{vert,frag}` | GLSL source, AOT compiled to SPIR-V by `glslc` in CMake |
+| `app/src/main/cpp/forgeshape_*_selftest.{h,cpp}` | The ten debug-only deterministic suites: camera, picking, mesh, construction (box), transform, primitive, sphere, cone/capsule, sculpt brush kernel, render shading |
+| `app/src/main/cpp/shaders/surface.{vert,frag}` | GLSL source for the surface pipeline: view-space normals, Studio Solid, the MatCap lookup and the debug colour path. AOT compiled to SPIR-V by `glslc` in CMake |
 | `app/src/main/cpp/CMakeLists.txt` | Native build + glslc shader step |
-| `artifacts/` | Runtime evidence screenshots from accepted stages |
+| `artifacts/` | Runtime evidence screenshots from accepted stages, plus `stage015c_shading_comparison.md`, the Stage 015C comparison sheet |
 | `docs/ui/UX_ARCHITECTURE_DECISION_PACK.md` | Stage 015A-R UI proposal. **Proposal only** — the Owner Decision Baseline above is authoritative, not the pack |
 | `README.md`, `ARCHITECTURE.md`, `PRODUCT.md`, `CLAUDE.md` | See the ownership table in `CLAUDE.md` |
+
+## Shading cost record
+
+Not a benchmark stage; these are the numbers a future change has to beat, taken
+from `FORGESHAPE_RENDER_MESH_BUILD` on `emulator-5558`.
+
+| Mesh | Source (v:i) | Render (v:i) | Rebuild |
+| --- | --- | --- | --- |
+| Box | 8:36 | 24:36 | 0.03 ms |
+| Cylinder | 66:384 | 130:384 | 0.55 ms |
+| Sphere | 482:2880 | 482:2880 | 0.66–1.25 ms |
+| Cone | 34:192 | 66:192 | 0.07 ms |
+| Capsule | 514:3072 | 514:3072 | 0.78 ms |
+| Sphere, Faceted | 482:2880 | 2880:2880 | 0.30 ms |
+| Sculpt mesh, per accepted move | 482:2880 | 491–492:2880 | 0.56–0.73 ms |
+
+A rebuild happens per accepted geometry change, not per frame, so none of this is
+on the frame budget: 4448 frames cost 2 rebuilds. **MatCap costs no more than
+Studio Solid** and if anything less — it is one texture fetch against Studio's two
+Lambert terms, a hemisphere lerp, a Blinn-Phong power and a rim power — and both
+remained normally interactive throughout, with orbiting, sculpting and rotation
+indistinguishable from the pre-stage build by eye. No frame-time instrumentation
+was added and no marketing claim is made.
 
 ## Next Stage
 
@@ -554,3 +708,10 @@ decision rather than a habit.
 The rotated-landscape rendering defect that previously blocked the area is
 **closed** by Platform Fix P2 and is not part of this stage. Stage 016 is
 primitives only: it must not touch the renderer's orientation convention.
+
+Shading costs a Plane nothing extra. The crease policy is per-vertex and
+primitive-agnostic, so a Plane inherits correct flat shading with no new case —
+though it is the first primitive that is a **single flat sheet**, so Stage 016
+should check what a Plane looks like from behind, where back-face culling means
+it disappears. That is a culling question, not a shading one, and it is the one
+interaction between the two areas worth naming in advance.

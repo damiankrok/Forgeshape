@@ -6,15 +6,16 @@
 #include <chrono>
 #include <cstring>
 
+#include "forgeshape_matcap.h"
 #include "forgeshape_math.h"
 #include "forgeshape_mesh.h"
 
 // SPIR-V produced ahead of time by the NDK-provided glslc (see CMakeLists.txt).
-static const uint32_t kCubeVertSpv[] =
-#include "cube.vert.spv.inc"
+static const uint32_t kSurfaceVertSpv[] =
+#include "surface.vert.spv.inc"
     ;
-static const uint32_t kCubeFragSpv[] =
-#include "cube.frag.spv.inc"
+static const uint32_t kSurfaceFragSpv[] =
+#include "surface.frag.spv.inc"
     ;
 
 #define FS_TAG "ForgeShape"
@@ -39,17 +40,43 @@ static const uint32_t kCubeFragSpv[] =
 namespace forgeshape {
 namespace {
 
-// Fragment-stage push constant: rgb is the tint colour, a is how much of it to
-// mix in. The renderer is told only whether to draw the highlight; which object
-// is selected is owned by SelectionController and never reaches this file.
-struct SelectionPush {
-    float tint[4];
+// The complete per-draw uniform block, shared by both stages.
+//
+// It is EXACTLY 128 bytes, which is the minimum maxPushConstantsSize the Vulkan
+// specification guarantees. Some implementations expose 256, but ForgeShape
+// targets the guarantee, so this struct must not grow: the next thing that
+// needs per-draw uniform data belongs in a descriptor, not here.
+//
+// The layout is mirrored, member for member and offset for offset, by
+// shaders/surface.vert and shaders/surface.frag. A static_assert below pins the
+// size so a careless addition fails the build rather than the device.
+struct SurfacePush {
+    float mvp[16];  // offset 0
+
+    // The upper-left 3x3 of (view * model), by ROWS, so the vertex shader
+    // transforms a normal with three dot products. Valid as a plain matrix
+    // rather than an inverse-transpose only because both factors are rigid —
+    // see the note in surface.vert.
+    //
+    // Each row's w component is otherwise dead weight forced by std430's
+    // 16-byte vec3 alignment, so `normalRow0.w` carries the shading model
+    // rather than costing a fifth 16-byte slot the budget does not have. Rows
+    // 1 and 2 keep a zero w.
+    float normalRow0[4];  // offset 64, w = ShadingModel as a float
+    float normalRow1[4];  // offset 80
+    float normalRow2[4];  // offset 96
+
+    // rgb is the tint colour, a is how much of it to mix in. The renderer is
+    // told only WHETHER to draw the highlight; which object is selected is
+    // owned by SelectionController and never reaches this file.
+    float selectionTint[4];  // offset 112
 };
 
-constexpr VkDeviceSize kSelectionPushOffset = sizeof(Mat4);
+static_assert(sizeof(SurfacePush) == 128,
+              "the push constant block must stay inside the guaranteed 128-byte budget");
 
-const SelectionPush kNotSelected{{0.0f, 0.0f, 0.0f, 0.0f}};
-const SelectionPush kSelected{{1.00f, 0.62f, 0.10f, 0.55f}};
+const float kNotSelectedTint[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+const float kSelectedTint[4] = {1.00f, 0.62f, 0.10f, 0.55f};
 
 }  // namespace
 
@@ -114,6 +141,7 @@ void Renderer::destroyInstance() {
         // queue is about to disappear along with the device.
         vkDeviceWaitIdle(device_);
 
+        destroyMatCapResources();
         destroyMeshResources();
         if (vertShader_ != VK_NULL_HANDLE) vkDestroyShaderModule(device_, vertShader_, nullptr);
         if (fragShader_ != VK_NULL_HANDLE) vkDestroyShaderModule(device_, fragShader_, nullptr);
@@ -167,9 +195,15 @@ bool Renderer::attachSurface(ANativeWindow* window) {
         if (!pickPhysicalDeviceAndQueues()) return false;
         if (!createLogicalDevice()) return false;
         if (!createCommandPool()) return false;
+        // The descriptor set layout must exist before the pipeline layout that
+        // references it, and the MatCap upload needs the staging buffer and
+        // upload command buffer that createMeshUploadObjects provides — so the
+        // two halves of the sampler setup sit on either side of it.
+        if (!createDescriptorResources()) return false;
         if (!createShaderModules()) return false;
         if (!createSyncObjects()) return false;
         if (!createMeshUploadObjects()) return false;
+        if (!createMatCapResources()) return false;
     } else {
         // Reused device: confirm the new surface is still presentable.
         VkBool32 supported = VK_FALSE;
@@ -422,6 +456,9 @@ void Renderer::destroyMeshResources() {
     uploadCommandBuffer_ = VK_NULL_HANDLE;
     indexCount_ = 0;
     uploadedRevision_ = kNoMeshRevision;
+    // The GPU no longer holds anything derived from the cache, so the cache
+    // must not claim it does: the next sync has to rebuild and re-upload.
+    renderMesh_.invalidate();
     meshUploadDiagnostics().setLiveBufferObjects(0);
 }
 
@@ -538,7 +575,7 @@ bool Renderer::ensureMeshCapacity(VkDeviceSize vertexBytes, VkDeviceSize indexBy
     return true;
 }
 
-bool Renderer::uploadMesh(const RuntimeMesh& mesh) {
+bool Renderer::uploadRenderMesh(const RenderMeshData& mesh, MeshRevision sourceRevision) {
     const VkDeviceSize vertexBytes = static_cast<VkDeviceSize>(mesh.vertexBytes());
     const VkDeviceSize indexBytes = static_cast<VkDeviceSize>(mesh.indexBytes());
     if (vertexBytes == 0 || indexBytes == 0) {
@@ -568,8 +605,8 @@ bool Renderer::uploadMesh(const RuntimeMesh& mesh) {
     FS_VK_CHECK(vkMapMemory(device_, stagingMemory_, 0, stagingNeeded, 0, &mapped),
                 "vkMapMemory(mesh_staging)");
     auto* bytes = static_cast<unsigned char*>(mapped);
-    std::memcpy(bytes, mesh.vertices(), static_cast<size_t>(vertexBytes));
-    std::memcpy(bytes + vertexBytes, mesh.indices(), static_cast<size_t>(indexBytes));
+    std::memcpy(bytes, mesh.vertices.data(), static_cast<size_t>(vertexBytes));
+    std::memcpy(bytes + vertexBytes, mesh.indices.data(), static_cast<size_t>(indexBytes));
     vkUnmapMemory(device_, stagingMemory_);
 
     FS_VK_CHECK(vkResetCommandBuffer(uploadCommandBuffer_, 0), "vkResetCommandBuffer(mesh_upload)");
@@ -613,26 +650,37 @@ bool Renderer::uploadMesh(const RuntimeMesh& mesh) {
                 "vkWaitForFences(mesh_upload)");
 
     indexCount_ = mesh.indexCount();
-    uploadedRevision_ = mesh.revision();
+    uploadedRevision_ = sourceRevision;
+    uploadedShading_ = mesh.shading;
 
     MeshUploadDiagnostics& diagnostics = meshUploadDiagnostics();
-    diagnostics.recordUpload(mesh.revision(), mesh.vertexCount(), mesh.indexCount(),
+    // The recorded counts are the RENDER counts — what the GPU actually holds.
+    // The source counts are recorded separately and logged beside them, because
+    // they are different numbers about different things and confusing them
+    // would make every capacity and topology diagnostic misleading.
+    diagnostics.recordUpload(sourceRevision, mesh.vertexCount(), mesh.indexCount(),
                              vertexCapacityBytes_, indexCapacityBytes_, /*reusedCapacity=*/!grew);
+    diagnostics.recordSourceCounts(mesh.sourceVertexCount, mesh.sourceIndexCount);
     // Exactly one vertex buffer and one index buffer are ever live: an old one
     // is destroyed in the same step that replaces it.
     diagnostics.setLiveBufferObjects(
         (vertexBuffer_ != VK_NULL_HANDLE ? 1u : 0u) + (indexBuffer_ != VK_NULL_HANDLE ? 1u : 0u));
 
     const MeshGpuStats stats = diagnostics.snapshot();
+    // The historical prefix is preserved verbatim, including the counts in
+    // positions 2 and 3, so existing evidence tooling keeps parsing. Those two
+    // are now the RENDER counts; `src=` names the authoritative ones and
+    // `shading=` says which derivation produced the difference.
     FS_LOGI("FORGESHAPE_MESH_UPLOAD_OK:%llu:%u:%u:%s vcap=%llu icap=%llu scap=%llu "
-            "grows=%llu sgrows=%llu uploads=%llu",
-            (unsigned long long)mesh.revision(), mesh.vertexCount(), mesh.indexCount(),
+            "grows=%llu sgrows=%llu uploads=%llu src=%u:%u shading=%s",
+            (unsigned long long)sourceRevision, mesh.vertexCount(), mesh.indexCount(),
             grew ? "grow" : "reuse", (unsigned long long)stats.vertexCapacityBytes,
             (unsigned long long)stats.indexCapacityBytes,
             (unsigned long long)stats.stagingCapacityBytes,
             (unsigned long long)stats.bufferGrowCount,
             (unsigned long long)stats.stagingGrowCount,
-            (unsigned long long)stats.uploadCount);
+            (unsigned long long)stats.uploadCount, mesh.sourceVertexCount, mesh.sourceIndexCount,
+            surfaceShadingName(mesh.shading));
     return true;
 }
 
@@ -643,46 +691,309 @@ void Renderer::syncMeshRevision() {
     if (!mesh) {
         return;
     }
-    if (mesh->revision() == uploadedRevision_ || mesh->revision() == failedRevision_) {
+
+    const SurfaceShading shading = display_.surface;
+
+    // THE per-frame gate. On a steady frame both comparisons match and this
+    // function does nothing at all: no normal generation, no allocation, no
+    // buffer traffic. Camera motion, a rotation, an inspector toggle, a unit
+    // switch and a Studio<->MatCap change all land here and stop.
+    if ((mesh->revision() == uploadedRevision_ && shading == uploadedShading_) ||
+        (mesh->revision() == failedRevision_ && shading == uploadedShading_)) {
         return;
     }
-    if (!uploadMesh(*mesh)) {
+
+    // Rebuild the render-only derived geometry. This is where normals come
+    // from; it never touches the authoritative RuntimeMesh, which stays exactly
+    // as MeshStore published it and remains what CPU picking reads.
+    bool buildFailed = false;
+    renderMesh_.refresh(*mesh, shading, &buildFailed);
+    if (buildFailed || !renderMesh_.valid()) {
+        failedRevision_ = mesh->revision();
+        uploadedShading_ = shading;  // do not retry this pair every frame
+        meshUploadDiagnostics().recordFailure();
+        FS_LOGE("FORGESHAPE_RENDER_MESH_FAIL:%llu", (unsigned long long)mesh->revision());
+        return;
+    }
+
+    if (!uploadRenderMesh(renderMesh_.data(), mesh->revision())) {
         failedRevision_ = mesh->revision();  // fail closed, keep drawing the last good mesh
+        uploadedShading_ = shading;
         meshUploadDiagnostics().recordFailure();
         FS_LOGE("FORGESHAPE_MESH_UPLOAD_FAIL:%llu", (unsigned long long)mesh->revision());
+        return;
     }
+
+    // Proof material for "no accidental per-frame rebuild".
+    //
+    // `rebuilds` and `frame` are the two numbers that settle it: this line is
+    // emitted once per accepted geometry or shading change, so a session in
+    // which `frame` climbs by thousands while `rebuilds` does not move at all
+    // is a direct measurement rather than an argument.
+    //
+    // RenderMeshCache's own skipped-refresh counter is deliberately NOT logged
+    // here: the gate above returns before refresh() is ever called on a steady
+    // frame, so in production that counter would read zero forever and say
+    // nothing. It counts direct calls, which is what the self-tests make.
+    FS_LOGI("FORGESHAPE_RENDER_MESH_BUILD:%llu src=%u:%u render=%u:%u shading=%s "
+            "rebuilds=%llu frame=%llu ms=%.3f",
+            (unsigned long long)mesh->revision(), renderMesh_.data().sourceVertexCount,
+            renderMesh_.data().sourceIndexCount, renderMesh_.data().vertexCount(),
+            renderMesh_.data().indexCount(), surfaceShadingName(renderMesh_.shading()),
+            (unsigned long long)renderMesh_.rebuildCount(), (unsigned long long)frameIndex_,
+            renderMesh_.lastRebuildMillis());
 }
 
 bool Renderer::createShaderModules() {
     VkShaderModuleCreateInfo vertInfo{};
     vertInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-    vertInfo.codeSize = sizeof(kCubeVertSpv);
-    vertInfo.pCode = kCubeVertSpv;
+    vertInfo.codeSize = sizeof(kSurfaceVertSpv);
+    vertInfo.pCode = kSurfaceVertSpv;
     FS_VK_CHECK(vkCreateShaderModule(device_, &vertInfo, nullptr, &vertShader_), "vkCreateShaderModule(vert)");
 
     VkShaderModuleCreateInfo fragInfo{};
     fragInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-    fragInfo.codeSize = sizeof(kCubeFragSpv);
-    fragInfo.pCode = kCubeFragSpv;
+    fragInfo.codeSize = sizeof(kSurfaceFragSpv);
+    fragInfo.pCode = kSurfaceFragSpv;
     FS_VK_CHECK(vkCreateShaderModule(device_, &fragInfo, nullptr, &fragShader_), "vkCreateShaderModule(frag)");
 
-    VkPushConstantRange pushRanges[2]{};
-    pushRanges[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-    pushRanges[0].offset = 0;
-    pushRanges[0].size = sizeof(Mat4);
-    pushRanges[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-    pushRanges[1].offset = static_cast<uint32_t>(kSelectionPushOffset);
-    pushRanges[1].size = sizeof(SelectionPush);
+    // ONE range covering both stages. The vertex stage reads the MVP and the
+    // normal rows, the fragment stage reads the normal rows' packed shading
+    // model and the selection tint; declaring a single shared range is simpler
+    // than two overlapping ones and is what both shaders' blocks describe.
+    VkPushConstantRange pushRange{};
+    pushRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    pushRange.offset = 0;
+    pushRange.size = sizeof(SurfacePush);
 
     VkPipelineLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    layoutInfo.pushConstantRangeCount = 2;
-    layoutInfo.pPushConstantRanges = pushRanges;
+    layoutInfo.setLayoutCount = 1;
+    layoutInfo.pSetLayouts = &descriptorSetLayout_;
+    layoutInfo.pushConstantRangeCount = 1;
+    layoutInfo.pPushConstantRanges = &pushRange;
     FS_VK_CHECK(vkCreatePipelineLayout(device_, &layoutInfo, nullptr, &pipelineLayout_), "vkCreatePipelineLayout");
 
-    FS_LOGI("Shader modules created (SPIR-V: vert %zu bytes, frag %zu bytes)",
-            sizeof(kCubeVertSpv), sizeof(kCubeFragSpv));
+    FS_LOGI("Shader modules created (SPIR-V: vert %zu bytes, frag %zu bytes, push %zu bytes)",
+            sizeof(kSurfaceVertSpv), sizeof(kSurfaceFragSpv), sizeof(SurfacePush));
     return true;
+}
+
+// ---------------------------------------------------------------------------
+// MatCap image and the one descriptor set
+// ---------------------------------------------------------------------------
+
+bool Renderer::createDescriptorResources() {
+    // Exactly one binding exists in the whole renderer: the MatCap sampler.
+    VkDescriptorSetLayoutBinding binding{};
+    binding.binding = 0;
+    binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    binding.descriptorCount = 1;
+    binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    VkDescriptorSetLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = 1;
+    layoutInfo.pBindings = &binding;
+    FS_VK_CHECK(vkCreateDescriptorSetLayout(device_, &layoutInfo, nullptr, &descriptorSetLayout_),
+                "vkCreateDescriptorSetLayout(matcap)");
+
+    // One set, allocated once, never updated again after the MatCap is
+    // uploaded: the image is immutable for the life of the device, so there is
+    // no per-frame descriptor traffic and no need for per-frame-in-flight
+    // copies.
+    VkDescriptorPoolSize poolSize{};
+    poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    poolSize.descriptorCount = 1;
+
+    VkDescriptorPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.maxSets = 1;
+    poolInfo.poolSizeCount = 1;
+    poolInfo.pPoolSizes = &poolSize;
+    FS_VK_CHECK(vkCreateDescriptorPool(device_, &poolInfo, nullptr, &descriptorPool_),
+                "vkCreateDescriptorPool(matcap)");
+
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = descriptorPool_;
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts = &descriptorSetLayout_;
+    FS_VK_CHECK(vkAllocateDescriptorSets(device_, &allocInfo, &descriptorSet_),
+                "vkAllocateDescriptorSets(matcap)");
+    return true;
+}
+
+bool Renderer::createMatCapResources() {
+    // The asset is COMPUTED, not loaded: there is no image file, no decoder and
+    // no third-party dependency. See forgeshape_matcap.h for provenance.
+    std::vector<uint8_t> texels;
+    generateMatCap(&texels);
+    if (texels.size() != kMatCapByteSize) {
+        FS_FAIL("matcap_generation_size");
+        return false;
+    }
+
+    VkImageCreateInfo imageInfo{};
+    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.imageType = VK_IMAGE_TYPE_2D;
+    imageInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+    imageInfo.extent = {kMatCapSize, kMatCapSize, 1};
+    imageInfo.mipLevels = 1;
+    imageInfo.arrayLayers = 1;
+    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    imageInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    FS_VK_CHECK(vkCreateImage(device_, &imageInfo, nullptr, &matcapImage_), "vkCreateImage(matcap)");
+
+    VkMemoryRequirements requirements{};
+    vkGetImageMemoryRequirements(device_, matcapImage_, &requirements);
+    uint32_t memoryType = 0;
+    if (!findMemoryType(requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                        &memoryType)) {
+        FS_FAIL("matcap_memory_type");
+        return false;
+    }
+    VkMemoryAllocateInfo alloc{};
+    alloc.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    alloc.allocationSize = requirements.size;
+    alloc.memoryTypeIndex = memoryType;
+    FS_VK_CHECK(vkAllocateMemory(device_, &alloc, nullptr, &matcapMemory_), "vkAllocateMemory(matcap)");
+    FS_VK_CHECK(vkBindImageMemory(device_, matcapImage_, matcapMemory_, 0), "vkBindImageMemory(matcap)");
+
+    // Reuse the mesh path's staging buffer and upload command buffer: this runs
+    // once, at device creation, long before any mesh upload, so there is no
+    // contention and no second staging allocation.
+    if (!ensureStagingCapacity(kMatCapByteSize)) {
+        return false;
+    }
+    void* mapped = nullptr;
+    FS_VK_CHECK(vkMapMemory(device_, stagingMemory_, 0, kMatCapByteSize, 0, &mapped),
+                "vkMapMemory(matcap_staging)");
+    std::memcpy(mapped, texels.data(), kMatCapByteSize);
+    vkUnmapMemory(device_, stagingMemory_);
+
+    FS_VK_CHECK(vkResetCommandBuffer(uploadCommandBuffer_, 0), "vkResetCommandBuffer(matcap)");
+    VkCommandBufferBeginInfo begin{};
+    begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    FS_VK_CHECK(vkBeginCommandBuffer(uploadCommandBuffer_, &begin), "vkBeginCommandBuffer(matcap)");
+
+    // UNDEFINED -> TRANSFER_DST_OPTIMAL, copy, then -> SHADER_READ_ONLY_OPTIMAL.
+    // The image never changes again, so this is the only layout transition it
+    // will ever undergo.
+    VkImageMemoryBarrier toTransfer{};
+    toTransfer.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    toTransfer.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    toTransfer.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    toTransfer.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toTransfer.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toTransfer.image = matcapImage_;
+    toTransfer.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    toTransfer.srcAccessMask = 0;
+    toTransfer.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    vkCmdPipelineBarrier(uploadCommandBuffer_, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                         VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &toTransfer);
+
+    VkBufferImageCopy copy{};
+    copy.bufferOffset = 0;
+    copy.bufferRowLength = 0;
+    copy.bufferImageHeight = 0;
+    copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    copy.imageOffset = {0, 0, 0};
+    copy.imageExtent = {kMatCapSize, kMatCapSize, 1};
+    vkCmdCopyBufferToImage(uploadCommandBuffer_, stagingBuffer_, matcapImage_,
+                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+
+    VkImageMemoryBarrier toSampled = toTransfer;
+    toSampled.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    toSampled.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    toSampled.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    toSampled.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    vkCmdPipelineBarrier(uploadCommandBuffer_, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1,
+                         &toSampled);
+
+    FS_VK_CHECK(vkEndCommandBuffer(uploadCommandBuffer_), "vkEndCommandBuffer(matcap)");
+
+    VkSubmitInfo submit{};
+    submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submit.commandBufferCount = 1;
+    submit.pCommandBuffers = &uploadCommandBuffer_;
+    FS_VK_CHECK(vkResetFences(device_, 1, &uploadFence_), "vkResetFences(matcap)");
+    FS_VK_CHECK(vkQueueSubmit(graphicsQueue_, 1, &submit, uploadFence_), "vkQueueSubmit(matcap)");
+    FS_VK_CHECK(vkWaitForFences(device_, 1, &uploadFence_, VK_TRUE, UINT64_MAX),
+                "vkWaitForFences(matcap)");
+
+    VkImageViewCreateInfo viewInfo{};
+    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    viewInfo.image = matcapImage_;
+    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+    viewInfo.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    FS_VK_CHECK(vkCreateImageView(device_, &viewInfo, nullptr, &matcapImageView_),
+                "vkCreateImageView(matcap)");
+
+    VkSamplerCreateInfo samplerInfo{};
+    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    samplerInfo.magFilter = VK_FILTER_LINEAR;
+    samplerInfo.minFilter = VK_FILTER_LINEAR;
+    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+    // CLAMP_TO_EDGE matters: a normal exactly on the silhouette lands on the
+    // rim of the disc, and wrapping there would sample the opposite side of the
+    // sphere and put a bright seam around every object.
+    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.anisotropyEnable = VK_FALSE;  // a MatCap lookup has no surface gradient to filter
+    samplerInfo.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK;
+    samplerInfo.compareEnable = VK_FALSE;
+    samplerInfo.maxLod = 0.0f;
+    FS_VK_CHECK(vkCreateSampler(device_, &samplerInfo, nullptr, &matcapSampler_),
+                "vkCreateSampler(matcap)");
+
+    VkDescriptorImageInfo imageBinding{};
+    imageBinding.sampler = matcapSampler_;
+    imageBinding.imageView = matcapImageView_;
+    imageBinding.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    VkWriteDescriptorSet write{};
+    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write.dstSet = descriptorSet_;
+    write.dstBinding = 0;
+    write.descriptorCount = 1;
+    write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    write.pImageInfo = &imageBinding;
+    vkUpdateDescriptorSets(device_, 1, &write, 0, nullptr);
+
+    FS_LOGI("FORGESHAPE_MATCAP_READY:%ux%u:%u bytes (generated, ForgeShape-owned)", kMatCapSize,
+            kMatCapSize, kMatCapByteSize);
+    return true;
+}
+
+void Renderer::destroyMatCapResources() {
+    if (device_ == VK_NULL_HANDLE) return;
+
+    if (matcapSampler_ != VK_NULL_HANDLE) vkDestroySampler(device_, matcapSampler_, nullptr);
+    if (matcapImageView_ != VK_NULL_HANDLE) vkDestroyImageView(device_, matcapImageView_, nullptr);
+    if (matcapImage_ != VK_NULL_HANDLE) vkDestroyImage(device_, matcapImage_, nullptr);
+    if (matcapMemory_ != VK_NULL_HANDLE) vkFreeMemory(device_, matcapMemory_, nullptr);
+    // Freeing the pool frees the set allocated from it; the set must not be
+    // freed separately.
+    if (descriptorPool_ != VK_NULL_HANDLE) vkDestroyDescriptorPool(device_, descriptorPool_, nullptr);
+    if (descriptorSetLayout_ != VK_NULL_HANDLE) {
+        vkDestroyDescriptorSetLayout(device_, descriptorSetLayout_, nullptr);
+    }
+
+    matcapSampler_ = VK_NULL_HANDLE;
+    matcapImageView_ = VK_NULL_HANDLE;
+    matcapImage_ = VK_NULL_HANDLE;
+    matcapMemory_ = VK_NULL_HANDLE;
+    descriptorPool_ = VK_NULL_HANDLE;
+    descriptorSet_ = VK_NULL_HANDLE;
+    descriptorSetLayout_ = VK_NULL_HANDLE;
 }
 
 bool Renderer::createSyncObjects() {
@@ -1006,26 +1317,34 @@ bool Renderer::createPipeline() {
     stages[1].module = fragShader_;
     stages[1].pName = "main";
 
+    // The vertex format is RenderVertex, not MeshVertex: what the GPU holds is
+    // the derived render mesh, whose extra normal channel is the whole point of
+    // the derivation. MeshVertex remains the authoritative CPU format and is
+    // never handed to Vulkan directly any more.
     VkVertexInputBindingDescription binding{};
     binding.binding = 0;
-    binding.stride = sizeof(MeshVertex);
+    binding.stride = sizeof(RenderVertex);
     binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-    VkVertexInputAttributeDescription attributes[2]{};
+    VkVertexInputAttributeDescription attributes[3]{};
     attributes[0].location = 0;
     attributes[0].binding = 0;
     attributes[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-    attributes[0].offset = offsetof(MeshVertex, position);
+    attributes[0].offset = offsetof(RenderVertex, position);
     attributes[1].location = 1;
     attributes[1].binding = 0;
     attributes[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-    attributes[1].offset = offsetof(MeshVertex, color);
+    attributes[1].offset = offsetof(RenderVertex, normal);
+    attributes[2].location = 2;
+    attributes[2].binding = 0;
+    attributes[2].format = VK_FORMAT_R32G32B32_SFLOAT;
+    attributes[2].offset = offsetof(RenderVertex, color);
 
     VkPipelineVertexInputStateCreateInfo vertexInput{};
     vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
     vertexInput.vertexBindingDescriptionCount = 1;
     vertexInput.pVertexBindingDescriptions = &binding;
-    vertexInput.vertexAttributeDescriptionCount = 2;
+    vertexInput.vertexAttributeDescriptionCount = 3;
     vertexInput.pVertexAttributeDescriptions = attributes;
 
     VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
@@ -1211,14 +1530,48 @@ bool Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex) {
     // box appears comes from the derived model transform, and where the viewer
     // stands comes from the camera snapshot. The renderer composes the two and
     // owns neither.
-    const Mat4 mvp = mat4Multiply(camera_.proj, mat4Multiply(camera_.view, model_));
+    const Mat4 modelView = mat4Multiply(camera_.view, model_);
+    const Mat4 mvp = mat4Multiply(camera_.proj, modelView);
 
-    vkCmdPushConstants(cmd, pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(Mat4), mvp.m);
+    SurfacePush push{};
+    std::memcpy(push.mvp, mvp.m, sizeof(push.mvp));
 
-    const SelectionPush& selection = selectionHighlight_ ? kSelected : kNotSelected;
-    vkCmdPushConstants(cmd, pipelineLayout_, VK_SHADER_STAGE_FRAGMENT_BIT,
-                       static_cast<uint32_t>(kSelectionPushOffset), sizeof(SelectionPush),
-                       selection.tint);
+    // The upper-left 3x3 of modelView, by ROWS. Storage is column-major
+    // (m[column * 4 + row]), so row r is {m[0*4+r], m[1*4+r], m[2*4+r]}.
+    //
+    // Handing the shader this matrix directly instead of its inverse-transpose
+    // is correct ONLY because both factors are rigid — the look-at view matrix
+    // and a rotation+translation ConstructionTransform. Adding scale to the
+    // transform would make the normals wrong here, silently and only on scaled
+    // objects; see the matching note in shaders/surface.vert.
+    for (int row = 0; row < 3; ++row) {
+        float* dst = (row == 0) ? push.normalRow0 : (row == 1) ? push.normalRow1 : push.normalRow2;
+        dst[0] = modelView.m[0 * 4 + row];
+        dst[1] = modelView.m[1 * 4 + row];
+        dst[2] = modelView.m[2 * 4 + row];
+        dst[3] = 0.0f;
+    }
+    // Packed into row 0's otherwise-dead w to stay inside the guaranteed
+    // 128-byte push constant budget. Switching shading model is exactly this
+    // one float: no geometry is rebuilt, no revision is minted and no buffer is
+    // touched.
+    push.normalRow0[3] = static_cast<float>(shadingModelIndex(display_.shading));
+
+    std::memcpy(push.selectionTint, selectionHighlight_ ? kSelectedTint : kNotSelectedTint,
+                sizeof(push.selectionTint));
+
+    vkCmdPushConstants(cmd, pipelineLayout_,
+                       VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                       sizeof(SurfacePush), &push);
+
+    // The MatCap sampler. Bound unconditionally even in Studio Solid: the set
+    // is immutable and binding it costs nothing, whereas leaving a declared
+    // binding unbound is invalid usage regardless of whether the shader's
+    // branch reads it.
+    if (descriptorSet_ != VK_NULL_HANDLE) {
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_, 0, 1,
+                                &descriptorSet_, 0, nullptr);
+    }
 
     // Before the first mesh revision has been uploaded there is nothing to
     // draw; the pass still clears and presents, so the viewport never stalls.

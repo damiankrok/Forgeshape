@@ -1093,6 +1093,136 @@ The runtime and render paths use **32-bit indices** (`uint32_t` /
 `TriangleMeshView` and the GPU index buffer agree on one width, so they cannot
 drift.
 
+## Derived render geometry and shading
+
+`forgeshape_render_mesh.{h,cpp}` sits between the authoritative mesh and the GPU.
+It is platform-neutral and holds no GPU resource. The chain is one-way:
+
+```
+Construction / Sculpt truth
+  -> authoritative RuntimeMesh   (positions + indices + colour)
+      -> RenderMeshData          (positions + NORMALS + colour)
+          -> Vulkan buffers
+```
+
+Nothing is read back. A normal is never a dimension, a Construction parameter, a
+sculpt deformation or picking topology, and **CPU picking still runs on the
+source `RuntimeMesh`** — which is precisely what frees this layer to duplicate
+vertices, because a render vertex has no identity anything outside the renderer
+can observe.
+
+### Render-only vertex duplication, and the two counts
+
+A hard edge needs two different normals at one position, and a vertex carries one
+normal, so a corner on a crease becomes several **render** vertices. Therefore:
+
+- render vertex count >= source vertex count, and usually differs;
+- render index count == source index count, always — a corner is remapped, never
+  added, so the triangle list is the same triangles;
+- every diagnostic names which it means. `FORGESHAPE_MESH_UPLOAD_OK` reports
+  render counts in its historical positions and adds `src=v:i`;
+  `FORGESHAPE_RENDER_MESH_BUILD` reports both explicitly.
+
+Measured, at the default dimensions: box `8:36 -> 24:36`, cylinder
+`66:384 -> 130:384`, sphere `482:2880 -> 482:2880`, cone `34:192 -> 66:192`,
+capsule `514:3072 -> 514:3072`. A fully smooth closed surface has no crease to
+split on, so its render mesh *is* its source topology — which is the cheapest
+available proof that the grouping does not fragment a smooth surface.
+
+### The crease policy
+
+One threshold, `kCreaseAngleDegrees = 40`, stated once and used nowhere else.
+Two triangles sharing a vertex contribute to the same smoothed normal when the
+angle between their face normals is at most that; otherwise the vertex splits and
+each group gets its own normal. Grouping is a per-vertex union-find over that
+vertex's incident triangles, so transitivity lets a sphere pole's 32-triangle fan
+become one group even though its extreme members are far apart in azimuth.
+
+The value must clear the coarsest curved adjacency (360/32 = 11.25°) and stay
+well under the sharpest edge a primitive presents (90°); 40° is near the middle
+of that band, so neither bound is close. That single rule produces every
+per-primitive contract — a box's hard 90° edges, a cylinder's smooth side with
+flat caps and hard rims, a sphere's continuous shading and stable poles, a cone's
+smooth side with a hard base rim and an on-axis apex normal, and a capsule's
+seamless hemisphere-to-middle transition — with no per-primitive special case.
+
+Normals are area-weighted (`(v1-v0) x (v2-v0)`, whose length is twice the area),
+the same weighting `computeVertexNormals` uses for the sculpt cache, so a surface
+does not change character between the two paths. A degenerate triangle
+contributes the zero vector rather than a NaN, and a group with no usable length
+keeps the zero normal — honest, and handled by a documented shader fallback.
+
+Faceted shading is the other branch: three private vertices per triangle carrying
+that triangle's flat normal. It intentionally exposes triangle structure.
+
+### Rebuild policy
+
+`RenderMeshCache` rebuilds when — and only when — the source `MeshRevision` or
+the `SurfaceShading` changed. It does **not** rebuild for a camera move, a
+rotation, a window resize, a unit switch, an inspector toggle, a mode or tool
+change, or a Studio<->MatCap change, because that last one is a fragment-stage
+uniform touching no geometry at all. The renderer gates on the same pair before
+calling in, so a steady frame costs two integer comparisons.
+
+Measured on `emulator-5558`: **4448 presented frames, 2 rebuilds** — across eight
+camera-orbit gestures and three shading-model changes, zero rebuilds and zero
+uploads. Rebuild cost is 0.03 ms (box), 0.55 ms (cylinder), 0.7-1.3 ms (sphere),
+0.78 ms (capsule) and 0.56-0.73 ms for a 482-vertex sculpt mesh per accepted
+move.
+
+The cache derives its own adjacency from the index buffer and deliberately does
+**not** reuse `SculptTopology`: the renderer depends on the published
+`RuntimeMesh` and on nothing in the Sculpt domain, or "presentation only" would
+stop being true the moment sculpt state changed shape.
+
+### Studio Solid and MatCap
+
+Two shading models plus a debug-only source-colour path, as a closed enum and a
+switch — the same rule the sculpt tools follow. Both are evaluated in **view
+space**, so the lights follow the camera. That is a product decision, not a
+convenience: while modelling the user orbits constantly, and world-fixed lights
+would swing a face from lit to unlit purely because the viewpoint moved, which
+reads as the shape changing. Camera-relative light means a change in shading
+always means a change in the *model*.
+
+Studio Solid is computed per fragment in `shaders/surface.frag` and is tuned
+matte and even, for judging planar faces and exact silhouettes. MatCap is a
+single texture lookup at `uv = n.xy * 0.5 + 0.5`, tuned glossier and
+higher-contrast, for reading curvature and sculpt deformation. They share one
+geometry of light — same key direction, same fill, same hemispherical ambient —
+so switching does not relight the object.
+
+Both fills are placed lower-**front**, not opposite the key. A fill opposite the
+key lifts exactly the planes the key leaves dark, and a box's left and right
+faces end up nearly the same value; measured, that rig gave 0.44 vs 0.40 against
+0.49 vs 0.29 for the current one.
+
+There is no PBR here and none is implied: no metalness, no roughness, no
+environment probe, no shadow map, no ambient occlusion and no tone-mapping stack.
+
+### The MatCap asset
+
+`forgeshape_matcap.{h,cpp}` **computes** the one 128x128 RGBA8 preset at device
+initialization from a closed-form model written out in that file. There is no
+image in the repository, nothing downloaded, and nothing derived from another
+application's asset. Generating rather than shipping a file is also the only
+option that respects the no-third-party-library rule — decoding a PNG would need
+a decoder ForgeShape may not depend on. Texels outside the unit disc are clamped
+to the rim value in the same direction so bilinear filtering at a silhouette does
+not bleed, and the sampler uses `CLAMP_TO_EDGE` for the same reason.
+
+Exactly one preset. No library, no browser, no import, no per-object material.
+
+### Display settings ownership
+
+`forgeshape_display.{h,cpp}` holds the shading model and the surface shading as
+two process-scoped atomics. Native owns them exactly as it owns the product mode
+and the active tool; the Android UI may request a change and read the value back,
+but does not hold it — which is why they survive HOME/resume with no save/restore
+code in the Android layer. A snapshot is pushed into the renderer per frame,
+outside the state mutex, because no domain invariant depends on it and a frame
+must never wait on the geometry lock to learn which shading model to draw with.
+
 ## GPU mesh upload
 
 `Renderer` owns every mesh-related `VkBuffer`, `VkDeviceMemory`, copy and
@@ -1112,6 +1242,13 @@ Capacity policy (`growCapacityBytes`, pure arithmetic, self-tested):
   buffer;
 - otherwise capacity grows by 1.5x, but never to less than what is needed;
 - everything is bounded by a hard cap, so the size arithmetic cannot overflow.
+
+The "reuse a smaller mesh" rule earns its keep now that render vertex counts are
+derived. A sculpt stroke that deforms a surface enough to create genuine creases
+splits vertices, so the **render** count drifts move to move (measured: 482 → 492,
+oscillating 491/492) even though the source count is fixed. Because capacity
+never shrinks, that whole stroke ran with **every upload `reuse` and zero buffer
+growth** — the fluctuation costs nothing.
 
 ### In-flight resource safety
 
@@ -1193,10 +1330,53 @@ the camera moved, or the object did.
 
 Its only selection input is `setSelectionHighlight(bool)` — pure visual state,
 delivered to the fragment shader as a tint push constant. The renderer is never
-told *which* object is selected. Once per frame it asks `MeshStore` for the
-current revision and uploads it only if it differs from the uploaded one, so
-render and pick geometry both follow the same published revision and cannot
-diverge.
+told *which* object is selected. `setDisplaySettings(...)` is the same kind of
+input: consumed verbatim, owned elsewhere. Once per frame it asks `MeshStore` for
+the current revision and, if that revision or the surface shading differs from
+what is uploaded, rebuilds the derived render mesh and uploads that — so render
+and pick geometry both follow the same published revision and cannot diverge.
+
+What the GPU holds is `RenderVertex` (position + normal + colour), not
+`MeshVertex`. The authoritative format is no longer handed to Vulkan directly.
+
+### Push constant budget
+
+One 128-byte range covering both stages, which is the **smallest**
+`maxPushConstantsSize` Vulkan guarantees, so the layout stays valid on
+implementations exposing only the minimum:
+
+```
+  0  mat4 mvp
+ 64  vec4 normalRow0    xyz = row 0 of the view-space normal matrix, w = shading model
+ 80  vec4 normalRow1    xyz = row 1
+ 96  vec4 normalRow2    xyz = row 2
+112  vec4 selectionTint rgb = tint, a = mix amount
+```
+
+A `static_assert` pins the size. The shading model rides in an otherwise-dead
+`w` component rather than taking a fifth 16-byte slot the budget does not have;
+the next thing needing per-draw uniform data belongs in a descriptor, not here.
+
+Normals are transformed by the upper-left 3x3 of `view * model` applied
+**directly**, not as an inverse-transpose. That is valid only because both
+factors are rigid — a look-at view matrix, and a `ConstructionTransform`
+documented as rotation + translation with no scale — so the product is
+orthonormal and its inverse-transpose is itself. **Adding scale to the transform
+would make normals silently wrong on scaled objects**; it is one of exactly two
+places that shortcut is taken, the other being picking's "local distance is world
+distance". The fix would be CPU-side; the shader would not change.
+
+### The one descriptor set
+
+The MatCap sampler is the only sampled image in ForgeShape and therefore the only
+reason a descriptor set exists — everything else still travels as push constants.
+One `COMBINED_IMAGE_SAMPLER` at set 0 binding 0, allocated once and never updated
+again, because the image is immutable for the life of the device: no per-frame
+descriptor traffic and no per-frame-in-flight copies. It is bound unconditionally
+even in Studio Solid, since leaving a declared binding unbound is invalid usage
+regardless of which shader branch runs. The image, its view, its sampler and the
+set are device-scoped, so a Surface swap does not touch them and a HOME/resume
+neither regenerates nor re-uploads the MatCap.
 
 ### Surface orientation convention
 

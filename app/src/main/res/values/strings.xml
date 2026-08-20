@@ -20,6 +20,16 @@
     <string name="hide_ui">Hide UI</string>
     <string name="show_ui">Show UI</string>
 
+    <!-- Display settings. Presentation only; none of these changes the model. -->
+    <string name="display_settings">Display</string>
+    <string name="shading">Shading</string>
+    <string name="shading_studio">Studio</string>
+    <string name="shading_matcap">MatCap</string>
+    <string name="shading_debug">Debug</string>
+    <string name="surface">Surface</string>
+    <string name="surface_smooth">Smooth</string>
+    <string name="surface_faceted">Faceted</string>
+
     <!-- Tool Rail -->
     <string name="tool_rail">Tool Rail</string>
     <string name="tool_grab">Grab</string>

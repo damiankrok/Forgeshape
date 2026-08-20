@@ -93,7 +93,7 @@ emit several hundred lines in a few milliseconds and the default buffer silently
 drops the tail, which reads exactly like a self-test that stopped partway
 through. That is a logging limit, not an app failure.
 
-A clean debug launch emits **nine** `*_SELFTEST_OK` tokens, in this order, then
+A clean debug launch emits **ten** `*_SELFTEST_OK` tokens, in this order, then
 `FORGESHAPE_NATIVE_VIEWPORT_OK` once the first frame is presented:
 
 ```
@@ -106,6 +106,7 @@ FORGESHAPE_CONSTRUCTION_PRIMITIVE_SELFTEST_OK
 FORGESHAPE_CONSTRUCTION_SPHERE_SELFTEST_OK
 FORGESHAPE_CONE_CAPSULE_SELFTEST_OK
 FORGESHAPE_SCULPT_BRUSH_KERNEL_SELFTEST_OK
+FORGESHAPE_RENDER_SHADING_SELFTEST_OK
 ```
 
 Each suite reports `(<n> checks)` and fails as `<SUITE>_CASE_FAIL:<name>` plus
@@ -113,6 +114,28 @@ Each suite reports `(<n> checks)` and fails as `<SUITE>_CASE_FAIL:<name>` plus
 Grepping for `FAIL` alone over-matches, because some passing check *names*
 contain "fails" — match `_SELFTEST_FAIL` or `_FAIL:`. The self-tests are
 debug-only and run once from `NativeViewport.start()`; none runs per frame.
+
+### Checking that shading normals are not rebuilt per frame
+
+Derived render geometry must be rebuilt only when the source mesh revision or the
+Smooth/Faceted choice actually changed. One `FORGESHAPE_RENDER_MESH_BUILD` line is
+emitted per rebuild and never per frame, and it carries the frame counter so the
+two are directly comparable.
+
+```
+adb -s <serial> logcat -d -s ForgeShape:V | grep RENDER_MESH_BUILD
+```
+
+```
+FORGESHAPE_RENDER_MESH_BUILD:8 src=482:2880 render=482:2880 shading=Smooth \
+    rebuilds=2 frame=4448 ms=1.015
+```
+
+`src` is the authoritative `RuntimeMesh`; `render` is the derived mesh the GPU
+holds, which differs wherever a hard edge forced a corner to split. To check the
+policy, orbit the camera and switch Studio<->MatCap for a while, then confirm the
+grep returns **nothing** — neither changes geometry. `rebuilds` should stay far
+below `frame`; a `rebuilds` count that tracks `frame` means the gate is broken.
 
 ### Checking orientation and surface geometry
 

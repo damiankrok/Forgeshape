@@ -20,6 +20,52 @@ added to the scene.
 The object comes up as a box, **2.0 m wide × 1.0 m high × 0.5 m deep**, centred
 at the world origin and unrotated, so it is visibly not a cube.
 
+## How the surface is shaded
+
+The object is drawn as neutral grey clay, lit from the upper left with a soft
+fill and a restrained sheen. The light travels with the camera, so orbiting never
+makes a face appear to change: if the shading changes, the *shape* changed.
+
+The point of it is that form is readable. A box shows six flat faces with genuine
+hard corners and no rounded edges, and its left and right faces are clearly
+different values rather than the same grey. A cylinder's side is smooth while its
+end caps stay flat, with a crisp rim between them. A sphere is continuously
+smooth all over, including at the poles. A cone has a smooth side, a flat base, a
+sharp rim, and a clean point at the top. A capsule is smooth from end to end, with
+no visible join where the rounded ends meet the middle — and a capsule as tall as
+it is wide is simply a smooth sphere.
+
+**Display** in the Global Toolbar opens a small panel with two choices.
+
+*Shading* picks how the surface is lit:
+
+- **Studio** — the default. Matte and even, best for judging flat faces and exact
+  outlines.
+- **MatCap** — glossier and more contrasty, best for reading curvature and for
+  seeing what a sculpting stroke actually did.
+
+*Surface* picks how the surface is smoothed:
+
+- **Smooth** — the default. Curved surfaces look curved; only real edges look
+  sharp.
+- **Faceted** — every triangle is shaded flat, which deliberately shows the
+  underlying triangles.
+
+Switching between Studio and MatCap changes nothing but the picture: the object,
+its dimensions, its placement and any sculpting are untouched, and so is what you
+can tap. Smooth and Faceted are the same — the same triangles are drawn either
+way. None of the four discards a dimension you are part-way through typing.
+
+The panel stays open while you try several options, and the choices survive
+leaving the app and coming back.
+
+A selected object is tinted, and stays readable as a shape while tinted, in both
+shading modes.
+
+While sculpting, the lighting follows the surface as it moves: a stroke that
+pulls a lobe out of a sphere lights that lobe immediately, with no stale shading
+left behind.
+
 ## The Editor Workspace
 
 The editor is one workspace, and the model is the largest thing in it. A thin
@@ -447,6 +493,13 @@ acts on the selection (moving, editing, deleting) are not implemented.
 Two-finger twist/roll, inertia, camera presets, orthographic camera,
 focus-on-selection, long-press selection, grid, modelling, UV, save/load and undo
 are not implemented.
+
+Shading stops where it is. There is **one** MatCap and no way to add, import or
+choose another; there are no materials, no colour or texture you can assign to
+the object, no texture painting, no metalness or roughness, no environment or
+HDRI, no movable or additional lights, no shadows, no ambient occlusion, and no
+outline around the selected object — selection is a tint. A photoreal (PBR)
+preview belongs to later work on materials and export.
 
 **Sketch, Extrude and Export have visible homes and no implementation.** They
 appear in the Editor Workspace — Sketch and Extrude in the Construction Tool

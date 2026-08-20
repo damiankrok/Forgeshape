@@ -212,6 +212,8 @@ MeshGpuStats MeshUploadDiagnostics::snapshot() const {
     s.uploadedRevision = uploadedRevision_.load();
     s.uploadedVertexCount = uploadedVertexCount_.load();
     s.uploadedIndexCount = uploadedIndexCount_.load();
+    s.sourceVertexCount = sourceVertexCount_.load();
+    s.sourceIndexCount = sourceIndexCount_.load();
     s.vertexCapacityBytes = vertexCapacityBytes_.load();
     s.indexCapacityBytes = indexCapacityBytes_.load();
     s.stagingCapacityBytes = stagingCapacityBytes_.load();

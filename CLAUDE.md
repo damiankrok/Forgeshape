@@ -18,8 +18,8 @@ adb -s <serial> logcat -s ForgeShape:V
 
 APK: `app/build/outputs/apk/debug/app-debug.apk`
 
-A clean debug launch emits **nine** `*_SELFTEST_OK` tokens, then
-`FORGESHAPE_NATIVE_VIEWPORT_OK`. All nine, in emission order:
+A clean debug launch emits **ten** `*_SELFTEST_OK` tokens, then
+`FORGESHAPE_NATIVE_VIEWPORT_OK`. All ten, in emission order:
 
 ```
 FORGESHAPE_CAMERA_SELFTEST_OK
@@ -31,6 +31,7 @@ FORGESHAPE_CONSTRUCTION_PRIMITIVE_SELFTEST_OK
 FORGESHAPE_CONSTRUCTION_SPHERE_SELFTEST_OK
 FORGESHAPE_CONE_CAPSULE_SELFTEST_OK
 FORGESHAPE_SCULPT_BRUSH_KERNEL_SELFTEST_OK
+FORGESHAPE_RENDER_SHADING_SELFTEST_OK
 ```
 
 Failures: `FORGESHAPE_NATIVE_VIEWPORT_FAIL:*` and the matching `*_SELFTEST_FAIL`.
@@ -41,9 +42,9 @@ Enlarge the log ring buffer (`adb -s <serial> logcat -G 16M`) before capturing
 startup evidence: the default buffer drops part of the self-test output and it
 looks like a suite that stopped partway.
 
-Camera, picking, dynamic-mesh, Construction-box and sculpt self-tests are
-debug-only and run once from `NativeViewport.start()`. They must never run per
-frame.
+Camera, picking, dynamic-mesh, Construction-box, sculpt and render-shading
+self-tests are debug-only and run once from `NativeViewport.start()`. They must
+never run per frame.
 
 ## Hard rules
 
@@ -77,6 +78,12 @@ frame.
   a `PrimitiveKind` or a transform, and no Construction parameter may ever be
   reconstructed from sculpt vertices. Adopting a changed Construction shape into
   the sculpt mesh is always an explicit user act, never automatic.
+- **Shading is presentation, never truth.** Normals, the derived render mesh and
+  every display setting are one-way products of a published `RuntimeMesh`.
+  Nothing may read a dimension, a Construction parameter, a sculpt deformation,
+  picking topology or an `ObjectId` back out of them, and no display change may
+  mint a revision. Render-only vertex duplication for hard edges is expected, so
+  render and source counts differ and a diagnostic must say which it means.
 - **The Vulkan viewport is full-bleed; only chrome is inset.** The `SurfaceView`
   gets the whole window, and no layout decision, window inset or IME may inset,
   pad or resize it — that would change the render target and rebuild the

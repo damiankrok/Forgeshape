@@ -17,7 +17,9 @@
 #include <vector>
 
 #include "forgeshape_camera.h"
+#include "forgeshape_display.h"
 #include "forgeshape_mesh.h"
+#include "forgeshape_render_mesh.h"
 
 namespace forgeshape {
 
@@ -40,6 +42,15 @@ public:
     // Visual selection state only. The renderer is never told WHICH object is
     // selected: identity is owned by SelectionController.
     void setSelectionHighlight(bool selected) { selectionHighlight_ = selected; }
+
+    // Installs the display settings used by the next recorded frame, consumed
+    // verbatim exactly like the camera snapshot. The renderer owns no
+    // presentation preference: DisplaySettingsStore does, and the viewport
+    // thread pushes a snapshot in before each frame.
+    //
+    // Only the Smooth/Faceted choice can cause any work beyond a uniform
+    // change, and even that is confined to the render-only derived mesh.
+    void setDisplaySettings(const ViewportDisplaySettings& settings) { display_ = settings; }
 
     // Device-independent setup: Vulkan instance only.
     bool createInstance();
@@ -93,6 +104,20 @@ private:
     // side only observes the newest revision and mirrors it onto the GPU.
     bool createMeshUploadObjects();
     void destroyMeshResources();
+
+    // --- MatCap sampling resources (renderer-owned, render thread only) ------
+    //
+    // The only sampled image in ForgeShape, and therefore the only reason a
+    // descriptor set exists at all: everything else the pipeline needs still
+    // travels as push constants. The image content is generated on the CPU by
+    // forgeshape_matcap.cpp; this side only uploads and binds it.
+    //
+    // Device-scoped, like the mesh buffers: created once with the device and
+    // untouched by a Surface swap, so a HOME/resume does not regenerate or
+    // re-upload the MatCap.
+    bool createDescriptorResources();
+    bool createMatCapResources();
+    void destroyMatCapResources();
     // Waits on the renderer's own frame fences (never vkDeviceWaitIdle /
     // vkQueueWaitIdle) so no in-flight frame can still reference the mesh
     // buffers that are about to be overwritten or destroyed.
@@ -101,9 +126,13 @@ private:
     // Reuses the existing device-local allocation when it is already big
     // enough; grows (and retires the old one) only when it is not.
     bool ensureMeshCapacity(VkDeviceSize vertexBytes, VkDeviceSize indexBytes, bool* outGrew);
-    bool uploadMesh(const RuntimeMesh& mesh);
-    // Called once per frame, before recording: uploads only if the store's
-    // current revision differs from the uploaded one.
+    // Uploads DERIVED render geometry. `sourceRevision` is carried through for
+    // diagnostics only: it identifies which authoritative revision this render
+    // data was derived from, and is what the uploaded-revision check compares.
+    bool uploadRenderMesh(const RenderMeshData& mesh, MeshRevision sourceRevision);
+    // Called once per frame, before recording. Rebuilds the render-only derived
+    // mesh and uploads it ONLY when the source revision or the surface shading
+    // actually changed; on every other frame this is two integer comparisons.
     void syncMeshRevision();
 
     // Instance-level
@@ -139,9 +168,29 @@ private:
     VkCommandBuffer uploadCommandBuffer_ = VK_NULL_HANDLE;
     VkFence uploadFence_ = VK_NULL_HANDLE;
 
+    // The render-only derived geometry (positions + NORMALS + colour) that the
+    // GPU buffers above actually hold. The authoritative RuntimeMesh in
+    // MeshStore is NOT what gets uploaded any more: this is derived from it,
+    // and its vertex count generally differs because a hard edge needs one
+    // render vertex per crease group. Picking still runs on the source.
+    RenderMeshCache renderMesh_;
+
+    // Which authoritative revision, and which surface shading, the GPU buffers
+    // currently hold. Both must match for an upload to be skipped.
     MeshRevision uploadedRevision_ = kNoMeshRevision;
+    SurfaceShading uploadedShading_ = kDefaultSurfaceShading;
     MeshRevision failedRevision_ = kNoMeshRevision;  // do not retry in a loop
     uint64_t meshBufferGrowCount_ = 0;
+
+    // The one sampled image, its sampler, and the single descriptor set that
+    // binds them. Device-scoped: a Surface swap does not touch them.
+    VkImage matcapImage_ = VK_NULL_HANDLE;
+    VkDeviceMemory matcapMemory_ = VK_NULL_HANDLE;
+    VkImageView matcapImageView_ = VK_NULL_HANDLE;
+    VkSampler matcapSampler_ = VK_NULL_HANDLE;
+    VkDescriptorSetLayout descriptorSetLayout_ = VK_NULL_HANDLE;
+    VkDescriptorPool descriptorPool_ = VK_NULL_HANDLE;
+    VkDescriptorSet descriptorSet_ = VK_NULL_HANDLE;
 
     VkShaderModule vertShader_ = VK_NULL_HANDLE;
     VkShaderModule fragShader_ = VK_NULL_HANDLE;
@@ -184,6 +233,12 @@ private:
 
     // Purely visual: "tint the cube because something is selected".
     bool selectionHighlight_ = false;
+
+    // Purely presentation: which shading model to evaluate and whether the
+    // derived normals are smoothed or faceted. Owned by DisplaySettingsStore
+    // and pushed in per frame; the defaults here only cover the frames before
+    // the first snapshot arrives.
+    ViewportDisplaySettings display_{};
 
     // True when this swapchain deliberately declared a pre-transform the surface
     // does not currently use (the identity-pre-transform orientation

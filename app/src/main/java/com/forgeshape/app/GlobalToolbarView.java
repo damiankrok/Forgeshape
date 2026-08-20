@@ -42,6 +42,8 @@ final class GlobalToolbarView extends LinearLayout {
         void onBackToConstruction();
 
         void onChromeHideRequested();
+
+        void onDisplaySettingsRequested();
     }
 
     private final TextView contextLabel;
@@ -49,6 +51,7 @@ final class GlobalToolbarView extends LinearLayout {
     private final TextView resumeButton;
     private final TextView backButton;
     private final TextView exportAction;
+    private final TextView displaySettingsButton;
     private final TextView hideUiToggle;
     private final TextView statusMessage;
 
@@ -137,6 +140,19 @@ final class GlobalToolbarView extends LinearLayout {
                 context.getString(R.string.export_reserved_note));
         controlsRow.addView(exportAction, EditorControlStyles.wrap(gap));
 
+        // Display sits in the Global Toolbar because it is mode-independent:
+        // how the surface is shaded is as true in Sculpt as in Construction, so
+        // it does not belong to the Tool Rail or to either inspector body.
+        displaySettingsButton = EditorControlStyles.chip(context, R.id.display_settings_button, "◐");
+        displaySettingsButton.setContentDescription(context.getString(R.string.display_settings));
+        displaySettingsButton.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                actions.onDisplaySettingsRequested();
+            }
+        });
+        controlsRow.addView(displaySettingsButton, EditorControlStyles.wrap(gap));
+
         hideUiToggle = EditorControlStyles.chip(context, R.id.hide_ui_toggle, "⊟");
         hideUiToggle.setContentDescription(context.getString(R.string.hide_ui));
         hideUiToggle.setOnClickListener(new OnClickListener() {
@@ -209,6 +225,11 @@ final class GlobalToolbarView extends LinearLayout {
         // non-destructive act is the one that gets the toolbar slot.
         freezeButton.setVisibility(!sculpting && !hasFrozenMesh ? VISIBLE : GONE);
         resumeButton.setVisibility(!sculpting && hasFrozenMesh ? VISIBLE : GONE);
+    }
+
+    /** Marks the Display button active while its popover is open. */
+    void showDisplaySettingsOpen(boolean open) {
+        EditorControlStyles.setChipActive(displaySettingsButton, open);
     }
 
     void showChromeHidden(boolean hidden) {

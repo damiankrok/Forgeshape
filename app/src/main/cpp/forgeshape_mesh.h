@@ -191,8 +191,17 @@ inline bool capacityIsSufficient(uint64_t currentCapacity, uint64_t neededBytes)
 // diagnostics sink, not a second owner of GPU state.
 struct MeshGpuStats {
     uint64_t uploadedRevision = 0;
+    // What the GPU holds. Since shading normals were added these are the
+    // DERIVED RENDER counts, which differ from the authoritative ones whenever
+    // a hard edge forced a corner to split into several render vertices.
     uint64_t uploadedVertexCount = 0;
     uint64_t uploadedIndexCount = 0;
+    // What the authoritative RuntimeMesh that render data was derived from
+    // holds. These are the counts every other subsystem means — picking,
+    // sculpt topology, capacity reasoning about the source — and they are
+    // reported separately precisely so the two can never be confused.
+    uint64_t sourceVertexCount = 0;
+    uint64_t sourceIndexCount = 0;
     uint64_t vertexCapacityBytes = 0;
     uint64_t indexCapacityBytes = 0;
     uint64_t stagingCapacityBytes = 0;
@@ -210,6 +219,13 @@ public:
 
     void recordUpload(MeshRevision revision, uint32_t vertexCount, uint32_t indexCount,
                       uint64_t vertexCapacity, uint64_t indexCapacity, bool reusedCapacity);
+    // Records the authoritative counts the last upload's render data was
+    // derived from. Separate from recordUpload because they describe a
+    // different mesh, not a different aspect of the same one.
+    void recordSourceCounts(uint32_t vertexCount, uint32_t indexCount) {
+        sourceVertexCount_.store(vertexCount);
+        sourceIndexCount_.store(indexCount);
+    }
     void recordBufferGrow() { bufferGrowCount_.fetch_add(1); }
     void recordStagingGrow(uint64_t capacity) {
         stagingGrowCount_.fetch_add(1);
@@ -222,6 +238,8 @@ private:
     std::atomic<uint64_t> uploadedRevision_{0};
     std::atomic<uint64_t> uploadedVertexCount_{0};
     std::atomic<uint64_t> uploadedIndexCount_{0};
+    std::atomic<uint64_t> sourceVertexCount_{0};
+    std::atomic<uint64_t> sourceIndexCount_{0};
     std::atomic<uint64_t> vertexCapacityBytes_{0};
     std::atomic<uint64_t> indexCapacityBytes_{0};
     std::atomic<uint64_t> stagingCapacityBytes_{0};

@@ -362,6 +362,68 @@ final class NativeViewport {
     /** @return the active {@code TOOL_*} constant */
     static native int sculptTool();
 
+    // -----------------------------------------------------------------------
+    // Viewport display settings
+    // -----------------------------------------------------------------------
+    //
+    // PRESENTATION ONLY. None of the four calls below publishes a mesh, mints a
+    // MeshRevision or a SculptRevision, moves a vertex, changes a Construction
+    // parameter or affects picking. They decide how the object is DRAWN and
+    // nothing about what it is.
+    //
+    // Native owns the values, exactly as it owns the product mode and the active
+    // tool, so they survive HOME/resume for free: the Android layer reads them
+    // back on resume rather than saving and restoring them.
+
+    /** Neutral clay studio lighting: the modelling default. */
+    static final int SHADING_STUDIO = 0;
+
+    /** The ForgeShape-owned MatCap: the high-readability form/sculpt view. */
+    static final int SHADING_MATCAP = 1;
+
+    /**
+     * DEBUG-ONLY: the source mesh's own per-vertex colours, which is what the
+     * viewport looked like before shading existed. Reachable only from a
+     * debuggable build, and never the default.
+     */
+    static final int SHADING_DEBUG_SOURCE_COLOR = 2;
+
+    /** Normals averaged across crease-bounded face groups. */
+    static final int SURFACE_SMOOTH = 0;
+
+    /** One flat normal per triangle; intentionally exposes triangle structure. */
+    static final int SURFACE_FACETED = 1;
+
+    /**
+     * Requests a shading model.
+     *
+     * <p>An unknown index is refused and the current model stands. This is a
+     * fragment-stage uniform: it rebuilds no geometry and re-uploads nothing.
+     *
+     * @param model one of the {@code SHADING_*} constants
+     * @return the {@code SHADING_*} constant that is active after the call
+     */
+    static native int setShadingModel(int model);
+
+    /** @return the active {@code SHADING_*} constant */
+    static native int shadingModel();
+
+    /**
+     * Requests smooth or faceted surface shading.
+     *
+     * <p>An unknown index is refused and the current choice stands. This is the
+     * one display setting that causes any recomputation, and it is confined to
+     * the render-only derived mesh: the authoritative RuntimeMesh, its revision
+     * and picking are all untouched.
+     *
+     * @param shading one of the {@code SURFACE_*} constants
+     * @return the {@code SURFACE_*} constant that is active after the call
+     */
+    static native int setSurfaceShading(int shading);
+
+    /** @return the active {@code SURFACE_*} constant */
+    static native int surfaceShading();
+
     /**
      * DEBUG-ONLY test hook: publishes a native debug mesh fixture, or drives the
      * native Construction box's authoritative dimensions.

@@ -43,7 +43,8 @@ import android.widget.TextView;
 final class EditorWorkspaceView extends FrameLayout
         implements InspectorHost, GlobalToolbarView.OnGlobalAction,
         ToolRailView.OnToolSelected, PropertyInspectorView.OnExpandedChanged,
-        BrushEdgeControlsView.OnBrushChanged {
+        BrushEdgeControlsView.OnBrushChanged,
+        DisplaySettingsPopoverView.OnDisplaySettingChanged {
 
     private static final int[] SCULPT_TOOL_HINTS = {
             R.string.hint_grab, R.string.hint_clay, R.string.hint_smooth, R.string.hint_inflate
@@ -65,6 +66,7 @@ final class EditorWorkspaceView extends FrameLayout
     private final BrushEdgeControlsView brushControls;
     private final PropertyInspectorView inspector;
     private final TextView restoreChip;
+    private final DisplaySettingsPopoverView displayPopover;
 
     private final ConstructionShapeEditorView shapeEditor;
     private final ConstructionPlacementEditorView placementEditor;
@@ -163,6 +165,16 @@ final class EditorWorkspaceView extends FrameLayout
         restoreParams.topMargin = EditorControlStyles.dimen(context, R.dimen.row_gap);
         restoreParams.rightMargin = EditorControlStyles.dimen(context, R.dimen.row_gap);
         overlayRoot.addView(restoreChip, restoreParams);
+
+        // The display popover lives in the overlay rather than in the toolbar's
+        // own row for one reason: the toolbar is a fixed-height strip inside a
+        // vertical LinearLayout, so a panel added there would either be clipped
+        // or would push the middle row down and resize the chrome. In the
+        // overlay it simply hangs under the toolbar, and the adaptive layout
+        // arithmetic in WorkspaceLayoutMode does not have to learn about it.
+        displayPopover = new DisplaySettingsPopoverView(context, this, isDebuggableBuild(context));
+        overlayRoot.addView(displayPopover, DisplaySettingsPopoverView.anchoredParams(context,
+                EditorControlStyles.dimen(context, R.dimen.toolbar_height)));
 
         shapeEditor = new ConstructionShapeEditorView(context, this);
         placementEditor = new ConstructionPlacementEditorView(context, this);
@@ -384,6 +396,15 @@ final class EditorWorkspaceView extends FrameLayout
         chromeRoot.setVisibility(hidden ? GONE : VISIBLE);
         restoreChip.setVisibility(hidden ? VISIBLE : GONE);
         toolbar.showChromeHidden(hidden);
+        if (hidden) {
+            // Hiding chrome means "show me the bare model". The popover lives in
+            // the overlay, so it would otherwise survive the very act that was
+            // meant to clear the viewport. Closed without animation: the chrome
+            // around it is disappearing in the same frame, so animating this one
+            // panel out would only draw attention to it.
+            displayPopover.closeImmediately();
+            toolbar.showDisplaySettingsOpen(false);
+        }
     }
 
     boolean chromeHidden() {
@@ -416,6 +437,10 @@ final class EditorWorkspaceView extends FrameLayout
 
         toolbar.showContext(sculpting, hasFrozenMesh);
         buildRailFor(sculpting);
+        // Display settings are native-owned and process-scoped, so on a resume
+        // they are already whatever they were; this only makes the popover's
+        // chips agree with them.
+        refreshDisplaySettings();
 
         if (sculpting) {
             brushControls.setVisibility(VISIBLE);
@@ -630,6 +655,72 @@ final class EditorWorkspaceView extends FrameLayout
     @Override
     public void onChromeHideRequested() {
         setChromeHidden(!uiState.chromeHidden());
+    }
+
+    // -----------------------------------------------------------------------
+    // Display settings (presentation only)
+    // -----------------------------------------------------------------------
+    //
+    // None of this publishes a mesh revision, changes a Construction parameter,
+    // moves a sculpt vertex or affects what is pickable, so — unlike a mode or
+    // tool change — none of it calls syncFromNative(). Doing so would rewrite
+    // the exact-value editors and discard a half-typed dimension, which is
+    // exactly the kind of surprise a display control must never cause.
+
+    @Override
+    public void onDisplaySettingsRequested() {
+        final boolean opening = !displayPopover.isOpen();
+        if (opening) {
+            refreshDisplaySettings();
+            // Hang the popover below the toolbar's ACTUAL height, not a nominal
+            // one. The toolbar grows a second line when the status message
+            // cannot share the control row, and a fixed offset would then put
+            // the popover on top of the very message a rejected Apply writes.
+            final ViewGroup.MarginLayoutParams params =
+                    (ViewGroup.MarginLayoutParams) displayPopover.getLayoutParams();
+            final int toolbarHeight = toolbar.getHeight();
+            if (toolbarHeight > 0 && params.topMargin != toolbarHeight) {
+                params.topMargin = toolbarHeight;
+                displayPopover.setLayoutParams(params);
+            }
+        }
+        displayPopover.setOpen(opening);
+        toolbar.showDisplaySettingsOpen(opening);
+    }
+
+    @Override
+    public void onShadingModelRequested(int model) {
+        // The popover deliberately stays OPEN. Comparing Studio against MatCap
+        // means switching back and forth, and a panel that dismissed itself on
+        // every choice would make that four gestures instead of two.
+        NativeViewport.setShadingModel(model);
+        refreshDisplaySettings();
+    }
+
+    @Override
+    public void onSurfaceShadingRequested(int shading) {
+        NativeViewport.setSurfaceShading(shading);
+        refreshDisplaySettings();
+    }
+
+    /** Repaints the popover from native truth, so a refused request shows. */
+    private void refreshDisplaySettings() {
+        displayPopover.showSettings(NativeViewport.shadingModel(),
+                NativeViewport.surfaceShading());
+    }
+
+    /**
+     * Whether this build is debuggable, which is what gates the debug
+     * source-colour shading chip.
+     *
+     * <p>Read from the application info rather than from {@code BuildConfig}:
+     * the project does not generate a {@code BuildConfig} class, and enabling
+     * one for a single boolean would add a build feature to the product for a
+     * diagnostic's benefit.
+     */
+    private static boolean isDebuggableBuild(Context context) {
+        return (context.getApplicationInfo().flags
+                & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0;
     }
 
     // -----------------------------------------------------------------------

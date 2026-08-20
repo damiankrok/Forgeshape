@@ -20,9 +20,22 @@
     <item name="resume_sculpt" type="id" />
     <item name="back_to_construction" type="id" />
     <item name="export_action" type="id" />
+    <item name="display_settings_button" type="id" />
     <item name="hide_ui_toggle" type="id" />
     <item name="restore_ui_chip" type="id" />
     <item name="status_message" type="id" />
+
+    <!--
+      Display settings. Presentation only: none of these controls changes a
+      dimension, a Construction parameter, a sculpt vertex or what is pickable.
+      `display_mode_debug` exists only in a debuggable build.
+    -->
+    <item name="display_settings_popover" type="id" />
+    <item name="display_mode_studio" type="id" />
+    <item name="display_mode_matcap" type="id" />
+    <item name="display_mode_debug" type="id" />
+    <item name="surface_shading_smooth" type="id" />
+    <item name="surface_shading_faceted" type="id" />
 
     <!-- Tool Rail. One rail view; its entries differ by mode. -->
     <item name="tool_rail" type="id" />

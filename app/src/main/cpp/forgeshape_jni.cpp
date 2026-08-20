@@ -30,11 +30,13 @@
 #include "forgeshape_camera_selftest.h"
 #include "forgeshape_construction.h"
 #include "forgeshape_construction_selftest.h"
+#include "forgeshape_display.h"
 #include "forgeshape_mesh.h"
 #include "forgeshape_mesh_fixtures.h"
 #include "forgeshape_mesh_selftest.h"
 #include "forgeshape_picking_selftest.h"
 #include "forgeshape_primitive_selftest.h"
+#include "forgeshape_render_mesh_selftest.h"
 #include "forgeshape_renderer.h"
 #include "forgeshape_sculpt.h"
 #include "forgeshape_sculpt_selftest.h"
@@ -341,6 +343,28 @@ void runSculptSelfTestsAndLog() {
     } else {
         FS_LOGE("FORGESHAPE_SCULPT_BRUSH_KERNEL_SELFTEST_FAIL (%d of %d checks failed)", failed,
                 count);
+    }
+#endif
+}
+
+void runRenderMeshSelfTestsAndLog() {
+#ifndef NDEBUG
+    constexpr int kMaxRenderMeshChecks = 256;
+    static forgeshape::RenderMeshSelfTestResult results[kMaxRenderMeshChecks];
+    const int count = forgeshape::runRenderMeshSelfTests(results, kMaxRenderMeshChecks);
+    int failed = 0;
+    for (int i = 0; i < count; ++i) {
+        if (!results[i].passed) {
+            ++failed;
+            FS_LOGE("FORGESHAPE_RENDER_SHADING_SELFTEST_CASE_FAIL:%s", results[i].name);
+        } else {
+            FS_LOGI("render shading selftest pass: %s", results[i].name);
+        }
+    }
+    if (failed == 0) {
+        FS_LOGI("FORGESHAPE_RENDER_SHADING_SELFTEST_OK (%d checks)", count);
+    } else {
+        FS_LOGE("FORGESHAPE_RENDER_SHADING_SELFTEST_FAIL (%d of %d checks failed)", failed, count);
     }
 #endif
 }
@@ -832,6 +856,11 @@ void renderThreadMain() {
                 // Visual state only: the renderer is never told which object.
                 renderer.setSelectionHighlight(g_selection.hasSelection());
             }
+            // Presentation only, and deliberately OUTSIDE the state mutex: the
+            // display settings are plain atomics that no domain invariant
+            // depends on, so a frame must never wait on the geometry lock to
+            // find out which shading model to draw with.
+            renderer.setDisplaySettings(forgeshape::displaySettings().snapshot());
             if (!renderer.drawFrame()) {
                 FS_LOGE("Render loop stopping after frame failure");
                 renderer.detachSurface();
@@ -880,6 +909,7 @@ Java_com_forgeshape_app_NativeViewport_start(JNIEnv*, jclass) {
     runSphereSelfTestsAndLog();
     runConeCapsuleSelfTestsAndLog();
     runSculptSelfTestsAndLog();
+    runRenderMeshSelfTestsAndLog();
     // The mesh and construction self-tests publish revisions of their own into
     // the store, so republish the ACTIVE representation: the app must always
     // come up showing what the current product mode says it is showing. At a
@@ -1256,6 +1286,60 @@ Java_com_forgeshape_app_NativeViewport_setSculptTool(JNIEnv*, jclass, jint toolI
 JNIEXPORT jint JNICALL
 Java_com_forgeshape_app_NativeViewport_sculptTool(JNIEnv*, jclass) {
     return static_cast<jint>(forgeshape::sculptToolIndex(forgeshape::sculptSession().tool()));
+}
+
+// --- viewport display settings (presentation only) --------------------------
+//
+// These four take no lock. The values are independent atomics that no geometry
+// invariant depends on, and holding g_stateMutex here would let a display
+// control block on a running stroke for no reason. Each setter returns the
+// value that is actually in effect afterwards, so a refused index leaves the UI
+// showing the truth rather than its own optimistic guess.
+//
+// None of these publishes a mesh, mints a revision or touches picking.
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_setShadingModel(JNIEnv*, jclass, jint modelIndex) {
+    forgeshape::DisplaySettingsStore& settings = forgeshape::displaySettings();
+    forgeshape::ShadingModel requested = settings.shadingModel();
+    const bool known = forgeshape::shadingModelFromIndex(static_cast<int>(modelIndex), &requested);
+    bool changed = false;
+    if (known) {
+        changed = settings.setShadingModel(requested);
+    }
+    FS_LOGI("FORGESHAPE_SHADING_MODEL:%s requested=%d known=%d changed=%d",
+            forgeshape::shadingModelName(settings.shadingModel()), static_cast<int>(modelIndex),
+            known ? 1 : 0, changed ? 1 : 0);
+    return static_cast<jint>(forgeshape::shadingModelIndex(settings.shadingModel()));
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_shadingModel(JNIEnv*, jclass) {
+    return static_cast<jint>(
+        forgeshape::shadingModelIndex(forgeshape::displaySettings().shadingModel()));
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_setSurfaceShading(JNIEnv*, jclass, jint shadingIndex) {
+    forgeshape::DisplaySettingsStore& settings = forgeshape::displaySettings();
+    forgeshape::SurfaceShading requested = settings.surfaceShading();
+    const bool known =
+        forgeshape::surfaceShadingFromIndex(static_cast<int>(shadingIndex), &requested);
+    bool changed = false;
+    if (known) {
+        changed = settings.setSurfaceShading(requested);
+    }
+    FS_LOGI("FORGESHAPE_SURFACE_SHADING:%s requested=%d known=%d changed=%d",
+            forgeshape::surfaceShadingName(settings.surfaceShading()),
+            static_cast<int>(shadingIndex), known ? 1 : 0, changed ? 1 : 0);
+    return static_cast<jint>(
+        forgeshape::surfaceShadingIndex(settings.surfaceShading()));
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_surfaceShading(JNIEnv*, jclass) {
+    return static_cast<jint>(
+        forgeshape::surfaceShadingIndex(forgeshape::displaySettings().surfaceShading()));
 }
 
 JNIEXPORT void JNICALL
