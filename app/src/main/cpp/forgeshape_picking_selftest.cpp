@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "forgeshape_camera.h"
+#include "forgeshape_construction.h"
 #include "forgeshape_demo_mesh.h"
 #include "forgeshape_math.h"
 #include "forgeshape_picking.h"
@@ -506,6 +507,235 @@ void testTapAndSelection(Recorder& r) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// CAMPROJ-09 / CAMPROJ-10 — picking in both projections
+//
+// Part of the CAMPROJ series that begins in the camera suite; these two live
+// here because the code they exercise is buildPickRay.
+//
+// The decisive measurement is a ROUND TRIP: pick at a pixel, then project the
+// resulting world hit back through the very matrices the renderer draws with and
+// check it lands on the pixel it started from. That single statement is what
+// "the hit matches the visible surface" actually means, it is true of both
+// projections, and it cannot be satisfied by a ray that is merely plausible —
+// an orthographic image picked with a perspective ray agrees only at the screen
+// centre and drifts further out toward every edge, which is exactly what the
+// off-centre pixels below would catch.
+// ---------------------------------------------------------------------------
+
+// The known box this stage is specified against: 2.0 x 1.0 x 0.5 m.
+constexpr float kProbeBoxWidth = 2.0f;
+constexpr float kProbeBoxHeight = 1.0f;
+constexpr float kProbeBoxDepth = 0.5f;
+
+// Yaw 0 / pitch 0: the eye sits on +Z looking down -Z, world +X right, +Y up.
+// The algebra a check asserts is then algebra a reader can redo by hand.
+CameraController makeAxisAlignedController(int width, int height) {
+    CameraController c;
+    c.setViewport(width, height);
+    TouchPointer p{0, 0.0f, 0.0f};
+    c.onTouch(TouchAction::Down, -1, &p, 1);
+    TouchPointer q{0, kInitialYaw / kOrbitRadiansPerPixel,
+                   -kInitialPitch / kOrbitRadiansPerPixel};
+    c.onTouch(TouchAction::Move, -1, &q, 1);
+    c.resetGesture();
+    return c;
+}
+
+// Projects a world point to a view-local pixel: the exact inverse of what
+// buildPickRay is asked to do, built from the same snapshot.
+bool screenOf(const CameraSnapshot& s, const Vec3& world, int width, int height, float* outX,
+              float* outY) {
+    const Mat4 vp = mat4Multiply(s.proj, s.view);
+    const float x =
+        vp.m[0] * world.x + vp.m[4] * world.y + vp.m[8] * world.z + vp.m[12];
+    const float y =
+        vp.m[1] * world.x + vp.m[5] * world.y + vp.m[9] * world.z + vp.m[13];
+    const float w =
+        vp.m[3] * world.x + vp.m[7] * world.y + vp.m[11] * world.z + vp.m[15];
+    if (!std::isfinite(w) || std::fabs(w) < 1e-9f) {
+        return false;
+    }
+    *outX = ((x / w) + 1.0f) * 0.5f * static_cast<float>(width);
+    *outY = ((y / w) + 1.0f) * 0.5f * static_cast<float>(height);
+    return std::isfinite(*outX) && std::isfinite(*outY);
+}
+
+void testProjectionPicking(Recorder& r) {
+    ConstructionBox box;
+    box.setDimensionsMeters(kProbeBoxWidth, kProbeBoxHeight, kProbeBoxDepth);
+    const ConstructionMesh mesh = box.generateMesh();
+
+    TriangleMeshView view{};
+    view.positions = mesh.vertices.empty() ? nullptr : mesh.vertices[0].position;
+    view.positionStride = sizeof(MeshVertex);
+    view.vertexCount = static_cast<uint32_t>(mesh.vertices.size());
+    view.indices = mesh.indices.empty() ? nullptr : mesh.indices.data();
+    view.indexCount = static_cast<uint32_t>(mesh.indices.size());
+
+    r.check("camproj_probe_box_is_2x1x0.5",
+            nearly(box.widthMeters(), kProbeBoxWidth, 1e-6f) &&
+                nearly(box.heightMeters(), kProbeBoxHeight, 1e-6f) &&
+                nearly(box.depthMeters(), kProbeBoxDepth, 1e-6f) && view.indexCount == 36);
+
+    // Non-square viewport, deliberately: a projection bug that cancels out on a
+    // square viewport is the one worth catching.
+    constexpr int kW = 1080;
+    constexpr int kH = 2400;
+
+    // Five pixels spread across the box's silhouette, including well off-centre
+    // in both axes, because the centre pixel is where the two projections agree
+    // and therefore where a wrong ray hides.
+    struct Probe {
+        float u, v;  // fraction of the box's projected half-extent
+    };
+    const Probe probes[5] = {{0.0f, 0.0f}, {0.6f, 0.0f}, {-0.6f, 0.0f},
+                             {0.0f, 0.6f}, {0.55f, -0.55f}};
+
+    for (int mode = 0; mode < 2; ++mode) {
+        const bool orthographic = (mode == 1);
+        CameraController c = makeAxisAlignedController(kW, kH);
+        if (orthographic) {
+            c.setProjectionMode(ProjectionMode::Orthographic);
+        }
+        const CameraSnapshot s = c.snapshot();
+
+        bool allHit = true;
+        bool allOnFrontFace = true;
+        bool allRoundTrip = true;
+        bool allInsideBox = true;
+        bool originsDiffer = false;
+        bool directionsShared = true;
+        Ray firstRay{};
+
+        for (int i = 0; i < 5; ++i) {
+            // Aim at a point known to be on the box's near (+Z) face, then ask
+            // the picker for that pixel back.
+            const Vec3 aim{probes[i].u * kProbeBoxWidth * 0.5f,
+                           probes[i].v * kProbeBoxHeight * 0.5f, kProbeBoxDepth * 0.5f};
+            float px = 0.0f, py = 0.0f;
+            if (!screenOf(s, aim, kW, kH, &px, &py)) {
+                allHit = false;
+                continue;
+            }
+
+            Ray ray{};
+            if (!buildPickRay(s, px, py, kW, kH, &ray)) {
+                allHit = false;
+                continue;
+            }
+            if (i == 0) {
+                firstRay = ray;
+            } else {
+                if (length(vec3Sub(ray.origin, firstRay.origin)) > 1e-4f) {
+                    originsDiffer = true;
+                }
+                if (length(vec3Sub(ray.direction, firstRay.direction)) > 1e-5f) {
+                    directionsShared = false;
+                }
+            }
+
+            const TriangleHit hit = pickTriangleMesh(ray, view, /*frontFacesOnly=*/true);
+            if (!hit.hit) {
+                allHit = false;
+                continue;
+            }
+
+            // Front-face-only picking must return the NEAR face (+Z at 0.25),
+            // never the far one at -0.25.
+            if (!nearly(hit.position.z, kProbeBoxDepth * 0.5f, 1e-3f)) {
+                allOnFrontFace = false;
+            }
+            // And the hit must lie within the box's exact extents.
+            if (std::fabs(hit.position.x) > kProbeBoxWidth * 0.5f + 1e-3f ||
+                std::fabs(hit.position.y) > kProbeBoxHeight * 0.5f + 1e-3f) {
+                allInsideBox = false;
+            }
+
+            // The round trip: back to the pixel it came from, inside a pixel.
+            float bx = 0.0f, by = 0.0f;
+            if (!screenOf(s, hit.position, kW, kH, &bx, &by) ||
+                std::fabs(bx - px) > 1.0f || std::fabs(by - py) > 1.0f) {
+                allRoundTrip = false;
+            }
+        }
+
+        if (orthographic) {
+            r.check("camproj10_ortho_all_probe_pixels_hit", allHit);
+            r.check("camproj10_ortho_hits_front_face_only", allOnFrontFace);
+            r.check("camproj10_ortho_hit_inside_exact_box_extents", allInsideBox);
+            r.check("camproj10_ortho_hit_reprojects_to_source_pixel", allRoundTrip);
+            // The structural signature of a parallel pick: the origin slides
+            // with the pixel and the direction does not.
+            r.check("camproj10_ortho_ray_origin_moves_with_pixel", originsDiffer);
+            r.check("camproj10_ortho_ray_direction_is_shared", directionsShared);
+            // The shared direction is the view axis itself.
+            const Vec3 forward{-s.view.m[2], -s.view.m[6], -s.view.m[10]};
+            r.check("camproj10_ortho_direction_is_the_view_axis",
+                    length(vec3Sub(firstRay.direction, forward)) < 1e-5f);
+        } else {
+            r.check("camproj09_perspective_all_probe_pixels_hit", allHit);
+            r.check("camproj09_perspective_hits_front_face_only", allOnFrontFace);
+            r.check("camproj09_perspective_hit_inside_exact_box_extents", allInsideBox);
+            r.check("camproj09_perspective_hit_reprojects_to_source_pixel", allRoundTrip);
+            // The structural signature of a pinhole pick: one origin, fanning
+            // directions — the exact opposite of the orthographic case.
+            r.check("camproj09_perspective_ray_origin_is_the_eye",
+                    !originsDiffer && length(vec3Sub(firstRay.origin, s.eye)) < 1e-4f);
+            r.check("camproj09_perspective_ray_directions_fan", !directionsShared);
+        }
+    }
+
+    // The two modes must agree about the SAME visible surface: a pick at the
+    // centre lands on the same face at the same point in both, because the
+    // centre pixel is the one ray the two projections share.
+    {
+        CameraController p = makeAxisAlignedController(kW, kH);
+        CameraController o = makeAxisAlignedController(kW, kH);
+        o.setProjectionMode(ProjectionMode::Orthographic);
+
+        Ray pr{}, orr{};
+        const bool built = buildPickRay(p.snapshot(), kW * 0.5f, kH * 0.5f, kW, kH, &pr) &&
+                           buildPickRay(o.snapshot(), kW * 0.5f, kH * 0.5f, kW, kH, &orr);
+        const TriangleHit ph = pickTriangleMesh(pr, view, true);
+        const TriangleHit oh = pickTriangleMesh(orr, view, true);
+        r.check("camproj_centre_pick_agrees_across_projections",
+                built && ph.hit && oh.hit &&
+                    length(vec3Sub(ph.position, oh.position)) < 1e-3f &&
+                    ph.triangleIndex == oh.triangleIndex);
+    }
+
+    // A pixel clear of the silhouette misses in both modes: an orthographic ray
+    // that had kept a perspective origin would still sweep inward and could hit.
+    {
+        CameraController o = makeAxisAlignedController(kW, kH);
+        o.setProjectionMode(ProjectionMode::Orthographic);
+        Ray corner{};
+        const bool built = buildPickRay(o.snapshot(), 4.0f, 4.0f, kW, kH, &corner);
+        r.check("camproj10_ortho_background_pixel_misses",
+                built && !pickTriangleMesh(corner, view, true).hit);
+    }
+
+    // Degenerate input is refused in Orthographic exactly as in Perspective —
+    // the guards precede the projection branch, so neither mode can produce a
+    // NaN ray.
+    {
+        CameraController o = makeAxisAlignedController(kW, kH);
+        o.setProjectionMode(ProjectionMode::Orthographic);
+        const CameraSnapshot s = o.snapshot();
+        Ray unused{};
+        r.check("camproj10_ortho_rejects_degenerate_input",
+                !buildPickRay(s, kW * 0.5f, kH * 0.5f, 0, kH, &unused) &&
+                    !buildPickRay(s, kW * 0.5f, kH * 0.5f, kW, 0, &unused) &&
+                    !buildPickRay(s, NAN, kH * 0.5f, kW, kH, &unused) &&
+                    !buildPickRay(s, kW * 0.5f, INFINITY, kW, kH, &unused));
+        Ray ok{};
+        r.check("camproj10_ortho_ray_is_finite_and_unit",
+                buildPickRay(s, 12.0f, 2380.0f, kW, kH, &ok) && vec3Finite(ok.origin) &&
+                    vec3Finite(ok.direction) && nearly(length(ok.direction), 1.0f, 1e-5f));
+    }
+}
+
 }  // namespace
 
 int runPickingSelfTests(PickingSelfTestResult* out, int maxOut) {
@@ -518,6 +748,7 @@ int runPickingSelfTests(PickingSelfTestResult* out, int maxOut) {
     testWinding(r);
     testDemoCubePicking(r);
     testTapAndSelection(r);
+    testProjectionPicking(r);
     return r.n;
 }
 

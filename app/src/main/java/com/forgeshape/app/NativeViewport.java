@@ -425,6 +425,41 @@ final class NativeViewport {
     static native int surfaceShading();
 
     /**
+     * Standard pinhole projection: nearer parts of a solid are drawn larger and
+     * parallel edges converge. The product default.
+     */
+    static final int PROJECTION_PERSPECTIVE = 0;
+
+    /**
+     * True parallel projection: equal lengths parallel to the screen are drawn
+     * at equal size at every depth, so exact Construction geometry can be judged
+     * without anything being enlarged merely for being closer.
+     */
+    static final int PROJECTION_ORTHOGRAPHIC = 1;
+
+    /**
+     * Requests a camera projection.
+     *
+     * <p>An unknown index is refused and the current projection stands. This is
+     * camera/presentation state, not geometry: it publishes no mesh, mints no
+     * {@code MeshRevision} or {@code SculptRevision}, moves no vertex, changes
+     * no Construction parameter or transform, and re-uploads nothing. The
+     * framing at the target plane is preserved across the switch, so the frame
+     * does not jump.
+     *
+     * <p>Native owns the value, exactly as it owns the camera pose, so the
+     * chosen projection and its framing survive HOME/resume and a Surface
+     * recreation for free.
+     *
+     * @param mode one of the {@code PROJECTION_*} constants
+     * @return the {@code PROJECTION_*} constant that is active after the call
+     */
+    static native int setProjectionMode(int mode);
+
+    /** @return the active {@code PROJECTION_*} constant */
+    static native int projectionMode();
+
+    /**
      * DEBUG-ONLY test hook: publishes a native debug mesh fixture, or drives the
      * native Construction box's authoritative dimensions.
      *

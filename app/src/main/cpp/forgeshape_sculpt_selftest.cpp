@@ -1527,6 +1527,180 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
                 strengthScalesEveryTool);
     }
 
+    // -----------------------------------------------------------------------
+    // CAMPROJ-11 — sculpt works in BOTH projections.
+    //
+    // Part of the CAMPROJ series that begins in the camera suite; this member
+    // lives here because the code it exercises is the stroke kernel's
+    // pixel-to-world resolution.
+    //
+    // Three things have to hold in Orthographic, and only the first is obvious:
+    // the ray must hit the right surface, the brush radius must be right, and
+    // the radius must be INDEPENDENT OF DEPTH — because a parallel view does not
+    // open with distance, so there is nothing for a depth-scaled brush to be
+    // proportional to.
+    // -----------------------------------------------------------------------
+    {
+        CameraController orthoCam;
+        orthoCam.setViewport(kViewportWidth, kViewportHeight);
+        orthoCam.setProjectionMode(ProjectionMode::Orthographic);
+        const CameraSnapshot ortho = orthoCam.snapshot();
+
+        ConstructionObject object = makeSphereObject();
+        const ConstructionMesh source = object.generateMesh();
+
+        // A stroke must start in Orthographic at all, on the same pixel and the
+        // same object that works in Perspective.
+        SculptMesh perspectiveMesh;
+        SculptMesh orthoMesh;
+        perspectiveMesh.freezeFrom(source, object.objectId());
+        orthoMesh.freezeFrom(source, object.objectId());
+
+        SculptStroke perspectiveStroke;
+        SculptStroke orthoStroke;
+        const bool pBegan =
+            perspectiveStroke.begin(SculptTool::Grab, perspectiveMesh, camera, kCentreX, kCentreY,
+                                    kViewportWidth, kViewportHeight, identity, identity, 120.0f);
+        const bool oBegan =
+            orthoStroke.begin(SculptTool::Grab, orthoMesh, ortho, kCentreX, kCentreY,
+                              kViewportWidth, kViewportHeight, identity, identity, 120.0f);
+
+        r.check("camproj11_stroke_begins_in_both_projections", pBegan && oBegan);
+        r.check("camproj11_ortho_captures_vertices",
+                oBegan && orthoStroke.affectedVertexCount() > 0);
+
+        // The hit is on the real surface: a 2.0 m diameter sphere means the hit
+        // point is 1.0 m from its centre. Faceting pulls a hit slightly inside
+        // the exact radius, which is why this is a band rather than an equality.
+        const float orthoHitRadius = lengthOf(orthoStroke.localCenter());
+        r.check("camproj11_ortho_hit_is_on_the_sphere_surface",
+                oBegan && orthoHitRadius > 0.97f && orthoHitRadius <= 1.0f + kEpsilon);
+        r.check("camproj11_both_projections_hit_the_same_point",
+                pBegan && oBegan &&
+                    lengthOf(vec3Sub(orthoStroke.localCenter(),
+                                     perspectiveStroke.localCenter())) < 1e-3f);
+
+        // The orthographic pixel-to-world scale is the ortho span over the
+        // viewport height, with no depth term anywhere in it.
+        const float expectedScale = (2.0f * ortho.orthoHalfHeightMeters) /
+                                    static_cast<float>(kViewportHeight);
+        r.check("camproj11_ortho_world_per_pixel_is_the_span_over_the_viewport",
+                oBegan && std::fabs(orthoStroke.worldPerPixel() - expectedScale) < 1e-6f);
+        r.check("camproj11_ortho_radius_follows_that_scale",
+                oBegan && std::fabs(orthoStroke.localRadius() - 120.0f * expectedScale) < 1e-4f);
+        r.check("camproj11_ortho_radius_finite_and_positive",
+                oBegan && std::isfinite(orthoStroke.localRadius()) &&
+                    orthoStroke.localRadius() > 0.0f &&
+                    std::isfinite(orthoStroke.worldPerPixel()));
+
+        // Depth independence, measured rather than argued: move the object far
+        // away along the view axis and the brush must cover the SAME amount of
+        // surface. The perspective brush, on the same move, must not.
+        {
+            const Vec3 dir{ortho.view.m[2], ortho.view.m[6], ortho.view.m[10]};  // backward
+            // +/- 3 m along the view axis. Far enough that the perspective
+            // brush must visibly differ, close enough that the near case still
+            // frames the sphere and captures vertices in both projections.
+            const Mat4 pushedIn = mat4Translation(vec3Scale(dir, -3.0f));   // farther away
+            const Mat4 pulledOut = mat4Translation(vec3Scale(dir, 3.0f));   // nearer
+            const Mat4 inInverse = mat4Translation(vec3Scale(dir, 3.0f));
+            const Mat4 outInverse = mat4Translation(vec3Scale(dir, -3.0f));
+
+            SculptMesh farMesh, nearMesh;
+            farMesh.freezeFrom(source, object.objectId());
+            nearMesh.freezeFrom(source, object.objectId());
+            SculptStroke farStroke, nearStroke;
+            const bool farOk =
+                farStroke.begin(SculptTool::Grab, farMesh, ortho, kCentreX, kCentreY,
+                                kViewportWidth, kViewportHeight, pushedIn, inInverse, 120.0f);
+            const bool nearOk =
+                nearStroke.begin(SculptTool::Grab, nearMesh, ortho, kCentreX, kCentreY,
+                                 kViewportWidth, kViewportHeight, pulledOut, outInverse, 120.0f);
+            r.check("camproj11_ortho_brush_radius_is_depth_independent",
+                    farOk && nearOk &&
+                        std::fabs(farStroke.localRadius() - nearStroke.localRadius()) < 1e-5f);
+
+            SculptMesh pFar, pNear;
+            pFar.freezeFrom(source, object.objectId());
+            pNear.freezeFrom(source, object.objectId());
+            SculptStroke pFarStroke, pNearStroke;
+            const bool pFarOk =
+                pFarStroke.begin(SculptTool::Grab, pFar, camera, kCentreX, kCentreY,
+                                 kViewportWidth, kViewportHeight, pushedIn, inInverse, 120.0f);
+            const bool pNearOk =
+                pNearStroke.begin(SculptTool::Grab, pNear, camera, kCentreX, kCentreY,
+                                  kViewportWidth, kViewportHeight, pulledOut, outInverse, 120.0f);
+            // The counterpart check: without it, a brush that had simply frozen
+            // to a constant would pass the depth-independence check above.
+            r.check("camproj11_perspective_brush_radius_does_depend_on_depth",
+                    pFarOk && pNearOk &&
+                        pFarStroke.localRadius() > pNearStroke.localRadius() + 1e-3f);
+        }
+
+        // A real Grab in Orthographic deforms the mesh, keeps the topology
+        // fixed, produces no NaN, and leaves the Construction Source untouched.
+        {
+            const uint32_t vertexCountBefore = orthoMesh.vertexCount();
+            const SculptRevision revisionBefore = orthoMesh.revision();
+            const uint32_t probe =
+                orthoStroke.affectedVertex(slotOfHighestWeight(orthoStroke)).index;
+            const Vec3 base = orthoMesh.vertexPosition(probe);
+
+            bool everyMoveApplied = true;
+            for (int i = 1; i <= 6; ++i) {
+                if (!orthoStroke.update(orthoMesh, kCentreX + static_cast<float>(i) * 12.0f,
+                                        kCentreY, 1.0f)) {
+                    everyMoveApplied = false;
+                }
+                orthoMesh.advanceRevision();
+            }
+            orthoStroke.end();
+
+            const Vec3 moved = vec3Sub(orthoMesh.vertexPosition(probe), base);
+            r.check("camproj11_ortho_grab_applies_every_move", everyMoveApplied);
+            r.check("camproj11_ortho_grab_actually_moved_a_vertex", lengthOf(moved) > 1e-4f);
+
+            // The stroke's own displacement is the unweighted camera-plane
+            // vector for the total travel from the anchor; what an individual
+            // vertex receives is that vector scaled by its falloff weight, so
+            // the two are compared separately.
+            const Vec3 expected =
+                expectedWorldDelta(ortho, 72.0f, 0.0f, orthoStroke.worldPerPixel());
+            r.check("camproj11_ortho_grab_direction_matches_the_camera_plane",
+                    lengthOf(vec3Sub(orthoStroke.lastLocalDisplacement(), expected)) < 1e-4f);
+            // The vertex moved along that same axis, at no more than the full
+            // displacement — which is what a falloff weight in [0, 1] means.
+            r.check("camproj11_ortho_grab_vertex_follows_that_axis_within_its_weight",
+                    lengthOf(moved) <= lengthOf(expected) + 1e-4f &&
+                        vec3Dot(moved, expected) > 0.0f &&
+                        lengthOf(vec3Sub(vec3Scale(vec3Normalize(moved), lengthOf(expected)),
+                                         expected)) < 1e-3f);
+            r.check("camproj11_ortho_grab_keeps_topology_fixed",
+                    orthoMesh.vertexCount() == vertexCountBefore &&
+                        sameIndices(orthoMesh.indices(), source.indices));
+            r.check("camproj11_ortho_grab_produces_no_nan", allPositionsFinite(orthoMesh));
+            r.check("camproj11_ortho_grab_minted_revisions",
+                    orthoMesh.revision() > revisionBefore);
+            // The Construction Source is never written by sculpting, in either
+            // projection. Changing the camera cannot change that.
+            r.check("camproj11_ortho_grab_leaves_construction_source_untouched",
+                    sameVertices(object.generateMesh().vertices, source.vertices));
+        }
+
+        // A pixel clear of the object starts NO stroke in Orthographic, the same
+        // rule Perspective follows.
+        {
+            SculptMesh missMesh;
+            missMesh.freezeFrom(source, object.objectId());
+            SculptStroke missStroke;
+            r.check("camproj11_ortho_miss_starts_no_stroke",
+                    !missStroke.begin(SculptTool::Grab, missMesh, ortho, 6.0f, 6.0f,
+                                      kViewportWidth, kViewportHeight, identity, identity,
+                                      40.0f) &&
+                        !missStroke.active());
+        }
+    }
+
     return r.n;
 }
 

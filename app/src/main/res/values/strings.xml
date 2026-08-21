@@ -29,6 +29,14 @@
     <string name="surface">Surface</string>
     <string name="surface_smooth">Smooth</string>
     <string name="surface_faceted">Faceted</string>
+    <!--
+      Written out in full rather than as "Persp" / "Ortho": both labels fit the
+      control, and the abbreviations are drafting jargon that a reader has to
+      already know.
+    -->
+    <string name="projection">Projection</string>
+    <string name="projection_perspective">Perspective</string>
+    <string name="projection_orthographic">Orthographic</string>
 
     <!-- Tool Rail -->
     <string name="tool_rail">Tool Rail</string>

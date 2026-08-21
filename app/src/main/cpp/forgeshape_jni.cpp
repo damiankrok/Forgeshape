@@ -175,8 +175,8 @@ bool translateAction(jint androidAction, forgeshape::TouchAction* out) {
 
 void runCameraSelfTestsAndLog() {
 #ifndef NDEBUG
-    forgeshape::CameraSelfTestResult results[64];
-    const int count = forgeshape::runCameraSelfTests(results, 64);
+    forgeshape::CameraSelfTestResult results[128];
+    const int count = forgeshape::runCameraSelfTests(results, 128);
     int failed = 0;
     for (int i = 0; i < count; ++i) {
         if (!results[i].passed) {
@@ -196,8 +196,8 @@ void runCameraSelfTestsAndLog() {
 
 void runPickingSelfTestsAndLog() {
 #ifndef NDEBUG
-    forgeshape::PickingSelfTestResult results[128];
-    const int count = forgeshape::runPickingSelfTests(results, 128);
+    forgeshape::PickingSelfTestResult results[160];
+    const int count = forgeshape::runPickingSelfTests(results, 160);
     int failed = 0;
     for (int i = 0; i < count; ++i) {
         if (!results[i].passed) {
@@ -1340,6 +1340,41 @@ JNIEXPORT jint JNICALL
 Java_com_forgeshape_app_NativeViewport_surfaceShading(JNIEnv*, jclass) {
     return static_cast<jint>(
         forgeshape::surfaceShadingIndex(forgeshape::displaySettings().surfaceShading()));
+}
+
+// The projection mode is CAMERA state, not a display setting, so it is taken
+// under the same lock the camera gestures use rather than through the display
+// store. It publishes no mesh, mints no revision and touches no geometry: the
+// only thing it changes is which pixels the existing geometry lands on.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_setProjectionMode(JNIEnv*, jclass, jint modeIndex) {
+    forgeshape::ProjectionMode requested = forgeshape::kDefaultProjectionMode;
+    const bool known =
+        forgeshape::projectionModeFromIndex(static_cast<int>(modeIndex), &requested);
+    bool changed = false;
+    forgeshape::ProjectionMode active = forgeshape::kDefaultProjectionMode;
+    float span = 0.0f;
+    float distance = 0.0f;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        if (known) {
+            changed = g_camera.setProjectionMode(requested);
+        }
+        active = g_camera.projectionMode();
+        span = g_camera.orthoHalfHeightMeters();
+        distance = g_camera.distance();
+    }
+    FS_LOGI("FORGESHAPE_PROJECTION_MODE:%s requested=%d known=%d changed=%d "
+            "orthoHalfHeightMeters=%.4f distance=%.4f",
+            forgeshape::projectionModeName(active), static_cast<int>(modeIndex), known ? 1 : 0,
+            changed ? 1 : 0, span, distance);
+    return static_cast<jint>(forgeshape::projectionModeIndex(active));
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_projectionMode(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    return static_cast<jint>(forgeshape::projectionModeIndex(g_camera.projectionMode()));
 }
 
 JNIEXPORT void JNICALL

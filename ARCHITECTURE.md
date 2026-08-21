@@ -36,7 +36,8 @@ forgeshape_jni.cpp            render thread, ANativeWindow ownership,
         |                     stroke-vs-navigation arbitration,
         |                     publishActiveRepresentation
         |
-        +--> CameraController -> CameraSnapshot (view, proj, eye, target, pose)
+        +--> CameraController -> CameraSnapshot (view, proj, eye, target, pose,
+        |                                        projection mode, world span)
         |
         +--> SelectionController -- on a valid tap --> pickScene() -> Picking
         |         |                                        ^  (ray build,
@@ -396,17 +397,108 @@ dropped rather than forwarded.
 
 `CameraController` (`forgeshape_camera.{h,cpp}`) is the single source of camera
 truth and contains no JNI, Android or Vulkan types. It owns `target` (orbit
-centre), `yaw`, `pitch`, `distance`; FOV, near and far planes; viewport
-width/height and therefore projection aspect; and the gesture state machine
-(mode, tracked pointer ids, anchors). It produces a `CameraSnapshot` — view
-matrix, projection matrix, eye, target and pose scalars — which is the only thing
-the renderer ever sees.
+centre), `yaw`, `pitch`, `distance`; the **projection mode and the orthographic
+world span**; FOV, near and far planes; viewport width/height and therefore
+projection aspect; and the gesture state machine (mode, tracked pointer ids,
+anchors). It produces a `CameraSnapshot` — view matrix, projection matrix, eye,
+target, pose scalars, the active `ProjectionMode` and the visible half-height —
+which is the only thing the renderer, picking and sculpt ever see.
 
 Gesture rule: every touch event recomputes the set of pointers that are still
 down, sorted by pointer id. If that set differs from the tracked one, the
 controller re-anchors and applies **no** delta; deltas are applied only on Move
 events whose pointer set is unchanged. This is what makes 1↔2 pointer transitions
 and MotionEvent index reordering jump-free.
+
+### Projection mode
+
+`ProjectionMode` is a closed enum with two members — `Perspective` (the product
+default) and `Orthographic` — and a switch, the same rule the sculpt tools and
+the shading models follow. There is no camera framework and no projection
+registry.
+
+It is **camera/presentation state, never geometry truth**. Changing it mints no
+`MeshRevision` and no `SculptRevision`, moves no vertex, and touches no
+Construction parameter, `PrimitiveKind`, transform or `ObjectId`. It changes
+which pixels a fixed piece of geometry lands on, and nothing else. Like the
+camera pose and the display settings it is process-scoped, which is why it
+survives HOME/resume and Surface recreation with no save/restore code in the
+Android layer.
+
+| | Perspective | Orthographic |
+| --- | --- | --- |
+| Matrix | `mat4Perspective(kFovYRadians, aspect, near, far)` | `mat4Orthographic(halfHeight, aspect, near, far)` |
+| Field of view | 60° vertical (`kFovYRadians`), unchanged by this stage | not applicable |
+| Visible scale set by | `distance` | `orthoHalfHeightMeters` |
+| `proj.m[11]` | `-1` — divides by depth | `0` — **w is 1 everywhere**, a true parallel projection |
+| Depth | `[0, 1]`, non-linear | `[0, 1]`, linear |
+| `snapshot.eye` | the pinhole, `target + dir × distance` | the **view-plane centre**, `target + dir × kOrthoViewPlaneDistance` |
+| Pinch changes | `distance`, clamped to `[0.35, 400] m` | `orthoHalfHeightMeters`, clamped to `[0.02, 250] m` |
+
+**The orthographic scale is a world length, not a zoom factor.**
+`orthoHalfHeightMeters` is half the world-space height the viewport shows, in
+meters, measured at the target plane — so it can be reasoned about against an
+exact Construction dimension rather than against an abstract multiplier. The
+snapshot carries it in **both** modes: in Perspective it is the equivalent
+framing `distance × tan(fovY / 2)`, so the field is always a live, physically
+interpretable span rather than a stale leftover.
+
+**Switching preserves the framing at the target plane**, converting between the
+two descriptions rather than resetting:
+
+```
+Perspective -> Orthographic:  orthoHalfHeight = distance * tan(fovY / 2)
+Orthographic -> Perspective:  distance        = orthoHalfHeight / tan(fovY / 2)
+```
+
+These are one identity read in opposite directions, so a round trip returns to
+where it started (up to the distance clamps). The target, yaw and pitch are never
+touched, so the frame keeps its centre and its viewing direction and the object
+can neither jump nor vanish.
+
+**Why the orthographic eye is pulled back.** A parallel projection produces the
+same image from anywhere on the view axis, so the view plane's distance is free —
+and `kOrthoViewPlaneDistance` (= `kFarPlane / 2`, 250 m) spends that freedom on
+centring the `[near, far]` slab on the target. Nothing the user can frame is
+sliced by the near plane, and every drawn surface lies in front of the pick-ray
+origin, so *what is pickable stays what is drawn*. Ortho depth is linear, so a
+500 m slab costs no precision worth naming; the same range in a perspective
+frustum would be ruinous. The consequence to know: `snapshot.eye` is **not**
+`target + dir × distance` in Orthographic, and a reported pick distance is
+measured from that view plane (~250 m) rather than from the orbit eye.
+
+**Pinch must not fake orthographic zoom with distance.** Shrinking the distance
+changes nothing on screen in a parallel projection, so the pinch would appear
+dead. The ortho scale is the visible span, so that is what pinch changes; the
+orbit distance is deliberately left alone, because it is still the pose radius
+and still what a switch back to Perspective is computed from. Pan is scaled by
+whichever quantity is active — `distance × tan(fovY / 2)` or
+`orthoHalfHeightMeters` — so the "one pixel of finger is one pixel of world at
+the target plane" contract holds identically in both modes.
+
+### Screen ray, per projection
+
+`buildPickRay` handles both, and the difference is structural rather than a
+tweak to a constant:
+
+| | origin | direction |
+| --- | --- | --- |
+| Perspective | one point — the eye | depends on the pixel; the rays fan out |
+| Orthographic | depends on the pixel; slides across the view plane | one shared direction — the view axis |
+
+Both are inverted out of `camera.proj` and `camera.view`; neither restates a
+field of view, an orthographic span or an aspect. Picking keeping a perspective
+origin under an orthographic image would agree with the picture only at the
+screen centre and drift further from it toward every edge — which is why the
+picking suite probes off-centre pixels and round-trips each hit back through the
+same matrices to the pixel it came from.
+
+The same split governs the sculpt brush. `worldPerPixelAtDepth` reads
+`proj.m[5]` in both modes, but multiplies by the hit depth only in Perspective:
+a parallel view does not open with distance, so the orthographic brush covers the
+same amount of surface at every depth. `CAMPROJ-11` measures both halves — that
+the orthographic radius does *not* move when the object is pushed along the view
+axis, and that the perspective one does.
 
 ## Canonical winding and culling
 
@@ -936,8 +1028,10 @@ Deliberate properties of the kernel, shared by all four tools:
   is not in meters.
 - Depth is measured along the camera **forward axis**, not along the ray, so the
   scale is the same everywhere on screen. The field of view comes from the
-  snapshot's own projection term (`proj.m[5] = -1/tan(fovY/2)`); nothing here
-  restates `kFovYRadians` or the aspect.
+  snapshot's own projection term (`proj.m[5]`, which is `-1/tan(fovY/2)` in
+  Perspective and `-1/orthoHalfHeight` in Orthographic); nothing here restates
+  `kFovYRadians`, the orthographic span or the aspect. The depth factor applies
+  in Perspective only — see *Screen ray, per projection*.
 - The **affected set is fixed at stroke start**, so a vertex cannot wander into
   or out of the brush mid-stroke and a stroke stays one coherent deformation. It
   is found by a linear scan, like picking; there is no spatial acceleration.

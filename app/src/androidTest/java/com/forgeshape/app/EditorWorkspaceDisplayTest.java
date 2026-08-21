@@ -52,6 +52,7 @@ public final class EditorWorkspaceDisplayTest {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             NativeViewport.setShadingModel(NativeViewport.SHADING_STUDIO);
             NativeViewport.setSurfaceShading(NativeViewport.SURFACE_SMOOTH);
+            NativeViewport.setProjectionMode(NativeViewport.PROJECTION_PERSPECTIVE);
             return null;
         });
     }
@@ -78,6 +79,107 @@ public final class EditorWorkspaceDisplayTest {
                     workspace.findViewById(R.id.surface_shading_smooth));
             assertNotNull("Faceted is reachable by id",
                     workspace.findViewById(R.id.surface_shading_faceted));
+            assertNotNull("Perspective is reachable by id",
+                    workspace.findViewById(R.id.projection_perspective));
+            assertNotNull("Orthographic is reachable by id",
+                    workspace.findViewById(R.id.projection_orthographic));
+            return null;
+        });
+    }
+
+    // -----------------------------------------------------------------------
+    // PROJ-13 / PROJ-12 / PROJ-14 -- the camera projection control
+    //
+    // Projection shares this surface because it is the other control that
+    // changes how the object READS without changing what it is. These cases
+    // hold it to the same three promises the shading chips make: reachable by a
+    // stable id, provably inert against domain state, and native-owned so it
+    // survives a resume.
+    // -----------------------------------------------------------------------
+
+    @Test
+    public void proj13_theProjectionControlSwitchesTheCameraAndShowsWhatIsActive() {
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            workspace.findViewById(R.id.display_settings_button).performClick();
+
+            assertEquals("Perspective is the product default",
+                    NativeViewport.PROJECTION_PERSPECTIVE, NativeViewport.projectionMode());
+            assertTrue("the Perspective chip starts active",
+                    workspace.findViewById(R.id.projection_perspective).isActivated());
+
+            workspace.findViewById(R.id.projection_orthographic).performClick();
+            assertEquals("tapping Orthographic switches the camera",
+                    NativeViewport.PROJECTION_ORTHOGRAPHIC, NativeViewport.projectionMode());
+            assertTrue("the Orthographic chip repaints as active",
+                    workspace.findViewById(R.id.projection_orthographic).isActivated());
+            assertTrue("and Perspective stops being active",
+                    !workspace.findViewById(R.id.projection_perspective).isActivated());
+
+            // Selection feedback happens in place: choosing a projection must
+            // not dismiss the panel, because comparing the two means switching
+            // back and forth.
+            assertEquals("the popover stays open across a projection change", View.VISIBLE,
+                    workspace.findViewById(R.id.display_settings_popover).getVisibility());
+
+            workspace.findViewById(R.id.projection_perspective).performClick();
+            assertEquals("and back again", NativeViewport.PROJECTION_PERSPECTIVE,
+                    NativeViewport.projectionMode());
+            return null;
+        });
+    }
+
+    @Test
+    public void proj13_anUnknownProjectionIndexIsRefused() {
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            NativeViewport.setProjectionMode(NativeViewport.PROJECTION_ORTHOGRAPHIC);
+            assertEquals("an out-of-range projection is refused",
+                    NativeViewport.PROJECTION_ORTHOGRAPHIC, NativeViewport.setProjectionMode(5));
+            assertEquals("a negative projection is refused",
+                    NativeViewport.PROJECTION_ORTHOGRAPHIC, NativeViewport.setProjectionMode(-1));
+            return null;
+        });
+    }
+
+    @Test
+    public void proj12_projectionChangeTouchesNoDomainState() {
+        final double[] before = onWorkspace(rule.getScenario(),
+                (activity, workspace) -> nativeSnapshot());
+
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            workspace.findViewById(R.id.display_settings_button).performClick();
+            workspace.findViewById(R.id.projection_orthographic).performClick();
+            workspace.findViewById(R.id.projection_perspective).performClick();
+            workspace.findViewById(R.id.projection_orthographic).performClick();
+            return null;
+        });
+
+        final double[] after = onWorkspace(rule.getScenario(),
+                (activity, workspace) -> nativeSnapshot());
+        // A projection switch is a camera act. It must not move a Construction
+        // parameter, a transform, a MeshRevision, a SculptRevision or a vertex
+        // count — the object is the same object, seen differently.
+        assertArrayEquals("Perspective<->Orthographic must not change any Construction, "
+                        + "transform or sculpt state:" + describeSnapshotDifference(before, after),
+                before, after, 0.0);
+    }
+
+    @Test
+    public void proj14_projectionSurvivesHomeAndResume() {
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            workspace.findViewById(R.id.display_settings_button).performClick();
+            workspace.findViewById(R.id.projection_orthographic).performClick();
+            return null;
+        });
+
+        rule.getScenario().moveToState(androidx.lifecycle.Lifecycle.State.CREATED);
+        rule.getScenario().moveToState(androidx.lifecycle.Lifecycle.State.RESUMED);
+
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            assertEquals("Orthographic survives a resume",
+                    NativeViewport.PROJECTION_ORTHOGRAPHIC, NativeViewport.projectionMode());
+            workspace.findViewById(R.id.display_settings_button).performClick();
+            assertTrue("the Orthographic chip shows as active after a resume",
+                    workspace.findViewById(R.id.projection_orthographic).isActivated());
             return null;
         });
     }

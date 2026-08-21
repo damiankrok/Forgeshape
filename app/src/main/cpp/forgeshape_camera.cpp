@@ -53,7 +53,33 @@ float spanOf(const TouchPointer& a, const TouchPointer& b) {
     return std::sqrt(dx * dx + dy * dy);
 }
 
+// Half the visible height at unit depth. The one place the field of view turns
+// into a span; both the Perspective->Orthographic conversion and the perspective
+// pan scale read it rather than restating tan(fovY / 2).
+float perspectiveHalfHeightPerMeter() { return std::tan(kFovYRadians * 0.5f); }
+
 }  // namespace
+
+const char* projectionModeName(ProjectionMode mode) {
+    switch (mode) {
+        case ProjectionMode::Perspective: return "perspective";
+        case ProjectionMode::Orthographic: return "orthographic";
+    }
+    return "unknown";
+}
+
+bool projectionModeFromIndex(int index, ProjectionMode* out) {
+    if (out == nullptr) {
+        return false;
+    }
+    switch (index) {
+        case 0: *out = ProjectionMode::Perspective; return true;
+        case 1: *out = ProjectionMode::Orthographic; return true;
+        default: return false;  // refused, not clamped
+    }
+}
+
+int projectionModeIndex(ProjectionMode mode) { return static_cast<int>(mode); }
 
 CameraController::CameraController() = default;
 
@@ -76,10 +102,46 @@ void CameraController::resetCamera() {
     yaw_ = kInitialYaw;
     pitch_ = kInitialPitch;
     distance_ = kInitialDistance;
+    projection_ = kDefaultProjectionMode;
+    orthoHalfHeightMeters_ = kInitialOrthoHalfHeightMeters;
     orbitCount_ = 0;
     panCount_ = 0;
     zoomCount_ = 0;
     resetGesture();
+}
+
+// Converts the framing between the two descriptions rather than resetting it.
+// See the contract on the declaration: the target, yaw and pitch are untouched,
+// so only the visible SPAN is restated, and it is restated to the same span.
+bool CameraController::setProjectionMode(ProjectionMode mode) {
+    if (mode == projection_) {
+        return false;
+    }
+
+    const float halfHeightPerMeter = perspectiveHalfHeightPerMeter();
+
+    if (mode == ProjectionMode::Orthographic) {
+        // The perspective view's half-height AT THE TARGET PLANE is exactly what
+        // the ortho view must show, so the object keeps the size it had.
+        const float span = distance_ * halfHeightPerMeter;
+        if (std::isfinite(span) && span > 0.0f) {
+            orthoHalfHeightMeters_ =
+                clampf(span, kMinOrthoHalfHeightMeters, kMaxOrthoHalfHeightMeters);
+        }
+    } else {
+        // The inverse reading of the same identity. Distance is clamped, so a
+        // framing beyond what Perspective can express lands at the nearest one
+        // it can rather than producing a degenerate pose.
+        if (halfHeightPerMeter > 0.0f) {
+            const float d = orthoHalfHeightMeters_ / halfHeightPerMeter;
+            if (std::isfinite(d) && d > 0.0f) {
+                distance_ = clampf(d, kMinDistance, kMaxDistance);
+            }
+        }
+    }
+
+    projection_ = mode;
+    return true;
 }
 
 int CameraController::trackedPointerCount() const {
@@ -197,6 +259,26 @@ void CameraController::applyOrbit(float dx, float dy) {
     ++orbitCount_;
 }
 
+// One pixel of finger travel is one pixel of world travel at the target plane in
+// BOTH modes — the modes only disagree about how many world meters a pixel is
+// worth there. In Perspective that span opens with distance; in Orthographic it
+// is the ortho half-height and distance does not enter at all, which is the
+// whole point of a parallel projection.
+bool CameraController::worldPerPixelAtTargetPlane(float* out) const {
+    if (out == nullptr) {
+        return false;
+    }
+    const float halfHeight = (projection_ == ProjectionMode::Orthographic)
+                                 ? orthoHalfHeightMeters_
+                                 : distance_ * perspectiveHalfHeightPerMeter();
+    const float scale = (2.0f * halfHeight) / static_cast<float>(viewportHeight_);
+    if (!std::isfinite(scale) || scale <= 0.0f) {
+        return false;
+    }
+    *out = scale;
+    return true;
+}
+
 // The target slides in the camera plane so the world appears to follow the
 // fingers. One pixel of finger travel maps to exactly one pixel of world travel
 // measured at the target plane, which is what makes pan feel identical at every
@@ -208,9 +290,8 @@ void CameraController::applyPan(float dx, float dy) {
     if (dx == 0.0f && dy == 0.0f) {
         return;
     }
-    const float worldPerPixel =
-        (2.0f * distance_ * std::tan(kFovYRadians * 0.5f)) / static_cast<float>(viewportHeight_);
-    if (!std::isfinite(worldPerPixel)) {
+    float worldPerPixel = 0.0f;
+    if (!worldPerPixelAtTargetPlane(&worldPerPixel)) {
         return;
     }
 
@@ -227,8 +308,17 @@ void CameraController::applyPan(float dx, float dy) {
     }
 }
 
-// Multiplicative, so the distance can never reach or cross zero and the same
-// finger travel always produces the same zoom ratio.
+// Multiplicative, so the zoomed quantity can never reach or cross zero and the
+// same finger travel always produces the same zoom ratio.
+//
+// WHICH quantity is zoomed depends on the projection, and this is the one place
+// the difference is load-bearing. In Perspective, moving the eye toward the
+// target is what makes the object bigger. In Orthographic it is not: a parallel
+// projection produces the same image from anywhere on the view axis, so shrinking
+// the distance would change nothing on screen and pinch would appear dead. The
+// ortho scale is the visible world span, so that is what pinch changes — and the
+// orbit distance is deliberately left alone, because it is still the pose radius
+// and still what a switch back to Perspective is computed from.
 void CameraController::applyZoom(float spanDelta) {
     if (!std::isfinite(spanDelta) || spanDelta == 0.0f) {
         return;
@@ -237,6 +327,18 @@ void CameraController::applyZoom(float spanDelta) {
     if (!std::isfinite(scale) || scale <= 0.0f) {
         return;
     }
+
+    if (projection_ == ProjectionMode::Orthographic) {
+        const float next = orthoHalfHeightMeters_ * scale;
+        if (!std::isfinite(next)) {
+            return;
+        }
+        orthoHalfHeightMeters_ =
+            clampf(next, kMinOrthoHalfHeightMeters, kMaxOrthoHalfHeightMeters);
+        ++zoomCount_;
+        return;
+    }
+
     const float next = distance_ * scale;
     if (!std::isfinite(next)) {
         return;
@@ -251,12 +353,36 @@ CameraSnapshot CameraController::snapshot() const {
     s.pitch = pitch_;
     s.distance = distance_;
     s.target = target_;
-    s.eye = vec3Add(target_, vec3Scale(orbitDirection(), distance_));
+    s.projection = projection_;
+
+    const Vec3 direction = orbitDirection();  // target -> eye
+
+    // The view plane sits at the orbit eye in Perspective and is pulled back in
+    // Orthographic. Only the projection differs in where it puts the eye; the
+    // ORIENTATION is identical, which is what keeps orbit and pan behaving the
+    // same in both modes.
+    const float eyeDistance = (projection_ == ProjectionMode::Orthographic)
+                                  ? kOrthoViewPlaneDistance
+                                  : distance_;
+    s.eye = vec3Add(target_, vec3Scale(direction, eyeDistance));
     s.view = mat4LookAt(s.eye, s.target, Vec3{0.0f, 1.0f, 0.0f});
 
+    // One aspect, from the one viewport truth, for both projections. The
+    // orientation convention (P2) is untouched: this is the window's own aspect
+    // with no display rotation folded in, exactly as before.
     const float aspect =
         static_cast<float>(viewportWidth_) / static_cast<float>(viewportHeight_);
-    s.proj = mat4Perspective(kFovYRadians, aspect > 0.0f ? aspect : 1.0f, kNearPlane, kFarPlane);
+    const float safeAspect = aspect > 0.0f ? aspect : 1.0f;
+
+    if (projection_ == ProjectionMode::Orthographic) {
+        s.orthoHalfHeightMeters = orthoHalfHeightMeters_;
+        s.proj = mat4Orthographic(orthoHalfHeightMeters_, safeAspect, kNearPlane, kFarPlane);
+    } else {
+        // Carried live rather than left stale, so the field always describes the
+        // framing that is actually on screen (see the CameraSnapshot contract).
+        s.orthoHalfHeightMeters = distance_ * perspectiveHalfHeightPerMeter();
+        s.proj = mat4Perspective(kFovYRadians, safeAspect, kNearPlane, kFarPlane);
+    }
     return s;
 }
 

@@ -18,15 +18,78 @@
 
 namespace forgeshape {
 
+// How the camera projects the world onto the viewport.
+//
+// A closed enum and a switch, deliberately — the same rule the sculpt tools and
+// the shading models follow. Two projections do not justify a camera framework,
+// a projection registry or a plugin surface.
+//
+// This is CAMERA/PRESENTATION state, never geometry truth. Changing it mints no
+// MeshRevision and no SculptRevision, moves no vertex, touches no Construction
+// parameter, no PrimitiveKind, no transform and no ObjectId. It changes which
+// pixels a fixed piece of geometry lands on, and nothing else.
+enum class ProjectionMode {
+    // Standard pinhole projection: near parts of a solid are drawn larger, and
+    // parallel edges converge. The product default.
+    Perspective,
+    // True parallel projection: equal lengths parallel to the image plane are
+    // drawn at equal size at every depth, and parallel edges stay parallel. This
+    // is the mode in which exact Construction geometry can be judged, because
+    // nothing is enlarged merely for being closer.
+    Orthographic,
+};
+
+constexpr int kProjectionModeCount = 2;
+
+// Perspective, so the viewport comes up in the natural, depth-cued view.
+constexpr ProjectionMode kDefaultProjectionMode = ProjectionMode::Perspective;
+
+const char* projectionModeName(ProjectionMode mode);
+
+// Maps the UI's index onto the enum. Out-of-range is REFUSED rather than
+// clamped, matching shadingModelFromIndex and sculptToolFromIndex: an unknown
+// mode is a caller bug, not a value to repair.
+bool projectionModeFromIndex(int index, ProjectionMode* out);
+int projectionModeIndex(ProjectionMode mode);
+
 // Immutable, self-consistent camera state handed to the renderer once per frame.
 struct CameraSnapshot {
     Mat4 view;
     Mat4 proj;
+
+    // The world-space origin of the view: the point every pick ray starts from
+    // and the point `view` translates to the origin.
+    //
+    // In Perspective this is the pinhole itself, `target + orbitDirection *
+    // distance`. In Orthographic it is the centre of the near face of the view
+    // slab, which is pulled back to kOrthoViewPlaneDistance so that the whole
+    // depth range sits in front of it (see kOrthoViewPlaneDistance). A parallel
+    // projection is invariant to translation along the view axis, so that
+    // pull-back changes no pixel — it exists so clipping and picking agree with
+    // what is drawn. It therefore does NOT equal `target + orbitDirection *
+    // distance` in Orthographic, and nothing may assume it does.
     Vec3 eye;
+
     Vec3 target;
     float yaw;
     float pitch;
+
+    // The ORBIT pose distance, target -> orbit eye. It is the pose radius in
+    // both modes and is what orbit must leave alone; in Orthographic it does not
+    // set the visible scale (orthoHalfHeightMeters does) and does not place
+    // `eye`.
     float distance;
+
+    // Which of the two projections `proj` actually is, so downstream code can
+    // branch without re-deriving it from the matrix.
+    ProjectionMode projection;
+
+    // Half the world-space height the viewport shows, in METERS, measured at the
+    // target plane. Meaningful in Orthographic, where it is the visible scale;
+    // in Perspective it carries the equivalent framing (distance * tan(fovY / 2))
+    // so the value is always a live, physically interpretable span rather than a
+    // stale leftover.
+    float orthoHalfHeightMeters;
 };
 
 // ---------------------------------------------------------------------------
@@ -56,6 +119,41 @@ constexpr float kFovYRadians = 1.0471976f;  // 60 deg
 constexpr float kNearPlane = 0.05f;
 constexpr float kFarPlane = 500.0f;
 
+// ---------------------------------------------------------------------------
+// Orthographic scale and depth
+// ---------------------------------------------------------------------------
+
+// Hard clamps on the orthographic visible half-height, in METERS. The minimum
+// shows a 4 cm tall slice of the world, which is enough to work on a small
+// detail; the maximum frames a 500 m tall object. The pair brackets the same
+// range of apparent sizes the perspective distance clamps do — at the 60 deg
+// field of view, kMinDistance and kMaxDistance correspond to half-heights of
+// about 0.20 m and 231 m, so neither mode can reach a framing the other cannot.
+constexpr float kMinOrthoHalfHeightMeters = 0.02f;
+constexpr float kMaxOrthoHalfHeightMeters = 250.0f;
+
+// Where the orthographic view plane sits, in meters in front of the target
+// along the orbit direction.
+//
+// A parallel projection produces the same image from anywhere on the view axis,
+// so this is free to be generous, and being generous is the point: with the
+// view plane kFarPlane/2 in front of the target, the depth slab [kNearPlane,
+// kFarPlane] is centred on the target and reaches 250 m either side of it.
+// Nothing the user can frame gets sliced by the near plane, and every drawn
+// surface is in front of the pick-ray origin — so what is pickable stays what
+// is drawn, which is the same invariant the front-face rule protects.
+//
+// Ortho depth is linear, so a 500 m slab costs no precision worth naming
+// (about 30 um per depth-buffer step at 24 bits) — unlike a perspective frustum,
+// where the same range would be ruinous.
+constexpr float kOrthoViewPlaneDistance = kFarPlane * 0.5f;
+
+// The default orthographic framing, chosen to match what Perspective shows at
+// kInitialDistance so the very first switch does not move the frame.
+// Recomputed rather than stored on every real switch; this is only the value a
+// process starts with.
+constexpr float kInitialOrthoHalfHeightMeters = 4.7343f;  // 8.2 * tan(30 deg)
+
 // Initial framing, chosen so the Stage 003 cube stays fully framed on a tall
 // portrait surface.
 constexpr float kInitialYaw = 0.7f;
@@ -82,6 +180,23 @@ public:
     // Restores the initial pose. Not wired to any gesture; used by self-tests.
     void resetCamera();
 
+    // Switches the projection, PRESERVING THE FRAMING at the target plane.
+    //
+    // The two modes describe the same visible span in different terms, so the
+    // switch converts between them instead of resetting:
+    //
+    //   Perspective -> Orthographic:  orthoHalfHeight = distance * tan(fovY / 2)
+    //   Orthographic -> Perspective:  distance = orthoHalfHeight / tan(fovY / 2)
+    //
+    // Both are the same identity read in opposite directions, so a round trip
+    // returns to where it started (up to the distance clamps). The target, the
+    // yaw and the pitch are never touched, so the frame keeps its centre and its
+    // viewing direction and the object cannot jump or vanish.
+    //
+    // Returns true only when the mode actually changed, so a caller can log a
+    // real transition rather than reporting a no-op as one.
+    bool setProjectionMode(ProjectionMode mode);
+
     CameraSnapshot snapshot() const;
 
     // --- introspection (logging and self-tests only) ---
@@ -89,6 +204,8 @@ public:
     float pitch() const { return pitch_; }
     float distance() const { return distance_; }
     Vec3 target() const { return target_; }
+    ProjectionMode projectionMode() const { return projection_; }
+    float orthoHalfHeightMeters() const { return orthoHalfHeightMeters_; }
     bool gestureActive() const { return mode_ != Mode::None; }
     int trackedPointerCount() const;
 
@@ -104,6 +221,13 @@ private:
     void applyPan(float dx, float dy);
     void applyZoom(float spanDelta);
 
+    // World meters per screen pixel at the target plane, for the ACTIVE
+    // projection. Pan is authored in pixels and has to be resolved in world
+    // units, and the two modes resolve it differently: in Perspective the span
+    // grows with distance, in Orthographic it is the ortho half-height and
+    // distance does not enter. Returns false if the result is not usable.
+    bool worldPerPixelAtTargetPlane(float* out) const;
+
     // Orthonormal camera basis for the current pose.
     Vec3 orbitDirection() const;  // unit vector target -> eye
     void cameraBasis(Vec3* right, Vec3* up) const;
@@ -112,6 +236,13 @@ private:
     float yaw_ = kInitialYaw;
     float pitch_ = kInitialPitch;
     float distance_ = kInitialDistance;
+
+    // Projection state. Process-scoped exactly as the pose above is: the one
+    // CameraController instance outlives every Surface and every Activity, which
+    // is why the chosen projection and its framing survive a HOME/resume and a
+    // surface recreation with no save/restore code in the Android layer.
+    ProjectionMode projection_ = kDefaultProjectionMode;
+    float orthoHalfHeightMeters_ = kInitialOrthoHalfHeightMeters;
 
     int viewportWidth_ = 1;
     int viewportHeight_ = 1;

@@ -703,10 +703,24 @@ final class EditorWorkspaceView extends FrameLayout
         refreshDisplaySettings();
     }
 
+    @Override
+    public void onProjectionModeRequested(int mode) {
+        // Camera state, so this goes to the camera rather than the display
+        // store — but from the user's side it is the same kind of act as the
+        // chips above it, and the popover stays open for the same reason:
+        // judging Perspective against Orthographic means switching repeatedly.
+        //
+        // Nothing else is refreshed. A projection change publishes no mesh and
+        // mints no revision, so no inspector value and no status line can have
+        // become stale because of it.
+        NativeViewport.setProjectionMode(mode);
+        refreshDisplaySettings();
+    }
+
     /** Repaints the popover from native truth, so a refused request shows. */
     private void refreshDisplaySettings() {
         displayPopover.showSettings(NativeViewport.shadingModel(),
-                NativeViewport.surfaceShading());
+                NativeViewport.surfaceShading(), NativeViewport.projectionMode());
     }
 
     /**

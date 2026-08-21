@@ -38,7 +38,7 @@ sharp rim, and a clean point at the top. A capsule is smooth from end to end, wi
 no visible join where the rounded ends meet the middle — and a capsule as tall as
 it is wide is simply a smooth sphere.
 
-**Display** in the Global Toolbar opens a small panel with two choices.
+**Display** in the Global Toolbar opens a small panel with three choices.
 
 *Shading* picks how the surface is lit:
 
@@ -54,10 +54,31 @@ it is wide is simply a smooth sphere.
 - **Faceted** — every triangle is shaded flat, which deliberately shows the
   underlying triangles.
 
+*Projection* picks how the camera flattens the scene onto the screen:
+
+- **Perspective** — the default. The natural view: parts of the object that are
+  nearer are drawn larger, and edges that are parallel in the world converge
+  toward the distance. It reads like a photograph and is the better view for
+  judging overall form.
+- **Orthographic** — a parallel view. Two edges of the same length are drawn the
+  same size no matter which is nearer, and edges that are parallel in the world
+  stay parallel on screen. This is the view for judging exact geometry, because
+  nothing is enlarged merely for being closer.
+
+An edge pointing away from you still looks shortened in Orthographic. That is
+foreshortening from *orientation*, which both projections have and which is
+correct: what Orthographic removes is foreshortening from *distance*.
+
 Switching between Studio and MatCap changes nothing but the picture: the object,
 its dimensions, its placement and any sculpting are untouched, and so is what you
 can tap. Smooth and Faceted are the same — the same triangles are drawn either
-way. None of the four discards a dimension you are part-way through typing.
+way. Perspective and Orthographic are the same again: they move the camera's
+description of the scene, never the scene. None of them discards a dimension you
+are part-way through typing.
+
+Switching projection does not jump the frame. The object keeps its place on
+screen and stays roughly the size it was, because the two views are matched at
+the depth of the point the camera is looking at.
 
 The panel stays open while you try several options, and the choices survive
 leaving the app and coming back.
@@ -423,10 +444,18 @@ a **target** point and is described by target, yaw, pitch and distance.
   camera plane, so the scene follows the fingers. One pixel of finger travel
   moves the scene by one pixel measured at the target plane, so panning feels
   identical at every zoom level and on every screen size.
-- **Pinch — Zoom.** Spreading zooms in, pinching zooms out. Distance is scaled by
+- **Pinch — Zoom.** Spreading zooms in, pinching zooms out, scaled by
   `exp(-Δspan × 0.0035)`, so the same finger travel always produces the same zoom
-  ratio and the distance can never reach zero or go negative. It is clamped to
-  `[0.35, 400]`.
+  ratio and the value can never reach zero or go negative.
+
+All three work the same way in both projections, on the same target. Only what
+pinch *changes* differs, and it has to: in Perspective it moves the camera closer
+or further away, clamped to `[0.35, 400] m`. In Orthographic moving the camera
+along its own axis would change nothing on screen — that is what a parallel view
+means — so pinch instead changes how much of the world the viewport spans,
+clamped to a visible height of `[0.02, 250] m`, which reaches from a 4 cm detail
+to a 500 m object. Panning is scaled to match whichever is active, so one pixel
+of finger travel is still one pixel of scene travel at the target plane in both.
 
 Pan and pinch are interpreted from the same two-finger gesture and can be
 performed simultaneously. Adding or removing a finger re-anchors the gesture and
@@ -467,7 +496,8 @@ that used to be its surface is empty and taps now land 0.3 m from its centre.
 
 The object's shape, its size, its position and rotation, its identity, the chosen
 display unit, which mode is active, which sculpt tool is in hand, every sculpted
-deformation, the camera pose and the selection all survive sending ForgeShape to
+deformation, the camera pose, the chosen projection and its framing, and the
+selection all survive sending ForgeShape to
 the home screen and resuming it — the viewport comes back pixel-identical. On
 resume the surfaces for the active mode are shown and every field, slider and
 tool is rewritten from what the object actually is, so anything half-typed or
@@ -482,7 +512,10 @@ restarts.
 
 ## Not yet implemented
 
-Scaling the object, transform gizmos, snapping, creating a second object, further
+Standard named views (Front, Top, Right and the rest), a view cube, a grid, a
+focus-on-selection command and any camera animation are not implemented — the
+projection can be switched, but the camera is aimed only by hand. Scaling the
+object, transform gizmos, snapping, creating a second object, further
 primitives (plane), an editable tessellation and booleans are not implemented:
 shape, position and rotation are edited only by typing exact values and pressing
 an Apply button. Sculpting has exactly the four tools above — other brushes

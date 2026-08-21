@@ -23,22 +23,44 @@ Vec3 viewForward(const CameraSnapshot& camera) {
     return Vec3{-camera.view.m[2], -camera.view.m[6], -camera.view.m[10]};
 }
 
-// World meters per screen pixel on the plane `depth` in front of the eye.
+// World meters per screen pixel, for the brush being worked at `depth` in front
+// of the view plane.
 //
-// The projection's own vertical term carries the field of view
-// (proj.m[5] = -1 / tan(fovY / 2) after the Vulkan Y flip), so the half-height
-// of the view at that depth is depth / |proj.m[5]| and one pixel spans twice
-// that over the viewport height. Nothing here restates kFovYRadians.
+// The projection's own vertical term carries the scale, so kFovYRadians and the
+// orthographic span are never restated here — but the two projections read that
+// term differently, and getting this wrong is what would make a brush the wrong
+// size in one of them:
+//
+//   Perspective  — proj.m[5] = -1 / tan(fovY / 2) after the Vulkan Y flip, so
+//                  the view's half-height at that depth is depth / |m[5]|. The
+//                  brush IS depth-dependent, because the view opens with depth.
+//
+//   Orthographic — proj.m[5] = -1 / orthoHalfHeight, so the half-height is
+//                  1 / |m[5]| at EVERY depth. The brush is depth-independent,
+//                  because a parallel view does not open. Multiplying by depth
+//                  here would make the same on-screen brush cover a different
+//                  amount of surface depending on how far the object happened to
+//                  be — a size the projection gives no basis for.
+//
+// So the two cases are the same expression with the depth factor present or
+// absent, which is exactly the difference between the two projections.
 bool worldPerPixelAtDepth(const CameraSnapshot& camera, float depth, int viewportHeight,
                           float* out) {
-    if (out == nullptr || viewportHeight <= 0 || !std::isfinite(depth) || depth <= 0.0f) {
+    if (out == nullptr || viewportHeight <= 0) {
+        return false;
+    }
+    const bool orthographic = (camera.projection == ProjectionMode::Orthographic);
+    // Depth is required to be a usable positive length only where it is used.
+    if (!orthographic && (!std::isfinite(depth) || depth <= 0.0f)) {
         return false;
     }
     const float projY = std::fabs(camera.proj.m[5]);
     if (!std::isfinite(projY) || projY < 1e-8f) {
         return false;
     }
-    const float scale = (2.0f * depth) / (projY * static_cast<float>(viewportHeight));
+    const float halfHeightNumerator = orthographic ? 1.0f : depth;
+    const float scale =
+        (2.0f * halfHeightNumerator) / (projY * static_cast<float>(viewportHeight));
     if (!std::isfinite(scale) || scale <= 0.0f) {
         return false;
     }
@@ -484,9 +506,15 @@ bool SculptStroke::begin(SculptTool tool, const SculptMesh& mesh, const CameraSn
         return false;
     }
 
-    // Brush size is authored in pixels, so it has to be resolved at the depth of
-    // the thing being worked on. Depth is measured along the camera FORWARD
-    // axis, not along the ray, so the scale is the same everywhere on screen.
+    // Brush size is authored in pixels, so it has to be resolved into world
+    // units. Depth is measured along the camera FORWARD axis, not along the ray,
+    // so the scale is the same everywhere on screen.
+    //
+    // In Orthographic this depth is computed and then deliberately ignored: the
+    // view does not open with distance, so the pixel-to-world scale is constant
+    // through the whole slab (see worldPerPixelAtDepth). It is still measured
+    // here rather than branched around, because one expression that the callee
+    // interprets per projection is harder to get out of step than two.
     const float depth = vec3Dot(vec3Sub(worldHit, camera.eye), viewForward(camera));
     float worldPerPixel = 0.0f;
     if (!worldPerPixelAtDepth(camera, depth, viewportHeight, &worldPerPixel)) {

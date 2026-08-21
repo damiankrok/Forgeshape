@@ -179,4 +179,39 @@ inline Mat4 mat4Perspective(float fovYRadians, float aspect, float zNear, float 
     return r;
 }
 
+// Vulkan-style ORTHOGRAPHIC (parallel) projection, sharing every convention with
+// mat4Perspective above: right-handed view space looking down -Z, depth range
+// [0, 1], and the Y flip performed in the matrix rather than by a negative
+// viewport.
+//
+// `halfHeightMeters` is half the world-space height the viewport shows, so the
+// visible slab is 2 * halfHeightMeters tall and 2 * halfHeightMeters * aspect
+// wide. It is a real world length, not an abstract zoom factor.
+//
+// The defining difference from the perspective matrix is m[11]: it stays 0, so
+// w_clip is 1 for every vertex and nothing is divided by depth. That is what
+// makes this a true parallel projection rather than a perspective one with a
+// narrow field of view — equal lengths parallel to the image plane project to
+// equal screen lengths no matter how far away they are.
+//
+// Mapping, for a camera-space point (x, y, z) with z negative in front:
+//     x_ndc = x / (halfHeightMeters * aspect)
+//     y_ndc = -y / halfHeightMeters
+//     z_ndc = (-z - zNear) / (zFar - zNear)
+// so z = -zNear lands on 0 and z = -zFar lands on 1, exactly as the perspective
+// matrix does.
+//
+// zNear may legitimately be negative here. A parallel projection has no eye
+// singularity and never divides by w, so a near plane behind the view origin is
+// well defined; the caller decides whether it wants one.
+inline Mat4 mat4Orthographic(float halfHeightMeters, float aspect, float zNear, float zFar) {
+    Mat4 r{};
+    r.m[0] = 1.0f / (halfHeightMeters * aspect);
+    r.m[5] = -1.0f / halfHeightMeters;
+    r.m[10] = 1.0f / (zNear - zFar);
+    r.m[14] = zNear / (zNear - zFar);
+    r.m[15] = 1.0f;
+    return r;
+}
+
 }  // namespace forgeshape

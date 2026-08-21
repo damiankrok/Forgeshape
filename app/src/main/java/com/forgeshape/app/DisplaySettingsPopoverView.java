@@ -10,13 +10,21 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 /**
- * The compact display control: how the viewport SHADES the object.
+ * The compact display control: how the viewport PRESENTS the object.
  *
- * <p>Two labelled groups and nothing else — the shading model (Studio Solid or
- * MatCap) and the surface shading (Smooth or Faceted). It is deliberately not a
- * material editor, a preset browser or a light rig: those are later decisions
- * with their own approvals, and a surface that looks like it could grow into one
+ * <p>Three labelled groups and nothing else — the shading model (Studio Solid or
+ * MatCap), the surface shading (Smooth or Faceted) and the camera projection
+ * (Perspective or Orthographic). It is deliberately not a material editor, a
+ * preset browser, a light rig or a view-cube: those are later decisions with
+ * their own approvals, and a surface that looks like it could grow into one
  * invites exactly that.
+ *
+ * <p>Projection is the odd member and is here on purpose. It is <em>camera</em>
+ * state rather than a display setting — native code keeps it with the camera
+ * pose, not in the display store — but it is the other control that changes how
+ * the object reads without changing what it is, and giving it its own chrome
+ * surface would cost the user a second place to look for the same kind of
+ * decision.
  *
  * <p><b>Owns no state.</b> Every chip reports a request; native code decides,
  * and {@link #showSettings} repaints from what native code reports afterwards.
@@ -51,6 +59,8 @@ final class DisplaySettingsPopoverView extends LinearLayout {
         void onShadingModelRequested(int model);
 
         void onSurfaceShadingRequested(int shading);
+
+        void onProjectionModeRequested(int mode);
     }
 
     /**
@@ -66,6 +76,8 @@ final class DisplaySettingsPopoverView extends LinearLayout {
     private final TextView debugChip;
     private final TextView smoothChip;
     private final TextView facetedChip;
+    private final TextView perspectiveChip;
+    private final TextView orthographicChip;
 
     DisplaySettingsPopoverView(Context context, final OnDisplaySettingChanged listener,
                                boolean includeDebugShading) {
@@ -157,6 +169,39 @@ final class DisplaySettingsPopoverView extends LinearLayout {
         });
         surfaceRow.addView(facetedChip, EditorControlStyles.wrap(gap));
 
+        addView(EditorControlStyles.sectionLabel(context, context.getString(R.string.projection)),
+                EditorControlStyles.rowParams(
+                        EditorControlStyles.dimen(context, R.dimen.row_gap)));
+
+        // The two projection labels are long, so they get their own row rather
+        // than sharing one with anything else. Like the shading chips they are
+        // sized to their labels: "Orthographic" clipped to "Orthograph" would be
+        // exactly the failure the comment above the shading row describes.
+        final LinearLayout projectionRow = new LinearLayout(context);
+        projectionRow.setOrientation(HORIZONTAL);
+        addView(projectionRow, EditorControlStyles.rowParams(
+                EditorControlStyles.dimen(context, R.dimen.row_gap_small)));
+
+        perspectiveChip = EditorControlStyles.chip(context, R.id.projection_perspective,
+                context.getString(R.string.projection_perspective));
+        perspectiveChip.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                listener.onProjectionModeRequested(NativeViewport.PROJECTION_PERSPECTIVE);
+            }
+        });
+        projectionRow.addView(perspectiveChip, EditorControlStyles.wrap(0));
+
+        orthographicChip = EditorControlStyles.chip(context, R.id.projection_orthographic,
+                context.getString(R.string.projection_orthographic));
+        orthographicChip.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                listener.onProjectionModeRequested(NativeViewport.PROJECTION_ORTHOGRAPHIC);
+            }
+        });
+        projectionRow.addView(orthographicChip, EditorControlStyles.wrap(gap));
+
         setVisibility(GONE);
     }
 
@@ -167,7 +212,7 @@ final class DisplaySettingsPopoverView extends LinearLayout {
      * is actually in effect rather than what was last tapped — which is the
      * difference that matters when a request was refused.
      */
-    void showSettings(int shadingModel, int surfaceShading) {
+    void showSettings(int shadingModel, int surfaceShading, int projectionMode) {
         EditorControlStyles.setChipActive(studioChip, shadingModel == NativeViewport.SHADING_STUDIO);
         EditorControlStyles.setChipActive(matcapChip, shadingModel == NativeViewport.SHADING_MATCAP);
         if (debugChip != null) {
@@ -178,6 +223,10 @@ final class DisplaySettingsPopoverView extends LinearLayout {
                 surfaceShading == NativeViewport.SURFACE_SMOOTH);
         EditorControlStyles.setChipActive(facetedChip,
                 surfaceShading == NativeViewport.SURFACE_FACETED);
+        EditorControlStyles.setChipActive(perspectiveChip,
+                projectionMode == NativeViewport.PROJECTION_PERSPECTIVE);
+        EditorControlStyles.setChipActive(orthographicChip,
+                projectionMode == NativeViewport.PROJECTION_ORTHOGRAPHIC);
     }
 
     boolean isOpen() {

@@ -37,6 +37,15 @@
     <item name="surface_shading_smooth" type="id" />
     <item name="surface_shading_faceted" type="id" />
 
+    <!--
+      Camera projection. It shares the display surface because it is the other
+      thing that changes how the object READS without changing what it is, but
+      it is camera state rather than a display setting, and native code keeps it
+      with the camera pose.
+    -->
+    <item name="projection_perspective" type="id" />
+    <item name="projection_orthographic" type="id" />
+
     <!-- Tool Rail. One rail view; its entries differ by mode. -->
     <item name="tool_rail" type="id" />
     <item name="tool_rail_grab" type="id" />

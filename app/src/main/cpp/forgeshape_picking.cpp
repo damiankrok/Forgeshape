@@ -64,12 +64,35 @@ bool buildPickRay(const CameraSnapshot& camera, float screenX, float screenY,
     const float ndcX = (2.0f * screenX / static_cast<float>(viewportWidth)) - 1.0f;
     const float ndcY = (2.0f * screenY / static_cast<float>(viewportHeight)) - 1.0f;
 
-    // Direction to the pixel on the camera-space plane z = -1.
-    const Vec3 dirCamera{ndcX / sx, ndcY / sy, -1.0f};
+    // The camera-space coordinates of this pixel, inverted out of whichever
+    // projection is active. Both matrices scale x and y by m[0] and m[5], so
+    // this single division serves both; what the two do with the result is where
+    // they part company.
+    const float camX = ndcX / sx;
+    const float camY = ndcY / sy;
 
     const Vec3 r0{camera.view.m[0], camera.view.m[4], camera.view.m[8]};
     const Vec3 r1{camera.view.m[1], camera.view.m[5], camera.view.m[9]};
     const Vec3 r2{camera.view.m[2], camera.view.m[6], camera.view.m[10]};
+
+    // Camera-space origin offset and direction, per projection.
+    //
+    //   Perspective — every ray leaves the SAME point (the pinhole) in a
+    //   DIFFERENT direction. The pixel selects the direction: the point
+    //   (camX, camY, -1) on the plane one meter in front of the eye.
+    //
+    //   Orthographic — every ray leaves a DIFFERENT point in the SAME direction.
+    //   The pixel selects the origin, sliding it across the view plane by
+    //   (camX, camY, 0); the direction is straight down the view axis for the
+    //   whole screen, which is exactly what a parallel projection means.
+    //
+    // Using the pixel to move the origin is not an optional refinement. A pick
+    // ray that still fanned out from a point while the image was drawn in
+    // parallel would agree with the picture only at the screen centre and drift
+    // further from it toward every edge.
+    const bool orthographic = (camera.projection == ProjectionMode::Orthographic);
+
+    const Vec3 dirCamera = orthographic ? Vec3{0.0f, 0.0f, -1.0f} : Vec3{camX, camY, -1.0f};
 
     Vec3 dirWorld = vec3Scale(r0, dirCamera.x);
     dirWorld = vec3Add(dirWorld, vec3Scale(r1, dirCamera.y));
@@ -88,7 +111,20 @@ bool buildPickRay(const CameraSnapshot& camera, float screenX, float screenY,
         return false;
     }
 
-    out->origin = camera.eye;
+    Vec3 origin = camera.eye;
+    if (orthographic) {
+        // camera.eye is the centre of the view plane (see CameraSnapshot), and
+        // the plane is pulled far enough back that every drawn surface is in
+        // front of it — so a positive hit distance still means "visible", and
+        // the nearest-hit rule still picks the surface the rasterizer drew.
+        origin = vec3Add(origin, vec3Scale(r0, camX));
+        origin = vec3Add(origin, vec3Scale(r1, camY));
+        if (!vec3Finite(origin)) {
+            return false;
+        }
+    }
+
+    out->origin = origin;
     out->direction = normalized;
     return true;
 }

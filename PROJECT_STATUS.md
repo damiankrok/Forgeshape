@@ -1,35 +1,158 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.19.0
+**Status Version:** 0.20.0
 **Updated:** 2026-08-21
 **Result:** COMPLETE
 **Current Phase:** Phase 1 — Native Viewport
 **Workspace:** `D:\TRAVELAPPS\ForgeShape`
-**Accepted implementation baseline:** Stage 015C-R — viewport surface readability
-(inverted front-face culling fixed), on top of Stage 015C (shading), Platform Fix
-P2 (rotated-landscape renderer orientation), Stage 015B (Editor Workspace),
-Stage 014, the NDK r29 migration (Gate P0) and the owner decision baseline
+**Accepted implementation baseline:** Stage 015D — camera projection
+(Orthographic added alongside Perspective), on top of Stage 015C-R (front-face
+culling), Stage 015C (shading), Platform Fix P2 (rotated-landscape renderer
+orientation), Stage 015B (Editor Workspace), Stage 014, the NDK r29 migration
+(Gate P0) and the owner decision baseline
 **Next Stage:** Stage 016 — Plane + Primitive Coverage Cleanup
 
 This is a current snapshot, not a chronology. Per-stage verification chapters,
 superseded environment states and old next-stage recommendations live in Git
 history and are deliberately not repeated here.
 
-Stage 015C-R fixed the defect that made every convex primitive read as a hollow
-interior: the graphics pipeline named `VK_FRONT_FACE_CLOCKWISE`, which inverted
-back-face culling, so the viewport drew each solid's **far** walls instead of its
-near ones. It also adds a ten-part direction test family (`NOR-01`..`NOR-10`) to
-the render-shading suite, because every check that existed measured which axis a
-normal lay on and none measured which way it pointed.
+Stage 015D added a mathematically correct **Orthographic** projection beside the
+existing Perspective one, so exact Construction geometry can be judged without
+near parts of a solid being enlarged for being near. Perspective remains the
+default and was **audited, not changed** — its 60° vertical field of view, its
+aspect source and its pinhole form are all unchanged.
+
+Stage 015C-R before it fixed the defect that made every convex primitive read as
+a hollow interior: the graphics pipeline named `VK_FRONT_FACE_CLOCKWISE`, which
+inverted back-face culling, so the viewport drew each solid's **far** walls
+instead of its near ones. It also added the ten-part direction test family
+(`NOR-01`..`NOR-10`).
 
 Stage 015C before it replaced the debug-looking per-vertex rainbow with readable
 lit geometry: a **derived, render-only** normal layer between the authoritative
 mesh and Vulkan, one centralized crease policy, two shading models (Studio Solid
 and MatCap), Smooth/Faceted display, a compact display control in the Global
-Toolbar, and a tenth native self-test suite. No Construction, sculpt, picking,
-camera or transform behaviour changed in either stage. Platform Fix P2 closed the
+Toolbar, and a tenth native self-test suite. Platform Fix P2 closed the
 rotated-landscape rendering defect, and Stage 015B replaced the two provisional
 Android panels with the approved responsive **Editor Workspace**.
+
+## Stage 015D — camera projection
+
+**The existing Perspective camera was audited first and left alone.** The
+vertical field of view is **60°** (`kFovYRadians = 1.0471976`), the aspect comes
+from the one `CameraController` viewport truth, orbit changes neither distance
+nor FOV, there is no screen-axis non-uniform scale, and the matrix is a standard
+pinhole (`proj.m[11] = -1`). `CAMPROJ-01` asserts each of those against the
+matrix rather than by inspection, including that `|m[0]/m[5]|` is exactly
+`1/aspect` — the check that would fail if anything ever stretched one axis to
+"fix" a rotated display. No evidence of non-rigid geometry distortion was found
+and no projection constant was changed.
+
+**Orthographic is a true parallel projection**, `mat4Orthographic` in
+`forgeshape_math.h`, sharing every convention with `mat4Perspective`:
+right-handed view space, Vulkan `[0, 1]` depth, the Y flip in the matrix. Its
+defining property is `m[11] = 0`, so `w` is 1 for every vertex and nothing is
+divided by depth. It is **not** a narrow FOV, a huge camera distance, a model
+scale or a shader trick, and `CAMPROJ-02`/`03` assert the parallel behaviour
+directly: two equal segments parallel to the image plane measure the same screen
+size at depths 80 m apart, and a box's front and back faces project to the same
+width.
+
+**The orthographic scale is an explicit world length.**
+`orthoHalfHeightMeters` is half the world height the viewport shows, in meters at
+the target plane — finite, positive, and clamped to `[0.02, 250] m`, which
+brackets the same range of apparent sizes the perspective distance clamps do. The
+snapshot carries it in both modes, so it is never a stale leftover.
+
+**Switching preserves the framing**, converting rather than resetting:
+`orthoHalfHeight = distance × tan(fovY/2)` and its inverse. Target, yaw and pitch
+are untouched. Measured at runtime: the first switch produced
+`orthoHalfHeightMeters=4.7343` from `distance=8.2000` (8.2 × tan 30° = 4.73427),
+and after an ortho pinch to `0.3809` the switch back produced `distance=0.6598`
+(0.3809 / tan 30° = 0.65977). `CAMPROJ-05`/`06` hold the on-screen scale at the
+target plane to 1e-4 in NDC and prove the round trip returns to its origin.
+
+**Pinch had to be projection-aware, and this is the load-bearing part.** Moving
+the eye along its own axis changes nothing in a parallel projection, so a
+distance-based ortho zoom would look dead. Orthographic pinch therefore changes
+the span and deliberately leaves the orbit distance alone — measured at runtime:
+a real two-finger spread moved the span `4.7343 → 0.3809` with `distance=8.2000`
+unchanged.
+
+**Picking is structurally different per projection, not a tweaked constant.**
+Perspective keeps one origin (the eye) with fanning directions; Orthographic
+shares one direction (the view axis) with an origin that slides across the view
+plane per pixel. Keeping a perspective origin under an orthographic image agrees
+with the picture only at the screen centre and drifts toward every edge, so the
+picking suite probes off-centre pixels and **round-trips each hit back through
+the same matrices to the pixel it came from**. The orthographic view plane is
+pulled back to `kFarPlane/2` (250 m) so the depth slab is centred on the target;
+that costs nothing visually (a parallel projection is translation-invariant along
+its axis) and buys the guarantee that every drawn surface is in front of the
+pick-ray origin. The consequence to know is that `snapshot.eye` is not
+`target + dir × distance` in Orthographic and a reported pick distance is
+measured from that plane.
+
+**Sculpt needed one change: the brush radius must not scale with depth in
+Orthographic.** `worldPerPixelAtDepth` still reads `proj.m[5]` in both modes but
+applies the depth factor only in Perspective. `CAMPROJ-11` measures both halves —
+pushing the object ±3 m along the view axis leaves the orthographic radius
+identical and does move the perspective one — so a brush frozen to a constant
+could not pass either.
+
+**Verification.** Ten self-test suites green (**1316 checks, zero failures**, up
+from 1199); 26 JVM tests green; **44 instrumented tests, 43 green**. The one
+failure is `EditorWorkspaceGestureTest.ui11_...` failing its own precondition
+guard ("the soft keyboard did not appear, so this case proves nothing") and is
+**proven pre-existing**: the same test was run alone on a stashed, unmodified
+`171c7ae` tree and failed with the identical message. See the environment note
+under *Android UI suites*.
+
+**Runtime**, on `emulator-5558` through the real touch path, with the native
+`CONSTRUCTION_PUBLISHED` line confirming the primitive before every capture:
+Box 2 × 1 × 0.5, orbit in both projections, a real multi-touch pinch in both,
+pan, picking, a transform-only edit (`rev=9` unchanged, no publish, no upload),
+Freeze (482 : 2880), a real Grab in Perspective (51 moves) and a real Grab in
+Orthographic (52 moves) with `src=482:2880` fixed and every upload `reuse`,
+HOME/resume, portrait and rotated landscape.
+
+*Picking measured in both modes at three pixels on a 1 m diameter × 2 m
+cylinder.* Orthographic hits landed on the exact surface — `y = 1.0000` on the
+top cap and radius `0.4976` on the wall against an exact 0.5 (the expected
+faceting inset) — and the centre pixel returned the **identical** point
+`(0.3336, 1.0000, -0.0600)` in both projections, which is the one ray the two
+share. Off-centre pixels correctly returned *different* points.
+
+*Multi-touch navigation still cannot mutate the sculpt mesh in Orthographic.*
+The injected pinch logged `STROKE_PENDING → STROKE_ABANDONED:navigation` with
+`sculptRev` held at 104.
+
+*Rotated landscape holds the P2 convention under Orthographic*: window 2400×1080,
+`chosenExtent=2400x1080`, `preTransform=0x1`, camera viewport 2400×1080, aspect
+2.2222. `CAMPROJ-14` additionally asserts in **both** modes and **both**
+orientations that a 1 m world square occupies the same pixel count horizontally
+and vertically.
+
+*HOME/resume preserved the projection*: re-requesting Orthographic after the
+resume reported `changed=0` with `orthoHalfHeightMeters=4.7343` and
+`distance=8.2000` intact. The projection is process-scoped state on the one
+`CameraController`, so this needs no save/restore code in the Android layer.
+
+**Visual evidence**, under `artifacts/stage015d_*` (foreground confirmed before
+each capture). The three required pairs share a camera pose exactly, because the
+switch preserves it: `_01`/`_02` the oblique three-face box, `_03`/`_04` the box
+seen nearly along its 2 m axis, `_05`/`_06` a 1 dia × 2 m cylinder. In the
+Perspective members the near end is visibly larger and parallel edges converge —
+the cylinder's silhouette tapers. In the Orthographic members the box's top face
+is a true parallelogram, near and far vertical edges are equal, and the
+cylinder's sides are parallel with matching top and bottom ellipses.
+Foreshortening from *orientation* remains in both and is correct. `_07`/`_08`
+bracket the HOME/resume, and `_09` is rotated landscape.
+
+**Performance.** Nothing was added to the frame path. A projection change writes
+two floats under the existing `g_stateMutex` and mints no revision; no
+`RENDER_MESH_BUILD` and no `MESH_UPLOAD_OK` line follows one. The projection
+matrix is built in `snapshot()`, which was already built per frame.
 
 ## Stage 015C-R — root cause, convention and evidence
 
@@ -49,21 +172,11 @@ same outline either way. It only swaps which surface of that outline is drawn, s
 it presents as a *shading* complaint ("the box looks concave") rather than as a
 rasterizer defect, and it sends the investigation into the light rig.
 
-**The obligatory winding / normal / raster convention, stated once.**
-
-| Layer | Rule |
-| --- | --- |
-| Source triangles | counter-clockwise seen from **outside** the solid, right-handed world space |
-| Geometric normal | `N = (v1 − v0) × (v2 − v0)`, points away from the solid |
-| Render normals | derived one-way from a published `RuntimeMesh`; outward everywhere |
-| Model → view normals | upper-left 3×3 of `view * model`, valid because both factors are rigid |
-| Projection | `forgeshape_math.h` flips Y **in the matrix** for Vulkan clip space |
-| Pipeline | `cullMode = VK_CULL_MODE_BACK_BIT`, `frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE` |
-| Picking | front faces only, same rule, so what is pickable is what is drawn |
-
-The projection's Y flip is **already applied** by the time Vulkan classifies a
-triangle. Compensating for it a second time in `frontFace` is the mistake this
-stage removed.
+**The winding / normal / raster convention is owned by `ARCHITECTURE.md`**
+(*Canonical winding and culling*) and is not restated here. The one fact this
+chapter contributes: the projection's Y flip is **already applied** by the time
+Vulkan classifies a triangle. Compensating for it a second time in `frontFace` is
+the mistake that stage removed.
 
 **Hypotheses tested and rejected**, each by a check that would have failed:
 source winding wrong (`NOR-01`), render normal generation wrong or sign-flipped
@@ -83,28 +196,13 @@ passed unchanged on a mesh whose normals had all been negated;
 the new measurement does invert, so the suite cannot regress into that blind spot
 again.
 
-**Verification.** Ten self-test suites green (**1199 checks, zero failures**);
-26 JVM tests green; **40 instrumented tests green, zero failures** — including
-the IME test that was previously recorded as a pre-existing failure, so that
-entry is retired. Runtime on `emulator-5558`: Box / Cylinder / Cone / Capsule
-applied through the real touch path with the native `CONSTRUCTION_PUBLISHED` line
-confirming the primitive before every capture, picking (`PICK_HIT` on a
-near-side, front-facing point), Freeze, a real 11-move Grab stroke, Studio,
-MatCap, Smooth, Faceted, HOME/resume and rotated landscape (`2400x1080`, aspect
-2.2222, one swapchain rebuild).
-
-**Performance.** A stationary run of **3371 presented frames** (frame 18989 →
-22360) moved the render-data rebuild count **61 → 62**, and that single rebuild
-is the Smooth toggle used to close the measurement. Zero rebuilds while
-stationary, no revision minted by any display change, no buffer growth and no
-swapchain churn. The fix is one pipeline enumerator and costs nothing.
-
-**Visual evidence**, under `artifacts/stage015cr_*` (`emulator-5558`, foreground
-confirmed before each capture): the before/after pair on the same default box
-(`_00_box_studio_smooth_before` vs `_01_box_studio_smooth_after`), then Box
-MatCap Smooth, Box Studio Faceted, Cylinder Studio Smooth, Cone Studio Smooth
-after an explicit Apply, Capsule MatCap, the sculpted mesh after a real Grab, and
-rotated landscape.
+**Verification.** Ten suites green (1199 checks at that baseline); 26 JVM tests
+green; 40 instrumented tests green. A stationary run of **3371 presented frames**
+moved the render-data rebuild count 61 → 62, and that one rebuild was the Smooth
+toggle used to close the measurement — the fix is one pipeline enumerator and
+costs nothing. Screenshots are under `artifacts/stage015cr_*`, including the
+before/after pair on the same default box (`_00_box_studio_smooth_before` vs
+`_01_box_studio_smooth_after`).
 
 ## Owner Decision Baseline
 
@@ -250,6 +348,13 @@ Android touch path. `PRODUCT.md` owns the user-facing description.
 | --- | --- |
 | Vulkan viewport, swapchain, depth, pipeline, indexed draw, surface recreation | VERIFIED |
 | Camera: orbit / pan / pinch, pointer-set re-anchoring, cancel handling | VERIFIED |
+| Perspective (60° FOV) and true Orthographic projection, switchable | VERIFIED |
+| Switching projection preserves target-plane framing; the frame does not jump | VERIFIED |
+| Orthographic pinch changes the world span, not the orbit distance | VERIFIED |
+| Picking correct in both projections; ortho ray origin moves per pixel | VERIFIED |
+| Sculpt hit and brush radius correct in both; ortho radius is depth-independent | VERIFIED |
+| Projection change mints no revision and touches no geometry truth | VERIFIED |
+| Projection mode and framing survive HOME/resume and surface recreation | VERIFIED |
 | Tap-to-select, tap-to-clear, drag and multi-touch never select | VERIFIED |
 | CPU picking follows camera, dimensions, transform and sculpt deformation | VERIFIED |
 | Dynamic mesh: immutable revisions, fail-closed validation, capacity reuse/growth | VERIFIED |
@@ -297,20 +402,20 @@ Android touch path. `PRODUCT.md` owns the user-facing description.
 ## Self-test suite
 
 Ten debug-only native suites run once from `NativeViewport.start()` — never per
-frame — and total **1199 checks, zero failures** at the accepted baseline under
+frame — and total **1316 checks, zero failures** at the accepted baseline under
 NDK r29:
 
 | suite token | checks |
 | --- | --- |
-| `FORGESHAPE_CAMERA_SELFTEST_OK` | 38 |
-| `FORGESHAPE_PICKING_SELFTEST_OK` | 94 |
+| `FORGESHAPE_CAMERA_SELFTEST_OK` | 119 |
+| `FORGESHAPE_PICKING_SELFTEST_OK` | 112 |
 | `FORGESHAPE_DYNAMIC_MESH_SELFTEST_OK` | 91 |
 | `FORGESHAPE_CONSTRUCTION_BOX_SELFTEST_OK` | 100 |
 | `FORGESHAPE_CONSTRUCTION_TRANSFORM_SELFTEST_OK` | 94 |
 | `FORGESHAPE_CONSTRUCTION_PRIMITIVE_SELFTEST_OK` | 75 |
 | `FORGESHAPE_CONSTRUCTION_SPHERE_SELFTEST_OK` | 105 |
 | `FORGESHAPE_CONE_CAPSULE_SELFTEST_OK` | 163 |
-| `FORGESHAPE_SCULPT_BRUSH_KERNEL_SELFTEST_OK` | 232 |
+| `FORGESHAPE_SCULPT_BRUSH_KERNEL_SELFTEST_OK` | 250 |
 | `FORGESHAPE_RENDER_SHADING_SELFTEST_OK` | 207 |
 
 followed by `FORGESHAPE_MESH_UPLOAD_OK` and `FORGESHAPE_NATIVE_VIEWPORT_OK`.
@@ -319,6 +424,17 @@ and the capsule equality case, Faceted, NaN/Inf and fail-closed behaviour,
 determinism, the render-data rebuild policy, the generated MatCap asset, the
 display settings, and the proof that building render data leaves the
 authoritative `RuntimeMesh` bit-identical.
+
+Stage 015D added the **projection family**, `CAMPROJ-01`..`CAMPROJ-14`, split
+across three suites by module ownership rather than kept in one file: the camera
+suite carries `CAMPROJ-01`..`08` and `12`..`14` (the perspective audit, the
+orthographic matrix, depth-independence versus foreshortening, both framing
+conversions, orbit invariance, ortho pinch and clamps, purity, resume, and the
+P2 orientation convention in both modes on a non-square viewport); the picking
+suite carries `CAMPROJ-09`/`10`; the sculpt suite carries `CAMPROJ-11`. Each
+family member has a counterpart that would fail if the behaviour collapsed to a
+constant — `CAMPROJ-04` against `03`, and the perspective depth check against the
+orthographic one — which is the property the `NOR` family was added for.
 
 Stage 015C-R added the **direction family** to it, `NOR-01`..`NOR-10`: source
 winding on all five primitives, outward render normals per primitive, Faceted
@@ -351,26 +467,37 @@ Build and verification commands are in `README.md`.
 | `EditorWorkspaceGestureTest` | UI-10/11 — chrome gesture ownership, IME | 5 |
 | `EditorWorkspaceLifecycleTest` | UI-14 — HOME/resume rebuilt from native truth | 3 |
 | `DisplaySettingsContractTest` (JVM) | the shading/surface index contract across JNI | 4 |
-| `EditorWorkspaceDisplayTest` | SHD-13/15/16 — display ids, presentation-only, resume | 8 |
+| `EditorWorkspaceDisplayTest` | SHD-13/15/16 — display ids, presentation-only, resume; PROJ-12/13/14 — projection ids, inertness against domain state, refused index, resume | 12 |
 
-**66 tests** (26 JVM, 40 instrumented). No Java test asserts a rendered pixel;
+**70 tests** (26 JVM, 44 instrumented). No Java test asserts a rendered pixel;
 every control is reached by its stable semantic id and no assertion uses a screen
 coordinate.
 
-**All 40 instrumented tests pass as of Stage 015C-R** on `emulator-5558`.
+**43 of the 44 instrumented tests pass as of Stage 015D** on `emulator-5558`.
 
-One of them is **environment-dependent, in both directions**, and that is worth
-keeping on the record rather than deleting now that it is green.
+The one failure is **environment-dependent, in both directions**, and it is the
+same case that has moved in both directions before.
 `EditorWorkspaceGestureTest.ui11_theImeLeavesTheFieldAndTheCommitPathUsableAndTheSurfaceUntouched`
 opens with a precondition guard — "the soft keyboard did not appear, so this case
-proves nothing" — and at the Stage 015C baseline that guard failed, because no
-soft keyboard showed on that emulator session. It appeared in this one and the
-case passed on its merits. Nothing in the test or the product changed between the
-two runs, so treat a future failure of this one case as a harness symptom to
-confirm against the current baseline before calling it a regression.
+proves nothing" — and fails on that guard, never reaching an assertion about
+product behaviour. It failed at the Stage 015C baseline, passed on its merits at
+Stage 015C-R, and fails again now. **Stage 015D proved it pre-existing rather
+than assuming it**: the case was run alone against a stashed, unmodified
+`171c7ae` working tree and failed with the identical message. Treat a future
+failure of this one case as a harness symptom to confirm against the current
+baseline before calling it a regression.
 
 ## Current evidence summary
 
+- **Stage 015D acceptance** (`emulator-5558`): ten self-test suites green
+  (**1316 checks, zero failures**, including `CAMPROJ-01`..`CAMPROJ-14`); 26 JVM
+  tests green; 44 instrumented tests with the one environment-dependent IME case
+  described above, proven pre-existing against a stashed `171c7ae` tree. The
+  measured framing conversions, the ortho pinch, the picking comparison and the
+  runtime smoke are in the Stage 015D chapter at the top of this file.
+  **The default appearance did not change**: Perspective is still the default and
+  its 60° field of view is untouched, so a cold start is identical to the
+  Stage 015C-R baseline. Screenshots are under `artifacts/stage015d_*`.
 - **Stage 015C-R acceptance** (`emulator-5558`, clean install): ten self-test
   suites green (**1199 checks, zero failures**, including `NOR-01`..`NOR-10`);
   26 JVM tests green; **40 instrumented tests green, zero failures**. The
@@ -383,82 +510,47 @@ confirm against the current baseline before calling it a regression.
 - **Stage 015C acceptance** (`emulator-5558`, clean install, empty crash buffer):
   ten self-test suites green (1150 checks at that baseline, zero failures);
   26 JVM tests green; 40 instrumented tests with the one environment-dependent
-  IME case described above. **The default appearance changed**: the per-vertex rainbow is gone and the
-  viewport comes up in neutral Studio Solid, with the old appearance still
-  reachable in a debuggable build as the Debug chip (the before/after pair is
-  `stage015c_00` vs `stage015c_03`). **Render counts, measured through the real
-  touch path** and matching the self-test's predictions exactly: box
-  `8:36 → 24:36`, cylinder `66:384 → 130:384`, sphere `482:2880 → 482:2880`, cone
-  `34:192 → 66:192`, capsule `514:3072 → 514:3072`, faceted sphere
-  `482:2880 → 2880:2880`. A fully smooth closed surface has no crease to split
-  on, so its render mesh is exactly its source topology. **The no-per-frame-
-  rebuild proof is a direct measurement**: `rebuilds=2 frame=4448` — over 4448
-  presented frames including eight camera-orbit gestures and three shading-model
-  changes, the render mesh was rebuilt twice (once at startup, once for an
-  applied sphere), and grepping the log during camera motion and Studio↔MatCap
-  churn returns **zero** `RENDER_MESH_BUILD` and **zero** `MESH_UPLOAD_OK` lines.
-  A Smooth↔Faceted round trip on **one unchanged source revision** moved the
-  render count 24 → 36 → 24 with `src=8:36` throughout. A real 5-move Grab stroke
-  on a frozen sphere relit the pulled lobe immediately with a visible crease and
-  no stale shading; the render count drifted 482 → 492 as the deformation created
-  genuine creases, and **every one of the 54 uploads in the session was `reuse`
-  with the buffer-grow count flat**. Selection stays unmistakable and the form
-  stays readable in both modes. In rotated landscape the orientation chain is
-  unchanged from P2 (`chosenExtent=2400x1080`, `preTransform=0x1`, viewport
-  2400×1080, aspect 2.2222), `viewport_surface` is still full-bleed at
-  `[0,0][2400,1080]`, the sphere renders circular and rotation triggered no
-  rebuild and no upload. Screenshots are under `artifacts/stage015c_*`, with
-  `artifacts/stage015c_shading_comparison.md` as the comparison sheet.
+  IME case described above. **The default appearance changed**: the per-vertex
+  rainbow is gone and the viewport comes up in neutral Studio Solid, with the old
+  appearance still reachable in a debuggable build as the Debug chip. The
+  per-primitive source-vs-render counts it established are in the *Shading cost
+  record* below. **The no-per-frame-rebuild proof is a direct measurement**:
+  `rebuilds=2 frame=4448` — over 4448 presented frames including eight
+  camera-orbit gestures and three shading-model changes, the render mesh was
+  rebuilt twice, and the log carries **zero** `RENDER_MESH_BUILD` and **zero**
+  `MESH_UPLOAD_OK` lines during camera motion and Studio↔MatCap churn. A
+  Smooth↔Faceted round trip on **one unchanged source revision** moved the render
+  count 24 → 36 → 24 with `src=8:36` throughout, and every one of the 54 uploads
+  in the session was `reuse` with the buffer-grow count flat. Screenshots are
+  under `artifacts/stage015c_*`, with `artifacts/stage015c_shading_comparison.md`
+  as the comparison sheet.
 - **Platform Fix P2 acceptance** (`emulator-5558`, cold boot, clean install,
   empty crash buffer): nine self-test suites green (992 checks, zero failures);
   54 Android tests green (22 JVM, 32 instrumented). **Root cause proven, not
-  assumed.** The recorded chain in rotated landscape was window 2400×1080,
-  `currentExtent` 2400×1080, `currentTransform` `0x2` (ROTATE_90),
-  `supportedTransforms` `0x1ff`, chosen extent 2400×1080, `preTransform` `0x2`,
-  camera viewport 2400×1080, aspect 2.2222. The first inconsistent convention was
-  the **swapchain extent space**, not the projection: declaring a 90° pre-
-  transform obliges the image to be in pre-transform (panel) space, so
-  SurfaceFlinger rotated the 2400×1080 buffer to 1080×2400 and stretched it back
-  to the window, scaling by (2400/1080, 1080/2400). That model predicts a
+  assumed.** The first inconsistent convention was the **swapchain extent
+  space**, not the projection: declaring a 90° pre-transform obliges the image to
+  be in pre-transform (panel) space, so SurfaceFlinger rotated the 2400×1080
+  buffer to 1080×2400 and stretched it back to the window. That model predicted a
   2 × 1 × 0.5 m box at 427 × 98 px; it measured **428 × 98**, against 218 × 192
-  when correct. The fix requests an identity pre-transform. Measured with the
-  same object and camera in every configuration: portrait 484 × 427 px
-  (ratio 1.1335), rotated landscape **218 × 192** (1.1354), non-rotated
-  1280 × 800 wide window 162 × 142 (1.1408) — the pose-fixed invariant
-  `bboxWidth / screenHeight` agreeing at 0.2017 / 0.2019 / 0.2025, inside 0.5 %.
-  Portrait and the wide window are **pixel-identical to their pre-fix
-  measurements**. A default sphere measures **269 × 269 px in portrait and
-  121 × 121 px in rotated landscape — ratio exactly 1.0000 in both**, against a
-  predicted 121.05. Two landscape↔portrait round trips restored portrait
-  bit-identically with no stale extent and no crash. Picking stays aligned with
-  what is drawn: in rotated landscape a tap at the rendered box silhouette's
-  centre hits local z = 0.2500, exactly the 0.5 m box's face, and a tap at the
-  transformed sphere's centre lands 0.4975 m from its centre against an exact
-  0.5 m radius (0.5 % inside, the expected 482-vertex faceting inset). Five
-  orientation changes plus a HOME/resume published **no mesh revision, triggered
-  no upload and started no stroke**, and left the rendered sculpted mesh
-  pixel-identical. Real smoke through the touch path in rotated landscape:
-  sphere applied (482 : 2880), a transform-only edit publishing nothing, Freeze,
-  a real 66-move Grab stroke capturing 439 of 482 vertices with topology fixed
-  and every upload `reuse`, Back to Construction and Resume Sculpt. The Editor
-  Workspace lays out correctly in both orientations with `viewport_surface` still
-  full-bleed at `[0,0][2400,1080]`. Screenshots are under
+  when correct. The fix requests an identity pre-transform, after which the
+  pose-fixed invariant `bboxWidth / screenHeight` agreed at 0.2017 / 0.2019 /
+  0.2025 across portrait, rotated landscape and a non-rotated wide window, inside
+  0.5 %, and a default sphere measured square in both orientations. Picking
+  stayed aligned with what is drawn, and five orientation changes plus a
+  HOME/resume published **no mesh revision, triggered no upload and started no
+  stroke**. The resulting convention is owned by `CLAUDE.md` and
+  `ARCHITECTURE.md`; the full measurement tables are in Git history. Screenshots
+  are under
   `artifacts/platformfixp2_*`.
 - **Stage 015B acceptance** (`emulator-5558`, clean install, empty crash
   buffer): nine self-test suites green; 54 Android tests green; the measured
-  unoccluded viewport at 411×914 dp is **82.6 %** collapsed and 57.5 % with the
-  inspector fully open, at 914×411 dp landscape **60.1 %** (against 0 % before),
-  and at 1280×800 dp **69.0 %** open / 85.2 % collapsed; a sphere applied and a
-  transform applied through the real touch path, the transform publishing **no
-  revision and no upload**; unit switching mm→cm→m→m exact (0.5 m ↔ 500 mm ↔
-  50 cm) with zero native calls; a real Grab stroke on a 482-vertex sphere
-  (35 moves, topology fixed at 482:2880, every upload `reuse`); three chrome
-  drags leaving the viewport region **pixel-identical** and minting no sculpt
-  revision; the re-Freeze confirmation naming "1 sculpt stroke" with Cancel
-  leaving the mesh pixel-identical and making no native call; Resume Sculpt
-  preserving `sculptRev=36` with the stale-source warning shown; and HOME/resume
-  returning a pixel-identical viewport with no re-upload. Screenshots are under
-  `artifacts/stage015b_*`.
+  unoccluded viewport in landscape moved from **0 % to 60.1 %** (82.6 %
+  collapsed at 411×914 dp, 85.2 % at 1280×800 dp). Chrome drags left the viewport
+  region **pixel-identical** and minted no sculpt revision; the re-Freeze
+  confirmation named "1 sculpt stroke" with Cancel making no native call; unit
+  switching was exact with zero native calls; and HOME/resume returned a
+  pixel-identical viewport with no re-upload. The full measurement tables are in
+  Git history. Screenshots are under `artifacts/stage015b_*`.
 - **Stage 014 acceptance** (`emulator-5558`, one pid, empty crash buffer): the
   cone and capsule happy paths, closed-base and hemisphere picking measured at
   the pixel against the exact radius, the capsule relation rejection, no-op and
@@ -695,15 +787,19 @@ no validation layers, a single global viewport, and a selection highlight that i
 a whole-object tint rather than an outline.
 
 **Documentation size.** Every core document is inside the 2000-line hard limit,
-but three are over their preferred target budgets and this stage pushed all three
-further: `ARCHITECTURE.md` 1529 against a 700–1000 target, `PRODUCT.md` 561
-against 300–450, `README.md` 320 against 150–250. (`PROJECT_STATUS.md` 706 and
-`CLAUDE.md` 180 are inside theirs.) Every addition here is a new fact about a new
-subsystem rather than a historical chapter, so nothing was appended that Git
-history should have held instead — but the overshoot is real and predates this
-stage, and closing it means compacting prose that has nothing to do with shading.
-That is a deliberate deferral, not an oversight: bundling a documentation rewrite
-into a rendering stage is exactly the unrelated-debt mixing the rules forbid.
+but four are over their preferred target budgets: `ARCHITECTURE.md` 1633 against
+a 700–1000 target, `PROJECT_STATUS.md` 963 against 500–800, `PRODUCT.md` 597
+against 300–450, `README.md` 320 against 150–250. (`CLAUDE.md` 180 is inside
+its.) Stage 015D paid part of this back rather than only adding to it: the
+superseded Stage 015C, Stage 015B and Platform Fix P2 acceptance chapters were
+compacted by ~90 lines, keeping the conclusions and leaving the measurement
+tables to Git history, and the winding/normal/raster convention table was deleted
+here because `ARCHITECTURE.md` already owns it — a duplicated durable fact was
+the actual rule violation, not the line count. The remaining overshoot predates
+this stage and is concentrated in `ARCHITECTURE.md`, where closing it means
+compacting prose about shading, sculpt and layout that has nothing to do with the
+camera. That is a deliberate deferral: bundling a documentation rewrite into a
+camera stage is the unrelated-debt mixing the rules forbid.
 
 **Shading and render data.** The crease policy is a single global angle. It is
 correct for every primitive ForgeShape has, but it is a *policy*, not a per-object
@@ -730,6 +826,23 @@ is work repeated for a constant. Selection remains a whole-object tint rather
 than an outline; the §12 readability enhancement (outline or cavity) was
 **explicitly deferred** — see below.
 
+**Camera and projection.** Three things are deliberate but worth naming. The
+orthographic view plane sits a fixed `kFarPlane/2` in front of the target, which
+makes `snapshot.eye` mean something different in the two modes and makes a
+reported orthographic pick distance ~250 m rather than a distance from the orbit
+eye; the field is only ever used as a ray origin and a view reference, so this is
+correct, but it is a name that no longer describes both cases equally well and a
+future stage that adds a second camera should rename it. The ortho depth slab is
+a fixed 500 m rather than fitted to the scene — free at these sizes because ortho
+depth is linear, but it is a constant, not a policy. And
+`kInitialOrthoHalfHeightMeters` is a literal because `std::tan` is not
+`constexpr`; a self-test asserts it still equals `kInitialDistance × tan(fovY/2)`
+so the two cannot drift, but a computed constant would be better than a checked
+one. Separately, the camera still has no read-back of pose across JNI, so
+"a chrome gesture did not move the camera" is still proven by screenshot rather
+than by assertion — the new projection getter is the first camera value the Java
+layer can read at all.
+
 **Naming and test infrastructure.** `kConstructionBoxObjectId` and
 `kDemoCubeObjectId` are the same value under two names and are now doubly
 misnamed: the object is not always a box and never was a demo cube. Renaming has
@@ -750,7 +863,7 @@ been deferred to avoid churning unrelated code. There is still no checked-in
 | `app/src/main/java/.../WorkspaceLayoutMode.java` | Window-dp breakpoints, inspector placement and chrome sizing, as arithmetic. No Android type |
 | `app/src/main/java/.../EditorUiState.java` | The closed list of UI-owned state: display unit, draft kind, rail selection, detent per mode, chrome-hidden |
 | `app/src/main/java/.../GlobalToolbarView.java` | Editing context, the three mutually exclusive mode transitions, reserved Export, the Display control, chrome hide, and the one status message |
-| `app/src/main/java/.../DisplaySettingsPopoverView.java` | The compact display popover: Shading (Studio / MatCap / Debug) and Surface (Smooth / Faceted), with short interruptible open/close motion that honours the system animator scale. Owns no state |
+| `app/src/main/java/.../DisplaySettingsPopoverView.java` | The compact display popover: Shading (Studio / MatCap / Debug), Surface (Smooth / Faceted) and Projection (Perspective / Orthographic), with short interruptible open/close motion that honours the system animator scale. Owns no state |
 | `app/src/main/java/.../ToolRailView.java` | The edge tool selector for either mode, including reserved entries. Selects; decides nothing |
 | `app/src/main/java/.../BrushEdgeControlsView.java`, `VerticalSliderView.java` | Direct Radius and Strength, and the custom vertical control behind them. Own no brush value |
 | `app/src/main/java/.../PropertyInspectorView.java` | Contextual, collapsible, scrolling container with a measured height cap. Owns no value |
@@ -765,11 +878,11 @@ been deferred to avoid churning unrelated code. There is still no checked-in
 | `app/src/main/java/.../NativeViewport.java` | JNI declarations, library load, `APPLY_*` / `SCULPT_*` status codes, `MODE_*`, `TOOL_*` |
 | `app/src/main/cpp/forgeshape_jni.cpp` | JNI boundary, render thread, `ANativeWindow`, MotionEvent→`TouchAction`, camera + selection locking, stroke arbitration, `publishActiveRepresentation` |
 | `app/src/main/cpp/forgeshape_input.h` | Platform-neutral touch event data (`TouchAction`, `TouchPointer`) |
-| `app/src/main/cpp/forgeshape_camera.{h,cpp}` | Camera pose, projection, gesture state machine |
+| `app/src/main/cpp/forgeshape_camera.{h,cpp}` | Camera pose, the `ProjectionMode` enum and the orthographic world span, both projections, the framing-preserving switch, gesture state machine |
 | `app/src/main/cpp/forgeshape_construction.{h,cpp}` | `ConstructionObject` (identity + active `PrimitiveKind` + all five primitives + transform), the five `Construction*` generators, shared tessellation constants, the typed `PrimitiveSpec` payload variant, dimension validation including `validateCapsuleMeters`, publication into `MeshStore`, and `applyPrimitive` — the one update-and-publish entry point |
 | `app/src/main/cpp/forgeshape_transform.{h,cpp}` | `ConstructionTransform`: authoritative double-meter position and double-degree rotation, THE axis/Euler convention, validation, atomic apply, derived model and inverse-model matrices |
 | `app/src/main/cpp/forgeshape_sculpt.{h,cpp}` | `ProductMode`, `SculptTool`, `SculptSession` (mode + tool + brush + live stroke + the `hitsSculptMesh` probe), `SculptMesh`, `SculptTopology`, `computeVertexNormals`, `SculptStroke` (the one kernel plus one `apply*` per tool), sculpt publication |
-| `app/src/main/cpp/forgeshape_picking.{h,cpp}` | Screen→world ray, `transformRayToLocal`, ray/triangle, nearest hit, winding check |
+| `app/src/main/cpp/forgeshape_picking.{h,cpp}` | Screen→world ray for **both** projections (perspective: one origin, fanning directions; orthographic: one direction, per-pixel origin), `transformRayToLocal`, ray/triangle, nearest hit, winding check |
 | `app/src/main/cpp/forgeshape_selection.{h,cpp}` | `ObjectId`, `SelectionController`, tap-vs-navigation, `pickScene` |
 | `app/src/main/cpp/forgeshape_object_id.h` | `ObjectId` type and reserved values, shared by the mesh and selection layers |
 | `app/src/main/cpp/forgeshape_mesh.{h,cpp}` | `RuntimeMesh` (immutable revision), `MeshStore`, validation, capacity policy, upload diagnostics including source-vs-render counts |
@@ -830,7 +943,17 @@ decision rather than a habit.
 
 The rotated-landscape rendering defect that previously blocked the area is
 **closed** by Platform Fix P2 and is not part of this stage. Stage 016 is
-primitives only: it must not touch the renderer's orientation convention.
+primitives only: it must not touch the renderer's orientation convention and it
+must not touch the camera. Stage 015D deliberately stopped at the projection and
+implemented **no** Plane, sketch plane, Front/Top/Right preset, view cube, grid
+or focus-on-selection, so none of those is started work for Stage 016 to inherit
+— the Plane it adds is a Construction primitive, not a camera concept, and the
+two must not be conflated because they share a word.
+
+Orthographic is the projection in which a Plane is most obviously worth checking:
+it is the first primitive that is a **single flat sheet**, and in a parallel view
+edge-on it collapses to a line exactly rather than to a near-line, which is
+correct and must not be "fixed".
 
 Shading costs a Plane nothing extra. The crease policy is per-vertex and
 primitive-agnostic, so a Plane inherits correct flat shading with no new case —

@@ -84,7 +84,19 @@ constexpr float kRayTriangleEpsilon = 1e-8f;
 // `screenX` / `screenY` are in the same coordinate system Android hands us:
 // pixels, origin top-left, Y increasing downward. `viewportWidth/Height` must
 // be the size of that same view. The camera's own projection matrix is used, so
-// FOV, aspect and the Vulkan depth/Y convention are never restated here.
+// FOV, orthographic span, aspect and the Vulkan depth/Y convention are never
+// restated here.
+//
+// BOTH projections are handled, and the difference is structural rather than a
+// tweak to a constant:
+//
+//   Perspective  — one origin (the eye), a direction that depends on the pixel.
+//   Orthographic — one direction (the view axis), an origin that depends on the
+//                  pixel, sliding across the view plane.
+//
+// Which one is built comes from `camera.projection`; the geometry comes from
+// `camera.proj` and `camera.view`. Nothing here keeps a second copy of any
+// camera value, so picking cannot drift out of agreement with what is drawn.
 //
 // Returns false (leaving `out` untouched) for a non-positive viewport, a
 // degenerate projection, or any non-finite result.
