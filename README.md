@@ -42,18 +42,29 @@ APK: `app/build/outputs/apk/debug/app-debug.apk`
 
 ```
 gradlew.bat :app:testDebugUnitTest         # JVM: layout rules, UI state, units
-gradlew.bat :app:connectedDebugAndroidTest # on-device: Editor Workspace UI
 ```
 
-The instrumented suite needs exactly one attached target and installs its own
-APKs; when several are attached, detach or stop the others first, because the
-Gradle task has no `-s <serial>` equivalent. It **uninstalls the app when it
-finishes**, so reinstall before taking runtime evidence.
+**Never run bare `gradlew.bat :app:connectedDebugAndroidTest` when more than one
+Android target could be attached.** That task enumerates every attached device
+with no default and installs/runs the full suite on all of them — this is how
+Stage 016 touched the reserved `emulator-5554`. The one supported path for the
+instrumented suite is:
+
+```
+scripts\run-instrumented-tests.ps1 -Serial <serial>
+```
+
+It requires an explicit `-Serial`, refuses `emulator-5554` before contacting
+any device, builds the debug app and test APKs, then installs and instruments
+through `adb -s <serial>` only — every device operation is scoped, mechanically,
+not by operator discipline. It uninstalls the test APK when it finishes,
+matching `connectedDebugAndroidTest`'s own cleanup behaviour, so reinstall the
+app before taking further runtime evidence.
 
 To run one class:
 
 ```
-gradlew.bat :app:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.forgeshape.app.EditorWorkspaceLayoutTest"
+scripts\run-instrumented-tests.ps1 -Serial <serial> -TestClass com.forgeshape.app.EditorWorkspaceLayoutTest
 ```
 
 The layout suite logs its measurements as `FORGESHAPE_UI_VIEWPORT` lines, so the

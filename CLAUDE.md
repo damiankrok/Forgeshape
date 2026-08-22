@@ -161,10 +161,27 @@ shadow history Markdown file.
   runs on it, steals the foreground and injects input. Do not use it for
   authoritative runtime evidence, and do not stop, wipe or reconfigure it.
 - Runtime evidence is taken on a ForgeShape-owned isolated AVD (currently
-  `ForgeShape_Stage006` / `emulator-5558`). Before any evidence-sensitive input
-  or screenshot, confirm ForgeShape is the resumed activity, and invalidate any
-  run contaminated by foreign input. Creating a new AVD from already-installed
-  tooling is allowed; installing or updating SDK/NDK/JDK/system images is not.
+  `ForgeShape_Stage006`, port varies — see below). Before any evidence-sensitive
+  input or screenshot, confirm ForgeShape is the resumed activity, and
+  invalidate any run contaminated by foreign input. Creating a new AVD from
+  already-installed tooling is allowed; installing or updating SDK/NDK/JDK/
+  system images is not.
+- **Never trust a port or serial number to say which AVD is behind it.** The
+  emulator assigns the first free port starting at `5554` to whichever
+  instance boots first, so `ForgeShape_Stage006` can itself land on
+  `emulator-5554` by pure allocation order — confirmed directly during Stage
+  016-R. Always confirm with `adb -s <serial> emu avd name` before treating a
+  serial as safe, and prefer booting with an explicit `-port` away from
+  `5554`/`5556` so the ambiguity cannot arise. If a serial cannot be confirmed
+  safe this way, do not use it — BLOCKED beats a guess.
+- **Bare, unscoped `connected*AndroidTest` is forbidden whenever more than one
+  Android target could be attached.** That Gradle task enumerates every
+  attached device with no default and installs/runs on all of them — this is
+  exactly how Stage 016 touched the reserved `emulator-5554`. The one
+  supported path is `scripts\run-instrumented-tests.ps1 -Serial <serial>`,
+  which requires an explicit serial, refuses `emulator-5554` before any device
+  is contacted, and drives `adb -s <serial>` explicitly for every install and
+  instrumentation step — see `README.md`.
 - `surfaceDestroyed` must block until native code has released the
   `ANativeWindow`. Never let the render thread touch a destroyed window.
 - **One orientation convention: render in Android window orientation.** The

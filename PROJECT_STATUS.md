@@ -117,6 +117,19 @@ stage continued, and chose to proceed with every later command scoped to
 `-s emulator-5556` / `ANDROID_SERIAL=emulator-5556`, confirmed by AVD name to
 be `ForgeShape_Stage006`.
 
+**Remediated in Stage 016-R**, without touching `emulator-5554` at all: the
+bare, unscoped Gradle task is now a documented anti-pattern in `CLAUDE.md` and
+`README.md`, and `scripts\run-instrumented-tests.ps1 -Serial <serial>` is the
+one supported instrumented-test path — it requires an explicit serial, refuses
+`emulator-5554` before any device is contacted, and drives every install and
+instrumentation step through `adb -s <serial>` only. Re-verification on
+`ForgeShape_Stage006` (that session booted it on `emulator-5580`, since even
+`5554` itself is not a stable identifier for any one AVD — see `CLAUDE.md`)
+reproduced the Stage 016 baseline: ten self-test suites green on a clean
+launch (1421 checks, zero failures), 26 JVM tests green, 46 instrumented tests
+green on that one serial, and the Plane/projection/shading/Freeze-Resume/
+stale-source/real-sculpt/lifecycle contracts held on the real touch path.
+
 Stage 015D added a mathematically correct **Orthographic** projection beside the
 existing Perspective one, so exact Construction geometry can be judged without
 near parts of a solid being enlarged for being near. Perspective remains the
