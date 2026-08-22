@@ -60,11 +60,13 @@ SceneHit pickScene(const CameraSnapshot& camera, float screenX, float screenY,
                    int viewportWidth, int viewportHeight);
 
 // Same, against an explicitly supplied transform pair and an explicit
-// front-face-only choice. Exists so the self-tests can pick against a known
-// transform and a known mesh without touching process-scoped state; the
-// overload above is this one applied to the process transform and the process
-// primitive's two-sidedness. `frontFacesOnly` defaults to true — the ordinary
-// closed-solid rule — so existing callers are unaffected.
+// front-face-only choice, instead of the process-scoped ConstructionTransform
+// and ConstructionObject::kind() the overload above reads. Exists so
+// self-tests that already publish their own known mesh into the (still
+// process-scoped) MeshStore can pick it without also depending on whatever
+// transform or primitive kind a prior UI test or Activity recreation left
+// live. `frontFacesOnly` defaults to true — the ordinary closed-solid rule —
+// so existing callers are unaffected.
 SceneHit pickScene(const CameraSnapshot& camera, float screenX, float screenY,
                    int viewportWidth, int viewportHeight, const Mat4& model,
                    const Mat4& inverseModel, bool frontFacesOnly = true);

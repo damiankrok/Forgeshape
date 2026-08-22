@@ -1,20 +1,92 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.21.0
+**Status Version:** 0.21.1
 **Updated:** 2026-08-22
 **Result:** COMPLETE
 **Current Phase:** Phase 1 — Native Viewport
 **Workspace:** `D:\TRAVELAPPS\ForgeShape`
-**Accepted implementation baseline:** Stage 016 — Plane + primitive coverage
-cleanup, on top of Stage 015D (camera projection), Stage 015C-R (front-face
-culling), Stage 015C (shading), Platform Fix P2, Stage 015B, Stage 014, the
-NDK r29 migration (Gate P0) and the owner decision baseline
+**Accepted implementation baseline:** Stage 016-R2 — explicit emulator port
+isolation + deterministic native self-test fixtures, on top of Stage 016
+(Plane + primitive coverage cleanup), Stage 015D (camera projection), Stage
+015C-R (front-face culling), Stage 015C (shading), Platform Fix P2, Stage
+015B, Stage 014, the NDK r29 migration (Gate P0) and the owner decision
+baseline
 **Next Stage:** Gate P1 — Physical ARM64 + 16 KB Runtime + Vulkan Validation +
 Heavy-Mesh Baseline
 
 This is a current snapshot, not a chronology. Per-stage verification chapters,
 superseded environment states and old next-stage recommendations live in Git
 history and are deliberately not repeated here.
+
+## Stage 016-R2 — explicit emulator port isolation + deterministic test harness
+
+Closes Stage 016 with **zero product behaviour changes**: only emulator/test
+scripts and native self-test fixtures changed.
+
+**Root cause, self-test determinism.** `NativeViewport.start()`'s
+thread-joinable guard only blocks a *concurrent* start; it does not make the
+self-test run a true one-time process event. `ForgeShapeActivity.onDestroy()`
+calls `NativeViewport.stop()`, which joins the render thread, so a later
+`onCreate()` — a real Activity recreation within one still-alive process, the
+normal shape of an `am instrument` run moving between test classes — passes
+the guard and reruns all ten suites. Three self-tests assumed the live,
+process-scoped `MeshStore` / `ConstructionTransform` / `ConstructionObject`
+still held their first-launch defaults: `testDemoCubePicking`
+(`forgeshape_picking_selftest.cpp`, using the implicit
+`pickScene(camera, x, y, w, h)` overload, which reads
+`constructionTransform()` and `constructionObject().kind()`) and two picks in
+`forgeshape_construction_selftest.cpp` / `forgeshape_mesh_selftest.cpp` that
+already published their own known fixture into the store but still picked
+through that same implicit, transform-dependent overload. Fixed by publishing
+`demoCubeMeshView()` directly in the picking self-test and switching all three
+to the existing explicit-transform `pickScene(..., model, inverseModel,
+frontFacesOnly)` overload with an identity transform, removing every
+dependency on live global state. `publishActiveRepresentation` already
+restores the real product mesh after all self-tests finish, so this was
+already read-only with respect to what the user sees; the fix makes it
+input-independent too.
+
+**Verified live, on `ForgeShape_Stage006` / `emulator-5580`.** Mutated the
+process-global Construction primitive via the real UI (Box → Plane 2×1.25 m →
+Sphere), then ran the full instrumented suite: the render thread started and
+stopped **46** times in one process (one cycle per test method), all ten
+self-test suites reran on nearly every cycle, and grep across the full
+captured log found **zero** `_SELFTEST_FAIL` / `_FAIL:` tokens. One cycle's
+`startup_after_selftests` republish logged `kind=plane w=2.0 d=1.25` — direct
+proof self-tests passed with a mutated, non-default primitive and transform
+still live in process state. A clean cold launch after the whole session still
+reports **1421 checks, zero failures**, digit-for-digit the Stage 016
+baseline.
+
+**Emulator/adb hygiene.** `scripts\start-forgeshape-emulator.ps1` is a new,
+minimal launcher: explicit `-Avd`/`-Port` (default `ForgeShape_Stage006` /
+`5580`), hard-rejects port `5554` before any OS or adb call, checks occupancy
+of only the requested port, BLOCKS with no automatic fallback port, launches
+detached, and confirms AVD identity by name before reporting ready.
+`scripts\run-instrumented-tests.ps1`'s one bare `adb devices` enumeration
+(used only to confirm the given serial was attached) is replaced with
+`adb -s <serial> get-state`, so every adb call in the repo's scripts is now
+scoped to an explicit serial with no exception. `scripts\verify-device-guards.ps1`
+is new: `DEV2-01`..`07` all PASS, including two checks (`DEV2-01`, `DEV2-05`)
+that invoke the real scripts' real reject paths as child processes (not
+mocks) and one (`DEV2-02`) that proves the occupied-port BLOCK against a real
+dummy TCP listener, never against `5554` or `5580`.
+
+**Verification.** Ten self-test suites green (1421 checks, zero failures,
+including after 46 in-process reruns under mutated state); 26 JVM tests green;
+46 instrumented tests green on `emulator-5580` only; DEV2-01..07 PASS; zero
+adb interaction with `emulator-5554` anywhere in this stage. Runtime
+re-verification repeated the Stage 016 Plane contract on the real touch path:
+Apply (2×1.25 m), front-face pick, a 180° transform-only rotation (`rev`
+unchanged) with a confirmed back-face pick (the two-sided Plane exception),
+Orthographic + MatCap, Freeze, Back to Construction, a Sphere apply while
+frozen (`FORGESHAPE_SCULPT_SOURCE_STALE`, frozen mesh untouched at "4
+vertices"), Freeze again onto the Sphere (482:2880, no confirmation needed —
+nothing to lose), a real 24-move Grab stroke
+(`STROKE_PENDING`→`STROKE_BEGIN:grab:131`→24×`STROKE_MOVE`→`STROKE_END`),
+HOME/resume with no re-init (identical `ActivityRecord`, no self-test rerun),
+and rotated landscape (`chosenExtent=2400x1080 preTransform=0x1`). Screenshots
+are under `artifacts/stage016r2_*`.
 
 ## Stage 016 — Plane + primitive coverage cleanup
 
@@ -117,7 +189,10 @@ stage continued, and chose to proceed with every later command scoped to
 `-s emulator-5556` / `ANDROID_SERIAL=emulator-5556`, confirmed by AVD name to
 be `ForgeShape_Stage006`.
 
-**Remediated in Stage 016-R**, without touching `emulator-5554` at all: the
+**Remediated in Stage 016-R, then hardened further in Stage 016-R2** (see that
+chapter above for the explicit-port launcher, the `adb devices`→`get-state`
+fix and the self-test determinism fix), without touching `emulator-5554` at
+all: the
 bare, unscoped Gradle task is now a documented anti-pattern in `CLAUDE.md` and
 `README.md`, and `scripts\run-instrumented-tests.ps1 -Serial <serial>` is the
 one supported instrumented-test path — it requires an explicit serial, refuses
@@ -395,9 +470,9 @@ evidence screenshots cited by past stage acceptance.
 | --- | --- |
 | `Medium_Phone_API_36.1` / `emulator-5554` | **Reserved by another program.** ForgeShape must not use, start, stop, wipe, reconfigure, install to, send input to, log or screenshot it until the owner lifts this. |
 | `ForgeShape_Stage004` / `emulator-5556` | **Contended, non-authoritative.** Another program runs `com.damian.wlochyikafalonia.claude.debug` on it, steals the foreground and injects taps that reach ForgeShape. Do not use it for authoritative evidence; do not stop, wipe or reconfigure it. |
-| `ForgeShape_Stage006` / `emulator-5558` | **Current ForgeShape-owned evidence target.** Isolated, own AVD definition and data dir. |
+| `ForgeShape_Stage006` / port varies, boot with `scripts\start-forgeshape-emulator.ps1` (default port `5580`) | **Current ForgeShape-owned evidence target.** Isolated, own AVD definition and data dir. Always confirm identity with `adb -s <serial> emu avd name`, never by port alone; this AVD has been seen on `5556`, `5558` and `5580` across sessions purely by allocation order. |
 
-`emulator-5558` is pixel_6, 1080×2400, density 420, multi-touch, GPU host,
+`ForgeShape_Stage006` is pixel_6, 1080×2400, density 420, multi-touch, GPU host,
 `x86_64`, API 36 (`google_apis_playstore`). Vulkan: loader instance 1.4.0,
 physical device "Goldfish GFXStream (AMD Radeon RX 9070 XT)", device API 1.3.0,
 swapchain format 37 (`R8G8B8A8_UNORM`), 4 images, FIFO.
@@ -580,6 +655,14 @@ regression.
 
 ## Current evidence summary
 
+- **Stage 016-R2 acceptance** (`ForgeShape_Stage006` / `emulator-5580`): device
+  and test-harness remediation only, zero product behaviour change. Ten
+  self-test suites green (1421 checks, zero failures) both on a clean launch
+  and after 46 in-process reruns under UI-mutated Construction state during
+  the full instrumented suite; 26 JVM tests green; 46 instrumented tests
+  green; `DEV2-01`..`07` PASS; zero `emulator-5554` interaction. Full detail in
+  the Stage 016-R2 chapter at the top of this file. Screenshots are under
+  `artifacts/stage016r2_*`.
 - **Stage 016 acceptance** (`ForgeShape_Stage006`): ten self-test suites green
   (**1421 checks, zero failures**, including `PLN-01`..`PLN-20`); 26 JVM tests
   green; **46 instrumented tests, 46 green**. The Plane contract, the two-sided

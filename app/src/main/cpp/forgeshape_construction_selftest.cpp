@@ -509,12 +509,18 @@ void testPickingUsesGeneratedBox(Recorder& r) {
                 std::fabs(hitX.position.x - 1.665) > 0.5);
 
     // And the full scene path — camera ray, picking, object identity — resolves
-    // to the Construction box's stable id.
+    // to the Construction box's stable id. Picks with an explicit identity
+    // transform rather than the implicit process-global ConstructionTransform:
+    // this self-test suite can rerun within one process after Activity
+    // recreation, by which point that global transform may no longer be
+    // identity, and this test's "on the generated surface" bounds are only
+    // valid in the local space the box above was built in.
     CameraController camera;
     camera.setViewport(kTestViewportWidth, kTestViewportHeight);
+    const Mat4 identity = mat4Identity();
     const SceneHit scene =
         pickScene(camera.snapshot(), kTestViewportWidth * 0.5f, kTestViewportHeight * 0.5f,
-                  kTestViewportWidth, kTestViewportHeight);
+                  kTestViewportWidth, kTestViewportHeight, identity, identity, true);
     r.check("pick_scene_hits_construction_box",
             scene.hit && scene.objectId == kConstructionBoxObjectId);
     // The reported hit point must lie on the generated surface.

@@ -6,6 +6,7 @@
 #include "forgeshape_construction.h"
 #include "forgeshape_demo_mesh.h"
 #include "forgeshape_math.h"
+#include "forgeshape_mesh.h"
 #include "forgeshape_picking.h"
 #include "forgeshape_selection.h"
 
@@ -302,8 +303,20 @@ void testWinding(Recorder& r) {
 void testDemoCubePicking(Recorder& r) {
     CameraController c = makeController();
 
+    // This suite can rerun within one process after Activity recreation (the
+    // render thread is stopped and restarted between NativeViewport.stop()/
+    // start() calls), by which point the live process-scoped MeshStore may
+    // hold whatever primitive/transform a prior UI test last applied, not the
+    // demo cube these checks are written against. Publish the known demo cube
+    // fixture directly and pick with an explicit identity transform, so this
+    // test is self-contained and its result cannot depend on ConstructionObject
+    // or ConstructionTransform state left over from anything else.
+    meshStore().publish(demoCubeVertices(), demoCubeVertexCount(), demoCubeIndices(),
+                        demoCubeIndexCount());
+    const Mat4 identity = mat4Identity();
+
     const SceneHit center = pickScene(c.snapshot(), kCenterX, kCenterY, kTestViewportWidth,
-                                      kTestViewportHeight);
+                                      kTestViewportHeight, identity, identity, true);
     r.check("scene_center_hits_cube", center.hit);
     r.check("scene_center_object_id", center.hit && center.objectId == kDemoCubeObjectId);
     r.check("scene_center_triangle_index_valid",
@@ -317,8 +330,8 @@ void testDemoCubePicking(Recorder& r) {
                 std::fabs(center.position.y) <= kDemoCubeHalfExtent + 1e-3f &&
                 std::fabs(center.position.z) <= kDemoCubeHalfExtent + 1e-3f);
 
-    const SceneHit background =
-        pickScene(c.snapshot(), 5.0f, 5.0f, kTestViewportWidth, kTestViewportHeight);
+    const SceneHit background = pickScene(c.snapshot(), 5.0f, 5.0f, kTestViewportWidth,
+                                          kTestViewportHeight, identity, identity, true);
     r.check("scene_background_corner_misses", !background.hit);
     r.check("scene_miss_has_no_object_id", background.objectId == kNoObject);
 
@@ -336,7 +349,7 @@ void testDemoCubePicking(Recorder& r) {
     r.check("scene_camera_pose_actually_changed", poseChanged);
 
     const SceneHit afterOrbit = pickScene(c.snapshot(), kCenterX, kCenterY, kTestViewportWidth,
-                                          kTestViewportHeight);
+                                          kTestViewportHeight, identity, identity, true);
     r.check("scene_hits_cube_after_camera_move", afterOrbit.hit);
     r.check("scene_object_id_stable_after_camera_move",
             afterOrbit.hit && afterOrbit.objectId == center.objectId);
@@ -354,13 +367,13 @@ void testDemoCubePicking(Recorder& r) {
     c.onTouch(TouchAction::Move, -1, pair, 2);
     c.onTouch(TouchAction::Cancel, -1, pair, 2);
     const SceneHit afterZoom = pickScene(c.snapshot(), kCenterX, kCenterY, kTestViewportWidth,
-                                         kTestViewportHeight);
+                                         kTestViewportHeight, identity, identity, true);
     r.check("scene_hits_cube_after_zoom", afterZoom.hit);
     r.check("scene_object_id_stable_after_zoom",
             afterZoom.hit && afterZoom.objectId == kDemoCubeObjectId);
 
     r.check("scene_zero_viewport_safe",
-            !pickScene(c.snapshot(), kCenterX, kCenterY, 0, 0).hit);
+            !pickScene(c.snapshot(), kCenterX, kCenterY, 0, 0, identity, identity, true).hit);
 }
 
 // ---------------------------------------------------------------------------

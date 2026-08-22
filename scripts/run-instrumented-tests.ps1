@@ -16,8 +16,10 @@
     mechanically, not by convention or operator discipline.
 
     A serial is required. `emulator-5554` is refused before any device is
-    contacted. The serial must already appear in `adb devices`; this script
-    starts nothing and never guesses a target.
+    contacted. Readiness is then checked with `adb -s <serial> get-state`, not
+    a bare `adb devices` enumeration -- this script never lists or touches any
+    device other than the one it was given, and it starts nothing and never
+    guesses a target.
 
 .PARAMETER Serial
     The exact adb serial to install and instrument. Required. Verify the AVD
@@ -63,9 +65,13 @@ foreach ($forbidden in $ForbiddenSerials) {
 }
 
 Write-Output "Checking that '$Serial' is currently attached..."
-$attached = & adb devices | Select-String -Pattern "^$([regex]::Escape($Serial))\s+device$"
-if (-not $attached) {
-    Write-Error "Refusing: '$Serial' is not in 'adb devices' as a ready device. This script starts nothing and never falls back to whatever else is attached."
+# Deliberately `adb -s $Serial get-state`, not a bare `adb devices` enumeration:
+# the latter lists (and, for later commands relying on a default target, can
+# touch) every attached device, which is the exact class of mistake this
+# script exists to make impossible. get-state talks to exactly one serial.
+$state = & adb -s $Serial get-state 2>$null
+if ($LASTEXITCODE -ne 0 -or $state -ne 'device') {
+    Write-Error "Refusing: 'adb -s $Serial get-state' did not report a ready device (got '$state'). This script starts nothing and never falls back to whatever else is attached."
     exit 1
 }
 Write-Output "OK: '$Serial' is attached."

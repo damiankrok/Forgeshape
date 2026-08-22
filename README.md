@@ -38,6 +38,28 @@ gradlew.bat :app:assembleDebug
 
 APK: `app/build/outputs/apk/debug/app-debug.apk`
 
+## Booting the emulator
+
+**Never boot `ForgeShape_Stage006` (or any ForgeShape AVD) without an explicit
+`-port`.** The emulator hands the first free port starting at `5554` to
+whichever instance boots first, so an unpinned launch can land on the reserved
+`emulator-5554` by pure allocation order — this happened during Stage 016-R.
+The one supported launcher is:
+
+```
+scripts\start-forgeshape-emulator.ps1
+scripts\start-forgeshape-emulator.ps1 -Avd ForgeShape_Stage006 -Port 5580
+```
+
+It rejects port `5554` before touching the OS or adb, checks occupancy of only
+the requested port (never `5554`, never any other), BLOCKS with no automatic
+fallback port if that port is taken, launches detached (WMI/CIM
+`Win32_Process.Create` — the emulator dies if spawned as a child of this or
+any tool shell), and confirms AVD identity with `adb -s <serial> emu avd name`
+before reporting the device ready. If the AVD is already running on that port
+from an earlier session, confirm identity the same way and reuse it; the
+launcher itself will report the port BLOCKED rather than starting a duplicate.
+
 ## Test
 
 ```
@@ -55,11 +77,18 @@ scripts\run-instrumented-tests.ps1 -Serial <serial>
 ```
 
 It requires an explicit `-Serial`, refuses `emulator-5554` before contacting
-any device, builds the debug app and test APKs, then installs and instruments
-through `adb -s <serial>` only — every device operation is scoped, mechanically,
-not by operator discipline. It uninstalls the test APK when it finishes,
-matching `connectedDebugAndroidTest`'s own cleanup behaviour, so reinstall the
-app before taking further runtime evidence.
+any device, checks readiness with `adb -s <serial> get-state` (never a bare
+`adb devices` enumeration), builds the debug app and test APKs, then installs
+and instruments through `adb -s <serial>` only — every device operation is
+scoped, mechanically, not by operator discipline. It uninstalls the test APK
+when it finishes, matching `connectedDebugAndroidTest`'s own cleanup
+behaviour, so reinstall the app before taking further runtime evidence.
+
+`scripts\verify-device-guards.ps1` runs the DEV2-01..07 device-isolation
+guard checks (forbidden port/serial rejection, no bare `adb`, every
+instrumentation call scoped) without needing any device attached and without
+ever contacting `emulator-5554` — safe to run any time as a quick sanity
+check on the two scripts above.
 
 To run one class:
 

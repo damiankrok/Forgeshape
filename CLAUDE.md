@@ -171,17 +171,25 @@ shadow history Markdown file.
   instance boots first, so `ForgeShape_Stage006` can itself land on
   `emulator-5554` by pure allocation order — confirmed directly during Stage
   016-R. Always confirm with `adb -s <serial> emu avd name` before treating a
-  serial as safe, and prefer booting with an explicit `-port` away from
-  `5554`/`5556` so the ambiguity cannot arise. If a serial cannot be confirmed
-  safe this way, do not use it — BLOCKED beats a guess.
+  serial as safe. Boot it only with `scripts\start-forgeshape-emulator.ps1`
+  (defaults `-Avd ForgeShape_Stage006 -Port 5580`): it hard-rejects port
+  `5554` before touching the OS or adb at all, checks occupancy of ONLY the
+  requested port, BLOCKS with no automatic fallback port if that port is
+  already taken, launches detached via WMI/CIM `Win32_Process.Create`, and
+  confirms AVD identity with `emu avd name` before reporting ready. An
+  unavailable port is BLOCKED, never a reason to try another one.
 - **Bare, unscoped `connected*AndroidTest` is forbidden whenever more than one
   Android target could be attached.** That Gradle task enumerates every
   attached device with no default and installs/runs on all of them — this is
   exactly how Stage 016 touched the reserved `emulator-5554`. The one
   supported path is `scripts\run-instrumented-tests.ps1 -Serial <serial>`,
   which requires an explicit serial, refuses `emulator-5554` before any device
-  is contacted, and drives `adb -s <serial>` explicitly for every install and
-  instrumentation step — see `README.md`.
+  is contacted, checks readiness with `adb -s <serial> get-state` (never a
+  bare `adb devices` enumeration), and drives `adb -s <serial>` explicitly for
+  every install and instrumentation step — see `README.md`. No repo script
+  under `scripts\` issues a bare, unscoped `adb` call;
+  `scripts\verify-device-guards.ps1` checks this and the port/serial guards
+  above mechanically (`DEV2-01`..`07`) and needs no device attached.
 - `surfaceDestroyed` must block until native code has released the
   `ANativeWindow`. Never let the render thread touch a destroyed window.
 - **One orientation convention: render in Android window orientation.** The
