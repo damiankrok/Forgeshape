@@ -325,6 +325,8 @@ a no-op in release.
 | 12 | dump mesh / GPU / Construction / Sculpt diagnostics |
 | 13 / 14 / 15 | box state A `2.0×1.0×0.5` / B `1.25×2.5×0.75` / C `3.333×0.42×1.125` m |
 | 16 | deliberately invalid box update — must be rejected |
+| 29 / 30 / 31 / 32 / 33 | Gate P1 heavy-mesh density fixture: publish a ~10k / 50k / 100k / 250k / 500k-vertex closed "spherified box" through the normal `MeshStore::publish` path |
+| 34 | freeze the most recently published density tier directly into Sculpt (bypasses Construction) |
 
 The box driver goes through the same native `applyPrimitive` entry point the
 inspector uses, so it is a bounded driver rather than a parallel implementation. A
@@ -336,10 +338,43 @@ FORGESHAPE_MESH_REVISION_PUBLISHED:<rev>:<verts>:<indices>
 FORGESHAPE_MESH_STRESS_OK:<published>:<uploaded>:<coalesced> ...
 FORGESHAPE_MESH_DIAG:<reason> ...                          the diagnostics dump
 FORGESHAPE_CONSTRUCTION_STATE / _TRANSFORM_STATE / FORGESHAPE_SCULPT_STATE
+FORGESHAPE_STRESS_MESH_TIER:<label> target=<n> v=<verts> i=<indices> genMs=<..> publishMs=<..> rev=<rev>
+FORGESHAPE_STRESS_SCULPT_FROZEN:<label> freezeMs=<..> meshRev=<rev>
 ```
 
 The dump reports both representations side by side. None of these is logged per
 frame.
+
+## Gate P1 tooling
+
+**16 KB runtime target.** `scripts\start-forgeshape-emulator.ps1 -Avd ForgeShape_16K -Port <explicit>`
+boots the x86_64 `google_apis_playstore_ps16k` AVD created for Gate P1 — same
+isolation rules as `ForgeShape_Stage006` (explicit port, confirm identity by
+`emu avd name`, never `5554`). Confirm the real page size before treating any
+result as evidence:
+
+```
+adb -s <serial> shell getconf PAGE_SIZE      # must read 16384
+```
+
+**Vulkan validation layer.** No layer binary is ever bundled or committed —
+see `CLAUDE.md`, "Android / Vulkan safety". To enable it ad hoc against a
+running debug build:
+
+```
+adb -s <serial> push libVkLayer_khronos_validation.so /data/local/tmp/
+adb -s <serial> shell run-as com.forgeshape.app cp /data/local/tmp/libVkLayer_khronos_validation.so .
+adb -s <serial> shell settings put global enable_gpu_debug_layers 1
+adb -s <serial> shell settings put global gpu_debug_app com.forgeshape.app
+adb -s <serial> shell settings put global gpu_debug_layers VK_LAYER_KHRONOS_validation
+adb -s <serial> shell settings put global gpu_debug_layer_app com.forgeshape.app
+adb -s <serial> shell setprop debug.vulkan.khronos_validation.report_flags "error,warn,perf,info"
+```
+
+Relaunch the app, then `adb -s <serial> logcat -d | grep " VALIDATION:"` for the
+layer's own messages (distinct from anything ForgeShape logs under the
+`ForgeShape` tag). Delete the four `global` settings above when finished —
+they are not scoped to a single run and persist otherwise.
 
 ## Injecting multi-touch for testing
 

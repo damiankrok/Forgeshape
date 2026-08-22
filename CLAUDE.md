@@ -203,3 +203,13 @@ shadow history Markdown file.
   this rebuilds the swapchain every frame while the device is rotated.
 - Shaders are compiled ahead of time by the NDK `glslc` in CMake. No shader
   compiler ships at runtime.
+- **A Vulkan validation layer is never bundled into the APK or committed to
+  the repo.** When debugging needs it, fetch the official Khronos build
+  (`github.com/KhronosGroup/Vulkan-ValidationLayers` releases) into a
+  scratch/temp location, `adb push` it and enable it through Android's
+  first-party per-app GPU debug layer settings
+  (`adb shell settings put global enable_gpu_debug_layers 1` /
+  `gpu_debug_app` / `gpu_debug_layers` / `gpu_debug_layer_app`), then delete
+  those settings afterward. Never add it under `jniLibs`, never make it a
+  Gradle dependency: it must stay a session-scoped, adb-only debug tool with
+  zero footprint in the built product.

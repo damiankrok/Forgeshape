@@ -115,10 +115,16 @@ if ($result.ReturnValue -ne 0) {
 Write-Output "Emulator process launched (PID $($result.ProcessId)). Waiting for '$Serial' to come up..."
 
 # --- 4. Wait for the device, then confirm identity via adb -s <serial> only -
+# adb reports "error: device 'x' not found" on stderr, with a nonzero exit,
+# for as long as the serial hasn't appeared yet -- expected during boot, not
+# a failure. Under $ErrorActionPreference = 'Stop', redirecting that stderr
+# turns it into a terminating NativeCommandError, so this poll must swallow
+# it via try/catch rather than 2>$null.
 $deadline = (Get-Date).AddSeconds(180)
 $ready = $false
 while ((Get-Date) -lt $deadline) {
-    $state = & adb -s $Serial get-state 2>$null
+    $state = $null
+    try { $state = & adb -s $Serial get-state 2>$null } catch { $state = $null }
     if ($LASTEXITCODE -eq 0 -and $state -eq 'device') { $ready = $true; break }
     Start-Sleep -Seconds 3
 }

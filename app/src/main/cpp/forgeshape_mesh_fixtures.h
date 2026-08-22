@@ -45,4 +45,15 @@ FixtureMesh buildFixtureLarge();
 // capacity-reuse path rather than reallocation.
 FixtureMesh buildStressStep(uint32_t step);
 
+// Heavy-mesh density fixture (Gate P1). A closed, deterministic "spherified
+// box" — the same construction as buildFixtureLarge, generalized to a caller-
+// chosen vertex count instead of the fixed kFixtureLargeSubdivisions. Solves
+// for the subdivision level that lands closest to targetVertexCount; the
+// actual count is whatever the caller reads back off the returned mesh, not a
+// promise of an exact match. Canonical outward winding, uint32-safe indices,
+// no degenerate triangles, at any density this Gate's mesh-density ladder
+// asks for. Test/debug harness only — not a Construction primitive, not
+// reachable from product UI.
+FixtureMesh buildStressMesh(uint32_t targetVertexCount);
+
 }  // namespace forgeshape

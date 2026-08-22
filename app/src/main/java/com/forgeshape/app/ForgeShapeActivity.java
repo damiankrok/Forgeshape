@@ -80,8 +80,12 @@ public final class ForgeShapeActivity extends Activity {
      * DEBUG-ONLY test hook. The number keys 1-5 publish a native debug mesh
      * fixture and 6-9 drive the native Construction object's authoritative
      * dimensions, so both paths can be exercised from
-     * {@code adb shell input keyevent} without any product UI. Native code makes
-     * this a no-op in a release build, in which case the key is not consumed.
+     * {@code adb shell input keyevent} without any product UI. A-E publish the
+     * Gate P1 heavy-mesh density ladder (~10k/50k/100k/250k/500k vertices) and F
+     * freezes whichever tier was published most recently into Sculpt, for
+     * render/upload/picking/Sculpt measurement at densities no real primitive
+     * produces. Native code makes this a no-op in a release build, in which
+     * case the key is not consumed.
      *
      * <p>This is not a product feature and nothing user-facing exposes it. In
      * particular, keys 6-9 are not dimension editing: they are a bounded test
@@ -100,6 +104,12 @@ public final class ForgeShapeActivity extends Activity {
             case KeyEvent.KEYCODE_7: command = 7; break;  // box state B: 1.25 x 2.5 x 0.75 m
             case KeyEvent.KEYCODE_8: command = 8; break;  // box state C: 3.333 x 0.42 x 1.125 m
             case KeyEvent.KEYCODE_9: command = 9; break;  // invalid dimension: must be rejected
+            case KeyEvent.KEYCODE_A: command = 17; break;  // stress mesh tier: ~10k vertices
+            case KeyEvent.KEYCODE_B: command = 18; break;  // stress mesh tier: ~50k vertices
+            case KeyEvent.KEYCODE_C: command = 19; break;  // stress mesh tier: ~100k vertices
+            case KeyEvent.KEYCODE_D: command = 20; break;  // stress mesh tier: ~250k vertices
+            case KeyEvent.KEYCODE_E: command = 21; break;  // stress mesh tier: ~500k vertices
+            case KeyEvent.KEYCODE_F: command = 22; break;  // freeze last stress tier to Sculpt
             default: return super.onKeyDown(keyCode, event);
         }
         if (NativeViewport.debugMeshCommand(command)) {

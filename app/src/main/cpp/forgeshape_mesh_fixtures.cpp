@@ -1,5 +1,6 @@
 #include "forgeshape_mesh_fixtures.h"
 
+#include <algorithm>
 #include <cmath>
 
 #include "forgeshape_demo_mesh.h"
@@ -41,12 +42,11 @@ FixtureMesh buildFixtureDeformed() {
     return mesh;
 }
 
-FixtureMesh buildFixtureLarge() {
-    // Six subdivided faces, each vertex pushed out to a fixed radius: a
-    // "spherified box". Deterministic, closed, and visibly a different shape
-    // and a different size from the cube.
-    constexpr float kRadius = 1.28f;
-    const uint32_t n = kFixtureLargeSubdivisions;
+// Shared by buildFixtureLarge (fixed subdivision) and buildStressMesh
+// (caller-chosen subdivision): six subdivided faces, each vertex pushed out to
+// a fixed radius, giving a closed "spherified box" with canonical outward
+// winding at any density. 6*(n+1)^2 vertices, 6*n^2 quads (36*n^2 indices).
+FixtureMesh buildSpherifiedBox(uint32_t n, float radius) {
     const float half = kDemoCubeHalfExtent;
 
     struct Face {
@@ -79,7 +79,7 @@ FixtureMesh buildFixtureLarge() {
                 p = vec3Add(p, vec3Scale(face.u, fu * half));
                 p = vec3Add(p, vec3Scale(face.v, fv * half));
                 const Vec3 dir = vec3Normalize(p);
-                const Vec3 out = vec3Scale(dir, kRadius);
+                const Vec3 out = vec3Scale(dir, radius);
 
                 MeshVertex vertex{};
                 vertex.position[0] = out.x;
@@ -110,6 +110,18 @@ FixtureMesh buildFixtureLarge() {
         }
     }
     return mesh;
+}
+
+FixtureMesh buildFixtureLarge() { return buildSpherifiedBox(kFixtureLargeSubdivisions, 1.28f); }
+
+FixtureMesh buildStressMesh(uint32_t targetVertexCount) {
+    // 6*(n+1)^2 vertices; solve for n and clamp to keep the hard mesh caps
+    // (forgeshape_mesh.h: 4M vertices, 24M indices) unreachable at every
+    // tier this Gate's density ladder asks for (10k .. 500k).
+    const double n = std::sqrt(static_cast<double>(targetVertexCount) / 6.0) - 1.0;
+    const uint32_t subdivisions =
+        std::max<uint32_t>(1, static_cast<uint32_t>(std::lround(n)));
+    return buildSpherifiedBox(subdivisions, 1.28f);
 }
 
 FixtureMesh buildStressStep(uint32_t step) {

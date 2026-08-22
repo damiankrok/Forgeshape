@@ -1,8 +1,9 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.21.1
+**Status Version:** 0.22.0
 **Updated:** 2026-08-22
-**Result:** COMPLETE
+**Result:** PARTIAL — Gate P1 blocked on missing physical ARM64 hardware; see
+the Gate P1 chapter below for exactly what is and is not closed
 **Current Phase:** Phase 1 — Native Viewport
 **Workspace:** `D:\TRAVELAPPS\ForgeShape`
 **Accepted implementation baseline:** Stage 016-R2 — explicit emulator port
@@ -10,13 +11,165 @@ isolation + deterministic native self-test fixtures, on top of Stage 016
 (Plane + primitive coverage cleanup), Stage 015D (camera projection), Stage
 015C-R (front-face culling), Stage 015C (shading), Platform Fix P2, Stage
 015B, Stage 014, the NDK r29 migration (Gate P0) and the owner decision
-baseline
-**Next Stage:** Gate P1 — Physical ARM64 + 16 KB Runtime + Vulkan Validation +
-Heavy-Mesh Baseline
+baseline. Gate P1's arm64-v8a build support, 16 KB runtime verification and
+Vulkan validation path are real, evidenced, additive work on top of this
+baseline (see below) but Gate P1 itself is not accepted as complete.
+**Next Stage:** Gate P1 closure — obtain access to a physical ARM64 Android
+device (explicit adb serial, provided by the owner) and re-run P1-A (launch/
+lifecycle smoke) and the mandatory P1-E mesh-density ladder (~10k/~50k/~100k
+vertices) on it. Every other Gate P1 requirement is already closed.
 
 This is a current snapshot, not a chronology. Per-stage verification chapters,
 superseded environment states and old next-stage recommendations live in Git
 history and are deliberately not repeated here.
+
+## Gate P1 — Physical ARM64 + 16 KB Runtime + Vulkan Validation + Heavy-Mesh Baseline (PARTIAL)
+
+No product behaviour changed. Closed: arm64-v8a build support, real 16 KB
+runtime verification, an active debug-only Vulkan validation path, and a new
+debug/test-only heavy-mesh density fixture. Blocked: no physical ARM64
+device was made available this Gate, so P1-A (physical launch/lifecycle
+smoke) and the *mandatory* P1-E density ladder — which this Gate requires to
+run on physical ARM64, not an emulator — could not be executed. P1-D
+(stylus) is UNVERIFIED for the same reason: no physical device, no real
+stylus input.
+
+**ABI.** `app/build.gradle`'s `abiFilters` now lists `'x86_64', 'arm64-v8a'`;
+CMake and the native sources needed no ABI-specific changes (no intrinsics,
+no `#ifdef __x86_64__`/`__aarch64__` anywhere in `app/src/main/cpp`). Both
+`.so`s build clean and package into the debug APK
+(`lib/arm64-v8a/libforgeshape_native.so`, `lib/x86_64/libforgeshape_native.so`),
+both report `0x4000` (16384-byte) ELF `LOAD` alignment via `llvm-readelf -l`,
+and `zipalign -c -P 16 -v 4` on the packaged APK reports both libraries `OK`.
+x86_64 regression is unaffected (below).
+
+**16 KB runtime — real, not just static alignment.** With the owner's
+authorization, `system-images;android-36.1;google_apis_playstore_ps16k;x86_64`
+was installed via `sdkmanager` and a new isolated AVD, `ForgeShape_16K`, was
+created from it (GPU host mode and the same pixel_6 profile as
+`ForgeShape_Stage006`; not authorized for physical-ARM64 evidence — it is
+x86_64, not arm64 — but it is a real Linux kernel built with a genuine 16384
+page size, which is exactly the dimension Gate P0 left unmeasured).
+`adb -s emulator-5590 shell getconf PAGE_SIZE` reports **16384**. On that
+target: a clean launch reports all ten self-test suites green, 1421 checks,
+zero failures; the Plane primitive applies and picks (front and, after a
+180° transform-only rotate, the two-sided back-face case) correctly;
+Orthographic and MatCap both switch correctly; Freeze → Back to Construction
+→ Sphere apply produces the stale-source warning with the frozen mesh
+untouched; Freeze again onto the Sphere (482:2880) needs no confirmation
+(nothing to lose) and a real 23-move Grab stroke completes
+(`STROKE_PENDING`→`STROKE_BEGIN:grab:142`→`STROKE_END`); HOME/resume
+reproduces the same `ActivityRecord` with no re-init; rotated landscape holds
+`chosenExtent=2400x1080 preTransform=0x1`. One reproducible environment
+symptom: this AVD's SystemUI hit a persistent "System UI isn't responding"
+ANR under rapid scripted UI automation partway through evidence collection; a
+full guest reboot cleared it and the retried sequence completed cleanly with
+zero `FORGESHAPE_*_SELFTEST_FAIL` tokens throughout. Recorded as a real
+16 KB-runtime stability observation, not a ForgeShape defect — the native
+render thread and self-tests were unaffected throughout and the symptom was
+specifically SystemUI's input dispatch, not `com.forgeshape.app`. Screenshots
+under `artifacts/gatep1_16k_*`.
+
+**Vulkan validation.** No validation-layer binary existed anywhere on this
+machine; with the owner's authorization, the official
+`android-binaries-1.4.357.0.zip` was downloaded from
+`github.com/KhronosGroup/Vulkan-ValidationLayers` releases (the source
+Android's own developer documentation names) and used exclusively through
+Android's first-party per-app GPU debug layer mechanism: `adb push` to
+`/data/local/tmp`, `run-as` copy into the app's own data directory, and
+`adb shell settings put global enable_gpu_debug_layers 1` /
+`gpu_debug_app` / `gpu_debug_layers=VK_LAYER_KHRONOS_validation` /
+`gpu_debug_layer_app`. The binary was never bundled into the APK, never
+placed under `jniLibs`, and never committed to the repository — purely an
+ad-hoc, adb-pushed debug tool, cleaned up (device settings deleted) after
+evidence collection. `adb logcat` confirms
+`Loaded layer VK_LAYER_KHRONOS_validation` and, with
+`debug.vulkan.khronos_validation.report_flags=error,warn,perf,info`, the
+layer's own `I VALIDATION:` banner: "Current Validation Enabled: Core
+Checks, Stateless Parameter, Object lifetime, Thread Safety, Handle
+Wrapping." Exercised across Construction/Plane apply, front/back picking, a
+transform-only edit, both projections, both shading models, Freeze → Sphere
+→ Freeze again → a real Grab stroke, and self-tests (1421 checks green
+throughout, unaffected). Result: **zero ForgeShape-caused validation
+messages of any severity.** The only message the layer emitted at all is one
+`Validation Information: [ WARNING-cache-file-error ]` — the layer's own
+shader-validation-cache file not existing yet at
+`/tmp/shader_validation_cache-<uid>.bin` on first run — which is the layer's
+internal bookkeeping, not a finding against ForgeShape's Vulkan usage.
+
+**Heavy-mesh density fixture (test/debug-only).** The existing sphere
+generator's vertex count is fixed by the Construction contract (482:2880 at
+any diameter) and is not reusable for a variable density ladder without
+changing that contract, which this Gate forbids. Added
+`buildStressMesh(uint32_t targetVertexCount)` to
+`forgeshape_mesh_fixtures.{h,cpp}`, generalizing the existing
+`buildFixtureLarge` "spherified box" (closed, deterministic, canonical
+outward winding, uint32-safe indices) to a caller-chosen density instead of
+its fixed `kFixtureLargeSubdivisions`, and reused it via debug-only key hooks
+(`ForgeShapeActivity` keys A–E publish ~10k/50k/100k/250k/500k-vertex tiers
+through the same `MeshStore::publish` path the other fixtures use; key F
+freezes the most recently published tier directly into Sculpt through the
+real `SculptSession::freezeToSculpt`, bypassing Construction, for stroke
+measurement at density). Not a Construction primitive, not reachable from
+product UI, compiled out in release exactly like the existing fixtures 1–9.
+**Harness-validated only** on `emulator-5590` (x86_64, 16 KB runtime) at the
+10k/50k/100k tiers — publish, GPU upload/growth, picking, Sculpt freeze
+(adjacency build) and a real Grab stroke all worked correctly with zero
+failures — but this is proof the *harness* is correct, not P1-E mandatory-
+tier evidence, which this Gate requires on physical ARM64. Measured there:
+10086 v / 57600 i (gen 4.4 ms, publish 1.3 ms); 49686 v / 291600 i (gen
+13.0 ms, publish 4.2 ms); 99846 v / 589824 i (gen 22.0 ms, publish 9.9 ms,
+render-mesh build 120.8 ms, a real pick landing at triangle 159210, Sculpt
+freeze in 80.2 ms building 592896 adjacency entries, a real Grab stroke
+capturing 3792 vertices). Process PSS after the 100k tier plus a Sculpt
+freeze and stroke: ~75 MB, no crash.
+
+**Regression.** 26/26 JVM tests; ten native self-test suites, 1421 checks,
+zero failures on a clean launch (confirmed on both `ForgeShape_Stage006` and
+the new 16 KB target); 46/46 instrumented tests on `ForgeShape_Stage006` /
+`emulator-5580` through the corrected wrapper. Zero interaction with
+`emulator-5554` anywhere in this Gate. One pre-existing script bug was found
+and fixed while booting the 16 KB AVD:
+`scripts/start-forgeshape-emulator.ps1`'s boot-wait poll redirected
+`adb get-state`'s stderr under `$ErrorActionPreference = 'Stop'`, which
+PowerShell 5.1 turns into a terminating `NativeCommandError` on the expected
+"device not found" response while the emulator is still booting — wrapped in
+try/catch; `DEV2-01..07` re-verified green afterward.
+
+**GP1 criteria.**
+
+| ID | Verdict | Evidence |
+| --- | --- | --- |
+| GP1-01 | PASS | clean tree at `f156ed9` confirmed before any change |
+| GP1-02 | PASS | arm64-v8a + x86_64 both build, package, and 16 KB-align; x86_64 self-test/JVM/instrumented regression green |
+| GP1-03 | BLOCKED | no physical ARM64 device provided |
+| GP1-04 | BLOCKED | requires P1-A physical target |
+| GP1-05 | BLOCKED | requires P1-A physical target |
+| GP1-06 | BLOCKED | requires P1-A physical target |
+| GP1-07 | PASS | `getconf PAGE_SIZE` = 16384 on `emulator-5590` |
+| GP1-08 | PASS | 1421/1421 self-test checks, full Construction/picking/projection/shading/Freeze/Resume/Sculpt smoke, zero failures on the 16 KB target |
+| GP1-09 | PASS | both `.so`s at 0x4000 ELF alignment; `zipalign -P 16 -c` OK on the packaged APK |
+| GP1-10 | PASS | `VK_LAYER_KHRONOS_validation` loaded and proven active (layer's own "Current Validation Enabled" banner) |
+| GP1-11 | PASS | zero ForgeShape-caused validation messages of any severity across the exercised path |
+| GP1-12 | PASS | the one message seen (`WARNING-cache-file-error`) classified as the layer's own internal bookkeeping, not a ForgeShape finding |
+| GP1-13 | UNVERIFIED | no physical device, no real stylus available |
+| GP1-14 | BLOCKED | ~10k tier requires physical ARM64; harness-validated only on x86_64/16K |
+| GP1-15 | BLOCKED | ~50k tier requires physical ARM64; harness-validated only on x86_64/16K |
+| GP1-16 | BLOCKED | ~100k tier requires physical ARM64; harness-validated only on x86_64/16K |
+| GP1-17 | N/A | no mandatory-tier run to evaluate (see GP1-14..16) |
+| GP1-18 | N/A | same |
+| GP1-19 | N/A | same — Sculpt-heavy-mesh metrics were gathered only on the harness-validation target |
+| GP1-20 | N/A | same |
+| GP1-21 | N/A | 250k/500k not attempted; mandatory tiers themselves are blocked |
+| GP1-22 | PASS | no triangle-count/performance claim made anywhere in this report |
+| GP1-23 | PASS | JVM 26/26, native self-test 1421/1421 (both targets), instrumented 46/46 |
+| GP1-24 | PASS | every adb call this Gate used `-s <serial>`; zero `emulator-5554` interaction; no auto-port; no `connected*AndroidTest` fan-out |
+| GP1-25 | PASS | no Sketch/Extrude/booleans/persistence/export/new tools/pressure/remesh/PBR/Apple work; heavy-mesh fixture is debug-only, not a product feature |
+| GP1-26 | PASS | see doc line counts below |
+| GP1-27 | PASS | one focused commit, clean tree |
+
+**Result: PARTIAL.** GP1-01/02/07..12/22..27 PASS; GP1-13 UNVERIFIED
+(permitted); GP1-03..06 and GP1-14..21 BLOCKED for the single reason above.
 
 ## Stage 016-R2 — explicit emulator port isolation + deterministic test harness
 
@@ -449,7 +602,7 @@ other general-purpose engine that owns the viewport or render loop.
 | CMake | 3.22.1 in use (4.1.2 also installed) |
 | Gradle / AGP | 8.14.3 wrapper / 8.13.2 |
 | SDK levels | compileSdk 36, targetSdk 36, minSdk 26 |
-| ABI filter | `x86_64` only |
+| ABI filter | `x86_64` (emulator) + `arm64-v8a` (physical devices, Gate P1) |
 | C++ / STL | C++17, `c++_static`; one packaged `.so`, `lib/x86_64/libforgeshape_native.so` |
 | Shaders | `glslc` at `<ndk>/shader-tools/windows-x86_64/glslc.exe`, AOT from CMake |
 | System images | only `system-images;android-36.1;google_apis_playstore;x86_64` |
@@ -471,11 +624,13 @@ evidence screenshots cited by past stage acceptance.
 | `Medium_Phone_API_36.1` / `emulator-5554` | **Reserved by another program.** ForgeShape must not use, start, stop, wipe, reconfigure, install to, send input to, log or screenshot it until the owner lifts this. |
 | `ForgeShape_Stage004` / `emulator-5556` | **Contended, non-authoritative.** Another program runs `com.damian.wlochyikafalonia.claude.debug` on it, steals the foreground and injects taps that reach ForgeShape. Do not use it for authoritative evidence; do not stop, wipe or reconfigure it. |
 | `ForgeShape_Stage006` / port varies, boot with `scripts\start-forgeshape-emulator.ps1` (default port `5580`) | **Current ForgeShape-owned evidence target.** Isolated, own AVD definition and data dir. Always confirm identity with `adb -s <serial> emu avd name`, never by port alone; this AVD has been seen on `5556`, `5558` and `5580` across sessions purely by allocation order. |
+| `ForgeShape_16K` / port varies, boot with `scripts\start-forgeshape-emulator.ps1 -Avd ForgeShape_16K -Port <explicit>` | **Gate P1's 16 KB runtime target.** x86_64, `google_apis_playstore_ps16k`; `getconf PAGE_SIZE` = 16384. Not a substitute for physical ARM64 — same isolation rules as `ForgeShape_Stage006` apply (explicit port, confirm identity by name, never `5554`). |
 
 `ForgeShape_Stage006` is pixel_6, 1080×2400, density 420, multi-touch, GPU host,
 `x86_64`, API 36 (`google_apis_playstore`). Vulkan: loader instance 1.4.0,
 physical device "Goldfish GFXStream (AMD Radeon RX 9070 XT)", device API 1.3.0,
-swapchain format 37 (`R8G8B8A8_UNORM`), 4 images, FIFO.
+swapchain format 37 (`R8G8B8A8_UNORM`), 4 images, FIFO. `ForgeShape_16K` shares
+the same profile and Vulkan stack on the `google_apis_playstore_ps16k` image.
 
 Rules that apply to every run:
 
@@ -560,7 +715,8 @@ Android touch path. `PRODUCT.md` owns the user-facing description.
 | Selection stays obvious and form stays readable in both shading modes | VERIFIED |
 | Display settings are native-owned and survive HOME/resume | VERIFIED |
 | No per-frame normal or render-data rebuild: 4448 frames, 2 rebuilds | VERIFIED |
-| 16 KB page-size runtime behaviour | **UNVERIFIED** — see Known Issues |
+| 16 KB page-size runtime behaviour (x86_64) | VERIFIED (Gate P1) |
+| 16 KB page-size runtime behaviour (physical ARM64) | **UNVERIFIED** — see Known Issues |
 
 ## Self-test suite
 
@@ -655,6 +811,14 @@ regression.
 
 ## Current evidence summary
 
+- **Gate P1 (PARTIAL)**: arm64-v8a build support, real 16 KB runtime
+  verification (x86_64), an active Vulkan validation path (zero
+  ForgeShape-caused messages) and a debug-only heavy-mesh density fixture are
+  all closed and evidenced. Physical ARM64 launch/lifecycle (P1-A) and the
+  mandatory 10k/50k/100k mesh-density ladder (P1-E) are BLOCKED pending a
+  physical ARM64 device; stylus (P1-D) is UNVERIFIED for the same reason.
+  Full detail, the GP1 criteria table and screenshots (`artifacts/gatep1_*`)
+  are in the Gate P1 chapter at the top of this file.
 - **Stage 016-R2 acceptance** (`ForgeShape_Stage006` / `emulator-5580`): device
   and test-harness remediation only, zero product behaviour change. Ten
   self-test suites green (1421 checks, zero failures) both on a clean launch
@@ -787,13 +951,12 @@ required shading is complete without them.
 
 ## Known Issues / Blockers
 
-- **16 KB page-size runtime behaviour is UNVERIFIED.** Static, ELF and APK
-  evidence all pass, but no 16 KB Android runtime is available: `emulator-5558`
-  reports `getconf PAGE_SIZE` = 4096 and the only installed system image is a
-  4 KB one. Closing this needs
-  `system-images;android-36.1;google_apis_playstore_ps16k;x86_64` and an AVD
-  created from it, and installing a system image is not authorized. Not a defect
-  — an unmeasured dimension.
+- **16 KB page-size runtime behaviour is VERIFIED (Gate P1)**, on the x86_64
+  `ForgeShape_16K` AVD (`getconf PAGE_SIZE` = 16384): full self-test suite,
+  Construction/picking/projection/shading/Freeze/Resume/Sculpt smoke all
+  green. **Still open: real 16 KB behaviour on physical ARM64 hardware**,
+  which needs the owner to provide a physical ARM64 device (an explicit adb
+  serial) — see the Gate P1 chapter above for the exact blocker.
 - **The `EditorWorkspaceView` layout decision runs inside `onMeasure`.** That is
   deliberate and documented — running it in `onSizeChanged` measures newly added
   chrome against the previous pass and lays it out at zero height, which is

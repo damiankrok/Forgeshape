@@ -922,6 +922,74 @@ Java_com_forgeshape_app_NativeViewport_start(JNIEnv*, jclass) {
     publishActiveRepresentation("startup_after_selftests");
 }
 
+#ifndef NDEBUG
+// DEBUG-ONLY heavy-mesh density harness (Gate P1).
+//
+// Not a Construction primitive, not a product feature, not reachable from any
+// UI: it exists so the render/upload/picking/Sculpt path can be measured at
+// vertex counts no real primitive produces. Keeps the last generated tier so
+// a separate command can freeze exactly what was just published/measured into
+// Sculpt, instead of silently regenerating a second, distinct instance.
+forgeshape::FixtureMesh g_lastStressMesh;
+const char* g_lastStressLabel = "none";
+
+void publishStressTier(const char* label, uint32_t targetVertexCount) {
+    const auto genStart = std::chrono::steady_clock::now();
+    forgeshape::FixtureMesh mesh = forgeshape::buildStressMesh(targetVertexCount);
+    const double genMs = std::chrono::duration<double, std::milli>(
+                             std::chrono::steady_clock::now() - genStart)
+                             .count();
+    const auto publishStart = std::chrono::steady_clock::now();
+    const forgeshape::MeshRevision revision = publishFixture(label, mesh, /*log=*/true);
+    const double publishMs = std::chrono::duration<double, std::milli>(
+                                 std::chrono::steady_clock::now() - publishStart)
+                                 .count();
+    FS_LOGI("FORGESHAPE_STRESS_MESH_TIER:%s target=%u v=%zu i=%zu genMs=%.3f publishMs=%.3f "
+            "rev=%llu",
+            label, targetVertexCount, mesh.vertices.size(), mesh.indices.size(), genMs, publishMs,
+            (unsigned long long)revision);
+    g_lastStressMesh = std::move(mesh);
+    g_lastStressLabel = label;
+}
+
+// Freezes the mesh most recently built by publishStressTier directly into
+// Sculpt, bypassing Construction entirely -- the same freezeToSculpt entry
+// point the real product path uses, just fed a debug-only source. Exercises
+// adjacency build and normal computation at stress density without inventing
+// a second Sculpt path.
+void freezeStressMeshToSculpt() {
+    if (g_lastStressMesh.vertices.empty()) {
+        FS_LOGE("FORGESHAPE_STRESS_SCULPT_FREEZE_FAIL:no_stress_mesh_generated_yet");
+        return;
+    }
+    forgeshape::ConstructionMesh source;
+    source.vertices = g_lastStressMesh.vertices;
+    source.indices = g_lastStressMesh.indices;
+    forgeshape::MeshValidation why = forgeshape::MeshValidation::Ok;
+    bool froze = false;
+    const auto start = std::chrono::steady_clock::now();
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        g_grabbing = false;
+        g_strokePending = false;
+        froze = forgeshape::sculptSession().freezeToSculpt(
+            source, forgeshape::kConstructionBoxObjectId, &why);
+    }
+    const double freezeMs = std::chrono::duration<double, std::milli>(
+                                std::chrono::steady_clock::now() - start)
+                                .count();
+    if (!froze) {
+        FS_LOGE("FORGESHAPE_STRESS_SCULPT_FREEZE_FAIL:%s:%s", g_lastStressLabel,
+                forgeshape::meshValidationName(why));
+        return;
+    }
+    const forgeshape::MeshRevision revision = publishSculptRepresentation("stress_freeze");
+    FS_LOGI("FORGESHAPE_STRESS_SCULPT_FROZEN:%s freezeMs=%.3f meshRev=%llu", g_lastStressLabel,
+            freezeMs, (unsigned long long)revision);
+    logSculptState("after_stress_freeze");
+}
+#endif  // NDEBUG
+
 // DEBUG-ONLY mesh fixture trigger.
 //
 // Compiled to a no-op in release, so no product surface, no exported component
@@ -975,6 +1043,29 @@ Java_com_forgeshape_app_NativeViewport_debugMeshCommand(JNIEnv*, jclass, jint co
             // Must fail closed and change nothing.
             applyPrimitive("invalid_negative_width",
                            forgeshape::PrimitiveSpec::forBox(-1.0, 1.0, 0.5));
+            return JNI_TRUE;
+        // Gate P1 heavy-mesh density ladder. Publishes a closed, deterministic
+        // stress mesh at approximately the named vertex count (see
+        // buildStressMesh's doc comment for how "approximately" resolves) so
+        // render/upload/picking can be measured at that density; command 22
+        // then freezes whichever tier was published most recently into Sculpt.
+        case 17:
+            publishStressTier("stress_10k", 10000);
+            return JNI_TRUE;
+        case 18:
+            publishStressTier("stress_50k", 50000);
+            return JNI_TRUE;
+        case 19:
+            publishStressTier("stress_100k", 100000);
+            return JNI_TRUE;
+        case 20:
+            publishStressTier("stress_250k", 250000);
+            return JNI_TRUE;
+        case 21:
+            publishStressTier("stress_500k", 500000);
+            return JNI_TRUE;
+        case 22:
+            freezeStressMeshToSculpt();
             return JNI_TRUE;
         default:
             FS_LOGI("FORGESHAPE_MESH_DEBUG_UNKNOWN_COMMAND:%d", (int)command);
