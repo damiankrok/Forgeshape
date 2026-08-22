@@ -196,8 +196,9 @@ void runCameraSelfTestsAndLog() {
 
 void runPickingSelfTestsAndLog() {
 #ifndef NDEBUG
-    forgeshape::PickingSelfTestResult results[160];
-    const int count = forgeshape::runPickingSelfTests(results, 160);
+    constexpr int kMaxPickingChecks = 256;
+    static forgeshape::PickingSelfTestResult results[kMaxPickingChecks];
+    const int count = forgeshape::runPickingSelfTests(results, kMaxPickingChecks);
     int failed = 0;
     for (int i = 0; i < count; ++i) {
         if (!results[i].passed) {
@@ -260,8 +261,9 @@ void runConstructionSelfTestsAndLog() {
 
 void runPrimitiveSelfTestsAndLog() {
 #ifndef NDEBUG
-    forgeshape::PrimitiveSelfTestResult results[128];
-    const int count = forgeshape::runPrimitiveSelfTests(results, 128);
+    constexpr int kMaxPrimitiveChecks = 256;
+    static forgeshape::PrimitiveSelfTestResult results[kMaxPrimitiveChecks];
+    const int count = forgeshape::runPrimitiveSelfTests(results, kMaxPrimitiveChecks);
     int failed = 0;
     for (int i = 0; i < count; ++i) {
         if (!results[i].passed) {
@@ -414,6 +416,8 @@ void describeSpec(const forgeshape::PrimitiveSpec& spec, char* out, size_t size)
     } else if (const forgeshape::CapsuleDimensionsMeters* capsule = spec.capsule()) {
         snprintf(out, size, "capsule dia=%.6fm totalH=%.6fm", capsule->diameter,
                  capsule->totalHeight);
+    } else if (const forgeshape::PlaneDimensionsMeters* plane = spec.plane()) {
+        snprintf(out, size, "plane w=%.6fm d=%.6fm", plane->width, plane->depth);
     } else {
         snprintf(out, size, "unknown");
     }
@@ -990,16 +994,18 @@ Java_com_forgeshape_app_NativeViewport_debugMeshCommand(JNIEnv*, jclass, jint co
 // defaults of its own. Each slot has ONE fixed meaning regardless of the kind,
 // so nothing here is positional-by-kind:
 //
-//   [0] active kind (0 = box, 1 = cylinder, 2 = sphere, 3 = cone, 4 = capsule)
+//   [0] active kind (0 = box, 1 = cylinder, 2 = sphere, 3 = cone, 4 = capsule,
+//                    5 = plane)
 //   [1..3]  box width / height / depth, meters
 //   [4..5]  cylinder diameter / height, meters
 //   [6]     sphere diameter, meters
 //   [7..8]  cone bottom diameter / height, meters
 //   [9..10] capsule diameter / TOTAL height, meters
+//   [11..12] plane width / depth, meters
 JNIEXPORT void JNICALL
 Java_com_forgeshape_app_NativeViewport_constructionPrimitive(JNIEnv* env, jclass,
                                                               jdoubleArray outState) {
-    constexpr jsize kSlots = 11;
+    constexpr jsize kSlots = 13;
     if (outState == nullptr || env->GetArrayLength(outState) < kSlots) {
         return;
     }
@@ -1009,6 +1015,7 @@ Java_com_forgeshape_app_NativeViewport_constructionPrimitive(JNIEnv* env, jclass
     const forgeshape::SphereDimensionsMeters sphere = object.sphere().dimensionsMeters();
     const forgeshape::ConeDimensionsMeters cone = object.cone().dimensionsMeters();
     const forgeshape::CapsuleDimensionsMeters capsule = object.capsule().dimensionsMeters();
+    const forgeshape::PlaneDimensionsMeters plane = object.plane().dimensionsMeters();
     const jdouble values[kSlots] = {
         static_cast<jdouble>(static_cast<int>(object.kind())),
         box.width, box.height, box.depth,
@@ -1016,6 +1023,7 @@ Java_com_forgeshape_app_NativeViewport_constructionPrimitive(JNIEnv* env, jclass
         sphere.diameter,
         cone.bottomDiameter, cone.height,
         capsule.diameter, capsule.totalHeight,
+        plane.width, plane.depth,
     };
     env->SetDoubleArrayRegion(outState, 0, kSlots, values);
 }
@@ -1069,6 +1077,14 @@ Java_com_forgeshape_app_NativeViewport_applyConstructionCapsule(JNIEnv*, jclass,
                                                                  jdouble totalHeightMeters) {
     return applyResultToJni(applyPrimitive(
         "ui", forgeshape::PrimitiveSpec::forCapsule(diameterMeters, totalHeightMeters)));
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_applyConstructionPlane(JNIEnv*, jclass,
+                                                               jdouble widthMeters,
+                                                               jdouble depthMeters) {
+    return applyResultToJni(
+        applyPrimitive("ui", forgeshape::PrimitiveSpec::forPlane(widthMeters, depthMeters)));
 }
 
 // Reads the AUTHORITATIVE Construction transform for display: position in

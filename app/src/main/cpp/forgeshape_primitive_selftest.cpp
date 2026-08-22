@@ -471,6 +471,301 @@ void testCylinderPicking(Recorder& r) {
 }
 
 // ---------------------------------------------------------------------------
+// Plane geometry (Stage 016)
+// ---------------------------------------------------------------------------
+
+// PLN-01: exactly 4 source vertices, 6 indices (2 triangles), independent of
+// the requested dimensions, with no duplicate vertex, no degenerate triangle
+// and every value finite.
+void testPlaneTopology(Recorder& r) {
+    ConstructionPlane plane;
+    plane.setDimensionsMeters(3.0, 0.4);
+    const ConstructionMesh mesh = plane.generateMesh();
+
+    r.check("plane_vertex_count_is_exactly_4",
+            mesh.vertices.size() == 4 && kPlaneVertexCount == 4);
+    r.check("plane_index_count_is_exactly_6",
+            mesh.indices.size() == 6 && kPlaneIndexCount == 6);
+    r.check("plane_triangle_count_is_exactly_2", (mesh.indices.size() / 3) == 2);
+
+    bool finitePositions = true;
+    for (const MeshVertex& v : mesh.vertices) {
+        for (int axis = 0; axis < 3; ++axis) {
+            if (!std::isfinite(v.position[axis])) finitePositions = false;
+        }
+    }
+    r.check("plane_positions_all_finite", finitePositions);
+
+    bool indicesInRange = true;
+    for (uint32_t i : mesh.indices) {
+        if (i >= mesh.vertices.size()) indicesInRange = false;
+    }
+    r.check("plane_indices_in_range", indicesInRange);
+
+    // No duplicate source vertices: all 4 corners are distinct positions.
+    bool noDuplicates = true;
+    for (uint32_t i = 0; i < mesh.vertices.size(); ++i) {
+        for (uint32_t j = i + 1; j < mesh.vertices.size(); ++j) {
+            const MeshVertex& a = mesh.vertices[i];
+            const MeshVertex& b = mesh.vertices[j];
+            if (a.position[0] == b.position[0] && a.position[1] == b.position[1] &&
+                a.position[2] == b.position[2]) {
+                noDuplicates = false;
+            }
+        }
+    }
+    r.check("plane_no_duplicate_source_vertices", noDuplicates);
+
+    // No degenerate triangle: each triangle's area is strictly positive.
+    bool noDegenerate = true;
+    for (uint32_t tri = 0; tri < mesh.indices.size() / 3; ++tri) {
+        const MeshVertex& a = mesh.vertices[mesh.indices[tri * 3 + 0]];
+        const MeshVertex& b = mesh.vertices[mesh.indices[tri * 3 + 1]];
+        const MeshVertex& c = mesh.vertices[mesh.indices[tri * 3 + 2]];
+        const float ux = b.position[0] - a.position[0], uy = b.position[1] - a.position[1],
+                    uz = b.position[2] - a.position[2];
+        const float vx = c.position[0] - a.position[0], vy = c.position[1] - a.position[1],
+                    vz = c.position[2] - a.position[2];
+        const float cx = uy * vz - uz * vy, cy = uz * vx - ux * vz, cz = ux * vy - uy * vx;
+        if ((cx * cx + cy * cy + cz * cz) <= 0.0f) noDegenerate = false;
+    }
+    r.check("plane_no_degenerate_triangle", noDegenerate);
+
+    // Every vertex is referenced, so the two triangles really do share a
+    // diagonal rather than leaving a corner unused.
+    std::vector<uint32_t> uses(mesh.vertices.size(), 0);
+    for (uint32_t i : mesh.indices) {
+        if (i < uses.size()) ++uses[i];
+    }
+    bool allUsed = true;
+    for (uint32_t count : uses) {
+        if (count == 0) allUsed = false;
+    }
+    r.check("plane_uses_every_vertex", allUsed);
+
+    r.check("plane_mesh_passes_runtime_validation",
+            validateMeshData(mesh.vertices.data(), static_cast<uint32_t>(mesh.vertices.size()),
+                             mesh.indices.data(),
+                             static_cast<uint32_t>(mesh.indices.size())) == MeshValidation::Ok);
+
+    // PLN-topology-independent-of-dimensions: a very different width/depth
+    // still produces exactly 4:6.
+    ConstructionPlane other;
+    other.setDimensionsMeters(0.02, 40.0);
+    const ConstructionMesh otherMesh = other.generateMesh();
+    r.check("plane_topology_independent_of_dimensions",
+            otherMesh.vertices.size() == 4 && otherMesh.indices.size() == 6);
+}
+
+// PLN-02/03: exact X/Z bounds, Y always exactly 0, CCW winding and an outward
+// +Y normal seen from the canonical front, across several representative
+// sizes.
+void testPlaneBoundsAndWinding(Recorder& r) {
+    struct Case {
+        const char* boundsName;
+        const char* windingName;
+        const char* normalName;
+        Meters width;
+        Meters depth;
+    };
+    const Case cases[] = {
+        {"plane_bounds_default", "plane_winding_default", "plane_normal_default",
+         kDefaultPlaneWidthMeters, kDefaultPlaneDepthMeters},
+        {"plane_bounds_3x0_4", "plane_winding_3x0_4", "plane_normal_3x0_4", 3.0, 0.4},
+        {"plane_bounds_wide_flat", "plane_winding_wide_flat", "plane_normal_wide_flat", 8.0, 0.1},
+        {"plane_bounds_narrow_tall", "plane_winding_narrow_tall", "plane_normal_narrow_tall", 0.05,
+         6.0},
+    };
+
+    for (const Case& c : cases) {
+        ConstructionPlane plane;
+        plane.setDimensionsMeters(c.width, c.depth);
+        const ConstructionMesh mesh = plane.generateMesh();
+
+        Bounds b{};
+        const bool ok = boundsOf(mesh, &b);
+        const float halfX = static_cast<float>(c.width * 0.5);
+        const float halfZ = static_cast<float>(c.depth * 0.5);
+        r.check(c.boundsName, ok && b.maxAxis[0] == halfX && b.minAxis[0] == -halfX &&
+                                  b.maxAxis[2] == halfZ && b.minAxis[2] == -halfZ &&
+                                  b.maxAxis[1] == 0.0f && b.minAxis[1] == 0.0f);
+
+        // A point strictly below the plane (negative Y) is "outside" it, so
+        // canonical winding here means every triangle's normal points toward
+        // +Y, exactly what the canonical front (+Y) contract requires.
+        r.check(c.windingName,
+                meshObeysCanonicalWinding(viewOf(mesh), Vec3{0.0f, -1.0f, 0.0f}));
+
+        // The geometric normal of both triangles is exactly +Y (not merely
+        // outward-ish): the plane is flat, so there is exactly one direction
+        // to get right.
+        const TriangleMeshView view = viewOf(mesh);
+        bool bothNormalsExactlyPlusY = true;
+        for (uint32_t tri = 0; tri < view.indexCount / 3; ++tri) {
+            const uint32_t i0 = view.indices[tri * 3 + 0];
+            const uint32_t i1 = view.indices[tri * 3 + 1];
+            const uint32_t i2 = view.indices[tri * 3 + 2];
+            const MeshVertex& v0 = mesh.vertices[i0];
+            const MeshVertex& v1 = mesh.vertices[i1];
+            const MeshVertex& v2 = mesh.vertices[i2];
+            const float ux = v1.position[0] - v0.position[0], uz = v1.position[2] - v0.position[2];
+            const float vx = v2.position[0] - v0.position[0], vz = v2.position[2] - v0.position[2];
+            // Cross product's Y component for two vectors lying in the XZ
+            // plane: (u x v).y = uz*vx - ux*vz.
+            const float ny = uz * vx - ux * vz;
+            if (!(ny > 0.0f)) bothNormalsExactlyPlusY = false;
+        }
+        r.check(c.normalName, bothNormalsExactlyPlusY);
+    }
+}
+
+// PLN-04: non-finite, zero and negative width/depth are all rejected, and a
+// rejection leaves kind, parameters, transform and revision exactly as they
+// were (the same fail-closed contract every primitive has).
+void testPlaneRejection(Recorder& r) {
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    const double inf = std::numeric_limits<double>::infinity();
+
+    struct Case {
+        const char* name;
+        PrimitiveSpec spec;
+        DimensionValidation expected;
+    };
+    const Case cases[] = {
+        {"reject_zero_plane_width", PrimitiveSpec::forPlane(0.0, 1.0),
+         DimensionValidation::NotPositive},
+        {"reject_negative_plane_width", PrimitiveSpec::forPlane(-1.0, 1.0),
+         DimensionValidation::NotPositive},
+        {"reject_zero_plane_depth", PrimitiveSpec::forPlane(1.0, 0.0),
+         DimensionValidation::NotPositive},
+        {"reject_negative_plane_depth", PrimitiveSpec::forPlane(1.0, -2.0),
+         DimensionValidation::NotPositive},
+        {"reject_nan_plane_width", PrimitiveSpec::forPlane(nan, 1.0),
+         DimensionValidation::NotFinite},
+        {"reject_inf_plane_depth", PrimitiveSpec::forPlane(1.0, inf),
+         DimensionValidation::NotFinite},
+        {"reject_unrepresentable_plane_width", PrimitiveSpec::forPlane(1e40, 1.0),
+         DimensionValidation::NotRepresentable},
+    };
+
+    for (const Case& c : cases) {
+        ConstructionObject object;
+        MeshStore store(kConstructionBoxObjectId);
+        applyPrimitive(object, store, PrimitiveSpec::forPlane(2.5, 1.5));
+        TransformValues placement;
+        placement.positionY = 0.75;
+        placement.rotationX = 90.0;
+        object.transform().setValues(placement);
+
+        const MeshRevision before = store.currentRevision();
+        const uint64_t publishedBefore = store.publishedCount();
+        const PrimitiveApplyResult rejected = applyPrimitive(object, store, c.spec);
+
+        const bool refused = rejected.status == PrimitiveUpdateStatus::Rejected &&
+                             rejected.validation == c.expected;
+        const bool kindHeld = object.kind() == PrimitiveKind::Plane;
+        const bool parametersHeld =
+            object.plane().widthMeters() == 2.5 && object.plane().depthMeters() == 1.5;
+        const bool revisionHeld = store.currentRevision() == before &&
+                                  store.publishedCount() == publishedBefore && !rejected.published;
+        const TransformValues t = object.transform().values();
+        const bool transformHeld = t.positionY == 0.75 && t.rotationX == 90.0;
+        r.check(c.name, refused && kindHeld && parametersHeld && revisionHeld && transformHeld);
+    }
+}
+
+// PLN-05/06: an unchanged Apply publishes nothing; a changed Apply publishes
+// exactly one revision and preserves ObjectId and transform.
+void testPlaneApplySemantics(Recorder& r) {
+    ConstructionObject object;
+    MeshStore store(kConstructionBoxObjectId);
+    const MeshRevision rev0 = publishConstructionObject(object, store);
+    const ObjectId idBefore = object.objectId();
+
+    TransformValues placement;
+    placement.positionX = 1.5;
+    placement.rotationY = 45.0;
+    object.transform().setValues(placement);
+
+    const uint64_t publishedBefore = store.publishedCount();
+    const PrimitiveApplyResult toPlane =
+        applyPrimitive(object, store, PrimitiveSpec::forPlane(2.0, 1.25));
+    r.check("box_to_plane_publishes_exactly_one_revision",
+            toPlane.published && toPlane.revision == rev0 + 1 &&
+                store.publishedCount() == publishedBefore + 1);
+    r.check("box_to_plane_reports_plane_topology",
+            toPlane.vertexCount == kPlaneVertexCount && toPlane.indexCount == kPlaneIndexCount);
+    r.check("box_to_plane_preserves_object_id", object.objectId() == idBefore);
+    const TransformValues afterToPlane = object.transform().values();
+    r.check("box_to_plane_preserves_transform",
+            afterToPlane.positionX == 1.5 && afterToPlane.rotationY == 45.0);
+
+    // Identical request is a no-op: same status, no revision, no publish.
+    const MeshRevision afterApply = store.currentRevision();
+    const uint64_t publishedAfterApply = store.publishedCount();
+    const PrimitiveApplyResult repeat =
+        applyPrimitive(object, store, PrimitiveSpec::forPlane(2.0, 1.25));
+    r.check("identical_plane_is_unchanged", repeat.status == PrimitiveUpdateStatus::Unchanged);
+    r.check("identical_plane_publishes_nothing",
+            !repeat.published && store.currentRevision() == afterApply &&
+                store.publishedCount() == publishedAfterApply);
+
+    // A genuine parameter change publishes exactly one more revision and keeps
+    // the fixed 4:6 topology, ObjectId and transform.
+    const PrimitiveApplyResult resized =
+        applyPrimitive(object, store, PrimitiveSpec::forPlane(5.0, 0.3));
+    r.check("plane_parameter_change_publishes_one_revision",
+            resized.status == PrimitiveUpdateStatus::Applied && resized.published &&
+                resized.revision == afterApply + 1);
+    r.check("plane_parameter_change_keeps_topology",
+            resized.vertexCount == kPlaneVertexCount && resized.indexCount == kPlaneIndexCount);
+    r.check("plane_parameter_change_preserves_object_id", object.objectId() == idBefore);
+    const TransformValues afterResize = object.transform().values();
+    r.check("plane_parameter_change_preserves_transform",
+            afterResize.positionX == 1.5 && afterResize.rotationY == 45.0);
+}
+
+// PLN-07: all six primitive payloads survive a full round trip of kind
+// switches, each remembering its own last-applied values independently.
+void testAllSixPrimitivesRoundTrip(Recorder& r) {
+    ConstructionObject object;
+    MeshStore store(kConstructionBoxObjectId);
+    const ObjectId idBefore = object.objectId();
+
+    applyPrimitive(object, store, PrimitiveSpec::forBox(1.1, 2.2, 3.3));
+    applyPrimitive(object, store, PrimitiveSpec::forCylinder(1.5, 2.5));
+    applyPrimitive(object, store, PrimitiveSpec::forSphere(0.9));
+    applyPrimitive(object, store, PrimitiveSpec::forCone(1.2, 1.8));
+    applyPrimitive(object, store, PrimitiveSpec::forCapsule(0.6, 2.4));
+    applyPrimitive(object, store, PrimitiveSpec::forPlane(2.0, 1.25));
+
+    r.check("round_trip_kind_ends_on_plane", object.kind() == PrimitiveKind::Plane);
+    r.check("round_trip_object_id_stable", object.objectId() == idBefore);
+    r.check("round_trip_remembers_box",
+            object.box().widthMeters() == 1.1 && object.box().heightMeters() == 2.2 &&
+                object.box().depthMeters() == 3.3);
+    r.check("round_trip_remembers_cylinder",
+            object.cylinder().diameterMeters() == 1.5 && object.cylinder().heightMeters() == 2.5);
+    r.check("round_trip_remembers_sphere", object.sphere().diameterMeters() == 0.9);
+    r.check("round_trip_remembers_cone",
+            object.cone().bottomDiameterMeters() == 1.2 && object.cone().heightMeters() == 1.8);
+    r.check("round_trip_remembers_capsule",
+            object.capsule().diameterMeters() == 0.6 && object.capsule().totalHeightMeters() == 2.4);
+    r.check("round_trip_remembers_plane",
+            object.plane().widthMeters() == 2.0 && object.plane().depthMeters() == 1.25);
+
+    // Switching all the way back to Box brings its remembered values back
+    // rather than resetting them.
+    const PrimitiveApplyResult backToBox =
+        applyPrimitive(object, store, PrimitiveSpec::forBox(1.1, 2.2, 3.3));
+    r.check("round_trip_back_to_box_is_applied",
+            backToBox.status == PrimitiveUpdateStatus::Applied);
+    r.check("round_trip_back_to_box_object_id_stable", object.objectId() == idBefore);
+    r.check("round_trip_plane_still_remembered_while_box_active",
+            object.plane().widthMeters() == 2.0 && object.plane().depthMeters() == 1.25);
+}
+
+// ---------------------------------------------------------------------------
 // Box regression through the new owner
 // ---------------------------------------------------------------------------
 
@@ -514,6 +809,11 @@ int runPrimitiveSelfTests(PrimitiveSelfTestResult* out, int max) {
     testCylinderTopology(r);
     testCylinderBoundsAndWinding(r);
     testCylinderPicking(r);
+    testPlaneTopology(r);
+    testPlaneBoundsAndWinding(r);
+    testPlaneRejection(r);
+    testPlaneApplySemantics(r);
+    testAllSixPrimitivesRoundTrip(r);
     testBoxStillWorksThroughTheObject(r);
     return r.n;
 }

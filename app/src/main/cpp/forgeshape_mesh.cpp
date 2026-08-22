@@ -57,11 +57,13 @@ MeshValidation validateMeshData(const MeshVertex* vertices, uint32_t vertexCount
 }
 
 RuntimeMesh::RuntimeMesh(ObjectId objectId, MeshRevision revision, const MeshVertex* vertices,
-                         uint32_t vertexCount, const uint32_t* indices, uint32_t indexCount)
+                         uint32_t vertexCount, const uint32_t* indices, uint32_t indexCount,
+                         bool renderBothSides)
     : objectId_(objectId),
       revision_(revision),
       vertices_(vertices, vertices + vertexCount),
-      indices_(indices, indices + indexCount) {}
+      indices_(indices, indices + indexCount),
+      renderBothSides_(renderBothSides) {}
 
 TriangleMeshView RuntimeMesh::triangleView() const {
     TriangleMeshView view{};
@@ -76,7 +78,7 @@ TriangleMeshView RuntimeMesh::triangleView() const {
 RuntimeMeshPtr createRuntimeMesh(ObjectId objectId, MeshRevision revision,
                                  const MeshVertex* vertices, uint32_t vertexCount,
                                  const uint32_t* indices, uint32_t indexCount,
-                                 MeshValidation* outWhy) {
+                                 MeshValidation* outWhy, bool renderBothSides) {
     const MeshValidation why = validateMeshData(vertices, vertexCount, indices, indexCount);
     if (outWhy != nullptr) {
         *outWhy = why;
@@ -87,8 +89,8 @@ RuntimeMeshPtr createRuntimeMesh(ObjectId objectId, MeshRevision revision,
     if (revision == kNoMeshRevision) {
         return nullptr;  // revision 0 is reserved for "nothing published"
     }
-    return RuntimeMeshPtr(
-        new RuntimeMesh(objectId, revision, vertices, vertexCount, indices, indexCount));
+    return RuntimeMeshPtr(new RuntimeMesh(objectId, revision, vertices, vertexCount, indices,
+                                          indexCount, renderBothSides));
 }
 
 // ---------------------------------------------------------------------------
@@ -97,7 +99,7 @@ RuntimeMeshPtr createRuntimeMesh(ObjectId objectId, MeshRevision revision,
 
 MeshRevision MeshStore::publish(const MeshVertex* vertices, uint32_t vertexCount,
                                 const uint32_t* indices, uint32_t indexCount,
-                                MeshValidation* outWhy) {
+                                MeshValidation* outWhy, bool renderBothSides) {
     // Validate before the lock: rejecting bad data must never disturb readers.
     const MeshValidation why = validateMeshData(vertices, vertexCount, indices, indexCount);
     if (outWhy != nullptr) {
@@ -111,8 +113,8 @@ MeshRevision MeshStore::publish(const MeshVertex* vertices, uint32_t vertexCount
 
     std::lock_guard<std::mutex> lock(mutex_);
     const MeshRevision revision = nextRevision_++;
-    RuntimeMeshPtr mesh =
-        createRuntimeMesh(objectId_, revision, vertices, vertexCount, indices, indexCount);
+    RuntimeMeshPtr mesh = createRuntimeMesh(objectId_, revision, vertices, vertexCount, indices,
+                                            indexCount, nullptr, renderBothSides);
     if (!mesh) {
         ++rejected_;
         return kNoMeshRevision;

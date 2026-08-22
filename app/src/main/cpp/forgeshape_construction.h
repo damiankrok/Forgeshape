@@ -13,6 +13,7 @@
 //         |  ConstructionSphere    <-- exact diameter parameter
 //         |  ConstructionCone      <-- exact bottom-diameter/height parameters
 //         |  ConstructionCapsule   <-- exact diameter/total-height parameters
+//         |  ConstructionPlane     <-- exact width/depth parameters
 //         |  ConstructionTransform <-- exact placement (see forgeshape_transform.h)
 //         |
 //         -> generateMesh()   (LOCAL-space, derived float RuntimeMesh data)
@@ -29,9 +30,9 @@
 // named accordingly at every boundary. RuntimeMesh positions are DERIVED `float`
 // data. There is no mm/cm/m presentation or input conversion in this module.
 //
-// Scope: exactly ONE active object which is a box, a cylinder, a sphere, a cone
-// or a capsule. There is no registry, no scene graph, no hierarchy, no second
-// object and no create or delete operation.
+// Scope: exactly ONE active object which is a box, a cylinder, a sphere, a cone,
+// a capsule or a plane. There is no registry, no scene graph, no hierarchy, no
+// second object and no create or delete operation.
 #pragma once
 
 #include <cstdint>
@@ -72,9 +73,19 @@ constexpr Meters kDefaultConeHeightMeters = 1.0;
 constexpr Meters kDefaultCapsuleDiameterMeters = 1.0;
 constexpr Meters kDefaultCapsuleTotalHeightMeters = 2.0;
 
+// The default plane: square, so neither of its two extents can be mistaken for
+// the other by eye.
+constexpr Meters kDefaultPlaneWidthMeters = 1.0;
+constexpr Meters kDefaultPlaneDepthMeters = 1.0;
+
 // A box is 8 logical corners and 12 triangles, always.
 constexpr uint32_t kBoxVertexCount = 8;
 constexpr uint32_t kBoxIndexCount = 36;
+
+// A plane is 4 logical corners and 2 triangles, always — one rectangle, no
+// tessellation, because there is nothing to divide.
+constexpr uint32_t kPlaneVertexCount = 4;
+constexpr uint32_t kPlaneIndexCount = 6;
 
 // ---------------------------------------------------------------------------
 // Shared primitive tessellation
@@ -169,6 +180,7 @@ enum class PrimitiveKind {
     Sphere,
     Cone,
     Capsule,
+    Plane,
 };
 
 const char* primitiveKindName(PrimitiveKind kind);
@@ -266,10 +278,24 @@ struct CapsuleDimensionsMeters {
     Meters totalHeight = kDefaultCapsuleTotalHeightMeters;
 };
 
+// The two authoritative plane parameters, in meters: local X extent and local Z
+// extent of a flat, finite, zero-thickness rectangular sheet. Independent of
+// each other — a plane has no relation to validate beyond the ordinary
+// per-length rule every primitive has.
+struct PlaneDimensionsMeters {
+    Meters width = kDefaultPlaneWidthMeters;
+    Meters depth = kDefaultPlaneDepthMeters;
+};
+
 // Generated geometry, ready to hand to MeshStore. Derived data, not truth.
 struct ConstructionMesh {
     std::vector<MeshVertex> vertices;
     std::vector<uint32_t> indices;
+    // True only for a flat, open, single-sided sheet with no "inside" — today,
+    // exactly the Construction Plane. See createRuntimeMesh's doc comment in
+    // forgeshape_mesh.h for what this authorizes downstream and why it is a
+    // geometric fact about the mesh rather than a display setting.
+    bool renderBothSides = false;
 };
 
 // The exact-dimension Construction box.
@@ -508,6 +534,49 @@ private:
     uint64_t rejectedUpdates_ = 0;
 };
 
+// The exact-dimension Construction plane: a flat, finite, ZERO-THICKNESS
+// rectangular sheet — not a solid, not a sketch plane and not an infinite grid.
+//
+// Contract: centred on the LOCAL origin, lying in the local XZ plane at
+// y = 0, with its canonical FRONT along local +Y. Extents are exactly
+// +/- width/2 in X and +/- depth/2 in Z; Y is always exactly 0. There is no
+// tessellation parameter because there is nothing to divide: the source
+// topology is always exactly 4 vertices and 2 triangles.
+class ConstructionPlane {
+public:
+    explicit ConstructionPlane(ObjectId objectId = kConstructionBoxObjectId)
+        : objectId_(objectId) {}
+
+    ObjectId objectId() const { return objectId_; }
+
+    Meters widthMeters() const { return dimensions_.width; }
+    Meters depthMeters() const { return dimensions_.depth; }
+    PlaneDimensionsMeters dimensionsMeters() const { return dimensions_; }
+
+    uint64_t updateCount() const { return updateCount_; }
+    uint64_t rejectedUpdateCount() const { return rejectedUpdates_; }
+
+    // Same fail-closed contract as every other primitive: both values are
+    // validated before either is written.
+    //
+    // `outWhy` receives the reason for the FIRST invalid dimension found, in
+    // width then depth order, and Ok otherwise.
+    PrimitiveUpdateStatus setDimensionsMeters(Meters width, Meters depth,
+                                              DimensionValidation* outWhy = nullptr);
+
+    // Deterministic generation: exactly 4 corners at +/- width/2, +/- depth/2
+    // around the LOCAL origin at y = 0, and 6 indices (2 triangles) in the
+    // canonical ForgeShape winding, counter-clockwise seen from the canonical
+    // front (+Y). Colour is derived PRESENTATION data, not Construction truth.
+    ConstructionMesh generateMesh() const;
+
+private:
+    const ObjectId objectId_;
+    PlaneDimensionsMeters dimensions_{};
+    uint64_t updateCount_ = 0;
+    uint64_t rejectedUpdates_ = 0;
+};
+
 // A complete, self-describing primitive request: a payload that IS one
 // primitive's parameters, and nothing else.
 //
@@ -525,7 +594,7 @@ public:
     // Alternative order MUST match PrimitiveKind's enumerator order.
     using Payload = std::variant<BoxDimensionsMeters, CylinderDimensionsMeters,
                                  SphereDimensionsMeters, ConeDimensionsMeters,
-                                 CapsuleDimensionsMeters>;
+                                 CapsuleDimensionsMeters, PlaneDimensionsMeters>;
 
     // Defaults to the default box, which is what the object starts as.
     PrimitiveSpec() = default;
@@ -535,12 +604,14 @@ public:
     static PrimitiveSpec forSphere(Meters diameter);
     static PrimitiveSpec forCone(Meters bottomDiameter, Meters height);
     static PrimitiveSpec forCapsule(Meters diameter, Meters totalHeight);
+    static PrimitiveSpec forPlane(Meters width, Meters depth);
 
     static PrimitiveSpec of(const BoxDimensionsMeters& box);
     static PrimitiveSpec of(const CylinderDimensionsMeters& cylinder);
     static PrimitiveSpec of(const SphereDimensionsMeters& sphere);
     static PrimitiveSpec of(const ConeDimensionsMeters& cone);
     static PrimitiveSpec of(const CapsuleDimensionsMeters& capsule);
+    static PrimitiveSpec of(const PlaneDimensionsMeters& plane);
 
     // Derived from the payload, never stored separately.
     PrimitiveKind kind() const { return static_cast<PrimitiveKind>(payload_.index()); }
@@ -557,6 +628,9 @@ public:
     const ConeDimensionsMeters* cone() const { return std::get_if<ConeDimensionsMeters>(&payload_); }
     const CapsuleDimensionsMeters* capsule() const {
         return std::get_if<CapsuleDimensionsMeters>(&payload_);
+    }
+    const PlaneDimensionsMeters* plane() const {
+        return std::get_if<PlaneDimensionsMeters>(&payload_);
     }
 
     // For std::visit, so a caller can handle all three exhaustively.
@@ -583,7 +657,8 @@ public:
           cylinder_(objectId),
           sphere_(objectId),
           cone_(objectId),
-          capsule_(objectId) {}
+          capsule_(objectId),
+          plane_(objectId) {}
 
     // Stable across dimension edits, transform edits, mesh revisions, GPU
     // reallocation AND primitive changes. Changing a box into a cylinder does
@@ -597,6 +672,7 @@ public:
     const ConstructionSphere& sphere() const { return sphere_; }
     const ConstructionCone& cone() const { return cone_; }
     const ConstructionCapsule& capsule() const { return capsule_; }
+    const ConstructionPlane& plane() const { return plane_; }
 
     // Placement is a separate truth and is NOT touched by a primitive change.
     ConstructionTransform& transform() { return transform_; }
@@ -631,6 +707,26 @@ public:
     ConstructionMesh generateMesh() const;
 
 private:
+    // Typed dispatch for setPrimitive's update half, one overload per
+    // primitive kind, resolved by std::visit over the requested payload rather
+    // than an if-else chain over typed accessors. A new PrimitiveSpec
+    // alternative with no matching overload here fails to COMPILE — the
+    // property an if-else chain cannot offer, and the reason this pair of
+    // overload sets is the whole of the per-kind dispatch this class does.
+    bool parametersDiffer(const BoxDimensionsMeters& box) const;
+    bool parametersDiffer(const CylinderDimensionsMeters& cylinder) const;
+    bool parametersDiffer(const SphereDimensionsMeters& sphere) const;
+    bool parametersDiffer(const ConeDimensionsMeters& cone) const;
+    bool parametersDiffer(const CapsuleDimensionsMeters& capsule) const;
+    bool parametersDiffer(const PlaneDimensionsMeters& plane) const;
+
+    void writeParameters(const BoxDimensionsMeters& box);
+    void writeParameters(const CylinderDimensionsMeters& cylinder);
+    void writeParameters(const SphereDimensionsMeters& sphere);
+    void writeParameters(const ConeDimensionsMeters& cone);
+    void writeParameters(const CapsuleDimensionsMeters& capsule);
+    void writeParameters(const PlaneDimensionsMeters& plane);
+
     const ObjectId objectId_;
     PrimitiveKind kind_ = PrimitiveKind::Box;
     ConstructionBox box_;
@@ -638,6 +734,7 @@ private:
     ConstructionSphere sphere_;
     ConstructionCone cone_;
     ConstructionCapsule capsule_;
+    ConstructionPlane plane_;
     ConstructionTransform transform_;
     uint64_t updateCount_ = 0;
     uint64_t rejectedUpdates_ = 0;
@@ -717,5 +814,6 @@ PrimitiveApplyResult applyConstructionCylinder(Meters diameter, Meters height);
 PrimitiveApplyResult applyConstructionSphere(Meters diameter);
 PrimitiveApplyResult applyConstructionCone(Meters bottomDiameter, Meters height);
 PrimitiveApplyResult applyConstructionCapsule(Meters diameter, Meters totalHeight);
+PrimitiveApplyResult applyConstructionPlane(Meters width, Meters depth);
 
 }  // namespace forgeshape

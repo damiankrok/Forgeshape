@@ -231,6 +231,37 @@ bool buildSmooth(const MeshVertex* vertices, uint32_t vertexCount, const uint32_
     return true;
 }
 
+// The bounded two-sided render-only exception (see buildRenderMesh's doc
+// comment): duplicates the whole one-sided result, negating every normal and
+// reversing every triangle's winding on the copy, so the existing global
+// back-face-culling pipeline draws the duplicate from the far side while still
+// culling it from the near side. Operates purely on already-built RENDER data;
+// touches no source vertex, no source index and no picking topology.
+void appendMirroredBackFace(RenderMeshData* out) {
+    const uint32_t baseVertexCount = static_cast<uint32_t>(out->vertices.size());
+    const uint32_t baseIndexCount = static_cast<uint32_t>(out->indices.size());
+
+    out->vertices.reserve(baseVertexCount * 2);
+    for (uint32_t i = 0; i < baseVertexCount; ++i) {
+        RenderVertex mirrored = out->vertices[i];
+        mirrored.normal[0] = -mirrored.normal[0];
+        mirrored.normal[1] = -mirrored.normal[1];
+        mirrored.normal[2] = -mirrored.normal[2];
+        out->vertices.push_back(mirrored);
+    }
+
+    out->indices.reserve(baseIndexCount * 2);
+    for (uint32_t t = 0; t < baseIndexCount / 3; ++t) {
+        const uint32_t i0 = out->indices[t * 3 + 0];
+        const uint32_t i1 = out->indices[t * 3 + 1];
+        const uint32_t i2 = out->indices[t * 3 + 2];
+        // Reversed winding, on the mirrored (normal-negated) vertex set.
+        out->indices.push_back(baseVertexCount + i0);
+        out->indices.push_back(baseVertexCount + i2);
+        out->indices.push_back(baseVertexCount + i1);
+    }
+}
+
 }  // namespace
 
 const char* surfaceShadingName(SurfaceShading shading) {
@@ -273,7 +304,8 @@ bool renderMeshIsFinite(const RenderMeshData& data) {
 }
 
 bool buildRenderMesh(const MeshVertex* vertices, uint32_t vertexCount, const uint32_t* indices,
-                     uint32_t indexCount, SurfaceShading shading, RenderMeshData* out) {
+                     uint32_t indexCount, SurfaceShading shading, RenderMeshData* out,
+                     bool renderBothSides) {
     if (out == nullptr) {
         return false;
     }
@@ -283,9 +315,12 @@ bool buildRenderMesh(const MeshVertex* vertices, uint32_t vertexCount, const uin
         return false;
     }
     // Faceted is the worst case at three render vertices per triangle, which is
-    // exactly indexCount. Checking that bound covers both modes, because smooth
-    // grouping can never emit more vertices than there are corners.
-    if (indexCount > kMaxMeshVertices) {
+    // exactly indexCount, doubled again when the two-sided exception applies.
+    // Checking that bound covers both modes, because smooth grouping can never
+    // emit more vertices than there are corners.
+    const uint64_t worstCaseVertices =
+        static_cast<uint64_t>(indexCount) * (renderBothSides ? 2u : 1u);
+    if (worstCaseVertices > kMaxMeshVertices) {
         return false;
     }
 
@@ -295,6 +330,10 @@ bool buildRenderMesh(const MeshVertex* vertices, uint32_t vertexCount, const uin
                         : buildSmooth(vertices, vertexCount, indices, indexCount, &built);
     if (!ok) {
         return false;
+    }
+
+    if (renderBothSides) {
+        appendMirroredBackFace(&built);
     }
 
     built.sourceVertexCount = vertexCount;
@@ -317,7 +356,11 @@ bool RenderMeshCache::refresh(const RuntimeMesh& source, SurfaceShading shading,
 
     // THE rebuild gate. Everything that is not a new revision or a different
     // surface shading stops here, which is what keeps normal generation off the
-    // per-frame path.
+    // per-frame path. renderBothSides is a fixed fact of the source mesh's own
+    // topology (see RuntimeMesh::renderBothSides()), not a separate axis of
+    // change: it cannot flip without the revision changing too, because the
+    // only way to get a different renderBothSides value is to publish a
+    // different mesh.
     if (valid_ && sourceRevision_ == source.revision() && sourceObjectId_ == source.objectId() &&
         shading_ == shading) {
         ++skippedRefreshCount_;
@@ -327,7 +370,7 @@ bool RenderMeshCache::refresh(const RuntimeMesh& source, SurfaceShading shading,
     const double startMillis = nowMillis();
     RenderMeshData built;
     if (!buildRenderMesh(source.vertices(), source.vertexCount(), source.indices(),
-                         source.indexCount(), shading, &built)) {
+                         source.indexCount(), shading, &built, source.renderBothSides())) {
         // Keep whatever was already cached: one unbuildable revision must not
         // blank the viewport.
         ++failedRebuildCount_;

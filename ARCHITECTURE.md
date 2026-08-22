@@ -46,7 +46,7 @@ forgeshape_jni.cpp            render thread, ANativeWindow ownership,
         |                                                  |
         |    ConstructionObject                 SculptSession
         |      ObjectId, PrimitiveKind,           ProductMode, SculptTool,
-        |      the five Construction*             SculptStroke (one kernel)
+        |      the six Construction*              SculptStroke (one kernel)
         |      primitives,                          |
         |      ConstructionTransform                |
         |        |                                  |
@@ -310,7 +310,7 @@ drag.
 
 ## JNI boundary
 
-Five lifecycle methods, one input method, eight Construction methods and eight
+Five lifecycle methods, one input method, nine Construction methods and eight
 sculpt methods on `NativeViewport`:
 
 ```
@@ -329,6 +329,7 @@ applyConstructionCylinder(double diameterMeters, double heightMeters)
 applyConstructionSphere(double diameterMeters)
 applyConstructionCone(double bottomDiameterMeters, double heightMeters)
 applyConstructionCapsule(double diameterMeters, double totalHeightMeters)
+applyConstructionPlane(double widthMeters, double depthMeters)
 
 boxTransform(double[] outPositionRotation)                 // read placement
 applyBoxTransform(double px, double py, double pz,         // submit placement
@@ -376,7 +377,7 @@ boundary in either direction — a stroke is driven entirely by the existing
 method for the arbitration: whether a Down becomes a stroke is decided below the
 boundary, where the mesh actually is.
 
-Below the boundary all five shape methods build the matching typed
+Below the boundary all six shape methods build the matching typed
 `PrimitiveSpec` and go straight into `applyConstructionPrimitive`, so the
 per-kind split is a boundary shape only: the update-then-publish rule still has
 exactly one implementation. The JNI layer adds logging and the status code and
@@ -524,6 +525,18 @@ normal transform stay outward (`NOR-02`..`NOR-09`), and assert that a ray fired
 from inside a closed solid misses under front-face-only picking; that is what
 keeps the data, the rasterizer and the picker from drifting apart.
 
+**The Plane is a bounded, explicitly named exception to both halves of this
+rule**, never a change to the rule itself. It is the one primitive with no
+"inside": a flat, open, single-sided sheet has no far wall a two-sided render
+or pick could wrongly reach, unlike every other, closed primitive above. The
+exception is carried by one fact — `RuntimeMesh::renderBothSides()`, true only
+for a Plane's published mesh — read independently by the render layer (which
+duplicates its one-sided result, see *Derived render geometry and shading*)
+and by `pickScene` (which passes `frontFacesOnly = false` only when the active
+`PrimitiveKind` is `Plane`, see *Picking and selection*). The pipeline itself
+is untouched: still one global `VK_CULL_MODE_BACK_BIT` /
+`VK_FRONT_FACE_COUNTER_CLOCKWISE`, for every primitive including the Plane.
+
 **Naming this `VK_FRONT_FACE_CLOCKWISE` double-counts the Y flip** and inverts
 culling. It does not blank the viewport — a closed solid still fills exactly the
 same silhouette — it draws the solid's far walls instead of its near ones, so
@@ -543,11 +556,11 @@ Android, Vulkan, renderer or UI type, and it holds no GPU resource.
 object what it is:
 
 - a stable `ObjectId`;
-- a `PrimitiveKind` — `Box`, `Cylinder`, `Sphere`, `Cone` or `Capsule` — saying
-  which primitive is **active**;
+- a `PrimitiveKind` — `Box`, `Cylinder`, `Sphere`, `Cone`, `Capsule` or
+  `Plane` — saying which primitive is **active**;
 - a `ConstructionBox`, a `ConstructionCylinder`, a `ConstructionSphere`, a
-  `ConstructionCone` and a `ConstructionCapsule`, each holding its own exact
-  parameters;
+  `ConstructionCone`, a `ConstructionCapsule` and a `ConstructionPlane`, each
+  holding its own exact parameters;
 - a `ConstructionTransform` holding its placement.
 
 There is exactly one of these. It is emphatically **not** a registry: no
@@ -568,13 +581,13 @@ inventing defaults of its own.
 
 A primitive *request* is a `PrimitiveSpec`, and its payload is a
 `std::variant<BoxDimensionsMeters, CylinderDimensionsMeters,
-SphereDimensionsMeters, ConeDimensionsMeters, CapsuleDimensionsMeters>` — a real
-tagged union, not a struct carrying all five groups at once. A spec built for a
-cylinder physically does not contain box or sphere values, so there is no
-"inactive parameter group" riding along beside the active one and nothing for a
-caller to read by mistake.
+SphereDimensionsMeters, ConeDimensionsMeters, CapsuleDimensionsMeters,
+PlaneDimensionsMeters>` — a real tagged union, not a struct carrying all six
+groups at once. A spec built for a cylinder physically does not contain box or
+sphere values, so there is no "inactive parameter group" riding along beside
+the active one and nothing for a caller to read by mistake.
 
-This matters more with five primitives than it did with three: a cone's
+This matters more with six primitives than it did with three: a cone's
 `(diameter, height)` and a capsule's `(diameter, totalHeight)` are the same two
 numbers in the same order and mean different things, and the payload is what
 makes reading one as the other impossible rather than merely discouraged.
@@ -582,14 +595,26 @@ makes reading one as the other impossible rather than merely discouraged.
 `kind()` is **derived** from the payload's alternative index rather than stored
 next to it, so the tag and the data cannot disagree; a `static_assert` pins the
 variant's alternative order to `PrimitiveKind`'s enumerator order. Access is
-typed — `box()`, `cylinder()`, `sphere()`, `cone()` and `capsule()` each return a
-pointer that is null unless the spec really is that primitive — and specs are
-built only through the matching `forBox` … `forCapsule`, so a request always says
-what it is by construction and reading the wrong one is a null check away rather
-than silent nonsense. `ConstructionObject::spec()` therefore returns only the
-**active** primitive's parameters; the remembered parameters of the inactive ones
-are reachable only by asking for that primitive by name, which is exactly what
-the panel's draft display does and nothing else needs.
+typed — `box()`, `cylinder()`, `sphere()`, `cone()`, `capsule()` and `plane()`
+each return a pointer that is null unless the spec really is that primitive —
+and specs are built only through the matching `forBox` … `forPlane`, so a
+request always says what it is by construction and reading the wrong one is a
+null check away rather than silent nonsense. `ConstructionObject::spec()`
+therefore returns only the **active** primitive's parameters; the remembered
+parameters of the inactive ones are reachable only by asking for that
+primitive by name, which is exactly what the panel's draft display does and
+nothing else needs.
+
+**Update dispatch is typed, not stringly or if-else.** Requesting a kind
+change means writing new parameters into one of the six members above and
+comparing them against what that member already holds, and both the
+"changed?" check and the write are done by `std::visit`ing the payload against
+a private per-kind overload set (`parametersDiffer` / `writeParameters`,
+declared once per kind on `ConstructionObject`) rather than an if-else chain
+over the typed accessors. A `PrimitiveSpec` alternative with no matching
+overload fails to **compile** — the same guarantee `validateParameters`
+already had — so this is the one place in the primitive surface where a
+seventh kind added to the variant without its matching overloads cannot ship.
 
 ### Source-of-truth hierarchy
 
@@ -646,6 +671,11 @@ count, `S`.
 | Sphere | diameter | centred | `N` meridians × `S` stacks | `(S-1)N+2` = 482 : `2N(S-1)`·3 = 2880 |
 | Cone | bottom diameter, height | axis local +Y, base at `-h/2`, apex at `+h/2` | `N` radial segments | `N+2` = 34 : `6N` = 192 |
 | Capsule | diameter, **total** height | axis local +Y, centred | `N` meridians × `R` rings | `RN+2` = 514 : `6NR` = 3072 |
+| Plane | width (local X), depth (local Z) | lies in the local XZ plane, `y = 0`, front `+Y`, centred | none — a fixed 4-vertex, 2-triangle rectangle | 4 : 6 |
+
+Every row above but the last is a **closed solid**; the Plane is the one
+open, single-sided sheet, and it is called out on its own after the shared
+invariants below rather than folded into them.
 
 Invariants every generator shares:
 
@@ -712,6 +742,18 @@ constant — the two sides of one exact `double` comparison with nothing in
 between — which also makes the capsule the one primitive whose edit can change a
 vertex count and so trigger a buffer growth.
 
+**The Plane has no tessellation constant and no relation to validate.** Its
+source topology is always exactly 4 vertices and 2 triangles — `kPlaneIndices
+= {0, 3, 2, 2, 1, 0}` over corners `(-w/2,0,-d/2)`, `(w/2,0,-d/2)`,
+`(w/2,0,d/2)`, `(-w/2,0,d/2)` — CCW seen from `+Y`, so both triangles' geometric
+normals are exactly `(0, 1, 0)`, not merely outward-ish. Width and depth are
+validated independently by the same `validateDimensionMeters` every other
+primitive's per-length fields use; there is no capsule-style cross-field rule
+because the two extents do not constrain each other. Being the one open,
+single-sided primitive, it is also the one whose `ConstructionMesh` sets
+`renderBothSides = true` — see *Derived render geometry and shading* and
+*Picking and selection* below for what that authorizes downstream.
+
 ### The capsule relation, and float resolvability
 
 The capsule is the only primitive whose two parameters are **related** rather
@@ -771,7 +813,7 @@ resulting revision and whether anything was actually published.
 never branches on a kind field that could disagree with the numbers beside it: it
 validates and compares whichever parameters the request actually contains.
 
-Callers therefore decide nothing. The product UI path (for all five primitives)
+Callers therefore decide nothing. The product UI path (for all six primitives)
 and the DEBUG driver all go through it, so there is exactly one implementation of
 the rule in the process. `publishConstructionObject` remains separately callable
 for the startup publish, which changes no parameter.
@@ -808,7 +850,7 @@ object changes one derived 4×4 matrix and nothing else — no vertex is rewritt
 no `MeshRevision` is published and no GPU upload happens. `ConstructionTransform`
 could not publish one if it wanted to; it has no access to `MeshStore`. The
 independence runs both ways: a shape change republishes the mesh and leaves the
-placement exactly as it was, including across any switch among the five kinds.
+placement exactly as it was, including across any switch among the six kinds.
 
 ### Unit contract
 
@@ -1229,9 +1271,34 @@ normal, so a corner on a crease becomes several **render** vertices. Therefore:
 
 Measured, at the default dimensions: box `8:36 -> 24:36`, cylinder
 `66:384 -> 130:384`, sphere `482:2880 -> 482:2880`, cone `34:192 -> 66:192`,
-capsule `514:3072 -> 514:3072`. A fully smooth closed surface has no crease to
-split on, so its render mesh *is* its source topology — which is the cheapest
-available proof that the grouping does not fragment a smooth surface.
+capsule `514:3072 -> 514:3072`, plane `4:6 -> 8:12`. A fully smooth closed
+surface has no crease to split on, so its render mesh *is* its source
+topology — which is the cheapest available proof that the grouping does not
+fragment a smooth surface. The Plane's doubled render count is the **other**
+reason a render count can exceed a source one: not a crease split, but the
+bounded two-sided exception below.
+
+### The two-sided render exception
+
+`buildRenderMesh` takes an optional `renderBothSides` argument
+(`RenderMeshCache::refresh` reads it straight off `RuntimeMesh::
+renderBothSides()`, so the renderer itself never branches on `PrimitiveKind`).
+When true — today, only for a Plane — the ordinary one-sided Smooth or Faceted
+result is duplicated once more by `appendMirroredBackFace`: every render
+vertex is repeated with its normal negated, every triangle is repeated with
+reversed winding, on the duplicated vertex set. Nothing about the source
+`RuntimeMesh` changes and nothing is re-validated against a different rule;
+this runs entirely on already-built render data.
+
+The reason this needs no pipeline, culling or material change is the winding
+reversal itself: from the front, the duplicate is now the **back**-facing
+triangle at that location and the existing `VK_CULL_MODE_BACK_BIT` culls it,
+leaving only the original; from the far side, the original is back-facing and
+culled, leaving only the duplicate, whose negated normal is correct for a
+viewer looking from that side. One global pipeline keeps drawing exactly one
+of the two triangles at any position, for every primitive, Plane included —
+the exception is entirely in what data reaches that pipeline, not in the
+pipeline itself.
 
 ### The crease policy
 
@@ -1388,6 +1455,20 @@ the geometry. Because that snapshot is whichever representation is active,
 generated from the current parameters or sculpted, picking automatically follows
 an edit with no separate collision representation to keep in sync. Picking is a
 linear scan; there is no spatial acceleration.
+
+**The two-sided picking exception is one boolean, computed once, at the one
+process-scoped call site.** `pickScene(camera, x, y, w, h)` passes
+`!(constructionObject().kind() == PrimitiveKind::Plane)` as the
+`frontFacesOnly` argument to the explicit-transform overload
+`pickScene(camera, x, y, w, h, model, inverseModel, frontFacesOnly)`, which
+forwards it straight to `pickTriangleMesh`. `frontFacesOnly` defaults to
+`true` on that overload, so every existing caller — including the self-tests,
+which use the explicit overload precisely to avoid depending on
+process-scoped state — is unaffected. `constructionObject().kind()` is read
+here, not `RuntimeMesh::renderBothSides()`: picking and Freeze share one
+active mesh, and a Plane's `kind()` is unchanged by Freeze, so the exception
+follows a Frozen Sculpt Mesh copy of a Plane exactly as it follows the
+Construction source.
 
 `SelectionController` (`forgeshape_selection.{h,cpp}`) owns the selected
 `ObjectId` and the tap-versus-navigation decision. `ObjectId` is an opaque

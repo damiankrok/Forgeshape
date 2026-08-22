@@ -8,10 +8,10 @@ it exists.
 ## What the viewport shows
 
 The viewport shows one **Construction Body**: an exactly dimensioned shape, which
-is a **box**, a **cylinder**, a **sphere**, a **cone** or a **capsule**. Its
-dimensions are real lengths in **meters**, and they are what the shape is made
-from — what is on screen is generated from those numbers. Where it sits is a
-separate matter of its position and rotation.
+is a **box**, a **cylinder**, a **sphere**, a **cone**, a **capsule** or a
+**plane**. Its dimensions are real lengths in **meters**, and they are what the
+shape is made from — what is on screen is generated from those numbers. Where
+it sits is a separate matter of its position and rotation.
 
 There is exactly one object. Changing it from one of those shapes to another
 changes what that object *is*; it does not create a second one, and nothing is
@@ -124,9 +124,9 @@ you see, so a tap that hits the model in portrait hits it in landscape too.
 
 The Tool Rail in Construction carries **Shape** and **Place**, plus **Sketch**
 and **Extrude**, which are drawn but clearly not available. Choosing Shape puts a
-**primitive chooser** — Box, Cylinder, Sphere, Cone and Capsule — the chosen
-shape's dimensions, a display unit (**mm**, **cm** or **m**) shared by every
-length, and an **Apply Shape** button into the Property Inspector. Only the
+**primitive chooser** — Box, Cylinder, Sphere, Cone, Capsule and Plane — the
+chosen shape's dimensions, a display unit (**mm**, **cm** or **m**) shared by
+every length, and an **Apply Shape** button into the Property Inspector. Only the
 chosen shape's fields are on screen, so nothing in the inspector can be mistaken
 for another shape's dimension. Choosing Place puts the object's position and
 rotation there instead, described further down. The rest of the viewport stays
@@ -142,6 +142,7 @@ model itself.
 | Sphere | one diameter, reaching exactly half of it in every direction | 1.0 m across |
 | Cone | bottom diameter and height | 1.0 m across, 1.0 m tall |
 | Capsule | diameter and **total** height, ends included | 1.0 m across, 2.0 m tall |
+| Plane | width and depth, a flat sheet centred on its position | 1.0 × 1.0 m |
 
 Curved shapes are authored by **diameter**, not radius, because that is what a
 drawing and a caliper give you. How finely a curved surface is divided is **not a
@@ -173,6 +174,17 @@ so in as many words and changes nothing:
 
 A total height *equal* to the diameter is perfectly valid — it is a capsule with
 no middle at all, which is a sphere, and it is drawn as a clean one.
+
+### A plane is a flat sheet, visible and usable from both sides
+
+A plane is a flat, **zero-thickness** rectangular sheet — width across, depth
+front-to-back, centred on its position. It is not a thin box: there is no third
+dimension to type, and looked at edge-on in Orthographic it draws as a true
+line, not a sliver. It has one canonical front, but the viewport shows and
+shades a plane correctly from either side, and tapping either side selects it,
+because a flat sheet has no "inside" the way a box or a sphere does. Rotating
+it — with the same Position/Rotation fields every shape uses — is how its
+facing is changed; there is no separate orientation control.
 
 ### Choosing a shape changes nothing by itself
 

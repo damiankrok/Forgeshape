@@ -145,15 +145,17 @@ public final class EditorWorkspaceControlsTest {
     public void ui02_eachPrimitiveShowsOnlyItsOwnFields() {
         final int[] chips = {R.id.primitive_option_box, R.id.primitive_option_cylinder,
                 R.id.primitive_option_sphere, R.id.primitive_option_cone,
-                R.id.primitive_option_capsule};
+                R.id.primitive_option_capsule, R.id.primitive_option_plane};
         final int[] rows = {R.id.primitive_row_box, R.id.primitive_row_cylinder,
-                R.id.primitive_row_sphere, R.id.primitive_row_cone, R.id.primitive_row_capsule};
+                R.id.primitive_row_sphere, R.id.primitive_row_cone, R.id.primitive_row_capsule,
+                R.id.primitive_row_plane};
         final int[][] fields = {
                 {R.id.field_box_width, R.id.field_box_height, R.id.field_box_depth},
                 {R.id.field_cylinder_diameter, R.id.field_cylinder_height},
                 {R.id.field_sphere_diameter},
                 {R.id.field_cone_diameter, R.id.field_cone_height},
                 {R.id.field_capsule_diameter, R.id.field_capsule_total_height},
+                {R.id.field_plane_width, R.id.field_plane_depth},
         };
 
         for (int kind = 0; kind < chips.length; kind++) {
@@ -178,6 +180,77 @@ public final class EditorWorkspaceControlsTest {
                 return null;
             });
         }
+    }
+
+    /**
+     * PLN-08: moving the chooser to the Plane chip — the newest, so the one
+     * most likely to have skipped this contract by accident — is pure
+     * presentation. No native Apply happens and nothing observable through JNI
+     * changes, exactly as UI-01's rail switch and every other chooser move.
+     */
+    @Test
+    public void ui02_selectingThePlaneChipMakesNoNativeCall() {
+        final double[] before = onWorkspace(rule.getScenario(),
+                (activity, workspace) -> nativeSnapshot());
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            workspace.findViewById(R.id.primitive_option_plane).performClick();
+            return null;
+        });
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            assertTrue("the Plane chip is now the drafted kind",
+                    workspace.findViewById(R.id.primitive_option_plane).isActivated());
+            final double[] after = nativeSnapshot();
+            assertArrayEquals("selecting a chip is presentation only:"
+                    + describeSnapshotDifference(before, after), before, after, 0.0);
+            return null;
+        });
+    }
+
+    /**
+     * PLN-07: all six primitive payloads survive a full round trip of kind
+     * switches — each remembers its own last-applied values independently, and
+     * the placement (set once, before any shape change) survives every one of
+     * them. ObjectId is not separately observable from Java outside Sculpt
+     * mode; identity stability under a kind change is covered natively (see
+     * FORGESHAPE_CONSTRUCTION_PRIMITIVE_SELFTEST_OK's round-trip checks).
+     */
+    @Test
+    public void ui07_allSixPrimitivePayloadsSurviveASelectorRoundTrip() {
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            NativeViewport.applyBoxTransform(0.4, -0.2, 0.1, 5.0, 10.0, 15.0);
+            NativeViewport.applyConstructionBox(1.1, 2.2, 3.3);
+            NativeViewport.applyConstructionCylinder(1.5, 2.5);
+            NativeViewport.applyConstructionSphere(0.9);
+            NativeViewport.applyConstructionCone(1.2, 1.8);
+            NativeViewport.applyConstructionCapsule(0.6, 2.4);
+            NativeViewport.applyConstructionPlane(2.0, 1.25);
+            workspace.syncFromNative();
+            return null;
+        });
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final double[] primitive = new double[NativeViewport.PRIMITIVE_STATE_SIZE];
+            NativeViewport.constructionPrimitive(primitive);
+            assertEquals("ends on the last-applied kind",
+                    NativeViewport.PRIMITIVE_PLANE, (int) primitive[0]);
+            assertEquals(1.1, primitive[NativeViewport.PRIMITIVE_BOX_WIDTH], 0.0);
+            assertEquals(2.2, primitive[NativeViewport.PRIMITIVE_BOX_WIDTH + 1], 0.0);
+            assertEquals(3.3, primitive[NativeViewport.PRIMITIVE_BOX_WIDTH + 2], 0.0);
+            assertEquals(1.5, primitive[NativeViewport.PRIMITIVE_CYLINDER_DIAMETER], 0.0);
+            assertEquals(2.5, primitive[NativeViewport.PRIMITIVE_CYLINDER_DIAMETER + 1], 0.0);
+            assertEquals(0.9, primitive[NativeViewport.PRIMITIVE_SPHERE_DIAMETER], 0.0);
+            assertEquals(1.2, primitive[NativeViewport.PRIMITIVE_CONE_BOTTOM_DIAMETER], 0.0);
+            assertEquals(1.8, primitive[NativeViewport.PRIMITIVE_CONE_BOTTOM_DIAMETER + 1], 0.0);
+            assertEquals(0.6, primitive[NativeViewport.PRIMITIVE_CAPSULE_DIAMETER], 0.0);
+            assertEquals(2.4, primitive[NativeViewport.PRIMITIVE_CAPSULE_DIAMETER + 1], 0.0);
+            assertEquals(2.0, primitive[NativeViewport.PRIMITIVE_PLANE_WIDTH], 0.0);
+            assertEquals(1.25, primitive[NativeViewport.PRIMITIVE_PLANE_WIDTH + 1], 0.0);
+
+            final double[] transform = new double[6];
+            NativeViewport.boxTransform(transform);
+            assertArrayEquals("placement survives every shape change in the chain",
+                    new double[]{0.4, -0.2, 0.1, 5.0, 10.0, 15.0}, transform, 0.0);
+            return null;
+        });
     }
 
     // -----------------------------------------------------------------------

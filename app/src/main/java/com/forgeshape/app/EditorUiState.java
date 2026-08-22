@@ -87,7 +87,7 @@ final class EditorUiState {
      *  to a box rather than leaving the selector pointing at nothing. */
     void setDraftPrimitiveKind(int kind) {
         draftPrimitiveKind = (kind >= NativeViewport.PRIMITIVE_BOX
-                && kind <= NativeViewport.PRIMITIVE_CAPSULE) ? kind : NativeViewport.PRIMITIVE_BOX;
+                && kind <= NativeViewport.PRIMITIVE_PLANE) ? kind : NativeViewport.PRIMITIVE_BOX;
     }
 
     int constructionTool() {

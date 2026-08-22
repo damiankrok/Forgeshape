@@ -1,20 +1,121 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.20.0
-**Updated:** 2026-08-21
+**Status Version:** 0.21.0
+**Updated:** 2026-08-22
 **Result:** COMPLETE
 **Current Phase:** Phase 1 — Native Viewport
 **Workspace:** `D:\TRAVELAPPS\ForgeShape`
-**Accepted implementation baseline:** Stage 015D — camera projection
-(Orthographic added alongside Perspective), on top of Stage 015C-R (front-face
-culling), Stage 015C (shading), Platform Fix P2 (rotated-landscape renderer
-orientation), Stage 015B (Editor Workspace), Stage 014, the NDK r29 migration
-(Gate P0) and the owner decision baseline
-**Next Stage:** Stage 016 — Plane + Primitive Coverage Cleanup
+**Accepted implementation baseline:** Stage 016 — Plane + primitive coverage
+cleanup, on top of Stage 015D (camera projection), Stage 015C-R (front-face
+culling), Stage 015C (shading), Platform Fix P2, Stage 015B, Stage 014, the
+NDK r29 migration (Gate P0) and the owner decision baseline
+**Next Stage:** Gate P1 — Physical ARM64 + 16 KB Runtime + Vulkan Validation +
+Heavy-Mesh Baseline
 
 This is a current snapshot, not a chronology. Per-stage verification chapters,
 superseded environment states and old next-stage recommendations live in Git
 history and are deliberately not repeated here.
+
+## Stage 016 — Plane + primitive coverage cleanup
+
+**Plane is the sixth and final Construction MVP primitive**: a flat,
+zero-thickness rectangular sheet, authored by width (local X) and depth
+(local Z), centred on the local origin at `y = 0` with its canonical front
+along local `+Y`. It is not a solid, not a Sketch plane and not an infinite
+grid. Source topology is exactly **4 vertices, 2 triangles, 6 indices**,
+independent of the requested dimensions, CCW seen from the front, with exact
+bounds `X = [-w/2, +w/2]`, `Y = [0, 0]`, `Z = [-d/2, +d/2]`. Every existing
+Construction contract applies unchanged: exact double-meter parameters,
+transactional Apply (`Applied`/`Unchanged`/`Rejected`), the mm/cm/m display
+contract, transform, Freeze/Resume, stale-source, and both projections.
+
+**Two-sided editor usability is one bounded, explicitly named exception, not a
+global culling change.** A Plane has no interior, so unlike a closed solid
+there is no far wall a two-sided pick or render could wrongly reach. Both
+mechanisms key off one fact — `RuntimeMesh::renderBothSides()` /
+`ConstructionMesh::renderBothSides`, true only for a Plane, carried with the
+published mesh rather than re-derived from `PrimitiveKind` in either
+consumer:
+
+- **Rendering** (`forgeshape_render_mesh.cpp`): when set, the ordinary
+  one-sided render result is duplicated once more — every vertex repeated
+  with its normal negated, every triangle repeated with reversed winding — so
+  the *existing* global `VK_CULL_MODE_BACK_BIT` /
+  `VK_FRONT_FACE_COUNTER_CLOCKWISE` pipeline draws the duplicate from the far
+  side while culling it from the near side. No pipeline, culling or material
+  change anywhere; the authoritative `RuntimeMesh` is never touched. Render
+  counts double (4:6 Smooth source builds to 8:12 render) — a second,
+  distinct reason a render count can exceed a source count, alongside the
+  existing crease-split one.
+- **Picking**: `pickScene` passes `!(constructionObject().kind() ==
+  PrimitiveKind::Plane)` as `frontFacesOnly`, so only a Plane picks from both
+  sides. The explicit-transform `pickScene` overload gained an optional
+  `frontFacesOnly` parameter (default `true`) so the self-test-only overload
+  stays free of process-scoped state.
+
+**Primitive coverage cleanup, bounded to what a sixth kind actually
+revealed.** `ConstructionObject::setPrimitive` no longer dispatches its
+update half with an if-else chain over typed accessors — the debt Stage 015D
+named. It `std::visit`s the requested `PrimitiveSpec` payload against two
+small overload sets (`parametersDiffer` / `writeParameters`, one overload per
+kind), so a kind added to the variant with no matching overload is now a
+**compile** error, not a silently-skipped branch — the property the existing
+`validateParameters` family already had via its own `std::visit`. The Java
+shape editor's two-field-primitive constants (`DIAMETER`/`AXIAL`) are renamed
+`FIELD_0`/`FIELD_1`: a Plane's width/depth pair is neither, and the rename is
+the direct, minimal fix a sixth kind revealed. No reflection, registry or
+property-bag framework was introduced.
+
+**Verification.** Ten self-test suites green, **1421 checks, zero
+failures** (up from 1316): picking 112→124 (`PLN-11`..`16` — the two-sided
+exception, front/back, outside-rectangle, transformed, both projections),
+primitive 75→125 (`PLN-01`..`08` — topology, bounds, winding, rejection,
+apply semantics, the six-kind round trip), sculpt 250→276 (`PLN-17`..`19` —
+Freeze on an open 4:6 mesh, Resume, stale-source), render shading 207→224
+(`PLN-09`/`10`/`20` — the two-sided render duplication and its inertness to
+display switching). 26 JVM tests green. **46 instrumented tests, 46 green**
+(up from 44), including the `ui11` IME case that has moved in both
+directions across recent stages.
+
+**Runtime**, on `ForgeShape_Stage006` (booted this session on port 5556
+rather than its usual 5558 — confirmed by AVD name, not by port, before any
+command targeted it): a non-default Plane (2.0 × 1.25 m) applied through the
+real touch path (`FORGESHAPE_CONSTRUCTION_PUBLISHED:8:4:6`), an exact mm/cm/m
+round trip (4 m → 400 cm → 4000 mm → 4 m, digit for digit), a 180°
+`ConstructionTransform` rotation applied as a transform-only edit (revision
+unchanged), a real tap-to-select hit landing on the rotated (far) side of the
+sheet (`FORGESHAPE_PICK_HIT` at local `y=0.0000`), Perspective and
+Orthographic, Studio and MatCap, Freeze → Sculpt
+(`FORGESHAPE_SCULPT_FROZEN:4:6`) → Back to Construction → Resume Sculpt
+(`freezes=1` unchanged, topology still 4:6), a Construction edit after Freeze
+producing `FORGESHAPE_SCULPT_SOURCE_STALE` with the frozen mesh untouched and
+the Sculpt panel naming "4 vertices", a real 23-move Grab stroke on a
+re-frozen 482-vertex sphere (the sculpt-regression carve-out, not the sparse
+Plane: `STROKE_PENDING` → `STROKE_BEGIN:grab:137` → 23 `STROKE_MOVE`s →
+`STROKE_END`), HOME/resume with no re-upload, and rotated landscape
+(`chosenExtent=2400x1080 preTransform=0x1`, the P2 convention intact).
+Screenshots are under `artifacts/stage016_*`; the Plane reads as a true flat
+sheet throughout, never as a thick box.
+
+**One incidental fix, found only by running the real touch path.**
+`forgeshape_jni.cpp`'s `describeSpec` — the JNI-local log-line formatter, a
+different if-else chain from the one the cleanup above targeted, exercised
+only by the JNI wrapper functions the native self-tests never call (they call
+the namespaced `forgeshape::applyPrimitive` directly) — had no Plane branch
+and logged `kind=plane unknown`. Fixed by adding the branch. No self-test
+would have caught this; it is the concrete argument for the runtime pass
+beyond what the self-tests already prove.
+
+**One environment mishap, disclosed rather than hidden.** The first
+`connectedDebugAndroidTest` run was launched without pinning a target device,
+and Gradle's task runs against every attached device with no default: it
+installed the debug APK and ran the full 46-test suite against
+`emulator-5554` (`Medium_Phone_API_36.1`), the AVD `CLAUDE.md` reserves for
+another program — confirmed via `adb -s emulator-5554 emu avd name` after the
+fact. No further command touched that device. The owner was told before the
+stage continued, and chose to proceed with every later command scoped to
+`-s emulator-5556` / `ANDROID_SERIAL=emulator-5556`, confirmed by AVD name to
+be `ForgeShape_Stage006`.
 
 Stage 015D added a mathematically correct **Orthographic** projection beside the
 existing Perspective one, so exact Construction geometry can be judged without
@@ -156,53 +257,26 @@ matrix is built in `snapshot()`, which was already built per frame.
 
 ## Stage 015C-R — root cause, convention and evidence
 
-**Root cause, proven by measurement rather than inspection.** With
-`cullMode = BACK` and `frontFace = CLOCKWISE`, the three faces visible on the
-default box measured luminance **0.3874 / 0.3331 / 0.2639**. Those are the
-computed Studio Solid values for the **−X, −Z and −Y** faces (0.3864 / 0.3335 /
-0.2647) — the three that face away from the camera. The three that should have
-been visible are **+Y, +Z, +X** at 0.8324 / 0.5587 / 0.3095. For a closed convex
-solid a far face can only reach a pixel if the near face was culled, so culling
-was inverted. After the fix the same pixels measure **0.8327 and 0.5588**, which
-match the +Y and +Z predictions to four decimals.
+**Root cause, proven by measurement.** With `cullMode = BACK` and
+`frontFace = CLOCKWISE`, the default box's visible faces measured the Studio
+Solid luminance of its **far** walls, not its near ones — the culling was
+inverted, double-compensating for the projection's Y flip, which is already
+applied by the time Vulkan classifies a triangle. Inverted culling does not
+blank the viewport or change the silhouette, only which surface of it is
+drawn, so it presented as a shading complaint rather than a rasterizer defect.
+After the fix the near-face pixels matched their Studio Solid predictions to
+four decimals. The winding/normal/raster convention itself is owned by
+`ARCHITECTURE.md` (*Canonical winding and culling*).
 
-**Why it survived Stage 015C review.** Inverted culling does not blank the
-viewport and does not change the silhouette — a closed solid fills exactly the
-same outline either way. It only swaps which surface of that outline is drawn, so
-it presents as a *shading* complaint ("the box looks concave") rather than as a
-rasterizer defect, and it sends the investigation into the light rig.
-
-**The winding / normal / raster convention is owned by `ARCHITECTURE.md`**
-(*Canonical winding and culling*) and is not restated here. The one fact this
-chapter contributes: the projection's Y flip is **already applied** by the time
-Vulkan classifies a triangle. Compensating for it a second time in `frontFace` is
-the mistake that stage removed.
-
-**Hypotheses tested and rejected**, each by a check that would have failed:
-source winding wrong (`NOR-01`), render normal generation wrong or sign-flipped
-(`NOR-02`..`NOR-07`), hard-edge duplication reordering a triangle (`NOR-08`),
-model→view normal transform losing a sign or needing an inverse-transpose
-(`NOR-09`), display modes mutating source truth or picking (`NOR-10`), and the
-Studio light rig being internally inconsistent — its computed face values match
-the rendered pixels to four decimals in **both** the broken and the fixed build,
-which is what proves the rig was never the defect. **No geometry, no normal
-generation and no light constant was changed.**
-
-**Direction tests (`NOR-01`..`NOR-10`), all green.** They live in the
-render-shading suite, which grew 158 → 207 checks. The family exists because
-every pre-existing normal check measured an axis or a magnitude and therefore
-passed unchanged on a mesh whose normals had all been negated;
-`nor_outwardness_fails_on_global_normal_flip` asserts on all five primitives that
-the new measurement does invert, so the suite cannot regress into that blind spot
-again.
-
-**Verification.** Ten suites green (1199 checks at that baseline); 26 JVM tests
-green; 40 instrumented tests green. A stationary run of **3371 presented frames**
-moved the render-data rebuild count 61 → 62, and that one rebuild was the Smooth
-toggle used to close the measurement — the fix is one pipeline enumerator and
-costs nothing. Screenshots are under `artifacts/stage015cr_*`, including the
-before/after pair on the same default box (`_00_box_studio_smooth_before` vs
-`_01_box_studio_smooth_after`).
+**The direction family (`NOR-01`..`NOR-10`)** closes the blind spot that let
+this hide: every pre-existing normal check measured an axis or a magnitude and
+so passed unchanged on a mesh whose normals had all been negated.
+`nor_outwardness_fails_on_global_normal_flip` asserts the new measurement does
+invert on a global flip, so the suite cannot regress into that blind spot
+again. Ten suites green (1199 checks); 26 JVM tests; 40 instrumented tests. A
+stationary 3371-frame run moved the render-data rebuild count by exactly one
+(the Smooth toggle used to close the measurement). Screenshots are under
+`artifacts/stage015cr_*`.
 
 ## Owner Decision Baseline
 
@@ -334,7 +408,7 @@ Rules that apply to every run:
 standalone Android application (`com.forgeshape.app`) with a Java shell that owns
 no domain truth, a plain `SurfaceView` viewport, a JNI boundary that carries
 whole sections and semantic pointer samples, and a platform-neutral C++17 domain
-(`ConstructionObject` and its five primitives, `ConstructionTransform`,
+(`ConstructionObject` and its six primitives, `ConstructionTransform`,
 `SculptSession` and its one brush kernel, `MeshStore`, picking, selection,
 camera) beneath a native Vulkan renderer that owns no geometry truth. No Compose,
 no AndroidX, no third-party runtime library, no engine.
@@ -358,7 +432,8 @@ Android touch path. `PRODUCT.md` owns the user-facing description.
 | Tap-to-select, tap-to-clear, drag and multi-touch never select | VERIFIED |
 | CPU picking follows camera, dimensions, transform and sculpt deformation | VERIFIED |
 | Dynamic mesh: immutable revisions, fail-closed validation, capacity reuse/growth | VERIFIED |
-| One Construction Body with exact Box / Cylinder / Sphere / Cone / Capsule | VERIFIED |
+| One Construction Body with exact Box / Cylinder / Sphere / Cone / Capsule / Plane | VERIFIED |
+| Plane: 4:6 open source topology, exact bounds, two-sided render and pick as one bounded, named exception | VERIFIED |
 | Exact dimensions in meters; mm/cm/m display unit above JNI only, lossless | VERIFIED |
 | Apply Shape: Applied / Unchanged / Rejected, atomic, kind change is a change | VERIFIED |
 | Every primitive's parameters remembered independently across kind changes | VERIFIED |
@@ -389,7 +464,7 @@ Android touch path. `PRODUCT.md` owns the user-facing description.
 | Rotation mutates no Construction or Sculpt state and triggers no mesh upload | VERIFIED |
 | Studio Solid replaces the per-vertex rainbow as the default appearance | VERIFIED |
 | Derived render-only normals; source RuntimeMesh and picking untouched | VERIFIED |
-| One 40° crease policy gives all five primitives their hard/smooth contracts | VERIFIED |
+| One 40° crease policy gives all six primitives their hard/smooth contracts | VERIFIED |
 | Smooth ↔ Faceted is presentation only, on the same source revision | VERIFIED |
 | ForgeShape-generated MatCap from view-space normals; one preset, no asset file | VERIFIED |
 | Studio ↔ MatCap rebuilds no geometry and uploads nothing | VERIFIED |
@@ -402,28 +477,32 @@ Android touch path. `PRODUCT.md` owns the user-facing description.
 ## Self-test suite
 
 Ten debug-only native suites run once from `NativeViewport.start()` — never per
-frame — and total **1316 checks, zero failures** at the accepted baseline under
+frame — and total **1421 checks, zero failures** at the accepted baseline under
 NDK r29:
 
 | suite token | checks |
 | --- | --- |
 | `FORGESHAPE_CAMERA_SELFTEST_OK` | 119 |
-| `FORGESHAPE_PICKING_SELFTEST_OK` | 112 |
+| `FORGESHAPE_PICKING_SELFTEST_OK` | 124 |
 | `FORGESHAPE_DYNAMIC_MESH_SELFTEST_OK` | 91 |
 | `FORGESHAPE_CONSTRUCTION_BOX_SELFTEST_OK` | 100 |
 | `FORGESHAPE_CONSTRUCTION_TRANSFORM_SELFTEST_OK` | 94 |
-| `FORGESHAPE_CONSTRUCTION_PRIMITIVE_SELFTEST_OK` | 75 |
+| `FORGESHAPE_CONSTRUCTION_PRIMITIVE_SELFTEST_OK` | 125 |
 | `FORGESHAPE_CONSTRUCTION_SPHERE_SELFTEST_OK` | 105 |
 | `FORGESHAPE_CONE_CAPSULE_SELFTEST_OK` | 163 |
-| `FORGESHAPE_SCULPT_BRUSH_KERNEL_SELFTEST_OK` | 250 |
-| `FORGESHAPE_RENDER_SHADING_SELFTEST_OK` | 207 |
+| `FORGESHAPE_SCULPT_BRUSH_KERNEL_SELFTEST_OK` | 276 |
+| `FORGESHAPE_RENDER_SHADING_SELFTEST_OK` | 224 |
 
 followed by `FORGESHAPE_MESH_UPLOAD_OK` and `FORGESHAPE_NATIVE_VIEWPORT_OK`.
-The tenth suite covers the crease policy, all five primitives' Smooth contracts
+The tenth suite covers the crease policy, all six primitives' Smooth contracts
 and the capsule equality case, Faceted, NaN/Inf and fail-closed behaviour,
 determinism, the render-data rebuild policy, the generated MatCap asset, the
-display settings, and the proof that building render data leaves the
-authoritative `RuntimeMesh` bit-identical.
+display settings, the proof that building render data leaves the
+authoritative `RuntimeMesh` bit-identical, and (Stage 016) the Plane's
+two-sided render duplication and its inertness to display switching
+(`PLN-09`/`10`/`20`). Stage 016 also added `PLN-01`..`08` to the primitive
+suite, `PLN-11`..`16` to the picking suite, and `PLN-17`..`19` to the sculpt
+suite.
 
 Stage 015D added the **projection family**, `CAMPROJ-01`..`CAMPROJ-14`, split
 across three suites by module ownership rather than kept in one file: the camera
@@ -462,33 +541,41 @@ Build and verification commands are in `README.md`.
 | `WorkspaceLayoutModeTest` (JVM) | breakpoints, placement, chrome sizing arithmetic | 9 |
 | `EditorUiStateTest` (JVM) | what the UI may remember, and what it refuses | 8 |
 | `LengthUnitTest` (JVM) | exact mm/cm/m round-tripping and parse refusal | 5 |
-| `EditorWorkspaceControlsTest` | UI-01/02/03/04/05/06/13 — control sets, fields, validation, freeze wording, tools, presentation-only actions | 17 |
+| `EditorWorkspaceControlsTest` | UI-01/02/03/04/05/06/13 — control sets, fields, validation, freeze wording, tools, presentation-only actions; `PLN-07`/`08` — the six-kind round trip and the Plane chip's no-native-call contract | 19 |
 | `EditorWorkspaceLayoutTest` | UI-07/08/09/12 — measured viewport floor, landscape, expanded, collapse | 6 |
 | `EditorWorkspaceGestureTest` | UI-10/11 — chrome gesture ownership, IME | 5 |
 | `EditorWorkspaceLifecycleTest` | UI-14 — HOME/resume rebuilt from native truth | 3 |
 | `DisplaySettingsContractTest` (JVM) | the shading/surface index contract across JNI | 4 |
 | `EditorWorkspaceDisplayTest` | SHD-13/15/16 — display ids, presentation-only, resume; PROJ-12/13/14 — projection ids, inertness against domain state, refused index, resume | 12 |
 
-**70 tests** (26 JVM, 44 instrumented). No Java test asserts a rendered pixel;
+**72 tests** (26 JVM, 46 instrumented). No Java test asserts a rendered pixel;
 every control is reached by its stable semantic id and no assertion uses a screen
 coordinate.
 
-**43 of the 44 instrumented tests pass as of Stage 015D** on `emulator-5558`.
+**46 of the 46 instrumented tests pass as of Stage 016** on `ForgeShape_Stage006`.
 
-The one failure is **environment-dependent, in both directions**, and it is the
-same case that has moved in both directions before.
 `EditorWorkspaceGestureTest.ui11_theImeLeavesTheFieldAndTheCommitPathUsableAndTheSurfaceUntouched`
-opens with a precondition guard — "the soft keyboard did not appear, so this case
-proves nothing" — and fails on that guard, never reaching an assertion about
-product behaviour. It failed at the Stage 015C baseline, passed on its merits at
-Stage 015C-R, and fails again now. **Stage 015D proved it pre-existing rather
-than assuming it**: the case was run alone against a stashed, unmodified
-`171c7ae` working tree and failed with the identical message. Treat a future
-failure of this one case as a harness symptom to confirm against the current
-baseline before calling it a regression.
+is the one case that has moved in both directions across recent stages: it
+opens with a precondition guard — "the soft keyboard did not appear, so this
+case proves nothing" — and fails on that guard alone, never reaching an
+assertion about product behaviour, whenever the keyboard is slow to appear. It
+failed at the Stage 015C baseline, passed at Stage 015C-R, failed again at
+Stage 015D (proven pre-existing there against a stashed, unmodified `171c7ae`
+tree), and **passed at Stage 016**. Treat a future failure of this one case as
+a harness symptom to confirm against the current baseline before calling it a
+regression.
 
 ## Current evidence summary
 
+- **Stage 016 acceptance** (`ForgeShape_Stage006`): ten self-test suites green
+  (**1421 checks, zero failures**, including `PLN-01`..`PLN-20`); 26 JVM tests
+  green; **46 instrumented tests, 46 green**. The Plane contract, the two-sided
+  render/pick exception, the primitive-coverage cleanup and the full runtime
+  walkthrough (Apply, unit round-trip, transform, front/back pick, both
+  projections, both shading models, Freeze/Resume/stale-source, a real sculpt
+  stroke on a dense primitive, HOME/resume, rotated landscape) are in the
+  Stage 016 chapter at the top of this file. Screenshots are under
+  `artifacts/stage016_*`.
 - **Stage 015D acceptance** (`emulator-5558`): ten self-test suites green
   (**1316 checks, zero failures**, including `CAMPROJ-01`..`CAMPROJ-14`); 26 JVM
   tests green; 44 instrumented tests with the one environment-dependent IME case
@@ -708,15 +795,26 @@ exists. The Sculpt panel's status line is written on refresh and does not update
 during a stroke, because a live readout would need a native→Java notification
 that does not exist.
 
-**Primitive surface.** Adding a primitive costs four parallel edits — a member on
-`ConstructionObject`, a `PrimitiveKind` case, a variant alternative, and a JNI
-method plus its Java declaration. That is deliberate and visible rather than
-hidden behind a registry, but at a sixth primitive it should be a decision rather
-than a habit. `ConstructionObject::setPrimitive` still dispatches with an if-else
-chain over the typed accessors rather than a `std::visit`, because the per-kind
-members are not uniform; it is the one place a new primitive can be forgotten
-without a compile error. Every primitive's parameters are always resident even
-though one is active. Tessellation is a compile-time constant, so a very large
+**Primitive surface.** Adding a primitive still costs four parallel edits — a
+member on `ConstructionObject`, a `PrimitiveKind` case, a variant alternative,
+and a JNI method plus its Java declaration. That remains deliberate and visible
+rather than hidden behind a registry. Stage 016 paid down the one instance of
+it that dispatched with an if-else chain over typed accessors:
+`ConstructionObject::setPrimitive`'s update half now `std::visit`s the
+requested payload against two small per-kind overload sets
+(`parametersDiffer` / `writeParameters`), so a kind added to the variant with
+no matching overload is a compile error rather than a branch that is silently
+never taken — the same property the pre-existing `validateParameters` overload
+family already had. The plain `switch (kind_)` statements elsewhere
+(`spec()`, `generateMesh()`, `primitiveKindName`) were left as they were: each
+is one line per kind, visually complete at a glance, and — Stage 016 found one
+real instance of exactly this risk in `forgeshape_jni.cpp`'s separate
+`describeSpec` if-else chain, which had no Plane branch until the runtime pass
+caught it — a `switch` with a trailing fallback is a smaller, more visible
+version of the same gap than an if-else chain was, not a solved one; a future
+stage that wants it closed for these too has a proven pattern to reuse. Every
+primitive's parameters are always resident even though one is active.
+Tessellation is a compile-time constant, so a very large
 curved primitive shows its facets and nothing adapts; relatedly, the capsule's
 cylindrical middle carries no interior rings however long it is, which makes
 sculpt fidelity there coarse (a 120 px brush captured 8 vertices on a 514-vertex
@@ -787,19 +885,18 @@ no validation layers, a single global viewport, and a selection highlight that i
 a whole-object tint rather than an outline.
 
 **Documentation size.** Every core document is inside the 2000-line hard limit,
-but four are over their preferred target budgets: `ARCHITECTURE.md` 1633 against
-a 700–1000 target, `PROJECT_STATUS.md` 963 against 500–800, `PRODUCT.md` 597
-against 300–450, `README.md` 320 against 150–250. (`CLAUDE.md` 180 is inside
-its.) Stage 015D paid part of this back rather than only adding to it: the
-superseded Stage 015C, Stage 015B and Platform Fix P2 acceptance chapters were
-compacted by ~90 lines, keeping the conclusions and leaving the measurement
-tables to Git history, and the winding/normal/raster convention table was deleted
-here because `ARCHITECTURE.md` already owns it — a duplicated durable fact was
-the actual rule violation, not the line count. The remaining overshoot predates
-this stage and is concentrated in `ARCHITECTURE.md`, where closing it means
-compacting prose about shading, sculpt and layout that has nothing to do with the
-camera. That is a deliberate deferral: bundling a documentation rewrite into a
-camera stage is the unrelated-debt mixing the rules forbid.
+but four are over their preferred target budgets: `ARCHITECTURE.md` 1714
+against a 700–1000 target, `PROJECT_STATUS.md` 1061 against 500–800,
+`PRODUCT.md` 609 against 300–450, `README.md` 320 against 150–250.
+(`CLAUDE.md` 180 is inside its.) Stage 016 paid part of this back rather than
+only adding to it: the Stage 015C-R chapter here was compacted from 49 lines to
+15, keeping its conclusions and moving its measurement detail to Git history,
+the same pattern Stage 015D used on the chapters before it. The remaining
+overshoot predates this stage and is concentrated in `ARCHITECTURE.md`, where
+closing it means compacting prose about shading, sculpt and layout that a
+primitive-only stage does not own. That is a deliberate deferral, the same one
+Stage 015D recorded: bundling a documentation rewrite into a stage whose scope
+is one primitive is the unrelated-debt mixing the rules forbid.
 
 **Shading and render data.** The crease policy is a single global angle. It is
 correct for every primitive ForgeShape has, but it is a *policy*, not a per-object
@@ -925,39 +1022,21 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Stage 016 — Plane + Primitive Coverage Cleanup**
+**Gate P1 — Physical ARM64 + 16 KB Runtime + Vulkan Validation + Heavy-Mesh
+Baseline**
 
-The Editor Workspace is in place and every control it needs for a sixth primitive
-already exists — the chooser lays out in rows of three, so a Plane costs one more
-chip, one more parameter row, one more `primitive_row_*` id and one more case in
-`UI-02`, and no shell change at all. That is the point of having built the shell
-first.
-
-The debt this stage should settle while it is in the area is named under
-*Primitive surface* above: `ConstructionObject::setPrimitive` still dispatches
-with an if-else chain over typed accessors rather than a `std::visit`, which is
-the one place a new primitive can be forgotten without a compile error, and a
-Plane is exactly the primitive that would slip through it. A sixth primitive is
-also the point at which "four parallel edits per primitive" should become a
-decision rather than a habit.
-
-The rotated-landscape rendering defect that previously blocked the area is
-**closed** by Platform Fix P2 and is not part of this stage. Stage 016 is
-primitives only: it must not touch the renderer's orientation convention and it
-must not touch the camera. Stage 015D deliberately stopped at the projection and
-implemented **no** Plane, sketch plane, Front/Top/Right preset, view cube, grid
-or focus-on-selection, so none of those is started work for Stage 016 to inherit
-— the Plane it adds is a Construction primitive, not a camera concept, and the
-two must not be conflated because they share a word.
-
-Orthographic is the projection in which a Plane is most obviously worth checking:
-it is the first primitive that is a **single flat sheet**, and in a parallel view
-edge-on it collapses to a line exactly rather than to a near-line, which is
-correct and must not be "fixed".
-
-Shading costs a Plane nothing extra. The crease policy is per-vertex and
-primitive-agnostic, so a Plane inherits correct flat shading with no new case —
-though it is the first primitive that is a **single flat sheet**, so Stage 016
-should check what a Plane looks like from behind, where back-face culling means
-it disappears. That is a culling question, not a shading one, and it is the one
-interaction between the two areas worth naming in advance.
+Construction is now complete at six primitives, and every product-side
+verification (self-tests, JVM, instrumented, real touch-path runtime) has been
+run only on `x86_64` emulators. Gate P1 is the platform-evidence gate deferred
+since Gate P0: build and run on **physical ARM64 hardware**, close the **16 KB
+page-size runtime** dimension left `UNVERIFIED` under *Known Issues* (static/
+ELF/APK evidence already passes; only a real 16 KB device or system image can
+close it, and installing one is not yet authorized), enable the **Vulkan
+validation layers** for at least one full session to catch anything the
+current always-`x86_64`, no-validation-layer runtime evidence could not, and
+establish a **heavy-mesh baseline** — sculpt and render-data-rebuild cost
+measurements at a vertex count well past the current 482–514 range, so a
+future performance stage has a real number to beat instead of an assumption.
+This is a platform/verification gate, not a feature stage: no new primitive,
+no Sketch/Extrude, no camera or shading change, and no product behaviour is
+expected to differ on ARM64 — the gate exists to prove that, not to change it.

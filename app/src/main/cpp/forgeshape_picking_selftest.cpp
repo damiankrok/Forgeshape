@@ -736,6 +736,155 @@ void testProjectionPicking(Recorder& r) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// PLN-11..16 — the bounded two-sided Plane picking exception
+//
+// A Construction Plane is a flat, open, zero-thickness sheet: unlike a closed
+// solid there is no interior a back-face hit could wrongly reach, so it is the
+// one primitive `pickScene` picks from BOTH sides (see forgeshape_selection.h/
+// .cpp). These checks exercise that exception directly, at both the
+// TriangleMeshView level (proving the raw exception mechanics) and through
+// `pickScene`'s explicit-frontFacesOnly overload (proving the actual function
+// the product calls behaves correctly), in both camera projections.
+// ---------------------------------------------------------------------------
+
+constexpr float kProbePlaneWidth = 2.0f;
+constexpr float kProbePlaneDepth = 1.5f;
+
+TriangleMeshView planeView(const ConstructionMesh& mesh) {
+    TriangleMeshView view{};
+    view.positions = mesh.vertices.empty() ? nullptr : mesh.vertices[0].position;
+    view.positionStride = sizeof(MeshVertex);
+    view.vertexCount = static_cast<uint32_t>(mesh.vertices.size());
+    view.indices = mesh.indices.empty() ? nullptr : mesh.indices.data();
+    view.indexCount = static_cast<uint32_t>(mesh.indices.size());
+    return view;
+}
+
+// PLN-11/12: a ray from the canonical front (+Y) and a ray from the canonical
+// back (-Y) both hit the plane once the two-sided exception is requested;
+// front-face-only picking (the ordinary closed-solid rule) hits the front but
+// MISSES the back, which is exactly the defect the exception exists to fix.
+void testPlaneFrontAndBackPicking(Recorder& r) {
+    ConstructionPlane plane;
+    plane.setDimensionsMeters(kProbePlaneWidth, kProbePlaneDepth);
+    const ConstructionMesh mesh = plane.generateMesh();
+    const TriangleMeshView view = planeView(mesh);
+
+    const Ray fromAbove{{0.3f, 5.0f, 0.2f}, {0.0f, -1.0f, 0.0f}};
+    const Ray fromBelow{{0.3f, -5.0f, 0.2f}, {0.0f, 1.0f, 0.0f}};
+
+    const TriangleHit frontOrdinary = pickTriangleMesh(fromAbove, view, /*frontFacesOnly=*/true);
+    r.check("plane_front_hits_under_ordinary_front_face_rule",
+            frontOrdinary.hit && nearly(frontOrdinary.position.y, 0.0f, 1e-5f));
+
+    const TriangleHit backOrdinary = pickTriangleMesh(fromBelow, view, /*frontFacesOnly=*/true);
+    r.check("plane_back_misses_under_ordinary_front_face_rule", !backOrdinary.hit);
+
+    const TriangleHit frontTwoSided = pickTriangleMesh(fromAbove, view, /*frontFacesOnly=*/false);
+    r.check("plane_front_hits_with_two_sided_exception",
+            frontTwoSided.hit && nearly(frontTwoSided.position.y, 0.0f, 1e-5f));
+
+    const TriangleHit backTwoSided = pickTriangleMesh(fromBelow, view, /*frontFacesOnly=*/false);
+    r.check("plane_back_hits_with_two_sided_exception",
+            backTwoSided.hit && nearly(backTwoSided.position.y, 0.0f, 1e-5f) &&
+                nearly(backTwoSided.position.x, 0.3f, 1e-5f) &&
+                nearly(backTwoSided.position.z, 0.2f, 1e-5f));
+}
+
+// PLN-13: a ray clear of the finite rectangle misses from either side, even
+// with the two-sided exception on — the exception widens WHICH SIDE can be
+// hit, never the finite extent of the sheet.
+void testPlaneOutsideRectangleMisses(Recorder& r) {
+    ConstructionPlane plane;
+    plane.setDimensionsMeters(kProbePlaneWidth, kProbePlaneDepth);
+    const ConstructionMesh mesh = plane.generateMesh();
+    const TriangleMeshView view = planeView(mesh);
+
+    // Just outside the half-width (1.0 m) on X.
+    const Ray besideAbove{{1.2f, 5.0f, 0.0f}, {0.0f, -1.0f, 0.0f}};
+    const Ray besideBelow{{1.2f, -5.0f, 0.0f}, {0.0f, 1.0f, 0.0f}};
+    // Just outside the half-depth (0.75 m) on Z.
+    const Ray beyondAbove{{0.0f, 5.0f, 0.9f}, {0.0f, -1.0f, 0.0f}};
+
+    r.check("plane_outside_width_misses_from_front",
+            !pickTriangleMesh(besideAbove, view, false).hit);
+    r.check("plane_outside_width_misses_from_back",
+            !pickTriangleMesh(besideBelow, view, false).hit);
+    r.check("plane_outside_depth_misses", !pickTriangleMesh(beyondAbove, view, false).hit);
+
+    // Just inside both bounds still hits, proving the misses above are really
+    // about the rectangle's edge and not a broken ray.
+    const Ray justInside{{0.99f, 5.0f, 0.74f}, {0.0f, -1.0f, 0.0f}};
+    r.check("plane_just_inside_rectangle_hits", pickTriangleMesh(justInside, view, false).hit);
+}
+
+// PLN-14/15/16: the two-sided exception survives a representative rotation and
+// works in both Perspective and Orthographic, mirroring CAMPROJ-09/10's probe
+// technique (aim a known world point, ask the camera for its pixel, pick at
+// that pixel, and check the hit round-trips back to the point it was aimed
+// at). Rotating 90 degrees about local X takes the plane's canonical front
+// (local +Y) to world +Z — the direction `makeAxisAlignedController`'s eye
+// looks toward — so a local point (lx, 0, lz) lands at world (lx, -lz, 0).
+void testPlaneRotatedPickingBothProjections(Recorder& r) {
+    ConstructionPlane plane;
+    plane.setDimensionsMeters(kProbePlaneWidth, kProbePlaneDepth);
+    const ConstructionMesh mesh = plane.generateMesh();
+    const TriangleMeshView view = planeView(mesh);
+
+    ConstructionTransform transform;
+    TransformValues rotated;
+    rotated.rotationX = 90.0;
+    transform.setValues(rotated);
+    const Mat4 model = transform.modelMatrix();
+    const Mat4 inverseModel = transform.inverseModelMatrix();
+
+    constexpr int kW = 1080;
+    constexpr int kH = 2400;
+    const Vec3 worldAim{0.4f, -0.3f, 0.0f};  // (lx, -lz, 0) for local (0.4, 0, 0.3)
+
+    for (int mode = 0; mode < 2; ++mode) {
+        const bool orthographic = (mode == 1);
+        CameraController c = makeAxisAlignedController(kW, kH);
+        if (orthographic) {
+            c.setProjectionMode(ProjectionMode::Orthographic);
+        }
+        const CameraSnapshot s = c.snapshot();
+
+        float px = 0.0f, py = 0.0f;
+        const bool projected = screenOf(s, worldAim, kW, kH, &px, &py);
+
+        Ray worldRay{};
+        const bool built = projected && buildPickRay(s, px, py, kW, kH, &worldRay);
+        Ray localRay{};
+        const bool moved = built && transformRayToLocal(worldRay, inverseModel, &localRay);
+        const TriangleHit front =
+            moved ? pickTriangleMesh(localRay, view, /*frontFacesOnly=*/false) : TriangleHit{};
+        const Vec3 worldHit =
+            front.hit ? mat4TransformPoint(model, front.position) : Vec3{0.0f, 0.0f, 0.0f};
+
+        const bool ok = moved && front.hit && nearly(worldHit.x, worldAim.x, 1e-3f) &&
+                        nearly(worldHit.y, worldAim.y, 1e-3f) && nearly(worldHit.z, worldAim.z, 1e-3f);
+        if (orthographic) {
+            r.check("plane_ortho_rotated_front_pick_round_trips", ok);
+        } else {
+            r.check("plane_persp_rotated_front_pick_round_trips", ok);
+        }
+    }
+
+    // Back: a ray from world -Z toward +Z meets the plane's BACK once rotated
+    // this way — a hit only with the two-sided exception, a miss under the
+    // ordinary closed-solid rule. Projection-independent (the exception is a
+    // property of the pick, not of the camera), so checked once.
+    Ray fromBehindWorld{{worldAim.x, worldAim.y, -5.0f}, {0.0f, 0.0f, 1.0f}};
+    Ray localBack{};
+    const bool builtBack = transformRayToLocal(fromBehindWorld, inverseModel, &localBack);
+    const TriangleHit backTwoSided = pickTriangleMesh(localBack, view, /*frontFacesOnly=*/false);
+    r.check("plane_rotated_back_pick_hits_finite_plane", builtBack && backTwoSided.hit);
+    const TriangleHit backOrdinary = pickTriangleMesh(localBack, view, /*frontFacesOnly=*/true);
+    r.check("plane_rotated_back_misses_without_exception", !backOrdinary.hit);
+}
+
 }  // namespace
 
 int runPickingSelfTests(PickingSelfTestResult* out, int maxOut) {
@@ -749,6 +898,9 @@ int runPickingSelfTests(PickingSelfTestResult* out, int maxOut) {
     testDemoCubePicking(r);
     testTapAndSelection(r);
     testProjectionPicking(r);
+    testPlaneFrontAndBackPicking(r);
+    testPlaneOutsideRectangleMisses(r);
+    testPlaneRotatedPickingBothProjections(r);
     return r.n;
 }
 

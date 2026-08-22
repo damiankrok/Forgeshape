@@ -108,6 +108,15 @@ ConstructionObject makeSphereObject() {
     return object;
 }
 
+// The Plane fixture for PLN-17..19: the one primitive whose Frozen Sculpt Mesh
+// is OPEN (4 vertices, 2 triangles, no interior), which is what those checks
+// exist to prove the generic Freeze pipeline handles without any special case.
+ConstructionObject makePlaneObject() {
+    ConstructionObject object(kConstructionBoxObjectId);
+    object.setPrimitive(PrimitiveSpec::forPlane(2.0, 1.5));
+    return object;
+}
+
 // The world-space displacement the brush should produce for a pointer travel of
 // (dx, dy) pixels, derived from the camera snapshot the same way the brush does:
 // screen +x is camera right, screen +y is DOWN, which is camera -up.
@@ -359,6 +368,92 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
         session.freezeToSculpt(object.generateMesh(), object.objectId());
         r.check("explicit_refreeze_clears_stale", !session.sourceStale());
         r.check("explicit_refreeze_restarts_sculpt_revision", session.mesh().revision() == 1);
+    }
+
+    // -----------------------------------------------------------------------
+    // PLN-17/18/19 — Freeze / Resume / stale-source on a Plane, the one
+    // primitive whose Frozen Sculpt Mesh is OPEN. The generic Freeze pipeline
+    // (forgeshape_sculpt.{h,cpp}) has no closedness assumption anywhere — this
+    // proves that rather than merely asserting it.
+    // -----------------------------------------------------------------------
+    {
+        ConstructionObject object = makePlaneObject();
+        const ConstructionMesh source = object.generateMesh();
+        r.check("pln17_plane_source_is_open_4_6",
+                source.vertices.size() == 4 && source.indices.size() == 6);
+
+        SculptSession session;
+        const bool froze = session.freezeToSculpt(source, object.objectId());
+        r.check("pln17_freeze_succeeds_on_open_plane_mesh", froze);
+        r.check("pln17_freeze_enters_sculpt_mode", session.mode() == ProductMode::Sculpt);
+
+        const SculptMesh& mesh = session.mesh();
+        r.check("pln17_frozen_mesh_is_still_exactly_4_6",
+                mesh.vertexCount() == 4 && mesh.indexCount() == 6);
+        r.check("pln17_frozen_mesh_copies_plane_vertices_exactly",
+                sameVertices(mesh.vertices(), source.vertices));
+        r.check("pln17_frozen_mesh_copies_plane_indices_exactly",
+                sameIndices(mesh.indices(), source.indices));
+        r.check("pln17_freeze_preserves_object_id", mesh.objectId() == object.objectId());
+
+        // The Construction Source is untouched by Freeze: kind, parameters and
+        // the regenerated mesh are all exactly what they were.
+        r.check("pln17_freeze_leaves_primitive_kind", object.kind() == PrimitiveKind::Plane);
+        r.check("pln17_freeze_leaves_plane_parameters",
+                object.plane().widthMeters() == 2.0 && object.plane().depthMeters() == 1.5);
+        r.check("pln17_freeze_leaves_construction_mesh_regenerable",
+                sameVertices(object.generateMesh().vertices, source.vertices));
+
+        // A real sculpt edit on the sparse 4-vertex plane still writes and
+        // reads back correctly — the open topology is not a special case for
+        // vertex writes either, even though a real brush STROKE is exercised
+        // on a denser primitive elsewhere (a 4-vertex mesh is too sparse for a
+        // realistic brush capture, per the stage's own carve-out).
+        session.mesh().setVertexPosition(0, Vec3{5.0f, 5.0f, 5.0f});
+        r.check("pln17_direct_vertex_edit_visible_in_sculpt_mesh",
+                nearlyVec(session.mesh().vertexPosition(0), Vec3{5.0f, 5.0f, 5.0f}));
+        r.check("pln17_direct_vertex_edit_does_not_reach_construction_source",
+                sameVertices(object.generateMesh().vertices, source.vertices));
+
+        // PLN-18: Back to Construction and Resume Sculpt round-trip both
+        // representations without disturbing either.
+        session.enterConstruction();
+        r.check("pln18_back_to_construction_switches_mode",
+                session.mode() == ProductMode::Construction);
+        r.check("pln18_back_to_construction_keeps_frozen_plane_mesh", session.hasSculptMesh());
+        r.check("pln18_back_to_construction_keeps_the_edit",
+                nearlyVec(session.mesh().vertexPosition(0), Vec3{5.0f, 5.0f, 5.0f}));
+
+        const uint64_t freezesBeforeResume = session.freezeCount();
+        r.check("pln18_resume_sculpt_succeeds", session.enterSculpt());
+        r.check("pln18_resume_sculpt_does_not_refreeze",
+                session.freezeCount() == freezesBeforeResume);
+        r.check("pln18_resume_sculpt_restores_the_edit_down_to_the_pixel",
+                nearlyVec(session.mesh().vertexPosition(0), Vec3{5.0f, 5.0f, 5.0f}));
+        r.check("pln18_resume_sculpt_keeps_open_topology",
+                session.mesh().vertexCount() == 4 && session.mesh().indexCount() == 6);
+
+        // PLN-19: a Construction edit after Freeze establishes the standard
+        // stale-source state and does NOT touch the existing frozen mesh.
+        r.check("pln19_source_not_stale_after_freeze", !session.sourceStale());
+        object.setPrimitive(PrimitiveSpec::forPlane(4.0, 0.5));
+        session.markSourceStale();
+        r.check("pln19_plane_edit_after_freeze_marks_source_stale", session.sourceStale());
+        r.check("pln19_stale_source_does_not_replace_frozen_plane_mesh",
+                nearlyVec(session.mesh().vertexPosition(0), Vec3{5.0f, 5.0f, 5.0f}) &&
+                    session.mesh().vertexCount() == 4);
+        r.check("pln19_stale_source_does_not_auto_refreeze",
+                session.freezeCount() == freezesBeforeResume);
+
+        // Only an explicit re-Freeze is destructive, exactly as for every other
+        // primitive: it clears staleness and starts a fresh sculpt revision
+        // from the NEW (4.0 x 0.5) plane.
+        session.freezeToSculpt(object.generateMesh(), object.objectId());
+        r.check("pln19_explicit_refreeze_clears_stale_for_plane", !session.sourceStale());
+        r.check("pln19_explicit_refreeze_restarts_sculpt_revision",
+                session.mesh().revision() == 1);
+        r.check("pln19_explicit_refreeze_reflects_the_new_plane_dimensions",
+                object.plane().widthMeters() == 4.0 && object.plane().depthMeters() == 0.5);
     }
 
     // -----------------------------------------------------------------------

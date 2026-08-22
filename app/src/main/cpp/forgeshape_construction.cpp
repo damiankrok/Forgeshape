@@ -43,6 +43,30 @@ const float kCornerSigns[kBoxVertexCount][3] = {
     {-1.0f, -1.0f,  1.0f}, { 1.0f, -1.0f,  1.0f}, { 1.0f,  1.0f,  1.0f}, {-1.0f,  1.0f,  1.0f},
 };
 
+// Plane corner colours. DERIVED PRESENTATION data, exactly like the box's: a
+// per-corner gradient makes orientation and the -X/+Z corners readable by eye.
+// No dimension is ever inferred from it.
+const float kPlaneCornerColors[kPlaneVertexCount][3] = {
+    {0.20f, 0.30f, 0.85f},  // -x -z
+    {0.90f, 0.35f, 0.20f},  // +x -z
+    {0.95f, 0.90f, 0.25f},  // +x +z
+    {0.25f, 0.85f, 0.45f},  // -x +z
+};
+
+// Sign of each corner along x, z, in the order the colour table above assumes.
+const float kPlaneCornerSigns[kPlaneVertexCount][2] = {
+    {-1.0f, -1.0f}, { 1.0f, -1.0f}, { 1.0f,  1.0f}, {-1.0f,  1.0f},
+};
+
+// Canonical plane topology: one rectangle split on the (-X-Z, +X+Z) diagonal,
+// both triangles counter-clockwise seen from the canonical front (+Y) — the
+// same winding rule the box's +Y face uses, and for the same reason: the
+// geometric normal (v1-v0) x (v2-v0) must point away from the surface's front.
+const uint32_t kPlaneIndices[kPlaneIndexCount] = {
+    0, 3, 2,
+    2, 1, 0,
+};
+
 // Exact unit direction for ring vertex `segment` of a ring divided into
 // `segmentCount` equal parts, where segmentCount is divisible by four.
 //
@@ -121,6 +145,7 @@ const char* primitiveKindName(PrimitiveKind kind) {
         case PrimitiveKind::Sphere: return "sphere";
         case PrimitiveKind::Cone: return "cone";
         case PrimitiveKind::Capsule: return "capsule";
+        case PrimitiveKind::Plane: return "plane";
     }
     return "unknown";
 }
@@ -845,6 +870,64 @@ ConstructionMesh ConstructionCapsule::generateMesh() const {
 }
 
 // ---------------------------------------------------------------------------
+// Plane
+// ---------------------------------------------------------------------------
+
+PrimitiveUpdateStatus ConstructionPlane::setDimensionsMeters(Meters width, Meters depth,
+                                                              DimensionValidation* outWhy) {
+    DimensionValidation why = validateDimensionMeters(width);
+    if (why == DimensionValidation::Ok) {
+        why = validateDimensionMeters(depth);
+    }
+    if (outWhy != nullptr) {
+        *outWhy = why;
+    }
+    if (why != DimensionValidation::Ok) {
+        ++rejectedUpdates_;
+        return PrimitiveUpdateStatus::Rejected;
+    }
+
+    if (width == dimensions_.width && depth == dimensions_.depth) {
+        return PrimitiveUpdateStatus::Unchanged;
+    }
+
+    dimensions_.width = width;
+    dimensions_.depth = depth;
+    ++updateCount_;
+    return PrimitiveUpdateStatus::Applied;
+}
+
+// Vertex layout, fixed and shared with the index table above:
+//
+//   0   -x -z          1   +x -z
+//   3   -x +z          2   +x +z
+//
+// Exactly 4 vertices and 2 triangles, always — a plane has no tessellation
+// parameter because there is nothing to divide. Y is always exactly 0: this is
+// a zero-thickness sheet, not a thin box.
+ConstructionMesh ConstructionPlane::generateMesh() const {
+    const float halfX = static_cast<float>(dimensions_.width * 0.5);
+    const float halfZ = static_cast<float>(dimensions_.depth * 0.5);
+
+    ConstructionMesh mesh;
+    mesh.vertices.resize(kPlaneVertexCount);
+    for (uint32_t i = 0; i < kPlaneVertexCount; ++i) {
+        MeshVertex& v = mesh.vertices[i];
+        v.position[0] = kPlaneCornerSigns[i][0] * halfX;
+        v.position[1] = 0.0f;
+        v.position[2] = kPlaneCornerSigns[i][1] * halfZ;
+        v.color[0] = kPlaneCornerColors[i][0];
+        v.color[1] = kPlaneCornerColors[i][1];
+        v.color[2] = kPlaneCornerColors[i][2];
+    }
+    mesh.indices.assign(kPlaneIndices, kPlaneIndices + kPlaneIndexCount);
+    // A Plane has no interior: it is the one primitive whose render and pick
+    // layers are each authorized to treat both sides as legitimate surface.
+    mesh.renderBothSides = true;
+    return mesh;
+}
+
+// ---------------------------------------------------------------------------
 // The one active object
 // ---------------------------------------------------------------------------
 
@@ -875,6 +958,12 @@ PrimitiveSpec PrimitiveSpec::of(const ConeDimensionsMeters& cone) {
 PrimitiveSpec PrimitiveSpec::of(const CapsuleDimensionsMeters& capsule) {
     PrimitiveSpec spec;
     spec.payload_ = capsule;
+    return spec;
+}
+
+PrimitiveSpec PrimitiveSpec::of(const PlaneDimensionsMeters& plane) {
+    PrimitiveSpec spec;
+    spec.payload_ = plane;
     return spec;
 }
 
@@ -913,6 +1002,13 @@ PrimitiveSpec PrimitiveSpec::forCapsule(Meters diameter, Meters totalHeight) {
     return of(capsule);
 }
 
+PrimitiveSpec PrimitiveSpec::forPlane(Meters width, Meters depth) {
+    PlaneDimensionsMeters plane;
+    plane.width = width;
+    plane.depth = depth;
+    return of(plane);
+}
+
 // The payload's alternative order IS the kind, so a mismatch here would make
 // every kind() answer silently wrong. Caught at compile time instead.
 static_assert(PrimitiveSpec::Payload{BoxDimensionsMeters{}}.index() ==
@@ -930,6 +1026,9 @@ static_assert(PrimitiveSpec::Payload{ConeDimensionsMeters{}}.index() ==
 static_assert(PrimitiveSpec::Payload{CapsuleDimensionsMeters{}}.index() ==
                   static_cast<size_t>(PrimitiveKind::Capsule),
               "PrimitiveSpec payload order must match PrimitiveKind");
+static_assert(PrimitiveSpec::Payload{PlaneDimensionsMeters{}}.index() ==
+                  static_cast<size_t>(PrimitiveKind::Plane),
+              "PrimitiveSpec payload order must match PrimitiveKind");
 
 PrimitiveSpec ConstructionObject::spec() const {
     switch (kind_) {
@@ -938,6 +1037,7 @@ PrimitiveSpec ConstructionObject::spec() const {
         case PrimitiveKind::Sphere: return PrimitiveSpec::of(sphere_.dimensionsMeters());
         case PrimitiveKind::Cone: return PrimitiveSpec::of(cone_.dimensionsMeters());
         case PrimitiveKind::Capsule: return PrimitiveSpec::of(capsule_.dimensionsMeters());
+        case PrimitiveKind::Plane: return PrimitiveSpec::of(plane_.dimensionsMeters());
     }
     return PrimitiveSpec::of(box_.dimensionsMeters());
 }
@@ -976,6 +1076,14 @@ DimensionValidation validateParameters(const CapsuleDimensionsMeters& capsule) {
     return validateCapsuleMeters(capsule.diameter, capsule.totalHeight);
 }
 
+// A plane's two extents are independent, exactly like a box's three: there is
+// no relation to enforce beyond the ordinary per-length rule.
+DimensionValidation validateParameters(const PlaneDimensionsMeters& plane) {
+    DimensionValidation why = validateDimensionMeters(plane.width);
+    if (why == DimensionValidation::Ok) why = validateDimensionMeters(plane.depth);
+    return why;
+}
+
 bool sameParameters(const BoxDimensionsMeters& a, const BoxDimensionsMeters& b) {
     return a.width == b.width && a.height == b.height && a.depth == b.depth;
 }
@@ -996,7 +1104,55 @@ bool sameParameters(const CapsuleDimensionsMeters& a, const CapsuleDimensionsMet
     return a.diameter == b.diameter && a.totalHeight == b.totalHeight;
 }
 
+bool sameParameters(const PlaneDimensionsMeters& a, const PlaneDimensionsMeters& b) {
+    return a.width == b.width && a.depth == b.depth;
+}
+
 }  // namespace
+
+// One overload per primitive kind, each comparing the requested payload
+// against the matching member's current parameters. Replaces an if-else chain
+// over typed accessors: std::visit in setPrimitive below requires a matching
+// overload for every PrimitiveSpec payload alternative, so a kind added to the
+// variant without a matching overload here is a COMPILE error instead of a
+// silently-skipped branch.
+bool ConstructionObject::parametersDiffer(const BoxDimensionsMeters& box) const {
+    return !sameParameters(box, box_.dimensionsMeters());
+}
+bool ConstructionObject::parametersDiffer(const CylinderDimensionsMeters& cylinder) const {
+    return !sameParameters(cylinder, cylinder_.dimensionsMeters());
+}
+bool ConstructionObject::parametersDiffer(const SphereDimensionsMeters& sphere) const {
+    return !sameParameters(sphere, sphere_.dimensionsMeters());
+}
+bool ConstructionObject::parametersDiffer(const ConeDimensionsMeters& cone) const {
+    return !sameParameters(cone, cone_.dimensionsMeters());
+}
+bool ConstructionObject::parametersDiffer(const CapsuleDimensionsMeters& capsule) const {
+    return !sameParameters(capsule, capsule_.dimensionsMeters());
+}
+bool ConstructionObject::parametersDiffer(const PlaneDimensionsMeters& plane) const {
+    return !sameParameters(plane, plane_.dimensionsMeters());
+}
+
+void ConstructionObject::writeParameters(const BoxDimensionsMeters& box) {
+    box_.setDimensionsMeters(box.width, box.height, box.depth);
+}
+void ConstructionObject::writeParameters(const CylinderDimensionsMeters& cylinder) {
+    cylinder_.setDimensionsMeters(cylinder.diameter, cylinder.height);
+}
+void ConstructionObject::writeParameters(const SphereDimensionsMeters& sphere) {
+    sphere_.setDimensionsMeters(sphere.diameter);
+}
+void ConstructionObject::writeParameters(const ConeDimensionsMeters& cone) {
+    cone_.setDimensionsMeters(cone.bottomDiameter, cone.height);
+}
+void ConstructionObject::writeParameters(const CapsuleDimensionsMeters& capsule) {
+    capsule_.setDimensionsMeters(capsule.diameter, capsule.totalHeight);
+}
+void ConstructionObject::writeParameters(const PlaneDimensionsMeters& plane) {
+    plane_.setDimensionsMeters(plane.width, plane.depth);
+}
 
 PrimitiveUpdateStatus ConstructionObject::setPrimitive(const PrimitiveSpec& requested,
                                                        DimensionValidation* outWhy) {
@@ -1015,34 +1171,16 @@ PrimitiveUpdateStatus ConstructionObject::setPrimitive(const PrimitiveSpec& requ
     // A kind change is always a change, even when the target primitive already
     // holds exactly these parameters: the object is a different shape after it.
     const bool kindChanged = requested.kind() != kind_;
-    bool parametersChanged = false;
-    if (const BoxDimensionsMeters* box = requested.box()) {
-        parametersChanged = !sameParameters(*box, box_.dimensionsMeters());
-    } else if (const CylinderDimensionsMeters* cylinder = requested.cylinder()) {
-        parametersChanged = !sameParameters(*cylinder, cylinder_.dimensionsMeters());
-    } else if (const SphereDimensionsMeters* sphere = requested.sphere()) {
-        parametersChanged = !sameParameters(*sphere, sphere_.dimensionsMeters());
-    } else if (const ConeDimensionsMeters* cone = requested.cone()) {
-        parametersChanged = !sameParameters(*cone, cone_.dimensionsMeters());
-    } else if (const CapsuleDimensionsMeters* capsule = requested.capsule()) {
-        parametersChanged = !sameParameters(*capsule, capsule_.dimensionsMeters());
-    }
+    const bool parametersChanged = std::visit(
+        [this](const auto& parameters) { return parametersDiffer(parameters); },
+        requested.payload());
 
     if (!kindChanged && !parametersChanged) {
         return PrimitiveUpdateStatus::Unchanged;
     }
 
-    if (const BoxDimensionsMeters* box = requested.box()) {
-        box_.setDimensionsMeters(box->width, box->height, box->depth);
-    } else if (const CylinderDimensionsMeters* cylinder = requested.cylinder()) {
-        cylinder_.setDimensionsMeters(cylinder->diameter, cylinder->height);
-    } else if (const SphereDimensionsMeters* sphere = requested.sphere()) {
-        sphere_.setDimensionsMeters(sphere->diameter);
-    } else if (const ConeDimensionsMeters* cone = requested.cone()) {
-        cone_.setDimensionsMeters(cone->bottomDiameter, cone->height);
-    } else if (const CapsuleDimensionsMeters* capsule = requested.capsule()) {
-        capsule_.setDimensionsMeters(capsule->diameter, capsule->totalHeight);
-    }
+    std::visit([this](const auto& parameters) { writeParameters(parameters); },
+              requested.payload());
     kind_ = requested.kind();
     ++updateCount_;
     // transform_ is deliberately untouched: where the object sits is not part of
@@ -1057,6 +1195,7 @@ ConstructionMesh ConstructionObject::generateMesh() const {
         case PrimitiveKind::Sphere: return sphere_.generateMesh();
         case PrimitiveKind::Cone: return cone_.generateMesh();
         case PrimitiveKind::Capsule: return capsule_.generateMesh();
+        case PrimitiveKind::Plane: return plane_.generateMesh();
     }
     return box_.generateMesh();
 }
@@ -1069,7 +1208,8 @@ namespace {
 
 MeshRevision publishMesh(const ConstructionMesh& mesh, MeshStore& store, MeshValidation* outWhy) {
     return store.publish(mesh.vertices.data(), static_cast<uint32_t>(mesh.vertices.size()),
-                         mesh.indices.data(), static_cast<uint32_t>(mesh.indices.size()), outWhy);
+                         mesh.indices.data(), static_cast<uint32_t>(mesh.indices.size()), outWhy,
+                         mesh.renderBothSides);
 }
 
 }  // namespace
@@ -1142,6 +1282,10 @@ PrimitiveApplyResult applyConstructionCone(Meters bottomDiameter, Meters height)
 
 PrimitiveApplyResult applyConstructionCapsule(Meters diameter, Meters totalHeight) {
     return applyConstructionPrimitive(PrimitiveSpec::forCapsule(diameter, totalHeight));
+}
+
+PrimitiveApplyResult applyConstructionPlane(Meters width, Meters depth) {
+    return applyConstructionPrimitive(PrimitiveSpec::forPlane(width, depth));
 }
 
 }  // namespace forgeshape

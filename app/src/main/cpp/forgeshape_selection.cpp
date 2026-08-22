@@ -2,6 +2,7 @@
 
 #include <cmath>
 
+#include "forgeshape_construction.h"
 #include "forgeshape_mesh.h"
 #include "forgeshape_picking.h"
 #include "forgeshape_transform.h"
@@ -10,14 +11,21 @@ namespace forgeshape {
 
 SceneHit pickScene(const CameraSnapshot& camera, float screenX, float screenY,
                    int viewportWidth, int viewportHeight) {
+    // The bounded two-sided exception, named and scoped to exactly one
+    // primitive: a flat Construction Plane has no interior a back-face hit
+    // could wrongly reach, so it alone picks from both sides — including while
+    // its Frozen Sculpt Mesh copy is the active representation, since that copy
+    // is still the same open sheet and `kind()` is unaffected by Freeze. Every
+    // other primitive keeps the ordinary front-face-only rule.
+    const bool twoSidedPlane = constructionObject().kind() == PrimitiveKind::Plane;
     return pickScene(camera, screenX, screenY, viewportWidth, viewportHeight,
                      constructionTransform().modelMatrix(),
-                     constructionTransform().inverseModelMatrix());
+                     constructionTransform().inverseModelMatrix(), !twoSidedPlane);
 }
 
 SceneHit pickScene(const CameraSnapshot& camera, float screenX, float screenY,
                    int viewportWidth, int viewportHeight, const Mat4& model,
-                   const Mat4& inverseModel) {
+                   const Mat4& inverseModel, bool frontFacesOnly) {
     SceneHit result{};
 
     Ray worldRay{};
@@ -43,10 +51,11 @@ SceneHit pickScene(const CameraSnapshot& camera, float screenX, float screenY,
     }
 
     // Front faces only, so picking sees exactly the surfaces the rasterizer
-    // draws under VK_CULL_MODE_BACK_BIT. The rigid transform preserves winding
-    // (it has no reflection), so front-facing is the same fact in either space.
-    const TriangleHit hit =
-        pickTriangleMesh(localRay, mesh->triangleView(), /*frontFacesOnly=*/true);
+    // draws under VK_CULL_MODE_BACK_BIT — except when the caller has passed the
+    // bounded two-sided exception for a flat Construction Plane. The rigid
+    // transform preserves winding (it has no reflection), so front-facing is
+    // the same fact in either space.
+    const TriangleHit hit = pickTriangleMesh(localRay, mesh->triangleView(), frontFacesOnly);
     if (!hit.hit) {
         return result;
     }

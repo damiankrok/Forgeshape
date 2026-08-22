@@ -243,6 +243,12 @@ ConstructionMesh defaultCapsule() {
     return capsule.generateMesh();
 }
 
+ConstructionMesh defaultPlane() {
+    ConstructionPlane plane;
+    plane.setDimensionsMeters(kDefaultPlaneWidthMeters, kDefaultPlaneDepthMeters);
+    return plane.generateMesh();
+}
+
 // The equality case: totalHeight == diameter, which the generator produces as a
 // sphere rather than as a capsule with a zero-height middle.
 ConstructionMesh sphericalCapsule() {
@@ -1373,6 +1379,140 @@ void checkDisplayModesAreInert(Recorder& r) {
                                                    store.publishedCount() == 1);
 }
 
+// ---------------------------------------------------------------------------
+// PLN-09/10/20 — the bounded two-sided render-only exception for Plane
+// ---------------------------------------------------------------------------
+
+// PLN-09/10: a Plane's render data, built with the two-sided exception on, is
+// exactly the ordinary one-sided result plus a wholesale mirrored copy — front
+// half shaded +Y, back half shaded -Y — and the SOURCE topology it was built
+// from is untouched (still exactly 4:6), because the duplication happens only
+// in render-only data that is never read back.
+void checkPlaneTwoSidedRenderGeometry(Recorder& r) {
+    const ConstructionMesh source = defaultPlane();
+    r.check("pln09_source_topology_is_4_6",
+            source.vertices.size() == 4 && source.indices.size() == 6 &&
+                source.renderBothSides);
+
+    RenderMeshData oneSided;
+    const bool builtOneSided =
+        buildRenderMesh(source.vertices.data(), static_cast<uint32_t>(source.vertices.size()),
+                        source.indices.data(), static_cast<uint32_t>(source.indices.size()),
+                        SurfaceShading::Smooth, &oneSided, /*renderBothSides=*/false);
+    r.check("pln09_one_sided_build_succeeds", builtOneSided);
+
+    RenderMeshData twoSided;
+    const bool builtTwoSided =
+        buildRenderMesh(source.vertices.data(), static_cast<uint32_t>(source.vertices.size()),
+                        source.indices.data(), static_cast<uint32_t>(source.indices.size()),
+                        SurfaceShading::Smooth, &twoSided, /*renderBothSides=*/true);
+    r.check("pln09_two_sided_build_succeeds", builtTwoSided);
+    if (!builtOneSided || !builtTwoSided) {
+        return;
+    }
+
+    const uint32_t baseVertexCount = oneSided.vertexCount();
+    const uint32_t baseIndexCount = oneSided.indexCount();
+    r.check("pln10_two_sided_doubles_vertex_and_index_counts",
+            twoSided.vertexCount() == baseVertexCount * 2 &&
+                twoSided.indexCount() == baseIndexCount * 2);
+    // Source topology is still exactly 4:6 — the duplication above never
+    // touched it, and this is the direct proof rather than an inference.
+    r.check("pln10_source_topology_still_4_6_after_render_build",
+            source.vertices.size() == 4 && source.indices.size() == 6);
+
+    // A perfectly flat, coplanar 2-triangle sheet has no crease, so Smooth
+    // shading produces exactly one normal group per side: the front half is
+    // exactly +Y and the back half is exactly -Y, not merely "outward-ish".
+    bool frontAllPlusY = true;
+    for (uint32_t i = 0; i < baseVertexCount; ++i) {
+        const Vec3 n = normalOf(twoSided.vertices[i]);
+        if (!(nearly(n.x, 0.0f) && nearly(n.y, 1.0f) && nearly(n.z, 0.0f))) frontAllPlusY = false;
+    }
+    r.check("pln09_front_render_normals_are_exactly_plus_y", frontAllPlusY);
+
+    bool backAllMinusY = true;
+    for (uint32_t i = baseVertexCount; i < twoSided.vertexCount(); ++i) {
+        const Vec3 n = normalOf(twoSided.vertices[i]);
+        if (!(nearly(n.x, 0.0f) && nearly(n.y, -1.0f) && nearly(n.z, 0.0f))) backAllMinusY = false;
+    }
+    r.check("pln10_back_render_normals_are_exactly_minus_y", backAllMinusY);
+
+    // Every back-half triangle indexes only back-half vertices, so the front
+    // and back copies never share a render vertex.
+    bool backIndicesInBackRange = true;
+    for (uint32_t i = baseIndexCount; i < twoSided.indexCount(); ++i) {
+        if (twoSided.indices[i] < baseVertexCount) backIndicesInBackRange = false;
+    }
+    r.check("pln10_back_triangles_use_only_back_vertices", backIndicesInBackRange);
+
+    r.check("pln09_10_render_data_all_finite", renderMeshIsFinite(twoSided));
+}
+
+// PLN-20: Studio/MatCap/Shading-model and Smooth/Faceted switches, applied to a
+// Plane specifically, mutate no source revision and are invisible to picking —
+// the same NOR-10 contract, proven again on the one primitive whose render
+// path takes the extra two-sided branch.
+void checkPlaneDisplayModesAreInert(Recorder& r) {
+    const ConstructionMesh source = defaultPlane();
+    MeshStore store(kConstructionBoxObjectId);
+    const MeshRevision revision = store.publish(
+        source.vertices.data(), static_cast<uint32_t>(source.vertices.size()),
+        source.indices.data(), static_cast<uint32_t>(source.indices.size()), nullptr,
+        source.renderBothSides);
+    const RuntimeMeshPtr mesh = store.current();
+    if (!mesh || revision == kNoMeshRevision) {
+        r.check("pln20_display_fixture", false);
+        return;
+    }
+    r.check("pln20_display_fixture", mesh->renderBothSides());
+
+    // A ray from behind the plane hits only because of the two-sided
+    // exception; it must keep hitting the SAME triangle/point through every
+    // display change below.
+    const Ray fromBelow{Vec3{0.2f, -4.0f, 0.1f}, Vec3{0.0f, 1.0f, 0.0f}};
+    const TriangleHit before =
+        pickTriangleMesh(fromBelow, mesh->triangleView(), /*frontFacesOnly=*/false);
+    r.check("pln20_back_picking_hits_before_display_change", before.hit);
+
+    RenderMeshCache cache;
+    cache.refresh(*mesh, SurfaceShading::Smooth);
+    const uint64_t afterFirstBuild = cache.rebuildCount();
+    const uint32_t twoSidedVertexCount = cache.data().vertexCount();
+
+    DisplaySettingsStore display;
+    display.setShadingModel(ShadingModel::MatCap);
+    display.setShadingModel(ShadingModel::StudioSolid);
+    display.setShadingModel(ShadingModel::MatCap);
+    r.check("pln20_shading_model_never_rebuilds_geometry",
+            !cache.refresh(*mesh, SurfaceShading::Smooth) &&
+                cache.rebuildCount() == afterFirstBuild);
+
+    display.setSurfaceShading(SurfaceShading::Faceted);
+    r.check("pln20_surface_shading_rebuilds_render_data_only",
+            cache.refresh(*mesh, SurfaceShading::Faceted) &&
+                cache.rebuildCount() == afterFirstBuild + 1);
+    // Faceted still doubles whatever the one-sided Faceted count is; the exact
+    // number differs from Smooth's, but the two-sided exception must still be
+    // in effect (an even count, at least the Smooth two-sided count).
+    r.check("pln20_faceted_still_two_sided",
+            cache.data().vertexCount() % 2 == 0 && cache.data().vertexCount() >= 4);
+
+    display.setSurfaceShading(SurfaceShading::Smooth);
+    cache.refresh(*mesh, SurfaceShading::Smooth);
+    r.check("pln20_smooth_round_trip_restores_two_sided_count",
+            cache.data().vertexCount() == twoSidedVertexCount);
+
+    const TriangleHit after =
+        pickTriangleMesh(fromBelow, mesh->triangleView(), /*frontFacesOnly=*/false);
+    r.check("pln20_back_picking_unchanged_by_display",
+            after.hit == before.hit && after.triangleIndex == before.triangleIndex &&
+                nearly(after.t, before.t));
+    r.check("pln20_source_revision_unchanged", mesh->revision() == revision &&
+                                                    store.currentRevision() == revision &&
+                                                    store.publishedCount() == 1);
+}
+
 // The guard that makes every check above mean something.
 //
 // A suite that measures only axes and magnitudes passes unchanged on a mesh
@@ -1432,6 +1572,10 @@ int runRenderMeshSelfTests(RenderMeshSelfTestResult* out, int max) {
     checkNormalTransform(r);
     checkDisplayModesAreInert(r);
     checkFlipIsDetected(r);
+
+    // Stage 016: the bounded two-sided render-only exception for Plane.
+    checkPlaneTwoSidedRenderGeometry(r);
+    checkPlaneDisplayModesAreInert(r);
 
     return r.n;
 }

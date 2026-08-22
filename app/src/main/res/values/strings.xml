@@ -68,6 +68,7 @@
     <string name="primitive_sphere">Sphere</string>
     <string name="primitive_cone">Cone</string>
     <string name="primitive_capsule">Capsule</string>
+    <string name="primitive_plane">Plane</string>
     <string name="apply_shape">Apply Shape</string>
     <string name="apply_transform">Apply Transform</string>
     <string name="label_width">Width</string>

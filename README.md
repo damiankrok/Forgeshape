@@ -179,7 +179,7 @@ See `PRODUCT.md` for the full gesture contract.
 ## Editing the object
 
 The Construction **Tool Rail** chooses what the **Property Inspector** edits:
-*Shape* (Box, Cylinder, Sphere, Cone or Capsule, and that shape's dimensions) or
+*Shape* (Box, Cylinder, Sphere, Cone, Capsule or Plane, and that shape's dimensions) or
 *Place* (position X/Y/Z, rotation X/Y/Z), each with its own Apply. Pick a display
 unit (mm / cm / m) for lengths — rotation is always degrees — type the values,
 and press the matching Apply. Nothing changes until then, including choosing a

@@ -27,23 +27,27 @@ import java.math.BigDecimal;
  */
 final class ConstructionShapeEditorView extends LinearLayout {
 
-    /** Two-parameter primitive field order: slot 0 is always the diameter and
-     *  slot 1 always the length along the axis, whichever primitive it is — so
-     *  a row's slots never change meaning, only their labels do. */
-    private static final int DIAMETER = 0;
-    private static final int AXIAL = 1;
+    /** Two-parameter primitive field order: slot 0 and slot 1 are always the
+     *  same two fields in the same order for one primitive, whichever it is —
+     *  so a row's slots never change meaning, only their labels do. For
+     *  cylinder, cone and capsule that pair is a diameter and an axial length;
+     *  for a plane it is a width and a depth, which is exactly why these two
+     *  are named by POSITION rather than by "diameter"/"axial". */
+    private static final int FIELD_0 = 0;
+    private static final int FIELD_1 = 1;
 
     private static final int[] CHOOSER_IDS = {
             R.id.primitive_option_box, R.id.primitive_option_cylinder,
             R.id.primitive_option_sphere, R.id.primitive_option_cone,
-            R.id.primitive_option_capsule
+            R.id.primitive_option_capsule, R.id.primitive_option_plane
     };
     private static final int[] CHOOSER_LABELS = {
             R.string.primitive_box, R.string.primitive_cylinder, R.string.primitive_sphere,
-            R.string.primitive_cone, R.string.primitive_capsule
+            R.string.primitive_cone, R.string.primitive_capsule, R.string.primitive_plane
     };
-    /** Three per row rather than five: five chips across a compact window
-     *  would each be narrower than a fingertip, and the last one clipped. */
+    /** Three per row rather than five or six: five (or six) chips across a
+     *  compact window would each be narrower than a fingertip, and the last
+     *  one clipped. */
     private static final int CHOOSER_COLUMNS = 3;
 
     private final InspectorHost host;
@@ -55,6 +59,7 @@ final class ConstructionShapeEditorView extends LinearLayout {
     private final NumericPropertyRow[] sphereFields = new NumericPropertyRow[1];
     private final NumericPropertyRow[] coneFields = new NumericPropertyRow[2];
     private final NumericPropertyRow[] capsuleFields = new NumericPropertyRow[2];
+    private final NumericPropertyRow[] planeFields = new NumericPropertyRow[2];
     private final UnitChipsView unitChips;
 
     /** Reused across reads; native fills this with authoritative values. */
@@ -88,6 +93,10 @@ final class ConstructionShapeEditorView extends LinearLayout {
                 R.id.primitive_row_capsule, capsuleFields,
                 new int[]{R.id.field_capsule_diameter, R.id.field_capsule_total_height},
                 new int[]{R.string.label_diameter, R.string.label_total_height});
+        parameterRows[NativeViewport.PRIMITIVE_PLANE] = buildRow(context,
+                R.id.primitive_row_plane, planeFields,
+                new int[]{R.id.field_plane_width, R.id.field_plane_depth},
+                new int[]{R.string.label_width, R.string.label_depth});
         for (View row : parameterRows) {
             addView(row, EditorControlStyles.rowParams(gap));
         }
@@ -238,7 +247,7 @@ final class ConstructionShapeEditorView extends LinearLayout {
 
     private NumericPropertyRow[][] allFieldGroups() {
         return new NumericPropertyRow[][]{
-                boxFields, cylinderFields, sphereFields, coneFields, capsuleFields};
+                boxFields, cylinderFields, sphereFields, coneFields, capsuleFields, planeFields};
     }
 
     // -----------------------------------------------------------------------
@@ -265,16 +274,22 @@ final class ConstructionShapeEditorView extends LinearLayout {
                     nativePrimitive[NativeViewport.PRIMITIVE_BOX_WIDTH + i]));
         }
         writeAxialPair(cylinderFields, NativeViewport.PRIMITIVE_CYLINDER_DIAMETER, unit);
-        sphereFields[DIAMETER].setText(
+        sphereFields[FIELD_0].setText(
                 unit.format(nativePrimitive[NativeViewport.PRIMITIVE_SPHERE_DIAMETER]));
         writeAxialPair(coneFields, NativeViewport.PRIMITIVE_CONE_BOTTOM_DIAMETER, unit);
         writeAxialPair(capsuleFields, NativeViewport.PRIMITIVE_CAPSULE_DIAMETER, unit);
+        writeAxialPair(planeFields, NativeViewport.PRIMITIVE_PLANE_WIDTH, unit);
         unitChips.showSelected(unit);
     }
 
-    private void writeAxialPair(NumericPropertyRow[] fields, int diameterSlot, LengthUnit unit) {
-        fields[DIAMETER].setText(unit.format(nativePrimitive[diameterSlot]));
-        fields[AXIAL].setText(unit.format(nativePrimitive[diameterSlot + 1]));
+    /** Writes two sequential native slots into a row's two fields, in order.
+     *  Named for its main use — a diameter followed by an axial length, for
+     *  cylinder, cone and capsule — but equally correct for any two sequential
+     *  lengths in the same order, which is how the plane's width/depth pair
+     *  reuses it below. */
+    private void writeAxialPair(NumericPropertyRow[] fields, int firstSlot, LengthUnit unit) {
+        fields[FIELD_0].setText(unit.format(nativePrimitive[firstSlot]));
+        fields[FIELD_1].setText(unit.format(nativePrimitive[firstSlot + 1]));
     }
 
     // -----------------------------------------------------------------------
@@ -350,7 +365,7 @@ final class ConstructionShapeEditorView extends LinearLayout {
         final LengthUnit unit = host.uiState().displayUnit();
         switch (host.uiState().draftPrimitiveKind()) {
             case NativeViewport.PRIMITIVE_SPHERE: {
-                final BigDecimal diameter = readField(sphereFields[DIAMETER], true);
+                final BigDecimal diameter = readField(sphereFields[FIELD_0], true);
                 if (diameter == null) {
                     return null;
                 }
@@ -363,8 +378,8 @@ final class ConstructionShapeEditorView extends LinearLayout {
                     return null;
                 }
                 return NativeViewport.applyConstructionCylinder(
-                        unit.toMeters(values[DIAMETER]).doubleValue(),
-                        unit.toMeters(values[AXIAL]).doubleValue());
+                        unit.toMeters(values[FIELD_0]).doubleValue(),
+                        unit.toMeters(values[FIELD_1]).doubleValue());
             }
             case NativeViewport.PRIMITIVE_CONE: {
                 final BigDecimal[] values = readAxialPair(coneFields);
@@ -372,8 +387,8 @@ final class ConstructionShapeEditorView extends LinearLayout {
                     return null;
                 }
                 return NativeViewport.applyConstructionCone(
-                        unit.toMeters(values[DIAMETER]).doubleValue(),
-                        unit.toMeters(values[AXIAL]).doubleValue());
+                        unit.toMeters(values[FIELD_0]).doubleValue(),
+                        unit.toMeters(values[FIELD_1]).doubleValue());
             }
             case NativeViewport.PRIMITIVE_CAPSULE: {
                 final BigDecimal[] values = readAxialPair(capsuleFields);
@@ -386,8 +401,17 @@ final class ConstructionShapeEditorView extends LinearLayout {
                 // problem with: it refuses only what it can describe from the
                 // text alone.
                 return NativeViewport.applyConstructionCapsule(
-                        unit.toMeters(values[DIAMETER]).doubleValue(),
-                        unit.toMeters(values[AXIAL]).doubleValue());
+                        unit.toMeters(values[FIELD_0]).doubleValue(),
+                        unit.toMeters(values[FIELD_1]).doubleValue());
+            }
+            case NativeViewport.PRIMITIVE_PLANE: {
+                final BigDecimal[] values = readAxialPair(planeFields);
+                if (values == null) {
+                    return null;
+                }
+                return NativeViewport.applyConstructionPlane(
+                        unit.toMeters(values[FIELD_0]).doubleValue(),
+                        unit.toMeters(values[FIELD_1]).doubleValue());
             }
             default: {
                 final BigDecimal[] displayed = new BigDecimal[boxFields.length];
@@ -406,20 +430,21 @@ final class ConstructionShapeEditorView extends LinearLayout {
     }
 
     /**
-     * Reads a diameter-plus-axial-length pair from one primitive's own row.
+     * Reads two sequential fields from one primitive's own row, in order.
      *
-     * <p>Shared by the cylinder, the cone and the capsule because all three
-     * present exactly that pair in exactly those two slots. It reads fields and
-     * reports on them; it decides nothing about the shape, and the caller still
-     * hands the values to that primitive's own native method, so the typed
-     * boundary is untouched.
+     * <p>Shared by the cylinder, the cone and the capsule, whose two fields are
+     * a diameter and an axial length, and by the plane, whose two fields are a
+     * width and a depth — all four present exactly two lengths in exactly the
+     * same two slots. It reads fields and reports on them; it decides nothing
+     * about the shape, and the caller still hands the values to that
+     * primitive's own native method, so the typed boundary is untouched.
      */
     private BigDecimal[] readAxialPair(NumericPropertyRow[] fields) {
-        final BigDecimal diameter = readField(fields[DIAMETER], true);
+        final BigDecimal diameter = readField(fields[FIELD_0], true);
         if (diameter == null) {
             return null;
         }
-        final BigDecimal axial = readField(fields[AXIAL], true);
+        final BigDecimal axial = readField(fields[FIELD_1], true);
         if (axial == null) {
             return null;
         }
@@ -475,6 +500,14 @@ final class ConstructionShapeEditorView extends LinearLayout {
             case NativeViewport.PRIMITIVE_CAPSULE:
                 return describeAxialPair("capsule",
                         NativeViewport.PRIMITIVE_CAPSULE_DIAMETER, " total");
+            case NativeViewport.PRIMITIVE_PLANE:
+                // Not describeAxialPair: "dia" is right for a diameter, wrong
+                // for a width, so the plane gets its own "W x D" phrasing.
+                return "plane " + unit.format(
+                        nativePrimitive[NativeViewport.PRIMITIVE_PLANE_WIDTH])
+                        + " x " + unit.format(
+                                nativePrimitive[NativeViewport.PRIMITIVE_PLANE_WIDTH + 1])
+                        + " " + unit.label();
             default:
                 return "box " + unit.format(nativePrimitive[NativeViewport.PRIMITIVE_BOX_WIDTH])
                         + " x " + unit.format(

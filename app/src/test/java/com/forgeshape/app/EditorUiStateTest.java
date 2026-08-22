@@ -27,7 +27,7 @@ public final class EditorUiStateTest {
     @Test
     public void acceptsEveryRealPrimitiveKind() {
         final EditorUiState state = new EditorUiState();
-        for (int kind = NativeViewport.PRIMITIVE_BOX; kind <= NativeViewport.PRIMITIVE_CAPSULE;
+        for (int kind = NativeViewport.PRIMITIVE_BOX; kind <= NativeViewport.PRIMITIVE_PLANE;
                 kind++) {
             state.setDraftPrimitiveKind(kind);
             assertEquals(kind, state.draftPrimitiveKind());
@@ -38,7 +38,7 @@ public final class EditorUiStateTest {
     public void refusesAKindTheProductDoesNotHave() {
         final EditorUiState state = new EditorUiState();
         state.setDraftPrimitiveKind(NativeViewport.PRIMITIVE_SPHERE);
-        state.setDraftPrimitiveKind(NativeViewport.PRIMITIVE_CAPSULE + 1);
+        state.setDraftPrimitiveKind(NativeViewport.PRIMITIVE_PLANE + 1);
         assertEquals("falls back to a box rather than pointing at nothing",
                 NativeViewport.PRIMITIVE_BOX, state.draftPrimitiveKind());
         state.setDraftPrimitiveKind(-1);

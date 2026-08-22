@@ -46,7 +46,11 @@ struct SceneHit {
 
 // Resolves a view-local screen point against everything selectable, using CPU
 // ray/triangle picking and the canonical front-face convention (so only surfaces
-// the rasterizer actually draws can be hit).
+// the rasterizer actually draws can be hit) — EXCEPT for the one bounded,
+// explicitly named case a flat, zero-thickness Construction Plane needs: it has
+// no "inside" a two-sided pick could wrongly reach, unlike a closed solid, so
+// the active primitive being Plane picks both its front and its back. Every
+// other primitive keeps the ordinary front-face-only rule.
 //
 // The ray is carried into the object's local space by the current Construction
 // transform and intersected against the unchanged local mesh, so what is
@@ -55,12 +59,15 @@ struct SceneHit {
 SceneHit pickScene(const CameraSnapshot& camera, float screenX, float screenY,
                    int viewportWidth, int viewportHeight);
 
-// Same, against an explicitly supplied transform pair. Exists so the self-tests
-// can pick against a known transform without touching process-scoped state; the
-// overload above is this one applied to the process transform.
+// Same, against an explicitly supplied transform pair and an explicit
+// front-face-only choice. Exists so the self-tests can pick against a known
+// transform and a known mesh without touching process-scoped state; the
+// overload above is this one applied to the process transform and the process
+// primitive's two-sidedness. `frontFacesOnly` defaults to true — the ordinary
+// closed-solid rule — so existing callers are unaffected.
 SceneHit pickScene(const CameraSnapshot& camera, float screenX, float screenY,
                    int viewportWidth, int viewportHeight, const Mat4& model,
-                   const Mat4& inverseModel);
+                   const Mat4& inverseModel, bool frontFacesOnly = true);
 
 class SelectionController {
 public:

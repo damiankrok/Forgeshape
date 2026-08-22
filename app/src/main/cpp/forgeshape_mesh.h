@@ -80,10 +80,19 @@ using RuntimeMeshPtr = std::shared_ptr<const RuntimeMesh>;
 // Validates, then copies. Returns nullptr (and sets *outWhy) if the data is not
 // a usable triangle mesh; nothing partial is ever produced. This is the ONLY
 // way to obtain a RuntimeMesh, so every mesh that exists has been validated.
+//
+// `renderBothSides` is a GEOMETRIC fact about this mesh, not a display setting:
+// it is true only for a flat, open, single-sided sheet (today, exactly a
+// Construction Plane) that has no "inside" a two-sided render or pick could
+// wrongly reach, unlike a closed solid. It travels with the mesh so the
+// render-only derived-normals layer and CPU picking can each make their own
+// bounded, presentation/pick-appropriate use of it without either one needing
+// to know PrimitiveKind.
 RuntimeMeshPtr createRuntimeMesh(ObjectId objectId, MeshRevision revision,
                                  const MeshVertex* vertices, uint32_t vertexCount,
                                  const uint32_t* indices, uint32_t indexCount,
-                                 MeshValidation* outWhy = nullptr);
+                                 MeshValidation* outWhy = nullptr,
+                                 bool renderBothSides = false);
 
 // One immutable published mesh revision.
 class RuntimeMesh {
@@ -101,6 +110,10 @@ public:
 
     uint32_t triangleCount() const { return indexCount() / 3; }
 
+    // See createRuntimeMesh's doc comment: a geometric fact about this mesh
+    // (flat, open, one canonical front), not a display setting.
+    bool renderBothSides() const { return renderBothSides_; }
+
     // Non-owning triangle view for CPU picking. Valid for as long as the caller
     // holds the shared_ptr this mesh came from.
     TriangleMeshView triangleView() const;
@@ -108,14 +121,16 @@ public:
 private:
     // Private, so validation cannot be bypassed.
     friend RuntimeMeshPtr createRuntimeMesh(ObjectId, MeshRevision, const MeshVertex*, uint32_t,
-                                            const uint32_t*, uint32_t, MeshValidation*);
+                                            const uint32_t*, uint32_t, MeshValidation*, bool);
     RuntimeMesh(ObjectId objectId, MeshRevision revision, const MeshVertex* vertices,
-                uint32_t vertexCount, const uint32_t* indices, uint32_t indexCount);
+                uint32_t vertexCount, const uint32_t* indices, uint32_t indexCount,
+                bool renderBothSides);
 
     const ObjectId objectId_;
     const MeshRevision revision_;
     const std::vector<MeshVertex> vertices_;
     const std::vector<uint32_t> indices_;
+    const bool renderBothSides_;
 };
 
 // The single publication point for runtime geometry.
@@ -134,9 +149,10 @@ public:
 
     // Mints the next revision and publishes it. Returns kNoMeshRevision and
     // leaves the current revision untouched when the data is invalid.
+    // `renderBothSides`: see createRuntimeMesh's doc comment.
     MeshRevision publish(const MeshVertex* vertices, uint32_t vertexCount,
                          const uint32_t* indices, uint32_t indexCount,
-                         MeshValidation* outWhy = nullptr);
+                         MeshValidation* outWhy = nullptr, bool renderBothSides = false);
 
     // Publishes an already-built revision. Rejects null, a foreign ObjectId and
     // any revision that is not strictly newer than the current one, so a stale

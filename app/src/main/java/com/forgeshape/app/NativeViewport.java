@@ -88,9 +88,11 @@ final class NativeViewport {
     static final int PRIMITIVE_CONE = 3;
     /** The active primitive is a capsule. */
     static final int PRIMITIVE_CAPSULE = 4;
+    /** The active primitive is a plane. */
+    static final int PRIMITIVE_PLANE = 5;
 
     /** Length of the array {@link #constructionPrimitive} fills. */
-    static final int PRIMITIVE_STATE_SIZE = 11;
+    static final int PRIMITIVE_STATE_SIZE = 13;
 
     /** Index of the box width within that array; height and depth follow it. */
     static final int PRIMITIVE_BOX_WIDTH = 1;
@@ -102,6 +104,8 @@ final class NativeViewport {
     static final int PRIMITIVE_CONE_BOTTOM_DIAMETER = 7;
     /** Index of the capsule diameter within that array; its total height follows. */
     static final int PRIMITIVE_CAPSULE_DIAMETER = 9;
+    /** Index of the plane width within that array; its depth follows. */
+    static final int PRIMITIVE_PLANE_WIDTH = 11;
 
     /**
      * Reads the authoritative Construction primitive state.
@@ -123,6 +127,7 @@ final class NativeViewport {
      *                   <li>sphere diameter in meters (index 6)</li>
      *                   <li>cone bottom diameter, height in meters (indices 7-8)</li>
      *                   <li>capsule diameter, total height in meters (indices 9-10)</li>
+     *                   <li>plane width, depth in meters (indices 11-12)</li>
      *                 </ol>
      */
     static native void constructionPrimitive(double[] outState);
@@ -188,6 +193,15 @@ final class NativeViewport {
      * @return one of the {@code APPLY_*} constants
      */
     static native int applyConstructionCapsule(double diameterMeters, double totalHeightMeters);
+
+    /**
+     * Makes the object a flat, zero-thickness plane of exactly this width and
+     * depth, centred at the local origin with its canonical front along local
+     * +Y.
+     *
+     * @return one of the {@code APPLY_*} constants
+     */
+    static native int applyConstructionPlane(double widthMeters, double depthMeters);
 
     // ---------------------------------------------------------------------
     // Construction transform.

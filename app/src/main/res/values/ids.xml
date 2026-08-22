@@ -78,11 +78,13 @@
     <item name="primitive_option_sphere" type="id" />
     <item name="primitive_option_cone" type="id" />
     <item name="primitive_option_capsule" type="id" />
+    <item name="primitive_option_plane" type="id" />
     <item name="primitive_row_box" type="id" />
     <item name="primitive_row_cylinder" type="id" />
     <item name="primitive_row_sphere" type="id" />
     <item name="primitive_row_cone" type="id" />
     <item name="primitive_row_capsule" type="id" />
+    <item name="primitive_row_plane" type="id" />
     <item name="field_box_width" type="id" />
     <item name="field_box_height" type="id" />
     <item name="field_box_depth" type="id" />
@@ -93,6 +95,8 @@
     <item name="field_cone_height" type="id" />
     <item name="field_capsule_diameter" type="id" />
     <item name="field_capsule_total_height" type="id" />
+    <item name="field_plane_width" type="id" />
+    <item name="field_plane_depth" type="id" />
     <item name="apply_shape" type="id" />
 
     <!-- Construction: placement -->

@@ -178,6 +178,7 @@ final class SculptContextView extends LinearLayout {
             case NativeViewport.PRIMITIVE_SPHERE: return "sphere";
             case NativeViewport.PRIMITIVE_CONE: return "cone";
             case NativeViewport.PRIMITIVE_CAPSULE: return "capsule";
+            case NativeViewport.PRIMITIVE_PLANE: return "plane";
             default: return "box";
         }
     }

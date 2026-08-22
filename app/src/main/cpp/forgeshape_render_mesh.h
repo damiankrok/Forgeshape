@@ -24,7 +24,10 @@
 // ------------------------------
 // A hard edge needs two different normals at the same position, and a vertex
 // carries exactly one normal, so a corner that sits on a crease must become
-// more than one RENDER vertex. Consequently:
+// more than one RENDER vertex. The one other reason a render vertex count can
+// exceed the source count is the bounded two-sided exception below: a flat,
+// open Construction Plane is duplicated once more, wholesale, so its back is
+// drawable too. Consequently:
 //
 //   * render vertex count >= source vertex count, and usually differs;
 //   * render index count == source index count, always — a corner is remapped,
@@ -150,9 +153,20 @@ bool renderMeshIsFinite(const RenderMeshData& data);
 //
 // Deterministic: the same source and the same shading always produce
 // byte-identical output, which is what lets a self-test assert exact counts.
+//
+// `renderBothSides` is the bounded, render-only backside representation for a
+// flat, open, single-sided sheet (today, exactly a Construction Plane; see
+// RuntimeMesh::renderBothSides()): when true, the whole one-sided result above
+// is duplicated once more — every vertex repeated with its normal negated,
+// every triangle repeated with reversed winding — so the SAME global
+// VK_CULL_MODE_BACK_BIT / VK_FRONT_FACE_COUNTER_CLOCKWISE pipeline draws the
+// duplicate from the far side while still culling it from the near side, where
+// the original already covers that surface. No pipeline, culling or material
+// change is needed anywhere; the source RuntimeMesh is never touched, so
+// picking and Freeze see only the original single-sided topology.
 bool buildRenderMesh(const MeshVertex* vertices, uint32_t vertexCount,
                      const uint32_t* indices, uint32_t indexCount, SurfaceShading shading,
-                     RenderMeshData* out);
+                     RenderMeshData* out, bool renderBothSides = false);
 
 // ---------------------------------------------------------------------------
 // The rebuild policy
