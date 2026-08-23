@@ -1,38 +1,93 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.22.0
-**Updated:** 2026-08-22
-**Result:** PARTIAL — Gate P1 blocked on missing physical ARM64 hardware; see
-the Gate P1 chapter below for exactly what is and is not closed
+**Status Version:** 0.23.0
+**Updated:** 2026-08-24
+**Result:** COMPLETE — Gate P1 is closed on real physical ARM64 hardware; see
+the Gate P1 chapter below
 **Current Phase:** Phase 1 — Native Viewport
 **Workspace:** `D:\TRAVELAPPS\ForgeShape`
-**Accepted implementation baseline:** Stage 016-R2 — explicit emulator port
-isolation + deterministic native self-test fixtures, on top of Stage 016
-(Plane + primitive coverage cleanup), Stage 015D (camera projection), Stage
-015C-R (front-face culling), Stage 015C (shading), Platform Fix P2, Stage
-015B, Stage 014, the NDK r29 migration (Gate P0) and the owner decision
-baseline. Gate P1's arm64-v8a build support, 16 KB runtime verification and
-Vulkan validation path are real, evidenced, additive work on top of this
-baseline (see below) but Gate P1 itself is not accepted as complete.
-**Next Stage:** Gate P1 closure — obtain access to a physical ARM64 Android
-device (explicit adb serial, provided by the owner) and re-run P1-A (launch/
-lifecycle smoke) and the mandatory P1-E mesh-density ladder (~10k/~50k/~100k
-vertices) on it. Every other Gate P1 requirement is already closed.
+**Accepted implementation baseline:** Gate P1 — physical ARM64 closure, on top
+of Stage 016-R2 (explicit emulator port isolation + deterministic native
+self-test fixtures), Stage 016 (Plane + primitive coverage cleanup), Stage 015D
+(camera projection), Stage 015C-R (front-face culling), Stage 015C (shading),
+Platform Fix P2, Stage 015B, Stage 014, the NDK r29 migration (Gate P0) and the
+owner decision baseline.
+**Next Stage:** Pre-017 Correctness Repair — active representation sidedness +
+re-Freeze guard + device verifier.
 
 This is a current snapshot, not a chronology. Per-stage verification chapters,
 superseded environment states and old next-stage recommendations live in Git
 history and are deliberately not repeated here.
 
-## Gate P1 — Physical ARM64 + 16 KB Runtime + Vulkan Validation + Heavy-Mesh Baseline (PARTIAL)
+## Gate P1 — Physical ARM64 + 16 KB Runtime + Vulkan Validation + Heavy-Mesh Baseline (COMPLETE)
 
-No product behaviour changed. Closed: arm64-v8a build support, real 16 KB
-runtime verification, an active debug-only Vulkan validation path, and a new
-debug/test-only heavy-mesh density fixture. Blocked: no physical ARM64
-device was made available this Gate, so P1-A (physical launch/lifecycle
-smoke) and the *mandatory* P1-E density ladder — which this Gate requires to
-run on physical ARM64, not an emulator — could not be executed. P1-D
-(stylus) is UNVERIFIED for the same reason: no physical device, no real
-stylus input.
+Closed on real physical ARM64 hardware: the launch/lifecycle smoke, the
+mandatory heavy-mesh density ladder (~10k / ~50k / ~100k vertices), the
+Sculpt-at-density measurement and the physical memory evidence, alongside the
+arm64-v8a build support, the real 16 KB runtime verification and the
+debug-only Vulkan validation path closed earlier. P1-D (stylus) remains
+UNVERIFIED — closing it needs a person physically moving an S Pen, which no
+adb-driven run can substitute for; the Gate permits this.
+
+**Physical target class.** A Samsung Galaxy S25 Ultra (`SM-S938B`, Snapdragon
+8 Elite `SM8750`), Android 16 / API 36, 1440×3120, attached over Wi-Fi adb and
+addressed by one explicit serial for every single command. Deliberately not
+recorded here: its IP address and serial, which are network facts of one
+session and not durable project truth. `ro.product.cpu.abi` and
+`ro.product.cpu.abilist` both report **`arm64-v8a`** and nothing else, and
+after installing the current debug build `dumpsys package com.forgeshape.app`
+reports **`primaryCpuAbi=arm64-v8a`** — so this is genuinely the arm64 `.so`
+executing, not an emulated or secondary ABI.
+
+**This phone's `getconf PAGE_SIZE` is 4096, and that is not a failure.** A
+4 KB-page device is the ordinary case; the 16 KB dimension was deliberately
+closed separately, on a dedicated 16 KB target (the `ForgeShape_16K` AVD,
+`getconf PAGE_SIZE` = 16384) — see the 16 KB paragraph below. The two pieces
+of evidence are complementary and neither substitutes for the other: this run
+proves real arm64 execution, that one proves real 16 KB-page execution.
+
+**One real ARM64 correctness defect was found, and it was found only because
+the run was physical.** On the first physical launch two self-test suites
+failed — 6 checks across picking (3) and the Construction box (3) — against
+1421/1421 green on x86_64 from the identical source. Root cause, measured on
+the device rather than assumed: `intersectRayTriangle` tested barycentric
+containment with exact bounds (`u < 0.0f`, `(u + v) > 1.0f`). A ray landing on
+an edge two triangles SHARE has a coordinate that is mathematically exactly 0,
+so its sign is decided purely by rounding — and if it rounds negative for one
+triangle it rounds negative for its neighbour too, making both reject a ray
+that geometrically hits the surface. The rounding is ABI-dependent: no
+`-ffp-contract=off` is set, so Clang contracts the dot/cross products into
+fused multiply-adds on arm64-v8a, which baseline x86-64 cannot do. A
+throwaway arm64 probe run on the device measured the failing ray's `u` at
+**-9e-9** on both triangles of the face. This is a product-visible defect, not
+a test artefact: the very first physical pick taken after the fix landed at
+`(0.0000, 0.0000, 0.0000)`, the centre of a Plane — which *is* the shared
+diagonal of its two triangles — so tapping the middle of a Plane on an ARM64
+phone would have selected nothing.
+
+The fix is one named constant and two widened comparisons:
+`kBarycentricEpsilon = 1e-6f` in `forgeshape_picking.h`, applied to both
+containment bounds. Widening is the real fix; pinning the FP model with
+`-ffp-contract=off` would only re-hide the same knife-edge geometry behind a
+compiler flag and cost performance. Barycentric coordinates are already
+normalized by the determinant, so the tolerance is scale-free — a fraction of
+a triangle, not a world length — and at 1e-6 it is two orders above the
+observed rounding error while being a few micrometres of overlap on a 2 m
+triangle, far below `kMinRayDistance`. The overlap makes an edge ray hit both
+neighbours; `pickTriangleMesh` keeps the nearest `t` and the first triangle on
+an exact tie, so the result stays deterministic. No other module changed and
+no product behaviour was redesigned.
+
+Four checks were added to the picking suite (124 → 128). Two of them pin the
+tolerance **deterministically on any ABI**, rather than depending on which way
+a given target happens to round an exactly-zero coordinate: they aim at a
+point known to sit just outside a triangle across its shared diagonal, at a
+chosen barycentric depth, and assert that a barely-outside point is accepted
+while a clearly-outside one is rejected — so the tolerance can be neither
+removed nor widened arbitrarily. Verified to have teeth by rebuilding with the
+constant set to `0.0f` and confirming
+`barely_outside_shared_edge_is_still_accepted` fails, alongside the six
+pre-existing checks the defect originally broke.
 
 **ABI.** `app/build.gradle`'s `abiFilters` now lists `'x86_64', 'arm64-v8a'`;
 CMake and the native sources needed no ABI-specific changes (no intrinsics,
@@ -112,22 +167,96 @@ freezes the most recently published tier directly into Sculpt through the
 real `SculptSession::freezeToSculpt`, bypassing Construction, for stroke
 measurement at density). Not a Construction primitive, not reachable from
 product UI, compiled out in release exactly like the existing fixtures 1–9.
-**Harness-validated only** on `emulator-5590` (x86_64, 16 KB runtime) at the
-10k/50k/100k tiers — publish, GPU upload/growth, picking, Sculpt freeze
-(adjacency build) and a real Grab stroke all worked correctly with zero
-failures — but this is proof the *harness* is correct, not P1-E mandatory-
-tier evidence, which this Gate requires on physical ARM64. Measured there:
-10086 v / 57600 i (gen 4.4 ms, publish 1.3 ms); 49686 v / 291600 i (gen
-13.0 ms, publish 4.2 ms); 99846 v / 589824 i (gen 22.0 ms, publish 9.9 ms,
-render-mesh build 120.8 ms, a real pick landing at triangle 159210, Sculpt
-freeze in 80.2 ms building 592896 adjacency entries, a real Grab stroke
-capturing 3792 vertices). Process PSS after the 100k tier plus a Sculpt
-freeze and stroke: ~75 MB, no crash.
+**Measured on the physical ARM64 device.** All three mandatory tiers ran to
+completion with no crash, no OOM, no ANR and no state corruption. Each tier
+was published through the same `MeshStore::publish` path the product uses,
+then picked, then carried through HOME/resume and a landscape/portrait
+rotation round trip before its memory was read.
 
-**Regression.** 26/26 JVM tests; ten native self-test suites, 1421 checks,
-zero failures on a clean launch (confirmed on both `ForgeShape_Stage006` and
-the new 16 KB target); 46/46 instrumented tests on `ForgeShape_Stage006` /
-`emulator-5580` through the corrected wrapper. Zero interaction with
+| tier | vertices | triangles (indices) | gen ms | publish ms | render-mesh build ms | GPU upload | pick | lifecycle + rotation | PSS | result |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| baseline | — | — | — | — | — | — | — | — | 212 MB | — |
+| ~10k | 10086 | 19200 (57600) | 2.763 | 1.695 | 19.577 | reuse | HIT tri 15592 | same `ActivityRecord`, `preTransform=0x1` both ways | 219 MB | PASS |
+| ~50k | 49686 | 97200 (291600) | 17.776 | 7.880 | 72.204 | grow | HIT tri 78824 | same `ActivityRecord`, `preTransform=0x1` both ways | 231 MB | PASS |
+| ~100k | 99846 | 196608 (589824) | 32.405 | 15.426 | 104.387 | grow | HIT tri 159210 | same `ActivityRecord`, `preTransform=0x1` both ways | 248 MB | PASS |
+| ~100k + Sculpt | 99846 | 196608 (589824) | — | — | 80.730 (post-stroke) | reuse | — | — | 264 MB | PASS |
+
+Generation and publication scale close to linearly in vertex count across the
+ladder; nothing degrades disproportionately, and no tier was the "first
+degraded" or "first failed" one — **the last stable mandatory tier is ~100k,
+the highest tier the Gate requires.** 250k/500k were not run: the Gate does not
+need them for closure. The picks are worth noting for a reason beyond
+performance — the 100k tier picked triangle **159210**, digit-for-digit the
+triangle the same fixture picked during x86_64 harness validation, so picking
+is deterministic across ABIs once the shared-edge defect above is fixed.
+
+**Sculpt at density.** The ~100k tier is Sculpt-capable under the current
+contract, so the Sculpt-heavy measurement was taken at the highest mandatory
+tier with no topology or architecture change: `freezeToSculpt` completed in
+**110.126 ms**, building **592896** adjacency entries over 99846 v / 589824 i,
+and two real Grab strokes ran through the full pointer path
+(`STROKE_PENDING` → `STROKE_BEGIN:grab:2365` → moves → `STROKE_END`, then a
+second capturing 1655 vertices). `normalRecomputes=2` — one per stroke — and
+every post-stroke GPU upload reported `reuse`, so the fixed-topology
+buffer-reuse contract holds at 100k exactly as it does at 482. Mesh
+diagnostics after the stress Sculpt: `failed=0`, `reuse=24`, topology still
+99846 : 589824.
+
+**Memory and stability.** Process PSS rose 212 → 219 → 231 → 248 MB across the
+ladder and to 264 MB after the Sculpt stress: about 52 MB total for a 100k-vertex
+mesh plus its adjacency, render mesh and GPU buffers, with the Graphics share
+moving only 151.7 → 169.1 MB. No crash, no ANR, no OOM and no thermal
+throttling symptom was observed at any point. **No device-wide or product-wide
+performance claim is drawn from this.** These are single-run figures from one
+Snapdragon 8 Elite phone; they are existence evidence that the mandatory tiers
+work on physical ARM64, not a supported capacity limit, not a benchmark, and
+not a statement about any other device.
+
+The earlier x86_64 harness validation on `emulator-5590` remains valid as proof
+the *fixture itself* is correct, and is superseded as capacity evidence by the
+physical table above.
+
+**Physical runtime smoke.** Everything below was driven on the phone through
+the real Android touch path, with ForgeShape confirmed as the resumed activity
+before each capture and every control located by its stable semantic id
+(resolved to bounds from the live hierarchy at run time, never a hard-coded
+coordinate). Ten self-test suites green on a clean physical launch, **1425
+checks, zero failures**. A Construction solid and a Plane both applied
+(`FORGESHAPE_CONSTRUCTION_PUBLISHED:9:4:6`, the exact 4 : 6 Plane topology). A
+front-face pick and, after a 180° transform-only rotation, a back-face pick
+both hit — the Plane's two-sided exception intact — and that transform
+reported `rev=9` unchanged, republishing nothing. Orthographic converted the
+framing exactly (`orthoHalfHeightMeters=4.7343` from `distance=8.2000`, i.e.
+8.2 × tan 30°) and Perspective converted back. Studio ↔ MatCap and Smooth ↔
+Faceted both switched, with the Plane's two-sided render duplication visible
+as `src=4:6 render=8:12` Smooth and `render=12:12` Faceted. Freeze on a Sphere
+(482 : 2880, adjacency 2880) then a real Grab stroke
+(`STROKE_BEGIN:grab:49`) and a real Clay stroke (`STROKE_BEGIN:clay:41`, a
+normal-updating brush) — `strokes=2`, `normalRecomputes=2`. Back to
+Construction → Resume Sculpt left `freezes=1` unchanged, so Resume re-froze
+nothing. HOME/resume reproduced the identical `ActivityRecord{38541817}` with
+no self-test rerun and no re-upload. Portrait 1440×3120 → landscape 3120×1440
+→ portrait, `preTransform=0x1` throughout and **exactly two** swapchain
+rebuilds for two rotations — the P2 convention holds on physical ARM64 and
+`VK_SUBOPTIMAL_KHR` is not rebuilding per frame. Vulkan on this device:
+swapchain format 37, **5** images, FIFO.
+
+**Multi-touch arbitration, on real injected multi-touch.** `/system/bin/uinput`
+is present and the adb shell user is in the `uhid` group, so a genuine
+two-finger pinch was injected as virtual-device events (not an `input swipe`,
+which cannot express multi-touch). The gesture logged `STROKE_PENDING` →
+`STROKE_ABANDONED:navigation` with **no** `STROKE_BEGIN`, zoomed the camera
+(`FORGESHAPE_CAMERA_ZOOM_OK`, distance 8.2000 → 0.9495), and left `sculptRev`
+at 211 and `strokes` at 2 — byte-for-byte what they were before it. A gesture
+that became navigation mutated no vertex, minted no revision and committed no
+stroke.
+
+**Regression.** 26/26 JVM tests; ten native self-test suites, **1425 checks,
+zero failures**, on *both* the physical arm64-v8a device and
+`ForgeShape_Stage006` / `emulator-5580` (x86_64) — identical totals, so the
+picking fix regressed nothing on the ABI that was already green, and the two
+new deterministic tolerance checks pass on both; 46/46 instrumented tests on
+`emulator-5580` through the guarded wrapper. Zero interaction with
 `emulator-5554` anywhere in this Gate. One pre-existing script bug was found
 and fixed while booting the 16 KB AVD:
 `scripts/start-forgeshape-emulator.ps1`'s boot-wait poll redirected
@@ -140,36 +269,36 @@ try/catch; `DEV2-01..07` re-verified green afterward.
 
 | ID | Verdict | Evidence |
 | --- | --- | --- |
-| GP1-01 | PASS | clean tree at `f156ed9` confirmed before any change |
+| GP1-01 | PASS | clean tree at `b4f9e0e` confirmed before any change |
 | GP1-02 | PASS | arm64-v8a + x86_64 both build, package, and 16 KB-align; x86_64 self-test/JVM/instrumented regression green |
-| GP1-03 | BLOCKED | no physical ARM64 device provided |
-| GP1-04 | BLOCKED | requires P1-A physical target |
-| GP1-05 | BLOCKED | requires P1-A physical target |
-| GP1-06 | BLOCKED | requires P1-A physical target |
-| GP1-07 | PASS | `getconf PAGE_SIZE` = 16384 on `emulator-5590` |
-| GP1-08 | PASS | 1421/1421 self-test checks, full Construction/picking/projection/shading/Freeze/Resume/Sculpt smoke, zero failures on the 16 KB target |
+| GP1-03 | PASS | physical Galaxy S25 Ultra responds on one explicit serial; `ro.product.cpu.abi` = `arm64-v8a` |
+| GP1-04 | PASS | `primaryCpuAbi=arm64-v8a` after installing the current build |
+| GP1-05 | PASS | physical launch, lifecycle and both orientations green; 1425/1425 self-test checks |
+| GP1-06 | PASS | full physical Construction/Plane/pick/projection/shading/Freeze/Sculpt/multi-touch smoke |
+| GP1-07 | PASS | `getconf PAGE_SIZE` = 16384 on `emulator-5590` (dedicated 16 KB target; this phone is 4096, which is the ordinary case) |
+| GP1-08 | PASS | 1421/1421 self-test checks and full smoke on the 16 KB target |
 | GP1-09 | PASS | both `.so`s at 0x4000 ELF alignment; `zipalign -P 16 -c` OK on the packaged APK |
 | GP1-10 | PASS | `VK_LAYER_KHRONOS_validation` loaded and proven active (layer's own "Current Validation Enabled" banner) |
 | GP1-11 | PASS | zero ForgeShape-caused validation messages of any severity across the exercised path |
 | GP1-12 | PASS | the one message seen (`WARNING-cache-file-error`) classified as the layer's own internal bookkeeping, not a ForgeShape finding |
-| GP1-13 | UNVERIFIED | no physical device, no real stylus available |
-| GP1-14 | BLOCKED | ~10k tier requires physical ARM64; harness-validated only on x86_64/16K |
-| GP1-15 | BLOCKED | ~50k tier requires physical ARM64; harness-validated only on x86_64/16K |
-| GP1-16 | BLOCKED | ~100k tier requires physical ARM64; harness-validated only on x86_64/16K |
-| GP1-17 | N/A | no mandatory-tier run to evaluate (see GP1-14..16) |
-| GP1-18 | N/A | same |
-| GP1-19 | N/A | same — Sculpt-heavy-mesh metrics were gathered only on the harness-validation target |
-| GP1-20 | N/A | same |
-| GP1-21 | N/A | 250k/500k not attempted; mandatory tiers themselves are blocked |
-| GP1-22 | PASS | no triangle-count/performance claim made anywhere in this report |
-| GP1-23 | PASS | JVM 26/26, native self-test 1421/1421 (both targets), instrumented 46/46 |
-| GP1-24 | PASS | every adb call this Gate used `-s <serial>`; zero `emulator-5554` interaction; no auto-port; no `connected*AndroidTest` fan-out |
-| GP1-25 | PASS | no Sketch/Extrude/booleans/persistence/export/new tools/pressure/remesh/PBR/Apple work; heavy-mesh fixture is debug-only, not a product feature |
+| GP1-13 | UNVERIFIED | permitted; closing it needs a person physically moving an S Pen, which no adb-driven run can substitute for |
+| GP1-14 | PASS | ~10k measured physically: 10086 v / 57600 i, gen 2.763 ms, publish 1.695 ms |
+| GP1-15 | PASS | ~50k measured physically: 49686 v / 291600 i, gen 17.776 ms, publish 7.880 ms |
+| GP1-16 | PASS | ~100k measured physically: 99846 v / 589824 i, gen 32.405 ms, publish 15.426 ms |
+| GP1-17 | PASS | no crash, OOM, ANR or state corruption at any mandatory tier |
+| GP1-18 | PASS | real pick, HOME/resume and rotation round trip at every tier |
+| GP1-19 | PASS | Sculpt at ~100k: freeze 110.126 ms, 592896 adjacency entries, two real Grab strokes, uploads `reuse` |
+| GP1-20 | PASS | physical PSS 212 → 219 → 231 → 248 → 264 MB across ladder and Sculpt stress |
+| GP1-21 | N/A | 250k/500k deliberately not run; not required for closure and ~100k is stable |
+| GP1-22 | PASS | figures explicitly scoped to one device and one run; no capacity limit or device-wide claim drawn |
+| GP1-23 | PASS | JVM 26/26; native self-test 1425/1425 on both physical arm64 and x86_64; instrumented 46/46 |
+| GP1-24 | PASS | every adb call used an explicit `-s <serial>`; zero `emulator-5554` interaction; no auto-discovery; no `connected*AndroidTest` fan-out |
+| GP1-25 | PASS | no import/loader, no Stage 017, no Sketch/Extrude/Undo/BVH/async/new brush/renderer work; the one code change is a picking correctness fix |
 | GP1-26 | PASS | see doc line counts below |
 | GP1-27 | PASS | one focused commit, clean tree |
 
-**Result: PARTIAL.** GP1-01/02/07..12/22..27 PASS; GP1-13 UNVERIFIED
-(permitted); GP1-03..06 and GP1-14..21 BLOCKED for the single reason above.
+**Result: COMPLETE.** GP1-01..12 and GP1-14..27 PASS; GP1-13 UNVERIFIED
+(permitted); GP1-21 N/A by design.
 
 ## Stage 016-R2 — explicit emulator port isolation + deterministic test harness
 
@@ -625,6 +754,7 @@ evidence screenshots cited by past stage acceptance.
 | `ForgeShape_Stage004` / `emulator-5556` | **Contended, non-authoritative.** Another program runs `com.damian.wlochyikafalonia.claude.debug` on it, steals the foreground and injects taps that reach ForgeShape. Do not use it for authoritative evidence; do not stop, wipe or reconfigure it. |
 | `ForgeShape_Stage006` / port varies, boot with `scripts\start-forgeshape-emulator.ps1` (default port `5580`) | **Current ForgeShape-owned evidence target.** Isolated, own AVD definition and data dir. Always confirm identity with `adb -s <serial> emu avd name`, never by port alone; this AVD has been seen on `5556`, `5558` and `5580` across sessions purely by allocation order. |
 | `ForgeShape_16K` / port varies, boot with `scripts\start-forgeshape-emulator.ps1 -Avd ForgeShape_16K -Port <explicit>` | **Gate P1's 16 KB runtime target.** x86_64, `google_apis_playstore_ps16k`; `getconf PAGE_SIZE` = 16384. Not a substitute for physical ARM64 — same isolation rules as `ForgeShape_Stage006` apply (explicit port, confirm identity by name, never `5554`). |
+| **Physical ARM64 phone** — owner-supplied, attached over Wi-Fi adb; serial supplied per session and deliberately not recorded in this repo | **Gate P1's physical ARM64 evidence target.** Samsung Galaxy S25 Ultra (`SM-S938B`), Snapdragon 8 Elite (`SM8750`), Android 16 / API 36, 1440×3120, `arm64-v8a` only, `getconf PAGE_SIZE` = 4096. Vulkan: swapchain format 37, 5 images, FIFO. `/system/bin/uinput` is usable from the adb shell (the shell user is in the `uhid` group), so real multi-touch injection works. Same rules as every other target: explicit `-s <serial>` on every command, confirm ForgeShape is resumed before evidence, never a bare `adb devices`. |
 
 `ForgeShape_Stage006` is pixel_6, 1080×2400, density 420, multi-touch, GPU host,
 `x86_64`, API 36 (`google_apis_playstore`). Vulkan: loader instance 1.4.0,
@@ -716,18 +846,24 @@ Android touch path. `PRODUCT.md` owns the user-facing description.
 | Display settings are native-owned and survive HOME/resume | VERIFIED |
 | No per-frame normal or render-data rebuild: 4448 frames, 2 rebuilds | VERIFIED |
 | 16 KB page-size runtime behaviour (x86_64) | VERIFIED (Gate P1) |
-| 16 KB page-size runtime behaviour (physical ARM64) | **UNVERIFIED** — see Known Issues |
+| Physical ARM64 execution: `primaryCpuAbi=arm64-v8a`, full self-test suite, smoke, lifecycle and both orientations | VERIFIED (Gate P1) |
+| Picking is watertight across a shared triangle edge, and identical on arm64-v8a and x86_64 | VERIFIED (Gate P1) |
+| Heavy-mesh ladder ~10k / ~50k / ~100k on physical ARM64: publish, render build, GPU upload, pick, lifecycle | VERIFIED (Gate P1) |
+| Sculpt at ~100k vertices on physical ARM64: freeze, adjacency, real strokes, buffer reuse | VERIFIED (Gate P1) |
+| Real injected multi-touch on physical hardware never mutates the sculpt mesh | VERIFIED (Gate P1) |
+| 16 KB page size *and* ARM64 in one target | **UNVERIFIED** — see Known Issues |
+| Stylus / S Pen tool type and pressure on real hardware | **UNVERIFIED** — needs a person physically moving an S Pen |
 
 ## Self-test suite
 
 Ten debug-only native suites run once from `NativeViewport.start()` — never per
-frame — and total **1421 checks, zero failures** at the accepted baseline under
-NDK r29:
+frame — and total **1425 checks, zero failures** at the accepted baseline under
+NDK r29, identically on physical arm64-v8a and on x86_64:
 
 | suite token | checks |
 | --- | --- |
 | `FORGESHAPE_CAMERA_SELFTEST_OK` | 119 |
-| `FORGESHAPE_PICKING_SELFTEST_OK` | 124 |
+| `FORGESHAPE_PICKING_SELFTEST_OK` | 128 |
 | `FORGESHAPE_DYNAMIC_MESH_SELFTEST_OK` | 91 |
 | `FORGESHAPE_CONSTRUCTION_BOX_SELFTEST_OK` | 100 |
 | `FORGESHAPE_CONSTRUCTION_TRANSFORM_SELFTEST_OK` | 94 |
@@ -811,14 +947,17 @@ regression.
 
 ## Current evidence summary
 
-- **Gate P1 (PARTIAL)**: arm64-v8a build support, real 16 KB runtime
-  verification (x86_64), an active Vulkan validation path (zero
-  ForgeShape-caused messages) and a debug-only heavy-mesh density fixture are
-  all closed and evidenced. Physical ARM64 launch/lifecycle (P1-A) and the
-  mandatory 10k/50k/100k mesh-density ladder (P1-E) are BLOCKED pending a
-  physical ARM64 device; stylus (P1-D) is UNVERIFIED for the same reason.
-  Full detail, the GP1 criteria table and screenshots (`artifacts/gatep1_*`)
-  are in the Gate P1 chapter at the top of this file.
+- **Gate P1 (COMPLETE)**, closed on a physical Galaxy S25 Ultra (arm64-v8a,
+  `primaryCpuAbi=arm64-v8a`, `PAGE_SIZE` 4096): physical launch/lifecycle/
+  orientation smoke and the mandatory ~10k/~50k/~100k density ladder all
+  measured on real hardware, with Sculpt at 100k and PSS across the ladder.
+  arm64-v8a build support, real 16 KB runtime verification (separately, on a
+  dedicated 16 KB target) and an active Vulkan validation path with zero
+  ForgeShape-caused messages remain closed. One real ARM64-only picking defect
+  was found and fixed (shared-edge barycentric rounding). Stylus (P1-D) stays
+  UNVERIFIED — it needs a person physically moving an S Pen. Full detail, the
+  measurement table and the GP1 criteria table are in the Gate P1 chapter at
+  the top of this file.
 - **Stage 016-R2 acceptance** (`ForgeShape_Stage006` / `emulator-5580`): device
   and test-harness remediation only, zero product behaviour change. Ten
   self-test suites green (1421 checks, zero failures) both on a clean launch
@@ -954,9 +1093,33 @@ required shading is complete without them.
 - **16 KB page-size runtime behaviour is VERIFIED (Gate P1)**, on the x86_64
   `ForgeShape_16K` AVD (`getconf PAGE_SIZE` = 16384): full self-test suite,
   Construction/picking/projection/shading/Freeze/Resume/Sculpt smoke all
-  green. **Still open: real 16 KB behaviour on physical ARM64 hardware**,
-  which needs the owner to provide a physical ARM64 device (an explicit adb
-  serial) — see the Gate P1 chapter above for the exact blocker.
+  green. **Still open: 16 KB pages *and* ARM64 in the same target.** The
+  physical device Gate P1 closed on is a 4 KB-page phone, and the 16 KB
+  target is x86_64, so each dimension is proven but not both at once. This
+  needs 16 KB-page ARM64 hardware, which is a device-availability matter, not
+  a code one; both `.so`s already carry 0x4000 ELF `LOAD` alignment.
+- **Floating-point rounding is ABI-dependent, and exact FP comparisons in
+  geometry code are therefore an ARM64 hazard.** No `-ffp-contract=off` is
+  set, so Clang contracts multiply-adds into `fmadd` on arm64-v8a where
+  baseline x86-64 cannot — the direct cause of the shared-edge picking defect
+  Gate P1 found. Anything that compares a computed geometric quantity against
+  an exact bound should be assumed to differ between the emulator and a real
+  phone until measured on both.
+- **This phone drops self-test lines from the logcat ring buffer, and no
+  capture method fully prevents it.** It caps the buffer at 5 MiB
+  (`logcat -G 16M` is silently reduced), and the ~1400-line self-test burst
+  competes with a busy system log, so whole suites vanish from the *middle* of
+  a capture — which reads exactly like a suite that never ran. Confirmed
+  during Gate P1 across four methods: `logcat -d` after the fact, a host-side
+  stream started before launch, a PID/tag-filtered stream, and even an
+  on-device `logcat -f` (which rules out Wi-Fi adb transport as the cause).
+  Each dropped a *different* subset. The reliable signal is that the suites
+  which do appear always report their full expected check counts and
+  `_SELFTEST_FAIL` is always absent — so read a partial capture as "no
+  failures observed", and re-run until one capture is complete before
+  claiming a total. A complete 1425/1425 capture with all ten suites and
+  `FORGESHAPE_NATIVE_VIEWPORT_OK` was obtained this Gate; the retries after it
+  were partial, all with zero failures.
 - **The `EditorWorkspaceView` layout decision runs inside `onMeasure`.** That is
   deliberate and documented — running it in `onSizeChanged` measures newly added
   chrome against the previous pass and lays it out at zero height, which is
@@ -1281,21 +1444,13 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Gate P1 — Physical ARM64 + 16 KB Runtime + Vulkan Validation + Heavy-Mesh
-Baseline**
+**Pre-017 Correctness Repair — active representation sidedness + re-Freeze
+guard + device verifier**
 
-Construction is now complete at six primitives, and every product-side
-verification (self-tests, JVM, instrumented, real touch-path runtime) has been
-run only on `x86_64` emulators. Gate P1 is the platform-evidence gate deferred
-since Gate P0: build and run on **physical ARM64 hardware**, close the **16 KB
-page-size runtime** dimension left `UNVERIFIED` under *Known Issues* (static/
-ELF/APK evidence already passes; only a real 16 KB device or system image can
-close it, and installing one is not yet authorized), enable the **Vulkan
-validation layers** for at least one full session to catch anything the
-current always-`x86_64`, no-validation-layer runtime evidence could not, and
-establish a **heavy-mesh baseline** — sculpt and render-data-rebuild cost
-measurements at a vertex count well past the current 482–514 range, so a
-future performance stage has a real number to beat instead of an assumption.
-This is a platform/verification gate, not a feature stage: no new primitive,
-no Sketch/Extrude, no camera or shading change, and no product behaviour is
-expected to differ on ARM64 — the gate exists to prove that, not to change it.
+Gate P1 is closed, and the platform-evidence question it existed to answer is
+answered on real ARM64 hardware. The approved next work is the audited
+Pre-017 correctness repair, not Stage 017: the active-representation
+sidedness problem (`renderBothSides` surviving into a representation it does
+not describe), the re-Freeze guard, and a device verifier. This is a
+correctness stage, deliberately scheduled before any new feature work — no
+Sketch/Extrude, no import/loader, no Undo, no BVH, no renderer redesign.

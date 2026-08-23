@@ -198,14 +198,18 @@ bool intersectRayTriangle(const Ray& ray, const Vec3& v0, const Vec3& v1, const 
     const float invDet = 1.0f / det;
     const Vec3 s = vec3Sub(ray.origin, v0);
 
+    // The containment bounds are widened by kBarycentricEpsilon so a hit lying
+    // exactly on an edge shared with a neighbouring triangle cannot be rejected
+    // by both of them; see that constant for why an exact test is ABI-dependent.
     const float u = vec3Dot(s, p) * invDet;
-    if (!std::isfinite(u) || u < 0.0f || u > 1.0f) {
+    if (!std::isfinite(u) || u < -kBarycentricEpsilon || u > 1.0f + kBarycentricEpsilon) {
         return false;
     }
 
     const Vec3 q = vec3Cross(s, e1);
     const float v = vec3Dot(ray.direction, q) * invDet;
-    if (!std::isfinite(v) || v < 0.0f || (u + v) > 1.0f) {
+    if (!std::isfinite(v) || v < -kBarycentricEpsilon ||
+        (u + v) > 1.0f + kBarycentricEpsilon) {
         return false;
     }
 

@@ -79,6 +79,32 @@ constexpr float kMinRayDistance = 1e-4f;
 // the triangle is degenerate. Both are rejected.
 constexpr float kRayTriangleEpsilon = 1e-8f;
 
+// Tolerance on the barycentric containment test, so a ray that lands exactly on
+// an edge SHARED by two triangles hits at least one of them instead of falling
+// between both.
+//
+// A hit on a shared edge has a barycentric coordinate that is mathematically
+// exactly 0 (or a u+v of exactly 1). Rounding decides its sign, and if it
+// rounds negative for one triangle it also rounds negative for its neighbour,
+// so an exact `u < 0` test makes a ray that geometrically hits the surface
+// report a miss. This is not hypothetical and not uniform across ABIs: on
+// arm64-v8a the compiler contracts the dot/cross products into fused
+// multiply-adds (no `-ffp-contract=off` is set, and only arm64 has the
+// instruction at our baseline), which rounds differently from x86_64. Measured
+// on a physical arm64 device, an axis-aligned ray through a cube face centre
+// produced u = -9e-9 on both triangles of that face and picked nothing, while
+// the same source on x86_64 hit. Widening is the fix rather than pinning the
+// FP model, because pinning would only re-hide the same knife-edge geometry.
+//
+// Barycentric coordinates are already normalized by the determinant, so this is
+// scale-free: it is a fraction of a triangle, not a world length. 1e-6 is two
+// orders above the observed rounding error and, on a 2 m triangle, is a few
+// micrometres of overlap -- far below kMinRayDistance and every pick tolerance.
+// The overlap makes an edge ray hit both neighbours; pickTriangleMesh keeps the
+// nearest t and the first triangle on an exact tie, so the result stays
+// deterministic.
+constexpr float kBarycentricEpsilon = 1e-6f;
+
 // Builds the world-space ray through a view-local pixel.
 //
 // `screenX` / `screenY` are in the same coordinate system Android hands us:

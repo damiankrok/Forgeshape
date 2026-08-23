@@ -288,6 +288,78 @@ void testWinding(Recorder& r) {
     }
     r.check("cube_front_faces_hit_from_all_six_sides", allAxesHit);
 
+    // A ray landing exactly on the edge two triangles SHARE must hit the
+    // surface, not fall between both of them.
+    //
+    // This is the defect a physical arm64 device exposed and x86_64 hid: the
+    // shared-edge barycentric coordinate is mathematically exactly 0, its sign
+    // is decided by rounding, and rounding differs by ABI because only arm64
+    // contracts the dot/cross products into fused multiply-adds. An exact
+    // `u < 0` bound therefore rejected the hit on BOTH neighbours and an
+    // axis-aligned pick at a cube face centre returned a miss.
+    //
+    // Written against an explicit quad rather than the cube so it states the
+    // invariant directly and cannot start passing for an unrelated reason if
+    // the demo cube's winding or corner order is ever changed. The ray is aimed
+    // at the exact midpoint of the diagonal, which is the shared edge; both
+    // sub-triangles are checked individually to prove neither rejects it, so
+    // reverting the tolerance fails this case on any ABI that rounds negative.
+    // Wound so e1 x e2 points along +Y, i.e. the face the ray approaches from
+    // is the FRONT one -- otherwise front-face culling would reject the ray for
+    // a reason that has nothing to do with the shared edge under test.
+    const Vec3 quad[4] = {{-1.0f, 0.0f, -1.0f},
+                          {-1.0f, 0.0f, 1.0f},
+                          {1.0f, 0.0f, 1.0f},
+                          {1.0f, 0.0f, -1.0f}};
+    const uint32_t quadIndices[6] = {0, 1, 2, 2, 3, 0};  // diagonal 0-2 is shared
+    MeshVertex quadVertices[4]{};
+    for (int i = 0; i < 4; ++i) {
+        quadVertices[i].position[0] = quad[i].x;
+        quadVertices[i].position[1] = quad[i].y;
+        quadVertices[i].position[2] = quad[i].z;
+    }
+    TriangleMeshView quadView{};
+    quadView.positions = quadVertices[0].position;
+    quadView.positionStride = sizeof(MeshVertex);
+    quadView.vertexCount = 4;
+    quadView.indices = quadIndices;
+    quadView.indexCount = 6;
+
+    // Midpoint of the 0-2 diagonal, approached straight down the +Y normal.
+    const Ray edgeRay{{0.0f, 5.0f, 0.0f}, {0.0f, -1.0f, 0.0f}};
+    const TriangleHit edgeHit = pickTriangleMesh(edgeRay, quadView, true);
+    r.check("shared_edge_ray_hits_the_quad", edgeHit.hit && nearly(edgeHit.t, 5.0f, 1e-3f));
+
+    // The two checks below pin the tolerance deterministically, instead of
+    // depending on which way a given ABI happens to round an exactly-zero
+    // coordinate. Both aim at a point KNOWN to be just outside triangle
+    // (0, 1, 2) across its shared diagonal, at a chosen barycentric depth: the
+    // perpendicular from that diagonal to vertex 1 has length sqrt(2) and
+    // carries u from 0 to 1, so stepping a world distance d along the opposite
+    // in-plane perpendicular (1, 0, -1)/sqrt(2) puts u at -d/sqrt(2). Offsetting
+    // the ray by (e, 0, -e) therefore lands u at about -e.
+    //
+    // Only the one triangle is intersected, never the whole quad, because its
+    // neighbour covers exactly the region being probed and would mask the
+    // result.
+    float tInside = 0.0f;
+    const Ray justOutside{{5e-7f, 5.0f, -5e-7f}, {0.0f, -1.0f, 0.0f}};
+    r.check("barely_outside_shared_edge_is_still_accepted",
+            intersectRayTriangle(justOutside, quad[0], quad[1], quad[2], true, &tInside));
+
+    // Teeth in the other direction: the tolerance must stay far too small to
+    // swallow a point genuinely outside the triangle, so it cannot be widened
+    // arbitrarily to make the case above pass.
+    float tOutside = 0.0f;
+    const Ray wellOutside{{1e-3f, 5.0f, -1e-3f}, {0.0f, -1.0f, 0.0f}};
+    r.check("clearly_outside_shared_edge_is_rejected",
+            !intersectRayTriangle(wellOutside, quad[0], quad[1], quad[2], true, &tOutside));
+
+    // And a point outside the quad entirely still misses the whole mesh.
+    const Ray outsideRay{{1.5f, 5.0f, 0.0f}, {0.0f, -1.0f, 0.0f}};
+    r.check("point_outside_the_quad_still_misses",
+            !pickTriangleMesh(outsideRay, quadView, true).hit);
+
     // From inside the cube only back faces are visible, so front-face-only
     // picking must miss while unculled picking still hits. This is the check
     // that ties the picking convention to VK_CULL_MODE_BACK_BIT.
