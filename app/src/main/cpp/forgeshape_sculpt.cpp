@@ -383,6 +383,12 @@ bool SculptMesh::freezeFrom(const ConstructionMesh& source, ObjectId objectId,
     vertices_ = source.vertices;
     indices_ = source.indices;
     objectId_ = objectId;
+    // Sidedness is part of what is being frozen, not a property of whatever the
+    // Construction Source is at some later moment. Copying it here is what keeps
+    // a stale frozen solid single-sided after the Source has been changed to a
+    // Plane, and keeps a frozen Plane two-sided after the Source has been
+    // changed to a solid.
+    renderBothSides_ = source.renderBothSides;
     // The adjacency is a function of the index buffer alone, and no API on this
     // class can change an index, so building it here — once per Freeze — is
     // building it once for the life of this frozen mesh.
@@ -457,8 +463,11 @@ MeshRevision publishSculptMesh(const SculptMesh& mesh, MeshStore& store, MeshVal
         }
         return kNoMeshRevision;
     }
+    // Carries the frozen mesh's own sidedness into the published representation,
+    // so render and picking read one answer from the active mesh rather than
+    // each re-deriving one.
     return store.publish(mesh.vertices().data(), mesh.vertexCount(), mesh.indices().data(),
-                         mesh.indexCount(), outWhy);
+                         mesh.indexCount(), outWhy, mesh.renderBothSides());
 }
 
 // ---------------------------------------------------------------------------
@@ -496,7 +505,11 @@ bool SculptStroke::begin(SculptTool tool, const SculptMesh& mesh, const CameraSn
     if (!transformRayToLocal(worldRay, inverseModel, &localRay)) {
         return false;
     }
-    const TriangleHit hit = pickTriangleMesh(localRay, mesh.triangleView(), /*frontFacesOnly=*/true);
+    // Sidedness comes from the mesh being sculpted, so a frozen flat sheet can
+    // be sculpted from either side while a closed solid keeps the front-face
+    // rule. Same answer render and selection picking get, from the same fact.
+    const TriangleHit hit =
+        pickTriangleMesh(localRay, mesh.triangleView(), !mesh.renderBothSides());
     if (!hit.hit) {
         return false;  // a miss starts NO stroke
     }
@@ -944,7 +957,7 @@ bool SculptSession::hitsSculptMesh(const CameraSnapshot& camera, float screenX, 
     if (!transformRayToLocal(worldRay, inverseModel, &localRay)) {
         return false;
     }
-    return pickTriangleMesh(localRay, mesh_.triangleView(), /*frontFacesOnly=*/true).hit;
+    return pickTriangleMesh(localRay, mesh_.triangleView(), !mesh_.renderBothSides()).hit;
 }
 
 bool SculptSession::beginStroke(const CameraSnapshot& camera, float screenX, float screenY,

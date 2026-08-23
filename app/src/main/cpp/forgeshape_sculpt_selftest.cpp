@@ -8,7 +8,10 @@
 #include "forgeshape_construction.h"
 #include "forgeshape_math.h"
 #include "forgeshape_mesh.h"
+#include "forgeshape_picking.h"
+#include "forgeshape_render_mesh.h"
 #include "forgeshape_sculpt.h"
+#include "forgeshape_selection.h"
 #include "forgeshape_transform.h"
 
 namespace forgeshape {
@@ -210,6 +213,265 @@ void prepareSession(SculptSession* session, const ConstructionObject& object, Sc
 }
 
 }  // namespace
+
+// Builds a snapshot for an arbitrary eye position looking at the world origin.
+//
+// CameraController only moves by gesture, and a sidedness test needs the two
+// poses a gesture is the clumsiest possible way to reach: straight down the
+// -Y axis onto a Plane's canonical front, and straight up at the same sheet
+// from underneath. A flat sheet is invisible edge-on, so the product's default
+// oblique pose cannot express either. `up` is +Z rather than +Y precisely
+// because the view direction here IS the Y axis, and mat4LookAt needs an up
+// vector that is not parallel to it.
+CameraSnapshot cameraAt(const Vec3& eye, ProjectionMode projection) {
+    CameraSnapshot s{};
+    s.eye = eye;
+    s.target = Vec3{0.0f, 0.0f, 0.0f};
+    s.yaw = 0.0f;
+    s.pitch = 0.0f;
+    s.distance = std::sqrt(vec3Dot(eye, eye));
+    s.projection = projection;
+    s.orthoHalfHeightMeters = s.distance * std::tan(kFovYRadians * 0.5f);
+    s.view = mat4LookAt(eye, s.target, Vec3{0.0f, 0.0f, 1.0f});
+    const float aspect =
+        static_cast<float>(kViewportWidth) / static_cast<float>(kViewportHeight);
+    s.proj = (projection == ProjectionMode::Orthographic)
+                 ? mat4Orthographic(s.orthoHalfHeightMeters, aspect, kNearPlane, kFarPlane)
+                 : mat4Perspective(kFovYRadians, aspect, kNearPlane, kFarPlane);
+    return s;
+}
+
+// Directly above the sheet, seeing its canonical +Y front.
+CameraSnapshot cameraLookingAtPlaneFront() {
+    return cameraAt(Vec3{0.0f, 6.0f, 0.0f}, ProjectionMode::Perspective);
+}
+
+// Directly below the same sheet, seeing its back.
+CameraSnapshot cameraLookingAtPlaneBack() {
+    return cameraAt(Vec3{0.0f, -6.0f, 0.0f}, ProjectionMode::Perspective);
+}
+
+// SIDE-01..09. Kept in one function so the invariant reads as one contract
+// rather than nine scattered assertions.
+void runSidednessSelfTests(Recorder& r) {
+    const Mat4 identity = mat4Identity();
+
+    ConstructionObject planeObject;
+    planeObject.setPrimitive(PrimitiveSpec::forPlane(2.0, 1.25));
+    const ConstructionMesh planeSource = planeObject.generateMesh();
+
+    ConstructionObject solidObject = makeSphereObject();
+    const ConstructionMesh solidSource = solidObject.generateMesh();
+
+    // --- SIDE-01: the Construction publication carries the fact at all -----
+    r.check("side01_construction_plane_is_two_sided", planeSource.renderBothSides);
+    r.check("side01_construction_solid_is_single_sided", !solidSource.renderBothSides);
+
+    // --- SIDE-02: Freeze preserves it, in both directions ------------------
+    SculptMesh frozenPlane;
+    r.check("side02_freeze_plane_succeeds",
+            frozenPlane.freezeFrom(planeSource, planeObject.objectId()));
+    r.check("side02_frozen_plane_is_two_sided", frozenPlane.renderBothSides());
+
+    SculptMesh frozenSolid;
+    r.check("side06_freeze_solid_succeeds",
+            frozenSolid.freezeFrom(solidSource, solidObject.objectId()));
+    r.check("side06_frozen_solid_is_single_sided", !frozenSolid.renderBothSides());
+
+    // --- SIDE-03: the frozen Plane's PUBLICATION is two-sided, and its
+    // authoritative topology is still exactly 4:6. The backside is a
+    // render-only duplication; it must never reach the source.
+    MeshStore planeStore(planeObject.objectId());
+    MeshValidation why = MeshValidation::Ok;
+    r.check("side03_frozen_plane_publishes",
+            publishSculptMesh(frozenPlane, planeStore, &why) != kNoMeshRevision);
+    const RuntimeMeshPtr activePlane = planeStore.current();
+    r.check("side03_frozen_plane_publication_is_two_sided",
+            activePlane != nullptr && activePlane->renderBothSides());
+    r.check("side03_frozen_plane_source_topology_is_still_4_6",
+            frozenPlane.vertexCount() == 4 && frozenPlane.indexCount() == 6 &&
+                activePlane != nullptr && activePlane->vertexCount() == 4 &&
+                activePlane->indexCount() == 6);
+
+    RenderMeshData planeRender;
+    const bool planeRenderBuilt =
+        activePlane != nullptr &&
+        buildRenderMesh(activePlane->vertices(), activePlane->vertexCount(),
+                        activePlane->indices(), activePlane->indexCount(),
+                        SurfaceShading::Smooth, &planeRender, activePlane->renderBothSides());
+    // Smooth 4:6 duplicated once = 8:12, and the source counts it reports are
+    // still the undoubled ones.
+    r.check("side03_frozen_plane_render_representation_is_doubled",
+            planeRenderBuilt && planeRender.vertexCount() == 8 &&
+                planeRender.indexCount() == 12 && planeRender.sourceVertexCount == 4 &&
+                planeRender.sourceIndexCount == 6);
+
+    MeshStore solidStore(solidObject.objectId());
+    r.check("side06_frozen_solid_publishes",
+            publishSculptMesh(frozenSolid, solidStore, &why) != kNoMeshRevision);
+    const RuntimeMeshPtr activeSolid = solidStore.current();
+    r.check("side06_frozen_solid_publication_is_single_sided",
+            activeSolid != nullptr && !activeSolid->renderBothSides());
+    RenderMeshData solidRender;
+    const bool solidRenderBuilt =
+        activeSolid != nullptr &&
+        buildRenderMesh(activeSolid->vertices(), activeSolid->vertexCount(),
+                        activeSolid->indices(), activeSolid->indexCount(),
+                        SurfaceShading::Smooth, &solidRender, activeSolid->renderBothSides());
+    r.check("side06_frozen_solid_render_representation_is_not_doubled",
+            solidRenderBuilt && solidRender.indexCount() == activeSolid->indexCount());
+
+    // --- SIDE-04: selection picking hits the frozen Plane from BOTH sides ---
+    // Uses the explicit-transform overload with the published mesh's own
+    // sidedness, which is exactly what the implicit overload now computes.
+    const CameraSnapshot front = cameraLookingAtPlaneFront();
+    const CameraSnapshot back = cameraLookingAtPlaneBack();
+    {
+        const bool frontFacesOnly = !(activePlane != nullptr && activePlane->renderBothSides());
+        MeshStore probe(planeObject.objectId());
+        publishSculptMesh(frozenPlane, probe, &why);
+        // pickScene reads the process-global store, so drive the shared core
+        // through the explicit overload against a locally published mesh by
+        // temporarily making it the global active representation below; here we
+        // assert the triangle-level answer the whole chain rests on.
+        Ray frontRay{};
+        Ray backRay{};
+        const bool frontRayOk =
+            buildPickRay(front, kCentreX, kCentreY, kViewportWidth, kViewportHeight, &frontRay);
+        const bool backRayOk =
+            buildPickRay(back, kCentreX, kCentreY, kViewportWidth, kViewportHeight, &backRay);
+        r.check("side04_frozen_plane_pick_hits_from_front",
+                frontRayOk &&
+                    pickTriangleMesh(frontRay, frozenPlane.triangleView(), frontFacesOnly).hit);
+        r.check("side04_frozen_plane_pick_hits_from_back",
+                backRayOk &&
+                    pickTriangleMesh(backRay, frozenPlane.triangleView(), frontFacesOnly).hit);
+        // Teeth: with the front-face rule the back ray must miss, so the check
+        // above is proving the sidedness flag and not merely that a ray hits.
+        r.check("side04_back_ray_would_miss_under_the_front_face_rule",
+                backRayOk && !pickTriangleMesh(backRay, frozenPlane.triangleView(), true).hit);
+    }
+
+    // --- SIDE-05: the Sculpt hit-test agrees, from both sides ---------------
+    //
+    // The brush radius is the product MAXIMUM here, and that is load-bearing
+    // rather than lazy: a Plane's only 4 vertices are its corners, 1.18 m from
+    // the centre at this size, and a brush that captures no vertex starts no
+    // stroke at all (the same property Known Issues records for a frozen box).
+    // At this camera distance 600 px reaches 1.73 m, so a failure here is a
+    // sidedness failure and not a brush that was simply too small.
+    {
+        SculptStroke frontStroke;
+        SculptStroke backStroke;
+        r.check("side05_frozen_plane_sculpt_hits_from_front",
+                frontStroke.begin(SculptTool::Grab, frozenPlane, front, kCentreX, kCentreY,
+                                  kViewportWidth, kViewportHeight, identity, identity,
+                                  kMaxBrushRadiusPixels));
+        r.check("side05_frozen_plane_sculpt_hits_from_back",
+                backStroke.begin(SculptTool::Grab, frozenPlane, back, kCentreX, kCentreY,
+                                 kViewportWidth, kViewportHeight, identity, identity,
+                                 kMaxBrushRadiusPixels));
+
+        // Teeth for SIDE-06: a closed solid must still refuse a stroke started
+        // from inside, which is the front-face rule the Plane is the exception
+        // to. The sphere is 1 m across, so an eye 0.2 m from its centre is
+        // within it.
+        const CameraSnapshot inside =
+            cameraAt(Vec3{0.0f, 0.2f, 0.0f}, ProjectionMode::Perspective);
+        SculptStroke insideStroke;
+        r.check("side06_solid_sculpt_refuses_a_stroke_from_inside",
+                !insideStroke.begin(SculptTool::Grab, frozenSolid, inside, kCentreX, kCentreY,
+                                    kViewportWidth, kViewportHeight, identity, identity,
+                                    kMaxBrushRadiusPixels));
+        // ...and that refusal is culling, not an empty viewport: the same ray
+        // DOES meet the sphere's far wall once the front-face rule is dropped.
+        // Without this the check above could pass for having hit nothing at all.
+        Ray insideRay{};
+        const bool insideRayOk = buildPickRay(inside, kCentreX, kCentreY, kViewportWidth,
+                                              kViewportHeight, &insideRay);
+        r.check("side06_inside_refusal_is_culling_not_an_empty_scene",
+                insideRayOk &&
+                    pickTriangleMesh(insideRay, frozenSolid.triangleView(), false).hit);
+    }
+
+    // --- SIDE-07 / SIDE-08: the stale-source case, through the REAL implicit
+    // pickScene overload -- the one that used to ask PrimitiveKind.
+    //
+    // Freeze a solid, then change the Construction Source to a Plane. The active
+    // representation is still the frozen solid, so it must stay single-sided;
+    // asking the Source would wrongly make it two-sided. The converse case is
+    // asserted straight after, so neither a hard-coded true nor a hard-coded
+    // false can pass both.
+    {
+        // Save and restore the process-global state this exercises, so the test
+        // is input-independent and leaves nothing behind for later suites.
+        const TransformValues savedTransform = constructionTransform().values();
+        const PrimitiveSpec savedPrimitive = constructionObject().spec();
+        TransformValues atOrigin{};
+        constructionTransform().setValues(atOrigin);
+
+        Ray backRay{};
+        buildPickRay(back, kCentreX, kCentreY, kViewportWidth, kViewportHeight, &backRay);
+
+        // Case A: active = frozen SOLID, Construction Source = PLANE.
+        constructionObject().setPrimitive(PrimitiveSpec::forPlane(2.0, 1.25));
+        publishSculptMesh(frozenSolid, meshStore(), &why);
+        const SceneHit staleSolidFromBehind =
+            pickScene(front, kCentreX, kCentreY, kViewportWidth, kViewportHeight);
+        // Seen from the front the solid is hit normally; the point of the case
+        // is that it is hit on its NEAR surface, not its far wall.
+        r.check("side07_stale_frozen_solid_is_still_hit_from_outside", staleSolidFromBehind.hit);
+        // Now from inside: a single-sided solid must miss. If sidedness came
+        // from the Plane Source this would wrongly hit.
+        const CameraSnapshot inside =
+            cameraAt(Vec3{0.0f, 0.2f, 0.0f}, ProjectionMode::Perspective);
+        const SceneHit fromInside =
+            pickScene(inside, kCentreX, kCentreY, kViewportWidth, kViewportHeight);
+        r.check("side07_stale_frozen_solid_does_not_inherit_plane_two_sidedness",
+                !fromInside.hit);
+
+        // Case B: active = frozen PLANE, Construction Source = SOLID. The
+        // mirror image, so the rule cannot be satisfied by ignoring sidedness.
+        constructionObject().setPrimitive(
+            PrimitiveSpec::forSphere(kDefaultSphereDiameterMeters));
+        publishSculptMesh(frozenPlane, meshStore(), &why);
+        const SceneHit planeFromBack =
+            pickScene(back, kCentreX, kCentreY, kViewportWidth, kViewportHeight);
+        r.check("side08_frozen_plane_still_picks_from_behind_under_a_solid_source",
+                planeFromBack.hit);
+        const SceneHit planeFromFront =
+            pickScene(front, kCentreX, kCentreY, kViewportWidth, kViewportHeight);
+        r.check("side08_frozen_plane_still_picks_from_the_front", planeFromFront.hit);
+
+        constructionObject().setPrimitive(savedPrimitive);
+        constructionTransform().setValues(savedTransform);
+    }
+
+    // --- SIDE-09: display settings are presentation and cannot move the fact --
+    {
+        // Both shading models and both projections, against one unchanged
+        // published mesh. Sidedness is carried by the mesh, so none of them can
+        // touch it -- and the render duplication follows the mesh, not the mode.
+        RenderMeshData faceted;
+        const bool built =
+            activePlane != nullptr &&
+            buildRenderMesh(activePlane->vertices(), activePlane->vertexCount(),
+                            activePlane->indices(), activePlane->indexCount(),
+                            SurfaceShading::Faceted, &faceted, activePlane->renderBothSides());
+        r.check("side09_shading_change_does_not_alter_sidedness",
+                built && activePlane->renderBothSides() && faceted.sourceVertexCount == 4 &&
+                    faceted.sourceIndexCount == 6);
+        const CameraSnapshot orthoBack =
+            cameraAt(Vec3{0.0f, -6.0f, 0.0f}, ProjectionMode::Orthographic);
+        Ray orthoBackRay{};
+        const bool orthoOk = buildPickRay(orthoBack, kCentreX, kCentreY, kViewportWidth,
+                                          kViewportHeight, &orthoBackRay);
+        r.check("side09_projection_change_does_not_alter_sidedness",
+                orthoOk && pickTriangleMesh(orthoBackRay, frozenPlane.triangleView(),
+                                            !frozenPlane.renderBothSides())
+                               .hit);
+    }
+}
 
 int runSculptSelfTests(SculptSelfTestResult* out, int max) {
     Recorder r{out, max};
@@ -1795,6 +2057,18 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
                         !missStroke.active());
         }
     }
+
+    // -----------------------------------------------------------------------
+    // SIDE-01..09 -- sidedness belongs to the ACTIVE PUBLISHED REPRESENTATION
+    // -----------------------------------------------------------------------
+    //
+    // One fact, three consumers. Render, selection picking and the Sculpt
+    // hit-test must all get the same answer for the mesh that is active right
+    // now, and none of them may re-derive it from the Construction Source's
+    // current PrimitiveKind -- a Frozen Sculpt Mesh outlives the Source it was
+    // frozen from, so the Source can be a Plane while the frozen geometry is a
+    // solid, and vice versa.
+    runSidednessSelfTests(r);
 
     return r.n;
 }

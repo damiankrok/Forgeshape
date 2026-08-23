@@ -278,7 +278,7 @@ final class NativeViewport {
     static final int TOOL_INFLATE = 3;
 
     /** Length of the array {@link #sculptState} fills. */
-    static final int SCULPT_STATE_SIZE = 11;
+    static final int SCULPT_STATE_SIZE = 12;
 
     /** {@link #MODE_CONSTRUCTION} or {@link #MODE_SCULPT}. */
     static final int SCULPT_MODE = 0;
@@ -296,12 +296,26 @@ final class NativeViewport {
     static final int SCULPT_STRENGTH = 6;
     /** 1 when the Construction Source changed after the Freeze. */
     static final int SCULPT_SOURCE_STALE = 7;
-    /** How many Grab strokes have been started. */
+    /**
+     * How many strokes have been started for the life of the SESSION.
+     *
+     * <p>Diagnostic only. This counts strokes on frozen meshes that no longer
+     * exist, so it cannot answer whether re-freezing would destroy anything the
+     * user still has — use {@link #SCULPT_HAS_EDITS} for that.
+     */
     static final int SCULPT_STROKE_COUNT = 8;
     /** The object id — the same one the Construction object carries. */
     static final int SCULPT_OBJECT_ID = 9;
     /** The active tool, one of the {@code TOOL_*} constants. */
     static final int SCULPT_TOOL = 10;
+    /**
+     * 1 when the <b>current</b> Frozen Sculpt Mesh has user sculpt edits.
+     *
+     * <p>Native code owns what counts as an edit; this layer only reads the
+     * answer. Reset by every Freeze, and unaffected by a gesture that began and
+     * was abandoned to navigation without moving a vertex.
+     */
+    static final int SCULPT_HAS_EDITS = 11;
 
     /** @return {@link #MODE_CONSTRUCTION} or {@link #MODE_SCULPT} */
     static native int productMode();

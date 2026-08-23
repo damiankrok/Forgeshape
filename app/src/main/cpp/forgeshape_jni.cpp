@@ -1319,12 +1319,19 @@ Java_com_forgeshape_app_NativeViewport_enterSculptMode(JNIEnv*, jclass) {
 //   [5] brush radius, screen pixels
 //   [6] brush strength
 //   [7] 1 when the Construction Source changed since the Freeze
-//   [8] completed stroke count
+//   [8] completed stroke count, for the LIFE OF THE SESSION — diagnostic only.
+//       Deliberately not what the destructive re-Freeze guard asks: it counts
+//       strokes on frozen meshes that no longer exist, so it can never say
+//       whether re-freezing would destroy anything the user still has.
 //   [9] ObjectId
 //  [10] active tool (0 grab, 1 clay, 2 smooth, 3 inflate)
+//  [11] 1 when the CURRENT Frozen Sculpt Mesh has user edits. This is the one
+//       the re-Freeze guard asks, so the Java layer decides nothing about what
+//       counts as an edit and holds no copy of the rule — see
+//       SculptMesh::hasEdits().
 JNIEXPORT void JNICALL
 Java_com_forgeshape_app_NativeViewport_sculptState(JNIEnv* env, jclass, jdoubleArray outState) {
-    constexpr jsize kSculptStateSize = 11;
+    constexpr jsize kSculptStateSize = 12;
     if (outState == nullptr || env->GetArrayLength(outState) < kSculptStateSize) {
         return;
     }
@@ -1342,6 +1349,7 @@ Java_com_forgeshape_app_NativeViewport_sculptState(JNIEnv* env, jclass, jdoubleA
         static_cast<jdouble>(session.strokeCount()),
         static_cast<jdouble>(mesh.objectId()),
         static_cast<jdouble>(forgeshape::sculptToolIndex(session.tool())),
+        mesh.hasEdits() ? 1.0 : 0.0,
     };
     env->SetDoubleArrayRegion(outState, 0, kSculptStateSize, values);
 }

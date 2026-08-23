@@ -2,7 +2,8 @@
 
 #include <cmath>
 
-#include "forgeshape_construction.h"
+// Deliberately does NOT include forgeshape_construction.h: selection picking
+// reads the active published mesh, never the Construction primitive.
 #include "forgeshape_mesh.h"
 #include "forgeshape_picking.h"
 #include "forgeshape_transform.h"
@@ -11,16 +12,24 @@ namespace forgeshape {
 
 SceneHit pickScene(const CameraSnapshot& camera, float screenX, float screenY,
                    int viewportWidth, int viewportHeight) {
-    // The bounded two-sided exception, named and scoped to exactly one
-    // primitive: a flat Construction Plane has no interior a back-face hit
-    // could wrongly reach, so it alone picks from both sides — including while
-    // its Frozen Sculpt Mesh copy is the active representation, since that copy
-    // is still the same open sheet and `kind()` is unaffected by Freeze. Every
-    // other primitive keeps the ordinary front-face-only rule.
-    const bool twoSidedPlane = constructionObject().kind() == PrimitiveKind::Plane;
+    // The bounded two-sided exception, read from the ACTIVE PUBLISHED MESH
+    // rather than from the current Construction primitive.
+    //
+    // A flat sheet has no interior a back-face hit could wrongly reach, so it
+    // alone picks from both sides; every closed solid keeps the front-face-only
+    // rule. The distinction is a fact about the geometry actually on screen, and
+    // asking `constructionObject().kind()` for it was wrong in both directions
+    // once a Frozen Sculpt Mesh can outlive the Source it was frozen from: a
+    // frozen solid would start picking from behind the moment the Source was
+    // changed to a Plane, and a frozen Plane would stop picking from behind the
+    // moment the Source was changed to a solid — in neither case did the mesh
+    // being picked change at all. Reading the published RuntimeMesh keeps
+    // picking, rendering and the Sculpt hit-test on one answer.
+    const RuntimeMeshPtr active = meshStore().current();
+    const bool twoSided = (active != nullptr) && active->renderBothSides();
     return pickScene(camera, screenX, screenY, viewportWidth, viewportHeight,
                      constructionTransform().modelMatrix(),
-                     constructionTransform().inverseModelMatrix(), !twoSidedPlane);
+                     constructionTransform().inverseModelMatrix(), !twoSided);
 }
 
 SceneHit pickScene(const CameraSnapshot& camera, float screenX, float screenY,

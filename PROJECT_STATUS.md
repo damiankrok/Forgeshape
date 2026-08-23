@@ -1,23 +1,161 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.23.0
+**Status Version:** 0.24.0
 **Updated:** 2026-08-24
-**Result:** COMPLETE — Gate P1 is closed on real physical ARM64 hardware; see
-the Gate P1 chapter below
+**Result:** COMPLETE — the Pre-017 Correctness Repair is closed; see the chapter
+below
 **Current Phase:** Phase 1 — Native Viewport
 **Workspace:** `D:\TRAVELAPPS\ForgeShape`
-**Accepted implementation baseline:** Gate P1 — physical ARM64 closure, on top
-of Stage 016-R2 (explicit emulator port isolation + deterministic native
-self-test fixtures), Stage 016 (Plane + primitive coverage cleanup), Stage 015D
-(camera projection), Stage 015C-R (front-face culling), Stage 015C (shading),
-Platform Fix P2, Stage 015B, Stage 014, the NDK r29 migration (Gate P0) and the
-owner decision baseline.
-**Next Stage:** Pre-017 Correctness Repair — active representation sidedness +
-re-Freeze guard + device verifier.
+**Accepted implementation baseline:** Pre-017 Correctness Repair — active
+representation sidedness + re-Freeze guard + device verifier, on top of Gate P1
+(physical ARM64 closure), Stage 016-R2 (explicit emulator port isolation +
+deterministic native self-test fixtures), Stage 016 (Plane + primitive coverage
+cleanup), Stage 015D (camera projection), Stage 015C-R (front-face culling),
+Stage 015C (shading), Platform Fix P2, Stage 015B, Stage 014, the NDK r29
+migration (Gate P0) and the owner decision baseline.
+**Next Stage:** Stage 017 — Multi-object + Hierarchy Foundation.
 
 This is a current snapshot, not a chronology. Per-stage verification chapters,
 superseded environment states and old next-stage recommendations live in Git
 history and are deliberately not repeated here.
+
+## Pre-017 Correctness Repair — sidedness ownership + re-Freeze guard + device verifier (COMPLETE)
+
+Two real product defects and one real verifier weakness, all confirmed against
+the code before anything was changed. No new feature, no new primitive, no
+renderer or camera change.
+
+**A1 — sidedness was re-derived instead of carried, in three different
+places.** `RuntimeMesh::renderBothSides()` already existed as the intended
+single source of truth, and its own doc comment already said consumers should
+use it "without either one needing to know PrimitiveKind" — but the wiring
+never reached Sculpt or selection:
+
+- `SculptMesh::freezeFrom` copied vertices, indices, adjacency and objectId but
+  **not** `ConstructionMesh::renderBothSides`, so a frozen Plane forgot it was
+  an open sheet the moment it was frozen.
+- `publishSculptMesh` called `MeshStore::publish` without the sidedness
+  argument, so it silently took the `false` default: **every Frozen Sculpt Mesh
+  published single-sided**, and a frozen Plane stopped rendering from behind.
+- `pickScene`'s implicit overload asked `constructionObject().kind() ==
+  PrimitiveKind::Plane`. That is a question about the Construction Source, not
+  about the mesh being picked, and a Frozen Sculpt Mesh outlives the Source it
+  was frozen from — so it was wrong in **both** directions: a frozen solid
+  started picking from inside as soon as the Source was changed to a Plane, and
+  a frozen Plane stopped picking from behind as soon as the Source was changed
+  to a solid. In neither case did the geometry being picked change at all.
+- The Sculpt hit-test passed a hard-coded `frontFacesOnly=true` at both of its
+  call sites, so a frozen Plane could never be sculpted from underneath
+  regardless of anything else.
+
+**The contract now, stated once.** Sidedness is a property of the active
+published representation. `ConstructionMesh::renderBothSides` →
+`SculptMesh::renderBothSides()` (copied by `freezeFrom`) →
+`RuntimeMesh::renderBothSides()` (carried by both publication paths), and
+render, selection picking and the Sculpt hit-test all read that one value.
+Nothing re-derives it from `PrimitiveKind`; `forgeshape_selection.cpp` no
+longer includes `forgeshape_construction.h` at all, so the dependency that
+allowed the mistake is gone rather than merely unused. The Construction Plane
+itself is untouched: still 4 vertices / 6 indices, zero thickness, canonical
+front +Y, with the backside a render-only duplication that never reaches the
+authoritative mesh.
+
+**A2 — the destructive re-Freeze guard asked a question it could not answer.**
+`SculptContextView` read `SCULPT_STROKE_COUNT`, which is
+`SculptSession::strokeCount()` — incremented in `beginStroke` and **never reset
+by a Freeze**. So once anything had been sculpted in a session, every later
+re-Freeze of an untouched mesh raised a dialog claiming N strokes would be
+discarded, when the mesh in hand had none: precisely the train-the-user-to-
+dismiss failure UI-OWNER-05 exists to prevent, and a false statement about what
+was being lost.
+
+The predicate is now `SculptMesh::hasEdits()`, exposed as
+`SCULPT_HAS_EDITS`. It needed no new state: `revision_` is restarted at
+`kFrozenSculptRevision` by every `freezeFrom` and advanced only by
+`advanceRevision()`, which runs only from `updateStroke` — i.e. only when a
+stroke actually moved a vertex. A gesture that began and was abandoned to
+navigation, or a stroke that captured nothing, therefore correctly reports no
+edits. The lifetime `strokeCount` is kept, documented as diagnostic-only on
+both sides of the JNI boundary. The dialog now names no number, because the
+Java layer knows only that edits exist and any count it could quote would be
+about meshes that no longer exist.
+
+**A3 — the device verifier recognised only one syntax and one directory.**
+DEV2-06/07 matched only the `& adb` call-operator form, so a plain
+`adb shell ...` was invisible; they scanned only `scripts\*.ps1`, so no
+`.cmd`/`.bat`/`.sh` or Gradle surface was covered; there was no
+`connected*AndroidTest` check at all; and `@instrumentArgs` was accepted by
+variable **name** rather than by proving the array carries `-s`. DEV2-01..07 are
+kept exactly as accepted and DEV3-01..06 added on top, sharing one detector with
+the real repo scan so the fixtures test the code that actually guards the repo.
+The detector strips string literals, `#` comments and `<# … #>` blocks before
+matching, so the prose both device scripts legitimately contain — they log
+`"… only: adb …"` and mention `connectedDebugAndroidTest` in a message — is not
+mistaken for running it.
+
+**A4, found by DEV3-06 failing on its own first run: the verifier could report
+FAIL and still exit 0.** `$failed = $results | Where-Object …` returns a bare
+object, not an array, when exactly one check fails, and a `PSCustomObject` has
+no `.Count` — so `$null -gt 0` was false and the script printed "All checks
+PASS" and exited 0. Fixed with `@(…)`; proven by breaking exactly one check and
+observing exit 1 where it previously exited 0. This is why DEV3-06 asserts the
+surfaces it scanned rather than only that it found nothing.
+
+**Verification.** Ten native suites, **1451 checks, zero failures** (sculpt
+276 → 302 with SIDE-01..09; picking unchanged at 128, so the Gate P1 ARM64
+shared-edge fix is intact) on x86_64, and the same suites green on the physical
+arm64-v8a device (`primaryCpuAbi=arm64-v8a`) with picking 128/128 and sculpt
+302/302. 26/26 JVM. **50/50 instrumented** (46 → 50; one self-skipping test
+replaced by five REFR tests). DEV2-01..07 + DEV3-01..06 all PASS.
+
+**Both fixes have teeth, verified by reverting them.** Dropping sidedness from
+the Sculpt publish fails 5 SIDE checks; restoring the `PrimitiveKind`
+derivation in `pickScene` fails SIDE-07 and SIDE-08 — one for each direction of
+the error. Restoring the session-lifetime stroke count fails 3 of the 50
+instrumented tests.
+
+**Runtime**, on `ForgeShape_Stage006` / `emulator-5580` through the real touch
+path. Freeze a Plane: the frozen publication builds `src=4:6 render=8:12`,
+i.e. it kept its two-sidedness through Freeze (it would have been `4:6`
+before). A real Grab stroke ran on the frozen sheet **from underneath** — the
+camera orbited to `pitch=-1.5200`, and the stroke logged
+`STROKE_BEGIN:grab:4`, capturing all four vertices; before the fix that gesture
+could only have orbited. The same stroke works from above at `pitch=+1.5200`.
+The stale-source case is two consecutive render builds and needs no
+interpretation: revision 137, the Construction Plane, `src=4:6 render=8:12`;
+revision 138, the stale frozen Sphere while the Source *is* that Plane
+(`stale=1`), `src=482:2880 render=482:2880` — not doubled. Re-Freeze with edits
+(`sculptRev=117`) raised the confirmation, whose message quotes no count;
+confirming it left `sculptRev=1`, `freezes=2`, `strokes=2`; and re-Freezing
+that fresh mesh raised **no** dialog despite those two historical strokes.
+HOME/resume reproduced the identical `ActivityRecord{83699530}` with no
+self-test rerun, and rotation held `1080x2400 → 2400x1080 → 1080x2400` at
+`preTransform=0x1` with zero mesh uploads.
+
+**PRE17 criteria.**
+
+| ID | Verdict | Evidence |
+| --- | --- | --- |
+| PRE17-01 | PASS | clean tree at `159af08` audited before any change |
+| PRE17-02 | PASS | SIDE-01..09 green (26 checks) on x86_64 and physical arm64 |
+| PRE17-03 | PASS | one chain: ConstructionMesh → SculptMesh → RuntimeMesh; selection no longer includes `forgeshape_construction.h` |
+| PRE17-04 | PASS | frozen Plane `render=8:12`; real strokes from `pitch=+1.52` and `pitch=-1.52`; SIDE-03/04/05 |
+| PRE17-05 | PASS | rev 138 `render=482:2880` while the Source is a Plane; SIDE-07 |
+| PRE17-06 | PASS | SIDE-06 plus the whole pre-existing suite unchanged; solids still refuse a stroke from inside |
+| PRE17-07 | PASS | REFR-01..07 green within 50/50 instrumented |
+| PRE17-08 | PASS | guard reads `SCULPT_HAS_EDITS`; reverting it fails 3 instrumented tests |
+| PRE17-09 | PASS | REFR-03 asserts Resume is unguarded *with edits present* |
+| PRE17-10 | PASS | DEV3-01..06 PASS, including the negative controls |
+| PRE17-11 | PASS | DEV2-01..07 kept and still PASS; no rule relaxed |
+| PRE17-12 | PASS | native 1451/1451, JVM 26/26, instrumented 50/50 |
+| PRE17-13 | PASS | see *Runtime* above — both fixes proven on the real touch path |
+| PRE17-14 | PASS | picking suite still 128/128 on physical arm64-v8a |
+| PRE17-15 | PASS | release-retention claim downgraded to UNVERIFIED; Plane/re-Freeze wording corrected |
+| PRE17-16 | PASS | no Undo/import/persistence/BVH/async/Stage 017/Sketch/Extrude/new brush work |
+| PRE17-17 | PASS | see doc line counts below |
+| PRE17-18 | PASS | one focused commit, clean tree |
+
+**Result: COMPLETE.** PRE17-01..18 PASS.
 
 ## Gate P1 — Physical ARM64 + 16 KB Runtime + Vulkan Validation + Heavy-Mesh Baseline (COMPLETE)
 
@@ -166,7 +304,16 @@ through the same `MeshStore::publish` path the other fixtures use; key F
 freezes the most recently published tier directly into Sculpt through the
 real `SculptSession::freezeToSculpt`, bypassing Construction, for stroke
 measurement at density). Not a Construction primitive, not reachable from
-product UI, compiled out in release exactly like the existing fixtures 1–9.
+product UI. Its call sites are `#ifndef NDEBUG`-guarded exactly like the
+existing fixtures 1–9, so a release build reaches none of them. **What is
+NOT yet artifact-verified is whether the linker then drops the code from the
+final release binary**: the self-test and fixture translation units are on the
+CMake source list unconditionally, and no release `.so` has been inspected to
+confirm the symbols are absent. Treat "debug-only" as *"the calls are
+debug-guarded"*, which is proven, and not as *"the code is absent from the
+shipped binary"*, which is UNVERIFIED. Recorded as debt under *Technical
+Debt*; deliberately not refactored here, because changing release/test
+compilation is a different job from this repair.
 **Measured on the physical ARM64 device.** All three mandatory tiers ran to
 completion with no crash, no OOM, no ANR and no state corruption. Each tier
 was published through the same `MeshStore::publish` path the product uses,
@@ -807,6 +954,11 @@ Android touch path. `PRODUCT.md` owns the user-facing description.
 | Dynamic mesh: immutable revisions, fail-closed validation, capacity reuse/growth | VERIFIED |
 | One Construction Body with exact Box / Cylinder / Sphere / Cone / Capsule / Plane | VERIFIED |
 | Plane: 4:6 open source topology, exact bounds, two-sided render and pick as one bounded, named exception | VERIFIED |
+| Sidedness is owned by the active published representation; render, selection picking and Sculpt hit-test all read that one value | VERIFIED |
+| Frozen Plane renders, picks and **sculpts** from both sides; a real stroke lands on the underside | VERIFIED |
+| A stale frozen solid never inherits two-sidedness from a Construction Source later changed to a Plane (and the converse) | VERIFIED |
+| Destructive re-Freeze confirms only for edits on the CURRENT frozen mesh; historical strokes never raise it | VERIFIED |
+| The re-Freeze message states no stroke count, because no honest per-mesh count exists to state | VERIFIED |
 | Exact dimensions in meters; mm/cm/m display unit above JNI only, lossless | VERIFIED |
 | Apply Shape: Applied / Unchanged / Rejected, atomic, kind change is a change | VERIFIED |
 | Every primitive's parameters remembered independently across kind changes | VERIFIED |
@@ -830,7 +982,7 @@ Android touch path. `PRODUCT.md` owns the user-facing description.
 | Edge-to-edge with WindowInsets on chrome only; IME never resizes the Vulkan surface | VERIFIED |
 | Every chrome surface consumes its own gesture; viewport pixel-identical across chrome drags | VERIFIED |
 | Freeze / Resume wording follows whether a Frozen Sculpt Mesh exists | VERIFIED |
-| Destructive re-Freeze confirms only when strokes would be discarded; Cancel is inert | VERIFIED |
+| Destructive re-Freeze confirms only when the current mesh's edits would be discarded; Cancel is inert | VERIFIED |
 | Stable semantic ids on every control; 32 instrumented + 22 JVM tests | VERIFIED |
 | Correct geometric proportions in portrait, physical 90° landscape and a non-rotated wide window | VERIFIED |
 | One orientation convention: identity pre-transform, swapchain image = window | VERIFIED |
@@ -857,7 +1009,7 @@ Android touch path. `PRODUCT.md` owns the user-facing description.
 ## Self-test suite
 
 Ten debug-only native suites run once from `NativeViewport.start()` — never per
-frame — and total **1425 checks, zero failures** at the accepted baseline under
+frame — and total **1451 checks, zero failures** at the accepted baseline under
 NDK r29, identically on physical arm64-v8a and on x86_64:
 
 | suite token | checks |
@@ -870,7 +1022,7 @@ NDK r29, identically on physical arm64-v8a and on x86_64:
 | `FORGESHAPE_CONSTRUCTION_PRIMITIVE_SELFTEST_OK` | 125 |
 | `FORGESHAPE_CONSTRUCTION_SPHERE_SELFTEST_OK` | 105 |
 | `FORGESHAPE_CONE_CAPSULE_SELFTEST_OK` | 163 |
-| `FORGESHAPE_SCULPT_BRUSH_KERNEL_SELFTEST_OK` | 276 |
+| `FORGESHAPE_SCULPT_BRUSH_KERNEL_SELFTEST_OK` | 302 |
 | `FORGESHAPE_RENDER_SHADING_SELFTEST_OK` | 224 |
 
 followed by `FORGESHAPE_MESH_UPLOAD_OK` and `FORGESHAPE_NATIVE_VIEWPORT_OK`.
@@ -932,7 +1084,13 @@ Build and verification commands are in `README.md`.
 every control is reached by its stable semantic id and no assertion uses a screen
 coordinate.
 
-**46 of the 46 instrumented tests pass as of Stage 016** on `ForgeShape_Stage006`.
+**50 of the 50 instrumented tests pass as of the Pre-017 Correctness Repair**
+on `ForgeShape_Stage006`. The Pre-017 repair took the count from 46 to 50: it
+replaced one self-skipping re-Freeze test with the five `REFR-01..07` cases.
+The test it replaced returned early whenever a previous test had sculpted, and
+because the counter it consulted was never reset, that meant it silently proved
+nothing for the rest of every run — the reason REFR-06 exists as an explicit
+criterion.
 
 `EditorWorkspaceGestureTest.ui11_theImeLeavesTheFieldAndTheCommitPathUsableAndTheSurfaceUntouched`
 is the one case that has moved in both directions across recent stages: it
@@ -1171,6 +1329,18 @@ required shading is complete without them.
   different points in a session may not compare.
 
 ## Technical Debt
+
+**"Debug-only" code is proven debug-*guarded*, not proven absent from a release
+binary.** Every self-test and mesh-fixture entry point is behind `#ifndef
+NDEBUG` or an equivalent guard, so a release build calls none of them — that
+much is verified by reading the call sites. But the self-test and fixture
+translation units sit on the CMake source list unconditionally, and no release
+`.so` has ever been inspected to confirm the linker drops the symbols. Until
+someone builds a release binary and checks, the honest claim is "the calls are
+debug-guarded", not "the code is not shipped". Closing this means examining a
+real release artifact, and possibly moving the files behind a CMake condition —
+a change to release/test compilation that deliberately was not made as a side
+effect of the Pre-017 repair.
 
 **The selection tint costs about half the surface's form contrast, measured.**
 Selection is a whole-object tint mixed over the final shaded colour at
@@ -1444,13 +1614,18 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Pre-017 Correctness Repair — active representation sidedness + re-Freeze
-guard + device verifier**
+**Stage 017 — Multi-object + Hierarchy Foundation**
 
-Gate P1 is closed, and the platform-evidence question it existed to answer is
-answered on real ARM64 hardware. The approved next work is the audited
-Pre-017 correctness repair, not Stage 017: the active-representation
-sidedness problem (`renderBothSides` surviving into a representation it does
-not describe), the re-Freeze guard, and a device verifier. This is a
-correctness stage, deliberately scheduled before any new feature work — no
-Sketch/Extrude, no import/loader, no Undo, no BVH, no renderer redesign.
+Gate P1 closed the platform-evidence question on real ARM64 hardware, and the
+Pre-017 Correctness Repair closed the two contract defects that audit found —
+sidedness ownership and the destructive re-Freeze guard — plus the static
+device verifier's blind spots. The correctness debt that was scheduled ahead of
+new feature work is now paid, so the next stage is the first structural one:
+more than one object, and the hierarchy to hold them.
+
+Everything in the product today assumes exactly one object. There is one
+process-global `ConstructionObject`, one `ConstructionTransform`, one
+`MeshStore`, one `SculptSession` and one `ObjectId`, and Stage 017 is where
+that singularity has to become a collection with identity, selection and
+parent/child structure. It is deliberately a foundation stage: no Sketch or
+Extrude, no booleans, no import, no persistence.

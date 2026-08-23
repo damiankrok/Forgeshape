@@ -394,24 +394,221 @@ public final class EditorWorkspaceControlsTest {
         });
     }
 
+    // -----------------------------------------------------------------------
+    // REFR-01..07 -- the destructive re-Freeze guard asks about the CURRENT
+    // frozen mesh, never the session's history
+    // -----------------------------------------------------------------------
+    //
+    // UI-OWNER-05 says the confirmation appears only when existing Frozen
+    // Sculpt Mesh edits would actually be replaced. A session-lifetime stroke
+    // count cannot express that: it counts strokes on frozen meshes that no
+    // longer exist, so once anything has ever been sculpted every later
+    // re-Freeze of an untouched mesh raises a dialog with nothing behind it —
+    // exactly the training-to-dismiss the owner contract forbids.
+
     /**
-     * The one irreversible act, guarded exactly when there is something to
-     * lose. A mesh with no stroke on it can be replaced by an identical copy,
-     * so confirming that would be noise.
+     * REFR-01. A freshly frozen mesh has nothing on it, so re-freezing replaces
+     * a copy with an identical copy and must not stop to ask.
+     *
+     * <p>REFR-06: this asserts its own precondition instead of returning early
+     * when it does not hold. The version this replaced skipped itself whenever
+     * a previous test had sculpted, which — because the count it read was never
+     * reset — meant it silently proved nothing for the rest of the run.
      */
     @Test
-    public void ui05_reFreezeIsUnguardedWhenNoStrokeHasLanded() {
-        enterSculpt();
+    public void refr01_freshlyFrozenMeshIsReFrozenWithoutConfirmation() {
+        freezeFreshSculptableMesh();
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            final double[] sculpt = new double[NativeViewport.SCULPT_STATE_SIZE];
-            NativeViewport.sculptState(sculpt);
-            if (sculpt[NativeViewport.SCULPT_STROKE_COUNT] != 0.0) {
-                return null;   // a previous test sculpted; the guarded case covers this
-            }
+            assertFalse("precondition: a freshly frozen mesh has no edits", currentMeshHasEdits());
             workspace.findViewById(R.id.freeze_again).performClick();
             assertNull("re-freezing an unsculpted mesh discards nothing",
                     workspace.sculptContext().visibleConfirmation());
             assertEquals(NativeViewport.MODE_SCULPT, NativeViewport.productMode());
+            return null;
+        });
+    }
+
+    /**
+     * REFR-02. A real stroke on the CURRENT mesh is something to lose, so the
+     * guard appears. Driven through the native touch path rather than by
+     * poking state, so it is the same edit a finger would make.
+     */
+    @Test
+    public void refr02_reFreezeAfterEditingTheCurrentMeshAsksForConfirmation() {
+        freezeFreshSculptableMesh();
+        sculptTheCurrentMesh();
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            assertTrue("precondition: the stroke must have edited this mesh",
+                    currentMeshHasEdits());
+            workspace.findViewById(R.id.freeze_again).performClick();
+            assertNotNull("re-freezing an edited mesh must stop and ask",
+                    workspace.sculptContext().visibleConfirmation());
+            workspace.sculptContext().visibleConfirmation().dismiss();
+            return null;
+        });
+    }
+
+    /**
+     * REFR-03. Resume is not a destructive act and is never confirmed: it
+     * returns to the sculpt work exactly as it was left, and guarding it would
+     * train the user to dismiss the guard that matters. Asserted with edits
+     * present, which is the case a wrong guard would fire on.
+     */
+    @Test
+    public void refr03_resumeSculptIsNonDestructiveAndUnconfirmed() {
+        freezeFreshSculptableMesh();
+        sculptTheCurrentMesh();
+        final double[] frozen = onWorkspace(rule.getScenario(), (activity, workspace) -> {
+            assertTrue("precondition: Resume is being tested with edits to lose",
+                    currentMeshHasEdits());
+            workspace.findViewById(R.id.back_to_construction).performClick();
+            return nativeSnapshot();
+        });
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            workspace.findViewById(R.id.resume_sculpt).performClick();
+            return null;
+        });
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            assertEquals(NativeViewport.MODE_SCULPT, NativeViewport.productMode());
+            assertNull("Resume must never ask for confirmation",
+                    workspace.sculptContext().visibleConfirmation());
+            final double[] sculptNow = nativeSnapshot();
+            final int revisionSlot = NativeViewport.PRIMITIVE_STATE_SIZE + 6
+                    + NativeViewport.SCULPT_REVISION;
+            final int vertexSlot = NativeViewport.PRIMITIVE_STATE_SIZE + 6
+                    + NativeViewport.SCULPT_VERTEX_COUNT;
+            assertEquals("Resume re-freezes nothing", frozen[revisionSlot],
+                    sculptNow[revisionSlot], 0.0);
+            assertEquals(frozen[vertexSlot], sculptNow[vertexSlot], 0.0);
+            assertTrue("Resume also preserves the edits it did not discard",
+                    currentMeshHasEdits());
+            return null;
+        });
+    }
+
+    /**
+     * REFR-04 and REFR-05. Confirming the destructive re-Freeze builds a NEW
+     * frozen mesh, and that new mesh starts with no edits — so the guard must
+     * not fire again, even though the session's stroke history is now non-empty.
+     * This is the case the old session-lifetime count got wrong.
+     */
+    @Test
+    public void refr04_confirmedReFreezeResetsTheEditPredicateAndTheNextOneIsUnguarded() {
+        freezeFreshSculptableMesh();
+        sculptTheCurrentMesh();
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            assertTrue(currentMeshHasEdits());
+            workspace.findViewById(R.id.freeze_again).performClick();
+            final android.app.AlertDialog dialog = workspace.sculptContext().visibleConfirmation();
+            assertNotNull("precondition: the guarded path is the one under test", dialog);
+            // Press the real positive button, so the re-Freeze happens the way
+            // a user causes it rather than by calling native code directly.
+            dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).performClick();
+            return null;
+        });
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            // REFR-04: the predicate is about the mesh that exists now.
+            assertFalse("a re-frozen mesh carries no edits of its own", currentMeshHasEdits());
+            // REFR-05: the session HAS historical strokes, and they must not
+            // reach the new mesh's guard. Asserting the history is non-empty
+            // keeps this from passing vacuously.
+            final double[] sculpt = new double[NativeViewport.SCULPT_STATE_SIZE];
+            NativeViewport.sculptState(sculpt);
+            assertTrue("precondition: the session must carry historical strokes",
+                    sculpt[NativeViewport.SCULPT_STROKE_COUNT] > 0.0);
+            workspace.findViewById(R.id.freeze_again).performClick();
+            assertNull("old-mesh strokes must not guard a new, unedited mesh",
+                    workspace.sculptContext().visibleConfirmation());
+            return null;
+        });
+    }
+
+    /**
+     * REFR-07. A gesture that touched the model but moved nothing changes no
+     * vertex, so it is not an edit and must not arm the guard. This is the
+     * pending/abandoned case: a stroke can be BEGUN and still never promote.
+     */
+    @Test
+    public void refr07_aGestureThatEditsNothingDoesNotArmTheGuard() {
+        freezeFreshSculptableMesh();
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final View viewport = workspace.findViewById(R.id.viewport_surface);
+            final int w = viewport.getWidth();
+            final int h = viewport.getHeight();
+            assertTrue("precondition: the viewport must be laid out", w > 0 && h > 0);
+            // Down and straight back up at the same point: no movement, so no
+            // vertex can have been written.
+            sendTouch(android.view.MotionEvent.ACTION_DOWN, w / 2f, h / 2f, w, h);
+            sendTouch(android.view.MotionEvent.ACTION_UP, w / 2f, h / 2f, w, h);
+            assertFalse("a gesture that moved nothing is not an edit", currentMeshHasEdits());
+            workspace.findViewById(R.id.freeze_again).performClick();
+            assertNull("an unedited mesh is re-frozen without confirmation",
+                    workspace.sculptContext().visibleConfirmation());
+            return null;
+        });
+    }
+
+    // --- REFR support -------------------------------------------------------
+
+    /** The native answer to "does the mesh that exists right now have edits?". */
+    private static boolean currentMeshHasEdits() {
+        final double[] sculpt = new double[NativeViewport.SCULPT_STATE_SIZE];
+        NativeViewport.sculptState(sculpt);
+        return sculpt[NativeViewport.SCULPT_HAS_EDITS] != 0.0;
+    }
+
+    private static void sendTouch(int action, float x, float y, int width, int height) {
+        NativeViewport.touchEvent(action, -1, 1, new int[] {0}, new float[] {x},
+                new float[] {y}, width, height);
+    }
+
+    /**
+     * Puts the product in Sculpt mode on a mesh that is both freshly frozen and
+     * actually sculptable.
+     *
+     * <p>The primitive matters: a Box's 8 vertices are all at its corners and a
+     * brush that captures none of them starts no stroke, so a test that froze
+     * whatever the previous test left behind could not reliably produce an
+     * edit. A sphere's 482 vertices are spread over the surface.
+     */
+    private void freezeFreshSculptableMesh() {
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            NativeViewport.applyConstructionSphere(1.0);
+            NativeViewport.setSculptBrush(300.0, 1.0);
+            if (NativeViewport.productMode() != NativeViewport.MODE_SCULPT) {
+                final double[] sculpt = new double[NativeViewport.SCULPT_STATE_SIZE];
+                NativeViewport.sculptState(sculpt);
+                workspace.findViewById(sculpt[NativeViewport.SCULPT_HAS_MESH] != 0.0
+                        ? R.id.resume_sculpt : R.id.freeze_to_sculpt).performClick();
+            }
+            return null;
+        });
+        // A second, unconditional Freeze so the mesh under test is always newly
+        // built from the sphere above, whatever state the run arrived in.
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            assertEquals(NativeViewport.MODE_SCULPT, NativeViewport.productMode());
+            assertEquals("the fixture must freeze cleanly",
+                    NativeViewport.SCULPT_OK, NativeViewport.freezeToSculpt());
+            assertFalse("a newly frozen mesh starts with no edits", currentMeshHasEdits());
+            return null;
+        });
+    }
+
+    /** Drives a real Grab stroke through the native touch path. */
+    private void sculptTheCurrentMesh() {
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final View viewport = workspace.findViewById(R.id.viewport_surface);
+            final int w = viewport.getWidth();
+            final int h = viewport.getHeight();
+            assertTrue("precondition: the viewport must be laid out", w > 0 && h > 0);
+            final float cx = w / 2f;
+            final float cy = h / 2f;
+            sendTouch(android.view.MotionEvent.ACTION_DOWN, cx, cy, w, h);
+            for (int step = 1; step <= 8; ++step) {
+                sendTouch(android.view.MotionEvent.ACTION_MOVE, cx + step * 6f, cy + step * 4f,
+                        w, h);
+            }
+            sendTouch(android.view.MotionEvent.ACTION_UP, cx + 48f, cy + 32f, w, h);
             return null;
         });
     }

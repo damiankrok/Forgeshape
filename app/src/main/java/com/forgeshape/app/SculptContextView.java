@@ -126,24 +126,32 @@ final class SculptContextView extends LinearLayout {
      *
      * <p>Freezing again rebuilds the sculpt mesh from the current Construction
      * shape, which discards whatever was sculpted into the old one. The guard
-     * appears <b>only when there is something to lose</b>: if no stroke has
-     * landed on this mesh, re-freezing replaces a copy with an identical copy
-     * and confirming it would teach the user to dismiss the dialog that
-     * matters. Cancel changes nothing at all — it makes no native call.
+     * appears <b>only when there is something to lose</b>: if nothing has been
+     * sculpted into the mesh that exists right now, re-freezing replaces a copy
+     * with an identical copy and confirming it would teach the user to dismiss
+     * the dialog that matters. Cancel changes nothing at all — it makes no
+     * native call.
+     *
+     * <p>The question asked is {@link NativeViewport#SCULPT_HAS_EDITS}, about
+     * the <b>current</b> frozen mesh, and deliberately not the session-lifetime
+     * {@link NativeViewport#SCULPT_STROKE_COUNT}. Strokes made on an earlier
+     * frozen mesh are already gone; warning about them would make every later
+     * re-Freeze of an untouched mesh raise a dialog with nothing behind it,
+     * which is exactly the training-to-dismiss the owner contract forbids. For
+     * the same reason the message states no number: this layer knows only that
+     * edits exist, and quoting a historical count would be a false claim about
+     * what is being lost.
      */
     private void onFreezeAgainRequested() {
         NativeViewport.sculptState(nativeState);
-        final long strokes = (long) nativeState[NativeViewport.SCULPT_STROKE_COUNT];
-        if (strokes <= 0) {
+        if (nativeState[NativeViewport.SCULPT_HAS_EDITS] == 0.0) {
             freezeNow();
             return;
         }
         final Context context = getContext();
         confirmation = new AlertDialog.Builder(context)
                 .setTitle(R.string.freeze_confirm_title)
-                .setMessage(context.getString(R.string.freeze_confirm_message, strokes,
-                        context.getString(strokes == 1 ? R.string.freeze_confirm_stroke
-                                                       : R.string.freeze_confirm_strokes)))
+                .setMessage(context.getString(R.string.freeze_confirm_message))
                 // The button carries the verb, not "OK": the user should be
                 // able to read what pressing it does without re-reading the
                 // message above it.

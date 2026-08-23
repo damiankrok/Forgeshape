@@ -84,11 +84,19 @@ scoped, mechanically, not by operator discipline. It uninstalls the test APK
 when it finishes, matching `connectedDebugAndroidTest`'s own cleanup
 behaviour, so reinstall the app before taking further runtime evidence.
 
-`scripts\verify-device-guards.ps1` runs the DEV2-01..07 device-isolation
-guard checks (forbidden port/serial rejection, no bare `adb`, every
-instrumentation call scoped) without needing any device attached and without
-ever contacting `emulator-5554` — safe to run any time as a quick sanity
-check on the two scripts above.
+`scripts\verify-device-guards.ps1` runs the DEV2-01..07 and DEV3-01..06
+device-isolation guard checks without needing any device attached and without
+ever contacting `emulator-5554` — safe to run any time as a quick sanity check
+on the two scripts above.
+
+DEV2 covers forbidden port/serial rejection and scoped instrumentation. DEV3
+scans the executable workflow surface — `scripts\*.ps1`, any `.cmd`/`.bat`/
+`.sh`, and the Gradle files — for an unscoped `adb` in **any** form (`adb …`,
+`& adb …`, or an argument array that cannot be shown to carry `-s`), and for
+an executable `connected*AndroidTest` fan-out. It reads through string
+literals and comments, so documenting a forbidden command is not mistaken for
+running one, and it reports which surfaces it scanned so a check that silently
+covered nothing cannot pass.
 
 To run one class:
 

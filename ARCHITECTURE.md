@@ -528,13 +528,39 @@ keeps the data, the rasterizer and the picker from drifting apart.
 **The Plane is a bounded, explicitly named exception to both halves of this
 rule**, never a change to the rule itself. It is the one primitive with no
 "inside": a flat, open, single-sided sheet has no far wall a two-sided render
-or pick could wrongly reach, unlike every other, closed primitive above. The
-exception is carried by one fact — `RuntimeMesh::renderBothSides()`, true only
-for a Plane's published mesh — read independently by the render layer (which
-duplicates its one-sided result, see *Derived render geometry and shading*)
-and by `pickScene` (which passes `frontFacesOnly = false` only when the active
-`PrimitiveKind` is `Plane`, see *Picking and selection*). The pipeline itself
-is untouched: still one global `VK_CULL_MODE_BACK_BIT` /
+or pick could wrongly reach, unlike every other, closed primitive above.
+
+**Sidedness is a property of the active published representation, and exactly
+one value carries it.** The chain is:
+
+```
+ConstructionMesh::renderBothSides      (set only when generating a Plane)
+  -> SculptMesh::renderBothSides()     (copied wholesale by freezeFrom)
+    -> RuntimeMesh::renderBothSides()  (carried by BOTH publication paths:
+                                        publishConstructionObject and
+                                        publishSculptMesh)
+```
+
+and the three consumers all read the last link and nothing else:
+
+| Consumer | Reads |
+| --- | --- |
+| Render (`buildRenderMesh`) | `RuntimeMesh::renderBothSides()`, duplicating its one-sided result — see *Derived render geometry and shading* |
+| Selection (`pickScene`) | `meshStore().current()->renderBothSides()` |
+| Sculpt hit-test (`SculptStroke::begin`, `SculptSession::hitsSculptMesh`) | the `SculptMesh`'s own `renderBothSides()` |
+
+**No consumer may re-derive this from `PrimitiveKind`.** That is not a style
+preference: a Frozen Sculpt Mesh outlives the Construction Source it was frozen
+from, so the Source can be a Plane while the frozen geometry is a closed solid,
+and the reverse. Asking the Source is therefore wrong in both directions — a
+frozen solid would begin picking from inside the moment the Source became a
+Plane, and a frozen Plane would stop picking from behind the moment the Source
+became a solid, in neither case having changed at all. `forgeshape_selection.cpp`
+deliberately does not include `forgeshape_construction.h`, so the dependency
+that permits the mistake is absent rather than merely unused. `SIDE-01`..`09`
+assert the whole chain, including both directions of the stale-source case.
+
+The pipeline itself is untouched: still one global `VK_CULL_MODE_BACK_BIT` /
 `VK_FRONT_FACE_COUNTER_CLOCKWISE`, for every primitive including the Plane.
 
 **Naming this `VK_FRONT_FACE_CLOCKWISE` double-counts the Y flip** and inverts
@@ -1457,18 +1483,25 @@ an edit with no separate collision representation to keep in sync. Picking is a
 linear scan; there is no spatial acceleration.
 
 **The two-sided picking exception is one boolean, computed once, at the one
-process-scoped call site.** `pickScene(camera, x, y, w, h)` passes
-`!(constructionObject().kind() == PrimitiveKind::Plane)` as the
-`frontFacesOnly` argument to the explicit-transform overload
+process-scoped call site.** `pickScene(camera, x, y, w, h)` reads
+`meshStore().current()->renderBothSides()` — the sidedness of the mesh it is
+about to intersect — and passes its negation as the `frontFacesOnly` argument
+to the explicit-transform overload
 `pickScene(camera, x, y, w, h, model, inverseModel, frontFacesOnly)`, which
 forwards it straight to `pickTriangleMesh`. `frontFacesOnly` defaults to
 `true` on that overload, so every existing caller — including the self-tests,
 which use the explicit overload precisely to avoid depending on
-process-scoped state — is unaffected. `constructionObject().kind()` is read
-here, not `RuntimeMesh::renderBothSides()`: picking and Freeze share one
-active mesh, and a Plane's `kind()` is unchanged by Freeze, so the exception
-follows a Frozen Sculpt Mesh copy of a Plane exactly as it follows the
-Construction source.
+process-scoped state — is unaffected.
+
+This reads the **published mesh**, never `constructionObject().kind()`. An
+earlier version did ask the primitive kind, on the reasoning that a Plane's
+`kind()` is unchanged by Freeze so the exception would follow the frozen copy.
+That reasoning only holds while the Construction Source still *is* what was
+frozen. It is not an invariant: a Construction edit after a Freeze leaves the
+frozen mesh untouched and stale by design (see *Construction ↔ Sculpt*), so the
+Source and the active mesh can disagree about shape entirely — and then the
+kind describes geometry that is not on screen. See *Canonical winding and
+culling* for the single ownership chain and `SIDE-01`..`09` for the assertions.
 
 `SelectionController` (`forgeshape_selection.{h,cpp}`) owns the selected
 `ObjectId` and the tap-versus-navigation decision. `ObjectId` is an opaque

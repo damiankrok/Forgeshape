@@ -186,6 +186,15 @@ because a flat sheet has no "inside" the way a box or a sphere does. Rotating
 it — with the same Position/Rotation fields every shape uses — is how its
 facing is changed; there is no separate orientation control.
 
+**Freezing a plane keeps it two-sided.** Once frozen, the sheet still draws,
+selects and *sculpts* from either side: a brush works on the underside exactly
+as it does on top. Being usable from both sides belongs to the sheet itself, so
+it survives Freeze and it stays true no matter what the Construction shape is
+later changed to. The converse holds too: a frozen box or sphere stays
+one-sided — it keeps its inside — even if the Construction shape is afterwards
+changed to a plane. What decides is the mesh being worked on, never whichever
+shape the Shape selector happens to be showing.
+
 ### Choosing a shape changes nothing by itself
 
 Moving the Shape selector only swaps which fields are on screen. The object stays
@@ -324,11 +333,18 @@ belong to the brush rather than to the tool.
 The Property Inspector in Sculpt Mode carries what the sculpted mesh currently
 is, the stale-source warning when there is one, and **Freeze again…** — the one
 act in ForgeShape that cannot be undone. Pressing it when sculpting has actually
-been done asks first, in a message that says how many strokes will be discarded
-and labels the button with what it does rather than *OK*. Cancelling changes
-nothing at all. Pressing it on a mesh nothing has been done to just freezes,
-because there is nothing to lose and a warning that cries wolf is worse than no
-warning.
+been done **to the mesh that exists right now** asks first, and labels the button
+with what it does rather than *OK*. Cancelling changes nothing at all. Pressing
+it on a mesh nothing has been done to just freezes, because there is nothing to
+lose and a warning that cries wolf is worse than no warning.
+
+The question asked is only ever about the current Frozen Sculpt Mesh. Sculpting
+that was done, and then deliberately discarded by an earlier confirmed *Freeze
+again*, is already gone; it is not something a later Freeze can take away. So
+freezing a fresh mesh is silent no matter how much sculpting happened earlier in
+the session. For the same reason the message names no number: what is at stake
+is this mesh's sculpting, and a count carried over from meshes that no longer
+exist would be a false claim about what is being lost.
 
 ### One finger on the model sculpts; anywhere else navigates
 

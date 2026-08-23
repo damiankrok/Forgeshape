@@ -105,6 +105,12 @@ using SculptRevision = uint64_t;
 // Reserved: "nothing has been frozen yet".
 constexpr SculptRevision kNoSculptRevision = 0;
 
+// The revision every Freeze restarts at. A mesh still sitting at this revision
+// is a byte-identical copy of its Construction source: nothing has been
+// sculpted into it yet. That makes `revision > kFrozenSculptRevision` the exact
+// predicate for "THIS frozen mesh has user edits" — see SculptMesh::hasEdits().
+constexpr SculptRevision kFrozenSculptRevision = 1;
+
 // ---------------------------------------------------------------------------
 // Brush parameters, shared by every tool
 // ---------------------------------------------------------------------------
@@ -261,6 +267,27 @@ public:
 
     bool frozen() const { return revision_ != kNoSculptRevision; }
 
+    // True when THIS frozen mesh has been sculpted since it was frozen.
+    //
+    // The predicate the destructive re-Freeze guard asks, and deliberately NOT
+    // a session-lifetime stroke count: re-Freeze destroys the edits on the mesh
+    // that exists right now, so strokes that landed on some earlier frozen mesh
+    // are not something the user can still lose. `revision_` is restarted at
+    // kFrozenSculptRevision by every freezeFrom and advanced only by
+    // advanceRevision(), which runs only when a stroke actually moved a vertex —
+    // so a gesture that began and was abandoned to navigation, or a stroke that
+    // captured no vertex, correctly reports no edits.
+    bool hasEdits() const { return frozen() && revision_ > kFrozenSculptRevision; }
+
+    // Whether the frozen geometry is a flat, open sheet that is legitimately
+    // usable from both sides — carried over from the Construction mesh this was
+    // frozen from, NOT re-derived from whatever the Construction Source happens
+    // to be now. See ConstructionMesh::renderBothSides and
+    // RuntimeMesh::renderBothSides(): sidedness is a fact about a specific
+    // published representation, and a frozen sheet stays a sheet even after the
+    // Construction Source has been changed to something else entirely.
+    bool renderBothSides() const { return renderBothSides_; }
+
     // The SAME identity the Construction object carries. Freezing does not
     // create a new object; it creates a second representation of this one.
     ObjectId objectId() const { return objectId_; }
@@ -313,6 +340,7 @@ public:
 private:
     ObjectId objectId_ = kNoObject;
     SculptRevision revision_ = kNoSculptRevision;
+    bool renderBothSides_ = false;
     std::vector<MeshVertex> vertices_;
     std::vector<uint32_t> indices_;
     SculptTopology topology_;

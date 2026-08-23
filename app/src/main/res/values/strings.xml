@@ -95,9 +95,7 @@
     <!-- Destructive re-Freeze confirmation. Names the consequence, and the
          button carries the verb rather than "OK". -->
     <string name="freeze_confirm_title">Replace the sculpted mesh?</string>
-    <string name="freeze_confirm_message">Freezing again rebuilds the sculpt mesh from the current Construction shape. The %1$d sculpt %2$s already made will be discarded. This cannot be undone.</string>
-    <string name="freeze_confirm_stroke">stroke</string>
-    <string name="freeze_confirm_strokes">strokes</string>
+    <string name="freeze_confirm_message">Freezing again rebuilds the sculpt mesh from the current Construction shape. The sculpting already made on this mesh will be discarded. This cannot be undone.</string>
     <string name="freeze_confirm_action">Discard and freeze</string>
     <string name="cancel">Cancel</string>
 
