@@ -18,6 +18,7 @@
 #include "forgeshape_input.h"
 #include "forgeshape_math.h"
 #include "forgeshape_object_id.h"
+#include "forgeshape_scene.h"
 
 namespace forgeshape {
 
@@ -70,6 +71,23 @@ SceneHit pickScene(const CameraSnapshot& camera, float screenX, float screenY,
 SceneHit pickScene(const CameraSnapshot& camera, float screenX, float screenY,
                    int viewportWidth, int viewportHeight, const Mat4& model,
                    const Mat4& inverseModel, bool frontFacesOnly = true);
+
+// Intersects ONE explicitly supplied published mesh. The shared core all three
+// entry points above ultimately run, exposed so scene picking can drive it once
+// per body without re-reading any process-scoped state.
+SceneHit pickMesh(const CameraSnapshot& camera, float screenX, float screenY, int viewportWidth,
+                  int viewportHeight, const RuntimeMeshPtr& mesh, const Mat4& model,
+                  const Mat4& inverseModel, bool frontFacesOnly = true);
+
+// Nearest positive hit across an explicitly supplied scene snapshot.
+//
+// Each item is intersected with ITS OWN transform and ITS OWN sidedness, and
+// the nearest hit wins; ties keep the earlier body in scene order. Taking the
+// snapshot as a parameter is what lets a self-test pick a scene it built itself
+// and keeps the caller free to take the snapshot under the state mutex and then
+// scan triangles with that mutex released.
+SceneHit pickSceneSnapshot(const CameraSnapshot& camera, float screenX, float screenY,
+                           int viewportWidth, int viewportHeight, const SceneSnapshot& scene);
 
 class SelectionController {
 public:

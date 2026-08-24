@@ -18,6 +18,7 @@
 #include <android/native_window_jni.h>
 #include <jni.h>
 
+#include <algorithm>
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
@@ -38,6 +39,8 @@
 #include "forgeshape_primitive_selftest.h"
 #include "forgeshape_render_mesh_selftest.h"
 #include "forgeshape_renderer.h"
+#include "forgeshape_scene.h"
+#include "forgeshape_scene_selftest.h"
 #include "forgeshape_sculpt.h"
 #include "forgeshape_sculpt_selftest.h"
 #include "forgeshape_selection.h"
@@ -212,6 +215,28 @@ void runPickingSelfTestsAndLog() {
         FS_LOGI("FORGESHAPE_PICKING_SELFTEST_OK (%d checks)", count);
     } else {
         FS_LOGE("FORGESHAPE_PICKING_SELFTEST_FAIL (%d of %d checks failed)", failed, count);
+    }
+#endif
+}
+
+void runSceneSelfTestsAndLog() {
+#ifndef NDEBUG
+    constexpr int kMaxSceneChecks = 256;
+    static forgeshape::SceneSelfTestResult results[kMaxSceneChecks];
+    const int count = forgeshape::runSceneSelfTests(results, kMaxSceneChecks);
+    int failed = 0;
+    for (int i = 0; i < count; ++i) {
+        if (!results[i].passed) {
+            ++failed;
+            FS_LOGE("FORGESHAPE_SCENE_SELFTEST_CASE_FAIL:%s", results[i].name);
+        } else {
+            FS_LOGI("scene selftest pass: %s", results[i].name);
+        }
+    }
+    if (failed == 0) {
+        FS_LOGI("FORGESHAPE_SCENE_SELFTEST_OK (%d checks)", count);
+    } else {
+        FS_LOGE("FORGESHAPE_SCENE_SELFTEST_FAIL (%d of %d checks failed)", failed, count);
     }
 #endif
 }
@@ -854,11 +879,13 @@ void renderThreadMain() {
             {
                 std::lock_guard<std::mutex> lock(g_stateMutex);
                 renderer.setCamera(g_camera.snapshot());
-                // Derived placement only: the renderer is handed the finished
-                // model matrix and owns no position, rotation or Euler order.
-                renderer.setModelTransform(forgeshape::constructionTransform().modelMatrix());
-                // Visual state only: the renderer is never told which object.
-                renderer.setSelectionHighlight(g_selection.hasSelection());
+                // One immutable snapshot of every renderable body: its own
+                // published mesh, its own derived model matrix and its own
+                // selection flag. Taken under the state mutex; the geometry
+                // work the renderer then does with it happens after the mutex
+                // is released, because the snapshot holds shared_ptrs rather
+                // than borrowing anything the scene could change underneath.
+                renderer.setScene(forgeshape::constructionScene().snapshot());
             }
             // Presentation only, and deliberately OUTSIDE the state mutex: the
             // display settings are plain atomics that no domain invariant
@@ -914,6 +941,7 @@ Java_com_forgeshape_app_NativeViewport_start(JNIEnv*, jclass) {
     runConeCapsuleSelfTestsAndLog();
     runSculptSelfTestsAndLog();
     runRenderMeshSelfTestsAndLog();
+    runSceneSelfTestsAndLog();
     // The mesh and construction self-tests publish revisions of their own into
     // the store, so republish the ACTIVE representation: the app must always
     // come up showing what the current product mode says it is showing. At a
@@ -1307,6 +1335,108 @@ Java_com_forgeshape_app_NativeViewport_enterSculptMode(JNIEnv*, jclass) {
     FS_LOGI("FORGESHAPE_SCULPT_MODE:sculpt meshRev=%llu", (unsigned long long)revision);
     logSculptState("mode_sculpt");
     return kSculptOk;
+}
+
+// ---------------------------------------------------------------------------
+// The scene: several Construction Bodies
+// ---------------------------------------------------------------------------
+//
+// The Java layer holds NO model selection and no body list of its own. It asks
+// how many bodies there are, what their ids are in scene order, and which one
+// is active; every answer comes from here. That is what keeps the Objects list,
+// the Property Inspector and the viewport from ever disagreeing.
+
+JNIEXPORT jint JNICALL Java_com_forgeshape_app_NativeViewport_sceneBodyCount(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    return static_cast<jint>(forgeshape::constructionScene().bodyCount());
+}
+
+// Fills `outIds` with every body's ObjectId in SCENE ORDER (insertion order),
+// and returns how many were written. Order is the contract: the Objects list
+// must not reshuffle when something is edited or selected.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sceneBodyIds(JNIEnv* env, jclass, jlongArray outIds) {
+    if (outIds == nullptr) {
+        return 0;
+    }
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
+    const jsize capacity = env->GetArrayLength(outIds);
+    const jsize count =
+        std::min<jsize>(capacity, static_cast<jsize>(scene.bodyCount()));
+    for (jsize i = 0; i < count; ++i) {
+        const jlong id = static_cast<jlong>(scene.bodyAt(static_cast<size_t>(i)).objectId());
+        env->SetLongArrayRegion(outIds, i, 1, &id);
+    }
+    return static_cast<jint>(count);
+}
+
+JNIEXPORT jlong JNICALL Java_com_forgeshape_app_NativeViewport_sceneActiveBodyId(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    return static_cast<jlong>(forgeshape::constructionScene().activeBodyId());
+}
+
+// Makes an existing body the edit target. Selection ONLY: it publishes nothing,
+// mints no revision, uploads nothing and cannot change any ObjectId.
+//
+// Refused while the active body is in Sculpt mode. Stage 017's deliberate
+// policy is that the Sculpt target is fixed for the duration of Sculpt mode and
+// the user returns to Construction to change bodies; allowing a switch mid-mode
+// would mean deciding what happens to a half-finished stroke, which is a
+// question this stage does not need to answer.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sceneSelectBody(JNIEnv*, jclass, jlong objectId) {
+    bool selected = false;
+    bool refusedInSculpt = false;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        if (forgeshape::sculptSession().inSculptMode()) {
+            refusedInSculpt = true;
+        } else {
+            selected = forgeshape::constructionScene().setActiveBody(
+                static_cast<forgeshape::ObjectId>(objectId));
+        }
+    }
+    if (refusedInSculpt) {
+        FS_LOGI("FORGESHAPE_SCENE_SELECT_REFUSED:in_sculpt_mode");
+        return kSculptFailedFreeze;
+    }
+    if (!selected) {
+        FS_LOGI("FORGESHAPE_SCENE_SELECT_REFUSED:unknown_body:%lld", (long long)objectId);
+        return kSculptNothingFrozen;
+    }
+    // Deliberately no publish here: the newly active body already has its own
+    // current revision in its own store, so switching the edit target costs no
+    // geometry work at all.
+    FS_LOGI("FORGESHAPE_SCENE_ACTIVE_BODY:%lld", (long long)objectId);
+    return kSculptOk;
+}
+
+// Adds a Construction Body with the same defaults as the startup body, appends
+// it, and makes it active. Its Construction mesh is published immediately, so
+// it is visible and pickable straight away.
+JNIEXPORT jlong JNICALL Java_com_forgeshape_app_NativeViewport_sceneAddBody(JNIEnv*, jclass) {
+    forgeshape::ObjectId created = forgeshape::kNoObject;
+    bool refusedInSculpt = false;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        if (forgeshape::sculptSession().inSculptMode()) {
+            refusedInSculpt = true;
+        } else {
+            created = forgeshape::constructionScene().addBody().objectId();
+        }
+    }
+    if (refusedInSculpt) {
+        FS_LOGI("FORGESHAPE_SCENE_ADD_REFUSED:in_sculpt_mode");
+        return static_cast<jlong>(forgeshape::kNoObject);
+    }
+    // Outside the lock: publication generates a mesh, and no lock is held
+    // across geometry generation anywhere else either.
+    const forgeshape::MeshRevision revision = publishConstructionObject("body_added");
+    FS_LOGI("FORGESHAPE_SCENE_BODY_ADDED:%llu meshRev=%llu bodies=%d",
+            (unsigned long long)created, (unsigned long long)revision,
+            (int)forgeshape::constructionScene().bodyCount());
+    return static_cast<jlong>(created);
 }
 
 // Reads the authoritative sculpt state for display. Nothing here is measured
@@ -1817,6 +1947,15 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
                 // because it reads the store's current revision.
                 hit = forgeshape::pickScene(g_camera.snapshot(), tapX, tapY, viewWidth, viewHeight);
                 selectionChanged = g_selection.applyPick(hit);
+                // Picking a body also makes it the one the Construction editors
+                // act on, so the Property Inspector and the Objects list can
+                // never disagree with what the viewport says is selected.
+                // A miss clears the selection but deliberately leaves the edit
+                // target alone: there would be nothing to put in its place, and
+                // an editor bound to no body would have nothing to show.
+                if (hit.hit) {
+                    forgeshape::constructionScene().setActiveBody(hit.objectId);
+                }
             } else {
                 tapResolved = false;
             }

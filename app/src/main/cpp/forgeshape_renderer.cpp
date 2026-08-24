@@ -429,13 +429,39 @@ bool Renderer::createMeshUploadObjects() {
     return true;
 }
 
+void Renderer::destroyBodyResources(BodyRenderResources& body) {
+    if (body.vertexBuffer != VK_NULL_HANDLE) vkDestroyBuffer(device_, body.vertexBuffer, nullptr);
+    if (body.vertexMemory != VK_NULL_HANDLE) vkFreeMemory(device_, body.vertexMemory, nullptr);
+    if (body.indexBuffer != VK_NULL_HANDLE) vkDestroyBuffer(device_, body.indexBuffer, nullptr);
+    if (body.indexMemory != VK_NULL_HANDLE) vkFreeMemory(device_, body.indexMemory, nullptr);
+    body.vertexBuffer = VK_NULL_HANDLE;
+    body.vertexMemory = VK_NULL_HANDLE;
+    body.vertexCapacityBytes = 0;
+    body.indexBuffer = VK_NULL_HANDLE;
+    body.indexMemory = VK_NULL_HANDLE;
+    body.indexCapacityBytes = 0;
+    body.indexCount = 0;
+    body.uploadedRevision = kNoMeshRevision;
+    body.failedRevision = kNoMeshRevision;
+    // The GPU no longer holds anything derived from the cache, so the cache
+    // must not claim it does: the next sync has to rebuild and re-upload.
+    body.renderMesh.invalidate();
+}
+
+BodyRenderResources& Renderer::resourcesFor(ObjectId objectId) {
+    // Keyed by stable ObjectId, so a body keeps its own buffers for its whole
+    // life no matter how many other bodies are added around it.
+    return bodies_[objectId];
+}
+
 void Renderer::destroyMeshResources() {
     if (device_ == VK_NULL_HANDLE) return;
 
-    if (vertexBuffer_ != VK_NULL_HANDLE) vkDestroyBuffer(device_, vertexBuffer_, nullptr);
-    if (vertexMemory_ != VK_NULL_HANDLE) vkFreeMemory(device_, vertexMemory_, nullptr);
-    if (indexBuffer_ != VK_NULL_HANDLE) vkDestroyBuffer(device_, indexBuffer_, nullptr);
-    if (indexMemory_ != VK_NULL_HANDLE) vkFreeMemory(device_, indexMemory_, nullptr);
+    for (auto& entry : bodies_) {
+        destroyBodyResources(entry.second);
+    }
+    bodies_.clear();
+
     if (stagingBuffer_ != VK_NULL_HANDLE) vkDestroyBuffer(device_, stagingBuffer_, nullptr);
     if (stagingMemory_ != VK_NULL_HANDLE) vkFreeMemory(device_, stagingMemory_, nullptr);
     if (uploadFence_ != VK_NULL_HANDLE) vkDestroyFence(device_, uploadFence_, nullptr);
@@ -443,22 +469,11 @@ void Renderer::destroyMeshResources() {
         vkFreeCommandBuffers(device_, commandPool_, 1, &uploadCommandBuffer_);
     }
 
-    vertexBuffer_ = VK_NULL_HANDLE;
-    vertexMemory_ = VK_NULL_HANDLE;
-    vertexCapacityBytes_ = 0;
-    indexBuffer_ = VK_NULL_HANDLE;
-    indexMemory_ = VK_NULL_HANDLE;
-    indexCapacityBytes_ = 0;
     stagingBuffer_ = VK_NULL_HANDLE;
     stagingMemory_ = VK_NULL_HANDLE;
     stagingCapacityBytes_ = 0;
     uploadFence_ = VK_NULL_HANDLE;
     uploadCommandBuffer_ = VK_NULL_HANDLE;
-    indexCount_ = 0;
-    uploadedRevision_ = kNoMeshRevision;
-    // The GPU no longer holds anything derived from the cache, so the cache
-    // must not claim it does: the next sync has to rebuild and re-upload.
-    renderMesh_.invalidate();
     meshUploadDiagnostics().setLiveBufferObjects(0);
 }
 
@@ -517,23 +532,23 @@ bool Renderer::ensureStagingCapacity(VkDeviceSize bytes) {
     return true;
 }
 
-bool Renderer::ensureMeshCapacity(VkDeviceSize vertexBytes, VkDeviceSize indexBytes,
-                                  bool* outGrew) {
-    const bool vertexFits = vertexBuffer_ != VK_NULL_HANDLE && vertexBytes <= vertexCapacityBytes_;
-    const bool indexFits = indexBuffer_ != VK_NULL_HANDLE && indexBytes <= indexCapacityBytes_;
+bool Renderer::ensureMeshCapacity(BodyRenderResources& body, VkDeviceSize vertexBytes,
+                                  VkDeviceSize indexBytes, bool* outGrew) {
+    const bool vertexFits = body.vertexBuffer != VK_NULL_HANDLE && vertexBytes <= body.vertexCapacityBytes;
+    const bool indexFits = body.indexBuffer != VK_NULL_HANDLE && indexBytes <= body.indexCapacityBytes;
     if (vertexFits && indexFits) {
         if (outGrew != nullptr) *outGrew = false;
         return true;  // same-topology (or smaller) update: reuse, no recreation
     }
 
-    uint64_t newVertexCapacity = vertexCapacityBytes_;
-    uint64_t newIndexCapacity = indexCapacityBytes_;
+    uint64_t newVertexCapacity = body.vertexCapacityBytes;
+    uint64_t newIndexCapacity = body.indexCapacityBytes;
     if (!vertexFits &&
-        !growCapacityBytes(vertexCapacityBytes_, vertexBytes, &newVertexCapacity)) {
+        !growCapacityBytes(body.vertexCapacityBytes, vertexBytes, &newVertexCapacity)) {
         FS_FAIL("mesh_vertex_capacity_overflow");
         return false;
     }
-    if (!indexFits && !growCapacityBytes(indexCapacityBytes_, indexBytes, &newIndexCapacity)) {
+    if (!indexFits && !growCapacityBytes(body.indexCapacityBytes, indexBytes, &newIndexCapacity)) {
         FS_FAIL("mesh_index_capacity_overflow");
         return false;
     }
@@ -541,32 +556,32 @@ bool Renderer::ensureMeshCapacity(VkDeviceSize vertexBytes, VkDeviceSize indexBy
     // A buffer is only ever retired after every in-flight frame has finished
     // with it; the caller guarantees that before calling in.
     if (!vertexFits) {
-        if (vertexBuffer_ != VK_NULL_HANDLE) vkDestroyBuffer(device_, vertexBuffer_, nullptr);
-        if (vertexMemory_ != VK_NULL_HANDLE) vkFreeMemory(device_, vertexMemory_, nullptr);
-        vertexBuffer_ = VK_NULL_HANDLE;
-        vertexMemory_ = VK_NULL_HANDLE;
-        vertexCapacityBytes_ = 0;
+        if (body.vertexBuffer != VK_NULL_HANDLE) vkDestroyBuffer(device_, body.vertexBuffer, nullptr);
+        if (body.vertexMemory != VK_NULL_HANDLE) vkFreeMemory(device_, body.vertexMemory, nullptr);
+        body.vertexBuffer = VK_NULL_HANDLE;
+        body.vertexMemory = VK_NULL_HANDLE;
+        body.vertexCapacityBytes = 0;
         if (!createBuffer(static_cast<VkDeviceSize>(newVertexCapacity),
                           VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &vertexBuffer_, &vertexMemory_)) {
+                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &body.vertexBuffer, &body.vertexMemory)) {
             return false;
         }
-        vertexCapacityBytes_ = static_cast<VkDeviceSize>(newVertexCapacity);
+        body.vertexCapacityBytes = static_cast<VkDeviceSize>(newVertexCapacity);
         ++meshBufferGrowCount_;
         meshUploadDiagnostics().recordBufferGrow();
     }
     if (!indexFits) {
-        if (indexBuffer_ != VK_NULL_HANDLE) vkDestroyBuffer(device_, indexBuffer_, nullptr);
-        if (indexMemory_ != VK_NULL_HANDLE) vkFreeMemory(device_, indexMemory_, nullptr);
-        indexBuffer_ = VK_NULL_HANDLE;
-        indexMemory_ = VK_NULL_HANDLE;
-        indexCapacityBytes_ = 0;
+        if (body.indexBuffer != VK_NULL_HANDLE) vkDestroyBuffer(device_, body.indexBuffer, nullptr);
+        if (body.indexMemory != VK_NULL_HANDLE) vkFreeMemory(device_, body.indexMemory, nullptr);
+        body.indexBuffer = VK_NULL_HANDLE;
+        body.indexMemory = VK_NULL_HANDLE;
+        body.indexCapacityBytes = 0;
         if (!createBuffer(static_cast<VkDeviceSize>(newIndexCapacity),
                           VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &indexBuffer_, &indexMemory_)) {
+                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &body.indexBuffer, &body.indexMemory)) {
             return false;
         }
-        indexCapacityBytes_ = static_cast<VkDeviceSize>(newIndexCapacity);
+        body.indexCapacityBytes = static_cast<VkDeviceSize>(newIndexCapacity);
         ++meshBufferGrowCount_;
         meshUploadDiagnostics().recordBufferGrow();
     }
@@ -575,7 +590,8 @@ bool Renderer::ensureMeshCapacity(VkDeviceSize vertexBytes, VkDeviceSize indexBy
     return true;
 }
 
-bool Renderer::uploadRenderMesh(const RenderMeshData& mesh, MeshRevision sourceRevision) {
+bool Renderer::uploadRenderMesh(BodyRenderResources& body, ObjectId objectId,
+                                const RenderMeshData& mesh, MeshRevision sourceRevision) {
     const VkDeviceSize vertexBytes = static_cast<VkDeviceSize>(mesh.vertexBytes());
     const VkDeviceSize indexBytes = static_cast<VkDeviceSize>(mesh.indexBytes());
     if (vertexBytes == 0 || indexBytes == 0) {
@@ -591,7 +607,7 @@ bool Renderer::uploadRenderMesh(const RenderMeshData& mesh, MeshRevision sourceR
 
     // 2. Reuse the device-local allocation when it is already big enough.
     bool grew = false;
-    if (!ensureMeshCapacity(vertexBytes, indexBytes, &grew)) {
+    if (!ensureMeshCapacity(body, vertexBytes, indexBytes, &grew)) {
         return false;
     }
 
@@ -619,13 +635,13 @@ bool Renderer::uploadRenderMesh(const RenderMeshData& mesh, MeshRevision sourceR
     vertexCopy.srcOffset = 0;
     vertexCopy.dstOffset = 0;
     vertexCopy.size = vertexBytes;
-    vkCmdCopyBuffer(uploadCommandBuffer_, stagingBuffer_, vertexBuffer_, 1, &vertexCopy);
+    vkCmdCopyBuffer(uploadCommandBuffer_, stagingBuffer_, body.vertexBuffer, 1, &vertexCopy);
 
     VkBufferCopy indexCopy{};
     indexCopy.srcOffset = vertexBytes;
     indexCopy.dstOffset = 0;
     indexCopy.size = indexBytes;
-    vkCmdCopyBuffer(uploadCommandBuffer_, stagingBuffer_, indexBuffer_, 1, &indexCopy);
+    vkCmdCopyBuffer(uploadCommandBuffer_, stagingBuffer_, body.indexBuffer, 1, &indexCopy);
 
     // The transfer must be visible to vertex/index fetch of every later frame.
     VkMemoryBarrier barrier{};
@@ -649,9 +665,9 @@ bool Renderer::uploadRenderMesh(const RenderMeshData& mesh, MeshRevision sourceR
     FS_VK_CHECK(vkWaitForFences(device_, 1, &uploadFence_, VK_TRUE, UINT64_MAX),
                 "vkWaitForFences(mesh_upload)");
 
-    indexCount_ = mesh.indexCount();
-    uploadedRevision_ = sourceRevision;
-    uploadedShading_ = mesh.shading;
+    body.indexCount = mesh.indexCount();
+    body.uploadedRevision = sourceRevision;
+    body.uploadedShading = mesh.shading;
 
     MeshUploadDiagnostics& diagnostics = meshUploadDiagnostics();
     // The recorded counts are the RENDER counts — what the GPU actually holds.
@@ -659,20 +675,30 @@ bool Renderer::uploadRenderMesh(const RenderMeshData& mesh, MeshRevision sourceR
     // they are different numbers about different things and confusing them
     // would make every capacity and topology diagnostic misleading.
     diagnostics.recordUpload(sourceRevision, mesh.vertexCount(), mesh.indexCount(),
-                             vertexCapacityBytes_, indexCapacityBytes_, /*reusedCapacity=*/!grew);
+                             body.vertexCapacityBytes, body.indexCapacityBytes, /*reusedCapacity=*/!grew);
     diagnostics.recordSourceCounts(mesh.sourceVertexCount, mesh.sourceIndexCount);
-    // Exactly one vertex buffer and one index buffer are ever live: an old one
-    // is destroyed in the same step that replaces it.
-    diagnostics.setLiveBufferObjects(
-        (vertexBuffer_ != VK_NULL_HANDLE ? 1u : 0u) + (indexBuffer_ != VK_NULL_HANDLE ? 1u : 0u));
+    // Two live buffer objects per BODY at most: within a body an old buffer is
+    // destroyed in the same step that replaces it, so the total is a direct
+    // count of bodies that hold geometry, not a leak indicator that grows on
+    // its own.
+    uint32_t liveBuffers = 0;
+    for (const auto& entry : bodies_) {
+        if (entry.second.vertexBuffer != VK_NULL_HANDLE) ++liveBuffers;
+        if (entry.second.indexBuffer != VK_NULL_HANDLE) ++liveBuffers;
+    }
+    diagnostics.setLiveBufferObjects(liveBuffers);
 
     const MeshGpuStats stats = diagnostics.snapshot();
     // The historical prefix is preserved verbatim, including the counts in
     // positions 2 and 3, so existing evidence tooling keeps parsing. Those two
     // are now the RENDER counts; `src=` names the authoritative ones and
     // `shading=` says which derivation produced the difference.
+    // `body=` is new in Stage 017 and is appended rather than inserted, so the
+    // historical prefix keeps parsing: with several Bodies in the scene an
+    // upload line is otherwise ambiguous about which one it describes, which is
+    // exactly the evidence "editing A did not re-upload B" depends on.
     FS_LOGI("FORGESHAPE_MESH_UPLOAD_OK:%llu:%u:%u:%s vcap=%llu icap=%llu scap=%llu "
-            "grows=%llu sgrows=%llu uploads=%llu src=%u:%u shading=%s",
+            "grows=%llu sgrows=%llu uploads=%llu src=%u:%u shading=%s body=%llu",
             (unsigned long long)sourceRevision, mesh.vertexCount(), mesh.indexCount(),
             grew ? "grow" : "reuse", (unsigned long long)stats.vertexCapacityBytes,
             (unsigned long long)stats.indexCapacityBytes,
@@ -680,26 +706,42 @@ bool Renderer::uploadRenderMesh(const RenderMeshData& mesh, MeshRevision sourceR
             (unsigned long long)stats.bufferGrowCount,
             (unsigned long long)stats.stagingGrowCount,
             (unsigned long long)stats.uploadCount, mesh.sourceVertexCount, mesh.sourceIndexCount,
-            surfaceShadingName(mesh.shading));
+            surfaceShadingName(mesh.shading), (unsigned long long)objectId);
     return true;
 }
 
-void Renderer::syncMeshRevision() {
-    // Observes only the NEWEST published revision; revisions published between
-    // two frames are coalesced away, which is what keeps this bounded.
-    const RuntimeMeshPtr mesh = meshStore().current();
+void Renderer::syncScene() {
+    // One independent pass per body. Nothing here is shared between bodies
+    // except the transient staging buffer, so whether body B does any work is
+    // decided entirely by B's own revision and the surface shading.
+    for (const SceneDrawItem& item : scene_) {
+        syncBody(item);
+    }
+}
+
+void Renderer::syncBody(const SceneDrawItem& item) {
+    // The snapshot already holds this body's newest published revision; a
+    // revision published between two frames is coalesced away, which is what
+    // keeps this bounded.
+    const RuntimeMeshPtr& mesh = item.mesh;
     if (!mesh) {
         return;
     }
 
+    BodyRenderResources& body = resourcesFor(item.objectId);
     const SurfaceShading shading = display_.surface;
 
-    // THE per-frame gate. On a steady frame both comparisons match and this
-    // function does nothing at all: no normal generation, no allocation, no
-    // buffer traffic. Camera motion, a rotation, an inspector toggle, a unit
-    // switch and a Studio<->MatCap change all land here and stop.
-    if ((mesh->revision() == uploadedRevision_ && shading == uploadedShading_) ||
-        (mesh->revision() == failedRevision_ && shading == uploadedShading_)) {
+    // THE per-frame, per-body gate. On a steady frame both comparisons match
+    // and this function does nothing at all: no normal generation, no
+    // allocation, no buffer traffic. Camera motion, a rotation, an inspector
+    // toggle, a unit switch, a selection change and a Studio<->MatCap change
+    // all land here and stop.
+    //
+    // It is also what makes body independence structural: editing body A mints
+    // a revision in A's OWN MeshStore, so B's cached revision still equals B's
+    // published revision and B returns here without rebuilding or uploading.
+    if ((mesh->revision() == body.uploadedRevision && shading == body.uploadedShading) ||
+        (mesh->revision() == body.failedRevision && shading == body.uploadedShading)) {
         return;
     }
 
@@ -707,20 +749,22 @@ void Renderer::syncMeshRevision() {
     // from; it never touches the authoritative RuntimeMesh, which stays exactly
     // as MeshStore published it and remains what CPU picking reads.
     bool buildFailed = false;
-    renderMesh_.refresh(*mesh, shading, &buildFailed);
-    if (buildFailed || !renderMesh_.valid()) {
-        failedRevision_ = mesh->revision();
-        uploadedShading_ = shading;  // do not retry this pair every frame
+    body.renderMesh.refresh(*mesh, shading, &buildFailed);
+    if (buildFailed || !body.renderMesh.valid()) {
+        body.failedRevision = mesh->revision();
+        body.uploadedShading = shading;  // do not retry this pair every frame
         meshUploadDiagnostics().recordFailure();
-        FS_LOGE("FORGESHAPE_RENDER_MESH_FAIL:%llu", (unsigned long long)mesh->revision());
+        FS_LOGE("FORGESHAPE_RENDER_MESH_FAIL:%llu body=%llu",
+                (unsigned long long)mesh->revision(), (unsigned long long)item.objectId);
         return;
     }
 
-    if (!uploadRenderMesh(renderMesh_.data(), mesh->revision())) {
-        failedRevision_ = mesh->revision();  // fail closed, keep drawing the last good mesh
-        uploadedShading_ = shading;
+    if (!uploadRenderMesh(body, item.objectId, body.renderMesh.data(), mesh->revision())) {
+        body.failedRevision = mesh->revision();  // fail closed, keep the last good mesh
+        body.uploadedShading = shading;
         meshUploadDiagnostics().recordFailure();
-        FS_LOGE("FORGESHAPE_MESH_UPLOAD_FAIL:%llu", (unsigned long long)mesh->revision());
+        FS_LOGE("FORGESHAPE_MESH_UPLOAD_FAIL:%llu body=%llu",
+                (unsigned long long)mesh->revision(), (unsigned long long)item.objectId);
         return;
     }
 
@@ -735,13 +779,17 @@ void Renderer::syncMeshRevision() {
     // here: the gate above returns before refresh() is ever called on a steady
     // frame, so in production that counter would read zero forever and say
     // nothing. It counts direct calls, which is what the self-tests make.
+    // `rebuilds` is this BODY's own rebuild count, so the measurement stays
+    // exactly as strong as it was with one object: a session in which `frame`
+    // climbs by thousands while a body's `rebuilds` does not move is direct
+    // evidence that nothing rebuilt it.
     FS_LOGI("FORGESHAPE_RENDER_MESH_BUILD:%llu src=%u:%u render=%u:%u shading=%s "
-            "rebuilds=%llu frame=%llu ms=%.3f",
-            (unsigned long long)mesh->revision(), renderMesh_.data().sourceVertexCount,
-            renderMesh_.data().sourceIndexCount, renderMesh_.data().vertexCount(),
-            renderMesh_.data().indexCount(), surfaceShadingName(renderMesh_.shading()),
-            (unsigned long long)renderMesh_.rebuildCount(), (unsigned long long)frameIndex_,
-            renderMesh_.lastRebuildMillis());
+            "rebuilds=%llu frame=%llu ms=%.3f body=%llu",
+            (unsigned long long)mesh->revision(), body.renderMesh.data().sourceVertexCount,
+            body.renderMesh.data().sourceIndexCount, body.renderMesh.data().vertexCount(),
+            body.renderMesh.data().indexCount(), surfaceShadingName(body.renderMesh.shading()),
+            (unsigned long long)body.renderMesh.rebuildCount(), (unsigned long long)frameIndex_,
+            body.renderMesh.lastRebuildMillis(), (unsigned long long)item.objectId);
 }
 
 bool Renderer::createShaderModules() {
@@ -1541,11 +1589,42 @@ bool Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex) {
     vkCmdBeginRenderPass(cmd, &rp, VK_SUBPASS_CONTENTS_INLINE);
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_);
 
-    // The mesh vertices are the box's LOCAL geometry and never move; where the
-    // box appears comes from the derived model transform, and where the viewer
-    // stands comes from the camera snapshot. The renderer composes the two and
-    // owns neither.
-    const Mat4 modelView = mat4Multiply(camera_.view, model_);
+    // The MatCap sampler. Bound once for the whole pass: the set is immutable
+    // and shared by every body, so it does not belong inside the per-body loop.
+    if (descriptorSet_ != VK_NULL_HANDLE) {
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_, 0, 1,
+                                &descriptorSet_, 0, nullptr);
+    }
+
+    // One draw per Construction Body, each with its OWN model transform, its
+    // own buffers and its own selection state. Before the first mesh revision
+    // has been uploaded for a body there is nothing to draw for it; the pass
+    // still clears and presents, so the viewport never stalls.
+    for (const SceneDrawItem& item : scene_) {
+        recordBodyDraw(cmd, item);
+    }
+
+    vkCmdEndRenderPass(cmd);
+    FS_VK_CHECK(vkEndCommandBuffer(cmd), "vkEndCommandBuffer");
+    return true;
+}
+
+void Renderer::recordBodyDraw(VkCommandBuffer cmd, const SceneDrawItem& item) {
+    auto found = bodies_.find(item.objectId);
+    if (found == bodies_.end()) {
+        return;  // nothing uploaded for this body yet
+    }
+    const BodyRenderResources& body = found->second;
+    if (body.vertexBuffer == VK_NULL_HANDLE || body.indexBuffer == VK_NULL_HANDLE ||
+        body.indexCount == 0) {
+        return;
+    }
+
+    // The mesh vertices are this body's LOCAL geometry and never move; where the
+    // body appears comes from its own derived model transform, and where the
+    // viewer stands comes from the camera snapshot. The renderer composes the
+    // two and owns neither.
+    const Mat4 modelView = mat4Multiply(camera_.view, item.model);
     const Mat4 mvp = mat4Multiply(camera_.proj, modelView);
 
     SurfacePush push{};
@@ -1572,34 +1651,20 @@ bool Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex) {
     // touched.
     push.normalRow0[3] = static_cast<float>(shadingModelIndex(display_.shading));
 
-    std::memcpy(push.selectionTint, selectionHighlight_ ? kSelectedTint : kNotSelectedTint,
+    // Per body, not per frame: only the selected body is tinted. The renderer
+    // is still never told WHICH object is selected — the snapshot carries a
+    // plain bool per item and identity stays with SelectionController.
+    std::memcpy(push.selectionTint, item.selected ? kSelectedTint : kNotSelectedTint,
                 sizeof(push.selectionTint));
 
     vkCmdPushConstants(cmd, pipelineLayout_,
                        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                        sizeof(SurfacePush), &push);
 
-    // The MatCap sampler. Bound unconditionally even in Studio Solid: the set
-    // is immutable and binding it costs nothing, whereas leaving a declared
-    // binding unbound is invalid usage regardless of whether the shader's
-    // branch reads it.
-    if (descriptorSet_ != VK_NULL_HANDLE) {
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_, 0, 1,
-                                &descriptorSet_, 0, nullptr);
-    }
-
-    // Before the first mesh revision has been uploaded there is nothing to
-    // draw; the pass still clears and presents, so the viewport never stalls.
-    if (vertexBuffer_ != VK_NULL_HANDLE && indexBuffer_ != VK_NULL_HANDLE && indexCount_ > 0) {
-        VkDeviceSize offset = 0;
-        vkCmdBindVertexBuffers(cmd, 0, 1, &vertexBuffer_, &offset);
-        vkCmdBindIndexBuffer(cmd, indexBuffer_, 0, VK_INDEX_TYPE_UINT32);
-        vkCmdDrawIndexed(cmd, indexCount_, 1, 0, 0, 0);
-    }
-
-    vkCmdEndRenderPass(cmd);
-    FS_VK_CHECK(vkEndCommandBuffer(cmd), "vkEndCommandBuffer");
-    return true;
+    VkDeviceSize offset = 0;
+    vkCmdBindVertexBuffers(cmd, 0, 1, &body.vertexBuffer, &offset);
+    vkCmdBindIndexBuffer(cmd, body.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdDrawIndexed(cmd, body.indexCount, 1, 0, 0, 0);
 }
 
 bool Renderer::drawFrame() {
@@ -1617,9 +1682,9 @@ bool Renderer::drawFrame() {
         FS_LOGI("Swapchain rebuilt");
     }
 
-    // Mirror the newest published CPU mesh revision onto the GPU before this
-    // frame is recorded. No-op unless the revision actually changed.
-    syncMeshRevision();
+    // Mirror each body's newest published CPU mesh revision onto the GPU before
+    // this frame is recorded. No-op for any body whose revision did not change.
+    syncScene();
 
     vkWaitForFences(device_, 1, &inFlightFences_[currentFrame_], VK_TRUE, UINT64_MAX);
 

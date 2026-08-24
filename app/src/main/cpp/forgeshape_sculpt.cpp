@@ -911,10 +911,10 @@ bool SculptSession::freezeToSculpt(const ConstructionMesh& source, ObjectId obje
     // A live stroke cannot survive a Freeze: its captured vertex indices and
     // base positions describe the mesh that is being replaced.
     stroke_.cancel();
-    if (!mesh_.freezeFrom(source, objectId, outWhy)) {
+    if (!target().mesh.freezeFrom(source, objectId, outWhy)) {
         return false;  // mode and any previous frozen mesh both stand
     }
-    sourceStale_ = false;
+    target().sourceStale = false;
     mode_ = ProductMode::Sculpt;
     return true;
 }
@@ -929,7 +929,7 @@ void SculptSession::enterConstruction() {
 }
 
 bool SculptSession::enterSculpt() {
-    if (!mesh_.frozen()) {
+    if (!target().mesh.frozen()) {
         return false;  // there is nothing to sculpt until something is frozen
     }
     stroke_.cancel();
@@ -940,7 +940,7 @@ bool SculptSession::enterSculpt() {
 bool SculptSession::hitsSculptMesh(const CameraSnapshot& camera, float screenX, float screenY,
                                    int viewportWidth, int viewportHeight,
                                    const Mat4& inverseModel) const {
-    if (mode_ != ProductMode::Sculpt || !mesh_.frozen()) {
+    if (mode_ != ProductMode::Sculpt || !target().mesh.frozen()) {
         return false;
     }
     if (viewportWidth <= 0 || viewportHeight <= 0 || !mat4Finite(inverseModel)) {
@@ -957,7 +957,7 @@ bool SculptSession::hitsSculptMesh(const CameraSnapshot& camera, float screenX, 
     if (!transformRayToLocal(worldRay, inverseModel, &localRay)) {
         return false;
     }
-    return pickTriangleMesh(localRay, mesh_.triangleView(), !mesh_.renderBothSides()).hit;
+    return pickTriangleMesh(localRay, target().mesh.triangleView(), !target().mesh.renderBothSides()).hit;
 }
 
 bool SculptSession::beginStroke(const CameraSnapshot& camera, float screenX, float screenY,
@@ -966,7 +966,7 @@ bool SculptSession::beginStroke(const CameraSnapshot& camera, float screenX, flo
     if (mode_ != ProductMode::Sculpt) {
         return false;  // the brush exists only in Sculpt mode
     }
-    if (!stroke_.begin(tool_, mesh_, camera, screenX, screenY, viewportWidth, viewportHeight, model,
+    if (!stroke_.begin(tool_, target().mesh, camera, screenX, screenY, viewportWidth, viewportHeight, model,
                        inverseModel, radiusPixels_)) {
         return false;
     }
@@ -978,11 +978,11 @@ bool SculptSession::updateStroke(float screenX, float screenY) {
     if (!stroke_.active()) {
         return false;
     }
-    if (!stroke_.update(mesh_, screenX, screenY, strength_)) {
+    if (!stroke_.update(target().mesh, screenX, screenY, strength_)) {
         return false;
     }
     // One revision per coherent batch of position writes.
-    mesh_.advanceRevision();
+    target().mesh.advanceRevision();
     return true;
 }
 
@@ -990,9 +990,7 @@ void SculptSession::endStroke() { stroke_.end(); }
 
 void SculptSession::cancelStroke() { stroke_.cancel(); }
 
-SculptSession& sculptSession() {
-    static SculptSession session;
-    return session;
-}
+// sculptSession() is now "the ACTIVE body's session" and is defined in
+// forgeshape_scene.cpp; see the note there for why it moved.
 
 }  // namespace forgeshape

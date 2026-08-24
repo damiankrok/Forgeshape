@@ -7,18 +7,22 @@ it exists.
 
 ## What the viewport shows
 
-The viewport shows one **Construction Body**: an exactly dimensioned shape, which
-is a **box**, a **cylinder**, a **sphere**, a **cone**, a **capsule** or a
-**plane**. Its dimensions are real lengths in **meters**, and they are what the
-shape is made from — what is on screen is generated from those numbers. Where
-it sits is a separate matter of its position and rotation.
+The viewport shows the **Construction Bodies** in the scene. A Construction Body
+is an exactly dimensioned shape — a **box**, a **cylinder**, a **sphere**, a
+**cone**, a **capsule** or a **plane**. Its dimensions are real lengths in
+**meters**, and they are what the shape is made from: what is on screen is
+generated from those numbers. Where it sits is a separate matter of its position
+and rotation.
 
-There is exactly one object. Changing it from one of those shapes to another
-changes what that object *is*; it does not create a second one, and nothing is
-added to the scene.
+There can be several bodies at once, and every one of them is drawn. Exactly one
+is **selected**, and only the selected body is tinted; the rest are drawn
+normally. Changing a body from one of those shapes to another changes what *that
+body* is — it does not create a second one, and it does not touch any other
+body.
 
-The object comes up as a box, **2.0 m wide × 1.0 m high × 0.5 m deep**, centred
-at the world origin and unrotated, so it is visibly not a cube.
+ForgeShape comes up with a single body: a box **2.0 m wide × 1.0 m high × 0.5 m
+deep**, centred at the world origin and unrotated, so it is visibly not a cube.
+It is already selected, so there is never a step where nothing is being edited.
 
 ## How the surface is shaded
 
@@ -120,10 +124,40 @@ box keeps its proportions in both; rotating the device only makes the picture
 larger or smaller, and never stretches it one way. What you can tap follows what
 you see, so a tap that hits the model in portrait hits it in landscape too.
 
+## Several bodies, and which one you are editing
+
+Choosing **Shape** puts an **Objects** list at the top of the Property
+Inspector: one row per body, labelled `Body #1`, `Body #2` and so on, with the
+selected one visibly active. Below it is **Add Body**.
+
+**Add Body** adds one more body with the same defaults the first one had — the
+2.0 × 1.0 × 0.5 m box, unrotated, at the world origin — and selects it. The new
+body therefore starts out sitting exactly on top of whatever is already at the
+origin; move it with the ordinary Position fields. Nothing is offset for you,
+because guessing where you wanted it would be worse than putting it somewhere
+you can see and type over.
+
+Selecting a body is two equivalent things: tap its row in the Objects list, or
+tap the body itself in the viewport. Either way the shape fields, the placement
+fields and the highlight all move to that body together — they cannot disagree,
+because they are all reading the same one answer. Selecting a body changes
+nothing about the model: nothing is rebuilt, nothing is republished, and no
+body's identity changes.
+
+**Every edit applies only to the selected body.** Changing a shape, typing a
+dimension, applying a placement, Freezing and sculpting all reach that body and
+no other. Switching to another body and back brings the first one's exact
+numbers back unchanged.
+
+What Stage 017 deliberately does **not** offer: there is no way to delete,
+duplicate, rename, hide or lock a body, no groups or nesting, no reordering the
+list, and no Undo. Bodies are not saved when the app closes.
+
 ## Choosing and sizing the shape
 
 The Tool Rail in Construction carries **Shape** and **Place**, plus **Sketch**
-and **Extrude**, which are drawn but clearly not available. Choosing Shape puts a
+and **Extrude**, which are drawn but clearly not available. Choosing Shape puts
+the Objects list described above, a
 **primitive chooser** — Box, Cylinder, Sphere, Cone, Capsule and Plane — the
 chosen shape's dimensions, a display unit (**mm**, **cm** or **m**) shared by
 every length, and an **Apply Shape** button into the Property Inspector. Only the
@@ -304,12 +338,26 @@ and ForgeShape keeps both.
 
 ### Freeze to Sculpt, and the Sculpt workspace
 
-**Freeze to Sculpt**, in the Global Toolbar, takes the shape as it currently
-stands and makes a sculptable copy of it, then switches to Sculpt Mode. Nothing
-about the Construction Body changes: its shape, its dimensions and its placement
-are exactly what they were, and they are still there when Sculpt Mode is left.
-Freezing changes nothing visible — the picture on screen before and after
-pressing the button is identical, pixel for pixel.
+**Freeze to Sculpt**, in the Global Toolbar, takes the **selected** body's shape
+as it currently stands and makes a sculptable copy of it, then switches to
+Sculpt Mode. Nothing about that Construction Body changes: its shape, its
+dimensions and its placement are exactly what they were, and they are still
+there when Sculpt Mode is left. Freezing changes nothing visible — the picture
+on screen before and after pressing the button is identical, pixel for pixel.
+
+**Sculpting is per body, and each body keeps its own.** Freeze one body, sculpt
+it, go back to Construction, select another body and freeze and sculpt that one
+too — then come back to the first and Resume, and its own sculpting is exactly
+as it was left. The two do not share a mesh, a history or a stale-source
+warning, and sculpting one can never move a vertex of the other. The other
+bodies stay visible while you sculpt, so you can see what you are working
+against.
+
+Which body is being sculpted is fixed for as long as Sculpt Mode lasts: to work
+on a different one, go **Back to Construction**, select it there, and Freeze or
+Resume. What is *not* per body is the brush — the tool you are holding and its
+Radius and Strength stay exactly as you set them when you move between bodies,
+for the same reason they stay put when you switch tools.
 
 That button says **Freeze to Sculpt** only while nothing has been frozen yet.
 Once there is a sculpted mesh it says **Resume Sculpt** instead, because those
@@ -550,9 +598,10 @@ an Apply button. Sculpting has exactly the four tools above — other brushes
 (Flatten, Crease, Pinch and the rest), remesh, sculpt undo, symmetry, masking,
 layers, brush presets and stylus pressure are not implemented.
 
-There is exactly one object, and it is the only selectable one: selecting more
-than one, an object list or outliner, lasso and box selection, and anything that
-acts on the selection (moving, editing, deleting) are not implemented.
+Exactly one body is selected at a time. Selecting more than one, lasso and box
+selection, and object commands that act on a selection — delete, duplicate,
+rename, hide, lock, group, nesting and reordering — are not implemented. The
+Objects list adds and selects; it does nothing else.
 
 Two-finger twist/roll, inertia, camera presets, orthographic camera,
 focus-on-selection, long-press selection, grid, modelling, UV, save/load and undo

@@ -576,10 +576,71 @@ stays correct. Stage 015C-R fixed exactly this; the measurement is in
 `forgeshape_construction.{h,cpp}` owns the product geometry. It contains no JNI,
 Android, Vulkan, renderer or UI type, and it holds no GPU resource.
 
-### The one active object
+### The scene, and the active body
 
-`ConstructionObject` is the single owner of everything that makes the product's
-object what it is:
+`forgeshape_scene.{h,cpp}` owns the collection. `ConstructionScene` holds an
+ordered vector of `SceneObject`, one per Construction Body, plus the id of the
+active one. Platform-neutral C++17 like the rest of the domain: no JNI, no
+Android, no Vulkan, no renderer type.
+
+A `SceneObject` owns exactly three things, and they are precisely the things
+that used to be process-global singletons:
+
+| Owned per body | Why |
+| --- | --- |
+| `ConstructionObject` | the exact primitive, its parameters, and (through it) its `ConstructionTransform` |
+| `MeshStore` | its own publication chain, so revisions are per body and A's edit cannot replace B's mesh |
+| `FrozenSculpt` | its Frozen Sculpt Mesh and its stale-source flag |
+
+Bodies are held by `unique_ptr`, so their addresses are stable as the
+collection grows — a `SceneObject` owns a mutex through `MeshStore` and must
+not move. `SceneObject` is non-copyable: duplicating one would duplicate
+identity, which is the one thing an `ObjectId` exists to prevent.
+
+**`constructionObject()`, `meshStore()` and `sculptSession()` still exist under
+their original names but now mean "the ACTIVE body's".** They are defined in
+`forgeshape_scene.cpp` rather than beside their own types, because their answer
+is a scene question and defining them in their own translation units would make
+those units depend on the scene, which depends on them. Keeping the names is
+what made the multi-object migration small: every caller that means "the object
+the user is editing" is still correct unchanged, and only code that means
+"every body in the scene" — the renderer and scene picking — was rewritten.
+
+**`ObjectId` allocation.** Monotonic, minted by the scene, never reused, and
+never derived from a collection index, a `MeshRevision` or a GPU resource. It
+survives primitive edits, transform edits, Freeze/Resume/re-Freeze and
+selection. The first body keeps `kConstructionBoxObjectId`, so startup is
+identical to the single-object product's. There is no delete, and therefore
+deliberately no reuse policy.
+
+**The collection is flat.** Root-level bodies in insertion order, with stable
+enumeration. There is no parent, no child, no group, no reorder and no
+speculative field for any of them.
+
+### The scene snapshot
+
+`ConstructionScene::snapshot()` is the one thing the renderer and CPU picking
+consume. Per body it carries an `ObjectId`, a `RuntimeMeshPtr`, a model and an
+inverse-model matrix, and a selection flag — a `shared_ptr` copy and two
+matrices, and **no geometry**.
+
+That cheapness is the point. A snapshot is taken under the existing state mutex
+and then used with that mutex released, so no lock is ever held across normal
+generation, a GPU upload or a triangle scan. Because each item holds a
+`shared_ptr` to the exact revision it names, an older snapshot stays valid and
+self-consistent even while newer revisions are published, and a body with
+nothing published yet is simply absent rather than a null to guard against.
+
+**Lock order is unchanged**: the one state mutex, then `MeshStore`'s own mutex
+inside `publish`/`current`. `ConstructionScene` is deliberately *not* internally
+synchronised — adding a second scene-level lock would have introduced a new
+ordering to get wrong, for a collection whose callers already hold the state
+mutex the singletons required.
+
+### The one active body's object
+
+`ConstructionObject` is the single owner of everything that makes one body what
+it is:
 
 - a stable `ObjectId`;
 - a `PrimitiveKind` — `Box`, `Cylinder`, `Sphere`, `Cone`, `Capsule` or
@@ -589,12 +650,12 @@ object what it is:
   holding its own exact parameters;
 - a `ConstructionTransform` holding its placement.
 
-There is exactly one of these. It is emphatically **not** a registry: no
-container, no list, no parent, no child, no create and no delete, and the
-process-scoped `constructionObject()` is the only instance the product has.
+One per Construction Body, owned by that body's `SceneObject`. It is still not
+a registry — it contains no container, no list, no parent and no child; the
+collection is the scene's job, above it.
 
 `constructionTransform()` returns `constructionObject().transform()` rather than
-owning a singleton of its own, so identity, shape and placement are one object's
+owning a singleton of its own, so identity, shape and placement are one body's
 state and cannot drift apart.
 
 **Every** primitive's parameters are retained across a kind change. Switching
@@ -948,11 +1009,38 @@ transform, with no second collision representation to keep in sync.
 
 ## Sculpt domain
 
-`forgeshape_sculpt.{h,cpp}` owns the second representation of the one object and
-the four tools that edit it. Like the Construction domain it contains no JNI,
-Android, Vulkan, renderer or UI type, and it holds no GPU resource.
+`forgeshape_sculpt.{h,cpp}` owns each body's second representation and the four
+tools that edit it. Like the Construction domain it contains no JNI, Android,
+Vulkan, renderer or UI type, and it holds no GPU resource.
 
-### Two representations, one object
+### What is per body, and what is the session
+
+This split is load-bearing and was got wrong once, so it is stated explicitly.
+
+| Per body — `FrozenSculpt`, owned by `SceneObject` | Session-wide — one `SculptSession` |
+| --- | --- |
+| the Frozen Sculpt Mesh (`SculptMesh`) | the product mode (Construction / Sculpt) |
+| its stale-source flag | the held tool |
+| — | brush radius and strength |
+| — | the stroke in progress, and the session-lifetime stroke count |
+
+`sculptSession()` re-points the one session at the **active body's**
+`FrozenSculpt` on every access. It is a single pointer write, and rebinding
+every time rather than only on a selection change removes the whole class of bug
+where the session is left pointing at the body the user just navigated away from.
+
+Making `SculptSession` itself per body — the obvious first move — is wrong twice
+over. The product mode becomes ambiguous: `productMode()` would answer for
+whichever body is active, so selecting a body that was itself left in Sculpt mode
+would refuse every later selection. And **"Radius and Strength are shared" is a
+product contract** — switching bodies must no more change the brush than
+switching tools does — which a per-body copy breaks silently.
+
+Body switching is refused while in Sculpt mode. The Sculpt target is fixed for
+the duration of the mode and the user returns to Construction to change bodies,
+which avoids having to decide what a body switch does to a half-finished stroke.
+
+### Two representations, one body
 
 ```
 Construction Source                     Frozen Sculpt Mesh
@@ -1475,12 +1563,22 @@ into a world-space ray, and intersects that ray with indexed triangles
 truth. It contains no JNI, Android, Vulkan or renderer types, decides no object
 identity, and uses no GPU id buffer.
 
-`pickScene` intersects the **current CPU mesh snapshot** from `MeshStore` — never
-Vulkan buffer memory — and takes the object id from the store rather than from
-the geometry. Because that snapshot is whichever representation is active,
-generated from the current parameters or sculpted, picking automatically follows
-an edit with no separate collision representation to keep in sync. Picking is a
-linear scan; there is no spatial acceleration.
+`pickScene` takes a `SceneSnapshot` and intersects EVERY body in it — never
+Vulkan buffer memory — keeping the nearest positive hit and taking the object id
+from the published mesh rather than from the geometry. Each item is intersected
+with ITS OWN model/inverse-model pair and ITS OWN sidedness, so what is pickable
+is each body where it actually appears. Distances are directly comparable
+between bodies because every Construction transform is rigid, which is what
+makes "nearest wins" meaningful across the scene; ties keep the earlier body in
+scene order, so the result is deterministic rather than an iteration accident.
+Because each item is whichever representation that body has published,
+generated from current parameters or sculpted, picking automatically follows an
+edit with no separate collision representation to keep in sync. Picking is a
+linear scan over bodies and over triangles; there is no spatial acceleration.
+
+Taking the snapshot as a parameter is deliberate: it lets a self-test pick a
+scene it built itself, and it lets the caller take the snapshot under the state
+mutex and then scan triangles with that mutex released.
 
 **The two-sided picking exception is one boolean, computed once, at the one
 process-scoped call site.** `pickScene(camera, x, y, w, h)` reads
@@ -1536,23 +1634,51 @@ cannot select or clear on release.
 `Renderer` (`forgeshape_renderer.{h,cpp}`) owns the Vulkan instance, device,
 queues, surface, swapchain, depth resources, render pass, pipeline, command
 buffers, synchronization and the geometry buffers. It exposes
-`setCamera(const CameraSnapshot&)` and `setModelTransform(const Mat4&)` and
-consumes both verbatim; it derives no camera pose, builds no rotation, owns no
-Euler convention and interprets no pointer data.
+`setCamera(const CameraSnapshot&)` and `setScene(SceneSnapshot)` and consumes
+both verbatim; it derives no camera pose, builds no rotation, owns no Euler
+convention, interprets no pointer data and holds no geometry truth.
 
-The mesh vertices are the object's **local** geometry and never move. Where the
-object appears comes from the model transform, where the viewer stands comes from
-the camera snapshot, and the renderer only composes them as
+The mesh vertices are each body's **local** geometry and never move. Where a
+body appears comes from its own model transform, where the viewer stands comes
+from the camera snapshot, and the renderer only composes them as
 `mvp = proj * view * model` — so a screen-space change is always attributable:
-the camera moved, or the object did.
+the camera moved, or that body did.
 
-Its only selection input is `setSelectionHighlight(bool)` — pure visual state,
-delivered to the fragment shader as a tint push constant. The renderer is never
-told *which* object is selected. `setDisplaySettings(...)` is the same kind of
-input: consumed verbatim, owned elsewhere. Once per frame it asks `MeshStore` for
-the current revision and, if that revision or the surface shading differs from
-what is uploaded, rebuilds the derived render mesh and uploads that — so render
-and pick geometry both follow the same published revision and cannot diverge.
+### Per-body GPU resources
+
+`BodyRenderResources` holds everything the GPU keeps for **one** body: its
+device-local vertex and index buffers and their capacities, its
+`RenderMeshCache`, and which revision and surface shading those buffers
+currently hold. They live in a map keyed by **stable `ObjectId`** — never by
+scene index, which would silently rebind a body's buffers to a different body if
+the collection were ever reordered.
+
+Staging, the upload command buffer and the upload fence stay **shared**: they
+are transient scratch used inside one upload and waited on before the next, so
+one copy is both correct and the smaller footprint.
+
+`syncScene()` runs the existing per-frame gate once per body: if that body's
+published revision and the surface shading both match what it already holds, it
+returns without generating a normal, allocating anything or touching a buffer.
+**This is what makes body independence structural rather than a promise** — an
+edit to A mints a revision in A's own `MeshStore`, so B's cached revision still
+equals B's published revision and B's branch returns immediately. Camera motion,
+rotation, a selection change and a Studio↔MatCap switch all land in that gate
+and stop, for every body.
+
+`recordBodyDraw` then issues one draw per body, with that body's own model
+matrix, its own buffers and its own selection flag. Selection reaches the
+fragment shader as a tint push constant **per draw**; there is deliberately no
+renderer-wide selection bool, because a single one would tint every body at once
+as soon as anything was picked. The renderer is still never told *which* object
+is selected — the snapshot carries a plain bool per item and identity stays with
+`SelectionController`.
+
+`FORGESHAPE_RENDER_MESH_BUILD` and `FORGESHAPE_MESH_UPLOAD_OK` carry a `body=`
+field, appended so the historical prefix keeps parsing. With several bodies an
+upload line is otherwise ambiguous about which one it describes, and that
+ambiguity would destroy the only direct evidence for "editing A did not rebuild
+or re-upload B".
 
 What the GPU holds is `RenderVertex` (position + normal + colour), not
 `MeshVertex`. The authoritative format is no longer handed to Vulkan directly.

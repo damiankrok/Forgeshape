@@ -483,14 +483,38 @@ private:
 // settings and the live stroke. This is where "which representation is active"
 // and "which tool the finger is holding" are decided, and both are native state:
 // the Android UI can ask, it cannot hold either.
+// ---------------------------------------------------------------------------
+// The per-body half of sculpting
+// ---------------------------------------------------------------------------
+//
+// Everything about sculpting that belongs to ONE Construction Body: the Frozen
+// Sculpt Mesh it owns, and whether its Construction Source has moved on since
+// that mesh was frozen. Each body carries one of these, so two bodies can be
+// frozen, sculpted and gone stale entirely independently.
+//
+// Deliberately NOT here: the product mode, the held tool, the brush radius and
+// strength, and any stroke in progress. Those describe the editing session, not
+// a body, and duplicating them per body would mean switching bodies silently
+// changed the brush — which the product contract forbids.
+struct FrozenSculpt {
+    SculptMesh mesh;
+    bool sourceStale = false;
+};
+
 class SculptSession {
 public:
     ProductMode mode() const { return mode_; }
     bool inSculptMode() const { return mode_ == ProductMode::Sculpt; }
 
-    const SculptMesh& mesh() const { return mesh_; }
-    SculptMesh& mesh() { return mesh_; }
-    bool hasSculptMesh() const { return mesh_.frozen(); }
+    const SculptMesh& mesh() const { return target().mesh; }
+    SculptMesh& mesh() { return target().mesh; }
+    bool hasSculptMesh() const { return target().mesh.frozen(); }
+
+    // Points this session at ONE body's Frozen Sculpt Mesh. Called whenever the
+    // active body is resolved, so the session always edits the body the user is
+    // on; the mode, the tool, the brush and any stroke in progress are the
+    // session's own and are unaffected by rebinding.
+    void bindTarget(FrozenSculpt* target) { target_ = target; }
 
     // Takes a coherent snapshot of the supplied Construction local mesh, makes
     // it the Frozen Sculpt Mesh, and enters Sculpt mode.
@@ -516,8 +540,8 @@ public:
     // marked as having been frozen from an older source. Adopting the new source
     // is an explicit user act — another Freeze — which is the only thing that
     // clears the flag. There is no automatic sculpt-edit transfer.
-    void markSourceStale() { sourceStale_ = mesh_.frozen(); }
-    bool sourceStale() const { return sourceStale_; }
+    void markSourceStale() { target().sourceStale = target().mesh.frozen(); }
+    bool sourceStale() const { return target().sourceStale; }
 
     SculptStroke& stroke() { return stroke_; }
     const SculptStroke& stroke() const { return stroke_; }
@@ -535,7 +559,7 @@ public:
 
     // --- introspection (logging and self-tests only) ---
     uint64_t strokeCount() const { return strokeCount_; }
-    uint64_t freezeCount() const { return mesh_.freezeCount(); }
+    uint64_t freezeCount() const { return target().mesh.freezeCount(); }
 
     // Does the ray from this pixel hit the Frozen Sculpt Mesh?
     //
@@ -556,14 +580,27 @@ public:
     void cancelStroke();
 
 private:
+    // GLOBAL, because they describe the editing session rather than any one
+    // body: which mode the product is in, the stroke in progress, the held
+    // tool, and the brush. Radius and Strength being shared is a documented
+    // product contract — switching bodies must no more change the brush than
+    // switching tools does.
     ProductMode mode_ = ProductMode::Construction;
-    SculptMesh mesh_;
     SculptStroke stroke_;
     SculptTool tool_ = kDefaultSculptTool;
     float radiusPixels_ = kDefaultBrushRadiusPixels;
     float strength_ = kDefaultBrushStrength;
-    bool sourceStale_ = false;
     uint64_t strokeCount_ = 0;
+
+    // PER BODY, bound to whichever body is active. See bindTarget().
+    FrozenSculpt* target_ = nullptr;
+    // Used only before anything is bound, so every accessor stays total rather
+    // than dereferencing null. A session with no target reports "nothing
+    // frozen", which is the truthful answer.
+    FrozenSculpt unbound_;
+
+    FrozenSculpt& target() { return (target_ != nullptr) ? *target_ : unbound_; }
+    const FrozenSculpt& target() const { return (target_ != nullptr) ? *target_ : unbound_; }
 };
 
 // Process-scoped session. Like the camera, the selection, the mesh store and the

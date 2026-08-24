@@ -51,6 +51,7 @@ final class ConstructionShapeEditorView extends LinearLayout {
     private static final int CHOOSER_COLUMNS = 3;
 
     private final InspectorHost host;
+    private final ObjectsSectionView objects;
 
     private final TextView[] chooserChips = new TextView[CHOOSER_IDS.length];
     private final View[] parameterRows = new View[CHOOSER_IDS.length];
@@ -70,7 +71,14 @@ final class ConstructionShapeEditorView extends LinearLayout {
         this.host = host;
         setOrientation(VERTICAL);
 
-        addView(buildChooser(context), EditorControlStyles.rowParams(0));
+        // The Objects section sits above the shape controls because it decides
+        // WHICH body everything below it edits. Reading top to bottom the panel
+        // now says: this body, this shape, these dimensions, apply.
+        objects = new ObjectsSectionView(context, host);
+        addView(objects, EditorControlStyles.rowParams(0));
+
+        addView(buildChooser(context), EditorControlStyles.rowParams(
+                EditorControlStyles.dimen(context, R.dimen.section_gap)));
 
         final int gap = EditorControlStyles.dimen(context, R.dimen.row_gap);
         parameterRows[NativeViewport.PRIMITIVE_BOX] = buildRow(context, R.id.primitive_row_box,
@@ -263,7 +271,13 @@ final class ConstructionShapeEditorView extends LinearLayout {
      * defaulted here. It also resets the draft kind to what the object actually
      * is, so the chooser can never be left claiming a shape the object is not.
      */
+    /** The Objects section, for tests that select a body by its ObjectId. */
+    ObjectsSectionView objectsSection() { return objects; }
+
     void refreshFromNative() {
+        // The Objects list first: it decides which body the fields below
+        // describe, and it must never lag behind a viewport pick.
+        objects.refreshFromNative();
         NativeViewport.constructionPrimitive(nativePrimitive);
         final LengthUnit unit = host.uiState().displayUnit();
         host.uiState().setDraftPrimitiveKind((int) nativePrimitive[0]);

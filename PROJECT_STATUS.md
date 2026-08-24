@@ -1,799 +1,325 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.24.0
+**Status Version:** 0.25.0
 **Updated:** 2026-08-24
-**Result:** COMPLETE — the Pre-017 Correctness Repair is closed; see the chapter
-below
+**Result:** COMPLETE — Stage 017 is closed; the product is a multi-object scene
 **Current Phase:** Phase 1 — Native Viewport
 **Workspace:** `D:\TRAVELAPPS\ForgeShape`
-**Accepted implementation baseline:** Pre-017 Correctness Repair — active
-representation sidedness + re-Freeze guard + device verifier, on top of Gate P1
-(physical ARM64 closure), Stage 016-R2 (explicit emulator port isolation +
-deterministic native self-test fixtures), Stage 016 (Plane + primitive coverage
-cleanup), Stage 015D (camera projection), Stage 015C-R (front-face culling),
-Stage 015C (shading), Platform Fix P2, Stage 015B, Stage 014, the NDK r29
-migration (Gate P0) and the owner decision baseline.
-**Next Stage:** Stage 017 — Multi-object + Hierarchy Foundation.
+**Accepted implementation baseline:** Stage 017 — multi-object scene +
+hierarchy foundation, on top of the Pre-017 Correctness Repair (active
+representation sidedness + re-Freeze guard + device verifier), Gate P1
+(physical ARM64 closure), Stage 016-R2, Stage 016 (Plane), Stage 015D (camera
+projection), Stage 015C-R (front-face culling), Stage 015C (shading), Platform
+Fix P2, Stage 015B, Stage 014, the NDK r29 migration (Gate P0) and the owner
+decision baseline.
+**Next Stage:** Stage 018 — Object Commands.
 
 This is a current snapshot, not a chronology. Per-stage verification chapters,
 superseded environment states and old next-stage recommendations live in Git
 history and are deliberately not repeated here.
 
-## Pre-017 Correctness Repair — sidedness ownership + re-Freeze guard + device verifier (COMPLETE)
+## Stage 017 — Multi-object Scene + Hierarchy Foundation (COMPLETE)
 
-Two real product defects and one real verifier weakness, all confirmed against
-the code before anything was changed. No new feature, no new primitive, no
-renderer or camera change.
+The product is no longer one object. A platform-neutral `ConstructionScene`
+owns an ordered collection of Construction Bodies; each body owns its own
+Construction Source, its own placement, its own published mesh chain and its
+own Frozen Sculpt Mesh, and the renderer, CPU picking and the Objects UI all
+iterate the scene instead of assuming a single global object.
 
-**A1 — sidedness was re-derived instead of carried, in three different
-places.** `RuntimeMesh::renderBothSides()` already existed as the intended
-single source of truth, and its own doc comment already said consumers should
-use it "without either one needing to know PrimitiveKind" — but the wiring
-never reached Sculpt or selection:
+**What replaced the singletons.** Before this stage "the object" was three
+process-global accessors — `constructionObject()`, `meshStore()` and
+`sculptSession()` — and whatever each of them happened to hold. A body is now a
+`SceneObject` owning a `ConstructionObject` (which already carried its own
+`ConstructionTransform`), a `MeshStore` and a `FrozenSculpt`. The three
+accessors survive with their original names but are **redefined as "the ACTIVE
+body's"**, in `forgeshape_scene.cpp`. That is what kept the migration small:
+every existing caller that meant "the object the user is editing" kept working
+unchanged and correctly, and only the code that means "every body in the scene"
+— the renderer and scene picking — had to be rewritten.
 
-- `SculptMesh::freezeFrom` copied vertices, indices, adjacency and objectId but
-  **not** `ConstructionMesh::renderBothSides`, so a frozen Plane forgot it was
-  an open sheet the moment it was frozen.
-- `publishSculptMesh` called `MeshStore::publish` without the sidedness
-  argument, so it silently took the `false` default: **every Frozen Sculpt Mesh
-  published single-sided**, and a frozen Plane stopped rendering from behind.
-- `pickScene`'s implicit overload asked `constructionObject().kind() ==
-  PrimitiveKind::Plane`. That is a question about the Construction Source, not
-  about the mesh being picked, and a Frozen Sculpt Mesh outlives the Source it
-  was frozen from — so it was wrong in **both** directions: a frozen solid
-  started picking from inside as soon as the Source was changed to a Plane, and
-  a frozen Plane stopped picking from behind as soon as the Source was changed
-  to a solid. In neither case did the geometry being picked change at all.
-- The Sculpt hit-test passed a hard-coded `frontFacesOnly=true` at both of its
-  call sites, so a frozen Plane could never be sculpted from underneath
-  regardless of anything else.
+**ObjectId.** Monotonic, minted by the scene, never reused, and never derived
+from a collection index, a `MeshRevision` or any GPU resource. It survives
+primitive edits, transform edits, Freeze/Resume/re-Freeze and selection
+changes. The first body keeps `kConstructionBoxObjectId`, so startup is
+byte-for-byte the single-object product's: one default Box at identity,
+already selected. Stage 017 has no delete, so there is deliberately no reuse
+policy to design.
 
-**The contract now, stated once.** Sidedness is a property of the active
-published representation. `ConstructionMesh::renderBothSides` →
-`SculptMesh::renderBothSides()` (copied by `freezeFrom`) →
-`RuntimeMesh::renderBothSides()` (carried by both publication paths), and
-render, selection picking and the Sculpt hit-test all read that one value.
-Nothing re-derives it from `PrimitiveKind`; `forgeshape_selection.cpp` no
-longer includes `forgeshape_construction.h` at all, so the dependency that
-allowed the mistake is gone rather than merely unused. The Construction Plane
-itself is untouched: still 4 vertices / 6 indices, zero thickness, canonical
-front +Y, with the backside a render-only duplication that never reaches the
-authoritative mesh.
+**Publication is per body.** Each body owns a `MeshStore`, so revisions are
+per-body chains that start at 1 and an edit to A cannot replace, invalidate or
+renumber B's published mesh. `ConstructionScene::snapshot()` returns an
+immutable `SceneSnapshot` — per item an ObjectId, a `RuntimeMeshPtr`, a model
+and inverse-model matrix, and a selection flag. It copies a `shared_ptr` and
+two matrices per body and **no geometry**, so it is cheap enough to take under
+the existing state mutex and then be used with that mutex released; old
+snapshots stay valid because they hold the revisions they name alive.
 
-**A2 — the destructive re-Freeze guard asked a question it could not answer.**
-`SculptContextView` read `SCULPT_STROKE_COUNT`, which is
-`SculptSession::strokeCount()` — incremented in `beginStroke` and **never reset
-by a Freeze**. So once anything had been sculpted in a session, every later
-re-Freeze of an untouched mesh raised a dialog claiming N strokes would be
-discarded, when the mesh in hand had none: precisely the train-the-user-to-
-dismiss failure UI-OWNER-05 exists to prevent, and a false statement about what
-was being lost.
+**The renderer draws the scene.** The per-object GPU state that used to be flat
+`Renderer` members — device-local vertex/index buffers and capacities, the
+`RenderMeshCache`, and the uploaded/failed revision and shading — moved into
+`BodyRenderResources`, held in a map keyed by stable ObjectId (never by scene
+index, which would rebind a body's buffers to a different body if the
+collection were ever reordered). Staging, the upload command buffer and the
+upload fence stay shared: they are transient scratch used inside one upload.
+`syncScene()` runs the existing per-frame gate once per body, and
+`recordBodyDraw` issues one draw per body with that body's own model matrix and
+its own selection flag. The global `bool selectionHighlight_` is gone; it would
+have tinted every body at once the moment anything was picked.
 
-The predicate is now `SculptMesh::hasEdits()`, exposed as
-`SCULPT_HAS_EDITS`. It needed no new state: `revision_` is restarted at
-`kFrozenSculptRevision` by every `freezeFrom` and advanced only by
-`advanceRevision()`, which runs only from `updateStroke` — i.e. only when a
-stroke actually moved a vertex. A gesture that began and was abandoned to
-navigation, or a stroke that captured nothing, therefore correctly reports no
-edits. The lifetime `strokeCount` is kept, documented as diagnostic-only on
-both sides of the JNI boundary. The dialog now names no number, because the
-Java layer knows only that edits exist and any count it could quote would be
-about meshes that no longer exist.
+Body independence is therefore structural rather than a promise: an edit to A
+mints a revision in **A's own** store, so B's cached revision still equals B's
+published revision and B's branch returns before rebuilding or uploading
+anything. `FORGESHAPE_RENDER_MESH_BUILD` and `FORGESHAPE_MESH_UPLOAD_OK` gained
+a `body=` field (appended, so existing evidence tooling keeps parsing) because
+with several bodies an upload line is otherwise ambiguous about which one it
+describes — and that is exactly the evidence this claim rests on.
 
-**A3 — the device verifier recognised only one syntax and one directory.**
-DEV2-06/07 matched only the `& adb` call-operator form, so a plain
-`adb shell ...` was invisible; they scanned only `scripts\*.ps1`, so no
-`.cmd`/`.bat`/`.sh` or Gradle surface was covered; there was no
-`connected*AndroidTest` check at all; and `@instrumentArgs` was accepted by
-variable **name** rather than by proving the array carries `-s`. DEV2-01..07 are
-kept exactly as accepted and DEV3-01..06 added on top, sharing one detector with
-the real repo scan so the fixtures test the code that actually guards the repo.
-The detector strips string literals, `#` comments and `<# … #>` blocks before
-matching, so the prose both device scripts legitimately contain — they log
-`"… only: adb …"` and mention `connectedDebugAndroidTest` in a message — is not
-mistaken for running it.
+**Picking iterates the scene.** `pickScene` takes a snapshot, intersects each
+item with **its own** transform and **its own** sidedness, and keeps the nearest
+positive hit; ties keep the earlier body in scene order. Distances are directly
+comparable across bodies because every Construction transform is rigid. The
+Pre-017 invariant is unchanged and now doubly load-bearing: sidedness comes from
+the active published mesh, never from a `PrimitiveKind` — the active body's kind
+says nothing whatever about a *different* body's geometry.
 
-**A4, found by DEV3-06 failing on its own first run: the verifier could report
-FAIL and still exit 0.** `$failed = $results | Where-Object …` returns a bare
-object, not an array, when exactly one check fails, and a `PSCustomObject` has
-no `.Count` — so `$null -gt 0` was false and the script printed "All checks
-PASS" and exited 0. Fixed with `@(…)`; proven by breaking exactly one check and
-observing exit 1 where it previously exited 0. This is why DEV3-06 asserts the
-surfaces it scanned rather than only that it found nothing.
+**Sculpt: what is per body and what is not.** `SculptSession` was per-object in
+the first cut of this stage, and that was wrong twice over: the product mode
+became ambiguous (`productMode()` answered for whichever body was active, so
+switching to a body that was itself in Sculpt mode refused every later
+selection), and the documented "Radius and Strength are shared" contract would
+have broken silently, because switching bodies would have switched brushes. The
+split is now explicit. **Per body** (`FrozenSculpt`, owned by `SceneObject`):
+the Frozen Sculpt Mesh and its stale flag. **Global** (one `SculptSession`):
+the product mode, the held tool, the brush radius and strength, the stroke in
+progress and the session-lifetime stroke count. `sculptSession()` re-points the
+session at the active body's `FrozenSculpt` on every access — one pointer
+write, and it removes the whole class of bug where the session is left pointing
+at the body the user just navigated away from.
 
-**Verification.** Ten native suites, **1451 checks, zero failures** (sculpt
-276 → 302 with SIDE-01..09; picking unchanged at 128, so the Gate P1 ARM64
-shared-edge fix is intact) on x86_64, and the same suites green on the physical
-arm64-v8a device (`primaryCpuAbi=arm64-v8a`) with picking 128/128 and sculpt
-302/302. 26/26 JVM. **50/50 instrumented** (46 → 50; one self-skipping test
-replaced by five REFR tests). DEV2-01..07 + DEV3-01..06 all PASS.
-
-**Both fixes have teeth, verified by reverting them.** Dropping sidedness from
-the Sculpt publish fails 5 SIDE checks; restoring the `PrimitiveKind`
-derivation in `pickScene` fails SIDE-07 and SIDE-08 — one for each direction of
-the error. Restoring the session-lifetime stroke count fails 3 of the 50
-instrumented tests.
-
-**Runtime**, on `ForgeShape_Stage006` / `emulator-5580` through the real touch
-path. Freeze a Plane: the frozen publication builds `src=4:6 render=8:12`,
-i.e. it kept its two-sidedness through Freeze (it would have been `4:6`
-before). A real Grab stroke ran on the frozen sheet **from underneath** — the
-camera orbited to `pitch=-1.5200`, and the stroke logged
-`STROKE_BEGIN:grab:4`, capturing all four vertices; before the fix that gesture
-could only have orbited. The same stroke works from above at `pitch=+1.5200`.
-The stale-source case is two consecutive render builds and needs no
-interpretation: revision 137, the Construction Plane, `src=4:6 render=8:12`;
-revision 138, the stale frozen Sphere while the Source *is* that Plane
-(`stale=1`), `src=482:2880 render=482:2880` — not doubled. Re-Freeze with edits
-(`sculptRev=117`) raised the confirmation, whose message quotes no count;
-confirming it left `sculptRev=1`, `freezes=2`, `strokes=2`; and re-Freezing
-that fresh mesh raised **no** dialog despite those two historical strokes.
-HOME/resume reproduced the identical `ActivityRecord{83699530}` with no
-self-test rerun, and rotation held `1080x2400 → 2400x1080 → 1080x2400` at
-`preTransform=0x1` with zero mesh uploads.
-
-**PRE17 criteria.**
-
-| ID | Verdict | Evidence |
-| --- | --- | --- |
-| PRE17-01 | PASS | clean tree at `159af08` audited before any change |
-| PRE17-02 | PASS | SIDE-01..09 green (26 checks) on x86_64 and physical arm64 |
-| PRE17-03 | PASS | one chain: ConstructionMesh → SculptMesh → RuntimeMesh; selection no longer includes `forgeshape_construction.h` |
-| PRE17-04 | PASS | frozen Plane `render=8:12`; real strokes from `pitch=+1.52` and `pitch=-1.52`; SIDE-03/04/05 |
-| PRE17-05 | PASS | rev 138 `render=482:2880` while the Source is a Plane; SIDE-07 |
-| PRE17-06 | PASS | SIDE-06 plus the whole pre-existing suite unchanged; solids still refuse a stroke from inside |
-| PRE17-07 | PASS | REFR-01..07 green within 50/50 instrumented |
-| PRE17-08 | PASS | guard reads `SCULPT_HAS_EDITS`; reverting it fails 3 instrumented tests |
-| PRE17-09 | PASS | REFR-03 asserts Resume is unguarded *with edits present* |
-| PRE17-10 | PASS | DEV3-01..06 PASS, including the negative controls |
-| PRE17-11 | PASS | DEV2-01..07 kept and still PASS; no rule relaxed |
-| PRE17-12 | PASS | native 1451/1451, JVM 26/26, instrumented 50/50 |
-| PRE17-13 | PASS | see *Runtime* above — both fixes proven on the real touch path |
-| PRE17-14 | PASS | picking suite still 128/128 on physical arm64-v8a |
-| PRE17-15 | PASS | release-retention claim downgraded to UNVERIFIED; Plane/re-Freeze wording corrected |
-| PRE17-16 | PASS | no Undo/import/persistence/BVH/async/Stage 017/Sketch/Extrude/new brush work |
-| PRE17-17 | PASS | see doc line counts below |
-| PRE17-18 | PASS | one focused commit, clean tree |
-
-**Result: COMPLETE.** PRE17-01..18 PASS.
-
-## Gate P1 — Physical ARM64 + 16 KB Runtime + Vulkan Validation + Heavy-Mesh Baseline (COMPLETE)
-
-Closed on real physical ARM64 hardware: the launch/lifecycle smoke, the
-mandatory heavy-mesh density ladder (~10k / ~50k / ~100k vertices), the
-Sculpt-at-density measurement and the physical memory evidence, alongside the
-arm64-v8a build support, the real 16 KB runtime verification and the
-debug-only Vulkan validation path closed earlier. P1-D (stylus) remains
-UNVERIFIED — closing it needs a person physically moving an S Pen, which no
-adb-driven run can substitute for; the Gate permits this.
-
-**Physical target class.** A Samsung Galaxy S25 Ultra (`SM-S938B`, Snapdragon
-8 Elite `SM8750`), Android 16 / API 36, 1440×3120, attached over Wi-Fi adb and
-addressed by one explicit serial for every single command. Deliberately not
-recorded here: its IP address and serial, which are network facts of one
-session and not durable project truth. `ro.product.cpu.abi` and
-`ro.product.cpu.abilist` both report **`arm64-v8a`** and nothing else, and
-after installing the current debug build `dumpsys package com.forgeshape.app`
-reports **`primaryCpuAbi=arm64-v8a`** — so this is genuinely the arm64 `.so`
-executing, not an emulated or secondary ABI.
-
-**This phone's `getconf PAGE_SIZE` is 4096, and that is not a failure.** A
-4 KB-page device is the ordinary case; the 16 KB dimension was deliberately
-closed separately, on a dedicated 16 KB target (the `ForgeShape_16K` AVD,
-`getconf PAGE_SIZE` = 16384) — see the 16 KB paragraph below. The two pieces
-of evidence are complementary and neither substitutes for the other: this run
-proves real arm64 execution, that one proves real 16 KB-page execution.
-
-**One real ARM64 correctness defect was found, and it was found only because
-the run was physical.** On the first physical launch two self-test suites
-failed — 6 checks across picking (3) and the Construction box (3) — against
-1421/1421 green on x86_64 from the identical source. Root cause, measured on
-the device rather than assumed: `intersectRayTriangle` tested barycentric
-containment with exact bounds (`u < 0.0f`, `(u + v) > 1.0f`). A ray landing on
-an edge two triangles SHARE has a coordinate that is mathematically exactly 0,
-so its sign is decided purely by rounding — and if it rounds negative for one
-triangle it rounds negative for its neighbour too, making both reject a ray
-that geometrically hits the surface. The rounding is ABI-dependent: no
-`-ffp-contract=off` is set, so Clang contracts the dot/cross products into
-fused multiply-adds on arm64-v8a, which baseline x86-64 cannot do. A
-throwaway arm64 probe run on the device measured the failing ray's `u` at
-**-9e-9** on both triangles of the face. This is a product-visible defect, not
-a test artefact: the very first physical pick taken after the fix landed at
-`(0.0000, 0.0000, 0.0000)`, the centre of a Plane — which *is* the shared
-diagonal of its two triangles — so tapping the middle of a Plane on an ARM64
-phone would have selected nothing.
-
-The fix is one named constant and two widened comparisons:
-`kBarycentricEpsilon = 1e-6f` in `forgeshape_picking.h`, applied to both
-containment bounds. Widening is the real fix; pinning the FP model with
-`-ffp-contract=off` would only re-hide the same knife-edge geometry behind a
-compiler flag and cost performance. Barycentric coordinates are already
-normalized by the determinant, so the tolerance is scale-free — a fraction of
-a triangle, not a world length — and at 1e-6 it is two orders above the
-observed rounding error while being a few micrometres of overlap on a 2 m
-triangle, far below `kMinRayDistance`. The overlap makes an edge ray hit both
-neighbours; `pickTriangleMesh` keeps the nearest `t` and the first triangle on
-an exact tie, so the result stays deterministic. No other module changed and
-no product behaviour was redesigned.
-
-Four checks were added to the picking suite (124 → 128). Two of them pin the
-tolerance **deterministically on any ABI**, rather than depending on which way
-a given target happens to round an exactly-zero coordinate: they aim at a
-point known to sit just outside a triangle across its shared diagonal, at a
-chosen barycentric depth, and assert that a barely-outside point is accepted
-while a clearly-outside one is rejected — so the tolerance can be neither
-removed nor widened arbitrarily. Verified to have teeth by rebuilding with the
-constant set to `0.0f` and confirming
-`barely_outside_shared_edge_is_still_accepted` fails, alongside the six
-pre-existing checks the defect originally broke.
-
-**ABI.** `app/build.gradle`'s `abiFilters` now lists `'x86_64', 'arm64-v8a'`;
-CMake and the native sources needed no ABI-specific changes (no intrinsics,
-no `#ifdef __x86_64__`/`__aarch64__` anywhere in `app/src/main/cpp`). Both
-`.so`s build clean and package into the debug APK
-(`lib/arm64-v8a/libforgeshape_native.so`, `lib/x86_64/libforgeshape_native.so`),
-both report `0x4000` (16384-byte) ELF `LOAD` alignment via `llvm-readelf -l`,
-and `zipalign -c -P 16 -v 4` on the packaged APK reports both libraries `OK`.
-x86_64 regression is unaffected (below).
-
-**16 KB runtime — real, not just static alignment.** With the owner's
-authorization, `system-images;android-36.1;google_apis_playstore_ps16k;x86_64`
-was installed via `sdkmanager` and a new isolated AVD, `ForgeShape_16K`, was
-created from it (GPU host mode and the same pixel_6 profile as
-`ForgeShape_Stage006`; not authorized for physical-ARM64 evidence — it is
-x86_64, not arm64 — but it is a real Linux kernel built with a genuine 16384
-page size, which is exactly the dimension Gate P0 left unmeasured).
-`adb -s emulator-5590 shell getconf PAGE_SIZE` reports **16384**. On that
-target: a clean launch reports all ten self-test suites green, 1421 checks,
-zero failures; the Plane primitive applies and picks (front and, after a
-180° transform-only rotate, the two-sided back-face case) correctly;
-Orthographic and MatCap both switch correctly; Freeze → Back to Construction
-→ Sphere apply produces the stale-source warning with the frozen mesh
-untouched; Freeze again onto the Sphere (482:2880) needs no confirmation
-(nothing to lose) and a real 23-move Grab stroke completes
-(`STROKE_PENDING`→`STROKE_BEGIN:grab:142`→`STROKE_END`); HOME/resume
-reproduces the same `ActivityRecord` with no re-init; rotated landscape holds
-`chosenExtent=2400x1080 preTransform=0x1`. One reproducible environment
-symptom: this AVD's SystemUI hit a persistent "System UI isn't responding"
-ANR under rapid scripted UI automation partway through evidence collection; a
-full guest reboot cleared it and the retried sequence completed cleanly with
-zero `FORGESHAPE_*_SELFTEST_FAIL` tokens throughout. Recorded as a real
-16 KB-runtime stability observation, not a ForgeShape defect — the native
-render thread and self-tests were unaffected throughout and the symptom was
-specifically SystemUI's input dispatch, not `com.forgeshape.app`. Screenshots
-under `artifacts/gatep1_16k_*`.
-
-**Vulkan validation.** No validation-layer binary existed anywhere on this
-machine; with the owner's authorization, the official
-`android-binaries-1.4.357.0.zip` was downloaded from
-`github.com/KhronosGroup/Vulkan-ValidationLayers` releases (the source
-Android's own developer documentation names) and used exclusively through
-Android's first-party per-app GPU debug layer mechanism: `adb push` to
-`/data/local/tmp`, `run-as` copy into the app's own data directory, and
-`adb shell settings put global enable_gpu_debug_layers 1` /
-`gpu_debug_app` / `gpu_debug_layers=VK_LAYER_KHRONOS_validation` /
-`gpu_debug_layer_app`. The binary was never bundled into the APK, never
-placed under `jniLibs`, and never committed to the repository — purely an
-ad-hoc, adb-pushed debug tool, cleaned up (device settings deleted) after
-evidence collection. `adb logcat` confirms
-`Loaded layer VK_LAYER_KHRONOS_validation` and, with
-`debug.vulkan.khronos_validation.report_flags=error,warn,perf,info`, the
-layer's own `I VALIDATION:` banner: "Current Validation Enabled: Core
-Checks, Stateless Parameter, Object lifetime, Thread Safety, Handle
-Wrapping." Exercised across Construction/Plane apply, front/back picking, a
-transform-only edit, both projections, both shading models, Freeze → Sphere
-→ Freeze again → a real Grab stroke, and self-tests (1421 checks green
-throughout, unaffected). Result: **zero ForgeShape-caused validation
-messages of any severity.** The only message the layer emitted at all is one
-`Validation Information: [ WARNING-cache-file-error ]` — the layer's own
-shader-validation-cache file not existing yet at
-`/tmp/shader_validation_cache-<uid>.bin` on first run — which is the layer's
-internal bookkeeping, not a finding against ForgeShape's Vulkan usage.
-
-**Heavy-mesh density fixture (test/debug-only).** The existing sphere
-generator's vertex count is fixed by the Construction contract (482:2880 at
-any diameter) and is not reusable for a variable density ladder without
-changing that contract, which this Gate forbids. Added
-`buildStressMesh(uint32_t targetVertexCount)` to
-`forgeshape_mesh_fixtures.{h,cpp}`, generalizing the existing
-`buildFixtureLarge` "spherified box" (closed, deterministic, canonical
-outward winding, uint32-safe indices) to a caller-chosen density instead of
-its fixed `kFixtureLargeSubdivisions`, and reused it via debug-only key hooks
-(`ForgeShapeActivity` keys A–E publish ~10k/50k/100k/250k/500k-vertex tiers
-through the same `MeshStore::publish` path the other fixtures use; key F
-freezes the most recently published tier directly into Sculpt through the
-real `SculptSession::freezeToSculpt`, bypassing Construction, for stroke
-measurement at density). Not a Construction primitive, not reachable from
-product UI. Its call sites are `#ifndef NDEBUG`-guarded exactly like the
-existing fixtures 1–9, so a release build reaches none of them. **What is
-NOT yet artifact-verified is whether the linker then drops the code from the
-final release binary**: the self-test and fixture translation units are on the
-CMake source list unconditionally, and no release `.so` has been inspected to
-confirm the symbols are absent. Treat "debug-only" as *"the calls are
-debug-guarded"*, which is proven, and not as *"the code is absent from the
-shipped binary"*, which is UNVERIFIED. Recorded as debt under *Technical
-Debt*; deliberately not refactored here, because changing release/test
-compilation is a different job from this repair.
-**Measured on the physical ARM64 device.** All three mandatory tiers ran to
-completion with no crash, no OOM, no ANR and no state corruption. Each tier
-was published through the same `MeshStore::publish` path the product uses,
-then picked, then carried through HOME/resume and a landscape/portrait
-rotation round trip before its memory was read.
-
-| tier | vertices | triangles (indices) | gen ms | publish ms | render-mesh build ms | GPU upload | pick | lifecycle + rotation | PSS | result |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| baseline | — | — | — | — | — | — | — | — | 212 MB | — |
-| ~10k | 10086 | 19200 (57600) | 2.763 | 1.695 | 19.577 | reuse | HIT tri 15592 | same `ActivityRecord`, `preTransform=0x1` both ways | 219 MB | PASS |
-| ~50k | 49686 | 97200 (291600) | 17.776 | 7.880 | 72.204 | grow | HIT tri 78824 | same `ActivityRecord`, `preTransform=0x1` both ways | 231 MB | PASS |
-| ~100k | 99846 | 196608 (589824) | 32.405 | 15.426 | 104.387 | grow | HIT tri 159210 | same `ActivityRecord`, `preTransform=0x1` both ways | 248 MB | PASS |
-| ~100k + Sculpt | 99846 | 196608 (589824) | — | — | 80.730 (post-stroke) | reuse | — | — | 264 MB | PASS |
-
-Generation and publication scale close to linearly in vertex count across the
-ladder; nothing degrades disproportionately, and no tier was the "first
-degraded" or "first failed" one — **the last stable mandatory tier is ~100k,
-the highest tier the Gate requires.** 250k/500k were not run: the Gate does not
-need them for closure. The picks are worth noting for a reason beyond
-performance — the 100k tier picked triangle **159210**, digit-for-digit the
-triangle the same fixture picked during x86_64 harness validation, so picking
-is deterministic across ABIs once the shared-edge defect above is fixed.
-
-**Sculpt at density.** The ~100k tier is Sculpt-capable under the current
-contract, so the Sculpt-heavy measurement was taken at the highest mandatory
-tier with no topology or architecture change: `freezeToSculpt` completed in
-**110.126 ms**, building **592896** adjacency entries over 99846 v / 589824 i,
-and two real Grab strokes ran through the full pointer path
-(`STROKE_PENDING` → `STROKE_BEGIN:grab:2365` → moves → `STROKE_END`, then a
-second capturing 1655 vertices). `normalRecomputes=2` — one per stroke — and
-every post-stroke GPU upload reported `reuse`, so the fixed-topology
-buffer-reuse contract holds at 100k exactly as it does at 482. Mesh
-diagnostics after the stress Sculpt: `failed=0`, `reuse=24`, topology still
-99846 : 589824.
-
-**Memory and stability.** Process PSS rose 212 → 219 → 231 → 248 MB across the
-ladder and to 264 MB after the Sculpt stress: about 52 MB total for a 100k-vertex
-mesh plus its adjacency, render mesh and GPU buffers, with the Graphics share
-moving only 151.7 → 169.1 MB. No crash, no ANR, no OOM and no thermal
-throttling symptom was observed at any point. **No device-wide or product-wide
-performance claim is drawn from this.** These are single-run figures from one
-Snapdragon 8 Elite phone; they are existence evidence that the mandatory tiers
-work on physical ARM64, not a supported capacity limit, not a benchmark, and
-not a statement about any other device.
-
-The earlier x86_64 harness validation on `emulator-5590` remains valid as proof
-the *fixture itself* is correct, and is superseded as capacity evidence by the
-physical table above.
-
-**Physical runtime smoke.** Everything below was driven on the phone through
-the real Android touch path, with ForgeShape confirmed as the resumed activity
-before each capture and every control located by its stable semantic id
-(resolved to bounds from the live hierarchy at run time, never a hard-coded
-coordinate). Ten self-test suites green on a clean physical launch, **1425
-checks, zero failures**. A Construction solid and a Plane both applied
-(`FORGESHAPE_CONSTRUCTION_PUBLISHED:9:4:6`, the exact 4 : 6 Plane topology). A
-front-face pick and, after a 180° transform-only rotation, a back-face pick
-both hit — the Plane's two-sided exception intact — and that transform
-reported `rev=9` unchanged, republishing nothing. Orthographic converted the
-framing exactly (`orthoHalfHeightMeters=4.7343` from `distance=8.2000`, i.e.
-8.2 × tan 30°) and Perspective converted back. Studio ↔ MatCap and Smooth ↔
-Faceted both switched, with the Plane's two-sided render duplication visible
-as `src=4:6 render=8:12` Smooth and `render=12:12` Faceted. Freeze on a Sphere
-(482 : 2880, adjacency 2880) then a real Grab stroke
-(`STROKE_BEGIN:grab:49`) and a real Clay stroke (`STROKE_BEGIN:clay:41`, a
-normal-updating brush) — `strokes=2`, `normalRecomputes=2`. Back to
-Construction → Resume Sculpt left `freezes=1` unchanged, so Resume re-froze
-nothing. HOME/resume reproduced the identical `ActivityRecord{38541817}` with
-no self-test rerun and no re-upload. Portrait 1440×3120 → landscape 3120×1440
-→ portrait, `preTransform=0x1` throughout and **exactly two** swapchain
-rebuilds for two rotations — the P2 convention holds on physical ARM64 and
-`VK_SUBOPTIMAL_KHR` is not rebuilding per frame. Vulkan on this device:
-swapchain format 37, **5** images, FIFO.
-
-**Multi-touch arbitration, on real injected multi-touch.** `/system/bin/uinput`
-is present and the adb shell user is in the `uhid` group, so a genuine
-two-finger pinch was injected as virtual-device events (not an `input swipe`,
-which cannot express multi-touch). The gesture logged `STROKE_PENDING` →
-`STROKE_ABANDONED:navigation` with **no** `STROKE_BEGIN`, zoomed the camera
-(`FORGESHAPE_CAMERA_ZOOM_OK`, distance 8.2000 → 0.9495), and left `sculptRev`
-at 211 and `strokes` at 2 — byte-for-byte what they were before it. A gesture
-that became navigation mutated no vertex, minted no revision and committed no
+Freeze, Resume, re-Freeze, the stale-source flag and the current-mesh
+`hasEdits()` predicate are therefore all per body, exactly as Pre-017 defined
+them. Body switching is refused while in Sculpt mode: the Sculpt target is
+fixed for the duration, and the user returns to Construction to change bodies,
+which avoids having to decide what a body switch does to a half-finished
 stroke.
 
-**Regression.** 26/26 JVM tests; ten native self-test suites, **1425 checks,
-zero failures**, on *both* the physical arm64-v8a device and
-`ForgeShape_Stage006` / `emulator-5580` (x86_64) — identical totals, so the
-picking fix regressed nothing on the ABI that was already green, and the two
-new deterministic tolerance checks pass on both; 46/46 instrumented tests on
-`emulator-5580` through the guarded wrapper. Zero interaction with
-`emulator-5554` anywhere in this Gate. One pre-existing script bug was found
-and fixed while booting the 16 KB AVD:
-`scripts/start-forgeshape-emulator.ps1`'s boot-wait poll redirected
-`adb get-state`'s stderr under `$ErrorActionPreference = 'Stop'`, which
-PowerShell 5.1 turns into a terminating `NativeCommandError` on the expected
-"device not found" response while the emulator is still booting — wrapped in
-try/catch; `DEV2-01..07` re-verified green afterward.
+**Objects UI.** A minimal `Objects` section at the top of the Construction
+inspector: one row per root body labelled `Body #<ObjectId>`, active
+indication, and one `Add Body` action. The Java layer holds **no** body list
+and **no** model selection — every refresh re-reads native state, which is what
+keeps the list, the Inspector and the viewport from disagreeing. Rows share the
+`object_row` id (a per-body id cannot exist at build time) and identify their
+body by tag; tests select by that tag, never by row position. A viewport pick
+also makes the hit body active, and the workspace re-reads when a gesture
+settles.
 
-**GP1 criteria.**
+**One defect found and fixed during the runtime walkthrough.** The chrome
+tracked the last active body only inside the gesture listener that consulted
+it, so Add Body left it stale; a later viewport pick that landed back on the
+stale value compared equal and skipped the refresh, leaving the Inspector
+showing another body's numbers. It is now recorded in `onNativeStateChanged()`
+— the one place every surface re-reads — so the comparison means what it says.
+
+**Scope.** Flat root-level collection only: deterministic insertion order,
+stable enumeration, no parent/child, no groups, no reparenting, no rename, no
+reorder, and no speculative parent field anywhere. No delete, duplicate, hide
+or lock. No Undo, no command framework, no persistence, no import/export
+change, no dirty ranges and no spatial acceleration.
+
+**Verification.** Eleven native suites, **1530 checks, zero failures** (the new
+scene suite is 79 checks, S17-01..20); 26/26 JVM; **56 instrumented, 55 green**
+— the one failure is `ui11`, the documented environment-dependent IME case,
+**proven pre-existing** by stashing every Stage 017 change and reproducing the
+identical failure on `d04e0b4`. DEV2-01..07 + DEV3-01..06 all PASS.
+
+The scene suite builds its **own** `ConstructionScene` per case rather than
+touching the process-scoped one — the Stage 016-R2 lesson applied to the scene,
+and possible only because `ConstructionScene` is an ordinary class with no
+hidden global state. Teeth were verified by reverting: making the highlight a
+global "something is selected" fails both S17-08 checks, and replacing the
+nearest-hit rule with first-hit-wins fails both S17-10 checks.
+
+**Runtime**, on `ForgeShape_Stage006` / `emulator-5580` through the real touch
+path. Two bodies render at once with independent placements, and **only the
+selected one is tinted**. Alternating viewport picks return
+`FORGESHAPE_PICK_HIT:1:…` and `:2:…` and the Inspector's Pos X follows
+`0 → 2 → 0`. Editing body 1's width 2 → 4 published exactly one revision
+(`objectId=1`), caused exactly one `RENDER_MESH_BUILD body=1` and exactly one
+`MESH_UPLOAD_OK body=1`, with **zero** of either for body 2 — and an
+accidentally triggered debug stress harness that republished body 1 forty-seven
+times in a row still produced zero work for body 2. Per-body sidedness in one
+scene, two consecutive builds: `body=1 src=482:2880 render=482:2880` (not
+doubled) beside `body=2 src=4:6 render=8:12` (doubled). The mandatory round
+trip completed through the product's own controls: Freeze A → real Grab stroke
+(`STROKE_BEGIN:grab:91`, A reaching `sculptRev=40`) → Back → select B → Freeze
+B → real stroke (`STROKE_BEGIN:smooth:91`, B reaching `sculptRev=45`) → Back →
+select A → **Resume A returns `sculptRev=40`, `objectId=1`, `freezes=1`,
+`storeRev=114`** while B keeps its own. Projection changes and Studio↔MatCap
+caused zero rebuilds; Smooth↔Faceted rebuilt each body exactly once. The Plane
+body picked from the front and, after orbiting to `pitch=-1.5200`, from behind.
+HOME/resume reproduced the identical `ActivityRecord` with no self-test rerun
+and zero uploads; rotation held `1080x2400 → 2400x1080 → 1080x2400` at
+`preTransform=0x1`; both bodies survived both.
+
+**P17 criteria.**
 
 | ID | Verdict | Evidence |
 | --- | --- | --- |
-| GP1-01 | PASS | clean tree at `b4f9e0e` confirmed before any change |
-| GP1-02 | PASS | arm64-v8a + x86_64 both build, package, and 16 KB-align; x86_64 self-test/JVM/instrumented regression green |
-| GP1-03 | PASS | physical Galaxy S25 Ultra responds on one explicit serial; `ro.product.cpu.abi` = `arm64-v8a` |
-| GP1-04 | PASS | `primaryCpuAbi=arm64-v8a` after installing the current build |
-| GP1-05 | PASS | physical launch, lifecycle and both orientations green; 1425/1425 self-test checks |
-| GP1-06 | PASS | full physical Construction/Plane/pick/projection/shading/Freeze/Sculpt/multi-touch smoke |
-| GP1-07 | PASS | `getconf PAGE_SIZE` = 16384 on `emulator-5590` (dedicated 16 KB target; this phone is 4096, which is the ordinary case) |
-| GP1-08 | PASS | 1421/1421 self-test checks and full smoke on the 16 KB target |
-| GP1-09 | PASS | both `.so`s at 0x4000 ELF alignment; `zipalign -P 16 -c` OK on the packaged APK |
-| GP1-10 | PASS | `VK_LAYER_KHRONOS_validation` loaded and proven active (layer's own "Current Validation Enabled" banner) |
-| GP1-11 | PASS | zero ForgeShape-caused validation messages of any severity across the exercised path |
-| GP1-12 | PASS | the one message seen (`WARNING-cache-file-error`) classified as the layer's own internal bookkeeping, not a ForgeShape finding |
-| GP1-13 | UNVERIFIED | permitted; closing it needs a person physically moving an S Pen, which no adb-driven run can substitute for |
-| GP1-14 | PASS | ~10k measured physically: 10086 v / 57600 i, gen 2.763 ms, publish 1.695 ms |
-| GP1-15 | PASS | ~50k measured physically: 49686 v / 291600 i, gen 17.776 ms, publish 7.880 ms |
-| GP1-16 | PASS | ~100k measured physically: 99846 v / 589824 i, gen 32.405 ms, publish 15.426 ms |
-| GP1-17 | PASS | no crash, OOM, ANR or state corruption at any mandatory tier |
-| GP1-18 | PASS | real pick, HOME/resume and rotation round trip at every tier |
-| GP1-19 | PASS | Sculpt at ~100k: freeze 110.126 ms, 592896 adjacency entries, two real Grab strokes, uploads `reuse` |
-| GP1-20 | PASS | physical PSS 212 → 219 → 231 → 248 → 264 MB across ladder and Sculpt stress |
-| GP1-21 | N/A | 250k/500k deliberately not run; not required for closure and ~100k is stable |
-| GP1-22 | PASS | figures explicitly scoped to one device and one run; no capacity limit or device-wide claim drawn |
-| GP1-23 | PASS | JVM 26/26; native self-test 1425/1425 on both physical arm64 and x86_64; instrumented 46/46 |
-| GP1-24 | PASS | every adb call used an explicit `-s <serial>`; zero `emulator-5554` interaction; no auto-discovery; no `connected*AndroidTest` fan-out |
-| GP1-25 | PASS | no import/loader, no Stage 017, no Sketch/Extrude/Undo/BVH/async/new brush/renderer work; the one code change is a picking correctness fix |
-| GP1-26 | PASS | see doc line counts below |
-| GP1-27 | PASS | one focused commit, clean tree |
+| P17-01 | PASS | clean tree at `d04e0b4` audited before any change |
+| P17-02 | PASS | `ConstructionScene`, platform-neutral, insertion-ordered; S17-02/20 |
+| P17-03 | PASS | monotonic ids, independent of index/revision/GPU; S17-02/03/04 |
+| P17-04 | PASS | one default Box at identity, already selected; S17-01 |
+| P17-05 | PASS | Add Body appends and selects; S17-02, S17-21, runtime |
+| P17-06 | PASS | order stable across edits, selection and publication; S17-20 |
+| P17-07 | PASS | primitive and transform edits touch only the active body; S17-03/04 |
+| P17-08 | PASS | per-body `MeshStore`; immutable snapshot; S17-05 |
+| P17-09 | PASS | two bodies drawn with independent transforms; runtime screenshot |
+| P17-10 | PASS | one build + one upload, both `body=1`, zero for body 2; S17-07 |
+| P17-11 | PASS | only the selected body is tinted; S17-08 (teeth-verified) |
+| P17-12 | PASS | nearest correct ObjectId; S17-09/10 (teeth-verified) |
+| P17-13 | PASS | `body=1` undoubled beside `body=2` doubled; S17-11; Plane front/back |
+| P17-14 | PASS | A/B independent Freeze/Resume; S17-13/14/17, runtime round trip |
+| P17-15 | PASS | stale-source and `hasEdits()` per body; S17-15/16 |
+| P17-16 | PASS | A→B→A returns A's own mesh and revision; S17-17, S17-25, runtime |
+| P17-17 | PASS | a stroke on A leaves B's source, mesh and revision untouched; S17-18 |
+| P17-18 | PASS | picking suite still 128/128; S17-12 re-asserts it inside a scene |
+| P17-19 | PASS | S17-01..20 green (79 checks) |
+| P17-20 | PASS | S17-21..26 green within 56 instrumented |
+| P17-21 | PASS | native 1530/1530, JVM 26/26, instrumented 55/56 (1 proven pre-existing), both ABIs build |
+| P17-22 | PASS | lifecycle, rotation, both projections and both shading models green |
+| P17-23 | PASS | no delete/duplicate/group/Undo/Sketch/persistence/BVH/dirty-range work |
+| P17-24 | PASS | see doc line counts below; PROJECT_STATUS compacted |
+| P17-25 | PASS | one focused commit, clean tree |
 
-**Result: COMPLETE.** GP1-01..12 and GP1-14..27 PASS; GP1-13 UNVERIFIED
-(permitted); GP1-21 N/A by design.
+**Result: COMPLETE.** P17-01..25 PASS.
 
-## Stage 016-R2 — explicit emulator port isolation + deterministic test harness
+## Closed stages — durable facts only
 
-Closes Stage 016 with **zero product behaviour changes**: only emulator/test
-scripts and native self-test fixtures changed.
+Full narrative for every stage below lives in Git history. What is kept here is
+only what still constrains the code.
 
-**Root cause, self-test determinism.** `NativeViewport.start()`'s
-thread-joinable guard only blocks a *concurrent* start; it does not make the
-self-test run a true one-time process event. `ForgeShapeActivity.onDestroy()`
-calls `NativeViewport.stop()`, which joins the render thread, so a later
-`onCreate()` — a real Activity recreation within one still-alive process, the
-normal shape of an `am instrument` run moving between test classes — passes
-the guard and reruns all ten suites. Three self-tests assumed the live,
-process-scoped `MeshStore` / `ConstructionTransform` / `ConstructionObject`
-still held their first-launch defaults: `testDemoCubePicking`
-(`forgeshape_picking_selftest.cpp`, using the implicit
-`pickScene(camera, x, y, w, h)` overload, which reads
-`constructionTransform()` and `constructionObject().kind()`) and two picks in
-`forgeshape_construction_selftest.cpp` / `forgeshape_mesh_selftest.cpp` that
-already published their own known fixture into the store but still picked
-through that same implicit, transform-dependent overload. Fixed by publishing
-`demoCubeMeshView()` directly in the picking self-test and switching all three
-to the existing explicit-transform `pickScene(..., model, inverseModel,
-frontFacesOnly)` overload with an identity transform, removing every
-dependency on live global state. `publishActiveRepresentation` already
-restores the real product mesh after all self-tests finish, so this was
-already read-only with respect to what the user sees; the fix makes it
-input-independent too.
+**Pre-017 Correctness Repair (COMPLETE).** Two contract defects and one
+verifier weakness.
 
-**Verified live, on `ForgeShape_Stage006` / `emulator-5580`.** Mutated the
-process-global Construction primitive via the real UI (Box → Plane 2×1.25 m →
-Sphere), then ran the full instrumented suite: the render thread started and
-stopped **46** times in one process (one cycle per test method), all ten
-self-test suites reran on nearly every cycle, and grep across the full
-captured log found **zero** `_SELFTEST_FAIL` / `_FAIL:` tokens. One cycle's
-`startup_after_selftests` republish logged `kind=plane w=2.0 d=1.25` — direct
-proof self-tests passed with a mutated, non-default primitive and transform
-still live in process state. A clean cold launch after the whole session still
-reports **1421 checks, zero failures**, digit-for-digit the Stage 016
-baseline.
+*Sidedness ownership.* `SculptMesh::freezeFrom` did not copy
+`ConstructionMesh::renderBothSides`, `publishSculptMesh` took the `false`
+default so every Frozen Sculpt Mesh published single-sided, the Sculpt
+hit-test hard-coded `frontFacesOnly=true`, and `pickScene` asked
+`constructionObject().kind()`. That last is wrong in both directions once a
+frozen mesh outlives its Source. **The rule now: sidedness is a property of the
+active published representation**, carried `ConstructionMesh::renderBothSides`
+→ `SculptMesh::renderBothSides()` → `RuntimeMesh::renderBothSides()`, and read
+from there by render, selection picking and the Sculpt hit-test alike.
+`forgeshape_selection.cpp` deliberately does not include
+`forgeshape_construction.h`. Asserted by `SIDE-01`..`09`.
 
-**Emulator/adb hygiene.** `scripts\start-forgeshape-emulator.ps1` is a new,
-minimal launcher: explicit `-Avd`/`-Port` (default `ForgeShape_Stage006` /
-`5580`), hard-rejects port `5554` before any OS or adb call, checks occupancy
-of only the requested port, BLOCKS with no automatic fallback port, launches
-detached, and confirms AVD identity by name before reporting ready.
-`scripts\run-instrumented-tests.ps1`'s one bare `adb devices` enumeration
-(used only to confirm the given serial was attached) is replaced with
-`adb -s <serial> get-state`, so every adb call in the repo's scripts is now
-scoped to an explicit serial with no exception. `scripts\verify-device-guards.ps1`
-is new: `DEV2-01`..`07` all PASS, including two checks (`DEV2-01`, `DEV2-05`)
-that invoke the real scripts' real reject paths as child processes (not
-mocks) and one (`DEV2-02`) that proves the occupied-port BLOCK against a real
-dummy TCP listener, never against `5554` or `5580`.
+*The destructive re-Freeze guard.* It read the session-lifetime stroke count,
+which is never reset by a Freeze, so every later re-Freeze of an untouched mesh
+raised a dialog with nothing behind it. **The predicate is now
+`SculptMesh::hasEdits()`** — `revision > kFrozenSculptRevision`, restarted by
+every `freezeFrom` and advanced only when a stroke actually moved a vertex, so
+an abandoned gesture correctly reports no edits. Exposed as `SCULPT_HAS_EDITS`;
+the dialog quotes no number, because any count available describes meshes that
+no longer exist. Asserted by `REFR-01`..`07`. UI-OWNER-05 intact.
 
-**Verification.** Ten self-test suites green (1421 checks, zero failures,
-including after 46 in-process reruns under mutated state); 26 JVM tests green;
-46 instrumented tests green on `emulator-5580` only; DEV2-01..07 PASS; zero
-adb interaction with `emulator-5554` anywhere in this stage. Runtime
-re-verification repeated the Stage 016 Plane contract on the real touch path:
-Apply (2×1.25 m), front-face pick, a 180° transform-only rotation (`rev`
-unchanged) with a confirmed back-face pick (the two-sided Plane exception),
-Orthographic + MatCap, Freeze, Back to Construction, a Sphere apply while
-frozen (`FORGESHAPE_SCULPT_SOURCE_STALE`, frozen mesh untouched at "4
-vertices"), Freeze again onto the Sphere (482:2880, no confirmation needed —
-nothing to lose), a real 24-move Grab stroke
-(`STROKE_PENDING`→`STROKE_BEGIN:grab:131`→24×`STROKE_MOVE`→`STROKE_END`),
-HOME/resume with no re-init (identical `ActivityRecord`, no self-test rerun),
-and rotated landscape (`chosenExtent=2400x1080 preTransform=0x1`). Screenshots
-are under `artifacts/stage016r2_*`.
+*The device verifier* gained `DEV3-01`..`06` on top of the unchanged
+`DEV2-01`..`07`: it now recognises a bare `adb` in any form, scans
+`.ps1`/`.cmd`/`.bat`/`.sh` and the Gradle files, detects an executable
+`connected*AndroidTest` fan-out, proves an argument array actually carries `-s`
+instead of trusting its variable name, and reports which surfaces it scanned so
+a check that covered nothing cannot pass. It also fixed a latent vacuous pass:
+`Where-Object` returning exactly one object has no `.Count`, so the script
+printed "All checks PASS" and exited 0 whenever exactly one check failed.
 
-## Stage 016 — Plane + primitive coverage cleanup
+**Gate P1 — physical ARM64 (COMPLETE).** Closed on a Samsung Galaxy S25 Ultra
+(`SM-S938B`, Snapdragon 8 Elite, Android 16 / API 36, 1440×3120), attached over
+Wi-Fi adb; its serial and address are session facts and are deliberately not
+recorded here. `ro.product.cpu.abi` and `abilist` report **`arm64-v8a`** only,
+and after install `dumpsys package` reports **`primaryCpuAbi=arm64-v8a`**. That
+phone's `getconf PAGE_SIZE` is **4096**, which is the ordinary case and not a
+failure: the 16 KB dimension was closed separately on a dedicated 16 KB target
+(`ForgeShape_16K`, `PAGE_SIZE` = 16384), and the two pieces of evidence are
+complementary.
 
-**Plane is the sixth and final Construction MVP primitive**: a flat,
-zero-thickness rectangular sheet, authored by width (local X) and depth
-(local Z), centred on the local origin at `y = 0` with its canonical front
-along local `+Y`. It is not a solid, not a Sketch plane and not an infinite
-grid. Source topology is exactly **4 vertices, 2 triangles, 6 indices**,
-independent of the requested dimensions, CCW seen from the front, with exact
-bounds `X = [-w/2, +w/2]`, `Y = [0, 0]`, `Z = [-d/2, +d/2]`. Every existing
-Construction contract applies unchanged: exact double-meter parameters,
-transactional Apply (`Applied`/`Unchanged`/`Rejected`), the mm/cm/m display
-contract, transform, Freeze/Resume, stale-source, and both projections.
+*The ARM64 picking defect, and why the tolerance exists.* Six self-test checks
+failed on the physical device against 1421/1421 green on x86_64 from identical
+source. `intersectRayTriangle` tested barycentric containment with exact bounds,
+and a ray landing on an edge two triangles SHARE has a coordinate that is
+mathematically exactly 0 — its sign decided purely by rounding, and if it
+rounds negative for one triangle it does for its neighbour too, so both reject a
+ray that geometrically hits. The rounding is ABI-dependent: no
+`-ffp-contract=off` is set, so Clang contracts the dot/cross products into fused
+multiply-adds on arm64-v8a, which baseline x86-64 cannot. An on-device probe
+measured the failing ray at **u = -9e-9**. Product-visible, not a test artefact:
+the centre of a Plane *is* the shared diagonal of its two triangles, so tapping
+the middle of a Plane selected nothing. Fixed by `kBarycentricEpsilon = 1e-6f`
+applied to both containment bounds — widening rather than pinning the FP model,
+which would only re-hide the same knife-edge geometry. **Do not remove or
+tighten it.**
 
-**Two-sided editor usability is one bounded, explicitly named exception, not a
-global culling change.** A Plane has no interior, so unlike a closed solid
-there is no far wall a two-sided pick or render could wrongly reach. Both
-mechanisms key off one fact — `RuntimeMesh::renderBothSides()` /
-`ConstructionMesh::renderBothSides`, true only for a Plane, carried with the
-published mesh rather than re-derived from `PrimitiveKind` in either
-consumer:
+*Heavy-mesh ladder, measured on that phone.* Single-run figures from one device;
+they are existence evidence that the mandatory tiers work on physical ARM64, not
+a supported capacity limit and not a statement about any other device.
 
-- **Rendering** (`forgeshape_render_mesh.cpp`): when set, the ordinary
-  one-sided render result is duplicated once more — every vertex repeated
-  with its normal negated, every triangle repeated with reversed winding — so
-  the *existing* global `VK_CULL_MODE_BACK_BIT` /
-  `VK_FRONT_FACE_COUNTER_CLOCKWISE` pipeline draws the duplicate from the far
-  side while culling it from the near side. No pipeline, culling or material
-  change anywhere; the authoritative `RuntimeMesh` is never touched. Render
-  counts double (4:6 Smooth source builds to 8:12 render) — a second,
-  distinct reason a render count can exceed a source count, alongside the
-  existing crease-split one.
-- **Picking**: `pickScene` passes `!(constructionObject().kind() ==
-  PrimitiveKind::Plane)` as `frontFacesOnly`, so only a Plane picks from both
-  sides. The explicit-transform `pickScene` overload gained an optional
-  `frontFacesOnly` parameter (default `true`) so the self-test-only overload
-  stays free of process-scoped state.
+| tier | vertices | triangles | gen ms | publish ms | render build ms | pick | PSS |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| ~10k | 10086 | 19200 | 2.763 | 1.695 | 19.577 | tri 15592 | 219 MB |
+| ~50k | 49686 | 97200 | 17.776 | 7.880 | 72.204 | tri 78824 | 231 MB |
+| ~100k | 99846 | 196608 | 32.405 | 15.426 | 104.387 | tri 159210 | 248 MB |
 
-**Primitive coverage cleanup, bounded to what a sixth kind actually
-revealed.** `ConstructionObject::setPrimitive` no longer dispatches its
-update half with an if-else chain over typed accessors — the debt Stage 015D
-named. It `std::visit`s the requested `PrimitiveSpec` payload against two
-small overload sets (`parametersDiffer` / `writeParameters`, one overload per
-kind), so a kind added to the variant with no matching overload is now a
-**compile** error, not a silently-skipped branch — the property the existing
-`validateParameters` family already had via its own `std::visit`. The Java
-shape editor's two-field-primitive constants (`DIAMETER`/`AXIAL`) are renamed
-`FIELD_0`/`FIELD_1`: a Plane's width/depth pair is neither, and the rename is
-the direct, minimal fix a sixth kind revealed. No reflection, registry or
-property-bag framework was introduced.
+Sculpt at ~100k: freeze 110.126 ms building 592896 adjacency entries, two real
+Grab strokes, every post-stroke upload `reuse`, PSS 264 MB. No crash, OOM, ANR
+or thermal symptom at any tier. The last stable mandatory tier is ~100k.
+250k/500k were not run. Stylus/S Pen remains **UNVERIFIED** — closing it needs a
+person physically moving a pen.
 
-**Verification.** Ten self-test suites green, **1421 checks, zero
-failures** (up from 1316): picking 112→124 (`PLN-11`..`16` — the two-sided
-exception, front/back, outside-rectangle, transformed, both projections),
-primitive 75→125 (`PLN-01`..`08` — topology, bounds, winding, rejection,
-apply semantics, the six-kind round trip), sculpt 250→276 (`PLN-17`..`19` —
-Freeze on an open 4:6 mesh, Resume, stale-source), render shading 207→224
-(`PLN-09`/`10`/`20` — the two-sided render duplication and its inertness to
-display switching). 26 JVM tests green. **46 instrumented tests, 46 green**
-(up from 44), including the `ui11` IME case that has moved in both
-directions across recent stages.
+*Also closed under Gate P1:* arm64-v8a packaged beside x86_64, both `.so`s at
+0x4000 ELF `LOAD` alignment with `zipalign -P 16 -c` OK; a debug-only Vulkan
+validation session with **zero ForgeShape-caused messages** of any severity
+(the layer was adb-pushed through Android's own per-app GPU debug layer
+settings and never bundled, never committed, and removed afterwards); and the
+debug-only `buildStressMesh` density fixture behind `ForgeShapeActivity` keys
+A–F.
 
-**Runtime**, on `ForgeShape_Stage006` (booted this session on port 5556
-rather than its usual 5558 — confirmed by AVD name, not by port, before any
-command targeted it): a non-default Plane (2.0 × 1.25 m) applied through the
-real touch path (`FORGESHAPE_CONSTRUCTION_PUBLISHED:8:4:6`), an exact mm/cm/m
-round trip (4 m → 400 cm → 4000 mm → 4 m, digit for digit), a 180°
-`ConstructionTransform` rotation applied as a transform-only edit (revision
-unchanged), a real tap-to-select hit landing on the rotated (far) side of the
-sheet (`FORGESHAPE_PICK_HIT` at local `y=0.0000`), Perspective and
-Orthographic, Studio and MatCap, Freeze → Sculpt
-(`FORGESHAPE_SCULPT_FROZEN:4:6`) → Back to Construction → Resume Sculpt
-(`freezes=1` unchanged, topology still 4:6), a Construction edit after Freeze
-producing `FORGESHAPE_SCULPT_SOURCE_STALE` with the frozen mesh untouched and
-the Sculpt panel naming "4 vertices", a real 23-move Grab stroke on a
-re-frozen 482-vertex sphere (the sculpt-regression carve-out, not the sparse
-Plane: `STROKE_PENDING` → `STROKE_BEGIN:grab:137` → 23 `STROKE_MOVE`s →
-`STROKE_END`), HOME/resume with no re-upload, and rotated landscape
-(`chosenExtent=2400x1080 preTransform=0x1`, the P2 convention intact).
-Screenshots are under `artifacts/stage016_*`; the Plane reads as a true flat
-sheet throughout, never as a thick box.
+**Stage 016-R2.** Self-tests must not depend on live process-scoped state: three
+cases were reading whatever primitive or transform a prior UI test had left, and
+now publish their own fixture and pick through the explicit-transform overload.
+`scripts\start-forgeshape-emulator.ps1` takes an explicit `-Avd`/`-Port`, hard-
+rejects port 5554 before any OS or adb call, and BLOCKS rather than falling back
+when the requested port is occupied. Every adb call in every repo script is
+scoped to an explicit serial.
 
-**One incidental fix, found only by running the real touch path.**
-`forgeshape_jni.cpp`'s `describeSpec` — the JNI-local log-line formatter, a
-different if-else chain from the one the cleanup above targeted, exercised
-only by the JNI wrapper functions the native self-tests never call (they call
-the namespaced `forgeshape::applyPrimitive` directly) — had no Plane branch
-and logged `kind=plane unknown`. Fixed by adding the branch. No self-test
-would have caught this; it is the concrete argument for the runtime pass
-beyond what the self-tests already prove.
+**Stage 016 — the Plane.** The sixth and final Construction MVP primitive: a
+flat, zero-thickness rectangular sheet authored by width (local X) and depth
+(local Z), centred on the local origin at `y = 0`, canonical front along local
+`+Y`. Source topology is exactly **4 vertices, 2 triangles, 6 indices**
+whatever the dimensions, CCW seen from the front. Two-sided render and pick are
+one bounded, named exception carried by the published mesh — see the Pre-017
+entry above for who owns that fact now. `ConstructionObject::setPrimitive`
+`std::visit`s the requested spec, so a kind added to the variant with no
+matching overload is a compile error rather than a silently skipped branch.
 
-**One environment mishap, disclosed rather than hidden.** The first
-`connectedDebugAndroidTest` run was launched without pinning a target device,
-and Gradle's task runs against every attached device with no default: it
-installed the debug APK and ran the full 46-test suite against
-`emulator-5554` (`Medium_Phone_API_36.1`), the AVD `CLAUDE.md` reserves for
-another program — confirmed via `adb -s emulator-5554 emu avd name` after the
-fact. No further command touched that device. The owner was told before the
-stage continued, and chose to proceed with every later command scoped to
-`-s emulator-5556` / `ANDROID_SERIAL=emulator-5556`, confirmed by AVD name to
-be `ForgeShape_Stage006`.
+**Stage 015D — camera projection.** Orthographic is a true parallel projection
+(`mat4Orthographic`, `m[11] = 0`), not a narrow FOV or a huge distance. The
+existing 60° Perspective camera was audited and left unchanged. Switching
+converts the framing rather than resetting it
+(`orthoHalfHeight = distance × tan(fovY/2)` and its inverse), so the frame never
+jumps. Orthographic pinch changes the world span and deliberately leaves the
+orbit distance alone, because moving the eye along its own axis changes nothing
+in a parallel projection. Picking is structurally different per projection —
+Perspective keeps one origin with fanning directions, Orthographic shares one
+direction with a per-pixel origin — and the orthographic view plane is pulled
+back to `kFarPlane/2`, so `snapshot.eye` is **not** `target + dir × distance` in
+Orthographic. The sculpt brush radius must not scale with depth in Orthographic.
 
-**Remediated in Stage 016-R, then hardened further in Stage 016-R2** (see that
-chapter above for the explicit-port launcher, the `adb devices`→`get-state`
-fix and the self-test determinism fix), without touching `emulator-5554` at
-all: the
-bare, unscoped Gradle task is now a documented anti-pattern in `CLAUDE.md` and
-`README.md`, and `scripts\run-instrumented-tests.ps1 -Serial <serial>` is the
-one supported instrumented-test path — it requires an explicit serial, refuses
-`emulator-5554` before any device is contacted, and drives every install and
-instrumentation step through `adb -s <serial>` only. Re-verification on
-`ForgeShape_Stage006` (that session booted it on `emulator-5580`, since even
-`5554` itself is not a stable identifier for any one AVD — see `CLAUDE.md`)
-reproduced the Stage 016 baseline: ten self-test suites green on a clean
-launch (1421 checks, zero failures), 26 JVM tests green, 46 instrumented tests
-green on that one serial, and the Plane/projection/shading/Freeze-Resume/
-stale-source/real-sculpt/lifecycle contracts held on the real touch path.
-
-Stage 015D added a mathematically correct **Orthographic** projection beside the
-existing Perspective one, so exact Construction geometry can be judged without
-near parts of a solid being enlarged for being near. Perspective remains the
-default and was **audited, not changed** — its 60° vertical field of view, its
-aspect source and its pinhole form are all unchanged.
-
-Stage 015C-R before it fixed the defect that made every convex primitive read as
-a hollow interior: the graphics pipeline named `VK_FRONT_FACE_CLOCKWISE`, which
-inverted back-face culling, so the viewport drew each solid's **far** walls
-instead of its near ones. It also added the ten-part direction test family
-(`NOR-01`..`NOR-10`).
-
-Stage 015C before it replaced the debug-looking per-vertex rainbow with readable
-lit geometry: a **derived, render-only** normal layer between the authoritative
-mesh and Vulkan, one centralized crease policy, two shading models (Studio Solid
-and MatCap), Smooth/Faceted display, a compact display control in the Global
-Toolbar, and a tenth native self-test suite. Platform Fix P2 closed the
-rotated-landscape rendering defect, and Stage 015B replaced the two provisional
-Android panels with the approved responsive **Editor Workspace**.
-
-## Stage 015D — camera projection
-
-**The existing Perspective camera was audited first and left alone.** The
-vertical field of view is **60°** (`kFovYRadians = 1.0471976`), the aspect comes
-from the one `CameraController` viewport truth, orbit changes neither distance
-nor FOV, there is no screen-axis non-uniform scale, and the matrix is a standard
-pinhole (`proj.m[11] = -1`). `CAMPROJ-01` asserts each of those against the
-matrix rather than by inspection, including that `|m[0]/m[5]|` is exactly
-`1/aspect` — the check that would fail if anything ever stretched one axis to
-"fix" a rotated display. No evidence of non-rigid geometry distortion was found
-and no projection constant was changed.
-
-**Orthographic is a true parallel projection**, `mat4Orthographic` in
-`forgeshape_math.h`, sharing every convention with `mat4Perspective`:
-right-handed view space, Vulkan `[0, 1]` depth, the Y flip in the matrix. Its
-defining property is `m[11] = 0`, so `w` is 1 for every vertex and nothing is
-divided by depth. It is **not** a narrow FOV, a huge camera distance, a model
-scale or a shader trick, and `CAMPROJ-02`/`03` assert the parallel behaviour
-directly: two equal segments parallel to the image plane measure the same screen
-size at depths 80 m apart, and a box's front and back faces project to the same
-width.
-
-**The orthographic scale is an explicit world length.**
-`orthoHalfHeightMeters` is half the world height the viewport shows, in meters at
-the target plane — finite, positive, and clamped to `[0.02, 250] m`, which
-brackets the same range of apparent sizes the perspective distance clamps do. The
-snapshot carries it in both modes, so it is never a stale leftover.
-
-**Switching preserves the framing**, converting rather than resetting:
-`orthoHalfHeight = distance × tan(fovY/2)` and its inverse. Target, yaw and pitch
-are untouched. Measured at runtime: the first switch produced
-`orthoHalfHeightMeters=4.7343` from `distance=8.2000` (8.2 × tan 30° = 4.73427),
-and after an ortho pinch to `0.3809` the switch back produced `distance=0.6598`
-(0.3809 / tan 30° = 0.65977). `CAMPROJ-05`/`06` hold the on-screen scale at the
-target plane to 1e-4 in NDC and prove the round trip returns to its origin.
-
-**Pinch had to be projection-aware, and this is the load-bearing part.** Moving
-the eye along its own axis changes nothing in a parallel projection, so a
-distance-based ortho zoom would look dead. Orthographic pinch therefore changes
-the span and deliberately leaves the orbit distance alone — measured at runtime:
-a real two-finger spread moved the span `4.7343 → 0.3809` with `distance=8.2000`
-unchanged.
-
-**Picking is structurally different per projection, not a tweaked constant.**
-Perspective keeps one origin (the eye) with fanning directions; Orthographic
-shares one direction (the view axis) with an origin that slides across the view
-plane per pixel. Keeping a perspective origin under an orthographic image agrees
-with the picture only at the screen centre and drifts toward every edge, so the
-picking suite probes off-centre pixels and **round-trips each hit back through
-the same matrices to the pixel it came from**. The orthographic view plane is
-pulled back to `kFarPlane/2` (250 m) so the depth slab is centred on the target;
-that costs nothing visually (a parallel projection is translation-invariant along
-its axis) and buys the guarantee that every drawn surface is in front of the
-pick-ray origin. The consequence to know is that `snapshot.eye` is not
-`target + dir × distance` in Orthographic and a reported pick distance is
-measured from that plane.
-
-**Sculpt needed one change: the brush radius must not scale with depth in
-Orthographic.** `worldPerPixelAtDepth` still reads `proj.m[5]` in both modes but
-applies the depth factor only in Perspective. `CAMPROJ-11` measures both halves —
-pushing the object ±3 m along the view axis leaves the orthographic radius
-identical and does move the perspective one — so a brush frozen to a constant
-could not pass either.
-
-**Verification.** Ten self-test suites green (**1316 checks, zero failures**, up
-from 1199); 26 JVM tests green; **44 instrumented tests, 43 green**. The one
-failure is `EditorWorkspaceGestureTest.ui11_...` failing its own precondition
-guard ("the soft keyboard did not appear, so this case proves nothing") and is
-**proven pre-existing**: the same test was run alone on a stashed, unmodified
-`171c7ae` tree and failed with the identical message. See the environment note
-under *Android UI suites*.
-
-**Runtime**, on `emulator-5558` through the real touch path, with the native
-`CONSTRUCTION_PUBLISHED` line confirming the primitive before every capture:
-Box 2 × 1 × 0.5, orbit in both projections, a real multi-touch pinch in both,
-pan, picking, a transform-only edit (`rev=9` unchanged, no publish, no upload),
-Freeze (482 : 2880), a real Grab in Perspective (51 moves) and a real Grab in
-Orthographic (52 moves) with `src=482:2880` fixed and every upload `reuse`,
-HOME/resume, portrait and rotated landscape.
-
-*Picking measured in both modes at three pixels on a 1 m diameter × 2 m
-cylinder.* Orthographic hits landed on the exact surface — `y = 1.0000` on the
-top cap and radius `0.4976` on the wall against an exact 0.5 (the expected
-faceting inset) — and the centre pixel returned the **identical** point
-`(0.3336, 1.0000, -0.0600)` in both projections, which is the one ray the two
-share. Off-centre pixels correctly returned *different* points.
-
-*Multi-touch navigation still cannot mutate the sculpt mesh in Orthographic.*
-The injected pinch logged `STROKE_PENDING → STROKE_ABANDONED:navigation` with
-`sculptRev` held at 104.
-
-*Rotated landscape holds the P2 convention under Orthographic*: window 2400×1080,
-`chosenExtent=2400x1080`, `preTransform=0x1`, camera viewport 2400×1080, aspect
-2.2222. `CAMPROJ-14` additionally asserts in **both** modes and **both**
-orientations that a 1 m world square occupies the same pixel count horizontally
-and vertically.
-
-*HOME/resume preserved the projection*: re-requesting Orthographic after the
-resume reported `changed=0` with `orthoHalfHeightMeters=4.7343` and
-`distance=8.2000` intact. The projection is process-scoped state on the one
-`CameraController`, so this needs no save/restore code in the Android layer.
-
-**Visual evidence**, under `artifacts/stage015d_*` (foreground confirmed before
-each capture). The three required pairs share a camera pose exactly, because the
-switch preserves it: `_01`/`_02` the oblique three-face box, `_03`/`_04` the box
-seen nearly along its 2 m axis, `_05`/`_06` a 1 dia × 2 m cylinder. In the
-Perspective members the near end is visibly larger and parallel edges converge —
-the cylinder's silhouette tapers. In the Orthographic members the box's top face
-is a true parallelogram, near and far vertical edges are equal, and the
-cylinder's sides are parallel with matching top and bottom ellipses.
-Foreshortening from *orientation* remains in both and is correct. `_07`/`_08`
-bracket the HOME/resume, and `_09` is rotated landscape.
-
-**Performance.** Nothing was added to the frame path. A projection change writes
-two floats under the existing `g_stateMutex` and mints no revision; no
-`RENDER_MESH_BUILD` and no `MESH_UPLOAD_OK` line follows one. The projection
-matrix is built in `snapshot()`, which was already built per frame.
-
-## Stage 015C-R — root cause, convention and evidence
-
-**Root cause, proven by measurement.** With `cullMode = BACK` and
-`frontFace = CLOCKWISE`, the default box's visible faces measured the Studio
-Solid luminance of its **far** walls, not its near ones — the culling was
-inverted, double-compensating for the projection's Y flip, which is already
-applied by the time Vulkan classifies a triangle. Inverted culling does not
-blank the viewport or change the silhouette, only which surface of it is
-drawn, so it presented as a shading complaint rather than a rasterizer defect.
-After the fix the near-face pixels matched their Studio Solid predictions to
-four decimals. The winding/normal/raster convention itself is owned by
-`ARCHITECTURE.md` (*Canonical winding and culling*).
-
-**The direction family (`NOR-01`..`NOR-10`)** closes the blind spot that let
-this hide: every pre-existing normal check measured an axis or a magnitude and
-so passed unchanged on a mesh whose normals had all been negated.
-`nor_outwardness_fails_on_global_normal_flip` asserts the new measurement does
-invert on a global flip, so the suite cannot regress into that blind spot
-again. Ten suites green (1199 checks); 26 JVM tests; 40 instrumented tests. A
-stationary 3371-frame run moved the render-data rebuild count by exactly one
-(the Smooth toggle used to close the measurement). Screenshots are under
-`artifacts/stage015cr_*`.
+**Stage 015C-R — winding and culling.** The pipeline named
+`VK_FRONT_FACE_CLOCKWISE`, which double-counted the projection's Y flip and
+inverted back-face culling, so every convex primitive drew its far walls and
+read as a hollow interior. The convention is now
+`VK_CULL_MODE_BACK_BIT` + `VK_FRONT_FACE_COUNTER_CLOCKWISE`, owned by
+`ARCHITECTURE.md`. The `NOR-01`..`10` direction family exists because every
+earlier normal check measured an axis or a magnitude and so passed unchanged on
+a mesh whose normals had all been negated.
 
 ## Owner Decision Baseline
 
@@ -952,7 +478,20 @@ Android touch path. `PRODUCT.md` owns the user-facing description.
 | Tap-to-select, tap-to-clear, drag and multi-touch never select | VERIFIED |
 | CPU picking follows camera, dimensions, transform and sculpt deformation | VERIFIED |
 | Dynamic mesh: immutable revisions, fail-closed validation, capacity reuse/growth | VERIFIED |
-| One Construction Body with exact Box / Cylinder / Sphere / Cone / Capsule / Plane | VERIFIED |
+| SEVERAL Construction Bodies in one scene, each with exact Box / Cylinder / Sphere / Cone / Capsule / Plane | VERIFIED |
+| Stable per-body ObjectIds, independent of collection index, mesh revision and GPU allocation | VERIFIED |
+| Add Body appends and selects; deterministic insertion order across edits and selection | VERIFIED |
+| Primitive and transform edits reach only the active body; A↔B round-trips the exact spec and placement | VERIFIED |
+| Per-body mesh publication: each body its own revision chain; A's edit cannot replace B's mesh | VERIFIED |
+| Renderer draws every body with its own transform and its own GPU buffers | VERIFIED |
+| Editing A rebuilds and uploads nothing for B | VERIFIED |
+| Only the selected body is highlighted | VERIFIED |
+| Scene picking returns the nearest hit's correct ObjectId; a viewport pick re-points the editors | VERIFIED |
+| Sidedness is per body: a Plane body does not make its neighbour two-sided | VERIFIED |
+| Per-body Freeze / Resume / stale-source / current-mesh edit predicate, independent across bodies | VERIFIED |
+| A→B→A returns A's own Frozen Sculpt Mesh, revision and edits, without re-freezing | VERIFIED |
+| Mode, held tool and brush Radius/Strength are session-wide and unchanged by switching bodies | VERIFIED |
+| Objects list holds no Java-side model selection; every refresh re-reads native state | VERIFIED |
 | Plane: 4:6 open source topology, exact bounds, two-sided render and pick as one bounded, named exception | VERIFIED |
 | Sidedness is owned by the active published representation; render, selection picking and Sculpt hit-test all read that one value | VERIFIED |
 | Frozen Plane renders, picks and **sculpts** from both sides; a real stroke lands on the underside | VERIFIED |
@@ -1008,9 +547,9 @@ Android touch path. `PRODUCT.md` owns the user-facing description.
 
 ## Self-test suite
 
-Ten debug-only native suites run once from `NativeViewport.start()` — never per
-frame — and total **1451 checks, zero failures** at the accepted baseline under
-NDK r29, identically on physical arm64-v8a and on x86_64:
+Eleven debug-only native suites run once from `NativeViewport.start()` — never
+per frame — and total **1530 checks, zero failures** at the accepted baseline
+under NDK r29:
 
 | suite token | checks |
 | --- | --- |
@@ -1024,6 +563,7 @@ NDK r29, identically on physical arm64-v8a and on x86_64:
 | `FORGESHAPE_CONE_CAPSULE_SELFTEST_OK` | 163 |
 | `FORGESHAPE_SCULPT_BRUSH_KERNEL_SELFTEST_OK` | 302 |
 | `FORGESHAPE_RENDER_SHADING_SELFTEST_OK` | 224 |
+| `FORGESHAPE_SCENE_SELFTEST_OK` | 79 |
 
 followed by `FORGESHAPE_MESH_UPLOAD_OK` and `FORGESHAPE_NATIVE_VIEWPORT_OK`.
 The tenth suite covers the crease policy, all six primitives' Smooth contracts
@@ -1084,13 +624,20 @@ Build and verification commands are in `README.md`.
 every control is reached by its stable semantic id and no assertion uses a screen
 coordinate.
 
-**50 of the 50 instrumented tests pass as of the Pre-017 Correctness Repair**
-on `ForgeShape_Stage006`. The Pre-017 repair took the count from 46 to 50: it
-replaced one self-skipping re-Freeze test with the five `REFR-01..07` cases.
-The test it replaced returned early whenever a previous test had sculpted, and
-because the counter it consulted was never reset, that meant it silently proved
-nothing for the rest of every run — the reason REFR-06 exists as an explicit
-criterion.
+**55 of the 56 instrumented tests pass as of Stage 017** on
+`ForgeShape_Stage006`; the one failure is the `ui11` IME case described just
+below. Pre-017 took the count 46 → 50, replacing one self-skipping re-Freeze
+test with the five `REFR-01..07` cases; Stage 017 took it 50 → 56 with
+`EditorWorkspaceObjectsTest` (`S17-21..26`).
+
+**The scene is process-scoped and there is no delete, so bodies ACCUMULATE
+across the tests in a run**, and the product may be left in Sculpt mode by an
+earlier one. No instrumented test may therefore assume a body count, which body
+sits at the origin, or which mode is current: each establishes what it needs and
+asserts relative to what it found. That is the Stage 016-R2 lesson — a test that
+reads live global state passes or fails on what ran before it — applied to the
+instrumentation, and it is why `EditorWorkspaceObjectsTest` has an
+`isolateAtOrigin` helper rather than hard-coded placements.
 
 `EditorWorkspaceGestureTest.ui11_theImeLeavesTheFieldAndTheCommitPathUsableAndTheSurfaceUntouched`
 is the one case that has moved in both directions across recent stages: it
@@ -1105,117 +652,36 @@ regression.
 
 ## Current evidence summary
 
-- **Gate P1 (COMPLETE)**, closed on a physical Galaxy S25 Ultra (arm64-v8a,
-  `primaryCpuAbi=arm64-v8a`, `PAGE_SIZE` 4096): physical launch/lifecycle/
-  orientation smoke and the mandatory ~10k/~50k/~100k density ladder all
-  measured on real hardware, with Sculpt at 100k and PSS across the ladder.
-  arm64-v8a build support, real 16 KB runtime verification (separately, on a
-  dedicated 16 KB target) and an active Vulkan validation path with zero
-  ForgeShape-caused messages remain closed. One real ARM64-only picking defect
-  was found and fixed (shared-edge barycentric rounding). Stylus (P1-D) stays
-  UNVERIFIED — it needs a person physically moving an S Pen. Full detail, the
-  measurement table and the GP1 criteria table are in the Gate P1 chapter at
-  the top of this file.
-- **Stage 016-R2 acceptance** (`ForgeShape_Stage006` / `emulator-5580`): device
-  and test-harness remediation only, zero product behaviour change. Ten
-  self-test suites green (1421 checks, zero failures) both on a clean launch
-  and after 46 in-process reruns under UI-mutated Construction state during
-  the full instrumented suite; 26 JVM tests green; 46 instrumented tests
-  green; `DEV2-01`..`07` PASS; zero `emulator-5554` interaction. Full detail in
-  the Stage 016-R2 chapter at the top of this file. Screenshots are under
-  `artifacts/stage016r2_*`.
-- **Stage 016 acceptance** (`ForgeShape_Stage006`): ten self-test suites green
-  (**1421 checks, zero failures**, including `PLN-01`..`PLN-20`); 26 JVM tests
-  green; **46 instrumented tests, 46 green**. The Plane contract, the two-sided
-  render/pick exception, the primitive-coverage cleanup and the full runtime
-  walkthrough (Apply, unit round-trip, transform, front/back pick, both
-  projections, both shading models, Freeze/Resume/stale-source, a real sculpt
-  stroke on a dense primitive, HOME/resume, rotated landscape) are in the
-  Stage 016 chapter at the top of this file. Screenshots are under
-  `artifacts/stage016_*`.
-- **Stage 015D acceptance** (`emulator-5558`): ten self-test suites green
-  (**1316 checks, zero failures**, including `CAMPROJ-01`..`CAMPROJ-14`); 26 JVM
-  tests green; 44 instrumented tests with the one environment-dependent IME case
-  described above, proven pre-existing against a stashed `171c7ae` tree. The
-  measured framing conversions, the ortho pinch, the picking comparison and the
-  runtime smoke are in the Stage 015D chapter at the top of this file.
-  **The default appearance did not change**: Perspective is still the default and
-  its 60° field of view is untouched, so a cold start is identical to the
-  Stage 015C-R baseline. Screenshots are under `artifacts/stage015d_*`.
-- **Stage 015C-R acceptance** (`emulator-5558`, clean install): ten self-test
-  suites green (**1199 checks, zero failures**, including `NOR-01`..`NOR-10`);
-  26 JVM tests green; **40 instrumented tests green, zero failures**. The
-  measured before/after and the stationary-frame proof are in the Stage 015C-R
-  chapter at the top of this file. **The default appearance changed again**: a
-  convex primitive now shows its near faces, so the cold-start box reads as a
-  solid with a bright top, a mid front and a dark end instead of as a hollow
-  corner (`artifacts/stage015cr_00_box_studio_smooth_before` vs
-  `artifacts/stage015cr_01_box_studio_smooth_after`).
-- **Stage 015C acceptance** (`emulator-5558`, clean install, empty crash buffer):
-  ten self-test suites green (1150 checks at that baseline, zero failures);
-  26 JVM tests green; 40 instrumented tests with the one environment-dependent
-  IME case described above. **The default appearance changed**: the per-vertex
-  rainbow is gone and the viewport comes up in neutral Studio Solid, with the old
-  appearance still reachable in a debuggable build as the Debug chip. The
-  per-primitive source-vs-render counts it established are in the *Shading cost
-  record* below. **The no-per-frame-rebuild proof is a direct measurement**:
-  `rebuilds=2 frame=4448` — over 4448 presented frames including eight
-  camera-orbit gestures and three shading-model changes, the render mesh was
-  rebuilt twice, and the log carries **zero** `RENDER_MESH_BUILD` and **zero**
-  `MESH_UPLOAD_OK` lines during camera motion and Studio↔MatCap churn. A
-  Smooth↔Faceted round trip on **one unchanged source revision** moved the render
-  count 24 → 36 → 24 with `src=8:36` throughout, and every one of the 54 uploads
-  in the session was `reuse` with the buffer-grow count flat. Screenshots are
-  under `artifacts/stage015c_*`, with `artifacts/stage015c_shading_comparison.md`
-  as the comparison sheet.
-- **Platform Fix P2 acceptance** (`emulator-5558`, cold boot, clean install,
-  empty crash buffer): nine self-test suites green (992 checks, zero failures);
-  54 Android tests green (22 JVM, 32 instrumented). **Root cause proven, not
-  assumed.** The first inconsistent convention was the **swapchain extent
-  space**, not the projection: declaring a 90° pre-transform obliges the image to
-  be in pre-transform (panel) space, so SurfaceFlinger rotated the 2400×1080
-  buffer to 1080×2400 and stretched it back to the window. That model predicted a
-  2 × 1 × 0.5 m box at 427 × 98 px; it measured **428 × 98**, against 218 × 192
-  when correct. The fix requests an identity pre-transform, after which the
-  pose-fixed invariant `bboxWidth / screenHeight` agreed at 0.2017 / 0.2019 /
-  0.2025 across portrait, rotated landscape and a non-rotated wide window, inside
-  0.5 %, and a default sphere measured square in both orientations. Picking
-  stayed aligned with what is drawn, and five orientation changes plus a
-  HOME/resume published **no mesh revision, triggered no upload and started no
-  stroke**. The resulting convention is owned by `CLAUDE.md` and
-  `ARCHITECTURE.md`; the full measurement tables are in Git history. Screenshots
-  are under
-  `artifacts/platformfixp2_*`.
-- **Stage 015B acceptance** (`emulator-5558`, clean install, empty crash
-  buffer): nine self-test suites green; 54 Android tests green; the measured
-  unoccluded viewport in landscape moved from **0 % to 60.1 %** (82.6 %
-  collapsed at 411×914 dp, 85.2 % at 1280×800 dp). Chrome drags left the viewport
-  region **pixel-identical** and minted no sculpt revision; the re-Freeze
-  confirmation named "1 sculpt stroke" with Cancel making no native call; unit
-  switching was exact with zero native calls; and HOME/resume returned a
-  pixel-identical viewport with no re-upload. The full measurement tables are in
-  Git history. Screenshots are under `artifacts/stage015b_*`.
-- **Stage 014 acceptance** (`emulator-5558`, one pid, empty crash buffer): the
-  cone and capsule happy paths, closed-base and hemisphere picking measured at
-  the pixel against the exact radius, the capsule relation rejection, no-op and
-  invalid handling, transform-only edits publishing nothing, the five-kind round
-  trip preserving `objectId=1` and every remembered parameter, and the
-  stale-source policy across a capsule → cone change with a pixel-identical
-  resumed sculpt.
-- **Gate P0 (NDK r27 → r29)**: `compileDebugJavaWithJavac`, `buildCMakeDebug` and
-  `packageDebug` all succeeded first time with **no migration fix of any kind** —
-  the whole migration is one line. Nine suites / 992 checks green, plus an
-  integration smoke (Construction Apply, transform-only edit, transformed cone
-  picking inside the facet band, Freeze, one real `uinput` Grab stroke with
-  fixed topology and `reuse` uploads throughout, Construction ↔ Sculpt
-  preservation, and a byte-identical HOME/resume screenshot).
-- **16 KB page size**: ELF LOAD alignment moved from `0x1000` (r27, not
-  compatible) to `0x4000` (r29, compatible) on all three segments;
-  `zipalign -c -P 16 -v 4` verification successful with the `.so` stored
-  uncompressed; a source/config audit found no page-size assumption anywhere and
-  no third-party native library in the APK. Normal (4 KB) runtime smoke PASS.
-  **16 KB runtime remains UNVERIFIED.**
-- Runtime evidence screenshots are retained under `artifacts/`.
+Latest acceptance run, on `ForgeShape_Stage006` / `emulator-5580` unless a line
+says otherwise:
+
+- **Native self-tests:** eleven suites, **1530 checks, zero failures** on a
+  clean launch. The Gate P1 picking suite is unchanged at 128, so the ARM64
+  shared-edge fix is intact; `SIDE`, `REFR`, `NOR` and `CAMPROJ` all still green.
+- **JVM:** 26/26.
+- **Instrumented:** 56 run, **55 green**, through
+  `scripts\run-instrumented-tests.ps1 -Serial emulator-5580`. The one failure is
+  `EditorWorkspaceGestureTest.ui11_…`, which fails its own precondition guard
+  ("the soft keyboard did not appear, so this case proves nothing") — **proven
+  pre-existing** for Stage 017 by stashing every change and reproducing the
+  identical failure on `d04e0b4`. See *Android UI suites*.
+- **Device guards:** `DEV2-01`..`07` and `DEV3-01`..`06` all PASS, with no
+  device attached and zero `emulator-5554` interaction.
+- **Physical ARM64 (Gate P1):** closed on a Galaxy S25 Ultra —
+  `primaryCpuAbi=arm64-v8a`, `PAGE_SIZE` 4096, the mandatory ~10k/~50k/~100k
+  ladder and Sculpt at 100k measured on real hardware. Stylus stays UNVERIFIED.
+- **Runtime:** the Stage 017 walkthrough (two bodies, alternating picks,
+  isolated edits, per-body Freeze/Sculpt/Resume round trip, Plane front/back,
+  both projections, both shading models, HOME/resume, rotation) is summarised
+  in the Stage 017 chapter at the top of this file.
+
+**One caveat about capturing self-test evidence.** On both the emulator and the
+physical phone the logcat ring buffer intermittently drops whole suites from the
+*middle* of a startup capture, which reads exactly like a suite that never ran.
+The reliable signal is that the suites which do appear always report their full
+expected check counts and `_SELFTEST_FAIL` is always absent; read a partial
+capture as "no failures observed", and re-run until one capture is complete
+before quoting a total.
 
 ## Display-control motion, and what was rejected
 
@@ -1452,8 +918,10 @@ round-trip residual grow linearly with `|p|` (about `|p| * 2^-23`); at kilometre
 scale the derived `float` matrix, not the `double` domain, is the precision
 limit.
 
-**Mesh and renderer.** `MeshStore` publishes for exactly one object; there is no
-multi-mesh registry. `MeshStore::publish` validates the data twice (before
+**Mesh and renderer.** Each body owns a `MeshStore`, and the renderer keeps a
+`BodyRenderResources` per body, so a scene of N bodies is N independent
+publication chains and N buffer pairs — correct, and deliberately not pooled or
+batched. `MeshStore::publish` validates the data twice (before
 taking the lock and again inside `createRuntimeMesh`) — negligible now, wasteful
 at sculpt sizes. Retired GPU buffers are freed inline after the fence wait rather
 than through a deferred-destruction queue, which is what makes the synchronous
@@ -1614,18 +1082,21 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Stage 017 — Multi-object + Hierarchy Foundation**
+**Stage 018 — Object Commands**
 
-Gate P1 closed the platform-evidence question on real ARM64 hardware, and the
-Pre-017 Correctness Repair closed the two contract defects that audit found —
-sidedness ownership and the destructive re-Freeze guard — plus the static
-device verifier's blind spots. The correctness debt that was scheduled ahead of
-new feature work is now paid, so the next stage is the first structural one:
-more than one object, and the hierarchy to hold them.
+Stage 017 gave the product a scene: several Construction Bodies, stable
+identity, selection, per-body state and an Objects list. What it deliberately
+did not give it is any way to *manage* those bodies. The only object command
+that exists is Add.
 
-Everything in the product today assumes exactly one object. There is one
-process-global `ConstructionObject`, one `ConstructionTransform`, one
-`MeshStore`, one `SculptSession` and one `ObjectId`, and Stage 017 is where
-that singularity has to become a collection with identity, selection and
-parent/child structure. It is deliberately a foundation stage: no Sketch or
-Extrude, no booleans, no import, no persistence.
+Stage 018 is the command set that a scene needs before anything else can be
+built on it — delete, duplicate, and the visibility/lock kind of state that
+decides what a command may touch — together with the question Add Body dodged
+by having no answer to give: what an ObjectId means once ids can stop existing.
+Stage 017 has no reuse policy precisely because it has no delete, and that is
+the first thing Stage 018 has to settle.
+
+It is still not the hierarchy stage: groups, nesting and reparenting stay out,
+as do Undo/Redo, Sketch/Extrude, booleans and persistence. A command framework
+is a decision for whichever stage first needs commands to be undoable, and
+Stage 017 deliberately left one unbuilt.

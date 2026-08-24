@@ -3,8 +3,9 @@
 #include <cmath>
 
 // Deliberately does NOT include forgeshape_construction.h: selection picking
-// reads the active published mesh, never the Construction primitive.
+// reads published meshes, never a Construction primitive.
 #include "forgeshape_mesh.h"
+#include "forgeshape_scene.h"
 #include "forgeshape_picking.h"
 #include "forgeshape_transform.h"
 
@@ -12,29 +13,57 @@ namespace forgeshape {
 
 SceneHit pickScene(const CameraSnapshot& camera, float screenX, float screenY,
                    int viewportWidth, int viewportHeight) {
-    // The bounded two-sided exception, read from the ACTIVE PUBLISHED MESH
-    // rather than from the current Construction primitive.
-    //
-    // A flat sheet has no interior a back-face hit could wrongly reach, so it
-    // alone picks from both sides; every closed solid keeps the front-face-only
-    // rule. The distinction is a fact about the geometry actually on screen, and
-    // asking `constructionObject().kind()` for it was wrong in both directions
-    // once a Frozen Sculpt Mesh can outlive the Source it was frozen from: a
-    // frozen solid would start picking from behind the moment the Source was
-    // changed to a Plane, and a frozen Plane would stop picking from behind the
-    // moment the Source was changed to a solid — in neither case did the mesh
-    // being picked change at all. Reading the published RuntimeMesh keeps
-    // picking, rendering and the Sculpt hit-test on one answer.
-    const RuntimeMeshPtr active = meshStore().current();
-    const bool twoSided = (active != nullptr) && active->renderBothSides();
-    return pickScene(camera, screenX, screenY, viewportWidth, viewportHeight,
-                     constructionTransform().modelMatrix(),
-                     constructionTransform().inverseModelMatrix(), !twoSided);
+    return pickSceneSnapshot(camera, screenX, screenY, viewportWidth, viewportHeight,
+                             constructionScene().snapshot());
+}
+
+SceneHit pickSceneSnapshot(const CameraSnapshot& camera, float screenX, float screenY,
+                           int viewportWidth, int viewportHeight, const SceneSnapshot& scene) {
+    SceneHit nearest{};
+
+    for (const SceneDrawItem& item : scene) {
+        // The bounded two-sided exception, read from THIS body's active
+        // published mesh rather than from any Construction primitive.
+        //
+        // A flat sheet has no interior a back-face hit could wrongly reach, so
+        // it alone picks from both sides; every closed solid keeps the
+        // front-face-only rule. Asking `constructionObject().kind()` for this
+        // was wrong before Stage 017 because a Frozen Sculpt Mesh outlives the
+        // Source it was frozen from, and it would be wrong twice over now: the
+        // active body's kind says nothing whatsoever about a DIFFERENT body's
+        // geometry. Each item answers for itself.
+        const bool frontFacesOnly = !(item.mesh != nullptr && item.mesh->renderBothSides());
+        const SceneHit hit = pickMesh(camera, screenX, screenY, viewportWidth, viewportHeight,
+                                      item.mesh, item.model, item.inverseModel, frontFacesOnly);
+        if (!hit.hit) {
+            continue;
+        }
+        // Nearest positive hit across the whole scene. Distances are directly
+        // comparable between bodies because every Construction transform is
+        // rigid, so each body's local `t` is already a world distance. Ties keep
+        // the earlier body in scene order, which makes the result deterministic
+        // rather than dependent on iteration accidents.
+        if (!nearest.hit || hit.distance < nearest.distance) {
+            nearest = hit;
+        }
+    }
+
+    return nearest;
 }
 
 SceneHit pickScene(const CameraSnapshot& camera, float screenX, float screenY,
                    int viewportWidth, int viewportHeight, const Mat4& model,
                    const Mat4& inverseModel, bool frontFacesOnly) {
+    // Picking reads the CURRENT CPU mesh revision, never Vulkan buffer memory.
+    // Holding the snapshot keeps that revision alive for the whole intersection,
+    // even if a newer revision is published concurrently.
+    return pickMesh(camera, screenX, screenY, viewportWidth, viewportHeight, meshStore().current(),
+                    model, inverseModel, frontFacesOnly);
+}
+
+SceneHit pickMesh(const CameraSnapshot& camera, float screenX, float screenY, int viewportWidth,
+                  int viewportHeight, const RuntimeMeshPtr& mesh, const Mat4& model,
+                  const Mat4& inverseModel, bool frontFacesOnly) {
     SceneHit result{};
 
     Ray worldRay{};
@@ -42,15 +71,11 @@ SceneHit pickScene(const CameraSnapshot& camera, float screenX, float screenY,
         return result;
     }
 
-    // Picking reads the CURRENT CPU mesh revision, never Vulkan buffer memory.
-    // Holding the snapshot keeps that revision alive for the whole intersection,
-    // even if a newer revision is published concurrently.
-    const RuntimeMeshPtr mesh = meshStore().current();
     if (!mesh) {
         return result;  // nothing published yet: a miss, not a crash
     }
 
-    // The published mesh is the box's LOCAL geometry, so the ray comes to it
+    // The published mesh is the body's LOCAL geometry, so the ray comes to it
     // rather than the geometry going to the ray. This is what lets a transform
     // change cost no mesh revision: the vertices the picker reads are the same
     // vertices the GPU already has.

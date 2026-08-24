@@ -170,10 +170,8 @@ uint64_t MeshStore::rejectedCount() const {
     return rejected_;
 }
 
-MeshStore& meshStore() {
-    static MeshStore store(kDemoCubeObjectId);
-    return store;
-}
+// meshStore() is now "the ACTIVE body's store" and is defined in
+// forgeshape_scene.cpp; see the note there for why it moved.
 
 // ---------------------------------------------------------------------------
 // Capacity policy

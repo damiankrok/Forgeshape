@@ -29,6 +29,8 @@ final class ForgeShapeSurfaceView extends SurfaceView implements SurfaceHolder.C
     private final float[] pointerXs = new float[MAX_POINTERS];
     private final float[] pointerYs = new float[MAX_POINTERS];
 
+    private OnViewportGestureSettled gestureSettled;
+
     ForgeShapeSurfaceView(Context context) {
         super(context);
         getHolder().addCallback(this);
@@ -64,7 +66,25 @@ final class ForgeShapeSurfaceView extends SurfaceView implements SurfaceHolder.C
 
         NativeViewport.touchEvent(action, actionPointerId, count,
                 pointerIds, pointerXs, pointerYs, getWidth(), getHeight());
+
+        // A gesture that ended may have resolved a tap, and a tap that hit a
+        // body makes that body the edit target down in native code. Nothing is
+        // interpreted here — the listener only learns that a gesture settled,
+        // and decides for itself whether anything it displays actually moved.
+        if ((action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL)
+                && gestureSettled != null) {
+            gestureSettled.onViewportGestureSettled();
+        }
         return true;
+    }
+
+    /** Told when a viewport gesture has finished and native state may have moved. */
+    interface OnViewportGestureSettled {
+        void onViewportGestureSettled();
+    }
+
+    void setOnViewportGestureSettled(OnViewportGestureSettled listener) {
+        gestureSettled = listener;
     }
 
     /** Pulls focus and the soft keyboard away from whatever was being edited. */

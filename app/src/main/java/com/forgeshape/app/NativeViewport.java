@@ -317,6 +317,46 @@ final class NativeViewport {
      */
     static final int SCULPT_HAS_EDITS = 11;
 
+    // -----------------------------------------------------------------------
+    // The scene: several Construction Bodies
+    // -----------------------------------------------------------------------
+    //
+    // This layer holds NO body list and NO model selection of its own. It asks
+    // native code how many bodies exist, what their ids are in scene order and
+    // which one is active, every time it needs to know. That is what keeps the
+    // Objects list, the Property Inspector and the viewport from disagreeing.
+
+    /** @return how many Construction Bodies the scene currently holds */
+    static native int sceneBodyCount();
+
+    /**
+     * Fills {@code outIds} with every body's ObjectId in scene (insertion)
+     * order.
+     *
+     * @return how many ids were written, never more than the array length
+     */
+    static native int sceneBodyIds(long[] outIds);
+
+    /** @return the ObjectId of the body the Construction editors act on */
+    static native long sceneActiveBodyId();
+
+    /**
+     * Makes an existing body the edit target. Selection only: publishes
+     * nothing, mints no revision and changes no ObjectId.
+     *
+     * @return {@link #SCULPT_OK}, or a non-OK status when the id is unknown or
+     *         the product is in Sculpt mode (where the target is fixed)
+     */
+    static native int sceneSelectBody(long objectId);
+
+    /**
+     * Adds a Construction Body with the startup defaults, appends it to the
+     * scene and makes it active.
+     *
+     * @return the new body's ObjectId, or 0 when the add was refused
+     */
+    static native long sceneAddBody();
+
     /** @return {@link #MODE_CONSTRUCTION} or {@link #MODE_SCULPT} */
     static native int productMode();
 

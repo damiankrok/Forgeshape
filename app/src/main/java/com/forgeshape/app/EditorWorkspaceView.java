@@ -56,6 +56,9 @@ final class EditorWorkspaceView extends FrameLayout
     private final EditorUiState uiState = new EditorUiState();
 
     private final View viewport;
+
+    /** Last active body this chrome refreshed for; see the gesture listener. */
+    private long lastKnownActiveBodyId = NativeViewport.sceneActiveBodyId();
     private final LinearLayout chromeRoot;
     private final LinearLayout middleRow;
     private final FrameLayout overlayRoot;
@@ -101,6 +104,24 @@ final class EditorWorkspaceView extends FrameLayout
         // Child 0: the viewport, at the whole window size, under everything.
         addView(viewport, new LayoutParams(LayoutParams.MATCH_PARENT,
                 LayoutParams.MATCH_PARENT));
+
+        // A tap in the viewport can change which body the Construction editors
+        // act on, so the chrome has to re-read when a gesture settles. The
+        // check is deliberately "did the active body actually change": an orbit,
+        // a pan and a tap that hit nothing all end here and cost nothing.
+        if (viewport instanceof ForgeShapeSurfaceView) {
+            ((ForgeShapeSurfaceView) viewport).setOnViewportGestureSettled(
+                    new ForgeShapeSurfaceView.OnViewportGestureSettled() {
+                        @Override
+                        public void onViewportGestureSettled() {
+                            final long active = NativeViewport.sceneActiveBodyId();
+                            if (active != lastKnownActiveBodyId) {
+                                lastKnownActiveBodyId = active;
+                                onNativeStateChanged();
+                            }
+                        }
+                    });
+        }
 
         // Child 1: all interactive chrome. This container is transparent and
         // not clickable, so a touch in the gaps between chrome surfaces falls
@@ -748,6 +769,16 @@ final class EditorWorkspaceView extends FrameLayout
 
     @Override
     public void onNativeStateChanged() {
+        // Recorded HERE, in the one place every surface re-reads, rather than
+        // in the viewport gesture listener that consults it. Tracking it only
+        // there left it stale whenever the active body changed by some other
+        // route — Add Body, or an Objects row — and a later viewport pick that
+        // happened to land back on the stale value then compared equal and
+        // skipped the refresh, leaving the Inspector showing another body's
+        // numbers. Updating it wherever the chrome actually re-reads makes the
+        // comparison mean what it says: "has the active body changed since the
+        // last time these surfaces were refreshed?"
+        lastKnownActiveBodyId = NativeViewport.sceneActiveBodyId();
         syncFromNative();
     }
 
@@ -807,6 +838,15 @@ final class EditorWorkspaceView extends FrameLayout
 
     SculptContextView sculptContext() {
         return sculptContext;
+    }
+
+    ConstructionShapeEditorView shapeEditor() {
+        return shapeEditor;
+    }
+
+    /** The Objects section, so a test can select a body by its ObjectId. */
+    ObjectsSectionView objectsSection() {
+        return shapeEditor.objectsSection();
     }
 
     /** The chrome rectangles, in this view's coordinates, that stand between

@@ -69,6 +69,11 @@
     <string name="primitive_cone">Cone</string>
     <string name="primitive_capsule">Capsule</string>
     <string name="primitive_plane">Plane</string>
+    <string name="objects">Objects</string>
+    <string name="add_body">Add Body</string>
+    <string name="body_label">Body #%1$d</string>
+    <string name="status_body_added">Added %1$s — it is now the selected body.</string>
+    <string name="status_body_selected">%1$s selected.</string>
     <string name="apply_shape">Apply Shape</string>
     <string name="apply_transform">Apply Transform</string>
     <string name="label_width">Width</string>

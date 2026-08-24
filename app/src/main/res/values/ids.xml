@@ -118,4 +118,12 @@
     <item name="sculpt_mesh_summary" type="id" />
     <item name="stale_source_warning" type="id" />
     <item name="freeze_again" type="id" />
+
+    <!-- Objects: the scene's Construction Bodies. Every row carries the same
+         `object_row` id and identifies WHICH body by its tag (the ObjectId),
+         because a per-body id cannot exist at build time. -->
+    <item name="objects_section" type="id" />
+    <item name="objects_list" type="id" />
+    <item name="object_row" type="id" />
+    <item name="add_body" type="id" />
 </resources>

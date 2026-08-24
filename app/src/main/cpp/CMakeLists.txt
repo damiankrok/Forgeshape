@@ -61,6 +61,8 @@ add_library(forgeshape_native SHARED
     forgeshape_render_mesh_selftest.cpp
     forgeshape_picking_selftest.cpp
     forgeshape_primitive_selftest.cpp
+    forgeshape_scene.cpp
+    forgeshape_scene_selftest.cpp
     forgeshape_sculpt.cpp
     forgeshape_sculpt_selftest.cpp
     forgeshape_selection.cpp

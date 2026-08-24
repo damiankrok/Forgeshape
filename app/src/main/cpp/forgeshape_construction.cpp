@@ -1255,11 +1255,6 @@ PrimitiveApplyResult applyPrimitive(ConstructionObject& object, MeshStore& store
     return result;
 }
 
-ConstructionObject& constructionObject() {
-    static ConstructionObject object(kConstructionBoxObjectId);
-    return object;
-}
-
 PrimitiveApplyResult applyConstructionPrimitive(const PrimitiveSpec& requested) {
     return applyPrimitive(constructionObject(), meshStore(), requested);
 }
