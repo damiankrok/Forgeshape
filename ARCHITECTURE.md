@@ -1755,12 +1755,14 @@ implementations exposing only the minimum:
  64  vec4 normalRow0    xyz = row 0 of the view-space normal matrix, w = shading model
  80  vec4 normalRow1    xyz = row 1
  96  vec4 normalRow2    xyz = row 2
-112  vec4 selectionTint rgb = tint, a = mix amount
+112  vec4 selectionTint rgb = tint, a = mix amount (see Motion and selection feedback)
 ```
 
 A `static_assert` pins the size. The shading model rides in an otherwise-dead
 `w` component rather than taking a fifth 16-byte slot the budget does not have;
 the next thing needing per-draw uniform data belongs in a descriptor, not here.
+The selection pulse added no byte to this block: `selectionTint.a` was already
+here, and what changed is only what is written into it.
 
 Normals are transformed by the upper-left 3x3 of `view * model` applied
 **directly**, not as an inverse-transpose. That is valid only because both
@@ -1825,6 +1827,53 @@ the window size, `currentExtent`, `currentTransform`, `supportedTransforms`, the
 chosen extent and the chosen `preTransform`, so the whole chain is auditable from
 a log without adding instrumentation; `FORGESHAPE_CAMERA_VIEWPORT` is its
 companion for the camera half.
+
+## Motion and selection feedback
+
+Both are **presentation**, and the ownership rule is the same one shading
+follows: nothing here is truth, nothing mints a revision, and nothing may be read
+back out.
+
+**Selection feedback is renderer-owned and per body.**
+`forgeshape_selection_pulse.{h,cpp}` owns the peak alpha, the resting alpha, the
+decay and one pure function over an explicit frame delta. It holds no `ObjectId`,
+reads no clock and touches no `MeshStore`, so a whole selection cycle beside a
+published mesh leaves that mesh bit-identical *structurally* rather than by
+promise. `Renderer::advanceSelectionFeedback` runs once per frame from
+`drawFrame`, deliberately **outside** `syncScene`'s revision gate — a pulse has
+to keep decaying on the frames where nothing was published, which is nearly all
+of them — and writes one float into the `BodyRenderResources` entry that already
+keys that body's GPU buffers by stable `ObjectId`. That keying is what makes A's
+pulse structurally unable to reach B's. The renderer is still never told which
+object is selected: `SceneDrawItem` carries a plain bool and identity stays with
+`SelectionController`.
+
+**Motion is a shared helper, not a system.** `ChromeMotion` (Java) owns exactly
+four decisions — the two durations, the reduced-motion question, cancel-first,
+and one alpha helper — and nothing may be added to it that describes motion as
+data. A surface with its own movement writes it itself against those constants.
+Three rules constrain every caller:
+
+- **Nothing on the path of a pointer sample.** A chrome transition never runs
+  while a viewport gesture is in flight; `ForgeShapeSurfaceView` reports pointer
+  down and gesture settled, and the workspace pushes that down as a flag. Input
+  responsiveness outranks motion.
+- **Nothing that changes a size.** Chrome hide/restore is alpha only, because the
+  `SurfaceView` is full-bleed and a transition that changed a size would rebuild
+  the swapchain. The Property Inspector changes its size **once** per detent
+  change and animates only drawing properties either side of it — animating
+  height would `requestLayout` per frame and re-run the workspace's whole
+  adaptive decision, which lives in `onMeasure`.
+- **Only a user act animates.** The instant, idempotent paths (`showExpanded`,
+  `settle`) are what the measure pass and every state refresh call.
+
+**Reduced motion crosses the boundary as one bool.** The Android layer reads
+`ANIMATOR_DURATION_SCALE`, decides what it means, and hands the answer to
+`DisplaySettingsStore::setReducedMotion`, which carries it to the renderer in the
+same per-frame snapshot as the shading model. This is the same seam shape as
+`ViewportBackground`: native code is given the *meaning*, never the platform
+value, and no Android type reaches it. It deliberately does not advance the
+store's `changeCount_`, which exists to prove a display transition the user chose.
 
 ## Threading
 
@@ -1915,8 +1964,9 @@ is a stage of its own and naming them is what stops one arriving by accident:
   know what a labelled number and a unit are, and nothing about primitives.
 - **No design system and no motion framework.** Themes are two styles over one
   set of semantic attributes, not a component library; the Objects section is a
-  flat list of rows, not an object browser or a history panel. The only animation
-  in the product is the Display popover's own open/close.
+  flat list of rows, not an object browser or a history panel. `ChromeMotion` is
+  four shared decisions, not a transition system — see *Motion and selection
+  feedback*.
 - **No persistence.** Nothing is written to disk: not the scene, not the camera,
   not the start choice and not the theme. A process kill is a clean slate.
 - **`RuntimeMesh` is not a Construction mesh format**, and the debug paths are

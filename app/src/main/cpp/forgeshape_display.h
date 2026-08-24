@@ -106,6 +106,10 @@ struct ViewportDisplaySettings {
     ShadingModel shading = kDefaultShadingModel;
     SurfaceShading surface = kDefaultSurfaceShading;
     ViewportBackground background = kDefaultViewportBackground;
+
+    // Whether the viewport may spend TIME expressing a change, or must land on
+    // the final appearance at once. See setReducedMotion.
+    bool reducedMotion = false;
 };
 
 // The two values, readable from the render thread and writable from the UI
@@ -124,12 +128,24 @@ public:
     ShadingModel shadingModel() const;
     SurfaceShading surfaceShading() const;
     ViewportBackground viewportBackground() const;
+    bool reducedMotion() const;
 
-    // All three return true when the value actually changed, so a caller can log
+    // All four return true when the value actually changed, so a caller can log
     // a real transition and avoid reporting a no-op as one.
     bool setShadingModel(ShadingModel model);
     bool setSurfaceShading(SurfaceShading shading);
     bool setViewportBackground(ViewportBackground background);
+
+    // Whether the user has asked the SYSTEM for reduced motion.
+    //
+    // This is the narrow presentation-only seam that fact crosses, and it is
+    // deliberately a plain bool. The signal originates in an Android setting
+    // (the animator duration scale), and neither this file nor the renderer may
+    // learn that: the Android layer reads the setting, decides what it means and
+    // pushes the answer down, exactly as it pushes a viewport APPEARANCE rather
+    // than a theme. Nothing here is truth — the only thing the value can change
+    // is whether a selection acknowledgement takes 220 ms or no time at all.
+    bool setReducedMotion(bool reduced);
 
     // --- introspection (logging and self-tests only) ---
     uint64_t changeCount() const { return changeCount_.load(std::memory_order_relaxed); }
@@ -141,6 +157,7 @@ private:
     std::atomic<int> shading_{static_cast<int>(kDefaultShadingModel)};
     std::atomic<int> surface_{static_cast<int>(kDefaultSurfaceShading)};
     std::atomic<int> background_{static_cast<int>(kDefaultViewportBackground)};
+    std::atomic<bool> reducedMotion_{false};
     std::atomic<uint64_t> changeCount_{0};
 };
 

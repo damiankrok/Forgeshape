@@ -1,7 +1,6 @@
 package com.forgeshape.app;
 
 import android.content.Context;
-import android.provider.Settings;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
@@ -66,12 +65,13 @@ final class DisplaySettingsPopoverView extends LinearLayout {
     }
 
     /**
-     * Short enough to feel immediate rather than animated. A popover that takes
-     * longer than this to arrive is a popover the user has already looked away
-     * from.
+     * The durations are {@link ChromeMotion}'s, not this view's, and the values
+     * are the ones this popover shipped with — it is where they were measured.
+     * What stays here is only the part that is genuinely about a popover: the
+     * scale, and growing it from the anchor corner.
      */
-    private static final long OPEN_DURATION_MS = 120L;
-    private static final long CLOSE_DURATION_MS = 90L;
+    private static final long OPEN_DURATION_MS = ChromeMotion.ENTER_MS;
+    private static final long CLOSE_DURATION_MS = ChromeMotion.EXIT_MS;
 
     private final TextView studioChip;
     private final TextView matcapChip;
@@ -284,21 +284,19 @@ final class DisplaySettingsPopoverView extends LinearLayout {
         }
         // Always interruptible: a second tap while the open animation is still
         // running must close it, not queue behind it.
-        animate().cancel();
+        ChromeMotion.begin(this);
 
         // The panel grows out of the control that opened it, which sits at the
         // top-right of the workspace.
         setPivotX(getWidth());
         setPivotY(0.0f);
 
-        if (!animationsEnabled()) {
+        final float scale = ChromeMotion.animatorScale(getContext());
+        if (ChromeMotion.duration(OPEN_DURATION_MS, scale) == 0L) {
             // The platform's own reduce-motion / developer animator scale says
             // no animation. Honour it exactly: land on the final state, do not
             // run a shortened one.
-            setAlpha(1.0f);
-            setScaleX(1.0f);
-            setScaleY(1.0f);
-            setVisibility(open ? VISIBLE : GONE);
+            ChromeMotion.settle(this, open);
             return;
         }
 
@@ -344,25 +342,7 @@ final class DisplaySettingsPopoverView extends LinearLayout {
 
     /** Closes immediately, with no animation. Used when chrome is hidden. */
     void closeImmediately() {
-        animate().cancel();
-        setVisibility(GONE);
-        setAlpha(1.0f);
-        setScaleX(1.0f);
-        setScaleY(1.0f);
-    }
-
-    /**
-     * Whether the system wants animations at all.
-     *
-     * <p>A zero animator duration scale is set by the "Remove animations"
-     * accessibility option and by the developer-options scale, and it means
-     * exactly what it says. Reading it per use rather than caching it is
-     * deliberate: the setting can change while the app is running.
-     */
-    private boolean animationsEnabled() {
-        final float scale = Settings.Global.getFloat(getContext().getContentResolver(),
-                Settings.Global.ANIMATOR_DURATION_SCALE, 1.0f);
-        return scale > 0.0f;
+        ChromeMotion.settle(this, false);
     }
 
     /**

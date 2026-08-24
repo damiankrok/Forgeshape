@@ -15,6 +15,7 @@
 // asserting the intention in prose.
 #include "forgeshape_picking.h"
 #include "forgeshape_render_mesh.h"
+#include "forgeshape_selection_pulse.h"
 
 namespace forgeshape {
 namespace {
@@ -1597,6 +1598,204 @@ void checkFlipIsDetected(Recorder& r) {
     r.check("nor_outwardness_fails_on_global_normal_flip", everyFlipCaught);
 }
 
+// ---------------------------------------------------------------------------
+// Selection feedback (UI-R1C1): R1C1-01..06
+// ---------------------------------------------------------------------------
+//
+// Driven with an EXPLICIT elapsed time rather than a clock, which is why a whole
+// 220 ms pulse costs microseconds here and why nothing in this family can be
+// flaky. That is the entire reason advanceSelectionPulse takes a delta instead
+// of reading steady_clock itself.
+constexpr double kFrame = 1.0 / 60.0;
+
+void checkSelectionPulse(Recorder& r) {
+    // --- R1C1-01: false -> true starts a pulse -----------------------------
+    {
+        SelectionPulseState s;
+        const float unselected = advanceSelectionPulse(s, false, kFrame, true);
+        const float onSelect = advanceSelectionPulse(s, true, kFrame, true);
+        r.check("r1c1_01_unselected_body_mixes_no_tint", unselected == 0.0f);
+        r.check("r1c1_01_selection_starts_at_the_pulse_peak",
+                nearly(onSelect, kSelectionPulseAlpha));
+        r.check("r1c1_01_the_peak_is_above_the_resting_value",
+                kSelectionPulseAlpha > kSelectionRestingAlpha);
+    }
+
+    // --- R1C1-02: the pulse decays to the resting alpha --------------------
+    {
+        SelectionPulseState s;
+        float previous = advanceSelectionPulse(s, true, kFrame, true);
+        bool monotone = true;
+        bool everOvershot = false;
+        int frames = 0;
+        // Long enough to cover the whole decay several times over, so the
+        // settle is proven rather than assumed from one sample.
+        while (frames < 120) {
+            const float alpha = advanceSelectionPulse(s, true, kFrame, true);
+            if (alpha > previous + kEpsilon) monotone = false;
+            if (alpha > kSelectionPulseAlpha + kEpsilon ||
+                alpha < kSelectionRestingAlpha - kEpsilon) {
+                everOvershot = true;
+            }
+            previous = alpha;
+            ++frames;
+        }
+        r.check("r1c1_02_the_pulse_decays_monotonically", monotone);
+        r.check("r1c1_02_the_pulse_never_overshoots_either_end", !everOvershot);
+        r.check("r1c1_02_the_pulse_settles_on_the_resting_alpha",
+                nearly(previous, kSelectionRestingAlpha));
+
+        // It must actually take TIME. A decay that had already finished on the
+        // frame after selection would pass every check above and be a flicker.
+        SelectionPulseState mid;
+        advanceSelectionPulse(mid, true, kFrame, true);
+        const float afterOneFrame = advanceSelectionPulse(mid, true, kFrame, true);
+        r.check("r1c1_02_the_pulse_is_still_running_one_frame_in",
+                afterOneFrame > kSelectionRestingAlpha + kEpsilon);
+    }
+
+    // --- R1C1-03: the resting alpha is materially below the legacy 0.55 ----
+    {
+        // The number this replaced, quoted here so the comparison is visible
+        // rather than implied. It is not a constant anywhere in the product any
+        // more, which is the point.
+        constexpr float kLegacySelectedAlpha = 0.55f;
+        r.check("r1c1_03_resting_alpha_is_below_the_legacy_flood",
+                kSelectionRestingAlpha < kLegacySelectedAlpha);
+        r.check("r1c1_03_resting_alpha_is_less_than_half_the_legacy_flood",
+                kSelectionRestingAlpha < kLegacySelectedAlpha * 0.5f);
+        // A tint mixed at 0 would make selection invisible, which is the
+        // opposite failure and just as bad.
+        r.check("r1c1_03_resting_alpha_is_still_visible", kSelectionRestingAlpha > 0.1f);
+        r.check("r1c1_03_the_peak_still_matches_the_legacy_flood",
+                nearly(kSelectionPulseAlpha, kLegacySelectedAlpha));
+    }
+
+    // --- R1C1-04: deselection clears the visual state ----------------------
+    {
+        SelectionPulseState s;
+        advanceSelectionPulse(s, true, kFrame, true);
+        advanceSelectionPulse(s, true, kFrame, true);  // mid-pulse
+        const float cleared = advanceSelectionPulse(s, false, kFrame, true);
+        r.check("r1c1_04_deselection_mixes_no_tint", cleared == 0.0f);
+        r.check("r1c1_04_deselection_leaves_no_running_pulse",
+                !s.selected && s.pulseElapsedSeconds < 0.0);
+        // And the NEXT selection starts a full pulse rather than resuming a
+        // half-decayed one.
+        const float reselected = advanceSelectionPulse(s, true, kFrame, true);
+        r.check("r1c1_04_reselection_starts_a_whole_new_pulse",
+                nearly(reselected, kSelectionPulseAlpha));
+    }
+
+    // --- R1C1-04b: a tap that changes nothing must not re-pulse ------------
+    {
+        SelectionPulseState s;
+        advanceSelectionPulse(s, true, kFrame, true);
+        for (int i = 0; i < 60; ++i) {
+            advanceSelectionPulse(s, true, kFrame, true);
+        }
+        // Selection truth did not change, so nothing restarts however many
+        // frames (or taps) go by while it stays true.
+        const float stillResting = advanceSelectionPulse(s, true, kFrame, true);
+        r.check("r1c1_04_staying_selected_does_not_re_pulse",
+                nearly(stillResting, kSelectionRestingAlpha));
+    }
+
+    // --- R1C1-05: two bodies' pulse states are independent -----------------
+    {
+        SelectionPulseState a;
+        SelectionPulseState b;
+        // A is selected and allowed to settle.
+        advanceSelectionPulse(a, true, kFrame, true);
+        for (int i = 0; i < 60; ++i) {
+            advanceSelectionPulse(a, true, kFrame, true);
+            advanceSelectionPulse(b, false, kFrame, true);
+        }
+        // Now the user selects B instead. B pulses; A must simply go dark, and
+        // must NOT inherit B's pulse or restart one of its own.
+        const float bOnSelect = advanceSelectionPulse(b, true, kFrame, true);
+        const float aOnDeselect = advanceSelectionPulse(a, false, kFrame, true);
+        r.check("r1c1_05_the_newly_selected_body_pulses",
+                nearly(bOnSelect, kSelectionPulseAlpha));
+        r.check("r1c1_05_the_previously_selected_body_goes_dark", aOnDeselect == 0.0f);
+        r.check("r1c1_05_one_bodys_pulse_does_not_touch_anothers",
+                b.pulseElapsedSeconds >= 0.0 && a.pulseElapsedSeconds < 0.0);
+    }
+
+    // --- R1C1-05b: reduced motion, and a resume mid-pulse ------------------
+    {
+        SelectionPulseState s;
+        // Reduced motion: selection is readable at once, at the RESTING value.
+        // Landing on the peak instead would simply restore the flood.
+        const float instant = advanceSelectionPulse(s, true, kFrame, false);
+        r.check("r1c1_06_reduced_motion_reaches_resting_immediately",
+                nearly(instant, kSelectionRestingAlpha));
+        r.check("r1c1_06_reduced_motion_runs_no_pulse", s.pulseElapsedSeconds < 0.0);
+
+        // A huge delta is a resume or a stall, not a frame. It is clamped, so a
+        // process that was paused mid-pulse comes back still pulsing rather
+        // than having silently skipped the acknowledgement.
+        SelectionPulseState resumed;
+        advanceSelectionPulse(resumed, true, kFrame, true);
+        const float afterStall = advanceSelectionPulse(resumed, true, 30.0, true);
+        r.check("r1c1_06_a_stall_is_clamped_not_trusted",
+                afterStall > kSelectionRestingAlpha + kEpsilon);
+        // A NaN or negative delta advances nothing rather than corrupting the
+        // elapsed time.
+        SelectionPulseState odd;
+        advanceSelectionPulse(odd, true, kFrame, true);
+        const double before = odd.pulseElapsedSeconds;
+        advanceSelectionPulse(odd, true, std::numeric_limits<double>::quiet_NaN(), true);
+        advanceSelectionPulse(odd, true, -5.0, true);
+        r.check("r1c1_06_a_nonsense_delta_advances_nothing",
+                odd.pulseElapsedSeconds == before);
+    }
+
+    // --- R1C1-06: selection feedback touches no geometry truth -------------
+    //
+    // Structural rather than incidental: the pulse is a pure function over its
+    // own small state, so it has nothing to reach a MeshStore WITH. This runs
+    // a whole selection cycle beside a real published mesh and proves the
+    // revision, the vertex data and the index data all come out bit-identical.
+    {
+        const ConstructionMesh source = defaultSphere();
+        MeshStore store(kConstructionBoxObjectId);
+        const MeshRevision revisionBefore =
+            store.publish(source.vertices.data(), static_cast<uint32_t>(source.vertices.size()),
+                          source.indices.data(), static_cast<uint32_t>(source.indices.size()));
+        const RuntimeMeshPtr before = store.current();
+
+        SelectionPulseState s;
+        for (int i = 0; i < 40; ++i) {
+            advanceSelectionPulse(s, true, kFrame, true);
+        }
+        for (int i = 0; i < 40; ++i) {
+            advanceSelectionPulse(s, false, kFrame, true);
+        }
+        for (int i = 0; i < 40; ++i) {
+            advanceSelectionPulse(s, true, kFrame, false);
+        }
+
+        const RuntimeMeshPtr after = store.current();
+        const bool sameRevision = after && store.currentRevision() == revisionBefore &&
+                                  after->revision() == revisionBefore &&
+                                  revisionBefore != kNoMeshRevision;
+        const bool sameCounts = after && before && after->vertexCount() == before->vertexCount() &&
+                                after->indexCount() == before->indexCount();
+        bool sameBytes = sameCounts;
+        if (sameBytes) {
+            sameBytes = std::memcmp(after->vertices(), before->vertices(),
+                                    after->vertexCount() * sizeof(MeshVertex)) == 0 &&
+                        std::memcmp(after->indices(), before->indices(),
+                                    after->indexCount() * sizeof(uint32_t)) == 0;
+        }
+        r.check("r1c1_06_the_fixture_published", revisionBefore != kNoMeshRevision);
+        r.check("r1c1_06_selection_mints_no_mesh_revision", sameRevision);
+        r.check("r1c1_06_selection_leaves_the_runtime_mesh_bit_identical", sameBytes);
+        r.check("r1c1_06_selection_is_still_the_same_published_object", after == before);
+    }
+}
+
 }  // namespace
 
 int runRenderMeshSelfTests(RenderMeshSelfTestResult* out, int max) {
@@ -1632,6 +1831,12 @@ int runRenderMeshSelfTests(RenderMeshSelfTestResult* out, int max) {
     // Stage 016: the bounded two-sided render-only exception for Plane.
     checkPlaneTwoSidedRenderGeometry(r);
     checkPlaneDisplayModesAreInert(r);
+
+    // UI-R1C1: selection feedback. It lives in this suite because selection is
+    // PRESENTATION — the same reason the shading model and the viewport
+    // background are here and not in the picking or selection suites, which own
+    // which object is selected rather than how it is drawn.
+    checkSelectionPulse(r);
 
     return r.n;
 }

@@ -95,6 +95,11 @@ final class EditorWorkspaceView extends FrameLayout
     private int appliedWidthPx;
     private int appliedHeightPx;
 
+    /** False while a viewport gesture is in flight; see the gesture listener.
+     *  Chrome transitions are instant during one, because pointer samples
+     *  outrank motion. */
+    private boolean chromeMotionAllowed = true;
+
     /** What the inspector is currently placed as, so it is re-parented only
      *  when the answer actually changed. */
     private WorkspaceLayoutMode.InspectorPlacement appliedPlacement;
@@ -117,7 +122,21 @@ final class EditorWorkspaceView extends FrameLayout
             ((ForgeShapeSurfaceView) viewport).setOnViewportGestureSettled(
                     new ForgeShapeSurfaceView.OnViewportGestureSettled() {
                         @Override
+                        public void onViewportGestureStarted() {
+                            // The user's pointer is on the model — in Sculpt
+                            // Mode that is a real stroke. Chrome must not spend
+                            // main-thread time on a transition while pointer
+                            // samples are arriving, so from here until the
+                            // gesture settles every chrome detent change is
+                            // instant. Nothing about the gesture's own
+                            // arbitration is touched: this decides only whether
+                            // a PANEL animates.
+                            setChromeMotionAllowed(false);
+                        }
+
+                        @Override
                         public void onViewportGestureSettled() {
+                            setChromeMotionAllowed(true);
                             final long active = NativeViewport.sceneActiveBodyId();
                             if (active != lastKnownActiveBodyId) {
                                 lastKnownActiveBodyId = active;
@@ -451,8 +470,18 @@ final class EditorWorkspaceView extends FrameLayout
      */
     void setChromeHidden(boolean hidden) {
         uiState.setChromeHidden(hidden);
-        chromeRoot.setVisibility(hidden ? GONE : VISIBLE);
-        restoreChip.setVisibility(hidden ? VISIBLE : GONE);
+
+        // Alpha only, and short. The viewport was always the whole window, so
+        // there is no size here for a transition to change — and one that DID
+        // change a size would rebuild the swapchain for a question about where
+        // buttons are drawn. Both surfaces are cancelled first, so a rapid
+        // hide/restore reverses rather than queueing and can never settle with
+        // both the chrome and its restore affordance half visible.
+        final long durationMs = ChromeMotion.duration(
+                hidden ? ChromeMotion.EXIT_MS : ChromeMotion.ENTER_MS,
+                chromeMotionAllowed ? ChromeMotion.animatorScale(getContext()) : 0.0f);
+        ChromeMotion.fade(chromeRoot, !hidden, durationMs);
+        ChromeMotion.fade(restoreChip, hidden, durationMs);
         toolbar.showChromeHidden(hidden);
         if (hidden) {
             // Hiding chrome means "show me the bare model". The popover lives in
@@ -580,6 +609,7 @@ final class EditorWorkspaceView extends FrameLayout
      * Rail entry.
      */
     void syncFromNative() {
+        pushReducedMotion();
         NativeViewport.sculptState(nativeSculpt);
         final boolean sculpting =
                 NativeViewport.productMode() == NativeViewport.MODE_SCULPT;
@@ -699,6 +729,19 @@ final class EditorWorkspaceView extends FrameLayout
         applyInspectorSideWidth();
     }
 
+    /**
+     * Tells the viewport whether to reduce motion.
+     *
+     * <p>Pushed on every refresh, including every resume, because the setting
+     * can be changed while ForgeShape is in the background — which is exactly
+     * how a user turns animation off. Reading the Android setting and deciding
+     * what it means happens HERE; what crosses JNI is one bool, so the geometry
+     * domain never learns that an Android setting exists.
+     */
+    private void pushReducedMotion() {
+        NativeViewport.setReducedMotion(!ChromeMotion.animationsEnabled(getContext()));
+    }
+
     private boolean isSculpting() {
         return NativeViewport.productMode() == NativeViewport.MODE_SCULPT;
     }
@@ -744,8 +787,30 @@ final class EditorWorkspaceView extends FrameLayout
 
     @Override
     public void onInspectorExpandedChanged(boolean expanded) {
+        // The decision, recorded at once: a rotation part-way through a collapse
+        // must come back collapsed.
         uiState.setInspectorExpanded(isSculpting(), expanded);
+    }
+
+    @Override
+    public void onInspectorLayoutSettled() {
+        // The width, applied only once the panel is at its resting size. A side
+        // placement gives back WIDTH when it collapses, and narrowing the column
+        // while the body is still on screen would clip the content that is
+        // leaving.
         applyInspectorSideWidth();
+    }
+
+    /**
+     * Whether chrome may spend time on a transition.
+     *
+     * <p>Pushed down rather than queried, because the surfaces that animate
+     * decide at the moment of the act and the act can arrive on a second finger
+     * while the first one is mid-stroke.
+     */
+    private void setChromeMotionAllowed(boolean allowed) {
+        chromeMotionAllowed = allowed;
+        inspector.setMotionAllowed(allowed);
     }
 
     // -----------------------------------------------------------------------

@@ -37,7 +37,21 @@ final class PropertyInspectorView extends LinearLayout {
 
     /** Told the user collapsed or expanded the panel. */
     interface OnExpandedChanged {
+        /**
+         * The user's decision, reported the moment it is made — before any
+         * transition finishes. What the UI REMEMBERS must be the target, or a
+         * rotation part-way through a collapse would come back expanded.
+         */
         void onInspectorExpandedChanged(boolean expanded);
+
+        /**
+         * The panel has finished changing size and is at its resting layout.
+         *
+         * <p>Separate from the decision because a side-placed panel gives back
+         * WIDTH when it collapses, and narrowing the column while the body is
+         * still on screen would clip the very content that is leaving.
+         */
+        void onInspectorLayoutSettled();
     }
 
     private final TextView title;
@@ -47,6 +61,9 @@ final class PropertyInspectorView extends LinearLayout {
     private final OnExpandedChanged listener;
 
     private boolean expanded = true;
+
+    /** See {@link #setMotionAllowed}. */
+    private boolean motionAllowed = true;
 
     /** Zero disables the cap; a bottom sheet sets it so it cannot grow to fill
      *  the window, which is exactly what the previous panel did. */
@@ -135,14 +152,33 @@ final class PropertyInspectorView extends LinearLayout {
         return expanded;
     }
 
+    /**
+     * Puts the panel in a detent with no transition.
+     *
+     * <p>Idempotent, and deliberately instant: this is what the measure pass
+     * and every state refresh call, and a layout traversal is no place to start
+     * an animation. Motion belongs to the one path that is a user ACT — see
+     * {@link #toggleExpanded}.
+     */
     void showExpanded(boolean value) {
-        // Idempotent so it can be called from the measure pass without
-        // requesting a fresh layout on every traversal.
-        if (value == expanded && scroll.getVisibility() == (value ? VISIBLE : GONE)) {
+        if (value == expanded && scroll.getVisibility() == (value ? VISIBLE : GONE)
+                && scroll.getAlpha() == 1.0f) {
             return;
         }
         expanded = value;
-        scroll.setVisibility(value ? VISIBLE : GONE);
+        ChromeMotion.settle(scroll, value);
+        showToggleGlyph(value);
+    }
+
+    /**
+     * The chevron, its content description, and nothing else.
+     *
+     * <p>Set from the TARGET detent at the start of a transition rather than at
+     * its end. An interrupted collapse must never leave a control claiming the
+     * panel will do the opposite of what it is doing, and the glyph is the only
+     * thing in the panel that could say so.
+     */
+    private void showToggleGlyph(boolean value) {
         // The chevron points the way the panel will go, not the way it is.
         toggle.setImageResource(
                 value ? R.drawable.ic_chevron_down : R.drawable.ic_chevron_up);
@@ -176,11 +212,82 @@ final class PropertyInspectorView extends LinearLayout {
         setElevation(0.0f);
     }
 
+    /**
+     * The user changed the detent: the one path that animates.
+     *
+     * <p><b>The panel's size changes exactly once per toggle</b>, and the body
+     * fades and slides the short distance either side of that. Animating the
+     * HEIGHT would mean a {@code requestLayout} on every frame of the
+     * transition, re-running the workspace's whole adaptive layout decision
+     * — which lives in {@code onMeasure} — dozens of times for a panel that is
+     * going to end up exactly where it always did. Alpha and translation are
+     * drawing properties: they cost no traversal at all.
+     *
+     * <p>So the two directions are deliberately sequenced rather than
+     * symmetric. Expanding opens the space first and lets the body arrive into
+     * it; collapsing lets the body leave first and then closes the space. Both
+     * end at the identical resting layout the instant path produces.
+     *
+     * <p>Not animated at all while a viewport gesture is in flight, or when the
+     * platform asks for reduced motion. In both cases this is the instant path.
+     */
     private void toggleExpanded() {
-        showExpanded(!expanded);
+        final boolean value = !expanded;
+        expanded = value;
+        showToggleGlyph(value);
         if (listener != null) {
-            listener.onInspectorExpandedChanged(expanded);
+            listener.onInspectorExpandedChanged(value);
         }
+
+        final long durationMs = ChromeMotion.duration(
+                value ? ChromeMotion.ENTER_MS : ChromeMotion.EXIT_MS,
+                ChromeMotion.animatorScale(getContext()));
+        if (durationMs == 0L || !motionAllowed) {
+            ChromeMotion.settle(scroll, value);
+            notifyLayoutSettled();
+            return;
+        }
+
+        ChromeMotion.begin(scroll);
+        final float offset = EditorControlStyles.dimen(getContext(), R.dimen.row_gap);
+        if (value) {
+            scroll.setVisibility(VISIBLE);
+            scroll.setAlpha(0.0f);
+            scroll.setTranslationY(-offset);
+            // The space is already open, so this is the resting layout from the
+            // first frame; only the body's own drawing is still arriving.
+            notifyLayoutSettled();
+            scroll.animate().alpha(1.0f).translationY(0.0f).setDuration(durationMs).start();
+        } else {
+            scroll.animate().alpha(0.0f).translationY(-offset).setDuration(durationMs)
+                    .withEndAction(new Runnable() {
+                        @Override
+                        public void run() {
+                            // Reached only when the fade finished; a reversal
+                            // cancels it, and the reversal owns the state.
+                            ChromeMotion.settle(scroll, false);
+                            notifyLayoutSettled();
+                        }
+                    }).start();
+        }
+    }
+
+    private void notifyLayoutSettled() {
+        if (listener != null) {
+            listener.onInspectorLayoutSettled();
+        }
+    }
+
+    /**
+     * Whether this panel may spend time on a detent change.
+     *
+     * <p>Set false by the workspace while a viewport gesture — a camera orbit
+     * or, in Sculpt Mode, a real stroke — is in flight. A chrome transition
+     * must never compete with pointer samples for the main thread: input
+     * responsiveness outranks motion, so the panel simply snaps instead.
+     */
+    void setMotionAllowed(boolean allowed) {
+        motionAllowed = allowed;
     }
 
     /**

@@ -1618,6 +1618,32 @@ Java_com_forgeshape_app_NativeViewport_viewportBackground(JNIEnv*, jclass) {
         forgeshape::viewportBackgroundIndex(forgeshape::displaySettings().viewportBackground()));
 }
 
+// Reduced motion: the whole of the accessibility seam, and deliberately one
+// bool.
+//
+// The Android layer reads the platform's animator duration scale and decides
+// what it means; what crosses here is only the answer. Native code must not
+// learn that an Android setting exists, exactly as it must not learn that an
+// Android theme does — and the renderer must not learn either, which is why the
+// value lands in the display store beside the other presentation state rather
+// than in a renderer method of its own.
+//
+// It changes nothing but timing. No revision is minted, no mesh is published,
+// no buffer is touched: the only observable difference is whether a newly
+// selected body reaches its resting tint over 220 ms or in one frame.
+JNIEXPORT void JNICALL
+Java_com_forgeshape_app_NativeViewport_setReducedMotion(JNIEnv*, jclass, jboolean reduced) {
+    const bool wanted = (reduced == JNI_TRUE);
+    if (forgeshape::displaySettings().setReducedMotion(wanted)) {
+        FS_LOGI("FORGESHAPE_REDUCED_MOTION:%d", wanted ? 1 : 0);
+    }
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_reducedMotion(JNIEnv*, jclass) {
+    return forgeshape::displaySettings().reducedMotion() ? JNI_TRUE : JNI_FALSE;
+}
+
 // The projection mode is CAMERA state, not a display setting, so it is taken
 // under the same lock the camera gestures use rather than through the display
 // store. It publishes no mesh, mints no revision and touches no geometry: the

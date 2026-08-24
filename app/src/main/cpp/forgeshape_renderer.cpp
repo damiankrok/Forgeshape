@@ -75,8 +75,13 @@ struct SurfacePush {
 static_assert(sizeof(SurfacePush) == 128,
               "the push constant block must stay inside the guaranteed 128-byte budget");
 
-const float kNotSelectedTint[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-const float kSelectedTint[4] = {1.00f, 0.62f, 0.10f, 0.55f};
+// The selection HUE, unchanged. What changed at UI-R1C1 is only how much of it
+// is mixed in, and that is no longer a constant: it comes per body, per frame,
+// from forgeshape_selection_pulse.h — the peak of an acknowledgement pulse when
+// a body has just become selected, and kSelectionRestingAlpha for as long as it
+// stays selected. A not-selected body mixes nothing, which is why alpha 0 and
+// the colour below are all a body needs to disappear from the highlight.
+const float kSelectionTintRgb[3] = {1.00f, 0.62f, 0.10f};
 
 }  // namespace
 
@@ -716,6 +721,37 @@ void Renderer::syncScene() {
     // decided entirely by B's own revision and the surface shading.
     for (const SceneDrawItem& item : scene_) {
         syncBody(item);
+    }
+}
+
+double Renderer::consumeFrameDeltaSeconds() {
+    const auto now = std::chrono::steady_clock::now();
+    if (!haveFrameTime_) {
+        haveFrameTime_ = true;
+        lastFrameTime_ = now;
+        return 0.0;
+    }
+    const double seconds =
+        std::chrono::duration<double>(now - lastFrameTime_).count();
+    lastFrameTime_ = now;
+    return seconds;
+}
+
+void Renderer::advanceSelectionFeedback(double deltaSeconds) {
+    // Reduced motion is read per frame from the same display snapshot that
+    // carries the shading model and the viewport background. It is a plain bool
+    // by the time it gets here; what an Android animator scale is stays above
+    // JNI, where it belongs.
+    const bool motionEnabled = !display_.reducedMotion;
+
+    for (const SceneDrawItem& item : scene_) {
+        auto found = bodies_.find(item.objectId);
+        if (found == bodies_.end()) {
+            continue;  // nothing uploaded for this body yet; nothing to tint
+        }
+        BodyRenderResources& body = found->second;
+        body.selectionAlpha = advanceSelectionPulse(body.selectionPulse, item.selected,
+                                                    deltaSeconds, motionEnabled);
     }
 }
 
@@ -1659,11 +1695,14 @@ void Renderer::recordBodyDraw(VkCommandBuffer cmd, const SceneDrawItem& item) {
     // touched.
     push.normalRow0[3] = static_cast<float>(shadingModelIndex(display_.shading));
 
-    // Per body, not per frame: only the selected body is tinted. The renderer
-    // is still never told WHICH object is selected — the snapshot carries a
-    // plain bool per item and identity stays with SelectionController.
-    std::memcpy(push.selectionTint, item.selected ? kSelectedTint : kNotSelectedTint,
-                sizeof(push.selectionTint));
+    // Per body, not per frame: only the selected body is tinted, and how
+    // strongly is this body's own pulse state, advanced once per frame by
+    // advanceSelectionFeedback. The renderer is still never told WHICH object
+    // is selected — the snapshot carries a plain bool per item and identity
+    // stays with SelectionController. No push-constant byte was added for this:
+    // `selectionTint.a` has always been there.
+    std::memcpy(push.selectionTint, kSelectionTintRgb, sizeof(kSelectionTintRgb));
+    push.selectionTint[3] = body.selectionAlpha;
 
     vkCmdPushConstants(cmd, pipelineLayout_,
                        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
@@ -1693,6 +1732,13 @@ bool Renderer::drawFrame() {
     // Mirror each body's newest published CPU mesh revision onto the GPU before
     // this frame is recorded. No-op for any body whose revision did not change.
     syncScene();
+
+    // Selection feedback is presentation and rides entirely on the frame loop
+    // that was going to run anyway: no Java animator, no invalidate, no
+    // geometry, no revision and no upload. It is advanced OUTSIDE syncScene's
+    // revision gate on purpose — a pulse has to keep decaying on the frames
+    // where nothing was published, which is nearly all of them.
+    advanceSelectionFeedback(consumeFrameDeltaSeconds());
 
     vkWaitForFences(device_, 1, &inFlightFences_[currentFrame_], VK_TRUE, UINT64_MAX);
 

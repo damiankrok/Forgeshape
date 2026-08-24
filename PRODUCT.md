@@ -88,7 +88,9 @@ The panel stays open while you try several options, and the choices survive
 leaving the app and coming back.
 
 A selected object is tinted, and stays readable as a shape while tinted, in both
-shading modes.
+shading modes and on both appearances — the resting tint is deliberately light
+enough that the object's own light and shade still carry its form. See
+*Selection*.
 
 While sculpting, the lighting follows the surface as it moves: a stroke that
 pulls a lobe out of a sphere lights that lobe immediately, with no stale shading
@@ -161,6 +163,23 @@ dimmed, says so when read aloud, and does nothing.
 
 A tap on a Tool Rail entry selects that tool even if the finger drifts a little,
 and dragging the rail scrolls it without selecting whatever it started on.
+
+**Panels move, briefly, and never make you wait.** Opening the Display popover
+grows it out of the button that opened it; opening or closing the Property
+Inspector fades its contents in or out around the moment the panel changes size;
+hiding and restoring the controls fades them rather than blinking them away. Each
+of these takes about a tenth of a second, and every one of them can be
+interrupted — tapping again immediately reverses what is happening rather than
+queueing behind it, so a panel can never be left half visible or showing a
+control that disagrees with what it is doing. **The model itself never animates**:
+nothing moves the viewport, nothing resizes it, and none of this happens while
+your finger is on the model. If you are sculpting and reach for a panel with a
+second finger, the panel simply snaps — the stroke comes first.
+
+**If you have asked Android to remove animations, ForgeShape removes them.** Every
+panel lands on its final state immediately instead of running a shortened
+version, and a newly selected body goes straight to its resting tint with no
+flash — so selection is still just as easy to see, it simply takes no time.
 
 The workspace re-arranges itself for the window it is in — a phone in portrait, a
 phone in landscape, a split-screen half, a tablet — and the arrangement is
@@ -594,9 +613,17 @@ The Construction Body can be selected. Selection is a highlight only: it changes
 nothing about the model, and there is nothing yet that acts on the selected
 object.
 
-A short single-finger tap on the object selects it and tints the whole object
-towards a warm orange. A short single-finger tap that misses clears the
-selection, and it returns to exactly its unselected appearance. In Sculpt Mode
+A short single-finger tap on the object selects it. **Selection announces itself
+and then gets out of the way**: the moment a body becomes selected it flushes to
+a strong warm orange, and over about a fifth of a second that settles to a much
+lighter warm tint it then keeps for as long as it stays selected. The
+acknowledgement is what tells you the tap landed; the resting tint is what tells
+you which body you are editing, and it is light enough that the object's own
+light and shade still read — a face that was brighter than its neighbour still
+is, on both appearances. Tapping a body that is already selected does not flash
+again: the acknowledgement marks a change of selection, not a touch. A short
+single-finger tap that misses clears the selection, and the object returns to
+exactly its unselected appearance. In Sculpt Mode
 one finger on the model sculpts instead of selecting — that is what one finger on
 the model means there — so tap-to-select is Construction Mode behaviour, while a
 tap on empty space still clears the selection in either mode.
@@ -664,9 +691,9 @@ Nothing at all is saved between runs — not the appearance, not the start choic
 not the model and not the camera — so starting ForgeShape fresh gives you Dark
 and asks again how the model begins.
 
-**The selected body is still marked by a strong orange tint**, and on the light
-appearance that tint is heavier than it needs to be. It is unchanged from the
-dark theme on purpose; how selection is shown is being reworked separately.
+**Selection is still a tint over the whole body, not an outline.** It is much
+lighter at rest than it used to be and it announces itself when it changes, but
+nothing draws a line around the selected object, and nothing else marks it.
 
 Shading stops where it is. There is **one** MatCap and no way to add, import or
 choose another; there are no materials, no colour or texture you can assign to

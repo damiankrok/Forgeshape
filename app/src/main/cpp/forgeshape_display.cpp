@@ -85,6 +85,7 @@ ViewportDisplaySettings DisplaySettingsStore::snapshot() const {
     out.shading = shadingModel();
     out.surface = surfaceShading();
     out.background = viewportBackground();
+    out.reducedMotion = reducedMotion();
     return out;
 }
 
@@ -136,6 +137,22 @@ bool DisplaySettingsStore::setViewportBackground(ViewportBackground background) 
         return false;
     }
     changeCount_.fetch_add(1, std::memory_order_relaxed);
+    return true;
+}
+
+bool DisplaySettingsStore::reducedMotion() const {
+    return reducedMotion_.load(std::memory_order_relaxed);
+}
+
+bool DisplaySettingsStore::setReducedMotion(bool reduced) {
+    const bool previous = reducedMotion_.exchange(reduced, std::memory_order_relaxed);
+    if (previous == reduced) {
+        return false;
+    }
+    // Deliberately NOT counted in changeCount_: that counter exists so the
+    // display suite can prove a real display transition happened, and reduced
+    // motion is an accessibility preference arriving from the platform rather
+    // than a display setting the user chose here.
     return true;
 }
 

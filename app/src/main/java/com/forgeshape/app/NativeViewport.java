@@ -524,6 +524,26 @@ final class NativeViewport {
     static native int viewportBackground();
 
     /**
+     * Tells the viewport whether the user has asked the system for reduced
+     * motion.
+     *
+     * <p>This is the whole of the accessibility seam, and it carries one bool
+     * on purpose. Reading {@code Settings.Global.ANIMATOR_DURATION_SCALE} and
+     * deciding what it means is Android's job and stays here; native code is
+     * handed the answer, exactly as it is handed a viewport appearance rather
+     * than an {@link AppTheme}. No Android type crosses.
+     *
+     * <p>Presentation only, and only timing at that: it publishes no mesh,
+     * mints no revision, moves no vertex and re-uploads nothing. The single
+     * observable difference is whether a newly selected body reaches its
+     * resting tint over a fifth of a second or in one frame.
+     */
+    static native void setReducedMotion(boolean reduced);
+
+    /** @return whether the viewport was last told to reduce motion */
+    static native boolean reducedMotion();
+
+    /**
      * Standard pinhole projection: nearer parts of a solid are drawn larger and
      * parallel edges converge. The product default.
      */

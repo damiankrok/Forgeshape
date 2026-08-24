@@ -1,164 +1,233 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.27.0
+**Status Version:** 0.28.0
 **Updated:** 2026-08-24
-**Result:** COMPLETE — UI-R1B2 is closed; the product has Dark and Light
+**Result:** COMPLETE — UI-R1C1 is closed; the product has a motion language, and
+selection feedback that no longer repaints the model
 **Current Phase:** Phase 1 — Native Viewport
 **Workspace:** `D:\TRAVELAPPS\ForgeShape`
-**Accepted implementation baseline:** UI-R1B2 — theme system + Light mode, on top
-of UI-R1B1 (visual foundation + start flow), Stage 017 (multi-object scene +
-hierarchy foundation), the Pre-017 Correctness Repair (active representation
-sidedness + re-Freeze guard + device verifier), Gate P1 (physical ARM64 closure),
-Stage 016-R2, Stage 016 (Plane), Stage 015D (camera projection), Stage 015C-R
-(front-face culling), Stage 015C (shading), Platform Fix P2, Stage 015B,
-Stage 014, the NDK r29 migration (Gate P0) and the owner decision baseline.
-**Next Stage:** UI-R1C — Motion + Selection Feedback + View/Adaptive Pass.
+**Accepted implementation baseline:** UI-R1C1 — motion language + selection
+feedback, on top of UI-R1B2 (theme system + Light), UI-R1B1 (visual foundation +
+start flow), Stage 017 (multi-object scene + hierarchy foundation), the Pre-017
+Correctness Repair (active representation sidedness + re-Freeze guard + device
+verifier), Gate P1 (physical ARM64 closure), Stage 016-R2, Stage 016 (Plane),
+Stage 015D (camera projection), Stage 015C-R (front-face culling), Stage 015C
+(shading), Platform Fix P2, Stage 015B, Stage 014, the NDK r29 migration
+(Gate P0) and the owner decision baseline.
+**Next Stage:** UI-R1C2 — View/Grid + Adaptive Workspace Refinement.
 
-## UI-R1B2 — Theme System + Light Mode (COMPLETE)
+## UI-R1C1 — Motion Language + Selection Feedback (COMPLETE)
 
-ForgeShape has two appearances, chosen explicitly, and a theme is presentation
-all the way down: switching one mints no revision, publishes nothing, uploads
-nothing, and leaves every body, id, parameter, placement and frozen mesh
-bit-identical.
+Two things closed together because they are the same question asked twice: what
+does ForgeShape do with **time**, and what does it do to the model to say "this
+one is selected".
 
-**The mechanism is theme attributes, not duplicated components.** A role is
-declared once in `attrs.xml`, given a value once per theme in `themes.xml`, and
-referenced as `?attr/fs*`. Backgrounds are `res/drawable` state lists and content
-colours `res/color` state lists, both carrying attributes; the one imperative
-path is `EditorControlStyles.themeColor(context, attr)`, for text roles and the
-two brush sliders, which are drawn onto a Canvas rather than composed. **No
-colour is written in Java and no component knows which theme it is in** — there
-is one `bg_control.xml`, one `chip()` and no `if (light)` anywhere, so a third
-theme would touch two resource files and nothing else. UI-R1B1 made this possible
-by moving every literal out of view code; UI-R1B2 only had to split role from
-value.
+**Selection is now an acknowledgement, not a costume.** Becoming selected raises
+the tint to alpha **0.55** — the value the product used to sit at permanently —
+and decays it over **220 ms** to a resting **0.20**. The hue is unchanged
+(`1.00, 0.62, 0.10`); only how much of it is mixed in moved, so nothing else
+about the appearance was renegotiated. The decay curve is a smoothstep, chosen
+over linear or ease-out because both of those leave the peak before the finger
+does: smoothstep holds the acknowledgement for a few frames and then settles. It
+is monotone and bounded on [0.20, 0.55], so there is no overshoot and no bounce.
+Deselection clears the state outright rather than letting it decay, so a body
+selected again later starts a whole pulse instead of resuming a spent one.
 
-Two roles existed only because a light theme forced them apart. `fsAccentFill` is
-what an ACTIVE control is filled with; `fsPrimaryFill` is what a PRIMARY COMMIT
-is filled with, with `fsTextOnPrimary` on it. On dark those are the same colour
-and the split looks pointless; on light an active chip wants a pale tint carrying
-dark text while Apply wants a solid accent carrying white, and one attribute
-could not be both.
+**A pulse acknowledges a CHANGE in selection truth**, not a tap. Tapping a body
+that is already selected does nothing, however many times it happens.
 
-**Dark is unchanged.** Every dark hex is the value UI-R1B1 shipped, and it is
-still the default a fresh process wears.
+**It costs nothing.** `selectionTint.a` was already a push-constant component and
+the render loop already re-snapshots every frame, so the whole feature is one
+float per body per draw: no Java animator, no invalidate, no new push-constant
+byte, no geometry, no revision and no upload. Per-body pulse state lives in
+`BodyRenderResources`, keyed by the same stable ObjectId as that body's GPU
+buffers, which is what makes A's pulse structurally unable to touch B's. The
+renderer is still never told *which* object is selected — the scene snapshot
+carries a plain bool per item and `SceneSnapshot`'s schema is unchanged.
 
-**Light is warm, and deliberately not a stark white canvas.** The viewport is
-`#E6E1D9` — warm by about ten points of red over blue, enough to read as paper
-rather than as a screen and far short of beige. A pure white ground makes a
-neutral clay render look grey. The accent is the same blue deepened until it
-carries white; the verdict colours are darkened, because dark-theme green and
-amber simply vanish on paper. **The light chrome surface is fully opaque where
-the dark one is 95 %**: over a dark viewport a few per cent of bleed is
-invisible, and over cream a near-white panel loses the edge that separates it
-from the model — which is exactly the trade this stage was told not to make.
+**The math is a pure function over an explicit delta** in
+`forgeshape_selection_pulse.{h,cpp}`, not a clock read. That is why the
+self-tests drive a whole 220 ms pulse in microseconds with no sleep, and why the
+only clock in the presentation path is the one the frame loop already had. A
+frame delta over 100 ms is a resume or a stall, not a frame, and is clamped — so
+a process paused mid-pulse comes back still pulsing rather than having silently
+skipped the acknowledgement.
 
-**The renderer seam is one closed enum.** `ViewportBackground`
-(`NeutralDark`, `WarmLight`) lives in the native display store beside the shading
-model, and what crosses JNI is its index, refused if unrecognised. No Android
-theme, no style, no Android type and no RGB authored in Java reaches native code:
-it is handed a viewport *appearance* and owns what each one looks like. The clear
-value is written into the render pass every frame anyway, so a switch touches no
-swapchain, pipeline, descriptor set or buffer. The two float triples are pinned
-by `display_dark_background_is_0e121b` / `display_light_background_is_e6e1d9`,
-because they are duplicated in `colors.xml` as the Android *window* background —
-what covers the moment before the surface has content — and drift there is a
-launch flash.
+**Motion is a small shared helper, deliberately not a framework.**
+`ChromeMotion` holds four things and nothing else: the two durations (**120 ms**
+arriving, **90 ms** leaving), the reduced-motion question, the cancel-first rule,
+and one alpha helper. There is no transition type, no registry, no builder and no
+way to describe motion as data. A surface that needs its own movement writes it
+itself against these constants — which is exactly what the Display popover still
+does with its anchor-pivot scale. The popover's values are unchanged, because it
+is where they were measured.
 
-**Applying a theme recreates the Activity, and that is free.** Re-resolving themed
-resources for a UI built entirely in code means rebuilding the views holding
-them; walking dozens of view classes reapplying colours would be the duplication
-the attributes exist to avoid, with every surface a chance to be missed. It is
-safe because nothing that matters lives in the Activity — the scene, every body,
-the active ObjectId, the mode, the Frozen Sculpt Mesh, the camera and the display
-settings are process-scoped native state. It is free because **`onDestroy` skips
-`NativeViewport.stop()` while `isChangingConfigurations()`**: the render thread,
-the Vulkan device and every GPU buffer survive, the Surface is detached and
-reattached exactly as on a HOME/resume, and `start()` returns early rather than
-re-running the self-tests or re-publishing. Without that guard a theme change
-would tear down the device and re-upload the whole scene.
+**Reduced motion crosses JNI as one bool.** The Android layer reads
+`ANIMATOR_DURATION_SCALE`, decides what it means, and pushes the answer into the
+display store beside the shading model. No Android type reaches native code, and
+`DisplaySettingsStore::setReducedMotion` deliberately does **not** advance
+`changeCount_`: it is a platform preference arriving, not a display setting the
+user chose. `ChromeMotion.duration` returns **0** rather than a small number for
+that case, and every caller branches on the zero to *land* on the final state — a
+1 ms animation still posts a frame and still ends asynchronously, which is the
+thing a user asking for no motion is trying to avoid. In the viewport, reduced
+motion goes straight to the **resting** tint: landing on the peak instead would
+simply restore the flood this stage exists to remove.
 
-**The session goes with it.** `EditorUiState` is handed to the incoming
-workspace, so changing colour does not also snap the display unit back to meters,
-close the Property Inspector or re-point the Tool Rail. Found by doing it: the
-first working switch reset all three. Still no Android type and no `Bundle` —
-the carried instance dies with the process like everything else in that class.
+**Chrome hide/restore is alpha only.** The `SurfaceView` is full-bleed and
+already occupies the whole window, so there is no size for a transition to
+change — and one that did would rebuild the swapchain for a question about where
+buttons are drawn. Runtime evidence: hide and restore produced **zero**
+`SURFACE_CONFIG`, zero `CAMERA_VIEWPORT`, zero upload and zero rebuild. The
+restore affordance measured **48 x 48 dp**.
 
-**Ownership.** The theme is UI-owned, process-scoped and losable, in
-`EditorUiState` beside the start choice; the viewport background is native-owned
-presentation. One derivation runs in one place — `ForgeShapeActivity.applyTheme`
-— so chrome and viewport cannot disagree. Nothing is persisted: a process kill
-returns to Dark.
+**The inspector's two directions are sequenced, not symmetric,** and that is the
+design rather than an omission. Animating the panel's HEIGHT would mean a
+`requestLayout` every frame, re-running the workspace's whole adaptive layout
+decision — which lives in `onMeasure` — dozens of times for a panel that ends up
+exactly where it always did. So the size changes **once** per toggle and the body
+fades and slides the short distance either side of it: expanding opens the space
+first and lets the body arrive into it, collapsing lets the body leave and then
+closes the space. Alpha and translation are drawing properties and cost no
+traversal at all. A side-placed panel gives back WIDTH when it collapses, so the
+width is applied on a separate `onInspectorLayoutSettled` callback — narrowing
+the column while the body is still on screen would clip the content that is
+leaving.
 
-**Scope.** No automatic system theme and no `-night` qualifier, no persistence,
-no selection pulse or outline, no Grid or View group, no glass or blur, no motion
-framework, no hierarchy commands, no Sketch or Extrude, no Undo, no new
-dependency and no NDK/Gradle/AGP change. **`kSelectedTint` is untouched** at
-alpha 0.55; on the light theme that tint reads heavier than it should, and it is
-a known, accepted state deferred to UI-R1C rather than tuned here.
+**Only a user act animates.** `showExpanded` stayed instant and idempotent
+because it is what the measure pass and every state refresh call, and a layout
+traversal is no place to start an animation. The chevron is set from the TARGET
+detent at the *start* of a transition, so an interrupted collapse can never leave
+a control claiming the panel will do the opposite of what it is doing.
 
-**Verification.** Native **1544/1544** across eleven suites, zero failures — the
-shading suite took 224 to 238 with the `DISP-VBG` family. JVM **39/39** (was 29).
-Instrumented **88 run, 87 green** (was 71); the one failure is the documented
-`ui11` IME case, which fails its own precondition guard before reaching any
-product assertion, with the signature recorded below — a known baseline failure,
-not a stage-caused regression. Both ABIs build. DEV2-01..07 and DEV3-01..06 PASS.
+**A viewport gesture outranks motion.** `ForgeShapeSurfaceView` now reports when
+a pointer goes down on the model and when the gesture settles — nothing about the
+gesture is interpreted there, and the arbitration is untouched. While a pointer
+is down, every chrome detent change is instant. The case this exists for is a
+second finger reaching the inspector header while the first is mid-stroke.
 
-The theme suite asserts no rendered pixel and no literal colour. What it checks is
-that every chrome role *answers differently* and in the right direction (light
-chrome lighter, light text darker), that the renderer was told the other
-background, that a switch leaves `nativeSnapshot()` bit-identical, and — for the
-Property Inspector — WCAG contrast ratios computed in the test, because "readable
-numbers" is the one thing this stage could have traded away for a look.
+**Scope.** No Grid, no View group, no Selection Outline, no stencil or
+screen-space edge pass, no post-processing, no adaptive restructure, no
+`railDocked()` promotion, no blur or glass, no new dependency, no Compose, and no
+NDK/Gradle/AGP change.
+
+**Verification.** Native **1570/1570** across eleven suites, zero failures — the
+render-shading suite took 238 to **264** with the `r1c1_01..06` family. JVM
+**43/43** (was 39). Instrumented **98 run, 97 green** (was 88); the one failure is
+the documented `ui11` IME case, which fails its own precondition guard with a
+character-identical message before reaching any product assertion. Both ABIs
+build. `DEV2-01..07` and `DEV3-01..06` PASS.
+
+The selection suite asserts no rendered pixel. What it checks is the state
+machine — that the edge starts a pulse, that the decay is monotone and bounded,
+that it takes real time rather than finishing on the next frame, that deselection
+clears, that two bodies' states cannot reach each other, and that a whole
+selection cycle beside a real published mesh leaves the revision and the vertex
+and index bytes identical.
 
 **Runtime**, on `ForgeShape_Stage006` / `emulator-5580`, confirmed by AVD name.
-Cold start came up Dark (`NeutralDark requested=0 known=1 changed=0`) with the
-chooser. Two bodies were created and placed through the product's own editors;
-switching to Light logged `WarmLight ... changed=1` with **zero**
-`MESH_UPLOAD_OK` and **zero** `RENDER_MESH_BUILD`, and Construction state came
-through unchanged (`objectId=2`, `pos=(2.5,0,0)`, `updates=1`). The selected body
-stayed orange-tinted beside its unselected neighbour, so selection still reads on
-a light ground. Rotation and HOME/resume held Light with zero uploads; switching
-back restored Dark with the same state. A cold restart returned to Dark and
-re-asked the start question. Choosing Sculpt, a real Grab stroke reached
-`sculptRev=26 strokes=1`; switching to Light **while sculpting** left
-`mode=sculpt sculptRev=26 v=482 i=2880 objectId=1 freezes=1` bit-identical with
-zero uploads, and Back gave the sphere source while Resume gave
-`sculptRev=26 freezes=1`, so nothing re-froze. Portrait, rotated phone and an
-expanded 1600 x 2560 @ 240 dpi window were viewport-first in both appearances.
+Two bodies were created and placed through the product's own editors. The pulse
+was **caught on camera**: the frame captured immediately after selecting Body #1
+sampled `RGB(234,186,120)` on the lit face — a red-blue spread of **114** —
+against `RGB(223,201,171)` and a spread of **52** one frame later and at rest.
+A→B→A produced **zero** `MESH_UPLOAD_OK` and **zero** `RENDER_MESH_BUILD` in both
+appearances. On Light the selected body reads as warm tan beside its grey
+neighbour with all three face values still distinct, which is the readability the
+0.55 flood used to cost. With `animator_duration_scale 0` a HOME/resume logged
+`FORGESHAPE_REDUCED_MOTION:1`, and four consecutive frames captured after a
+selection were **byte-identical at the resting spread of 53** — no pulse ran at
+all. A real Grab stroke on a 482-vertex frozen sphere reached `sculptRev=26` /
+`STROKE_END` with every upload `reuse`. Four rapid inspector toggles and a chrome
+hide/restore *while in Sculpt Mode* produced zero sculpt events, zero uploads,
+zero rebuilds and zero swapchain events, and the panel settled at the correct
+detent. Portrait, rotated landscape (side inspector) and an expanded
+1600 x 2560 @ 240 dpi window (docked inspector) all settled correctly, and Back
+to Construction returned the sphere Source with Resume Sculpt still offered.
 
-**R1B2 criteria.**
+**R1C1 criteria.**
 
 | ID | Verdict | Evidence |
 | --- | --- | --- |
-| R1B2-AC01 | PASS | clean `97878a7` audited before any change; final tree clean |
-| R1B2-AC02 | PASS | `AppTheme` has two members; `R1B2-02` asserts the count and the control |
-| R1B2-AC03 | PASS | one drawable set, one state list, no `if (light)`; see *The mechanism* |
-| R1B2-AC04 | PASS | every dark hex unchanged; `R1B2-05` restores Dark exactly |
-| R1B2-AC05 | PASS | `#E6E1D9`; `display_light_background_is_warm` and `..._not_stark_white` |
-| R1B2-AC06 | PASS | `R1B2-15` computes WCAG contrast for values, labels and verdicts |
-| R1B2-AC07 | PASS | an Appearance group in the existing Display popover; no new surface |
-| R1B2-AC08 | PASS | `R1B2-06` asserts `nativeSnapshot()` bit-identical across a switch |
-| R1B2-AC09 | PASS | runtime: zero `MESH_UPLOAD_OK` / `RENDER_MESH_BUILD` across every switch |
-| R1B2-AC10 | PASS | `R1B2-07`; runtime `objectId=2`, cone spec and placement preserved |
-| R1B2-AC11 | PASS | `R1B2-09`; runtime `sculptRev=26 freezes=1` across a switch |
-| R1B2-AC12 | PASS | `R1B2-11` and `R1B2-12`; runtime rotation and HOME/resume |
-| R1B2-AC13 | PASS | `R1B2-01`; runtime cold restart returns to Dark |
-| R1B2-AC14 | PASS | `R1B2-10`; runtime, chooser absent after both switches |
-| R1B2-AC15 | PASS | `R1B2-14` re-checks icons, tint, pressed feedback and reserved entries |
-| R1B2-AC16 | PASS | `R1B2-16` in both themes; runtime portrait/rotated/expanded |
-| R1B2-AC17 | PASS | `R1B2-17` anchor, open/close, in-place selection, both themes |
-| R1B2-AC18 | PASS | `kSelectedTint` untouched; no Grid/glass/motion work — see *Scope* |
-| R1B2-AC19 | PASS | native 1544/1544, JVM 39/39, instrumented 87/88, both ABIs |
-| R1B2-AC20 | PASS | all core docs < 2000; ARCHITECTURE handled by replacement — see below |
-| R1B2-AC21 | PASS | one focused commit, clean tree |
+| R1C1-AC01 | PASS | clean `5884542` audited before any change; final tree clean |
+| R1C1-AC02 | PASS | `ChromeMotion` is 4 concerns, no type/registry/builder — see *Motion is a small shared helper* |
+| R1C1-AC03 | PASS | `r1c110_*` x2: open/close, reduced motion, in-place choice, no movement |
+| R1C1-AC04 | PASS | `r1c1_01_*`; runtime spread 114 → 52 caught on camera |
+| R1C1-AC05 | PASS | `r1c1_03_*`: 0.20 is under half the legacy 0.55, and still above 0.1 |
+| R1C1-AC06 | PASS | the tint stays in `forgeshape_renderer.cpp`; no ObjectId reaches it; `SceneSnapshot` unchanged |
+| R1C1-AC07 | PASS | `r1c1_06_*` bit-identical mesh; runtime zero upload/rebuild in both themes |
+| R1C1-AC08 | PASS | `r1c1_05_*`; state lives per `BodyRenderResources`, keyed by ObjectId |
+| R1C1-AC09 | PASS | runtime screenshots, Dark and Light — see *Runtime* |
+| R1C1-AC10 | PASS | `r1c114`, `r1c124` x2, `r1c109_*`; runtime `REDUCED_MOTION:1` + identical frames |
+| R1C1-AC11 | PASS | `r1c111`, `r1c112`: six rapid toggles settle at alpha 1, translation 0, chevron agreeing |
+| R1C1-AC12 | PASS | `r1c122`; runtime real stroke to `sculptRev=26`, all uploads `reuse` |
+| R1C1-AC13 | PASS | `r1c113`, `r1c123`; runtime zero `SURFACE_CONFIG`; affordance 48 dp |
+| R1C1-AC14 | PASS | picking suite still 128; `SIDE`, `REFR`, `NOR`, `CAMPROJ` unchanged |
+| R1C1-AC15 | PASS | runtime portrait / rotated landscape / expanded 1600x2560 |
+| R1C1-AC16 | PASS | no Grid, View, Outline or adaptive change — see *Scope* |
+| R1C1-AC17 | PASS | native 1570/1570, JVM 43/43, instrumented 97/98, both ABIs |
+| R1C1-AC18 | PASS | every core doc < 2000; this file compacted — see the counts below |
+| R1C1-AC19 | PASS | one focused commit |
+| R1C1-AC20 | PASS | clean tree |
 
-**Result: COMPLETE.** R1B2-AC01..21 PASS.
+**Core document sizes at acceptance** (hard cap 2000 each): `PROJECT_STATUS.md`
+1235, `ARCHITECTURE.md` 1658, `PRODUCT.md` 616, `README.md` 323, `CLAUDE.md` 193.
+This file paid for its new chapter by cutting the UI-R1B2 one from 140 lines to
+43; `ARCHITECTURE.md` gained the motion/selection ownership section and stays
+inside its 1900 aspiration.
+
+**Result: COMPLETE.** R1C1-AC01..20 PASS.
 
 ## Closed stages — durable facts only
 
 Full narrative for every stage below lives in Git history. What is kept here is
 only what still constrains the code.
+
+**UI-R1B2 — theme system + Light mode (COMPLETE).** Two appearances, chosen
+explicitly, and a theme is presentation all the way down: switching one mints no
+revision, publishes nothing, uploads nothing, and leaves every body, id,
+parameter, placement and frozen mesh bit-identical.
+
+*The mechanism is theme attributes, not duplicated components.* A role is
+declared once in `attrs.xml`, given a value once per theme in `themes.xml`, and
+referenced as `?attr/fs*`. Backgrounds are `res/drawable` state lists and content
+colours `res/color` state lists, both carrying attributes; the one imperative
+path is `EditorControlStyles.themeColor(context, attr)`, for the text roles and
+the two brush sliders, which are drawn onto a Canvas rather than composed. **No
+colour is written in Java and no component knows which theme it is in** — one
+`bg_control.xml`, one `chip()`, no `if (light)` anywhere, so a third theme would
+touch two resource files and nothing else. `fsAccentFill` (what an ACTIVE control
+is filled with) and `fsPrimaryFill` (what a PRIMARY COMMIT is filled with,
+carrying `fsTextOnPrimary`) are two roles because on light an active chip wants a
+pale tint with dark text while Apply wants a solid accent with white, and one
+attribute could not be both.
+
+*Dark is unchanged* and is still what a fresh process wears; a process kill
+returns to it. *Light* uses a warm off-white VIEWPORT, `#E6E1D9` — paper rather
+than screen, and deliberately not `#FFFFFF`, which makes a neutral clay render
+read as grey. **The light chrome surface is fully opaque where the dark one is
+95 %**: over cream, a near-white translucent panel loses the edge that separates
+it from the model.
+
+*The renderer seam is one closed enum.* `ViewportBackground` (`NeutralDark`,
+`WarmLight`) lives in the native display store beside the shading model, and what
+crosses JNI is its index, refused if unrecognised. Native code owns what each
+appearance looks like; no Android theme, style, type or RGB authored in Java
+reaches it. The clear value is written into the render pass every frame anyway,
+so a switch touches no swapchain, pipeline, descriptor set or buffer. The two
+float triples are pinned by `display_dark_background_is_0e121b` /
+`display_light_background_is_e6e1d9`, because they are duplicated in `colors.xml`
+as the Android *window* background and drift there is a launch flash.
+
+*Applying a theme recreates the Activity, and that is free,* because **`onDestroy`
+skips `NativeViewport.stop()` while `isChangingConfigurations()`**: the render
+thread, the Vulkan device and every GPU buffer survive, the Surface is detached
+and reattached exactly as on a HOME/resume, and `start()` returns early rather
+than re-running the self-tests or re-publishing. Without that guard a theme
+change would tear down the device and re-upload the whole scene. `EditorUiState`
+is handed to the incoming workspace, so changing colour does not also reset the
+display unit, the inspector detent or the Tool Rail. The theme is UI-owned and
+process-scoped; the viewport background is native-owned presentation; one
+derivation runs in `ForgeShapeActivity.applyTheme` so the two cannot disagree.
 
 **UI-R1B1 — visual foundation + start flow (COMPLETE).** The shell stopped
 looking like a harness.
@@ -563,6 +632,15 @@ Android touch path. `PRODUCT.md` owns the user-facing description.
 | Renderer draws every body with its own transform and its own GPU buffers | VERIFIED |
 | Editing A rebuilds and uploads nothing for B | VERIFIED |
 | Only the selected body is highlighted | VERIFIED |
+| Becoming selected gives a short acknowledgement pulse that decays to a much lower resting tint | VERIFIED |
+| A tap on an already-selected body does not re-pulse; only a change in selection truth does | VERIFIED |
+| Selection feedback mints no revision, rebuilds no render mesh and uploads nothing, in either appearance | VERIFIED |
+| Two bodies' pulse states are independent; deselecting one does not disturb the other | VERIFIED |
+| The selected body stays obvious and the model's form stays readable in Dark and in Light | VERIFIED |
+| Reduced motion goes straight to the resting tint and runs no pulse at all | VERIFIED |
+| Chrome hide/restore and the inspector detent are short, interruptible and always settle at a legitimate resting state | VERIFIED |
+| A chrome transition never resizes the viewport or rebuilds the swapchain | VERIFIED |
+| A viewport gesture outranks chrome motion: a detent change during a real stroke is instant | VERIFIED |
 | Scene picking returns the nearest hit's correct ObjectId; a viewport pick re-points the editors | VERIFIED |
 | Sidedness is per body: a Plane body does not make its neighbour two-sided | VERIFIED |
 | Per-body Freeze / Resume / stale-source / current-mesh edit predicate, independent across bodies | VERIFIED |
@@ -645,7 +723,7 @@ Android touch path. `PRODUCT.md` owns the user-facing description.
 ## Self-test suite
 
 Eleven debug-only native suites run once from `NativeViewport.start()` — never
-per frame — and total **1544 checks, zero failures** at the accepted baseline
+per frame — and total **1570 checks, zero failures** at the accepted baseline
 under NDK r29:
 
 | suite token | checks |
@@ -659,10 +737,18 @@ under NDK r29:
 | `FORGESHAPE_CONSTRUCTION_SPHERE_SELFTEST_OK` | 105 |
 | `FORGESHAPE_CONE_CAPSULE_SELFTEST_OK` | 163 |
 | `FORGESHAPE_SCULPT_BRUSH_KERNEL_SELFTEST_OK` | 302 |
-| `FORGESHAPE_RENDER_SHADING_SELFTEST_OK` | 238 |
+| `FORGESHAPE_RENDER_SHADING_SELFTEST_OK` | 264 |
 | `FORGESHAPE_SCENE_SELFTEST_OK` | 79 |
 
 followed by `FORGESHAPE_MESH_UPLOAD_OK` and `FORGESHAPE_NATIVE_VIEWPORT_OK`.
+
+UI-R1C1 added `r1c1_01`..`06` to the render-shading suite (238 → 264), because
+selection is PRESENTATION — the same reason the shading model and the viewport
+background live there and not in the picking or selection suites, which own
+*which* object is selected rather than how it is drawn. The family is driven with
+an explicit elapsed time rather than a clock, so a whole 220 ms pulse costs
+microseconds and nothing in it can be flaky.
+
 The tenth suite covers the crease policy, all six primitives' Smooth contracts
 and the capsule equality case, Faceted, NaN/Inf and fail-closed behaviour,
 determinism, the render-data rebuild policy, the generated MatCap asset, the
@@ -721,8 +807,10 @@ Build and verification commands are in `README.md`.
 | `EditorWorkspaceFoundationTest` | R1B1-09..14 — icons, pressed feedback, touch floor, rail tap-vs-scroll, viewport floor, popover | 7 |
 | `AppThemeTest` (JVM) | the default, the two appearances, and that choosing one moves nothing else the UI remembers | 10 |
 | `EditorWorkspaceThemeTest` | R1B2-01..17 — the control, the switch, state preservation across the recreation, contrast | 17 |
+| `ChromeMotionTest` (JVM) | R1C1-09 — the durations, and that reduced motion returns 0 rather than a short duration | 4 |
+| `EditorWorkspaceMotionTest` | R1C1-10..14, 21..24 — popover preserved, inspector interruptibility, chrome hide/restore, viewport stability, reduced motion, gesture priority | 10 |
 
-**127 tests** (39 JVM, 88 instrumented). No Java test asserts a rendered pixel;
+**141 tests** (43 JVM, 98 instrumented). No Java test asserts a rendered pixel;
 every control is reached by its stable semantic id and no assertion uses a screen
 coordinate. `EditorWorkspaceFoundationTest` and `EditorWorkspaceThemeTest`
 deliberately assert no colour literal, radius or shadow: those are judged by eye
@@ -731,10 +819,22 @@ while proving nothing. What the theme suite asserts instead is *relational* —
 that a role answers differently and in the right direction — plus WCAG contrast
 ratios computed in the test for the surfaces that carry numbers.
 
-**87 of the 88 instrumented tests pass as of UI-R1B2** on `ForgeShape_Stage006`;
+**97 of the 98 instrumented tests pass as of UI-R1C1** on `ForgeShape_Stage006`;
 the one failure is the `ui11` IME case described just below. Pre-017 took the
-count 46 → 50, Stage 017 took it 50 → 56, UI-R1B1 took it 56 → 71, and UI-R1B2
-took it 71 → 88 with `EditorWorkspaceThemeTest`.
+count 46 → 50, Stage 017 took it 50 → 56, UI-R1B1 took it 56 → 71, UI-R1B2 took
+it 71 → 88 with `EditorWorkspaceThemeTest`, and UI-R1C1 took it 88 → 98 with
+`EditorWorkspaceMotionTest`.
+
+**`EditorWorkspaceMotionTest` asserts a RESTING state and never a frame of an
+animation.** A case that sampled a transition part-way through would be a test of
+the device's frame timing and would fail on a slow emulator for reasons that have
+nothing to do with the product. What it checks instead is that a panel always
+ends up somewhere legitimate — fully visible or fully gone, at alpha 1,
+untranslated, with a chevron that agrees with it — however the user interrupted
+it. It writes `animator_duration_scale` through the instrumentation's own shell,
+because the product holds no `WRITE_SECURE_SETTINGS` and must never ask for one,
+and restores it in **both** `@Before` and `@After` so a case that dies part-way
+cannot leave animation switched off for every suite that follows.
 
 **A theme switch recreates the Activity, so a test that changes appearance must
 wait for the workspace to come back.** `EditorWorkspaceThemeTest.switchTo` drives
@@ -777,11 +877,11 @@ it a regression.
 Latest acceptance run, on `ForgeShape_Stage006` / `emulator-5580` unless a line
 says otherwise:
 
-- **Native self-tests:** eleven suites, **1544 checks, zero failures** on a
+- **Native self-tests:** eleven suites, **1570 checks, zero failures** on a
   clean launch. The Gate P1 picking suite is unchanged at 128, so the ARM64
   shared-edge fix is intact; `SIDE`, `REFR`, `NOR` and `CAMPROJ` all still green.
-- **JVM:** 39/39.
-- **Instrumented:** 88 run, **87 green**, through
+- **JVM:** 43/43.
+- **Instrumented:** 98 run, **97 green**, through
   `scripts\run-instrumented-tests.ps1 -Serial emulator-5580`. The one failure is
   `EditorWorkspaceGestureTest.ui11_…`, which fails its own precondition guard
   ("the soft keyboard did not appear, so this case proves nothing") before
@@ -794,12 +894,13 @@ says otherwise:
 - **Physical ARM64 (Gate P1):** closed on a Galaxy S25 Ultra —
   `primaryCpuAbi=arm64-v8a`, `PAGE_SIZE` 4096, the mandatory ~10k/~50k/~100k
   ladder and Sculpt at 100k measured on real hardware. Stylus stays UNVERIFIED.
-- **Runtime:** the UI-R1B2 walkthrough (cold start in Dark, two bodies placed
-  through the product's own editors, Dark↔Light with zero uploads, rotation,
-  HOME/resume, cold restart back to Dark, the direct Sculpt path with a real
-  Grab stroke, a switch made *while sculpting*, Back/Resume, and an expanded
-  window in both appearances) is summarised in the UI-R1B2 chapter at the top of
-  this file. The UI-R1B1 and Stage 017 walkthroughs are in Git history.
+- **Runtime:** the UI-R1C1 walkthrough (two bodies placed through the product's
+  own editors, the pulse caught on camera at a red-blue spread of 114 decaying to
+  52, A↔B with zero uploads in both appearances, Light readability, reduced
+  motion proven by four byte-identical frames, a real Grab stroke, chrome and
+  inspector motion exercised *during* Sculpt, and portrait / rotated / expanded)
+  is summarised in the UI-R1C1 chapter at the top of this file. Earlier
+  walkthroughs are in Git history.
 
 **One caveat about capturing self-test evidence.** On both the emulator and the
 physical phone the logcat ring buffer intermittently drops whole suites from the
@@ -922,19 +1023,22 @@ required shading is complete without them.
 
 ## Technical Debt
 
-**The selection tint was chosen against a dark ground and is now used on a light
-one.** `kSelectedTint` mixes a flat orange at alpha 0.55 over the whole selected
-body. On the dark theme that reads as intended; on the light theme it is the
-heaviest thing on screen. UI-R1B2 deliberately left it untouched — retuning
-selection while also introducing a theme would have made neither reviewable — so
-this is a **known and accepted** state, and it is the first item of UI-R1C.
+**The selection tint's weight is FIXED as of UI-R1C1** and the entry that used to
+sit here is retired. What remains is the shape of the repair rather than a debt:
+selection is still composed as a lerp toward a flat colour rather than as a
+per-channel gain on the shaded colour (`shaded * mix(vec3(1.0), tint, a)`), which
+is the composition that would preserve face-to-face luminance ratios exactly.
+Dropping the resting alpha from 0.55 to 0.20 removed most of the measured cost
+without changing that convention — at 0.20 the flattening is roughly a fifth of
+what it was — so the gain formulation is now a small, optional refinement rather
+than the fix for a real readability problem. Selection also remains a whole-object
+tint rather than an **outline**; that is the expensive half, needs either a second
+geometry pass or a screen-space edge filter, and stays a separate decision.
 
-**`ARCHITECTURE.md` is at 1932 lines against a 1900 aspiration** (hard cap 2000).
-UI-R1B2 added the appearance model and the renderer background seam and paid for
-them by compressing nine sections and deleting three claims that Stage 017 had
-already made false — the single-object ownership row, "exactly one selectable
-object", and a `Current boundaries` list that still said there was no create. Net
-growth is about ten lines. The next stage touching this file should keep
+**`ARCHITECTURE.md` is inside its hard cap and still over its target.** UI-R1B2
+added the appearance model and the renderer background seam and paid for them by
+compressing nine sections; UI-R1C1 added the motion and selection-feedback
+ownership and compressed to match. The next stage touching this file should keep
 compressing rather than adding.
 
 **`scripts\run-instrumented-tests.ps1` aborts when javac emits a note.** The
@@ -956,9 +1060,10 @@ correct, but they are what produces the javac note above. Pre-existing and
 unrelated to UI-R1B1.
 
 **`PROJECT_STATUS.md` is over its own target budget** (see the line counts below,
-against a 500–800 target, under the 2000 hard cap). Each of the last two stages
-compressed the chapter before it into durable facts and still grew the file,
-because a stage chapter costs more than the one it retires. The next stage
+against a 500–800 target, under the 2000 hard cap). Every recent stage has
+compressed the chapter before it into durable facts and still grown the file,
+because a stage chapter costs more than the one it retires — UI-R1C1 cut the
+UI-R1B2 chapter from 140 lines to 43 and still added about 70 net. The next stage
 touching this file should compact the older closed-stage entries — Stage 016
 onward — rather than adding to them.
 
@@ -974,25 +1079,23 @@ real release artifact, and possibly moving the files behind a CMake condition �
 a change to release/test compilation that deliberately was not made as a side
 effect of the Pre-017 repair.
 
-**The selection tint costs about half the surface's form contrast, measured.**
-Selection is a whole-object tint mixed over the final shaded colour at
-`alpha = 0.55` (`kSelectedTint` in `forgeshape_renderer.cpp`). On the default box
-that takes the three visible faces from luminance 0.832 / 0.559 / 0.310 —
-a 2.69x spread with clear steps between adjacent faces — to 0.739 / 0.616 /
-0.504, a 1.47x spread whose face-to-face steps drop from ~0.26 to ~0.11, with
-every face pushed into the same saturated orange so hue carries no form cue
-either. A Construction Body is selected for the whole time the user is editing
-it, so this is the state the object is normally *worked* in.
+**The measurement that motivated UI-R1C1, kept for the record.** At the old
+permanent `alpha = 0.55` the default box's three visible faces went from
+luminance 0.832 / 0.559 / 0.310 — a 2.69x spread with clear steps between
+adjacent faces — to 0.739 / 0.616 / 0.504, a 1.47x spread whose face-to-face
+steps dropped from ~0.26 to ~0.11, with every face pushed into the same saturated
+orange so hue carried no form cue either. A Construction Body is selected for the
+whole time the user is editing it, so that was the state the object was normally
+*worked* in. Since UI-R1C1 the object rests at 0.20 and only passes through 0.55
+for 220 ms on the frame it becomes selected.
 
-This is **not** the Stage 015C-R defect and was not touched by it: the inverted
-culling was a separate, larger fault that the numbers above are measured after
-fixing. It is recorded because it is a real, quantified readability cost, and
-because the obvious repair is small — compose selection as a per-channel gain on
-the shaded colour (`shaded * mix(vec3(1.0), tint, a)`) instead of a lerp toward a
-flat colour, which preserves the luminance ratios between faces exactly while
-leaving the object unmistakably orange. That is a deliberate change to a
-user-visible convention, so it belongs to a stage that owns it, not to a fix
-whose scope was culling.
+**Reduced motion is pushed on refresh, not observed.** `syncFromNative` reads
+`ANIMATOR_DURATION_SCALE` and hands the answer to native code, which covers every
+resume and every state change. A user who changes the setting while ForgeShape is
+in the foreground and then immediately selects a body can therefore get one pulse
+decided by the previous value. Closing it means either a `ContentObserver` or a
+read on the pointer path, and neither is worth putting on the input path for a
+single frame of a 220 ms decay.
 
 **Sculpt cost model.** Sculpt publication is synchronous and republishes the
 whole mesh per move — O(vertices) regardless of how few the brush touched — and
@@ -1110,21 +1213,18 @@ for 90/270 is reasoned from the Vulkan pre-transform contract, not measured, and
 it would present rotated content. Carried and untouched: static viewport and
 scissor, no `oldSwapchain` handling,
 no validation layers, a single global viewport, and a selection highlight that is
-a whole-object tint rather than an outline.
+a whole-object tint rather than an outline — now pulsed and much lighter at rest
+(UI-R1C1), but still a tint.
 
 **Documentation size.** Every core document is inside the 2000-line hard limit,
-but four are over their preferred target budgets: `ARCHITECTURE.md` 1714
-against a 700–1000 target, `PROJECT_STATUS.md` 1061 against 500–800,
-`PRODUCT.md` 609 against 300–450, `README.md` 320 against 150–250.
-(`CLAUDE.md` 180 is inside its.) Stage 016 paid part of this back rather than
-only adding to it: the Stage 015C-R chapter here was compacted from 49 lines to
-15, keeping its conclusions and moving its measurement detail to Git history,
-the same pattern Stage 015D used on the chapters before it. The remaining
-overshoot predates this stage and is concentrated in `ARCHITECTURE.md`, where
-closing it means compacting prose about shading, sculpt and layout that a
-primitive-only stage does not own. That is a deliberate deferral, the same one
-Stage 015D recorded: bundling a documentation rewrite into a stage whose scope
-is one primitive is the unrelated-debt mixing the rules forbid.
+but four are over their preferred target budgets — see the counts recorded in the
+UI-R1C1 chapter. The overshoot predates this stage and is concentrated in
+`ARCHITECTURE.md` and this file. Each recent stage has paid part of it back by
+compacting the chapter it retires rather than only appending, which is the
+pattern the next one should continue; closing it outright means compacting prose
+about shading, sculpt and layout that no single feature stage owns, and bundling
+that rewrite into a stage with a different scope is the unrelated-debt mixing the
+rules forbid.
 
 **Shading and render data.** The crease policy is a single global angle. It is
 correct for every primitive ForgeShape has, but it is a *policy*, not a per-object
@@ -1200,6 +1300,7 @@ been deferred to avoid churning unrelated code. There is still no checked-in
 | `app/src/main/java/.../StartChooserView.java` | The New Project question: two ways to begin, over the live viewport. Owns no state, makes no native call |
 | `app/src/main/res/values/*` | `ids.xml` (the stable semantic id contract), `dimens.xml` (radius/type/depth scales), `colors.xml` (role names, dark values), `strings.xml`, `themes.xml` (edge-to-edge) |
 | `app/src/main/java/.../AppTheme.java` | The two appearances: the Android style each applies, and the viewport appearance each hands to native code |
+| `app/src/main/java/.../ChromeMotion.java` | The four rules every chrome transition follows: the two durations, the reduced-motion question, cancel-first, and one alpha helper. Not a framework and must not become one |
 | `app/src/main/res/values/attrs.xml`, `themes.xml` | The semantic roles, and the one place each is given a value per theme. Adding a theme touches these two files and nothing else |
 | `app/src/main/res/drawable/*` | 15 icon vector drawables on one 24 dp grid, plus the `bg_*` background state lists every control's look comes from, all written in `?attr/fs*` |
 | `app/src/main/res/color/*` | `control_content_tint.xml` — the one state list an icon and its label both read, so they cannot disagree |
@@ -1218,7 +1319,8 @@ been deferred to avoid churning unrelated code. There is still no checked-in
 | `app/src/main/cpp/forgeshape_mesh.{h,cpp}` | `RuntimeMesh` (immutable revision), `MeshStore`, validation, capacity policy, upload diagnostics including source-vs-render counts |
 | `app/src/main/cpp/forgeshape_render_mesh.{h,cpp}` | Derived render geometry: `RenderVertex` (position + normal + colour), `SurfaceShading`, THE crease policy (`kCreaseAngleDegrees`), per-vertex crease grouping with render-only duplication, and `RenderMeshCache`'s rebuild gate. Presentation only |
 | `app/src/main/cpp/forgeshape_matcap.{h,cpp}` | The one ForgeShape-owned MatCap, computed at device init from the closed-form model in that file. No asset, no decoder, one preset |
-| `app/src/main/cpp/forgeshape_display.{h,cpp}` | `ShadingModel`, the process-scoped `DisplaySettingsStore`, and the UI index mapping. Presentation state, never truth |
+| `app/src/main/cpp/forgeshape_display.{h,cpp}` | `ShadingModel`, `ViewportBackground`, the reduced-motion bool, the process-scoped `DisplaySettingsStore`, and the UI index mapping. Presentation state, never truth |
+| `app/src/main/cpp/forgeshape_selection_pulse.{h,cpp}` | How a SELECTED body is drawn, never which one is: the peak, the resting alpha, the decay, and one pure function over an explicit frame delta. Holds no ObjectId and reads no clock |
 | `app/src/main/cpp/forgeshape_renderer.{h,cpp}` | Vulkan renderer, frame loop, camera snapshot + model transform + selection highlight consumer |
 | `app/src/main/cpp/forgeshape_math.h` | Minimal self-owned vec3/mat4. No GLM |
 | `app/src/main/cpp/forgeshape_demo_mesh.{h,cpp}` | Baseline cube numbers; source data for the baseline debug fixture only |
@@ -1256,32 +1358,28 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**UI-R1C — Motion + Selection Feedback + View/Adaptive Pass**
+**UI-R1C2 — View/Grid + Adaptive Workspace Refinement**
 
-Selection is the oldest unaddressed thing on screen and now the most visible.
-`kSelectedTint` is a flat orange mixed at **alpha 0.55** over the whole selected
-body, and UI-R1B2 deliberately did not touch it — which means it now has to work
-on a warm light ground it was never chosen against, where it reads heavier than
-anything else in the product. The audit already established the cheap half: the
-render loop is continuous and re-snapshots every frame, and `selectionTint.a` is
-an existing push-constant component, so a short pulse on selection plus a much
-lower resting alpha costs no Java animator, no invalidate, no geometry and no
-upload. The expensive half — an outline — needs either a second geometry pass or
-a screen-space edge filter, and stays a separate decision.
+The two pieces UI-R1C1 deliberately did not take, and the most bounded work
+left in this round.
 
-Motion is the other half. The product has exactly one animation, the Display
-popover's open/close, and it is good: grow-from-anchor, selection feedback in
-place, non-modal, interruptible, and honouring the platform's reduce-motion
-signal. What it is not is shared. UI-R1C extracts the durations, the
-reduce-motion gate and the cancel-first rule into something the inspector's
-expand/collapse and the chrome hide/restore can reuse — a helper, not a
-framework, and nothing on the path of a pointer sample.
+**Grid** is a renderer overlay driven by the display store, on the seam that
+already exists: `ViewportDisplaySettings` carries the shading model, the viewport
+background and now the reduced-motion bool, and a Grid on/off is the same shape
+of value. It is presentation and must stay so — no revision, no geometry truth,
+nothing readable back out of it — and it needs a **View** group in the Display
+popover to switch it, which is the first new group that surface has gained since
+Appearance.
 
-The View group and the adaptive pass are the third piece and the most bounded:
-Grid on/off as a renderer overlay driven by the display store, and the
-Expanded-window work the audit named — honouring `railDocked()`, which exists
-and has never been called, and giving Objects its own surface where there is
-room for one.
+**The adaptive pass** is the Expanded-window work the UI audit named:
+`WorkspaceLayoutMode.railDocked()` exists and has never once been called, and
+Objects deserves its own surface on a window that has room for one rather than
+living inside the Construction shape editor's scroll. UI-R1C1 verified the new
+motion in portrait, rotated and expanded windows but changed no breakpoint and
+promoted nothing, precisely so that this stage can.
 
-Still out: blur or glass of any kind, persistence, automatic system theme,
-hierarchy commands, Sketch/Extrude, Undo and import/export.
+**Still out:** Selection Outline — the expensive half of selection feedback,
+needing either a second geometry pass or a screen-space edge filter and its own
+decision; blur or glass of any kind; a post-processing framework; persistence;
+an automatic system theme; hierarchy commands; Sketch/Extrude; Undo; and
+import/export.

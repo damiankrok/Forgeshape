@@ -31,6 +31,10 @@ final class ForgeShapeSurfaceView extends SurfaceView implements SurfaceHolder.C
 
     private OnViewportGestureSettled gestureSettled;
 
+    /** Whether a pointer is currently down on the viewport. UI-thread only,
+     *  presentation only: the gesture itself is still native code's to read. */
+    private boolean pointerDown;
+
     ForgeShapeSurfaceView(Context context) {
         super(context);
         getHolder().addCallback(this);
@@ -42,6 +46,14 @@ final class ForgeShapeSurfaceView extends SurfaceView implements SurfaceHolder.C
     public boolean onTouchEvent(MotionEvent event) {
         final int action = event.getActionMasked();
         if (action == MotionEvent.ACTION_DOWN) {
+            // A viewport gesture has begun. Nothing about it is interpreted
+            // here — the listener is told only that the user's pointer is on
+            // the model, which is what chrome uses to decide it must not spend
+            // time animating. See PropertyInspectorView#setMotionAllowed.
+            pointerDown = true;
+            if (gestureSettled != null) {
+                gestureSettled.onViewportGestureStarted();
+            }
             // Touching the viewport ends any text edit in the overlay panel:
             // focus and the soft keyboard both come back here, so navigating the
             // model never happens "through" a focused field. Nothing about the
@@ -71,15 +83,25 @@ final class ForgeShapeSurfaceView extends SurfaceView implements SurfaceHolder.C
         // body makes that body the edit target down in native code. Nothing is
         // interpreted here — the listener only learns that a gesture settled,
         // and decides for itself whether anything it displays actually moved.
-        if ((action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL)
-                && gestureSettled != null) {
-            gestureSettled.onViewportGestureSettled();
+        if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+            pointerDown = false;
+            if (gestureSettled != null) {
+                gestureSettled.onViewportGestureSettled();
+            }
         }
         return true;
     }
 
-    /** Told when a viewport gesture has finished and native state may have moved. */
+    /** Whether the user currently has a pointer down on the model. */
+    boolean viewportPointerDown() {
+        return pointerDown;
+    }
+
+    /** Told when a viewport gesture starts, and when it has finished and native
+     *  state may have moved. */
     interface OnViewportGestureSettled {
+        void onViewportGestureStarted();
+
         void onViewportGestureSettled();
     }
 

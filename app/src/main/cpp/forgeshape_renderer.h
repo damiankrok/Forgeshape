@@ -13,6 +13,7 @@
 #include <android/native_window.h>
 #include <vulkan/vulkan.h>
 
+#include <chrono>
 #include <cstdint>
 #include <unordered_map>
 #include <utility>
@@ -24,6 +25,7 @@
 #include "forgeshape_object_id.h"
 #include "forgeshape_render_mesh.h"
 #include "forgeshape_scene.h"
+#include "forgeshape_selection_pulse.h"
 
 namespace forgeshape {
 
@@ -59,6 +61,18 @@ struct BodyRenderResources {
     MeshRevision uploadedRevision = kNoMeshRevision;
     SurfaceShading uploadedShading = kDefaultSurfaceShading;
     MeshRevision failedRevision = kNoMeshRevision;  // do not retry in a loop
+
+    // How this body's selection is currently being DRAWN — the acknowledgement
+    // pulse and the resting tint that follows it.
+    //
+    // It lives here, beside the GPU state, because it is per body and keyed by
+    // the same stable ObjectId, so body A's pulse cannot be interrupted or
+    // restarted by anything that happens to body B. It is presentation and
+    // nothing else: no revision, no buffer, no upload and no rebuild can be
+    // caused by it, and the pulse advancing changes exactly one float in the
+    // push constants that were going to be written for this draw anyway.
+    SelectionPulseState selectionPulse;
+    float selectionAlpha = 0.0f;  // this frame's answer, written by syncScene
 };
 
 class Renderer {
@@ -185,6 +199,13 @@ private:
     void syncScene();
     // One body's half of syncScene: the per-body gate, then rebuild + upload.
     void syncBody(const SceneDrawItem& item);
+    // Advances every body's selection presentation by one frame. Runs beside
+    // syncScene and deliberately outside its revision gate: a pulse must keep
+    // decaying on frames where no geometry changed, which is all of them.
+    void advanceSelectionFeedback(double deltaSeconds);
+    // Seconds since the previous frame, clamped. The renderer owns the only
+    // clock in ForgeShape's presentation path.
+    double consumeFrameDeltaSeconds();
     // Records one body's push constants and its indexed draw.
     void recordBodyDraw(VkCommandBuffer cmd, const SceneDrawItem& item);
     BodyRenderResources& resourcesFor(ObjectId objectId);
@@ -291,6 +312,12 @@ private:
     bool needsSwapchainRebuild_ = false;
     bool presentedThisSession_ = false;
     uint64_t frameIndex_ = 0;
+
+    // When the previous frame measured its delta. Zero until the first frame,
+    // which therefore advances no animation at all rather than by however long
+    // the process had been alive.
+    std::chrono::steady_clock::time_point lastFrameTime_{};
+    bool haveFrameTime_ = false;
 };
 
 }  // namespace forgeshape
