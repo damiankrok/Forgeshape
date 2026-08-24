@@ -56,7 +56,7 @@ final class SculptContextView extends LinearLayout {
         meshSummary.setId(R.id.sculpt_mesh_summary);
         meshSummary.setTextSize(TypedValue.COMPLEX_UNIT_PX,
                 EditorControlStyles.dimen(context, R.dimen.text_body));
-        meshSummary.setTextColor(context.getColor(R.color.text_primary));
+        meshSummary.setTextColor(EditorControlStyles.themeColor(context, R.attr.fsTextPrimary));
         meshSummary.setLineSpacing(
                 EditorControlStyles.dimen(context, R.dimen.text_line_spacing), 1.0f);
         addView(meshSummary, EditorControlStyles.rowParams(0));
@@ -68,7 +68,7 @@ final class SculptContextView extends LinearLayout {
         // status line, where the next message would overwrite it.
         staleWarning = EditorControlStyles.captionText(context, R.id.stale_source_warning,
                 context.getString(R.string.stale_source_warning));
-        staleWarning.setTextColor(context.getColor(R.color.text_measure));
+        staleWarning.setTextColor(EditorControlStyles.themeColor(context, R.attr.fsTextMeasure));
         staleWarning.setContentDescription(context.getString(R.string.stale_source_warning));
         final int pad = EditorControlStyles.dimen(context, R.dimen.row_gap);
         staleWarning.setPadding(pad, pad, pad, pad);
@@ -161,12 +161,12 @@ final class SculptContextView extends LinearLayout {
     private void freezeNow() {
         if (NativeViewport.freezeToSculpt() != NativeViewport.SCULPT_OK) {
             host.showStatus(getContext().getString(R.string.status_freeze_failed),
-                    R.color.text_error);
+                    R.attr.fsTextError);
             return;
         }
         host.onNativeStateChanged();
         host.showStatus(getContext().getString(R.string.status_frozen, describeNativeKind()),
-                R.color.text_success);
+                R.attr.fsTextSuccess);
     }
 
     private String describeNativeKind() {

@@ -1587,6 +1587,37 @@ Java_com_forgeshape_app_NativeViewport_surfaceShading(JNIEnv*, jclass) {
         forgeshape::surfaceShadingIndex(forgeshape::displaySettings().surfaceShading()));
 }
 
+// The viewport background: what the render pass clears to, behind everything.
+//
+// This is the ONE presentation value the Android theme system hands down, and it
+// crosses as a closed appearance index rather than as a theme or an RGB. Native
+// code owns what each appearance looks like, so the geometry domain never learns
+// that an Android theme exists. Refused if unrecognised, exactly like a shading
+// model, and the caller is told what is actually in effect afterwards.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_setViewportBackground(JNIEnv*, jclass,
+                                                            jint backgroundIndex) {
+    forgeshape::DisplaySettingsStore& settings = forgeshape::displaySettings();
+    forgeshape::ViewportBackground requested = settings.viewportBackground();
+    const bool known = forgeshape::viewportBackgroundFromIndex(
+        static_cast<int>(backgroundIndex), &requested);
+    bool changed = false;
+    if (known) {
+        changed = settings.setViewportBackground(requested);
+    }
+    FS_LOGI("FORGESHAPE_VIEWPORT_BACKGROUND:%s requested=%d known=%d changed=%d",
+            forgeshape::viewportBackgroundName(settings.viewportBackground()),
+            static_cast<int>(backgroundIndex), known ? 1 : 0, changed ? 1 : 0);
+    return static_cast<jint>(
+        forgeshape::viewportBackgroundIndex(settings.viewportBackground()));
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_viewportBackground(JNIEnv*, jclass) {
+    return static_cast<jint>(
+        forgeshape::viewportBackgroundIndex(forgeshape::displaySettings().viewportBackground()));
+}
+
 // The projection mode is CAMERA state, not a display setting, so it is taken
 // under the same lock the camera gestures use rather than through the display
 // store. It publishes no mesh, mints no revision and touches no geometry: the

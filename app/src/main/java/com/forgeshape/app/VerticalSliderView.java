@@ -50,10 +50,13 @@ final class VerticalSliderView extends View {
         trackWidth = EditorControlStyles.dimen(context, R.dimen.brush_track_width);
         thumbRadius = EditorControlStyles.dimen(context, R.dimen.brush_thumb_radius);
 
-        trackPaint.setColor(context.getColor(R.color.slider_track));
-        fillPaint.setColor(context.getColor(R.color.slider_fill));
-        thumbPaint.setColor(context.getColor(R.color.text_primary));
-        thumbBorderPaint.setColor(context.getColor(R.color.accent));
+        trackPaint.setColor(EditorControlStyles.themeColor(context, R.attr.fsSliderTrack));
+        fillPaint.setColor(EditorControlStyles.themeColor(context, R.attr.fsSliderFill));
+        // Its own role rather than the body-text colour: a thumb has to stand
+        // off ITS TRACK, and on a light theme the track is pale, so the answer
+        // is a dark thumb — the opposite of what a text colour would give.
+        thumbPaint.setColor(EditorControlStyles.themeColor(context, R.attr.fsSliderThumb));
+        thumbBorderPaint.setColor(EditorControlStyles.themeColor(context, R.attr.fsAccent));
         thumbBorderPaint.setStyle(Paint.Style.STROKE);
         thumbBorderPaint.setStrokeWidth(
                 EditorControlStyles.dimen(context, R.dimen.control_border_active_width));

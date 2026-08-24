@@ -11,8 +11,8 @@
   active one and must not be able to read as it.
 -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:state_enabled="false" android:color="@color/text_disabled" />
-    <item android:state_activated="true" android:color="@color/text_primary" />
-    <item android:state_pressed="true" android:color="@color/text_primary" />
-    <item android:color="@color/text_secondary" />
+    <item android:state_enabled="false" android:color="?attr/fsTextDisabled" />
+    <item android:state_activated="true" android:color="?attr/fsTextPrimary" />
+    <item android:state_pressed="true" android:color="?attr/fsTextPrimary" />
+    <item android:color="?attr/fsTextSecondary" />
 </selector>

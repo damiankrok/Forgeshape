@@ -8,5 +8,5 @@
 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
-    <solid android:color="@color/chooser_scrim" />
+    <solid android:color="?attr/fsChooserScrim" />
 </shape>

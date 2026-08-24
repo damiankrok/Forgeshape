@@ -492,6 +492,37 @@ final class NativeViewport {
     /** @return the active {@code SURFACE_*} constant */
     static native int surfaceShading();
 
+    /** The neutral dark viewport: the product default. */
+    static final int VIEWPORT_BACKGROUND_DARK = 0;
+
+    /** The calm warm off-white viewport. */
+    static final int VIEWPORT_BACKGROUND_LIGHT = 1;
+
+    /**
+     * Requests what the viewport is CLEARED to, behind everything.
+     *
+     * <p>This is the one value the Android theme system hands to native code,
+     * and it crosses as a closed viewport <b>appearance</b> — never a theme,
+     * never an Android type, never an RGB authored up here. Native code owns
+     * what each appearance looks like, so the geometry domain does not learn
+     * that themes exist.
+     *
+     * <p>The cheapest presentation change in the product: the clear value is
+     * written into the render pass every frame anyway, so this publishes no
+     * mesh, mints no {@code MeshRevision} or {@code SculptRevision}, moves no
+     * vertex, rebuilds no derived geometry, re-uploads nothing and cannot be
+     * observed by picking. An unknown index is refused and the current
+     * appearance stands.
+     *
+     * @param background {@link #VIEWPORT_BACKGROUND_DARK} or
+     *                   {@link #VIEWPORT_BACKGROUND_LIGHT}
+     * @return the {@code VIEWPORT_BACKGROUND_*} constant in effect afterwards
+     */
+    static native int setViewportBackground(int background);
+
+    /** @return the active {@code VIEWPORT_BACKGROUND_*} constant */
+    static native int viewportBackground();
+
     /**
      * Standard pinhole projection: nearer parts of a solid are drawn larger and
      * parallel edges converge. The product default.

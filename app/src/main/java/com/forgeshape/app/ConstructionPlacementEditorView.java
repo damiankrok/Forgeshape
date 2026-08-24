@@ -179,22 +179,22 @@ final class ConstructionPlacementEditorView extends LinearLayout {
             case NativeViewport.APPLY_APPLIED:
                 host.onNativeStateChanged();
                 host.showStatus(getContext().getString(R.string.status_transform_applied,
-                        describeTransform()), R.color.text_success);
+                        describeTransform()), R.attr.fsTextSuccess);
                 host.finishEditing();
                 break;
             case NativeViewport.APPLY_UNCHANGED:
                 host.onNativeStateChanged();
                 host.showStatus(getContext().getString(R.string.status_transform_unchanged,
-                        describeTransform()), R.color.text_secondary);
+                        describeTransform()), R.attr.fsTextSecondary);
                 host.finishEditing();
                 break;
             case NativeViewport.APPLY_REJECTED_NOT_REPRESENTABLE:
                 host.showStatus(getContext().getString(
-                        R.string.reject_transform_not_representable), R.color.text_error);
+                        R.string.reject_transform_not_representable), R.attr.fsTextError);
                 break;
             default:
                 host.showStatus(getContext().getString(R.string.reject_transform_other),
-                        R.color.text_error);
+                        R.attr.fsTextError);
                 break;
         }
     }
@@ -214,7 +214,7 @@ final class ConstructionPlacementEditorView extends LinearLayout {
                             ? getContext().getString(R.string.field_empty, row.label())
                             : getContext().getString(R.string.field_not_a_number, row.label(),
                                     raw.trim()),
-                    R.color.text_error);
+                    R.attr.fsTextError);
             row.focusForCorrection();
             return null;
         }

@@ -20,9 +20,17 @@ public final class ForgeShapeActivity extends Activity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        // BEFORE super.onCreate and before anything is inflated: a theme applied
+        // later would leave every already-resolved drawable and colour state
+        // list holding the previous theme's answers.
+        applyTheme();
+
         super.onCreate(savedInstanceState);
         // Native state — including the Construction object the inspector reads
         // its initial values from — must exist before any view asks for it.
+        // Started once per PROCESS: a second call while the render thread is
+        // alive returns immediately, which is what makes a theme recreation
+        // cost nothing (see onDestroy).
         NativeViewport.start();
 
         goEdgeToEdge();
@@ -35,6 +43,61 @@ public final class ForgeShapeActivity extends Activity {
         // Without this a text field would take focus at startup, which would
         // both pop the keyboard and swallow the debug key hook below.
         viewport.requestFocus();
+    }
+
+    /**
+     * Puts this Activity into the appearance the process has chosen, and tells
+     * native code what the viewport should be cleared to.
+     *
+     * <p>Both halves come from the <b>one</b> UI-owned choice in
+     * {@link EditorUiState}, so the chrome and the viewport cannot disagree
+     * about which theme is in force. The derivation runs here and nowhere else.
+     *
+     * <p>The native call is the whole of what a theme means below JNI: a closed
+     * viewport appearance index. No Android theme, no style, no colour authored
+     * in Java and no Android type crosses. It publishes no mesh, mints no
+     * revision, rebuilds no geometry and re-uploads nothing.
+     */
+    private void applyTheme() {
+        final AppTheme theme = EditorUiState.currentAppTheme();
+        setTheme(theme.styleRes());
+        NativeViewport.setViewportBackground(theme.viewportBackground());
+    }
+
+    /**
+     * Switches the appearance, by recreating this Activity.
+     *
+     * <p>Recreation rather than a manual repaint, and that is a deliberate
+     * choice rather than a shortcut. The workspace is built entirely in code
+     * from themed resources, so re-resolving them means rebuilding the views
+     * that hold them — and walking dozens of view classes reapplying colours
+     * would be the duplication the theme attributes exist to avoid, with every
+     * surface a chance to be missed.
+     *
+     * <p>It is safe because <b>nothing that matters lives in the Activity</b>.
+     * The scene, every body, the active {@code ObjectId}, the product mode, the
+     * Frozen Sculpt Mesh, the camera and the display settings are all
+     * process-scoped native state that outlives this object; the start choice
+     * and the theme are process-scoped UI state for the same reason. What is
+     * destroyed and rebuilt is the view tree, which owns none of it.
+     *
+     * <p>It is also <b>free</b>, because {@link #onDestroy} does not stop native
+     * code during a configuration change: the render thread, the Vulkan device
+     * and every GPU buffer survive, so the Surface is detached and reattached
+     * exactly as it is on a HOME/resume — with no re-upload and no self-test
+     * re-run.
+     */
+    void requestTheme(AppTheme theme) {
+        if (!EditorUiState.setCurrentAppTheme(theme)) {
+            return;  // already wearing it; recreating would flash for nothing
+        }
+        // The session state goes with it. Changing colour must not also snap
+        // the display unit back to meters, close the Property Inspector or
+        // re-point the Tool Rail — none of which the user asked for.
+        if (workspace != null) {
+            EditorUiState.carryAcrossRecreation(workspace.uiState());
+        }
+        recreate();
     }
 
     /**
@@ -123,9 +186,25 @@ public final class ForgeShapeActivity extends Activity {
         return workspace;
     }
 
+    /**
+     * Stops native code only when this Activity is really going away.
+     *
+     * <p>{@code stop()} joins the render thread, which destroys the Vulkan
+     * instance, the device and every GPU buffer with it — so the next
+     * {@code start()} would re-run the self-tests, re-publish and re-upload the
+     * whole scene. That is correct when the app is finishing and quite wrong for
+     * a theme change, which must cost the model nothing.
+     *
+     * <p>During a configuration change — a theme recreation, or a window change
+     * `configChanges` did not absorb — the process, the scene and the render
+     * thread all continue. The Surface is detached and reattached, exactly as on
+     * a HOME/resume, and the buffers are device-scoped so nothing is re-uploaded.
+     */
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        NativeViewport.stop();
+        if (!isChangingConfigurations()) {
+            NativeViewport.stop();
+        }
     }
 }

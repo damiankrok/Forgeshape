@@ -8,7 +8,7 @@
 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
-    <solid android:color="@color/chrome_surface" />
+    <solid android:color="?attr/fsChromeSurface" />
     <corners
         android:topLeftRadius="@dimen/radius_sheet"
         android:topRightRadius="@dimen/radius_sheet"
@@ -16,5 +16,5 @@
         android:bottomRightRadius="0dp" />
     <stroke
         android:width="@dimen/control_border_width"
-        android:color="@color/chrome_hairline" />
+        android:color="?attr/fsChromeHairline" />
 </shape>

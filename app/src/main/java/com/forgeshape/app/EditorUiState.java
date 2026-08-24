@@ -20,6 +20,51 @@ package com.forgeshape.app;
 final class EditorUiState {
 
     /**
+     * The instance handed to the next workspace, when the one before it was
+     * destroyed by a theme change rather than by the user leaving.
+     *
+     * <p>A theme is applied by recreating the Activity, which destroys the whole
+     * view tree and the state below it. Everything that MATTERS survives anyway,
+     * because it is native and process-scoped — the scene, every body, the
+     * active ObjectId, the mode, the Frozen Sculpt Mesh. But the session state
+     * in this class is neither native nor static, and losing it would mean that
+     * changing colour also snapped the display unit back to meters, closed the
+     * Property Inspector and re-pointed the Tool Rail. That is not a theme
+     * change; that is a theme change plus a small unasked-for reset.
+     *
+     * <p>So the outgoing instance is carried across and adopted by the incoming
+     * workspace. Deliberately NOT a {@code Bundle} and not persistence: this
+     * class holds no Android type, which is what keeps it unit-testable without
+     * a device, and the carried instance dies with the process exactly as the
+     * fields in it always have.
+     */
+    private static EditorUiState carriedAcrossRecreation;
+
+    /**
+     * Hands this state to whichever workspace is built next.
+     *
+     * <p>Called immediately before an intentional recreation. It is not a
+     * general "save": a destroy that is not a configuration change leaves this
+     * null, so leaving the app really does start clean.
+     */
+    static void carryAcrossRecreation(EditorUiState state) {
+        carriedAcrossRecreation = state;
+    }
+
+    /**
+     * The state a newly built workspace should adopt.
+     *
+     * <p>Returns the carried instance exactly once, so a later workspace built
+     * for any other reason gets a fresh one and cannot inherit a session that
+     * was never handed to it.
+     */
+    static EditorUiState forNewWorkspace() {
+        final EditorUiState carried = carriedAcrossRecreation;
+        carriedAcrossRecreation = null;
+        return carried != null ? carried : new EditorUiState();
+    }
+
+    /**
      * Which Construction editor the Tool Rail is pointing at.
      *
      * <p>These are not native tools and native code has never heard of them.
@@ -83,6 +128,26 @@ final class EditorUiState {
      */
     private static boolean startChoiceMade;
 
+    /**
+     * Which appearance this PROCESS is wearing.
+     *
+     * <p>Static for the same reason the start flag is, and more sharply: a theme
+     * change is applied by <b>recreating the Activity</b>, which is the only
+     * clean way to re-resolve themed resources for a UI built entirely in code.
+     * An instance field would therefore be destroyed by the very act that
+     * applies it, and the recreated workspace would come back in the theme the
+     * user just left.
+     *
+     * <p>Still <b>losable</b>, and deliberately so: nothing is written to disk
+     * and no {@code Bundle} carries it, so a genuine process kill returns to the
+     * documented default. Persistence is not part of this stage.
+     *
+     * <p>It is presentation. It cannot change a Construction parameter, a
+     * transform, an {@code ObjectId}, a revision, what is pickable or what is
+     * selected — all of which are native truth that outlives the Activity.
+     */
+    private static AppTheme appTheme = AppTheme.defaultTheme();
+
     /** Whether every chrome surface is hidden, leaving the bare model. */
     private boolean chromeHidden;
 
@@ -128,6 +193,48 @@ final class EditorUiState {
         } else {
             constructionInspectorExpanded = expanded;
         }
+    }
+
+    /** The appearance in force, which a fresh process reports as the default. */
+    AppTheme appTheme() {
+        return appTheme;
+    }
+
+    /**
+     * The appearance in force, reachable before any workspace exists.
+     *
+     * <p>Static because the Activity must apply the theme <i>before</i> it
+     * inflates anything, and at that moment there is no
+     * {@link EditorWorkspaceView} and therefore no instance to ask.
+     */
+    static AppTheme currentAppTheme() {
+        return appTheme;
+    }
+
+    /**
+     * Records the appearance the user chose.
+     *
+     * @return whether this actually changed anything, so a caller can avoid
+     *         recreating the Activity for a tap on the theme that is already on
+     *         screen — which would be a visible flash for no result
+     */
+    static boolean setCurrentAppTheme(AppTheme theme) {
+        if (theme == null || theme == appTheme) {
+            return false;
+        }
+        appTheme = theme;
+        return true;
+    }
+
+    /**
+     * Returns the process to the documented default, as a fresh one starts.
+     *
+     * <p>Exists so verification can assert the default and then exercise both
+     * appearances inside one instrumentation process. It destroys nothing: the
+     * scene, the mode and every body are native state this does not touch.
+     */
+    static void resetAppTheme() {
+        appTheme = AppTheme.defaultTheme();
     }
 
     /** Whether the start chooser still has a question to ask this process. */

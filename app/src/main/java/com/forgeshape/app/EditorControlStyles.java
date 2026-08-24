@@ -69,22 +69,60 @@ final class EditorControlStyles {
     }
 
     // -----------------------------------------------------------------------
+    // Theme
+    // -----------------------------------------------------------------------
+
+    /**
+     * Resolves one semantic role against the theme the Activity applied.
+     *
+     * <p>This is the only way a colour reaches Java in this package. A caller
+     * asks for a <b>role</b> — {@code R.attr.fsTextError}, not a colour — and
+     * whichever of the two themes is in force answers. That is what stops a
+     * second theme costing a second component tree: there is no
+     * {@code if (light)} anywhere, and adding a third would touch
+     * {@code attrs.xml} and {@code themes.xml} and nothing else.
+     *
+     * <p>Views built from resources need none of this — a background or a colour
+     * state list carrying {@code ?attr/} is resolved by the platform when the
+     * Context inflates it. This exists for the handful of places that must set a
+     * colour imperatively: text roles, and the two brush sliders, which are
+     * drawn onto a Canvas rather than composed from drawables.
+     *
+     * @param attrRes one of the {@code R.attr.fs*} roles declared in attrs.xml
+     */
+    static int themeColor(Context context, int attrRes) {
+        final TypedValue value = new TypedValue();
+        if (!context.getTheme().resolveAttribute(attrRes, value, true)) {
+            // A role with no answer is a theme that forgot it, which is a build
+            // mistake rather than something to paint around. Magenta is chosen
+            // to be impossible to mistake for a designed colour.
+            return 0xFFFF00FF;
+        }
+        if (value.type >= TypedValue.TYPE_FIRST_COLOR_INT
+                && value.type <= TypedValue.TYPE_LAST_COLOR_INT) {
+            return value.data;
+        }
+        return context.getColor(value.resourceId);
+    }
+
+    // -----------------------------------------------------------------------
     // Typography
     // -----------------------------------------------------------------------
 
     /**
      * Applies one typographic role.
      *
-     * @param sizeRes one of the {@code text_*} dimensions, which are named by
-     *                role rather than by size
-     * @param medium  whether this role carries the medium weight; reserved for
-     *                type that names a surface or states an exact value, so
-     *                weight stays a hierarchy signal instead of decoration
+     * @param sizeRes  one of the {@code text_*} dimensions, which are named by
+     *                 role rather than by size
+     * @param colorAttr one of the {@code R.attr.fs*} colour roles
+     * @param medium   whether this role carries the medium weight; reserved for
+     *                 type that names a surface or states an exact value, so
+     *                 weight stays a hierarchy signal instead of decoration
      */
-    private static void applyRole(TextView view, int sizeRes, int colorRes, boolean medium) {
+    private static void applyRole(TextView view, int sizeRes, int colorAttr, boolean medium) {
         final Context context = view.getContext();
         view.setTextSize(TypedValue.COMPLEX_UNIT_PX, dimen(context, sizeRes));
-        view.setTextColor(context.getColor(colorRes));
+        view.setTextColor(themeColor(context, colorAttr));
         if (medium) {
             view.setTypeface(MEDIUM);
         }
@@ -99,7 +137,7 @@ final class EditorControlStyles {
     static TextView displayText(Context context, CharSequence text) {
         final TextView view = new TextView(context);
         view.setText(text);
-        applyRole(view, R.dimen.text_display, R.color.text_primary, true);
+        applyRole(view, R.dimen.text_display, R.attr.fsTextPrimary, true);
         return view;
     }
 
@@ -108,7 +146,7 @@ final class EditorControlStyles {
         final TextView view = new TextView(context);
         view.setId(id);
         view.setText(text);
-        applyRole(view, R.dimen.text_title, R.color.text_primary, true);
+        applyRole(view, R.dimen.text_title, R.attr.fsTextPrimary, true);
         return view;
     }
 
@@ -117,7 +155,7 @@ final class EditorControlStyles {
         final TextView view = new TextView(context);
         view.setId(id);
         view.setText(text);
-        applyRole(view, R.dimen.text_caption, R.color.text_secondary, false);
+        applyRole(view, R.dimen.text_caption, R.attr.fsTextSecondary, false);
         applyWrappedLeading(view);
         return view;
     }
@@ -125,7 +163,7 @@ final class EditorControlStyles {
     static TextView sectionLabel(Context context, CharSequence text) {
         final TextView label = new TextView(context);
         label.setText(text);
-        applyRole(label, R.dimen.text_label, R.color.text_secondary, true);
+        applyRole(label, R.dimen.text_label, R.attr.fsTextSecondary, true);
         label.setAllCaps(true);
         label.setLetterSpacing(0.08f);
         return label;
@@ -134,7 +172,7 @@ final class EditorControlStyles {
     static TextView fieldLabel(Context context, CharSequence text) {
         final TextView label = new TextView(context);
         label.setText(text);
-        applyRole(label, R.dimen.text_label, R.color.text_secondary, false);
+        applyRole(label, R.dimen.text_label, R.attr.fsTextSecondary, false);
         return label;
     }
 
@@ -219,7 +257,7 @@ final class EditorControlStyles {
      */
     static TextView actionChip(Context context, int id, CharSequence text) {
         final TextView chip = chip(context, id, text);
-        chip.setTextColor(context.getColor(R.color.text_primary));
+        chip.setTextColor(EditorControlStyles.themeColor(context, R.attr.fsTextPrimary));
         return chip;
     }
 
@@ -235,16 +273,24 @@ final class EditorControlStyles {
     /** A chip that names something the product does not have yet. */
     static void setChipReserved(TextView chip, CharSequence reason) {
         chip.setEnabled(false);
-        chip.setTextColor(chip.getContext().getColor(R.color.text_disabled));
+        chip.setTextColor(themeColor(chip.getContext(), R.attr.fsTextDisabled));
         chip.setBackgroundResource(R.drawable.bg_control_reserved);
         chip.setContentDescription(reason);
     }
 
-    /** A primary commit button. */
+    /**
+     * A primary commit button.
+     *
+     * <p>Its label reads {@code fsTextOnPrimary}, not {@code fsTextPrimary}:
+     * the two are the same on a dark theme, where a primary button is a dark
+     * blue block carrying the same near-white as everything else, and they are
+     * not on a light one, where the block is a solid accent that needs white on
+     * it while body text is near-black.
+     */
     static TextView primaryButton(Context context, int id, CharSequence text) {
         final TextView button = chip(context, id, text);
         button.setBackgroundResource(R.drawable.bg_primary);
-        button.setTextColor(context.getColor(R.color.text_primary));
+        button.setTextColor(themeColor(context, R.attr.fsTextOnPrimary));
         button.setTypeface(MEDIUM);
         final int padding = dimen(context, R.dimen.control_padding_horizontal);
         button.setPadding(padding, 0, padding, 0);

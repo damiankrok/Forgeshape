@@ -1573,8 +1573,16 @@ bool Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex) {
     begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     FS_VK_CHECK(vkBeginCommandBuffer(cmd, &begin), "vkBeginCommandBuffer");
 
+    // The viewport background, read from the display settings this frame was
+    // given. It is a presentation value and nothing more: the clear value is
+    // written into the render pass on every frame anyway, so switching it
+    // rebuilds no geometry, mints no revision, re-uploads nothing, and does not
+    // touch the swapchain, the pipeline, the descriptor set or any GPU buffer.
+    float background[3];
+    viewportBackgroundColor(display_.background, background);
+
     VkClearValue clears[2]{};
-    clears[0].color = {{0.055f, 0.070f, 0.105f, 1.0f}};  // ForgeShape viewport background
+    clears[0].color = {{background[0], background[1], background[2], 1.0f}};
     clears[1].depthStencil = {1.0f, 0};
 
     VkRenderPassBeginInfo rp{};

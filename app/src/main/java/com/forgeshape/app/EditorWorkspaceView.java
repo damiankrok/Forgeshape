@@ -54,7 +54,9 @@ final class EditorWorkspaceView extends FrameLayout
             R.string.tool_grab, R.string.tool_clay, R.string.tool_smooth, R.string.tool_inflate
     };
 
-    private final EditorUiState uiState = new EditorUiState();
+    /** Adopted from the workspace a theme change destroyed, when there was one;
+     *  otherwise fresh. See {@link EditorUiState#forNewWorkspace()}. */
+    private final EditorUiState uiState = EditorUiState.forNewWorkspace();
 
     private final View viewport;
 
@@ -505,7 +507,7 @@ final class EditorWorkspaceView extends FrameLayout
         showStartChooser(false);
         syncFromNative();
         showStatus(getContext().getString(R.string.status_started_construction),
-                R.color.text_secondary);
+                R.attr.fsTextSecondary);
     }
 
     /**
@@ -550,13 +552,13 @@ final class EditorWorkspaceView extends FrameLayout
         if (!shaped || NativeViewport.freezeToSculpt() != NativeViewport.SCULPT_OK) {
             syncFromNative();
             showStatus(getContext().getString(R.string.status_sculpt_start_failed),
-                    R.color.text_error);
+                    R.attr.fsTextError);
             return;
         }
         finishEditing();
         syncFromNative();
         showStatus(getContext().getString(R.string.status_started_sculpt),
-                R.color.text_success);
+                R.attr.fsTextSuccess);
     }
 
     // -----------------------------------------------------------------------
@@ -622,14 +624,14 @@ final class EditorWorkspaceView extends FrameLayout
         if (!sculpting) {
             showStatus(context.getString(R.string.status_showing,
                     shapeEditor.describeNativeKind(), uiState.displayUnit().label()),
-                    R.color.text_secondary);
+                    R.attr.fsTextSecondary);
             return;
         }
         final int tool = (int) nativeSculpt[NativeViewport.SCULPT_TOOL];
         final int index = (tool >= 0 && tool < SCULPT_TOOL_HINTS.length)
                 ? tool : NativeViewport.TOOL_GRAB;
         showStatus(context.getString(R.string.sculpt_gesture_rule,
-                context.getString(SCULPT_TOOL_HINTS[index])), R.color.text_secondary);
+                context.getString(SCULPT_TOOL_HINTS[index])), R.attr.fsTextSecondary);
     }
 
     private void buildRailFor(boolean sculpting) {
@@ -720,7 +722,7 @@ final class EditorWorkspaceView extends FrameLayout
                     ? active : NativeViewport.TOOL_GRAB;
             showStatus(getContext().getString(R.string.status_tool_selected,
                     getContext().getString(SCULPT_TOOL_NAMES[index]),
-                    getContext().getString(SCULPT_TOOL_HINTS[index])), R.color.text_secondary);
+                    getContext().getString(SCULPT_TOOL_HINTS[index])), R.attr.fsTextSecondary);
             finishEditing();
             return;
         }
@@ -731,13 +733,13 @@ final class EditorWorkspaceView extends FrameLayout
         toolRail.showActive(uiState.constructionTool());
         showActiveInspectorBody(false);
         showStatus(getContext().getString(R.string.status_construction_hint),
-                R.color.text_secondary);
+                R.attr.fsTextSecondary);
     }
 
     @Override
     public void onBrushChanged() {
         showStatus(getContext().getString(R.string.status_brush, brushControls.describeRadius(),
-                brushControls.describeStrength()), R.color.text_secondary);
+                brushControls.describeStrength()), R.attr.fsTextSecondary);
     }
 
     @Override
@@ -766,13 +768,13 @@ final class EditorWorkspaceView extends FrameLayout
     @Override
     public void onFreezeToSculpt() {
         if (NativeViewport.freezeToSculpt() != NativeViewport.SCULPT_OK) {
-            showStatus(getContext().getString(R.string.status_freeze_failed), R.color.text_error);
+            showStatus(getContext().getString(R.string.status_freeze_failed), R.attr.fsTextError);
             return;
         }
         finishEditing();
         syncFromNative();
         showStatus(getContext().getString(R.string.status_frozen,
-                shapeEditor.describeNativeKind()), R.color.text_success);
+                shapeEditor.describeNativeKind()), R.attr.fsTextSuccess);
     }
 
     /**
@@ -786,7 +788,7 @@ final class EditorWorkspaceView extends FrameLayout
     public void onResumeSculpt() {
         if (NativeViewport.enterSculptMode() != NativeViewport.SCULPT_OK) {
             showStatus(getContext().getString(R.string.status_nothing_frozen),
-                    R.color.text_error);
+                    R.attr.fsTextError);
             return;
         }
         finishEditing();
@@ -865,10 +867,39 @@ final class EditorWorkspaceView extends FrameLayout
         refreshDisplaySettings();
     }
 
+    /**
+     * Switches the whole workspace's appearance.
+     *
+     * <p>The one control here that is <b>not</b> answered by native code, and
+     * the only one that does not repaint in place: applying a theme means
+     * re-resolving every themed resource, which the Activity does by recreating
+     * itself. So there is nothing to refresh afterwards — this view is about to
+     * be replaced by one built in the new theme.
+     *
+     * <p>It changes no Construction parameter, no transform, no
+     * {@code ObjectId}, no revision, nothing about what is pickable and nothing
+     * about what is selected: all of that is process-scoped native state that
+     * outlives the Activity, which is exactly why recreating it is safe.
+     */
+    @Override
+    public void onAppThemeRequested(AppTheme theme) {
+        if (theme == uiState.appTheme()) {
+            // Already wearing it. Repaint the chips rather than recreating, so a
+            // tap on the current appearance is inert instead of a visible flash.
+            refreshDisplaySettings();
+            return;
+        }
+        final Context context = getContext();
+        if (context instanceof ForgeShapeActivity) {
+            ((ForgeShapeActivity) context).requestTheme(theme);
+        }
+    }
+
     /** Repaints the popover from native truth, so a refused request shows. */
     private void refreshDisplaySettings() {
         displayPopover.showSettings(NativeViewport.shadingModel(),
-                NativeViewport.surfaceShading(), NativeViewport.projectionMode());
+                NativeViewport.surfaceShading(), NativeViewport.projectionMode(),
+                uiState.appTheme());
     }
 
     /**
@@ -890,8 +921,8 @@ final class EditorWorkspaceView extends FrameLayout
     // -----------------------------------------------------------------------
 
     @Override
-    public void showStatus(CharSequence message, int colorRes) {
-        toolbar.showStatus(message, colorRes);
+    public void showStatus(CharSequence message, int colorAttr) {
+        toolbar.showStatus(message, colorAttr);
     }
 
     @Override
@@ -929,7 +960,7 @@ final class EditorWorkspaceView extends FrameLayout
         allConverted &= placementEditor.convertDisplayUnit(previous, unit);
         showStatus(getContext().getString(allConverted ? R.string.status_unit_display_only
                         : R.string.status_unit_unparsed, unit.label()),
-                allConverted ? R.color.text_secondary : R.color.text_error);
+                allConverted ? R.attr.fsTextSecondary : R.attr.fsTextError);
     }
 
     @Override

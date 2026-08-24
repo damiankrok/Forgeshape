@@ -48,6 +48,42 @@ enum class ShadingModel {
 
 constexpr int kShadingModelCount = 3;
 
+// What the viewport is CLEARED to, behind everything.
+//
+// A closed enum, exactly like ShadingModel, and for the same reason: the Android
+// UI has two themes, and the geometry domain must not learn what an Android
+// theme is. What crosses JNI is a viewport APPEARANCE — one of these — and
+// native code owns what each one actually looks like. No Android type, no theme
+// enum and no RGB authored above JNI reaches this file.
+//
+// Changing it is the cheapest kind of presentation change there is: the clear
+// value is written into the render pass every frame anyway, so a switch rebuilds
+// no geometry, mints no revision, re-uploads nothing and does not touch the
+// swapchain, the pipeline or any GPU buffer.
+enum class ViewportBackground {
+    NeutralDark,  // the product default
+    WarmLight,    // a calm warm off-white, not a stark white canvas
+};
+
+constexpr int kViewportBackgroundCount = 2;
+constexpr ViewportBackground kDefaultViewportBackground = ViewportBackground::NeutralDark;
+
+const char* viewportBackgroundName(ViewportBackground background);
+
+// Maps the UI's index onto the enum. Out-of-range is REFUSED rather than
+// clamped, for the same reason shadingModelFromIndex refuses.
+bool viewportBackgroundFromIndex(int index, ViewportBackground* out);
+int viewportBackgroundIndex(ViewportBackground background);
+
+// The linear RGB the render pass clears to, in the order Vulkan wants.
+//
+// These MUST stay in step with `dark_viewport_background` and
+// `light_viewport_background` in `colors.xml`, which is what the Android window
+// is painted with before the surface has anything on it; a mismatch shows as a
+// flash on launch. `DISP-VBG-03`/`04` pin the exact values so the pair cannot
+// drift silently.
+void viewportBackgroundColor(ViewportBackground background, float* outRgb);
+
 // The product default. Studio Solid, so a freshly launched viewport shows a
 // neutral modelling surface rather than a diagnostic.
 constexpr ShadingModel kDefaultShadingModel = ShadingModel::StudioSolid;
@@ -69,6 +105,7 @@ int surfaceShadingIndex(SurfaceShading shading);
 struct ViewportDisplaySettings {
     ShadingModel shading = kDefaultShadingModel;
     SurfaceShading surface = kDefaultSurfaceShading;
+    ViewportBackground background = kDefaultViewportBackground;
 };
 
 // The two values, readable from the render thread and writable from the UI
@@ -86,11 +123,13 @@ public:
 
     ShadingModel shadingModel() const;
     SurfaceShading surfaceShading() const;
+    ViewportBackground viewportBackground() const;
 
-    // Both return true when the value actually changed, so a caller can log a
-    // real transition and avoid reporting a no-op as one.
+    // All three return true when the value actually changed, so a caller can log
+    // a real transition and avoid reporting a no-op as one.
     bool setShadingModel(ShadingModel model);
     bool setSurfaceShading(SurfaceShading shading);
+    bool setViewportBackground(ViewportBackground background);
 
     // --- introspection (logging and self-tests only) ---
     uint64_t changeCount() const { return changeCount_.load(std::memory_order_relaxed); }
@@ -101,6 +140,7 @@ private:
     // maintaining a second mapping table that could drift.
     std::atomic<int> shading_{static_cast<int>(kDefaultShadingModel)};
     std::atomic<int> surface_{static_cast<int>(kDefaultSurfaceShading)};
+    std::atomic<int> background_{static_cast<int>(kDefaultViewportBackground)};
     std::atomic<uint64_t> changeCount_{0};
 };
 

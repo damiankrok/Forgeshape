@@ -14,10 +14,14 @@ interface InspectorHost {
     /**
      * Writes the one status message in the workspace.
      *
-     * @param colorRes a colour resource that says what kind of message this is:
-     *                 a neutral note, a success, a warning or a rejection
+     * @param colorAttr a semantic colour ROLE — {@code R.attr.fsTextSecondary},
+     *                  {@code fsTextSuccess} or {@code fsTextError} — saying
+     *                  what kind of message this is: a neutral note, a success
+     *                  or a rejection. A role rather than a colour, so a caller
+     *                  cannot state a verdict in a shade that only reads on one
+     *                  of the two themes
      */
-    void showStatus(CharSequence message, int colorRes);
+    void showStatus(CharSequence message, int colorAttr);
 
     /**
      * Announces that native state changed, so every surface must re-read it.

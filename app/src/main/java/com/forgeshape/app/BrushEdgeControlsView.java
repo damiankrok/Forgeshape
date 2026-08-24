@@ -131,7 +131,7 @@ final class BrushEdgeControlsView extends LinearLayout {
         label.setText(caption.substring(0, 3).toUpperCase(java.util.Locale.US));
         label.setTextSize(TypedValue.COMPLEX_UNIT_PX,
                 EditorControlStyles.dimen(context, R.dimen.rail_label_size));
-        label.setTextColor(context.getColor(R.color.text_secondary));
+        label.setTextColor(EditorControlStyles.themeColor(context, R.attr.fsTextSecondary));
         label.setGravity(Gravity.CENTER);
         column.addView(label);
         return column;
@@ -142,7 +142,7 @@ final class BrushEdgeControlsView extends LinearLayout {
         label.setId(id);
         label.setTextSize(TypedValue.COMPLEX_UNIT_PX,
                 EditorControlStyles.dimen(context, R.dimen.rail_label_size));
-        label.setTextColor(context.getColor(R.color.text_measure));
+        label.setTextColor(EditorControlStyles.themeColor(context, R.attr.fsTextMeasure));
         label.setGravity(Gravity.CENTER);
         label.setSingleLine(true);
         return label;

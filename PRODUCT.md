@@ -138,6 +138,23 @@ darkens under the finger before anything else happens — and the control that i
 currently active is filled, outlined and brightened together, so which tool is
 held can be read without relying on colour.
 
+**ForgeShape comes in two appearances, and you choose which.** *Display* carries
+an **Appearance** group with **Dark** and **Light**. Dark is what a fresh start
+gives you: a neutral dark workspace with a dark viewport. Light replaces it with
+a calm, warm off-white — the viewport itself included, so the model sits on
+something closer to paper than to a screen, and never on a stark white page.
+
+Switching changes how everything is drawn and nothing about what you are
+drawing. The model, its exact dimensions, its placement, which body is selected,
+whether you are in Construction or Sculpt, and any sculpting already done all
+come through untouched. So does what you were doing: the display unit you had
+chosen, the panel you had open and the editor you were in are all still there.
+The whole workspace is rebuilt in the new appearance, so it blinks once.
+
+The choice lasts as long as the app is running — turning the phone or leaving and
+coming back keeps it — and is not saved. Starting ForgeShape fresh gives you Dark
+again.
+
 Tools, modes and panels are named by drawn icons rather than by characters, and
 a control that is reserved for a feature the product does not have yet is drawn
 dimmed, says so when read aloud, and does nothing.
@@ -640,10 +657,16 @@ Two-finger twist/roll, inertia, camera presets, orthographic camera,
 focus-on-selection, long-press selection, grid, modelling, UV, save/load and undo
 are not implemented.
 
-**ForgeShape has one appearance and it is dark.** There is no light theme and no
-theme switcher. Nothing about the start choice, the model or the camera is saved
-between runs: closing the app loses which way the model was started, and starting
-it again asks the question afresh.
+**There are two appearances and no third.** ForgeShape does not follow the
+system's own light/dark setting, and there is no automatic or scheduled
+switching: Dark and Light are chosen by hand and nothing else changes them.
+Nothing at all is saved between runs — not the appearance, not the start choice,
+not the model and not the camera — so starting ForgeShape fresh gives you Dark
+and asks again how the model begins.
+
+**The selected body is still marked by a strong orange tint**, and on the light
+appearance that tint is heavier than it needs to be. It is unchanged from the
+dark theme on purpose; how selection is shown is being reworked separately.
 
 Shading stops where it is. There is **one** MatCap and no way to add, import or
 choose another; there are no materials, no colour or texture you can assign to

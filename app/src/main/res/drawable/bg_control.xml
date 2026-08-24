@@ -2,32 +2,31 @@
 <!--
   A control at rest: chip, Tool Rail entry, Objects row.
 
-  Written as a resource rather than built in Java for two reasons. Every
-  instance shares one parsed ConstantState, so repainting a rail on every mode
-  change stops allocating a fresh GradientDrawable per entry; and a later Light
-  theme can supply different colours for the same names without any view code
-  learning about it.
+  Every colour is a semantic ROLE (`?attr/fs*`), resolved against whichever theme
+  the Activity applied. That is why there is one of this file rather than a dark
+  copy and a light copy: the shape, the radius, the stroke width and the pressed
+  behaviour are the same claim in both themes, and only the answers differ.
 
-  The pressed state is the point: before this, tapping a tool gave no feedback
+  The pressed state is the point: before UI-R1B1, tapping a tool gave no feedback
   at all until native code answered.
 -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:state_pressed="true">
         <shape android:shape="rectangle">
-            <solid android:color="@color/control_surface_pressed" />
+            <solid android:color="?attr/fsControlSurfacePressed" />
             <corners android:radius="@dimen/radius_control" />
             <stroke
                 android:width="@dimen/control_border_width"
-                android:color="@color/control_border" />
+                android:color="?attr/fsControlBorder" />
         </shape>
     </item>
     <item>
         <shape android:shape="rectangle">
-            <solid android:color="@color/control_surface" />
+            <solid android:color="?attr/fsControlSurface" />
             <corners android:radius="@dimen/radius_control" />
             <stroke
                 android:width="@dimen/control_border_width"
-                android:color="@color/control_border" />
+                android:color="?attr/fsControlBorder" />
         </shape>
     </item>
 </selector>

@@ -207,7 +207,7 @@ final class ConstructionShapeEditorView extends LinearLayout {
         host.uiState().setDraftPrimitiveKind(kind);
         showDraftKind();
         host.showStatus(getContext().getString(R.string.status_draft_kind, describeDraftKind()),
-                R.color.text_secondary);
+                R.attr.fsTextSecondary);
     }
 
     private void showDraftKind() {
@@ -331,13 +331,13 @@ final class ConstructionShapeEditorView extends LinearLayout {
             case NativeViewport.APPLY_APPLIED:
                 host.onNativeStateChanged();
                 host.showStatus(getContext().getString(R.string.status_shape_applied,
-                        describeShape()), R.color.text_success);
+                        describeShape()), R.attr.fsTextSuccess);
                 host.finishEditing();
                 break;
             case NativeViewport.APPLY_UNCHANGED:
                 host.onNativeStateChanged();
                 host.showStatus(getContext().getString(R.string.status_shape_unchanged,
-                        describeShape()), R.color.text_secondary);
+                        describeShape()), R.attr.fsTextSecondary);
                 host.finishEditing();
                 break;
             case NativeViewport.APPLY_REJECTED_NOT_POSITIVE:
@@ -361,7 +361,7 @@ final class ConstructionShapeEditorView extends LinearLayout {
     }
 
     private void reject(int messageRes) {
-        host.showStatus(getContext().getString(messageRes), R.color.text_error);
+        host.showStatus(getContext().getString(messageRes), R.attr.fsTextError);
     }
 
     /**
@@ -491,7 +491,7 @@ final class ConstructionShapeEditorView extends LinearLayout {
     }
 
     private void fail(NumericPropertyRow row, String message) {
-        host.showStatus(message, R.color.text_error);
+        host.showStatus(message, R.attr.fsTextError);
         row.focusForCorrection();
     }
 

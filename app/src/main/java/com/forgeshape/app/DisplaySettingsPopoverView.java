@@ -61,6 +61,8 @@ final class DisplaySettingsPopoverView extends LinearLayout {
         void onSurfaceShadingRequested(int shading);
 
         void onProjectionModeRequested(int mode);
+
+        void onAppThemeRequested(AppTheme theme);
     }
 
     /**
@@ -78,6 +80,8 @@ final class DisplaySettingsPopoverView extends LinearLayout {
     private final TextView facetedChip;
     private final TextView perspectiveChip;
     private final TextView orthographicChip;
+    private final TextView darkChip;
+    private final TextView lightChip;
 
     DisplaySettingsPopoverView(Context context, final OnDisplaySettingChanged listener,
                                boolean includeDebugShading) {
@@ -202,6 +206,40 @@ final class DisplaySettingsPopoverView extends LinearLayout {
         });
         projectionRow.addView(orthographicChip, EditorControlStyles.wrap(gap));
 
+        // Appearance sits with the other three because it is the same kind of
+        // decision: it changes how the model READS and nothing about what it is.
+        // Giving the theme its own settings screen would cost the user a second
+        // place to look for one act, and this popover is already the product's
+        // answer to "how is this drawn".
+        addView(EditorControlStyles.sectionLabel(context, context.getString(R.string.appearance)),
+                EditorControlStyles.rowParams(
+                        EditorControlStyles.dimen(context, R.dimen.row_gap)));
+
+        final LinearLayout appearanceRow = new LinearLayout(context);
+        appearanceRow.setOrientation(HORIZONTAL);
+        addView(appearanceRow, EditorControlStyles.rowParams(
+                EditorControlStyles.dimen(context, R.dimen.row_gap_small)));
+
+        darkChip = EditorControlStyles.chip(context, R.id.appearance_dark,
+                context.getString(R.string.appearance_dark));
+        darkChip.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                listener.onAppThemeRequested(AppTheme.DARK);
+            }
+        });
+        appearanceRow.addView(darkChip, EditorControlStyles.wrap(0));
+
+        lightChip = EditorControlStyles.chip(context, R.id.appearance_light,
+                context.getString(R.string.appearance_light));
+        lightChip.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                listener.onAppThemeRequested(AppTheme.LIGHT);
+            }
+        });
+        appearanceRow.addView(lightChip, EditorControlStyles.wrap(gap));
+
         setVisibility(GONE);
     }
 
@@ -212,7 +250,13 @@ final class DisplaySettingsPopoverView extends LinearLayout {
      * is actually in effect rather than what was last tapped — which is the
      * difference that matters when a request was refused.
      */
-    void showSettings(int shadingModel, int surfaceShading, int projectionMode) {
+    void showSettings(int shadingModel, int surfaceShading, int projectionMode,
+                      AppTheme theme) {
+        // The appearance is UI truth rather than native truth, so it is passed
+        // in like the rest instead of being read here: this view owns nothing
+        // and reports what it is told, whichever layer the answer came from.
+        EditorControlStyles.setChipActive(darkChip, theme == AppTheme.DARK);
+        EditorControlStyles.setChipActive(lightChip, theme == AppTheme.LIGHT);
         EditorControlStyles.setChipActive(studioChip, shadingModel == NativeViewport.SHADING_STUDIO);
         EditorControlStyles.setChipActive(matcapChip, shadingModel == NativeViewport.SHADING_MATCAP);
         if (debugChip != null) {

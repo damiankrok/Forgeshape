@@ -2,9 +2,9 @@
 <!-- The start chooser's own panel, floating over the live viewport. -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
-    <solid android:color="@color/chrome_surface" />
+    <solid android:color="?attr/fsChromeSurface" />
     <corners android:radius="@dimen/radius_sheet" />
     <stroke
         android:width="@dimen/control_border_width"
-        android:color="@color/chrome_hairline" />
+        android:color="?attr/fsChromeHairline" />
 </shape>

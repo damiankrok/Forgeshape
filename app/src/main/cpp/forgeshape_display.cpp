@@ -38,10 +38,53 @@ int surfaceShadingIndex(SurfaceShading shading) {
     return shading == SurfaceShading::Faceted ? 1 : 0;
 }
 
+const char* viewportBackgroundName(ViewportBackground background) {
+    switch (background) {
+        case ViewportBackground::NeutralDark: return "NeutralDark";
+        case ViewportBackground::WarmLight: return "WarmLight";
+    }
+    return "Unknown";
+}
+
+bool viewportBackgroundFromIndex(int index, ViewportBackground* out) {
+    if (index < 0 || index >= kViewportBackgroundCount || out == nullptr) {
+        return false;
+    }
+    *out = static_cast<ViewportBackground>(index);
+    return true;
+}
+
+int viewportBackgroundIndex(ViewportBackground background) {
+    return static_cast<int>(background);
+}
+
+void viewportBackgroundColor(ViewportBackground background, float* outRgb) {
+    if (outRgb == nullptr) {
+        return;
+    }
+    switch (background) {
+        case ViewportBackground::WarmLight:
+            // #E6E1D9. Warm by about ten points of red over blue: paper rather
+            // than screen, and far short of beige. Deliberately not #FFFFFF — a
+            // stark white ground makes a neutral clay render read as grey.
+            outRgb[0] = 0.902f;
+            outRgb[1] = 0.882f;
+            outRgb[2] = 0.851f;
+            return;
+        case ViewportBackground::NeutralDark:
+            break;
+    }
+    // #0E121B, unchanged from every release before the light theme existed.
+    outRgb[0] = 0.055f;
+    outRgb[1] = 0.070f;
+    outRgb[2] = 0.105f;
+}
+
 ViewportDisplaySettings DisplaySettingsStore::snapshot() const {
     ViewportDisplaySettings out;
     out.shading = shadingModel();
     out.surface = surfaceShading();
+    out.background = viewportBackground();
     return out;
 }
 
@@ -73,6 +116,22 @@ bool DisplaySettingsStore::setShadingModel(ShadingModel model) {
 bool DisplaySettingsStore::setSurfaceShading(SurfaceShading shading) {
     const int next = surfaceShadingIndex(shading);
     const int previous = surface_.exchange(next, std::memory_order_relaxed);
+    if (previous == next) {
+        return false;
+    }
+    changeCount_.fetch_add(1, std::memory_order_relaxed);
+    return true;
+}
+
+ViewportBackground DisplaySettingsStore::viewportBackground() const {
+    ViewportBackground background = kDefaultViewportBackground;
+    viewportBackgroundFromIndex(background_.load(std::memory_order_relaxed), &background);
+    return background;
+}
+
+bool DisplaySettingsStore::setViewportBackground(ViewportBackground background) {
+    const int next = viewportBackgroundIndex(background);
+    const int previous = background_.exchange(next, std::memory_order_relaxed);
     if (previous == next) {
         return false;
     }

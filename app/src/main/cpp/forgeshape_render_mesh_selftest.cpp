@@ -886,11 +886,67 @@ void checkDisplaySettings(Recorder& r) {
     r.check("display_store_surface_held", store.surfaceShading() == SurfaceShading::Faceted);
     r.check("display_store_counts_two_changes", store.changeCount() == 2);
 
-    // A snapshot must be a coherent pair, which is what a frame is recorded
-    // with.
+    // -----------------------------------------------------------------------
+    // DISP-VBG-01..06 -- the viewport background
+    //
+    // The one presentation value the Android theme system hands down. It has to
+    // behave exactly like a shading model: a closed enum, an index contract with
+    // the UI that REFUSES what it does not recognise, and a default that is the
+    // appearance the product ships with.
+    // -----------------------------------------------------------------------
+
+    r.check("display_viewport_background_default_is_dark",
+            kDefaultViewportBackground == ViewportBackground::NeutralDark);
+
+    ViewportBackground background = ViewportBackground::WarmLight;
+    r.check("display_viewport_background_index_0_is_dark",
+            viewportBackgroundFromIndex(0, &background) &&
+                background == ViewportBackground::NeutralDark);
+    r.check("display_viewport_background_index_1_is_light",
+            viewportBackgroundFromIndex(1, &background) &&
+                background == ViewportBackground::WarmLight);
+    r.check("display_viewport_background_refuses_negative",
+            !viewportBackgroundFromIndex(-1, &background));
+    r.check("display_viewport_background_refuses_out_of_range",
+            !viewportBackgroundFromIndex(kViewportBackgroundCount, &background));
+    r.check("display_viewport_background_index_round_trips",
+            viewportBackgroundIndex(ViewportBackground::NeutralDark) == 0 &&
+                viewportBackgroundIndex(ViewportBackground::WarmLight) == 1);
+
+    r.check("display_store_background_starts_dark",
+            store.viewportBackground() == ViewportBackground::NeutralDark);
+    r.check("display_store_background_no_op_reports_false",
+            !store.setViewportBackground(ViewportBackground::NeutralDark));
+    r.check("display_store_background_change_reports_true",
+            store.setViewportBackground(ViewportBackground::WarmLight));
+    r.check("display_store_background_held",
+            store.viewportBackground() == ViewportBackground::WarmLight);
+
+    // The two colours, pinned. They are duplicated in colors.xml as the ANDROID
+    // WINDOW background, which is what covers the moment before the surface has
+    // content — so if these drift the user sees a flash of the wrong shade on
+    // every launch. Asserting the exact values is what makes that drift a test
+    // failure rather than a report months later.
+    float rgb[3];
+    viewportBackgroundColor(ViewportBackground::NeutralDark, rgb);
+    r.check("display_dark_background_is_0e121b",
+            nearly(rgb[0], 0.055f) && nearly(rgb[1], 0.070f) &&
+                nearly(rgb[2], 0.105f));
+    viewportBackgroundColor(ViewportBackground::WarmLight, rgb);
+    r.check("display_light_background_is_e6e1d9",
+            nearly(rgb[0], 0.902f) && nearly(rgb[1], 0.882f) &&
+                nearly(rgb[2], 0.851f));
+    // Warm means red leads and blue trails. A light background that lost its
+    // warmth would still pass every check above and would be the wrong product.
+    r.check("display_light_background_is_warm", rgb[0] > rgb[1] && rgb[1] > rgb[2]);
+    r.check("display_light_background_is_not_stark_white", rgb[0] < 0.96f);
+
+    // A snapshot must be a coherent set, which is what a frame is recorded with.
     const ViewportDisplaySettings snapshot = store.snapshot();
     r.check("display_snapshot_matches",
-            snapshot.shading == ShadingModel::MatCap && snapshot.surface == SurfaceShading::Faceted);
+            snapshot.shading == ShadingModel::MatCap &&
+                snapshot.surface == SurfaceShading::Faceted &&
+                snapshot.background == ViewportBackground::WarmLight);
 
     // Naming exists for logs and evidence; an unnamed mode is an unreadable log.
     r.check("display_names_present", std::strcmp(shadingModelName(ShadingModel::StudioSolid),

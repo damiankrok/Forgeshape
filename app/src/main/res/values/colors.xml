@@ -1,55 +1,138 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  The Editor Workspace palette.
+  The two palettes.
 
-  Evolved from the colours the two provisional panels carried inline, so the
-  shell still reads as the same application. One accent only: it means "active
-  tool" or "primary commit" and nothing else, which is what keeps the active
-  Tool Rail entry unmistakable.
+  These are RAW VALUES, and their names say which theme they belong to on
+  purpose — that is what they are. The *roles* live in `attrs.xml`, and the
+  mapping from role to value lives in `themes.xml`. Nothing outside those two
+  files may name a colour from here.
 
-  Every name states a ROLE, not an appearance. Nothing here is called `dark_*`,
-  even though the only theme that exists today is dark: a later Light theme
-  (UI-R1B2) has to be able to supply a second set of values for these same
-  names without any component tree learning about it. That is the whole reason
-  no new colour may be written as a literal in Java.
+  UI-R1B1 kept role names here because there was one theme. With two, a role and
+  a value are no longer the same thing: `fsControlSurface` is the role, and it
+  has two answers. Moving the role names up into attributes is what stops a
+  second theme costing a second component tree.
+
+  One accent family across both themes, so the product still reads as itself:
+  the same blue, lightened for a dark ground and deepened for a light one. The
+  accent means "active tool" or "primary commit" and nothing else.
 -->
 <resources>
-    <!-- Chrome surfaces. Opaque where text sits on them, translucent only over
-         the viewport where the model behind stays informative. -->
-    <color name="chrome_surface">#F2131922</color>
-    <color name="chrome_overlay">#E6121820</color>
-    <color name="chrome_hairline">#FF2A3441</color>
 
-    <!-- Controls. -->
-    <color name="control_surface">#FF1C2430</color>
-    <color name="control_surface_pressed">#FF2A3646</color>
-    <color name="control_border">#FF3A4757</color>
+    <!-- =====================================================================
+         DARK — the creative-tool default.
 
-    <!-- The single accent: active state and primary commit. -->
-    <color name="accent">#FF4C8FD8</color>
-    <color name="accent_fill">#FF20456E</color>
-    <color name="accent_fill_pressed">#FF2A5688</color>
-    <color name="accent_border">#A64C8FD8</color>
+         Unchanged from UI-R1B1 except where the accent split (see attrs.xml)
+         needed one value to be named twice. Every hex below is the value the
+         dark theme already shipped.
+         ===================================================================== -->
+    <color name="dark_chrome_surface">#F2131922</color>
+    <color name="dark_chrome_overlay">#E6121820</color>
+    <color name="dark_chrome_hairline">#FF2A3441</color>
 
-    <!-- Text. Disabled stays legible enough to read a reserved feature's name,
-         because a reserved control the user cannot read is just noise. -->
-    <color name="text_primary">#FFE8EDF4</color>
-    <color name="text_secondary">#FF8B99AC</color>
-    <color name="text_disabled">#FF5C6875</color>
+    <color name="dark_control_surface">#FF1C2430</color>
+    <color name="dark_control_surface_pressed">#FF2A3646</color>
+    <color name="dark_control_border">#FF3A4757</color>
 
-    <!-- Verdicts and measurements. -->
-    <color name="text_success">#FF7BD88F</color>
-    <color name="text_error">#FFFF8A7A</color>
-    <color name="text_measure">#FFE7C26B</color>
+    <color name="dark_accent">#FF4C8FD8</color>
+    <color name="dark_accent_fill">#FF20456E</color>
+    <color name="dark_accent_fill_pressed">#FF2A5688</color>
+    <color name="dark_accent_border">#A64C8FD8</color>
+    <color name="dark_primary_fill">#FF20456E</color>
+    <color name="dark_primary_fill_pressed">#FF4C8FD8</color>
+    <color name="dark_text_on_primary">#FFE8EDF4</color>
 
-    <color name="slider_track">#FF232C39</color>
-    <color name="slider_fill">#FF4C8FD8</color>
+    <color name="dark_text_primary">#FFE8EDF4</color>
+    <color name="dark_text_secondary">#FF8B99AC</color>
+    <color name="dark_text_disabled">#FF5C6875</color>
+
+    <color name="dark_text_success">#FF7BD88F</color>
+    <color name="dark_text_error">#FFFF8A7A</color>
+    <color name="dark_text_measure">#FFE7C26B</color>
+
+    <color name="dark_slider_track">#FF232C39</color>
+    <color name="dark_slider_fill">#FF4C8FD8</color>
+    <color name="dark_slider_thumb">#FFE8EDF4</color>
+
+    <color name="dark_chooser_scrim">#D40A0E14</color>
+    <color name="dark_chooser_card_surface">#FF161E29</color>
 
     <!--
-      The start chooser. The scrim is deliberately partial: the viewport keeps
-      rendering behind it, so the first thing the product shows is still the
-      model rather than a full-screen page.
+      The dark viewport, and the window behind it.
+
+      This MUST stay in step with `ViewportBackground::NeutralDark` in
+      `forgeshape_display.cpp`, which is what the Vulkan render pass actually
+      clears to; a native check asserts that float triple. The window background
+      exists only to cover the moment before the surface has anything on it, so
+      a mismatch shows up as a flash on launch.
     -->
-    <color name="chooser_scrim">#D40A0E14</color>
-    <color name="chooser_card_surface">#FF161E29</color>
+    <color name="dark_viewport_background">#FF0E121B</color>
+
+    <!-- =====================================================================
+         LIGHT — calm, warm and technical.
+
+         Deliberately NOT a stark white canvas. A pure #FFFFFF viewport makes a
+         neutral clay render look grey and dirty, and makes the whole workspace
+         read as a document editor rather than a modelling tool. The light
+         palette is warm by about ten points of red over blue: enough to read as
+         paper rather than as a screen, far short of beige.
+         ===================================================================== -->
+    <!--
+      Fully opaque, where the dark equivalent is 95%.
+
+      That asymmetry is deliberate. Over a dark viewport a few per cent of bleed
+      through a dark panel is invisible. Over warm cream, a near-white panel that
+      lets the ground through loses the edge that separates it from the model,
+      and the Property Inspector's numbers lose contrast for nothing — which is
+      exactly the trade this stage is told not to make. The rail and the popover
+      below stay translucent, because those are narrow surfaces standing ON the
+      model where the model behind them is informative.
+    -->
+    <color name="light_chrome_surface">#FFFBF8F3</color>
+    <color name="light_chrome_overlay">#EBFBF8F3</color>
+    <color name="light_chrome_hairline">#FFD8D2C6</color>
+
+    <color name="light_control_surface">#FFF2EEE6</color>
+    <color name="light_control_surface_pressed">#FFE3DDD1</color>
+    <color name="light_control_border">#FFCFC8BA</color>
+
+    <!-- The same blue, deepened until it carries white text and reads against
+         paper. The active-control FILL is a pale tint of it, so an active chip
+         is a tinted chip carrying dark text rather than a solid block. -->
+    <color name="light_accent">#FF2C6FB5</color>
+    <color name="light_accent_fill">#FFD9E7F6</color>
+    <color name="light_accent_fill_pressed">#FFC4D9F0</color>
+    <color name="light_accent_border">#A62C6FB5</color>
+    <color name="light_primary_fill">#FF2C6FB5</color>
+    <color name="light_primary_fill_pressed">#FF235C99</color>
+    <color name="light_text_on_primary">#FFFFFFFF</color>
+
+    <color name="light_text_primary">#FF1B2430</color>
+    <color name="light_text_secondary">#FF57626F</color>
+    <color name="light_text_disabled">#FF949CA7</color>
+
+    <!-- Verdicts, darkened until they carry on paper. Green and amber in
+         particular cannot keep their dark-theme values here: both vanish. -->
+    <color name="light_text_success">#FF1B6B36</color>
+    <color name="light_text_error">#FFB3261E</color>
+    <color name="light_text_measure">#FF8A5A0B</color>
+
+    <color name="light_slider_track">#FFDDD6C8</color>
+    <color name="light_slider_fill">#FF2C6FB5</color>
+    <!-- Dark, not white: a white thumb on a pale track is defined only by its
+         ring, and these two controls are dragged with a thumb over the model. -->
+    <color name="light_slider_thumb">#FF1B2430</color>
+
+    <!-- A scrim on a light theme still DARKENS: the panel has to come forward,
+         and lightening a light background moves nothing. Warm, so it does not
+         read as a grey wash over cream. -->
+    <color name="light_chooser_scrim">#66201C14</color>
+    <color name="light_chooser_card_surface">#FFF6F2EA</color>
+
+    <!--
+      The light viewport, and the window behind it.
+
+      Same contract as the dark one: this MUST stay in step with
+      `ViewportBackground::WarmLight` in `forgeshape_display.cpp`.
+    -->
+    <color name="light_viewport_background">#FFE6E1D9</color>
 </resources>

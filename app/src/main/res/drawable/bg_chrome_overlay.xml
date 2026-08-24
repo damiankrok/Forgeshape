@@ -9,9 +9,9 @@
 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
-    <solid android:color="@color/chrome_overlay" />
+    <solid android:color="?attr/fsChromeOverlay" />
     <corners android:radius="@dimen/radius_floating" />
     <stroke
         android:width="@dimen/control_border_width"
-        android:color="@color/chrome_hairline" />
+        android:color="?attr/fsChromeHairline" />
 </shape>

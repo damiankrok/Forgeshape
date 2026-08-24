@@ -1,160 +1,212 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.26.0
+**Status Version:** 0.27.0
 **Updated:** 2026-08-24
-**Result:** COMPLETE — UI-R1B1 is closed; the shell has a visual foundation and
-a start flow
+**Result:** COMPLETE — UI-R1B2 is closed; the product has Dark and Light
 **Current Phase:** Phase 1 — Native Viewport
 **Workspace:** `D:\TRAVELAPPS\ForgeShape`
-**Accepted implementation baseline:** UI-R1B1 — visual foundation + start flow,
-on top of Stage 017 (multi-object scene + hierarchy foundation), the Pre-017
-Correctness Repair (active representation sidedness + re-Freeze guard + device
-verifier), Gate P1 (physical ARM64 closure), Stage 016-R2, Stage 016 (Plane),
-Stage 015D (camera projection), Stage 015C-R (front-face culling), Stage 015C
-(shading), Platform Fix P2, Stage 015B, Stage 014, the NDK r29 migration
-(Gate P0) and the owner decision baseline.
-**Next Stage:** UI-R1B2 — Theme System + Light Mode.
+**Accepted implementation baseline:** UI-R1B2 — theme system + Light mode, on top
+of UI-R1B1 (visual foundation + start flow), Stage 017 (multi-object scene +
+hierarchy foundation), the Pre-017 Correctness Repair (active representation
+sidedness + re-Freeze guard + device verifier), Gate P1 (physical ARM64 closure),
+Stage 016-R2, Stage 016 (Plane), Stage 015D (camera projection), Stage 015C-R
+(front-face culling), Stage 015C (shading), Platform Fix P2, Stage 015B,
+Stage 014, the NDK r29 migration (Gate P0) and the owner decision baseline.
+**Next Stage:** UI-R1C — Motion + Selection Feedback + View/Adaptive Pass.
 
-## UI-R1B1 — Visual Foundation + Construction/Sculpt Start Flow (COMPLETE)
+## UI-R1B2 — Theme System + Light Mode (COMPLETE)
 
-The shell stopped looking like a harness. Every control that was a Unicode
-character is now a drawn icon, depth and corner radius say what kind of surface
-something is, pressing anything answers immediately, and the product asks once
-how a model should begin.
+ForgeShape has two appearances, chosen explicitly, and a theme is presentation
+all the way down: switching one mints no revision, publishes nothing, uploads
+nothing, and leaves every body, id, parameter, placement and frozen mesh
+bit-identical.
 
-**Iconography.** Fifteen local vector drawables on one 24 dp grid with one 2 dp
-round stroke replaced `◈ ● ≈ ◎ ▣ ⊕ ▱ ▤ ◐ ⊟ ⊞ ⌄ ⌃`. They are drawn white and
-tinted at use from a `res/color` state list, so one drawable serves idle, active
-and disabled; an icon inside a composed control duplicates its parent's state, so
-an entry's glyph and its caption cannot disagree about what it is. No icon
-dependency was added and nothing was copied from another product.
+**The mechanism is theme attributes, not duplicated components.** A role is
+declared once in `attrs.xml`, given a value once per theme in `themes.xml`, and
+referenced as `?attr/fs*`. Backgrounds are `res/drawable` state lists and content
+colours `res/color` state lists, both carrying attributes; the one imperative
+path is `EditorControlStyles.themeColor(context, attr)`, for text roles and the
+two brush sliders, which are drawn onto a Canvas rather than composed. **No
+colour is written in Java and no component knows which theme it is in** — there
+is one `bg_control.xml`, one `chip()` and no `if (light)` anywhere, so a third
+theme would touch two resource files and nothing else. UI-R1B1 made this possible
+by moving every literal out of view code; UI-R1B2 only had to split role from
+value.
 
-**The look is resources, not Java.** No colour, background or corner is written
-in view code any more. Backgrounds are `res/drawable` state lists and content
-colours are `res/color` state lists. That bought three things at once: pressed
-and active states come from the platform instead of a repaint call, every
-instance shares one parsed `ConstantState` instead of allocating a
-`GradientDrawable` per control on every rail rebuild, and UI-R1B2 can supply a
-second set of values for the same names without touching a single view.
+Two roles existed only because a light theme forced them apart. `fsAccentFill` is
+what an ACTIVE control is filled with; `fsPrimaryFill` is what a PRIMARY COMMIT
+is filled with, with `fsTextOnPrimary` on it. On dark those are the same colour
+and the split looks pointless; on light an active chip wants a pale tint carrying
+dark text while Apply wants a solid accent carrying white, and one attribute
+could not be both.
 
-Corner radius is three semantic levels (control / floating surface / sheet)
-instead of one number for both a 44 dp chip and a 360 dp panel. Type is five
-roles — display, title, value, body, caption — rather than five loose sizes.
-Floating surfaces carry a small elevation; the **docked** inspector deliberately
-carries none, because it sits beside the model rather than over it. The
-hard-coded `9dp`/`10dp`/`150dp` and `track_width * 3` leaks moved to `dimens.xml`.
+**Dark is unchanged.** Every dark hex is the value UI-R1B1 shipped, and it is
+still the default a fresh process wears.
 
-**Two real defects were found by doing this, and both are fixed.**
+**Light is warm, and deliberately not a stark white canvas.** The viewport is
+`#E6E1D9` — warm by about ten points of red over blue, enough to read as paper
+rather than as a screen and far short of beige. A pure white ground makes a
+neutral clay render look grey. The accent is the same blue deepened until it
+carries white; the verdict colours are darkened, because dark-theme green and
+amber simply vanish on paper. **The light chrome surface is fully opaque where
+the dark one is 95 %**: over a dark viewport a few per cent of bleed is
+invisible, and over cream a near-white panel loses the edge that separates it
+from the model — which is exactly the trade this stage was told not to make.
 
-*The Global Toolbar clipped its own controls.* Its row overflows on a 411 dp
-window, and a `LinearLayout` that has run out squeezes the LAST child — so
-Display and Hide UI measured **33 dp and 35 dp**, under the 44 dp touch floor
-INPUT-OWNER-01 requires. **Pre-existing**, measured on a stashed, unmodified
-`feba998` before anything was concluded. The editing-context label is now the
-weighted child, so it ellipsises and every action keeps the size it asked for;
-both controls now measure exactly 44 × 44 dp. Guarded by `R1B1-10b`, which
-measures rather than trusting the declared size.
+**The renderer seam is one closed enum.** `ViewportBackground`
+(`NeutralDark`, `WarmLight`) lives in the native display store beside the shading
+model, and what crosses JNI is its index, refused if unrecognised. No Android
+theme, no style, no Android type and no RGB authored in Java reaches native code:
+it is handed a viewport *appearance* and owns what each one looks like. The clear
+value is written into the render pass every frame anyway, so a switch touches no
+swapchain, pipeline, descriptor set or buffer. The two float triples are pinned
+by `display_dark_background_is_0e121b` / `display_light_background_is_e6e1d9`,
+because they are duplicated in `colors.xml` as the Android *window* background —
+what covers the moment before the surface has content — and drift there is a
+launch flash.
 
-*The Display popover's first open grew from the wrong corner.* `setOpen` sets the
-pivot from `getWidth()`, which is 0 the first time because the panel has never
-been laid out — so the very first animation grew from the top-left instead of
-from the button that opened it, which is the entire point of the pattern. The
-pivot is now also set in `onSizeChanged`. This is the only motion change in the
-stage: no new animation, no shared helper, and the reduce-motion gate and
-interruptibility are untouched.
+**Applying a theme recreates the Activity, and that is free.** Re-resolving themed
+resources for a UI built entirely in code means rebuilding the views holding
+them; walking dozens of view classes reapplying colours would be the duplication
+the attributes exist to avoid, with every surface a chance to be missed. It is
+safe because nothing that matters lives in the Activity — the scene, every body,
+the active ObjectId, the mode, the Frozen Sculpt Mesh, the camera and the display
+settings are process-scoped native state. It is free because **`onDestroy` skips
+`NativeViewport.stop()` while `isChangingConfigurations()`**: the render thread,
+the Vulkan device and every GPU buffer survive, the Surface is detached and
+reattached exactly as on a HOME/resume, and `start()` returns early rather than
+re-running the self-tests or re-publishing. Without that guard a theme change
+would tear down the device and re-upload the whole scene.
 
-**The Tool Rail defect UI-R1A found is closed.** The rail lives in a `ScrollView`
-so a short window can still reach every entry, and a scroll container takes a
-gesture as soon as it passes the platform slop — including from a control whose
-whole job is to be tapped. A rail entry now disallows interception on Down and
-allows it again once travel passes **twice** the slop, at which point the
-container takes the next event and the platform's own `ACTION_CANCEL` prevents
-the click. Small drift selects; a real scroll selects nothing. `R1B1-11`/`12` are
-a pair and run against a rail whose container can actually scroll, or neither
-would test anything. Viewport gesture arbitration is untouched.
+**The session goes with it.** `EditorUiState` is handed to the incoming
+workspace, so changing colour does not also snap the display unit back to meters,
+close the Property Inspector or re-point the Tool Rail. Found by doing it: the
+first working switch reset all three. Still no Android type and no `Bundle` —
+the carried instance dies with the process like everything else in that class.
 
-**The start flow.** `StartChooserView` asks **New Project** over the live
-viewport — a partial scrim, not a launcher page — and offers exactly two answers.
-It is asked once per **process**: the flag is the one static in `EditorUiState`,
-because an instance field would re-ask on every Activity recreation, and it is
-still losable, so a genuine process kill correctly asks again. It records only
-*that* an answer was given, never which one; the mode is native truth.
+**Ownership.** The theme is UI-owned, process-scoped and losable, in
+`EditorUiState` beside the start choice; the viewport background is native-owned
+presentation. One derivation runs in one place — `ForgeShapeActivity.applyTheme`
+— so chrome and viewport cannot disagree. Nothing is persisted: a process kill
+returns to Dark.
 
-*Construction / CAD* has nothing to build. Native state already exists before any
-view is constructed, so the default Body is already there — the answer only stops
-asking. `ConstructionScene`'s constructor is untouched and `S17-01` still holds.
+**Scope.** No automatic system theme and no `-night` qualifier, no persistence,
+no selection pulse or outline, no Grid or View group, no glass or blur, no motion
+framework, no hierarchy commands, no Sketch or Extrude, no Undo, no new
+dependency and no NDK/Gradle/AGP change. **`kSelectedTint` is untouched** at
+alpha 0.55; on the light theme that tint reads heavier than it should, and it is
+a known, accepted state deferred to UI-R1C rather than tuned here.
 
-*Sculpt* makes exactly the two calls a user would make by hand:
-`applyConstructionSphere` — with the diameter **read back from native state**
-rather than a constant invented in Java, so it is the domain's own default —
-then the existing `freezeToSculpt`. **No Freeze logic is duplicated**: no second
-validation, no second `SculptMesh` construction, no opinion about sidedness, the
-stale flag or revision numbering. A refusal leaves the product in Construction,
-unchanged, and says so.
+**Verification.** Native **1544/1544** across eleven suites, zero failures — the
+shading suite took 224 to 238 with the `DISP-VBG` family. JVM **39/39** (was 29).
+Instrumented **88 run, 87 green** (was 71); the one failure is the documented
+`ui11` IME case, which fails its own precondition guard before reaching any
+product assertion, with the signature recorded below — a known baseline failure,
+not a stage-caused regression. Both ABIs build. DEV2-01..07 and DEV3-01..06 PASS.
 
-**Scope.** No Light theme, no selection pulse or outline, no Grid or View group,
-no blur or glass, no shared motion helper, no inspector animation, no Sketch or
-Extrude, no hierarchy commands, no Undo, no persistence, no new dependency, and
-no NDK/Gradle/AGP change. The reserved Sketch and Extrude entries are still drawn
-dimmed and inert, and the start chooser names neither.
-
-**Verification.** Native **1530/1530** across eleven suites, unchanged. JVM
-**29/29** (was 26). Instrumented **71 run, 70 green** — the one failure is the
-documented `ui11` IME case, which fails its own precondition guard before
-reaching any product assertion and was **proven pre-existing** by stashing every
-change and reproducing the identical message on `feba998`. Both ABIs build.
-DEV2-01..07 and DEV3-01..06 all PASS.
+The theme suite asserts no rendered pixel and no literal colour. What it checks is
+that every chrome role *answers differently* and in the right direction (light
+chrome lighter, light text darker), that the renderer was told the other
+background, that a switch leaves `nativeSnapshot()` bit-identical, and — for the
+Property Inspector — WCAG contrast ratios computed in the test, because "readable
+numbers" is the one thing this stage could have traded away for a look.
 
 **Runtime**, on `ForgeShape_Stage006` / `emulator-5580`, confirmed by AVD name.
-Cold start showed the chooser over a rendering viewport; Construction landed on
-the default Box with its exact editor; rotation and HOME/resume did **not**
-re-ask; a real process kill did. Choosing Sculpt produced
-`kind=sphere dia=1.000000m objectId=1` beside
-`mode=sculpt frozen=1 sculptRev=1 v=482 i=2880 freezes=1 stale=0` — sphere source
-intact, sphere topology frozen, one Freeze. A real Grab stroke through the touch
-path reached `sculptRev=31 strokes=1`; **Back** showed the exact sphere with
-`freezes=1` still, and **Resume** returned `sculptRev=31` with `freezes=1`, so
-nothing re-froze. A 12 px drift on the Clay entry selected Clay. Add Body showed
-its pressed fill mid-press. The popover opened, stayed open across a choice and
-closed on the second tap. Portrait, rotated phone (side-overlay inspector,
-compact rail) and an expanded 1600 × 2560 @ 240 dpi window (docked inspector,
-flush, no card shadow) were all viewport-first.
+Cold start came up Dark (`NeutralDark requested=0 known=1 changed=0`) with the
+chooser. Two bodies were created and placed through the product's own editors;
+switching to Light logged `WarmLight ... changed=1` with **zero**
+`MESH_UPLOAD_OK` and **zero** `RENDER_MESH_BUILD`, and Construction state came
+through unchanged (`objectId=2`, `pos=(2.5,0,0)`, `updates=1`). The selected body
+stayed orange-tinted beside its unselected neighbour, so selection still reads on
+a light ground. Rotation and HOME/resume held Light with zero uploads; switching
+back restored Dark with the same state. A cold restart returned to Dark and
+re-asked the start question. Choosing Sculpt, a real Grab stroke reached
+`sculptRev=26 strokes=1`; switching to Light **while sculpting** left
+`mode=sculpt sculptRev=26 v=482 i=2880 objectId=1 freezes=1` bit-identical with
+zero uploads, and Back gave the sphere source while Resume gave
+`sculptRev=26 freezes=1`, so nothing re-froze. Portrait, rotated phone and an
+expanded 1600 x 2560 @ 240 dpi window were viewport-first in both appearances.
 
-**R1B1 criteria.**
+**R1B2 criteria.**
 
 | ID | Verdict | Evidence |
 | --- | --- | --- |
-| R1B1-AC01 | PASS | clean `feba998` audited before any change; final tree clean |
-| R1B1-AC02 | PASS | 15 vector drawables; `R1B1-09` walks the tree for retired glyphs |
-| R1B1-AC03 | PASS | `radius_control` / `radius_floating` / `radius_sheet` |
-| R1B1-AC04 | PASS | elevation on floating surfaces only; docked inspector has none |
-| R1B1-AC05 | PASS | `R1B1-10` asks the drawable, not a colour |
-| R1B1-AC06 | PASS | five `text_*` roles + the rail's own caption |
-| R1B1-AC07 | PASS | 9/10/150 dp and `track_width * 3` moved to `dimens.xml` |
-| R1B1-AC08 | PASS | `R1B1-10b` measures 44 dp; the 33/35 dp defect is fixed |
-| R1B1-AC09 | PASS | `R1B1-11`/`12`, teeth-paired on a scrollable rail; runtime 12 px drift |
-| R1B1-AC10 | PASS | `R1B1-01` counts clickable options: exactly two |
-| R1B1-AC11 | PASS | `R1B1-02`/`03`; body count and active id unchanged |
-| R1B1-AC12 | PASS | `R1B1-04`; 482:2880 proves sphere-derived; runtime `freezes=1` |
-| R1B1-AC13 | PASS | `R1B1-05`/`06`; runtime Back→sphere, Resume→`sculptRev=31` |
-| R1B1-AC14 | PASS | `R1B1-07`/`08`; runtime rotation, HOME/resume, process kill |
-| R1B1-AC15 | PASS | `R1B1-13` state-dependent floor; portrait/rotated/expanded runtime |
-| R1B1-AC16 | PASS | `R1B1-14` anchor, open/close, in-place selection; pivot defect fixed |
-| R1B1-AC17 | PASS | no Light/selection/Grid/glass/motion work; see *Scope* |
-| R1B1-AC18 | PASS | native 1530/1530, JVM 29/29, instrumented 70/71, both ABIs |
-| R1B1-AC19 | PASS | see doc line counts below; ARCHITECTURE compressed while extended |
-| R1B1-AC20 | PASS | one focused commit, clean tree |
+| R1B2-AC01 | PASS | clean `97878a7` audited before any change; final tree clean |
+| R1B2-AC02 | PASS | `AppTheme` has two members; `R1B2-02` asserts the count and the control |
+| R1B2-AC03 | PASS | one drawable set, one state list, no `if (light)`; see *The mechanism* |
+| R1B2-AC04 | PASS | every dark hex unchanged; `R1B2-05` restores Dark exactly |
+| R1B2-AC05 | PASS | `#E6E1D9`; `display_light_background_is_warm` and `..._not_stark_white` |
+| R1B2-AC06 | PASS | `R1B2-15` computes WCAG contrast for values, labels and verdicts |
+| R1B2-AC07 | PASS | an Appearance group in the existing Display popover; no new surface |
+| R1B2-AC08 | PASS | `R1B2-06` asserts `nativeSnapshot()` bit-identical across a switch |
+| R1B2-AC09 | PASS | runtime: zero `MESH_UPLOAD_OK` / `RENDER_MESH_BUILD` across every switch |
+| R1B2-AC10 | PASS | `R1B2-07`; runtime `objectId=2`, cone spec and placement preserved |
+| R1B2-AC11 | PASS | `R1B2-09`; runtime `sculptRev=26 freezes=1` across a switch |
+| R1B2-AC12 | PASS | `R1B2-11` and `R1B2-12`; runtime rotation and HOME/resume |
+| R1B2-AC13 | PASS | `R1B2-01`; runtime cold restart returns to Dark |
+| R1B2-AC14 | PASS | `R1B2-10`; runtime, chooser absent after both switches |
+| R1B2-AC15 | PASS | `R1B2-14` re-checks icons, tint, pressed feedback and reserved entries |
+| R1B2-AC16 | PASS | `R1B2-16` in both themes; runtime portrait/rotated/expanded |
+| R1B2-AC17 | PASS | `R1B2-17` anchor, open/close, in-place selection, both themes |
+| R1B2-AC18 | PASS | `kSelectedTint` untouched; no Grid/glass/motion work — see *Scope* |
+| R1B2-AC19 | PASS | native 1544/1544, JVM 39/39, instrumented 87/88, both ABIs |
+| R1B2-AC20 | PASS | all core docs < 2000; ARCHITECTURE handled by replacement — see below |
+| R1B2-AC21 | PASS | one focused commit, clean tree |
 
-**Result: COMPLETE.** R1B1-AC01..20 PASS.
-
-This is a current snapshot, not a chronology. Per-stage verification chapters,
-superseded environment states and old next-stage recommendations live in Git
-history and are deliberately not repeated here.
+**Result: COMPLETE.** R1B2-AC01..21 PASS.
 
 ## Closed stages — durable facts only
 
 Full narrative for every stage below lives in Git history. What is kept here is
 only what still constrains the code.
+
+**UI-R1B1 — visual foundation + start flow (COMPLETE).** The shell stopped
+looking like a harness.
+
+*Iconography.* Fifteen local vector drawables on one 24 dp grid with one 2 dp
+round stroke replaced the Unicode glyphs the chrome used as icons. They are drawn
+white and tinted at use from a state list, so one drawable serves idle, active
+and disabled; an icon inside a composed control duplicates its parent's state, so
+an entry's glyph and its caption cannot disagree. No icon dependency was added.
+
+*The look is resources, not Java.* Backgrounds are `res/drawable` state lists and
+content colours `res/color` state lists. Pressed and active states come from the
+platform instead of a repaint call, instances share one parsed `ConstantState`
+instead of allocating a `GradientDrawable` per control on every rail rebuild, and
+UI-R1B2 was able to add a second theme without touching a component tree. Corner
+radius is three semantic levels (control / floating surface / sheet); type is
+five roles; floating surfaces carry a small elevation and the **docked** inspector
+deliberately carries none, because it sits beside the model rather than over it.
+
+*Two defects, both proven pre-existing on `feba998`.* The Global Toolbar's row
+overflows on a 411 dp window, and a `LinearLayout` that has run out squeezes its
+LAST child — so Display and Hide UI measured **33 dp and 35 dp**, under the 44 dp
+floor. The editing-context label is now the weighted child, so it ellipsises and
+every action keeps its size; `R1B1-10b` measures rather than trusting the declared
+size. And the Display popover's first open grew from the wrong corner, because
+`setOpen` reads `getWidth()` before the panel has ever been laid out; the pivot is
+now also set in `onSizeChanged`.
+
+*Tool Rail gesture ownership.* The rail lives in a `ScrollView`, which takes a
+gesture as soon as it passes the platform slop — including from a control whose
+job is to be tapped. An entry now disallows interception on Down and allows it
+again once travel passes **twice** the slop, at which point the container takes
+the next event and the platform's own `ACTION_CANCEL` prevents the click. Small
+drift selects; a real scroll selects nothing. Viewport gesture arbitration is
+untouched.
+
+*The start flow.* `StartChooserView` asks **New Project** over the live viewport
+and offers exactly two answers, once per process. *Construction* has nothing to
+build: native state exists before any view, so the default Body is already there
+and the answer only stops asking — `ConstructionScene`'s constructor is untouched
+and `S17-01` still holds. *Sculpt* makes exactly the two calls a user would make
+by hand: `applyConstructionSphere` with the diameter **read back from native
+state** rather than a constant invented in Java, then the existing
+`freezeToSculpt`. **No Freeze logic is duplicated** — no second validation, no
+second `SculptMesh` construction, no opinion about sidedness, the stale flag or
+revision numbering — so Back finds the exact sphere and Resume returns the same
+frozen mesh for the ordinary reasons. A refusal leaves the product in
+Construction, unchanged, and says so.
 
 **Stage 017 — multi-object scene + hierarchy foundation (COMPLETE).** The product
 is not one object. A platform-neutral `ConstructionScene` owns an ordered
@@ -539,6 +591,15 @@ Android touch path. `PRODUCT.md` owns the user-facing description.
 | Sculpt topology fixed; buffers reused, never reallocated during a stroke | VERIFIED |
 | Construction Source bit-identical after sculpting with all four tools | VERIFIED |
 | Lifecycle: shape, placement, identity, unit, mode, tool, sculpt, camera and selection survive home/resume with no re-upload | VERIFIED |
+| Two explicit appearances, Dark and Light, chosen in the Display popover's Appearance group | VERIFIED |
+| Dark is the product default and what a fresh process wears; a process kill returns to it | VERIFIED |
+| Light uses a warm off-white VIEWPORT (`#E6E1D9`), not only light chrome, and not a stark white canvas | VERIFIED |
+| A theme switch publishes no mesh, mints no revision and causes zero GPU upload or render-mesh rebuild | VERIFIED |
+| Scene, active ObjectId, primitive spec, placement, product mode and Frozen Sculpt Mesh survive the switch bit-identically | VERIFIED |
+| The appearance survives rotation and HOME/resume; the start chooser does not reappear because of it | VERIFIED |
+| The UI session — display unit, inspector detent, Tool Rail entry — survives the recreation that applies a theme | VERIFIED |
+| Icons, pressed feedback, active-not-by-colour-alone and 44 dp targets all hold in both appearances | VERIFIED |
+| Property Inspector values, labels and verdicts meet WCAG AA contrast on the light theme; its surfaces stay opaque | VERIFIED |
 | Start chooser: New Project offers exactly Construction/CAD and Sculpt, over the live viewport | VERIFIED |
 | The start question is asked once per process; rotation, HOME/resume and Activity recreation do not re-ask; a process kill does | VERIFIED |
 | Choosing Construction creates no body and changes no active body — the default Body is already there | VERIFIED |
@@ -584,7 +645,7 @@ Android touch path. `PRODUCT.md` owns the user-facing description.
 ## Self-test suite
 
 Eleven debug-only native suites run once from `NativeViewport.start()` — never
-per frame — and total **1530 checks, zero failures** at the accepted baseline
+per frame — and total **1544 checks, zero failures** at the accepted baseline
 under NDK r29:
 
 | suite token | checks |
@@ -598,7 +659,7 @@ under NDK r29:
 | `FORGESHAPE_CONSTRUCTION_SPHERE_SELFTEST_OK` | 105 |
 | `FORGESHAPE_CONE_CAPSULE_SELFTEST_OK` | 163 |
 | `FORGESHAPE_SCULPT_BRUSH_KERNEL_SELFTEST_OK` | 302 |
-| `FORGESHAPE_RENDER_SHADING_SELFTEST_OK` | 224 |
+| `FORGESHAPE_RENDER_SHADING_SELFTEST_OK` | 238 |
 | `FORGESHAPE_SCENE_SELFTEST_OK` | 79 |
 
 followed by `FORGESHAPE_MESH_UPLOAD_OK` and `FORGESHAPE_NATIVE_VIEWPORT_OK`.
@@ -658,17 +719,29 @@ Build and verification commands are in `README.md`.
 | `EditorWorkspaceObjectsTest` | S17-21..26 — Objects rows by ObjectId, viewport pick sync | 6 |
 | `EditorWorkspaceStartFlowTest` | R1B1-01..08 — the start question, and the direct Sculpt path's Freeze reuse | 8 |
 | `EditorWorkspaceFoundationTest` | R1B1-09..14 — icons, pressed feedback, touch floor, rail tap-vs-scroll, viewport floor, popover | 7 |
+| `AppThemeTest` (JVM) | the default, the two appearances, and that choosing one moves nothing else the UI remembers | 10 |
+| `EditorWorkspaceThemeTest` | R1B2-01..17 — the control, the switch, state preservation across the recreation, contrast | 17 |
 
-**100 tests** (29 JVM, 71 instrumented). No Java test asserts a rendered pixel;
+**127 tests** (39 JVM, 88 instrumented). No Java test asserts a rendered pixel;
 every control is reached by its stable semantic id and no assertion uses a screen
-coordinate. `EditorWorkspaceFoundationTest` deliberately asserts no colour, radius
-or shadow: those are judged by eye and by runtime evidence, and pinning them would
-break on every deliberate restyle while proving nothing.
+coordinate. `EditorWorkspaceFoundationTest` and `EditorWorkspaceThemeTest`
+deliberately assert no colour literal, radius or shadow: those are judged by eye
+and by runtime evidence, and pinning them would break on every deliberate restyle
+while proving nothing. What the theme suite asserts instead is *relational* —
+that a role answers differently and in the right direction — plus WCAG contrast
+ratios computed in the test for the surfaces that carry numbers.
 
-**70 of the 71 instrumented tests pass as of UI-R1B1** on `ForgeShape_Stage006`;
+**87 of the 88 instrumented tests pass as of UI-R1B2** on `ForgeShape_Stage006`;
 the one failure is the `ui11` IME case described just below. Pre-017 took the
-count 46 → 50, Stage 017 took it 50 → 56 with `EditorWorkspaceObjectsTest`, and
-UI-R1B1 took it 56 → 71 with the two suites above.
+count 46 → 50, Stage 017 took it 50 → 56, UI-R1B1 took it 56 → 71, and UI-R1B2
+took it 71 → 88 with `EditorWorkspaceThemeTest`.
+
+**A theme switch recreates the Activity, so a test that changes appearance must
+wait for the workspace to come back.** `EditorWorkspaceThemeTest.switchTo` drives
+the real chip and then polls until a workspace reports the new appearance and has
+been laid out; setting the field directly would prove a boolean changed and
+nothing about whether the workspace survives being rebuilt, which is the whole
+point. Every case leaves the process in Dark.
 
 **The start question is asked once per process, so every case that is not ABOUT
 it answers it first.** `resetToBaselineConstruction` dismisses it, and
@@ -704,28 +777,29 @@ it a regression.
 Latest acceptance run, on `ForgeShape_Stage006` / `emulator-5580` unless a line
 says otherwise:
 
-- **Native self-tests:** eleven suites, **1530 checks, zero failures** on a
+- **Native self-tests:** eleven suites, **1544 checks, zero failures** on a
   clean launch. The Gate P1 picking suite is unchanged at 128, so the ARM64
   shared-edge fix is intact; `SIDE`, `REFR`, `NOR` and `CAMPROJ` all still green.
-- **JVM:** 29/29.
-- **Instrumented:** 71 run, **70 green**, through
+- **JVM:** 39/39.
+- **Instrumented:** 88 run, **87 green**, through
   `scripts\run-instrumented-tests.ps1 -Serial emulator-5580`. The one failure is
   `EditorWorkspaceGestureTest.ui11_…`, which fails its own precondition guard
-  ("the soft keyboard did not appear, so this case proves nothing") — **proven
-  pre-existing** for UI-R1B1 by stashing every change and reproducing the
-  identical failure on `feba998`. See *Android UI suites*.
+  ("the soft keyboard did not appear, so this case proves nothing") before
+  reaching any assertion about product behaviour. **Proven pre-existing** at
+  UI-R1B1 by stashing every change and reproducing the identical failure on
+  `feba998`; the message at UI-R1B2 is character-identical, so it is carried as a
+  known baseline failure rather than re-stashed. See *Android UI suites*.
 - **Device guards:** `DEV2-01`..`07` and `DEV3-01`..`06` all PASS, with no
   device attached and zero `emulator-5554` interaction.
 - **Physical ARM64 (Gate P1):** closed on a Galaxy S25 Ultra —
   `primaryCpuAbi=arm64-v8a`, `PAGE_SIZE` 4096, the mandatory ~10k/~50k/~100k
   ladder and Sculpt at 100k measured on real hardware. Stylus stays UNVERIFIED.
-- **Runtime:** the UI-R1B1 walkthrough (cold start into the chooser, both start
-  paths, a real Grab stroke, Back/Resume, rail drift versus scroll, pressed
-  feedback, the Display popover, portrait, rotated phone and an expanded
-  window) is summarised in the UI-R1B1 chapter at the top of this file. The
-  Stage 017 walkthrough (two bodies, alternating picks, isolated edits, per-body
-  Freeze/Sculpt/Resume round trip, Plane front/back, both projections, both
-  shading models) is in Git history.
+- **Runtime:** the UI-R1B2 walkthrough (cold start in Dark, two bodies placed
+  through the product's own editors, Dark↔Light with zero uploads, rotation,
+  HOME/resume, cold restart back to Dark, the direct Sculpt path with a real
+  Grab stroke, a switch made *while sculpting*, Back/Resume, and an expanded
+  window in both appearances) is summarised in the UI-R1B2 chapter at the top of
+  this file. The UI-R1B1 and Stage 017 walkthroughs are in Git history.
 
 **One caveat about capturing self-test evidence.** On both the emulator and the
 physical phone the logcat ring buffer intermittently drops whole suites from the
@@ -848,6 +922,21 @@ required shading is complete without them.
 
 ## Technical Debt
 
+**The selection tint was chosen against a dark ground and is now used on a light
+one.** `kSelectedTint` mixes a flat orange at alpha 0.55 over the whole selected
+body. On the dark theme that reads as intended; on the light theme it is the
+heaviest thing on screen. UI-R1B2 deliberately left it untouched — retuning
+selection while also introducing a theme would have made neither reviewable — so
+this is a **known and accepted** state, and it is the first item of UI-R1C.
+
+**`ARCHITECTURE.md` is at 1932 lines against a 1900 aspiration** (hard cap 2000).
+UI-R1B2 added the appearance model and the renderer background seam and paid for
+them by compressing nine sections and deleting three claims that Stage 017 had
+already made false — the single-object ownership row, "exactly one selectable
+object", and a `Current boundaries` list that still said there was no create. Net
+growth is about ten lines. The next stage touching this file should keep
+compressing rather than adding.
+
 **`scripts\run-instrumented-tests.ps1` aborts when javac emits a note.** The
 script runs under `$ErrorActionPreference = 'Stop'`, and Windows PowerShell 5.1
 wraps a native command's stderr in a `NativeCommandError`. So the first run after
@@ -866,11 +955,12 @@ in `ForgeShapeActivity` and the `getSystemWindowInset*` accessors in
 correct, but they are what produces the javac note above. Pre-existing and
 unrelated to UI-R1B1.
 
-**`PROJECT_STATUS.md` is over its own target budget** (1153 lines against a
-500–800 target, under the 2000 hard cap). UI-R1B1 compressed the Stage 017
-chapter into durable facts and still grew the file. The next stage that touches
-this file should compact the older closed-stage entries rather than adding to
-them.
+**`PROJECT_STATUS.md` is over its own target budget** (see the line counts below,
+against a 500–800 target, under the 2000 hard cap). Each of the last two stages
+compressed the chapter before it into durable facts and still grew the file,
+because a stage chapter costs more than the one it retires. The next stage
+touching this file should compact the older closed-stage entries — Stage 016
+onward — rather than adding to them.
 
 **"Debug-only" code is proven debug-*guarded*, not proven absent from a release
 binary.** Every self-test and mesh-fixture entry point is behind `#ifndef
@@ -1109,7 +1199,9 @@ been deferred to avoid churning unrelated code. There is still no checked-in
 | `app/src/main/java/.../LengthUnit.java` | Exact `BigDecimal` mm/cm/m ↔ meter conversion, parsing and formatting |
 | `app/src/main/java/.../StartChooserView.java` | The New Project question: two ways to begin, over the live viewport. Owns no state, makes no native call |
 | `app/src/main/res/values/*` | `ids.xml` (the stable semantic id contract), `dimens.xml` (radius/type/depth scales), `colors.xml` (role names, dark values), `strings.xml`, `themes.xml` (edge-to-edge) |
-| `app/src/main/res/drawable/*` | 15 icon vector drawables on one 24 dp grid, plus the `bg_*` background state lists every control's look comes from |
+| `app/src/main/java/.../AppTheme.java` | The two appearances: the Android style each applies, and the viewport appearance each hands to native code |
+| `app/src/main/res/values/attrs.xml`, `themes.xml` | The semantic roles, and the one place each is given a value per theme. Adding a theme touches these two files and nothing else |
+| `app/src/main/res/drawable/*` | 15 icon vector drawables on one 24 dp grid, plus the `bg_*` background state lists every control's look comes from, all written in `?attr/fs*` |
 | `app/src/main/res/color/*` | `control_content_tint.xml` — the one state list an icon and its label both read, so they cannot disagree |
 | `app/src/test/java/...` | JVM suites: layout arithmetic, UI-owned state, unit conversion |
 | `app/src/androidTest/java/...` | Instrumented Editor Workspace suites plus `WorkspaceTestSupport` (native snapshots, drag consumption, exact chrome-union viewport measurement) |
@@ -1161,22 +1253,35 @@ remained normally interactive throughout, with orbiting, sculpting and rotation
 indistinguishable from the pre-stage build by eye. No frame-time instrumentation
 was added and no marketing claim is made.
 
+
 ## Next Stage
 
-**UI-R1B2 — Theme System + Light Mode**
+**UI-R1C — Motion + Selection Feedback + View/Adaptive Pass**
 
-UI-R1B1 put every colour behind a semantic resource name and every background
-behind a state list, so no view in the package knows what colour anything is any
-more. That was the point, and it is what makes a second theme a resource
-exercise rather than a rewrite of the component tree.
+Selection is the oldest unaddressed thing on screen and now the most visible.
+`kSelectedTint` is a flat orange mixed at **alpha 0.55** over the whole selected
+body, and UI-R1B2 deliberately did not touch it — which means it now has to work
+on a warm light ground it was never chosen against, where it reads heavier than
+anything else in the product. The audit already established the cheap half: the
+render loop is continuous and re-snapshots every frame, and `selectionTint.a` is
+an existing push-constant component, so a short pulse on selection plus a much
+lower resting alpha costs no Java animator, no invalidate, no geometry and no
+upload. The expensive half — an outline — needs either a second geometry pass or
+a screen-space edge filter, and stays a separate decision.
 
-UI-R1B2 supplies that second set of values and the way to choose between them:
-a light palette for the same names, a theme decision that survives the places
-the start choice does, and the contrast work that a light viewport chrome
-actually needs — a translucent rail over a bright render is a different
-readability problem from a translucent rail over a dark one, and the selection
-tint was chosen against a dark background.
+Motion is the other half. The product has exactly one animation, the Display
+popover's open/close, and it is good: grow-from-anchor, selection feedback in
+place, non-modal, interruptible, and honouring the platform's reduce-motion
+signal. What it is not is shared. UI-R1C extracts the durations, the
+reduce-motion gate and the cancel-first rule into something the inspector's
+expand/collapse and the chrome hide/restore can reuse — a helper, not a
+framework, and nothing on the path of a pointer sample.
 
-It is still not the selection or motion stage. The selection pulse, the optional
-outline, the Grid and View group, blur/glass and any shared motion helper remain
-UI-R1C and later, unchanged by this.
+The View group and the adaptive pass are the third piece and the most bounded:
+Grid on/off as a renderer overlay driven by the display store, and the
+Expanded-window work the audit named — honouring `railDocked()`, which exists
+and has never been called, and giving Objects its own surface where there is
+room for one.
+
+Still out: blur or glass of any kind, persistence, automatic system theme,
+hierarchy commands, Sketch/Extrude, Undo and import/export.

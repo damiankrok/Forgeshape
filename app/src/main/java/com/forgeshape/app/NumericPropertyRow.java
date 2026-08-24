@@ -60,7 +60,7 @@ final class NumericPropertyRow extends LinearLayout {
         field.setSingleLine(true);
         field.setTextSize(TypedValue.COMPLEX_UNIT_PX,
                 EditorControlStyles.dimen(context, R.dimen.text_value));
-        field.setTextColor(context.getColor(R.color.text_primary));
+        field.setTextColor(EditorControlStyles.themeColor(context, R.attr.fsTextPrimary));
         // The background carries a focused state, so which field the keyboard
         // is about to type into is readable from its border rather than from
         // the caret alone.

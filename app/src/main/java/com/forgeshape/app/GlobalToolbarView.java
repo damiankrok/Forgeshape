@@ -260,8 +260,9 @@ final class GlobalToolbarView extends LinearLayout {
                 hidden ? R.string.show_ui : R.string.hide_ui));
     }
 
-    void showStatus(CharSequence message, int colorRes) {
-        statusMessage.setTextColor(getContext().getColor(colorRes));
+    void showStatus(CharSequence message, int colorAttr) {
+        statusMessage.setTextColor(
+                EditorControlStyles.themeColor(getContext(), colorAttr));
         statusMessage.setText(message);
         statusMessage.setContentDescription(message);
     }

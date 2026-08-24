@@ -128,14 +128,14 @@ final class ObjectsSectionView extends LinearLayout {
             // section is not normally reachable in; say so rather than silently
             // doing nothing.
             host.showStatus(getContext().getString(R.string.status_nothing_frozen),
-                    R.color.text_error);
+                    R.attr.fsTextError);
             return;
         }
         // Native code already selected the new body; the whole workspace
         // re-reads, so the Inspector shows the new body's own parameters.
         host.onNativeStateChanged();
         host.showStatus(getContext().getString(R.string.status_body_added,
-                getContext().getString(R.string.body_label, created)), R.color.text_success);
+                getContext().getString(R.string.body_label, created)), R.attr.fsTextSuccess);
     }
 
     private void onBodySelected(long objectId) {
@@ -146,6 +146,6 @@ final class ObjectsSectionView extends LinearLayout {
         // every surface must now read the newly active body.
         host.onNativeStateChanged();
         host.showStatus(getContext().getString(R.string.status_body_selected,
-                getContext().getString(R.string.body_label, objectId)), R.color.text_secondary);
+                getContext().getString(R.string.body_label, objectId)), R.attr.fsTextSecondary);
     }
 }

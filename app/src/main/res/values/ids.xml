@@ -49,6 +49,13 @@
     <item name="surface_shading_faceted" type="id" />
 
     <!--
+      Appearance. Presentation only, and the one place the theme is chosen:
+      there is deliberately no settings screen and no second popover class.
+    -->
+    <item name="appearance_dark" type="id" />
+    <item name="appearance_light" type="id" />
+
+    <!--
       Camera projection. It shares the display surface because it is the other
       thing that changes how the object READS without changing what it is, but
       it is camera state rather than a display setting, and native code keeps it
