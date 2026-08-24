@@ -11,12 +11,19 @@ import android.widget.TextView;
 /**
  * The compact display control: how the viewport PRESENTS the object.
  *
- * <p>Three labelled groups and nothing else — the shading model (Studio Solid or
- * MatCap), the surface shading (Smooth or Faceted) and the camera projection
- * (Perspective or Orthographic). It is deliberately not a material editor, a
+ * <p>Five labelled groups and nothing else — the shading model (Studio Solid or
+ * MatCap), the surface shading (Smooth or Faceted), the camera projection
+ * (Perspective or Orthographic), the <b>view</b> (the world reference grid) and
+ * the appearance (Dark or Light). It is deliberately not a material editor, a
  * preset browser, a light rig or a view-cube: those are later decisions with
  * their own approvals, and a surface that looks like it could grow into one
  * invites exactly that.
+ *
+ * <p><b>Every control here works.</b> Nothing in this popover is drawn disabled
+ * as a promise — the Tool Rail carries reserved entries because a rail is a map
+ * of the product, and a settings surface is not. That is why the View group
+ * holds one chip pair and not five: a selection outline, a view cube and named
+ * views arrive in this group when they arrive, and not before.
  *
  * <p>Projection is the odd member and is here on purpose. It is <em>camera</em>
  * state rather than a display setting — native code keeps it with the camera
@@ -62,6 +69,8 @@ final class DisplaySettingsPopoverView extends LinearLayout {
         void onProjectionModeRequested(int mode);
 
         void onAppThemeRequested(AppTheme theme);
+
+        void onGridVisibleRequested(boolean visible);
     }
 
     /**
@@ -82,6 +91,8 @@ final class DisplaySettingsPopoverView extends LinearLayout {
     private final TextView orthographicChip;
     private final TextView darkChip;
     private final TextView lightChip;
+    private final TextView gridOnChip;
+    private final TextView gridOffChip;
 
     DisplaySettingsPopoverView(Context context, final OnDisplaySettingChanged listener,
                                boolean includeDebugShading) {
@@ -206,6 +217,59 @@ final class DisplaySettingsPopoverView extends LinearLayout {
         });
         projectionRow.addView(orthographicChip, EditorControlStyles.wrap(gap));
 
+        // View: what the viewport draws BESIDES the model.
+        //
+        // A group rather than a lone chip, because what will join it later is
+        // the same kind of thing — a selection outline, a view cube, named
+        // views. What it must NOT do is show them now: a disabled control
+        // promising a feature that does not exist is a worse answer than an
+        // absent one, and it would also start turning this popover into the
+        // settings screen it was designed not to be. In UI-R1C2 the group
+        // holds exactly one working control.
+        addView(EditorControlStyles.sectionLabel(context, context.getString(R.string.view)),
+                EditorControlStyles.rowParams(
+                        EditorControlStyles.dimen(context, R.dimen.row_gap)));
+
+        final LinearLayout viewRow = new LinearLayout(context);
+        viewRow.setOrientation(HORIZONTAL);
+        viewRow.setGravity(Gravity.CENTER_VERTICAL);
+        addView(viewRow, EditorControlStyles.rowParams(
+                EditorControlStyles.dimen(context, R.dimen.row_gap_small)));
+
+        // The caption carries the name so the two chips can be plain On and
+        // Off. Two chips each reading "Grid ..." would say the word twice and
+        // make the row wider than the popover wants to be.
+        final TextView gridLabel =
+                EditorControlStyles.fieldLabel(context, context.getString(R.string.view_grid));
+        viewRow.addView(gridLabel, EditorControlStyles.wrap(0));
+
+        gridOnChip = EditorControlStyles.chip(context, R.id.view_grid_on,
+                context.getString(R.string.view_grid_on));
+        // Named for verification and for a screen reader, which see "On" with
+        // no idea what it turns on: the caption beside it is a sibling view,
+        // not part of the chip.
+        gridOnChip.setContentDescription(context.getString(R.string.view_grid) + " "
+                + context.getString(R.string.view_grid_on));
+        gridOnChip.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                listener.onGridVisibleRequested(true);
+            }
+        });
+        viewRow.addView(gridOnChip, EditorControlStyles.wrap(gap));
+
+        gridOffChip = EditorControlStyles.chip(context, R.id.view_grid_off,
+                context.getString(R.string.view_grid_off));
+        gridOffChip.setContentDescription(context.getString(R.string.view_grid) + " "
+                + context.getString(R.string.view_grid_off));
+        gridOffChip.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                listener.onGridVisibleRequested(false);
+            }
+        });
+        viewRow.addView(gridOffChip, EditorControlStyles.wrap(gap));
+
         // Appearance sits with the other three because it is the same kind of
         // decision: it changes how the model READS and nothing about what it is.
         // Giving the theme its own settings screen would cost the user a second
@@ -251,7 +315,13 @@ final class DisplaySettingsPopoverView extends LinearLayout {
      * difference that matters when a request was refused.
      */
     void showSettings(int shadingModel, int surfaceShading, int projectionMode,
-                      AppTheme theme) {
+                      AppTheme theme, boolean gridVisible) {
+        // Read back from native truth like every other chip here, never from
+        // what was tapped: the grid's visibility is process-scoped native
+        // presentation state, so on a resume it is already whatever it was and
+        // this only makes the control agree with it.
+        EditorControlStyles.setChipActive(gridOnChip, gridVisible);
+        EditorControlStyles.setChipActive(gridOffChip, !gridVisible);
         // The appearance is UI truth rather than native truth, so it is passed
         // in like the rest instead of being read here: this view owns nothing
         // and reports what it is told, whichever layer the answer came from.

@@ -21,6 +21,7 @@
 
 #include "forgeshape_camera.h"
 #include "forgeshape_display.h"
+#include "forgeshape_grid.h"
 #include "forgeshape_mesh.h"
 #include "forgeshape_object_id.h"
 #include "forgeshape_render_mesh.h"
@@ -141,6 +142,7 @@ private:
     bool createRenderPass();
     bool createFramebuffers();
     bool createPipeline();
+    bool createGridPipeline();
     bool createCommandBuffers();
 
     bool recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex);
@@ -173,6 +175,26 @@ private:
     bool createDescriptorResources();
     bool createMatCapResources();
     void destroyMatCapResources();
+
+    // --- world reference grid (renderer-owned, render thread only) -----------
+    //
+    // The grid's vertices are a compile-time constant of forgeshape_grid.h, so
+    // they are generated and uploaded EXACTLY ONCE, with the device, and never
+    // again: there is no parameter a user can move, no revision to follow and
+    // nothing for a camera move or a theme switch to invalidate. Showing or
+    // hiding the grid therefore decides only whether one draw call is recorded.
+    //
+    // Device-scoped like the mesh buffers and the MatCap, so a HOME/resume does
+    // not regenerate it. It deliberately does NOT go through
+    // BodyRenderResources: the grid has no ObjectId, and giving it one would be
+    // the first step towards it becoming a scene object, which it must never be.
+    bool createGridResources();
+    void destroyGridResources();
+    // Records the grid's push constants and its one line draw. Called after
+    // every body, so the model has already written depth and the grid — which
+    // is depth-tested, depth-biased away and does not write depth — can never
+    // punch through it.
+    void recordGridDraw(VkCommandBuffer cmd);
     // Waits on the renderer's own frame fences (never vkDeviceWaitIdle /
     // vkQueueWaitIdle) so no in-flight frame can still reference the mesh
     // buffers that are about to be overwritten or destroyed.
@@ -261,6 +283,20 @@ private:
     VkShaderModule fragShader_ = VK_NULL_HANDLE;
     VkPipelineLayout pipelineLayout_ = VK_NULL_HANDLE;
 
+    // The grid's own shaders and layout. A SEPARATE pipeline layout with no
+    // descriptor set, rather than a reuse of pipelineLayout_, because the grid
+    // genuinely needs no sampler: saying so in the layout is what keeps a
+    // future reader from believing the grid consults the MatCap.
+    VkShaderModule gridVertShader_ = VK_NULL_HANDLE;
+    VkShaderModule gridFragShader_ = VK_NULL_HANDLE;
+    VkPipelineLayout gridPipelineLayout_ = VK_NULL_HANDLE;
+
+    // Device-local, written once at device creation and never again. Sized from
+    // kGridVertexCount, which is a compile-time constant.
+    VkBuffer gridVertexBuffer_ = VK_NULL_HANDLE;
+    VkDeviceMemory gridVertexMemory_ = VK_NULL_HANDLE;
+    uint32_t gridVertexCount_ = 0;
+
     // Surface-dependent
     ANativeWindow* window_ = nullptr;
     VkSurfaceKHR surface_ = VK_NULL_HANDLE;
@@ -281,6 +317,9 @@ private:
 
     VkRenderPass renderPass_ = VK_NULL_HANDLE;
     VkPipeline pipeline_ = VK_NULL_HANDLE;
+    // Swapchain-dependent exactly like pipeline_, because it bakes the viewport
+    // and the render pass in the same way.
+    VkPipeline gridPipeline_ = VK_NULL_HANDLE;
 
     // Frames in flight
     static constexpr uint32_t kMaxFramesInFlight = 2;

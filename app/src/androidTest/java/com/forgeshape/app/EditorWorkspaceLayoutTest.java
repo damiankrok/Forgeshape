@@ -10,6 +10,7 @@ import static com.forgeshape.app.WorkspaceTestSupport.unoccludedViewportFraction
 import static com.forgeshape.app.WorkspaceTestSupport.waitForLayout;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import android.content.pm.ActivityInfo;
@@ -88,13 +89,209 @@ public final class EditorWorkspaceLayoutTest {
                     inspector.getWidth() < workspace.getWidth()
                             || inspector.getHeight() < workspace.getHeight());
             if (expected == WorkspaceLayoutMode.EXPANDED) {
+                // The Objects column is subtracted when it is there. UI-R1C2
+                // added a third docked surface, and measuring the viewport
+                // without it would report a number the user never sees.
+                final View objects = workspace.findViewById(R.id.objects_dock);
+                final int objectsPx =
+                        objects.getVisibility() == View.VISIBLE ? objects.getWidth() : 0;
                 final int viewportDp = EditorControlStyles.toDp(activity,
-                        workspace.getWidth() - inspector.getWidth()
+                        workspace.getWidth() - inspector.getWidth() - objectsPx
                                 - workspace.findViewById(R.id.tool_rail).getWidth());
-                assertTrue("an expanded window keeps a large central viewport: "
-                        + viewportDp + " dp", viewportDp >= Math.round(widthDp * 0.60f));
-                assertTrue(viewportDp >= 480);
+                // The absolute floor holds in every expanded window, with two
+                // docked surfaces or with three. The 60 % PROPORTIONAL floor is
+                // the two-surface rule and is asserted only there — see
+                // WorkspaceLayoutModeTest for why a third column is held to the
+                // absolute half of it instead.
+                assertTrue("an expanded window keeps a viewport at least as wide as a phone: "
+                        + viewportDp + " dp", viewportDp >= 480);
+                if (objectsPx == 0) {
+                    assertTrue("with two docked surfaces the proportional floor still holds: "
+                            + viewportDp + " dp", viewportDp >= Math.round(widthDp * 0.60f));
+                }
             }
+            return null;
+        });
+    }
+
+    // -----------------------------------------------------------------------
+    // UI-R1C2: the adaptive pass
+    //
+    // These read the window the suite is ACTUALLY in and assert the contract
+    // that belongs to it, which is this suite's existing rule. Running the
+    // instrumentation under an overridden window size is therefore a genuine
+    // expanded run rather than a simulation, and is how the expanded branches
+    // are exercised.
+    // -----------------------------------------------------------------------
+
+    /**
+     * R1C2-27 / R1C2-28 / R1C2-33. Whatever window this is, the workspace obeys
+     * the decision for it — and Objects is reachable either way.
+     */
+    @Test
+    public void r1c227_objectsAndTheRailFollowTheDecisionForThisWindow() {
+        WorkspaceTestSupport.settleLayout();
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final int widthDp = EditorControlStyles.toDp(activity, workspace.getWidth());
+            final WorkspaceLayoutMode mode = workspace.layoutMode();
+
+            assertEquals("the Objects surface follows the decision, never a guess",
+                    mode.objectsDocked(widthDp), workspace.objectsDocked());
+            assertEquals("and so does the Tool Rail dock (R1C2-33)",
+                    mode.railDocked(), workspace.railDocked());
+
+            // R1C2-27: Objects is reachable in EVERY window. The section is one
+            // instance that moves, so this holds wherever it currently hangs —
+            // which is the whole reason it is one instance.
+            assertNotNull("the Objects section exists in every layout",
+                    workspace.findViewById(R.id.objects_section));
+            assertNotNull("Add Body exists in every layout",
+                    workspace.findViewById(R.id.add_body));
+            assertEquals("every body has a row in every layout",
+                    NativeViewport.sceneBodyCount(), workspace.objectsSection().rowCount());
+
+            if (workspace.objectsDocked()) {
+                // R1C2-28: the scene list and the exact values are on screen at
+                // the same time, which is the point of the expanded layout.
+                final View dock = workspace.findViewById(R.id.objects_dock);
+                assertEquals(View.VISIBLE, dock.getVisibility());
+                assertTrue("the Objects column is laid out with a real width",
+                        dock.getWidth() > 0);
+                assertTrue("the Objects column is on screen", isFullyOnScreen(dock, workspace));
+                assertTrue("and the Property Inspector is on screen beside it",
+                        isFullyOnScreen(workspace.findViewById(R.id.property_inspector),
+                                workspace));
+                assertEquals("the one Objects section is what is in the column",
+                        dock, workspace.objectsSection().getParent());
+                assertEquals("a docked window docks the inspector too",
+                        WorkspaceLayoutMode.InspectorPlacement.SIDE_DOCK,
+                        workspace.inspectorPlacement());
+            } else {
+                // R1C2-27: a compact or medium window keeps the current
+                // viewport-first model. Objects stays inside the shape editor,
+                // and no column stands on the model.
+                assertEquals("no Objects column in a window that has not earned one",
+                        View.GONE, workspace.findViewById(R.id.objects_dock).getVisibility());
+                assertEquals("Objects stays in the Construction shape editor",
+                        workspace.shapeEditor(), workspace.objectsSection().getParent());
+            }
+            return null;
+        });
+    }
+
+    /**
+     * R1C2-36. A layout change never resizes the render target.
+     *
+     * <p>The {@code SurfaceView} is the whole window in every mode, so docking,
+     * un-docking and re-parenting chrome cannot change the swapchain's extent.
+     * Asserted by measuring the viewport before and after a rotation that
+     * genuinely re-runs the whole decision: the viewport must equal the
+     * workspace in both, whatever the chrome did in between.
+     */
+    @Test
+    public void r1c236_theViewportIsTheWholeWindowInEveryLayout() {
+        assertViewportFillsTheWorkspace("as launched");
+
+        setOrientation(rule.getScenario(), ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+        waitForLayout(rule.getScenario(), true);
+        assertViewportFillsTheWorkspace("landscape");
+
+        setOrientation(rule.getScenario(), ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+        waitForLayout(rule.getScenario(), false);
+        assertViewportFillsTheWorkspace("back in portrait");
+    }
+
+    /**
+     * R1C2-37. Portrait and rotated both settle at a legitimate arrangement,
+     * with the model still the subject.
+     *
+     * <p>The rotation runs the structural rearrangement — a possible re-parent
+     * of the Objects section and a possible change of rail dock — and the
+     * assertion is that it converges, not that it animated. A re-parent during
+     * a measure pass is never animated, deliberately.
+     */
+    @Test
+    public void r1c237_everyOrientationSettlesAtALegitimateArrangement() {
+        setOrientation(rule.getScenario(), ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+        waitForLayout(rule.getScenario(), true);
+        assertArrangementIsConsistent("landscape");
+        assertViewportFloorHolds("landscape with the UI-R1C2 chrome");
+
+        setOrientation(rule.getScenario(), ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+        waitForLayout(rule.getScenario(), false);
+        assertArrangementIsConsistent("portrait");
+        assertViewportFloorHolds("portrait with the UI-R1C2 chrome");
+    }
+
+    /**
+     * R1C2-34. The Tool Rail's tap-versus-scroll rule survives the dock.
+     *
+     * <p>UI-R1B1 fixed a rail entry losing its tap to the scroll container. The
+     * dock changes what the rail LOOKS like and nothing about how it negotiates
+     * a gesture, and this is what says so: a real small drift on a real entry,
+     * dispatched through the real scroll container, still selects.
+     */
+    @Test
+    public void r1c234_theRailStillTakesASmallDriftAsATapWhicheverWayItIsDrawn() {
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final View place = workspace.findViewById(R.id.tool_rail_place);
+            assertNotNull("the rail is built", place);
+            assertTrue("a rail entry is on screen whichever way it is drawn",
+                    place.getWidth() > 0 && place.getHeight() > 0);
+            assertTrue("and meets the touch floor: "
+                            + EditorControlStyles.toDp(activity, place.getHeight()) + " dp",
+                    EditorControlStyles.toDp(activity, place.getHeight()) >= 44);
+            // A docked rail is flush and level; a floating one is a raised card.
+            // Either way it consumes its own gestures, which is what keeps a
+            // reach for a tool from orbiting the camera.
+            assertTrue("the rail consumes its own drag",
+                    WorkspaceTestSupport.dragConsumed(workspace.toolRailScroll()));
+            if (workspace.railDocked()) {
+                assertEquals("a docked rail claims no elevation", 0.0f,
+                        workspace.toolRailScroll().getElevation(), 0.001f);
+            } else {
+                assertTrue("a floating rail is raised",
+                        workspace.toolRailScroll().getElevation() > 0.0f);
+            }
+            return null;
+        });
+    }
+
+    private void assertViewportFillsTheWorkspace(final String where) {
+        WorkspaceTestSupport.settleLayout();
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final View viewport = workspace.findViewById(R.id.viewport_surface);
+            assertNotNull("the viewport exists (" + where + ")", viewport);
+            assertEquals("the SurfaceView is the whole window's width (" + where + ")",
+                    workspace.getWidth(), viewport.getWidth());
+            assertEquals("the SurfaceView is the whole window's height (" + where + ")",
+                    workspace.getHeight(), viewport.getHeight());
+            assertEquals("and it is not offset by any chrome (" + where + ")",
+                    0, viewport.getLeft() + viewport.getTop());
+            return null;
+        });
+    }
+
+    private void assertArrangementIsConsistent(final String where) {
+        WorkspaceTestSupport.settleLayout();
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final int widthDp = EditorControlStyles.toDp(activity, workspace.getWidth());
+            final int heightDp = EditorControlStyles.toDp(activity, workspace.getHeight());
+            final WorkspaceLayoutMode expected =
+                    WorkspaceLayoutMode.forWindow(widthDp, heightDp);
+            assertEquals("the mode is re-derived (" + where + ")",
+                    expected, workspace.layoutMode());
+            assertEquals("the rail dock is re-derived (" + where + ")",
+                    expected.railDocked(), workspace.railDocked());
+            assertEquals("the Objects surface is re-derived (" + where + ")",
+                    expected.objectsDocked(widthDp), workspace.objectsDocked());
+            // Whatever happened, there is exactly ONE Objects section and it has
+            // exactly one parent. A rearrangement that had leaked a second copy
+            // would show up here as a row count that no longer matches the scene.
+            assertNotNull("the Objects section has a parent (" + where + ")",
+                    workspace.objectsSection().getParent());
+            assertEquals("one row per body, still (" + where + ")",
+                    NativeViewport.sceneBodyCount(), workspace.objectsSection().rowCount());
             return null;
         });
     }

@@ -15,6 +15,14 @@
 // asserting the intention in prose.
 #include "forgeshape_picking.h"
 #include "forgeshape_render_mesh.h"
+// UI-R1C2. The grid is presentation, so its contract is asserted in the
+// presentation suite; ConstructionScene comes with it because the strongest
+// available statement of "the grid is not in the scene" is a real scene,
+// snapshotted either side of a real toggle and compared.
+#include "forgeshape_camera.h"
+#include "forgeshape_grid.h"
+#include "forgeshape_scene.h"
+#include "forgeshape_sculpt.h"
 #include "forgeshape_selection_pulse.h"
 
 namespace forgeshape {
@@ -960,6 +968,445 @@ void checkDisplaySettings(Recorder& r) {
                                                     "Faceted") == 0);
 }
 
+// ---------------------------------------------------------------------------
+// UI-R1C2: the world reference grid
+// ---------------------------------------------------------------------------
+//
+// R1C2-01..09. Everything here is either pure arithmetic over the grid contract
+// or real state driven through the real stores; nothing samples a pixel, for the
+// same reason no other check in this suite does. What a rendered grid LOOKS
+// like is judged by eye and by runtime evidence — what is asserted here is that
+// it is generated correctly, that it is presentation and only presentation, and
+// that turning it on or off cannot reach the model.
+
+// R1C2-01/02: the default, and where the value lives.
+void checkGridDefaultAndOwnership(Recorder& r) {
+    r.check("r1c2_01_grid_defaults_to_on", kDefaultGridVisible);
+
+    // A fresh store wears the default, exactly as the shading model does. This
+    // is the whole of "process-scoped": nothing loads it, nothing saves it, and
+    // a new process is a new store.
+    DisplaySettingsStore store;
+    r.check("r1c2_01_a_fresh_store_shows_the_default",
+            store.gridVisible() == kDefaultGridVisible);
+
+    // R1C2-02. It is a DISPLAY setting, so it behaves like one: a no-op reports
+    // false, a real change reports true and is counted. Reduced motion
+    // deliberately is not counted; the grid deliberately is, because the user
+    // chose it.
+    const uint64_t before = store.changeCount();
+    r.check("r1c2_02_grid_no_op_reports_false", !store.setGridVisible(kDefaultGridVisible));
+    r.check("r1c2_02_grid_no_op_is_not_counted", store.changeCount() == before);
+    r.check("r1c2_02_grid_change_reports_true", store.setGridVisible(!kDefaultGridVisible));
+    r.check("r1c2_02_grid_change_is_counted", store.changeCount() == before + 1);
+    r.check("r1c2_02_grid_value_is_held", store.gridVisible() == !kDefaultGridVisible);
+    r.check("r1c2_02_grid_returns", store.setGridVisible(kDefaultGridVisible) &&
+                                        store.gridVisible() == kDefaultGridVisible);
+
+    // It must ride in the snapshot the render thread actually reads. A value
+    // held only in the store would be a value the frame loop never sees.
+    store.setGridVisible(false);
+    store.setViewportBackground(ViewportBackground::WarmLight);
+    const ViewportDisplaySettings off = store.snapshot();
+    store.setGridVisible(true);
+    const ViewportDisplaySettings on = store.snapshot();
+    r.check("r1c2_02_grid_rides_in_the_snapshot", !off.gridVisible && on.gridVisible);
+    r.check("r1c2_02_the_snapshot_is_otherwise_the_same",
+            off.shading == on.shading && off.surface == on.surface &&
+                off.background == on.background);
+
+    // The grid must not have leaked into any OTHER display value. A setter that
+    // wrote the wrong atomic would pass every check above.
+    r.check("r1c2_02_grid_does_not_disturb_the_shading_model",
+            on.shading == kDefaultShadingModel);
+    r.check("r1c2_02_grid_does_not_disturb_the_background",
+            on.background == ViewportBackground::WarmLight);
+}
+
+// The generated geometry: R1C2-04's structural half, and the spacing/extent
+// contract the report quotes.
+void checkGridGeometry(Recorder& r) {
+    // The contract itself, pinned. These are the numbers the product's look was
+    // chosen against, and a silent change to any of them is a different grid.
+    r.check("r1c2_grid_plane_is_world_y_zero", kGridPlaneY == 0.0f);
+    r.check("r1c2_grid_minor_spacing_is_one_meter",
+            nearly(kGridMinorSpacingMeters, 1.0f));
+    r.check("r1c2_grid_major_every_five", kGridMajorEveryNMinor == 5);
+    r.check("r1c2_grid_half_extent_is_twenty_meters",
+            nearly(kGridHalfExtentMeters, 20.0f));
+    r.check("r1c2_grid_line_count_is_odd_per_axis", (kGridLinesPerAxis % 2) == 1);
+    r.check("r1c2_grid_counts_agree",
+            kGridLineCount == 2 * kGridLinesPerAxis && kGridVertexCount == 2 * kGridLineCount);
+
+    std::vector<GridVertex> vertices(kGridVertexCount);
+    const int written = generateGridVertices(vertices.data(), kGridVertexCount);
+    r.check("r1c2_grid_generates_every_vertex", written == kGridVertexCount);
+
+    // Fails CLOSED. A partial grid drawn from a half-filled buffer would be
+    // stray lines through the model, which is worse than no grid at all.
+    GridVertex scratch[4];
+    r.check("r1c2_grid_refuses_a_short_buffer", generateGridVertices(scratch, 4) == 0);
+    r.check("r1c2_grid_refuses_a_null_buffer",
+            generateGridVertices(nullptr, kGridVertexCount) == 0);
+
+    // R1C2-04's structural half: EVERY vertex is on the world XZ plane at
+    // y = 0. A grid that drifted off its plane would be geometry floating in
+    // the scene rather than a floor.
+    bool allOnPlane = true;
+    bool allInsideExtent = true;
+    for (int i = 0; i < written; ++i) {
+        if (!nearly(vertices[i].position[1], kGridPlaneY)) {
+            allOnPlane = false;
+        }
+        if (std::fabs(vertices[i].position[0]) > kGridHalfExtentMeters + kEpsilon ||
+            std::fabs(vertices[i].position[2]) > kGridHalfExtentMeters + kEpsilon) {
+            allInsideExtent = false;
+        }
+    }
+    r.check("r1c2_04_every_grid_vertex_is_on_world_y_zero", allOnPlane);
+    r.check("r1c2_04_no_grid_vertex_escapes_the_extent", allInsideExtent);
+
+    // Every line is axis-aligned and spans the full extent: one coordinate is
+    // shared by both ends, the other runs edge to edge.
+    bool allAxisAligned = true;
+    bool allSpanTheExtent = true;
+    for (int i = 0; i + 1 < written; i += 2) {
+        const GridVertex& a = vertices[i];
+        const GridVertex& b = vertices[i + 1];
+        const bool alongX = nearly(a.position[2], b.position[2]);
+        const bool alongZ = nearly(a.position[0], b.position[0]);
+        if (alongX == alongZ) {
+            allAxisAligned = false;  // neither, or degenerate in both
+            continue;
+        }
+        const float span = alongX ? std::fabs(b.position[0] - a.position[0])
+                                  : std::fabs(b.position[2] - a.position[2]);
+        if (!nearly(span, 2.0f * kGridHalfExtentMeters)) {
+            allSpanTheExtent = false;
+        }
+        if (a.tier != b.tier) {
+            allAxisAligned = false;  // a line cannot change weight along itself
+        }
+    }
+    r.check("r1c2_grid_lines_are_axis_aligned_and_single_tiered", allAxisAligned);
+    r.check("r1c2_grid_lines_span_the_full_extent", allSpanTheExtent);
+
+    // The tiers. There is exactly ONE line of each axis kind, and it is the one
+    // through the origin — an axis that appeared twice, or nowhere, would leave
+    // the origin unreadable, which is what the tier exists for.
+    int axisX = 0;
+    int axisZ = 0;
+    int major = 0;
+    for (int index = 0; index < kGridLinesPerAxis; ++index) {
+        if (gridLineTier(index, /*alongX=*/true) == GridLineTier::AxisX) ++axisX;
+        if (gridLineTier(index, /*alongX=*/false) == GridLineTier::AxisZ) ++axisZ;
+        if (gridLineTier(index, /*alongX=*/true) == GridLineTier::Major) ++major;
+    }
+    r.check("r1c2_grid_has_exactly_one_x_axis", axisX == 1);
+    r.check("r1c2_grid_has_exactly_one_z_axis", axisZ == 1);
+    // 20 m either way at 1 m spacing with every fifth line major: 4 each side,
+    // and the fifth would be the axis itself.
+    r.check("r1c2_grid_major_rhythm_is_regular", major == 8);
+    r.check("r1c2_grid_a_line_next_to_the_axis_is_minor",
+            gridLineTier(kGridLinesPerAxis / 2 + 1, true) == GridLineTier::Minor);
+    r.check("r1c2_grid_the_fifth_line_out_is_major",
+            gridLineTier(kGridLinesPerAxis / 2 + kGridMajorEveryNMinor, true) ==
+                GridLineTier::Major);
+
+    // The two axes must be TOLD APART, or the grid shows where the origin is
+    // and not which way the world faces.
+    r.check("r1c2_grid_the_two_axes_are_distinct_tiers",
+            gridLineTier(kGridLinesPerAxis / 2, true) !=
+                gridLineTier(kGridLinesPerAxis / 2, false));
+}
+
+// R1C2-07: the two appearances' palettes, asserted as relationships rather than
+// as literals — the same rule the Android theme suite follows. Pinning the RGB
+// would break on every deliberate restyle while proving nothing about whether a
+// line can actually be seen.
+void checkGridPalette(Recorder& r) {
+    const GridLineTier tiers[kGridLineTierCount] = {
+        GridLineTier::Minor, GridLineTier::Major, GridLineTier::AxisX, GridLineTier::AxisZ};
+
+    float dark[kGridLineTierCount][4];
+    float light[kGridLineTierCount][4];
+    for (int i = 0; i < kGridLineTierCount; ++i) {
+        gridLineColor(ViewportBackground::NeutralDark, tiers[i], dark[i]);
+        gridLineColor(ViewportBackground::WarmLight, tiers[i], light[i]);
+    }
+
+    float darkBg[3];
+    float lightBg[3];
+    viewportBackgroundColor(ViewportBackground::NeutralDark, darkBg);
+    viewportBackgroundColor(ViewportBackground::WarmLight, lightBg);
+
+    // Every channel is a usable colour and every alpha is a usable weight.
+    bool inRange = true;
+    for (int i = 0; i < kGridLineTierCount; ++i) {
+        for (int c = 0; c < 4; ++c) {
+            if (dark[i][c] < 0.0f || dark[i][c] > 1.0f ||
+                light[i][c] < 0.0f || light[i][c] > 1.0f) {
+                inRange = false;
+            }
+        }
+    }
+    r.check("r1c2_07_every_grid_colour_is_in_range", inRange);
+
+    // The two appearances are genuinely DIFFERENT palettes. A grid that used
+    // one set of values for both would pass every other check here and would be
+    // invisible in one of them.
+    bool differsEverywhere = true;
+    for (int i = 0; i < kGridLineTierCount; ++i) {
+        if (nearly(dark[i][0], light[i][0]) && nearly(dark[i][1], light[i][1]) &&
+            nearly(dark[i][2], light[i][2])) {
+            differsEverywhere = false;
+        }
+    }
+    r.check("r1c2_07_dark_and_light_are_different_palettes", differsEverywhere);
+
+    // The direction of the contrast, which is what "readable" actually means
+    // and is opposite in the two appearances: lines LIFT off the near-black
+    // ground and SIT DOWN into the cream one. Judged on the minor tier, which
+    // is the faintest and therefore the one that decides.
+    const float darkBgLuma = (darkBg[0] + darkBg[1] + darkBg[2]) / 3.0f;
+    const float lightBgLuma = (lightBg[0] + lightBg[1] + lightBg[2]) / 3.0f;
+    const float darkMinorLuma = (dark[0][0] + dark[0][1] + dark[0][2]) / 3.0f;
+    const float lightMinorLuma = (light[0][0] + light[0][1] + light[0][2]) / 3.0f;
+    r.check("r1c2_07_dark_lines_are_lighter_than_the_dark_ground",
+            darkMinorLuma > darkBgLuma);
+    r.check("r1c2_07_light_lines_are_darker_than_the_cream_ground",
+            lightMinorLuma < lightBgLuma);
+
+    // The weight ladder: a major line reads more strongly than a minor one and
+    // an axis more strongly than a major one, in BOTH appearances. This is the
+    // whole visual hierarchy, and it comes from alpha rather than from colour so
+    // that a line is never made louder by being made a different hue.
+    bool ladderHolds = true;
+    for (int i = 0; i < 2; ++i) {
+        const float(*p)[4] = (i == 0) ? dark : light;
+        if (!(p[0][3] < p[1][3] && p[1][3] < p[2][3] && nearly(p[2][3], p[3][3]))) {
+            ladderHolds = false;
+        }
+    }
+    r.check("r1c2_07_minor_under_major_under_axis_in_both_appearances", ladderHolds);
+
+    // Subtle, and measurably so: even the strongest line is blended at well
+    // under half weight, so the grid can never dominate the model.
+    bool allSubtle = true;
+    for (int i = 0; i < kGridLineTierCount; ++i) {
+        if (dark[i][3] > 0.6f || light[i][3] > 0.6f) {
+            allSubtle = false;
+        }
+    }
+    r.check("r1c2_07_no_grid_line_is_drawn_at_a_dominating_weight", allSubtle);
+
+    // The two axes lean opposite ways so X and Z can be told apart, and neither
+    // is a saturated primary.
+    r.check("r1c2_07_the_x_axis_leans_warm", dark[2][0] > dark[2][2] && light[2][0] > light[2][2]);
+    r.check("r1c2_07_the_z_axis_leans_cool", dark[3][2] > dark[3][0] && light[3][2] > light[3][0]);
+}
+
+// R1C2-03/04/05/06: what the grid must NOT be able to do.
+//
+// Driven against a real ConstructionScene, a real MeshStore and the real
+// picking query — the same shape as NOR-10 above, because an intention stated
+// in prose is not a test.
+void checkGridIsInertAgainstTheModel(Recorder& r) {
+    // Its OWN scene, never the process-scoped one: the Stage 016-R2 lesson.
+    ConstructionScene scene;
+    SceneObject& body = scene.bodyAt(0);
+    const ConstructionMesh source = defaultSphere();
+    const MeshRevision revision = body.meshStore().publish(
+        source.vertices.data(), static_cast<uint32_t>(source.vertices.size()),
+        source.indices.data(), static_cast<uint32_t>(source.indices.size()));
+    const RuntimeMeshPtr mesh = body.meshStore().current();
+    if (!mesh || revision == kNoMeshRevision) {
+        r.check("r1c2_03_grid_inertness_fixture", false);
+        return;
+    }
+    r.check("r1c2_03_grid_inertness_fixture", true);
+
+    const SceneSnapshot before = scene.snapshot();
+    const Ray ray{Vec3{0.0f, 0.0f, 4.0f}, Vec3{0.0f, 0.0f, -1.0f}};
+    const TriangleHit hitBefore =
+        pickTriangleMesh(ray, mesh->triangleView(), /*frontFacesOnly=*/true);
+    r.check("r1c2_04_picking_hits_the_body_before_the_toggle", hitBefore.hit);
+
+    RenderMeshCache cache;
+    cache.refresh(*mesh, SurfaceShading::Smooth);
+    const uint64_t rebuildsBefore = cache.rebuildCount();
+    const uint32_t sourceVertexCountBefore = mesh->vertexCount();
+
+    // Four real toggles through the real store.
+    DisplaySettingsStore display;
+    display.setGridVisible(false);
+    display.setGridVisible(true);
+    display.setGridVisible(false);
+    display.setGridVisible(true);
+
+    // R1C2-03. The snapshot is what the renderer draws, so "the grid is not in
+    // the scene" means this: the same items, the same ids, the same revisions,
+    // the same transforms, the same selection — and above all the same COUNT.
+    // A grid that had become a scene object would show up here as a fifth field
+    // or a second item.
+    const SceneSnapshot after = scene.snapshot();
+    bool snapshotIdentical = before.size() == after.size();
+    if (snapshotIdentical) {
+        for (size_t i = 0; i < before.size(); ++i) {
+            if (before[i].objectId != after[i].objectId ||
+                before[i].selected != after[i].selected ||
+                before[i].mesh.get() != after[i].mesh.get()) {
+                snapshotIdentical = false;
+                break;
+            }
+            for (int m = 0; m < 16; ++m) {
+                if (!nearly(before[i].model.m[m], after[i].model.m[m]) ||
+                    !nearly(before[i].inverseModel.m[m], after[i].inverseModel.m[m])) {
+                    snapshotIdentical = false;
+                    break;
+                }
+            }
+        }
+    }
+    r.check("r1c2_03_grid_toggling_leaves_the_scene_snapshot_identical", snapshotIdentical);
+    r.check("r1c2_03_the_scene_still_holds_exactly_its_own_bodies",
+            after.size() == scene.bodyCount() && scene.bodyCount() == 1);
+
+    // R1C2-03 again, from the publication side: no revision was minted and
+    // nothing was published.
+    r.check("r1c2_03_grid_toggling_mints_no_mesh_revision",
+            body.meshStore().currentRevision() == revision &&
+                body.meshStore().publishedCount() == 1 && mesh->revision() == revision);
+
+    // R1C2-06. The render-only derived mesh is the thing a toggle could
+    // plausibly have dirtied, and it did not: the cache still reports cached.
+    r.check("r1c2_06_grid_toggling_rebuilds_no_render_mesh",
+            !cache.refresh(*mesh, SurfaceShading::Smooth) &&
+                cache.rebuildCount() == rebuildsBefore);
+    r.check("r1c2_06_grid_toggling_leaves_the_source_mesh_the_same_size",
+            mesh->vertexCount() == sourceVertexCountBefore);
+
+    // R1C2-04. The grid is not pickable, and the way that is true is that
+    // picking never sees it: the query runs over a RuntimeMesh's triangles, the
+    // grid is not one, and the answer is byte-identical either side.
+    const TriangleHit hitAfter =
+        pickTriangleMesh(ray, mesh->triangleView(), /*frontFacesOnly=*/true);
+    r.check("r1c2_04_picking_is_unchanged_by_the_grid",
+            hitAfter.hit == hitBefore.hit &&
+                hitAfter.triangleIndex == hitBefore.triangleIndex &&
+                nearly(hitAfter.t, hitBefore.t));
+
+    // A ray fired straight along the grid's own plane, through the origin,
+    // where the grid's densest lines are. It must miss everything the sphere
+    // does not own — the grid cannot be hit because it is not in the geometry
+    // the query is given at all.
+    ConstructionScene emptyish;
+    SceneObject& lonely = emptyish.bodyAt(0);
+    const ConstructionMesh tiny = defaultSphere();
+    lonely.meshStore().publish(tiny.vertices.data(), static_cast<uint32_t>(tiny.vertices.size()),
+                               tiny.indices.data(), static_cast<uint32_t>(tiny.indices.size()));
+    const RuntimeMeshPtr lonelyMesh = lonely.meshStore().current();
+    const Ray grazing{Vec3{-30.0f, 0.0f, 12.0f}, Vec3{1.0f, 0.0f, 0.0f}};
+    const TriangleHit grazingHit =
+        lonelyMesh ? pickTriangleMesh(grazing, lonelyMesh->triangleView(), true) : TriangleHit{};
+    r.check("r1c2_04_a_ray_along_the_grid_plane_hits_nothing", !grazingHit.hit);
+
+    // R1C2-05. Freeze copies the Construction mesh; the grid is not part of it,
+    // so a frozen mesh is the same whatever the grid is doing.
+    display.setGridVisible(true);
+    SculptMesh frozenWithGrid;
+    const bool frozeWithGrid = frozenWithGrid.freezeFrom(source, body.objectId());
+    display.setGridVisible(false);
+    SculptMesh frozenWithout;
+    const bool frozeWithout = frozenWithout.freezeFrom(source, body.objectId());
+    r.check("r1c2_05_freeze_succeeds_either_way", frozeWithGrid && frozeWithout);
+    r.check("r1c2_05_a_frozen_mesh_is_the_same_size_either_way",
+            frozenWithGrid.vertexCount() == frozenWithout.vertexCount() &&
+                frozenWithGrid.indexCount() == frozenWithout.indexCount() &&
+                frozenWithGrid.vertexCount() == mesh->vertexCount());
+    bool frozenBytesIdentical = frozenWithGrid.vertexCount() == frozenWithout.vertexCount();
+    if (frozenBytesIdentical) {
+        frozenBytesIdentical =
+            std::memcmp(frozenWithGrid.vertices().data(), frozenWithout.vertices().data(),
+                        frozenWithGrid.vertices().size() * sizeof(MeshVertex)) == 0;
+    }
+    r.check("r1c2_05_a_frozen_mesh_is_bit_identical_either_way", frozenBytesIdentical);
+    r.check("r1c2_05_the_grid_did_not_reach_the_construction_source",
+            body.meshStore().currentRevision() == revision &&
+                body.meshStore().publishedCount() == 1);
+}
+
+// R1C2-08/09: the two things the grid shares a plane and a projection with.
+void checkGridAgainstPlaneAndProjection(Recorder& r) {
+    // R1C2-08. The Plane's 4:6 source topology is exactly what Stage 016
+    // pinned, and the grid did not touch it. The grid settles their shared
+    // plane with pipeline DEPTH STATE — draw order, depth-write off and a
+    // depth bias — so there was never anything here for it to move, and this
+    // check is what proves nobody was tempted to move it anyway.
+    ConstructionObject object(kConstructionBoxObjectId);
+    object.setPrimitive(PrimitiveSpec::forPlane(kDefaultPlaneWidthMeters,
+                                                kDefaultPlaneDepthMeters));
+    const ConstructionMesh mesh = object.generateMesh();
+    r.check("r1c2_08_plane_source_topology_is_still_4_6",
+            mesh.vertices.size() == 4 && mesh.indices.size() == 6);
+
+    bool planeIsFlatAtLocalZero = true;
+    for (const MeshVertex& v : mesh.vertices) {
+        if (!nearly(static_cast<float>(v.position[1]), 0.0f)) {
+            planeIsFlatAtLocalZero = false;
+        }
+    }
+    r.check("r1c2_08_plane_is_still_flat_at_local_y_zero", planeIsFlatAtLocalZero);
+    // The grid lives on the same world plane a Plane at identity occupies. That
+    // is the coincidence the depth bias exists for, and stating it here is what
+    // makes a future change to either constant visible.
+    r.check("r1c2_08_the_plane_and_the_grid_share_world_y_zero",
+            nearly(kGridPlaneY, 0.0f));
+
+    // R1C2-09. The grid composes the camera's own projection matrix and owns
+    // none of it, so both modes work and neither is touched. Asserted the only
+    // way that means anything without a GPU: the camera reports different
+    // projections and IDENTICAL pose either side of a grid toggle.
+    CameraController camera;
+    camera.setViewport(1080, 2400);
+    const CameraSnapshot perspective = camera.snapshot();
+    r.check("r1c2_09_perspective_is_a_perspective_matrix",
+            !nearly(perspective.proj.m[11], 0.0f));
+
+    DisplaySettingsStore display;
+    display.setGridVisible(false);
+    const CameraSnapshot afterToggle = camera.snapshot();
+    bool poseUnchanged = true;
+    for (int m = 0; m < 16; ++m) {
+        if (!nearly(perspective.proj.m[m], afterToggle.proj.m[m]) ||
+            !nearly(perspective.view.m[m], afterToggle.view.m[m])) {
+            poseUnchanged = false;
+        }
+    }
+    r.check("r1c2_09_a_grid_toggle_moves_no_camera_value", poseUnchanged);
+    r.check("r1c2_09_a_grid_toggle_does_not_change_the_projection_mode",
+            afterToggle.projection == perspective.projection &&
+                perspective.projection == ProjectionMode::Perspective);
+
+    camera.setProjectionMode(ProjectionMode::Orthographic);
+    const CameraSnapshot ortho = camera.snapshot();
+    // A true parallel projection: m[11] is 0, which is what Stage 015D pinned.
+    // The grid needs no branch for this — one viewProj multiply serves both —
+    // and that is exactly why neither mode can be broken by it.
+    r.check("r1c2_09_orthographic_is_a_parallel_projection", nearly(ortho.proj.m[11], 0.0f));
+    display.setGridVisible(true);
+    const CameraSnapshot orthoAfter = camera.snapshot();
+    bool orthoUnchanged = true;
+    for (int m = 0; m < 16; ++m) {
+        if (!nearly(ortho.proj.m[m], orthoAfter.proj.m[m])) {
+            orthoUnchanged = false;
+        }
+    }
+    r.check("r1c2_09_a_grid_toggle_moves_no_orthographic_value", orthoUnchanged);
+    r.check("r1c2_09_the_projection_mode_survives_the_toggle",
+            orthoAfter.projection == ProjectionMode::Orthographic);
+}
+
 // A stand-in for a sculpt edit: move some vertices and rebuild. The renderer
 // must follow the deformed positions, and must do so WITHOUT reading anything
 // from the Sculpt domain — this check deliberately uses only MeshStore.
@@ -1837,6 +2284,16 @@ int runRenderMeshSelfTests(RenderMeshSelfTestResult* out, int max) {
     // background are here and not in the picking or selection suites, which own
     // which object is selected rather than how it is drawn.
     checkSelectionPulse(r);
+
+    // UI-R1C2: the world reference grid. Here for the same reason selection
+    // feedback is — it is PRESENTATION. The suite that owns how a thing is
+    // drawn owns the grid; the picking and selection suites own what is in the
+    // scene, and the whole point of the grid is that it is not.
+    checkGridDefaultAndOwnership(r);
+    checkGridGeometry(r);
+    checkGridPalette(r);
+    checkGridIsInertAgainstTheModel(r);
+    checkGridAgainstPlaneAndProjection(r);
 
     return r.n;
 }

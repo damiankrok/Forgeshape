@@ -24,6 +24,20 @@ ForgeShape comes up with a single body: a box **2.0 m wide × 1.0 m high × 0.5 
 deep**, centred at the world origin and unrotated, so it is visibly not a cube.
 It is already selected, so there is never a step where nothing is being edited.
 
+**Behind the bodies there is a grid** — a reference floor on the ground plane
+through the world origin, with a line every **1 metre** and a stronger line every
+**5**. It is what tells you how big something is, which way the world faces and
+where the origin is, and it fades out with distance rather than stopping at a
+visible edge. The two lines through the origin are tinted very slightly warm and
+cool so the two ground directions can be told apart. It reaches about 20 m from
+the origin in each direction.
+
+The grid is drawn, and nothing more. **Nothing snaps to it**, nothing is measured
+from it, it cannot be selected or sculpted, and it is never part of what you are
+building — a body that sits exactly on the ground plane covers the grid rather
+than fighting with it. It is on when ForgeShape starts and can be switched off
+under **Display → View → Grid**; the choice lasts as long as the app is running.
+
 ## How the surface is shaded
 
 The object is drawn as neutral grey clay, lit from the upper left with a soft
@@ -42,7 +56,8 @@ sharp rim, and a clean point at the top. A capsule is smooth from end to end, wi
 no visible join where the rounded ends meet the middle — and a capsule as tall as
 it is wide is simply a smooth sphere.
 
-**Display** in the Global Toolbar opens a small panel with three choices.
+**Display** in the Global Toolbar opens a small panel. Every control in it works;
+nothing there is drawn as a promise of something that does not exist yet.
 
 *Shading* picks how the surface is lit:
 
@@ -72,6 +87,13 @@ it is wide is simply a smooth sphere.
 An edge pointing away from you still looks shortened in Orthographic. That is
 foreshortening from *orientation*, which both projections have and which is
 correct: what Orthographic removes is foreshortening from *distance*.
+
+*View* picks what the viewport draws besides the model. Today that is one thing:
+
+- **Grid — On** (the default) or **Off**. The reference floor described above.
+  Turning it off leaves the bare model; turning it back on costs nothing and
+  changes nothing about what you are building. The grid is correct in both
+  projections.
 
 Switching between Studio and MatCap changes nothing but the picture: the object,
 its dimensions, its placement and any sculpting are untouched, and so is what you
@@ -132,6 +154,23 @@ model and one chip to bring it back.
 
 The same three regions are there in both modes. What changes is what they carry,
 never where they are.
+
+**A bigger window buys more of the model in view at once, not just more space
+around it.** On a phone the workspace is viewport-first: the list of bodies lives
+inside the shape panel, and the Tool Rail floats over the edge of the model as a
+small raised card. On a tablet-sized window there is room to stop stacking things,
+so the **list of bodies gets a column of its own** down the leading edge and the
+Tool Rail sits flush against the trailing edge as part of the layout rather than
+standing on the picture. The exact values stay in their own panel on the other
+side, so you can see what you are editing and what its numbers are at the same
+time, with the model between them.
+
+That only happens where it genuinely fits. A window that is merely wide — a large
+phone in landscape — keeps the phone arrangement, because three permanent columns
+there would take more from the model than they give back. Whichever window you are
+in, the list of bodies behaves identically: the same rows, the same order, the
+same Add Body, and a body picked in the viewport highlights in the list either
+way. A long list scrolls.
 
 Touching any of that chrome never moves the camera and never sculpts: a control
 owns its own gesture completely. Touching the viewport anywhere else navigates
@@ -665,24 +704,28 @@ restarts.
 
 ## Not yet implemented
 
-Standard named views (Front, Top, Right and the rest), a view cube, a grid, a
+Standard named views (Front, Top, Right and the rest), a view cube, a
 focus-on-selection command and any camera animation are not implemented — the
 projection can be switched, but the camera is aimed only by hand. Scaling the
-object, transform gizmos, snapping, creating a second object, further
-primitives (plane), an editable tessellation and booleans are not implemented:
-shape, position and rotation are edited only by typing exact values and pressing
-an Apply button. Sculpting has exactly the four tools above — other brushes
-(Flatten, Crease, Pinch and the rest), remesh, sculpt undo, symmetry, masking,
-layers, brush presets and stylus pressure are not implemented.
+object, transform gizmos, an editable tessellation and booleans are not
+implemented: shape, position and rotation are edited only by typing exact values
+and pressing an Apply button. Sculpting has exactly the four tools above — other
+brushes (Flatten, Crease, Pinch and the rest), remesh, sculpt undo, symmetry,
+masking, layers, brush presets and stylus pressure are not implemented.
+
+**There is a grid, but there is no snapping of any kind.** Nothing you drag,
+type or place is quantised to it, no value is ever measured off it, and there is
+no snap setting to turn on. A sketch grid — the one you would draw on, with
+snapping — is a different thing entirely and does not exist. The grid is a
+reference the viewport draws and nothing more.
 
 Exactly one body is selected at a time. Selecting more than one, lasso and box
 selection, and object commands that act on a selection — delete, duplicate,
 rename, hide, lock, group, nesting and reordering — are not implemented. The
 Objects list adds and selects; it does nothing else.
 
-Two-finger twist/roll, inertia, camera presets, orthographic camera,
-focus-on-selection, long-press selection, grid, modelling, UV, save/load and undo
-are not implemented.
+Two-finger twist/roll, inertia, camera presets, focus-on-selection, long-press
+selection, UV, save/load and undo are not implemented.
 
 **There are two appearances and no third.** ForgeShape does not follow the
 system's own light/dark setting, and there is no automatic or scheduled

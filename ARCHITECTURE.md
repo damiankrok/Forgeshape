@@ -8,54 +8,38 @@ runtime, rendering, math or input library participates in the running product.
 
 ## Layer map
 
+What each box owns is in the Ownership table below; what the diagram adds is the
+**direction of every arrow**, which the table cannot show.
+
 ```
-ForgeShapeActivity            Android lifecycle, edge-to-edge window
+ForgeShapeActivity
         |
-        +-- EditorWorkspaceView   the whole editor UI: adaptive layout, window
-        |        |                insets, chrome visibility, and the surfaces
-        |        |                for the mode NATIVE code is in
-        |        |  EditorUiState      drafts / presentation / layout ONLY,
-        |        |                     plus the process-scoped start choice
-        |        |                     and AppTheme (Dark | Light)
-        |        |  WorkspaceLayoutMode window-dp breakpoints (no Android type)
-        |        |
-        |        +-- StartChooserView    Construction/CAD | Sculpt, once per process
-        |        +-- GlobalToolbarView   context, mode seam, status, Export (rsvd)
-        |        +-- ToolRailView        sculpt brushes | Construction editors
-        |        +-- BrushEdgeControlsView  direct Radius + Strength (Sculpt)
-        |        +-- PropertyInspectorView  contextual, collapsible, scrolling
-        |                 +-- ConstructionShapeEditorView   what the object IS
+        +-- EditorWorkspaceView   (+ EditorUiState, WorkspaceLayoutMode)
+        |        +-- StartChooserView / GlobalToolbarView / ToolRailView
+        |        +-- BrushEdgeControlsView / ObjectsSectionView
+        |        +-- PropertyInspectorView
+        |                 +-- ConstructionShapeEditorView    what the object IS
         |                 +-- ConstructionPlacementEditorView  where it SITS
         |                 +-- SculptContextView   mesh state + guarded re-Freeze
-        |        |  LengthUnit    exact BigDecimal mm/cm/m <-> meters
-        |        |
+        |
 ForgeShapeSurfaceView         Surface lifecycle + raw pointer forwarding
-        |                     (no camera state, no matrices, no Vulkan)
 NativeViewport (JNI decls)
         |  JNI  -- Android/JNI types stop HERE --
-forgeshape_jni.cpp            render thread, ANativeWindow ownership,
-        |                     MotionEvent -> TouchAction translation,
-        |                     Camera + Selection ownership + locking,
-        |                     stroke-vs-navigation arbitration,
-        |                     publishActiveRepresentation
+forgeshape_jni.cpp            render thread, ANativeWindow, MotionEvent ->
+        |                     TouchAction, camera/selection locking,
+        |                     stroke-vs-navigation arbitration
         |
-        +--> CameraController -> CameraSnapshot (view, proj, eye, target, pose,
-        |                                        projection mode, world span)
+        +--> CameraController -> CameraSnapshot
         |
         +--> SelectionController -- on a valid tap --> pickScene() -> Picking
-        |         |                                        ^  (ray build,
-        |         v                                        |   ray/triangle)
-        |    ObjectId or none -> bool "draw highlight"     | current snapshot
-        |                                                  |
+        |         |                                        ^
+        |         v                                        | current snapshot
+        |    ObjectId or none -> bool "draw highlight"      |
+        |                                                   |
         |    ConstructionObject                 SculptSession
-        |      ObjectId, PrimitiveKind,           ProductMode, SculptTool,
-        |      the six Construction*              SculptStroke (one kernel)
-        |      primitives,                          |
-        |      ConstructionTransform                |
         |        |                                  |
         |        generateMesh() [LOCAL] --Freeze--> SculptMesh [LOCAL copy,
         |        |                                  own SculptRevision]
-        |        |                                  |
         |        +---- the ACTIVE one is published -+
         |        v                                  |
         |    MeshStore (immutable revisions, monotonic, latest-wins)
@@ -63,6 +47,7 @@ forgeshape_jni.cpp            render thread, ANativeWindow ownership,
         |    modelMatrix() / inverseModelMatrix()   |
         v        v                                  v
       Renderer  (Vulkan, frame loop, upload; owns no geometry truth)
+        |            ^-- forgeshape_grid: world reference floor, NOT in the scene
         |
    ANativeWindow -> VkSurfaceKHR -> swapchain
 ```
@@ -89,6 +74,10 @@ forgeshape_jni.cpp            render thread, ANativeWindow ownership,
 | Identity, which primitive is active, every primitive's parameters, and placement — for ONE body | `ConstructionObject` (`forgeshape_construction.{h,cpp}`) | it knows nothing of the collection holding it |
 | Which of the two appearances the process wears | `EditorUiState` (static) → `AppTheme` | UI-owned, losable, never persisted; the domain sees only a viewport-background index |
 | What the viewport is cleared to | `ViewportBackground` in `forgeshape_display.{h,cpp}` | native owns the colours; no Android theme or RGB crosses JNI |
+| The world reference grid's plane, spacing, extent, tiers and palette | `forgeshape_grid.{h,cpp}` | it is not a `SceneObject`, has no `ObjectId` or revision, is not pickable, and is not a snap target |
+| Whether the grid is drawn | `DisplaySettingsStore` | the renderer owns no presentation preference; the grid module owns no visibility |
+| Whether Objects and the Tool Rail are docked for a given window | `WorkspaceLayoutMode.objectsDocked(widthDp)` / `railDocked()` | arithmetic on window dp; neither reads theme, mode or domain state |
+| Which surface currently hosts the Objects list | `EditorWorkspaceView` | there is exactly ONE `ObjectsSectionView`, re-parented; no second list and no Java-side selection truth |
 | Each primitive's exact parameters and its deterministic **local**-space mesh | `ConstructionBox` (W/H/D), `ConstructionCylinder` and `ConstructionSphere` (diameter…), `ConstructionCone` (bottom diameter, height), `ConstructionCapsule` (diameter, **total** height) | no JNI/Android/Vulkan/renderer/UI types. Tessellation counts are fixed, not parameters. A radius, and the capsule's cylindrical middle, are derived and never stored. The cone's apex radius is zero by definition: no top diameter, no frustum. The mesh, the GPU and the picker own no parameter |
 | The one radial-segment and latitude-stack count every round primitive is drawn with | `kPrimitiveRadialSegments` / `kPrimitiveLatitudeStacks` (`forgeshape_construction.h`) | no generator writes down a segment count of its own |
 | The capsule's `totalHeight >= diameter` relation | `validateCapsuleMeters` | the UI restates none of it; it is a domain rule, not an input check |
@@ -131,13 +120,10 @@ it.**
 
 The practical test is one question: *if this file had to compile on a platform
 that has no Android, what would break?* For everything below `forgeshape_jni.cpp`
-the answer must stay "nothing".
-
-This is deliberately **not** an abstraction layer. No renderer interface, no
-platform façade, no `#ifdef` for an operating system that has no target — a
-portability layer built before there is a second platform is a guess, and a wrong
-one is more expensive than the port. What is required is only that the seams stay
-where they are and that nothing new crosses them.
+the answer must stay "nothing". This is deliberately **not** an abstraction
+layer — no renderer interface, no platform façade, no `#ifdef` for an operating
+system that has no target. What is required is only that the seams stay where
+they are and that nothing new crosses them.
 
 ## Android layer
 
@@ -160,11 +146,12 @@ children in z-order:
    chip, the Display popover and the start chooser.
 
 Inside `chromeRoot`: `GlobalToolbarView` at the top, then a weighted horizontal
-row carrying `BrushEdgeControlsView` (leading edge, Sculpt only), a weighted gap
-where the model lives, and the `ToolRailView` inside a `ScrollView` (trailing
-edge). `PropertyInspectorView` is placed either after that row (bottom sheet) or
-inside it (side placement) — see below. All are plain framework views built in
-code; no Compose, no AndroidX in the product, no design system, no drawer.
+row carrying — leading edge first — the Objects column (expanded windows only),
+`BrushEdgeControlsView` (Sculpt only), a weighted gap where the model lives, and
+the `ToolRailView` inside a `ScrollView` (trailing edge). `PropertyInspectorView`
+is placed either after that row (bottom sheet) or inside it (side placement). All
+are plain framework views built in code; no Compose, no AndroidX in the product,
+no design system, no drawer.
 
 ### Appearance: roles, not colours
 
@@ -176,42 +163,35 @@ carrying attributes; the one imperative path is
 `EditorControlStyles.themeColor(context, attr)`, for text roles and the two brush
 sliders, which are drawn onto a Canvas rather than composed.
 
-That buys three things at once. Pressed and active states come from the platform
-instead of a repaint call. Instances share one parsed `ConstantState` rather than
-allocating a `GradientDrawable` per control. And **two themes cost one component
-tree**: there is one `bg_control.xml`, one `chip()` and one
-`control_content_tint.xml`, no `if (light)` anywhere, and a third theme would
-touch those two resource files and nothing else.
-
-Two roles exist only because a light theme forced them apart. `fsAccentFill` is
-what an ACTIVE control is filled with; `fsPrimaryFill` is what a PRIMARY COMMIT
-is filled with, and `fsTextOnPrimary` is the label on it. On dark those are the
-same colour and the split looks pointless; on light an active chip wants a pale
-tint carrying dark text while Apply wants a solid accent carrying white, and one
-attribute could not be both.
+That buys three things at once: pressed and active states come from the platform
+instead of a repaint call; instances share one parsed `ConstantState` rather than
+allocating a `GradientDrawable` per control; and **two themes cost one component
+tree** — one `bg_control.xml`, one `chip()`, one `control_content_tint.xml`, no
+`if (light)` anywhere, so a third theme would touch two resource files and
+nothing else. Two roles exist only because a light theme forced them apart:
+`fsAccentFill` (what an ACTIVE control is filled with) and `fsPrimaryFill` (what a
+PRIMARY COMMIT is filled with, carrying `fsTextOnPrimary`) are the same colour on
+dark, but on light an active chip wants a pale tint with dark text while Apply
+wants a solid accent with white, and one attribute could not be both.
 
 Icons are local vector drawables on one 24 dp grid, drawn white and tinted from
-the same state list; an icon inside a composed control duplicates its parent's
-state, so an entry's glyph and its caption cannot disagree about whether it is
-active, pressed or reserved. Metrics come from `dimens.xml`: corner radius is
-three semantic levels — control, floating surface, sheet — and type is five roles
-rather than five sizes.
+the same state list, so an entry's glyph and its caption cannot disagree about
+whether it is active, pressed or reserved. Metrics come from `dimens.xml`: corner
+radius is three semantic levels — control, floating surface, sheet — and type is
+five roles rather than five sizes.
 
 **The theme itself is UI-owned, process-scoped and losable**, in the one static
-field in `EditorUiState` beside the start choice. It is applied by
-`setTheme()` **before** anything is inflated, and changed by recreating the
-Activity — the only clean way to re-resolve themed resources for a UI built
-entirely in code, and far safer than walking dozens of view classes reapplying
-colours. That is safe because nothing that matters lives in the Activity: the
-scene, every body, the active ObjectId, the mode, the Frozen Sculpt Mesh, the
-camera and the display settings are process-scoped native state. It is also
-free, because `onDestroy` skips `NativeViewport.stop()` while
-`isChangingConfigurations()` — so the render thread, the Vulkan device and every
-GPU buffer survive, the Surface is detached and reattached exactly as on a
-HOME/resume, and `start()` returns early rather than re-running the self-tests.
-The session state in `EditorUiState` is handed to the incoming workspace, so
-changing colour does not also reset the display unit or close a panel. Nothing is
-persisted: a real process kill returns to the default, which is Dark.
+field in `EditorUiState` beside the start choice. It is applied by `setTheme()`
+**before** anything is inflated, and changed by recreating the Activity — the only
+clean way to re-resolve themed resources for a UI built entirely in code. That is
+safe because nothing that matters lives in the Activity: the scene, every body,
+the active ObjectId, the mode, the Frozen Sculpt Mesh, the camera and the display
+settings are process-scoped native state. It is also free, because `onDestroy`
+skips `NativeViewport.stop()` while `isChangingConfigurations()`, so the render
+thread, the Vulkan device and every GPU buffer survive and `start()` returns early
+rather than re-running the self-tests. `EditorUiState` is handed to the incoming
+workspace, so changing colour does not reset the display unit or close a panel.
+Nothing is persisted: a real process kill returns to Dark.
 
 **The Vulkan viewport is full-bleed and stays that way.** No layout decision
 insets, pads or resizes the `SurfaceView`; window insets are applied to
@@ -227,17 +207,14 @@ representation that is not being worked on.
 
 Two layout contracts in the chrome are load-bearing rather than cosmetic. In the
 Global Toolbar the **editing-context label is the weighted child**, so a row that
-has run out of width shrinks the label and ellipsises it instead of squeezing the
-last action: a wrap-content label kept its text width and left both icon controls
-measured at 33–35 dp, under the 44 dp touch floor, on an ordinary 411 dp window.
-And a **Tool Rail entry holds its gesture against the enclosing `ScrollView`**:
-it disallows interception on Down and allows it again once travel passes twice
-the platform slop, at which point the container takes the next event and the
-platform's own `ACTION_CANCEL` prevents the click. A scroll container otherwise
-takes a tap the moment a finger — or a resting stylus tip — drifts past the slop,
-which made selecting a tool intermittently do nothing at all. Neither contract
-touches viewport gesture arbitration: both are chrome, and chrome consumes its
-own events either way.
+has run out of width ellipsises the label instead of squeezing the last action
+below the 44 dp touch floor. And a **Tool Rail entry holds its gesture against the
+enclosing `ScrollView`**: it disallows interception on Down and allows it again
+once travel passes twice the platform slop, at which point the container takes the
+next event and the platform's own `ACTION_CANCEL` prevents the click — otherwise a
+scroll container takes the tap the moment a finger or a resting stylus tip drifts,
+which made selecting a tool intermittently do nothing. Neither touches viewport
+gesture arbitration: both are chrome.
 
 Every chrome surface swallows every touch inside its bounds that none of its own
 controls takes (`onTouchEvent` returns `true`). Because the viewport is a
@@ -282,14 +259,38 @@ to the chrome containers only. `windowSoftInputMode` is `adjustResize`, but with
 decor-fits off the window is **not** resized: the keyboard arrives as an inset the
 chrome absorbs and the surface is untouched.
 
-**Chrome depth.** Surfaces that float over the model (rail, popover, brush
-controls, bottom-sheet and side-overlay inspector, restore chip, start chooser)
-carry a small elevation; the **docked** inspector deliberately carries none,
-because it sits beside the model rather than over it. Their containers set
-`clipChildren(false)`, since a shadow is drawn outside its child's bounds — that
-affects drawing only and never hit-testing. The rail's surface and elevation live
-on its `ScrollView` rather than on the rail, or the container would clip exactly
-the shadow it wraps.
+**Chrome depth, and what "docked" claims.** Surfaces that float over the model
+carry a small elevation; **docked** surfaces deliberately carry none and are drawn
+opaque and flush, because they sit *beside* the model rather than over it. That is
+a claim about the layout and it has to be true, which is why it is answered by the
+window rather than by taste. `railDocked()` and `objectsDocked(widthDp)` are the
+two predicates; the Property Inspector has followed the same rule since Stage 015B.
+Containers set `clipChildren(false)`, since a shadow is drawn outside its child's
+bounds — drawing only, never hit-testing. The rail's surface and elevation live on
+its `ScrollView` rather than on the rail, or the container would clip exactly the
+shadow it wraps.
+
+**The Objects surface is one view with two hosts.** An expanded window with room
+gives the scene list a leading-edge column (`objectsDock`, a `ScrollView`); every
+other window keeps it inside the Construction shape editor. The **same
+`ObjectsSectionView` instance** is re-parented between them — never a second list,
+because a second Java Objects view would be a second place for "which body is
+active" to be remembered, and that answer lives in exactly one place, below JNI.
+Because the same view moves, a viewport pick, a row tap and Add Body all end at the
+same one native fact and the same one `refreshFromNative()` in every window.
+Docked, it scrolls in its own container rather than nested inside the inspector's.
+
+Whether it docks is arithmetic, **not a fourth breakpoint**: `EXPANDED` is
+necessary and not sufficient, and a window qualifies only when a 180 dp Objects
+column, the rail and the inspector still leave a central viewport at least 480 dp
+wide — the absolute floor the expanded layout has always been held to. Deriving it
+means a later change to any column width moves the answer instead of silently
+violating the floor, and it is why the bottom of the expanded range gets no third
+column: three permanent chrome columns on a large phone in landscape is the
+desktop-CAD clutter UI-OWNER-02 rules out. The re-parent is **instant**, because
+it runs inside `onMeasure` and starting an animation there is the same defect as
+running the decision in `onSizeChanged`. **None of it touches the render target:**
+the `SurfaceView` is the whole window in every layout mode.
 
 ### Property Inspector ownership boundary
 
@@ -323,53 +324,40 @@ body is on screen; that choice is UI layout state, makes no native call, and
 deliberately does not refresh the editors, so a half-typed value in the other
 section survives.
 
-Consequently:
+Consequently: typing changes no geometry or placement, publishes no revision and
+uploads nothing; switching display units makes **no native call at all**, being a
+decimal point shift on text applied to size and position and never to rotation,
+which is degrees in every unit; and the UI never clamps, rounds or repairs an
+invalid value — it refuses only input it can already name a problem with (blank,
+non-numeric, and non-positive *for a dimension only*) so it can report a useful
+message, and everything else goes to native validation, the final authority. The
+positivity rule is deliberately not applied to placement, where zero and negative
+are ordinary.
 
-- typing changes no geometry and no placement, publishes no revision and uploads
-  nothing;
-- switching display units makes **no native call at all** — it is a decimal point
-  shift on text, applied to the size and position fields and never to rotation,
-  which is degrees in every unit;
-- the UI never clamps, rounds or repairs an invalid value. It refuses input it
-  can already name a problem with (blank, non-numeric, and non-positive *for a
-  dimension only*) so it can report a useful message, and everything else goes to
-  native validation, which is the final authority.
-
-The positivity rule is deliberately not applied to placement: zero and negative
-are ordinary for a coordinate and an angle, so the only thing the UI refuses
-there is text that is not a number.
-
-`LengthUnit` converts by exact `BigDecimal` point shift (`10^3` mm, `10^2` cm,
-`10^0` m), never a floating-point multiply, so switching is lossless and a value
-re-entered in another unit produces the identical `double` — which is why
-re-applying the same box in a different unit reports `Unchanged`. Meters render
-through `BigDecimal.valueOf(double)`, shifted, trailing zeros stripped, no
-grouping separator; parsing accepts `.` or `,`. Fields use a numeric IME via
-`setRawInputType` plus a `DigitsKeyListener` accepting `0123456789.,-`. The minus
-matters twice over: a negative coordinate or angle is ordinary, and a negative
-*dimension* must be enterable so it can be visibly refused rather than
-unreachable.
+`LengthUnit` converts by exact `BigDecimal` point shift, never a floating-point
+multiply, so switching is lossless and a value re-entered in another unit produces
+the identical `double` — which is why re-applying the same box in a different unit
+reports `Unchanged`. Parsing accepts `.` or `,`; fields use a numeric IME whose
+key listener accepts `0123456789.,-`, and the minus matters twice over: a negative
+coordinate or angle is ordinary, and a negative *dimension* must be enterable so
+it can be visibly refused rather than unreachable.
 
 ### Start flow ownership
 
 `StartChooserView` asks which representation the model begins in, over the live
-viewport, in `overlayRoot` above everything it asks about. It owns no state and
-makes no native call; it reports which option was pressed.
+viewport. It owns no state and makes no native call; it reports which option was
+pressed.
 
 **Native state already exists when it is asked.** The Activity starts native code
 before building any view, so the scene, the default Body and its ObjectId are the
-same in both branches — neither answer creates anything, and `ConstructionScene`'s
-constructor is untouched by the chooser (startup is still one default Box at
-identity, which `S17-01` asserts).
-
-*Construction* therefore only stops asking and re-reads. *Sculpt* makes exactly
-the two calls a user would make by hand: `applyConstructionSphere` with the
-diameter **read back from native state** rather than a constant invented in Java,
-then `freezeToSculpt`. Nothing about Freeze is duplicated — no second validation,
-no second `SculptMesh` construction, no opinion about sidedness, the stale flag or
-revision numbering — so *Back to Construction* finds the exact sphere and *Resume
-Sculpt* returns the same frozen mesh for the ordinary reasons. A refusal leaves
-the product in Construction, unchanged, and says so.
+same in both branches — neither answer creates anything, and startup is still one
+default Box at identity (`S17-01`). *Construction* therefore only stops asking and
+re-reads. *Sculpt* makes exactly the two calls a user would make by hand:
+`applyConstructionSphere` with the diameter **read back from native state** rather
+than a constant invented in Java, then `freezeToSculpt`. Nothing about Freeze is
+duplicated, so *Back to Construction* finds the exact sphere and *Resume Sculpt*
+returns the same frozen mesh for the ordinary reasons. A refusal leaves the
+product in Construction, unchanged, and says so.
 
 ### The destructive-act guard
 
@@ -390,23 +378,24 @@ raise a dialog with nothing behind it. Cancel makes no native call at all.
 
 The native self-tests own geometry and math; the runtime smoke owns the
 Vulkan/input bridge; the Android suites own shell behaviour, control visibility
-and the UI→native call contract. **No Java test asserts a rendered pixel.**
+and the UI→native call contract. **No Java test asserts a rendered pixel**, every
+control is reached by its stable semantic id from `res/values/ids.xml`, and no
+assertion depends on a screen coordinate. `src/test` is JVM/JUnit only, over the
+pieces deliberately free of Android types; `src/androidTest` is instrumentation
+with Espresso deliberately absent — the assertions are view state, measured
+geometry and touch consumption read directly from the view tree.
 
-- `src/test` (JVM, JUnit only): `WorkspaceLayoutMode`, `EditorUiState` and
-  `LengthUnit` — the three pieces deliberately free of Android types.
-- `src/androidTest` (instrumentation): every control is reached by its stable
-  semantic id from `res/values/ids.xml`; no assertion depends on a screen
-  coordinate. Espresso is deliberately absent — the assertions are view state,
-  measured geometry and touch consumption, read directly from the view tree.
+Two techniques carry most of the weight. "A UI action changed nothing" is asserted
+by comparing a **bit-identical** snapshot of the native primitive, transform and
+sculpt arrays across the action. "Chrome does not leak a gesture" is asserted by
+dispatching a drag to the surface and requiring it to return `true`, plus the
+native sculpt revision and stroke count being unchanged. The camera has no
+read-back across JNI, so camera immobility is proven at runtime instead, by a
+pixel-identical viewport region across a chrome drag.
 
-Two techniques carry most of the weight. "A UI action changed nothing" is
-asserted by comparing a **bit-identical** snapshot of the native primitive,
-transform and sculpt arrays across the action. "Chrome does not leak a gesture"
-is asserted by dispatching a drag to the surface and requiring it to return
-`true`, which is the guarantee, plus the native sculpt revision and stroke count
-being unchanged. The camera has no read-back across JNI, so camera immobility is
-proven at runtime instead, by a pixel-identical viewport region across a chrome
-drag.
+An **adaptive** case reads the window it is actually in and asserts the contract
+belonging to that window, so running the suite under an overridden window size is
+a genuine expanded-layout run rather than a simulation.
 
 ## JNI boundary
 
@@ -421,15 +410,17 @@ masked action, the lifting pointer's id, and stable ids with view-local pixels.
 `enterConstructionMode`, `enterSculptMode` (resume WITHOUT re-freezing),
 `sculptState`, `setSculptBrush`, `setSculptTool`, `sculptTool`.
 **Presentation**: `setShadingModel`, `setSurfaceShading`, `setProjectionMode`,
-`setViewportBackground` and their readers — every one of which requests a value,
-refuses an index it does not recognise, and returns what is actually in effect.
+`setViewportBackground`, `setGridVisible`, `setReducedMotion` and their readers —
+every one of which requests a value, refuses an index it does not recognise, and
+returns what is actually in effect. `setGridVisible` takes a plain `bool` rather
+than an index, because there are two answers and no third to refuse.
 
 The methods are listed by group rather than one by one because the *shape* is the
 contract and an exhaustive list only drifts. Reading and writing mirror each
-other: read the whole section, or submit the whole section. The shape read reports **every** primitive's parameters plus the
-active kind, so the panel can populate an inactive draft without inventing
-defaults; each slot of that array has one fixed meaning whatever the active kind
-is, so nothing there is positional-by-kind either.
+other: read the whole section, or submit the whole section. The shape read reports
+**every** primitive's parameters plus the active kind, so the panel can populate an
+inactive draft without inventing defaults, and each slot of that array has one
+fixed meaning whatever the active kind is.
 
 **The shape write is one method per primitive.** There is deliberately no generic
 `kind + a + b + c` entry point: a signature whose third double means "depth, or
@@ -861,47 +852,45 @@ Invariants every generator shares:
   carries **no normals** and the renderer does no lighting, so per-primitive
   shading hardness is not expressible today.
 
-Three cases need more than the table says:
+Four cases need more than the table says:
 
-**The cone's base is closed** and its apex is a true point. The apex radius is
-zero by definition and is not a parameter: no top diameter and no frustum,
-because a truncated cone is a different shape rather than a cone with an extra
-number. Concretely the side triangle is the cylinder's `(b0, t1, b1)` with the
-top ring collapsed to the apex; its `(b0, t0, t1)` partner is the one that would
-have been degenerate, so it simply does not exist. The base fan is the cylinder's
-bottom cap unchanged, and `V - E + F = 2` is what would fail if the base were
-left open.
+**The cone's base is closed** and its apex is a true point — apex radius is zero
+by definition and is not a parameter, because a truncated cone is a different
+shape rather than a cone with an extra number. The side triangle is the
+cylinder's `(b0, t1, b1)` with the top ring collapsed to the apex; the
+`(b0, t0, t1)` partner that would have been degenerate simply does not exist. The
+base fan is the cylinder's bottom cap unchanged, and `V - E + F = 2` is what
+would fail if the base were left open.
 
-**The capsule's cylindrical middle is not a special case in the index loop.**
-Rings run from the north pole downward; the first `kCapsuleHemisphereBands` are
-the top hemisphere and the rest the bottom, and the middle is simply the band
-between the two seam rings, generated by the same code as every other band. It is
-centred on the origin, so its ends sit at `±(totalHeight-diameter)/2`, and the
-poles are written down from the authoritative **total** height rather than
-accumulated as `middle/2 + radius`.
+**The capsule's cylindrical middle is not a special case in the index loop.** The
+middle is just the band between the two seam rings, generated by the same code as
+every other band. It is centred on the origin, so its ends sit at
+`±(totalHeight-diameter)/2`, and the poles are written down from the
+authoritative **total** height rather than accumulated as `middle/2 + radius`.
 
 **The capsule equality case is a sphere, and is generated as one.**
-`totalHeight == diameter` is valid and describes a capsule with no middle: the
-two seam rings are **the same ring**, `R` is one smaller, that band does not
-exist, and the result is exactly the sphere's 482 : 2880. That is what keeps the
-degenerate case free of a duplicated zero-length ring and of zero-area triangles,
-and a `static_assert` pins it rather than leaving it to coincidence. Capsule
-topology is therefore a deterministic *function* of the parameters rather than a
-constant — the two sides of one exact `double` comparison with nothing in
-between — which also makes the capsule the one primitive whose edit can change a
-vertex count and so trigger a buffer growth.
+`totalHeight == diameter` describes a capsule with no middle: the two seam rings
+are **the same ring**, `R` is one smaller, that band does not exist, and the
+result is exactly the sphere's 482 : 2880 — pinned by a `static_assert` rather
+than left to coincidence, which is what keeps the degenerate case free of a
+zero-length ring and zero-area triangles. Capsule topology is therefore a
+deterministic *function* of the parameters (the two sides of one exact `double`
+comparison, nothing in between), which makes the capsule the one primitive whose
+edit can change a vertex count and so trigger a buffer growth.
 
-**The Plane has no tessellation constant and no relation to validate.** Its
-source topology is always exactly 4 vertices and 2 triangles — `kPlaneIndices
-= {0, 3, 2, 2, 1, 0}` over corners `(-w/2,0,-d/2)`, `(w/2,0,-d/2)`,
-`(w/2,0,d/2)`, `(-w/2,0,d/2)` — CCW seen from `+Y`, so both triangles' geometric
-normals are exactly `(0, 1, 0)`, not merely outward-ish. Width and depth are
-validated independently by the same `validateDimensionMeters` every other
-primitive's per-length fields use; there is no capsule-style cross-field rule
-because the two extents do not constrain each other. Being the one open,
-single-sided primitive, it is also the one whose `ConstructionMesh` sets
-`renderBothSides = true` — see *Derived render geometry and shading* and
-*Picking and selection* below for what that authorizes downstream.
+**The Plane has no tessellation constant and no relation to validate.** Source
+topology is always exactly 4 vertices and 2 triangles —
+`kPlaneIndices = {0, 3, 2, 2, 1, 0}` over corners `(∓w/2, 0, ∓d/2)` — CCW seen
+from `+Y`, so both triangles' geometric normals are exactly `(0, 1, 0)`, not
+merely outward-ish. Width and depth are validated independently by the same
+`validateDimensionMeters` every other per-length field uses; there is no
+capsule-style cross-field rule because the two extents do not constrain each
+other. Being the one open, single-sided primitive, it is also the one whose
+`ConstructionMesh` sets `renderBothSides = true` — see *Derived render geometry
+and shading* and *Picking and selection* for what that authorizes. It is
+additionally the one primitive that can sit exactly coplanar with the world
+reference grid, which is why the grid carries a depth nudge; nothing about the
+Plane changes for it.
 
 ### The capsule relation, and float resolvability
 
@@ -1118,17 +1107,15 @@ These are separate truths and neither writes to the other:
   currently generated local mesh wholesale. Nothing is shared, so no sculpt edit
   can reach back into Construction data, and the Construction Source can still
   regenerate its own mesh at any moment.
-- **A sculpt edit changes no parameter, no kind and no transform.** It cannot:
-  the sculpt module has no mutable access to `ConstructionObject`, and the only
-  mutation `SculptMesh` offers is a single vertex POSITION. No API here can add,
+- **A sculpt edit changes no parameter, no kind and no transform.** It cannot: the
+  sculpt module has no mutable access to `ConstructionObject`, and the only
+  mutation `SculptMesh` offers is a single vertex POSITION — nothing here can add,
   remove or reorder a vertex or touch an index, so topology is preserved by
   construction rather than by discipline. **Nothing reconstructs a parameter from
-  sculpt vertices** either; that direction does not exist, exactly as it does not
-  exist from the Construction mesh.
-- The transform is deliberately **not** duplicated. Both representations are
-  local geometry under the one `ConstructionTransform`, so the object sits in
-  exactly the same place in either mode and there is no second placement to keep
-  in sync.
+  sculpt vertices** either; that direction does not exist.
+- The transform is deliberately **not** duplicated. Both representations are local
+  geometry under the one `ConstructionTransform`, so there is no second placement
+  to keep in sync.
 - `SculptRevision` is emphatically **not** a `MeshRevision`. `MeshStore`'s
   revisions count every published snapshot of whichever representation is active;
   a `SculptRevision` counts changes to *this* mesh and restarts at 1 on every
@@ -1137,16 +1124,14 @@ These are separate truths and neither writes to the other:
 ### Mode ownership
 
 `SculptSession` owns `ProductMode` — `Construction` or `Sculpt` — plus the one
-`SculptMesh`, the active `SculptTool`, the brush settings and the live stroke. It
-is process-scoped, like the camera, the selection, the mesh store and the
-Construction object.
+`SculptMesh`, the active `SculptTool`, the brush settings and the live stroke, and
+is process-scoped like the camera, the selection and the mesh store.
 
-The mode is **native state**. The Android UI may request a change through
-`freezeToSculpt` / `enterSculptMode` / `enterConstructionMode` and is then told
-what the mode actually is; `EditorWorkspaceView.syncFromNative()` reads
-`productMode()` back rather than assuming its request succeeded, so a refused
-request (entering Sculpt with nothing frozen) cannot leave surfaces on screen
-that lie about what is being edited. The active tool is read back the same way.
+The mode is **native state**. The Android UI may request a change and is then told
+what the mode actually is; `syncFromNative()` reads `productMode()` back rather
+than assuming its request succeeded, so a refused request (entering Sculpt with
+nothing frozen) cannot leave surfaces on screen that lie about what is being
+edited. The active tool is read back the same way.
 
 - **Freeze to Sculpt** snapshots the current Construction local mesh, creates the
   Frozen Sculpt Mesh with the same `ObjectId`, and enters Sculpt mode.
@@ -1191,20 +1176,18 @@ assert that its build count stays at 1 across a whole stroke.
 It stores exactly two things, in flat CSR arrays: each vertex's **1-ring vertex
 neighbours** and its **incident triangles**. Neighbour lists are sorted and
 deduplicated, because a shared edge is seen once from each of its two triangles
-and without the dedup every interior neighbour would be weighted double in a
-mean. Out-of-range indices are skipped rather than trusted and no vertex is ever
-its own neighbour. It is deliberately **not** a half-edge structure: half-edges
-are the right shape for *changing* topology, and nothing here can change
-topology.
+and without the dedup every interior neighbour would be weighted double in a mean.
+Out-of-range indices are skipped rather than trusted and no vertex is ever its own
+neighbour. It is deliberately **not** a half-edge structure: half-edges are the
+right shape for *changing* topology, and nothing here can change topology.
 
 `computeVertexNormals` produces **area-weighted** normals from the CURRENT
 positions: each triangle contributes its unnormalized `(v1-v0) x (v2-v0)` — the
-same canonical outward normal picking uses, whose length is twice the triangle's
-area — to all three corners, and each vertex normal is then normalized. A
-degenerate triangle contributes a zero vector rather than a NaN, and a vertex
-with no usable accumulated direction gets the **zero** vector rather than an
-invented axis, so a normal-based brush simply does not move it. Every value
-written is finite.
+same canonical outward normal picking uses, whose length is twice the area — to
+all three corners, then each vertex normal is normalized. A degenerate triangle
+contributes a zero vector rather than a NaN, and a vertex with no usable
+accumulated direction gets the **zero** vector rather than an invented axis, so a
+normal-based brush simply does not move it.
 
 **When normals are recomputed:** the cache is marked dirty by every accepted
 `setVertexPosition` and recomputed on the next read. That is the whole rule — at
@@ -1281,49 +1264,41 @@ Deliberate properties of the kernel, shared by all four tools:
 than accumulating, so the result depends only on where the finger *is*, never on
 how many events it took to get there.
 
-The other three are **path-driven**, and that is the whole of the accumulation
-rule. For each move, `travelFraction = pointer travel this move / brush radius`,
-both in pixels, and
+The other three are **path-driven**. Per move,
+`travelFraction = pointer travel this move / brush radius` (both in pixels), and
 
 ```
 amount = strength * localRadius * kNormalBrushGain * travelFraction   (Clay, Inflate)
 lambda = strength * weight * kSmoothGain * travelFraction             (Smooth)
 ```
 
-Measuring path length rather than counting events is what makes them independent
-of the event rate: the same finger path always deposits, relaxes or expands the
-same amount whether Android delivered it in five events or fifty, a stationary
-finger does nothing at all, and there is no timer and no per-event dab. `amount`
-is clamped to one local radius per move, so a teleporting pointer cannot produce
-an unbounded displacement. `kNormalBrushGain` (0.35), `kSmoothGain` (1.0) and
-`kMaxSmoothLambda` (0.9) are chosen defaults, not derived constants; the low gain
-is why a short stroke with a large brush reads as doing very little.
+Measuring path length rather than counting events makes them independent of the
+event rate: the same finger path deposits the same amount whether Android
+delivered it in five events or fifty, a stationary finger does nothing, and there
+is no timer and no per-event dab. `amount` is clamped to one local radius per
+move, so a teleporting pointer cannot produce an unbounded displacement.
+`kNormalBrushGain` (0.35), `kSmoothGain` (1.0) and `kMaxSmoothLambda` (0.9) are
+chosen defaults, not derived constants; the low gain is why a short stroke with a
+large brush reads as doing very little.
 
-**Clay is deposition and Inflate is expansion**, and the difference is in the
-formula rather than a constant. Clay reads `baseNormal`, captured once on Down and
-held fixed exactly as the affected set and the weights are, so it lays a coherent
-slab in one consistent set of directions. Inflate reads `mesh.vertexNormals()`,
-recomputed from the CURRENT positions every move, so on a forming bulge the flank
-normals have tilted outward and it widens and rounds instead of extruding. It is
-directly observable: a clayed vertex's *total* displacement stays parallel to the
-normal it started with however many moves it took, while an inflated vertex's
-leaves that axis as soon as the surface has moved. The self-tests assert both
-halves with thresholds three orders of magnitude apart.
+**Clay is deposition and Inflate is expansion**, and the difference is the
+formula, not a constant. Clay reads `baseNormal`, captured once on Down and held
+fixed exactly as the affected set and weights are, so it lays a coherent slab in
+one consistent set of directions. Inflate reads `mesh.vertexNormals()`,
+recomputed from CURRENT positions every move, so on a forming bulge the flank
+normals have tilted outward and it widens and rounds instead of extruding —
+directly observable, and asserted by self-tests with thresholds three orders of
+magnitude apart.
 
-**Smooth is bounded interpolation, never extrapolation:**
-
-```
-p := p + (neighbourAverage - p) * lambda,    0 < lambda <= kMaxSmoothLambda
-```
-
-so a vertex can only move part of the way toward a point it is already surrounded
-by — which is what makes repeated smoothing converge, the deviation shrinking by
-`(1 - lambda)` per application and never changing sign, and why no clamp on the
-result is needed. Every target is computed from a coherent snapshot of the
-current positions **before** anything is written (Jacobi, not Gauss-Seidel), so
-the outcome cannot depend on the affected set's order. Only affected vertices are
-written; neighbours outside the brush are read and never modified. Inflate
-snapshots its normals the same way and for the same reason.
+**Smooth is bounded interpolation, never extrapolation** —
+`p := p + (neighbourAverage - p) * lambda`, `0 < lambda <= kMaxSmoothLambda` — so
+a vertex can only move part of the way toward a point it is already surrounded
+by. That is what makes repeated smoothing converge (deviation shrinking by
+`(1 - lambda)` per application, never changing sign) and why no clamp on the
+result is needed. Targets are computed from a coherent snapshot **before**
+anything is written (Jacobi, not Gauss-Seidel), so the outcome cannot depend on
+the affected set's order; only affected vertices are written. Inflate snapshots
+its normals the same way and for the same reason.
 
 ### Sculpt-mode gesture rule and arbitration
 
@@ -1346,30 +1321,22 @@ the first of two fingers — so the rule is **pending-then-promote**:
 
 `SculptSession::hitsSculptMesh` is the probe that answers "would a stroke start
 here?" *without* starting one. It provably cannot move a vertex, mint a revision
-or advance the stroke counter, and that is the structural half of the guarantee
-that a gesture which turns out to be navigation cannot have mutated the sculpt
-mesh — the self-tests assert it directly, and the log shows it as a
-`STROKE_PENDING` with no `STROKE_BEGIN` after it.
+or advance the stroke counter — the structural half of the guarantee that a
+gesture which turns out to be navigation cannot have mutated the sculpt mesh.
 
 Anchoring the promoted stroke at the original down point makes the deferral free:
 the hit, the affected set and the weights are exactly what they would have been
 had the stroke begun on Down. The camera re-anchors on any pointer-set change so
-an abandoned gesture produces no jump, and the selection never saw the Down so it
-cannot select or clear. While a stroke owns the gesture neither controller sees
-the event at all, which is what makes a brush gesture structurally unable to
-orbit, select or clear.
+an abandoned gesture produces no jump, and the selection never saw the Down. While
+a stroke owns the gesture neither controller sees the event at all, which is what
+makes a brush gesture structurally unable to orbit, select or clear.
 
-The 8 px threshold sits between touch jitter and the 24 px tap slop. The residual
-it accepts is stated rather than hidden: a first finger that *deliberately drags
-more than 8 px* before the second lands does commit a stroke — a gesture the user
-drove as a stroke, and closing it completely would need a buffered or undoable
-stroke, which does not exist.
-
+The 8 px threshold sits between touch jitter and the 24 px tap slop, and the
+residual it accepts is stated rather than hidden: a first finger that
+*deliberately drags more than 8 px* before the second lands does commit a stroke.
 `g_grabbing` and `g_strokePending` in `forgeshape_jni.cpp` are gesture routing
-only, guarded by `g_stateMutex` alongside the camera and the selection. Like
-camera anchors and tap candidacy they are dropped whenever the Surface goes away;
-the mode, the active tool and the sculpted vertices are not, because they are
-process-scoped.
+only, guarded by `g_stateMutex`, and are dropped whenever the Surface goes away;
+the mode, the active tool and the sculpted vertices are not, being process-scoped.
 
 ## Runtime mesh ownership
 
@@ -1440,14 +1407,13 @@ normal, so a corner on a crease becomes several **render** vertices. Therefore:
   render counts in its historical positions and adds `src=v:i`;
   `FORGESHAPE_RENDER_MESH_BUILD` reports both explicitly.
 
-Measured, at the default dimensions: box `8:36 -> 24:36`, cylinder
-`66:384 -> 130:384`, sphere `482:2880 -> 482:2880`, cone `34:192 -> 66:192`,
-capsule `514:3072 -> 514:3072`, plane `4:6 -> 8:12`. A fully smooth closed
-surface has no crease to split on, so its render mesh *is* its source
-topology — which is the cheapest available proof that the grouping does not
-fragment a smooth surface. The Plane's doubled render count is the **other**
-reason a render count can exceed a source one: not a crease split, but the
-bounded two-sided exception below.
+The measured per-primitive counts live in `PROJECT_STATUS.md`'s shading cost
+record and are not restated here. Two shapes of result matter architecturally: a
+fully smooth closed surface has no crease to split on, so its render mesh *is* its
+source topology — the cheapest available proof that the grouping does not fragment
+a smooth surface — and the Plane's doubled count is the **other** reason a render
+count can exceed a source one, not a crease split but the bounded two-sided
+exception below.
 
 ### The two-sided render exception
 
@@ -1462,14 +1428,12 @@ reversed winding, on the duplicated vertex set. Nothing about the source
 this runs entirely on already-built render data.
 
 The reason this needs no pipeline, culling or material change is the winding
-reversal itself: from the front, the duplicate is now the **back**-facing
-triangle at that location and the existing `VK_CULL_MODE_BACK_BIT` culls it,
-leaving only the original; from the far side, the original is back-facing and
-culled, leaving only the duplicate, whose negated normal is correct for a
-viewer looking from that side. One global pipeline keeps drawing exactly one
-of the two triangles at any position, for every primitive, Plane included —
-the exception is entirely in what data reaches that pipeline, not in the
-pipeline itself.
+reversal itself: from the front, the duplicate is the **back**-facing triangle and
+the existing `VK_CULL_MODE_BACK_BIT` culls it; from the far side the original is
+back-facing and culled, leaving the duplicate, whose negated normal is correct for
+a viewer there. One global pipeline keeps drawing exactly one of the two triangles
+at any position, for every primitive — the exception is entirely in what data
+reaches the pipeline, not in the pipeline itself.
 
 ### The crease policy
 
@@ -1505,11 +1469,8 @@ change, or a Studio<->MatCap change, because that last one is a fragment-stage
 uniform touching no geometry at all. The renderer gates on the same pair before
 calling in, so a steady frame costs two integer comparisons.
 
-Measured on `emulator-5558`: **4448 presented frames, 2 rebuilds** — across eight
-camera-orbit gestures and three shading-model changes, zero rebuilds and zero
-uploads. Rebuild cost is 0.03 ms (box), 0.55 ms (cylinder), 0.7-1.3 ms (sphere),
-0.78 ms (capsule) and 0.56-0.73 ms for a 482-vertex sculpt mesh per accepted
-move.
+The measured frame-to-rebuild ratio and the per-primitive rebuild costs live in
+`PROJECT_STATUS.md`'s shading cost record, which owns runtime evidence.
 
 The cache derives its own adjacency from the index buffer and deliberately does
 **not** reuse `SculptTopology`: the renderer depends on the published
@@ -1533,10 +1494,9 @@ higher-contrast, for reading curvature and sculpt deformation. They share one
 geometry of light — same key direction, same fill, same hemispherical ambient —
 so switching does not relight the object.
 
-Both fills are placed lower-**front**, not opposite the key. A fill opposite the
-key lifts exactly the planes the key leaves dark, and a box's left and right
-faces end up nearly the same value; measured, that rig gave 0.44 vs 0.40 against
-0.49 vs 0.29 for the current one.
+Both fills are placed lower-**front**, not opposite the key: a fill opposite the
+key lifts exactly the planes the key leaves dark, so a box's left and right faces
+end up nearly the same value and the form stops reading.
 
 There is no PBR here and none is implied: no metalness, no roughness, no
 environment probe, no shadow map, no ambient occlusion and no tone-mapping stack.
@@ -1776,13 +1736,12 @@ distance". The fix would be CPU-side; the shader would not change.
 ### The one descriptor set
 
 The MatCap sampler is the only sampled image in ForgeShape and therefore the only
-reason a descriptor set exists — everything else still travels as push constants.
-One `COMBINED_IMAGE_SAMPLER` at set 0 binding 0, allocated once and never updated
-again, because the image is immutable for the life of the device: no per-frame
-descriptor traffic and no per-frame-in-flight copies. It is bound unconditionally
-even in Studio Solid, since leaving a declared binding unbound is invalid usage
-regardless of which shader branch runs. The image, its view, its sampler and the
-set are device-scoped, so a Surface swap does not touch them and a HOME/resume
+reason a descriptor set exists — everything else still travels as push constants,
+and the grid pipeline declares no set at all. One `COMBINED_IMAGE_SAMPLER` at set
+0 binding 0, allocated once and never updated again because the image is immutable
+for the life of the device. It is bound unconditionally even in Studio Solid,
+since leaving a declared binding unbound is invalid usage regardless of which
+branch runs. Image, view, sampler and set are device-scoped, so a HOME/resume
 neither regenerates nor re-uploads the MatCap.
 
 ### Surface orientation convention
@@ -1810,23 +1769,68 @@ window-space extent is the inconsistent combination: SurfaceFlinger rotates the
 buffer into the transposed layout and stretches it back, an anisotropic scale.
 That, not the projection, was the rotated-landscape defect.
 
-The cost of the convention is one compositor rotation on a rotated display, which
-every non-pre-rotated Android application already pays. Its consequence is that
-`vkAcquireNextImageKHR` and `vkQueuePresentKHR` report
-`VK_SUBOPTIMAL_KHR` for as long as the device is rotated — the surface's
-transform is genuinely not the one the swapchain declared. That is the convention
-working, not a stale swapchain, so the frame loop must not rebuild on it:
-`Renderer::expectSuboptimal_` records when the declared pre-transform differs
-from the surface's own, and suboptimal is ignored in exactly that case. Rebuilds
-still happen on `VK_ERROR_OUT_OF_DATE_KHR` and on the explicit `requestResize()`
-that `surfaceChanged` raises, which is how every real size change arrives. Losing
-this distinction rebuilds the swapchain on every single frame while rotated.
+The cost is one compositor rotation on a rotated display, which every
+non-pre-rotated Android application already pays. Its consequence is that
+`vkAcquireNextImageKHR` and `vkQueuePresentKHR` report `VK_SUBOPTIMAL_KHR` for as
+long as the device is rotated — the surface's transform is genuinely not the one
+the swapchain declared. **That is the convention working, not a stale swapchain,
+so the frame loop must not rebuild on it:** `Renderer::expectSuboptimal_` records
+when the declared pre-transform differs from the surface's own, and suboptimal is
+ignored in exactly that case. Rebuilds still happen on
+`VK_ERROR_OUT_OF_DATE_KHR` and on the explicit `requestResize()` that
+`surfaceChanged` raises. Losing this distinction rebuilds the swapchain on every
+single frame while rotated.
 
 One non-per-frame `FORGESHAPE_SURFACE_CONFIG` line per swapchain creation records
 the window size, `currentExtent`, `currentTransform`, `supportedTransforms`, the
 chosen extent and the chosen `preTransform`, so the whole chain is auditable from
 a log without adding instrumentation; `FORGESHAPE_CAMERA_VIEWPORT` is its
 companion for the camera half.
+
+### The world reference grid
+
+The grid is a viewport **reference**, and the boundary is absolute: it has no
+`ObjectId`, never enters `ConstructionScene` or a `SceneSnapshot`, is not a
+`RuntimeMesh`, is invisible to picking, takes no part in Freeze, Resume or a
+sculpt stroke, is not exported and is not a snap target. A future Sketch grid —
+the one that snaps, drawn on a sketch plane — is a **different contract** with
+its own approval and must not be grown out of this one.
+
+Ownership splits in the usual place. `forgeshape_grid.{h,cpp}` is
+platform-neutral and owns the *contract*: the plane (`y = 0`), the spacing (1 m
+minor, 5 m major), the extent (20 m half), `GridLineTier`, one pure vertex
+generator and the palette per `ViewportBackground`. `DisplaySettingsStore` owns
+*visibility*, beside the shading model. The renderer owns only Vulkan.
+
+**Generated once, never regenerated.** The vertex count is a compile-time
+constant, so `createGridResources()` uploads 2624 bytes at device creation and is
+never called again — no input can change, no cache to invalidate, no revision to
+follow. Device-scoped like the MatCap, so a Surface swap or rotation does not
+re-upload it, and `FORGESHAPE_GRID_UPLOAD_OK` appears once per device. Showing or
+hiding the grid decides only whether **one** already-built `vkCmdDraw` is
+recorded. The tier travels in the vertex buffer and the colour does not: the four
+tier colours ride in a second 128-byte push block, so switching appearance
+re-uploads nothing.
+
+It has **its own pipeline and layout with `setLayoutCount = 0`**, because it
+consults no sampler — no normal, no light, no shading model — and it is the **one
+blended pipeline** in the renderer, which is not an invitation to reuse it as a
+general overlay path. Depth is **tested, not written**, and it draws after every
+body, so the model occludes it and it contributes nothing a later draw could be
+occluded by. Three constraints are non-obvious enough that each was wrong once,
+and all three are documented at their sites in `forgeshape_renderer.cpp` and
+`shaders/grid.{vert,frag}`: `polygonMode` must be `FILL` under `LINE_LIST`; the
+destination **alpha channel must be preserved**, or the compositor punches the
+viewport translucent along every line; and the radial fade must be **per
+fragment**, because a line's only two vertices are its fully-faded endpoints.
+
+**The coplanar case is settled in the vertex shader.** A Construction Plane at
+world `y = 0` shares the grid's plane exactly, so the grid is pushed `1e-4` of the
+depth range further from the eye and loses every tie deterministically under
+`VK_COMPARE_OP_LESS`. **Nothing in the domain moves for this.** It is in the
+shader rather than in `VkPipelineRasterizationStateCreateInfo` because Vulkan's
+depth bias is defined for **polygon** fragments and would have been inert on a
+line list — reading as the fix while doing nothing.
 
 ## Motion and selection feedback
 
@@ -1849,31 +1853,26 @@ object is selected: `SceneDrawItem` carries a plain bool and identity stays with
 `SelectionController`.
 
 **Motion is a shared helper, not a system.** `ChromeMotion` (Java) owns exactly
-four decisions — the two durations, the reduced-motion question, cancel-first,
-and one alpha helper — and nothing may be added to it that describes motion as
-data. A surface with its own movement writes it itself against those constants.
-Three rules constrain every caller:
-
-- **Nothing on the path of a pointer sample.** A chrome transition never runs
-  while a viewport gesture is in flight; `ForgeShapeSurfaceView` reports pointer
-  down and gesture settled, and the workspace pushes that down as a flag. Input
-  responsiveness outranks motion.
-- **Nothing that changes a size.** Chrome hide/restore is alpha only, because the
-  `SurfaceView` is full-bleed and a transition that changed a size would rebuild
-  the swapchain. The Property Inspector changes its size **once** per detent
-  change and animates only drawing properties either side of it — animating
-  height would `requestLayout` per frame and re-run the workspace's whole
-  adaptive decision, which lives in `onMeasure`.
-- **Only a user act animates.** The instant, idempotent paths (`showExpanded`,
-  `settle`) are what the measure pass and every state refresh call.
+four decisions — the two durations, the reduced-motion question, cancel-first, and
+one alpha helper — and nothing may be added to it that describes motion as data.
+Three rules constrain every caller. **Nothing on the path of a pointer sample:** a
+chrome transition never runs while a viewport gesture is in flight, because input
+responsiveness outranks motion. **Nothing that changes a size:** chrome
+hide/restore is alpha only, because the `SurfaceView` is full-bleed and a
+transition that changed a size would rebuild the swapchain, and the Property
+Inspector changes its size **once** per detent change rather than animating a
+height that would `requestLayout` per frame and re-run the whole adaptive decision.
+**Only a user act animates** — the instant, idempotent paths are what the measure
+pass and every state refresh call, which is also why the UI-R1C2 Objects re-parent
+does not animate.
 
 **Reduced motion crosses the boundary as one bool.** The Android layer reads
 `ANIMATOR_DURATION_SCALE`, decides what it means, and hands the answer to
 `DisplaySettingsStore::setReducedMotion`, which carries it to the renderer in the
-same per-frame snapshot as the shading model. This is the same seam shape as
+same per-frame snapshot as the shading model — the same seam shape as
 `ViewportBackground`: native code is given the *meaning*, never the platform
-value, and no Android type reaches it. It deliberately does not advance the
-store's `changeCount_`, which exists to prove a display transition the user chose.
+value. It deliberately does not advance the store's `changeCount_`, which exists
+to prove a display transition the user chose.
 
 ## Threading
 
@@ -1893,15 +1892,15 @@ store's `changeCount_`, which exists to prove a display transition the user chos
 selection mutex in a way that could invert. A publisher never blocks a frame, and
 the render thread's mesh upload happens outside `g_stateMutex` entirely.
 
-`g_stateMutex` guards the single `CameraController`, the single
-`SelectionController` and the single `ConstructionTransform` together, plus the
-gesture-routing flags. The UI thread mutates them under it; a tap resolves its
-pick against the camera snapshot *and* the transform and updates the selection
-under one lock hold, so they can never be seen out of step. The render thread
-takes the camera snapshot, the derived model matrix and the selection highlight
-flag under the same lock immediately before each `drawFrame()`, so a frame can
-never be drawn with the camera from one transform state and the model from
-another.
+`g_stateMutex` guards the single `CameraController`, `SelectionController` and
+`ConstructionTransform` together, plus the gesture-routing flags. A tap resolves
+its pick against the camera snapshot *and* the transform and updates the selection
+under **one** lock hold, so they can never be seen out of step; the render thread
+takes the camera snapshot, the derived model matrix and the selection flag under
+the same lock immediately before each `drawFrame()`. The display snapshot (shading
+model, surface shading, background, grid visibility, reduced motion) is read from
+plain atomics rather than under that lock, because no combination of those values
+is invalid to draw.
 
 ## Lifecycle contract
 
@@ -1948,6 +1947,14 @@ is a stage of its own and naming them is what stops one arriving by accident:
   reorder, no parent field, no multi-select, and therefore no ObjectId reuse
   policy — there is nothing yet that can stop existing. No command framework and
   no Undo; the first stage that needs commands to be undoable owns that decision.
+  The expanded Objects column is a **view** of that same flat list and adds no
+  verb to it.
+- **No snapping, and no Sketch grid.** The world reference grid is a viewport
+  reference only. Nothing snaps to it, no cursor is quantised, and no dimension is
+  ever derived from it. A Sketch grid — drawn on a sketch plane, with snapping —
+  is a different contract with its own approval and must not be grown out of
+  `forgeshape_grid.h`. Nor is there a Selection Outline, a View Cube, camera
+  focus, named views, blur/glass or any post-processing framework.
 - **No scale and no gizmo.** `ConstructionTransform` is deliberately rigid —
   rotation and translation only — which is exactly what lets the picker use an
   exact composed inverse and keep the ray's distance in world units. Adding scale
@@ -1962,13 +1969,13 @@ is a stage of its own and naming them is what stops one arriving by accident:
   bodies: no property model, no binding layer, no editor registry, no reflection.
   `NumericPropertyRow` and `UnitChipsView` are components, not a framework — they
   know what a labelled number and a unit are, and nothing about primitives.
-- **No design system and no motion framework.** Themes are two styles over one
-  set of semantic attributes, not a component library; the Objects section is a
-  flat list of rows, not an object browser or a history panel. `ChromeMotion` is
-  four shared decisions, not a transition system — see *Motion and selection
-  feedback*.
+- **No design system and no motion framework.** Themes are two styles over one set
+  of semantic attributes, not a component library; the Objects section is a flat
+  list of rows, not an object browser or a history panel. `ChromeMotion` is four
+  shared decisions, not a transition system.
 - **No persistence.** Nothing is written to disk: not the scene, not the camera,
-  not the start choice and not the theme. A process kill is a clean slate.
+  not the start choice, not the theme and not the grid. A process kill is a clean
+  slate.
 - **`RuntimeMesh` is not a Construction mesh format**, and the debug paths are
   not product. `RuntimeMesh` carries positions, colours and indices and nothing
   else: no normals, no UVs, no material, no adjacency, no history.

@@ -84,6 +84,19 @@ int viewportBackgroundIndex(ViewportBackground background);
 // drift silently.
 void viewportBackgroundColor(ViewportBackground background, float* outRgb);
 
+// Whether the world reference grid is drawn.
+//
+// ON by default. The grid is what makes an empty viewport legible: without it a
+// body floats in a void with no scale, no horizon and no origin, and the first
+// question a modelling application has to answer is "how big is this and where
+// is it". It is subtle enough (see forgeshape_grid.cpp) that a user who wants
+// the bare model turns it off deliberately rather than being forced to.
+//
+// It is a plain bool rather than an enum because there are exactly two answers
+// and no third one is coming: a Sketch grid is a different contract on a
+// different plane, not a third state of this one. See forgeshape_grid.h.
+constexpr bool kDefaultGridVisible = true;
+
 // The product default. Studio Solid, so a freshly launched viewport shows a
 // neutral modelling surface rather than a diagnostic.
 constexpr ShadingModel kDefaultShadingModel = ShadingModel::StudioSolid;
@@ -107,6 +120,12 @@ struct ViewportDisplaySettings {
     SurfaceShading surface = kDefaultSurfaceShading;
     ViewportBackground background = kDefaultViewportBackground;
 
+    // Whether the world reference grid is drawn behind the model. It rides in
+    // this snapshot rather than being read from the store by the renderer for
+    // the same reason as the rest: the render thread must read presentation
+    // state once, at a known point, and never mid-frame.
+    bool gridVisible = kDefaultGridVisible;
+
     // Whether the viewport may spend TIME expressing a change, or must land on
     // the final appearance at once. See setReducedMotion.
     bool reducedMotion = false;
@@ -128,6 +147,7 @@ public:
     ShadingModel shadingModel() const;
     SurfaceShading surfaceShading() const;
     ViewportBackground viewportBackground() const;
+    bool gridVisible() const;
     bool reducedMotion() const;
 
     // All four return true when the value actually changed, so a caller can log
@@ -135,6 +155,15 @@ public:
     bool setShadingModel(ShadingModel model);
     bool setSurfaceShading(SurfaceShading shading);
     bool setViewportBackground(ViewportBackground background);
+
+    // Shows or hides the world reference grid.
+    //
+    // The cheapest presentation change in the renderer, and structurally so:
+    // the grid's vertices are uploaded once at device creation and never again,
+    // so this decides only whether one already-recorded draw call is issued.
+    // No body's render mesh is rebuilt, no buffer is re-uploaded and no
+    // MeshRevision is minted — see R1C2-03 and R1C2-06.
+    bool setGridVisible(bool visible);
 
     // Whether the user has asked the SYSTEM for reduced motion.
     //
@@ -157,6 +186,7 @@ private:
     std::atomic<int> shading_{static_cast<int>(kDefaultShadingModel)};
     std::atomic<int> surface_{static_cast<int>(kDefaultSurfaceShading)};
     std::atomic<int> background_{static_cast<int>(kDefaultViewportBackground)};
+    std::atomic<bool> gridVisible_{kDefaultGridVisible};
     std::atomic<bool> reducedMotion_{false};
     std::atomic<uint64_t> changeCount_{0};
 };

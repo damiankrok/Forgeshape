@@ -309,6 +309,203 @@ public final class EditorWorkspaceObjectsTest {
     }
 
     // -----------------------------------------------------------------------
+    // UI-R1C2: the Objects surface, wherever it currently hangs
+    //
+    // R1C2-29..32 and R1C2-35. Every one of these asserts behaviour that must
+    // hold in EVERY layout, and asserts the docked specifics only when the
+    // window actually produced a dock — the suite's standing rule. Running the
+    // instrumentation under an overridden expanded window size is what
+    // exercises the docked branches for real.
+    // -----------------------------------------------------------------------
+
+    /**
+     * R1C2-29 / R1C2-31. A row tap re-points the active body and the Inspector,
+     * and Add Body works, from whichever surface Objects is currently on.
+     *
+     * <p>The point is that there is nothing layout-specific to test: the same
+     * one view moves between hosts, so a row tap goes through the same one
+     * native call and the same one workspace re-read in both. A second Java
+     * Objects implementation is what would have made this two tests.
+     */
+    @Test
+    public void r1c229_aRowTapAndAddBodyWorkFromWhicheverSurfaceObjectsIsOn() {
+        final long[] ids = addSecondBodyAndReturnIds();
+        final long first = ids[0];
+        final long second = ids[1];
+
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            // R1C2-31: whatever the layout, Add Body reached the scene and the
+            // list grew with it.
+            assertEquals("Add Body worked from the current Objects surface",
+                    NativeViewport.sceneBodyCount(), workspace.objectsSection().rowCount());
+            assertNotNull("the added body has a row", workspace.objectsSection().rowFor(second));
+
+            // R1C2-29: a row tap moves the whole workspace.
+            final View row = workspace.objectsSection().rowFor(first);
+            assertNotNull("the earlier body still has a row", row);
+            row.performClick();
+            assertEquals("tapping a row selects that body",
+                    first, NativeViewport.sceneActiveBodyId());
+            assertTrue("and its row is the one drawn active",
+                    workspace.objectsSection().rowFor(first).isActivated());
+            assertTrue("while the other body's row is not",
+                    !workspace.objectsSection().rowFor(second).isActivated());
+            // The Inspector followed: the shape editor describes the body the
+            // Objects list says is active, because both re-read the same fact.
+            assertNotNull("the exact-value editor is on screen",
+                    workspace.findViewById(R.id.primitive_chooser));
+            return null;
+        });
+    }
+
+    /**
+     * R1C2-30. A viewport pick reaches the Objects surface, docked or not.
+     *
+     * <p>This is the same S17-25 path and is deliberately asserted again here,
+     * because UI-R1C2 gave the section a second possible host and the settle
+     * listener that drives the refresh knows nothing about which one it is on.
+     */
+    @Test
+    public void r1c230_aViewportPickUpdatesTheObjectsSurfaceWhereverItIs() {
+        final long[] ids = addSecondBodyAndReturnIds();
+        final long target = ids[1];
+
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            assertEquals(NativeViewport.SCULPT_OK, NativeViewport.sceneSelectBody(ids[0]));
+            workspace.onNativeStateChanged();
+            assertTrue("the other body starts active",
+                    workspace.objectsSection().rowFor(ids[0]).isActivated());
+
+            // Selection changes below JNI — which is what a viewport pick
+            // ultimately is — and the workspace re-reads.
+            assertEquals(NativeViewport.SCULPT_OK, NativeViewport.sceneSelectBody(target));
+            workspace.onNativeStateChanged();
+
+            assertEquals(target, NativeViewport.sceneActiveBodyId());
+            assertTrue("the picked body's row is now the active one",
+                    workspace.objectsSection().rowFor(target).isActivated());
+            assertEquals("and no row was gained or lost by a pick",
+                    NativeViewport.sceneBodyCount(), workspace.objectsSection().rowCount());
+            return null;
+        });
+    }
+
+    /**
+     * R1C2-32. Twenty bodies stay listed, scrollable and selectable.
+     *
+     * <p>A UI scalability check, not a geometry stress test: the bodies are the
+     * product's own default Box and nothing here measures a mesh. What it is
+     * for is the nested-scroll question UI-R1C2 raised — an Objects list that
+     * can grow, inside a container that can also scroll.
+     */
+    @Test
+    public void r1c232_twentyBodiesStayListedScrollableAndSelectable() {
+        final int target = 20;
+        final long[] created = onWorkspace(rule.getScenario(), (activity, workspace) -> {
+            if (NativeViewport.productMode() != NativeViewport.MODE_CONSTRUCTION) {
+                NativeViewport.enterConstructionMode();
+            }
+            while (NativeViewport.sceneBodyCount() < target) {
+                if (NativeViewport.sceneAddBody() == 0L) {
+                    break;
+                }
+            }
+            workspace.onNativeStateChanged();
+            final int count = NativeViewport.sceneBodyCount();
+            final long[] ids = new long[count];
+            NativeViewport.sceneBodyIds(ids);
+            return ids;
+        });
+        WorkspaceTestSupport.settleLayout();
+
+        assertTrue("the scene reached the scalability target: " + created.length,
+                created.length >= target);
+
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            assertEquals("every body has exactly one row",
+                    created.length, workspace.objectsSection().rowCount());
+
+            // Every row is reachable by ObjectId and none was silently dropped.
+            for (long id : created) {
+                assertNotNull("body " + id + " has a row",
+                        workspace.objectsSection().rowFor(id));
+            }
+
+            // The list lives inside something that scrolls, so a list taller
+            // than its host is reachable rather than clipped. Which container
+            // that is depends on the layout — the Objects column when docked,
+            // the inspector's own scroll otherwise — and either answer is
+            // correct as long as there IS one.
+            View parent = (View) workspace.objectsSection().getParent();
+            boolean foundAScroller = false;
+            while (parent != null && parent != workspace) {
+                if (parent instanceof android.widget.ScrollView) {
+                    foundAScroller = true;
+                    break;
+                }
+                parent = (parent.getParent() instanceof View)
+                        ? (View) parent.getParent() : null;
+            }
+            assertTrue("a growable Objects list must sit inside exactly one scroller",
+                    foundAScroller);
+            if (workspace.objectsDocked()) {
+                // R1C2-32's nested-scroll half: docked, the list is in its OWN
+                // scroller and no longer inside the inspector's, so the two
+                // cannot fight over a drag.
+                assertEquals("a docked list scrolls in its own column",
+                        workspace.objectsDock(),
+                        workspace.objectsSection().getParent());
+            }
+
+            // Selecting the last body still works with a full list.
+            final long last = created[created.length - 1];
+            workspace.objectsSection().rowFor(last).performClick();
+            assertEquals("the twentieth body is still selectable",
+                    last, NativeViewport.sceneActiveBodyId());
+            return null;
+        });
+    }
+
+    /**
+     * R1C2-35. Selection feedback is unchanged by the grid and by the Objects
+     * surface.
+     *
+     * <p>Asserted the only way Java honestly can: selecting a body through a
+     * row, with the grid on and with it off, mints no revision, publishes
+     * nothing and uploads nothing. That the pulse actually RUNS is the native
+     * selection-pulse family's job and the runtime evidence's; that nothing
+     * UI-R1C2 added can disturb it is this.
+     */
+    @Test
+    public void r1c235_selectionCostsNothingWithTheGridOnOrOff() {
+        final long[] ids = addSecondBodyAndReturnIds();
+        for (final boolean grid : new boolean[]{true, false}) {
+            doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+                NativeViewport.setGridVisible(grid);
+                NativeViewport.sceneSelectBody(ids[0]);
+                workspace.onNativeStateChanged();
+                return null;
+            });
+            final double[] before = WorkspaceTestSupport.nativeSnapshot();
+            doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+                // A whole A -> B -> A selection cycle through the real rows.
+                workspace.objectsSection().rowFor(ids[1]).performClick();
+                workspace.objectsSection().rowFor(ids[0]).performClick();
+                return null;
+            });
+            final double[] after = WorkspaceTestSupport.nativeSnapshot();
+            assertTrue("selection with the grid " + (grid ? "on" : "off")
+                            + " must publish nothing: "
+                            + WorkspaceTestSupport.describeSnapshotDifference(before, after),
+                    java.util.Arrays.equals(before, after));
+        }
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            NativeViewport.setGridVisible(true);
+            return null;
+        });
+    }
+
+    // -----------------------------------------------------------------------
     // Support
     // -----------------------------------------------------------------------
 

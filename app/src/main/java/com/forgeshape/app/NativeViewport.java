@@ -524,6 +524,36 @@ final class NativeViewport {
     static native int viewportBackground();
 
     /**
+     * Shows or hides the world reference grid: the 1 m floor on the world XZ
+     * plane the viewport draws behind the model.
+     *
+     * <p>It is a viewport <b>reference</b>, not geometry, and the distinction is
+     * absolute. The grid has no {@code ObjectId}, never enters the scene or a
+     * scene snapshot, is not a {@code RuntimeMesh}, is invisible to picking,
+     * takes no part in Freeze or in a sculpt stroke, is not exported and is not
+     * a snap target. A future Sketch grid — the one that snaps, drawn on a
+     * sketch plane — is a different feature with its own approval and is not
+     * this.
+     *
+     * <p>Structurally the cheapest change the renderer has: the grid's vertices
+     * are generated and uploaded exactly once with the Vulkan device and never
+     * again, so this decides only whether one already-built draw call is
+     * recorded. No body's render mesh is rebuilt, nothing is re-uploaded and no
+     * revision is minted.
+     *
+     * <p>Native-owned and process-scoped like the rest of the display settings,
+     * which is why the choice survives rotation, an Activity recreation and a
+     * HOME/resume with no save/restore code up here. A process kill returns it
+     * to the default, which is <b>on</b>.
+     *
+     * @return whether the grid is drawn afterwards
+     */
+    static native boolean setGridVisible(boolean visible);
+
+    /** @return whether the world reference grid is currently drawn */
+    static native boolean gridVisible();
+
+    /**
      * Tells the viewport whether the user has asked the system for reduced
      * motion.
      *

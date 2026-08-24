@@ -85,6 +85,7 @@ ViewportDisplaySettings DisplaySettingsStore::snapshot() const {
     out.shading = shadingModel();
     out.surface = surfaceShading();
     out.background = viewportBackground();
+    out.gridVisible = gridVisible();
     out.reducedMotion = reducedMotion();
     return out;
 }
@@ -136,6 +137,22 @@ bool DisplaySettingsStore::setViewportBackground(ViewportBackground background) 
     if (previous == next) {
         return false;
     }
+    changeCount_.fetch_add(1, std::memory_order_relaxed);
+    return true;
+}
+
+bool DisplaySettingsStore::gridVisible() const {
+    return gridVisible_.load(std::memory_order_relaxed);
+}
+
+bool DisplaySettingsStore::setGridVisible(bool visible) {
+    const bool previous = gridVisible_.exchange(visible, std::memory_order_relaxed);
+    if (previous == visible) {
+        return false;
+    }
+    // Counted, unlike reduced motion: this IS a display setting the user chose,
+    // exactly like the shading model beside it, and the display suite proves a
+    // real transition happened by watching this counter move.
     changeCount_.fetch_add(1, std::memory_order_relaxed);
     return true;
 }

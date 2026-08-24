@@ -75,6 +75,23 @@ final class EditorWorkspaceView extends FrameLayout
     private final DisplaySettingsPopoverView displayPopover;
     private final StartChooserView startChooser;
 
+    /**
+     * The leading-edge column an expanded window gives the scene list.
+     *
+     * <p>It is a host, not a second Objects implementation: the one
+     * {@link ObjectsSectionView} the Construction shape editor owns is
+     * re-parented into it and back out again. There is deliberately no second
+     * list, no second row set and no Java-side copy of an {@code ObjectId} or
+     * of which body is active — every row is still built by re-reading native
+     * scene state, exactly as it was when the list lived in the inspector.
+     *
+     * <p>It scrolls, because a scene can grow without limit while a window
+     * cannot. Its scroll is its own: it sits outside the Property Inspector's
+     * scroll container, so an Objects list of twenty bodies is no longer a
+     * nested scroll inside the shape editor's.
+     */
+    private final ScrollView objectsDock;
+
     private final ConstructionShapeEditorView shapeEditor;
     private final ConstructionPlacementEditorView placementEditor;
     private final SculptContextView sculptContext;
@@ -104,6 +121,14 @@ final class EditorWorkspaceView extends FrameLayout
      *  when the answer actually changed. */
     private WorkspaceLayoutMode.InspectorPlacement appliedPlacement;
     private int appliedInspectorWidthPx;
+
+    /** Whether Objects currently has a column of its own, so the section is
+     *  re-parented only when the answer actually changed. Boxed so the first
+     *  decision is always applied, whichever way it goes. */
+    private Boolean appliedObjectsDocked;
+
+    /** Whether the Tool Rail is currently drawn flush rather than floating. */
+    private Boolean appliedRailDocked;
 
     EditorWorkspaceView(Context context, View viewport) {
         super(context);
@@ -169,6 +194,26 @@ final class EditorWorkspaceView extends FrameLayout
         EditorControlStyles.allowChildShadows(middleRow);
         chromeRoot.addView(middleRow, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f));
+
+        // FIRST in the middle row, so the scene list is on the leading edge and
+        // the exact-value inspector on the trailing one: what is being edited on
+        // the left, what its numbers are on the right, the model between them.
+        // It carries no width until the layout decision gives it one, and is
+        // GONE in every window that has not earned it.
+        objectsDock = new ScrollView(context);
+        objectsDock.setId(R.id.objects_dock);
+        objectsDock.setVisibility(GONE);
+        objectsDock.setBackgroundResource(R.drawable.bg_chrome_docked_leading);
+        // Opaque to touch, exactly as every other chrome surface is, so reaching
+        // for a body never orbits the camera behind the column. A clickable
+        // ScrollView consumes what its own scrolling and its own rows did not.
+        objectsDock.setClickable(true);
+        final int dockPad = EditorControlStyles.dimen(context, R.dimen.row_gap_small);
+        objectsDock.setPadding(dockPad, dockPad, dockPad, dockPad);
+        final LinearLayout.LayoutParams objectsParams = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.MATCH_PARENT);
+        objectsParams.rightMargin = EditorControlStyles.dimen(context, R.dimen.row_gap_small);
+        middleRow.addView(objectsDock, objectsParams);
 
         brushControls = new BrushEdgeControlsView(context, this);
         final LinearLayout.LayoutParams brushParams = new LinearLayout.LayoutParams(
@@ -360,8 +405,97 @@ final class EditorWorkspaceView extends FrameLayout
         // instead of being clipped by it.
         brushControls.setTrackHeightPx(Math.round(heightPx * 0.45f));
 
+        placeObjects(layoutMode.objectsDocked(widthDp));
+        applyRailDock(layoutMode.railDocked());
         placeInspector(layoutMode.inspectorPlacement(heightDp), widthDp, heightDp);
         showInspectorDetent();
+    }
+
+    /**
+     * Gives Objects a column of its own, or hands it back to the shape editor.
+     *
+     * <p><b>One instance, re-parented</b> — never a second list. A second Java
+     * Objects view would be a second place for "which body is active" to be
+     * remembered, and the answer to that question lives in exactly one place,
+     * below JNI. Because the same view moves, a viewport pick, an Objects row
+     * tap and Add Body all still end at the same one native fact and the same
+     * one {@code refreshFromNative()}, whichever window the user is in.
+     *
+     * <p>Instant, not animated. This runs inside {@code onMeasure}, and
+     * starting an animation from a measure pass is how a re-parented surface
+     * ends up laid out at zero height; a structural rearrangement caused by a
+     * rotation or a window resize is also not a transition a user asked for.
+     * {@link ChromeMotion} is untouched.
+     */
+    private void placeObjects(boolean docked) {
+        if (appliedObjectsDocked != null && appliedObjectsDocked == docked) {
+            return;
+        }
+        appliedObjectsDocked = docked;
+
+        final ObjectsSectionView objects = shapeEditor.objectsSection();
+        if (!docked) {
+            objectsDock.setVisibility(GONE);
+            final ViewGroup.LayoutParams gone = objectsDock.getLayoutParams();
+            if (gone != null && gone.width != 0) {
+                gone.width = 0;
+                objectsDock.setLayoutParams(gone);
+            }
+            shapeEditor.reclaimObjectsSection();
+            return;
+        }
+        if (objects.getParent() instanceof ViewGroup) {
+            ((ViewGroup) objects.getParent()).removeView(objects);
+        }
+        objectsDock.addView(objects, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        final ViewGroup.LayoutParams params = objectsDock.getLayoutParams();
+        if (params != null) {
+            params.width = dpToPx(WorkspaceLayoutMode.OBJECTS_DOCK_WIDTH_DP);
+            objectsDock.setLayoutParams(params);
+        }
+        objectsDock.setVisibility(VISIBLE);
+        // The column is built from whatever the scene currently holds. The
+        // section was possibly last refreshed while it lived somewhere else, and
+        // a rebuild is a handful of rows.
+        objects.refreshFromNative();
+    }
+
+    /**
+     * Draws the Tool Rail as part of the layout rather than as a surface over
+     * the model — the promotion of {@link WorkspaceLayoutMode#railDocked()},
+     * which had a tested meaning and had never been asked.
+     *
+     * <p>What changes is what the rail CLAIMS about itself: docked it is flush
+     * against the window edge, opaque and level; floating it is a translucent
+     * raised card standing on the picture with a gap under it. On an expanded
+     * window the second is a lie, because there is room beside the model and
+     * the rail is in it.
+     *
+     * <p>What does <b>not</b> change is the {@code SurfaceView}, in any mode.
+     * It is the whole window in a compact portrait phone and the whole window
+     * on a docked tablet; docking rearranges chrome and never the render
+     * target, so nothing here can resize a swapchain.
+     */
+    private void applyRailDock(boolean docked) {
+        if (appliedRailDocked != null && appliedRailDocked == docked) {
+            return;
+        }
+        appliedRailDocked = docked;
+        if (docked) {
+            toolRailScroll.setBackgroundResource(R.drawable.bg_chrome_docked_trailing);
+            toolRailScroll.setElevation(0.0f);
+        } else {
+            EditorControlStyles.applyFloatingSurface(toolRailScroll);
+        }
+        final ViewGroup.LayoutParams params = toolRailScroll.getLayoutParams();
+        if (params instanceof LinearLayout.LayoutParams) {
+            // A docked rail sits flush against the window edge; a floating one
+            // keeps the gap that lets the model show around it.
+            ((LinearLayout.LayoutParams) params).rightMargin =
+                    docked ? 0 : EditorControlStyles.dimen(getContext(), R.dimen.brush_gap);
+            toolRailScroll.setLayoutParams(params);
+        }
     }
 
     /**
@@ -627,6 +761,16 @@ final class EditorWorkspaceView extends FrameLayout
             brushControls.refreshFromNative();
             sculptContext.refreshFromNative();
             toolRail.showActive((int) nativeSculpt[NativeViewport.SCULPT_TOOL]);
+            // In Construction the shape editor refreshes the Objects section as
+            // part of its own re-read. In Sculpt it is not on screen and is not
+            // asked to, so a DOCKED column — which is still visible — would
+            // otherwise keep showing whatever the scene looked like on the way
+            // in. Body switching is refused while sculpting, so this changes
+            // nothing about which body is active; it only stops the column
+            // lying about the scene.
+            if (objectsDock.getVisibility() == VISIBLE) {
+                shapeEditor.objectsSection().refreshFromNative();
+            }
         } else {
             // In Construction the brush controls are not merely disabled but
             // absent: there is no brush to set, and an inert slider standing on
@@ -960,11 +1104,34 @@ final class EditorWorkspaceView extends FrameLayout
         }
     }
 
+    /**
+     * Shows or hides the world reference grid.
+     *
+     * <p>The same shape of act as the shading chips above it, and the popover
+     * stays open for the same reason: deciding whether a floor helps the body
+     * you are placing means switching it back and forth.
+     *
+     * <p>Nothing else is refreshed, because nothing else can have gone stale.
+     * The grid is a viewport reference, not geometry: it has no
+     * {@code ObjectId}, is not in the scene, is not pickable, and toggling it
+     * mints no revision, rebuilds no render mesh and uploads nothing. Calling
+     * {@code syncFromNative()} here would throw away a half-typed dimension for
+     * a change that did not touch a single value in the fields.
+     */
+    @Override
+    public void onGridVisibleRequested(boolean visible) {
+        final boolean inEffect = NativeViewport.setGridVisible(visible);
+        refreshDisplaySettings();
+        showStatus(getContext().getString(
+                inEffect ? R.string.status_grid_on : R.string.status_grid_off),
+                R.attr.fsTextSecondary);
+    }
+
     /** Repaints the popover from native truth, so a refused request shows. */
     private void refreshDisplaySettings() {
         displayPopover.showSettings(NativeViewport.shadingModel(),
                 NativeViewport.surfaceShading(), NativeViewport.projectionMode(),
-                uiState.appTheme());
+                uiState.appTheme(), NativeViewport.gridVisible());
     }
 
     /**
@@ -1067,9 +1234,30 @@ final class EditorWorkspaceView extends FrameLayout
         return shapeEditor;
     }
 
-    /** The Objects section, so a test can select a body by its ObjectId. */
+    /**
+     * The Objects section, so a test can select a body by its ObjectId.
+     *
+     * <p>The same instance in every layout mode — that is the point. A test
+     * asserts what it does, not where it currently hangs.
+     */
     ObjectsSectionView objectsSection() {
         return shapeEditor.objectsSection();
+    }
+
+    /** The expanded window's Objects column, so a test can measure it. */
+    ScrollView objectsDock() {
+        return objectsDock;
+    }
+
+    /** Whether Objects currently has a surface of its own. */
+    boolean objectsDocked() {
+        return objectsDock.getVisibility() == VISIBLE
+                && shapeEditor.objectsSection().getParent() == objectsDock;
+    }
+
+    /** Whether the Tool Rail is currently drawn flush rather than floating. */
+    boolean railDocked() {
+        return appliedRailDocked != null && appliedRailDocked;
     }
 
     /**
@@ -1109,7 +1297,7 @@ final class EditorWorkspaceView extends FrameLayout
         if (uiState.chromeHidden()) {
             return new Rect[0];
         }
-        final View[] surfaces = {toolbar, brushControls, toolRailScroll, inspector};
+        final View[] surfaces = {toolbar, brushControls, toolRailScroll, inspector, objectsDock};
         int count = 0;
         for (View surface : surfaces) {
             if (isOnScreen(surface)) {

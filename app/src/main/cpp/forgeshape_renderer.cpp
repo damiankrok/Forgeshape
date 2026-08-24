@@ -17,6 +17,12 @@ static const uint32_t kSurfaceVertSpv[] =
 static const uint32_t kSurfaceFragSpv[] =
 #include "surface.frag.spv.inc"
     ;
+static const uint32_t kGridVertSpv[] =
+#include "grid.vert.spv.inc"
+    ;
+static const uint32_t kGridFragSpv[] =
+#include "grid.frag.spv.inc"
+    ;
 
 #define FS_TAG "ForgeShape"
 #define FS_LOGI(...) __android_log_print(ANDROID_LOG_INFO, FS_TAG, __VA_ARGS__)
@@ -74,6 +80,49 @@ struct SurfacePush {
 
 static_assert(sizeof(SurfacePush) == 128,
               "the push constant block must stay inside the guaranteed 128-byte budget");
+
+// The grid's per-draw uniform block, mirrored by shaders/grid.vert.
+//
+// Also exactly 128 bytes, and also at the guaranteed minimum rather than at
+// whatever a particular device happens to expose. There is no model matrix and
+// no normal matrix here because there is nothing to place or to light: the grid
+// IS world space and it takes no light. What fills the budget instead is one
+// colour per GridLineTier, which is what keeps the tier in the vertex buffer and
+// the appearance in the push constants — so switching Dark to Light re-uploads
+// nothing at all.
+struct GridPush {
+    float viewProj[16];    // offset 0
+    float minorColor[4];   // offset 64
+    float majorColor[4];   // offset 80
+    float axisXColor[4];   // offset 96
+    float axisZColor[4];   // offset 112
+};
+
+static_assert(sizeof(GridPush) == 128,
+              "the grid push constant block must stay inside the guaranteed 128-byte budget");
+
+// How far the grid is pushed AWAY from the eye in depth, in NDC, to settle the
+// one case where it is exactly coplanar with real geometry: a Construction
+// Plane sitting at world y = 0, which is where the grid lives.
+//
+// Applied in the vertex shader rather than through VkPipelineRasterizationState's
+// depth bias, because that is defined for POLYGON fragments and the grid is a
+// line list — enabling it would look like the fix and do nothing. Mirrored by
+// shaders/grid.vert, which is the only consumer.
+//
+// The sign matters: a POSITIVE nudge makes the grid lose every tie under
+// VK_COMPARE_OP_LESS, so a coplanar Plane always wins and the result is
+// deterministic rather than a per-pixel coin toss that shimmers as the camera
+// moves. Nudging the GRID rather than the Plane is equally deliberate: the
+// domain Plane keeps the y its ConstructionTransform says and its 4-vertex /
+// 6-index topology, and no Construction parameter is moved for a presentation
+// problem.
+//
+// 1e-4 of the [0,1] depth range is far above the float depth buffer's
+// resolvable difference anywhere the model realistically sits, and far below
+// anything geometrically visible: at the default 8.2 m framing it hides the
+// grid within roughly a millimetre of a surface.
+constexpr float kGridDepthNudge = 1.0e-4f;
 
 // The selection HUE, unchanged. What changed at UI-R1C1 is only how much of it
 // is mixed in, and that is no longer a constant: it comes per body, per frame,
@@ -148,9 +197,15 @@ void Renderer::destroyInstance() {
 
         destroyMatCapResources();
         destroyMeshResources();
+        destroyGridResources();
         if (vertShader_ != VK_NULL_HANDLE) vkDestroyShaderModule(device_, vertShader_, nullptr);
         if (fragShader_ != VK_NULL_HANDLE) vkDestroyShaderModule(device_, fragShader_, nullptr);
         if (pipelineLayout_ != VK_NULL_HANDLE) vkDestroyPipelineLayout(device_, pipelineLayout_, nullptr);
+        if (gridVertShader_ != VK_NULL_HANDLE) vkDestroyShaderModule(device_, gridVertShader_, nullptr);
+        if (gridFragShader_ != VK_NULL_HANDLE) vkDestroyShaderModule(device_, gridFragShader_, nullptr);
+        if (gridPipelineLayout_ != VK_NULL_HANDLE) {
+            vkDestroyPipelineLayout(device_, gridPipelineLayout_, nullptr);
+        }
 
         for (uint32_t i = 0; i < kMaxFramesInFlight; ++i) {
             if (imageAvailable_[i] != VK_NULL_HANDLE) vkDestroySemaphore(device_, imageAvailable_[i], nullptr);
@@ -165,6 +220,9 @@ void Renderer::destroyInstance() {
         vertShader_ = VK_NULL_HANDLE;
         fragShader_ = VK_NULL_HANDLE;
         pipelineLayout_ = VK_NULL_HANDLE;
+        gridVertShader_ = VK_NULL_HANDLE;
+        gridFragShader_ = VK_NULL_HANDLE;
+        gridPipelineLayout_ = VK_NULL_HANDLE;
         commandPool_ = VK_NULL_HANDLE;
     }
 
@@ -209,6 +267,9 @@ bool Renderer::attachSurface(ANativeWindow* window) {
         if (!createSyncObjects()) return false;
         if (!createMeshUploadObjects()) return false;
         if (!createMatCapResources()) return false;
+        // After the upload objects, because the grid borrows the same staging
+        // buffer and upload command buffer for its single, one-time copy.
+        if (!createGridResources()) return false;
     } else {
         // Reused device: confirm the new surface is still presentable.
         VkBool32 supported = VK_FALSE;
@@ -858,9 +919,136 @@ bool Renderer::createShaderModules() {
     layoutInfo.pPushConstantRanges = &pushRange;
     FS_VK_CHECK(vkCreatePipelineLayout(device_, &layoutInfo, nullptr, &pipelineLayout_), "vkCreatePipelineLayout");
 
-    FS_LOGI("Shader modules created (SPIR-V: vert %zu bytes, frag %zu bytes, push %zu bytes)",
-            sizeof(kSurfaceVertSpv), sizeof(kSurfaceFragSpv), sizeof(SurfacePush));
+    // --- the grid's own shaders and layout ---------------------------------
+    VkShaderModuleCreateInfo gridVertInfo{};
+    gridVertInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    gridVertInfo.codeSize = sizeof(kGridVertSpv);
+    gridVertInfo.pCode = kGridVertSpv;
+    FS_VK_CHECK(vkCreateShaderModule(device_, &gridVertInfo, nullptr, &gridVertShader_),
+                "vkCreateShaderModule(grid_vert)");
+
+    VkShaderModuleCreateInfo gridFragInfo{};
+    gridFragInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    gridFragInfo.codeSize = sizeof(kGridFragSpv);
+    gridFragInfo.pCode = kGridFragSpv;
+    FS_VK_CHECK(vkCreateShaderModule(device_, &gridFragInfo, nullptr, &gridFragShader_),
+                "vkCreateShaderModule(grid_frag)");
+
+    VkPushConstantRange gridRange{};
+    gridRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    gridRange.offset = 0;
+    gridRange.size = sizeof(GridPush);
+
+    // setLayoutCount = 0, deliberately. The grid consults no sampler: it has no
+    // normal, takes no light and ignores the shading model entirely, so it must
+    // not be able to reach the MatCap even by accident.
+    VkPipelineLayoutCreateInfo gridLayoutInfo{};
+    gridLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    gridLayoutInfo.setLayoutCount = 0;
+    gridLayoutInfo.pushConstantRangeCount = 1;
+    gridLayoutInfo.pPushConstantRanges = &gridRange;
+    FS_VK_CHECK(vkCreatePipelineLayout(device_, &gridLayoutInfo, nullptr, &gridPipelineLayout_),
+                "vkCreatePipelineLayout(grid)");
+
+    FS_LOGI("Shader modules created (SPIR-V: vert %zu bytes, frag %zu bytes, push %zu bytes; "
+            "grid vert %zu bytes, grid frag %zu bytes, grid push %zu bytes)",
+            sizeof(kSurfaceVertSpv), sizeof(kSurfaceFragSpv), sizeof(SurfacePush),
+            sizeof(kGridVertSpv), sizeof(kGridFragSpv), sizeof(GridPush));
     return true;
+}
+
+// ---------------------------------------------------------------------------
+// World reference grid
+// ---------------------------------------------------------------------------
+
+bool Renderer::createGridResources() {
+    // Generated on the stack from a compile-time constant count, uploaded, and
+    // then forgotten. There is no cache to invalidate and no revision to
+    // follow, because there is no input that can change: the grid's spacing,
+    // extent and tiers are constants of forgeshape_grid.h.
+    GridVertex vertices[kGridVertexCount];
+    const int written = generateGridVertices(vertices, kGridVertexCount);
+    if (written != kGridVertexCount) {
+        FS_FAIL("grid_generate_incomplete");
+        return false;
+    }
+    const VkDeviceSize bytes = sizeof(GridVertex) * static_cast<VkDeviceSize>(written);
+
+    if (!createBuffer(bytes,
+                      VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &gridVertexBuffer_,
+                      &gridVertexMemory_)) {
+        FS_FAIL("grid_vertex_buffer");
+        return false;
+    }
+
+    // Shares the mesh path's staging buffer and upload command buffer, which is
+    // why this runs after createMeshUploadObjects. It is the same kind of
+    // transient scratch used inside one upload, and a second copy of it for
+    // 2.6 KiB written once would be pure duplication.
+    if (!ensureStagingCapacity(bytes)) {
+        return false;
+    }
+    void* mapped = nullptr;
+    FS_VK_CHECK(vkMapMemory(device_, stagingMemory_, 0, bytes, 0, &mapped),
+                "vkMapMemory(grid_staging)");
+    std::memcpy(mapped, vertices, static_cast<size_t>(bytes));
+    vkUnmapMemory(device_, stagingMemory_);
+
+    FS_VK_CHECK(vkResetCommandBuffer(uploadCommandBuffer_, 0), "vkResetCommandBuffer(grid_upload)");
+    VkCommandBufferBeginInfo begin{};
+    begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    FS_VK_CHECK(vkBeginCommandBuffer(uploadCommandBuffer_, &begin),
+                "vkBeginCommandBuffer(grid_upload)");
+
+    VkBufferCopy copy{};
+    copy.srcOffset = 0;
+    copy.dstOffset = 0;
+    copy.size = bytes;
+    vkCmdCopyBuffer(uploadCommandBuffer_, stagingBuffer_, gridVertexBuffer_, 1, &copy);
+
+    VkMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
+    vkCmdPipelineBarrier(uploadCommandBuffer_, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         VK_PIPELINE_STAGE_VERTEX_INPUT_BIT, 0, 1, &barrier, 0, nullptr, 0,
+                         nullptr);
+    FS_VK_CHECK(vkEndCommandBuffer(uploadCommandBuffer_), "vkEndCommandBuffer(grid_upload)");
+
+    VkSubmitInfo submit{};
+    submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submit.commandBufferCount = 1;
+    submit.pCommandBuffers = &uploadCommandBuffer_;
+    FS_VK_CHECK(vkResetFences(device_, 1, &uploadFence_), "vkResetFences(grid_upload)");
+    FS_VK_CHECK(vkQueueSubmit(graphicsQueue_, 1, &submit, uploadFence_),
+                "vkQueueSubmit(grid_upload)");
+    FS_VK_CHECK(vkWaitForFences(device_, 1, &uploadFence_, VK_TRUE, UINT64_MAX),
+                "vkWaitForFences(grid_upload)");
+
+    gridVertexCount_ = static_cast<uint32_t>(written);
+    // Logged ONCE per device, deliberately not per frame and deliberately not
+    // per toggle. A second occurrence of this line in a session log is direct
+    // evidence that something re-uploaded a constant.
+    FS_LOGI("FORGESHAPE_GRID_UPLOAD_OK lines=%d vertices=%u bytes=%llu spacing=%.2f "
+            "major=%d extent=%.1f",
+            kGridLineCount, gridVertexCount_, (unsigned long long)bytes,
+            kGridMinorSpacingMeters, kGridMajorEveryNMinor, kGridHalfExtentMeters);
+    return true;
+}
+
+void Renderer::destroyGridResources() {
+    if (device_ == VK_NULL_HANDLE) return;
+    if (gridVertexBuffer_ != VK_NULL_HANDLE) {
+        vkDestroyBuffer(device_, gridVertexBuffer_, nullptr);
+        gridVertexBuffer_ = VK_NULL_HANDLE;
+    }
+    if (gridVertexMemory_ != VK_NULL_HANDLE) {
+        vkFreeMemory(device_, gridVertexMemory_, nullptr);
+        gridVertexMemory_ = VK_NULL_HANDLE;
+    }
+    gridVertexCount_ = 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -1517,6 +1705,147 @@ bool Renderer::createPipeline() {
     return true;
 }
 
+bool Renderer::createGridPipeline() {
+    VkPipelineShaderStageCreateInfo stages[2]{};
+    stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+    stages[0].module = gridVertShader_;
+    stages[0].pName = "main";
+    stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    stages[1].module = gridFragShader_;
+    stages[1].pName = "main";
+
+    // GridVertex, not RenderVertex: a grid line has a position and a TIER, and
+    // no normal and no colour. Sharing the surface pipeline's vertex format
+    // would mean carrying 24 dead bytes per vertex to describe a floor.
+    VkVertexInputBindingDescription binding{};
+    binding.binding = 0;
+    binding.stride = sizeof(GridVertex);
+    binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    VkVertexInputAttributeDescription attributes[2]{};
+    attributes[0].location = 0;
+    attributes[0].binding = 0;
+    attributes[0].format = VK_FORMAT_R32G32B32_SFLOAT;
+    attributes[0].offset = offsetof(GridVertex, position);
+    attributes[1].location = 1;
+    attributes[1].binding = 0;
+    attributes[1].format = VK_FORMAT_R32_SFLOAT;
+    attributes[1].offset = offsetof(GridVertex, tier);
+
+    VkPipelineVertexInputStateCreateInfo vertexInput{};
+    vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertexInput.vertexBindingDescriptionCount = 1;
+    vertexInput.pVertexBindingDescriptions = &binding;
+    vertexInput.vertexAttributeDescriptionCount = 2;
+    vertexInput.pVertexAttributeDescriptions = attributes;
+
+    VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
+    inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+
+    VkViewport viewport{0.0f, 0.0f, static_cast<float>(swapchainExtent_.width),
+                        static_cast<float>(swapchainExtent_.height), 0.0f, 1.0f};
+    VkRect2D scissor{{0, 0}, swapchainExtent_};
+
+    VkPipelineViewportStateCreateInfo viewportState{};
+    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewportState.viewportCount = 1;
+    viewportState.pViewports = &viewport;
+    viewportState.scissorCount = 1;
+    viewportState.pScissors = &scissor;
+
+    VkPipelineRasterizationStateCreateInfo raster{};
+    raster.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    // FILL, even though every primitive here is a line.
+    //
+    // polygonMode describes how POLYGONS are rasterized and says nothing about
+    // a LINE_LIST, so the only thing naming VK_POLYGON_MODE_LINE would achieve
+    // is requiring the `fillModeNonSolid` device feature — which ForgeShape does
+    // not request and must not start requesting to draw a floor.
+    raster.polygonMode = VK_POLYGON_MODE_FILL;
+    // No culling: a line has no facing, and a floor is looked at from above and
+    // from below equally often.
+    raster.cullMode = VK_CULL_MODE_NONE;
+    raster.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    // 1.0 exactly. Anything wider needs the `wideLines` device feature, which
+    // ForgeShape does not request and must not start requesting for a grid.
+    raster.lineWidth = 1.0f;
+    // depthBiasEnable is deliberately LEFT OFF, and the coplanar case is
+    // settled in the vertex shader instead. Vulkan's depth bias is defined for
+    // POLYGON fragments; a line primitive is not one, so enabling it here would
+    // read as the fix for the Plane-at-y=0 case while doing nothing at all.
+    // See kGridDepthNudge and shaders/grid.vert.
+
+    VkPipelineMultisampleStateCreateInfo multisample{};
+    multisample.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    multisample.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+    VkPipelineDepthStencilStateCreateInfo depthStencil{};
+    depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    // Tested, so the model occludes the grid and the grid never punches through
+    // it. NOT written, so a translucent line leaves the depth buffer exactly as
+    // the bodies left it: the grid contributes nothing that a later draw could
+    // be occluded by, which is what keeps it a reference rather than geometry.
+    depthStencil.depthTestEnable = VK_TRUE;
+    depthStencil.depthWriteEnable = VK_FALSE;
+    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
+    depthStencil.minDepthBounds = 0.0f;
+    depthStencil.maxDepthBounds = 1.0f;
+
+    // The one blended pipeline in ForgeShape. The grid's whole visual contract
+    // is "present but never competing", and that is an alpha, not a colour —
+    // see the palette rules in forgeshape_grid.cpp.
+    VkPipelineColorBlendAttachmentState blendAttachment{};
+    blendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                                     VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    blendAttachment.blendEnable = VK_TRUE;
+    blendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    blendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    blendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+    // The ALPHA channel is deliberately left alone: KEEP what is already in the
+    // attachment (1.0, from the render pass clear) rather than replacing it
+    // with the line's blend weight.
+    //
+    // This is not a detail. The swapchain image is what the Android compositor
+    // presents, and it honours that alpha — so writing a line's own 0.14 into
+    // the destination would punch the viewport 86 % transparent along every
+    // grid line and composite the window background through it. The colour
+    // channels are blended, which is where the subtlety belongs; the surface
+    // stays opaque.
+    blendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+    blendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    blendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
+
+    VkPipelineColorBlendStateCreateInfo colorBlend{};
+    colorBlend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    colorBlend.attachmentCount = 1;
+    colorBlend.pAttachments = &blendAttachment;
+
+    VkGraphicsPipelineCreateInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    info.stageCount = 2;
+    info.pStages = stages;
+    info.pVertexInputState = &vertexInput;
+    info.pInputAssemblyState = &inputAssembly;
+    info.pViewportState = &viewportState;
+    info.pRasterizationState = &raster;
+    info.pMultisampleState = &multisample;
+    info.pDepthStencilState = &depthStencil;
+    info.pColorBlendState = &colorBlend;
+    info.layout = gridPipelineLayout_;
+    info.renderPass = renderPass_;
+    info.subpass = 0;
+
+    FS_VK_CHECK(vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1, &info, nullptr, &gridPipeline_),
+                "vkCreateGraphicsPipelines(grid)");
+    FS_LOGI("Grid pipeline created (LINE_LIST, polygonMode FILL, cull NONE, depth test LESS, "
+            "depth write OFF, vertex depth nudge %.5f, alpha blend, no descriptor set)",
+            kGridDepthNudge);
+    return true;
+}
+
 bool Renderer::createCommandBuffers() {
     commandBuffers_.resize(framebuffers_.size());
     VkCommandBufferAllocateInfo info{};
@@ -1542,6 +1871,7 @@ bool Renderer::createSwapchainDependents() {
     if (!createRenderPass()) return false;
     if (!createFramebuffers()) return false;
     if (!createPipeline()) return false;
+    if (!createGridPipeline()) return false;
     if (!createCommandBuffers()) return false;
     needsSwapchainRebuild_ = false;
     return true;
@@ -1560,6 +1890,10 @@ void Renderer::destroySwapchainDependents() {
         vkFreeCommandBuffers(device_, commandPool_, static_cast<uint32_t>(commandBuffers_.size()),
                              commandBuffers_.data());
         commandBuffers_.clear();
+    }
+    if (gridPipeline_ != VK_NULL_HANDLE) {
+        vkDestroyPipeline(device_, gridPipeline_, nullptr);
+        gridPipeline_ = VK_NULL_HANDLE;
     }
     if (pipeline_ != VK_NULL_HANDLE) {
         vkDestroyPipeline(device_, pipeline_, nullptr);
@@ -1648,6 +1982,13 @@ bool Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex) {
         recordBodyDraw(cmd, item);
     }
 
+    // LAST, and that ordering is load-bearing. Every body has now written depth,
+    // so the depth-tested, depth-biased grid is correctly occluded by the model
+    // and loses cleanly to a Construction Plane lying on its own plane at y = 0.
+    // Drawing it first would work for opaque bodies and fail for exactly the
+    // coplanar case the bias exists to settle.
+    recordGridDraw(cmd);
+
     vkCmdEndRenderPass(cmd);
     FS_VK_CHECK(vkEndCommandBuffer(cmd), "vkEndCommandBuffer");
     return true;
@@ -1712,6 +2053,46 @@ void Renderer::recordBodyDraw(VkCommandBuffer cmd, const SceneDrawItem& item) {
     vkCmdBindVertexBuffers(cmd, 0, 1, &body.vertexBuffer, &offset);
     vkCmdBindIndexBuffer(cmd, body.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
     vkCmdDrawIndexed(cmd, body.indexCount, 1, 0, 0, 0);
+}
+
+void Renderer::recordGridDraw(VkCommandBuffer cmd) {
+    // The whole cost of "Grid off" is this early return. Nothing is rebuilt,
+    // nothing is freed and nothing is re-uploaded when the grid is hidden, which
+    // is why toggling it can be proven to touch no body's revision, render mesh
+    // or GPU buffer (R1C2-03, R1C2-06, R1C2-19).
+    if (!display_.gridVisible || gridPipeline_ == VK_NULL_HANDLE ||
+        gridVertexBuffer_ == VK_NULL_HANDLE || gridVertexCount_ == 0) {
+        return;
+    }
+
+    // No model matrix. The grid's vertices ARE world space — the one thing in
+    // the renderer with no placement, because a floor that could be moved would
+    // be a Construction Body, and it must never become one.
+    //
+    // Both projections work here for free and neither is touched: whatever the
+    // camera snapshot says about perspective or orthographic is already in
+    // camera_.proj, and this composes it exactly as recordBodyDraw does.
+    const Mat4 viewProj = mat4Multiply(camera_.proj, camera_.view);
+
+    GridPush push{};
+    std::memcpy(push.viewProj, viewProj.m, sizeof(push.viewProj));
+    gridLineColor(display_.background, GridLineTier::Minor, push.minorColor);
+    gridLineColor(display_.background, GridLineTier::Major, push.majorColor);
+    gridLineColor(display_.background, GridLineTier::AxisX, push.axisXColor);
+    gridLineColor(display_.background, GridLineTier::AxisZ, push.axisZColor);
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, gridPipeline_);
+    vkCmdPushConstants(cmd, gridPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GridPush),
+                       &push);
+
+    VkDeviceSize offset = 0;
+    vkCmdBindVertexBuffers(cmd, 0, 1, &gridVertexBuffer_, &offset);
+    // ONE draw call, non-indexed, for the whole grid.
+    vkCmdDraw(cmd, gridVertexCount_, 1, 0, 0);
+
+    // The surface pipeline is rebound by the next frame's recording, which
+    // always starts from vkCmdBindPipeline(pipeline_). Nothing after this point
+    // in the pass draws a body.
 }
 
 bool Renderer::drawFrame() {

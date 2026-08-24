@@ -1618,6 +1618,32 @@ Java_com_forgeshape_app_NativeViewport_viewportBackground(JNIEnv*, jclass) {
         forgeshape::viewportBackgroundIndex(forgeshape::displaySettings().viewportBackground()));
 }
 
+// The world reference grid's visibility.
+//
+// A plain bool rather than an index, because there is no third answer to refuse:
+// unlike a shading model or an appearance, "on" and "off" exhaust the values. It
+// returns what is actually in effect afterwards for the same reason all of these
+// do — the Android control repaints from the answer, never from what was tapped.
+//
+// This is presentation and only presentation. It publishes no mesh, mints no
+// MeshRevision, changes no Construction parameter and moves no sculpt vertex;
+// the grid is not a SceneObject, has no ObjectId and is invisible to picking.
+// See forgeshape_grid.h for the whole contract.
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_setGridVisible(JNIEnv*, jclass, jboolean visible) {
+    forgeshape::DisplaySettingsStore& settings = forgeshape::displaySettings();
+    const bool wanted = (visible == JNI_TRUE);
+    const bool changed = settings.setGridVisible(wanted);
+    FS_LOGI("FORGESHAPE_VIEWPORT_GRID:%d changed=%d", settings.gridVisible() ? 1 : 0,
+            changed ? 1 : 0);
+    return settings.gridVisible() ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_gridVisible(JNIEnv*, jclass) {
+    return forgeshape::displaySettings().gridVisible() ? JNI_TRUE : JNI_FALSE;
+}
+
 // Reduced motion: the whole of the accessibility seam, and deliberately one
 // bool.
 //

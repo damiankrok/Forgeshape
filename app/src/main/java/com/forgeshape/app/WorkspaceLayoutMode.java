@@ -93,9 +93,79 @@ enum WorkspaceLayoutMode {
      * <p>Only an expanded window can pay for this. On a phone the rail overlays
      * the edge, which is what keeps the model full-bleed; the rail is narrow and
      * translucent precisely because it is standing on the picture.
+     *
+     * <p>"Docked" here means exactly what it already means for the Property
+     * Inspector: the surface is drawn as <b>part of the layout</b> — flush,
+     * with no elevation and no floating card — instead of as a raised panel
+     * standing on the model. It is a claim about where the surface sits, and it
+     * has to be true, which is why it is answered by the window and not by
+     * taste. Note what it is <i>not</i>: it changes nothing about the
+     * {@code SurfaceView}, which is full-bleed in every mode. See
+     * {@link EditorWorkspaceView}.
      */
     boolean railDocked() {
         return this == EXPANDED;
+    }
+
+    // -----------------------------------------------------------------------
+    // The Objects surface
+    // -----------------------------------------------------------------------
+
+    /**
+     * How wide a dedicated Objects column is.
+     *
+     * <p>Fixed rather than proportional, because its content does not scale
+     * with the window: a row reads "Body 7" and Add Body is one chip. A
+     * proportional column would simply buy whitespace with viewport.
+     */
+    static final int OBJECTS_DOCK_WIDTH_DP = 180;
+
+    /**
+     * How wide the Tool Rail's column is once docked: its widest entry plus its
+     * padding. Shared with {@link #objectsDocked} so the budget below is
+     * computed from the same number the layout actually uses.
+     */
+    static final int RAIL_WIDTH_DP = 68;
+
+    /**
+     * The narrowest central viewport the shell will leave: as wide as a phone
+     * screen.
+     *
+     * <p>This is the floor the expanded layout has always been held to — the
+     * absolute half of it, kept, while the proportional half is deliberately
+     * <b>not</b> applied to the three-column case. The reason is that the
+     * proportional rule was written for two docked surfaces, and a scene list
+     * is the third; 60 % of the window is unreachable at the bottom of the
+     * expanded range once an inspector, a rail and an Objects column are all
+     * subtracted, and pretending otherwise would either shrink the columns
+     * below usefulness or quietly break the rule.
+     */
+    static final int MIN_CENTRAL_VIEWPORT_DP = 480;
+
+    /**
+     * Whether Objects gets a persistent surface of its own, beside the model.
+     *
+     * <p>Being {@link #EXPANDED} is necessary and not sufficient, and the
+     * second condition is arithmetic rather than a fourth breakpoint: a window
+     * earns the third column when it still leaves a central viewport at least
+     * {@link #MIN_CENTRAL_VIEWPORT_DP} wide afterwards. Deriving it means a
+     * later change to any column width moves this answer automatically instead
+     * of silently violating the floor.
+     *
+     * <p>The bottom of the expanded range — 840 dp — therefore does not get
+     * one, and that is the intended answer rather than a gap. A window that
+     * wide is a large phone in landscape or a small tablet, and three permanent
+     * chrome columns there is precisely the desktop-CAD clutter UI-OWNER-02
+     * rules out. Objects stays where a compact window keeps it: in the
+     * Construction shape editor, above the fields it decides the subject of.
+     */
+    boolean objectsDocked(int widthDp) {
+        if (this != EXPANDED) {
+            return false;
+        }
+        final int remaining =
+                widthDp - sideDockWidthDp(widthDp) - RAIL_WIDTH_DP - OBJECTS_DOCK_WIDTH_DP;
+        return remaining >= MIN_CENTRAL_VIEWPORT_DP;
     }
 
     /**

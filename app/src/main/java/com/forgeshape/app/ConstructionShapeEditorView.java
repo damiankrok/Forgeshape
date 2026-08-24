@@ -274,6 +274,32 @@ final class ConstructionShapeEditorView extends LinearLayout {
     /** The Objects section, for tests that select a body by its ObjectId. */
     ObjectsSectionView objectsSection() { return objects; }
 
+    /**
+     * Takes the Objects section back into this panel, at the top where it
+     * belongs.
+     *
+     * <p>An expanded window borrows the <b>same instance</b> for a column of its
+     * own (see {@link EditorWorkspaceView}); a window that shrinks hands it
+     * back. Reparenting one view rather than building a second one is what
+     * keeps there being exactly one Objects presentation in the product — a
+     * second copy would be a second place for ObjectId and selection to be
+     * remembered, and they must be remembered nowhere in Java at all.
+     *
+     * <p>Idempotent: called from the layout decision, which runs on every
+     * measure pass.
+     */
+    void reclaimObjectsSection() {
+        if (objects.getParent() == this) {
+            return;
+        }
+        if (objects.getParent() instanceof ViewGroup) {
+            ((ViewGroup) objects.getParent()).removeView(objects);
+        }
+        // Index 0: it decides WHICH body the fields below describe, so it reads
+        // first for the same reason it was placed there to begin with.
+        addView(objects, 0, EditorControlStyles.rowParams(0));
+    }
+
     void refreshFromNative() {
         // The Objects list first: it decides which body the fields below
         // describe, and it must never lag behind a viewport pick.

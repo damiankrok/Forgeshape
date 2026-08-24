@@ -64,6 +64,24 @@
     <item name="projection_perspective" type="id" />
     <item name="projection_orthographic" type="id" />
 
+    <!--
+      View. What the viewport draws BESIDES the model. In UI-R1C2 that is
+      exactly one working control, the world reference grid; the group exists
+      rather than the chip standing alone because the things that will join it
+      are view references too. Nothing disabled or fake is drawn here — a
+      control the product cannot honour yet has no home in this group.
+    -->
+    <item name="view_grid_on" type="id" />
+    <item name="view_grid_off" type="id" />
+
+    <!--
+      The expanded window's Objects column. It HOSTS the one Objects section;
+      objects_section and object_row keep naming the same views wherever that
+      section is currently parented, which is what lets verification reach a
+      body by its ObjectId without caring about the layout mode.
+    -->
+    <item name="objects_dock" type="id" />
+
     <!-- Tool Rail. One rail view; its entries differ by mode. -->
     <item name="tool_rail" type="id" />
     <item name="tool_rail_grab" type="id" />

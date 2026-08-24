@@ -1,411 +1,465 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.28.0
+**Status Version:** 0.29.0
 **Updated:** 2026-08-24
-**Result:** COMPLETE — UI-R1C1 is closed; the product has a motion language, and
-selection feedback that no longer repaints the model
+**Result:** COMPLETE — UI-R1C2 is closed; the viewport has a world reference
+grid, and a large window now buys parallel context rather than padding
 **Current Phase:** Phase 1 — Native Viewport
 **Workspace:** `D:\TRAVELAPPS\ForgeShape`
-**Accepted implementation baseline:** UI-R1C1 — motion language + selection
-feedback, on top of UI-R1B2 (theme system + Light), UI-R1B1 (visual foundation +
-start flow), Stage 017 (multi-object scene + hierarchy foundation), the Pre-017
-Correctness Repair (active representation sidedness + re-Freeze guard + device
-verifier), Gate P1 (physical ARM64 closure), Stage 016-R2, Stage 016 (Plane),
-Stage 015D (camera projection), Stage 015C-R (front-face culling), Stage 015C
-(shading), Platform Fix P2, Stage 015B, Stage 014, the NDK r29 migration
-(Gate P0) and the owner decision baseline.
-**Next Stage:** UI-R1C2 — View/Grid + Adaptive Workspace Refinement.
+**Accepted implementation baseline:** UI-R1C2 — world grid + adaptive workspace,
+on top of UI-R1C1 (motion + selection feedback), UI-R1B2 (theme system + Light),
+UI-R1B1 (visual foundation + start flow), Stage 017 (multi-object scene +
+hierarchy foundation), the Pre-017 Correctness Repair (active representation
+sidedness + re-Freeze guard + device verifier), Gate P1 (physical ARM64
+closure), Stage 016-R2, Stage 016 (Plane), Stage 015D (camera projection),
+Stage 015C-R (front-face culling), Stage 015C (shading), Platform Fix P2,
+Stage 015B, Stage 014, the NDK r29 migration (Gate P0) and the owner decision
+baseline.
+**Next Stage:** INPUT-R1 — Pointer Semantics Foundation.
 
-## UI-R1C1 — Motion Language + Selection Feedback (COMPLETE)
+## UI-R1C2 — World Grid + Adaptive Workspace (COMPLETE)
 
-Two things closed together because they are the same question asked twice: what
-does ForgeShape do with **time**, and what does it do to the model to say "this
-one is selected".
+Two questions closed together because both are about **context**: what the
+viewport gives the eye besides the model, and what a large window gives the user
+besides padding.
 
-**Selection is now an acknowledgement, not a costume.** Becoming selected raises
-the tint to alpha **0.55** — the value the product used to sit at permanently —
-and decays it over **220 ms** to a resting **0.20**. The hue is unchanged
-(`1.00, 0.62, 0.10`); only how much of it is mixed in moved, so nothing else
-about the appearance was renegotiated. The decay curve is a smoothstep, chosen
-over linear or ease-out because both of those leave the peak before the finger
-does: smoothstep holds the acknowledgement for a few frames and then settles. It
-is monotone and bounded on [0.20, 0.55], so there is no overshoot and no bounce.
-Deselection clears the state outright rather than letting it decay, so a body
-selected again later starts a whole pulse instead of resuming a spent one.
+**The grid is a viewport reference, and that is a contract, not a description.**
+It has no `ObjectId`, never enters `ConstructionScene` or a `SceneSnapshot`, is
+not a `RuntimeMesh`, is invisible to picking, takes no part in Freeze, Resume or
+a sculpt stroke, is not exported and is **not** a snap target. A future Sketch
+grid — the one that snaps, drawn on a sketch plane — is a different contract with
+its own approval and must not be grown out of `forgeshape_grid.h`.
 
-**A pulse acknowledges a CHANGE in selection truth**, not a tap. Tapping a body
-that is already selected does nothing, however many times it happens.
+**Visibility lives in `DisplaySettingsStore`**, beside the shading model, the
+viewport background and the reduced-motion bool, because it is the same class of
+value. It is a plain `bool` rather than an index: there are two answers and no
+third is coming. Process-scoped, so it survives rotation, an Activity recreation
+and HOME/resume for free and a process kill returns it to the default, which is
+**on** — an empty viewport with no floor gives the eye no scale, no horizon and
+no origin, and that is the first question a modelling application has to answer.
 
-**It costs nothing.** `selectionTint.a` was already a push-constant component and
-the render loop already re-snapshots every frame, so the whole feature is one
-float per body per draw: no Java animator, no invalidate, no new push-constant
-byte, no geometry, no revision and no upload. Per-body pulse state lives in
-`BodyRenderResources`, keyed by the same stable ObjectId as that body's GPU
-buffers, which is what makes A's pulse structurally unable to touch B's. The
-renderer is still never told *which* object is selected — the scene snapshot
-carries a plain bool per item and `SceneSnapshot`'s schema is unchanged.
+**The technique is the smallest one that works: a static line list.** 82 lines /
+164 vertices / **2624 bytes**, generated from compile-time constants and uploaded
+**exactly once** with the Vulkan device, through the mesh path's own staging
+buffer. There is no cache to invalidate and no revision to follow because there
+is no input that can change. Showing or hiding the grid therefore decides only
+whether **one** already-built draw call is recorded — `vkCmdDraw`, non-indexed,
+after every body. `FORGESHAPE_GRID_UPLOAD_OK` is logged once per device, so a
+second occurrence in a session log is direct evidence that something re-uploaded
+a constant.
 
-**The math is a pure function over an explicit delta** in
-`forgeshape_selection_pulse.{h,cpp}`, not a clock read. That is why the
-self-tests drive a whole 220 ms pulse in microseconds with no sleep, and why the
-only clock in the presentation path is the one the frame loop already had. A
-frame delta over 100 ms is a resume or a stall, not a frame, and is clamped — so
-a process paused mid-pulse comes back still pulsing rather than having silently
-skipped the acknowledgement.
+*The tier is in the buffer and the colour is not.* Each vertex carries a
+`GridLineTier` (minor / major / X axis / Z axis) as a float; the four colours ride
+in push constants. So switching Dark to Light rewrites four `vec4`s and
+re-uploads nothing at all. The block is 128 bytes exactly — the guaranteed
+minimum, the same budget `surface.vert` works inside — which is also why a fifth
+line weight is not something this grid can grow.
 
-**Motion is a small shared helper, deliberately not a framework.**
-`ChromeMotion` holds four things and nothing else: the two durations (**120 ms**
-arriving, **90 ms** leaving), the reduced-motion question, the cancel-first rule,
-and one alpha helper. There is no transition type, no registry, no builder and no
-way to describe motion as data. A surface that needs its own movement writes it
-itself against these constants — which is exactly what the Display popover still
-does with its anchor-pivot scale. The popover's values are unchanged, because it
-is where they were measured.
+*Spacing and extent are chosen against the camera, not taste.* Minor lines every
+**1 m**, major every **5 m**, half-extent **20 m**. The initial orbit distance is
+8.2 m at a 60° vertical field of view, so the default framing is about 9.5 m tall
+and a one-metre cell puts roughly ten cells across the viewport — and because the
+spacing IS the unit the Property Inspector shows, counting cells is counting
+metres. The extent is fixed on purpose; a grid that re-tessellated as the camera
+dollied would be the multi-decade CAD system this stage is told not to build.
 
-**Reduced motion crosses JNI as one bool.** The Android layer reads
-`ANIMATOR_DURATION_SCALE`, decides what it means, and pushes the answer into the
-display store beside the shading model. No Android type reaches native code, and
-`DisplaySettingsStore::setReducedMotion` deliberately does **not** advance
-`changeCount_`: it is a platform preference arriving, not a display setting the
-user chose. `ChromeMotion.duration` returns **0** rather than a small number for
-that case, and every caller branches on the zero to *land* on the final state — a
-1 ms animation still posts a frame and still ends asynchronously, which is the
-thing a user asking for no motion is trying to avoid. In the viewport, reduced
-motion goes straight to the **resting** tint: landing on the peak instead would
-simply restore the flood this stage exists to remove.
+*A radial fade is what lets a bounded grid read as an open plane.* Without it the
+floor ends at a hard square border 20 m out and reads as a table top. The fade
+runs from 55 % of the half extent to nothing at the border. **It must be computed
+per FRAGMENT**, and that is not a performance choice: a grid line's only two
+vertices are its far endpoints, both fully faded, so a per-vertex fade
+interpolates zero across the whole line and every line disappears at every
+radius. It was written per-vertex first and did exactly that.
 
-**Chrome hide/restore is alpha only.** The `SurfaceView` is full-bleed and
-already occupies the whole window, so there is no size for a transition to
-change — and one that did would rebuild the swapchain for a question about where
-buttons are drawn. Runtime evidence: hide and restore produced **zero**
-`SURFACE_CONFIG`, zero `CAMERA_VIEWPORT`, zero upload and zero rebuild. The
-restore affordance measured **48 x 48 dp**.
+*Both appearances follow three rules* — weight comes from **alpha**, not from a
+brighter colour; the two axes are separated by a faint warm/cool lean rather than
+by saturated primaries, so X and Z are distinguishable without turning the floor
+into a diagram; and every value is authored against its own background, because
+"darker" and "lighter" are opposite instructions in the two themes. The
+self-tests assert those as *relationships* — lines lift off the near-black ground
+and sit down into the cream one, minor < major < axis, nothing above 0.6 alpha —
+rather than pinning RGB literals that would break on any deliberate restyle.
 
-**The inspector's two directions are sequenced, not symmetric,** and that is the
-design rather than an omission. Animating the panel's HEIGHT would mean a
-`requestLayout` every frame, re-running the workspace's whole adaptive layout
-decision — which lives in `onMeasure` — dozens of times for a panel that ends up
-exactly where it always did. So the size changes **once** per toggle and the body
-fades and slides the short distance either side of it: expanding opens the space
-first and lets the body arrive into it, collapsing lets the body leave and then
-closes the space. Alpha and translation are drawing properties and cost no
-traversal at all. A side-placed panel gives back WIDTH when it collapses, so the
-width is applied on a separate `onInspectorLayoutSettled` callback — narrowing
-the column while the body is still on screen would clip the content that is
-leaving.
+**The coplanar case is settled with depth state, never by moving anything.** A
+Construction Plane at world y = 0 shares the grid's plane exactly. The grid is
+depth-**tested** so the model occludes it, depth-**write off** so it contributes
+nothing a later draw could be occluded by, drawn **after** every body, and pushed
+`1e-4` of the depth range further from the eye **in the vertex shader**. The
+domain Plane keeps its y, its transform and its 4:6 topology; nothing in the
+Construction Source moves for a presentation problem. The nudge is in the shader
+because Vulkan's `depthBiasEnable` is defined for **polygon** fragments and would
+have done nothing at all to a line list — it would have read as the fix while
+being inert.
 
-**Only a user act animates.** `showExpanded` stayed instant and idempotent
-because it is what the measure pass and every state refresh call, and a layout
-traversal is no place to start an animation. The chevron is set from the TARGET
-detent at the *start* of a transition, so an interrupted collapse can never leave
-a control claiming the panel will do the opposite of what it is doing.
+**The adaptive pass promoted `railDocked()`, which had a tested meaning and had
+never once been called.** Its semantics were audited first and were sound, so it
+was activated rather than replaced. "Docked" means what it already meant for the
+Property Inspector: the surface is drawn as **part of the layout** — flush,
+opaque, no elevation — instead of as a raised translucent card standing on the
+picture. On an expanded window the card is a lie, because there is room beside the
+model and the rail is in it.
 
-**A viewport gesture outranks motion.** `ForgeShapeSurfaceView` now reports when
-a pointer goes down on the model and when the gesture settles — nothing about the
-gesture is interpreted there, and the arbitration is untouched. While a pointer
-is down, every chrome detent change is instant. The case this exists for is a
-second finger reaching the inspector header while the first is mid-stroke.
+**Objects gets its own persistent column on a window that has earned one.** The
+gate is arithmetic, not a fourth breakpoint: EXPANDED is necessary and not
+sufficient, and a window qualifies when a **180 dp** Objects column, the rail and
+the inspector still leave a central viewport at least **480 dp** wide — "as wide
+as a phone screen", the absolute half of the floor the expanded layout has always
+been held to. Deriving it means a later change to any column width moves the
+answer automatically instead of silently violating the floor. So 840 dp — the
+bottom of the expanded range, which is a large phone in landscape or a small
+tablet — deliberately does **not** get one; three permanent chrome columns there
+is precisely the desktop-CAD clutter UI-OWNER-02 rules out. The threshold lands
+near 1012 dp.
 
-**Scope.** No Grid, no View group, no Selection Outline, no stencil or
-screen-space edge pass, no post-processing, no adaptive restructure, no
-`railDocked()` promotion, no blur or glass, no new dependency, no Compose, and no
-NDK/Gradle/AGP change.
+*One `ObjectsSectionView`, re-parented — never a second list.* A second Java
+Objects view would be a second place for "which body is active" to be remembered,
+and that answer lives in exactly one place, below JNI. Because the same view
+moves, a viewport pick, a row tap and Add Body all still end at the same one
+native fact and the same one `refreshFromNative()`, in every window. The move is
+**instant**: it runs inside `onMeasure`, and starting an animation from a measure
+pass is how a re-parented surface ends up laid out at zero height. `ChromeMotion`
+is untouched.
 
-**Verification.** Native **1570/1570** across eleven suites, zero failures — the
-render-shading suite took 238 to **264** with the `r1c1_01..06` family. JVM
-**43/43** (was 39). Instrumented **98 run, 97 green** (was 88); the one failure is
-the documented `ui11` IME case, which fails its own precondition guard with a
-character-identical message before reaching any product assertion. Both ABIs
-build. `DEV2-01..07` and `DEV3-01..06` PASS.
+*Scroll ownership.* Docked, the list lives in its **own** `ScrollView` and is no
+longer nested inside the inspector's, so the two cannot fight over a drag. The
+UI-R1B1 rail tap-versus-scroll rule is untouched — docking changes what the rail
+looks like, not how it negotiates a gesture.
 
-The selection suite asserts no rendered pixel. What it checks is the state
-machine — that the edge starts a pulse, that the decay is monotone and bounded,
-that it takes real time rather than finishing on the next frame, that deselection
-clears, that two bodies' states cannot reach each other, and that a whole
-selection cycle beside a real published mesh leaves the revision and the vertex
-and index bytes identical.
+**The `SurfaceView` is the whole window in every mode.** Docking, un-docking and
+re-parenting chrome rearrange chrome and never the render target. The only
+swapchain events observed during the walkthrough came from a genuine window
+resize (rotation), and the grid was **not** re-uploaded across it, because its
+buffer is device-scoped.
+
+**Two defects found in this stage's own new code, both by runtime evidence
+rather than by review**, and both worth recording because the code looked
+correct: `VK_POLYGON_MODE_LINE` was named for a line list, which describes
+*polygon* rasterization and would only have required the `fillModeNonSolid`
+device feature ForgeShape does not request; and the alpha blend wrote each line's
+own weight into the destination **alpha** channel, which the Android compositor
+honours, so the viewport would have been punched translucent along every grid
+line. Both are fixed; the alpha channel is now explicitly preserved.
+
+**Scope.** No Selection Outline, no snap-to-grid, no Sketch grid, no View Cube,
+no camera focus or named views, no object commands (delete / duplicate / hide /
+lock / rename / group), no parent/child, no Undo, no Sketch/Extrude, no
+import/export, no stylus pressure, no glass or blur, no post-processing
+framework, no new dependency, no Compose, and no NDK/Gradle/AGP change.
+
+**Verification.** Native **1631/1631** across eleven suites, zero failures — the
+render-shading suite took 264 to **325** with the `r1c2_*` family. JVM **50/50**
+(was 43); `WorkspaceLayoutModeTest` went 9 to 16. Instrumented **111 run, 110
+green** (was 98/97), and the suite was run **twice** — once in the default
+compact phone window and once under an overridden 1600 x 2560 @ 240 dpi expanded
+window, so the docked branches are genuinely exercised rather than simulated. The
+one failure in both runs is the documented `ui11` IME case, which fails its own
+precondition guard with a character-identical message before reaching any product
+assertion. Both ABIs build. `DEV2-01..07` and `DEV3-01..06` PASS.
 
 **Runtime**, on `ForgeShape_Stage006` / `emulator-5580`, confirmed by AVD name.
-Two bodies were created and placed through the product's own editors. The pulse
-was **caught on camera**: the frame captured immediately after selecting Body #1
-sampled `RGB(234,186,120)` on the lit face — a red-blue spread of **114** —
-against `RGB(223,201,171)` and a spread of **52** one frame later and at rest.
-A→B→A produced **zero** `MESH_UPLOAD_OK` and **zero** `RENDER_MESH_BUILD` in both
-appearances. On Light the selected body reads as warm tan beside its grey
-neighbour with all three face values still distinct, which is the readability the
-0.55 flood used to cost. With `animator_duration_scale 0` a HOME/resume logged
-`FORGESHAPE_REDUCED_MOTION:1`, and four consecutive frames captured after a
-selection were **byte-identical at the resting spread of 53** — no pulse ran at
-all. A real Grab stroke on a 482-vertex frozen sphere reached `sculptRev=26` /
-`STROKE_END` with every upload `reuse`. Four rapid inspector toggles and a chrome
-hide/restore *while in Sculpt Mode* produced zero sculpt events, zero uploads,
-zero rebuilds and zero swapchain events, and the panel settled at the correct
-detent. Portrait, rotated landscape (side inspector) and an expanded
-1600 x 2560 @ 240 dpi window (docked inspector) all settled correctly, and Back
-to Construction returned the sphere Source with Resume Sculpt still offered.
+Four real Grid toggles through the real chips produced **zero**
+`MESH_UPLOAD_OK`, **zero** `RENDER_MESH_BUILD`, **zero** `GRID_UPLOAD_OK`, zero
+`SURFACE_CONFIG` and zero `CAMERA_VIEWPORT`. A Plane 2 x 1.25 m applied at world
+y = 0 — coplanar with the grid — rendered as a clean unbroken sheet with the grid
+stopping at its edges, and **two consecutive frames of that static scene were
+byte-identical**, which is the z-fight evidence: a fight is per-pixel and would
+differ. It stays clean at a near-coplanar grazing angle, which is the worst case.
+Dark and Light were both confirmed readable by eye, and Perspective and
+Orthographic both correct (parallel lines stay parallel in ortho). Grid Off
+survived a HOME/resume with the chip reading back Off from native truth. In the
+expanded window the docked Objects column measured **270 px at 1.5x = exactly
+180 dp**, sat beside a docked Property Inspector with the model between them,
+Add Body worked from the column, and the scene was grown to **20 bodies** which
+scrolled in the column's own container with Add Body still reachable at the
+bottom.
 
-**R1C1 criteria.**
+**R1C2 criteria.**
 
 | ID | Verdict | Evidence |
 | --- | --- | --- |
-| R1C1-AC01 | PASS | clean `5884542` audited before any change; final tree clean |
-| R1C1-AC02 | PASS | `ChromeMotion` is 4 concerns, no type/registry/builder — see *Motion is a small shared helper* |
-| R1C1-AC03 | PASS | `r1c110_*` x2: open/close, reduced motion, in-place choice, no movement |
-| R1C1-AC04 | PASS | `r1c1_01_*`; runtime spread 114 → 52 caught on camera |
-| R1C1-AC05 | PASS | `r1c1_03_*`: 0.20 is under half the legacy 0.55, and still above 0.1 |
-| R1C1-AC06 | PASS | the tint stays in `forgeshape_renderer.cpp`; no ObjectId reaches it; `SceneSnapshot` unchanged |
-| R1C1-AC07 | PASS | `r1c1_06_*` bit-identical mesh; runtime zero upload/rebuild in both themes |
-| R1C1-AC08 | PASS | `r1c1_05_*`; state lives per `BodyRenderResources`, keyed by ObjectId |
-| R1C1-AC09 | PASS | runtime screenshots, Dark and Light — see *Runtime* |
-| R1C1-AC10 | PASS | `r1c114`, `r1c124` x2, `r1c109_*`; runtime `REDUCED_MOTION:1` + identical frames |
-| R1C1-AC11 | PASS | `r1c111`, `r1c112`: six rapid toggles settle at alpha 1, translation 0, chevron agreeing |
-| R1C1-AC12 | PASS | `r1c122`; runtime real stroke to `sculptRev=26`, all uploads `reuse` |
-| R1C1-AC13 | PASS | `r1c113`, `r1c123`; runtime zero `SURFACE_CONFIG`; affordance 48 dp |
-| R1C1-AC14 | PASS | picking suite still 128; `SIDE`, `REFR`, `NOR`, `CAMPROJ` unchanged |
-| R1C1-AC15 | PASS | runtime portrait / rotated landscape / expanded 1600x2560 |
-| R1C1-AC16 | PASS | no Grid, View, Outline or adaptive change — see *Scope* |
-| R1C1-AC17 | PASS | native 1570/1570, JVM 43/43, instrumented 97/98, both ABIs |
-| R1C1-AC18 | PASS | every core doc < 2000; this file compacted — see the counts below |
-| R1C1-AC19 | PASS | one focused commit |
-| R1C1-AC20 | PASS | clean tree |
+| R1C2-AC01 | PASS | clean `4a476a9` audited before any change; final tree clean |
+| R1C2-AC02 | PASS | `r1c217_*` x2: the View group is one working chip pair, no disabled promises, 44 dp measured |
+| R1C2-AC03 | PASS | `r1c2_01_*`/`r1c2_02_*`; `DisplaySettingsStore::setGridVisible`, process-scoped |
+| R1C2-AC04 | PASS | `r1c2_04_every_grid_vertex_is_on_world_y_zero`; see *the grid is a viewport reference* |
+| R1C2-AC05 | PASS | `r1c2_03_*`: real scene snapshotted either side of four real toggles, identical |
+| R1C2-AC06 | PASS | `r1c2_06_*`, `r1c219_*`; runtime zero upload / zero rebuild across four toggles |
+| R1C2-AC07 | PASS | 2624 bytes uploaded once per device; `GRID_UPLOAD_OK` appeared exactly once |
+| R1C2-AC08 | PASS | `r1c2_07_*` palette relationships; runtime screenshots, Dark and Light |
+| R1C2-AC09 | PASS | `r1c2_09_*`; runtime Perspective and Orthographic both correct |
+| R1C2-AC10 | PASS | `r1c2_08_plane_source_topology_is_still_4_6`; two byte-identical frames of a coplanar Plane |
+| R1C2-AC11 | PASS | `R1C2-11`, `r1c227_*`; compact keeps Objects in the shape editor |
+| R1C2-AC12 | PASS | `R1C2-12`: medium docks nothing new and gains no breakpoint |
+| R1C2-AC13 | PASS | `R1C2-13`, `r1c227_*`; runtime expanded column measured at 180 dp |
+| R1C2-AC14 | PASS | `R1C2-14`, `r1c234_*`; `railDocked()` audited then promoted, elevation 0 when docked |
+| R1C2-AC15 | PASS | one `ObjectsSectionView`, re-parented; `r1c237_*` asserts one parent and one row per body |
+| R1C2-AC16 | PASS | `r1c229_*`, `r1c230_*`; runtime Add Body from the docked column added Body #5 |
+| R1C2-AC17 | PASS | `r1c232_*`; runtime 20 bodies scrolled and selectable |
+| R1C2-AC18 | PASS | `r1c236_*`: the SurfaceView equals the workspace in every mode and orientation |
+| R1C2-AC19 | PASS | `r1c235_*`: selection publishes nothing with the grid on or off; pulse constants untouched |
+| R1C2-AC20 | PASS | `r1c234_*`; the UI-R1B1 rail rule is unchanged |
+| R1C2-AC21 | PASS | no Outline, snap, View Cube or object command — see *Scope*, asserted by `r1c217_*` |
+| R1C2-AC22 | PASS | native 1631/1631, JVM 50/50, instrumented 110/111 twice, both ABIs |
+| R1C2-AC23 | PASS | picking suite still 128; `SIDE`, `REFR`, `NOR`, `CAMPROJ`, `PLN` unchanged |
+| R1C2-AC24 | PASS | every core doc re-measured and under 2000; this file and `ARCHITECTURE.md` compacted — see below |
+| R1C2-AC25 | PASS | one focused commit |
+| R1C2-AC26 | PASS | clean tree |
 
-**Core document sizes at acceptance** (hard cap 2000 each): `PROJECT_STATUS.md`
-1235, `ARCHITECTURE.md` 1658, `PRODUCT.md` 616, `README.md` 323, `CLAUDE.md` 193.
-This file paid for its new chapter by cutting the UI-R1B2 one from 140 lines to
-43; `ARCHITECTURE.md` gained the motion/selection ownership section and stays
-inside its 1900 aspiration.
+**Core document sizes at acceptance** (hard cap 2000 each), every one
+**re-measured** rather than carried forward — the counts recorded at UI-R1C1 were
+stale in both directions, so no number here was inferred from the previous report:
 
-**Result: COMPLETE.** R1C1-AC01..20 PASS.
+| file | at UI-R1C2 baseline | now |
+| --- | --- | --- |
+| `PROJECT_STATUS.md` | 1385 | **1319** |
+| `ARCHITECTURE.md` | 1982 | **1989** |
+| `PRODUCT.md` | 762 | **805** |
+| `README.md` | 403 | 403 |
+| `CLAUDE.md` | 215 | 215 |
+
+This file **shrank while gaining a stage chapter**: the UI-R1C1 chapter was cut
+from 160 lines to a 30-line durable entry, and Technical Debt, the suite
+sections, Known Issues and the closed-stage entries were compacted, retiring
+about 330 lines of superseded prose against roughly 260 added.
+
+`ARCHITECTURE.md` is the honest exception and is recorded as such. It began this
+stage at **1982**, already at 99 % of the hard cap and roughly double its own
+700–1000 target — pre-existing debt this file has carried for several stages. It
+had to gain the grid-renderer and adaptive-workspace ownership it now owns, and
+paying for that took a compaction of fourteen sections (the layer map, the
+appearance, verification, JNI, camera, sculpt, shading, threading and boundary
+prose). It ends at **1989**: under the cap, but by 11 lines. **The ≤1850
+aspiration was not safely achievable here**, because the remaining content is
+dense ownership statements rather than narrative, and cutting it would delete
+durable facts. Closing it properly means a dedicated compaction pass — which is
+exactly the unrelated-debt rewrite the rules forbid bundling into a feature
+stage. **The next stage to touch `ARCHITECTURE.md` should budget for that pass
+before adding anything**, because 11 lines is not a working margin.
+
+**Result: COMPLETE.** R1C2-AC01..26 PASS.
 
 ## Closed stages — durable facts only
 
 Full narrative for every stage below lives in Git history. What is kept here is
 only what still constrains the code.
 
+**UI-R1C1 — motion language + selection feedback (COMPLETE).** Selection is an
+acknowledgement, not a costume: becoming selected raises the tint to alpha
+**0.55** and decays it over **220 ms** to a resting **0.20**, on a smoothstep,
+monotone and bounded. The hue is unchanged (`1.00, 0.62, 0.10`). **A pulse
+acknowledges a CHANGE in selection truth**, not a tap. It costs one float per body
+per draw — no animator, no invalidate, no geometry, no revision, no upload.
+Per-body pulse state lives in `BodyRenderResources`, keyed by the same stable
+ObjectId as that body's GPU buffers, which is what makes A's pulse structurally
+unable to touch B's; the renderer is still never told *which* object is selected.
+The math is a pure function over an explicit frame delta in
+`forgeshape_selection_pulse.{h,cpp}`, not a clock read, and a delta over 100 ms is
+a resume or a stall and is clamped.
+
+*`ChromeMotion` is four things and must not become a framework:* the two durations
+(**120 ms** arriving, **90 ms** leaving), the reduced-motion question, the
+cancel-first rule and one alpha helper. No transition type, no registry, no way to
+describe motion as data. Reduced motion crosses JNI as one bool, and
+`setReducedMotion` deliberately does **not** advance `changeCount_` — it is a
+platform preference arriving, not a display setting chosen. `ChromeMotion.duration`
+returns **0** rather than a small number and every caller branches on the zero to
+*land* on the final state; in the viewport reduced motion goes straight to the
+**resting** tint.
+
+*Chrome hide/restore is alpha only* — the `SurfaceView` is full-bleed, so there is
+no size for a transition to change. The inspector's two directions are sequenced
+rather than symmetric: its size changes **once** per toggle and the body fades and
+slides either side of it, because animating the height would re-run the adaptive
+layout decision (which lives in `onMeasure`) every frame. Only a user act
+animates. **A viewport gesture outranks motion:** while a pointer is down on the
+model every chrome detent change is instant.
+
 **UI-R1B2 — theme system + Light mode (COMPLETE).** Two appearances, chosen
-explicitly, and a theme is presentation all the way down: switching one mints no
+explicitly; a theme is presentation all the way down, so switching one mints no
 revision, publishes nothing, uploads nothing, and leaves every body, id,
 parameter, placement and frozen mesh bit-identical.
 
-*The mechanism is theme attributes, not duplicated components.* A role is
-declared once in `attrs.xml`, given a value once per theme in `themes.xml`, and
-referenced as `?attr/fs*`. Backgrounds are `res/drawable` state lists and content
-colours `res/color` state lists, both carrying attributes; the one imperative
-path is `EditorControlStyles.themeColor(context, attr)`, for the text roles and
-the two brush sliders, which are drawn onto a Canvas rather than composed. **No
-colour is written in Java and no component knows which theme it is in** — one
-`bg_control.xml`, one `chip()`, no `if (light)` anywhere, so a third theme would
-touch two resource files and nothing else. `fsAccentFill` (what an ACTIVE control
-is filled with) and `fsPrimaryFill` (what a PRIMARY COMMIT is filled with,
-carrying `fsTextOnPrimary`) are two roles because on light an active chip wants a
-pale tint with dark text while Apply wants a solid accent with white, and one
-attribute could not be both.
+*The mechanism is theme attributes, not duplicated components.* A role is declared
+once in `attrs.xml`, given a value once per theme in `themes.xml`, and referenced
+as `?attr/fs*`. Backgrounds are `res/drawable` state lists and content colours
+`res/color` state lists; the one imperative path is
+`EditorControlStyles.themeColor`, for text roles and the two Canvas-drawn brush
+sliders. **No colour is written in Java and no component knows which theme it is
+in** — one `bg_control.xml`, one `chip()`, no `if (light)` anywhere, so a third
+theme would touch two resource files. `fsAccentFill` (what an ACTIVE control is
+filled with) and `fsPrimaryFill` (what a PRIMARY COMMIT is filled with, carrying
+`fsTextOnPrimary`) are two roles because on light an active chip wants a pale tint
+with dark text while Apply wants a solid accent with white.
 
-*Dark is unchanged* and is still what a fresh process wears; a process kill
-returns to it. *Light* uses a warm off-white VIEWPORT, `#E6E1D9` — paper rather
-than screen, and deliberately not `#FFFFFF`, which makes a neutral clay render
-read as grey. **The light chrome surface is fully opaque where the dark one is
-95 %**: over cream, a near-white translucent panel loses the edge that separates
-it from the model.
+*Dark is unchanged* and is what a fresh process wears; a process kill returns to
+it. *Light* uses a warm off-white viewport, `#E6E1D9` — paper rather than screen,
+deliberately not `#FFFFFF`, which makes a neutral clay render read as grey. **The
+light chrome surface is fully opaque where the dark one is 95 %**: over cream, a
+near-white translucent panel loses the edge that separates it from the model.
 
 *The renderer seam is one closed enum.* `ViewportBackground` (`NeutralDark`,
-`WarmLight`) lives in the native display store beside the shading model, and what
-crosses JNI is its index, refused if unrecognised. Native code owns what each
-appearance looks like; no Android theme, style, type or RGB authored in Java
-reaches it. The clear value is written into the render pass every frame anyway,
-so a switch touches no swapchain, pipeline, descriptor set or buffer. The two
-float triples are pinned by `display_dark_background_is_0e121b` /
-`display_light_background_is_e6e1d9`, because they are duplicated in `colors.xml`
-as the Android *window* background and drift there is a launch flash.
+`WarmLight`) lives in the native display store; what crosses JNI is its index,
+refused if unrecognised. The clear value is written into the render pass every
+frame anyway, so a switch touches no swapchain, pipeline, descriptor set or
+buffer. The two float triples are pinned by self-tests because they are duplicated
+in `colors.xml` as the Android *window* background and drift there is a launch
+flash.
 
 *Applying a theme recreates the Activity, and that is free,* because **`onDestroy`
 skips `NativeViewport.stop()` while `isChangingConfigurations()`**: the render
-thread, the Vulkan device and every GPU buffer survive, the Surface is detached
-and reattached exactly as on a HOME/resume, and `start()` returns early rather
-than re-running the self-tests or re-publishing. Without that guard a theme
-change would tear down the device and re-upload the whole scene. `EditorUiState`
-is handed to the incoming workspace, so changing colour does not also reset the
-display unit, the inspector detent or the Tool Rail. The theme is UI-owned and
-process-scoped; the viewport background is native-owned presentation; one
-derivation runs in `ForgeShapeActivity.applyTheme` so the two cannot disagree.
+thread, the Vulkan device and every GPU buffer survive, and `start()` returns early
+rather than re-running the self-tests. Without that guard a theme change would tear
+down the device and re-upload the whole scene. `EditorUiState` is handed to the
+incoming workspace, so changing colour does not reset the display unit, the
+inspector detent or the Tool Rail.
 
-**UI-R1B1 — visual foundation + start flow (COMPLETE).** The shell stopped
-looking like a harness.
+**UI-R1B1 — visual foundation + start flow (COMPLETE).** Fifteen local vector
+drawables on one 24 dp grid with one 2 dp round stroke replaced the Unicode glyphs
+the chrome used as icons; they are drawn white and tinted at use from a state
+list, so one drawable serves idle, active and disabled and an icon inside a
+composed control cannot disagree with its parent. No icon dependency was added.
 
-*Iconography.* Fifteen local vector drawables on one 24 dp grid with one 2 dp
-round stroke replaced the Unicode glyphs the chrome used as icons. They are drawn
-white and tinted at use from a state list, so one drawable serves idle, active
-and disabled; an icon inside a composed control duplicates its parent's state, so
-an entry's glyph and its caption cannot disagree. No icon dependency was added.
+*The look is resources, not Java.* Pressed and active states come from the platform
+instead of a repaint call, instances share one parsed `ConstantState` instead of
+allocating a `GradientDrawable` per control on every rail rebuild, and UI-R1B2 was
+able to add a second theme without touching a component tree. Corner radius is
+three semantic levels (control / floating surface / sheet); type is five roles;
+floating surfaces carry a small elevation and the **docked** inspector deliberately
+carries none, because it sits beside the model rather than over it.
 
-*The look is resources, not Java.* Backgrounds are `res/drawable` state lists and
-content colours `res/color` state lists. Pressed and active states come from the
-platform instead of a repaint call, instances share one parsed `ConstantState`
-instead of allocating a `GradientDrawable` per control on every rail rebuild, and
-UI-R1B2 was able to add a second theme without touching a component tree. Corner
-radius is three semantic levels (control / floating surface / sheet); type is
-five roles; floating surfaces carry a small elevation and the **docked** inspector
-deliberately carries none, because it sits beside the model rather than over it.
-
-*Two defects, both proven pre-existing on `feba998`.* The Global Toolbar's row
-overflows on a 411 dp window, and a `LinearLayout` that has run out squeezes its
-LAST child — so Display and Hide UI measured **33 dp and 35 dp**, under the 44 dp
-floor. The editing-context label is now the weighted child, so it ellipsises and
-every action keeps its size; `R1B1-10b` measures rather than trusting the declared
-size. And the Display popover's first open grew from the wrong corner, because
-`setOpen` reads `getWidth()` before the panel has ever been laid out; the pivot is
-now also set in `onSizeChanged`.
+*Two defects, both proven pre-existing.* A `LinearLayout` that has run out squeezes
+its LAST child, so Display and Hide UI measured **33 dp and 35 dp** on a 411 dp
+window, under the 44 dp floor; the editing-context label is now the weighted child,
+and `R1B1-10b` **measures** rather than trusting the declared size. And the Display
+popover's first open grew from the wrong corner because `setOpen` reads
+`getWidth()` before the panel has ever been laid out; the pivot is now also set in
+`onSizeChanged`.
 
 *Tool Rail gesture ownership.* The rail lives in a `ScrollView`, which takes a
-gesture as soon as it passes the platform slop — including from a control whose
-job is to be tapped. An entry now disallows interception on Down and allows it
-again once travel passes **twice** the slop, at which point the container takes
-the next event and the platform's own `ACTION_CANCEL` prevents the click. Small
-drift selects; a real scroll selects nothing. Viewport gesture arbitration is
-untouched.
+gesture as soon as it passes the platform slop — including from a control whose job
+is to be tapped. An entry now disallows interception on Down and allows it again
+once travel passes **twice** the slop, at which point the platform's own
+`ACTION_CANCEL` prevents the click. Small drift selects; a real scroll selects
+nothing. Viewport gesture arbitration is untouched.
 
-*The start flow.* `StartChooserView` asks **New Project** over the live viewport
-and offers exactly two answers, once per process. *Construction* has nothing to
-build: native state exists before any view, so the default Body is already there
-and the answer only stops asking — `ConstructionScene`'s constructor is untouched
-and `S17-01` still holds. *Sculpt* makes exactly the two calls a user would make
-by hand: `applyConstructionSphere` with the diameter **read back from native
-state** rather than a constant invented in Java, then the existing
-`freezeToSculpt`. **No Freeze logic is duplicated** — no second validation, no
-second `SculptMesh` construction, no opinion about sidedness, the stale flag or
-revision numbering — so Back finds the exact sphere and Resume returns the same
-frozen mesh for the ordinary reasons. A refusal leaves the product in
+*The start flow.* `StartChooserView` asks **New Project** over the live viewport and
+offers exactly two answers, once per process. *Construction* has nothing to build:
+native state exists before any view, so the default Body is already there and the
+answer only stops asking. *Sculpt* makes exactly the two calls a user would make by
+hand — `applyConstructionSphere` with the diameter **read back from native state**
+rather than a constant invented in Java, then the existing `freezeToSculpt`. **No
+Freeze logic is duplicated**, so Back finds the exact sphere and Resume returns the
+same frozen mesh for the ordinary reasons. A refusal leaves the product in
 Construction, unchanged, and says so.
 
-**Stage 017 — multi-object scene + hierarchy foundation (COMPLETE).** The product
-is not one object. A platform-neutral `ConstructionScene` owns an ordered
-collection of Construction Bodies; each `SceneObject` owns its own
-`ConstructionObject`, `MeshStore` and `FrozenSculpt`.
+**Stage 017 — multi-object scene + hierarchy foundation (COMPLETE).** A
+platform-neutral `ConstructionScene` owns an ordered collection of Construction
+Bodies; each `SceneObject` owns its own `ConstructionObject`, `MeshStore` and
+`FrozenSculpt`.
 
 *The three accessors survived their names and changed their meaning.*
-`constructionObject()`, `meshStore()` and `sculptSession()` are now defined in
-`forgeshape_scene.cpp` as **"the ACTIVE body's"**. That is what kept the
-migration small: every caller meaning "the object the user is editing" kept
-working unchanged, and only code meaning "every body" — the renderer and scene
-picking — was rewritten. They are defined there rather than beside their own
-types because the answer is a scene question, and defining them in their own
-translation units would make those units depend on the scene, which depends on
-them.
+`constructionObject()`, `meshStore()` and `sculptSession()` are defined in
+`forgeshape_scene.cpp` as **"the ACTIVE body's"**. That is what kept the migration
+small: every caller meaning "the object the user is editing" kept working, and only
+code meaning "every body" — the renderer and scene picking — was rewritten. They
+live there rather than beside their own types because the answer is a scene
+question, and defining them in their own translation units would make those units
+depend on the scene, which depends on them.
 
 *ObjectId* is monotonic, scene-minted, never reused, and never derived from a
-collection index, a `MeshRevision` or a GPU resource. It survives primitive
-edits, transform edits, Freeze/Resume/re-Freeze and selection changes. The first
-body keeps `kConstructionBoxObjectId`, so **startup is byte-for-byte the
-single-object product's**: one default Box at identity, already selected
-(`S17-01`).
+collection index, a `MeshRevision` or a GPU resource. It survives primitive edits,
+transform edits, Freeze/Resume/re-Freeze and selection changes. The first body
+keeps `kConstructionBoxObjectId`, so **startup is byte-for-byte the single-object
+product's** (`S17-01`).
 
 *Publication is per body*, so revisions are per-body chains starting at 1 and an
-edit to A cannot replace, invalidate or renumber B's mesh. `snapshot()` returns
-an immutable `SceneSnapshot` — per item an ObjectId, a `RuntimeMeshPtr`, a model
-and inverse-model matrix, and a selection flag — copying a `shared_ptr` and two
+edit to A cannot replace, invalidate or renumber B's mesh. `snapshot()` returns an
+immutable `SceneSnapshot` — per item an ObjectId, a `RuntimeMeshPtr`, a model and
+inverse-model matrix, and a selection flag — copying a `shared_ptr` and two
 matrices per body and **no geometry**, so it is cheap under the state mutex and
 usable with that mutex released; old snapshots stay valid because they hold the
 revisions they name alive.
 
-*Per-body GPU state.* Device-local buffers, capacities, the `RenderMeshCache` and
-the uploaded/failed revision live in `BodyRenderResources`, keyed by stable
-ObjectId — never by scene index, which would rebind a body's buffers to a
-different body if the collection were reordered. Staging, the upload command
-buffer and the fence stay shared: transient scratch inside one upload. The global
-`bool selectionHighlight_` is gone; it would have tinted every body at once.
-`FORGESHAPE_RENDER_MESH_BUILD` and `FORGESHAPE_MESH_UPLOAD_OK` carry an appended
-`body=` field.
+*Per-body GPU state* lives in `BodyRenderResources`, keyed by stable ObjectId —
+never by scene index, which would rebind a body's buffers to a different body if
+the collection were reordered. Staging, the upload command buffer and the fence
+stay shared: transient scratch inside one upload. `FORGESHAPE_RENDER_MESH_BUILD`
+and `FORGESHAPE_MESH_UPLOAD_OK` carry an appended `body=` field.
 
 *Picking iterates the scene.* `pickScene` intersects each item with **its own**
 transform and **its own** sidedness and keeps the nearest positive hit; ties keep
 the earlier body in scene order. Distances compare across bodies because every
-Construction transform is rigid. Sidedness comes from the active published mesh,
-never from a `PrimitiveKind` — the active body's kind says nothing about a
-*different* body's geometry.
+Construction transform is rigid.
 
 *Sculpt: what is per body and what is not.* **Per body** (`FrozenSculpt`): the
-Frozen Sculpt Mesh and its stale flag. **Global** (one `SculptSession`): the
-product mode, the held tool, radius, strength, the stroke in progress and the
-session-lifetime stroke count. `sculptSession()` re-points the session at the
-active body's `FrozenSculpt` on every access — one pointer write that removes the
-whole class of bug where the session points at the body the user left. A per-body
-session was tried and was wrong twice over: the product mode became ambiguous,
-and the documented "Radius and Strength are shared" contract would have broken
-silently. Body switching is refused while in Sculpt mode, so the Sculpt target is
-fixed for the duration.
+Frozen Sculpt Mesh and its stale flag. **Global** (one `SculptSession`): the product
+mode, the held tool, radius, strength, the stroke in progress and the
+session-lifetime stroke count. `sculptSession()` re-points the session at the active
+body's `FrozenSculpt` on every access — one pointer write that removes the whole
+class of bug where the session points at the body the user left. A per-body session
+was tried and was wrong twice over: the product mode became ambiguous, and the
+documented "Radius and Strength are shared" contract would have broken silently.
+Body switching is refused while in Sculpt mode.
 
 *Scope.* Flat root-level collection only: deterministic insertion order, stable
 enumeration, no parent/child, groups, reparenting, rename, reorder or speculative
 parent field; no delete, duplicate, hide or lock.
 
-*The scene suite builds its OWN `ConstructionScene` per case* rather than
-touching the process-scoped one — the Stage 016-R2 lesson applied to the scene,
-and possible only because `ConstructionScene` is an ordinary class with no hidden
-global state. Teeth were verified by reverting: a global "something is selected"
-fails both S17-08 checks, and first-hit-wins fails both S17-10 checks.
+*The scene suite builds its OWN `ConstructionScene` per case* rather than touching
+the process-scoped one — the Stage 016-R2 lesson applied to the scene. Teeth were
+verified by reverting: a global "something is selected" fails both S17-08 checks,
+and first-hit-wins fails both S17-10 checks.
 
-**Pre-017 Correctness Repair (COMPLETE).** Two contract defects and one
-verifier weakness.
-
-*Sidedness ownership.* `SculptMesh::freezeFrom` did not copy
-`ConstructionMesh::renderBothSides`, `publishSculptMesh` took the `false`
-default so every Frozen Sculpt Mesh published single-sided, the Sculpt
-hit-test hard-coded `frontFacesOnly=true`, and `pickScene` asked
-`constructionObject().kind()`. That last is wrong in both directions once a
-frozen mesh outlives its Source. **The rule now: sidedness is a property of the
-active published representation**, carried `ConstructionMesh::renderBothSides`
-→ `SculptMesh::renderBothSides()` → `RuntimeMesh::renderBothSides()`, and read
-from there by render, selection picking and the Sculpt hit-test alike.
+**Pre-017 Correctness Repair (COMPLETE).** *Sidedness ownership.* Four separate
+places disagreed about it. **The rule now: sidedness is a property of the active
+published representation**, carried `ConstructionMesh::renderBothSides` →
+`SculptMesh::renderBothSides()` → `RuntimeMesh::renderBothSides()`, and read from
+there by render, selection picking and the Sculpt hit-test alike — never from a
+`PrimitiveKind`, which says nothing about a *different* body's geometry and is
+wrong in both directions once a frozen mesh outlives its Source.
 `forgeshape_selection.cpp` deliberately does not include
 `forgeshape_construction.h`. Asserted by `SIDE-01`..`09`.
 
-*The destructive re-Freeze guard.* It read the session-lifetime stroke count,
-which is never reset by a Freeze, so every later re-Freeze of an untouched mesh
-raised a dialog with nothing behind it. **The predicate is now
-`SculptMesh::hasEdits()`** — `revision > kFrozenSculptRevision`, restarted by
-every `freezeFrom` and advanced only when a stroke actually moved a vertex, so
-an abandoned gesture correctly reports no edits. Exposed as `SCULPT_HAS_EDITS`;
-the dialog quotes no number, because any count available describes meshes that
-no longer exist. Asserted by `REFR-01`..`07`. UI-OWNER-05 intact.
+*The destructive re-Freeze guard* read the session-lifetime stroke count, which is
+never reset by a Freeze, so every later re-Freeze of an untouched mesh raised a
+dialog with nothing behind it. **The predicate is now `SculptMesh::hasEdits()`** —
+`revision > kFrozenSculptRevision`, restarted by every `freezeFrom` and advanced
+only when a stroke actually moved a vertex. Exposed as `SCULPT_HAS_EDITS`; the
+dialog quotes no number, because any count available describes meshes that no
+longer exist. Asserted by `REFR-01`..`07`. UI-OWNER-05 intact.
 
-*The device verifier* gained `DEV3-01`..`06` on top of the unchanged
-`DEV2-01`..`07`: it now recognises a bare `adb` in any form, scans
-`.ps1`/`.cmd`/`.bat`/`.sh` and the Gradle files, detects an executable
-`connected*AndroidTest` fan-out, proves an argument array actually carries `-s`
-instead of trusting its variable name, and reports which surfaces it scanned so
-a check that covered nothing cannot pass. It also fixed a latent vacuous pass:
-`Where-Object` returning exactly one object has no `.Count`, so the script
-printed "All checks PASS" and exited 0 whenever exactly one check failed.
+*The device verifier* gained `DEV3-01`..`06` on top of `DEV2-01`..`07`: it
+recognises a bare `adb` in any form, scans `.ps1`/`.cmd`/`.bat`/`.sh` and the
+Gradle files, detects an executable `connected*AndroidTest` fan-out, proves an
+argument array actually carries `-s` instead of trusting its variable name, and
+reports which surfaces it scanned so a check that covered nothing cannot pass. It
+also fixed a latent vacuous pass: `Where-Object` returning exactly one object has
+no `.Count`, so the script printed "All checks PASS" whenever exactly one check
+failed.
 
 **Gate P1 — physical ARM64 (COMPLETE).** Closed on a Samsung Galaxy S25 Ultra
-(`SM-S938B`, Snapdragon 8 Elite, Android 16 / API 36, 1440×3120), attached over
-Wi-Fi adb; its serial and address are session facts and are deliberately not
-recorded here. `ro.product.cpu.abi` and `abilist` report **`arm64-v8a`** only,
-and after install `dumpsys package` reports **`primaryCpuAbi=arm64-v8a`**. That
-phone's `getconf PAGE_SIZE` is **4096**, which is the ordinary case and not a
-failure: the 16 KB dimension was closed separately on a dedicated 16 KB target
-(`ForgeShape_16K`, `PAGE_SIZE` = 16384), and the two pieces of evidence are
-complementary.
+(`SM-S938B`, Snapdragon 8 Elite, Android 16 / API 36, 1440×3120) over Wi-Fi adb;
+`arm64-v8a` only, `primaryCpuAbi=arm64-v8a` after install, `getconf PAGE_SIZE`
+**4096**. The 16 KB dimension was closed separately on a dedicated 16 KB target
+(`ForgeShape_16K`), so the two pieces of evidence are complementary.
 
-*The ARM64 picking defect, and why the tolerance exists.* Six self-test checks
-failed on the physical device against 1421/1421 green on x86_64 from identical
-source. `intersectRayTriangle` tested barycentric containment with exact bounds,
-and a ray landing on an edge two triangles SHARE has a coordinate that is
-mathematically exactly 0 — its sign decided purely by rounding, and if it
-rounds negative for one triangle it does for its neighbour too, so both reject a
-ray that geometrically hits. The rounding is ABI-dependent: no
-`-ffp-contract=off` is set, so Clang contracts the dot/cross products into fused
-multiply-adds on arm64-v8a, which baseline x86-64 cannot. An on-device probe
-measured the failing ray at **u = -9e-9**. Product-visible, not a test artefact:
-the centre of a Plane *is* the shared diagonal of its two triangles, so tapping
-the middle of a Plane selected nothing. Fixed by `kBarycentricEpsilon = 1e-6f`
-applied to both containment bounds — widening rather than pinning the FP model,
-which would only re-hide the same knife-edge geometry. **Do not remove or
-tighten it.**
+*The ARM64 picking defect, and why the tolerance exists.* Six checks failed on the
+physical device against 1421/1421 green on x86_64 from identical source.
+`intersectRayTriangle` tested barycentric containment with exact bounds, and a ray
+landing on an edge two triangles SHARE has a coordinate that is mathematically
+exactly 0 — its sign decided purely by rounding, and if it rounds negative for one
+triangle it does for its neighbour too, so both reject a ray that geometrically
+hits. The rounding is ABI-dependent: no `-ffp-contract=off` is set, so Clang
+contracts the dot/cross products into fused multiply-adds on arm64-v8a, which
+baseline x86-64 cannot. An on-device probe measured the failing ray at
+**u = -9e-9**. Product-visible: the centre of a Plane *is* the shared diagonal of
+its two triangles, so tapping the middle of a Plane selected nothing. Fixed by
+`kBarycentricEpsilon = 1e-6f` applied to both containment bounds — widening rather
+than pinning the FP model, which would only re-hide the same knife-edge geometry.
+**Do not remove or tighten it.**
 
 *Heavy-mesh ladder, measured on that phone.* Single-run figures from one device;
-they are existence evidence that the mandatory tiers work on physical ARM64, not
-a supported capacity limit and not a statement about any other device.
+existence evidence that the mandatory tiers work on physical ARM64, not a supported
+capacity limit.
 
 | tier | vertices | triangles | gen ms | publish ms | render build ms | pick | PSS |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -413,59 +467,54 @@ a supported capacity limit and not a statement about any other device.
 | ~50k | 49686 | 97200 | 17.776 | 7.880 | 72.204 | tri 78824 | 231 MB |
 | ~100k | 99846 | 196608 | 32.405 | 15.426 | 104.387 | tri 159210 | 248 MB |
 
-Sculpt at ~100k: freeze 110.126 ms building 592896 adjacency entries, two real
-Grab strokes, every post-stroke upload `reuse`, PSS 264 MB. No crash, OOM, ANR
-or thermal symptom at any tier. The last stable mandatory tier is ~100k.
-250k/500k were not run. Stylus/S Pen remains **UNVERIFIED** — closing it needs a
-person physically moving a pen.
+Sculpt at ~100k: freeze 110.126 ms building 592896 adjacency entries, two real Grab
+strokes, every post-stroke upload `reuse`, PSS 264 MB. No crash, OOM, ANR or thermal
+symptom at any tier. The last stable mandatory tier is ~100k; 250k/500k were not
+run. Stylus/S Pen remains **UNVERIFIED** — closing it needs a person physically
+moving a pen.
 
 *Also closed under Gate P1:* arm64-v8a packaged beside x86_64, both `.so`s at
 0x4000 ELF `LOAD` alignment with `zipalign -P 16 -c` OK; a debug-only Vulkan
-validation session with **zero ForgeShape-caused messages** of any severity
-(the layer was adb-pushed through Android's own per-app GPU debug layer
-settings and never bundled, never committed, and removed afterwards); and the
-debug-only `buildStressMesh` density fixture behind `ForgeShapeActivity` keys
-A–F.
+validation session with **zero ForgeShape-caused messages** of any severity (the
+layer was adb-pushed through Android's own per-app GPU debug layer settings and
+never bundled, never committed, and removed afterwards); and the debug-only
+`buildStressMesh` density fixture behind `ForgeShapeActivity` keys A–F.
 
 **Stage 016-R2.** Self-tests must not depend on live process-scoped state: three
 cases were reading whatever primitive or transform a prior UI test had left, and
-now publish their own fixture and pick through the explicit-transform overload.
-`scripts\start-forgeshape-emulator.ps1` takes an explicit `-Avd`/`-Port`, hard-
-rejects port 5554 before any OS or adb call, and BLOCKS rather than falling back
-when the requested port is occupied. Every adb call in every repo script is
-scoped to an explicit serial.
+now publish their own fixture. `scripts\start-forgeshape-emulator.ps1` takes an
+explicit `-Avd`/`-Port`, hard-rejects port 5554 before any OS or adb call, and
+BLOCKS rather than falling back when the requested port is occupied. Every adb call
+in every repo script is scoped to an explicit serial.
 
-**Stage 016 — the Plane.** The sixth and final Construction MVP primitive: a
-flat, zero-thickness rectangular sheet authored by width (local X) and depth
-(local Z), centred on the local origin at `y = 0`, canonical front along local
-`+Y`. Source topology is exactly **4 vertices, 2 triangles, 6 indices**
-whatever the dimensions, CCW seen from the front. Two-sided render and pick are
-one bounded, named exception carried by the published mesh — see the Pre-017
-entry above for who owns that fact now. `ConstructionObject::setPrimitive`
-`std::visit`s the requested spec, so a kind added to the variant with no
-matching overload is a compile error rather than a silently skipped branch.
+**Stage 016 — the Plane.** The sixth and final Construction MVP primitive: a flat,
+zero-thickness rectangular sheet authored by width (local X) and depth (local Z),
+centred on the local origin at `y = 0`, canonical front along local `+Y`. Source
+topology is exactly **4 vertices, 2 triangles, 6 indices** whatever the dimensions,
+CCW seen from the front. Two-sided render and pick are one bounded, named exception
+carried by the published mesh. `ConstructionObject::setPrimitive` `std::visit`s the
+requested spec, so a kind added to the variant with no matching overload is a
+compile error rather than a silently skipped branch.
 
 **Stage 015D — camera projection.** Orthographic is a true parallel projection
-(`mat4Orthographic`, `m[11] = 0`), not a narrow FOV or a huge distance. The
-existing 60° Perspective camera was audited and left unchanged. Switching
-converts the framing rather than resetting it
-(`orthoHalfHeight = distance × tan(fovY/2)` and its inverse), so the frame never
-jumps. Orthographic pinch changes the world span and deliberately leaves the
-orbit distance alone, because moving the eye along its own axis changes nothing
-in a parallel projection. Picking is structurally different per projection —
-Perspective keeps one origin with fanning directions, Orthographic shares one
-direction with a per-pixel origin — and the orthographic view plane is pulled
-back to `kFarPlane/2`, so `snapshot.eye` is **not** `target + dir × distance` in
-Orthographic. The sculpt brush radius must not scale with depth in Orthographic.
+(`mat4Orthographic`, `m[11] = 0`), not a narrow FOV or a huge distance. The existing
+60° Perspective camera was audited and left unchanged. Switching converts the
+framing rather than resetting it (`orthoHalfHeight = distance × tan(fovY/2)` and its
+inverse), so the frame never jumps. Orthographic pinch changes the world span and
+deliberately leaves the orbit distance alone, because moving the eye along its own
+axis changes nothing in a parallel projection. Picking is structurally different per
+projection — Perspective keeps one origin with fanning directions, Orthographic
+shares one direction with a per-pixel origin — and the orthographic view plane is
+pulled back to `kFarPlane/2`, so `snapshot.eye` is **not** `target + dir × distance`
+in Orthographic. The sculpt brush radius must not scale with depth in Orthographic.
 
 **Stage 015C-R — winding and culling.** The pipeline named
-`VK_FRONT_FACE_CLOCKWISE`, which double-counted the projection's Y flip and
-inverted back-face culling, so every convex primitive drew its far walls and
-read as a hollow interior. The convention is now
-`VK_CULL_MODE_BACK_BIT` + `VK_FRONT_FACE_COUNTER_CLOCKWISE`, owned by
-`ARCHITECTURE.md`. The `NOR-01`..`10` direction family exists because every
-earlier normal check measured an axis or a magnitude and so passed unchanged on
-a mesh whose normals had all been negated.
+`VK_FRONT_FACE_CLOCKWISE`, which double-counted the projection's Y flip and inverted
+back-face culling, so every convex primitive drew its far walls and read as a hollow
+interior. The convention is now `VK_CULL_MODE_BACK_BIT` +
+`VK_FRONT_FACE_COUNTER_CLOCKWISE`, owned by `ARCHITECTURE.md`. The `NOR-01`..`10`
+direction family exists because every earlier normal check measured an axis or a
+magnitude and so passed unchanged on a mesh whose normals had all been negated.
 
 ## Owner Decision Baseline
 
@@ -528,10 +577,8 @@ chrome and tool, and a semantic input boundary able to carry pressure, tilt,
 hover and tool type. Stage 015B does **not** change Sculpt deformation from
 pressure.
 
-**DOC-OWNER-01 in detail.** The rule itself lives in `CLAUDE.md`; the fixed UI
-vocabulary is *Editor Workspace*, *Global Toolbar*, *Tool Rail*, *Property
-Inspector*, *Construction Body*, *Frozen Sculpt Mesh*. Existing working code is
-not mass-renamed for it.
+**DOC-OWNER-01 in detail.** Owned by `CLAUDE.md`, including the fixed UI
+vocabulary; not restated here.
 
 ## Product Direction
 
@@ -607,8 +654,9 @@ no AndroidX, no third-party runtime library, no engine.
 
 ## Verified capability matrix
 
-Everything below is verified at runtime on `emulator-5558` through the real
-Android touch path. `PRODUCT.md` owns the user-facing description.
+Everything below is verified at runtime on a ForgeShape-owned AVD through the
+real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
+`PRODUCT.md` owns the user-facing description.
 
 | Capability | State |
 | --- | --- |
@@ -637,6 +685,23 @@ Android touch path. `PRODUCT.md` owns the user-facing description.
 | Selection feedback mints no revision, rebuilds no render mesh and uploads nothing, in either appearance | VERIFIED |
 | Two bodies' pulse states are independent; deselecting one does not disturb the other | VERIFIED |
 | The selected body stays obvious and the model's form stays readable in Dark and in Light | VERIFIED |
+| A world reference grid on the XZ plane at y = 0, switchable from the Display popover's View group | VERIFIED |
+| The grid is ON by default and its choice survives rotation, Activity recreation and HOME/resume | VERIFIED |
+| Grid lines at 1 m, a 5 m major rhythm, a 20 m extent that fades radially rather than ending at a border | VERIFIED |
+| The X and Z axes are told apart by a faint warm/cool lean, not by saturated primaries | VERIFIED |
+| The grid is readable in Dark and in Light, and never competes with the model for the eye | VERIFIED |
+| The grid is correct in Perspective and in Orthographic, and changes neither projection nor camera pose | VERIFIED |
+| A Construction Plane at world y = 0 shows no z-fighting; two consecutive static frames are byte-identical | VERIFIED |
+| The grid never enters the scene, a snapshot, picking, Freeze, Sculpt or a revision | VERIFIED |
+| Toggling the grid rebuilds no render mesh, uploads nothing and mints no revision | VERIFIED |
+| The grid's vertices are uploaded exactly once per Vulkan device and survive rotation and resume | VERIFIED |
+| Expanded windows give Objects a persistent column beside a docked Property Inspector | VERIFIED |
+| Compact and medium keep the current viewport-first model; Objects stays in the shape editor | VERIFIED |
+| The Tool Rail is drawn flush and level when docked, raised and translucent when floating | VERIFIED |
+| One Objects section, re-parented — no second Java list and no second selection truth | VERIFIED |
+| Row tap, viewport pick and Add Body stay in sync from whichever surface Objects is on | VERIFIED |
+| ~20 bodies stay listed, scrollable in the column's own container, and selectable | VERIFIED |
+| The SurfaceView is the whole window in every layout mode; docking never resizes the render target | VERIFIED |
 | Reduced motion goes straight to the resting tint and runs no pulse at all | VERIFIED |
 | Chrome hide/restore and the inspector detent are short, interruptible and always settle at a legitimate resting state | VERIFIED |
 | A chrome transition never resizes the viewport or rebuilds the swapchain | VERIFIED |
@@ -723,8 +788,7 @@ Android touch path. `PRODUCT.md` owns the user-facing description.
 ## Self-test suite
 
 Eleven debug-only native suites run once from `NativeViewport.start()` — never
-per frame — and total **1570 checks, zero failures** at the accepted baseline
-under NDK r29:
+per frame — and total **1631 checks, zero failures**:
 
 | suite token | checks |
 | --- | --- |
@@ -737,542 +801,441 @@ under NDK r29:
 | `FORGESHAPE_CONSTRUCTION_SPHERE_SELFTEST_OK` | 105 |
 | `FORGESHAPE_CONE_CAPSULE_SELFTEST_OK` | 163 |
 | `FORGESHAPE_SCULPT_BRUSH_KERNEL_SELFTEST_OK` | 302 |
-| `FORGESHAPE_RENDER_SHADING_SELFTEST_OK` | 264 |
+| `FORGESHAPE_RENDER_SHADING_SELFTEST_OK` | 325 |
 | `FORGESHAPE_SCENE_SELFTEST_OK` | 79 |
 
-followed by `FORGESHAPE_MESH_UPLOAD_OK` and `FORGESHAPE_NATIVE_VIEWPORT_OK`.
+followed by `FORGESHAPE_MESH_UPLOAD_OK`, `FORGESHAPE_GRID_UPLOAD_OK` and
+`FORGESHAPE_NATIVE_VIEWPORT_OK`.
 
-UI-R1C1 added `r1c1_01`..`06` to the render-shading suite (238 → 264), because
-selection is PRESENTATION — the same reason the shading model and the viewport
-background live there and not in the picking or selection suites, which own
-*which* object is selected rather than how it is drawn. The family is driven with
-an explicit elapsed time rather than a clock, so a whole 220 ms pulse costs
-microseconds and nothing in it can be flaky.
+**The render-shading suite owns PRESENTATION**, which is why selection feedback
+(UI-R1C1, `r1c1_01..06`) and the world grid (UI-R1C2, `r1c2_*`, 264 → **325**)
+live there rather than in the picking or selection suites — those own *which*
+object is selected and what is in the scene, not how any of it is drawn. Both
+families are driven with explicit values rather than a clock or a GPU, so a whole
+220 ms pulse costs microseconds and nothing in either can be flaky. Neither
+asserts a rendered pixel.
 
-The tenth suite covers the crease policy, all six primitives' Smooth contracts
-and the capsule equality case, Faceted, NaN/Inf and fail-closed behaviour,
-determinism, the render-data rebuild policy, the generated MatCap asset, the
-display settings, the proof that building render data leaves the
-authoritative `RuntimeMesh` bit-identical, and (Stage 016) the Plane's
-two-sided render duplication and its inertness to display switching
-(`PLN-09`/`10`/`20`). Stage 016 also added `PLN-01`..`08` to the primitive
-suite, `PLN-11`..`16` to the picking suite, and `PLN-17`..`19` to the sculpt
-suite.
+The suite also covers the crease policy, all six primitives' Smooth contracts,
+the capsule equality case, Faceted, NaN/Inf and fail-closed behaviour,
+determinism, the render-data rebuild policy, the generated MatCap, the display
+settings, the proof that building render data leaves the authoritative
+`RuntimeMesh` bit-identical, and (Stage 016) the Plane's two-sided render
+duplication and its inertness to display switching (`PLN-09`/`10`/`20`). Stage 016
+also added `PLN-01`..`08` to the primitive suite, `PLN-11`..`16` to picking and
+`PLN-17`..`19` to sculpt.
 
-Stage 015D added the **projection family**, `CAMPROJ-01`..`CAMPROJ-14`, split
-across three suites by module ownership rather than kept in one file: the camera
-suite carries `CAMPROJ-01`..`08` and `12`..`14` (the perspective audit, the
-orthographic matrix, depth-independence versus foreshortening, both framing
-conversions, orbit invariance, ortho pinch and clamps, purity, resume, and the
-P2 orientation convention in both modes on a non-square viewport); the picking
-suite carries `CAMPROJ-09`/`10`; the sculpt suite carries `CAMPROJ-11`. Each
-family member has a counterpart that would fail if the behaviour collapsed to a
-constant — `CAMPROJ-04` against `03`, and the perspective depth check against the
-orthographic one — which is the property the `NOR` family was added for.
-
-Stage 015C-R added the **direction family** to it, `NOR-01`..`NOR-10`: source
-winding on all five primitives, outward render normals per primitive, Faceted
-orientation against the source triangle, duplication-preserves-winding, the
-model→view normal transform under six representative placements, and display
-modes proven inert against picking and revisions. Its guard check
+**The projection family `CAMPROJ-01`..`14`** is split across three suites by
+module ownership: camera carries `01`..`08` and `12`..`14`, picking `09`/`10`,
+sculpt `11`. **The direction family `NOR-01`..`10`** covers source winding,
+outward render normals, Faceted orientation, duplication-preserves-winding, the
+model→view normal transform and display-mode inertness. Both families include a
+member that would fail if the behaviour collapsed to a constant —
 `nor_outwardness_fails_on_global_normal_flip` asserts the measurement inverts
-under a global `normal *= -1`, which is the property the rest of the suite
-lacked.
+under a global `normal *= -1`, which is the property the rest of the suite lacked.
 
-Three further non-per-frame diagnostics exist. `FORGESHAPE_SURFACE_CONFIG` (one
-per swapchain creation) and `FORGESHAPE_CAMERA_VIEWPORT` (one per
-`surfaceChanged`) audit the orientation chain; `FORGESHAPE_RENDER_MESH_BUILD` (one
-per accepted geometry or surface-shading change) reports source vs render counts,
-the rebuild count and the frame counter. `README.md` documents how to read all
-three.
+Three non-per-frame diagnostics exist. `FORGESHAPE_SURFACE_CONFIG` (one per
+swapchain creation) and `FORGESHAPE_CAMERA_VIEWPORT` (one per `surfaceChanged`)
+audit the orientation chain; `FORGESHAPE_RENDER_MESH_BUILD` (one per accepted
+geometry or surface-shading change) reports source vs render counts, the rebuild
+count and the frame counter. `FORGESHAPE_GRID_UPLOAD_OK` is one per Vulkan
+device. `README.md` documents how to read them.
 
 ## Android UI suites
 
-Added by Stage 015B; the first automated tests the Android layer has ever had.
-Build and verification commands are in `README.md`.
-
 | suite | scope | tests |
 | --- | --- | --- |
-| `WorkspaceLayoutModeTest` (JVM) | breakpoints, placement, chrome sizing arithmetic | 9 |
-| `EditorUiStateTest` (JVM) | what the UI may remember and what it refuses; the start flag's process lifetime | 11 |
+| `WorkspaceLayoutModeTest` (JVM) | breakpoints, placement, chrome sizing, the Objects dock and rail dock decisions | 16 |
+| `EditorUiStateTest` (JVM) | what the UI may remember and what it refuses | 11 |
 | `LengthUnitTest` (JVM) | exact mm/cm/m round-tripping and parse refusal | 5 |
-| `EditorWorkspaceControlsTest` | UI-01/02/03/04/05/06/13 — control sets, fields, validation, freeze wording, tools, presentation-only actions; `PLN-07`/`08` — the six-kind round trip and the Plane chip's no-native-call contract | 19 |
-| `EditorWorkspaceLayoutTest` | UI-07/08/09/12 — measured viewport floor, landscape, expanded, collapse | 6 |
-| `EditorWorkspaceGestureTest` | UI-10/11 — chrome gesture ownership, IME | 5 |
-| `EditorWorkspaceLifecycleTest` | UI-14 — HOME/resume rebuilt from native truth | 3 |
+| `AppThemeTest` (JVM) | the default, the two appearances, and that choosing one moves nothing else | 10 |
+| `ChromeMotionTest` (JVM) | the durations, and that reduced motion returns 0 rather than a short duration | 4 |
 | `DisplaySettingsContractTest` (JVM) | the shading/surface index contract across JNI | 4 |
-| `EditorWorkspaceDisplayTest` | SHD-13/15/16 — display ids, presentation-only, resume; PROJ-12/13/14 — projection ids, inertness against domain state, refused index, resume | 12 |
-| `EditorWorkspaceObjectsTest` | S17-21..26 — Objects rows by ObjectId, viewport pick sync | 6 |
-| `EditorWorkspaceStartFlowTest` | R1B1-01..08 — the start question, and the direct Sculpt path's Freeze reuse | 8 |
-| `EditorWorkspaceFoundationTest` | R1B1-09..14 — icons, pressed feedback, touch floor, rail tap-vs-scroll, viewport floor, popover | 7 |
-| `AppThemeTest` (JVM) | the default, the two appearances, and that choosing one moves nothing else the UI remembers | 10 |
-| `EditorWorkspaceThemeTest` | R1B2-01..17 — the control, the switch, state preservation across the recreation, contrast | 17 |
-| `ChromeMotionTest` (JVM) | R1C1-09 — the durations, and that reduced motion returns 0 rather than a short duration | 4 |
-| `EditorWorkspaceMotionTest` | R1C1-10..14, 21..24 — popover preserved, inspector interruptibility, chrome hide/restore, viewport stability, reduced motion, gesture priority | 10 |
+| `EditorWorkspaceControlsTest` | control sets, fields, validation, freeze wording, tools, the six-kind round trip | 23 |
+| `EditorWorkspaceLayoutTest` | measured viewport floor, landscape, expanded, collapse, the UI-R1C2 adaptive pass | 10 |
+| `EditorWorkspaceGestureTest` | chrome gesture ownership, IME | 5 |
+| `EditorWorkspaceLifecycleTest` | HOME/resume rebuilt from native truth | 3 |
+| `EditorWorkspaceDisplayTest` | display/projection ids, presentation-only, resume, refused index, the View/Grid group | 17 |
+| `EditorWorkspaceObjectsTest` | rows by ObjectId, viewport pick sync, the docked surface, 20-body scalability | 10 |
+| `EditorWorkspaceStartFlowTest` | the start question, and the direct Sculpt path's Freeze reuse | 8 |
+| `EditorWorkspaceFoundationTest` | icons, pressed feedback, touch floor, rail tap-vs-scroll, viewport floor, popover | 7 |
+| `EditorWorkspaceThemeTest` | the control, the switch, state preservation across the recreation, contrast | 17 |
+| `EditorWorkspaceMotionTest` | popover preserved, inspector interruptibility, chrome hide/restore, viewport stability, reduced motion, gesture priority | 10 |
 
-**141 tests** (43 JVM, 98 instrumented). No Java test asserts a rendered pixel;
+**161 tests** (50 JVM, 111 instrumented). No Java test asserts a rendered pixel;
 every control is reached by its stable semantic id and no assertion uses a screen
-coordinate. `EditorWorkspaceFoundationTest` and `EditorWorkspaceThemeTest`
-deliberately assert no colour literal, radius or shadow: those are judged by eye
-and by runtime evidence, and pinning them would break on every deliberate restyle
-while proving nothing. What the theme suite asserts instead is *relational* —
-that a role answers differently and in the right direction — plus WCAG contrast
-ratios computed in the test for the surfaces that carry numbers.
+coordinate. The foundation and theme suites deliberately assert no colour
+literal, radius or shadow — those are judged by eye and by runtime evidence, and
+pinning them would break on every deliberate restyle. What the theme suite
+asserts instead is *relational*, plus WCAG contrast ratios computed in the test.
 
-**97 of the 98 instrumented tests pass as of UI-R1C1** on `ForgeShape_Stage006`;
-the one failure is the `ui11` IME case described just below. Pre-017 took the
-count 46 → 50, Stage 017 took it 50 → 56, UI-R1B1 took it 56 → 71, UI-R1B2 took
-it 71 → 88 with `EditorWorkspaceThemeTest`, and UI-R1C1 took it 88 → 98 with
-`EditorWorkspaceMotionTest`.
+**110 of the 111 instrumented tests pass**; the one failure is the `ui11` IME
+case described below. Pre-017 took the count 46 → 50, Stage 017 50 → 56, UI-R1B1
+56 → 71, UI-R1B2 71 → 88, UI-R1C1 88 → 98, UI-R1C2 98 → 111.
+
+**The suite is run in TWO windows** — the default compact phone window and an
+overridden 1600 x 2560 @ 240 dpi expanded window. The adaptive cases read the
+window they are actually in and assert the contract that belongs to it, so an
+overridden run is a genuine expanded-layout run rather than a simulation, and it
+is the only thing that exercises the docked Objects and docked rail branches.
 
 **`EditorWorkspaceMotionTest` asserts a RESTING state and never a frame of an
 animation.** A case that sampled a transition part-way through would be a test of
-the device's frame timing and would fail on a slow emulator for reasons that have
-nothing to do with the product. What it checks instead is that a panel always
-ends up somewhere legitimate — fully visible or fully gone, at alpha 1,
-untranslated, with a chevron that agrees with it — however the user interrupted
-it. It writes `animator_duration_scale` through the instrumentation's own shell,
-because the product holds no `WRITE_SECURE_SETTINGS` and must never ask for one,
-and restores it in **both** `@Before` and `@After` so a case that dies part-way
-cannot leave animation switched off for every suite that follows.
+the device's frame timing. It writes `animator_duration_scale` through the
+instrumentation's own shell — the product holds no `WRITE_SECURE_SETTINGS` and
+must never ask for one — and restores it in **both** `@Before` and `@After` so a
+case that dies part-way cannot leave animation off for every suite that follows.
+`EditorWorkspaceDisplayTest` restores the display defaults for the same reason.
 
-**A theme switch recreates the Activity, so a test that changes appearance must
-wait for the workspace to come back.** `EditorWorkspaceThemeTest.switchTo` drives
-the real chip and then polls until a workspace reports the new appearance and has
-been laid out; setting the field directly would prove a boolean changed and
-nothing about whether the workspace survives being rebuilt, which is the whole
-point. Every case leaves the process in Dark.
+**A theme switch recreates the Activity**, so `EditorWorkspaceThemeTest.switchTo`
+drives the real chip and polls until a workspace reports the new appearance and
+has been laid out; setting the field directly would prove a boolean changed and
+nothing about whether the workspace survives being rebuilt. Every case leaves the
+process in Dark.
 
 **The start question is asked once per process, so every case that is not ABOUT
-it answers it first.** `resetToBaselineConstruction` dismisses it, and
+it answers it first.** `resetToBaselineConstruction` dismisses it;
 `EditorWorkspaceObjectsTest` — which deliberately does not use that baseline —
 dismisses it in its own `@Before`. Cases that *are* about it call
-`showStartChooserAsFirstLaunch()`, which is the only way to see an unanswered
-chooser twice in one instrumentation process.
+`showStartChooserAsFirstLaunch()`.
 
-**The scene is process-scoped and there is no delete, so bodies ACCUMULATE
-across the tests in a run**, and the product may be left in Sculpt mode by an
-earlier one. No instrumented test may therefore assume a body count, which body
-sits at the origin, or which mode is current: each establishes what it needs and
-asserts relative to what it found. That is the Stage 016-R2 lesson — a test that
-reads live global state passes or fails on what ran before it — applied to the
-instrumentation, and it is why `EditorWorkspaceObjectsTest` has an
-`isolateAtOrigin` helper rather than hard-coded placements.
+**The scene is process-scoped and there is no delete, so bodies ACCUMULATE across
+a run**, and the product may be left in Sculpt mode by an earlier case. No
+instrumented test may assume a body count, which body sits at the origin, or
+which mode is current: each establishes what it needs and asserts relative to what
+it found. That is the Stage 016-R2 lesson applied to the instrumentation.
+
+**A view that has just been made visible reports a size of 0 until a traversal has
+run.** Measuring a control in the same block that opened its container is the same
+mistake the display popover's own first-open pivot bug was; settle the layout in
+between. Found again during UI-R1C2, on the new Grid chips.
 
 `EditorWorkspaceGestureTest.ui11_theImeLeavesTheFieldAndTheCommitPathUsableAndTheSurfaceUntouched`
-is the one case that has moved in both directions across recent stages: it
-opens with a precondition guard — "the soft keyboard did not appear, so this
-case proves nothing" — and fails on that guard alone, never reaching an
-assertion about product behaviour, whenever the keyboard is slow to appear. It
-failed at the Stage 015C baseline, passed at Stage 015C-R, failed again at
-Stage 015D (proven pre-existing there against a stashed, unmodified `171c7ae`
-tree), and **passed at Stage 016**. It failed again at Stage 017 and at UI-R1B1,
-proven pre-existing each time by stashing every change and reproducing the
-identical message on the untouched baseline. Treat a future failure of this one
-case as a harness symptom to confirm against the current baseline before calling
-it a regression.
+opens with a precondition guard — "the soft keyboard did not appear, so this case
+proves nothing" — and fails on that guard alone, never reaching an assertion about
+product behaviour, whenever the keyboard is slow to appear. It has failed and
+passed across recent stages (proven pre-existing at Stage 015D and UI-R1B1 by
+stashing every change and reproducing the identical message on an untouched tree)
+and the message has been character-identical since. Treat a future failure of this
+one case as a harness symptom to confirm against the current baseline before
+calling it a regression.
 
 ## Current evidence summary
 
-Latest acceptance run, on `ForgeShape_Stage006` / `emulator-5580` unless a line
-says otherwise:
+Latest acceptance run, on `ForgeShape_Stage006` / `emulator-5580` unless stated:
 
-- **Native self-tests:** eleven suites, **1570 checks, zero failures** on a
-  clean launch. The Gate P1 picking suite is unchanged at 128, so the ARM64
-  shared-edge fix is intact; `SIDE`, `REFR`, `NOR` and `CAMPROJ` all still green.
-- **JVM:** 43/43.
-- **Instrumented:** 98 run, **97 green**, through
-  `scripts\run-instrumented-tests.ps1 -Serial emulator-5580`. The one failure is
-  `EditorWorkspaceGestureTest.ui11_…`, which fails its own precondition guard
-  ("the soft keyboard did not appear, so this case proves nothing") before
-  reaching any assertion about product behaviour. **Proven pre-existing** at
-  UI-R1B1 by stashing every change and reproducing the identical failure on
-  `feba998`; the message at UI-R1B2 is character-identical, so it is carried as a
-  known baseline failure rather than re-stashed. See *Android UI suites*.
-- **Device guards:** `DEV2-01`..`07` and `DEV3-01`..`06` all PASS, with no
-  device attached and zero `emulator-5554` interaction.
+- **Native self-tests:** eleven suites, **1631 checks, zero failures** on a clean
+  launch. The Gate P1 picking suite is unchanged at 128, so the ARM64 shared-edge
+  fix is intact; `SIDE`, `REFR`, `NOR`, `CAMPROJ` and `PLN` all still green.
+- **JVM:** 50/50.
+- **Instrumented:** 111 run, **110 green**, twice — once compact, once expanded —
+  through `scripts\run-instrumented-tests.ps1 -Serial emulator-5580`. The one
+  failure is the documented `ui11` precondition guard.
+- **Device guards:** `DEV2-01`..`07` and `DEV3-01`..`06` all PASS, with no device
+  attached and zero `emulator-5554` interaction.
 - **Physical ARM64 (Gate P1):** closed on a Galaxy S25 Ultra —
   `primaryCpuAbi=arm64-v8a`, `PAGE_SIZE` 4096, the mandatory ~10k/~50k/~100k
   ladder and Sculpt at 100k measured on real hardware. Stylus stays UNVERIFIED.
-- **Runtime:** the UI-R1C1 walkthrough (two bodies placed through the product's
-  own editors, the pulse caught on camera at a red-blue spread of 114 decaying to
-  52, A↔B with zero uploads in both appearances, Light readability, reduced
-  motion proven by four byte-identical frames, a real Grab stroke, chrome and
-  inspector motion exercised *during* Sculpt, and portrait / rotated / expanded)
-  is summarised in the UI-R1C1 chapter at the top of this file. Earlier
-  walkthroughs are in Git history.
+- **Runtime:** the UI-R1C2 walkthrough is summarised in the chapter at the top of
+  this file. Earlier walkthroughs are in Git history.
 
 **One caveat about capturing self-test evidence.** On both the emulator and the
 physical phone the logcat ring buffer intermittently drops whole suites from the
 *middle* of a startup capture, which reads exactly like a suite that never ran.
 The reliable signal is that the suites which do appear always report their full
 expected check counts and `_SELFTEST_FAIL` is always absent; read a partial
-capture as "no failures observed", and re-run until one capture is complete
-before quoting a total.
+capture as "no failures observed", and re-run until one capture is complete before
+quoting a total.
 
-## Display-control motion, and what was rejected
+## Display-control research, and what was rejected
 
 Motion research for the display popover used Mobbin Pro against creative and
-canvas applications on iOS. Five patterns were worth having an opinion about:
+canvas applications on iOS. **Adopted:** the popover grows from the control that
+opened it rather than sliding in from a screen edge (Craft, Apple Mail,
+Freeform); selection feedback happens **in place**, so the surface does not move,
+re-animate or close on a choice — the one that matters, because comparing two
+options means switching repeatedly; non-modal, staying open across several
+changes; and grouped labelled chip rows rather than one long list (eBay,
+Photoroom), adopted as layout and not as styling.
 
-| Pattern | Seen in | Decision |
-| --- | --- | --- |
-| Popover **grows from the control that opened it**, rather than sliding in from a screen edge | Craft (line style), Apple Mail (shapes), Freeform | **Adopted.** 120 ms scale-plus-fade from the anchor corner; it reads as belonging to the button instead of arriving from nowhere. |
-| **Selection feedback in place** — the chip repaints, the surface does not move, re-animate or close | Freeform's alignment settings toggles checkmarks across three frames with the menu stationary | **Adopted.** This is the one that matters: comparing Studio against MatCap means switching repeatedly, and a panel that re-animated on each choice would make it feel like four separate acts. |
-| **Non-modal, stays open** across several changes | Craft, Freeform | **Adopted.** Dismissed only by tapping Display again, or by hiding chrome. |
-| **Grouped labelled chip rows** rather than one long list | eBay "Edit Scene" (Material / Shadow), Photoroom (Shadow / Backdrop / Size) | **Adopted as layout**, not as styling: two groups, Shading and Surface. |
-| **Live preview thumbnails** with a check badge per option | Photoroom | **Rejected.** A rendered thumbnail per shading mode needs a second offscreen render target, for a two-option choice whose result is already filling the screen behind the panel. |
-| **Bottom sheet with drag detents** | Canva, Play, Unfold | **Rejected for this control.** A sheet covers the model, which is the thing being judged. ForgeShape already has a Property Inspector for sheet-shaped content. |
+**Rejected:** live preview thumbnails with a check badge per option (Photoroom) —
+a rendered thumbnail per shading mode needs a second offscreen render target, for
+a choice whose result is already filling the screen behind the panel; and a bottom
+sheet with drag detents (Canva, Play, Unfold) — a sheet covers the model, which is
+the thing being judged, and ForgeShape already has a Property Inspector for
+sheet-shaped content.
 
 Nothing decorative was taken. There is no continuous or looping model animation,
 no motion on the viewport itself, and no animation anywhere on the path of a
 pointer sample. Both animations are interruptible, and a zero system animator
-duration scale — the platform's own reduce-motion signal — skips them outright
-rather than shortening them.
-
-**The §12 readability enhancement is deliberately deferred.** Neither candidate
-was implemented. A selected-object outline needs either a second pass over the
-geometry or a screen-space depth/normal edge filter, and the latter is the start
-of the post-processing framework this stage is told not to build; cheap cavity
-shading from a screen-space depth derivative is the same problem, and the
-vertex-based alternative would expose triangle structure in Smooth mode, which
-the stage explicitly forbids. Neither is a small addition to what exists, and the
-required shading is complete without them.
+duration scale skips them outright rather than shortening them.
 
 ## Known Issues / Blockers
 
-- **16 KB page-size runtime behaviour is VERIFIED (Gate P1)**, on the x86_64
-  `ForgeShape_16K` AVD (`getconf PAGE_SIZE` = 16384): full self-test suite,
-  Construction/picking/projection/shading/Freeze/Resume/Sculpt smoke all
-  green. **Still open: 16 KB pages *and* ARM64 in the same target.** The
-  physical device Gate P1 closed on is a 4 KB-page phone, and the 16 KB
-  target is x86_64, so each dimension is proven but not both at once. This
-  needs 16 KB-page ARM64 hardware, which is a device-availability matter, not
+- **16 KB page size *and* ARM64 in the same target is UNVERIFIED.** 16 KB page
+  behaviour is VERIFIED on the x86_64 `ForgeShape_16K` AVD (`PAGE_SIZE` 16384) and
+  ARM64 is VERIFIED on a 4 KB-page phone, so each dimension is proven but not both
+  at once. This needs 16 KB-page ARM64 hardware — a device-availability matter, not
   a code one; both `.so`s already carry 0x4000 ELF `LOAD` alignment.
-- **Floating-point rounding is ABI-dependent, and exact FP comparisons in
-  geometry code are therefore an ARM64 hazard.** No `-ffp-contract=off` is
-  set, so Clang contracts multiply-adds into `fmadd` on arm64-v8a where
-  baseline x86-64 cannot — the direct cause of the shared-edge picking defect
-  Gate P1 found. Anything that compares a computed geometric quantity against
-  an exact bound should be assumed to differ between the emulator and a real
-  phone until measured on both.
-- **This phone drops self-test lines from the logcat ring buffer, and no
-  capture method fully prevents it.** It caps the buffer at 5 MiB
-  (`logcat -G 16M` is silently reduced), and the ~1400-line self-test burst
-  competes with a busy system log, so whole suites vanish from the *middle* of
-  a capture — which reads exactly like a suite that never ran. Confirmed
-  during Gate P1 across four methods: `logcat -d` after the fact, a host-side
-  stream started before launch, a PID/tag-filtered stream, and even an
-  on-device `logcat -f` (which rules out Wi-Fi adb transport as the cause).
-  Each dropped a *different* subset. The reliable signal is that the suites
-  which do appear always report their full expected check counts and
-  `_SELFTEST_FAIL` is always absent — so read a partial capture as "no
-  failures observed", and re-run until one capture is complete before
-  claiming a total. A complete 1425/1425 capture with all ten suites and
-  `FORGESHAPE_NATIVE_VIEWPORT_OK` was obtained this Gate; the retries after it
-  were partial, all with zero failures.
+- **Floating-point rounding is ABI-dependent, so exact FP comparisons in geometry
+  code are an ARM64 hazard.** No `-ffp-contract=off` is set, so Clang contracts
+  multiply-adds into `fmadd` on arm64-v8a where baseline x86-64 cannot — the direct
+  cause of the shared-edge picking defect Gate P1 found. Anything comparing a
+  computed geometric quantity against an exact bound should be assumed to differ
+  between the emulator and a real phone until measured on both.
+- **The physical phone drops self-test lines from the logcat ring buffer, and no
+  capture method fully prevents it.** It caps the buffer at 5 MiB (`logcat -G 16M`
+  is silently reduced) and whole suites vanish from the *middle* of a capture,
+  which reads exactly like a suite that never ran. Confirmed across four methods
+  during Gate P1, each dropping a *different* subset. Read a partial capture as "no
+  failures observed" and re-run until one is complete before quoting a total.
 - **The `EditorWorkspaceView` layout decision runs inside `onMeasure`.** That is
   deliberate and documented — running it in `onSizeChanged` measures newly added
-  chrome against the previous pass and lays it out at zero height, which is
-  exactly the bug that was hit and fixed during this stage — but mutating the
-  view tree during measure is unusual enough to be worth naming. It is
-  idempotent and converges in one traversal.
-- **A horizontal drag along the Property Inspector header toggles it.** The
-  header is a full-width clickable row, and Android's default click detection
-  fires on `ACTION_UP` while the pointer is still inside the view's bounds,
-  regardless of how far it travelled. Harmless — the gesture never reaches the
-  viewport — but it reads as a stray toggle. Not fixed, to avoid hand-written
-  touch handling on a surface whose touch-opacity is load-bearing.
+  chrome against the previous pass and lays it out at zero height, which is exactly
+  the bug that was hit and fixed — but mutating the view tree during measure is
+  unusual enough to be worth naming. It is idempotent and converges in one
+  traversal. It is also why the UI-R1C2 Objects re-parent is instant rather than
+  animated: starting an animation from a measure pass reintroduces the same defect.
+- **A horizontal drag along the Property Inspector header toggles it.** The header
+  is a full-width clickable row and Android's default click detection fires on
+  `ACTION_UP` while the pointer is still inside the view's bounds, however far it
+  travelled. Harmless — the gesture never reaches the viewport — but it reads as a
+  stray toggle. Not fixed, to avoid hand-written touch handling on a surface whose
+  touch-opacity is load-bearing.
 - **Test-harness note, not a product defect:** a stroke driven at the centre of a
   face of a frozen **box** logs `STROKE_PENDING` → `STROKE_ABANDONED:navigation`
-  and never promotes, because a box has 8 vertices, all at its corners, and a
-  brush that would capture no vertex starts no stroke. Reproduced identically
-  under r27 and r29. Drive evidence strokes on a dense primitive (sphere 482 v,
-  capsule 514 v) or widen the radius.
-- **A viewport tap while the soft keyboard is up** must land clear of the
-  Property Inspector and above the keyboard or it never reaches the
-  `SurfaceView`; focus stays in the text field and a following `keyevent` types a
-  digit instead. Looks exactly like a command that did not run. Test-harness
-  issue only.
-- **`uiautomator dump` omits inspector content scrolled out of view**, so a
-  script that looks for `apply_shape` without scrolling the inspector first gets
-  `MISSING` and reads like a lost control. Scroll, then resolve the id.
-- **`connectedDebugAndroidTest` uninstalls the app when it finishes**, and it has
-  no `-s <serial>` equivalent. Reinstall before taking runtime evidence, and run
-  it with exactly one target attached.
-- **The default logcat ring buffer drops part of the startup self-test output.**
-  Run `adb -s <serial> logcat -G 16M` first.
+  and never promotes, because a box has 8 vertices, all at its corners, and a brush
+  that would capture no vertex starts no stroke. Drive evidence strokes on a dense
+  primitive (sphere 482 v, capsule 514 v) or widen the radius.
+- **A viewport tap while the soft keyboard is up** must land clear of the Property
+  Inspector and above the keyboard or it never reaches the `SurfaceView`; focus
+  stays in the text field and a following `keyevent` types a digit instead. Looks
+  exactly like a command that did not run.
+- **`uiautomator dump` omits inspector content scrolled out of view**, so a script
+  that looks for `apply_shape` without scrolling the inspector first gets `MISSING`
+  and reads like a lost control. Scroll, then resolve the id.
+- **`connectedDebugAndroidTest` uninstalls the app when it finishes**, and it has no
+  `-s <serial>` equivalent. Reinstall before taking runtime evidence.
+- **The default logcat ring buffer drops part of the startup self-test output.** Run
+  `adb -s <serial> logcat -G 16M` first.
 - **The Android emulator dies if launched as a child of a tool shell**; spawn it
   detached.
+- **PowerShell `>` redirection corrupts binary output.** `adb exec-out screencap -p
+  > file.png` writes a BOM and re-encodes, producing an invalid PNG; use
+  `adb shell screencap -p /sdcard/x.png` followed by `adb pull`.
 - Android input resampling can emit a one-finger MOVE between `ACTION_DOWN` and
-  `ACTION_POINTER_DOWN`, so starting a two-finger gesture may orbit by a few
-  pixels first. Correct for the contract, not a defect.
+  `ACTION_POINTER_DOWN`, so starting a two-finger gesture may orbit by a few pixels
+  first. Correct for the contract, not a defect.
 - The path-driven tools deposit in proportion to pointer travel measured in brush
-  radii, so a **short stroke with a large brush** does very little — the one
-  thing that reads as "the brush did nothing" on a first try. Documented
-  behaviour, not a defect.
-- The arbitration's remaining deliberate seam: a first finger that **drags more
-  than 8 px** before a second one lands does commit a stroke. That is a gesture
-  the user drove as a stroke; closing it completely needs a buffered or undoable
-  stroke, which does not exist.
-- On `emulator-5558`, `screencap` output can acquire a uniform whole-framebuffer
-  black-level lift partway through a session. It is a system/compositing effect,
-  not a rendering change — the swapchain format is unchanged and home/resume
-  within one display state stays byte-identical — but it means screenshots from
-  different points in a session may not compare.
+  radii, so a **short stroke with a large brush** does very little — the one thing
+  that reads as "the brush did nothing" on a first try.
+- The arbitration's remaining deliberate seam: a first finger that **drags more than
+  8 px** before a second one lands does commit a stroke. That is a gesture the user
+  drove as a stroke; closing it completely needs a buffered or undoable stroke,
+  which does not exist.
+- On some emulator sessions `screencap` output can acquire a uniform
+  whole-framebuffer black-level lift partway through. It is a system/compositing
+  effect, not a rendering change, but it means screenshots from different points in
+  a session may not compare.
 
 ## Technical Debt
 
-**The selection tint's weight is FIXED as of UI-R1C1** and the entry that used to
-sit here is retired. What remains is the shape of the repair rather than a debt:
-selection is still composed as a lerp toward a flat colour rather than as a
-per-channel gain on the shaded colour (`shaded * mix(vec3(1.0), tint, a)`), which
-is the composition that would preserve face-to-face luminance ratios exactly.
-Dropping the resting alpha from 0.55 to 0.20 removed most of the measured cost
-without changing that convention — at 0.20 the flattening is roughly a fifth of
-what it was — so the gain formulation is now a small, optional refinement rather
-than the fix for a real readability problem. Selection also remains a whole-object
-tint rather than an **outline**; that is the expensive half, needs either a second
-geometry pass or a screen-space edge filter, and stays a separate decision.
+Durable constraints and known-but-accepted costs. Narrative for how each was
+found lives in Git history.
 
-**`ARCHITECTURE.md` is inside its hard cap and still over its target.** UI-R1B2
-added the appearance model and the renderer background seam and paid for them by
-compressing nine sections; UI-R1C1 added the motion and selection-feedback
-ownership and compressed to match. The next stage touching this file should keep
-compressing rather than adding.
+**Selection composition.** Selection is composed as a lerp toward a flat colour
+rather than as a per-channel gain on the shaded colour
+(`shaded * mix(vec3(1.0), tint, a)`), which would preserve face-to-face luminance
+ratios exactly. At the resting 0.20 the flattening is about a fifth of what the
+old permanent 0.55 cost, so the gain formulation is now an optional refinement
+rather than a fix. Selection is still a whole-object **tint** rather than an
+outline; the outline is the expensive half, needs either a second geometry pass
+or a screen-space edge filter, and remains a separate decision. The §12
+readability enhancement (outline or cavity) was **explicitly deferred**: both
+candidates start the post-processing framework the shading stage was told not to
+build, and the vertex-based alternative would expose triangle structure in
+Smooth mode.
 
-**`scripts\run-instrumented-tests.ps1` aborts when javac emits a note.** The
-script runs under `$ErrorActionPreference = 'Stop'`, and Windows PowerShell 5.1
-wraps a native command's stderr in a `NativeCommandError`. So the first run after
-any source change fails before reaching the device, on nothing worse than
-"Note: Some input files use or override a deprecated API" — and the same command
-succeeds immediately afterwards, once compilation is up to date. Found during
-UI-R1B1; the workaround is to build first (`gradlew :app:assembleDebug
-:app:assembleDebugAndroidTest`) and then run the script. Not fixed here because
-the script is what `DEV2`/`DEV3` verify mechanically, and changing its error
-handling is a device-safety change that deserves its own attention rather than
-being bundled into a UI stage.
+**Documentation size, and one file that is now urgent.** Every core document is
+inside the 2000-line hard cap, but several are over their preferred targets.
+**`ARCHITECTURE.md` sits at 1989 of 2000** after UI-R1C2 compacted fourteen of its
+sections to pay for the ownership it had to gain — an 11-line margin, which is not
+a working one. The next stage that touches it must compact **before** adding, and
+the remaining content is dense ownership prose rather than narrative, so that is a
+dedicated pass rather than another round of trimming. This file is over its
+500–800 target at 1319 and should keep retiring closed-stage detail into Git
+history. **Always re-measure before quoting a count** — the numbers recorded at
+UI-R1C1 were stale in both directions.
 
-**The Android layer still calls deprecated platform APIs.** `setSystemUiVisibility`
-in `ForgeShapeActivity` and the `getSystemWindowInset*` accessors in
-`EditorWorkspaceView` are both inside `SDK_INT` branches for API 26–30, which is
-correct, but they are what produces the javac note above. Pre-existing and
-unrelated to UI-R1B1.
+**`scripts\run-instrumented-tests.ps1` aborts when javac emits a note.** It runs
+under `$ErrorActionPreference = 'Stop'`, and Windows PowerShell 5.1 wraps a
+native command's stderr in a `NativeCommandError`, so the first run after any
+source change fails before reaching the device on nothing worse than "Note: Some
+input files use or override a deprecated API". The workaround is to build first
+(`gradlew :app:assembleDebug :app:assembleDebugAndroidTest`) and then run the
+script. Not fixed here because the script is what `DEV2`/`DEV3` verify
+mechanically, and changing its error handling is a device-safety change that
+deserves its own attention.
 
-**`PROJECT_STATUS.md` is over its own target budget** (see the line counts below,
-against a 500–800 target, under the 2000 hard cap). Every recent stage has
-compressed the chapter before it into durable facts and still grown the file,
-because a stage chapter costs more than the one it retires — UI-R1C1 cut the
-UI-R1B2 chapter from 140 lines to 43 and still added about 70 net. The next stage
-touching this file should compact the older closed-stage entries — Stage 016
-onward — rather than adding to them.
+**The Android layer still calls deprecated platform APIs.**
+`setSystemUiVisibility` in `ForgeShapeActivity` and the `getSystemWindowInset*`
+accessors in `EditorWorkspaceView` are inside `SDK_INT` branches for API 26–30,
+which is correct, and are what produces the javac note above.
 
 **"Debug-only" code is proven debug-*guarded*, not proven absent from a release
-binary.** Every self-test and mesh-fixture entry point is behind `#ifndef
-NDEBUG` or an equivalent guard, so a release build calls none of them — that
-much is verified by reading the call sites. But the self-test and fixture
-translation units sit on the CMake source list unconditionally, and no release
-`.so` has ever been inspected to confirm the linker drops the symbols. Until
-someone builds a release binary and checks, the honest claim is "the calls are
-debug-guarded", not "the code is not shipped". Closing this means examining a
-real release artifact, and possibly moving the files behind a CMake condition —
-a change to release/test compilation that deliberately was not made as a side
-effect of the Pre-017 repair.
-
-**The measurement that motivated UI-R1C1, kept for the record.** At the old
-permanent `alpha = 0.55` the default box's three visible faces went from
-luminance 0.832 / 0.559 / 0.310 — a 2.69x spread with clear steps between
-adjacent faces — to 0.739 / 0.616 / 0.504, a 1.47x spread whose face-to-face
-steps dropped from ~0.26 to ~0.11, with every face pushed into the same saturated
-orange so hue carried no form cue either. A Construction Body is selected for the
-whole time the user is editing it, so that was the state the object was normally
-*worked* in. Since UI-R1C1 the object rests at 0.20 and only passes through 0.55
-for 220 ms on the frame it becomes selected.
+binary.** Every self-test and mesh-fixture entry point is behind `#ifndef NDEBUG`
+or an equivalent guard, verified by reading the call sites. But those translation
+units sit on the CMake source list unconditionally and no release `.so` has ever
+been inspected to confirm the linker drops the symbols. Closing this means
+examining a real release artifact and possibly moving the files behind a CMake
+condition.
 
 **Reduced motion is pushed on refresh, not observed.** `syncFromNative` reads
-`ANIMATOR_DURATION_SCALE` and hands the answer to native code, which covers every
-resume and every state change. A user who changes the setting while ForgeShape is
-in the foreground and then immediately selects a body can therefore get one pulse
-decided by the previous value. Closing it means either a `ContentObserver` or a
-read on the pointer path, and neither is worth putting on the input path for a
-single frame of a 220 ms decay.
+`ANIMATOR_DURATION_SCALE` and hands the answer to native code, covering every
+resume and state change. A user who changes the setting while ForgeShape is in
+the foreground and then immediately selects a body can get one pulse decided by
+the previous value. Closing it needs a `ContentObserver` or a read on the pointer
+path, and neither is worth putting there for one frame of a 220 ms decay.
 
-**Sculpt cost model.** Sculpt publication is synchronous and republishes the
-whole mesh per move — O(vertices) regardless of how few the brush touched — and
-Inflate's normal recompute is O(triangles) per move for the same reason. Measured
-free at 482–514 vertices (1,170 uploads, no stall, no growth), so nothing was
-redesigned pre-emptively; that measurement is the baseline a future partial or
-asynchronous path must beat. The affected set is found by a linear scan at stroke
-start, and picking is a linear scan too: both want the same missing spatial
-acceleration.
+**Sculpt cost model.** Sculpt publication is synchronous and republishes the whole
+mesh per move — O(vertices) regardless of how few the brush touched — and
+Inflate's normal recompute is O(triangles) per move. Measured free at 482–514
+vertices (1,170 uploads, no stall, no growth); that measurement is the baseline a
+future partial or asynchronous path must beat. The affected set is found by a
+linear scan at stroke start, and picking is a linear scan too: both want the same
+missing spatial acceleration.
 
-**Sculpt state and feel.** Sculpt state is process-scoped with no save, load or
-undo, so a stroke is unrecoverable the moment it lands and Freeze silently
-discards the previous sculpt (the panel says so; the honest fix is undo). The
-path-driven gain constants (`kNormalBrushGain` 0.35, `kSmoothGain` 1.0,
-`kMaxSmoothLambda` 0.9) are chosen, not derived, and have never been tuned
-against a real modelling session; if brush feel is tuned they should move
-together. `FORGESHAPE_SCULPT_STROKE_ABANDONED:navigation` names two different
-causes — a gesture that really became navigation, and a promoted stroke that
-captured no vertex — and the log cannot tell them apart; the fix is a second
-token, not a behaviour change. Freeze regenerates the Construction mesh to copy
-it rather than copying the store's current revision: correct (the store may hold
-a debug fixture) and cheap, but a second generation of geometry that already
-exists. The Sculpt panel's status line is written on refresh and does not update
-during a stroke, because a live readout would need a native→Java notification
-that does not exist.
+**Sculpt state and feel.** Process-scoped with no save, load or undo, so a stroke
+is unrecoverable the moment it lands and Freeze silently discards the previous
+sculpt (the panel says so; the honest fix is undo). The path-driven gain constants
+(`kNormalBrushGain` 0.35, `kSmoothGain` 1.0, `kMaxSmoothLambda` 0.9) are chosen,
+not derived, and have never been tuned against a real modelling session; if brush
+feel is tuned they should move together.
+`FORGESHAPE_SCULPT_STROKE_ABANDONED:navigation` names two different causes — a
+gesture that really became navigation, and a promoted stroke that captured no
+vertex — and the log cannot tell them apart; the fix is a second token. Freeze
+regenerates the Construction mesh to copy it rather than copying the store's
+current revision: correct (the store may hold a debug fixture) and cheap, but a
+second generation of geometry that already exists. The Sculpt panel's status line
+does not update during a stroke, because a live readout would need a native→Java
+notification that does not exist.
 
 **Primitive surface.** Adding a primitive still costs four parallel edits — a
-member on `ConstructionObject`, a `PrimitiveKind` case, a variant alternative,
-and a JNI method plus its Java declaration. That remains deliberate and visible
-rather than hidden behind a registry. Stage 016 paid down the one instance of
-it that dispatched with an if-else chain over typed accessors:
-`ConstructionObject::setPrimitive`'s update half now `std::visit`s the
-requested payload against two small per-kind overload sets
-(`parametersDiffer` / `writeParameters`), so a kind added to the variant with
-no matching overload is a compile error rather than a branch that is silently
-never taken — the same property the pre-existing `validateParameters` overload
-family already had. The plain `switch (kind_)` statements elsewhere
-(`spec()`, `generateMesh()`, `primitiveKindName`) were left as they were: each
-is one line per kind, visually complete at a glance, and — Stage 016 found one
-real instance of exactly this risk in `forgeshape_jni.cpp`'s separate
-`describeSpec` if-else chain, which had no Plane branch until the runtime pass
-caught it — a `switch` with a trailing fallback is a smaller, more visible
-version of the same gap than an if-else chain was, not a solved one; a future
-stage that wants it closed for these too has a proven pattern to reuse. Every
-primitive's parameters are always resident even though one is active.
-Tessellation is a compile-time constant, so a very large
-curved primitive shows its facets and nothing adapts; relatedly, the capsule's
-cylindrical middle carries no interior rings however long it is, which makes
-sculpt fidelity there coarse (a 120 px brush captured 8 vertices on a 514-vertex
-capsule), and the float-resolvability check is the one validation coupled to that
-tessellation constant. Capsule topology is a function of its parameters (514 :
-3072, or 482 : 2880 at equality), which is deliberate and is also the only case
-where a shape edit can change a vertex count and trigger a buffer growth.
+member on `ConstructionObject`, a `PrimitiveKind` case, a variant alternative, and
+a JNI method plus its Java declaration — deliberately visible rather than hidden
+behind a registry. `ConstructionObject::setPrimitive`'s update half `std::visit`s
+the requested payload, so a kind added with no matching overload is a compile
+error; the plain `switch (kind_)` statements elsewhere (`spec()`,
+`generateMesh()`, `primitiveKindName`) were left as they were, and Stage 016 found
+one real instance of exactly that risk in a `describeSpec` if-else chain with no
+Plane branch. A future stage that wants those closed has a proven pattern to
+reuse. Every primitive's parameters stay resident even though one is active.
+Tessellation is a compile-time constant, so a very large curved primitive shows
+its facets; relatedly the capsule's cylindrical middle carries no interior rings
+however long it is, which makes sculpt fidelity there coarse. Capsule topology is
+a function of its parameters (514 : 3072, or 482 : 2880 at equality) and is the
+only case where a shape edit can change a vertex count and trigger a buffer
+growth.
 
-**Android layer.** The workspace still builds its view trees in code — colours,
+**Android layer.** The workspace builds its view trees in code — colours,
 dimensions, strings and ids are resources, but there are no XML layouts, so the
 structure is only readable by reading Java. The Property Inspector has two
-detents (collapsed / expanded) rather than the three the UI architecture pack
-proposed; the third would only matter once a body is long enough that a partial
-peek is useful. Chrome regions are placed by nested `LinearLayout` weights rather
-than a constraint solver, which is why the rail sits in a `ScrollView` instead of
-being able to compress. There is no focus-on-selection and no camera framing
-helper. Focus handling is minimal: a field keeps focus after a rejected Apply and
-keeps swallowing hardware/`adb` number keys until the viewport is touched. The
-inspector refreshes from native truth on resume and after any Apply, discarding a
-half-typed edit — deliberate, but a future edit-session or undo feature will need
-a model for it. `LengthUnit.format` strips trailing zeros, so 2.0 m displays as
-`2`; exact and unambiguous, but a future significant-figures policy will replace
-it. Icons are now local vector drawables rather than platform-font glyphs
-(UI-R1B1), so that dependency is gone; what remains is that a **compact** window
-drops the rail's icons and keeps only its labels, which is deliberate but means
-the rail reads differently in a short landscape window than anywhere else.
+detents rather than three. Chrome regions are placed by nested `LinearLayout`
+weights rather than a constraint solver, which is why the rail sits in a
+`ScrollView` instead of being able to compress. There is no focus-on-selection
+and no camera framing helper. A field keeps focus after a rejected Apply and keeps
+swallowing hardware/`adb` number keys until the viewport is touched. The inspector
+refreshes from native truth on resume and after any Apply, discarding a half-typed
+edit — deliberate, but a future edit-session or undo feature needs a model for it.
+`LengthUnit.format` strips trailing zeros, so 2.0 m displays as `2`. A **compact**
+window drops the rail's icons and keeps only its labels, so the rail reads
+differently in a short landscape window than anywhere else. **The primitive
+chooser's three-column chips clip their labels in a narrow docked inspector**
+("Cylinder" → "Cyli"): pre-existing, a function of `CHOOSER_COLUMNS = 3` against
+`sideDockWidthDp`, and visible in any expanded window.
 
-**Android test infrastructure.** `androidTest` is the project's only AndroidX,
-and `android.useAndroidX=true` is now set for it — a build-configuration change
-that adds nothing to the product APK, which still has no runtime dependency of
-any kind. The instrumented suites share one process, so native state (in
-particular *whether anything has ever been frozen*) carries across tests; the
-freeze-wording test therefore asserts the state machine from whatever state it
-finds rather than assuming a pristine process, and the pristine branch is covered
-by running the suite on a clean install. There is no camera read-back across JNI,
-so "a chrome gesture did not move the camera" is proven by runtime screenshot
-comparison rather than by an automated assertion.
+**Android test infrastructure.** `androidTest` is the project's only AndroidX and
+`android.useAndroidX=true` is set for it — a build-configuration change that adds
+nothing to the product APK, which still has no runtime dependency of any kind. The
+instrumented suites share one process, so native state (in particular *whether
+anything has ever been frozen*, and how many bodies exist) carries across tests;
+no instrumented test may assume a body count, which body is at the origin, or
+which mode is current. There is no camera read-back across JNI, so "a chrome
+gesture did not move the camera" is proven by runtime screenshot rather than by
+assertion.
 
-**Transform and math.** `modelMatrix()` / `inverseModelMatrix()` recompute six
-trig calls per frame and per pick, for a value that only changes on Apply. The
-transform is rigid by design: the exact composed inverse and the "local distance
-is world distance" shortcut in picking both depend on that, so adding scale is a
-domain change rather than a matrix change. A large translation makes the float
-round-trip residual grow linearly with `|p|` (about `|p| * 2^-23`); at kilometre
-scale the derived `float` matrix, not the `double` domain, is the precision
-limit.
+**Transform and math.** `modelMatrix()` / `inverseModelMatrix()` recompute six trig
+calls per frame and per pick for a value that only changes on Apply. The transform
+is rigid by design: the exact composed inverse, picking's "local distance is world
+distance" shortcut and the renderer's plain-matrix normal transform all depend on
+it, so adding scale is a domain change rather than a matrix change. A large
+translation makes the float round-trip residual grow linearly with `|p|` (about
+`|p| * 2^-23`); at kilometre scale the derived `float` matrix, not the `double`
+domain, is the precision limit.
 
-**Mesh and renderer.** Each body owns a `MeshStore`, and the renderer keeps a
+**Mesh and renderer.** Each body owns a `MeshStore` and the renderer keeps a
 `BodyRenderResources` per body, so a scene of N bodies is N independent
 publication chains and N buffer pairs — correct, and deliberately not pooled or
-batched. `MeshStore::publish` validates the data twice (before
-taking the lock and again inside `createRuntimeMesh`) — negligible now, wasteful
-at sculpt sizes. Retired GPU buffers are freed inline after the fence wait rather
-than through a deferred-destruction queue, which is what makes the synchronous
-wait necessary. One redundant swapchain rebuild occurs at startup and again on
-each resume, because `surfaceChanged` arrives immediately after `surfaceCreated`
-(cosmetic). The identity-pre-transform orientation convention costs one
-compositor rotation while the display is rotated — the same cost every
-non-pre-rotated Android application pays, and not measurable here — but on a
-tiled mobile GPU true pre-rotation is the cheaper path, so this is the one
-renderer decision that a future performance stage might revisit; it would have to
-move the extent, the clip-space rotation and the camera aspect together.
-`createSwapchain`'s fallback for a presentation engine that does **not** support
-an identity transform is **UNVERIFIED**: it exists because declaring identity
-when it is absent from `supportedTransforms` would be invalid usage, not because
-anything can reach it — `emulator-5558` reports `supportedTransforms=0x1ff`, so
-identity is always available and the branch has never executed. Its extent swap
-for 90/270 is reasoned from the Vulkan pre-transform contract, not measured, and
-it would present rotated content. Carried and untouched: static viewport and
-scissor, no `oldSwapchain` handling,
-no validation layers, a single global viewport, and a selection highlight that is
-a whole-object tint rather than an outline — now pulsed and much lighter at rest
-(UI-R1C1), but still a tint.
+batched. `MeshStore::publish` validates the data twice. Retired GPU buffers are
+freed inline after the fence wait rather than through a deferred-destruction
+queue, which is what makes the synchronous wait necessary. **One redundant
+swapchain rebuild occurs at startup and again on each resume or rotation**,
+because `surfaceChanged` arrives immediately after `surfaceCreated` (cosmetic;
+observed twice per rotation in the UI-R1C2 walkthrough). The identity-pre-transform
+orientation convention costs one compositor rotation while the display is rotated
+— the same cost every non-pre-rotated Android application pays — but on a tiled
+mobile GPU true pre-rotation is cheaper, so this is the one renderer decision a
+future performance stage might revisit; it would have to move the extent, the
+clip-space rotation and the camera aspect together. `createSwapchain`'s fallback
+for a presentation engine that does **not** support an identity transform is
+**UNVERIFIED**: `emulator-5558` reports `supportedTransforms=0x1ff`, so the branch
+has never executed, and its extent swap for 90/270 is reasoned from the
+pre-transform contract rather than measured. Carried and untouched: static viewport
+and scissor, no `oldSwapchain` handling, no validation layers, and a single global
+viewport.
 
-**Documentation size.** Every core document is inside the 2000-line hard limit,
-but four are over their preferred target budgets — see the counts recorded in the
-UI-R1C1 chapter. The overshoot predates this stage and is concentrated in
-`ARCHITECTURE.md` and this file. Each recent stage has paid part of it back by
-compacting the chapter it retires rather than only appending, which is the
-pattern the next one should continue; closing it outright means compacting prose
-about shading, sculpt and layout that no single feature stage owns, and bundling
-that rewrite into a stage with a different scope is the unrelated-debt mixing the
-rules forbid.
+**Shading and render data.** The crease policy is a single global angle — correct
+for every primitive ForgeShape has, but a *policy*, not a per-object property; a
+future imported or sketched body wanting a different threshold has nowhere to say
+so. Render data is rebuilt whole on every accepted change including every sculpt
+move (0.56–0.73 ms for a 482-vertex mesh, free at these sizes); both it and the
+sculpt publication it rides on want the same missing partial-update path. The
+renderer keeps a per-frame gate *and* `RenderMeshCache` keeps its own, so the
+cache's skipped-refresh counter reads zero forever in production — real
+duplication, deliberately not logged. Colour still travels in `RenderVertex`
+purely so the debug source-colour mode has something to draw, costing 12 bytes per
+render vertex; the generators' per-vertex rainbow is likewise dead data on the
+product path, retained so the before/after comparison stays one tap away. Studio
+Solid, the MatCap and the grid palette are authored **directly in display space**,
+because the swapchain is `R8G8B8A8_UNORM` and every colour in ForgeShape already
+is; there is no linear workflow, and introducing one is a PBR-stage decision that
+has to move all of them at once. The MatCap is regenerated from scratch on every
+device creation rather than cached — 64 KiB of trivial arithmetic, never measured,
+but work repeated for a constant.
 
-**Shading and render data.** The crease policy is a single global angle. It is
-correct for every primitive ForgeShape has, but it is a *policy*, not a per-object
-property: a future imported or sketched body that genuinely wants a different
-threshold has nowhere to say so, and the honest fix is a per-object crease value
-rather than a second constant. Render data is rebuilt whole on every accepted
-change, including every sculpt move — 0.56–0.73 ms for a 482-vertex mesh, free at
-these sizes, and the same O(vertices) shape as the sculpt publication it rides on;
-both want the same missing partial-update path. The renderer keeps a per-frame
-gate *and* `RenderMeshCache` keeps its own, so the cache's skipped-refresh counter
-reads zero forever in production and is exercised only by the self-tests; it is
-deliberately not logged, but the duplication is real. Colour still travels in
-`RenderVertex` purely so the debug source-colour mode has something to draw,
-costing 12 bytes per render vertex in a build where nothing else reads it — the
-primitive generators' per-vertex rainbow is likewise now dead data on the product
-path, retained rather than deleted so the before/after comparison stays one tap
-away. Studio Solid and the MatCap are authored **directly in display space**,
-because the swapchain is `R8G8B8A8_UNORM` and every colour in ForgeShape (the
-clear colour, the debug vertex colours) already is; there is no linear workflow,
-and introducing one is a PBR-stage decision that has to move all of them at once.
-The MatCap is regenerated from scratch on every device creation rather than
-cached, which is 64 KiB of trivial arithmetic and has never been measured, but it
-is work repeated for a constant. Selection remains a whole-object tint rather
-than an outline; the §12 readability enhancement (outline or cavity) was
-**explicitly deferred** — see below.
+**Grid.** The extent is a fixed 20 m, so zooming far out leaves the model on a
+small patch of floor and zooming far in shows one cell; that is the deliberate
+alternative to a multi-decade CAD grid and is the first thing a future stage
+should revisit if the fixed extent is felt. The fade constants and the four
+palettes are chosen, not derived. The grid is the one **blended** pipeline in the
+renderer, so it is also the one place a future depth-sorted or translucent
+feature would find an existing precedent — that is not an invitation to reuse it
+as a general overlay path.
 
-**Camera and projection.** Three things are deliberate but worth naming. The
-orthographic view plane sits a fixed `kFarPlane/2` in front of the target, which
-makes `snapshot.eye` mean something different in the two modes and makes a
-reported orthographic pick distance ~250 m rather than a distance from the orbit
-eye; the field is only ever used as a ray origin and a view reference, so this is
-correct, but it is a name that no longer describes both cases equally well and a
-future stage that adds a second camera should rename it. The ortho depth slab is
-a fixed 500 m rather than fitted to the scene — free at these sizes because ortho
-depth is linear, but it is a constant, not a policy. And
-`kInitialOrthoHalfHeightMeters` is a literal because `std::tan` is not
-`constexpr`; a self-test asserts it still equals `kInitialDistance × tan(fovY/2)`
-so the two cannot drift, but a computed constant would be better than a checked
-one. Separately, the camera still has no read-back of pose across JNI, so
-"a chrome gesture did not move the camera" is still proven by screenshot rather
-than by assertion — the new projection getter is the first camera value the Java
-layer can read at all.
+**Camera and projection.** The orthographic view plane sits a fixed `kFarPlane/2`
+in front of the target, which makes `snapshot.eye` mean something different in the
+two modes and makes a reported orthographic pick distance ~250 m rather than a
+distance from the orbit eye; the field is only ever used as a ray origin and a view
+reference, so this is correct, but a future stage adding a second camera should
+rename it. The ortho depth slab is a fixed 500 m rather than fitted to the scene.
+`kInitialOrthoHalfHeightMeters` is a literal because `std::tan` is not `constexpr`;
+a self-test asserts it still equals `kInitialDistance × tan(fovY/2)`. The camera
+still has no read-back of pose across JNI.
 
-**Naming and test infrastructure.** `kConstructionBoxObjectId` and
-`kDemoCubeObjectId` are the same value under two names and are now doubly
-misnamed: the object is not always a box and never was a demo cube. Renaming has
-been deferred to avoid churning unrelated code. There is still no checked-in
-`uinput` harness file, so the multi-touch gesture is regenerated per stage.
+**Naming.** `kConstructionBoxObjectId` and `kDemoCubeObjectId` are the same value
+under two names and are both misnamed: the object is not always a box and never
+was a demo cube. Renaming is deferred to avoid churning unrelated code. There is
+still no checked-in `uinput` harness file, so the multi-touch gesture is
+regenerated per stage.
 
 ## Current Files / Modules
 
@@ -1319,7 +1282,8 @@ been deferred to avoid churning unrelated code. There is still no checked-in
 | `app/src/main/cpp/forgeshape_mesh.{h,cpp}` | `RuntimeMesh` (immutable revision), `MeshStore`, validation, capacity policy, upload diagnostics including source-vs-render counts |
 | `app/src/main/cpp/forgeshape_render_mesh.{h,cpp}` | Derived render geometry: `RenderVertex` (position + normal + colour), `SurfaceShading`, THE crease policy (`kCreaseAngleDegrees`), per-vertex crease grouping with render-only duplication, and `RenderMeshCache`'s rebuild gate. Presentation only |
 | `app/src/main/cpp/forgeshape_matcap.{h,cpp}` | The one ForgeShape-owned MatCap, computed at device init from the closed-form model in that file. No asset, no decoder, one preset |
-| `app/src/main/cpp/forgeshape_display.{h,cpp}` | `ShadingModel`, `ViewportBackground`, the reduced-motion bool, the process-scoped `DisplaySettingsStore`, and the UI index mapping. Presentation state, never truth |
+| `app/src/main/cpp/forgeshape_display.{h,cpp}` | `ShadingModel`, `ViewportBackground`, grid visibility, the reduced-motion bool, the process-scoped `DisplaySettingsStore`, and the UI index mapping. Presentation state, never truth |
+| `app/src/main/cpp/forgeshape_grid.{h,cpp}` | The world reference grid's CONTRACT: the XZ plane at y = 0, the 1 m / 5 m / 20 m spacing and extent, `GridLineTier`, one pure vertex generator and the per-appearance palette. No ObjectId, no revision, not in the scene, not pickable |
 | `app/src/main/cpp/forgeshape_selection_pulse.{h,cpp}` | How a SELECTED body is drawn, never which one is: the peak, the resting alpha, the decay, and one pure function over an explicit frame delta. Holds no ObjectId and reads no clock |
 | `app/src/main/cpp/forgeshape_renderer.{h,cpp}` | Vulkan renderer, frame loop, camera snapshot + model transform + selection highlight consumer |
 | `app/src/main/cpp/forgeshape_math.h` | Minimal self-owned vec3/mat4. No GLM |
@@ -1327,6 +1291,7 @@ been deferred to avoid churning unrelated code. There is still no checked-in
 | `app/src/main/cpp/forgeshape_mesh_fixtures.{h,cpp}` | DEBUG test fixtures (baseline / same-topology / larger / stress step) |
 | `app/src/main/cpp/forgeshape_*_selftest.{h,cpp}` | The ten debug-only deterministic suites: camera, picking, mesh, construction (box), transform, primitive, sphere, cone/capsule, sculpt brush kernel, render shading |
 | `app/src/main/cpp/shaders/surface.{vert,frag}` | GLSL source for the surface pipeline: view-space normals, Studio Solid, the MatCap lookup and the debug colour path. AOT compiled to SPIR-V by `glslc` in CMake |
+| `app/src/main/cpp/shaders/grid.{vert,frag}` | GLSL source for the grid pipeline: world→clip with no model matrix, the tier→colour choice, the depth nudge that settles the coplanar Plane, and the PER-FRAGMENT radial fade |
 | `app/src/main/cpp/CMakeLists.txt` | Native build + glslc shader step |
 | `artifacts/` | Runtime evidence screenshots from accepted stages, plus `stage015c_shading_comparison.md`, the Stage 015C comparison sheet |
 | `docs/ui/UX_ARCHITECTURE_DECISION_PACK.md` | Stage 015A-R UI proposal. **Proposal only** — the Owner Decision Baseline above is authoritative, not the pack |
@@ -1358,28 +1323,29 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**UI-R1C2 — View/Grid + Adaptive Workspace Refinement**
+**INPUT-R1 — Pointer Semantics Foundation**
 
-The two pieces UI-R1C1 deliberately did not take, and the most bounded work
-left in this round.
+The seam INPUT-OWNER-01 has been pointing at since the owner decision baseline,
+and the one piece of architecture every later input feature has to stand on.
+`forgeshape_input.h` already carries platform-neutral `TouchAction` /
+`TouchPointer` samples, and `forgeshape_jni.cpp` is already the one place an
+Android `MotionEvent` stops. What it does not carry is what a stylus actually
+reports: tool type, pressure, tilt and hover are not in the vocabulary, so no
+code below JNI can express them and every future brush, gesture or precision
+affordance would have to widen the boundary first.
 
-**Grid** is a renderer overlay driven by the display store, on the seam that
-already exists: `ViewportDisplaySettings` carries the shading model, the viewport
-background and now the reduced-motion bool, and a Grid on/off is the same shape
-of value. It is presentation and must stay so — no revision, no geometry truth,
-nothing readable back out of it — and it needs a **View** group in the Display
-popover to switch it, which is the first new group that surface has gained since
-Appearance.
-
-**The adaptive pass** is the Expanded-window work the UI audit named:
-`WorkspaceLayoutMode.railDocked()` exists and has never once been called, and
-Objects deserves its own surface on a window that has room for one rather than
-living inside the Construction shape editor's scroll. UI-R1C1 verified the new
-motion in portrait, rotated and expanded windows but changed no breakpoint and
-promoted nothing, precisely so that this stage can.
+This is a **foundation** stage, not a feature stage. Widening the semantic
+sample and proving the boundary still holds is the work; changing what Sculpt
+DOES with pressure is explicitly not, and UI-OWNER-06 defers that to a dedicated
+Sculpt stage. Stylus behaviour on real hardware also remains UNVERIFIED and
+needs a person physically moving a pen, so what this stage can close by machine
+and what needs a human are different questions and should be separated in the
+gate.
 
 **Still out:** Selection Outline — the expensive half of selection feedback,
 needing either a second geometry pass or a screen-space edge filter and its own
-decision; blur or glass of any kind; a post-processing framework; persistence;
-an automatic system theme; hierarchy commands; Sketch/Extrude; Undo; and
+decision; snap-to-grid and the Sketch grid, which are a different contract from
+the world reference grid this stage shipped; a View Cube, camera focus or named
+views; blur or glass of any kind; a post-processing framework; persistence; an
+automatic system theme; hierarchy and object commands; Sketch/Extrude; Undo; and
 import/export.

@@ -53,8 +53,210 @@ public final class EditorWorkspaceDisplayTest {
             NativeViewport.setShadingModel(NativeViewport.SHADING_STUDIO);
             NativeViewport.setSurfaceShading(NativeViewport.SURFACE_SMOOTH);
             NativeViewport.setProjectionMode(NativeViewport.PROJECTION_PERSPECTIVE);
+            NativeViewport.setGridVisible(true);
+            // The viewport appearance too: r1c222 drives it directly to prove
+            // the grid is orthogonal to it, and a case that died part-way
+            // through would otherwise hand a cream viewport to a Dark-theme
+            // suite that runs next.
+            NativeViewport.setViewportBackground(NativeViewport.VIEWPORT_BACKGROUND_DARK);
             return null;
         });
+    }
+
+    // -----------------------------------------------------------------------
+    // UI-R1C2: the View group and the world reference grid
+    //
+    // R1C2-17 and R1C2-19..25. What a grid LOOKS like is not asserted here, for
+    // exactly the reason nothing else in this suite asserts a pixel: that is
+    // judged by the native presentation suite and by runtime evidence. What is
+    // asserted is that the control exists, is bounded, reads back from native
+    // truth, survives everything it must survive, and cannot reach the model.
+    // -----------------------------------------------------------------------
+
+    /** R1C2-17. The View group exists, works, and is exactly one control. */
+    @Test
+    public void r1c217_theDisplayPopoverCarriesABoundedViewGroup() {
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            workspace.findViewById(R.id.display_settings_button).performClick();
+            return null;
+        });
+        // The popover starts GONE and has never been laid out, so its chips
+        // report a height of 0 until a traversal has actually run. Measuring in
+        // the same block that opens it is the same mistake the popover's own
+        // first-open pivot bug was — see DisplaySettingsPopoverView.onSizeChanged.
+        WorkspaceTestSupport.settleLayout();
+
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final View on = workspace.findViewById(R.id.view_grid_on);
+            final View off = workspace.findViewById(R.id.view_grid_off);
+            assertNotNull("the View group offers Grid On", on);
+            assertNotNull("the View group offers Grid Off", off);
+
+            // Both are real controls, not drawn promises. UI-R1C2 shows nothing
+            // it cannot honour, so nothing in this group may be disabled.
+            assertTrue("Grid On is a working control", on.isEnabled());
+            assertTrue("Grid Off is a working control", off.isEnabled());
+
+            // Bounded: the group is the grid and nothing else. A View group that
+            // had quietly grown a Selection Outline, a View Cube, Named Views or
+            // any snapping control would fail here, which is the scope guard.
+            assertEquals("no Selection Outline control exists yet", 0,
+                    activity.getResources().getIdentifier(
+                            "view_selection_outline", "id", activity.getPackageName()));
+            assertEquals("no View Cube control exists yet", 0,
+                    activity.getResources().getIdentifier(
+                            "view_cube", "id", activity.getPackageName()));
+            assertEquals("no snapping control exists yet", 0,
+                    activity.getResources().getIdentifier(
+                            "view_snap_to_grid", "id", activity.getPackageName()));
+
+            // The touch floor, measured rather than trusted to the declared
+            // size — the R1B1-10b rule.
+            assertTrue("Grid On meets the 44 dp touch floor: "
+                            + EditorControlStyles.toDp(activity, on.getHeight()) + " dp",
+                    EditorControlStyles.toDp(activity, on.getHeight()) >= 44);
+            assertTrue("Grid Off meets the 44 dp touch floor: "
+                            + EditorControlStyles.toDp(activity, off.getHeight()) + " dp",
+                    EditorControlStyles.toDp(activity, off.getHeight()) >= 44);
+
+            // The popover must stay a compact surface rather than becoming a
+            // settings screen. Five small groups still fit well inside the
+            // window it hangs in.
+            final View popover = workspace.findViewById(R.id.display_settings_popover);
+            assertTrue("the popover is not a full-screen settings surface: "
+                            + popover.getHeight() + " of " + workspace.getHeight(),
+                    popover.getHeight() < workspace.getHeight() * 0.85);
+            return null;
+        });
+    }
+
+    /** R1C2-17. The chips report native truth, both ways, and stay in place. */
+    @Test
+    public void r1c217_theGridChipsReadBackFromNativeTruth() {
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            workspace.findViewById(R.id.display_settings_button).performClick();
+
+            workspace.findViewById(R.id.view_grid_off).performClick();
+            assertTrue("native code reports the grid off", !NativeViewport.gridVisible());
+            assertTrue("and Off shows as active",
+                    workspace.findViewById(R.id.view_grid_off).isActivated());
+            assertTrue("while On does not",
+                    !workspace.findViewById(R.id.view_grid_on).isActivated());
+            // Selection feedback happens IN PLACE: the popover does not close on
+            // a choice, because deciding whether a floor helps means switching
+            // back and forth.
+            assertEquals("the popover stays open across a choice", View.VISIBLE,
+                    workspace.findViewById(R.id.display_settings_popover).getVisibility());
+
+            workspace.findViewById(R.id.view_grid_on).performClick();
+            assertTrue("native code reports the grid on", NativeViewport.gridVisible());
+            assertTrue(workspace.findViewById(R.id.view_grid_on).isActivated());
+            assertTrue(!workspace.findViewById(R.id.view_grid_off).isActivated());
+
+            // Idempotent: asking for what is already in effect is inert.
+            assertTrue("setting the value it already has is honoured, not refused",
+                    NativeViewport.setGridVisible(true));
+            return null;
+        });
+    }
+
+    /**
+     * R1C2-19. Toggling the grid touches no geometry truth whatsoever.
+     *
+     * <p>The native snapshot carries the dimensions, the placement, the mesh
+     * revision, the sculpt revision and the GPU upload counters. A grid toggle
+     * that had rebuilt or re-uploaded a body's render mesh would move one of
+     * them; four toggles leave every value byte-identical.
+     */
+    @Test
+    public void r1c219_togglingTheGridChangesNoDomainStateAndUploadsNothing() {
+        final double[] before = nativeSnapshot();
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            workspace.findViewById(R.id.display_settings_button).performClick();
+            workspace.findViewById(R.id.view_grid_off).performClick();
+            workspace.findViewById(R.id.view_grid_on).performClick();
+            workspace.findViewById(R.id.view_grid_off).performClick();
+            workspace.findViewById(R.id.view_grid_on).performClick();
+            return null;
+        });
+        final double[] after = nativeSnapshot();
+        assertArrayEquals("a grid toggle is presentation only: "
+                + describeSnapshotDifference(before, after), before, after, 0.0);
+    }
+
+    /** R1C2-20 / R1C2-21. It survives a recreation and a HOME/resume. */
+    @Test
+    public void r1c220_theGridSurvivesRecreationAndResume() {
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            NativeViewport.setGridVisible(false);
+            return null;
+        });
+
+        // A recreation is what a rotation and a theme change both come down to.
+        // The store is process-scoped, so the value is not restored — it was
+        // never lost.
+        rule.getScenario().recreate();
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            assertTrue("the grid choice outlives the Activity", !NativeViewport.gridVisible());
+            workspace.findViewById(R.id.display_settings_button).performClick();
+            assertTrue("and the rebuilt control agrees with it",
+                    workspace.findViewById(R.id.view_grid_off).isActivated());
+            return null;
+        });
+
+        rule.getScenario().moveToState(androidx.lifecycle.Lifecycle.State.CREATED);
+        rule.getScenario().moveToState(androidx.lifecycle.Lifecycle.State.RESUMED);
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            assertTrue("and a HOME/resume", !NativeViewport.gridVisible());
+            workspace.findViewById(R.id.display_settings_button).performClick();
+            assertTrue(workspace.findViewById(R.id.view_grid_off).isActivated());
+            NativeViewport.setGridVisible(true);
+            return null;
+        });
+    }
+
+    /**
+     * R1C2-22..25. The grid is orthogonal to appearance and to projection.
+     *
+     * <p>Neither can refuse it and it can change neither of them: the grid's
+     * colours are derived from the viewport appearance inside native code, and
+     * its one draw composes whichever projection the camera reports. Asserted
+     * as state rather than as pixels — that both appearances are actually
+     * READABLE is a native palette check plus runtime evidence.
+     */
+    @Test
+    public void r1c222_theGridIsIndependentOfAppearanceAndProjection() {
+        final double[] before = nativeSnapshot();
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final int[] backgrounds = {NativeViewport.VIEWPORT_BACKGROUND_DARK,
+                    NativeViewport.VIEWPORT_BACKGROUND_LIGHT};
+            final int[] projections = {NativeViewport.PROJECTION_PERSPECTIVE,
+                    NativeViewport.PROJECTION_ORTHOGRAPHIC};
+            for (int background : backgrounds) {
+                for (int projection : projections) {
+                    NativeViewport.setViewportBackground(background);
+                    NativeViewport.setProjectionMode(projection);
+                    for (boolean grid : new boolean[]{true, false, true}) {
+                        assertEquals("the grid is honoured in every appearance and projection",
+                                grid, NativeViewport.setGridVisible(grid));
+                        assertEquals("and does not disturb the appearance",
+                                background, NativeViewport.viewportBackground());
+                        assertEquals("or the projection",
+                                projection, NativeViewport.projectionMode());
+                    }
+                }
+            }
+            return null;
+        });
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            NativeViewport.setViewportBackground(NativeViewport.VIEWPORT_BACKGROUND_DARK);
+            NativeViewport.setProjectionMode(NativeViewport.PROJECTION_PERSPECTIVE);
+            NativeViewport.setGridVisible(true);
+            return null;
+        });
+        final double[] after = nativeSnapshot();
+        assertArrayEquals("none of that touched the model: "
+                + describeSnapshotDifference(before, after), before, after, 0.0);
     }
 
     // -----------------------------------------------------------------------

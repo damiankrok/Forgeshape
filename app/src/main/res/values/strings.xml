@@ -65,6 +65,18 @@
     <string name="projection_perspective">Perspective</string>
     <string name="projection_orthographic">Orthographic</string>
 
+    <!--
+      View: what the viewport draws besides the model. "Grid" alone, not "Show
+      Grid" or "World Grid" — the group name already says this is about the
+      view, and the two chips beside it already say on or off.
+    -->
+    <string name="view">View</string>
+    <string name="view_grid">Grid</string>
+    <string name="view_grid_on">On</string>
+    <string name="view_grid_off">Off</string>
+    <string name="status_grid_on">Grid on — a 1 m reference floor. The model is unchanged.</string>
+    <string name="status_grid_off">Grid off — the model is unchanged.</string>
+
     <!-- Tool Rail -->
     <string name="tool_rail">Tool Rail</string>
     <string name="tool_grab">Grab</string>
