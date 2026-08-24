@@ -48,7 +48,10 @@ final class ObjectsSectionView extends LinearLayout {
         addView(list, EditorControlStyles.rowParams(
                 EditorControlStyles.dimen(context, R.dimen.row_gap_small)));
 
-        final TextView add = EditorControlStyles.chip(context, R.id.add_body,
+        // An action, not a selection: it has no active state to be in, so its
+        // label stays primary rather than sitting permanently dimmed beside
+        // the rows, which would read as disabled.
+        final TextView add = EditorControlStyles.actionChip(context, R.id.add_body,
                 context.getString(R.string.add_body));
         add.setOnClickListener(new OnClickListener() {
             @Override

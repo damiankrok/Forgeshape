@@ -1,12 +1,12 @@
 package com.forgeshape.app;
 
 import android.content.Context;
-import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -41,7 +41,7 @@ final class PropertyInspectorView extends LinearLayout {
     }
 
     private final TextView title;
-    private final TextView toggle;
+    private final ImageView toggle;
     private final ScrollView scroll;
     private final FrameLayout body;
     private final OnExpandedChanged listener;
@@ -57,8 +57,9 @@ final class PropertyInspectorView extends LinearLayout {
         this.listener = listener;
         setId(R.id.property_inspector);
         setOrientation(VERTICAL);
-        setBackground(EditorControlStyles.chromeSurface(context));
         setContentDescription(context.getString(R.string.property_inspector));
+        // A placement decides the shape and the depth; see showFloating.
+        showFloating(true);
 
         final int pad = EditorControlStyles.dimen(context, R.dimen.inspector_padding);
 
@@ -77,26 +78,21 @@ final class PropertyInspectorView extends LinearLayout {
         addView(header, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 EditorControlStyles.dimen(context, R.dimen.inspector_handle_height)));
 
-        title = new TextView(context);
-        title.setId(R.id.inspector_title);
-        title.setTextSize(TypedValue.COMPLEX_UNIT_PX,
-                EditorControlStyles.dimen(context, R.dimen.text_title));
-        title.setTextColor(context.getColor(R.color.text_primary));
+        title = EditorControlStyles.titleText(context, R.id.inspector_title, "");
         title.setSingleLine(true);
         header.addView(title, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
 
-        toggle = EditorControlStyles.chip(context, R.id.inspector_toggle, "⌄");
-        toggle.setMinimumHeight(EditorControlStyles.dimen(context, R.dimen.control_height));
+        toggle = EditorControlStyles.iconButton(context, R.id.inspector_toggle,
+                R.drawable.ic_chevron_down,
+                context.getString(R.string.inspector_collapse));
         toggle.setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View v) {
                 toggleExpanded();
             }
         });
-        header.addView(toggle, new LinearLayout.LayoutParams(
-                EditorControlStyles.dimen(context, R.dimen.control_height),
-                EditorControlStyles.dimen(context, R.dimen.control_height)));
+        header.addView(toggle, EditorControlStyles.iconButtonParams(context, 0));
 
         scroll = new ScrollView(context);
         scroll.setId(R.id.inspector_scroll);
@@ -147,9 +143,37 @@ final class PropertyInspectorView extends LinearLayout {
         }
         expanded = value;
         scroll.setVisibility(value ? VISIBLE : GONE);
-        toggle.setText(value ? "⌄" : "⌃");
+        // The chevron points the way the panel will go, not the way it is.
+        toggle.setImageResource(
+                value ? R.drawable.ic_chevron_down : R.drawable.ic_chevron_up);
         toggle.setContentDescription(getContext().getString(
                 value ? R.string.inspector_collapse : R.string.inspector_expand));
+    }
+
+    /**
+     * Says whether this panel is standing ON the model or sitting BESIDE it.
+     *
+     * <p>The two are genuinely different surfaces and are drawn differently. A
+     * bottom sheet and a side overlay float, so they are rounded on the edge
+     * that faces the model and carry a little depth. A <b>docked</b> panel on a
+     * tablet does not float: it occupies its own column of the window, and
+     * giving it a card's shadow would be a claim about the layout that is
+     * simply untrue.
+     *
+     * @param bottomSheet whether the panel is anchored to the bottom edge; the
+     *                    trailing-edge placements round their leading side
+     *                    instead
+     */
+    void showFloating(boolean bottomSheet) {
+        setBackgroundResource(bottomSheet
+                ? R.drawable.bg_inspector_sheet : R.drawable.bg_inspector_side);
+        setElevation(EditorControlStyles.dimen(getContext(), R.dimen.elevation_sheet));
+    }
+
+    /** Draws the panel as part of the layout rather than as a surface over it. */
+    void showDocked() {
+        setBackgroundResource(R.drawable.bg_inspector_side);
+        setElevation(0.0f);
     }
 
     private void toggleExpanded() {

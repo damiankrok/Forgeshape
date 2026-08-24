@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The tint for a control's icon and its label, together.
+
+  One list for both so an entry's glyph and its caption can never disagree
+  about whether the entry is active. Children set duplicateParentState, so the
+  state that drives this comes from the entry itself and no code has to walk
+  the entry repainting its children.
+
+  Order matters: disabled first, because a reserved entry is never also the
+  active one and must not be able to read as it.
+-->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_enabled="false" android:color="@color/text_disabled" />
+    <item android:state_activated="true" android:color="@color/text_primary" />
+    <item android:state_pressed="true" android:color="@color/text_primary" />
+    <item android:color="@color/text_secondary" />
+</selector>

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Place: where the Construction Body SITS — position and rotation. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M12,2.8 L12,21.2 M2.8,12 L21.2,12" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M9.4,5.4 L12,2.8 L14.6,5.4 M9.4,18.6 L12,21.2 L14.6,18.6 M5.4,9.4 L2.8,12 L5.4,14.6 M18.6,9.4 L21.2,12 L18.6,14.6" />
+</vector>

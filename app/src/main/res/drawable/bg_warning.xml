@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The stale-source warning block.
+
+  It reports a state that persists until the user acts on it, so it gets a
+  bordered block of its own rather than a line of status text the next message
+  would overwrite.
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/control_surface" />
+    <corners android:radius="@dimen/radius_control" />
+    <stroke
+        android:width="@dimen/control_border_width"
+        android:color="@color/text_measure" />
+</shape>

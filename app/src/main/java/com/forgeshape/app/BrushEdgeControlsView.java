@@ -63,7 +63,7 @@ final class BrushEdgeControlsView extends LinearLayout {
         this.listener = listener;
         setId(R.id.brush_edge_controls);
         setOrientation(HORIZONTAL);
-        setBackground(EditorControlStyles.chromeOverlay(context));
+        EditorControlStyles.applyFloatingSurface(this);
         final int padding = EditorControlStyles.dimen(context, R.dimen.rail_padding);
         setPadding(padding, padding, padding, padding);
 
@@ -96,9 +96,17 @@ final class BrushEdgeControlsView extends LinearLayout {
         strengthSlider.setOnFractionChanged(onMoved);
     }
 
+    /**
+     * The slider's touch column, which is deliberately much wider than the
+     * track it draws.
+     *
+     * <p>Named in {@code dimens.xml} rather than derived from the track width,
+     * so restyling the track cannot silently shrink the hit area below what a
+     * thumb can find.
+     */
     private LinearLayout.LayoutParams trackParams(Context context) {
         return new LinearLayout.LayoutParams(
-                EditorControlStyles.dimen(context, R.dimen.brush_track_width) * 3,
+                EditorControlStyles.dimen(context, R.dimen.brush_touch_width),
                 EditorControlStyles.dimen(context, R.dimen.brush_slider_height));
     }
 

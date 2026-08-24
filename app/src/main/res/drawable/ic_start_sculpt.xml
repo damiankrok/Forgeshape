@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The Sculpt start: an organic form with a stroke across it.
+
+  Deliberately NOT a circle. Sculpt is the representation whose shape is the
+  history of the strokes made on it, and the glyph has to say that a number is
+  not what authored this.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M12.4,2.6 C17.4,2.6 21.4,6.4 21.4,11.4 C21.4,17 16.6,21.4 11.6,21.4 C6.8,21.4 2.6,17.4 2.6,12.6 C2.6,7 7,2.6 12.4,2.6 Z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M6.8,14.8 C9.2,10.6 14.2,9.4 17.4,12.2" />
+</vector>

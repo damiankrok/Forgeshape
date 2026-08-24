@@ -84,7 +84,7 @@ final class DisplaySettingsPopoverView extends LinearLayout {
         super(context);
         setId(R.id.display_settings_popover);
         setOrientation(VERTICAL);
-        setBackground(EditorControlStyles.chromeOverlay(context));
+        EditorControlStyles.applyFloatingSurface(this);
 
         final int pad = EditorControlStyles.dimen(context, R.dimen.row_gap);
         final int gap = EditorControlStyles.dimen(context, R.dimen.toolbar_gap);
@@ -279,6 +279,23 @@ final class DisplaySettingsPopoverView extends LinearLayout {
                         }
                     }).start();
         }
+    }
+
+    /**
+     * Keeps the growth origin on the anchor corner once this view has a size.
+     *
+     * <p>{@link #setOpen} also sets the pivot, and on every open but the first
+     * that is enough. The <b>first</b> open is the exception and the reason
+     * this exists: the panel starts {@code GONE} and has never been laid out,
+     * so {@code getWidth()} is 0 there and the very first animation grew from
+     * the top-LEFT — from nowhere in particular, rather than from the button
+     * that opened it, which is the entire point of the pattern.
+     */
+    @Override
+    protected void onSizeChanged(int width, int height, int oldWidth, int oldHeight) {
+        super.onSizeChanged(width, height, oldWidth, oldHeight);
+        setPivotX(width);
+        setPivotY(0.0f);
     }
 
     /** Closes immediately, with no animation. Used when chrome is hidden. */

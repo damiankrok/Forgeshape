@@ -59,11 +59,16 @@ final class NumericPropertyRow extends LinearLayout {
                 | InputType.TYPE_NUMBER_FLAG_SIGNED);
         field.setSingleLine(true);
         field.setTextSize(TypedValue.COMPLEX_UNIT_PX,
-                EditorControlStyles.dimen(context, R.dimen.text_field));
+                EditorControlStyles.dimen(context, R.dimen.text_value));
         field.setTextColor(context.getColor(R.color.text_primary));
-        field.setBackground(EditorControlStyles.fieldBackground(context));
-        final int paddingX = EditorControlStyles.dp(context, 9);
-        final int paddingY = EditorControlStyles.dp(context, 8);
+        // The background carries a focused state, so which field the keyboard
+        // is about to type into is readable from its border rather than from
+        // the caret alone.
+        field.setBackgroundResource(R.drawable.bg_field);
+        final int paddingX =
+                EditorControlStyles.dimen(context, R.dimen.field_padding_horizontal);
+        final int paddingY =
+                EditorControlStyles.dimen(context, R.dimen.field_padding_vertical);
         field.setPadding(paddingX, paddingY, paddingX, paddingY);
         field.setMinimumHeight(EditorControlStyles.dimen(context, R.dimen.control_height));
         field.setImeOptions(lastInRow ? EditorInfo.IME_ACTION_DONE : EditorInfo.IME_ACTION_NEXT);

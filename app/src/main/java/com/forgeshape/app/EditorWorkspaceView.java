@@ -10,9 +10,9 @@ import android.view.ViewGroup;
 import android.view.WindowInsets;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
-import android.widget.TextView;
 
 /**
  * The whole ForgeShape editor UI.
@@ -44,7 +44,8 @@ final class EditorWorkspaceView extends FrameLayout
         implements InspectorHost, GlobalToolbarView.OnGlobalAction,
         ToolRailView.OnToolSelected, PropertyInspectorView.OnExpandedChanged,
         BrushEdgeControlsView.OnBrushChanged,
-        DisplaySettingsPopoverView.OnDisplaySettingChanged {
+        DisplaySettingsPopoverView.OnDisplaySettingChanged,
+        StartChooserView.OnStartFlowChosen {
 
     private static final int[] SCULPT_TOOL_HINTS = {
             R.string.hint_grab, R.string.hint_clay, R.string.hint_smooth, R.string.hint_inflate
@@ -68,8 +69,9 @@ final class EditorWorkspaceView extends FrameLayout
     private final ScrollView toolRailScroll;
     private final BrushEdgeControlsView brushControls;
     private final PropertyInspectorView inspector;
-    private final TextView restoreChip;
+    private final ImageView restoreChip;
     private final DisplaySettingsPopoverView displayPopover;
+    private final StartChooserView startChooser;
 
     private final ConstructionShapeEditorView shapeEditor;
     private final ConstructionPlacementEditorView placementEditor;
@@ -129,6 +131,11 @@ final class EditorWorkspaceView extends FrameLayout
         // themselves are opaque to touch.
         chromeRoot = new LinearLayout(context);
         chromeRoot.setOrientation(LinearLayout.VERTICAL);
+        // Floating chrome casts a shadow OUTSIDE its own bounds, so a clipping
+        // container would remove exactly the part that makes the surface look
+        // raised. Nothing here changes what is touchable: a shadow is drawn,
+        // never hit-tested.
+        EditorControlStyles.allowChildShadows(chromeRoot);
         addView(chromeRoot, new LayoutParams(LayoutParams.MATCH_PARENT,
                 LayoutParams.MATCH_PARENT));
 
@@ -138,6 +145,7 @@ final class EditorWorkspaceView extends FrameLayout
 
         middleRow = new LinearLayout(context);
         middleRow.setOrientation(LinearLayout.HORIZONTAL);
+        EditorControlStyles.allowChildShadows(middleRow);
         chromeRoot.addView(middleRow, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f));
 
@@ -157,6 +165,11 @@ final class EditorWorkspaceView extends FrameLayout
         // still be able to reach every entry. Dropping a tool in landscape
         // would be the same class of defect this stage exists to fix.
         toolRailScroll = new ScrollView(context);
+        // The scroll container carries the rail's floating surface and its
+        // depth, because it is the view whose bounds the rail actually
+        // occupies. Putting them on the rail itself would have the container
+        // clip the shadow away. See ToolRailView's constructor.
+        EditorControlStyles.applyFloatingSurface(toolRailScroll);
         toolRailScroll.addView(toolRail, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         final LinearLayout.LayoutParams railParams = new LinearLayout.LayoutParams(
@@ -169,10 +182,13 @@ final class EditorWorkspaceView extends FrameLayout
 
         // Child 2: surfaces that must survive the chrome being hidden.
         overlayRoot = new FrameLayout(context);
+        EditorControlStyles.allowChildShadows(overlayRoot);
         addView(overlayRoot, new LayoutParams(LayoutParams.MATCH_PARENT,
                 LayoutParams.MATCH_PARENT));
-        restoreChip = EditorControlStyles.chip(context, R.id.restore_ui_chip, "⊞");
-        restoreChip.setContentDescription(context.getString(R.string.show_ui));
+        restoreChip = EditorControlStyles.iconButton(context, R.id.restore_ui_chip,
+                R.drawable.ic_chrome_show, context.getString(R.string.show_ui));
+        restoreChip.setElevation(
+                EditorControlStyles.dimen(context, R.dimen.elevation_floating));
         restoreChip.setVisibility(GONE);
         restoreChip.setOnClickListener(new OnClickListener() {
             @Override
@@ -201,8 +217,19 @@ final class EditorWorkspaceView extends FrameLayout
         placementEditor = new ConstructionPlacementEditorView(context, this);
         sculptContext = new SculptContextView(context, this);
 
+        // Last into the overlay, so the question is above everything it is
+        // asking about. It stands on a WORKING workspace: native state already
+        // exists (the Activity starts native code before building any view),
+        // the default Body is already there, and the viewport is already
+        // rendering it behind the scrim. Choosing Construction therefore has
+        // nothing to build — it only stops asking.
+        startChooser = new StartChooserView(context, this);
+        overlayRoot.addView(startChooser, new LayoutParams(
+                LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
+
         installInsetListener();
         syncFromNative();
+        showStartChooser(!uiState.startChoiceMade());
     }
 
     // -----------------------------------------------------------------------
@@ -336,6 +363,14 @@ final class EditorWorkspaceView extends FrameLayout
                         : WorkspaceLayoutMode.sideOverlayWidthDp(widthDp));
 
         inspectorPlacement = placement;
+        // A docked panel sits BESIDE the model and is part of the layout; the
+        // other two stand ON it. Drawing the docked one as a floating card
+        // would be a claim about the layout that is not true.
+        if (placement == WorkspaceLayoutMode.InspectorPlacement.SIDE_DOCK) {
+            inspector.showDocked();
+        } else {
+            inspector.showFloating(bottom);
+        }
         // A bottom sheet must be capped or it measures to whatever its content
         // wants, which is exactly how the previous panel came to fill the
         // window. A side placement is already bounded by the window's height,
@@ -433,6 +468,98 @@ final class EditorWorkspaceView extends FrameLayout
     }
 
     // -----------------------------------------------------------------------
+    // The start chooser
+    // -----------------------------------------------------------------------
+    //
+    // Asked once per PROCESS, not once per Activity and not once per window.
+    // The flag lives in EditorUiState precisely so a rotation, a HOME/resume or
+    // an Activity recreation cannot put the question back — see the field's own
+    // comment for why it is the one static there.
+    //
+    // Neither answer is a new document. Native state already exists by the time
+    // this view is built (ForgeShapeActivity starts native code first), so the
+    // scene, the default Body and its ObjectId are the same in both branches.
+    // What the answer decides is only which representation the user lands in.
+
+    /** Shows or hides the question. Nothing else about the workspace changes. */
+    private void showStartChooser(boolean visible) {
+        startChooser.setVisibility(visible ? VISIBLE : GONE);
+    }
+
+    /** Whether the start question is currently on screen. */
+    boolean startChooserVisible() {
+        return startChooser.getVisibility() == VISIBLE;
+    }
+
+    /**
+     * Construction / CAD: the workspace the product already had.
+     *
+     * <p>There is deliberately nothing to build. The default Body is already in
+     * the scene at identity, already selected, and already published, so this
+     * only records that the question was answered and re-reads native state so
+     * the exact-value editors show that body's own numbers.
+     */
+    @Override
+    public void onConstructionStartChosen() {
+        uiState.recordStartChoice();
+        showStartChooser(false);
+        syncFromNative();
+        showStatus(getContext().getString(R.string.status_started_construction),
+                R.color.text_secondary);
+    }
+
+    /**
+     * Sculpt: land directly on a mesh that is ready for a brush.
+     *
+     * <p><b>Every step here is an existing, verified product entry point.</b>
+     * Nothing about Freeze is duplicated or re-implemented: no second
+     * validation, no second {@code SculptMesh} construction, no opinion about
+     * sidedness, the stale-source flag or revision numbering. This method makes
+     * exactly the two calls a user would make by hand, in the order they would
+     * make them, and then reads back what native code decided.
+     *
+     * <p>The diameter comes from native state rather than from a constant
+     * invented here. Every body remembers each primitive's parameters
+     * independently, so what is read back is the domain's own canonical default
+     * sphere — and if the user has already sized a sphere on this body, that is
+     * what they get, which is the correct answer and not a special case.
+     *
+     * <p>The Construction Source is not consumed by this. It stays an exact
+     * sphere with its own parameters and placement, so Back to Construction
+     * shows a sphere and Resume Sculpt returns to this same frozen mesh, both
+     * for the ordinary reasons and not because of anything this method does.
+     *
+     * <p>On any refusal the product is left in Construction, unchanged, and the
+     * status line says so. It is deliberately not retried and not repaired: a
+     * refusal here means native code declined a shape it validated, and hiding
+     * that behind a fallback would make the one honest signal disappear.
+     */
+    @Override
+    public void onSculptStartChosen() {
+        uiState.recordStartChoice();
+        showStartChooser(false);
+
+        final double[] primitive = new double[NativeViewport.PRIMITIVE_STATE_SIZE];
+        NativeViewport.constructionPrimitive(primitive);
+        final int applied = NativeViewport.applyConstructionSphere(
+                primitive[NativeViewport.PRIMITIVE_SPHERE_DIAMETER]);
+        // UNCHANGED is a success: it means the body was already exactly this
+        // sphere, which is a perfectly good thing to sculpt.
+        final boolean shaped = applied == NativeViewport.APPLY_APPLIED
+                || applied == NativeViewport.APPLY_UNCHANGED;
+        if (!shaped || NativeViewport.freezeToSculpt() != NativeViewport.SCULPT_OK) {
+            syncFromNative();
+            showStatus(getContext().getString(R.string.status_sculpt_start_failed),
+                    R.color.text_error);
+            return;
+        }
+        finishEditing();
+        syncFromNative();
+        showStatus(getContext().getString(R.string.status_started_sculpt),
+                R.color.text_success);
+    }
+
+    // -----------------------------------------------------------------------
     // Reading native truth
     // -----------------------------------------------------------------------
 
@@ -513,16 +640,16 @@ final class EditorWorkspaceView extends FrameLayout
         final Context context = getContext();
         if (sculpting) {
             toolRail.setEntries(new ToolRailView.Entry[]{
-                    new ToolRailView.Entry(R.id.tool_rail_grab, "◈",
+                    new ToolRailView.Entry(R.id.tool_rail_grab, R.drawable.ic_tool_grab,
                             context.getString(R.string.tool_grab),
                             NativeViewport.TOOL_GRAB, false),
-                    new ToolRailView.Entry(R.id.tool_rail_clay, "●",
+                    new ToolRailView.Entry(R.id.tool_rail_clay, R.drawable.ic_tool_clay,
                             context.getString(R.string.tool_clay),
                             NativeViewport.TOOL_CLAY, false),
-                    new ToolRailView.Entry(R.id.tool_rail_smooth, "≈",
+                    new ToolRailView.Entry(R.id.tool_rail_smooth, R.drawable.ic_tool_smooth,
                             context.getString(R.string.tool_smooth),
                             NativeViewport.TOOL_SMOOTH, false),
-                    new ToolRailView.Entry(R.id.tool_rail_inflate, "◎",
+                    new ToolRailView.Entry(R.id.tool_rail_inflate, R.drawable.ic_tool_inflate,
                             context.getString(R.string.tool_inflate),
                             NativeViewport.TOOL_INFLATE, false),
             });
@@ -531,15 +658,15 @@ final class EditorWorkspaceView extends FrameLayout
             // presence is the point: when they arrive, the shell's content
             // changes and its shape does not.
             toolRail.setEntries(new ToolRailView.Entry[]{
-                    new ToolRailView.Entry(R.id.tool_rail_shape, "▣",
+                    new ToolRailView.Entry(R.id.tool_rail_shape, R.drawable.ic_tool_shape,
                             context.getString(R.string.tool_shape),
                             EditorUiState.CONSTRUCTION_TOOL_SHAPE, false),
-                    new ToolRailView.Entry(R.id.tool_rail_place, "⊕",
+                    new ToolRailView.Entry(R.id.tool_rail_place, R.drawable.ic_tool_place,
                             context.getString(R.string.tool_place),
                             EditorUiState.CONSTRUCTION_TOOL_PLACE, false),
-                    new ToolRailView.Entry(R.id.tool_rail_sketch, "▱",
+                    new ToolRailView.Entry(R.id.tool_rail_sketch, R.drawable.ic_tool_sketch,
                             context.getString(R.string.tool_sketch), -1, true),
-                    new ToolRailView.Entry(R.id.tool_rail_extrude, "▤",
+                    new ToolRailView.Entry(R.id.tool_rail_extrude, R.drawable.ic_tool_extrude,
                             context.getString(R.string.tool_extrude), -1, true),
             });
         }
@@ -847,6 +974,37 @@ final class EditorWorkspaceView extends FrameLayout
     /** The Objects section, so a test can select a body by its ObjectId. */
     ObjectsSectionView objectsSection() {
         return shapeEditor.objectsSection();
+    }
+
+    /**
+     * Puts the start question back and shows it, as a fresh process would.
+     *
+     * <p>The instrumentation runs every case in one process, so without this
+     * only the first test could ever see an unanswered chooser. It changes no
+     * native state: the scene, the mode and the body are exactly what they
+     * were, and only whether the question is drawn is different.
+     */
+    void showStartChooserAsFirstLaunch() {
+        uiState.clearStartChoice();
+        showStartChooser(true);
+    }
+
+    /**
+     * The scroll container the Tool Rail lives in.
+     *
+     * <p>Needed by verification because the rail's tap-versus-scroll rule is a
+     * negotiation BETWEEN the entry and this container, so a test that
+     * dispatched only to the rail would never exercise the interception the
+     * rule exists to settle.
+     */
+    ScrollView toolRailScroll() {
+        return toolRailScroll;
+    }
+
+    /** Answers the start question the way a test that is not about it needs. */
+    void dismissStartChooserForConstruction() {
+        uiState.recordStartChoice();
+        showStartChooser(false);
     }
 
     /** The chrome rectangles, in this view's coordinates, that stand between

@@ -70,6 +70,11 @@ final class WorkspaceTestSupport {
         doOnWorkspace(scenario, new WorkspaceAction<Void>() {
             @Override
             public Void run(ForgeShapeActivity activity, EditorWorkspaceView workspace) {
+                // The start question is asked once per process and stands over
+                // everything else, so every case that is not ABOUT it answers
+                // it first and then asserts against the ordinary workspace.
+                // Cases that are about it call showStartChooserAsFirstLaunch().
+                workspace.dismissStartChooserForConstruction();
                 NativeViewport.enterConstructionMode();
                 NativeViewport.applyConstructionBox(BASELINE_WIDTH_METERS,
                         BASELINE_HEIGHT_METERS, BASELINE_DEPTH_METERS);

@@ -150,16 +150,27 @@ children in z-order:
 1. the `SurfaceView`, at the **whole window size**;
 2. `chromeRoot`, a transparent, non-clickable vertical `LinearLayout` holding
    every interactive surface;
-3. `overlayRoot`, holding only the restore chip that survives chrome being
-   hidden.
+3. `overlayRoot`, holding what must survive chrome being hidden — the restore
+   chip, the Display popover and the start chooser.
 
 Inside `chromeRoot`: `GlobalToolbarView` at the top, then a weighted horizontal
 row carrying `BrushEdgeControlsView` (leading edge, Sculpt only), a weighted gap
 where the model lives, and the `ToolRailView` inside a `ScrollView` (trailing
 edge). `PropertyInspectorView` is placed either after that row (bottom sheet) or
 inside it (side placement) — see below. All are plain framework views built in
-code from `res/values` resources; no Compose, no AndroidX in the product, no
-design system, no drawer.
+code; no Compose, no AndroidX in the product, no design system, no drawer.
+
+**Every colour, background and icon is a resource, never a literal in Java.**
+Backgrounds are `res/drawable` state lists and content colours are `res/color`
+state lists, so pressed and active states come from the platform rather than from
+a repaint call, instances share one parsed `ConstantState` instead of allocating a
+`GradientDrawable` per control, and a later Light theme can supply a second set of
+values for the same names without any view learning about it. Icons are local
+vector drawables on one 24 dp grid, drawn white and tinted at use; an icon inside
+a composed control duplicates its parent's state, so an entry's glyph and its
+caption cannot disagree about whether it is active, pressed or reserved. Metrics
+come from `dimens.xml`, where corner radius is three semantic levels — control,
+floating surface, sheet — and type is five roles rather than five sizes.
 
 **The Vulkan viewport is full-bleed and stays that way.** No layout decision
 insets, pads or resizes the `SurfaceView`; window insets are applied to
@@ -172,6 +183,20 @@ from that — never from what was last tapped. In Sculpt Mode the shape and
 transform editors are therefore not merely disabled but **absent**, and in
 Construction the brush controls are absent, so nothing on screen can edit the
 representation that is not being worked on.
+
+Two layout contracts in the chrome are load-bearing rather than cosmetic. In the
+Global Toolbar the **editing-context label is the weighted child**, so a row that
+has run out of width shrinks the label and ellipsises it instead of squeezing the
+last action: a wrap-content label kept its text width and left both icon controls
+measured at 33–35 dp, under the 44 dp touch floor, on an ordinary 411 dp window.
+And a **Tool Rail entry holds its gesture against the enclosing `ScrollView`**:
+it disallows interception on Down and allows it again once travel passes twice
+the platform slop, at which point the container takes the next event and the
+platform's own `ACTION_CANCEL` prevents the click. A scroll container otherwise
+takes a tap the moment a finger — or a resting stylus tip — drifts past the slop,
+which made selecting a tool intermittently do nothing at all. Neither contract
+touches viewport gesture arbitration: both are chrome, and chrome consumes its
+own events either way.
 
 Every chrome surface swallows every touch inside its bounds that none of its own
 controls takes (`onTouchEvent` returns `true`). Because the viewport is a
@@ -210,29 +235,45 @@ so it converges within one traversal. `configChanges` is kept and widened with
 
 The app is edge-to-edge (`Theme.ForgeShape`, `setDecorFitsSystemWindows(false)`),
 replacing the deprecated fullscreen theme that merely hid the system bars.
-`setOnApplyWindowInsetsListener` applies `systemBars | displayCutout` — and the
+`setOnApplyWindowInsetsListener` applies `systemBars | displayCutout` — plus the
 `ime()` inset, which replaces rather than adds to the navigation bar — as padding
-to the chrome containers. `windowSoftInputMode` is `adjustResize`: with
-decor-fits off the window is **not** resized, so the keyboard arrives as an inset
-the chrome absorbs and the surface is untouched.
+to the chrome containers only. `windowSoftInputMode` is `adjustResize`, but with
+decor-fits off the window is **not** resized: the keyboard arrives as an inset the
+chrome absorbs and the surface is untouched.
+
+**Chrome depth.** Surfaces that float over the model (rail, popover, brush
+controls, bottom-sheet and side-overlay inspector, restore chip, start chooser)
+carry a small elevation; the **docked** inspector deliberately carries none,
+because it sits beside the model rather than over it. Their containers set
+`clipChildren(false)`, since a shadow is drawn outside its child's bounds — that
+affects drawing only and never hit-testing. The rail's surface and elevation live
+on its `ScrollView` rather than on the rail, or the container would clip exactly
+the shadow it wraps.
 
 ### Property Inspector ownership boundary
 
 `EditorUiState` is the closed list of what the UI may remember: display unit,
 draft primitive kind, which Construction editor the rail points at, inspector
-detent per mode, and chrome-hidden. Every field is safe to lose — kill the
-process and the object is exactly what it was. Anything that would change the
-model if it were wrong belongs in native code instead.
+detent per mode, chrome-hidden, and whether the start question has been answered.
+Every field is safe to lose — kill the process and the object is exactly what it
+was. Anything that would change the model if it were wrong belongs in native code
+instead.
+
+The start flag is the one **static** member, and deliberately so: the question is
+per *process*, not per Activity, and an instance field would re-ask it on every
+recreation because a recreated Activity builds a fresh workspace and a fresh
+`EditorUiState`. It records only *that* an answer was given, never which one —
+the mode is native truth, read back on every refresh, and a copy here would be a
+second answer able to disagree with the first.
 
 The primitive chooser is a **draft**: it swaps which parameter fields are on
-screen and nothing else. The object's kind changes only when Apply Shape reads
-the drafted primitive's own fields and calls **that primitive's own native
-method**, so there is no window in which the object is a cylinder carrying box
-dimensions. `refreshFromNative` resets the draft to the object's real kind, so
-the chooser can never be left claiming a shape the object is not. Exactly one
-parameter row is on screen at a time and it is always the drafted kind's; every
-primitive's fields are kept populated and converted, including the hidden ones,
-so an inactive draft does not silently change meaning while it is off screen.
+screen and nothing else. The kind changes only when Apply Shape reads the drafted
+primitive's own fields and calls **that primitive's own native method**, so there
+is no window in which the object is a cylinder carrying box dimensions.
+`refreshFromNative` resets the draft to the object's real kind. Exactly one
+parameter row is on screen and it is always the drafted kind's; every primitive's
+fields stay populated and converted, including hidden ones, so an inactive draft
+cannot silently change meaning off screen.
 
 Shape and placement live in **separate inspector bodies with separate Apply
 buttons** — *Apply Shape* and *Apply Transform* — because they are separate
@@ -258,18 +299,37 @@ The positivity rule is deliberately not applied to placement: zero and negative
 are ordinary for a coordinate and an angle, so the only thing the UI refuses
 there is text that is not a number.
 
-`LengthUnit` performs every conversion as an exact `BigDecimal` point shift
-(`10^3` mm, `10^2` cm, `10^0` m), never a floating-point multiply, so repeated
-unit switching is lossless and a value re-entered in a different unit produces
-the identical `double` — which is why re-applying the same box in a different
-unit reports `Unchanged`. Meter values are rendered through
-`BigDecimal.valueOf(double)` (shortest round-tripping decimal), shifted, and
-printed with trailing zeros stripped and no grouping separator. Parsing accepts
-`.` or `,` as the decimal separator; the fields use a numeric IME via
+`LengthUnit` converts by exact `BigDecimal` point shift (`10^3` mm, `10^2` cm,
+`10^0` m), never a floating-point multiply, so switching is lossless and a value
+re-entered in another unit produces the identical `double` — which is why
+re-applying the same box in a different unit reports `Unchanged`. Meters render
+through `BigDecimal.valueOf(double)`, shifted, trailing zeros stripped, no
+grouping separator; parsing accepts `.` or `,`. Fields use a numeric IME via
 `setRawInputType` plus a `DigitsKeyListener` accepting `0123456789.,-`. The minus
-matters twice over: a negative coordinate or angle is an ordinary value that must
-be enterable, and a negative *dimension* must be enterable so it can be visibly
-refused rather than being unreachable.
+matters twice over: a negative coordinate or angle is ordinary, and a negative
+*dimension* must be enterable so it can be visibly refused rather than
+unreachable.
+
+### Start flow ownership
+
+`StartChooserView` asks which representation the model begins in, over the live
+viewport, in `overlayRoot` above everything it asks about. It owns no state and
+makes no native call; it reports which option was pressed.
+
+**Native state already exists when it is asked.** The Activity starts native code
+before building any view, so the scene, the default Body and its ObjectId are the
+same in both branches — neither answer creates anything, and `ConstructionScene`'s
+constructor is untouched by the chooser (startup is still one default Box at
+identity, which `S17-01` asserts).
+
+*Construction* therefore only stops asking and re-reads. *Sculpt* makes exactly
+the two calls a user would make by hand: `applyConstructionSphere` with the
+diameter **read back from native state** rather than a constant invented in Java,
+then `freezeToSculpt`. Nothing about Freeze is duplicated — no second validation,
+no second `SculptMesh` construction, no opinion about sidedness, the stale flag or
+revision numbering — so *Back to Construction* finds the exact sphere and *Resume
+Sculpt* returns the same frozen mesh for the ordinary reasons. A refusal leaves
+the product in Construction, unchanged, and says so.
 
 ### The destructive-act guard
 
@@ -281,10 +341,10 @@ be: the first can discard nothing, and the second and third discard nothing.
 The one irreversible act in the product is **re-Freeze**, which rebuilds the
 sculpt mesh from the current Construction shape and throws away what was
 sculpted into the old one. It lives in the Sculpt inspector as *Freeze again…*
-and it confirms **only when the native stroke count is non-zero** — re-freezing a
-mesh no stroke has touched replaces a copy with an identical copy, and confirming
-that would train the user to dismiss the dialog that matters. Cancel makes no
-native call at all.
+and it confirms **only when `SCULPT_HAS_EDITS` says the CURRENT frozen mesh has
+edits** — deliberately not the session-lifetime stroke count, which describes
+meshes that no longer exist and made every later re-Freeze of an untouched mesh
+raise a dialog with nothing behind it. Cancel makes no native call at all.
 
 ### Android UI verification boundary
 

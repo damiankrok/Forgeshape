@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Grab: the surface itself is dragged, in the camera plane.
+
+  A surface pulled into a peak, with the direction of travel above it. What
+  distinguishes it from Clay is that nothing is ADDED — the same material is
+  somewhere else.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M3,17 C8,17 8,11 12,11 C16,11 16,17 21,17" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M12,10.5 L12,3.5 M8.8,6.7 L12,3.5 L15.2,6.7" />
+</vector>

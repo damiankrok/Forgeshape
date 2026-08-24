@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Inflate: the surface expands along the normals it has RIGHT NOW.
+
+  A closed form pushing outward in every direction at once, which is what
+  separates it from Clay's one-sided deposit.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M12,5.5 A6.5,6.5 0 1,0 12,18.5 A6.5,6.5 0 1,0 12,5.5 Z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M10.2,3.4 L12,1.6 L13.8,3.4 M10.2,20.6 L12,22.4 L13.8,20.6 M3.4,10.2 L1.6,12 L3.4,13.8 M20.6,10.2 L22.4,12 L20.6,13.8" />
+</vector>

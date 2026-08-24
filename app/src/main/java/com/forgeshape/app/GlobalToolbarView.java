@@ -2,12 +2,12 @@ package com.forgeshape.app;
 
 import android.content.Context;
 import android.text.TextUtils;
-import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -51,8 +51,8 @@ final class GlobalToolbarView extends LinearLayout {
     private final TextView resumeButton;
     private final TextView backButton;
     private final TextView exportAction;
-    private final TextView displaySettingsButton;
-    private final TextView hideUiToggle;
+    private final ImageView displaySettingsButton;
+    private final ImageView hideUiToggle;
     private final TextView statusMessage;
 
     private final LinearLayout controlsRow;
@@ -64,7 +64,7 @@ final class GlobalToolbarView extends LinearLayout {
         super(context);
         setId(R.id.global_toolbar);
         setOrientation(VERTICAL);
-        setBackground(EditorControlStyles.chromeSurface(context));
+        EditorControlStyles.applyChromeSurface(this);
 
         final int padH = EditorControlStyles.dimen(context, R.dimen.toolbar_padding_horizontal);
         final int gap = EditorControlStyles.dimen(context, R.dimen.toolbar_gap);
@@ -77,22 +77,25 @@ final class GlobalToolbarView extends LinearLayout {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 EditorControlStyles.dimen(context, R.dimen.toolbar_height)));
 
-        contextLabel = new TextView(context);
-        contextLabel.setId(R.id.editing_context_label);
-        contextLabel.setTextSize(TypedValue.COMPLEX_UNIT_PX,
-                EditorControlStyles.dimen(context, R.dimen.text_title));
-        contextLabel.setTextColor(context.getColor(R.color.text_primary));
+        contextLabel = EditorControlStyles.titleText(context, R.id.editing_context_label, "");
         contextLabel.setSingleLine(true);
-        // The label absorbs the squeeze so no button is ever clipped: on a
-        // narrow window the mode name ellipsises, the actions stay whole.
         contextLabel.setEllipsize(TextUtils.TruncateAt.END);
-        contextLabel.setMaxWidth(EditorControlStyles.dp(context, 150));
+        contextLabel.setMaxWidth(
+                EditorControlStyles.dimen(context, R.dimen.toolbar_context_max_width));
+        // THE LABEL IS THE FLEXIBLE CHILD, and that is load-bearing rather than
+        // cosmetic. A wrap-content label keeps whatever width its text wants
+        // even when the row has run out, and a LinearLayout that has run out
+        // squeezes the LAST child instead — which put both icon controls below
+        // the 44 dp touch floor on a 411 dp-wide window (measured at 35 dp and
+        // 33 dp). Weighted, the label gives up its own width first and
+        // ellipsises, and every action keeps the size it asked for. The cap
+        // stops it growing absurdly wide on a tablet, where there is room.
         controlsRow.addView(contextLabel, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
 
         statusSlot = new FrameLayout(context);
         final LinearLayout.LayoutParams slotParams = new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 0.0f);
         slotParams.leftMargin = gap;
         slotParams.rightMargin = gap;
         controlsRow.addView(statusSlot, slotParams);
@@ -143,25 +146,27 @@ final class GlobalToolbarView extends LinearLayout {
         // Display sits in the Global Toolbar because it is mode-independent:
         // how the surface is shaded is as true in Sculpt as in Construction, so
         // it does not belong to the Tool Rail or to either inspector body.
-        displaySettingsButton = EditorControlStyles.chip(context, R.id.display_settings_button, "◐");
-        displaySettingsButton.setContentDescription(context.getString(R.string.display_settings));
+        displaySettingsButton = EditorControlStyles.iconButton(context,
+                R.id.display_settings_button, R.drawable.ic_display,
+                context.getString(R.string.display_settings));
         displaySettingsButton.setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View v) {
                 actions.onDisplaySettingsRequested();
             }
         });
-        controlsRow.addView(displaySettingsButton, EditorControlStyles.wrap(gap));
+        controlsRow.addView(displaySettingsButton,
+                EditorControlStyles.iconButtonParams(context, gap));
 
-        hideUiToggle = EditorControlStyles.chip(context, R.id.hide_ui_toggle, "⊟");
-        hideUiToggle.setContentDescription(context.getString(R.string.hide_ui));
+        hideUiToggle = EditorControlStyles.iconButton(context, R.id.hide_ui_toggle,
+                R.drawable.ic_chrome_hide, context.getString(R.string.hide_ui));
         hideUiToggle.setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View v) {
                 actions.onChromeHideRequested();
             }
         });
-        controlsRow.addView(hideUiToggle, EditorControlStyles.wrap(gap));
+        controlsRow.addView(hideUiToggle, EditorControlStyles.iconButtonParams(context, gap));
 
         statusMessage = EditorControlStyles.statusText(context, R.id.status_message);
         statusMessage.setMaxLines(2);
@@ -191,6 +196,15 @@ final class GlobalToolbarView extends LinearLayout {
         if (parent != null) {
             parent.removeView(statusMessage);
         }
+        // The slot only competes for row width while it actually holds the
+        // message. Empty and weighted it would take room from the context
+        // label for nothing, and a short window is precisely where there is
+        // none to spare.
+        final LinearLayout.LayoutParams slotParams =
+                (LinearLayout.LayoutParams) statusSlot.getLayoutParams();
+        slotParams.weight = inline ? 1.0f : 0.0f;
+        statusSlot.setLayoutParams(slotParams);
+
         if (inline) {
             final FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -229,10 +243,19 @@ final class GlobalToolbarView extends LinearLayout {
 
     /** Marks the Display button active while its popover is open. */
     void showDisplaySettingsOpen(boolean open) {
-        EditorControlStyles.setChipActive(displaySettingsButton, open);
+        EditorControlStyles.setIconButtonActive(displaySettingsButton, open);
     }
 
+    /**
+     * Says which way the chrome control now goes.
+     *
+     * <p>The icon changes with it rather than only the description: a control
+     * whose glyph means "hide" while pressing it would show is exactly the kind
+     * of thing that made the Unicode set unreadable.
+     */
     void showChromeHidden(boolean hidden) {
+        hideUiToggle.setImageResource(
+                hidden ? R.drawable.ic_chrome_show : R.drawable.ic_chrome_hide);
         hideUiToggle.setContentDescription(getContext().getString(
                 hidden ? R.string.show_ui : R.string.hide_ui));
     }

@@ -6,21 +6,75 @@
   the stylus-first constraint (INPUT-OWNER-01) expressed as a number: an S Pen
   tip is precise, a fingertip is not, and the shell has to stay usable with
   both without growing a second set of controls.
+
+  Spacing follows a 4 dp grid. Values that are not on it are local arithmetic
+  (a stroke width, an icon's optical size), never a gap between two surfaces.
 -->
 <resources>
+    <!-- =====================================================================
+         Corner radius: three semantic levels, not one number.
+
+         A single radius on both a 44 dp chip and a 360 dp panel is what made
+         every surface read as the same flat card. The level says what KIND of
+         thing is being drawn, so a control never has to guess.
+         ===================================================================== -->
+    <!-- A thing you press: chip, field, button, rail entry, object row. -->
+    <dimen name="radius_control">10dp</dimen>
+    <!-- A surface that floats over the model: rail, popover, brush controls. -->
+    <dimen name="radius_floating">18dp</dimen>
+    <!-- A panel or sheet that carries a whole body of content. -->
+    <dimen name="radius_sheet">24dp</dimen>
+
+    <!-- =====================================================================
+         Depth. Only surfaces that genuinely float get any, and none of them
+         gets much: a heavy shadow over a rendered model reads as dirt on the
+         screen. A DOCKED inspector deliberately has none — it is beside the
+         model, not above it, and a card shadow would be a lie about the layout.
+         ===================================================================== -->
+    <dimen name="elevation_floating">6dp</dimen>
+    <dimen name="elevation_sheet">10dp</dimen>
+    <dimen name="elevation_chooser">16dp</dimen>
+
+    <!-- =====================================================================
+         Typography: five roles plus the rail's own caption.
+
+         These were five loose sizes before. Naming them by role is what lets a
+         caller ask for "a value" or "a caption" instead of picking a number,
+         and it is what a Light theme will not have to re-argue.
+         ===================================================================== -->
+    <!-- The start chooser's headline. The only prominent type in the product. -->
+    <dimen name="text_display">21sp</dimen>
+    <!-- A surface's own name: toolbar context, inspector title, option title. -->
+    <dimen name="text_title">15sp</dimen>
+    <!-- An exact value being typed. Larger than body on purpose. -->
+    <dimen name="text_value">16sp</dimen>
+    <!-- The default: chips, buttons, rail entries, summaries. -->
+    <dimen name="text_body">14sp</dimen>
+    <!-- Status lines, option descriptions, secondary prose. -->
+    <dimen name="text_caption">12sp</dimen>
+    <!-- Section headings and field captions. -->
+    <dimen name="text_label">11sp</dimen>
+
+    <!-- Extra leading for anything that can wrap to a second line. -->
+    <dimen name="text_line_spacing">3dp</dimen>
+
     <!-- Global Toolbar. One strip; its height is the only chrome height the
          viewport pays for at the top. -->
     <dimen name="toolbar_height">48dp</dimen>
     <dimen name="toolbar_padding_horizontal">10dp</dimen>
     <dimen name="toolbar_gap">8dp</dimen>
+    <!-- How wide the editing-context label may grow before it ellipsises. It
+         absorbs the squeeze so no action button is ever clipped on a narrow
+         window, which is why it is a shared contract and not a local number. -->
+    <dimen name="toolbar_context_max_width">152dp</dimen>
 
-    <!-- Tool Rail. 52 x 64 dp per entry: comfortably past the 44 dp floor with
-         room for a label under the glyph, because icon-only costs learning. -->
+    <!-- Tool Rail. 56 x 64 dp per entry: comfortably past the 44 dp floor with
+         room for a label under the icon, because icon-only costs learning. -->
     <dimen name="rail_item_width">56dp</dimen>
     <dimen name="rail_item_height">64dp</dimen>
     <dimen name="rail_item_gap">4dp</dimen>
     <dimen name="rail_padding">6dp</dimen>
-    <dimen name="rail_glyph_size">17sp</dimen>
+    <dimen name="rail_icon_size">22dp</dimen>
     <dimen name="rail_label_size">10sp</dimen>
 
     <!-- Brush edge controls: the two continuously-varied Sculpt values. The
@@ -29,8 +83,12 @@
     <dimen name="brush_slider_height">200dp</dimen>
     <dimen name="brush_slider_min_height">120dp</dimen>
     <dimen name="brush_track_width">10dp</dimen>
+    <!-- The slider's TOUCH width, which is deliberately much wider than the
+         track it draws. Named rather than computed from the track, so the hit
+         area cannot shrink by accident when the track is restyled. -->
+    <dimen name="brush_touch_width">32dp</dimen>
     <dimen name="brush_thumb_radius">11dp</dimen>
-    <dimen name="brush_gap">10dp</dimen>
+    <dimen name="brush_gap">8dp</dimen>
 
     <!-- Property Inspector. -->
     <dimen name="inspector_handle_height">44dp</dimen>
@@ -41,19 +99,27 @@
 
     <!-- Controls. -->
     <dimen name="control_height">44dp</dimen>
-    <dimen name="control_corner">7dp</dimen>
     <dimen name="control_border_width">1dp</dimen>
     <dimen name="control_border_active_width">2dp</dimen>
     <dimen name="control_padding_horizontal">14dp</dimen>
     <dimen name="chip_padding_horizontal">12dp</dimen>
+    <!-- An icon-only control: square, and still at the 44 dp touch floor. -->
+    <dimen name="icon_button_size">44dp</dimen>
+    <dimen name="icon_size">20dp</dimen>
+
+    <!-- Exact-value field padding. Shared by every numeric row in the product,
+         so the fields in the shape editor and the placement editor cannot
+         drift apart the way they did while each carried its own numbers. -->
+    <dimen name="field_padding_horizontal">12dp</dimen>
+    <dimen name="field_padding_vertical">8dp</dimen>
 
     <dimen name="row_gap">8dp</dimen>
     <dimen name="row_gap_small">4dp</dimen>
     <dimen name="section_gap">12dp</dimen>
 
-    <dimen name="text_title">14sp</dimen>
-    <dimen name="text_body">14sp</dimen>
-    <dimen name="text_label">11sp</dimen>
-    <dimen name="text_status">12sp</dimen>
-    <dimen name="text_field">16sp</dimen>
+    <!-- Start chooser. -->
+    <dimen name="chooser_padding">24dp</dimen>
+    <dimen name="chooser_max_width">440dp</dimen>
+    <dimen name="chooser_option_padding">16dp</dimen>
+    <dimen name="chooser_option_icon_size">28dp</dimen>
 </resources>

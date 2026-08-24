@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  A control at rest: chip, Tool Rail entry, Objects row.
+
+  Written as a resource rather than built in Java for two reasons. Every
+  instance shares one parsed ConstantState, so repainting a rail on every mode
+  change stops allocating a fresh GradientDrawable per entry; and a later Light
+  theme can supply different colours for the same names without any view code
+  learning about it.
+
+  The pressed state is the point: before this, tapping a tool gave no feedback
+  at all until native code answered.
+-->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_pressed="true">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/control_surface_pressed" />
+            <corners android:radius="@dimen/radius_control" />
+            <stroke
+                android:width="@dimen/control_border_width"
+                android:color="@color/control_border" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@color/control_surface" />
+            <corners android:radius="@dimen/radius_control" />
+            <stroke
+                android:width="@dimen/control_border_width"
+                android:color="@color/control_border" />
+        </shape>
+    </item>
+</selector>

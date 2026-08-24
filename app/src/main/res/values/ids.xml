@@ -13,6 +13,17 @@
     <item name="editor_workspace" type="id" />
     <item name="viewport_surface" type="id" />
 
+    <!--
+      The start chooser. Shown once per process, over the live viewport, and
+      answered by exactly one of the two options below. Neither option is a
+      document, a template or a persisted project: they choose which
+      representation the user begins in, and both end in the ordinary product.
+    -->
+    <item name="start_chooser" type="id" />
+    <item name="start_chooser_panel" type="id" />
+    <item name="start_option_construction" type="id" />
+    <item name="start_option_sculpt" type="id" />
+
     <!-- Global Toolbar -->
     <item name="global_toolbar" type="id" />
     <item name="editing_context_label" type="id" />

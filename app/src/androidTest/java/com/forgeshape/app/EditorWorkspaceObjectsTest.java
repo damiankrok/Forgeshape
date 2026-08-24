@@ -33,6 +33,22 @@ public final class EditorWorkspaceObjectsTest {
             new ActivityScenarioRule<>(ForgeShapeActivity.class);
 
     /**
+     * Answers the start question, which is asked once per process and stands
+     * over everything else.
+     *
+     * <p>This class deliberately does not use the shared baseline reset: the
+     * scene accumulates bodies across a run and these cases establish what they
+     * need relative to what they found. Only the chooser is dismissed.
+     */
+    @org.junit.Before
+    public void answerTheStartQuestion() {
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            workspace.dismissStartChooserForConstruction();
+            return null;
+        });
+    }
+
+    /**
      * S17-21. Add Body creates a row for the new body and selects it.
      */
     @Test

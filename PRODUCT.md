@@ -94,6 +94,29 @@ While sculpting, the lighting follows the surface as it moves: a stroke that
 pulls a lobe out of a sphere lights that lobe immediately, with no stale shading
 left behind.
 
+## Starting a model
+
+The first time ForgeShape runs, it asks one question — **New Project** — and
+offers exactly two ways to begin. The question stands over the live viewport
+rather than replacing it, and it is asked once: turning the phone, leaving to
+the home screen and coming back, or anything else that rebuilds the screen does
+not ask again. Starting the app fresh does, because nothing is saved anywhere.
+
+**Construction / CAD** begins where the product always did: one default body,
+its shape chosen from the six exact primitives, its dimensions typed.
+
+**Sculpt** begins on a sphere that has already been frozen for sculpting, so the
+first thing you can do is make a stroke. Nothing is skipped to get there — the
+sphere is an ordinary exact Construction sphere and it was frozen the ordinary
+way, so **Back to Construction** shows that sphere with its diameter, and
+**Resume Sculpt** returns to the same frozen mesh with the strokes already on
+it. Choosing Sculpt does not create a second body and does not consume the
+Construction Source.
+
+Neither choice is a document, a template or a saved project, and neither closes
+anything off: both representations stay one control apart for the life of the
+body.
+
 ## The Editor Workspace
 
 The editor is one workspace, and the model is the largest thing in it. A thin
@@ -110,7 +133,17 @@ never where they are.
 
 Touching any of that chrome never moves the camera and never sculpts: a control
 owns its own gesture completely. Touching the viewport anywhere else navigates
-exactly as it always has.
+exactly as it always has. Every control answers the moment it is touched — it
+darkens under the finger before anything else happens — and the control that is
+currently active is filled, outlined and brightened together, so which tool is
+held can be read without relying on colour.
+
+Tools, modes and panels are named by drawn icons rather than by characters, and
+a control that is reserved for a feature the product does not have yet is drawn
+dimmed, says so when read aloud, and does nothing.
+
+A tap on a Tool Rail entry selects that tool even if the finger drifts a little,
+and dragging the rail scrolls it without selecting whatever it started on.
 
 The workspace re-arranges itself for the window it is in — a phone in portrait, a
 phone in landscape, a split-screen half, a tablet — and the arrangement is
@@ -606,6 +639,11 @@ Objects list adds and selects; it does nothing else.
 Two-finger twist/roll, inertia, camera presets, orthographic camera,
 focus-on-selection, long-press selection, grid, modelling, UV, save/load and undo
 are not implemented.
+
+**ForgeShape has one appearance and it is dark.** There is no light theme and no
+theme switcher. Nothing about the start choice, the model or the camera is saved
+between runs: closing the app loses which way the model was started, and starting
+it again asks the question afresh.
 
 Shading stops where it is. There is **one** MatCap and no way to add, import or
 choose another; there are no materials, no colour or texture you can assign to

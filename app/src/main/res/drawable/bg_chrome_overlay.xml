@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Chrome that stands ON the viewport: the Tool Rail, the brush controls, the
+  Display popover.
+
+  Translucent on purpose and only here — the model behind a rail is
+  informative, and a rail is narrow enough that its labels stay legible over
+  it. Sheets and docks carry paragraphs and stay opaque.
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/chrome_overlay" />
+    <corners android:radius="@dimen/radius_floating" />
+    <stroke
+        android:width="@dimen/control_border_width"
+        android:color="@color/chrome_hairline" />
+</shape>

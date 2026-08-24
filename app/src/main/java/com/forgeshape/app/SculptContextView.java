@@ -3,7 +3,6 @@ package com.forgeshape.app;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.content.DialogInterface;
-import android.graphics.drawable.GradientDrawable;
 import android.util.TypedValue;
 import android.view.View;
 import android.view.ViewGroup;
@@ -58,6 +57,8 @@ final class SculptContextView extends LinearLayout {
         meshSummary.setTextSize(TypedValue.COMPLEX_UNIT_PX,
                 EditorControlStyles.dimen(context, R.dimen.text_body));
         meshSummary.setTextColor(context.getColor(R.color.text_primary));
+        meshSummary.setLineSpacing(
+                EditorControlStyles.dimen(context, R.dimen.text_line_spacing), 1.0f);
         addView(meshSummary, EditorControlStyles.rowParams(0));
 
         // The stale-source warning gets a bordered block of its own rather than
@@ -65,26 +66,16 @@ final class SculptContextView extends LinearLayout {
         // user acts on it, and it sits directly above the action that resolves
         // it -- which is the whole reason it is here and not in the toolbar's
         // status line, where the next message would overwrite it.
-        staleWarning = new TextView(context);
-        staleWarning.setId(R.id.stale_source_warning);
-        staleWarning.setTextSize(TypedValue.COMPLEX_UNIT_PX,
-                EditorControlStyles.dimen(context, R.dimen.text_status));
+        staleWarning = EditorControlStyles.captionText(context, R.id.stale_source_warning,
+                context.getString(R.string.stale_source_warning));
         staleWarning.setTextColor(context.getColor(R.color.text_measure));
-        staleWarning.setText(context.getString(R.string.stale_source_warning));
         staleWarning.setContentDescription(context.getString(R.string.stale_source_warning));
         final int pad = EditorControlStyles.dimen(context, R.dimen.row_gap);
         staleWarning.setPadding(pad, pad, pad, pad);
-        final GradientDrawable warningBackground = new GradientDrawable();
-        warningBackground.setColor(context.getColor(R.color.control_surface));
-        warningBackground.setCornerRadius(
-                EditorControlStyles.dimen(context, R.dimen.control_corner));
-        warningBackground.setStroke(
-                EditorControlStyles.dimen(context, R.dimen.control_border_width),
-                context.getColor(R.color.text_measure));
-        staleWarning.setBackground(warningBackground);
+        staleWarning.setBackgroundResource(R.drawable.bg_warning);
         addView(staleWarning, EditorControlStyles.rowParams(gap));
 
-        freezeAgain = EditorControlStyles.chip(context, R.id.freeze_again,
+        freezeAgain = EditorControlStyles.actionChip(context, R.id.freeze_again,
                 context.getString(R.string.freeze_again));
         freezeAgain.setOnClickListener(new OnClickListener() {
             @Override

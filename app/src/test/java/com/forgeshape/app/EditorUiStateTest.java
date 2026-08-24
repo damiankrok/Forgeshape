@@ -93,4 +93,49 @@ public final class EditorUiStateTest {
         state.applyInitialDetents(WorkspaceLayoutMode.MEDIUM, 411);
         assertFalse(state.inspectorExpanded(false));
     }
+
+    // -----------------------------------------------------------------------
+    // The start question
+    // -----------------------------------------------------------------------
+
+    @Test
+    public void aFreshProcessHasNotYetAnsweredTheStartQuestion() {
+        final EditorUiState state = new EditorUiState();
+        state.clearStartChoice();
+        assertFalse("a process that has not been asked must be asked",
+                state.startChoiceMade());
+    }
+
+    @Test
+    public void answeringTheStartQuestionIsRememberedForTheWholeProcess() {
+        final EditorUiState state = new EditorUiState();
+        state.clearStartChoice();
+        state.recordStartChoice();
+        assertTrue(state.startChoiceMade());
+
+        // This is the case that matters, and the reason the flag is process
+        // scoped rather than per instance: an Activity recreation builds a
+        // whole new workspace and therefore a whole new EditorUiState, and it
+        // must NOT put the question back.
+        assertTrue("a recreated Activity must not re-ask how the model began",
+                new EditorUiState().startChoiceMade());
+    }
+
+    @Test
+    public void theStartAnswerDoesNotRecordWHICHWayWasChosen() {
+        final EditorUiState state = new EditorUiState();
+        state.clearStartChoice();
+        state.recordStartChoice();
+
+        // Everything this class may remember is layout, drafts or presentation.
+        // Which representation the user is in is native truth, read back on
+        // every refresh, and a copy of it here would be a second answer that
+        // could disagree with the first.
+        assertEquals("choosing a start flow must not touch the draft kind",
+                NativeViewport.PRIMITIVE_BOX, state.draftPrimitiveKind());
+        assertEquals("nor which Construction editor the rail points at",
+                EditorUiState.CONSTRUCTION_TOOL_SHAPE, state.constructionTool());
+        assertEquals("nor the display unit", LengthUnit.METERS, state.displayUnit());
+        assertFalse("nor whether the chrome is hidden", state.chromeHidden());
+    }
 }

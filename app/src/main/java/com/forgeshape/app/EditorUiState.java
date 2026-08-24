@@ -64,6 +64,25 @@ final class EditorUiState {
     private boolean constructionInspectorExpanded = true;
     private boolean sculptInspectorExpanded = true;
 
+    /**
+     * Whether this PROCESS has already chosen how it started.
+     *
+     * <p>Static on purpose, and it is the one field here that is not per
+     * instance. The start chooser must not come back when the Activity is
+     * recreated — a theme change, a locale change, a low-memory restart — and
+     * an instance field would re-ask on every one of them, because a recreated
+     * Activity builds a fresh {@link EditorWorkspaceView} and therefore a fresh
+     * {@code EditorUiState}. Process-scoped is exactly the lifetime the
+     * question has.
+     *
+     * <p>It is still <b>losable</b>, which is what keeps it inside this class's
+     * contract: nothing is written to disk, no {@code Bundle} carries it, and a
+     * genuine process kill correctly asks again. It also cannot change the
+     * model — the chooser's two paths both run through the ordinary product
+     * entry points, and this flag only decides whether the question is put.
+     */
+    private static boolean startChoiceMade;
+
     /** Whether every chrome surface is hidden, leaving the bare model. */
     private boolean chromeHidden;
 
@@ -109,6 +128,36 @@ final class EditorUiState {
         } else {
             constructionInspectorExpanded = expanded;
         }
+    }
+
+    /** Whether the start chooser still has a question to ask this process. */
+    boolean startChoiceMade() {
+        return startChoiceMade;
+    }
+
+    /**
+     * Records that the user answered the start chooser.
+     *
+     * <p>What they chose is deliberately NOT remembered. Both paths end in the
+     * ordinary product — one in Construction, one in Sculpt on a frozen mesh —
+     * and after that the answer is already visible in native state, which is
+     * the authority. Keeping a copy here would be a second truth about which
+     * mode the product is in.
+     */
+    void recordStartChoice() {
+        startChoiceMade = true;
+    }
+
+    /**
+     * Puts the question back, as a fresh process would.
+     *
+     * <p>Exists so verification can exercise both sides of the flag inside one
+     * instrumentation process, where every test after the first would otherwise
+     * see an answered chooser. It destroys nothing: the model, the mode and the
+     * scene are native state and this does not touch any of them.
+     */
+    void clearStartChoice() {
+        startChoiceMade = false;
     }
 
     boolean chromeHidden() {

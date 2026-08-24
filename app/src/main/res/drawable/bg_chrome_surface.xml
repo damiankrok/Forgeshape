@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The Global Toolbar strip.
+
+  Square on purpose: it spans the whole window edge, and a rounded full-width
+  strip would show the model through its corners for no reason. Opaque, because
+  the status line and every rejection reason sit on it.
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/chrome_surface" />
+    <stroke
+        android:width="@dimen/control_border_width"
+        android:color="@color/chrome_hairline" />
+</shape>
