@@ -589,17 +589,19 @@ public final class EditorWorkspaceThemeTest {
                                 + luminance(accent),
                         luminance(selected) < luminance(accent));
                 // Quiet, but not invisible: a selected control must still be a
-                // visible step off the control beside it, because that step is
-                // the primary signal now that the border is secondary.
+                // visible step off the control beside it, and since UI-R4B
+                // removed the accent hairline that step carries MORE of the
+                // signal than it did — which is why this assertion matters more
+                // now, not less.
                 //
                 // Measured as a CHANNEL distance rather than as a contrast
                 // ratio, deliberately. Two of the three palettes separate the
                 // selected surface from a resting one mostly by lean — Neutral
                 // Charcoal's selection is bluer at almost the same luminance —
                 // and a luminance-only test would call a step the eye reads
-                // easily "no step at all". The selection also never rests on
-                // this alone: the brightened label and the accent hairline are
-                // the other two signals, which is what keeps it readable for
+                // easily "no step at all". The selection does not rest on this
+                // alone: the brightened label from control_content_tint is the
+                // second signal, and it is what keeps a selection readable for
                 // someone who cannot separate the two blues.
                 assertTrue(theme + ": a selection must be a visible step off a"
                                 + " resting control, distance was "

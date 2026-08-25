@@ -3,28 +3,32 @@
   A Tool Rail entry at rest.
 
   Borderless, for the same reason bg_icon_button is: the rail already draws its
-  own surface and its own hairline, so giving every entry a second filled and
-  stroked box inside it framed the same content twice and made four tools read
-  as four stacked cards rather than as one rail. Nomad-style creative rails and
-  modern segmented controls both draw the container once and let only the
-  selection carry a shape.
+  own floating capsule, so giving every entry a second filled box inside it
+  framed the same content twice and made four tools read as four stacked cards
+  rather than as one rail. Nomad-style creative rails and modern segmented
+  controls both draw the container once and let only the selection carry a
+  shape.
 
   Pressed feedback is kept — an entry that looks dead until native code answers
   which tool is held is exactly the defect this mechanism exists to prevent —
-  and the ACTIVE entry still uses bg_control_active, so the held tool is the one
-  filled, bordered thing in the rail and is unmistakable.
+  and the ACTIVE entry is bg_rail_entry_active, so the held tool is the one
+  filled thing in the rail and is unmistakable.
+
+  The corner is radius_rail_entry rather than radius_control, so both forms are
+  concentric with the rail's own surface: a 10 dp box inside an 18 dp surface
+  with 6 dp of padding left a crescent of rail at the first and last entries.
 -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:state_pressed="true">
         <shape android:shape="rectangle">
             <solid android:color="?attr/fsControlSurfacePressed" />
-            <corners android:radius="@dimen/radius_control" />
+            <corners android:radius="@dimen/radius_rail_entry" />
         </shape>
     </item>
     <item>
         <shape android:shape="rectangle">
             <solid android:color="@android:color/transparent" />
-            <corners android:radius="@dimen/radius_control" />
+            <corners android:radius="@dimen/radius_rail_entry" />
         </shape>
     </item>
 </selector>

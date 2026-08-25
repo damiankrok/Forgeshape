@@ -13,21 +13,28 @@
   It stays a state list rather than becoming a null background, because the
   pressed answer is the part that matters — a control that looks dead until
   native code replies is the defect the whole state-list mechanism exists to
-  prevent. The ACTIVE form is unchanged and still bg_control_active, so a
-  control whose panel is open is the only one in the row wearing a box, which
-  is what makes "open" readable at a glance.
+  prevent. The ACTIVE form is bg_capsule_control_active, so a control whose panel
+  is open is the only one in the row wearing a shape, which is what makes "open"
+  readable at a glance.
+
+  The corner is radius_control_inset, not radius_control. Every icon control in
+  the product sits inside a floating capsule — Display and Hide UI in the utility
+  group, the precision toggle in its own, the `+` in the Objects capsule — and a
+  10 dp box painted flush inside a 26 dp capsule leaves a crescent of capsule
+  showing beside it. The lone exception, the restore chip in the overlay, wants a
+  pill anyway.
 -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:state_pressed="true">
         <shape android:shape="rectangle">
             <solid android:color="?attr/fsControlSurfacePressed" />
-            <corners android:radius="@dimen/radius_control" />
+            <corners android:radius="@dimen/radius_control_inset" />
         </shape>
     </item>
     <item>
         <shape android:shape="rectangle">
             <solid android:color="@android:color/transparent" />
-            <corners android:radius="@dimen/radius_control" />
+            <corners android:radius="@dimen/radius_control_inset" />
         </shape>
     </item>
 </selector>

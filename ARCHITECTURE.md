@@ -16,11 +16,14 @@ ForgeShapeActivity
         |
         +-- EditorWorkspaceView   (+ EditorUiState, WorkspaceLayoutMode)
         |        +-- StartChooserView / GlobalToolbarView / ToolRailView
-        |        +-- BrushEdgeControlsView / ObjectsSectionView
-        |        +-- PropertyInspectorView
-        |                 +-- ConstructionShapeEditorView    what the object IS
-        |                 +-- ConstructionPlacementEditorView  where it SITS
-        |                 +-- SculptContextView   mesh state + guarded re-Freeze
+        |        +-- BrushEdgeControlsView / ObjectsSectionView / ObjectsCapsuleView
+        |        +-- AnchoredSurfaceView   one growth, four surfaces
+        |                 +-- ObjectsPopoverView / AddPrimitivePaletteView
+        |                 +-- DisplaySettingsPopoverView
+        |                 +-- PropertyInspectorView  (+ PrecisionScrollView)
+        |                          +-- ConstructionShapeEditorView    what the object IS
+        |                          +-- ConstructionPlacementEditorView  where it SITS
+        |                          +-- SculptContextView  mesh state + guarded re-Freeze
         |
 ForgeShapeSurfaceView         Surface lifecycle + raw pointer forwarding
 NativeViewport (JNI decls)
@@ -233,11 +236,44 @@ one of its children is active, and a fifth selectable thing in it would break
 that. It names what it will open, so a user never has to press it to find out,
 and it is drawn active exactly while the surface is up.
 
+**The status line has a lifecycle, and two kinds of message**, both owned by
+`GlobalToolbarView`. A **transient** — every verdict: applied, rejected, selected,
+created, switched — is written with `showStatus`, holds for `STATUS_HOLD_MS` (5 s)
+or `STATUS_FAULT_HOLD_MS` (10 s) in the error role, and then the line returns to
+whatever **stands**. A rejection gets the longer hold because ForgeShape's
+rejection copy explains a constraint and has to be readable to the end: the
+wording is not shortened to fit a timeout, the timeout fits the wording. A newer
+message cancels the older one's pending clear before writing — cancel-first, the
+same rule and reason as `ChromeMotion` — or the first message's timer would blank
+the second early. The **standing** message is set by `showStandingStatus` from the
+one refresh every surface re-reads, so it re-asserts itself after any transient
+that covered it and clears the moment it stops being true. It is empty in the
+ordinary case, and an empty line is **no capsule at all**: a surface with nothing
+in it is the same permanent claim on the workspace UI-R4A removed elsewhere.
+
 **A standing fault is visible without opening anything.** The stale-source warning
-still lives in the Sculpt context surface next to the action that resolves it,
-but that surface no longer opens by itself, so the warning is also written to the
-status line on every refresh in Sculpt, where it outranks the gesture hint and
-re-asserts itself after any message that overwrites it.
+still lives in the Sculpt context surface next to the action that resolves it, but
+that surface no longer opens by itself, so it is also the standing message in
+Sculpt. It is the only one the product has, and it is a *state* rather than a
+verdict — which is what the two kinds exist to separate.
+
+**Creation is offered only where it can succeed.** `sceneAddBody()` refuses in
+Sculpt Mode, so both `+` controls — the capsule's and the docked column's — are
+`GONE` there, set from the one refresh so the hosts cannot disagree. Nothing is
+drawn disabled in their place: a greyed `+` says "not now", which is exactly as
+much as its absence says, at the cost of a dead control in the resting workspace.
+The scene itself stays reachable. The native refusal path is kept and still writes
+its message — it is the guard, and removing a control is not removing a guard.
+
+**The Tool Rail remembers what it was told.** `rebuild()` discards every entry view
+and builds fresh ones at the resting background, and it runs from
+`setCompactEntries`, which the adaptive pass calls on any window crossing the
+short-height threshold — so a rotation left the rail with no entry drawn active
+while the tool was unchanged below JNI. The rail keeps the last key it was given
+and re-applies it after a rebuild. It still **decides** nothing: the caller reads
+the held tool back from native state and pushes it in, and `setEntries` clears the
+key outright, because `TOOL_GRAB` and `CONSTRUCTION_TOOL_SHAPE` are both 0 and
+carrying one across a mode change would light an entry by coincidence.
 
 ### Appearance: roles, not colours
 
@@ -276,12 +312,19 @@ and the platform cannot blur what is behind one, so "glass" is tone plus opacity
 plus a soft shadow — a look the platform actually keeps, rather than a blur that
 silently degrades to a grey slab.
 
-**States are fill-led, and almost nothing rests on an outline.** `fsAccentFill`
+**States are fill-led, and nothing rests on an accent outline.** `fsAccentFill`
 (what a SELECTED control rests in) and `fsPrimaryFill` (a PRIMARY COMMIT, carrying
 `fsTextOnPrimary`) are two roles and deliberately not the same family: a selection
-is a quiet lifted surface carried by its fill and its brightened label, with a
-hairline as the third signal; a commit is the accent itself. The accent is spent
-on exactly two things — a primary commit and the ring on a focused numeric field.
+is a quiet lifted surface carried by its fill and its brightened label; a commit
+is the accent itself. The selected state used to carry an accent hairline as well,
+described as its third signal and read as its first — at a glance a selected chip
+was a blue-outlined box, six of them made a panel look like a form of framed
+cells, and the outline did nothing the fill and the brightened label were not
+already doing. It is gone. `fsAccentBorder` is consequently referenced by no
+drawable and is deliberately still declared and still answered by all three
+palettes: those values are owner-approved, and dropping one to record a styling
+decision would change an approved palette. The accent is spent on exactly two
+things — a primary commit and the ring on a focused numeric field.
 `fsTextOnPrimary` is an **ink**, not white: `#4C8FD6` carries white at 3.4:1 and
 near-black at 5.5:1. Controls otherwise draw no box until pressed — one step of
 tone plus the space around them is the separation — and exactly two resting
@@ -293,8 +336,27 @@ rather than outlined.
 Icons are local vector drawables on one 24 dp grid, drawn white and tinted from
 the same state list, so an entry's glyph and its caption cannot disagree about
 whether it is active, pressed or reserved. Metrics come from `dimens.xml`: corner
-radius is four semantic levels — control, floating surface, sheet, capsule — and
+radius is four semantic levels — control, floating surface, sheet, capsule — plus
+the two **nesting** radii a member takes from its host (see *Chrome depth*), and
 type is five roles rather than five sizes.
+
+**The interactive floor is 48 dp, and it is a HIT AREA.** `control_height`,
+`icon_button_size` and `brush_touch_width` are all at it; the glyphs are still
+20 dp, the rail's compact caption is still 10 sp, and nothing grew a drawn box to
+reach the number. Raising it from 44 dp cost 8 dp of the Global Toolbar's row,
+and the mode-transition button gives that up rather than an icon control — a
+button that ellipsises still reads, an icon control squeezed past the window edge
+does not. `toolbar_transition_max_width` carries the arithmetic.
+
+**No type role upper-cases a string the product did not choose character by
+character.** `sectionLabel` dropped `setAllCaps` at UI-R4B, and it is a
+correctness fix rather than a taste one: a section heading can carry a unit —
+"Position (m)" — and the transform rendered that as "POSITION (M)". In SI, `m` is
+the metre and `M` is not a unit at all. A transformation that can change what a
+symbol *means* has no business being applied automatically, and the next unit to
+appear in a heading would have inherited the same defect silently. What separates
+a heading from a field caption is weight, tracking and the section gap above it,
+which is what was carrying it anyway.
 
 **What the approved palettes cost is stated rather than hidden.** The twelve
 anchor values are not the UI layer's to move, so `EditorWorkspaceThemeTest`
@@ -396,15 +458,25 @@ and a 914 × 411 dp phone in landscape is not classified as a tablet merely beca
 it is wide. The surface's body always scrolls and its bottom-sheet height is
 capped in `onMeasure`.
 
-**No chrome column spans the window.** Both side placements and the Objects
-column wrap their own content and hang from the top of the row: a panel stretched
-to a tablet's full height is mostly empty — a box has three dimensions and a
-scene often has two bodies — and that emptiness is what made the expanded layout
-read as a desktop CAD frame. They still cannot outgrow the window, because a
-`WRAP_CONTENT` child of a bounded `LinearLayout` is measured `AT_MOST` the parent
-height and a long body simply scrolls. A docked Tool Rail is top-aligned with
-them for the same reason: a rail centred on the window while the panel beside it
-hangs from the top is one surface stranded halfway down the model, not a layout.
+**No chrome column spans the window, and none of them is a slab.** Both side
+placements and the Objects column wrap their own content and hang from the top of
+the row: a panel stretched to a tablet's full height is mostly empty — a box has
+three dimensions and a scene often has two bodies — and that emptiness is what
+made the expanded layout read as a desktop CAD frame. They still cannot outgrow
+the window, because a `WRAP_CONTENT` child of a bounded `LinearLayout` is measured
+`AT_MOST` the parent height and a long body simply scrolls. A docked Tool Rail is
+top-aligned with them for the same reason: a rail centred on the window while the
+panel beside it hangs from the top is one surface stranded halfway down the
+model, not a layout.
+
+**Every chrome surface wears the same material in every window.** The Objects
+column, the docked rail and the docked inspector used to be drawn opaque, flat and
+squared against the window edge, so one session on one device showed the same
+three controls in two visual languages depending on which way the tablet was held.
+All three are inset from the edge, rounded on every corner and raised, exactly as
+on a phone. **Docking decides position, never material:** the rail is top-aligned
+with the panel beside it rather than centred on the thumb, and that is the whole
+remaining content of `railDocked()`.
 `sideDockWidthDp` is 30 % capped at 340 dp rather than 28 % capped at 320,
 because a panel must fit its own content before it may be narrow — at the old
 numbers a docked inspector gave the primitive chooser 85 dp a chip and clipped
@@ -425,15 +497,22 @@ to the chrome containers only. `windowSoftInputMode` is `adjustResize`, but with
 decor-fits off the window is **not** resized: the keyboard arrives as an inset the
 chrome absorbs and the surface is untouched.
 
-**Chrome depth, and what "docked" claims.** Surfaces that float over the model
-carry a small elevation; **docked** surfaces carry none and are drawn opaque and
-flush, because they sit *beside* the model. That is a claim about the layout,
-answered by the window rather than by taste: `railDocked()` and
-`objectsDocked(widthDp)` are the predicates, and the Property Inspector follows
-the same rule. Containers set `clipChildren(false)`, since a shadow is drawn
+**Chrome depth.** Every surface that stands over or beside the model carries the
+same small elevation, in every layout mode — see above for why the docked variants
+no longer drop it. Containers set `clipChildren(false)`, since a shadow is drawn
 outside its child's bounds — drawing only, never hit-testing. The rail's surface
 and elevation live on its `ScrollView`, or the container would clip exactly the
 shadow it wraps.
+
+**A control's corner is concentric with its host's.** The rule is
+`inner = outer − gap`: two rounded rectangles that do not share a corner centre
+leave a crescent of the outer one showing at each end, which reads as a rendering
+fault rather than as a control. `radius_control_inset` (22 dp) is the corner of a
+member of a `radius_capsule` (26 dp) control group with 4 dp of padding;
+`radius_rail_entry` (20 dp) is a Tool Rail entry inside the same 26 dp capsule
+with 6 dp of padding. It applies to the resting, pressed and active forms alike,
+which is why capsule members have their own drawables rather than reusing
+`bg_control*`.
 
 **The Objects surface is one view with two hosts, owned by the workspace.** An
 expanded window with room gives the scene list a leading-edge column
@@ -456,10 +535,22 @@ palette because it would otherwise be anchored to a control that is no longer
 there. A column is presentation the window pays for permanently; the panel is
 presentation the user asks for and dismisses.
 
-Whether it docks is arithmetic, **not a fourth breakpoint**: `EXPANDED` is
-necessary and not sufficient, and a window qualifies only when a 180 dp Objects
-column, the rail and the inspector still leave a central viewport at least 480 dp
-wide. Deriving it means a later change to any column width moves the answer
+**The column is Construction's, not the window's alone.** Whether Objects gets a
+permanent panel is `objectsColumnAffordable && !isSculpting()`, for two reasons.
+Body switching and creation are both refused below JNI while sculpting, so a
+permanent list of bodies there is a surface with nothing to do — and it is not
+free, because the column sits *before* `BrushEdgeControlsView` in the middle row,
+so its 180 dp pushed Radius and Strength inboard onto the model and out from under
+the reaching hand. Expanded Sculpt gets the phone's Objects capsule in the phone's
+place. The window's half of the answer is cached in `objectsColumnAffordable` by
+the adaptive pass, so a mode change re-asks through `applyObjectsPlacement` —
+called from both `applyLayoutForWindow` and `syncFromNative` — without re-running
+the whole decision.
+
+Whether the window can afford it at all is arithmetic, **not a fourth
+breakpoint**: `EXPANDED` is necessary and not sufficient, and a window qualifies
+only when a 180 dp Objects column, the rail and the inspector still leave a
+central viewport at least 480 dp wide. Deriving it means a later change to any column width moves the answer
 instead of silently violating that floor, and it is why the bottom of the expanded
 range gets no third column: three permanent chrome columns on a large phone in
 landscape is the desktop-CAD clutter UI-OWNER-02 rules out. The re-parent is
@@ -489,6 +580,19 @@ is no window in which the object is a cylinder carrying box dimensions.
 parameter row is on screen and it is always the drafted kind's; every primitive's
 fields stay populated and converted, including hidden ones, so an inactive draft
 cannot silently change meaning off screen.
+
+**The surface ends on a row, not through one.** The bottom-sheet cap is a number
+of pixels and the body is a stack of rows of unrelated heights, so the two lined up
+only by accident and the boundary regularly crossed a chip or a caption at rest.
+`PrecisionScrollView` rounds the visible body **down** to the bottom of the last
+row that fits whole, computed from measured heights and margins (a row's
+`getBottom()` is 0 during the measure pass it runs in). It caps nothing — the cap
+is still `PropertyInspectorView`'s and still comes from the window — changes no
+content, order or scroll range, and does nothing when everything fits, so the
+content-sized philosophy is intact. A control sliced across its middle reads as a
+rendering fault rather than as "there is more below", and in a panel whose whole
+claim is exact numbers that is the most expensive thing it can show. The scroll
+container clips to its padding, so nothing draws into the sheet's own inset.
 
 Shape and placement live in **separate inspector bodies with separate Apply
 buttons** — *Apply Shape* and *Apply Transform* — because they are separate
@@ -531,18 +635,30 @@ Nothing about Freeze is duplicated, so *Back to Construction* finds the exact
 sphere and *Resume Sculpt* returns the same frozen mesh for the ordinary reasons.
 A refusal leaves the product in Construction, unchanged, and says so.
 
+**Two vocabularies, on purpose.** This document, the code below JNI and the view
+ids say *Freeze*, *re-Freeze* and *Frozen Sculpt Mesh*, because those name what
+the operation does: `SculptMesh::freezeFrom` copies the Construction local mesh
+and the copy's topology can never change again. The **user** reads *Start
+Sculpting*, *Reset Sculpt from Shape…* and *Sculpt mesh*, because a user starts
+sculpting and the copy is the product's business, not theirs. Neither is a
+translation of the other and neither is wrong; what would be wrong is one
+vocabulary serving both readers. `UIR4B-15` scans every `R.string` the product
+declares and fails on any user-facing "Freeze" or "frozen". Nothing enforces the
+reverse and nothing needs to.
+
 Three mode transitions live in the Global Toolbar and exactly one is on screen:
-*Freeze to Sculpt* while no Frozen Sculpt Mesh exists, *Resume Sculpt* once one
-does, *Back to Construction* while sculpting. None is guarded, and none needs to
+**Start Sculpting** while no Frozen Sculpt Mesh exists, **Resume Sculpt** once one
+does, **Back to Construction** while sculpting. None is guarded, and none needs to
 be: none of the three discards anything.
 
 The one irreversible act in the product is **re-Freeze**, which rebuilds the
 sculpt mesh from the current Construction shape and throws away what was
-sculpted into the old one. It lives in the Sculpt inspector as *Freeze again…*
-and it confirms **only when `SCULPT_HAS_EDITS` says the CURRENT frozen mesh has
-edits** — deliberately not the session-lifetime stroke count, which describes
-meshes that no longer exist and would raise a dialog with nothing behind it on
-every later re-Freeze of an untouched mesh. Cancel makes no native call at all.
+sculpted into the old one. It lives in the Sculpt context surface as **Reset
+Sculpt from Shape…** and it confirms **only when `SCULPT_HAS_EDITS` says the
+CURRENT frozen mesh has edits** — deliberately not the session-lifetime stroke
+count, which describes meshes that no longer exist and would raise a dialog with
+nothing behind it on every later re-Freeze of an untouched mesh. Cancel makes no
+native call at all.
 
 ### Android UI verification boundary
 
@@ -563,6 +679,16 @@ pixel-identical viewport region across a chrome drag. An **adaptive** case reads
 the window it is actually in and asserts the contract belonging to that window,
 so running the suite under an overridden window size is a genuine expanded-layout
 run rather than a simulation.
+
+**Suites assert no literal colour, radius or shadow — and `UIR4B-14` asserts a
+radius RELATION, which is the same rule.** What it pins is `inner = outer −
+padding`, which survives any deliberate change to either number; a literal
+"10 dp" would break on the next restyle. The same principle covers the other
+correction cases: `UIR4B-15` scans every declared `R.string` rather than a list
+maintained by hand, and `UIR4B-08` asserts the anchored contract over the set of
+anchored surfaces rather than over four named ones — a list is exactly as
+complete as whoever last remembered to update it, which is how three of the four
+surfaces came to have a wrong first-open pivot while the fourth was correct.
 
 ## JNI boundary
 
@@ -1278,8 +1404,9 @@ rather than assuming its request succeeded, so a refused request (entering Sculp
 with nothing frozen) cannot leave surfaces on screen that lie about what is being
 edited. The active tool is read back the same way.
 
-- **Freeze to Sculpt** snapshots the current Construction local mesh, creates the
-  Frozen Sculpt Mesh with the same `ObjectId`, and enters Sculpt mode.
+- **Start Sculpting** (`freezeToSculpt`) snapshots the current Construction local
+  mesh, creates the Frozen Sculpt Mesh with the same `ObjectId`, and enters
+  Sculpt mode.
 - **Back to Construction** keeps the sculpt mesh untouched and republishes the
   Construction Source's own generated mesh, so the original object comes back
   exactly as it was.
@@ -1953,21 +2080,36 @@ pulse structurally unable to reach B's. The renderer is still never told *which*
 object is selected: `SceneDrawItem` carries a plain bool per item and identity
 stays with `SelectionController`.
 
-**Motion is a shared helper, not a system.** `ChromeMotion` (Java) owns exactly
-four decisions — the two durations (**120 ms** arriving, **90 ms** leaving), the
-reduced-motion question, cancel-first, and one alpha helper — and nothing may be
-added to it that describes motion as data.
+**Motion is a shared helper, not a system.** `ChromeMotion` (Java) owns the
+decisions and nothing may be added to it that describes motion as data: the fade
+durations (**120 ms** arriving, **90 ms** leaving), the anchored-growth durations
+(**190 ms** arriving, **150 ms** leaving), the one easing curve
+(`PathInterpolator(0.23, 1, 0.32, 1)` — an ease-out, built lazily so the JVM test
+source set can load the class), the one start scale (**0.96**, both axes), the
+reduced-motion question, cancel-first, and one alpha helper.
+
+**Every surface that grows out of a control is an `AnchoredSurfaceView`**, the
+single owner of that growth: `ObjectsPopoverView`, `AddPrimitivePaletteView`,
+`PropertyInspectorView`, `DisplaySettingsPopoverView`. A subclass answers only
+`anchoredToTrailingEdge()`; durations, curve, uniform scale, cancel-first,
+reduced-motion and the pivot it inherits and may not re-decide. **The pivot waits
+for a size:** it is expressed in the surface's own bounds, so an open before the
+surface has ever been laid out is *staged* — start transform applied, made visible
+so the traversal measures it — and the growth starts from `onSizeChanged`. Without
+that the first open of a surface in a process grows from the top-left of a
+zero-sized box rather than from the control that opened it, and every later one is
+correct, which is why a per-surface fix is not enough.
+
 Three rules constrain every caller. **Nothing on the path of a pointer sample:** a
 chrome transition never runs while a viewport gesture is in flight, because input
-responsiveness outranks motion. **Nothing that changes a size:** chrome
-hide/restore is alpha only, because the `SurfaceView` is full-bleed and a
-transition that changed a size would rebuild the swapchain, and every context
-surface — the scene list, the Add Primitive palette and the precision surface —
-animates **alpha and scale about the corner it grew from**, never a height that
-would `requestLayout` per frame and re-run the whole adaptive decision.
-**Only a user act animates** — the instant, idempotent paths are what the measure
-pass and every state refresh call, which is also why the Objects re-parent does
-not animate.
+responsiveness outranks motion, and `setMotionAllowed` is pushed to all four
+anchored surfaces. **Nothing that changes a size:** chrome hide/restore is alpha
+only, because the `SurfaceView` is full-bleed and a transition that changed a size
+would rebuild the swapchain, and every anchored surface animates **alpha and
+uniform scale about the corner it grew from**, never a height that would
+`requestLayout` per frame and re-run the whole adaptive decision. **Only a user
+act animates** — the instant, idempotent paths are what the measure pass and every
+state refresh call, which is also why the Objects re-parent does not animate.
 
 **Reduced motion crosses the boundary as one bool.** The Android layer reads
 `ANIMATOR_DURATION_SCALE`, decides what it means, and hands the answer to

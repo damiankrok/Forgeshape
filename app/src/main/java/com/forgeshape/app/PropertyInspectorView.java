@@ -2,7 +2,6 @@ package com.forgeshape.app;
 
 import android.content.Context;
 import android.view.Gravity;
-import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
@@ -38,10 +37,21 @@ import android.widget.TextView;
  * sheet: a body that does not fit must be reachable, not lost, and an uncapped
  * wrap-content sheet grows to whatever its content wants.
  *
+ * <p><b>But the cap now ends on a row, not through one.</b> The cap is a height
+ * in pixels and the body is a stack of rows, so the two agreed only by accident:
+ * a sheet capped at 30 % of the window landed wherever it landed, which at rest
+ * was regularly half-way through a chip or a field caption. A control sliced
+ * across its middle by a panel edge reads as a rendering fault, not as "there is
+ * more below" — the user cannot tell a clipped surface from a broken one. See
+ * {@link PrecisionScrollView}, which rounds the visible body DOWN to the last
+ * row that fits whole. Nothing about the cap, the scrolling, the keyboard or
+ * exact-value editing changes; what changes is where the surface is allowed to
+ * end.
+ *
  * <p><b>Owns no value.</b> The bodies read and submit; this is a frame with a
  * title, a close control and a scroll container.
  */
-final class PropertyInspectorView extends LinearLayout {
+final class PropertyInspectorView extends AnchoredSurfaceView {
 
     /** Told the user dismissed the precision surface. */
     interface OnPrecisionSurfaceClosed {
@@ -56,24 +66,10 @@ final class PropertyInspectorView extends LinearLayout {
         void onPrecisionCloseRequested();
     }
 
-    /** Matches the Objects panel and the Add Primitive palette, so every
-     *  surface the workspace opens on demand behaves the same way. */
-    private static final long OPEN_DURATION_MS = 140L;
-    private static final long CLOSE_DURATION_MS = 100L;
-
     private final TextView title;
-    private final ScrollView scroll;
+    private final PrecisionScrollView scroll;
     private final FrameLayout body;
     private final OnPrecisionSurfaceClosed listener;
-
-    /** See {@link #setMotionAllowed}. */
-    private boolean motionAllowed = true;
-
-    /** Set by the anchor: which way the surface unfolds from its toggle. */
-    private boolean growsUpward = true;
-
-    /** The state the user asked for; see {@link #isOpen()}. */
-    private boolean open;
 
     /** Zero disables the cap; a bottom sheet sets it so it cannot grow to fill
      *  the window, which is exactly what the previous panel did. */
@@ -83,10 +79,9 @@ final class PropertyInspectorView extends LinearLayout {
         super(context);
         this.listener = listener;
         setId(R.id.property_inspector);
-        setOrientation(VERTICAL);
         setContentDescription(context.getString(R.string.property_inspector));
-        // A placement decides the shape and the depth; see showFloating.
-        showFloating(true);
+        // One surface in every placement; see showAsFloatingPanel.
+        showAsFloatingPanel();
 
         final int pad = EditorControlStyles.dimen(context, R.dimen.inspector_padding);
 
@@ -120,11 +115,18 @@ final class PropertyInspectorView extends LinearLayout {
         });
         header.addView(close, EditorControlStyles.iconButtonParams(context, 0));
 
-        scroll = new ScrollView(context);
+        scroll = new PrecisionScrollView(context);
         scroll.setId(R.id.inspector_scroll);
         scroll.setFillViewport(false);
         scroll.setPadding(pad, 0, pad, pad);
-        scroll.setClipToPadding(false);
+        // CLIPPED to its padding, unlike most containers in the workspace.
+        //
+        // Nothing in this body casts a shadow, so the usual reason to let a
+        // child draw outside the padding does not apply — and letting it meant
+        // the bottom row was drawn INTO the sheet's own bottom inset, so the
+        // panel's rounded edge cut across it. The padding is a margin here, and
+        // it has to behave like one for the boundary to be a boundary.
+        scroll.setClipToPadding(true);
         addView(scroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT));
 
@@ -132,10 +134,6 @@ final class PropertyInspectorView extends LinearLayout {
         body.setId(R.id.inspector_body);
         scroll.addView(body, new ScrollView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT));
-
-        // Absent until asked for. Nothing about the resting workspace is this
-        // panel's to occupy.
-        setVisibility(GONE);
     }
 
     /** Replaces the contextual body. The caller owns which one belongs here. */
@@ -159,90 +157,6 @@ final class PropertyInspectorView extends LinearLayout {
         scroll.scrollTo(0, 0);
     }
 
-    /**
-     * Whether the precision surface is open.
-     *
-     * <p>The <b>target</b> state, not this frame's visibility: a closing panel
-     * is still VISIBLE for the length of its fade, and the toggle that draws
-     * itself active while it is open must not be lit by an animation that has
-     * not finished running.
-     */
-    boolean isOpen() {
-        return open;
-    }
-
-    /**
-     * Which way the surface unfolds from the control that opened it.
-     *
-     * <p>A compact window's precision toggle is roughly mid-height beside the
-     * rail and the sheet arrives from the bottom; a docked one hangs from the
-     * top. Set by the workspace's anchor, for the same reason the Objects panel
-     * and the Add Primitive palette take it.
-     */
-    void setGrowsUpward(boolean upward) {
-        growsUpward = upward;
-    }
-
-    /**
-     * Opens or closes the whole surface.
-     *
-     * <p>The one path that animates, and it animates the panel's <b>drawing</b>
-     * rather than its height: animating a height would mean a
-     * {@code requestLayout} on every frame, which re-runs the workspace's whole
-     * adaptive layout decision — it lives in {@code onMeasure} — dozens of times
-     * for a panel that is going to end up exactly where it always did. Alpha and
-     * scale cost no traversal at all.
-     *
-     * <p>Not animated while a viewport gesture is in flight, or when the
-     * platform asks for reduced motion. Both are the instant path.
-     */
-    void setOpen(boolean open) {
-        if (open == this.open) {
-            return;
-        }
-        this.open = open;
-        // Always interruptible: a second tap while a transition is running must
-        // reverse it, not queue behind it.
-        ChromeMotion.begin(this);
-        setPivotX(0.0f);
-        setPivotY(growsUpward ? getHeight() : 0.0f);
-
-        final long durationMs = ChromeMotion.duration(
-                open ? OPEN_DURATION_MS : CLOSE_DURATION_MS,
-                motionAllowed ? ChromeMotion.animatorScale(getContext()) : 0.0f);
-        if (durationMs <= 0L) {
-            settle(open);
-            return;
-        }
-        if (open) {
-            setAlpha(0.0f);
-            setScaleX(0.98f);
-            setScaleY(0.96f);
-            setVisibility(VISIBLE);
-            animate().alpha(1.0f).scaleX(1.0f).scaleY(1.0f)
-                    .setDuration(durationMs).start();
-        } else {
-            animate().alpha(0.0f).scaleX(0.98f).scaleY(0.96f)
-                    .setDuration(durationMs)
-                    .withEndAction(new Runnable() {
-                        @Override
-                        public void run() {
-                            // Reached only when the fade finished; a reversal
-                            // cancels it, and the reversal owns the state.
-                            settle(false);
-                        }
-                    }).start();
-        }
-    }
-
-    /** Lands on a resting state with no animation running on the view. */
-    private void settle(boolean open) {
-        setVisibility(open ? VISIBLE : GONE);
-        setAlpha(1.0f);
-        setScaleX(1.0f);
-        setScaleY(1.0f);
-    }
-
     private void requestClose() {
         if (listener != null) {
             listener.onPrecisionCloseRequested();
@@ -250,43 +164,28 @@ final class PropertyInspectorView extends LinearLayout {
     }
 
     /**
-     * Says whether this panel is standing ON the model or sitting BESIDE it.
+     * Draws the panel, wherever its host has placed it.
      *
-     * <p>The two are genuinely different surfaces and are drawn differently. A
-     * bottom sheet is INSET from the window edges by its host and is therefore
-     * rounded on all four corners — it stands over the model with the viewport
-     * visible around it. A side overlay floats against the trailing edge and is
-     * rounded only on the side that faces the model. A <b>docked</b> panel on a
-     * tablet does not float at all: it occupies its own column of the window,
-     * and giving it a card's shadow would be a claim about the layout that is
-     * simply untrue.
+     * <p><b>One surface in all three placements, and that is the correction.</b>
+     * A bottom sheet, a side overlay and a tablet's docked column used to be
+     * three different-looking things: rounded on four corners, rounded on one
+     * side, and a flat square-edged column with no depth. The user meets all
+     * three in one session by rotating a device, and the panel changed
+     * character each time — which is what made the expanded window read as a
+     * desktop CAD frame rather than as the same workspace with more room.
      *
-     * @param bottomSheet whether the panel is anchored to the bottom edge; the
-     *                    trailing-edge placements round their leading side
-     *                    instead
+     * <p>It is a floating panel everywhere now: rounded on every corner, with
+     * the same depth, inset from the window edges by its host. That is the same
+     * claim the Tool Rail, the Objects column and the toolbar's capsules all
+     * make — this is a surface in a workspace, and the model is around it.
+     *
+     * <p>Called on every placement decision rather than only on a change,
+     * because it is idempotent and the caller runs inside a measure pass where
+     * a conditional would be one more thing to get wrong.
      */
-    void showFloating(boolean bottomSheet) {
-        setBackgroundResource(bottomSheet
-                ? R.drawable.bg_inspector_sheet : R.drawable.bg_inspector_side);
+    void showAsFloatingPanel() {
+        setBackgroundResource(R.drawable.bg_inspector_sheet);
         setElevation(EditorControlStyles.dimen(getContext(), R.dimen.elevation_sheet));
-    }
-
-    /** Draws the panel as part of the layout rather than as a surface over it. */
-    void showDocked() {
-        setBackgroundResource(R.drawable.bg_inspector_side);
-        setElevation(0.0f);
-    }
-
-    /**
-     * Whether this panel may spend time on a transition.
-     *
-     * <p>Set false by the workspace while a viewport gesture — a camera orbit
-     * or, in Sculpt Mode, a real stroke — is in flight. A chrome transition
-     * must never compete with pointer samples for the main thread: input
-     * responsiveness outranks motion, so the panel simply appears instead.
-     */
-    void setMotionAllowed(boolean allowed) {
-        motionAllowed = allowed;
     }
 
     /**
@@ -296,6 +195,11 @@ final class PropertyInspectorView extends LinearLayout {
      * the window's height. Without it a wrap-content panel measures to whatever
      * its content wants, which is how the previous one came to measure to the
      * full window in landscape.
+     *
+     * <p>What the cap does <b>not</b> decide is where the visible body ends.
+     * That is {@link PrecisionScrollView}'s: a cap is a number of pixels and the
+     * body is a stack of rows, so the cap is an upper bound and the last whole
+     * row inside it is the boundary.
      */
     void setMaxHeightPx(int value) {
         if (maxHeightPx == value) {
@@ -303,6 +207,27 @@ final class PropertyInspectorView extends LinearLayout {
         }
         maxHeightPx = value;
         requestLayout();
+    }
+
+    /**
+     * Whether the body currently has more content than the surface shows.
+     *
+     * <p>For verification: a case proving there is no mid-row cut has to be able
+     * to tell "everything fits" from "it was rounded down to a row", because
+     * only the second is the interesting one.
+     */
+    boolean bodyIsScrollable() {
+        return scroll.contentOverflows();
+    }
+
+    /**
+     * Where the visible body ends, in the scroll container's own coordinates.
+     *
+     * <p>For verification. Compared against each row's bounds, this is what
+     * proves no row is crossed by the boundary.
+     */
+    int visibleBodyBottom() {
+        return scroll.visibleContentHeight();
     }
 
     @Override
@@ -316,17 +241,5 @@ final class PropertyInspectorView extends LinearLayout {
             spec = MeasureSpec.makeMeasureSpec(limit, MeasureSpec.AT_MOST);
         }
         super.onMeasure(widthMeasureSpec, spec);
-    }
-
-    /**
-     * Swallows every touch the inspector's own controls did not take.
-     *
-     * <p>Includes the gaps between fields and the padding around them: this
-     * panel sits over the viewport, and a missed tap next to a text field must
-     * not orbit the model or, in Sculpt Mode, deform it.
-     */
-    @Override
-    public boolean onTouchEvent(MotionEvent event) {
-        return true;
     }
 }

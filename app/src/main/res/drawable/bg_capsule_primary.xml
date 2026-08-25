@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  A primary commit that lives inside a floating capsule: Start Sculpting and
+  Resume Sculpt, in the Global Toolbar's editing group.
+
+  bg_primary's fill and ink, on the capsule's own concentric corner. It is a
+  separate file rather than a shared one because bg_primary also serves Apply
+  Shape and Apply Transform, which stand in a PANEL and are correctly 10 dp
+  there; one file for both would make a corner correct in one host and wrong in
+  the other.
+-->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_pressed="true">
+        <shape android:shape="rectangle">
+            <solid android:color="?attr/fsPrimaryFillPressed" />
+            <corners android:radius="@dimen/radius_control_inset" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="?attr/fsPrimaryFill" />
+            <corners android:radius="@dimen/radius_control_inset" />
+        </shape>
+    </item>
+</selector>

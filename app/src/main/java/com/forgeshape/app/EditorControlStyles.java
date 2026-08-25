@@ -128,6 +128,19 @@ final class EditorControlStyles {
         }
     }
 
+    /**
+     * Applies the medium weight to a view that is not one of the named roles.
+     *
+     * <p>Exists so the family string stays in this file. The two brush readouts
+     * are the only callers: they are a role of one, and giving them their own
+     * {@code applyRole} entry would put a size and a colour here that only one
+     * control uses — but a second copy of {@code "sans-serif-medium"} in a view
+     * constructor is exactly the drift this class was made to stop.
+     */
+    static void applyMediumWeight(TextView view) {
+        view.setTypeface(MEDIUM);
+    }
+
     /** Extra leading, for anything that may wrap onto a second line. */
     private static void applyWrappedLeading(TextView view) {
         view.setLineSpacing(dimen(view.getContext(), R.dimen.text_line_spacing), 1.0f);
@@ -160,12 +173,31 @@ final class EditorControlStyles {
         return view;
     }
 
+    /**
+     * A heading over a group of rows: Position, Rotation, Display unit, Objects.
+     *
+     * <p><b>Not upper-cased, and that is a correctness fix rather than a taste
+     * one.</b> A section heading can carry a unit — "Position (m)" — and
+     * {@code setAllCaps} rendered that as "POSITION (M)". In SI, {@code m} is
+     * the metre and {@code M} is not a unit at all; the nearest thing it
+     * suggests is the mega- prefix, so a CAD panel was writing the wrong symbol
+     * for its own authoritative unit. A transformation that can change what a
+     * symbol MEANS has no business being applied to a string the product did not
+     * choose character by character, and the next unit to appear in a heading
+     * would have inherited the same bug silently.
+     *
+     * <p>What separates a heading from a field caption is now weight, tracking
+     * and the section gap above it, which is what was doing the work anyway —
+     * 11 sp upper-case with 0.08 tracking is also the least legible type in the
+     * product, and headings are the one thing a user scans rather than reads.
+     */
     static TextView sectionLabel(Context context, CharSequence text) {
         final TextView label = new TextView(context);
         label.setText(text);
         applyRole(label, R.dimen.text_label, R.attr.fsTextSecondary, true);
-        label.setAllCaps(true);
-        label.setLetterSpacing(0.08f);
+        // Kept, and reduced: tracking still separates a heading from the caption
+        // under it, and at sentence case it does not have to work as hard.
+        label.setLetterSpacing(0.04f);
         return label;
     }
 
@@ -251,8 +283,41 @@ final class EditorControlStyles {
      * spanning the window with a hairline under it reads as an Android app bar
      * whatever colour it is painted; two small groups with the model between and
      * behind them read as chrome belonging to a viewport. The padding is what
-     * keeps the 44 dp controls inside from touching the capsule's own edge.
+     * keeps the 48 dp controls inside from touching the capsule's own edge.
      */
+    /**
+     * Restyles a control so it nests correctly inside a floating capsule.
+     *
+     * <p>A capsule's members have to be CONCENTRIC with it, or the straight edge
+     * of a small-cornered box leaves a crescent of capsule showing at each end
+     * of the group — which is what an active icon control, the Objects capsule's
+     * body label and the recessed Export well all did before UI-R4B, and which
+     * reads as a rendering fault rather than as a control. See
+     * {@code radius_control_inset}.
+     *
+     * <p>It is a restyle rather than a second set of factories because the
+     * control is the same control: same size, same touch target, same content
+     * tint, same states. Only its corner belongs to its host.
+     *
+     * @param resting the capsule form of this control's resting background
+     */
+    static void asCapsuleMember(View control, int resting) {
+        control.setBackgroundResource(resting);
+    }
+
+    /**
+     * Marks a capsule member active, fill-led and concentric with its host.
+     *
+     * <p>Separate from {@link #setChipActive} for the same reason
+     * {@link #setListRowActive} is: that one restores {@code bg_control}, which
+     * would quietly re-box a capsule member the first time it was deselected.
+     */
+    static void setCapsuleMemberActive(View control, boolean active) {
+        control.setBackgroundResource(active
+                ? R.drawable.bg_capsule_control_active : R.drawable.bg_capsule_control);
+        control.setActivated(active);
+    }
+
     static LinearLayout controlGroup(Context context) {
         final LinearLayout group = new LinearLayout(context);
         group.setOrientation(LinearLayout.HORIZONTAL);
@@ -337,9 +402,9 @@ final class EditorControlStyles {
      * one body look like a second Add Body sitting above the real one; the eye
      * reads a left edge as content and a centred pill as a control.
      *
-     * <p>The ACTIVE row is unchanged — {@link #setChipActive} still gives it the
-     * tinted fill, the thicker accent border and the brightened label — so the
-     * one shape in the list is the answer to the only question the surface asks.
+     * <p>The ACTIVE row is the tinted fill plus the brightened label, and
+     * nothing else — see {@link #setListRowActive}. It is the one shape in the
+     * list, which is the answer to the only question the surface asks.
      */
     static TextView listRow(Context context, int id, CharSequence text) {
         final TextView row = chip(context, id, text);
@@ -450,7 +515,7 @@ final class EditorControlStyles {
      * An icon-only control: Display, Objects, Hide UI, the restore chip, the
      * inspector toggle.
      *
-     * <p>Square at the 44 dp touch floor, so an icon that reads at 20 dp is
+     * <p>Square at the 48 dp touch floor, so an icon that reads at 20 dp is
      * still reachable with a fingertip. The content description is mandatory
      * and is the only name this control has.
      *
@@ -479,10 +544,20 @@ final class EditorControlStyles {
         return button;
     }
 
-    /** Marks an icon-only control active, background and tint together. */
+    /**
+     * Marks an icon-only control active, background and tint together.
+     *
+     * <p>Both forms carry the capsule's own corner rather than the control
+     * corner. Every icon control in the product either sits inside a floating
+     * capsule — Display and Hide UI in the utility group, the precision toggle
+     * in its own, the {@code +} in the Objects capsule — or stands alone in the
+     * overlay, where a pill is what a lone round-ish control should be anyway.
+     * At 10 dp inside a 26 dp capsule the active form showed a crescent of
+     * capsule at the end of the row.
+     */
     static void setIconButtonActive(ImageView button, boolean active) {
-        button.setBackgroundResource(
-                active ? R.drawable.bg_control_active : R.drawable.bg_icon_button);
+        button.setBackgroundResource(active
+                ? R.drawable.bg_capsule_control_active : R.drawable.bg_icon_button);
         button.setActivated(active);
     }
 

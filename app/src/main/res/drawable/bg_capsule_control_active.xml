@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The active member of a floating capsule: an icon control whose panel is open,
+  the Objects capsule's label while the scene list is up.
+
+  FILL-LED and borderless. What says "this is the one you are on" is the surface
+  itself — fsAccentFill, the palette's selected-at-rest value — plus the
+  brightened content that comes with it from control_content_tint. There is no
+  hairline: inside a capsule the accent outline was the first thing read, which
+  made a selection look like a bordered box rather than like the capsule's own
+  state, and the accent belongs to a primary commit and a focused field.
+
+  Concentric with its host at radius_control_inset, for the reason that
+  dimension exists.
+-->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_pressed="true">
+        <shape android:shape="rectangle">
+            <solid android:color="?attr/fsAccentFillPressed" />
+            <corners android:radius="@dimen/radius_control_inset" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="?attr/fsAccentFill" />
+            <corners android:radius="@dimen/radius_control_inset" />
+        </shape>
+    </item>
+</selector>

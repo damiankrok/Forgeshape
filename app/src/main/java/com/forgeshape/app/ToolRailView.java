@@ -67,6 +67,30 @@ final class ToolRailView extends LinearLayout {
     private final OnToolSelected listener;
     private boolean compact;
 
+    /**
+     * Which entry is drawn active, remembered across a rebuild.
+     *
+     * <p>This is NOT the rail deciding which tool is held — the caller still
+     * reads that back from native state and pushes it in through
+     * {@link #showActive(int)}, and this only remembers the last thing it was
+     * told so a rebuild can re-apply it.
+     *
+     * <p>It is what fixes the defect: {@link #rebuild()} discards every entry
+     * view and builds fresh ones at the resting background, and it runs from
+     * {@link #setCompactEntries(boolean)}, which the adaptive layout calls on
+     * every window that crosses the short-height threshold. A rotation into
+     * landscape therefore rebuilt the rail and left <b>no</b> entry drawn
+     * active, in either mode, with the tool itself unchanged below JNI — the
+     * user's held brush was still held and the rail had simply stopped saying
+     * so. It survived because the mode path re-applies it: {@code setEntries}
+     * is always followed by a {@code showActive} from {@code syncFromNative},
+     * and the compactness path is not.
+     *
+     * <p>Boxed, because "nothing yet" and "entry 0" are different answers and
+     * an {@code int} sentinel would collide with a real tool key.
+     */
+    private Integer activeKey;
+
     ToolRailView(Context context, OnToolSelected listener) {
         super(context);
         this.listener = listener;
@@ -99,8 +123,19 @@ final class ToolRailView extends LinearLayout {
         rebuild();
     }
 
+    /**
+     * Replaces the entry set — the four sculpt brushes, or the two Construction
+     * contexts.
+     *
+     * <p>Clears the remembered active entry, and that is deliberate: a key from
+     * the other mode means nothing in this one. {@code TOOL_GRAB} and
+     * {@code CONSTRUCTION_TOOL_SHAPE} are both 0, so carrying it over would
+     * light an entry by coincidence rather than by fact. The caller reads the
+     * held tool back from native state and pushes it in immediately afterwards.
+     */
     void setEntries(Entry[] entries) {
         this.entries = entries;
+        activeKey = null;
         rebuild();
     }
 
@@ -121,6 +156,12 @@ final class ToolRailView extends LinearLayout {
             params.topMargin = (i == 0) ? 0 : gap;
             addView(item, params);
         }
+        // The entries are new views at the resting background, so whatever was
+        // held has to be drawn again. Without this a rebuild silently loses the
+        // active state — see the activeKey field.
+        if (activeKey != null) {
+            applyActive(activeKey.intValue());
+        }
     }
 
     private View buildItem(Context context, final Entry entry) {
@@ -128,10 +169,11 @@ final class ToolRailView extends LinearLayout {
         item.setId(entry.viewId);
         item.setOrientation(VERTICAL);
         item.setGravity(Gravity.CENTER);
-        // Borderless at rest. The rail already draws one surface and one
-        // hairline around all of its entries, so a filled bordered box per entry
-        // framed the same content twice and four tools read as four stacked
-        // cards. Only the held tool wears a shape — see showActive.
+        // Borderless at rest. The rail already draws one floating capsule around
+        // all of its entries, so a filled box per entry framed the same content
+        // twice and four tools read as four stacked cards. Only the held tool
+        // wears a shape, and that shape is concentric with the capsule around
+        // it — see showActive and radius_rail_entry.
         item.setBackgroundResource(R.drawable.bg_rail_entry);
 
         // EVERY entry keeps its icon, including on a short window.
@@ -140,7 +182,7 @@ final class ToolRailView extends LinearLayout {
         // from the one the user learned in portrait: the glyph is what is
         // recognised at a glance, and a rail whose entries change shape with the
         // window stops being one rail. The compact form shrinks the icon instead
-        // — 18 dp and the 10 sp caption measure inside the 44 dp compact entry
+        // — 18 dp and the 10 sp caption measure inside the 48 dp compact entry
         // with room to spare, so nothing has to be dropped to fit.
         item.addView(EditorControlStyles.icon(context, entry.iconRes,
                 compact ? R.dimen.rail_icon_size_compact : R.dimen.rail_icon_size));
@@ -174,16 +216,30 @@ final class ToolRailView extends LinearLayout {
     /**
      * Draws exactly one entry as active — the one whose key the caller passes,
      * having read it back from native state.
+     *
+     * <p>Remembered as well as drawn, so a rebuild caused by a window change
+     * can restore it. The rail still decides nothing: what it remembers is the
+     * last answer it was given, never one it worked out for itself.
      */
     void showActive(int activeKey) {
+        this.activeKey = Integer.valueOf(activeKey);
+        applyActive(activeKey);
+    }
+
+    /** Which entry the rail is currently drawing as held, for verification. */
+    Integer activeKey() {
+        return activeKey;
+    }
+
+    private void applyActive(int key) {
         for (Entry entry : entries) {
             final View item = findViewById(entry.viewId);
             if (item == null) {
                 continue;
             }
-            final boolean active = entry.key == activeKey;
+            final boolean active = entry.key == key;
             item.setBackgroundResource(
-                    active ? R.drawable.bg_control_active : R.drawable.bg_rail_entry);
+                    active ? R.drawable.bg_rail_entry_active : R.drawable.bg_rail_entry);
             // The icon and the label follow from the entry's own state, so this
             // is the whole repaint. It is also what verification reads.
             item.setActivated(active);

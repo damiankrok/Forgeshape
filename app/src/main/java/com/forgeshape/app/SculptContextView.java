@@ -14,12 +14,19 @@ import android.widget.TextView;
  *
  * <p>Sculpt has no exact values to type — Radius and Strength are direct edge
  * controls, and the tools are the rail — so what remains for the inspector is
- * state and one guarded action: what the Frozen Sculpt Mesh currently is,
- * whether the Construction Source has moved on since it was frozen, and the
- * only irreversible act in the product.
+ * state and one guarded action: what the sculpt mesh currently is, whether the
+ * Construction Source has moved on since sculpting started, and the only
+ * irreversible act in the product.
  *
  * <p><b>Owns no vertex and no mode.</b> Everything it draws is read back from
  * native state on refresh.
+ *
+ * <p><b>Vocabulary.</b> What the user reads here is "Sculpt mesh" and "Reset
+ * Sculpt from Shape"; what the code below calls it is a freeze, because that is
+ * what {@link NativeViewport#freezeToSculpt()} actually does — it copies the
+ * Construction mesh into an editable one. The two names are for two different
+ * readers and both are accurate. Nothing about the operation changed at UI-R4B;
+ * only what it is called on screen did.
  */
 final class SculptContextView extends LinearLayout {
 
@@ -31,7 +38,7 @@ final class SculptContextView extends LinearLayout {
     private final InspectorHost host;
     private final TextView meshSummary;
     private final TextView staleWarning;
-    private final TextView freezeAgain;
+    private final TextView resetSculpt;
 
     /** Reused across reads; native fills it with the authoritative state. */
     private final double[] nativeState = new double[NativeViewport.SCULPT_STATE_SIZE];
@@ -75,25 +82,22 @@ final class SculptContextView extends LinearLayout {
         staleWarning.setBackgroundResource(R.drawable.bg_warning);
         addView(staleWarning, EditorControlStyles.rowParams(gap));
 
-        freezeAgain = EditorControlStyles.actionChip(context, R.id.freeze_again,
-                context.getString(R.string.freeze_again));
-        freezeAgain.setOnClickListener(new OnClickListener() {
+        resetSculpt = EditorControlStyles.actionChip(context, R.id.freeze_again,
+                context.getString(R.string.reset_sculpt_from_shape));
+        resetSculpt.setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View v) {
-                onFreezeAgainRequested();
+                onResetSculptRequested();
             }
         });
-        final LinearLayout.LayoutParams freezeParams = EditorControlStyles.rowParams(gap);
-        freezeParams.width = ViewGroup.LayoutParams.MATCH_PARENT;
-        addView(freezeAgain, freezeParams);
+        final LinearLayout.LayoutParams resetParams = EditorControlStyles.rowParams(gap);
+        resetParams.width = ViewGroup.LayoutParams.MATCH_PARENT;
+        addView(resetSculpt, resetParams);
 
         refreshFromNative();
     }
 
-    /**
-     * Rebuilds the summary, the stale-source state and the ellipsis on the
-     * re-Freeze label from authoritative native state.
-     */
+    /** Rebuilds the summary and the stale-source state from native truth. */
     void refreshFromNative() {
         NativeViewport.sculptState(nativeState);
         final Context context = getContext();
@@ -115,42 +119,42 @@ final class SculptContextView extends LinearLayout {
     /**
      * The one irreversible act in the product, and the only one that is guarded.
      *
-     * <p>Freezing again rebuilds the sculpt mesh from the current Construction
-     * shape, which discards whatever was sculpted into the old one. The guard
-     * appears <b>only when there is something to lose</b>: if nothing has been
-     * sculpted into the mesh that exists right now, re-freezing replaces a copy
-     * with an identical copy and confirming it would teach the user to dismiss
-     * the dialog that matters. Cancel changes nothing at all — it makes no
-     * native call.
+     * <p>Resetting rebuilds the sculpt mesh from the current Construction shape,
+     * which discards whatever was sculpted into the old one. The guard appears
+     * <b>only when there is something to lose</b>: if nothing has been sculpted
+     * into the mesh that exists right now, resetting replaces a copy with an
+     * identical copy and confirming it would teach the user to dismiss the
+     * dialog that matters. Cancel changes nothing at all — it makes no native
+     * call.
      *
      * <p>The question asked is {@link NativeViewport#SCULPT_HAS_EDITS}, about
-     * the <b>current</b> frozen mesh, and deliberately not the session-lifetime
+     * the <b>current</b> sculpt mesh, and deliberately not the session-lifetime
      * {@link NativeViewport#SCULPT_STROKE_COUNT}. Strokes made on an earlier
-     * frozen mesh are already gone; warning about them would make every later
-     * re-Freeze of an untouched mesh raise a dialog with nothing behind it,
-     * which is exactly the training-to-dismiss the owner contract forbids. For
-     * the same reason the message states no number: this layer knows only that
-     * edits exist, and quoting a historical count would be a false claim about
-     * what is being lost.
+     * mesh are already gone; warning about them would make every later reset of
+     * an untouched mesh raise a dialog with nothing behind it, which is exactly
+     * the training-to-dismiss the owner contract forbids. For the same reason
+     * the message states no number: this layer knows only that edits exist, and
+     * quoting a historical count would be a false claim about what is being
+     * lost.
      */
-    private void onFreezeAgainRequested() {
+    private void onResetSculptRequested() {
         NativeViewport.sculptState(nativeState);
         if (nativeState[NativeViewport.SCULPT_HAS_EDITS] == 0.0) {
-            freezeNow();
+            rebuildSculptMeshFromShape();
             return;
         }
         final Context context = getContext();
         confirmation = new AlertDialog.Builder(context)
-                .setTitle(R.string.freeze_confirm_title)
-                .setMessage(context.getString(R.string.freeze_confirm_message))
+                .setTitle(R.string.reset_sculpt_confirm_title)
+                .setMessage(context.getString(R.string.reset_sculpt_confirm_message))
                 // The button carries the verb, not "OK": the user should be
                 // able to read what pressing it does without re-reading the
                 // message above it.
-                .setPositiveButton(R.string.freeze_confirm_action,
+                .setPositiveButton(R.string.reset_sculpt_confirm_action,
                         new DialogInterface.OnClickListener() {
                             @Override
                             public void onClick(DialogInterface dialog, int which) {
-                                freezeNow();
+                                rebuildSculptMeshFromShape();
                             }
                         })
                 .setNegativeButton(R.string.cancel, null)
@@ -158,14 +162,14 @@ final class SculptContextView extends LinearLayout {
         confirmation.show();
     }
 
-    private void freezeNow() {
+    private void rebuildSculptMeshFromShape() {
         if (NativeViewport.freezeToSculpt() != NativeViewport.SCULPT_OK) {
-            host.showStatus(getContext().getString(R.string.status_freeze_failed),
+            host.showStatus(getContext().getString(R.string.status_sculpt_prepare_failed),
                     R.attr.fsTextError);
             return;
         }
         host.onNativeStateChanged();
-        host.showStatus(getContext().getString(R.string.status_frozen, describeNativeKind()),
+        host.showStatus(getContext().getString(R.string.status_now_sculpting, describeNativeKind()),
                 R.attr.fsTextSuccess);
     }
 
@@ -182,7 +186,7 @@ final class SculptContextView extends LinearLayout {
         }
     }
 
-    /** The re-Freeze confirmation currently on screen, or {@code null}. */
+    /** The reset confirmation currently on screen, or {@code null}. */
     AlertDialog visibleConfirmation() {
         return (confirmation != null && confirmation.isShowing()) ? confirmation : null;
     }

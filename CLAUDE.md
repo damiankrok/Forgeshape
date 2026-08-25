@@ -102,6 +102,16 @@ never run per frame.
   live in `res/values/ids.xml` and name what a control *does*. No test and no
   evidence script may locate a control by screen coordinate: the workspace
   re-arranges itself per window, so a coordinate is only ever true for one run.
+  An id names the act the code performs, not the label, so copy never renames one.
+- **48 dp is the interactive floor for user-operated chrome, and it is the HIT
+  AREA.** Glyphs stay the size they read at; the floor is reached with padding,
+  never by growing a drawn box.
+- **A control that cannot succeed is not drawn.** Where the domain refuses an act
+  in some state — creation while sculpting — the control is absent there rather
+  than shown and then refused. The domain guard stays: removing a control is not
+  removing a guard.
+- **A control's corner is concentric with its host's** (`inner = outer − gap`),
+  or a crescent of the host shows at each end and reads as a rendering fault.
 - **The domain is platform-neutral; the Android layer is an adapter.** Android is
   the first and only production platform, and no Apple target, Metal backend,
   MoltenVK dependency, Xcode project or cross-platform UI framework is
@@ -127,8 +137,17 @@ never run per frame.
   tool selector), *Objects capsule* (the resting scene control: the active body's
   name plus creation), *Add Primitive* (the six-shape creation surface),
   *precision surface* (the on-demand exact-value panel, implemented by
-  *Property Inspector*), *Construction Body* (an editable CAD-like object),
-  *Frozen Sculpt Mesh* (the polygon mesh created by Freeze).
+  *Property Inspector*), *anchored surface* (any panel that grows out of the
+  control that opened it; `AnchoredSurfaceView` owns the growth for all of them),
+  *Construction Body* (an editable CAD-like object), *Frozen Sculpt Mesh* (the
+  polygon mesh `SculptMesh::freezeFrom` creates).
+- **The user never reads "Freeze".** *Freeze*, *re-Freeze* and *Frozen Sculpt
+  Mesh* stay in the C++, the view ids and the architecture docs, because they name
+  what the operation does. Every user-facing string says **Start Sculpting**,
+  **Reset Sculpt from Shape…** and **sculpt mesh** instead; **Back to
+  Construction** and **Resume Sculpt** are unchanged. Two readers, two
+  vocabularies, and neither may be renamed into the other. `UIR4B-15` enforces
+  the user-facing half over every `R.string`.
 - **Comments explain why**, plus ownership, units, lifecycle and constraints —
   never obvious syntax. Worth a comment: why the Android UI must not become
   geometry truth, why a transform-only edit publishes no `MeshRevision`, why a

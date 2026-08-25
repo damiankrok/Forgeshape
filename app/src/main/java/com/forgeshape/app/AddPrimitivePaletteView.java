@@ -3,7 +3,6 @@ package com.forgeshape.app;
 import android.content.Context;
 import android.util.TypedValue;
 import android.view.Gravity;
-import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
@@ -34,18 +33,18 @@ import android.widget.TextView;
  * <p>It offers no subdivisions, segments or any other topology control. Where a
  * primitive has exact parameters they are its own, and they are edited in the
  * precision surface once it exists.
+ *
+ * <p>The growth out of the {@code +} is {@link AnchoredSurfaceView}'s, shared
+ * with the scene list, the precision surface and the Display popover. It used to
+ * be a private copy here, which is how this surface came to open with a
+ * different duration and a different pivot from the panel beside it.
  */
-final class AddPrimitivePaletteView extends LinearLayout {
+final class AddPrimitivePaletteView extends AnchoredSurfaceView {
 
     /** Told which primitive the user chose; the caller owns what that means. */
     interface OnPrimitiveChosen {
         void onAddPrimitiveChosen(int primitiveKind);
     }
-
-    /** Matches the growth of every other context surface, so the two panels the
-     *  Objects capsule opens feel like one system. */
-    private static final long OPEN_DURATION_MS = 140L;
-    private static final long CLOSE_DURATION_MS = 100L;
 
     /** Two rather than three: each tile carries a 26 dp silhouette above its
      *  name, and at three columns "Cylinder" no longer fits under its own icon
@@ -76,17 +75,9 @@ final class AddPrimitivePaletteView extends LinearLayout {
             R.drawable.ic_primitive_capsule, R.drawable.ic_primitive_plane
     };
 
-    /** Set by the anchor, so the surface grows out of the control that opened
-     *  it rather than out of a window edge. See {@link #setGrowsUpward}. */
-    private boolean growsUpward = true;
-
-    /** The state the user asked for; see {@link #isOpen()}. */
-    private boolean open;
-
     AddPrimitivePaletteView(Context context, final OnPrimitiveChosen listener) {
         super(context);
         setId(R.id.add_primitive_palette);
-        setOrientation(VERTICAL);
         setContentDescription(context.getString(R.string.add_primitive));
         // TIER 2 — an expanded context surface carrying a body of content to be
         // read and chosen from, exactly like the Objects panel.
@@ -116,8 +107,6 @@ final class AddPrimitivePaletteView extends LinearLayout {
             });
             row.addView(tile, EditorControlStyles.evenShare(kind % COLUMNS == 0 ? 0 : gap));
         }
-
-        setVisibility(GONE);
     }
 
     /**
@@ -160,99 +149,6 @@ final class AddPrimitivePaletteView extends LinearLayout {
 
         tile.setContentDescription(context.getString(TILE_LABELS[kind]));
         return tile;
-    }
-
-    /**
-     * Whether the palette is open.
-     *
-     * <p>The <b>target</b> state, not this frame's visibility. A closing surface
-     * is still VISIBLE for the length of its fade, and the control that draws
-     * itself active while the palette is up would otherwise stay lit for good
-     * after a shape was chosen.
-     */
-    boolean isOpen() {
-        return open;
-    }
-
-    /**
-     * Which way the surface grows, decided by where the control that opened it
-     * sits in the window.
-     *
-     * <p>The Objects capsule is low on a phone and the docked Objects column is
-     * high on a tablet, and in both cases the palette has to appear to come
-     * <i>out of</i> the {@code +} rather than to arrive from an unrelated edge.
-     */
-    void setGrowsUpward(boolean upward) {
-        growsUpward = upward;
-    }
-
-    /** Opens or closes the palette, growing from the control that opened it. */
-    void setOpen(boolean open) {
-        if (open == this.open) {
-            return;
-        }
-        this.open = open;
-        // Always interruptible: a second tap while the open animation is still
-        // running must close it, not queue behind it.
-        ChromeMotion.begin(this);
-
-        // The leading edge is where the plus is in both hosts, so the surface
-        // unfolds from that corner rather than from its own centre.
-        setPivotX(0.0f);
-        setPivotY(growsUpward ? getHeight() : 0.0f);
-
-        if (!ChromeMotion.animationsEnabled(getContext())) {
-            settle(open);
-            return;
-        }
-        if (open) {
-            setAlpha(0.0f);
-            setScaleX(0.96f);
-            setScaleY(0.96f);
-            setVisibility(VISIBLE);
-            animate().alpha(1.0f).scaleX(1.0f).scaleY(1.0f)
-                    .setDuration(OPEN_DURATION_MS).start();
-        } else {
-            animate().alpha(0.0f).scaleX(0.96f).scaleY(0.96f)
-                    .setDuration(CLOSE_DURATION_MS)
-                    .withEndAction(new Runnable() {
-                        @Override
-                        public void run() {
-                            settle(false);
-                        }
-                    }).start();
-        }
-    }
-
-    /**
-     * Closes with no animation, for the case where the chrome around the
-     * palette is disappearing in the same frame.
-     */
-    void closeImmediately() {
-        open = false;
-        ChromeMotion.begin(this);
-        settle(false);
-    }
-
-    /** Lands on a resting state, so the next open starts from a known transform
-     *  rather than from wherever a cancelled animation stopped. */
-    private void settle(boolean open) {
-        setVisibility(open ? VISIBLE : GONE);
-        setAlpha(1.0f);
-        setScaleX(1.0f);
-        setScaleY(1.0f);
-    }
-
-    /**
-     * Swallows every touch the palette's own tiles did not take.
-     *
-     * <p>The same rule every chrome surface follows: a missed tap between two
-     * tiles must not reach the {@code SurfaceView} beneath and orbit the model.
-     */
-    @Override
-    public boolean onTouchEvent(MotionEvent event) {
-        super.onTouchEvent(event);
-        return true;
     }
 
     /**

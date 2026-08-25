@@ -8,6 +8,7 @@ import static com.forgeshape.app.WorkspaceTestSupport.openPrecision;
 import static com.forgeshape.app.WorkspaceTestSupport.releaseOrientation;
 import static com.forgeshape.app.WorkspaceTestSupport.resetToBaselineConstruction;
 import static com.forgeshape.app.WorkspaceTestSupport.setOrientation;
+import static com.forgeshape.app.WorkspaceTestSupport.settleLayout;
 import static com.forgeshape.app.WorkspaceTestSupport.unoccludedViewportFraction;
 import static com.forgeshape.app.WorkspaceTestSupport.waitForLayout;
 import static org.junit.Assert.assertEquals;
@@ -247,19 +248,21 @@ public final class EditorWorkspaceLayoutTest {
                     place.getWidth() > 0 && place.getHeight() > 0);
             assertTrue("and meets the touch floor: "
                             + EditorControlStyles.toDp(activity, place.getHeight()) + " dp",
-                    EditorControlStyles.toDp(activity, place.getHeight()) >= 44);
-            // A docked rail is flush and level; a floating one is a raised card.
-            // Either way it consumes its own gestures, which is what keeps a
-            // reach for a tool from orbiting the camera.
+                    EditorControlStyles.toDp(activity, place.getHeight()) >= 48);
+            // It consumes its own gestures whichever window it is in, which is
+            // what keeps a reach for a tool from orbiting the camera.
             assertTrue("the rail consumes its own drag",
                     WorkspaceTestSupport.dragConsumed(workspace.toolRailScroll()));
-            if (workspace.railDocked()) {
-                assertEquals("a docked rail claims no elevation", 0.0f,
-                        workspace.toolRailScroll().getElevation(), 0.001f);
-            } else {
-                assertTrue("a floating rail is raised",
-                        workspace.toolRailScroll().getElevation() > 0.0f);
-            }
+            // The rail is a RAISED FLOATING CAPSULE IN EVERY WINDOW since
+            // UI-R4B. It used to be repainted flush and level when the window
+            // docked it, which meant one control had two visual identities in
+            // one session — a Sculpt user who rotated a tablet watched the brush
+            // selector turn into part of the wall. Docking now decides position
+            // and never material, so this assertion no longer branches: what it
+            // guards is precisely that the branch does not come back.
+            assertTrue("the rail is raised in every window, docked or not: "
+                            + workspace.toolRailScroll().getElevation(),
+                    workspace.toolRailScroll().getElevation() > 0.0f);
             return null;
         });
     }
@@ -311,6 +314,14 @@ public final class EditorWorkspaceLayoutTest {
      * The measured defect was 0 % unoccluded viewport at 914 x 411 dp, with the
      * status line laid out below the window bottom and no scroll container
      * anywhere to reach it. All three are asserted here.
+     *
+     * <p>The status line is written first, and that is a UI-R4B change to the
+     * CASE rather than to what it proves. Since the status line gained a
+     * lifecycle it says nothing at rest and is not drawn at all when it has
+     * nothing to say, so a resting workspace has no capsule to measure. What has
+     * to be true — and what this asserted then and asserts now — is that a
+     * message the product actually writes is laid out where the user can read
+     * it, in the one window that used to put it past the bottom edge.
      */
     @Test
     public void ui08_landscapeNeverCoversTheModelAndKeepsItsStatusLineOnScreen() {
@@ -318,6 +329,13 @@ public final class EditorWorkspaceLayoutTest {
         waitForLayout(rule.getScenario(), true);
 
         assertViewportFloorHolds("landscape");
+
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            workspace.showStatus(activity.getString(R.string.reject_relation),
+                    R.attr.fsTextError);
+            return null;
+        });
+        settleLayout();
 
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             assertNotEquals("a short window never gets a bottom sheet",

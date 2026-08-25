@@ -243,14 +243,19 @@ choosing a primitive. Touches on any chrome surface never move the camera.
 values are absent until the precision toggle is pressed, so a verification script
 must open that surface before looking for a field in it.
 
-**Freeze to Sculpt** in the Global Toolbar copies the object's current
-Construction mesh into a Frozen Sculpt Mesh and switches to Sculpt Mode, where
-the rail carries **Grab**, **Clay**, **Smooth** and **Inflate**, and Radius and
-Strength are edge sliders at the opposite side. Once a mesh exists that toolbar
-button reads **Resume Sculpt**, which returns to it without re-freezing; only
-*Freeze again…* in the Sculpt inspector discards prior deformation, and it
-confirms first when there is deformation to lose. Radius and Strength are shared
-by all four tools.
+**Start Sculpting** in the Global Toolbar (id `freeze_to_sculpt` — the ids are
+the implementation's and did not change with the wording) copies the object's
+current Construction mesh into a Frozen Sculpt Mesh and switches to Sculpt Mode,
+where the rail carries **Grab**, **Clay**, **Smooth** and **Inflate**, and Radius
+and Strength are edge sliders at the opposite side. Once a mesh exists that
+toolbar button reads **Resume Sculpt**, which returns to it without re-freezing;
+only **Reset Sculpt from Shape…** (id `freeze_again`) discards prior deformation,
+and it confirms first when there is deformation to lose. Radius and Strength are
+shared by all four tools.
+
+**Neither `+` exists in Sculpt Mode.** `sceneAddBody()` refuses while sculpting,
+so `objects_capsule_add` and `add_body` are `GONE` there and will not appear in a
+`uiautomator dump`. Leave Sculpt before driving a creation step.
 
 Every control has a stable semantic id in `res/values/ids.xml`. Drive UI-based
 verification by resolving those ids from a live `uiautomator dump` and tapping
@@ -275,8 +280,14 @@ intended, which looks exactly like a command that did not run.
 starts no stroke, so a stroke aimed at the centre of a face of a frozen **box**
 (8 vertices, all at its corners) logs `STROKE_PENDING` →
 `STROKE_ABANDONED:navigation` and never promotes. That is correct behaviour, not
-a bug. Freeze a sphere (482 v) or a capsule (514 v) before driving a stroke for
-evidence, or widen the radius.
+a bug. Start Sculpting on a sphere (482 v) or a capsule (514 v) before driving a
+stroke for evidence, or widen the radius.
+
+**The status capsule is transient.** Since UI-R4B it clears itself — 5 s for an
+acknowledgement, 10 s for a rejection — and is `GONE` when it has nothing to say,
+so a `uiautomator dump` taken a few seconds after an action will not contain
+`status_message`. Read it immediately after the step that wrote it, or read the
+`FORGESHAPE_*` log line, which is the authority either way.
 
 ## Log vocabulary
 

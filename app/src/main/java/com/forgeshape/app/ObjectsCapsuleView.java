@@ -32,6 +32,16 @@ import android.widget.TextView;
  * tapping it opens the palette, and a body exists only once a shape has been
  * chosen. A {@code +} that silently appended a default box is what made
  * creation feel like an administrative operation rather than a choice.
+ *
+ * <p><b>And in Sculpt there is no {@code +} at all.</b> {@code sceneAddBody()}
+ * refuses while sculpting — that is the domain's rule and it is correct — but
+ * the control was drawn anyway, so a user could tap it, be shown six shapes,
+ * choose one, and only then be told no. A path that must fail is worse than an
+ * absent one, and it is worse than a disabled one too: what a greyed {@code +}
+ * would say is "not now", which is exactly as much as its absence says, at the
+ * cost of a dead control in the resting workspace. The scene stays reachable —
+ * the body name still opens the list — because seeing what the scene holds is
+ * as true in Sculpt as anywhere else. See {@link #showCreationAvailable}.
  */
 final class ObjectsCapsuleView extends LinearLayout {
 
@@ -67,7 +77,11 @@ final class ObjectsCapsuleView extends LinearLayout {
         // being inert would be a label pretending to be a control.
         activeBody = EditorControlStyles.chip(context, R.id.objects_capsule_active, "");
         activeBody.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
-        activeBody.setBackgroundResource(R.drawable.bg_list_row);
+        // A member of this capsule, so it carries the capsule's own concentric
+        // corner rather than the 10 dp control corner — which left a crescent of
+        // capsule showing at the label's leading end whenever the scene list was
+        // open and the label was lit.
+        EditorControlStyles.asCapsuleMember(activeBody, R.drawable.bg_capsule_control);
         activeBody.setMaxWidth(
                 EditorControlStyles.dimen(context, R.dimen.objects_capsule_max_label_width));
         activeBody.setEllipsize(TextUtils.TruncateAt.END);
@@ -114,7 +128,25 @@ final class ObjectsCapsuleView extends LinearLayout {
 
     /** Draws the expand control as active while the scene list is open. */
     void showObjectsOpen(boolean open) {
-        EditorControlStyles.setListRowActive(activeBody, open);
+        EditorControlStyles.setCapsuleMemberActive(activeBody, open);
+    }
+
+    /**
+     * Shows or withdraws the {@code +}, according to whether creation is
+     * possible at all right now.
+     *
+     * <p>GONE rather than disabled. The scene is still reachable beside it, so
+     * nothing is lost: what is removed is a control that could only ever refuse.
+     * The capsule simply narrows to its label, which is the honest shape of what
+     * it offers in Sculpt.
+     */
+    void showCreationAvailable(boolean available) {
+        add.setVisibility(available ? VISIBLE : GONE);
+    }
+
+    /** Whether the {@code +} is currently offered, for verification. */
+    boolean creationAvailable() {
+        return add.getVisibility() == VISIBLE;
     }
 
     /** Draws {@code +} as active while the Add Primitive palette is open. */

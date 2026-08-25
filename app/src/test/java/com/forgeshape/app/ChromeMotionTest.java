@@ -51,6 +51,87 @@ public class ChromeMotionTest {
         assertEquals(ChromeMotion.ENTER_MS, ChromeMotion.duration(ChromeMotion.ENTER_MS, 10.0f));
     }
 
+    // -----------------------------------------------------------------------
+    // UIR4B-08 — the anchored-surface contract, as far as it can be argued
+    // about without a device
+    // -----------------------------------------------------------------------
+
+    /**
+     * UIR4B-08. The growth is longer than a fade, leaving is quicker than
+     * arriving, and both numbers are in the range a surface can be SEEN
+     * travelling in.
+     *
+     * <p>The four surfaces that grow out of a control each carried private
+     * copies of these before UI-R4B, and the copies had drifted to three
+     * different pairs. What that cost is not abstract: a growth is the only
+     * thing that says "this panel belongs to that button", and at the fade
+     * durations the copies used, the travel was over before the eye could
+     * resolve where it started.
+     */
+    @Test
+    public void uir4b08_theAnchoredGrowthIsLongerThanAFadeAndLeavesQuicker() {
+        assertTrue("a growth has to be seen travelling, unlike a fade",
+                ChromeMotion.ANCHORED_ENTER_MS > ChromeMotion.ENTER_MS);
+        assertTrue("and still has to be over before it is waited on",
+                ChromeMotion.ANCHORED_ENTER_MS >= 180L
+                        && ChromeMotion.ANCHORED_ENTER_MS <= 220L);
+        assertTrue("dismissal has already been decided about",
+                ChromeMotion.ANCHORED_EXIT_MS < ChromeMotion.ANCHORED_ENTER_MS);
+        assertTrue(ChromeMotion.ANCHORED_EXIT_MS >= 130L
+                && ChromeMotion.ANCHORED_EXIT_MS <= 170L);
+    }
+
+    /**
+     * UIR4B-08. The curve is an ease-OUT, and the scale is uniform.
+     *
+     * <p>Asserted as the four control points rather than by sampling a built
+     * interpolator, so no Android class is loaded — which is also why
+     * {@link ChromeMotion#anchoredEase()} builds its curve lazily. What makes it
+     * an ease-out is the first control point: its y is already at the top while
+     * its x is still near the start, so most of the travel is spent immediately.
+     * A symmetric or ease-in curve would put the slow part at the beginning,
+     * which is where the user is waiting.
+     */
+    @Test
+    public void uir4b08_theAnchoredCurveIsAnEaseOut() {
+        assertTrue("the first control point must lift immediately",
+                ChromeMotion.ANCHORED_EASE_Y1 >= 0.9f);
+        assertTrue("while its x is still near the start",
+                ChromeMotion.ANCHORED_EASE_X1 <= 0.35f);
+        assertTrue("and the second must already be settled",
+                ChromeMotion.ANCHORED_EASE_Y2 >= 0.9f);
+        assertTrue(ChromeMotion.ANCHORED_EASE_X2 > ChromeMotion.ANCHORED_EASE_X1
+                && ChromeMotion.ANCHORED_EASE_X2 <= 1.0f);
+    }
+
+    /**
+     * UIR4B-08. One start scale, applied to both axes.
+     *
+     * <p>A single constant is the mechanism: two of the copies this replaced
+     * scaled X and Y by different amounts, which stretches a panel into place
+     * rather than growing it, and there is no way to express that against one
+     * number.
+     */
+    @Test
+    public void uir4b08_theAnchoredGrowthStartsFromOneUniformScale() {
+        assertTrue("small enough to read as growth",
+                ChromeMotion.ANCHORED_START_SCALE < 1.0f);
+        assertTrue("large enough that nothing inside is legibly the wrong size",
+                ChromeMotion.ANCHORED_START_SCALE >= 0.94f);
+    }
+
+    /**
+     * UIR4B-10. Reduced motion applies to the anchored growth exactly as it
+     * applies to a fade: zero, meaning land on the final state now.
+     */
+    @Test
+    public void uir4b10_reducedMotionZerosTheAnchoredGrowthToo() {
+        assertEquals(0L, ChromeMotion.duration(ChromeMotion.ANCHORED_ENTER_MS, 0.0f));
+        assertEquals(0L, ChromeMotion.duration(ChromeMotion.ANCHORED_EXIT_MS, 0.0f));
+        assertEquals(ChromeMotion.ANCHORED_ENTER_MS,
+                ChromeMotion.duration(ChromeMotion.ANCHORED_ENTER_MS, 1.0f));
+    }
+
     @Test
     public void r1c109_anImpossibleScaleReducesMotionRatherThanAnimating() {
         // No platform should report either of these, but nothing prevents it,

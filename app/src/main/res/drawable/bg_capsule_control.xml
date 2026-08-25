@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  A control at rest INSIDE a floating capsule: an icon control, the Objects
+  capsule's body label.
+
+  Identical in every way to bg_icon_button except its corner, and that is the
+  whole point. A capsule's members have to be CONCENTRIC with it — see
+  radius_control_inset — or the straight edge of a 10 dp box shows a crescent of
+  capsule at each end of the group, which is exactly how an active control in a
+  pill came to read as a rectangle dropped into it.
+
+  Borderless at rest, because the capsule already draws the one surface these
+  controls share. Pressed feedback is kept: a control that looks dead until
+  native code answers is the defect the state-list mechanism exists to prevent.
+-->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_pressed="true">
+        <shape android:shape="rectangle">
+            <solid android:color="?attr/fsControlSurfacePressed" />
+            <corners android:radius="@dimen/radius_control_inset" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@android:color/transparent" />
+            <corners android:radius="@dimen/radius_control_inset" />
+        </shape>
+    </item>
+</selector>

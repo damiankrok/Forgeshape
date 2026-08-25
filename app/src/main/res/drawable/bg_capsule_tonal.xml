@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  A quiet, non-committing action inside a floating capsule: Back to Construction.
+
+  Tonal rather than accent — the act destroys nothing and is pure navigation, so
+  it takes the ordinary control fill and reads as one step up from the capsule
+  around it instead of as a second commit. Concentric with its host, like every
+  other capsule member.
+-->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_pressed="true">
+        <shape android:shape="rectangle">
+            <solid android:color="?attr/fsControlSurfacePressed" />
+            <corners android:radius="@dimen/radius_control_inset" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="?attr/fsControlSurface" />
+            <corners android:radius="@dimen/radius_control_inset" />
+        </shape>
+    </item>
+</selector>

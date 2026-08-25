@@ -22,7 +22,16 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 
 /**
- * UIR4A-12: the legacy Freeze / Back / Resume round trip loses no sculpt work.
+ * UIR4A-12 and UIR4B-20: the Start Sculpting / Back / Resume round trip loses no
+ * sculpt work.
+ *
+ * <p><b>UI-R4B renamed the door and not the room.</b> The control that used to
+ * read "Freeze to Sculpt" reads "Start Sculpting", and the guarded re-freeze
+ * reads "Reset Sculpt from Shape…"; the ids, the native calls and every one of
+ * the assertions below are unchanged. A copy change that quietly altered which
+ * mesh comes back would be exactly the kind of defect a wording pass is trusted
+ * not to introduce, and this suite is what makes that trust checkable — which is
+ * why the cases here are cited as UIR4B-20 as well.
  *
  * <p>This suite is a <b>regression guard on behaviour this stage deliberately
  * did not redesign</b>, and that is the whole reason it exists. The accepted
@@ -175,9 +184,12 @@ public final class EditorWorkspaceSculptRetentionTest {
             final double[] sculpt = sculptState();
             assertTrue("precondition: the source must now be stale",
                     sculpt[NativeViewport.SCULPT_SOURCE_STALE] != 0.0);
+            // The wording changed at UI-R4B — no user-facing string says
+            // "Freeze" any more — and what the warning has to DO is unchanged:
+            // name the standing fault and name the act that resolves it.
             assertTrue("a standing fault must be readable without opening a panel",
                     String.valueOf(workspace.globalToolbar().statusText())
-                            .contains("Freeze again"));
+                            .contains("Reset Sculpt from Shape"));
             return null;
         });
     }

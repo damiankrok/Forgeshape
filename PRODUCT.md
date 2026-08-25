@@ -129,12 +129,12 @@ not ask again. Starting the app fresh does, because nothing is saved anywhere.
 **Construction / CAD** begins where the product always did: one default body,
 its shape chosen from the six exact primitives, its dimensions typed.
 
-**Sculpt** begins on a sphere that has already been frozen for sculpting, so the
-first thing you can do is make a stroke. Nothing is skipped to get there — the
-sphere is an ordinary exact Construction sphere and it was frozen the ordinary
-way, so **Back to Construction** shows that sphere with its diameter, and
-**Resume Sculpt** returns to the same frozen mesh with the strokes already on
-it. Choosing Sculpt does not create a second body and does not consume the
+**Sculpt** begins on a sphere already prepared for sculpting, so the first thing
+you can do is make a stroke. Nothing is skipped to get there — the sphere is an
+ordinary exact Construction sphere and it was prepared the ordinary way, so
+**Back to Construction** shows that sphere with its diameter, and **Resume
+Sculpt** returns to the same sculpt mesh with the strokes already on it.
+Choosing Sculpt does not create a second body and does not consume the
 Construction Source.
 
 Neither choice is a document, a template or a saved project, and neither closes
@@ -152,12 +152,23 @@ floating groups with the model visible between and behind them — an editing gr
 on the leading edge carrying what is being edited and the control that crosses
 between constructing and sculpting, and a utility group on the trailing edge
 carrying the viewport's appearance settings and the control that hides the chrome.
-Every status and error message appears in a quiet capsule of its own just below
-them, sized to its own text.
+
+**The workspace at rest says nothing, and draws nothing to say it.** A status or
+error message appears in a quiet capsule of its own just below the toolbar, sized
+to its own text, and then it goes: an acknowledgement after a few seconds, a
+rejection after longer, because a rejection explains a constraint and has to be
+readable to the end. A newer message replaces an older one outright rather than
+waiting behind it. When there is nothing to report the capsule is not on screen
+at all. The one thing that stays is a standing fault — the warning that the
+constructed shape has changed under a sculpt — which is still true after any
+message that covers it and comes back when it does.
 
 Low on the leading edge, where a thumb reaches, is the **Objects capsule**: it
-names the body you are working on and carries a **+** beside it. It is in the same
-place whether you are constructing or sculpting.
+names the body you are working on and, while you are constructing, carries a
+**+** beside it. It is in the same place whether you are constructing or
+sculpting. The **+** is not there while you are sculpting, because ForgeShape
+does not add bodies in Sculpt Mode — a control that could only ever refuse is
+worse than one that is absent.
 
 At the trailing edge is the **Tool Rail**, and attached directly under it a single
 small control that opens the **exact values** behind whichever tool the rail is
@@ -179,19 +190,31 @@ where they are. Each answers one question and only one: what mode this is, which
 tool is held, what the scene holds, and what the selected body's numbers are.
 
 **A bigger window buys more of the model in view at once, not just more space
-around it.** On a phone the workspace is viewport-first: the list of bodies opens
-as a small panel over the model from the Objects capsule and is dismissed again,
-and the Tool Rail floats over the edge of the model as a small raised card. On a
-tablet-sized window there is room to stop stacking things, so the **list of bodies
-gets a panel of its own** on the leading edge — carrying its own **+** — and the
-Tool Rail sits flush at the other edge as part of the layout rather than standing
-on the picture. The exact values still open only when you ask for them, in the
-same way, from the same control.
+around it — and it is the same workspace, not a different one.** On a phone the
+list of bodies opens as a small panel over the model from the Objects capsule and
+is dismissed again. On a tablet-sized window there is room to stop stacking
+things, so while you are constructing the **list of bodies gets a panel of its
+own** on the leading edge, carrying its own **+**. Everything keeps the look it
+has on a phone: each panel stands clear of the window edge, is rounded on every
+corner and is raised off the model, and the Tool Rail is the same floating card at
+the same edge in every window. There are no flat panels welded to the sides of
+the screen. The exact values still open only when you ask for them, in the same
+way, from the same control.
+
+**That extra panel appears only where it is worth having.** While you are
+sculpting there is no permanent list of bodies even on a large window: you cannot
+switch body or add one while sculpting, so a permanent list of them would be
+furniture — and it would push **Radius** and **Strength** in off the edge and onto
+the model, away from the hand that reaches for them. Sculpting on a tablet gets
+the same Objects capsule a phone has, in the same place, and the brush controls
+stay at the edge.
 
 **None of those side panels is a full-height column.** Each ends where its own
 content ends — a scene of two bodies is a short card, not an arm's length of
 empty panel — and the viewport keeps the rest. A panel with more in it than the
-window can show scrolls rather than stretching.
+window can show scrolls rather than stretching, and it ends on a whole row rather
+than through the middle of one, so the boundary always reads as "there is more
+below" rather than as something broken.
 
 That only happens where it genuinely fits. A window that is merely wide — a large
 phone in landscape — keeps the phone arrangement, because three permanent columns
@@ -204,11 +227,19 @@ Touching any of that chrome never moves the camera and never sculpts: a surface
 owns its own gesture completely. Touching the viewport anywhere else navigates
 exactly as it always has. Every control answers the moment it is touched — it
 lifts under the finger before anything else happens — and the control that is
-currently active is **filled** first of all, with a brightened label and a
-hairline to go with it, so which tool is held can be read without relying on
-colour. Resting controls draw no box at all: what separates them from the surface
-under them is one step of tone and the space around them, and the only resting
-outline left in the product is the one around a value you can type into.
+currently active is a **filled** shape with a brightened label, so which tool is
+held can be read without relying on colour. There is no outline around it: the
+fill is the answer, and the blue accent is spent on the two things it is for —
+the button that commits a change, and the ring around the field the keyboard is
+typing into. A lit control takes the same shape as the group it sits in, so it
+reads as that group's own state rather than as a box dropped inside it. Resting
+controls draw no box at all: what separates them from the surface under them is
+one step of tone and the space around them, and the only resting outline left in
+the product is the one around a value you can type into.
+
+**Everything you can touch is at least 48 dp across.** That is the hit area and
+not the drawing: the icons are the size they look, and the extra is reach. It
+holds in portrait and in landscape, with a fingertip and with a stylus.
 
 **ForgeShape comes in three appearances, and you choose which.** *Display*
 carries an **Appearance** group listing **Warm Graphite**, **Neutral Charcoal**
@@ -238,17 +269,22 @@ dimmed, says so when read aloud, and does nothing.
 A tap on a Tool Rail entry selects that tool even if the finger drifts a little,
 and dragging the rail scrolls it without selecting whatever it started on.
 
-**Panels move, briefly, and never make you wait.** Opening the Display popover
-grows it out of the button that opened it; opening or closing the Property
-Inspector fades its contents in or out around the moment the panel changes size;
-hiding and restoring the controls fades them rather than blinking them away. Each
-of these takes about a tenth of a second, and every one of them can be
-interrupted — tapping again immediately reverses what is happening rather than
-queueing behind it, so a panel can never be left half visible or showing a
-control that disagrees with what it is doing. **The model itself never animates**:
-nothing moves the viewport, nothing resizes it, and none of this happens while
-your finger is on the model. If you are sculpting and reach for a panel with a
-second finger, the panel simply snaps — the stroke comes first.
+**Panels move, briefly, and never make you wait.** Every panel that opens from a
+control grows out of that control — the list of bodies and the shape palette out
+of the Objects capsule, the exact values out of the control beside the rail, the
+appearance settings out of the button in the toolbar — and all four move the same
+way, at the same speed, on the same curve. They leave immediately and settle at
+the end, rather than starting slowly, because you have already decided to open
+them. Arriving takes about a fifth of a second and leaving is quicker. Hiding and
+restoring the controls fades them rather than blinking them away.
+
+Every one of those can be interrupted: tapping again immediately reverses what is
+happening rather than queueing behind it, so a panel can never be left half
+visible or showing a control that disagrees with what it is doing. **The model
+itself never animates**: nothing moves the viewport, nothing resizes it, and none
+of this happens while your finger is on the model. If you are sculpting and reach
+for a panel with a second finger, the panel simply appears — the stroke comes
+first.
 
 **If you have asked Android to remove animations, ForgeShape removes them.** Every
 panel lands on its final state immediately instead of running a shortened
@@ -258,8 +294,10 @@ flash — so selection is still just as easy to see, it simply takes no time.
 The workspace re-arranges itself for the window it is in — a phone in portrait, a
 phone in landscape, a split-screen half, a tablet — and the arrangement is
 decided by the window's size, not by the device or the orientation. The model
-stays visible in all of them. On a tablet the inspector docks beside the model
-instead of over it, and the controls do not grow: only the viewport does.
+stays visible in all of them. On a tablet the exact values open beside the model
+instead of over it, and the controls do not grow: only the viewport does. Which
+tool you are holding survives all of it — turning the device or resizing the
+window never leaves the rail without a held tool.
 
 Turning the phone changes how much of the model you can see, never what shape it
 is. A sphere is a circle on screen in portrait and a circle in landscape, and a
@@ -273,10 +311,10 @@ The **Objects capsule**, low on the leading edge, names the body you are working
 on. Tapping that name opens the scene list, which rises out of the capsule: one
 row per body, labelled `Body #1`, `Body #2` and so on, with the selected one
 visibly active, and a **+** to add another. It closes again on a second tap, so
-while it is shut it costs the picture nothing. On a window wide enough for it the
-same list is a permanent column beside the model instead, and the capsule goes
-away — there is never a second copy of it on screen. The capsule is in the same
-place, and works the same way, in both modes.
+while it is shut it costs the picture nothing. On a window wide enough for it, and
+while you are constructing, the same list is a permanent panel beside the model
+instead, and the capsule goes away — there is never a second copy of it on
+screen. The capsule is in the same place, and works the same way, in both modes.
 
 The exact-value surface names the body it is editing — *Exact Shape — Body #1* —
 so when you do open it, the numbers on screen always say whose they are.
@@ -286,6 +324,11 @@ out of it: six shapes — Box, Cylinder, Sphere, Cone, Capsule and Plane — eac
 drawn as its own outline with its name under it. Choosing one creates a body that
 *is* that shape, selects it, and puts the palette away. There is nothing else in
 that palette: every shape it offers is a shape ForgeShape actually builds.
+
+The **+** is there while you are constructing and not while you are sculpting, in
+either presentation — the capsule's and the panel's. ForgeShape refuses to add a
+body in Sculpt Mode, so there is nothing to be gained by offering the choice and
+then declining it.
 
 A new body starts at the shape's own default size, unrotated, at the world
 origin. It therefore sits exactly on top of whatever is already at the origin;
@@ -386,14 +429,14 @@ because a flat sheet has no "inside" the way a box or a sphere does. Rotating
 it — with the same Position/Rotation fields every shape uses — is how its
 facing is changed; there is no separate orientation control.
 
-**Freezing a plane keeps it two-sided.** Once frozen, the sheet still draws,
-selects and *sculpts* from either side: a brush works on the underside exactly
-as it does on top. Being usable from both sides belongs to the sheet itself, so
-it survives Freeze and it stays true no matter what the Construction shape is
-later changed to. The converse holds too: a frozen box or sphere stays
-one-sided — it keeps its inside — even if the Construction shape is afterwards
-changed to a plane. What decides is the mesh being worked on, never whichever
-shape the Shape selector happens to be showing.
+**Sculpting a plane keeps it two-sided.** Once it is being sculpted, the sheet
+still draws, selects and *sculpts* from either side: a brush works on the
+underside exactly as it does on top. Being usable from both sides belongs to the
+sheet itself, so it survives Start Sculpting and it stays true no matter what the
+Construction shape is later changed to. The converse holds too: a box or sphere
+being sculpted stays one-sided — it keeps its inside — even if the Construction
+shape is afterwards changed to a plane. What decides is the mesh being worked on,
+never whichever shape the Shape selector happens to be showing.
 
 ### Choosing a shape changes nothing by itself
 
@@ -502,63 +545,73 @@ The object can be **sculpted** — pulled around by hand — as well as construc
 from exact numbers. Those are two different ways of describing the same object,
 and ForgeShape keeps both.
 
-### Freeze to Sculpt, and the Sculpt workspace
+### Start Sculpting, and the Sculpt workspace
 
-**Freeze to Sculpt**, in the Global Toolbar, takes the **selected** body's shape
-as it currently stands and makes a sculptable copy of it, then switches to
+**Start Sculpting**, in the Global Toolbar, takes the **selected** body's shape
+as it currently stands and makes a sculptable mesh from it, then switches to
 Sculpt Mode. Nothing about that Construction Body changes: its shape, its
 dimensions and its placement are exactly what they were, and they are still
-there when Sculpt Mode is left. Freezing changes nothing visible — the picture
+there when Sculpt Mode is left. Starting changes nothing visible — the picture
 on screen before and after pressing the button is identical, pixel for pixel.
 
-**Sculpting is per body, and each body keeps its own.** Freeze one body, sculpt
-it, go back to Construction, select another body and freeze and sculpt that one
-too — then come back to the first and Resume, and its own sculpting is exactly
-as it was left. The two do not share a mesh, a history or a stale-source
-warning, and sculpting one can never move a vertex of the other. The other
-bodies stay visible while you sculpt, so you can see what you are working
-against.
+**Sculpting is per body, and each body keeps its own.** Sculpt one body, go back
+to Construction, select another body and sculpt that one too — then come back to
+the first and Resume, and its own sculpting is exactly as it was left. The two do
+not share a mesh, a history or a stale-source warning, and sculpting one can
+never move a vertex of the other. The other bodies stay visible while you sculpt,
+so you can see what you are working against.
 
 Which body is being sculpted is fixed for as long as Sculpt Mode lasts: to work
-on a different one, go **Back to Construction**, select it there, and Freeze or
-Resume. What is *not* per body is the brush — the tool you are holding and its
-Radius and Strength stay exactly as you set them when you move between bodies,
-for the same reason they stay put when you switch tools.
+on a different one, go **Back to Construction**, select it there, and Start
+Sculpting or Resume. What is *not* per body is the brush — the tool you are
+holding and its Radius and Strength stay exactly as you set them when you move
+between bodies, for the same reason they stay put when you switch tools.
 
-That button says **Freeze to Sculpt** only while nothing has been frozen yet.
-Once there is a sculpted mesh it says **Resume Sculpt** instead, because those
-are genuinely different acts and the wording is the only thing that tells them
-apart before they happen: freezing starts from the constructed shape, resuming
-goes back to the sculpting exactly as it was left.
+That button says **Start Sculpting** only while there is no sculpt mesh yet.
+Once there is one it says **Resume Sculpt** instead, because those are genuinely
+different acts and the wording is the only thing that tells them apart before
+they happen: starting builds the mesh from the constructed shape, resuming goes
+back to the sculpting exactly as it was left.
+
+**Creating a body is not offered while sculpting.** ForgeShape refuses to add a
+body in Sculpt Mode — the mesh being worked on has to stay the one that is being
+worked on — so the `+` is simply not there. The scene itself stays one tap away:
+the Objects control still names the body being sculpted and still opens the list.
 
 In Sculpt Mode the Tool Rail carries the four tools — **Grab**, **Clay**,
 **Smooth** and **Inflate** — and a **Radius** and a **Strength** sit directly at
-the opposite edge, always on screen, adjustable without opening anything. The
-shape and placement fields are not merely greyed out; they are not there, because
-in Sculpt Mode there is nothing on screen that edits the constructed shape.
+the opposite edge, always on screen, adjustable without opening anything. Each of
+those two reads as one thing: its name, the value it currently has directly under
+the name, and the slider under both. The value follows the finger exactly, with
+no smoothing and no delay, and it is written in that one place — it is not
+repeated anywhere else on screen. The shape and placement fields are not merely
+greyed out; they are not there, because in Sculpt Mode there is nothing on screen
+that edits the constructed shape.
 
-One tool is filled and outlined, and it is always the one that is actually
-active: tapping a tool asks for it and the rail then shows what it got. The
-status line says what the finger will do with the tool that is in hand. Choosing
-a tool changes nothing about the model — nothing is redrawn or rebuilt, no
-sculpting is lost, and the Radius and Strength stay where they were, because they
-belong to the brush rather than to the tool.
+One tool is filled, and it is always the one that is actually active: tapping a
+tool asks for it and the rail then shows what it got. It keeps saying so —
+rotating the device, resizing the window or moving between compact and expanded
+layouts never leaves the rail without a held tool. Choosing a tool changes
+nothing about the model: nothing is redrawn or rebuilt, no sculpting is lost, and
+the Radius and Strength stay where they were, because they belong to the brush
+rather than to the tool.
 
-The Property Inspector in Sculpt Mode carries what the sculpted mesh currently
-is, the stale-source warning when there is one, and **Freeze again…** — the one
-act in ForgeShape that cannot be undone. Pressing it when sculpting has actually
-been done **to the mesh that exists right now** asks first, and labels the button
-with what it does rather than *OK*. Cancelling changes nothing at all. Pressing
-it on a mesh nothing has been done to just freezes, because there is nothing to
-lose and a warning that cries wolf is worse than no warning.
+The Property Inspector in Sculpt Mode carries what the sculpt mesh currently is,
+the stale-source warning when there is one, and **Reset Sculpt from Shape…** —
+the one act in ForgeShape that cannot be undone. Pressing it when sculpting has
+actually been done **to the mesh that exists right now** asks first, says the
+sculpting will be discarded, and labels the button with what it does rather than
+*OK*. Cancelling changes nothing at all. Pressing it on a mesh nothing has been
+done to just rebuilds, because there is nothing to lose and a warning that cries
+wolf is worse than no warning.
 
-The question asked is only ever about the current Frozen Sculpt Mesh. Sculpting
-that was done, and then deliberately discarded by an earlier confirmed *Freeze
-again*, is already gone; it is not something a later Freeze can take away. So
-freezing a fresh mesh is silent no matter how much sculpting happened earlier in
-the session. For the same reason the message names no number: what is at stake
-is this mesh's sculpting, and a count carried over from meshes that no longer
-exist would be a false claim about what is being lost.
+The question asked is only ever about the current sculpt mesh. Sculpting that was
+done, and then deliberately discarded by an earlier confirmed reset, is already
+gone; it is not something a later reset can take away. So rebuilding a fresh mesh
+is silent no matter how much sculpting happened earlier in the session. For the
+same reason the message names no number: what is at stake is this mesh's
+sculpting, and a count carried over from meshes that no longer exist would be a
+false claim about what is being lost.
 
 ### One finger on the model sculpts; anywhere else navigates
 
@@ -619,7 +672,7 @@ how big or how strong the brush is.
 
 **Radius** is measured on screen, in pixels, so the brush covers the same amount
 of what you can see regardless of how far you have zoomed in. It has a large and
-obvious effect on every tool: on a frozen 2 m sphere, halving the radius took
+obvious effect on every tool: on a 2 m sphere, halving the radius took
 Clay from 51 affected points to 11 and Inflate from 29 to 8.
 
 **Strength** is how much each tool does. For Grab it is how much of the finger's
@@ -635,22 +688,24 @@ before any sculpting — the original shape, at its original dimensions, in its
 original place. The sculpting is not lost and nothing is copied back into the
 constructed shape. **Resume Sculpt** returns to the sculpted version with every
 deformation still there, down to the pixel; it does not start again from the
-constructed shape. Only Freeze to Sculpt does that, and it is the only thing that
-discards sculpting.
+constructed shape. Only **Reset Sculpt from Shape** does that, and it is the only
+thing that discards sculpting.
 
-### Changing the shape after freezing
+### Changing the shape after you have started sculpting
 
-Changing the constructed shape while a sculpted version exists never touches the
-sculpting. The Sculpt inspector says so — it reports that the shape changed after
-the freeze and that the sculpt has been kept as it is — and leaves the decision
-alone: Freeze to Sculpt again to start from the new shape, or carry on sculpting
-what is already there. ForgeShape does not transfer sculpting onto a new shape by
-itself, and does not throw sculpting away without being asked.
+Changing the constructed shape while a sculpt mesh exists never touches the
+sculpting. ForgeShape says so — it reports that the shape changed after you
+started sculpting and that the sculpt has been kept as it is — and leaves the
+decision alone: reset from the new shape, or carry on sculpting what is already
+there. That warning is a standing one: it is on the workspace without opening
+anything, and it comes back after any passing message that covers it, because it
+stays true until you act on it. ForgeShape does not transfer sculpting onto a new
+shape by itself, and does not throw sculpting away without being asked.
 
 ### What sculpting can and cannot do
 
-Sculpting moves the surface and never adds or removes any of it: the sculpted
-copy always has exactly as many points and faces as the shape it was frozen from,
+Sculpting moves the surface and never adds or removes any of it: the sculpt mesh
+always has exactly as many points and faces as the shape it was built from,
 through every stroke of every tool. It changes only the sculpted copy — after
 working over an object with all four tools, going back to Construction shows the
 constructed shape at exactly its original dimensions in exactly its original
@@ -844,8 +899,8 @@ existing body, or to *cut* material out of it, is accepted as required direction
 but depends on boolean infrastructure that does not exist, so it comes after that
 and not before it.
 
-None of this changes what Freeze means. Construction and sculpting stay two
-separate representations of the one object, and moving from the first to the
+None of this changes what Start Sculpting means. Construction and sculpting stay
+two separate representations of the one object, and moving from the first to the
 second stays something the user asks for explicitly. A sketch or an extrusion is
 Construction work, and it can no more be altered by sculpting than a box's width
 can.
@@ -854,9 +909,9 @@ can.
 The accepted shell keeps the model in view and puts tools at the edges rather
 than in a block across the top, and it adapts across compact, medium and expanded
 window sizes rather than assuming a portrait phone. Export is a global action
-rather than an editing mode. A re-Freeze that would genuinely discard existing
-sculpt work will ask first; an ordinary Resume Sculpt will not, because it
-destroys nothing. None of this is built.
+rather than an editing mode. A reset that would genuinely discard existing sculpt
+work will ask first; an ordinary Resume Sculpt will not, because it destroys
+nothing. None of this is built.
 
 **Stylus support is a design constraint, not a feature yet.** ForgeShape must
 stay comfortable with a stylus — an S Pen today, an Apple Pencil in whatever

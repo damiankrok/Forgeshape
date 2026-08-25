@@ -2,7 +2,6 @@ package com.forgeshape.app;
 
 import android.content.Context;
 import android.view.Gravity;
-import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
@@ -57,8 +56,15 @@ import android.widget.TextView;
  * the system animator scale is zero — the platform's own "reduce motion"
  * signal. Nothing here is ever on the path of a stylus sample: the popover is a
  * chrome surface, and a viewport gesture never touches it.
+ *
+ * <p><b>None of that motion is written here any more.</b> This popover was the
+ * one surface that had already solved the anchor-pivot problem, so at UI-R4B
+ * the solution was lifted out of it into {@link AnchoredSurfaceView} and the
+ * other three surfaces were moved onto it. The only thing this class still says
+ * about its own motion is which edge it hangs off, which is a fact about where
+ * it is anchored rather than about how it moves.
  */
-final class DisplaySettingsPopoverView extends LinearLayout {
+final class DisplaySettingsPopoverView extends AnchoredSurfaceView {
 
     /** Told which display setting was requested; the caller owns what it means. */
     interface OnDisplaySettingChanged {
@@ -72,15 +78,6 @@ final class DisplaySettingsPopoverView extends LinearLayout {
 
         void onGridVisibleRequested(boolean visible);
     }
-
-    /**
-     * The durations are {@link ChromeMotion}'s, not this view's, and the values
-     * are the ones this popover shipped with — it is where they were measured.
-     * What stays here is only the part that is genuinely about a popover: the
-     * scale, and growing it from the anchor corner.
-     */
-    private static final long OPEN_DURATION_MS = ChromeMotion.ENTER_MS;
-    private static final long CLOSE_DURATION_MS = ChromeMotion.EXIT_MS;
 
     private final TextView studioChip;
     private final TextView matcapChip;
@@ -117,7 +114,11 @@ final class DisplaySettingsPopoverView extends LinearLayout {
                                boolean includeDebugShading) {
         super(context);
         setId(R.id.display_settings_popover);
-        setOrientation(VERTICAL);
+        // It hangs UNDER the toolbar's Display control in every window, so it
+        // never unfolds upward. Stated once here rather than pushed in by the
+        // workspace, because unlike the three surfaces that grow out of the
+        // Objects capsule, this one's anchor cannot move.
+        setGrowsUpward(false);
         // TIER 2. It carries five labelled groups of prose-named options, which
         // is a body of content to be read rather than a capsule to be glanced
         // at, so it is opaque where the rail and the toolbar groups are not.
@@ -367,84 +368,17 @@ final class DisplaySettingsPopoverView extends LinearLayout {
                 projectionMode == NativeViewport.PROJECTION_ORTHOGRAPHIC);
     }
 
-    boolean isOpen() {
-        return getVisibility() == VISIBLE;
-    }
-
-    /** Opens or closes the popover, animating from the anchor corner. */
-    void setOpen(boolean open) {
-        if (open == isOpen()) {
-            return;
-        }
-        // Always interruptible: a second tap while the open animation is still
-        // running must close it, not queue behind it.
-        ChromeMotion.begin(this);
-
-        // The panel grows out of the control that opened it, which sits at the
-        // top-right of the workspace.
-        setPivotX(getWidth());
-        setPivotY(0.0f);
-
-        final float scale = ChromeMotion.animatorScale(getContext());
-        if (ChromeMotion.duration(OPEN_DURATION_MS, scale) == 0L) {
-            // The platform's own reduce-motion / developer animator scale says
-            // no animation. Honour it exactly: land on the final state, do not
-            // run a shortened one.
-            ChromeMotion.settle(this, open);
-            return;
-        }
-
-        if (open) {
-            setAlpha(0.0f);
-            setScaleX(0.92f);
-            setScaleY(0.92f);
-            setVisibility(VISIBLE);
-            animate().alpha(1.0f).scaleX(1.0f).scaleY(1.0f).setDuration(OPEN_DURATION_MS).start();
-        } else {
-            animate().alpha(0.0f).scaleX(0.96f).scaleY(0.96f).setDuration(CLOSE_DURATION_MS)
-                    .withEndAction(new Runnable() {
-                        @Override
-                        public void run() {
-                            setVisibility(GONE);
-                            // Left in the resting state so the next open starts
-                            // from a known transform rather than from wherever
-                            // a cancelled animation stopped.
-                            setAlpha(1.0f);
-                            setScaleX(1.0f);
-                            setScaleY(1.0f);
-                        }
-                    }).start();
-        }
-    }
-
     /**
-     * Keeps the growth origin on the anchor corner once this view has a size.
+     * It hangs off the Display control at the workspace's TRAILING top corner,
+     * which is the one thing about this surface's growth that is its own.
      *
-     * <p>{@link #setOpen} also sets the pivot, and on every open but the first
-     * that is enough. The <b>first</b> open is the exception and the reason
-     * this exists: the panel starts {@code GONE} and has never been laid out,
-     * so {@code getWidth()} is 0 there and the very first animation grew from
-     * the top-LEFT — from nowhere in particular, rather than from the button
-     * that opened it, which is the entire point of the pattern.
+     * <p>It never unfolds upward: the control that opens it is in the toolbar,
+     * so the panel always hangs below it, and {@link AnchoredSurfaceView} takes
+     * the leading-edge case for the three surfaces that grow out of a capsule
+     * low in the window.
      */
     @Override
-    protected void onSizeChanged(int width, int height, int oldWidth, int oldHeight) {
-        super.onSizeChanged(width, height, oldWidth, oldHeight);
-        setPivotX(width);
-        setPivotY(0.0f);
-    }
-
-    /** Closes immediately, with no animation. Used when chrome is hidden. */
-    void closeImmediately() {
-        ChromeMotion.settle(this, false);
-    }
-
-    /**
-     * Swallows every touch its own chips did not take, so reaching for a display
-     * setting never orbits the camera behind the panel.
-     */
-    @Override
-    public boolean onTouchEvent(MotionEvent event) {
+    boolean anchoredToTrailingEdge() {
         return true;
     }
 

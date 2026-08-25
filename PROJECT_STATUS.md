@@ -1,17 +1,22 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.36.0
+**Status Version:** 0.37.0
 **Updated:** 2026-08-25
-**Result:** TECHNICAL COMPLETE — UI-R4A rebuilt the Editor Workspace around the
-viewport: no surface owns the bottom of the window at rest, the scene lives in an
-Objects capsule that names the active body and carries creation, and the exact
-values are a precision surface the user asks for from the tool context that owns
-them. **Visual acceptance is PENDING OWNER/COORDINATOR SCREENSHOT REVIEW**; no
-part of the look is final until that review returns.
+**Result:** TECHNICAL COMPLETE — UI-R4B corrected what the UI-R4A screenshot
+review found: Sculpt no longer offers a creation path that must fail, the Tool
+Rail keeps saying which tool is held across a rebuild, the status line has a
+lifecycle instead of standing forever, the precision surface ends on a row rather
+than through one, all four anchored surfaces share one growth with a correct
+first-open pivot, the expanded window speaks the phone's visual vocabulary and
+keeps Radius/Strength off the model, selection is fill-led and concentric with its
+host, no user-facing string says *Freeze*, and the interactive floor is 48 dp.
+**Visual acceptance is PENDING OWNER/COORDINATOR SCREENSHOT REVIEW** on the fresh
+UIR4B-S01..S12 set; no part of the look is final until that review returns.
 **Current Phase:** Phase 1 — Native Viewport
 **Workspace:** `D:\TRAVELAPPS\ForgeShape`
-**Accepted implementation baseline:** UI-R4A (mobile workspace interaction) on top
-of UI-R3R2 (approved dark palettes + visual composition correction), UI-R3
+**Accepted implementation baseline:** UI-R4B (workspace visual and motion
+correction) on top of UI-R4A (mobile workspace interaction), UI-R3R2 (approved
+dark palettes + visual composition correction), UI-R3
 (visual quality polish), DOC-R1 (documentation compaction), UI-R2 (workspace
 composition redesign), INPUT-R1 (pointer semantics foundation), UI-R1C2 (world
 grid + adaptive workspace), UI-R1C1 (motion + selection feedback), UI-R1B2 (theme
@@ -43,7 +48,7 @@ re-composes itself per window. `ARCHITECTURE.md` owns the ownership map and ever
 **Blockers: none.** Known costs and accepted debt are in *Technical Debt*;
 environment hazards are in *Known Issues*.
 
-## Current interaction model (UI-R4A)
+## Current interaction model (UI-R4A, corrected by UI-R4B)
 
 Runtime-verified on `ForgeShape_Stage006` / `emulator-5580` in three windows —
 compact portrait, compact landscape (short height) and an overridden
@@ -65,22 +70,55 @@ which is the rule the previous shell had and which meant a rotation could put a
 surface on screen that had never been asked for.
 
 **Objects became a capsule that says which body is current.** It carries the
-active body's name and a `+`, sits in the same place in both modes, and the
-Global Toolbar's Objects icon is gone with it — an icon can offer to open a list
-but cannot answer the question the list exists for. It is withdrawn exactly when
-the window gives the scene a permanent column.
+active body's name, sits in the same place in both modes, and the Global
+Toolbar's Objects icon is gone with it — an icon can offer to open a list but
+cannot answer the question the list exists for. It is withdrawn exactly when the
+window gives the scene a permanent column, which is now also a function of the
+mode: **Sculpt never gets a column**, because body switching and creation are both
+refused while sculpting and the column's width displaced Radius and Strength onto
+the model.
 
-**Creation is a choice, not an append.** Both `+` controls open **Add Primitive**,
-which offers exactly six tiles — Box, Cylinder, Sphere, Cone, Capsule, Plane —
-each an outlined silhouette with its name. Choosing one calls `sceneAddBody()`
-and then that primitive's own `applyConstruction*()` with parameters read back
-from the new body's own native state; there is no Java-side generator and no
-second table of defaults. There is no *Add from file* and no placeholder.
+**Creation is a choice, not an append — and it is offered only where it can
+succeed.** Both `+` controls open **Add Primitive**, which offers exactly six
+tiles — Box, Cylinder, Sphere, Cone, Capsule, Plane — each an outlined silhouette
+with its name. Choosing one calls `sceneAddBody()` and then that primitive's own
+`applyConstruction*()` with parameters read back from the new body's own native
+state; there is no Java-side generator and no second table of defaults. There is
+no *Add from file* and no placeholder. **Neither `+` is drawn in Sculpt**:
+`sceneAddBody()` refuses there, and UI-R4A drew the control anyway, so a user
+could tap it, be shown six shapes, choose one and only then be refused. The
+native guard is unchanged; what was removed is a path that had to fail.
 
-**Every surface grows out of the control that opened it.** One anchor implements
-it for the scene list, the palette and the precision surface, from the invoker's
-bounds — so the same two surfaces read as attached whether they were opened from
-a capsule low on a phone or from a column high on a tablet.
+**Every surface grows out of the control that opened it, and there is one
+implementation of that growth.** `AnchoredSurfaceView` owns it for all four —
+the scene list, the palette, the precision surface and the Display popover —
+against one set of `ChromeMotion` constants: 190 ms in, 150 ms out, one ease-out
+curve, uniform scale from 0.96, cancel-first, and reduced motion landing
+instantly. It also fixes the defect the copies shared: the pivot is expressed in
+the surface's own size, so the **first** open of each in a process grew from the
+top-left of a zero-sized box; an open with no size is now staged and the growth
+starts once the surface has been measured.
+
+**The Tool Rail keeps saying which tool is held.** A rebuild — which the adaptive
+pass triggers on any window crossing the short-height threshold — used to leave
+no entry drawn active while the tool itself was unchanged below JNI. The rail
+re-applies the last key it was given; it still decides nothing.
+
+**The status line has a lifecycle.** A verdict holds 5 s, a rejection 10 s, a
+newer message cancels the older one's pending clear, and the line then returns to
+what stands — which is nothing, drawn as no capsule at all. The one standing
+message is the stale-source warning, which is a state rather than a verdict. The
+ambient lines UI-R4A wrote on every refresh are gone, and live brush values are
+no longer mirrored there.
+
+**The precision surface ends on a row, not through one.** `PrecisionScrollView`
+rounds the visible body down to the last whole row inside the cap. It caps
+nothing, changes no content and no scroll range, and does nothing when everything
+fits.
+
+**48 dp is the interactive floor**, raised from 44 dp, and it is the hit area
+rather than the glyph. The 8 dp the toolbar's two icon controls gained comes out
+of the mode-transition button's maximum width, not out of an icon control.
 
 **The Tool Rail carries only tools that work.** Sketch and Extrude are gone from
 it, along with `ToolRailView`'s whole notion of a reserved entry; Construction's
@@ -92,8 +130,25 @@ The one approved-but-unimplemented control left in the product is the global
 
 **A standing fault stays visible without a resident panel.** The stale-source
 warning is still in the Sculpt context surface beside the action that resolves
-it, and is now also written to the status line on every refresh in Sculpt, where
-it outranks the gesture hint.
+it, and is also the standing status message in Sculpt, re-asserting itself after
+any transient that covered it.
+
+**No user-facing string says *Freeze* or *frozen*.** The primary Construction →
+Sculpt action reads **Start Sculpting**; the guarded destructive act reads **Reset
+Sculpt from Shape…**; the mesh is a **sculpt mesh**. *Back to Construction* and
+*Resume Sculpt* are unchanged in wording and in behaviour, the confirmation is
+unchanged, and the reversible semantics are unchanged. The domain, this document,
+`ARCHITECTURE.md` and the view ids keep `Freeze` / `Frozen Sculpt Mesh`, because
+that names what `SculptMesh::freezeFrom` does. `UIR4B-15` scans every `R.string`
+and fails on any user-facing occurrence.
+
+**One visual vocabulary in every window.** The Objects column, the docked Tool
+Rail and the docked precision surface were opaque, flat and squared against a
+window edge; all three are now inset, rounded on every corner and raised, exactly
+as on a phone. Docking decides position, never material. A selected control is
+fill-led with no accent hairline, and its corner is **concentric** with its
+host's — `inner = outer − padding` — so no crescent of capsule or rail shows at
+the ends of a group.
 
 **Nothing below JNI moved.** Opening and closing the scene list, the palette and
 the precision surface, switching rail context, and all three appearance switches
@@ -101,14 +156,16 @@ produced **zero** `MESH_UPLOAD_OK` and zero publications. A HOME/resume and a
 rotation round trip produced zero as well. Verified by logcat. A real sculpt
 stroke produced 29, which is the stroke working.
 
-**Legacy Freeze → stroke → Back → Resume loses nothing.** Verified at runtime and
-guarded by `EditorWorkspaceSculptRetentionTest`: after a real Grab stroke, *Back
-to Construction* shows the Construction Source unchanged (correct — sculpting
-never writes it), and *Resume Sculpt* returns the same revision, vertex count,
-index count, stroke history and ObjectId. The one-way project bridge is **not**
-implemented and this path is still the only thing keeping that work.
+**Start Sculpting → stroke → Back → Resume loses nothing.** Verified at runtime
+and guarded by `EditorWorkspaceSculptRetentionTest` (cited as `UIR4B-20`): after a
+real Grab stroke, *Back to Construction* shows the Construction Source unchanged
+(correct — sculpting never writes it), and *Resume Sculpt* returns the same
+revision, vertex count, index count, stroke history and ObjectId. The UI-R4B copy
+change touched no id, no native call and none of those assertions. The one-way
+project bridge is **not** implemented and this path is still the only thing
+keeping that work.
 
-## Current visual state (UI-R3R2, unchanged by UI-R4A)
+## Current visual state (UI-R3R2 palettes, UI-R4B composition)
 
 **The appearance set is three owner-approved DARK palettes**, and there is no
 light one. Warm Graphite (`#302E2B` ground, the default), Neutral Charcoal
@@ -130,17 +187,27 @@ the container so the viewport-floor measurement describes what is painted.
 translucent tier; context panels and the precision surface are opaque. Resting
 outlines are gone from every control except the two that earn one — a numeric
 field and the stale-source warning — and a reserved control is recessed rather
-than boxed. `fsTextOnPrimary` is an ink rather than white, because `#4C8FD6`
-carries white at only 3.4:1.
+than boxed. The selected state carries **no accent hairline at all** since
+UI-R4B: the fill and the brightened label are the signal, and the accent stays
+spent on a primary commit and a focused field. `fsAccentBorder` is consequently
+unreferenced and deliberately still declared, because those values are approved.
+`fsTextOnPrimary` is an ink rather than white, because `#4C8FD6` carries white at
+only 3.4:1.
 
-**No chrome column spans the window.** The compact precision surface is an inset
-floating sheet with the viewport visible around it; the docked Objects column and
-both side placements wrap their own content and hang from the top, and a docked
-Tool Rail is top-aligned with them. `sideDockWidthDp` is 30 % capped at 340 dp
-because at 28 %/320 the docked panel clipped "Cylinder" to "Cyl".
+**No chrome column spans the window, and none of them is a slab.** The compact
+precision surface is an inset floating sheet with the viewport visible around it;
+the Objects column and both side placements wrap their own content, hang from the
+top, and — since UI-R4B — wear the same inset, all-round, raised material they
+wear on a phone. `sideDockWidthDp` is 30 % capped at 340 dp because at 28 %/320
+the docked panel clipped "Cylinder" to "Cyl".
+
+**A control's corner is concentric with its host's.** `radius_control_inset`
+(22 dp) inside a 26 dp capsule with 4 dp of padding, `radius_rail_entry` (20 dp)
+inside the rail's own 26 dp capsule with 6 dp. Two corners that do not share a
+centre leave a crescent of the host showing, which reads as a rendering fault.
 
 **The short-height rail keeps its icons.** The compact entry shrinks the glyph to
-18 dp instead of dropping it; icon and caption both measure inside the 44 dp
+18 dp instead of dropping it; icon and caption both measure inside the 48 dp
 entry.
 
 **What the approved palettes cost.** The twelve anchors are not the UI layer's to
@@ -150,14 +217,20 @@ AA (4.5:1), secondary captions at 3.0:1 (measured 3.6–4.7), verdicts at 2.4:1
 against the precision surface. **That 2.4:1 is the tightest number in the product
 — Light Charcoal's error red on its own precision surface — and it is below AA.**
 It is a direct consequence of both the red and the ground being owner-fixed.
-UI-R4A **carried this debt deliberately and changed no approved value**; it is
+UI-R4B **carried this debt deliberately and changed no approved value**; it is
 still the one item here the owner may want to overrule.
 
-**Core document sizes** (hard cap 2000 physical lines each, measured at UI-R4A):
-`ARCHITECTURE.md` 2084, `PROJECT_STATUS.md` 1101, `PRODUCT.md` 871,
-`README.md` 404, `CLAUDE.md` 216. **`ARCHITECTURE.md` is now OVER the 2000-line
-hard cap** and roughly double its 700–1000 target; a compaction pass is owed
-before anything else adds to it. Always re-measure before quoting a count.
+**Core document sizes** (hard cap 2000 physical lines each, measured at UI-R4B):
+`ARCHITECTURE.md` 2226, `PROJECT_STATUS.md` 1199, `PRODUCT.md` 926,
+`README.md` 427, `CLAUDE.md` 245. **`ARCHITECTURE.md` is OVER the 2000-line hard
+cap** — it was 2084 at UI-R4A and UI-R4B added the durable contracts this
+correction created (the shared anchored-surface owner, the status lifecycle, the
+rail's state restoration, the concentric-corner rule, the adaptive composition
+invariant, the 48 dp floor and the two-vocabulary rule). Those additions were
+kept to contract rather than narrative and no stage diary was appended, but the
+file is further over than it was. **A compaction pass is owed before anything
+else adds to it**, and `PRODUCT.md` is now over its 300–450 target as well.
+Always re-measure before quoting a count.
 
 **Stylus / S Pen on real hardware remains UNVERIFIED.** Tool type, pressure and
 tilt are carried end to end and verified synthetically (`MotionEvent.obtain` with
@@ -253,7 +326,7 @@ Rectangle, Circle, select/delete, grid and snap, exact numeric entry, closed-
 profile detection and validation, and repeated Sketch → Extrude workflows. The
 first Extrude vertical slice supports **New Body**; Extrude **Add** and **Cut**
 are required integration **after** boolean infrastructure exists. The result stays
-Construction source and history until an explicit Freeze to Sculpt. **This
+Construction source and history until the user explicitly starts sculpting. **This
 approval is not permission for** a geometric constraint solver, assemblies,
 NURBS, engineering drawings, Revolve, Fillet, Chamfer or Shell — each needs its
 own approval.
@@ -419,7 +492,7 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 | Capsule equality case generated as a sphere (482 : 2880) | VERIFIED |
 | Position/rotation transform, degrees, right-hand rule, local X→Y→Z | VERIFIED |
 | Transform-only edit publishes no revision and triggers no GPU upload | VERIFIED |
-| Freeze to Sculpt / Back to Construction / Resume Sculpt without re-freezing | VERIFIED |
+| Start Sculpting / Back to Construction / Resume Sculpt without re-freezing | VERIFIED |
 | Stale-source policy: Construction change never touches the sculpt mesh | VERIFIED |
 | Four sculpt tools (Grab, Clay, Smooth, Inflate) on one shared kernel | VERIFIED |
 | Shared Radius and Strength, clamped, unchanged by tool switching | VERIFIED |
@@ -553,7 +626,7 @@ device. `README.md` documents how to read them.
 | `EditorUiStateTest` (JVM) | what the UI may remember and what it refuses, including that the precision surface starts closed in both modes and no window size opens it | 11 |
 | `LengthUnitTest` (JVM) | exact mm/cm/m round-tripping and parse refusal | 5 |
 | `AppThemeTest` (JVM) | the default, the three approved appearances, the JNI index contract, and that choosing one moves nothing else | 11 |
-| `ChromeMotionTest` (JVM) | the durations, and that reduced motion returns 0 rather than a short duration | 4 |
+| `ChromeMotionTest` (JVM) | the fade durations, the anchored-growth durations and curve shape (`UIR4B-08`), the uniform start scale, and that reduced motion returns 0 rather than a short duration (`UIR4B-10`) | 8 |
 | `DisplaySettingsContractTest` (JVM) | the shading/surface index contract across JNI | 4 |
 | `EditorWorkspaceControlsTest` | control sets, fields, validation, freeze wording, tools, the six-kind round trip | 23 |
 | `EditorWorkspaceLayoutTest` | measured viewport floor, landscape, expanded, collapse, the UI-R1C2 adaptive pass | 10 |
@@ -569,9 +642,10 @@ device. `README.md` documents how to read them.
 | `EditorWorkspacePointerTest` | synthetic stylus transport, per-pointer association, and that tap / navigation / sculpt arbitration are unchanged | 13 |
 | `EditorWorkspaceCompositionTest` | the UI-R2 role split: viewport dominance, the scene panel, one list with one owner, inspector-names-its-body, and that composition rebuilds no geometry | 10 |
 | `EditorWorkspaceMobileTest` | the UI-R4A structural claim: nothing owns the bottom edge in either mode (`UIR4A-01`, `-11`), the Objects capsule (`-02`), Add Primitive anchored to its `+` and offering exactly the six real primitives (`-03`, `-04`), Sphere and Plane routed through native truth (`-05`, `-06`), closing leaves one Objects control (`-07`), exact Shape and Transform one action away (`-08`, `-09`), the rail's icons and touch floor (`-10`), context surfaces rebuild no geometry (`-14`), the new surfaces leak no gesture (`-15`), one vocabulary in every window (`-17`) | 15 |
-| `EditorWorkspaceSculptRetentionTest` | `UIR4A-12`: Freeze → real stroke → Back → Resume returns the same revision, counts, stroke history and ObjectId, with the Construction Source untouched; and that a stale source is readable from the resting workspace | 2 |
+| `EditorWorkspaceSculptRetentionTest` | `UIR4A-12` / `UIR4B-20`: Start Sculpting → real stroke → Back → Resume returns the same revision, counts, stroke history and ObjectId, with the Construction Source untouched; and that a stale source is readable from the resting workspace | 2 |
+| `EditorWorkspaceCorrectionTest` | the UI-R4B corrections: no Sculpt creation path and the scene still reachable (`UIR4B-01`), Construction's six-primitive path intact (`-02`), the rail's active state across a rebuild in both modes and cleared on a mode change (`-03`), the status lifecycle, the longer hold for a rejection, the empty resting line and the standing fault (`-04`), brush values beside their sliders and nowhere else and publishing nothing (`-05`), no mid-row cut in Shape or Transform with scrolling and fields intact (`-06`, `-07`), one shared anchored contract (`-08`), a correct first-open pivot for all four surfaces (`-09`), instant reduced motion and interruptibility (`-10`), zero geometry from chrome and motion (`-11`), inset floating surfaces on an expanded window (`-12`), Radius/Strength off the model in expanded Sculpt (`-13`), concentric active geometry and a fill-led selection with no stroke (`-14`), no user-facing *Freeze* over every `R.string` (`-15`), Start Sculpting with Back/Resume/confirmation intact (`-16`), the 48 dp floor in both modes and the toolbar still fitting (`-17`), three appearances and no geometry (`-18`), grid and selection feedback unchanged (`-19`) | 36 |
 
-**211 tests** (57 JVM, 154 instrumented). No Java test asserts a rendered pixel;
+**250 tests** (60 JVM, 190 instrumented). No Java test asserts a rendered pixel;
 every control is reached by its stable semantic id and no assertion uses a screen
 coordinate. The foundation and theme suites deliberately assert no colour
 literal, radius or shadow — those are judged by eye and by runtime evidence, and
@@ -580,11 +654,24 @@ did. What the theme suite asserts instead is *relational*, plus WCAG contrast
 ratios computed in the test; that is why a whole palette and every resting
 background could change with no test edit beyond the one UI-R3 added.
 
+`EditorWorkspaceCorrectionTest` asserts corner **radii**, and that is the same
+rule rather than an exception to it: what it pins is `inner = outer − padding`,
+a relation that survives any deliberate change to either number. A literal
+"10 dp" would break on the next restyle; "concentric" breaks only when the defect
+returns.
+
 **The suite is run in TWO windows** — the default compact phone window and an
 overridden 1600 x 2560 @ 240 dpi expanded window. The adaptive cases read the
 window they are actually in and assert the contract that belongs to it, so an
 overridden run is a genuine expanded-layout run rather than a simulation, and it
 is the only thing that exercises the docked Objects and docked rail branches.
+
+**Both windows are mandatory, and UI-R4B is why.** Two cases passed compact and
+failed expanded, and neither was a product defect: `UIR4B-17` asserted the
+Objects capsule's size unconditionally, and the capsule is correctly `GONE` when
+the window gives Objects a column, so it measured 0 x 0; and
+`r1c234` still asserted "a docked rail claims no elevation", which is exactly the
+claim this stage removed. A compact-only run would have shipped both.
 
 **`EditorWorkspaceMotionTest` asserts a RESTING state and never a frame of an
 animation.** A case that sampled a transition part-way through would be a test of
@@ -608,7 +695,30 @@ dismisses it in its own `@Before`. Cases that *are* about it call
 
 **A view that has just been made visible reports a size of 0 until a traversal has
 run.** Measuring a control in the same block that opened its container is a
-recurring mistake; settle the layout in between.
+recurring mistake; settle the layout in between. It is also the shape of the
+first-open pivot defect UI-R4B fixed in the product itself, which is why
+`UIR4B-09` is worth having.
+
+**`WorkspaceTestSupport`'s open/close helpers must be called on the UI thread.**
+They drive real controls with `performClick()`, which plays a sound effect
+through the view root, so calling one from the instrumentation thread throws
+`CalledFromWrongThreadException` — a defect in the case that looks exactly like a
+defect in the product. Wrap them in `doOnWorkspace`.
+
+**An emulator session degrades under hours of instrumentation, and the symptom
+looks exactly like a lifecycle defect.** Seen at UI-R4B after roughly two hours
+of continuous runs on one boot: `EditorWorkspaceStartFlowTest` began failing with
+`Activity never becomes requested state "[DESTROYED]" / "[CREATED]" (last
+lifecycle transition = "PAUSED")`, individual cases took minutes instead of
+seconds, and `MonitoringInstr` reported "Unstopped activity count: 2" while a
+single binder transaction to `IActivityManager` took 3.4 s. ForgeShape's own
+surface log ruled the product out — `surfaceCreated` / `ANativeWindow released`
+completed in tens of milliseconds throughout, so the blocking `surfaceDestroyed`
+contract was not involved — and **the same APK ran the same eight cases 8/8 in
+16 seconds on a freshly booted emulator.** The signature is not `ui11`'s, so it
+was diagnosed rather than assumed: if it appears, reboot the emulator with
+`scripts\start-forgeshape-emulator.ps1` and re-run before reading it as a
+regression.
 
 `EditorWorkspaceGestureTest.ui11_theImeLeavesTheFieldAndTheCommitPathUsableAndTheSurfaceUntouched`
 opens with a precondition guard — "the soft keyboard did not appear, so this case
@@ -616,9 +726,11 @@ proves nothing" — and fails on that guard alone, never reaching an assertion a
 product behaviour, whenever the keyboard is slow to appear. It has failed and
 passed across recent stages (proven pre-existing at Stage 015D and UI-R1B1 by
 stashing every change and reproducing the identical message on an untouched tree)
-and the message has been character-identical since. Treat a future failure of this
-one case as a harness symptom to confirm against the current baseline before
-calling it a regression.
+and the message has been character-identical since. **It passed in both windows
+at UI-R4B**, on a freshly booted emulator, which is consistent with everything
+recorded about it: whether it passes is a function of how loaded the host is, not
+of the product. Treat a future failure as a harness symptom to confirm against
+this baseline before calling it a regression.
 
 ## Current evidence summary
 
@@ -626,38 +738,41 @@ Latest acceptance run, on `ForgeShape_Stage006` / `emulator-5580` unless stated:
 
 - **Native self-tests:** eleven suites, **1695 checks, zero failures** on a clean
   launch, followed by `FORGESHAPE_NATIVE_VIEWPORT_OK`. Nothing below JNI was
-  touched by UI-R4A; the Gate P1 picking assertions are intact inside the
-  174-check picking suite, and `SIDE`, `REFR`, `NOR`, `CAMPROJ` and `PLN` are all
-  still green.
-- **JVM:** 57/57.
-- **Instrumented:** 154 run, **153 green**, twice — once compact, once at an
-  overridden 1600 × 2560 @ 240 dpi — through
-  `scripts\run-instrumented-tests.ps1 -Serial emulator-5580`. The one failure in
-  each run is `ui11`, on its own precondition guard ("the soft keyboard did not
-  appear, so this case proves nothing"), which never reaches an assertion about
-  product behaviour. The message is **character-identical** to the one this file
-  has recorded since Stage 015D and was confirmed pre-existing there and at
-  UI-R1B1 by stashing every change; it is a harness symptom, not a regression.
+  touched by UI-R4B — the whole stage is Java, resources and documentation — and
+  the total is byte-for-byte the one UI-R4A recorded; the Gate P1 picking
+  assertions are intact inside the 174-check picking suite, and `SIDE`, `REFR`,
+  `NOR`, `CAMPROJ` and `PLN` are all still green.
+- **JVM:** 60/60.
+- **Instrumented: 190/190 green in BOTH windows** — the default compact phone
+  window and an overridden 1600 × 2560 @ 240 dpi — through
+  `scripts\run-instrumented-tests.ps1 -Serial emulator-5580`, on a freshly booted
+  emulator. **`ui11` passed in both**, which is the first acceptance run in
+  several stages where it has: it fails only on its own precondition guard when
+  the soft keyboard is slow to appear, and a rested emulator gives it the
+  keyboard.
 - **Device guards:** `DEV2-01`..`07` and `DEV3-01`..`06` all PASS, with no device
   attached and zero `emulator-5554` interaction.
 - **Physical ARM64 (Gate P1):** closed on a Galaxy S25 Ultra —
   `primaryCpuAbi=arm64-v8a`, `PAGE_SIZE` 4096, the mandatory ~10k/~50k/~100k
   ladder and Sculpt at 100k measured on real hardware. Stylus stays UNVERIFIED.
-- **Runtime walkthrough (UI-R4A):** cold start and start chooser into
-  Construction; the resting workspace with no bottom surface; the Objects capsule
-  expanded; Add Primitive; a Sphere and a Plane created and both confirmed as
-  their own native primitive; the active body switched from the list; exact Shape
-  and exact Transform opened, edited and dismissed; Freeze, a real Grab stroke,
-  Back to Construction, Resume Sculpt; Radius/Strength; all four brushes; all
-  three appearances; compact portrait, short landscape and the expanded window;
-  HOME/resume and a rotation round trip. No crash, no gesture leakage, the
-  viewport usable throughout, and **no geometry work from any pure UI state
-  change**: opening and closing every context surface, switching rail context,
-  three appearance switches, HOME/resume and rotation produced **zero**
-  `MESH_UPLOAD_OK` and zero publications. A real sculpt stroke produced 29, which
-  is the stroke working. Earlier walkthroughs are in Git history.
-- **Screenshot review set:** UIR4A-S01..S12 captured for owner/coordinator review
-  and deliberately **not committed**. Paths are in the UI-R4A stage report.
+- **Runtime walkthrough (UI-R4B):** cold start and start chooser into
+  Construction; the resting workspace with no bottom surface and **no status
+  capsule**; the Objects capsule expanded; Add Primitive; a Cone created and
+  confirmed as its own native primitive; exact Shape and exact Transform opened,
+  inspected for a clipped row and dismissed; **Start Sculpting**, the resting
+  Sculpt workspace with **no `+` in either Objects presentation**, a real
+  Radius and Strength drag, Back to Construction and Resume Sculpt; short
+  landscape with a held brush; the expanded window in both modes; all three
+  appearances. No crash, no gesture leakage and the viewport usable throughout.
+  Earlier walkthroughs are in Git history.
+- **Screenshot review sets:** `artifacts/uir4a/` (UIR4A-S01..S12 plus three
+  walkthrough frames) and `artifacts/uir4b/` (UIR4B-S01..S12), both **committed**.
+  UI-R4A's were left untracked, which contradicted `.gitignore`'s own note that
+  `/artifacts/` is deliberately not ignored because the cited runtime evidence is
+  versioned repository content. UI-R4B reconciled that rather than working around
+  it: the historical frames are tracked unmodified, and the fresh set sits beside
+  them under its own folder so the two reviews can be compared rather than one
+  overwriting the other.
 
 **One caveat about capturing self-test evidence.** On both the emulator and the
 physical phone the logcat ring buffer intermittently drops whole suites from the
@@ -984,24 +1099,25 @@ regenerated per stage.
 | `app/src/main/java/.../EditorWorkspaceView.java` | The whole editor UI: region composition, adaptive layout, window insets, chrome visibility, mode/tool wiring, and `syncFromNative()`. Owns no product state |
 | `app/src/main/java/.../WorkspaceLayoutMode.java` | Window-dp breakpoints, where the precision surface appears when open, and chrome sizing, as arithmetic. It has no opinion about whether that surface is open. No Android type |
 | `app/src/main/java/.../EditorUiState.java` | The closed list of UI-owned state: display unit, draft kind, rail selection, whether the precision surface was asked for (per mode, false to begin with), chrome-hidden |
-| `app/src/main/java/.../GlobalToolbarView.java` | Editing context, the three mutually exclusive mode transitions, reserved Export, the Display control, chrome hide, and the one status message. Owns no scene control — that is the Objects capsule's |
+| `app/src/main/java/.../GlobalToolbarView.java` | Editing context, the three mutually exclusive mode transitions, reserved Export, the Display control, chrome hide, and the one status line — including its lifecycle: transient versus standing, the two holds, and cancel-first. Owns no scene control — that is the Objects capsule's |
 | `app/src/main/java/.../DisplaySettingsPopoverView.java` | The compact display popover: Shading (Studio / MatCap / Debug), Surface (Smooth / Faceted) and Projection (Perspective / Orthographic), with short interruptible open/close motion that honours the system animator scale. Owns no state |
 | `app/src/main/java/.../ToolRailView.java` | The edge tool selector for either mode. Every entry works — there is no reserved-entry support left. Selects; decides nothing |
 | `app/src/main/java/.../BrushEdgeControlsView.java`, `VerticalSliderView.java` | Direct Radius and Strength, and the custom vertical control behind them. Own no brush value |
-| `app/src/main/java/.../PropertyInspectorView.java` | The on-demand precision surface: a scrolling container with a measured height cap that is open or absent, never collapsed. Owns no value |
-| `app/src/main/java/.../ObjectsCapsuleView.java` | The resting scene control: the active body's name, and the `+`. Holds no scene state; both its controls only report which was pressed |
+| `app/src/main/java/.../PropertyInspectorView.java`, `PrecisionScrollView.java` | The on-demand precision surface: open or absent, never collapsed, with a measured height cap — and a scroll container that ends the visible body on a whole row rather than through one. Owns no value |
+| `app/src/main/java/.../ObjectsCapsuleView.java` | The resting scene control: the active body's name, and — in Construction only — the `+`. Holds no scene state; both its controls only report which was pressed |
 | `app/src/main/java/.../AddPrimitivePaletteView.java` | The one creation surface: six primitive tiles, shared by both `+` controls. Builds no geometry and defaults no dimension |
 | `app/src/main/java/.../ConstructionShapeEditorView.java` | Primitive chooser, that primitive's exact fields, unit chips, Apply Shape. Owns field text and a DRAFT kind only |
 | `app/src/main/java/.../ConstructionPlacementEditorView.java` | Position/rotation fields, unit chips, Apply Transform. Owns field text only |
-| `app/src/main/java/.../SculptContextView.java` | Frozen-mesh summary, stale-source warning, and the guarded re-Freeze |
+| `app/src/main/java/.../SculptContextView.java` | Sculpt-mesh summary, stale-source warning, and the guarded reset (*Reset Sculpt from Shape…*) |
 | `app/src/main/java/.../InspectorHost.java`, `NumericPropertyRow.java`, `UnitChipsView.java`, `EditorControlStyles.java` | The four small shared pieces: what a body may ask of the workspace, one labelled exact field, the mm/cm/m selector, and the one place controls get their look |
 | `app/src/main/java/.../LengthUnit.java` | Exact `BigDecimal` mm/cm/m ↔ meter conversion, parsing and formatting |
 | `app/src/main/java/.../StartChooserView.java` | The New Project question: two ways to begin, over the live viewport. Owns no state, makes no native call |
 | `app/src/main/res/values/*` | `ids.xml` (the stable semantic id contract), `dimens.xml` (radius/type/depth scales), `colors.xml` (role names, dark values), `strings.xml`, `themes.xml` (edge-to-edge) |
 | `app/src/main/java/.../AppTheme.java` | The three approved appearances: the Android style each applies, and the viewport ground each hands to native code |
-| `app/src/main/java/.../ChromeMotion.java` | The four rules every chrome transition follows: the two durations, the reduced-motion question, cancel-first, and one alpha helper. Not a framework and must not become one |
+| `app/src/main/java/.../ChromeMotion.java` | The rules every chrome transition follows: the fade durations, the anchored-growth durations, the one ease-out curve, the uniform start scale, the reduced-motion question, cancel-first, and one alpha helper. Not a framework and must not become one |
+| `app/src/main/java/.../AnchoredSurfaceView.java` | The one implementation of "a surface grows out of the control that opened it", shared by all four: pivot, staging an open that has no size yet, cancel-first, reduced motion, and the open/closed state the invoking control reads |
 | `app/src/main/res/values/attrs.xml`, `themes.xml` | The semantic roles, and the one place each is given a value per theme. Adding a theme touches these two files and nothing else |
-| `app/src/main/res/drawable/*` | 15 icon vector drawables on one 24 dp grid, plus the `bg_*` background state lists every control's look comes from, all written in `?attr/fs*` |
+| `app/src/main/res/drawable/*` | 21 icon vector drawables on one 24 dp grid, plus the `bg_*` background state lists every control's look comes from, all written in `?attr/fs*` — including the `bg_capsule_*` set, whose only difference from the ordinary controls is a corner concentric with the capsule they sit in |
 | `app/src/main/res/color/*` | `control_content_tint.xml` — the one state list an icon and its label both read, so they cannot disagree |
 | `app/src/test/java/...` | JVM suites: layout arithmetic, UI-owned state, unit conversion |
 | `app/src/androidTest/java/...` | Instrumented Editor Workspace suites plus `WorkspaceTestSupport` (native snapshots, drag consumption, exact chrome-union viewport measurement) |
@@ -1060,8 +1176,9 @@ was added and no marketing claim is made.
 
 **Stage 019 — Undo/Redo transaction foundation for direct transform work.**
 
-UI-R4A left the shell ready for direct manipulation and deliberately built none
-of it. The thing that has to exist *before* a gizmo, not after it, is a
+UI-R4A left the shell ready for direct manipulation and UI-R4B corrected what the
+review of it found; neither built any of the manipulation, deliberately. The
+thing that has to exist *before* a gizmo, not after it, is a
 transaction boundary: a drag on a handle produces a continuous stream of
 intermediate states, and without a domain-level notion of "one edit began, one
 edit ended, this is what it can be undone to", every frame of that drag is either
@@ -1075,18 +1192,18 @@ for Construction parameters, for a transform and for a sculpt stroke, and what
 the memory ceiling is. The direct transform gizmo (Stage 020) is built on top of
 it and is not part of Stage 019.
 
-**Visual acceptance of UI-R4A remains PENDING**, on the twelve-screenshot review
-set UIR4A-S01..S12 (the resting Construction workspace, the Objects capsule
-expanded, Add Primitive, both precision surfaces, resting Sculpt and its
-Radius/Strength, short landscape, expanded Construction and Sculpt, and the
-Neutral Charcoal and Light Charcoal resting workspaces). Screenshots are
-deliberately **not** committed; their local paths are in the UI-R4A stage report.
-That review is a judgement about the look and is independent of Stage 019, which
-touches the domain rather than the shell.
+**Visual acceptance remains PENDING**, now on the fresh twelve-screenshot review
+set `artifacts/uir4b/UIR4B-S01..S12` — the resting Construction workspace, the
+Objects capsule expanded, Add Primitive, both precision surfaces, resting Sculpt
+with no `+`, Radius/Strength, short landscape with an active tool, expanded
+Construction and Sculpt, and the Neutral Charcoal and Light Charcoal resting
+workspaces. `artifacts/uir4a/` is committed unmodified beside it, so the two
+reviews can be compared. That review is a judgement about the look and is
+independent of Stage 019, which touches the domain rather than the shell.
 
-**Also owed, before anything else adds to it:** `ARCHITECTURE.md` is now 2084
-lines, over its own 2000-line hard cap and roughly double its 700–1000 target. A
-compaction pass is due.
+**Also owed, before anything else adds to it:** `ARCHITECTURE.md` is 2226 lines,
+over its own 2000-line hard cap and roughly double its 700–1000 target, and
+`PRODUCT.md` at 926 is over its 300–450 target. A compaction pass is due.
 
 The one feature the repo still records as a candidate is **Selection Outline** —
 the expensive half of selection feedback, needing either a second geometry pass

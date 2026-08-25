@@ -2,10 +2,13 @@
 <!--
   Editor Workspace metrics.
 
-  Every touch target here is at or above 44 dp in its short dimension. That is
-  the stylus-first constraint (INPUT-OWNER-01) expressed as a number: an S Pen
-  tip is precise, a fingertip is not, and the shell has to stay usable with
-  both without growing a second set of controls.
+  Every user-operated touch target here is at or above 48 dp in its short
+  dimension. That is the stylus-first constraint (INPUT-OWNER-01) expressed as a
+  number, raised from 44 dp at UI-R4B: an S Pen tip is precise, a fingertip is
+  not, and the shell has to stay usable with both without growing a second set
+  of controls. The floor is the HIT AREA and never the glyph — an icon still
+  reads at 20 dp inside a 48 dp control, and nothing here grows a drawn box to
+  reach the number.
 
   Spacing follows a 4 dp grid. Values that are not on it are local arithmetic
   (a stroke width, an icon's optical size), never a gap between two surfaces.
@@ -14,7 +17,7 @@
     <!-- =====================================================================
          Corner radius: three semantic levels, not one number.
 
-         A single radius on both a 44 dp chip and a 360 dp panel is what made
+         A single radius on both a 48 dp chip and a 360 dp panel is what made
          every surface read as the same flat card. The level says what KIND of
          thing is being drawn, so a control never has to guess.
          ===================================================================== -->
@@ -25,10 +28,29 @@
     <!-- A panel or sheet that carries a whole body of content. -->
     <dimen name="radius_sheet">24dp</dimen>
     <!-- A floating control GROUP: a capsule holding two or three controls that
-         belong together. Large enough that a 52 dp-tall group reads as a pill
+         belong together. Large enough that a 56 dp-tall group reads as a pill
          rather than as a rounded rectangle, which is the difference between a
          group of controls and a small panel. -->
     <dimen name="radius_capsule">26dp</dimen>
+    <!--
+      A control that lives INSIDE a floating capsule: an icon control, the
+      Objects capsule's body label, a mode-transition button, Export.
+
+      CONCENTRIC with its host, and that is the whole reason it exists. A 10 dp
+      corner painted flush inside a 26 dp capsule leaves a crescent of capsule
+      showing at each end, because the two arcs do not share a centre — which is
+      what made an active icon control read as a box dropped into a pill rather
+      than as the pill's own selected state. The rule is inner = outer minus the
+      gap between them: a 26 dp capsule with 4 dp of group padding takes a 22 dp
+      control.
+    -->
+    <dimen name="radius_control_inset">22dp</dimen>
+    <!--
+      A Tool Rail entry, by the same rule. The rail wears the Tier 1 floating
+      capsule (radius_capsule) like every other control group, with 6 dp of
+      padding around its entries, so an entry is concentric with it at 20 dp.
+    -->
+    <dimen name="radius_rail_entry">20dp</dimen>
 
     <!-- =====================================================================
          Depth. Only surfaces that genuinely float get any, and none of them
@@ -79,7 +101,7 @@
     -->
     <dimen name="toolbar_height">56dp</dimen>
     <dimen name="toolbar_padding_horizontal">8dp</dimen>
-    <!-- The breathing room inside a control group's capsule, around the 44 dp
+    <!-- The breathing room inside a control group's capsule, around the 48 dp
          controls it holds. -->
     <dimen name="toolbar_group_padding">4dp</dimen>
     <!-- 4dp rather than 6dp. Inside a control group's own capsule the gap is
@@ -93,7 +115,8 @@
          window, which is why it is a shared contract and not a local number. -->
     <dimen name="toolbar_context_max_width">152dp</dimen>
     <!--
-      How wide a mode-transition button (Freeze / Resume / Back) may grow.
+      How wide a mode-transition button (Start Sculpting / Resume / Back) may
+      grow.
 
       The context label absorbs squeeze first, but a COMPACT window withdraws it
       outright — and with it gone, the row's next-widest child was an unbounded
@@ -101,20 +124,26 @@
       left, so the LAST child took the squeeze and the Hide UI control was drawn
       clipped by the window edge, below the touch floor and partly unreachable.
       Bounded here, the button ellipsises instead and every icon control keeps
-      the size it asked for. Wide enough for "Freeze to Sculpt" in full.
+      the size it asked for.
 
       Sized against the NARROWEST window the product supports rather than
-      against the one it is usually measured on. On a 360 dp window the two
-      capsules' own padding plus the utility group's four controls leave about
-      173 dp for the editing group, so this is what is left after that group's
-      own padding. It fits "Back to Construction" — the longest label in the
-      product — on every window at or above 360 dp. `R1B1-10b` and `UIR3-01` are
-      what hold it honest: both measure the icon controls' real width AND their
-      right edge.
-    -->
-    <dimen name="toolbar_transition_max_width">164dp</dimen>
+      against the one it is usually measured on. On a 360 dp window the toolbar's
+      own padding plus the utility group — Export and two 48 dp icon controls —
+      leave about 150 dp for the editing group's button once that group's own
+      padding is taken, so this is that with two dp of slack.
 
-    <!-- Tool Rail. 56 x 64 dp per entry: comfortably past the 44 dp floor with
+      It was 164 dp while the touch floor was 44 dp. Raising the floor to 48 dp
+      spends 8 dp of the same row, and the BUTTON gives that up rather than an
+      icon control: a transition button that ellipsises still reads, and an icon
+      control squeezed below the floor is unreachable. "Back to Construction",
+      the longest label in the product, therefore ellipsises on a 360 dp window
+      and keeps its full wording as its content description. `R1B1-10b`,
+      `UIR3-01` and `UIR4B-17` are what hold this honest: all three measure the
+      icon controls' real width AND their right edge.
+    -->
+    <dimen name="toolbar_transition_max_width">148dp</dimen>
+
+    <!-- Tool Rail. 56 x 64 dp per entry: comfortably past the 48 dp floor with
          room for a label under the icon, because icon-only costs learning. -->
     <dimen name="rail_item_width">56dp</dimen>
     <dimen name="rail_item_height">64dp</dimen>
@@ -132,7 +161,7 @@
       A rail that drops to text-only in landscape is a different control from the
       one the user learned in portrait: the glyph is the part that is recognised
       at a glance, and losing it is a bigger regression than a smaller button.
-      At 18 dp the icon and the 10 sp caption together measure inside the 44 dp
+      At 18 dp the icon and the 10 sp caption together measure inside the 48 dp
       compact entry with room to spare, so nothing has to be dropped.
     -->
     <dimen name="rail_icon_size_compact">18dp</dimen>
@@ -145,9 +174,12 @@
     <dimen name="brush_slider_min_height">120dp</dimen>
     <dimen name="brush_track_width">10dp</dimen>
     <!-- The slider's TOUCH width, which is deliberately much wider than the
-         track it draws. Named rather than computed from the track, so the hit
-         area cannot shrink by accident when the track is restyled. -->
-    <dimen name="brush_touch_width">32dp</dimen>
+         10 dp track it draws. Named rather than computed from the track, so the
+         hit area cannot shrink by accident when the track is restyled. At the
+         48 dp floor it is a full-size target in its SHORT dimension, which is
+         the dimension a thumb actually misses in — a 200 dp-tall column is not
+         reachable if it is 32 dp wide. -->
+    <dimen name="brush_touch_width">48dp</dimen>
     <dimen name="brush_thumb_radius">11dp</dimen>
     <dimen name="brush_gap">8dp</dimen>
 
@@ -166,7 +198,7 @@
     <dimen name="inspector_sheet_inset">8dp</dimen>
 
     <!-- Controls. -->
-    <dimen name="control_height">44dp</dimen>
+    <dimen name="control_height">48dp</dimen>
     <dimen name="control_border_width">1dp</dimen>
     <dimen name="control_border_active_width">2dp</dimen>
     <dimen name="control_padding_horizontal">14dp</dimen>
@@ -175,8 +207,9 @@
          a narrow docked inspector three to a row need every dp to say their own
          names rather than "Cyl". -->
     <dimen name="chip_padding_horizontal">10dp</dimen>
-    <!-- An icon-only control: square, and still at the 44 dp touch floor. -->
-    <dimen name="icon_button_size">44dp</dimen>
+    <!-- An icon-only control: square, and at the 48 dp touch floor. The GLYPH is
+         still 20 dp; only the hit area carries the floor. -->
+    <dimen name="icon_button_size">48dp</dimen>
     <dimen name="icon_size">20dp</dimen>
 
     <!-- Exact-value field padding. Shared by every numeric row in the product,

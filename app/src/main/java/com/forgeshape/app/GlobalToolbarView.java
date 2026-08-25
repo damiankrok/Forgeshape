@@ -119,7 +119,7 @@ final class GlobalToolbarView extends LinearLayout {
         // It is still bounded and still ellipsises: the row can run out of width
         // on a narrow window, and a LinearLayout that has run out squeezes its
         // LAST child — which is how both icon controls once ended up below the
-        // 44 dp touch floor on a 411 dp window. Neither group is weighted; the
+        // 48 dp touch floor on a 411 dp window. Neither group is weighted; the
         // flexible child is the gap between them.
         final LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -128,8 +128,19 @@ final class GlobalToolbarView extends LinearLayout {
         labelParams.rightMargin = gap;
         editingGroup.addView(contextLabel, labelParams);
 
+        // "Start Sculpting", and the id is still `freeze_to_sculpt`.
+        //
+        // The wording changed at UI-R4B and the semantics did not: this control
+        // still builds the sculpt mesh from the Construction shape and enters
+        // Sculpt Mode, and the Construction Source is still kept. What "Freeze"
+        // named was the implementation's act, not the user's — a user starts
+        // sculpting; freezing is what the product does to let them. The id is
+        // the internal name of that implementation act, it is still accurate,
+        // and renaming it would churn every test and every evidence script for
+        // a change of copy. See PRODUCT.md for the whole vocabulary.
         freezeButton = EditorControlStyles.primaryButton(context, R.id.freeze_to_sculpt,
-                context.getString(R.string.freeze_to_sculpt));
+                context.getString(R.string.start_sculpting));
+        EditorControlStyles.asCapsuleMember(freezeButton, R.drawable.bg_capsule_primary);
         boundTransitionWidth(freezeButton);
         freezeButton.setOnClickListener(new OnClickListener() {
             @Override
@@ -145,6 +156,7 @@ final class GlobalToolbarView extends LinearLayout {
         // returns to the sculpt work exactly as it was left.
         resumeButton = EditorControlStyles.primaryButton(context, R.id.resume_sculpt,
                 context.getString(R.string.resume_sculpt));
+        EditorControlStyles.asCapsuleMember(resumeButton, R.drawable.bg_capsule_primary);
         boundTransitionWidth(resumeButton);
         resumeButton.setOnClickListener(new OnClickListener() {
             @Override
@@ -163,9 +175,11 @@ final class GlobalToolbarView extends LinearLayout {
         //
         // Quiet and TONAL: it takes the ordinary control fill inside the group's
         // own capsule, so it reads as one step up from the material around it
-        // rather than as a second commit.
+        // rather than as a second commit — on the capsule's own concentric
+        // corner, so it is the pill's own member rather than a box inside it.
         backButton = EditorControlStyles.chip(context, R.id.back_to_construction,
                 context.getString(R.string.back_to_construction));
+        EditorControlStyles.asCapsuleMember(backButton, R.drawable.bg_capsule_tonal);
         backButton.setTextColor(
                 EditorControlStyles.themeColor(context, R.attr.fsTextPrimary));
         boundTransitionWidth(backButton);
@@ -202,10 +216,19 @@ final class GlobalToolbarView extends LinearLayout {
         // the utility group it RECEDES — a recessed tonal well below the capsule
         // around it — instead of standing beside the working controls as an
         // outlined box of the same size.
+        //
+        // The SEAM, and why it needed fixing without touching Export's scope.
+        // The recessed well was drawn at the 10 dp control corner and sits flush
+        // against the leading end of a 26 dp capsule, so a lit crescent of
+        // capsule showed beside it — which read as a rendering fault rather than
+        // as a reserved control, and made the one honest "not implemented" in
+        // the product look broken. It is the same recessed well on the capsule's
+        // own corner now. Export remains unavailable and remains inert.
         exportAction = EditorControlStyles.chip(context, R.id.export_action,
                 context.getString(R.string.export));
         EditorControlStyles.setChipReserved(exportAction,
                 context.getString(R.string.export_reserved_note));
+        EditorControlStyles.asCapsuleMember(exportAction, R.drawable.bg_capsule_reserved);
         utilityGroup.addView(exportAction, EditorControlStyles.wrap(0));
 
         // Objects is deliberately NOT here any more. Which body is being edited
@@ -242,8 +265,17 @@ final class GlobalToolbarView extends LinearLayout {
         utilityGroup.addView(hideUiToggle, EditorControlStyles.iconButtonParams(context, gap));
 
         statusMessage = EditorControlStyles.statusText(context, R.id.status_message);
-        statusMessage.setMaxLines(2);
+        // Three lines rather than two, and it is the short-landscape fix. The
+        // capsule is sized to its own text, so on a tall window a long rejection
+        // wraps and fits; on a SHORT one the message shares the control row,
+        // where two lines cut "Rejected: Total Height cannot be less than
+        // Diameter — the two rounded…" in the middle of the sentence that
+        // carries the reason. A third line is one row of caption text, and it is
+        // the difference between a rule the user learns and an ellipsis.
+        statusMessage.setMaxLines(3);
         statusMessage.setEllipsize(TextUtils.TruncateAt.END);
+        // Nothing to say yet, so nothing is drawn: see write().
+        statusMessage.setVisibility(GONE);
         attachStatus(true);
     }
 
@@ -289,7 +321,7 @@ final class GlobalToolbarView extends LinearLayout {
      * Shows or hides the context label.
      *
      * <p>A narrow window cannot carry both control groups, the status capsule
-     * and a label above the 44 dp touch floor, and the label is the least
+     * and a label above the 48 dp touch floor, and the label is the least
      * load-bearing of the four. Where it cannot fit it is withdrawn outright
      * rather than squeezed to an ellipsis that says nothing.
      *
@@ -396,15 +428,142 @@ final class GlobalToolbarView extends LinearLayout {
                 hidden ? R.string.show_ui : R.string.hide_ui));
     }
 
+    // -----------------------------------------------------------------------
+    // The status line's lifecycle
+    //
+    // Before UI-R4B it had none. Every message was written and then simply
+    // stayed: "Body #3 selected." was still on the workspace ten minutes and
+    // three tools later, and the resting screenshots of the previous review are
+    // full of verdicts about acts long finished. A line that always says
+    // something says nothing, and it costs a capsule's worth of the top of the
+    // model to do it.
+    //
+    // Two kinds of message, and the difference is whether it describes a STATE
+    // or an EVENT:
+    //
+    //   STANDING  a fault that persists until the user acts on it. Today there
+    //             is exactly one — a stale Construction Source. It is written on
+    //             every refresh and re-asserts itself after any transient that
+    //             covered it, because it is still true.
+    //
+    //   TRANSIENT a verdict about something that just happened: applied,
+    //             rejected, selected, created, switched. It has a life, and when
+    //             that life is over the line goes back to whatever is standing —
+    //             which is usually nothing, and nothing is drawn as no capsule
+    //             at all rather than as an empty one.
+    //
+    // This is deliberately not a notification framework: two constants, one
+    // posted Runnable and one cancel. What makes it correct is the cancel —
+    // exactly the rule ChromeMotion follows for animations, for the same reason.
+    // A second message must replace the first AND its pending clear, or the
+    // first message's timer would wipe the second one off the screen early.
+    // -----------------------------------------------------------------------
+
+    /**
+     * How long an ordinary transient stands.
+     *
+     * <p>Long enough to be read after the eye has come back from the model,
+     * short enough that a resting workspace is genuinely resting.
+     */
+    static final long STATUS_HOLD_MS = 5000L;
+
+    /**
+     * How long a rejection stands.
+     *
+     * <p>Longer, because ForgeShape's rejection copy is its own argument for
+     * itself: "Rejected: Total Height cannot be less than Diameter — the two
+     * rounded ends alone are that tall. Object unchanged." is a sentence that
+     * teaches the constraint, and a message the user cannot finish reading may
+     * as well have said "Invalid". The wording is not shortened to fit a
+     * timeout; the timeout is set to fit the wording.
+     */
+    static final long STATUS_FAULT_HOLD_MS = 10000L;
+
+    /** What the line returns to when a transient's life is over. */
+    private CharSequence standingMessage = "";
+    private int standingColorAttr = R.attr.fsTextSecondary;
+
+    /** The one pending clear. Held so it can be cancelled, which is the whole
+     *  mechanism. */
+    private final Runnable restoreStanding = new Runnable() {
+        @Override
+        public void run() {
+            write(standingMessage, standingColorAttr);
+        }
+    };
+
+    /**
+     * Writes a verdict about something that just happened.
+     *
+     * <p>Cancel-first: a newer message replaces the older one <b>and</b> its
+     * pending clear, so a rapid sequence cannot have an early message's timer
+     * blank a later one.
+     */
     void showStatus(CharSequence message, int colorAttr) {
+        removeCallbacks(restoreStanding);
+        write(message, colorAttr);
+        if (message == null || message.length() == 0) {
+            return;
+        }
+        postDelayed(restoreStanding, colorAttr == R.attr.fsTextError
+                ? STATUS_FAULT_HOLD_MS : STATUS_HOLD_MS);
+    }
+
+    /**
+     * Sets what the line says at rest, and shows it now.
+     *
+     * <p>Called from the one refresh every surface re-reads, so a standing fault
+     * re-asserts itself after any transient that covered it, and clears the
+     * moment it stops being true. An empty standing message is the ordinary
+     * case: at rest the workspace has nothing to say.
+     */
+    void showStandingStatus(CharSequence message, int colorAttr) {
+        standingMessage = message == null ? "" : message;
+        standingColorAttr = colorAttr;
+        // A standing change outranks a transient in flight: the transient
+        // described an act, and the state it described has just been re-read.
+        removeCallbacks(restoreStanding);
+        write(standingMessage, standingColorAttr);
+    }
+
+    private void write(CharSequence message, int colorAttr) {
         statusMessage.setTextColor(
                 EditorControlStyles.themeColor(getContext(), colorAttr));
         statusMessage.setText(message);
         statusMessage.setContentDescription(message);
+        // GONE rather than an empty capsule. The capsule is a surface standing
+        // on the model, and a surface with nothing in it is exactly the kind of
+        // permanent claim on the workspace that UI-R4A removed everywhere else.
+        statusMessage.setVisibility(
+                message == null || message.length() == 0 ? GONE : VISIBLE);
+    }
+
+    /**
+     * Drops the pending clear when this toolbar leaves the window.
+     *
+     * <p>The platform already discards a detached view's callbacks, so this is
+     * belt and braces — but the toolbar IS detached and rebuilt by an appearance
+     * change, and a timer left holding a reference to a dead workspace is the
+     * kind of thing that is only ever found the hard way.
+     */
+    @Override
+    protected void onDetachedFromWindow() {
+        removeCallbacks(restoreStanding);
+        super.onDetachedFromWindow();
     }
 
     CharSequence statusText() {
         return statusMessage.getText();
+    }
+
+    /** Whether the line currently has anything to say, for verification. */
+    boolean statusVisible() {
+        return statusMessage.getVisibility() == VISIBLE;
+    }
+
+    /** What the line returns to when a transient expires, for verification. */
+    CharSequence standingStatusText() {
+        return standingMessage;
     }
 
     /**

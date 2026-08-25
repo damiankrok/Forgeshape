@@ -55,7 +55,6 @@ import android.widget.ScrollView;
 final class EditorWorkspaceView extends FrameLayout
         implements InspectorHost, GlobalToolbarView.OnGlobalAction,
         ToolRailView.OnToolSelected, PropertyInspectorView.OnPrecisionSurfaceClosed,
-        BrushEdgeControlsView.OnBrushChanged,
         DisplaySettingsPopoverView.OnDisplaySettingChanged,
         ObjectsCapsuleView.OnObjectsCapsuleAction,
         AddPrimitivePaletteView.OnPrimitiveChosen,
@@ -217,6 +216,18 @@ final class EditorWorkspaceView extends FrameLayout
      *  decision is always applied, whichever way it goes. */
     private Boolean appliedObjectsDocked;
 
+    /**
+     * Whether the current WINDOW could afford an Objects column.
+     *
+     * <p>Kept separately from {@link #appliedObjectsDocked} because the answer
+     * has two halves that change at different times: the window's half moves on
+     * a resize or a rotation, and the mode's half moves when the user starts or
+     * stops sculpting. Remembering the window's answer is what lets a mode
+     * change re-run the decision without re-running the whole adaptive pass.
+     * See {@link #applyObjectsPlacement()}.
+     */
+    private boolean objectsColumnAffordable;
+
     /** Whether the Tool Rail is currently drawn flush rather than floating. */
     private Boolean appliedRailDocked;
 
@@ -293,10 +304,18 @@ final class EditorWorkspaceView extends FrameLayout
         objectsDock = new ScrollView(context);
         objectsDock.setId(R.id.objects_dock);
         objectsDock.setVisibility(GONE);
-        objectsDock.setBackgroundResource(R.drawable.bg_chrome_docked_leading);
-        // A docked column is part of the window frame, not a card over the
-        // model, so it claims no depth — the same rule railDocked() follows.
-        objectsDock.setElevation(0.0f);
+        // TIER 2, INSET — the same material the Objects PANEL wears on a phone,
+        // and deliberately not a docked slab any more.
+        //
+        // It used to be bg_chrome_docked_leading: opaque, flat, square against
+        // the window edge and rounded only on the side facing the model. That is
+        // desktop-CAD furniture. It made the expanded window a different product
+        // from the phone rather than the same product with more room — the same
+        // scene list, in the same session, wore a floating rounded surface on one
+        // window and a wall on the other. Here it is a context surface standing
+        // clear of the edge, which is the vocabulary every other surface in the
+        // workspace already speaks.
+        EditorControlStyles.applyContextSurface(objectsDock);
         // Opaque to touch, exactly as every other chrome surface is, so reaching
         // for a body never orbits the camera behind the column. A clickable
         // ScrollView consumes what its own scrolling and its own rows did not.
@@ -314,13 +333,22 @@ final class EditorWorkspaceView extends FrameLayout
                 0, ViewGroup.LayoutParams.WRAP_CONTENT);
         objectsParams.gravity = Gravity.TOP;
         objectsParams.rightMargin = EditorControlStyles.dimen(context, R.dimen.row_gap_small);
+        // INSET from the leading window edge, not flush against it. This is the
+        // half of "same vocabulary" that is a margin rather than a material: a
+        // surface touching the window edge is part of the frame, and a surface
+        // standing off it is a panel in a workspace. It is the same claim the
+        // inset bottom sheet already makes.
+        objectsParams.leftMargin = EditorControlStyles.dimen(context, R.dimen.row_gap);
         // Clear of the status capsule above it. The toolbar container is
         // transparent, so without this the column's top edge butts straight into
         // a floating capsule and the two read as one broken surface.
         objectsParams.topMargin = EditorControlStyles.dimen(context, R.dimen.row_gap);
+        // And clear of the bottom edge, so it is a bounded panel rather than a
+        // column that happens to be short.
+        objectsParams.bottomMargin = EditorControlStyles.dimen(context, R.dimen.row_gap);
         middleRow.addView(objectsDock, objectsParams);
 
-        brushControls = new BrushEdgeControlsView(context, this);
+        brushControls = new BrushEdgeControlsView(context);
         final LinearLayout.LayoutParams brushParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         brushParams.gravity = Gravity.CENTER_VERTICAL;
@@ -577,9 +605,36 @@ final class EditorWorkspaceView extends FrameLayout
         // instead of being clipped by it.
         brushControls.setTrackHeightPx(Math.round(heightPx * 0.45f));
 
-        placeObjects(layoutMode.objectsDocked(widthDp));
+        objectsColumnAffordable = layoutMode.objectsDocked(widthDp);
+        applyObjectsPlacement();
         applyRailDock(layoutMode.railDocked());
         placeInspector(layoutMode.inspectorPlacement(heightDp), widthDp, heightDp);
+    }
+
+    /**
+     * Decides whether Objects has a column right now, from the window <b>and</b>
+     * the mode.
+     *
+     * <p>A window wide enough is necessary and no longer sufficient. In Sculpt a
+     * permanent scene column is not context, it is furniture: body switching is
+     * refused while sculpting, creation is refused, and what is left is a list
+     * of names with nothing to do — 180 dp of the leading edge spent on it.
+     *
+     * <p>And it was not free. The column sits before the brush controls in the
+     * middle row, so its width pushed Radius and Strength 180 dp inboard, onto
+     * the model and out from under the hand that reaches for them. That is the
+     * expanded-window defect the owner review named: the two most-used Sculpt
+     * controls displaced by a panel that Sculpt cannot use. Withdrawing the
+     * column in Sculpt answers both at once — the brush controls return to the
+     * leading edge, and Sculpt gets the same Objects capsule the phone has, in
+     * the same place, which is the vocabulary the expanded window is supposed to
+     * share.
+     *
+     * <p>The scene stays reachable in every window and every mode: the capsule
+     * names the active body and opens the list.
+     */
+    private void applyObjectsPlacement() {
+        placeObjects(objectsColumnAffordable && !isSculpting());
     }
 
     /**
@@ -855,11 +910,15 @@ final class EditorWorkspaceView extends FrameLayout
      * the model — the promotion of {@link WorkspaceLayoutMode#railDocked()},
      * which had a tested meaning and had never been asked.
      *
-     * <p>What changes is what the rail CLAIMS about itself: docked it is flush
-     * against the window edge, opaque and level; floating it is a translucent
-     * raised card standing on the picture with a gap under it. On an expanded
-     * window the second is a lie, because there is room beside the model and
-     * the rail is in it.
+     * <p><b>What changes is where it sits, and no longer what it is made of.</b>
+     * Docking used to also repaint the rail as an opaque slab flush against the
+     * window edge with no depth. That was the expanded window speaking a
+     * different visual language from the phone about the same control — a
+     * Sculpt user who rotated a tablet watched their brush selector turn from a
+     * floating capsule into part of the wall, and it read as a desktop CAD frame
+     * rather than as a viewport with its tools around it. The rail is a floating
+     * capsule in every window now, and docking means only that it is
+     * top-aligned with the panel beside it instead of centred on the thumb.
      *
      * <p>What does <b>not</b> change is the {@code SurfaceView}, in any mode.
      * It is the whole window in a compact portrait phone and the whole window
@@ -871,12 +930,6 @@ final class EditorWorkspaceView extends FrameLayout
             return;
         }
         appliedRailDocked = docked;
-        if (docked) {
-            toolRailScroll.setBackgroundResource(R.drawable.bg_chrome_docked_trailing);
-            toolRailScroll.setElevation(0.0f);
-        } else {
-            EditorControlStyles.applyFloatingSurface(toolRailScroll);
-        }
         // The precision toggle keeps its floating capsule in both cases. It is
         // not part of the docked frame even when the rail above it is: it opens
         // a surface over the model, and a flush toggle hanging off the bottom of
@@ -884,11 +937,12 @@ final class EditorWorkspaceView extends FrameLayout
         final ViewGroup.LayoutParams params = railColumn.getLayoutParams();
         if (params instanceof LinearLayout.LayoutParams) {
             final LinearLayout.LayoutParams rail = (LinearLayout.LayoutParams) params;
-            // A docked rail sits flush against the panel beside it; a floating
-            // one keeps the gap that lets the model show around it.
-            rail.rightMargin =
-                    docked ? 0 : EditorControlStyles.dimen(getContext(), R.dimen.brush_gap);
-            // And it starts where the docked precision surface starts.
+            // The gap off the trailing edge is kept in BOTH cases now. A rail
+            // flush against the window edge is the shape that made an expanded
+            // window read as a frame; the same gap in every window is what makes
+            // the same control recognisably the same control.
+            rail.rightMargin = EditorControlStyles.dimen(getContext(), R.dimen.brush_gap);
+            // What docking still decides is where the cluster starts.
             //
             // This is what makes "part of the layout" a true claim rather than a
             // style. A docked rail centred on the window height while the panel
@@ -925,14 +979,11 @@ final class EditorWorkspaceView extends FrameLayout
                         : WorkspaceLayoutMode.sideOverlayWidthDp(widthDp));
 
         inspectorPlacement = placement;
-        // A docked panel sits BESIDE the model and is part of the layout; the
-        // other two stand ON it. Drawing the docked one as a floating card
-        // would be a claim about the layout that is not true.
-        if (placement == WorkspaceLayoutMode.InspectorPlacement.SIDE_DOCK) {
-            inspector.showDocked();
-        } else {
-            inspector.showFloating(bottom);
-        }
+        // One surface in all three placements. A panel that becomes a flat
+        // square-edged column on a tablet and a rounded card on a phone is two
+        // designs for one thing, and the user meets both by rotating a device.
+        // See PropertyInspectorView#showAsFloatingPanel.
+        inspector.showAsFloatingPanel();
         // A bottom sheet must be capped or it measures to whatever its content
         // wants, which is exactly how the previous panel came to fill the
         // window. A side placement is already bounded by the window's height,
@@ -987,6 +1038,12 @@ final class EditorWorkspaceView extends FrameLayout
         // Clear of the toolbar's utility capsule, for the same reason the
         // Objects column is: nothing above this is an opaque strip any more.
         params.topMargin = EditorControlStyles.dimen(context, R.dimen.row_gap);
+        // INSET from the trailing window edge and off the bottom, the same way
+        // the Objects column stands off the leading one and the bottom sheet
+        // stands off three. A panel flush against a window edge is part of the
+        // frame; a panel standing off it is a surface in a workspace.
+        params.rightMargin = EditorControlStyles.dimen(context, R.dimen.row_gap);
+        params.bottomMargin = EditorControlStyles.dimen(context, R.dimen.row_gap);
         middleRow.addView(inspector, params);
     }
 
@@ -1181,6 +1238,25 @@ final class EditorWorkspaceView extends FrameLayout
         // stops a visible list lying about the scene.
         objectsSection.refreshFromNative();
 
+        // Whether the scene gets a column of its own depends on the MODE as well
+        // as on the window — see applyObjectsPlacement — so a mode change has to
+        // re-ask. The window's half of the answer is remembered from the last
+        // adaptive pass, so this costs one comparison whenever nothing changed.
+        applyObjectsPlacement();
+
+        // Creation is refused below JNI while sculpting, so it is not OFFERED
+        // while sculpting. Both hosts are told, from the one refresh, in every
+        // mode — so a window with a column and a window with a capsule cannot
+        // disagree about whether a body can be created.
+        objectsCapsule.showCreationAvailable(!sculpting);
+        objectsSection.showCreationAvailable(!sculpting);
+        if (sculpting) {
+            // The palette is anchored to a control that has just gone. Left open
+            // it would stand on the model attached to nothing, and choosing a
+            // tile from it would reach exactly the refusal this removes.
+            setAddPrimitiveOpen(false, null);
+        }
+
         if (sculpting) {
             brushControls.setVisibility(VISIBLE);
             brushControls.refreshFromNative();
@@ -1202,37 +1278,51 @@ final class EditorWorkspaceView extends FrameLayout
     }
 
     /**
-     * Writes what is currently being edited into the status line.
+     * Writes what STANDS in the status line — which is usually nothing.
      *
-     * <p>Always written on a re-read, so the line never sits empty and never
-     * keeps describing text that is no longer in the fields. Callers with
-     * something more specific to say — an applied value, a rejection reason —
-     * overwrite it immediately afterwards.
+     * <p>The line used to be written on every refresh with something ambient:
+     * "Showing the current box in m." in Construction, and the gesture rule in
+     * Sculpt. Both were true and neither was news, and because nothing ever
+     * cleared the line, the last verdict — a body selected, a shape applied —
+     * simply sat there until the next one replaced it. A line that always says
+     * something is a line nobody reads, and it spends a capsule at the top of
+     * the model to do it.
+     *
+     * <p>So the resting line says nothing, and the capsule is not drawn at all.
+     * What the ambient messages said is said better elsewhere and permanently:
+     * the precision surface's own title names the body and the mode, the unit
+     * chips name the unit, and the gesture rule is written as a transient when
+     * the user enters Sculpt or changes tool — at the moment it is news.
+     *
+     * <p><b>One exception, and it is a state rather than a verdict.</b> A stale
+     * Construction Source is a standing fault: it is still true after any
+     * message that covers it, and it stays true until the user acts. It lives in
+     * the Sculpt context surface beside the action that resolves it, and that
+     * surface no longer opens by itself, so it is also written here — where it
+     * re-asserts itself on every refresh.
      */
     private void showDefaultStatus(boolean sculpting) {
-        final Context context = getContext();
-        if (!sculpting) {
-            showStatus(context.getString(R.string.status_showing,
-                    shapeEditor.describeNativeKind(), uiState.displayUnit().label()),
-                    R.attr.fsTextSecondary);
-            return;
-        }
-        // A stale Construction Source outranks the gesture hint.
-        //
-        // The warning used to live in the Sculpt inspector, which opened by
-        // itself on a roomy window. It does not open by itself any more, so a
-        // standing fault would otherwise be reachable only by a user who
-        // already suspected it. It is a persistent state rather than a verdict,
-        // so it is written here, on every refresh, and re-asserts itself after
-        // any message that overwrites it.
-        if (nativeSculpt[NativeViewport.SCULPT_SOURCE_STALE] != 0.0) {
-            showStatus(context.getString(R.string.stale_source_warning),
+        if (sculpting && nativeSculpt[NativeViewport.SCULPT_SOURCE_STALE] != 0.0) {
+            toolbar.showStandingStatus(getContext().getString(R.string.stale_source_warning),
                     R.attr.fsTextMeasure);
             return;
         }
+        toolbar.showStandingStatus("", R.attr.fsTextSecondary);
+    }
+
+    /**
+     * The gesture rule for the tool now held, as a transient.
+     *
+     * <p>Written when entering Sculpt and when changing tool, which is when it
+     * is news. It used to be the ambient status line, permanently — which on a
+     * short landscape window also meant a sentence ellipsised in the middle of
+     * the clause carrying the rule, standing there for the whole session.
+     */
+    private void showSculptGestureHint() {
         final int tool = (int) nativeSculpt[NativeViewport.SCULPT_TOOL];
         final int index = (tool >= 0 && tool < SCULPT_TOOL_HINTS.length)
                 ? tool : NativeViewport.TOOL_GRAB;
+        final Context context = getContext();
         showStatus(context.getString(R.string.sculpt_gesture_rule,
                 context.getString(SCULPT_TOOL_HINTS[index])), R.attr.fsTextSecondary);
     }
@@ -1389,9 +1479,15 @@ final class EditorWorkspaceView extends FrameLayout
      * so their position is the layout's and not this method's.
      */
     private void applyPrecisionOpen(boolean open) {
-        if (open && inspectorPlacement
-                == WorkspaceLayoutMode.InspectorPlacement.BOTTOM_SHEET) {
-            inspector.setGrowsUpward(true);
+        if (open) {
+            // A bottom sheet unfolds UP out of the toggle beside the rail; a side
+            // placement hangs from the top of the chrome row, so it unfolds DOWN
+            // from its own top corner. Stated for both, because "whatever it was
+            // last set to" is not an anchor — a rotation from portrait into a
+            // side placement would otherwise leave the panel growing from a
+            // bottom edge it no longer has.
+            inspector.setGrowsUpward(inspectorPlacement
+                    == WorkspaceLayoutMode.InspectorPlacement.BOTTOM_SHEET);
         }
         inspector.setOpen(open);
     }
@@ -1452,11 +1548,16 @@ final class EditorWorkspaceView extends FrameLayout
                 R.attr.fsTextSecondary);
     }
 
-    @Override
-    public void onBrushChanged() {
-        showStatus(getContext().getString(R.string.status_brush, brushControls.describeRadius(),
-                brushControls.describeStrength()), R.attr.fsTextSecondary);
-    }
+    // The brush controls report nothing upward, deliberately.
+    //
+    // Dragging Radius used to write "Brush: radius 120 px, strength 0.45." into
+    // the status line, so the same two numbers stood on screen twice — once
+    // beside the finger moving them and once in a capsule at the top of the
+    // window, where nobody adjusting a brush is looking. The status copy then
+    // outlived the drag by the rest of the session, which is how a resting
+    // Sculpt screenshot came to be captioned with the last slider position.
+    // A value being dragged belongs beside the control dragging it, and it is
+    // there. See BrushEdgeControlsView.
 
     /**
      * Whether chrome may spend time on a transition.
@@ -1464,10 +1565,19 @@ final class EditorWorkspaceView extends FrameLayout
      * <p>Pushed down rather than queried, because the surfaces that animate
      * decide at the moment of the act and the act can arrive on a second finger
      * while the first one is mid-stroke.
+     *
+     * <p>Pushed to <b>every</b> anchored surface, not only the precision one.
+     * All four can be opened while a finger is on the model — the Objects
+     * capsule sits low, exactly where a stroke begins — and a surface that
+     * animated during a stroke would be competing with pointer samples for the
+     * main thread.
      */
     private void setChromeMotionAllowed(boolean allowed) {
         chromeMotionAllowed = allowed;
         inspector.setMotionAllowed(allowed);
+        objectsPopover.setMotionAllowed(allowed);
+        addPrimitivePalette.setMotionAllowed(allowed);
+        displayPopover.setMotionAllowed(allowed);
     }
 
     // -----------------------------------------------------------------------
@@ -1475,32 +1585,35 @@ final class EditorWorkspaceView extends FrameLayout
     // -----------------------------------------------------------------------
 
     /**
-     * Copies the object's current Construction mesh into a Frozen Sculpt Mesh
-     * and enters Sculpt Mode.
+     * <b>Start Sculpting.</b> Copies the object's current Construction mesh into
+     * a sculpt mesh and enters Sculpt Mode.
      *
      * <p>Unguarded on purpose. This control is on screen only while <b>no</b>
-     * frozen mesh exists, so it can discard nothing: there is no sculpt work to
-     * lose. The guarded path is the re-Freeze in the Sculpt inspector, which is
-     * the one that replaces an edited mesh.
+     * sculpt mesh exists, so it can discard nothing: there is no sculpt work to
+     * lose. The guarded path is Reset Sculpt from Shape in the Sculpt context
+     * surface, which is the one that replaces an edited mesh.
      *
      * <p>It changes no dimension, no primitive kind and no placement — the
      * Construction Source is only read, and it is still here, unchanged, when
-     * Sculpt Mode is left.
+     * Sculpt Mode is left. The wording changed at UI-R4B and none of that did:
+     * the method still calls {@code freezeToSculpt()}, which is still what the
+     * domain calls the operation, and it is still reversible in both directions.
      */
     @Override
     public void onFreezeToSculpt() {
         if (NativeViewport.freezeToSculpt() != NativeViewport.SCULPT_OK) {
-            showStatus(getContext().getString(R.string.status_freeze_failed), R.attr.fsTextError);
+            showStatus(getContext().getString(R.string.status_sculpt_prepare_failed),
+                    R.attr.fsTextError);
             return;
         }
         finishEditing();
         syncFromNative();
-        showStatus(getContext().getString(R.string.status_frozen,
+        showStatus(getContext().getString(R.string.status_now_sculpting,
                 shapeEditor.describeNativeKind()), R.attr.fsTextSuccess);
     }
 
     /**
-     * Returns to the Frozen Sculpt Mesh exactly as it was left.
+     * Returns to the sculpt mesh exactly as it was left.
      *
      * <p>Never confirmed, because it destroys nothing: nothing that has been
      * sculpted is lost by having looked at the Construction Source. Guarding it
@@ -1509,14 +1622,30 @@ final class EditorWorkspaceView extends FrameLayout
     @Override
     public void onResumeSculpt() {
         if (NativeViewport.enterSculptMode() != NativeViewport.SCULPT_OK) {
-            showStatus(getContext().getString(R.string.status_nothing_frozen),
+            showStatus(getContext().getString(R.string.status_no_sculpt_mesh),
                     R.attr.fsTextError);
             return;
         }
         finishEditing();
         syncFromNative();
+        // Says what the finger will do now, once, rather than standing in the
+        // status line for the rest of the session. A stale Construction Source
+        // outranks it and syncFromNative has already written that as the
+        // STANDING message, so this must not overwrite one.
+        if (nativeSculpt[NativeViewport.SCULPT_SOURCE_STALE] == 0.0) {
+            showSculptGestureHint();
+        }
     }
 
+    /**
+     * Back to the Construction Source, which sculpting never wrote.
+     *
+     * <p>The wording elsewhere changed at UI-R4B and what this does did not. The
+     * exact primitive, its parameters and its placement are exactly what they
+     * were before Start Sculpting — no sculpt edit has ever been allowed to
+     * reach them — and Resume Sculpt returns to the same mesh with the same
+     * revision, the same counts and the same stroke history.
+     */
     @Override
     public void onBackToConstruction() {
         NativeViewport.enterConstructionMode();
@@ -1803,6 +1932,34 @@ final class EditorWorkspaceView extends FrameLayout
     /** The one creation surface, so a test can enumerate what it offers. */
     AddPrimitivePaletteView addPrimitivePalette() {
         return addPrimitivePalette;
+    }
+
+    /** The Display popover, so a test can name the fourth anchored surface. */
+    DisplaySettingsPopoverView displayPopover() {
+        return displayPopover;
+    }
+
+    /**
+     * Every surface that grows out of a control, in one place.
+     *
+     * <p>So a case can assert the shared motion contract over the SET rather
+     * than over a list it maintains by hand — which is how the fourth surface
+     * came to be the only one with a correct first-open pivot: nothing was
+     * measuring them together.
+     */
+    AnchoredSurfaceView[] anchoredSurfaces() {
+        return new AnchoredSurfaceView[]{
+                objectsPopover, addPrimitivePalette, inspector, displayPopover};
+    }
+
+    /** The Tool Rail, so a test can read which entry it says is held. */
+    ToolRailView toolRail() {
+        return toolRail;
+    }
+
+    /** The direct brush controls, so a test can read the values beside them. */
+    BrushEdgeControlsView brushControls() {
+        return brushControls;
     }
 
     /** The rail's precision toggle, so a test can open the exact values the way

@@ -3,16 +3,27 @@
   The selected control: the held sculpt tool, the current Tool Rail entry, the
   active body's row, the drafted primitive, the chosen appearance.
 
-  FILL-LED. What says "this is the one you are on" is the surface itself —
-  `fsAccentFill`, the palette's selected-at-rest value, which is clearly lifted
-  and clearly cooler or bluer than the control beside it — plus the brightened
-  label that comes with it from `control_content_tint`. The border is a hairline
-  and is the THIRD signal rather than the first, so a selection reads as a state
-  and not as an outlined box.
+  FILL-LED, and since UI-R4B fill-led with nothing else. What says "this is the
+  one you are on" is the surface itself — `fsAccentFill`, the palette's
+  selected-at-rest value, which is clearly lifted and clearly cooler or bluer
+  than the control beside it — plus the brightened label that comes with it from
+  `control_content_tint`.
 
-  It is deliberately NOT the accent. The accent is spent on a primary commit and
-  on a focused field, and nowhere else; a selection that wore it made five loud
-  blue blocks compete on one screen.
+  The accent hairline is GONE. It was described as the third signal and was
+  read as the first: at a glance a selected chip was a blue-outlined box, six of
+  them made a panel look like a form of framed cells, and the outline did no
+  work the fill and the brightened label were not already doing. What remains is
+  a state, not a box.
+
+  The accent itself is still spent on exactly two things — a primary commit, and
+  the ring on a focused numeric field — which is the distinction the hairline was
+  quietly eroding.
+
+  `fsAccentBorder` is consequently referenced by no drawable. It is deliberately
+  left declared in `attrs.xml` and answered by all three palettes: those twelve
+  values are owner-approved, and dropping one because the current composition
+  does not spend it would change an approved palette to record a styling
+  decision. The role stays; what changed is what draws with it.
 -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:state_pressed="true">
@@ -25,9 +36,6 @@
         <shape android:shape="rectangle">
             <solid android:color="?attr/fsAccentFill" />
             <corners android:radius="@dimen/radius_control" />
-            <stroke
-                android:width="@dimen/control_border_width"
-                android:color="?attr/fsAccentBorder" />
         </shape>
     </item>
 </selector>

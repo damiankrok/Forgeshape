@@ -3,8 +3,18 @@
   Every user-visible string in the Editor Workspace.
 
   Kept here rather than inline so the wording of a load-bearing message (the
-  stale-source warning, the destructive re-Freeze confirmation, a rejection
-  reason) can be reviewed in one place instead of hunted through view code.
+  stale-source warning, the destructive reset confirmation, a rejection reason)
+  can be reviewed in one place instead of hunted through view code.
+
+  ONE VOCABULARY FOR THE CONSTRUCTION/SCULPT SEAM. Nothing the user reads says
+  "Freeze" or "frozen". Those name the implementation's act — copying the
+  Construction mesh into an editable sculpt mesh — and the user's act is
+  "start sculpting". The reversible semantics are unchanged and the copy says so:
+  the Construction Source is kept, Back to Construction returns to it, Resume
+  Sculpt comes back to the same mesh, and Reset Sculpt from Shape is still the
+  one destructive act and is still confirmed. Internal names below JNI, the view
+  ids and the architecture's own terms keep "freeze", because they are accurate
+  about what the code does and renaming them would be churn with no reader.
 -->
 <resources>
     <string name="app_name">ForgeShape</string>
@@ -20,15 +30,21 @@
     <string name="start_construction_title">Construction / CAD</string>
     <string name="start_construction_description">Begin from an exact primitive and type its dimensions. Shape and placement stay exact, editable values.</string>
     <string name="start_sculpt_title">Sculpt</string>
-    <string name="start_sculpt_description">Begin on a sphere already frozen for sculpting. Its exact source is kept, so Back to Construction returns to it.</string>
+    <string name="start_sculpt_description">Begin on a sphere already prepared for sculpting. Its exact source is kept, so Back to Construction returns to it.</string>
     <string name="status_started_construction">Construction — choose a shape, type its exact values, then Apply.</string>
-    <string name="status_started_sculpt">Ready to sculpt a frozen sphere. The Construction sphere is kept.</string>
+    <string name="status_started_sculpt">Now sculpting a sphere. The Construction sphere is kept.</string>
     <string name="status_sculpt_start_failed">Could not prepare a sculptable mesh. Still in Construction; nothing was changed.</string>
 
     <!-- Global Toolbar -->
     <string name="context_construction">Construction</string>
     <string name="context_sculpt">Sculpt</string>
-    <string name="freeze_to_sculpt">Freeze to Sculpt</string>
+    <!--
+      The primary Construction → Sculpt action. It is what the USER does; the
+      mesh copy the product makes to allow it is not the user's business and is
+      not named here. The act is still reversible in exactly the way it was:
+      the Construction Source is kept and Back to Construction returns to it.
+    -->
+    <string name="start_sculpting">Start Sculpting</string>
     <string name="resume_sculpt">Resume Sculpt</string>
     <string name="back_to_construction">Back to Construction</string>
     <string name="export">Export</string>
@@ -148,21 +164,36 @@
     <string name="unit_selector">Display unit</string>
 
     <!-- Sculpt context -->
-    <string name="freeze_again">Freeze again…</string>
-    <string name="sculpt_mesh_summary">Frozen mesh: %1$d vertices · %2$s</string>
+    <!--
+      The one destructive act in the product, named by what it does to the
+      user's work rather than by the mechanism: it throws the current sculpt
+      away and starts again from the Construction shape. The ellipsis is the
+      promise that it will ask first, and it does.
+    -->
+    <string name="reset_sculpt_from_shape">Reset Sculpt from Shape…</string>
+    <string name="sculpt_mesh_summary">Sculpt mesh: %1$d vertices · %2$s</string>
     <string name="sculpt_gesture_rule">One finger on the model — %1$s; elsewhere it orbits.</string>
-    <string name="stale_source_warning">The Construction shape changed after this Freeze. Your sculpt is kept as it is — Freeze again to start from the new shape.</string>
+    <string name="stale_source_warning">The Construction shape changed after you started sculpting. Your sculpt is kept as it is — Reset Sculpt from Shape to start again from the new shape.</string>
 
-    <!-- Destructive re-Freeze confirmation. Names the consequence, and the
+    <!-- The destructive reset's confirmation. Names the consequence, and the
          button carries the verb rather than "OK". -->
-    <string name="freeze_confirm_title">Replace the sculpted mesh?</string>
-    <string name="freeze_confirm_message">Freezing again rebuilds the sculpt mesh from the current Construction shape. The sculpting already made on this mesh will be discarded. This cannot be undone.</string>
-    <string name="freeze_confirm_action">Discard and freeze</string>
+    <string name="reset_sculpt_confirm_title">Replace the sculpted mesh?</string>
+    <string name="reset_sculpt_confirm_message">Resetting rebuilds the sculpt mesh from the current Construction shape. The sculpting already made on this mesh will be discarded. This cannot be undone.</string>
+    <string name="reset_sculpt_confirm_action">Discard and reset</string>
     <string name="cancel">Cancel</string>
 
-    <!-- Status messages -->
+    <!--
+      Status messages.
+
+      Every one of these is a TRANSIENT: it reports something that just happened
+      and then gets out of the way. The one message that stands until the user
+      acts on it is `stale_source_warning`, which is a state rather than a
+      verdict. There is deliberately no ambient "Showing the current box in m."
+      any more — a line that always says something says nothing, and it spent a
+      capsule at the top of the model saying what the panel title and the unit
+      chips already said.
+    -->
     <string name="status_construction_hint">Shape and placement — edit exact values, then Apply.</string>
-    <string name="status_showing">Showing the current %1$s in %2$s.</string>
     <string name="status_unit_display_only">Showing %1$s — display only, nothing applied.</string>
     <string name="status_unit_unparsed">Showing %1$s — a field is not a number and was left as typed.</string>
     <string name="status_draft_kind">%1$s selected — press Apply Shape to change the object.</string>
@@ -180,11 +211,10 @@
     <string name="field_empty">%1$s is empty — enter a number.</string>
     <string name="field_not_a_number">%1$s is not a number: \"%2$s\".</string>
     <string name="field_not_positive">%1$s must be greater than 0 %2$s.</string>
-    <string name="status_frozen">Frozen for sculpting — the Construction %1$s is kept.</string>
-    <string name="status_freeze_failed">Could not freeze this shape for sculpting. Object unchanged.</string>
-    <string name="status_nothing_frozen">Nothing has been frozen yet — press Freeze to Sculpt first.</string>
+    <string name="status_now_sculpting">Now sculpting — the Construction %1$s is kept.</string>
+    <string name="status_sculpt_prepare_failed">Could not prepare a sculpt mesh from this shape. Object unchanged.</string>
+    <string name="status_no_sculpt_mesh">There is no sculpt mesh yet — press Start Sculpting first.</string>
     <string name="status_tool_selected">%1$s: %2$s.</string>
-    <string name="status_brush">Brush: radius %1$s, strength %2$s.</string>
 
     <string name="hint_grab">drag the surface with your finger</string>
     <string name="hint_clay">deposit material outward as you drag</string>

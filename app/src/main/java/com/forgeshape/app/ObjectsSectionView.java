@@ -31,11 +31,28 @@ import android.widget.TextView;
  * administrative operation on a list rather than as a choice about the model —
  * and it also meant the first thing a user did after creating a body was
  * change what it was.
+ *
+ * <p><b>And in Sculpt the {@code +} is not drawn at all.</b> See
+ * {@link #showCreationAvailable}: creation is refused below JNI while sculpting,
+ * so offering it here could only ever lead the user through a palette to a
+ * refusal.
  */
 final class ObjectsSectionView extends LinearLayout {
 
     private final InspectorHost host;
     private final LinearLayout list;
+
+    /**
+     * The column host's {@code +}.
+     *
+     * <p>Held so it can be withdrawn in Sculpt, where {@code sceneAddBody()}
+     * refuses. It is the same rule the Objects capsule follows and for the same
+     * reason: a creation path that must fail is worse than an absent one. The
+     * two hosts are kept in step by the one refresh the workspace runs, so a
+     * window that has a column and a window that has a capsule cannot disagree
+     * about whether creation is offered.
+     */
+    private final TextView add;
 
     /** Scratch buffer for the native id read; grown only when the scene grows. */
     private long[] idBuffer = new long[8];
@@ -62,7 +79,7 @@ final class ObjectsSectionView extends LinearLayout {
         // This is the column host's `+`. The Objects capsule carries the other
         // one, and both open the same one palette — which is why the palette is
         // the host's and this only reports which control was pressed.
-        final TextView add = EditorControlStyles.secondaryActionChip(context, R.id.add_body,
+        add = EditorControlStyles.secondaryActionChip(context, R.id.add_body,
                 context.getString(R.string.add_body));
         add.setCompoundDrawablesRelativeWithIntrinsicBounds(R.drawable.ic_add, 0, 0, 0);
         add.setCompoundDrawablePadding(
@@ -118,6 +135,23 @@ final class ObjectsSectionView extends LinearLayout {
             params.width = ViewGroup.LayoutParams.MATCH_PARENT;
             list.addView(row, params);
         }
+    }
+
+    /**
+     * Shows or withdraws the {@code +}, according to whether creation is
+     * possible at all right now.
+     *
+     * <p>The same rule and the same reason as the Objects capsule's: in Sculpt
+     * the scene is worth seeing and creation is refused, so the list stays and
+     * the creation control does not.
+     */
+    void showCreationAvailable(boolean available) {
+        add.setVisibility(available ? VISIBLE : GONE);
+    }
+
+    /** Whether the {@code +} is currently offered, for verification. */
+    boolean creationAvailable() {
+        return add.getVisibility() == VISIBLE;
     }
 
     /** The row for a given body, or {@code null}. Found by tag, never by index. */

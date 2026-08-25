@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The held Tool Rail entry.
+
+  FILL-LED and borderless, and concentric with the rail's own 18 dp surface at
+  6 dp of padding — see radius_rail_entry. It used to be bg_control_active,
+  whose 10 dp corner and accent hairline were both wrong here: the corner left a
+  crescent of rail showing at the top and bottom entries, and the hairline made
+  the held tool read as an outlined box in a stack rather than as the one lit
+  cell of one control.
+-->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_pressed="true">
+        <shape android:shape="rectangle">
+            <solid android:color="?attr/fsAccentFillPressed" />
+            <corners android:radius="@dimen/radius_rail_entry" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="?attr/fsAccentFill" />
+            <corners android:radius="@dimen/radius_rail_entry" />
+        </shape>
+    </item>
+</selector>
