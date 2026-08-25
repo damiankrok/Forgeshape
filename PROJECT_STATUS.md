@@ -1,16 +1,14 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.30.0
+**Status Version:** 0.31.0
 **Updated:** 2026-08-25
-**Result:** PARTIAL — INPUT-R1 carries stylus pointer semantics across the
-whole boundary and is green on build, native self-test authoring and the JVM
-suite; the on-device instrumented run is UNVERIFIED because the ForgeShape-owned
-emulator would not boot
+**Result:** COMPLETE — INPUT-R1 is closed; stylus tool type, pressure and tilt
+cross the whole boundary, and the brush provably still ignores them
 **Current Phase:** Phase 1 — Native Viewport
 **Workspace:** `D:\TRAVELAPPS\ForgeShape`
-**Accepted implementation baseline:** UI-R1C2 — world grid + adaptive workspace,
-with INPUT-R1 (pointer semantics) implemented on top but NOT yet accepted, on
-top of UI-R1C1 (motion + selection feedback), UI-R1B2 (theme system + Light),
+**Accepted implementation baseline:** INPUT-R1 — pointer semantics foundation,
+on top of UI-R1C2 (world grid + adaptive workspace), UI-R1C1 (motion +
+selection feedback), UI-R1B2 (theme system + Light),
 UI-R1B1 (visual foundation + start flow), Stage 017 (multi-object scene +
 hierarchy foundation), the Pre-017 Correctness Repair (active representation
 sidedness + re-Freeze guard + device verifier), Gate P1 (physical ARM64
@@ -20,7 +18,7 @@ Stage 015B, Stage 014, the NDK r29 migration (Gate P0) and the owner decision
 baseline.
 **Next Stage:** UI-R2 — Workspace Composition Redesign.
 
-## INPUT-R1 — Pointer Semantics Foundation (IMPLEMENTED, on-device run UNVERIFIED)
+## INPUT-R1 — Pointer Semantics Foundation (COMPLETE)
 
 **What crosses the boundary now.** A `TouchPointer` carries a stable id and
 view-local pixels as it always did, plus three things it did not: a
@@ -81,12 +79,30 @@ stage, and the 8 px sculpt promotion threshold, the pending-then-promote rule,
 the two-finger navigation rule, the tap slop and the 6-pointer bound are
 untouched.
 
-**What is UNVERIFIED.** The instrumented suite and the runtime walkthrough did
-not run: `ForgeShape_Stage006` failed to reach a ready state on two launch
-attempts and the owner elected to defer device testing. The 13 new instrumented
-cases compile and are packaged into the test APK, but no on-device result exists
-for them, for the 45 + 14 new native checks, or for the walkthrough. Real stylus
-hardware remains UNVERIFIED as it was before this stage.
+**Verified on device.** 1691 native checks in eleven suites, zero failures;
+124/124 instrumented, twice — once compact, once expanded; 56/56 JVM. The
+runtime walkthrough drove real finger touch through the whole path: a tap
+selected (`FORGESHAPE_PICK_HIT` → `SELECTION_CHANGED`), a drag orbited, a
+no-travel tap on the Frozen Sculpt Mesh logged `STROKE_PENDING` then
+`STROKE_ABANDONED:navigation` with the `SculptRevision` unmoved, and a drag past
+the threshold promoted to `STROKE_BEGIN:grab` and committed. HOME/resume acked
+the `ANativeWindow` release and rotation rebuilt the swapchain exactly ONCE.
+
+**Two defects were found and fixed, both in the stage's own tests, neither in
+product code.** A native check asserted that an infinite tilt is *clamped* to
+pi/2, contradicting the non-finite rule the same header documents — the
+implementation was right and the assertion was wrong, so it now asserts the
+documented fallback, and a second check covers the case the old name was
+reaching for (a huge FINITE tilt clamps rather than defaults). And
+`inr121` compared whole native snapshots including
+`SCULPT_STROKE_COUNT`, a documented session-lifetime diagnostic that necessarily
+advances between two sequential runs; it is now excluded from the comparison and
+asserted directly instead — each run must start exactly one stroke — while every
+slot that describes what the stroke PRODUCED is still compared at delta 0.0.
+
+**Real stylus hardware remains UNVERIFIED**, exactly as before this stage. Every
+stylus event verified here is synthesised through `MotionEvent.obtain` with a
+tool type and an `AXIS_TILT` value, which exercises the same path an S Pen would.
 
 ## UI-R1C2 — World Grid + Adaptive Workspace (COMPLETE)
 
@@ -853,19 +869,20 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 | Heavy-mesh ladder ~10k / ~50k / ~100k on physical ARM64: publish, render build, GPU upload, pick, lifecycle | VERIFIED (Gate P1) |
 | Sculpt at ~100k vertices on physical ARM64: freeze, adjacency, real strokes, buffer reuse | VERIFIED (Gate P1) |
 | Real injected multi-touch on physical hardware never mutates the sculpt mesh | VERIFIED (Gate P1) |
+| Tool type, pressure and tilt cross MotionEvent → SurfaceView → JNI → native intact, and stay with the right pointer in a multi-pointer event | VERIFIED (INPUT-R1) |
+| Carrying stylus data changes no brush result: same stroke, opposite pressure and tilt, bit-identical vertices for all four tools | VERIFIED (INPUT-R1) |
 | 16 KB page size *and* ARM64 in one target | **UNVERIFIED** — see Known Issues |
-| Stylus / S Pen tool type and pressure on real hardware | **UNVERIFIED** — needs a person physically moving an S Pen |
+| Stylus / S Pen tool type and pressure on real hardware | **UNVERIFIED** — verified synthetically end to end in INPUT-R1; closing it needs a person physically moving an S Pen |
 
 ## Self-test suite
 
 Eleven debug-only native suites run once from `NativeViewport.start()` — never
-per frame — and total **1690 checks** (1631 with zero failures as of UI-R1C2;
-the 59 INPUT-R1 checks are authored and compile but have no on-device run yet):
+per frame — and total **1691 checks, zero failures**:
 
 | suite token | checks |
 | --- | --- |
 | `FORGESHAPE_CAMERA_SELFTEST_OK` | 119 |
-| `FORGESHAPE_PICKING_SELFTEST_OK` | 173 |
+| `FORGESHAPE_PICKING_SELFTEST_OK` | 174 |
 | `FORGESHAPE_DYNAMIC_MESH_SELFTEST_OK` | 91 |
 | `FORGESHAPE_CONSTRUCTION_BOX_SELFTEST_OK` | 100 |
 | `FORGESHAPE_CONSTRUCTION_TRANSFORM_SELFTEST_OK` | 94 |
@@ -905,9 +922,9 @@ member that would fail if the behaviour collapsed to a constant —
 `nor_outwardness_fails_on_global_normal_flip` asserts the measurement inverts
 under a global `normal *= -1`, which is the property the rest of the suite lacked.
 
-**The picking suite also owns the POINTER BOUNDARY** (`128` → `173`), because it
+**The picking suite also owns the POINTER BOUNDARY** (`128` → `174`), because it
 is the suite that already owns `TouchPointer` and the selection rules the same
-events drive. Those 45 checks cover the tool-type wire codes and their Unknown
+events drive. Those 46 checks cover the tool-type wire codes and their Unknown
 fallback, the struct defaults, pressure and tilt range/wrap/non-finite behaviour,
 per-index packing, the unchanged 6-pointer bound, and the proof that a stylus
 resolves the same tap and orbits the same distance as a finger. The Android half
@@ -945,18 +962,18 @@ device. `README.md` documents how to read them.
 | `PointerSemanticsTest` (JVM) | the Android tool-type mapping and its Unknown fallback | 6 |
 | `EditorWorkspacePointerTest` | synthetic stylus transport, per-pointer association, and that tap / navigation / sculpt arbitration are unchanged | 13 |
 
-**180 tests** (56 JVM, 124 instrumented). The JVM set is green at 56/56; the
-instrumented set has no run for this stage — see INPUT-R1 above. No Java test asserts a rendered pixel;
+**180 tests** (56 JVM, 124 instrumented), all green. No Java test asserts a rendered pixel;
 every control is reached by its stable semantic id and no assertion uses a screen
 coordinate. The foundation and theme suites deliberately assert no colour
 literal, radius or shadow — those are judged by eye and by runtime evidence, and
 pinning them would break on every deliberate restyle. What the theme suite
 asserts instead is *relational*, plus WCAG contrast ratios computed in the test.
 
-**110 of the 111 instrumented tests passed at UI-R1C2**; the one failure is the
-`ui11` IME case described below. Pre-017 took the count 46 → 50, Stage 017
+**All 124 instrumented tests passed at INPUT-R1**, in both windows — including
+the `ui11` IME case described below, whose precondition guard happened to be
+satisfied on both runs. Pre-017 took the count 46 → 50, Stage 017
 50 → 56, UI-R1B1 56 → 71, UI-R1B2 71 → 88, UI-R1C1 88 → 98, UI-R1C2 98 → 111,
-INPUT-R1 111 → 124 (unrun).
+INPUT-R1 111 → 124.
 
 **The suite is run in TWO windows** — the default compact phone window and an
 overridden 1600 x 2560 @ 240 dpi expanded window. The adaptive cases read the
@@ -1009,13 +1026,12 @@ calling it a regression.
 
 Latest acceptance run, on `ForgeShape_Stage006` / `emulator-5580` unless stated:
 
-- **Native self-tests:** eleven suites, **1631 checks, zero failures** on a clean
-  launch. The Gate P1 picking suite is unchanged at 128, so the ARM64 shared-edge
-  fix is intact; `SIDE`, `REFR`, `NOR`, `CAMPROJ` and `PLN` all still green.
-- **JVM:** 50/50.
-- **Instrumented:** 111 run, **110 green**, twice — once compact, once expanded —
-  through `scripts\run-instrumented-tests.ps1 -Serial emulator-5580`. The one
-  failure is the documented `ui11` precondition guard.
+- **Native self-tests:** eleven suites, **1691 checks, zero failures** on a clean
+  launch. The Gate P1 picking assertions are intact inside the now-174-check
+  picking suite; `SIDE`, `REFR`, `NOR`, `CAMPROJ` and `PLN` all still green.
+- **JVM:** 56/56.
+- **Instrumented:** 124 run, **124 green**, twice — once compact, once expanded —
+  through `scripts\run-instrumented-tests.ps1 -Serial emulator-5580`.
 - **Device guards:** `DEV2-01`..`07` and `DEV3-01`..`06` all PASS, with no device
   attached and zero `emulator-5554` interaction.
 - **Physical ARM64 (Gate P1):** closed on a Galaxy S25 Ultra —
@@ -1057,16 +1073,16 @@ duration scale skips them outright rather than shortening them.
 
 ## Known Issues / Blockers
 
-- **INPUT-R1 has no on-device verification.** `ForgeShape_Stage006` failed to
-  reach a ready state on two consecutive detached launches at port 5580 (the
-  emulator process stayed alive but never came up on adb; the first attempt's
-  process later died outright), and the owner elected to defer device testing
-  rather than keep retrying. So the 59 new native checks, the 13 new
-  instrumented cases and the INPUT-R1 runtime walkthrough are UNVERIFIED. The
-  build, the packaged test APK and the JVM suite are green. This is a
-  verification debt against the current tree — run
-  `scripts\run-instrumented-tests.ps1 -Serial <serial>` on a ForgeShape-owned
-  target and record the result before UI-R2 is accepted.
+- **A crashed emulator session can leave the quickboot snapshot corrupt, and
+  every later launch then hangs before `adbd` starts.** Seen on
+  `ForgeShape_Stage006` after the INPUT-R1 session: QEMU runs and
+  `adb -s <serial> emu avd name` answers, so the AVD looks alive, but the serial
+  never leaves `offline` and `start-forgeshape-emulator.ps1` reports BLOCKED at
+  its 180 s deadline. The tell is `snapshots\default_boot\ram.img.dirty` plus a
+  `ram.bin` of a few hundred bytes against a multi-GB `ram.img`. Deleting
+  `snapshots\default_boot` fixes it — the emulator cold-boots and rebuilds the
+  snapshot on its next clean exit. `userdata-qemu.img.qcow2`, `config.ini` and
+  the AVD definition are untouched, so nothing authored is lost.
 - **16 KB page size *and* ARM64 in the same target is UNVERIFIED.** 16 KB page
   behaviour is VERIFIED on the x86_64 `ForgeShape_16K` AVD (`PAGE_SIZE` 16384) and
   ARM64 is VERIFIED on a 4 KB-page phone, so each dimension is proven but not both
@@ -1430,12 +1446,6 @@ as one thing: what the workspace looks like when every group that exists today
 has to share one window, at both breakpoints, in both appearances.
 
 Nothing about the pointer boundary INPUT-R1 just built is UI-R2's to change.
-
-**Before UI-R2 is accepted, INPUT-R1 still needs an on-device run.** The
-implementation is complete and the JVM suite is green, but the instrumented
-suite, the 59 new native checks and the runtime walkthrough have no device
-result — see INPUT-R1 above. That is a verification debt against this tree, not
-a design question.
 
 **Still out:** Selection Outline — the expensive half of selection feedback,
 needing either a second geometry pass or a screen-space edge filter and its own

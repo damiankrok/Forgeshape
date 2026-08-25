@@ -1076,9 +1076,20 @@ void testPointerSemantics(Recorder& r) {
     r.check("tilt_clamps_beyond_flat", sanitizePointerTiltRadians(3.0f) == kPointerTiltMaxRadians);
     r.check("tilt_nan_falls_back_to_none",
             sanitizePointerTiltRadians(std::nanf("")) == kPointerTiltNoneRadians);
-    r.check("tilt_infinity_is_clamped_not_defaulted",
-            sanitizePointerTiltRadians(INFINITY) == kPointerTiltMaxRadians &&
+    // Both infinities are non-finite, so both take the documented non-finite
+    // fallback rather than being clamped to the nearest bound. Clamping +inf to
+    // "lying flat" would be inventing a pose out of a garbage reading, and it
+    // would disagree with how pressure and tilt orientation treat non-finite
+    // input -- one rule, three fields.
+    r.check("tilt_infinity_falls_back_to_none",
+            sanitizePointerTiltRadians(INFINITY) == kPointerTiltNoneRadians &&
                 sanitizePointerTiltRadians(-INFINITY) == kPointerTiltNoneRadians);
+    // ...but a FINITE value out of range is clamped, not defaulted. That is the
+    // distinction the fallback rule turns on, so it is asserted at a magnitude
+    // no clamp-vs-default confusion could survive.
+    r.check("huge_finite_tilt_is_clamped_not_defaulted",
+            sanitizePointerTiltRadians(1e30f) == kPointerTiltMaxRadians &&
+                sanitizePointerTiltRadians(-1e30f) == kPointerTiltNoneRadians);
     r.check("tilt_max_is_a_quarter_turn_in_radians",
             nearly(kPointerTiltMaxRadians, 1.5707963f, 1e-6f));
 

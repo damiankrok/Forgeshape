@@ -346,26 +346,61 @@ public final class EditorWorkspacePointerTest {
      * asserted by the native self-test that runs on this same build; what this
      * case adds is that the whole device path, MotionEvent included, produces the
      * same outcome.
+     *
+     * <p>One slot is deliberately excluded from the comparison and asserted
+     * separately instead: {@code SCULPT_STROKE_COUNT} counts strokes for the life
+     * of the <i>session</i>, so the second run is always one higher than the
+     * first no matter what the pressure was. Excluding it is not a tolerance —
+     * every slot that describes what the stroke PRODUCED is still compared
+     * exactly, at delta 0.0 — and the counter becomes a positive check that each
+     * run really did start exactly one stroke.
      */
     @Test
     public void inr121_pressureDoesNotChangeWhatAStrokeProduces() {
+        final int strokeCountSlot =
+                NativeViewport.PRIMITIVE_STATE_SIZE + 6 + NativeViewport.SCULPT_STROKE_COUNT;
+        final int hasEditsSlot =
+                NativeViewport.PRIMITIVE_STATE_SIZE + 6 + NativeViewport.SCULPT_HAS_EDITS;
+
         freezeASculptableMesh();
+        final double[] beforeLight = onWorkspace(rule.getScenario(),
+                (activity, workspace) -> nativeSnapshot());
         final double[] light = onWorkspace(rule.getScenario(), (activity, workspace) -> {
             strokeViewport(viewportOf(workspace), MotionEvent.TOOL_TYPE_STYLUS, 0.02f);
             return nativeSnapshot();
         });
 
         freezeASculptableMesh();
+        final double[] beforeHeavy = onWorkspace(rule.getScenario(),
+                (activity, workspace) -> nativeSnapshot());
         final double[] heavy = onWorkspace(rule.getScenario(), (activity, workspace) -> {
             strokeViewport(viewportOf(workspace), MotionEvent.TOOL_TYPE_STYLUS, 1.0f);
             return nativeSnapshot();
         });
 
         assertTrue("precondition: the stroke must actually have edited something",
-                heavy[NativeViewport.PRIMITIVE_STATE_SIZE + 6 + NativeViewport.SCULPT_HAS_EDITS]
-                        != 0.0);
+                heavy[hasEditsSlot] != 0.0);
+        assertEquals("precondition: the light run must have started exactly one stroke",
+                1.0, light[strokeCountSlot] - beforeLight[strokeCountSlot], 0.0);
+        assertEquals("precondition: the heavy run must have started exactly one stroke",
+                1.0, heavy[strokeCountSlot] - beforeHeavy[strokeCountSlot], 0.0);
+
+        // Everything the stroke actually produced, bit-exact.
+        final double[] lightResult = withoutSessionStrokeCount(light, strokeCountSlot);
+        final double[] heavyResult = withoutSessionStrokeCount(heavy, strokeCountSlot);
         assertArrayEquals("pressure must not change the result of a stroke:"
-                + describeSnapshotDifference(light, heavy), light, heavy, 0.0);
+                        + describeSnapshotDifference(lightResult, heavyResult),
+                lightResult, heavyResult, 0.0);
+    }
+
+    /**
+     * A copy of the snapshot with the session-lifetime stroke counter blanked.
+     * Every other slot is left exactly as native reported it.
+     */
+    private static double[] withoutSessionStrokeCount(double[] snapshot, int strokeCountSlot) {
+        final double[] copy = snapshot.clone();
+        copy[strokeCountSlot] = 0.0;
+        return copy;
     }
 
     // -----------------------------------------------------------------------
