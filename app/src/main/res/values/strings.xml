@@ -109,6 +109,10 @@
     <string name="primitive_capsule">Capsule</string>
     <string name="primitive_plane">Plane</string>
     <string name="objects">Objects</string>
+    <string name="objects_open">Open Objects</string>
+    <string name="objects_close">Close Objects</string>
+    <string name="inspector_shape_title_for_body">Shape — %1$s</string>
+    <string name="inspector_place_title_for_body">Placement — %1$s</string>
     <string name="add_body">Add Body</string>
     <string name="body_label">Body #%1$d</string>
     <string name="status_body_added">Added %1$s — it is now the selected body.</string>

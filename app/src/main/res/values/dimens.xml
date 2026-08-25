@@ -117,6 +117,15 @@
     <dimen name="row_gap_small">4dp</dimen>
     <dimen name="section_gap">12dp</dimen>
 
+    <!-- The Objects panel, in windows that have not earned a column of their
+         own. Fixed rather than proportional for the same reason the docked
+         column is: its content does not scale with the window — a row reads
+         "Body #7" and Add Body is one chip — so a proportional width would buy
+         whitespace with viewport. Wider than the 180dp column because this one
+         stands ON the model rather than beside it, and a panel that overlays
+         the picture should at least be comfortable to hit. -->
+    <dimen name="objects_popover_width">220dp</dimen>
+
     <!-- Start chooser. -->
     <dimen name="chooser_padding">24dp</dimen>
     <dimen name="chooser_max_width">440dp</dimen>

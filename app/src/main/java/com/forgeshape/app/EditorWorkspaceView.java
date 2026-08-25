@@ -79,18 +79,36 @@ final class EditorWorkspaceView extends FrameLayout
      * The leading-edge column an expanded window gives the scene list.
      *
      * <p>It is a host, not a second Objects implementation: the one
-     * {@link ObjectsSectionView} the Construction shape editor owns is
-     * re-parented into it and back out again. There is deliberately no second
+     * {@link ObjectsSectionView} this workspace owns is re-parented into it and
+     * back out to {@link ObjectsPopoverView}. There is deliberately no second
      * list, no second row set and no Java-side copy of an {@code ObjectId} or
-     * of which body is active — every row is still built by re-reading native
-     * scene state, exactly as it was when the list lived in the inspector.
+     * of which body is active — every row is built by re-reading native scene
+     * state, in whichever host the section currently hangs.
      *
      * <p>It scrolls, because a scene can grow without limit while a window
-     * cannot. Its scroll is its own: it sits outside the Property Inspector's
-     * scroll container, so an Objects list of twenty bodies is no longer a
-     * nested scroll inside the shape editor's.
+     * cannot, and its scroll is its own: no Objects list is ever nested inside
+     * the Property Inspector's scroll container.
      */
     private final ScrollView objectsDock;
+
+    /**
+     * The one scene list in the product.
+     *
+     * <p>Owned here rather than by the Construction shape editor, because it is
+     * a <b>scene-level</b> concern and the shape editor is one of three places
+     * it can be parented. It used to be built and held by that editor, which
+     * made a panel named "Shape" open on the list of bodies and pushed the
+     * dimensions below the fold — and made the list unreachable in any window
+     * where that editor was not the inspector's current body.
+     *
+     * <p>Still exactly one instance, moved between hosts and never copied: a
+     * second Objects view would be a second place for "which body is active" to
+     * be remembered, and that answer lives below JNI.
+     */
+    private final ObjectsSectionView objectsSection;
+
+    /** Where the scene list lives in every window that has no column for it. */
+    private final ObjectsPopoverView objectsPopover;
 
     private final ConstructionShapeEditorView shapeEditor;
     private final ConstructionPlacementEditorView placementEditor;
@@ -279,6 +297,15 @@ final class EditorWorkspaceView extends FrameLayout
         overlayRoot.addView(displayPopover, DisplaySettingsPopoverView.anchoredParams(context,
                 EditorControlStyles.dimen(context, R.dimen.toolbar_height)));
 
+        // Built before the editors that used to own it, and parented by the
+        // layout decision rather than here: until applyLayoutForWindow runs it
+        // belongs to no host, which is exactly what makes "one instance, three
+        // hosts" true rather than aspirational.
+        objectsSection = new ObjectsSectionView(context, this);
+        objectsPopover = new ObjectsPopoverView(context);
+        overlayRoot.addView(objectsPopover, ObjectsPopoverView.anchoredParams(context,
+                EditorControlStyles.dimen(context, R.dimen.toolbar_height)));
+
         shapeEditor = new ConstructionShapeEditorView(context, this);
         placementEditor = new ConstructionPlacementEditorView(context, this);
         sculptContext = new SculptContextView(context, this);
@@ -399,6 +426,11 @@ final class EditorWorkspaceView extends FrameLayout
         uiState.applyInitialDetents(layoutMode, heightDp);
 
         toolbar.setStatusInline(WorkspaceLayoutMode.statusInlineWithControls(heightDp));
+        // A compact window cannot fit the context label AND every global action
+        // above the touch floor, and the label is the one of the three
+        // context-bearing surfaces that a narrow row squeezes to nothing. See
+        // GlobalToolbarView#setContextLabelVisible.
+        toolbar.setContextLabelVisible(layoutMode != WorkspaceLayoutMode.COMPACT);
         toolRail.setCompactEntries(heightDp < WorkspaceLayoutMode.LOW_HEIGHT_MAX_DP);
         // Roughly half the window's height for the two brush tracks, bounded by
         // the control's own sensible range, so they shrink with the window
@@ -433,7 +465,10 @@ final class EditorWorkspaceView extends FrameLayout
         }
         appliedObjectsDocked = docked;
 
-        final ObjectsSectionView objects = shapeEditor.objectsSection();
+        // The control that opens the panel exists only while the panel is the
+        // way to reach the scene. A docked column IS the scene, permanently.
+        toolbar.setObjectsActionVisible(!docked);
+
         if (!docked) {
             objectsDock.setVisibility(GONE);
             final ViewGroup.LayoutParams gone = objectsDock.getLayoutParams();
@@ -441,13 +476,17 @@ final class EditorWorkspaceView extends FrameLayout
                 gone.width = 0;
                 objectsDock.setLayoutParams(gone);
             }
-            shapeEditor.reclaimObjectsSection();
+            objectsPopover.host(objectsSection);
+            objectsSection.refreshFromNative();
             return;
         }
-        if (objects.getParent() instanceof ViewGroup) {
-            ((ViewGroup) objects.getParent()).removeView(objects);
+        // Losing the column's opener must also close the panel it opened, or a
+        // window that grows would leave two copies of the same list on screen.
+        setObjectsPanelOpen(false);
+        if (objectsSection.getParent() instanceof ViewGroup) {
+            ((ViewGroup) objectsSection.getParent()).removeView(objectsSection);
         }
-        objectsDock.addView(objects, new FrameLayout.LayoutParams(
+        objectsDock.addView(objectsSection, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         final ViewGroup.LayoutParams params = objectsDock.getLayoutParams();
         if (params != null) {
@@ -458,7 +497,28 @@ final class EditorWorkspaceView extends FrameLayout
         // The column is built from whatever the scene currently holds. The
         // section was possibly last refreshed while it lived somewhere else, and
         // a rebuild is a handful of rows.
-        objects.refreshFromNative();
+        objectsSection.refreshFromNative();
+    }
+
+    /**
+     * Opens or closes the Objects panel, and keeps its opener in step.
+     *
+     * <p>Refuses to open it when the window has a column instead: there would be
+     * two copies of one list on screen, and the panel would be standing on the
+     * model for no reason.
+     */
+    private void setObjectsPanelOpen(boolean open) {
+        if (open && objectsDocked()) {
+            return;
+        }
+        if (open) {
+            // Two panels hang from the same toolbar edge, so opening one closes
+            // the other rather than stacking them.
+            displayPopover.setOpen(false);
+            objectsSection.refreshFromNative();
+        }
+        objectsPopover.setOpen(open);
+        toolbar.setObjectsActionOpen(objectsPopover.isOpen());
     }
 
     /**
@@ -618,13 +678,15 @@ final class EditorWorkspaceView extends FrameLayout
         ChromeMotion.fade(restoreChip, hidden, durationMs);
         toolbar.showChromeHidden(hidden);
         if (hidden) {
-            // Hiding chrome means "show me the bare model". The popover lives in
-            // the overlay, so it would otherwise survive the very act that was
+            // Hiding chrome means "show me the bare model". Both panels live in
+            // the overlay, so they would otherwise survive the very act that was
             // meant to clear the viewport. Closed without animation: the chrome
-            // around it is disappearing in the same frame, so animating this one
+            // around them is disappearing in the same frame, so animating a
             // panel out would only draw attention to it.
             displayPopover.closeImmediately();
             toolbar.showDisplaySettingsOpen(false);
+            objectsPopover.closeImmediately();
+            toolbar.setObjectsActionOpen(false);
         }
     }
 
@@ -756,21 +818,20 @@ final class EditorWorkspaceView extends FrameLayout
         // chips agree with them.
         refreshDisplaySettings();
 
+        // The scene list is refreshed HERE, in every mode, because the workspace
+        // owns it and it is on screen in modes the Construction editors are not.
+        // It used to be refreshed as a side effect of the shape editor's own
+        // re-read, which meant a docked column kept showing whatever the scene
+        // looked like on the way into Sculpt. Body switching is refused while
+        // sculpting, so this changes nothing about which body is active; it only
+        // stops a visible list lying about the scene.
+        objectsSection.refreshFromNative();
+
         if (sculpting) {
             brushControls.setVisibility(VISIBLE);
             brushControls.refreshFromNative();
             sculptContext.refreshFromNative();
             toolRail.showActive((int) nativeSculpt[NativeViewport.SCULPT_TOOL]);
-            // In Construction the shape editor refreshes the Objects section as
-            // part of its own re-read. In Sculpt it is not on screen and is not
-            // asked to, so a DOCKED column — which is still visible — would
-            // otherwise keep showing whatever the scene looked like on the way
-            // in. Body switching is refused while sculpting, so this changes
-            // nothing about which body is active; it only stops the column
-            // lying about the scene.
-            if (objectsDock.getVisibility() == VISIBLE) {
-                shapeEditor.objectsSection().refreshFromNative();
-            }
         } else {
             // In Construction the brush controls are not merely disabled but
             // absent: there is no brush to set, and an inert slider standing on
@@ -856,15 +917,31 @@ final class EditorWorkspaceView extends FrameLayout
      * presentation act, and a refresh here would throw away a number the user
      * had half typed in the other section.
      */
+    /**
+     * Puts the right body in the inspector, and names the object it edits.
+     *
+     * <p>The Construction titles carry the active body — "Shape — Body #2" —
+     * because the scene list no longer sits inside this panel and the panel must
+     * still say <b>which</b> object its numbers describe. The name is read from
+     * native scene state at the moment the title is written, never remembered
+     * here. Sculpt is titled by mode alone: it edits the one Frozen Sculpt Mesh
+     * and body switching is refused while it is open, so naming a body there
+     * would imply a choice that does not exist.
+     */
     private void showActiveInspectorBody(boolean sculpting) {
         final Context context = getContext();
         if (sculpting) {
             inspector.setBody(sculptContext, context.getString(R.string.inspector_sculpt_title));
-        } else if (uiState.constructionTool() == EditorUiState.CONSTRUCTION_TOOL_PLACE) {
+            return;
+        }
+        final String body = context.getString(R.string.body_label,
+                NativeViewport.sceneActiveBodyId());
+        if (uiState.constructionTool() == EditorUiState.CONSTRUCTION_TOOL_PLACE) {
             inspector.setBody(placementEditor,
-                    context.getString(R.string.inspector_place_title));
+                    context.getString(R.string.inspector_place_title_for_body, body));
         } else {
-            inspector.setBody(shapeEditor, context.getString(R.string.inspector_shape_title));
+            inspector.setBody(shapeEditor,
+                    context.getString(R.string.inspector_shape_title_for_body, body));
         }
     }
 
@@ -1026,10 +1103,38 @@ final class EditorWorkspaceView extends FrameLayout
     // the exact-value editors and discard a half-typed dimension, which is
     // exactly the kind of surprise a display control must never cause.
 
+    /**
+     * The Global Toolbar's Objects control.
+     *
+     * <p>Toggles the scene panel. Nothing about the scene, the active body or
+     * any geometry changes here: opening a list is presentation, and the rows
+     * themselves are still the only thing that asks native code to select.
+     */
+    @Override
+    public void onObjectsRequested() {
+        final boolean opening = !objectsPopover.isOpen();
+        if (opening) {
+            // Hang the panel below the toolbar's ACTUAL height, for the same
+            // reason the Display popover does: the toolbar grows a second line
+            // when the status message cannot share the control row.
+            final ViewGroup.MarginLayoutParams params =
+                    (ViewGroup.MarginLayoutParams) objectsPopover.getLayoutParams();
+            final int toolbarHeight = toolbar.getHeight();
+            if (toolbarHeight > 0 && params.topMargin != toolbarHeight) {
+                params.topMargin = toolbarHeight;
+                objectsPopover.setLayoutParams(params);
+            }
+        }
+        setObjectsPanelOpen(opening);
+    }
+
     @Override
     public void onDisplaySettingsRequested() {
         final boolean opening = !displayPopover.isOpen();
         if (opening) {
+            // Two panels hang from the same toolbar edge; opening one closes
+            // the other rather than stacking them.
+            setObjectsPanelOpen(false);
             refreshDisplaySettings();
             // Hang the popover below the toolbar's ACTUAL height, not a nominal
             // one. The toolbar grows a second line when the status message
@@ -1241,7 +1346,7 @@ final class EditorWorkspaceView extends FrameLayout
      * asserts what it does, not where it currently hangs.
      */
     ObjectsSectionView objectsSection() {
-        return shapeEditor.objectsSection();
+        return objectsSection;
     }
 
     /** The expanded window's Objects column, so a test can measure it. */
@@ -1252,7 +1357,17 @@ final class EditorWorkspaceView extends FrameLayout
     /** Whether Objects currently has a surface of its own. */
     boolean objectsDocked() {
         return objectsDock.getVisibility() == VISIBLE
-                && shapeEditor.objectsSection().getParent() == objectsDock;
+                && objectsSection.getParent() == objectsDock;
+    }
+
+    /** The scene panel, so a test can open it and measure what it costs. */
+    ObjectsPopoverView objectsPopover() {
+        return objectsPopover;
+    }
+
+    /** The Global Toolbar, so a test can reach a global control by id. */
+    GlobalToolbarView globalToolbar() {
+        return toolbar;
     }
 
     /** Whether the Tool Rail is currently drawn flush rather than floating. */

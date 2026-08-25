@@ -82,6 +82,15 @@
     -->
     <item name="objects_dock" type="id" />
 
+    <!--
+      The Objects panel every window that has NOT earned a column uses instead,
+      and the toolbar control that opens it. Both name a HOST: the one Objects
+      section moves between this panel and objects_dock, so objects_section and
+      object_row keep meaning the same views in either.
+    -->
+    <item name="objects_popover" type="id" />
+    <item name="objects_button" type="id" />
+
     <!-- Tool Rail. One rail view; its entries differ by mode. -->
     <item name="tool_rail" type="id" />
     <item name="tool_rail_grab" type="id" />

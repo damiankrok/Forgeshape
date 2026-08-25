@@ -43,6 +43,8 @@ final class GlobalToolbarView extends LinearLayout {
 
         void onChromeHideRequested();
 
+        void onObjectsRequested();
+
         void onDisplaySettingsRequested();
     }
 
@@ -51,6 +53,7 @@ final class GlobalToolbarView extends LinearLayout {
     private final TextView resumeButton;
     private final TextView backButton;
     private final TextView exportAction;
+    private final ImageView objectsButton;
     private final ImageView displaySettingsButton;
     private final ImageView hideUiToggle;
     private final TextView statusMessage;
@@ -143,6 +146,25 @@ final class GlobalToolbarView extends LinearLayout {
                 context.getString(R.string.export_reserved_note));
         controlsRow.addView(exportAction, EditorControlStyles.wrap(gap));
 
+        // Objects sits here for the same reason Display does: WHICH body is
+        // being edited is true in every mode, so it belongs to no tool and to
+        // no inspector body. Before this it lived inside the Construction shape
+        // editor, which made a scene-level question reachable only by expanding
+        // a panel named after something else.
+        //
+        // It is hidden, not disabled, on a window wide enough to give Objects a
+        // permanent column: a control that opens a panel duplicating what is
+        // already on screen is noise. See setObjectsActionVisible.
+        objectsButton = EditorControlStyles.iconButton(context, R.id.objects_button,
+                R.drawable.ic_objects, context.getString(R.string.objects_open));
+        objectsButton.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                actions.onObjectsRequested();
+            }
+        });
+        controlsRow.addView(objectsButton, EditorControlStyles.iconButtonParams(context, gap));
+
         // Display sits in the Global Toolbar because it is mode-independent:
         // how the surface is shaded is as true in Sculpt as in Construction, so
         // it does not belong to the Tool Rail or to either inspector body.
@@ -172,6 +194,55 @@ final class GlobalToolbarView extends LinearLayout {
         statusMessage.setMaxLines(2);
         statusMessage.setEllipsize(TextUtils.TruncateAt.END);
         attachStatus(true);
+    }
+
+    /**
+     * Shows or hides the Objects control.
+     *
+     * <p>Hidden exactly when the window gives Objects a permanent column of its
+     * own, because then the panel it opens would duplicate what is already
+     * beside the model. {@code GONE} rather than invisible, so it gives its
+     * width back to the context label instead of leaving a hole.
+     */
+    void setObjectsActionVisible(boolean visible) {
+        objectsButton.setVisibility(visible ? VISIBLE : GONE);
+    }
+
+    /**
+     * Draws the Objects control as active while its panel is open, and says so
+     * to accessibility.
+     *
+     * <p>The same pattern the Tool Rail uses for the held tool: a control that
+     * opens a panel should say whether that panel is open, or the only way to
+     * find out is to tap it.
+     */
+    void setObjectsActionOpen(boolean open) {
+        EditorControlStyles.setIconButtonActive(objectsButton, open);
+        objectsButton.setContentDescription(getContext().getString(
+                open ? R.string.objects_close : R.string.objects_open));
+    }
+
+    /** Whether the Objects control is currently on screen. */
+    boolean objectsActionVisible() {
+        return objectsButton.getVisibility() == VISIBLE;
+    }
+
+    /**
+     * Shows or hides the context label.
+     *
+     * <p>It is the row's flexible child, so on a narrow window it gives up all
+     * of its width to keep every action above the touch floor — and a label
+     * measured at zero draws nothing while still claiming to be the thing that
+     * says what is being edited. Where it cannot fit it is therefore withdrawn
+     * outright rather than left as an empty promise.
+     *
+     * <p>Nothing is lost by that: the status line directly beneath it always
+     * names the mode, and since UI-R2 the Property Inspector's own title names
+     * the body — "Shape — Body #1". The label is the third and least legible of
+     * the three, and it is the only one competing for a row that has run out.
+     */
+    void setContextLabelVisible(boolean visible) {
+        contextLabel.setVisibility(visible ? VISIBLE : GONE);
     }
 
     /**

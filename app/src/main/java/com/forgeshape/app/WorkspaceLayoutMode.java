@@ -156,8 +156,9 @@ enum WorkspaceLayoutMode {
      * one, and that is the intended answer rather than a gap. A window that
      * wide is a large phone in landscape or a small tablet, and three permanent
      * chrome columns there is precisely the desktop-CAD clutter UI-OWNER-02
-     * rules out. Objects stays where a compact window keeps it: in the
-     * Construction shape editor, above the fields it decides the subject of.
+     * rules out. Objects stays where every window without a column keeps it: in
+     * its own panel, one tap from the Global Toolbar, standing on the model only
+     * while it is open.
      */
     boolean objectsDocked(int widthDp) {
         if (this != EXPANDED) {

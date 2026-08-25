@@ -51,7 +51,6 @@ final class ConstructionShapeEditorView extends LinearLayout {
     private static final int CHOOSER_COLUMNS = 3;
 
     private final InspectorHost host;
-    private final ObjectsSectionView objects;
 
     private final TextView[] chooserChips = new TextView[CHOOSER_IDS.length];
     private final View[] parameterRows = new View[CHOOSER_IDS.length];
@@ -71,14 +70,14 @@ final class ConstructionShapeEditorView extends LinearLayout {
         this.host = host;
         setOrientation(VERTICAL);
 
-        // The Objects section sits above the shape controls because it decides
-        // WHICH body everything below it edits. Reading top to bottom the panel
-        // now says: this body, this shape, these dimensions, apply.
-        objects = new ObjectsSectionView(context, host);
-        addView(objects, EditorControlStyles.rowParams(0));
-
-        addView(buildChooser(context), EditorControlStyles.rowParams(
-                EditorControlStyles.dimen(context, R.dimen.section_gap)));
+        // The chooser is the FIRST thing in this panel, and that is the point:
+        // it is named Shape and it opens on shape. The scene list used to sit
+        // above it and pushed the dimensions -- what the panel is for -- below
+        // the fold of a sheet capped at 30 % of the window. Which body is being
+        // edited is a scene-level question and now has a scene-level surface;
+        // this panel says only what that body's numbers are, and names the body
+        // in its title so the context is not lost. See ObjectsPopoverView.
+        addView(buildChooser(context), EditorControlStyles.rowParams(0));
 
         final int gap = EditorControlStyles.dimen(context, R.dimen.row_gap);
         parameterRows[NativeViewport.PRIMITIVE_BOX] = buildRow(context, R.id.primitive_row_box,
@@ -271,39 +270,10 @@ final class ConstructionShapeEditorView extends LinearLayout {
      * defaulted here. It also resets the draft kind to what the object actually
      * is, so the chooser can never be left claiming a shape the object is not.
      */
-    /** The Objects section, for tests that select a body by its ObjectId. */
-    ObjectsSectionView objectsSection() { return objects; }
-
-    /**
-     * Takes the Objects section back into this panel, at the top where it
-     * belongs.
-     *
-     * <p>An expanded window borrows the <b>same instance</b> for a column of its
-     * own (see {@link EditorWorkspaceView}); a window that shrinks hands it
-     * back. Reparenting one view rather than building a second one is what
-     * keeps there being exactly one Objects presentation in the product — a
-     * second copy would be a second place for ObjectId and selection to be
-     * remembered, and they must be remembered nowhere in Java at all.
-     *
-     * <p>Idempotent: called from the layout decision, which runs on every
-     * measure pass.
-     */
-    void reclaimObjectsSection() {
-        if (objects.getParent() == this) {
-            return;
-        }
-        if (objects.getParent() instanceof ViewGroup) {
-            ((ViewGroup) objects.getParent()).removeView(objects);
-        }
-        // Index 0: it decides WHICH body the fields below describe, so it reads
-        // first for the same reason it was placed there to begin with.
-        addView(objects, 0, EditorControlStyles.rowParams(0));
-    }
-
     void refreshFromNative() {
-        // The Objects list first: it decides which body the fields below
-        // describe, and it must never lag behind a viewport pick.
-        objects.refreshFromNative();
+        // The Objects list is refreshed by the workspace, which owns it: this
+        // panel is one of three places it can be parented and must not be the
+        // only one that keeps it current.
         NativeViewport.constructionPrimitive(nativePrimitive);
         final LengthUnit unit = host.uiState().displayUnit();
         host.uiState().setDraftPrimitiveKind((int) nativePrimitive[0]);

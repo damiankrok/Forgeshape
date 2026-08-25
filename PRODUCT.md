@@ -144,16 +144,18 @@ body.
 ## The Editor Workspace
 
 The editor is one workspace, and the model is the largest thing in it. A thin
-**Global Toolbar** across the top says what is being edited, carries the one
-control that crosses between constructing and sculpting, and shows every status
-and error message. A **Tool Rail** stands at the trailing edge. A **Property
-Inspector** at the bottom edge — at the side when the window is short or wide —
-carries the exact values, and it collapses to a single strip when the model is
-what matters. A control in the toolbar hides all of it at once, leaving the bare
-model and one chip to bring it back.
+**Global Toolbar** across the top carries the control that crosses between
+constructing and sculpting, the way to reach the **Objects** list, the viewport's
+appearance settings, and every status and error message. A **Tool Rail** stands
+at the trailing edge. A **Property Inspector** at the bottom edge — at the side
+when the window is short or wide — carries the exact values of the body you are
+editing and names it in its own title, and it collapses to a single strip when
+the model is what matters. A control in the toolbar hides all of it at once,
+leaving the bare model and one chip to bring it back.
 
-The same three regions are there in both modes. What changes is what they carry,
-never where they are.
+The same regions are there in both modes. What changes is what they carry, never
+where they are. Each answers one question and only one: what mode this is, which
+tool is held, what the scene holds, and what the selected body's numbers are.
 
 **A bigger window buys more of the model in view at once, not just more space
 around it.** On a phone the workspace is viewport-first: the list of bodies lives
@@ -234,9 +236,16 @@ you see, so a tap that hits the model in portrait hits it in landscape too.
 
 ## Several bodies, and which one you are editing
 
-Choosing **Shape** puts an **Objects** list at the top of the Property
-Inspector: one row per body, labelled `Body #1`, `Body #2` and so on, with the
-selected one visibly active. Below it is **Add Body**.
+The **Objects** control in the Global Toolbar opens the scene list: one row per
+body, labelled `Body #1`, `Body #2` and so on, with the selected one visibly
+active, and **Add Body** beneath them. It opens over the model and closes again
+on a second tap, so while it is shut it costs the picture nothing. On a window
+wide enough for it the same list is a permanent column beside the model instead,
+and the toolbar control goes away — there is never a second copy of it on screen.
+The list is reachable the same way in both modes.
+
+The Property Inspector names the body it is editing — *Shape — Body #1* — so the
+numbers on screen always say whose they are without the list being open.
 
 **Add Body** adds one more body with the same defaults the first one had — the
 2.0 × 1.0 × 0.5 m box, unrotated, at the world origin — and selects it. The new

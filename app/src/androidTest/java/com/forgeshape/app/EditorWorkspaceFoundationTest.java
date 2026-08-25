@@ -199,10 +199,20 @@ public final class EditorWorkspaceFoundationTest {
     public void r1b1_10b_everyIconOnlyControlKeepsTheTouchFloor() {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             final int floor = EditorControlStyles.dimen(activity, R.dimen.icon_button_size);
-            for (int id : new int[]{R.id.display_settings_button, R.id.hide_ui_toggle,
-                    R.id.inspector_toggle}) {
+            // objects_button joined this row in UI-R2, which makes the row one
+            // control wider on exactly the window where it was already tightest
+            // — so it is guarded here rather than assumed.
+            for (int id : new int[]{R.id.objects_button, R.id.display_settings_button,
+                    R.id.hide_ui_toggle, R.id.inspector_toggle}) {
                 final View control = workspace.findViewById(id);
                 final String name = activity.getResources().getResourceEntryName(id);
+                if (control.getVisibility() != View.VISIBLE) {
+                    // A control the window deliberately withdrew has no touch
+                    // target to guard. objects_button is GONE exactly when the
+                    // window docks Objects in a column, because then the panel
+                    // it opens would duplicate what is already beside the model.
+                    continue;
+                }
                 assertTrue(name + " must be laid out", control.getWidth() > 0);
                 assertTrue(name + " is " + control.getWidth() + " px wide, under the "
                                 + floor + " px touch floor",

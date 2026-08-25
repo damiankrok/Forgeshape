@@ -168,12 +168,16 @@ public final class EditorWorkspaceLayoutTest {
                         workspace.inspectorPlacement());
             } else {
                 // R1C2-27: a compact or medium window keeps the current
-                // viewport-first model. Objects stays inside the shape editor,
-                // and no column stands on the model.
+                // viewport-first model, and no column stands on the model.
                 assertEquals("no Objects column in a window that has not earned one",
                         View.GONE, workspace.findViewById(R.id.objects_dock).getVisibility());
-                assertEquals("Objects stays in the Construction shape editor",
-                        workspace.shapeEditor(), workspace.objectsSection().getParent());
+                // UI-R2: and Objects is in its own panel rather than nested in
+                // the Property Inspector's shape editor, which is what stopped a
+                // panel named "Shape" from opening on the list of bodies.
+                assertTrue("Objects lives in the scene panel, not in the inspector",
+                        workspace.objectsPopover().hosts(workspace.objectsSection()));
+                assertTrue("and the control that opens it is on screen",
+                        workspace.globalToolbar().objectsActionVisible());
             }
             return null;
         });

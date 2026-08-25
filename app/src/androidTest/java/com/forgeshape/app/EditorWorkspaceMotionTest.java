@@ -401,7 +401,15 @@ public class EditorWorkspaceMotionTest {
             assertEquals(!expanded ? View.VISIBLE : View.GONE, scroll.getVisibility());
             assertEquals(1.0f, scroll.getAlpha(), 1.0e-6f);
 
-            sendViewportTouch(viewport, down, down + 32L, MotionEvent.ACTION_UP);
+            // CANCELLED, not lifted. A DOWN/UP pair at the same point is a TAP,
+            // and a tap legitimately resolves a selection — which, once the
+            // scene has accumulated bodies that overlap at the origin, can make
+            // a different body active and rewrite every exact value below.
+            // That is the product working, not a defect, but it is not what
+            // this case is about: the gesture here exists only to be IN FLIGHT
+            // while the detent changes. A cancel ends it just as definitely,
+            // still fires onViewportGestureSettled, and resolves no tap.
+            sendViewportTouch(viewport, down, down + 32L, MotionEvent.ACTION_CANCEL);
             return null;
         });
         settleLayout();
