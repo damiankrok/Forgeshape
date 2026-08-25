@@ -1,10 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The start chooser's own panel, floating over the live viewport. -->
+<!--
+  The start chooser's own panel, floating over the live viewport.
+
+  A Tier 2 context surface at the sheet radius, with the two options RECESSED
+  into it rather than outlined on it. A panel and its options on neighbouring
+  tones was one flat block: the options have to be the thing you reach for, and
+  a well is the tonal way to say "this is a slot you choose".
+
+  Borderless and raised. The outline it used to draw was most of what made this
+  read as a settings dialog; a panel separated by tone and depth belongs to the
+  same workspace as the viewport rendering behind it.
+-->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
-    <solid android:color="?attr/fsChromeSurface" />
+    <solid android:color="?attr/fsSurfaceContext" />
     <corners android:radius="@dimen/radius_sheet" />
-    <stroke
-        android:width="@dimen/control_border_width"
-        android:color="?attr/fsChromeHairline" />
 </shape>

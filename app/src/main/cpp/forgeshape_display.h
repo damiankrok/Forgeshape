@@ -51,22 +51,27 @@ constexpr int kShadingModelCount = 3;
 // What the viewport is CLEARED to, behind everything.
 //
 // A closed enum, exactly like ShadingModel, and for the same reason: the Android
-// UI has two themes, and the geometry domain must not learn what an Android
-// theme is. What crosses JNI is a viewport APPEARANCE — one of these — and
-// native code owns what each one actually looks like. No Android type, no theme
-// enum and no RGB authored above JNI reaches this file.
+// UI has three appearances, and the geometry domain must not learn what an
+// Android theme is. What crosses JNI is a viewport APPEARANCE — one of these —
+// and native code owns what each one actually looks like. No Android type, no
+// theme enum and no RGB authored above JNI reaches this file.
 //
 // Changing it is the cheapest kind of presentation change there is: the clear
 // value is written into the render pass every frame anyway, so a switch rebuilds
 // no geometry, mints no revision, re-uploads nothing and does not touch the
 // swapchain, the pipeline or any GPU buffer.
+// All three grounds are DARK, which is the whole authored appearance set. They
+// are not three shades of one idea: Warm Graphite leans red, Neutral Charcoal
+// leans blue-grey, and Light Charcoal is the lightest ground the set allows
+// while a neutral clay render still reads as lit rather than washed out.
 enum class ViewportBackground {
-    NeutralDark,  // the product default
-    WarmLight,    // a calm warm off-white, not a stark white canvas
+    WarmGraphite,     // the product default: a warm dark studio ground
+    NeutralCharcoal,  // a cooler steel-grey ground
+    LightCharcoal,    // the lightest ground in the set
 };
 
-constexpr int kViewportBackgroundCount = 2;
-constexpr ViewportBackground kDefaultViewportBackground = ViewportBackground::NeutralDark;
+constexpr int kViewportBackgroundCount = 3;
+constexpr ViewportBackground kDefaultViewportBackground = ViewportBackground::WarmGraphite;
 
 const char* viewportBackgroundName(ViewportBackground background);
 
@@ -77,11 +82,11 @@ int viewportBackgroundIndex(ViewportBackground background);
 
 // The linear RGB the render pass clears to, in the order Vulkan wants.
 //
-// These MUST stay in step with `dark_viewport_background` and
-// `light_viewport_background` in `colors.xml`, which is what the Android window
-// is painted with before the surface has anything on it; a mismatch shows as a
-// flash on launch. `DISP-VBG-03`/`04` pin the exact values so the pair cannot
-// drift silently.
+// These MUST stay in step with `p1_viewport_background`,
+// `p2_viewport_background` and `p3_viewport_background` in `colors.xml`, which is
+// what the Android window is painted with before the surface has anything on it;
+// a mismatch shows as a flash on launch. `DISP-VBG-03`/`04`/`05` pin the exact
+// values so the set cannot drift silently.
 void viewportBackgroundColor(ViewportBackground background, float* outRgb);
 
 // Whether the world reference grid is drawn.

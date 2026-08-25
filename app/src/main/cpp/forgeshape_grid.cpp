@@ -59,16 +59,16 @@ void gridLineColor(ViewportBackground background, GridLineTier tier, float* outR
     if (outRgba == nullptr) {
         return;
     }
-    // Both palettes follow the same three rules, which is what makes the grid
-    // read as one thing in two appearances rather than as two grids:
+    // Every palette follows the same three rules, which is what makes the grid
+    // read as one thing in three appearances rather than as three grids:
     //
     //   1. weight comes from ALPHA, not from a brighter colour, so a line never
     //      competes with the shaded model for the eye;
     //   2. the two axes are separated by a faint warm/cool lean rather than by
     //      saturated red and blue — enough to tell X from Z, far short of
     //      turning the floor into a diagram;
-    //   3. every value is authored against its own background, because "darker"
-    //      and "lighter" are opposite instructions in the two appearances.
+    //   3. every value is authored against its own background, because the
+    //      contrast a line needs is a function of the ground under it.
     //
     // The model is drawn BEFORE the grid with depth writes on, and the grid is
     // depth-tested and depth-biased away, so none of these values can ever land
@@ -81,27 +81,44 @@ void gridLineColor(ViewportBackground background, GridLineTier tier, float* outR
         float axisZ[4];
     };
 
-    // Over #0E121B. The lines lift off a near-black ground, so they are a cool
-    // light grey held down to a low alpha.
-    static const Palette kDark = {
-        {0.55f, 0.60f, 0.70f, 0.14f},
-        {0.60f, 0.65f, 0.75f, 0.28f},
+    // All three grounds are dark, so all three lift the lines LIGHTER than the
+    // floor and differ only in how much weight that takes. A lighter ground
+    // needs more alpha to say the same thing, which is why these are three
+    // palettes rather than one: the same alpha that is a whisper over #26282A
+    // is invisible over #3C3F41.
+
+    // Over #302E2B. Warm-neutral lines over a warm ground.
+    static const Palette kWarmGraphite = {
+        {0.72f, 0.70f, 0.66f, 0.13f},
+        {0.78f, 0.76f, 0.71f, 0.26f},
         {0.85f, 0.55f, 0.35f, 0.50f},
         {0.45f, 0.62f, 0.85f, 0.50f},
     };
 
-    // Over #E6E1D9. Inverted intent: the lines must sit DARKER than a warm
-    // cream ground, and they are warm-neutral rather than pure grey so the page
-    // does not turn into engineering paper.
-    static const Palette kLight = {
-        {0.25f, 0.24f, 0.22f, 0.16f},
-        {0.22f, 0.21f, 0.19f, 0.30f},
-        {0.55f, 0.30f, 0.15f, 0.52f},
-        {0.18f, 0.34f, 0.55f, 0.52f},
+    // Over #26282A. Cool-neutral lines over a cool ground.
+    static const Palette kNeutralCharcoal = {
+        {0.66f, 0.70f, 0.74f, 0.14f},
+        {0.72f, 0.76f, 0.80f, 0.28f},
+        {0.85f, 0.55f, 0.35f, 0.50f},
+        {0.45f, 0.62f, 0.85f, 0.50f},
     };
 
-    const Palette& palette =
-        (background == ViewportBackground::WarmLight) ? kLight : kDark;
+    // Over #3C3F41. The lightest ground, so the alphas are raised: at the two
+    // darker grounds' values the floor would read as unlined.
+    static const Palette kLightCharcoal = {
+        {0.80f, 0.82f, 0.84f, 0.18f},
+        {0.86f, 0.88f, 0.90f, 0.34f},
+        {0.90f, 0.60f, 0.40f, 0.56f},
+        {0.52f, 0.70f, 0.92f, 0.56f},
+    };
+
+    const Palette* selected = &kWarmGraphite;
+    switch (background) {
+        case ViewportBackground::WarmGraphite: selected = &kWarmGraphite; break;
+        case ViewportBackground::NeutralCharcoal: selected = &kNeutralCharcoal; break;
+        case ViewportBackground::LightCharcoal: selected = &kLightCharcoal; break;
+    }
+    const Palette& palette = *selected;
 
     const float* source = palette.minor;
     switch (tier) {

@@ -58,7 +58,8 @@ public final class EditorWorkspaceGestureTest {
     @Test
     public void ui10_everyConstructionChromeSurfaceConsumesItsOwnDrag() {
         assertChromeConsumesDrags(new int[]{
-                R.id.global_toolbar, R.id.tool_rail, R.id.property_inspector,
+                R.id.toolbar_editing_group, R.id.toolbar_utility_group,
+                R.id.tool_rail, R.id.property_inspector,
                 R.id.inspector_scroll});
     }
 
@@ -66,7 +67,8 @@ public final class EditorWorkspaceGestureTest {
     public void ui10_everySculptChromeSurfaceConsumesItsOwnDragAndTheMeshIsUntouched() {
         enterSculpt();
         assertChromeConsumesDrags(new int[]{
-                R.id.global_toolbar, R.id.tool_rail, R.id.brush_edge_controls,
+                R.id.toolbar_editing_group, R.id.toolbar_utility_group,
+                R.id.tool_rail, R.id.brush_edge_controls,
                 R.id.brush_radius_slider, R.id.brush_strength_slider,
                 R.id.property_inspector, R.id.inspector_scroll});
     }
@@ -83,7 +85,8 @@ public final class EditorWorkspaceGestureTest {
                 (activity, workspace) -> nativeSnapshot());
 
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            for (int id : new int[]{R.id.global_toolbar, R.id.tool_rail,
+            for (int id : new int[]{R.id.toolbar_editing_group,
+                    R.id.toolbar_utility_group, R.id.tool_rail,
                     R.id.brush_edge_controls, R.id.property_inspector}) {
                 dragConsumed(workspace.findViewById(id));
             }

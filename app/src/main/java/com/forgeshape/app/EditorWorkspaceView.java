@@ -222,15 +222,30 @@ final class EditorWorkspaceView extends FrameLayout
         objectsDock.setId(R.id.objects_dock);
         objectsDock.setVisibility(GONE);
         objectsDock.setBackgroundResource(R.drawable.bg_chrome_docked_leading);
+        // A docked column is part of the window frame, not a card over the
+        // model, so it claims no depth — the same rule railDocked() follows.
+        objectsDock.setElevation(0.0f);
         // Opaque to touch, exactly as every other chrome surface is, so reaching
         // for a body never orbits the camera behind the column. A clickable
         // ScrollView consumes what its own scrolling and its own rows did not.
         objectsDock.setClickable(true);
-        final int dockPad = EditorControlStyles.dimen(context, R.dimen.row_gap_small);
+        // The same padding the Property Inspector uses, because the two are the
+        // two docked columns of the same layout and a 4 dp inset put the OBJECTS
+        // heading hard against the window edge.
+        final int dockPad = EditorControlStyles.dimen(context, R.dimen.inspector_padding);
         objectsDock.setPadding(dockPad, dockPad, dockPad, dockPad);
+        // Top-aligned and WRAPPING its content, for the same reason the side
+        // inspector does: a scene of two bodies in a full-height column is one
+        // short list and an arm's length of empty panel. Bounded by the row, so
+        // a scene that outgrows the window scrolls instead of stretching it.
         final LinearLayout.LayoutParams objectsParams = new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.MATCH_PARENT);
+                0, ViewGroup.LayoutParams.WRAP_CONTENT);
+        objectsParams.gravity = Gravity.TOP;
         objectsParams.rightMargin = EditorControlStyles.dimen(context, R.dimen.row_gap_small);
+        // Clear of the status capsule above it. The toolbar container is
+        // transparent, so without this the column's top edge butts straight into
+        // a floating capsule and the two read as one broken surface.
+        objectsParams.topMargin = EditorControlStyles.dimen(context, R.dimen.row_gap);
         middleRow.addView(objectsDock, objectsParams);
 
         brushControls = new BrushEdgeControlsView(context, this);
@@ -550,11 +565,25 @@ final class EditorWorkspaceView extends FrameLayout
         }
         final ViewGroup.LayoutParams params = toolRailScroll.getLayoutParams();
         if (params instanceof LinearLayout.LayoutParams) {
-            // A docked rail sits flush against the window edge; a floating one
-            // keeps the gap that lets the model show around it.
-            ((LinearLayout.LayoutParams) params).rightMargin =
+            final LinearLayout.LayoutParams rail = (LinearLayout.LayoutParams) params;
+            // A docked rail sits flush against the panel beside it; a floating
+            // one keeps the gap that lets the model show around it.
+            rail.rightMargin =
                     docked ? 0 : EditorControlStyles.dimen(getContext(), R.dimen.brush_gap);
-            toolRailScroll.setLayoutParams(params);
+            // And it starts where the docked inspector starts.
+            //
+            // This is what makes "part of the layout" a true claim rather than a
+            // style. A docked rail centred on the window height while the panel
+            // beside it hangs from the top is not a layout: it is one surface
+            // stranded halfway down the model, which is exactly how it read once
+            // the side panels stopped spanning the full window. Top-aligned, the
+            // rail and the inspector are one trailing cluster. A FLOATING rail
+            // stays centred, because a capsule standing on the picture belongs
+            // where the thumb is, not where the chrome above it ended.
+            rail.gravity = docked ? Gravity.TOP : Gravity.CENTER_VERTICAL;
+            rail.topMargin =
+                    docked ? EditorControlStyles.dimen(getContext(), R.dimen.row_gap) : 0;
+            toolRailScroll.setLayoutParams(rail);
         }
     }
 
@@ -605,13 +634,41 @@ final class EditorWorkspaceView extends FrameLayout
             parent.removeView(inspector);
         }
         if (bottom) {
-            chromeRoot.addView(inspector, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            // INSET, not flush. A sheet touching three window edges reads as a
+            // platform bottom sheet dragged into a creative tool; the same
+            // content standing off those edges, with the viewport visible around
+            // it, reads as one more surface in the workspace — the same claim
+            // the Tool Rail and the toolbar's control groups already make. It
+            // costs a few dp of height and buys the whole composition.
+            final LinearLayout.LayoutParams sheetParams = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            final int inset = EditorControlStyles.dimen(context, R.dimen.inspector_sheet_inset);
+            sheetParams.leftMargin = inset;
+            sheetParams.rightMargin = inset;
+            sheetParams.bottomMargin = inset;
+            chromeRoot.addView(inspector, sheetParams);
             return;
         }
+        // WRAP_CONTENT and top-aligned, not MATCH_PARENT.
+        //
+        // A side panel stretched to the full window height is mostly empty for
+        // most of the product's life — a box has three dimensions, a placement
+        // has six fields, and a tablet window is 2500 px tall. That emptiness is
+        // what made the expanded layout read as a desktop CAD frame rather than
+        // as a viewport with panels beside it. Wrapping its content means the
+        // panel ends where its content ends and the viewport keeps the rest of
+        // the column, which is the whole point of a viewport-first tool.
+        //
+        // It still cannot outgrow the window: a WRAP_CONTENT child of a bounded
+        // LinearLayout is measured AT_MOST the parent's height, so a long body
+        // simply scrolls exactly as it always did.
         final LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                widthPx, ViewGroup.LayoutParams.MATCH_PARENT);
+                widthPx, ViewGroup.LayoutParams.WRAP_CONTENT);
+        params.gravity = Gravity.TOP;
         params.leftMargin = EditorControlStyles.dimen(context, R.dimen.row_gap_small);
+        // Clear of the toolbar's utility capsule, for the same reason the
+        // Objects column is: nothing above this is an opaque strip any more.
+        params.topMargin = EditorControlStyles.dimen(context, R.dimen.row_gap);
         middleRow.addView(inspector, params);
         applyInspectorSideWidth();
     }
@@ -1412,7 +1469,21 @@ final class EditorWorkspaceView extends FrameLayout
         if (uiState.chromeHidden()) {
             return new Rect[0];
         }
-        final View[] surfaces = {toolbar, brushControls, toolRailScroll, inspector, objectsDock};
+        // The toolbar CONTAINER is not in this list, and that is a fact about
+        // the composition rather than a convenience: it is transparent and
+        // draws nothing, so counting its full-width rect as occlusion would
+        // report a bar the user cannot see. What actually stands on the model up
+        // there is its two control capsules and the status capsule, which is
+        // exactly what the toolbar reports.
+        final View[] surfaces = {brushControls, toolRailScroll, inspector, objectsDock};
+        final View[] top = toolbar.occludingSurfaces();
+        final View[] all = new View[surfaces.length + top.length];
+        System.arraycopy(surfaces, 0, all, 0, surfaces.length);
+        System.arraycopy(top, 0, all, surfaces.length, top.length);
+        return chromeRectsFor(all);
+    }
+
+    private Rect[] chromeRectsFor(View[] surfaces) {
         int count = 0;
         for (View surface : surfaces) {
             if (isOnScreen(surface)) {

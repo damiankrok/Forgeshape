@@ -1,11 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  A control at rest: chip, Tool Rail entry, Objects row.
+  A control at rest: a chip, a display option, a unit.
 
-  Every colour is a semantic ROLE (`?attr/fs*`), resolved against whichever theme
-  the Activity applied. That is why there is one of this file rather than a dark
-  copy and a light copy: the shape, the radius, the stroke width and the pressed
-  behaviour are the same claim in both themes, and only the answers differ.
+  BORDERLESS, and tonal. The outline it used to draw was doing no work that the
+  fill was not already doing: a chip sits on a surface one step darker than
+  itself, and one step of tone plus the gap around it says "control" without
+  putting a rectangle on the screen. Outlines are spent where an editing
+  affordance genuinely needs one — see bg_field, which is the only resting
+  control in the product that still draws a border.
 
   The pressed state is the point: before UI-R1B1, tapping a tool gave no feedback
   at all until native code answered.
@@ -15,18 +17,12 @@
         <shape android:shape="rectangle">
             <solid android:color="?attr/fsControlSurfacePressed" />
             <corners android:radius="@dimen/radius_control" />
-            <stroke
-                android:width="@dimen/control_border_width"
-                android:color="?attr/fsControlBorder" />
         </shape>
     </item>
     <item>
         <shape android:shape="rectangle">
             <solid android:color="?attr/fsControlSurface" />
             <corners android:radius="@dimen/radius_control" />
-            <stroke
-                android:width="@dimen/control_border_width"
-                android:color="?attr/fsControlBorder" />
         </shape>
     </item>
 </selector>

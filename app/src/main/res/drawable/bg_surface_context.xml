@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  TIER 2 — an expanded context surface: the Display popover, the Objects panel,
+  the start chooser's panel.
+
+  Opaque, because it carries a body of content that has to be READ rather than
+  glanced at, and borderless for the same reason Tier 1 is: one step of tone and
+  a soft shadow are what separate it from the model, and an outline on a panel
+  this size reads as a dialog frame.
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="?attr/fsSurfaceContext" />
+    <corners android:radius="@dimen/radius_floating" />
+</shape>

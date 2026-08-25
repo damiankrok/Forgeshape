@@ -12,20 +12,34 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 /**
- * The mode-independent strip at the top of the Editor Workspace.
+ * The mode-independent controls at the top of the Editor Workspace.
  *
  * <p>It carries only what is true in every mode: what is being edited, the way
  * across the Construction/Sculpt seam, the reserved global Export action, the
  * chrome hide control, and — the part that matters most — the status and error
  * message.
  *
+ * <p><b>It is not a bar.</b> This container is transparent and draws nothing of
+ * its own; what the user sees is two floating control <i>groups</i> with the
+ * model between and behind them — an editing group on the leading edge holding
+ * the mode context and the one transition that belongs to it, and a utility
+ * group on the trailing edge holding Export and the icon controls. A full-width
+ * opaque strip with a hairline under it is the one shape that reads as an
+ * Android app bar no matter what colour it is painted, and the workspace is
+ * meant to read as one spatial composition rather than as a document editor with
+ * a title bar. Grouping is also what makes the hierarchy visible without
+ * colour: a primary commit is the loudest thing in the leading group, and the
+ * trailing group is uniformly tertiary.
+ *
  * <p><b>The status message is always laid out inside the window.</b> The
  * previous shell put it at the bottom of a wrap-content panel, where in
  * landscape it measured below the window edge with no scroll container anywhere
  * to reach it, which made validation verdicts and the stale-source warning
  * silently unreachable in the one configuration that needed them most. Here it
- * has a reserved place in a fixed-height strip: inline with the controls when
- * the window is short, on its own full-width line when it is not.
+ * has a reserved place: inline with the controls when the window is short, on
+ * its own line when it is not. It is a small capsule sized to its own text
+ * rather than a full-width band, because it is persistent — see
+ * {@link EditorControlStyles#statusText}.
  *
  * <p><b>Owns no mode.</b> The three transition buttons ask native code; which
  * one is on screen is decided by {@link #showContext} from what native code
@@ -59,6 +73,10 @@ final class GlobalToolbarView extends LinearLayout {
     private final TextView statusMessage;
 
     private final LinearLayout controlsRow;
+    /** The leading capsule: what is being edited, and the way across the seam. */
+    private final LinearLayout editingGroup;
+    /** The trailing capsule: Export and the icon controls, all tertiary. */
+    private final LinearLayout utilityGroup;
     private final FrameLayout statusSlot;
 
     private boolean statusInline = true;
@@ -67,7 +85,9 @@ final class GlobalToolbarView extends LinearLayout {
         super(context);
         setId(R.id.global_toolbar);
         setOrientation(VERTICAL);
-        EditorControlStyles.applyChromeSurface(this);
+        // Deliberately no background and no elevation. See the class comment:
+        // the surfaces the user sees are the two groups below, not this.
+        EditorControlStyles.allowChildShadows(this);
 
         final int padH = EditorControlStyles.dimen(context, R.dimen.toolbar_padding_horizontal);
         final int gap = EditorControlStyles.dimen(context, R.dimen.toolbar_gap);
@@ -76,32 +96,38 @@ final class GlobalToolbarView extends LinearLayout {
         controlsRow = new LinearLayout(context);
         controlsRow.setOrientation(HORIZONTAL);
         controlsRow.setGravity(Gravity.CENTER_VERTICAL);
+        EditorControlStyles.allowChildShadows(controlsRow);
         addView(controlsRow, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 EditorControlStyles.dimen(context, R.dimen.toolbar_height)));
+
+        editingGroup = EditorControlStyles.controlGroup(context);
+        editingGroup.setId(R.id.toolbar_editing_group);
+        controlsRow.addView(editingGroup, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT));
 
         contextLabel = EditorControlStyles.titleText(context, R.id.editing_context_label, "");
         contextLabel.setSingleLine(true);
         contextLabel.setEllipsize(TextUtils.TruncateAt.END);
         contextLabel.setMaxWidth(
                 EditorControlStyles.dimen(context, R.dimen.toolbar_context_max_width));
-        // THE LABEL IS THE FLEXIBLE CHILD, and that is load-bearing rather than
-        // cosmetic. A wrap-content label keeps whatever width its text wants
-        // even when the row has run out, and a LinearLayout that has run out
-        // squeezes the LAST child instead — which put both icon controls below
-        // the 44 dp touch floor on a 411 dp-wide window (measured at 35 dp and
-        // 33 dp). Weighted, the label gives up its own width first and
-        // ellipsises, and every action keeps the size it asked for. The cap
-        // stops it growing absurdly wide on a tablet, where there is room.
-        controlsRow.addView(contextLabel, new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
-
-        statusSlot = new FrameLayout(context);
-        final LinearLayout.LayoutParams slotParams = new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 0.0f);
-        slotParams.leftMargin = gap;
-        slotParams.rightMargin = gap;
-        controlsRow.addView(statusSlot, slotParams);
+        // Inside the leading capsule with the transition it describes, because
+        // "Sculpt" and "Back to Construction" are one thought. The label sits on
+        // a material rather than on the raw viewport, which is what lets the
+        // toolbar container be transparent at all.
+        //
+        // It is still bounded and still ellipsises: the row can run out of width
+        // on a narrow window, and a LinearLayout that has run out squeezes its
+        // LAST child — which is how both icon controls once ended up below the
+        // 44 dp touch floor on a 411 dp window. Neither group is weighted; the
+        // flexible child is the gap between them.
+        final LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        labelParams.leftMargin =
+                EditorControlStyles.dimen(context, R.dimen.chip_padding_horizontal);
+        labelParams.rightMargin = gap;
+        editingGroup.addView(contextLabel, labelParams);
 
         freezeButton = EditorControlStyles.primaryButton(context, R.id.freeze_to_sculpt,
                 context.getString(R.string.freeze_to_sculpt));
@@ -112,7 +138,7 @@ final class GlobalToolbarView extends LinearLayout {
                 actions.onFreezeToSculpt();
             }
         });
-        controlsRow.addView(freezeButton, EditorControlStyles.wrap(0));
+        editingGroup.addView(freezeButton, EditorControlStyles.wrap(0));
 
         // Resume is a different act from Freeze and therefore a different
         // control, not one button whose meaning depends on hidden state:
@@ -127,7 +153,7 @@ final class GlobalToolbarView extends LinearLayout {
                 actions.onResumeSculpt();
             }
         });
-        controlsRow.addView(resumeButton, EditorControlStyles.wrap(0));
+        editingGroup.addView(resumeButton, EditorControlStyles.wrap(0));
 
         // NOT a primary commit, and this is the one transition where that
         // distinction is real. Freeze and Resume change which representation is
@@ -135,6 +161,10 @@ final class GlobalToolbarView extends LinearLayout {
         // nothing, publishes the Construction Source's own mesh and is pure
         // navigation. Drawn as a solid accent block it was the loudest thing on
         // the Sculpt workspace — louder than the model — for the act of leaving.
+        //
+        // Quiet and TONAL: it takes the ordinary control fill inside the group's
+        // own capsule, so it reads as one step up from the material around it
+        // rather than as a second commit.
         backButton = EditorControlStyles.chip(context, R.id.back_to_construction,
                 context.getString(R.string.back_to_construction));
         backButton.setTextColor(
@@ -146,16 +176,38 @@ final class GlobalToolbarView extends LinearLayout {
                 actions.onBackToConstruction();
             }
         });
-        controlsRow.addView(backButton, EditorControlStyles.wrap(0));
+        editingGroup.addView(backButton, EditorControlStyles.wrap(0));
+
+        // The flexible child of the row, and the only one. It is where the model
+        // shows between the two groups, and it is what absorbs a squeeze — so a
+        // narrow window closes the gap first and neither group has to give up a
+        // touch target.
+        controlsRow.addView(EditorControlStyles.spacer(context));
+
+        statusSlot = new FrameLayout(context);
+        final LinearLayout.LayoutParams slotParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, 0.0f);
+        slotParams.leftMargin = gap;
+        slotParams.rightMargin = gap;
+        controlsRow.addView(statusSlot, slotParams);
+
+        utilityGroup = EditorControlStyles.controlGroup(context);
+        utilityGroup.setId(R.id.toolbar_utility_group);
+        controlsRow.addView(utilityGroup, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT));
 
         // Export is an approved global action with no implementation behind it.
         // It is drawn, named, readable and inert: a reserved home the user can
-        // see, and nothing that could be mistaken for a working export.
+        // see, and nothing that could be mistaken for a working export. Inside
+        // the utility group it RECEDES — a recessed tonal well below the capsule
+        // around it — instead of standing beside the working controls as an
+        // outlined box of the same size.
         exportAction = EditorControlStyles.chip(context, R.id.export_action,
                 context.getString(R.string.export));
         EditorControlStyles.setChipReserved(exportAction,
                 context.getString(R.string.export_reserved_note));
-        controlsRow.addView(exportAction, EditorControlStyles.wrap(gap));
+        utilityGroup.addView(exportAction, EditorControlStyles.wrap(0));
 
         // Objects sits here for the same reason Display does: WHICH body is
         // being edited is true in every mode, so it belongs to no tool and to
@@ -174,7 +226,7 @@ final class GlobalToolbarView extends LinearLayout {
                 actions.onObjectsRequested();
             }
         });
-        controlsRow.addView(objectsButton, EditorControlStyles.iconButtonParams(context, gap));
+        utilityGroup.addView(objectsButton, EditorControlStyles.iconButtonParams(context, gap));
 
         // Display sits in the Global Toolbar because it is mode-independent:
         // how the surface is shaded is as true in Sculpt as in Construction, so
@@ -188,7 +240,7 @@ final class GlobalToolbarView extends LinearLayout {
                 actions.onDisplaySettingsRequested();
             }
         });
-        controlsRow.addView(displaySettingsButton,
+        utilityGroup.addView(displaySettingsButton,
                 EditorControlStyles.iconButtonParams(context, gap));
 
         hideUiToggle = EditorControlStyles.iconButton(context, R.id.hide_ui_toggle,
@@ -199,7 +251,7 @@ final class GlobalToolbarView extends LinearLayout {
                 actions.onChromeHideRequested();
             }
         });
-        controlsRow.addView(hideUiToggle, EditorControlStyles.iconButtonParams(context, gap));
+        utilityGroup.addView(hideUiToggle, EditorControlStyles.iconButtonParams(context, gap));
 
         statusMessage = EditorControlStyles.statusText(context, R.id.status_message);
         statusMessage.setMaxLines(2);
@@ -264,13 +316,25 @@ final class GlobalToolbarView extends LinearLayout {
     }
 
     /**
+     * The surfaces this toolbar actually paints over the model.
+     *
+     * <p>Not {@code this}: the container is transparent and draws nothing, so
+     * reporting its full-width bounds as occlusion would count a bar that is not
+     * there. What stands on the model is the two control capsules and the status
+     * capsule, and the workspace's viewport-floor measurement has to be told
+     * that rather than left to assume the old strip.
+     */
+    View[] occludingSurfaces() {
+        return new View[]{editingGroup, utilityGroup, statusMessage};
+    }
+
+    /**
      * Shows or hides the context label.
      *
-     * <p>It is the row's flexible child, so on a narrow window it gives up all
-     * of its width to keep every action above the touch floor — and a label
-     * measured at zero draws nothing while still claiming to be the thing that
-     * says what is being edited. Where it cannot fit it is therefore withdrawn
-     * outright rather than left as an empty promise.
+     * <p>A narrow window cannot carry both control groups, the status capsule
+     * and a label above the 44 dp touch floor, and the label is the least
+     * load-bearing of the four. Where it cannot fit it is withdrawn outright
+     * rather than squeezed to an ellipsis that says nothing.
      *
      * <p>Nothing is lost by that: the status line directly beneath it always
      * names the mode, and since UI-R2 the Property Inspector's own title names
@@ -304,11 +368,12 @@ final class GlobalToolbarView extends LinearLayout {
             parent.removeView(statusMessage);
         }
         // The slot only competes for row width while it actually holds the
-        // message. Empty and weighted it would take room from the context
-        // label for nothing, and a short window is precisely where there is
+        // message. Empty and weighted it would take room from the two control
+        // groups for nothing, and a short window is precisely where there is
         // none to spare.
         final LinearLayout.LayoutParams slotParams =
                 (LinearLayout.LayoutParams) statusSlot.getLayoutParams();
+        slotParams.width = inline ? 0 : ViewGroup.LayoutParams.WRAP_CONTENT;
         slotParams.weight = inline ? 1.0f : 0.0f;
         statusSlot.setLayoutParams(slotParams);
 
@@ -318,9 +383,16 @@ final class GlobalToolbarView extends LinearLayout {
             params.gravity = Gravity.CENTER_VERTICAL;
             statusSlot.addView(statusMessage, params);
         } else {
+            // WRAP_CONTENT, not MATCH_PARENT: the capsule is sized to its own
+            // text so a one-line hint is a small aside rather than a band across
+            // the whole window. Left-aligned under the leading group, which is
+            // the surface that names the mode it is describing.
             final LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            params.gravity = Gravity.START;
+            params.topMargin = EditorControlStyles.dimen(getContext(), R.dimen.row_gap_small);
             params.bottomMargin = EditorControlStyles.dimen(getContext(), R.dimen.row_gap_small);
+            params.leftMargin = EditorControlStyles.dimen(getContext(), R.dimen.row_gap_small);
             addView(statusMessage, params);
         }
     }
@@ -379,11 +451,23 @@ final class GlobalToolbarView extends LinearLayout {
     }
 
     /**
-     * Swallows every touch the toolbar's own controls did not take, so reaching
-     * for a mode button never orbits the camera behind it.
+     * Deliberately does <b>not</b> swallow a touch, and this is the one chrome
+     * container in the product that does not.
+     *
+     * <p>It draws nothing: it is a transparent frame holding two floating
+     * capsules and a status capsule, and the model between and behind them is
+     * genuinely visible. A container that consumed everything inside its
+     * full-width bounds would put a 56 dp band of dead space across the top of
+     * a viewport the user can see straight through — which is the opposite of
+     * what making the toolbar transparent was for.
+     *
+     * <p>The rule itself is unchanged and is simply enforced one level down:
+     * each capsule is clickable and swallows what its own controls did not take,
+     * so reaching for Display still cannot orbit the camera behind it. See
+     * {@link EditorControlStyles#controlGroup}.
      */
     @Override
     public boolean onTouchEvent(MotionEvent event) {
-        return true;
+        return false;
     }
 }

@@ -3,23 +3,49 @@
   The Editor Workspace's semantic roles, as theme attributes.
 
   This is the whole theme mechanism. A role is declared once here, given a value
-  once per theme in `themes.xml`, and referenced as `?attr/fs*` from every
+  once per palette in `themes.xml`, and referenced as `?attr/fs*` from every
   drawable, colour state list and view. Nothing in the package asks for a
-  *colour*; it asks for a *role*, and the theme in force answers.
+  *colour*; it asks for a *role*, and the appearance in force answers.
 
-  That is what keeps two themes from costing two component trees. There is one
-  `bg_control.xml`, one `control_content_tint.xml` and one `chip()` — a Light
-  build reuses all of them and only the answers change. No view class contains
-  `if (light)`, and adding a third theme later would touch this file and
-  `themes.xml` and nothing else.
+  That is what keeps three appearances from costing three component trees. There
+  is one `bg_control.xml`, one `control_content_tint.xml` and one `chip()` — all
+  three palettes reuse every one of them and only the answers change. No view
+  class contains `if (warmGraphite)`, and a fourth appearance would touch this
+  file and `themes.xml` and nothing else.
 
   Platform mechanism only: theme attributes in drawables are resolved by
   `Resources.getDrawable(id, theme)` and in colour state lists from API 23.
   minSdk is 26, so both are always available and no support library is involved.
 -->
 <resources>
-    <!-- Chrome surfaces. Opaque where text sits on them; translucent only over
-         the viewport, where the model behind stays informative. -->
+    <!--
+      THE THREE MATERIAL TIERS.
+
+      A surface's tier says what KIND of thing it is, which is what stops every
+      panel in the product reading as the same flat card. It decides tone,
+      opacity and depth together, because those three are one claim.
+
+      There is no real backdrop blur anywhere and there will not be: the viewport
+      is a `SurfaceView` and the platform cannot blur what is behind one. "Glass"
+      here is tone plus opacity plus a soft shadow, which is a look the platform
+      can actually keep — a blur that silently degrades to a grey slab is worse
+      than one that was never promised.
+    -->
+    <!-- Tier 1 — a floating control group standing ON the model: the toolbar's
+         control capsules, the Tool Rail, the brush controls, the restore chip.
+         Translucent, because the model behind a narrow capsule is informative. -->
+    <attr name="fsSurfaceFloating" format="color" />
+    <!-- Tier 2 — an expanded context surface: the Display popover, the Objects
+         panel, the start chooser's own panel. Opaque, because it carries a body
+         of content that has to be read rather than glanced at. -->
+    <attr name="fsSurfaceContext" format="color" />
+    <!-- Tier 3 — a precision surface: the Property Inspector, where exact values
+         are typed. Opaque and calmest of the three; nothing is allowed to be
+         pretty at the expense of a legible dimension. -->
+    <attr name="fsSurfacePrecision" format="color" />
+
+    <!-- Base chrome: a surface that is part of the WINDOW FRAME rather than
+         standing on the model — the expanded window's docked columns. -->
     <attr name="fsChromeSurface" format="color" />
     <attr name="fsChromeOverlay" format="color" />
     <attr name="fsChromeHairline" format="color" />
@@ -29,15 +55,23 @@
     <attr name="fsControlSurfacePressed" format="color" />
     <attr name="fsControlBorder" format="color" />
 
+    <!-- An exact-value field, which is RECESSED into its panel rather than
+         raised off it: a well you type into, not a button. -->
+    <attr name="fsFieldSurface" format="color" />
+
     <!--
       The accent, split by JOB rather than by shade.
 
-      `fsAccentFill` is what an ACTIVE control is filled with; `fsPrimaryFill` is
-      what a PRIMARY COMMIT is filled with. In the dark theme those happen to be
-      the same colour, which is exactly why they were one value before and why
-      that could not survive a light theme: on a light background an active chip
-      wants a pale tint it can carry dark text on, and Apply wants a solid accent
-      carrying white. One attribute could not be both.
+      `fsAccentFill` is what a SELECTED control rests in; `fsPrimaryFill` is what
+      a PRIMARY COMMIT is filled with. They are deliberately not the same answer
+      and not even the same family: a selection is a quiet lifted surface that
+      says "this is the one you are on", and a commit is the accent itself. When
+      those were one value, an active chip, an active rail entry, the selected
+      body's row and Apply were one indistinguishable block — several on a single
+      screen, none reading as more important than any other.
+
+      `fsAccent` is spent on exactly two things: a primary commit, and the ring
+      on a focused numeric field. Nothing else in the product may wear it.
     -->
     <attr name="fsAccent" format="color" />
     <attr name="fsAccentFill" format="color" />
@@ -54,7 +88,7 @@
     <attr name="fsTextDisabled" format="color" />
 
     <!-- Verdicts and measurements. These must stay distinguishable from each
-         other AND from body text in both themes. -->
+         other AND from body text in every appearance. -->
     <attr name="fsTextSuccess" format="color" />
     <attr name="fsTextError" format="color" />
     <attr name="fsTextMeasure" format="color" />

@@ -1,22 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- One of the two start options. Pressed feedback, like every other control. -->
+<!--
+  One of the two start options.
+
+  Fill-led like every other control in the product: it is LIFTED off the panel
+  it sits on and answers a press by lifting further, rather than sitting inside a
+  permanent outlined box. Two outlined cards on an outlined panel was three
+  nested frames for one question.
+-->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:state_pressed="true">
         <shape android:shape="rectangle">
             <solid android:color="?attr/fsAccentFill" />
             <corners android:radius="@dimen/radius_floating" />
-            <stroke
-                android:width="@dimen/control_border_active_width"
-                android:color="?attr/fsAccent" />
         </shape>
     </item>
     <item>
         <shape android:shape="rectangle">
             <solid android:color="?attr/fsChooserCardSurface" />
             <corners android:radius="@dimen/radius_floating" />
-            <stroke
-                android:width="@dimen/control_border_width"
-                android:color="?attr/fsControlBorder" />
         </shape>
     </item>
 </selector>

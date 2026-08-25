@@ -58,7 +58,7 @@ public final class EditorWorkspaceDisplayTest {
             // the grid is orthogonal to it, and a case that died part-way
             // through would otherwise hand a cream viewport to a Dark-theme
             // suite that runs next.
-            NativeViewport.setViewportBackground(NativeViewport.VIEWPORT_BACKGROUND_DARK);
+            NativeViewport.setViewportBackground(NativeViewport.VIEWPORT_BACKGROUND_WARM_GRAPHITE);
             return null;
         });
     }
@@ -228,8 +228,9 @@ public final class EditorWorkspaceDisplayTest {
     public void r1c222_theGridIsIndependentOfAppearanceAndProjection() {
         final double[] before = nativeSnapshot();
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            final int[] backgrounds = {NativeViewport.VIEWPORT_BACKGROUND_DARK,
-                    NativeViewport.VIEWPORT_BACKGROUND_LIGHT};
+            final int[] backgrounds = {NativeViewport.VIEWPORT_BACKGROUND_WARM_GRAPHITE,
+                    NativeViewport.VIEWPORT_BACKGROUND_NEUTRAL_CHARCOAL,
+                    NativeViewport.VIEWPORT_BACKGROUND_LIGHT_CHARCOAL};
             final int[] projections = {NativeViewport.PROJECTION_PERSPECTIVE,
                     NativeViewport.PROJECTION_ORTHOGRAPHIC};
             for (int background : backgrounds) {
@@ -249,7 +250,7 @@ public final class EditorWorkspaceDisplayTest {
             return null;
         });
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            NativeViewport.setViewportBackground(NativeViewport.VIEWPORT_BACKGROUND_DARK);
+            NativeViewport.setViewportBackground(NativeViewport.VIEWPORT_BACKGROUND_WARM_GRAPHITE);
             NativeViewport.setProjectionMode(NativeViewport.PROJECTION_PERSPECTIVE);
             NativeViewport.setGridVisible(true);
             return null;

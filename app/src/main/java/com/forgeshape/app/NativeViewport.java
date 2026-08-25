@@ -577,11 +577,14 @@ final class NativeViewport {
     /** @return the active {@code SURFACE_*} constant */
     static native int surfaceShading();
 
-    /** The neutral dark viewport: the product default. */
-    static final int VIEWPORT_BACKGROUND_DARK = 0;
+    /** The warm dark studio ground: the product default. */
+    static final int VIEWPORT_BACKGROUND_WARM_GRAPHITE = 0;
 
-    /** The calm warm off-white viewport. */
-    static final int VIEWPORT_BACKGROUND_LIGHT = 1;
+    /** The cooler steel-grey ground. */
+    static final int VIEWPORT_BACKGROUND_NEUTRAL_CHARCOAL = 1;
+
+    /** The lightest ground in the set, and still a dark one. */
+    static final int VIEWPORT_BACKGROUND_LIGHT_CHARCOAL = 2;
 
     /**
      * Requests what the viewport is CLEARED to, behind everything.
@@ -599,8 +602,7 @@ final class NativeViewport {
      * observed by picking. An unknown index is refused and the current
      * appearance stands.
      *
-     * @param background {@link #VIEWPORT_BACKGROUND_DARK} or
-     *                   {@link #VIEWPORT_BACKGROUND_LIGHT}
+     * @param background one of the {@code VIEWPORT_BACKGROUND_*} constants
      * @return the {@code VIEWPORT_BACKGROUND_*} constant in effect afterwards
      */
     static native int setViewportBackground(int background);

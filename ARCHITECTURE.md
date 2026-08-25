@@ -72,7 +72,7 @@ forgeshape_jni.cpp            render thread, ANativeWindow, MotionEvent ->
 | mm/cm/m ↔ meter conversion and number formatting | `LengthUnit` | the domain never sees a display unit |
 | The ordered collection of Construction Bodies, ObjectId minting, and which body is active | `ConstructionScene` (`forgeshape_scene.{h,cpp}`) | a flat list, not a scene graph or a hierarchy; ids are never a collection index |
 | Identity, which primitive is active, every primitive's parameters, and placement — for ONE body | `ConstructionObject` (`forgeshape_construction.{h,cpp}`) | it knows nothing of the collection holding it |
-| Which of the two appearances the process wears | `EditorUiState` (static) → `AppTheme` | UI-owned, losable, never persisted; the domain sees only a viewport-background index |
+| Which of the three approved appearances the process wears | `EditorUiState` (static) → `AppTheme` | UI-owned, losable, never persisted; the domain sees only a viewport-background index |
 | What the viewport is cleared to | `ViewportBackground` in `forgeshape_display.{h,cpp}` | native owns the colours; no Android theme or RGB crosses JNI |
 | The world reference grid's plane, spacing, extent, tiers and palette | `forgeshape_grid.{h,cpp}` | it is not a `SceneObject`, has no `ObjectId` or revision, is not pickable, and is not a snap target |
 | Whether the grid is drawn | `DisplaySettingsStore` | the renderer owns no presentation preference; the grid module owns no visibility |
@@ -155,8 +155,8 @@ tool is held; the Objects surface says what the scene HOLDS and which body is
 current; the Property Inspector says what that body's exact values ARE, naming it
 in its own title — "Shape — Body #1". Scene-level content inside the active-body
 value panel is a role confusion: it buries the fields the panel is named after
-below the fold of a 30 %-capped sheet, nests one scroll in another, and vanishes
-in every mode that editor is not the inspector's body.
+below the fold, nests one scroll in another, and vanishes in every mode that
+editor is not the inspector's body.
 
 ### Appearance: roles, not colours
 
@@ -170,34 +170,59 @@ sliders, which are drawn onto a Canvas rather than composed.
 
 That buys three things at once: pressed and active states come from the platform
 instead of a repaint call; instances share one parsed `ConstantState` rather than
-allocating a `GradientDrawable` per control; and **two themes cost one component
-tree** — one `bg_control.xml`, one `chip()`, one `control_content_tint.xml`, no
-`if (light)` anywhere, so a third theme would touch two resource files and
-nothing else. `fsAccentFill` (what an ACTIVE control is filled with) and
-`fsPrimaryFill` (what a PRIMARY COMMIT is filled with, carrying `fsTextOnPrimary`)
-are two roles rather than one, and **both themes now answer them differently**: a
-selection is a quiet blue-leaning surface and a commit is the accent itself. They
-were the same hex on dark, which made an active chip, an active rail entry, the
-selected body's row and Apply one indistinguishable block — several of them on a
-single screen, none reading as more important than any other. Active still never
-rests on colour alone: the thicker accent border and the brightened label are
-what carry it, exactly as they always did on light.
+allocating a `GradientDrawable` per control; and **three appearances cost one
+component tree** — one `bg_control.xml`, one `chip()`, one
+`control_content_tint.xml`, no `if (warmGraphite)` anywhere, so a fourth palette
+would touch two resource files and nothing else.
 
-**Resting weight is a third thing a role decides.** Controls that sit inside a
-surface which already frames them — icon-only toolbar controls, Tool Rail entries,
-Objects rows — draw no box until pressed (`bg_icon_button`, `bg_rail_entry`,
-`bg_list_row`), so the ACTIVE one is the only shape on that surface. The touch
-target and the pressed state are unchanged; only the resting outline is gone. A
-control that stands alone on the chrome (a chip, a field, a commit) keeps its box,
-because there is nothing else there to frame it.
+**The approved appearance set is three DARK palettes** — Warm Graphite (the
+default), Neutral Charcoal and Light Charcoal. Twelve values of each are
+owner-approved and reproduced exactly in `colors.xml`; everything else in a
+palette is a derived neighbour of one of those twelve. There is no light
+appearance and no `-night` qualifier: ForgeShape is viewport-first, and every
+ground in the set is chosen so a neutral clay render reads as lit.
+
+**Three material tiers, and every surface is exactly one of them.**
+`fsSurfaceFloating` (Tier 1) is a control group standing ON the model — the
+toolbar's two capsules, the Tool Rail, the brush controls — and is the only
+translucent tier, because the model behind a narrow capsule is informative.
+`fsSurfaceContext` (Tier 2) is an expanded surface carrying a body of content to
+be read: the Display popover, the Objects panel, the start chooser.
+`fsSurfacePrecision` (Tier 3) is the Property Inspector, where exact values are
+typed. **Nothing blurs and nothing pretends to**: the viewport is a `SurfaceView`
+and the platform cannot blur what is behind one, so "glass" is tone plus opacity
+plus a soft shadow — a look the platform actually keeps, rather than a blur that
+silently degrades to a grey slab.
+
+**States are fill-led, and almost nothing rests on an outline.** `fsAccentFill`
+(what a SELECTED control rests in) and `fsPrimaryFill` (a PRIMARY COMMIT, carrying
+`fsTextOnPrimary`) are two roles and deliberately not the same family: a selection
+is a quiet lifted surface carried by its fill and its brightened label, with a
+hairline as the third signal; a commit is the accent itself. The accent is spent
+on exactly two things — a primary commit and the ring on a focused numeric field.
+`fsTextOnPrimary` is an **ink**, not white: `#4C8FD6` carries white at 3.4:1 and
+near-black at 5.5:1. Controls otherwise draw no box until pressed — one step of
+tone plus the space around them is the separation — and exactly two resting
+outlines are left, both earned: `bg_field`, because a value you can type into is
+an editing affordance, and `bg_warning`, because a standing fault is under-stated
+by tone alone. A reserved control (`Sketch`, `Extrude`, `Export`) is **recessed**
+rather than outlined.
 
 Icons are local vector drawables on one 24 dp grid, drawn white and tinted from
 the same state list, so an entry's glyph and its caption cannot disagree about
 whether it is active, pressed or reserved. Metrics come from `dimens.xml`: corner
-radius is three semantic levels — control, floating surface, sheet — and type is
-five roles rather than five sizes.
+radius is four semantic levels — control, floating surface, sheet, capsule — and
+type is five roles rather than five sizes.
 
-**The theme itself is UI-owned, process-scoped and losable**, in the one static
+**What the approved palettes cost is stated rather than hidden.** The twelve
+anchor values are not the UI layer's to move, so `EditorWorkspaceThemeTest`
+asserts what they deliver: primary text and every typed value at WCAG AA (4.5:1),
+secondary captions at 3.0:1 (measured 3.6–4.7 across the three), and verdicts at
+2.4:1 against the precision surface — the tightest number in the product, Light
+Charcoal's error red on its own inspector surface, and a consequence of both the
+red and the ground being fixed.
+
+**The appearance itself is UI-owned, process-scoped and losable**, in the one static
 field in `EditorUiState` beside the start choice. It is applied by `setTheme()`
 **before** anything is inflated and changed by recreating the Activity — the only
 clean way to re-resolve themed resources for a UI built entirely in code. Safe,
@@ -207,7 +232,7 @@ native state. Free, because **`onDestroy` skips `NativeViewport.stop()` while
 `isChangingConfigurations()`**, so the render thread, the Vulkan device and every
 GPU buffer survive and `start()` returns early rather than re-running the
 self-tests. `EditorUiState` is handed to the incoming workspace. Nothing is
-persisted: a real process kill returns to Dark.
+persisted: a real process kill returns to Warm Graphite.
 
 **The Vulkan viewport is full-bleed and stays that way.** No layout decision
 insets, pads or resizes the `SurfaceView`; window insets are applied to
@@ -221,29 +246,41 @@ transform editors are not merely disabled but **absent**, and in Construction th
 brush controls are, so nothing on screen can edit the representation that is not
 being worked on.
 
-Two chrome layout contracts are load-bearing. In the Global Toolbar the
-**editing-context label is the weighted child**, so a row out of width ellipsises
-the label rather than squeezing the last action below the 44 dp touch floor — and
-a `COMPACT` window withdraws the label outright, because there it measures to
-nothing while the status line beneath and the inspector's own title already name
-the mode and the body. **The mode-transition button is bounded for the same
-reason**: once the label is withdrawn it is the row's widest child, and unbounded
-it pushed the last icon control past the window edge in Sculpt Mode, where the
-label is the longest in the product. Both give up their own width first; no action
-ever gives up its touch target. And a **Tool Rail entry holds its gesture against the
-enclosing `ScrollView`**: it disallows interception on Down and allows it again
-once travel passes twice the platform slop, at which point the container takes the
-next event and the platform's `ACTION_CANCEL` prevents the click — otherwise a
-scroll container takes the tap the moment a finger or resting stylus tip drifts.
-Neither touches viewport gesture arbitration: both are chrome.
+**The Global Toolbar is not a bar.** `GlobalToolbarView` is a transparent
+container holding two floating capsules — `toolbar_editing_group` (the context
+label and the one mode transition) and `toolbar_utility_group` (Export and the
+three icon controls) — with a weighted gap and the status capsule between them. A
+full-width opaque strip with a hairline under it reads as an Android app bar
+whatever colour it is painted. Grouping also carries the hierarchy without
+colour: the primary commit is the loudest thing in the leading group and the
+trailing group is uniformly tertiary.
 
-Every chrome surface swallows every touch inside its bounds that none of its own
-controls takes (`onTouchEvent` returns `true`). Because the viewport is a sibling
-*below* them, and Android never offers a consumed event to a sibling underneath, a
-touch on chrome provably cannot orbit the camera or deform the model while
-reaching for a slider. In the other direction, `ACTION_DOWN` on the viewport pulls
-focus and the soft keyboard away from any field being edited, so navigation never
-happens "through" a focused editor.
+Three chrome layout contracts are load-bearing. **The flexible child of the row
+is the gap between the two groups**, so a row out of width closes that gap before
+anything gives up a touch target; a `COMPACT` window also withdraws the context
+label, because the status capsule and the inspector's title already name the mode
+and the body. **The mode-transition button is bounded** at a width sized against
+the narrowest supported window (360 dp), because unbounded it pushed the last icon
+control past the window edge in Sculpt Mode. And a **Tool Rail entry holds its
+gesture against the enclosing `ScrollView`**: it disallows interception on Down
+and allows it again once travel passes twice the platform slop, at which point
+the container takes the next event and `ACTION_CANCEL` prevents the click —
+otherwise a scroll container takes the tap the moment a stylus tip drifts. None
+of it touches viewport gesture arbitration: all of it is chrome.
+
+Every chrome **surface** swallows every touch inside its bounds that none of its
+own controls takes. Because the viewport is a sibling *below* them, and Android
+never offers a consumed event to a sibling underneath, a touch on chrome provably
+cannot orbit the camera or deform the model. The toolbar container is the one
+chrome view that deliberately does **not** consume: it draws nothing, and
+swallowing its full-width bounds would put a 56 dp band of dead space across a
+viewport the user can see straight through. The rule is enforced one level down —
+each capsule is clickable and swallows what its own controls did not take — and
+`chromeRects()` reports those capsules rather than the container, so the
+viewport-floor measurement describes what is actually painted. In the other
+direction, `ACTION_DOWN` on the viewport pulls focus and the soft keyboard away
+from any field being edited, so navigation never happens "through" a focused
+editor.
 
 ### Adaptive layout and window insets
 
@@ -256,13 +293,28 @@ unit-tested on the JVM.
 | --- | --- | --- |
 | width < 600 dp | `COMPACT` | bottom sheet, capped at 30 % of window height |
 | 600–839 dp, or any width with height < 480 dp | `MEDIUM` | bottom sheet, or **side overlay** when height < 480 dp |
-| ≥ 840 dp wide **and** ≥ 480 dp tall | `EXPANDED` | docked side panel, ≤ 28 % of width |
+| ≥ 840 dp wide **and** ≥ 480 dp tall | `EXPANDED` | docked side panel, ≤ 30 % of width |
 
 The height gate does two things at once: a short window never gets a bottom sheet,
 and a 914 × 411 dp phone in landscape is not classified as a tablet merely because
 it is wide. The inspector's body always scrolls, its bottom-sheet height is capped
 in `onMeasure`, and a side placement narrows to its toggle when collapsed — a
 panel that hid only its body would give the model back nothing.
+
+**No chrome column spans the window.** Both side placements and the Objects
+column wrap their own content and hang from the top of the row: a panel stretched
+to a tablet's full height is mostly empty — a box has three dimensions and a
+scene often has two bodies — and that emptiness is what made the expanded layout
+read as a desktop CAD frame. They still cannot outgrow the window, because a
+`WRAP_CONTENT` child of a bounded `LinearLayout` is measured `AT_MOST` the parent
+height and a long body simply scrolls. A docked Tool Rail is top-aligned with
+them for the same reason: a rail centred on the window while the panel beside it
+hangs from the top is one surface stranded halfway down the model, not a layout.
+`sideDockWidthDp` is 30 % capped at 340 dp rather than 28 % capped at 320,
+because a panel must fit its own content before it may be narrow — at the old
+numbers a docked inspector gave the primitive chooser 85 dp a chip and clipped
+"Cylinder" to "Cyl". The 260 dp floor is unchanged and is what keeps the 60 %
+central-viewport rule true at the bottom of the expanded range.
 
 The decision runs at the top of `EditorWorkspaceView.onMeasure`, not in
 `onSizeChanged`: a surface added or re-parented during the layout pass is
@@ -279,14 +331,14 @@ decor-fits off the window is **not** resized: the keyboard arrives as an inset t
 chrome absorbs and the surface is untouched.
 
 **Chrome depth, and what "docked" claims.** Surfaces that float over the model
-carry a small elevation; **docked** surfaces deliberately carry none and are drawn
-opaque and flush, because they sit *beside* the model rather than over it. That is
-a claim about the layout, which is why it is answered by the window rather than by
-taste: `railDocked()` and `objectsDocked(widthDp)` are the two predicates, and the
-Property Inspector follows the same rule. Containers set `clipChildren(false)`,
-since a shadow is drawn outside its child's bounds — drawing only, never
-hit-testing. The rail's surface and elevation live on its `ScrollView` rather than
-on the rail, or the container would clip exactly the shadow it wraps.
+carry a small elevation; **docked** surfaces carry none and are drawn opaque and
+flush, because they sit *beside* the model. That is a claim about the layout,
+answered by the window rather than by taste: `railDocked()` and
+`objectsDocked(widthDp)` are the predicates, and the Property Inspector follows
+the same rule. Containers set `clipChildren(false)`, since a shadow is drawn
+outside its child's bounds — drawing only, never hit-testing. The rail's surface
+and elevation live on its `ScrollView`, or the container would clip exactly the
+shadow it wraps.
 
 **The Objects surface is one view with two hosts, owned by the workspace.** An
 expanded window with room gives the scene list a leading-edge column

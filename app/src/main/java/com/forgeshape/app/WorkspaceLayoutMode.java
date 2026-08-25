@@ -205,9 +205,19 @@ enum WorkspaceLayoutMode {
         return clamp(Math.round(windowWidthDp * 0.33f), 240, 300);
     }
 
-    /** Widest a docked inspector may be. */
+    /**
+     * Widest a docked inspector may be.
+     *
+     * <p>30 % rather than 28 %, and capped at 340 rather than 320 dp, because
+     * the panel has to <b>fit its own content</b> before it is allowed to be
+     * narrow: at the old numbers a tablet's docked inspector gave the primitive
+     * chooser about 85 dp a chip and clipped "Cylinder" to "Cyl" — a panel whose
+     * controls cannot say their own names is worse than one that costs the model
+     * a few more dp. The floor stays 260 dp, which is what keeps the 60 %
+     * central-viewport rule true at the bottom of the expanded range.
+     */
     static int sideDockWidthDp(int windowWidthDp) {
-        return clamp(Math.round(windowWidthDp * 0.28f), 260, 320);
+        return clamp(Math.round(windowWidthDp * 0.30f), 260, 340);
     }
 
     /**

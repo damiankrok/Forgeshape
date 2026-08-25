@@ -85,7 +85,9 @@ final class ToolRailView extends LinearLayout {
      *
      * <p>The rail keeps every entry rather than dropping any: a tool that
      * exists on a phone in portrait and vanishes in landscape is a worse
-     * problem than a shorter button.
+     * problem than a shorter button. It also keeps every entry's ICON — see
+     * {@link #buildItem} — because a rail that becomes a text list in landscape
+     * is no longer recognisably the same control.
      */
     void setCompactEntries(boolean compact) {
         if (this.compact == compact) {
@@ -130,12 +132,16 @@ final class ToolRailView extends LinearLayout {
         // cards. Only the held tool wears a shape — see showActive.
         item.setBackgroundResource(R.drawable.bg_rail_entry);
 
-        // A compact window drops the icon rather than the label: the label is
-        // the part that says which tool this is without prior learning.
-        if (!compact) {
-            item.addView(EditorControlStyles.icon(context, entry.iconRes,
-                    R.dimen.rail_icon_size));
-        }
+        // EVERY entry keeps its icon, including on a short window.
+        //
+        // A rail that drops to text-only in landscape is a different control
+        // from the one the user learned in portrait: the glyph is what is
+        // recognised at a glance, and a rail whose entries change shape with the
+        // window stops being one rail. The compact form shrinks the icon instead
+        // — 18 dp and the 10 sp caption measure inside the 44 dp compact entry
+        // with room to spare, so nothing has to be dropped to fit.
+        item.addView(EditorControlStyles.icon(context, entry.iconRes,
+                compact ? R.dimen.rail_icon_size_compact : R.dimen.rail_icon_size));
 
         final TextView label = new TextView(context);
         label.setText(entry.label);

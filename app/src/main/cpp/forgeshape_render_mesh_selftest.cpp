@@ -896,7 +896,7 @@ void checkDisplaySettings(Recorder& r) {
     r.check("display_store_counts_two_changes", store.changeCount() == 2);
 
     // -----------------------------------------------------------------------
-    // DISP-VBG-01..06 -- the viewport background
+    // DISP-VBG-01..07 -- the viewport background
     //
     // The one presentation value the Android theme system hands down. It has to
     // behave exactly like a shading model: a closed enum, an index contract with
@@ -904,58 +904,79 @@ void checkDisplaySettings(Recorder& r) {
     // appearance the product ships with.
     // -----------------------------------------------------------------------
 
-    r.check("display_viewport_background_default_is_dark",
-            kDefaultViewportBackground == ViewportBackground::NeutralDark);
+    r.check("display_viewport_background_default_is_warm_graphite",
+            kDefaultViewportBackground == ViewportBackground::WarmGraphite);
+    r.check("display_viewport_background_has_three_appearances",
+            kViewportBackgroundCount == 3);
 
-    ViewportBackground background = ViewportBackground::WarmLight;
-    r.check("display_viewport_background_index_0_is_dark",
+    ViewportBackground background = ViewportBackground::LightCharcoal;
+    r.check("display_viewport_background_index_0_is_warm_graphite",
             viewportBackgroundFromIndex(0, &background) &&
-                background == ViewportBackground::NeutralDark);
-    r.check("display_viewport_background_index_1_is_light",
+                background == ViewportBackground::WarmGraphite);
+    r.check("display_viewport_background_index_1_is_neutral_charcoal",
             viewportBackgroundFromIndex(1, &background) &&
-                background == ViewportBackground::WarmLight);
+                background == ViewportBackground::NeutralCharcoal);
+    r.check("display_viewport_background_index_2_is_light_charcoal",
+            viewportBackgroundFromIndex(2, &background) &&
+                background == ViewportBackground::LightCharcoal);
     r.check("display_viewport_background_refuses_negative",
             !viewportBackgroundFromIndex(-1, &background));
     r.check("display_viewport_background_refuses_out_of_range",
             !viewportBackgroundFromIndex(kViewportBackgroundCount, &background));
     r.check("display_viewport_background_index_round_trips",
-            viewportBackgroundIndex(ViewportBackground::NeutralDark) == 0 &&
-                viewportBackgroundIndex(ViewportBackground::WarmLight) == 1);
+            viewportBackgroundIndex(ViewportBackground::WarmGraphite) == 0 &&
+                viewportBackgroundIndex(ViewportBackground::NeutralCharcoal) == 1 &&
+                viewportBackgroundIndex(ViewportBackground::LightCharcoal) == 2);
 
-    r.check("display_store_background_starts_dark",
-            store.viewportBackground() == ViewportBackground::NeutralDark);
+    r.check("display_store_background_starts_at_the_default",
+            store.viewportBackground() == ViewportBackground::WarmGraphite);
     r.check("display_store_background_no_op_reports_false",
-            !store.setViewportBackground(ViewportBackground::NeutralDark));
+            !store.setViewportBackground(ViewportBackground::WarmGraphite));
     r.check("display_store_background_change_reports_true",
-            store.setViewportBackground(ViewportBackground::WarmLight));
+            store.setViewportBackground(ViewportBackground::LightCharcoal));
     r.check("display_store_background_held",
-            store.viewportBackground() == ViewportBackground::WarmLight);
+            store.viewportBackground() == ViewportBackground::LightCharcoal);
 
-    // The two colours, pinned. They are duplicated in colors.xml as the ANDROID
+    // The three colours, pinned. Each is duplicated in colors.xml as the ANDROID
     // WINDOW background, which is what covers the moment before the surface has
     // content — so if these drift the user sees a flash of the wrong shade on
     // every launch. Asserting the exact values is what makes that drift a test
     // failure rather than a report months later.
-    float rgb[3];
-    viewportBackgroundColor(ViewportBackground::NeutralDark, rgb);
-    r.check("display_dark_background_is_0e121b",
-            nearly(rgb[0], 0.055f) && nearly(rgb[1], 0.070f) &&
-                nearly(rgb[2], 0.105f));
-    viewportBackgroundColor(ViewportBackground::WarmLight, rgb);
-    r.check("display_light_background_is_e6e1d9",
-            nearly(rgb[0], 0.902f) && nearly(rgb[1], 0.882f) &&
-                nearly(rgb[2], 0.851f));
-    // Warm means red leads and blue trails. A light background that lost its
-    // warmth would still pass every check above and would be the wrong product.
-    r.check("display_light_background_is_warm", rgb[0] > rgb[1] && rgb[1] > rgb[2]);
-    r.check("display_light_background_is_not_stark_white", rgb[0] < 0.96f);
+    float warm[3];
+    float neutral[3];
+    float lightest[3];
+    viewportBackgroundColor(ViewportBackground::WarmGraphite, warm);
+    r.check("display_warm_graphite_background_is_302e2b",
+            nearly(warm[0], 0.188f) && nearly(warm[1], 0.180f) &&
+                nearly(warm[2], 0.169f));
+    viewportBackgroundColor(ViewportBackground::NeutralCharcoal, neutral);
+    r.check("display_neutral_charcoal_background_is_26282a",
+            nearly(neutral[0], 0.149f) && nearly(neutral[1], 0.157f) &&
+                nearly(neutral[2], 0.165f));
+    viewportBackgroundColor(ViewportBackground::LightCharcoal, lightest);
+    r.check("display_light_charcoal_background_is_3c3f41",
+            nearly(lightest[0], 0.235f) && nearly(lightest[1], 0.247f) &&
+                nearly(lightest[2], 0.255f));
+
+    // What separates the three from each other, stated rather than implied.
+    // Three grounds that had drifted into the same neutral would still pass
+    // every exact check above if all three were edited together.
+    r.check("display_warm_graphite_leans_warm", warm[0] > warm[1] && warm[1] > warm[2]);
+    r.check("display_neutral_charcoal_leans_cool",
+            neutral[2] > neutral[1] && neutral[1] > neutral[0]);
+    r.check("display_light_charcoal_is_the_lightest_ground",
+            lightest[0] > warm[0] && lightest[0] > neutral[0]);
+    // Every ground in the set is DARK. A palette that had crept up into a light
+    // canvas would change what the whole product is.
+    r.check("display_every_ground_is_dark",
+            warm[0] < 0.4f && neutral[0] < 0.4f && lightest[0] < 0.4f);
 
     // A snapshot must be a coherent set, which is what a frame is recorded with.
     const ViewportDisplaySettings snapshot = store.snapshot();
     r.check("display_snapshot_matches",
             snapshot.shading == ShadingModel::MatCap &&
                 snapshot.surface == SurfaceShading::Faceted &&
-                snapshot.background == ViewportBackground::WarmLight);
+                snapshot.background == ViewportBackground::LightCharcoal);
 
     // Naming exists for logs and evidence; an unnamed mode is an unreadable log.
     r.check("display_names_present", std::strcmp(shadingModelName(ShadingModel::StudioSolid),
@@ -1006,7 +1027,7 @@ void checkGridDefaultAndOwnership(Recorder& r) {
     // It must ride in the snapshot the render thread actually reads. A value
     // held only in the store would be a value the frame loop never sees.
     store.setGridVisible(false);
-    store.setViewportBackground(ViewportBackground::WarmLight);
+    store.setViewportBackground(ViewportBackground::LightCharcoal);
     const ViewportDisplaySettings off = store.snapshot();
     store.setGridVisible(true);
     const ViewportDisplaySettings on = store.snapshot();
@@ -1020,7 +1041,7 @@ void checkGridDefaultAndOwnership(Recorder& r) {
     r.check("r1c2_02_grid_does_not_disturb_the_shading_model",
             on.shading == kDefaultShadingModel);
     r.check("r1c2_02_grid_does_not_disturb_the_background",
-            on.background == ViewportBackground::WarmLight);
+            on.background == ViewportBackground::LightCharcoal);
 }
 
 // The generated geometry: R1C2-04's structural half, and the spacing/extent
@@ -1120,90 +1141,113 @@ void checkGridGeometry(Recorder& r) {
                 gridLineTier(kGridLinesPerAxis / 2, false));
 }
 
-// R1C2-07: the two appearances' palettes, asserted as relationships rather than
-// as literals — the same rule the Android theme suite follows. Pinning the RGB
-// would break on every deliberate restyle while proving nothing about whether a
-// line can actually be seen.
+// R1C2-07: every appearance's grid palette, asserted as relationships rather
+// than as literals — the same rule the Android theme suite follows. Pinning the
+// RGB would break on every deliberate restyle while proving nothing about
+// whether a line can actually be seen.
+//
+// All three appearances are dark grounds, so the DIRECTION of the contrast is
+// the same in all three — lines lift off the floor. What differs is how much
+// weight that takes, which is exactly what the per-appearance palettes exist to
+// answer and what this checks.
 void checkGridPalette(Recorder& r) {
     const GridLineTier tiers[kGridLineTierCount] = {
         GridLineTier::Minor, GridLineTier::Major, GridLineTier::AxisX, GridLineTier::AxisZ};
+    const ViewportBackground appearances[kViewportBackgroundCount] = {
+        ViewportBackground::WarmGraphite, ViewportBackground::NeutralCharcoal,
+        ViewportBackground::LightCharcoal};
 
-    float dark[kGridLineTierCount][4];
-    float light[kGridLineTierCount][4];
-    for (int i = 0; i < kGridLineTierCount; ++i) {
-        gridLineColor(ViewportBackground::NeutralDark, tiers[i], dark[i]);
-        gridLineColor(ViewportBackground::WarmLight, tiers[i], light[i]);
+    float palette[kViewportBackgroundCount][kGridLineTierCount][4];
+    float ground[kViewportBackgroundCount][3];
+    for (int a = 0; a < kViewportBackgroundCount; ++a) {
+        viewportBackgroundColor(appearances[a], ground[a]);
+        for (int i = 0; i < kGridLineTierCount; ++i) {
+            gridLineColor(appearances[a], tiers[i], palette[a][i]);
+        }
     }
-
-    float darkBg[3];
-    float lightBg[3];
-    viewportBackgroundColor(ViewportBackground::NeutralDark, darkBg);
-    viewportBackgroundColor(ViewportBackground::WarmLight, lightBg);
 
     // Every channel is a usable colour and every alpha is a usable weight.
     bool inRange = true;
-    for (int i = 0; i < kGridLineTierCount; ++i) {
-        for (int c = 0; c < 4; ++c) {
-            if (dark[i][c] < 0.0f || dark[i][c] > 1.0f ||
-                light[i][c] < 0.0f || light[i][c] > 1.0f) {
-                inRange = false;
+    for (int a = 0; a < kViewportBackgroundCount; ++a) {
+        for (int i = 0; i < kGridLineTierCount; ++i) {
+            for (int c = 0; c < 4; ++c) {
+                if (palette[a][i][c] < 0.0f || palette[a][i][c] > 1.0f) {
+                    inRange = false;
+                }
             }
         }
     }
     r.check("r1c2_07_every_grid_colour_is_in_range", inRange);
 
-    // The two appearances are genuinely DIFFERENT palettes. A grid that used
-    // one set of values for both would pass every other check here and would be
-    // invisible in one of them.
+    // Each appearance is genuinely its OWN palette. A grid that reused one set
+    // of values everywhere would pass every other check here and would be
+    // nearly invisible on the lightest ground.
     bool differsEverywhere = true;
-    for (int i = 0; i < kGridLineTierCount; ++i) {
-        if (nearly(dark[i][0], light[i][0]) && nearly(dark[i][1], light[i][1]) &&
-            nearly(dark[i][2], light[i][2])) {
+    for (int a = 1; a < kViewportBackgroundCount; ++a) {
+        bool differs = false;
+        for (int i = 0; i < kGridLineTierCount; ++i) {
+            for (int c = 0; c < 4; ++c) {
+                if (!nearly(palette[a][i][c], palette[0][i][c])) {
+                    differs = true;
+                }
+            }
+        }
+        if (!differs) {
             differsEverywhere = false;
         }
     }
-    r.check("r1c2_07_dark_and_light_are_different_palettes", differsEverywhere);
+    r.check("r1c2_07_each_appearance_has_its_own_palette", differsEverywhere);
 
-    // The direction of the contrast, which is what "readable" actually means
-    // and is opposite in the two appearances: lines LIFT off the near-black
-    // ground and SIT DOWN into the cream one. Judged on the minor tier, which
-    // is the faintest and therefore the one that decides.
-    const float darkBgLuma = (darkBg[0] + darkBg[1] + darkBg[2]) / 3.0f;
-    const float lightBgLuma = (lightBg[0] + lightBg[1] + lightBg[2]) / 3.0f;
-    const float darkMinorLuma = (dark[0][0] + dark[0][1] + dark[0][2]) / 3.0f;
-    const float lightMinorLuma = (light[0][0] + light[0][1] + light[0][2]) / 3.0f;
-    r.check("r1c2_07_dark_lines_are_lighter_than_the_dark_ground",
-            darkMinorLuma > darkBgLuma);
-    r.check("r1c2_07_light_lines_are_darker_than_the_cream_ground",
-            lightMinorLuma < lightBgLuma);
+    // The direction of the contrast, which is what "readable" actually means.
+    // Judged on the minor tier, which is the faintest and therefore the one
+    // that decides.
+    bool linesLift = true;
+    for (int a = 0; a < kViewportBackgroundCount; ++a) {
+        const float bgLuma = (ground[a][0] + ground[a][1] + ground[a][2]) / 3.0f;
+        const float minorLuma =
+            (palette[a][0][0] + palette[a][0][1] + palette[a][0][2]) / 3.0f;
+        if (minorLuma <= bgLuma) {
+            linesLift = false;
+        }
+    }
+    r.check("r1c2_07_lines_lift_off_every_ground", linesLift);
+
+    // The lightest ground needs the most weight, or its floor reads as unlined.
+    // That is the whole reason three palettes exist rather than one.
+    r.check("r1c2_07_the_lightest_ground_carries_the_most_weight",
+            palette[2][0][3] > palette[0][0][3] && palette[2][0][3] > palette[1][0][3]);
 
     // The weight ladder: a major line reads more strongly than a minor one and
-    // an axis more strongly than a major one, in BOTH appearances. This is the
+    // an axis more strongly than a major one, in EVERY appearance. This is the
     // whole visual hierarchy, and it comes from alpha rather than from colour so
     // that a line is never made louder by being made a different hue.
     bool ladderHolds = true;
-    for (int i = 0; i < 2; ++i) {
-        const float(*p)[4] = (i == 0) ? dark : light;
+    for (int a = 0; a < kViewportBackgroundCount; ++a) {
+        const float(*p)[4] = palette[a];
         if (!(p[0][3] < p[1][3] && p[1][3] < p[2][3] && nearly(p[2][3], p[3][3]))) {
             ladderHolds = false;
         }
     }
-    r.check("r1c2_07_minor_under_major_under_axis_in_both_appearances", ladderHolds);
+    r.check("r1c2_07_minor_under_major_under_axis_in_every_appearance", ladderHolds);
 
     // Subtle, and measurably so: even the strongest line is blended at well
     // under half weight, so the grid can never dominate the model.
     bool allSubtle = true;
-    for (int i = 0; i < kGridLineTierCount; ++i) {
-        if (dark[i][3] > 0.6f || light[i][3] > 0.6f) {
-            allSubtle = false;
+    bool axesLean = true;
+    for (int a = 0; a < kViewportBackgroundCount; ++a) {
+        for (int i = 0; i < kGridLineTierCount; ++i) {
+            if (palette[a][i][3] > 0.6f) {
+                allSubtle = false;
+            }
+        }
+        // The two axes lean opposite ways so X and Z can be told apart, and
+        // neither is a saturated primary.
+        if (!(palette[a][2][0] > palette[a][2][2] && palette[a][3][2] > palette[a][3][0])) {
+            axesLean = false;
         }
     }
     r.check("r1c2_07_no_grid_line_is_drawn_at_a_dominating_weight", allSubtle);
-
-    // The two axes lean opposite ways so X and Z can be told apart, and neither
-    // is a saturated primary.
-    r.check("r1c2_07_the_x_axis_leans_warm", dark[2][0] > dark[2][2] && light[2][0] > light[2][2]);
-    r.check("r1c2_07_the_z_axis_leans_cool", dark[3][2] > dark[3][0] && light[3][2] > light[3][0]);
+    r.check("r1c2_07_the_x_axis_leans_warm_and_the_z_axis_leans_cool", axesLean);
 }
 
 // R1C2-03/04/05/06: what the grid must NOT be able to do.

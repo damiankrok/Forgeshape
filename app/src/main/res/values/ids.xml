@@ -26,6 +26,8 @@
 
     <!-- Global Toolbar -->
     <item name="global_toolbar" type="id" />
+    <item name="toolbar_editing_group" type="id" />
+    <item name="toolbar_utility_group" type="id" />
     <item name="editing_context_label" type="id" />
     <item name="freeze_to_sculpt" type="id" />
     <item name="resume_sculpt" type="id" />
@@ -52,8 +54,9 @@
       Appearance. Presentation only, and the one place the theme is chosen:
       there is deliberately no settings screen and no second popover class.
     -->
-    <item name="appearance_dark" type="id" />
-    <item name="appearance_light" type="id" />
+    <item name="appearance_warm_graphite" type="id" />
+    <item name="appearance_neutral_charcoal" type="id" />
+    <item name="appearance_light_charcoal" type="id" />
 
     <!--
       Camera projection. It shares the display surface because it is the other

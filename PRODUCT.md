@@ -110,7 +110,7 @@ The panel stays open while you try several options, and the choices survive
 leaving the app and coming back.
 
 A selected object is tinted, and stays readable as a shape while tinted, in both
-shading modes and on both appearances — the resting tint is deliberately light
+shading modes and in every appearance — the resting tint is deliberately light
 enough that the object's own light and shade still carry its form. See
 *Selection*.
 
@@ -143,15 +143,23 @@ body.
 
 ## The Editor Workspace
 
-The editor is one workspace, and the model is the largest thing in it. A thin
-**Global Toolbar** across the top carries the control that crosses between
-constructing and sculpting, the way to reach the **Objects** list, the viewport's
-appearance settings, and every status and error message. A **Tool Rail** stands
-at the trailing edge. A **Property Inspector** at the bottom edge — at the side
-when the window is short or wide — carries the exact values of the body you are
-editing and names it in its own title, and it collapses to a single strip when
-the model is what matters. A control in the toolbar hides all of it at once,
-leaving the bare model and one chip to bring it back.
+The editor is one workspace, and the model is the largest thing in it. There is
+no bar across the top: the **Global Toolbar**'s controls sit in two small
+floating groups with the model visible between and behind them — an editing group
+on the leading edge carrying what is being edited and the control that crosses
+between constructing and sculpting, and a utility group on the trailing edge
+carrying the way to reach the **Objects** list, the viewport's appearance
+settings and the control that hides the chrome. Every status and error message
+appears in a quiet capsule of its own just below them, sized to its own text. A
+**Tool Rail** stands at the trailing edge. A **Property Inspector** floats above
+the bottom edge with the viewport visible around it — at the side when the window
+is short or wide — carries the exact values of the body you are editing and names
+it in its own title, and it collapses to a single strip when the model is what
+matters. A control in the utility group hides all of it at once, leaving the bare
+model and one chip to bring it back.
+
+Touching the model between the two groups navigates: they are surfaces, not a
+bar, and only the surfaces themselves take a touch.
 
 The same regions are there in both modes. What changes is what they carry, never
 where they are. Each answers one question and only one: what mode this is, which
@@ -162,11 +170,16 @@ around it.** On a phone the workspace is viewport-first: the list of bodies open
 as a small panel over the model from one toolbar control and is dismissed again,
 and the Tool Rail floats over the edge of the model as a small raised card. On a
 tablet-sized window there is room to stop stacking things,
-so the **list of bodies gets a column of its own** down the leading edge and the
-Tool Rail sits flush against the trailing edge as part of the layout rather than
-standing on the picture. The exact values stay in their own panel on the other
-side, so you can see what you are editing and what its numbers are at the same
-time, with the model between them.
+so the **list of bodies gets a panel of its own** on the leading edge and the
+Tool Rail sits flush beside the exact-value panel as part of the layout rather
+than standing on the picture. The exact values stay in their own panel on the
+other side, so you can see what you are editing and what its numbers are at the
+same time, with the model between them.
+
+**None of those side panels is a full-height column.** Each ends where its own
+content ends — a scene of two bodies is a short card, not an arm's length of
+empty panel — and the viewport keeps the rest. A panel with more in it than the
+window can show scrolls rather than stretching.
 
 That only happens where it genuinely fits. A window that is merely wide — a large
 phone in landscape — keeps the phone arrangement, because three permanent columns
@@ -175,18 +188,25 @@ in, the list of bodies behaves identically: the same rows, the same order, the
 same Add Body, and a body picked in the viewport highlights in the list either
 way. A long list scrolls.
 
-Touching any of that chrome never moves the camera and never sculpts: a control
+Touching any of that chrome never moves the camera and never sculpts: a surface
 owns its own gesture completely. Touching the viewport anywhere else navigates
 exactly as it always has. Every control answers the moment it is touched — it
-darkens under the finger before anything else happens — and the control that is
-currently active is filled, outlined and brightened together, so which tool is
-held can be read without relying on colour.
+lifts under the finger before anything else happens — and the control that is
+currently active is **filled** first of all, with a brightened label and a
+hairline to go with it, so which tool is held can be read without relying on
+colour. Resting controls draw no box at all: what separates them from the surface
+under them is one step of tone and the space around them, and the only resting
+outline left in the product is the one around a value you can type into.
 
-**ForgeShape comes in two appearances, and you choose which.** *Display* carries
-an **Appearance** group with **Dark** and **Light**. Dark is what a fresh start
-gives you: a neutral dark workspace with a dark viewport. Light replaces it with
-a calm, warm off-white — the viewport itself included, so the model sits on
-something closer to paper than to a screen, and never on a stark white page.
+**ForgeShape comes in three appearances, and you choose which.** *Display*
+carries an **Appearance** group listing **Warm Graphite**, **Neutral Charcoal**
+and **Light Charcoal**. All three are dark workspaces, and the viewport's own
+ground changes with each: Warm Graphite — what a fresh start gives you — is a
+warm dark studio ground, Neutral Charcoal is a cooler steel grey, and Light
+Charcoal is the lightest of the three. They are three grounds to work a model
+against rather than a light option and a dark one; a light canvas makes a
+neutral clay render read as grey and washed out, which is the one thing a
+modelling viewport must not do.
 
 Switching changes how everything is drawn and nothing about what you are
 drawing. The model, its exact dimensions, its placement, which body is selected,
@@ -196,8 +216,8 @@ chosen, the panel you had open and the editor you were in are all still there.
 The whole workspace is rebuilt in the new appearance, so it blinks once.
 
 The choice lasts as long as the app is running — turning the phone or leaving and
-coming back keeps it — and is not saved. Starting ForgeShape fresh gives you Dark
-again.
+coming back keeps it — and is not saved. Starting ForgeShape fresh gives you Warm
+Graphite again.
 
 Tools, modes and panels are named by drawn icons rather than by characters, and
 a control that is reserved for a feature the product does not have yet is drawn
@@ -669,7 +689,7 @@ lighter warm tint it then keeps for as long as it stays selected. The
 acknowledgement is what tells you the tap landed; the resting tint is what tells
 you which body you are editing, and it is light enough that the object's own
 light and shade still read — a face that was brighter than its neighbour still
-is, on both appearances. Tapping a body that is already selected does not flash
+is, in every appearance. Tapping a body that is already selected does not flash
 again: the acknowledgement marks a change of selection, not a touch. A short
 single-finger tap that misses clears the selection, and the object returns to
 exactly its unselected appearance. In Sculpt Mode
@@ -737,12 +757,12 @@ Objects list adds and selects; it does nothing else.
 Two-finger twist/roll, inertia, camera presets, focus-on-selection, long-press
 selection, UV, save/load and undo are not implemented.
 
-**There are two appearances and no third.** ForgeShape does not follow the
-system's own light/dark setting, and there is no automatic or scheduled
-switching: Dark and Light are chosen by hand and nothing else changes them.
-Nothing at all is saved between runs — not the appearance, not the start choice,
-not the model and not the camera — so starting ForgeShape fresh gives you Dark
-and asks again how the model begins.
+**There are three appearances and no fourth, and none of them is light.**
+ForgeShape does not follow the system's own light/dark setting, and there is no
+automatic or scheduled switching: the three palettes are chosen by hand and
+nothing else changes them. Nothing at all is saved between runs — not the
+appearance, not the start choice, not the model and not the camera — so starting
+ForgeShape fresh gives you Warm Graphite and asks again how the model begins.
 
 **Selection is still a tint over the whole body, not an outline.** It is much
 lighter at rest than it used to be and it announces itself when it changes, but

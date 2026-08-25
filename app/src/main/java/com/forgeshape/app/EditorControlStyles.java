@@ -176,8 +176,27 @@ final class EditorControlStyles {
         return label;
     }
 
+    /**
+     * The status and instructional line, in its own quiet capsule.
+     *
+     * <p>The capsule is the point. This line is <b>persistent</b> — it always
+     * says something, and most of what it says is a standing hint rather than a
+     * verdict — so given the weight of a full-width toolbar it read as a
+     * permanent banner across the top of the model. In a small translucent
+     * capsule sized to its own text it reads as an aside: legible when looked
+     * at, ignorable when not. A real verdict still stands out, because a verdict
+     * changes the text COLOUR against the same quiet ground.
+     */
     static TextView statusText(Context context, int id) {
         final TextView status = captionText(context, id, "");
+        status.setBackgroundResource(R.drawable.bg_status_pill);
+        final int padH = dimen(context, R.dimen.chip_padding_horizontal);
+        final int padV = dimen(context, R.dimen.row_gap_small);
+        status.setPadding(padH, padV, padH, padV);
+        status.setElevation(dimen(context, R.dimen.elevation_floating));
+        // A surface over the viewport, so it swallows its own touches like every
+        // other one. See controlGroup.
+        status.setClickable(true);
         return status;
     }
 
@@ -185,14 +204,24 @@ final class EditorControlStyles {
     // Surfaces and depth
     // -----------------------------------------------------------------------
 
-    /** Opaque chrome: text sits on it, so it may not be translucent. */
+    // Three material tiers, and every surface in the product is exactly one of
+    // them. The tier decides tone, opacity and depth TOGETHER, because those
+    // three are one claim about what kind of thing a surface is — which is what
+    // stops every panel reading as the same flat card.
+    //
+    // None of them blurs. The viewport is a SurfaceView and the platform cannot
+    // blur what is behind one, so "glass" here is tone plus opacity plus a soft
+    // shadow. That is a look the platform actually keeps; a blur that silently
+    // degrades to a grey slab is worse than one that was never promised.
+
+    /** Base chrome that is part of the window frame rather than over the model. */
     static void applyChromeSurface(View view) {
         view.setBackgroundResource(R.drawable.bg_chrome_surface);
     }
 
     /**
-     * Chrome that floats over the viewport: the rail, the brush controls, the
-     * Display popover.
+     * TIER 1 — a floating control group standing ON the viewport: the toolbar's
+     * control capsules, the Tool Rail, the brush controls.
      *
      * <p>Elevation comes with the background because the two describe the same
      * claim — this surface is above the model. A surface that is beside the
@@ -201,6 +230,45 @@ final class EditorControlStyles {
     static void applyFloatingSurface(View view) {
         view.setBackgroundResource(R.drawable.bg_chrome_overlay);
         view.setElevation(dimen(view.getContext(), R.dimen.elevation_floating));
+    }
+
+    /**
+     * TIER 2 — an expanded context surface: the Display popover, the Objects
+     * panel, the start chooser's panel.
+     *
+     * <p>Opaque where Tier 1 is translucent, because this one carries a body of
+     * content that has to be read rather than glanced at.
+     */
+    static void applyContextSurface(View view) {
+        view.setBackgroundResource(R.drawable.bg_surface_context);
+        view.setElevation(dimen(view.getContext(), R.dimen.elevation_floating));
+    }
+
+    /**
+     * A capsule holding two or three controls that belong together.
+     *
+     * <p>This is what replaced the Global Toolbar's full-width strip. A bar
+     * spanning the window with a hairline under it reads as an Android app bar
+     * whatever colour it is painted; two small groups with the model between and
+     * behind them read as chrome belonging to a viewport. The padding is what
+     * keeps the 44 dp controls inside from touching the capsule's own edge.
+     */
+    static LinearLayout controlGroup(Context context) {
+        final LinearLayout group = new LinearLayout(context);
+        group.setOrientation(LinearLayout.HORIZONTAL);
+        group.setGravity(Gravity.CENTER_VERTICAL);
+        applyFloatingSurface(group);
+        final int pad = dimen(context, R.dimen.toolbar_group_padding);
+        group.setPadding(pad, pad, pad, pad);
+        // The capsule is now the surface, so the capsule is what swallows a
+        // touch its own controls did not take — a reach for Display may not
+        // orbit the camera behind it. Clickable with no listener is the whole
+        // mechanism: it consumes, and the background is not stateful, so nothing
+        // is drawn for it. The transparent container AROUND the groups
+        // deliberately does not consume, because the model is genuinely visible
+        // and genuinely reachable between them.
+        group.setClickable(true);
+        return group;
     }
 
     /**

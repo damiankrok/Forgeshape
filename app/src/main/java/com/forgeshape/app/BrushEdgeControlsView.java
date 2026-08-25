@@ -63,8 +63,13 @@ final class BrushEdgeControlsView extends LinearLayout {
         this.listener = listener;
         setId(R.id.brush_edge_controls);
         setOrientation(HORIZONTAL);
+        // TIER 1, exactly like the Tool Rail it sits opposite and the toolbar's
+        // control groups above it. That is what stops these two reading as a
+        // debug overlay bolted onto the viewport: they are the same material,
+        // the same radius and the same depth as every other floating control
+        // group, so they belong to the workspace rather than to a diagnostic.
         EditorControlStyles.applyFloatingSurface(this);
-        final int padding = EditorControlStyles.dimen(context, R.dimen.rail_padding);
+        final int padding = EditorControlStyles.dimen(context, R.dimen.brush_gap);
         setPadding(padding, padding, padding, padding);
 
         radiusValue = valueLabel(context, R.id.brush_radius_value);
@@ -141,19 +146,42 @@ final class BrushEdgeControlsView extends LinearLayout {
         label.setTextColor(EditorControlStyles.themeColor(context, R.attr.fsTextSecondary));
         label.setGravity(Gravity.CENTER);
         label.setSingleLine(true);
-        label.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        column.addView(label);
+        // WRAP_CONTENT and NOT ellipsised. The caption and the live value are
+        // what decide this column's width, and both have to be readable in full:
+        // a truncated "Stren…" beside a truncated "120 p…" is the register-name
+        // look UI-R3 already removed once. Two 10 sp captions cost a few dp of
+        // viewport and are the whole label of the control.
+        final LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        labelParams.gravity = Gravity.CENTER_HORIZONTAL;
+        labelParams.topMargin = EditorControlStyles.dimen(context, R.dimen.row_gap_small);
+        column.addView(label, labelParams);
         return column;
     }
 
+    /**
+     * The live value above a track.
+     *
+     * <p>Body-sized and in the primary text colour rather than a tiny amber
+     * readout. Amber is the MEASUREMENT role and belongs to a typed dimension in
+     * the Property Inspector; spending it on a slider's current position made
+     * the two columns read as an instrument panel taped to the viewport. Here
+     * the number is simply the loudest thing in its own column, which is what a
+     * value being dragged should be.
+     */
     private TextView valueLabel(Context context, int id) {
         final TextView label = new TextView(context);
         label.setId(id);
         label.setTextSize(TypedValue.COMPLEX_UNIT_PX,
-                EditorControlStyles.dimen(context, R.dimen.rail_label_size));
-        label.setTextColor(EditorControlStyles.themeColor(context, R.attr.fsTextMeasure));
+                EditorControlStyles.dimen(context, R.dimen.text_label));
+        label.setTextColor(EditorControlStyles.themeColor(context, R.attr.fsTextPrimary));
         label.setGravity(Gravity.CENTER);
         label.setSingleLine(true);
+        final LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        params.gravity = Gravity.CENTER_HORIZONTAL;
+        params.bottomMargin = EditorControlStyles.dimen(context, R.dimen.row_gap_small);
+        label.setLayoutParams(params);
         return label;
     }
 

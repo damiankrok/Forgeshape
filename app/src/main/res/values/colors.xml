@@ -1,167 +1,144 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  The two palettes.
+  The three approved palettes.
 
-  These are RAW VALUES, and their names say which theme they belong to on
+  These are RAW VALUES, and their names say which palette they belong to on
   purpose — that is what they are. The *roles* live in `attrs.xml`, and the
   mapping from role to value lives in `themes.xml`. Nothing outside those two
   files may name a colour from here.
 
-  UI-R1B1 kept role names here because there was one theme. With two, a role and
-  a value are no longer the same thing: `fsControlSurface` is the role, and it
-  has two answers. Moving the role names up into attributes is what stops a
-  second theme costing a second component tree.
+  Twelve values per palette are OWNER-APPROVED and are reproduced here exactly:
+  the viewport, the base chrome, the floating material, the precision surface,
+  the hairline, the two text weights, the accent, the selected-at-rest surface,
+  and the warning / error / success verdicts. Everything else in a palette is
+  derived from those twelve — a control fill lifted off the surface under it, a
+  recessed field, a pressed state — and is authored as a NEIGHBOUR of an
+  approved value rather than as a new opinion.
 
-  One accent family across both themes, so the product still reads as itself:
-  the same blue, lightened for a dark ground and deepened for a light one. The
-  accent means "active tool" or "primary commit" and nothing else.
+  All three are dark. That is the appearance set, not a default with variants:
+  the product is a viewport-first modelling tool and every one of its grounds is
+  chosen so a neutral clay render reads as lit. Warm Graphite leans red, Neutral
+  Charcoal leans blue-grey, and Light Charcoal is the lightest ground the set
+  allows.
+
+  One accent across all three, so the product still reads as itself in every
+  appearance: the same #4C8FD6, meaning "primary commit" or "focused field" and
+  nothing else. A SELECTION is a different, much quieter answer — see
+  `attrs.xml` on why those are two roles and not one.
 -->
 <resources>
 
     <!-- =====================================================================
-         DARK — the creative-tool default.
+         PALETTE 01 — WARM GRAPHITE. The product default.
 
-         Unchanged from UI-R1B1 except where the accent split (see attrs.xml)
-         needed one value to be named twice. Every hex below is the value the
-         dark theme already shipped.
+         A warm dark studio ground: red leads blue by five points, which is
+         enough to keep a neutral clay body from looking cold and far short of
+         brown.
          ===================================================================== -->
-    <color name="dark_chrome_surface">#F2131922</color>
-    <color name="dark_chrome_overlay">#E6121820</color>
-    <color name="dark_chrome_hairline">#FF2A3441</color>
+    <!-- APPROVED -->
+    <color name="p1_viewport_background">#FF302E2B</color>
+    <color name="p1_chrome_surface">#FF3A3835</color>
+    <color name="p1_surface_floating">#FF46433F</color>
+    <color name="p1_surface_precision">#FF403D39</color>
+    <color name="p1_chrome_hairline">#FF565149</color>
+    <color name="p1_text_primary">#FFF4F1EB</color>
+    <color name="p1_text_secondary">#FFA29B91</color>
+    <color name="p1_accent">#FF4C8FD6</color>
+    <color name="p1_selected_rest">#FF52504A</color>
+    <color name="p1_text_measure">#FFE0A84B</color>
+    <color name="p1_text_error">#FFD9695C</color>
+    <color name="p1_text_success">#FF7FB388</color>
 
-    <color name="dark_control_surface">#FF1C2430</color>
-    <color name="dark_control_surface_pressed">#FF2A3646</color>
-    <color name="dark_control_border">#FF3A4757</color>
-
-    <color name="dark_accent">#FF4C8FD8</color>
-    <!--
-      ACTIVE-SELECTION fill, and it is deliberately NOT the primary commit's.
-
-      These two were literally the same hex, so on a dark ground an active chip,
-      an active rail entry, the selected body's row and a commit button were one
-      indistinguishable blue block — five or more of them on a single screen,
-      none of which read as more important than any other. The light theme never
-      had that problem because it already answered the two roles differently.
-
-      A selection is now a blue-leaning SURFACE: clearly lifted and clearly
-      cooler than `dark_control_surface`, and far short of the accent. Active
-      still never rests on colour alone — the thicker accent border and the
-      brightened label are unchanged, and on this quieter fill the border
-      carries more of the signal, exactly as it does on light.
-    -->
-    <color name="dark_accent_fill">#FF1D3A55</color>
-    <color name="dark_accent_fill_pressed">#FF264A6B</color>
-    <color name="dark_accent_border">#A64C8FD8</color>
-    <!--
-      PRIMARY COMMIT fill: Apply Shape, Apply Transform, Freeze, Resume.
-
-      Now a confident accent rather than the same near-surface blue as a
-      selection, so the one act that changes the model is the one loud thing on
-      the screen. It is the same blue the light theme commits with — one accent
-      family across both themes, as the note at the top of this file claims.
-    -->
-    <color name="dark_primary_fill">#FF2C6FB5</color>
-    <color name="dark_primary_fill_pressed">#FF3C82CC</color>
-    <color name="dark_text_on_primary">#FFFFFFFF</color>
-
-    <color name="dark_text_primary">#FFE8EDF4</color>
-    <color name="dark_text_secondary">#FF8B99AC</color>
-    <color name="dark_text_disabled">#FF5C6875</color>
-
-    <color name="dark_text_success">#FF7BD88F</color>
-    <color name="dark_text_error">#FFFF8A7A</color>
-    <color name="dark_text_measure">#FFE7C26B</color>
-
-    <color name="dark_slider_track">#FF232C39</color>
-    <color name="dark_slider_fill">#FF4C8FD8</color>
-    <color name="dark_slider_thumb">#FFE8EDF4</color>
-
-    <!--
-      Lightened from 83% to 65% alpha. The drawable that uses this says the
-      viewport keeps rendering behind the chooser so the first thing ForgeShape
-      shows is still the model — at 83% over a near-black clear colour that was
-      not true in practice, and the claim and the picture have to agree.
-    -->
-    <color name="dark_chooser_scrim">#A6070B11</color>
-    <color name="dark_chooser_card_surface">#FF161E29</color>
-
-    <!--
-      The dark viewport, and the window behind it.
-
-      This MUST stay in step with `ViewportBackground::NeutralDark` in
-      `forgeshape_display.cpp`, which is what the Vulkan render pass actually
-      clears to; a native check asserts that float triple. The window background
-      exists only to cover the moment before the surface has anything on it, so
-      a mismatch shows up as a flash on launch.
-    -->
-    <color name="dark_viewport_background">#FF0E121B</color>
+    <!-- DERIVED. The floating material at 94 %: "glass" is faked with tone and
+         opacity, never by sampling the viewport — a SurfaceView cannot be blurred
+         behind, and pretending otherwise would be a promise the platform breaks. -->
+    <color name="p1_surface_floating_translucent">#F046433F</color>
+    <!-- A control fill, lifted just clear of the precision surface it sits on. -->
+    <color name="p1_control_surface">#FF45423D</color>
+    <color name="p1_control_surface_pressed">#FF565249</color>
+    <color name="p1_control_border">#FF565149</color>
+    <!-- A field is RECESSED rather than raised: a well you type into. -->
+    <color name="p1_field_surface">#FF34322F</color>
+    <color name="p1_selected_rest_pressed">#FF5C5A53</color>
+    <color name="p1_accent_border">#734C8FD6</color>
+    <color name="p1_primary_fill_pressed">#FF6BA3DF</color>
+    <!-- Ink, not white. #4C8FD6 is a bright accent: white on it is 3.4:1 and a
+         near-black ink is 5.5:1, so the one act that changes the model carries a
+         label that is actually legible. -->
+    <color name="p1_text_on_primary">#FF12110F</color>
+    <color name="p1_text_disabled">#FF7A746C</color>
+    <color name="p1_slider_track">#FF34322F</color>
+    <color name="p1_chooser_scrim">#99201E1C</color>
 
     <!-- =====================================================================
-         LIGHT — calm, warm and technical.
+         PALETTE 02 — NEUTRAL CHARCOAL / STEEL.
 
-         Deliberately NOT a stark white canvas. A pure #FFFFFF viewport makes a
-         neutral clay render look grey and dirty, and makes the whole workspace
-         read as a document editor rather than a modelling tool. The light
-         palette is warm by about ten points of red over blue: enough to read as
-         paper rather than as a screen, far short of beige.
+         The coolest of the three: blue leads red by four points, which is what
+         separates it from Warm Graphite at a glance without either reading as
+         tinted.
          ===================================================================== -->
-    <!--
-      Fully opaque, where the dark equivalent is 95%.
+    <!-- APPROVED -->
+    <color name="p2_viewport_background">#FF26282A</color>
+    <color name="p2_chrome_surface">#FF2E3134</color>
+    <color name="p2_surface_floating">#FF3A3E42</color>
+    <color name="p2_surface_precision">#FF33363A</color>
+    <color name="p2_chrome_hairline">#FF484D52</color>
+    <color name="p2_text_primary">#FFECEEF0</color>
+    <color name="p2_text_secondary">#FF9AA1A8</color>
+    <color name="p2_accent">#FF4C8FD6</color>
+    <color name="p2_selected_rest">#FF384653</color>
+    <color name="p2_text_measure">#FFDDA94F</color>
+    <color name="p2_text_error">#FFE2685C</color>
+    <color name="p2_text_success">#FF74C58A</color>
 
-      That asymmetry is deliberate. Over a dark viewport a few per cent of bleed
-      through a dark panel is invisible. Over warm cream, a near-white panel that
-      lets the ground through loses the edge that separates it from the model,
-      and the Property Inspector's numbers lose contrast for nothing — which is
-      exactly the trade this stage is told not to make. The rail and the popover
-      below stay translucent, because those are narrow surfaces standing ON the
-      model where the model behind them is informative.
-    -->
-    <color name="light_chrome_surface">#FFFBF8F3</color>
-    <color name="light_chrome_overlay">#EBFBF8F3</color>
-    <color name="light_chrome_hairline">#FFD8D2C6</color>
+    <!-- DERIVED -->
+    <color name="p2_surface_floating_translucent">#F03A3E42</color>
+    <color name="p2_control_surface">#FF383C41</color>
+    <color name="p2_control_surface_pressed">#FF4A4F55</color>
+    <color name="p2_control_border">#FF484D52</color>
+    <color name="p2_field_surface">#FF292C2F</color>
+    <color name="p2_selected_rest_pressed">#FF425264</color>
+    <color name="p2_accent_border">#734C8FD6</color>
+    <color name="p2_primary_fill_pressed">#FF6BA3DF</color>
+    <color name="p2_text_on_primary">#FF101214</color>
+    <color name="p2_text_disabled">#FF6C737A</color>
+    <color name="p2_slider_track">#FF292C2F</color>
+    <color name="p2_chooser_scrim">#99101214</color>
 
-    <color name="light_control_surface">#FFF2EEE6</color>
-    <color name="light_control_surface_pressed">#FFE3DDD1</color>
-    <color name="light_control_border">#FFCFC8BA</color>
+    <!-- =====================================================================
+         PALETTE 03 — LIGHT CHARCOAL. The lightest dark.
 
-    <!-- The same blue, deepened until it carries white text and reads against
-         paper. The active-control FILL is a pale tint of it, so an active chip
-         is a tinted chip carrying dark text rather than a solid block. -->
-    <color name="light_accent">#FF2C6FB5</color>
-    <color name="light_accent_fill">#FFD9E7F6</color>
-    <color name="light_accent_fill_pressed">#FFC4D9F0</color>
-    <color name="light_accent_border">#A62C6FB5</color>
-    <color name="light_primary_fill">#FF2C6FB5</color>
-    <color name="light_primary_fill_pressed">#FF235C99</color>
-    <color name="light_text_on_primary">#FFFFFFFF</color>
+         Past roughly this value a neutral clay render stops reading as lit and
+         starts reading as washed out, which is the same failure a stark white
+         canvas causes from the other direction.
+         ===================================================================== -->
+    <!-- APPROVED -->
+    <color name="p3_viewport_background">#FF3C3F41</color>
+    <color name="p3_chrome_surface">#FF45484A</color>
+    <color name="p3_surface_floating">#FF53575A</color>
+    <color name="p3_surface_precision">#FF4B4E50</color>
+    <color name="p3_chrome_hairline">#FF5F6366</color>
+    <color name="p3_text_primary">#FFF3F2F0</color>
+    <color name="p3_text_secondary">#FFA9AAA8</color>
+    <color name="p3_accent">#FF4C8FD6</color>
+    <color name="p3_selected_rest">#FF5A6570</color>
+    <color name="p3_text_measure">#FFD7A65A</color>
+    <color name="p3_text_error">#FFDB6A5E</color>
+    <color name="p3_text_success">#FF7CC08C</color>
 
-    <color name="light_text_primary">#FF1B2430</color>
-    <color name="light_text_secondary">#FF57626F</color>
-    <color name="light_text_disabled">#FF949CA7</color>
-
-    <!-- Verdicts, darkened until they carry on paper. Green and amber in
-         particular cannot keep their dark-theme values here: both vanish. -->
-    <color name="light_text_success">#FF1B6B36</color>
-    <color name="light_text_error">#FFB3261E</color>
-    <color name="light_text_measure">#FF8A5A0B</color>
-
-    <color name="light_slider_track">#FFDDD6C8</color>
-    <color name="light_slider_fill">#FF2C6FB5</color>
-    <!-- Dark, not white: a white thumb on a pale track is defined only by its
-         ring, and these two controls are dragged with a thumb over the model. -->
-    <color name="light_slider_thumb">#FF1B2430</color>
-
-    <!-- A scrim on a light theme still DARKENS: the panel has to come forward,
-         and lightening a light background moves nothing. Warm, so it does not
-         read as a grey wash over cream. -->
-    <color name="light_chooser_scrim">#66201C14</color>
-    <color name="light_chooser_card_surface">#FFF6F2EA</color>
-
-    <!--
-      The light viewport, and the window behind it.
-
-      Same contract as the dark one: this MUST stay in step with
-      `ViewportBackground::WarmLight` in `forgeshape_display.cpp`.
-    -->
-    <color name="light_viewport_background">#FFE6E1D9</color>
+    <!-- DERIVED -->
+    <color name="p3_surface_floating_translucent">#F053575A</color>
+    <color name="p3_control_surface">#FF515557</color>
+    <color name="p3_control_surface_pressed">#FF63676A</color>
+    <color name="p3_control_border">#FF5F6366</color>
+    <color name="p3_field_surface">#FF404345</color>
+    <color name="p3_selected_rest_pressed">#FF66717D</color>
+    <color name="p3_accent_border">#734C8FD6</color>
+    <color name="p3_primary_fill_pressed">#FF6BA3DF</color>
+    <color name="p3_text_on_primary">#FF101418</color>
+    <color name="p3_text_disabled">#FF82858A</color>
+    <color name="p3_slider_track">#FF404345</color>
+    <!-- Deeper than the other two scrims for the same visual result: a scrim
+         has to darken, and this palette's ground is already the lightest. -->
+    <color name="p3_chooser_scrim">#A3202224</color>
 </resources>

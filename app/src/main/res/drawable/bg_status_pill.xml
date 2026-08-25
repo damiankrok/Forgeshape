@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The quiet capsule the status and instructional line sits in.
+
+  It exists because that line is PERSISTENT: it always says something, and most
+  of what it says is a standing hint rather than a verdict. Given the weight of a
+  toolbar it read as a permanent banner across the top of the model. Given its
+  own small, translucent capsule it reads as an aside — legible when looked at,
+  ignorable when not — and a real verdict still stands out, because a verdict
+  changes the TEXT COLOUR against the same quiet ground.
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="?attr/fsSurfaceFloating" />
+    <corners android:radius="@dimen/radius_control" />
+</shape>

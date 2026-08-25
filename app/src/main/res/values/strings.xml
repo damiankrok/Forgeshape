@@ -56,10 +56,9 @@
       and it is the same kind of decision.
     -->
     <string name="appearance">Appearance</string>
-    <string name="appearance_dark">Dark</string>
-    <string name="appearance_light">Light</string>
-    <string name="status_appearance_dark">Dark appearance — the model and its exact values are unchanged.</string>
-    <string name="status_appearance_light">Light appearance — the model and its exact values are unchanged.</string>
+    <string name="appearance_warm_graphite">Warm Graphite</string>
+    <string name="appearance_neutral_charcoal">Neutral Charcoal</string>
+    <string name="appearance_light_charcoal">Light Charcoal</string>
 
     <string name="projection">Projection</string>
     <string name="projection_perspective">Perspective</string>

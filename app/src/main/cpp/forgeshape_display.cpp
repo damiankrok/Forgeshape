@@ -40,8 +40,9 @@ int surfaceShadingIndex(SurfaceShading shading) {
 
 const char* viewportBackgroundName(ViewportBackground background) {
     switch (background) {
-        case ViewportBackground::NeutralDark: return "NeutralDark";
-        case ViewportBackground::WarmLight: return "WarmLight";
+        case ViewportBackground::WarmGraphite: return "WarmGraphite";
+        case ViewportBackground::NeutralCharcoal: return "NeutralCharcoal";
+        case ViewportBackground::LightCharcoal: return "LightCharcoal";
     }
     return "Unknown";
 }
@@ -63,21 +64,32 @@ void viewportBackgroundColor(ViewportBackground background, float* outRgb) {
         return;
     }
     switch (background) {
-        case ViewportBackground::WarmLight:
-            // #E6E1D9. Warm by about ten points of red over blue: paper rather
-            // than screen, and far short of beige. Deliberately not #FFFFFF — a
-            // stark white ground makes a neutral clay render read as grey.
-            outRgb[0] = 0.902f;
-            outRgb[1] = 0.882f;
-            outRgb[2] = 0.851f;
+        case ViewportBackground::NeutralCharcoal:
+            // #26282A. The coolest of the three: blue leads red by four points,
+            // which is what separates it from Warm Graphite at a glance without
+            // either reading as tinted.
+            outRgb[0] = 0.149f;
+            outRgb[1] = 0.157f;
+            outRgb[2] = 0.165f;
             return;
-        case ViewportBackground::NeutralDark:
+        case ViewportBackground::LightCharcoal:
+            // #3C3F41. The lightest ground the set allows. Past roughly this
+            // value a neutral clay render stops reading as lit and starts
+            // reading as washed out, which is the same failure a stark white
+            // canvas causes from the other direction.
+            outRgb[0] = 0.235f;
+            outRgb[1] = 0.247f;
+            outRgb[2] = 0.255f;
+            return;
+        case ViewportBackground::WarmGraphite:
             break;
     }
-    // #0E121B, unchanged from every release before the light theme existed.
-    outRgb[0] = 0.055f;
-    outRgb[1] = 0.070f;
-    outRgb[2] = 0.105f;
+    // #302E2B. The product default: red leads blue by five points, so the
+    // ground is warm enough to keep a neutral clay body from looking cold and
+    // far short of brown.
+    outRgb[0] = 0.188f;
+    outRgb[1] = 0.180f;
+    outRgb[2] = 0.169f;
 }
 
 ViewportDisplaySettings DisplaySettingsStore::snapshot() const {

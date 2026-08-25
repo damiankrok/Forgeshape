@@ -11,13 +11,13 @@ import org.junit.Before;
 import org.junit.Test;
 
 /**
- * The theme choice, checked without a device.
+ * The appearance choice, checked without a device.
  *
- * <p>What matters here is not which colours a theme has — those are resources,
+ * <p>What matters here is not which colours a palette has — those are resources,
  * and a device draws them — but the three rules the choice itself has to obey:
- * Dark is the default a fresh process reports, the two appearances map onto two
- * DIFFERENT viewport backgrounds, and choosing one changes nothing else the UI
- * is allowed to remember.
+ * Warm Graphite is the default a fresh process reports, the three appearances
+ * map onto three DIFFERENT viewport backgrounds, and choosing one changes
+ * nothing else the UI is allowed to remember.
  */
 public final class AppThemeTest {
 
@@ -33,59 +33,88 @@ public final class AppThemeTest {
     }
 
     @Test
-    public void darkIsTheDocumentedDefault() {
-        assertSame(AppTheme.DARK, AppTheme.defaultTheme());
+    public void warmGraphiteIsTheDocumentedDefault() {
+        assertSame(AppTheme.WARM_GRAPHITE, AppTheme.defaultTheme());
         assertSame("a process that has not been asked wears the default",
-                AppTheme.DARK, EditorUiState.currentAppTheme());
-        assertSame(AppTheme.DARK, new EditorUiState().appTheme());
+                AppTheme.WARM_GRAPHITE, EditorUiState.currentAppTheme());
+        assertSame(AppTheme.WARM_GRAPHITE, new EditorUiState().appTheme());
     }
 
     @Test
-    public void thereAreExactlyTwoAppearances() {
-        assertEquals("Dark and Light, and no automatic System member:"
+    public void thereAreExactlyThreeApprovedAppearances() {
+        assertEquals("Warm Graphite, Neutral Charcoal and Light Charcoal — the"
+                        + " approved set, with no automatic System member:"
                         + " following the system is a separate decision",
-                2, AppTheme.values().length);
+                3, AppTheme.values().length);
     }
 
     @Test
     public void eachAppearanceCarriesItsOwnViewportBackground() {
-        assertEquals(NativeViewport.VIEWPORT_BACKGROUND_DARK,
-                AppTheme.DARK.viewportBackground());
-        assertEquals(NativeViewport.VIEWPORT_BACKGROUND_LIGHT,
-                AppTheme.LIGHT.viewportBackground());
-        assertNotEquals("a theme that did not change the viewport would leave a"
-                        + " dark render behind light chrome",
-                AppTheme.DARK.viewportBackground(), AppTheme.LIGHT.viewportBackground());
-        assertNotEquals(AppTheme.DARK.styleRes(), AppTheme.LIGHT.styleRes());
+        assertEquals(NativeViewport.VIEWPORT_BACKGROUND_WARM_GRAPHITE,
+                AppTheme.WARM_GRAPHITE.viewportBackground());
+        assertEquals(NativeViewport.VIEWPORT_BACKGROUND_NEUTRAL_CHARCOAL,
+                AppTheme.NEUTRAL_CHARCOAL.viewportBackground());
+        assertEquals(NativeViewport.VIEWPORT_BACKGROUND_LIGHT_CHARCOAL,
+                AppTheme.LIGHT_CHARCOAL.viewportBackground());
+
+        // No two appearances may share a ground or a style. An appearance that
+        // did not change the viewport would leave one palette's render behind
+        // another palette's chrome.
+        final AppTheme[] all = AppTheme.values();
+        for (int i = 0; i < all.length; i++) {
+            for (int j = i + 1; j < all.length; j++) {
+                assertNotEquals(all[i] + " and " + all[j] + " share a viewport ground",
+                        all[i].viewportBackground(), all[j].viewportBackground());
+                assertNotEquals(all[i] + " and " + all[j] + " share a style",
+                        all[i].styleRes(), all[j].styleRes());
+            }
+        }
+    }
+
+    @Test
+    public void theViewportIndicesAreTheDeclarationOrder() {
+        // What crosses JNI is the ordinal, and native code maps it back by
+        // numeric order. If these ever disagree the appearance switch silently
+        // selects the wrong ground and nothing fails loudly.
+        final AppTheme[] all = AppTheme.values();
+        for (int i = 0; i < all.length; i++) {
+            assertEquals(all[i] + " must cross JNI as its own index",
+                    i, all[i].viewportBackground());
+        }
     }
 
     @Test
     public void anUnrecognisedOrdinalFallsBackToTheDefault() {
-        assertSame(AppTheme.DARK, AppTheme.fromOrdinal(0));
-        assertSame(AppTheme.LIGHT, AppTheme.fromOrdinal(1));
+        assertSame(AppTheme.WARM_GRAPHITE, AppTheme.fromOrdinal(0));
+        assertSame(AppTheme.NEUTRAL_CHARCOAL, AppTheme.fromOrdinal(1));
+        assertSame(AppTheme.LIGHT_CHARCOAL, AppTheme.fromOrdinal(2));
         assertSame("the worst outcome of a bad index is the wrong colour, which"
                         + " is not a reason to refuse to start a workspace",
-                AppTheme.DARK, AppTheme.fromOrdinal(2));
-        assertSame(AppTheme.DARK, AppTheme.fromOrdinal(-1));
+                AppTheme.WARM_GRAPHITE, AppTheme.fromOrdinal(3));
+        assertSame(AppTheme.WARM_GRAPHITE, AppTheme.fromOrdinal(-1));
     }
 
     @Test
     public void choosingTheAppearanceAlreadyInForceIsNotAChange() {
         assertFalse("recreating the Activity for this would be a flash and"
-                        + " nothing else", EditorUiState.setCurrentAppTheme(AppTheme.DARK));
-        assertTrue(EditorUiState.setCurrentAppTheme(AppTheme.LIGHT));
-        assertFalse(EditorUiState.setCurrentAppTheme(AppTheme.LIGHT));
-        assertSame(AppTheme.LIGHT, EditorUiState.currentAppTheme());
+                        + " nothing else",
+                EditorUiState.setCurrentAppTheme(AppTheme.WARM_GRAPHITE));
+        assertTrue(EditorUiState.setCurrentAppTheme(AppTheme.NEUTRAL_CHARCOAL));
+        assertFalse(EditorUiState.setCurrentAppTheme(AppTheme.NEUTRAL_CHARCOAL));
+        assertSame(AppTheme.NEUTRAL_CHARCOAL, EditorUiState.currentAppTheme());
+        assertTrue(EditorUiState.setCurrentAppTheme(AppTheme.LIGHT_CHARCOAL));
+        assertSame(AppTheme.LIGHT_CHARCOAL, EditorUiState.currentAppTheme());
     }
 
     @Test
     public void theAppearanceIsProcessScopedNotPerWorkspace() {
-        EditorUiState.setCurrentAppTheme(AppTheme.LIGHT);
-        // The recreation that APPLIES a theme destroys the workspace holding it,
-        // so an instance field would be lost by the very act of applying it and
-        // the new workspace would come back in the theme just left.
+        EditorUiState.setCurrentAppTheme(AppTheme.LIGHT_CHARCOAL);
+        // The recreation that APPLIES an appearance destroys the workspace
+        // holding it, so an instance field would be lost by the very act of
+        // applying it and the new workspace would come back in the one just
+        // left.
         assertSame("a workspace built after the switch wears the new appearance",
-                AppTheme.LIGHT, new EditorUiState().appTheme());
+                AppTheme.LIGHT_CHARCOAL, new EditorUiState().appTheme());
     }
 
     @Test
@@ -95,9 +124,9 @@ public final class AppThemeTest {
         state.setConstructionTool(EditorUiState.CONSTRUCTION_TOOL_PLACE);
         state.setInspectorExpanded(false, false);
 
-        EditorUiState.setCurrentAppTheme(AppTheme.LIGHT);
+        EditorUiState.setCurrentAppTheme(AppTheme.NEUTRAL_CHARCOAL);
 
-        assertEquals("a theme is presentation and may not move a display unit",
+        assertEquals("an appearance is presentation and may not move a display unit",
                 LengthUnit.MILLIMETERS, state.displayUnit());
         assertEquals(EditorUiState.CONSTRUCTION_TOOL_PLACE, state.constructionTool());
         assertFalse(state.inspectorExpanded(false));

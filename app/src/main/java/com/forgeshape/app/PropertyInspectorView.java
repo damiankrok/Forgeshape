@@ -190,10 +190,12 @@ final class PropertyInspectorView extends LinearLayout {
      * Says whether this panel is standing ON the model or sitting BESIDE it.
      *
      * <p>The two are genuinely different surfaces and are drawn differently. A
-     * bottom sheet and a side overlay float, so they are rounded on the edge
-     * that faces the model and carry a little depth. A <b>docked</b> panel on a
-     * tablet does not float: it occupies its own column of the window, and
-     * giving it a card's shadow would be a claim about the layout that is
+     * bottom sheet is INSET from the window edges by its host and is therefore
+     * rounded on all four corners — it stands over the model with the viewport
+     * visible around it. A side overlay floats against the trailing edge and is
+     * rounded only on the side that faces the model. A <b>docked</b> panel on a
+     * tablet does not float at all: it occupies its own column of the window,
+     * and giving it a card's shadow would be a claim about the layout that is
      * simply untrue.
      *
      * @param bottomSheet whether the panel is anchored to the bottom edge; the

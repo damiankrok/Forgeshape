@@ -109,7 +109,7 @@ public final class WorkspaceLayoutModeTest {
             final int dock = WorkspaceLayoutMode.sideDockWidthDp(widthDp);
             assertTrue("overlay " + overlay + " dp in a " + widthDp + " dp window",
                     overlay <= 300);
-            assertTrue("dock " + dock + " dp in a " + widthDp + " dp window", dock <= 320);
+            assertTrue("dock " + dock + " dp in a " + widthDp + " dp window", dock <= 340);
             assertTrue("an inspector must stay wide enough to type in", overlay >= 240);
             assertTrue(dock >= 260);
         }

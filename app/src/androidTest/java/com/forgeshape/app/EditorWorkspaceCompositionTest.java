@@ -457,10 +457,16 @@ public final class EditorWorkspaceCompositionTest {
         return false;
     }
 
-    /** Every opaque chrome rectangle currently on screen. */
+    /**
+     * Every chrome rectangle currently painted on screen.
+     *
+     * <p>The toolbar's two control capsules, not the toolbar container: that
+     * container is transparent and draws nothing, so counting its full-width
+     * bounds would report a bar the user can see straight through.
+     */
     private static Rect[] chromeRects(EditorWorkspaceView workspace) {
-        final int[] ids = {R.id.global_toolbar, R.id.property_inspector, R.id.tool_rail,
-                R.id.objects_dock};
+        final int[] ids = {R.id.toolbar_editing_group, R.id.toolbar_utility_group,
+                R.id.property_inspector, R.id.tool_rail, R.id.objects_dock};
         int n = 0;
         final Rect[] rects = new Rect[ids.length];
         for (int id : ids) {

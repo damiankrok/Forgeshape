@@ -1,15 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  The Global Toolbar strip.
+  Base chrome that is part of the WINDOW FRAME rather than standing on the model.
 
-  Square on purpose: it spans the whole window edge, and a rounded full-width
-  strip would show the model through its corners for no reason. Opaque, because
-  the status line and every rejection reason sit on it.
+  Square and opaque on purpose: it spans a whole window edge. Borderless, because
+  a surface flush against the frame is already separated from everything by the
+  window itself.
 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
     <solid android:color="?attr/fsChromeSurface" />
-    <stroke
-        android:width="@dimen/control_border_width"
-        android:color="?attr/fsChromeHairline" />
 </shape>

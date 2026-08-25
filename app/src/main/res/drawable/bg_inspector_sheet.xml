@@ -1,20 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  The Property Inspector anchored to the BOTTOM edge.
+  TIER 3 — the Property Inspector as an INSET bottom sheet.
 
-  Only the leading corners are rounded. The trailing edge is the window edge,
-  and rounding it would leave two slivers of viewport that read as a rendering
-  fault rather than as a shape.
+  All four corners rounded, because the sheet no longer runs edge to edge: it is
+  inset from the window and floats above the model with a gap under it, which is
+  what turns a full-width attached slab into a panel that belongs to the same
+  spatial composition as the rail and the toolbar capsules. A sheet that touched
+  three window edges read as an Android bottom sheet; this one reads as a
+  surface in a workspace.
+
+  Opaque and borderless. This is where exact values are typed, so nothing here
+  is allowed to be pretty at the expense of a legible number — the fields inside
+  it draw their own recessed wells, and the panel does not need an outline on top
+  of that.
 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
-    <solid android:color="?attr/fsChromeSurface" />
-    <corners
-        android:topLeftRadius="@dimen/radius_sheet"
-        android:topRightRadius="@dimen/radius_sheet"
-        android:bottomLeftRadius="0dp"
-        android:bottomRightRadius="0dp" />
-    <stroke
-        android:width="@dimen/control_border_width"
-        android:color="?attr/fsChromeHairline" />
+    <solid android:color="?attr/fsSurfacePrecision" />
+    <corners android:radius="@dimen/radius_sheet" />
 </shape>

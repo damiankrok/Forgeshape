@@ -62,6 +62,10 @@ final class StartChooserView extends FrameLayout {
 
         panel = new ScrollView(context);
         panel.setId(R.id.start_chooser_panel);
+        // A Tier 2 context surface, borderless and raised. The outline it used
+        // to draw is most of what made this read as a settings dialog: a panel
+        // separated by tone and depth belongs to the same workspace as the
+        // viewport rendering behind it, and an outlined one sits on top of it.
         panel.setBackgroundResource(R.drawable.bg_chooser_panel);
         panel.setElevation(EditorControlStyles.dimen(context, R.dimen.elevation_chooser));
         final int pad = EditorControlStyles.dimen(context, R.dimen.chooser_padding);
@@ -73,14 +77,25 @@ final class StartChooserView extends FrameLayout {
         panel.addView(content, new ScrollView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
+        // A small all-caps eyebrow above the headline, and the product's name in
+        // it. This is the first surface ForgeShape ever shows, and one bare
+        // heading over two bordered rows is the shape of a settings dialog; a
+        // named eyebrow, a headline and a quiet one-line question is the shape
+        // of product chrome. It costs one line and no new mechanism — the
+        // section label role already exists and is used in every panel.
+        content.addView(EditorControlStyles.sectionLabel(context,
+                context.getString(R.string.app_name)),
+                EditorControlStyles.rowParams(0));
+
         content.addView(EditorControlStyles.displayText(context,
                 context.getString(R.string.new_project)),
-                EditorControlStyles.rowParams(0));
+                EditorControlStyles.rowParams(
+                        EditorControlStyles.dimen(context, R.dimen.row_gap_small)));
 
         content.addView(EditorControlStyles.captionText(context, View.NO_ID,
                 context.getString(R.string.start_prompt)),
                 EditorControlStyles.rowParams(
-                        EditorControlStyles.dimen(context, R.dimen.row_gap)));
+                        EditorControlStyles.dimen(context, R.dimen.row_gap_small)));
 
         content.addView(buildOption(context, R.id.start_option_construction,
                         R.drawable.ic_start_construction,

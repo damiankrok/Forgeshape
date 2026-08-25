@@ -57,9 +57,12 @@ final class ObjectsPopoverView extends LinearLayout {
         setId(R.id.objects_popover);
         setOrientation(VERTICAL);
         setContentDescription(context.getString(R.string.objects));
-        EditorControlStyles.applyFloatingSurface(this);
+        // TIER 2 — an expanded context surface, like the Display popover. It
+        // carries a named list to be read rather than a capsule to be glanced
+        // at, so it is opaque.
+        EditorControlStyles.applyContextSurface(this);
 
-        final int pad = EditorControlStyles.dimen(context, R.dimen.row_gap);
+        final int pad = EditorControlStyles.dimen(context, R.dimen.inspector_padding);
         setPadding(pad, pad, pad, pad);
 
         scroll = new ScrollView(context);

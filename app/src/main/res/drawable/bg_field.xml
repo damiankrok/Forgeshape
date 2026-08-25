@@ -1,16 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  An exact-value field.
+  An exact-value field, and the ONE control archetype that still draws a resting
+  border and the one that carries the strong accent ring.
 
-  The focused state carries a thicker accent border rather than only a
-  different colour, so which field the keyboard is about to type into is
-  readable without relying on hue — and stays readable on a light theme, where
-  the resting border is much closer in value to the surface it sits on.
+  Both are deliberate. The field is RECESSED — `fsFieldSurface` sits below the
+  panel around it rather than above it — because it is a well you type into
+  rather than a button you press, and the hairline is what closes that well. And
+  the focused state is the single place in the product where a 2 dp accent ring
+  is spent: which field the keyboard is about to type into is the one question
+  where an unmistakable answer outranks restraint.
 -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:state_focused="true">
         <shape android:shape="rectangle">
-            <solid android:color="?attr/fsControlSurface" />
+            <solid android:color="?attr/fsFieldSurface" />
             <corners android:radius="@dimen/radius_control" />
             <stroke
                 android:width="@dimen/control_border_active_width"
@@ -19,7 +22,7 @@
     </item>
     <item>
         <shape android:shape="rectangle">
-            <solid android:color="?attr/fsControlSurface" />
+            <solid android:color="?attr/fsFieldSurface" />
             <corners android:radius="@dimen/radius_control" />
             <stroke
                 android:width="@dimen/control_border_width"

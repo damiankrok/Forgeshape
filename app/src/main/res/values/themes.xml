@@ -1,136 +1,165 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  The two themes, and the one place a semantic role is given a value.
+  The three appearances, and the one place a semantic role is given a value.
 
-  ForgeShape runs edge-to-edge on purpose. The previous theme was
-  Theme.Material.NoActionBar.Fullscreen, whose windowFullscreen flag simply hid
-  the system bars. Under targetSdk 36 that flag is deprecated and edge-to-edge is
-  the platform default, so the app was relying on behaviour the platform no
-  longer guarantees — which is exactly why it had no WindowInsets handling and
-  would have collided with a cutout.
-
-  The window draws behind transparent system bars, the Vulkan SurfaceView keeps
-  the whole window (it is never inset, padded or resized by any layout decision),
-  and the interactive chrome is padded off the bars and cutouts by
-  EditorWorkspaceView's inset listener. None of that differs between themes.
+  ForgeShape runs edge-to-edge on purpose. The window draws behind transparent
+  system bars, the Vulkan SurfaceView keeps the whole window (it is never inset,
+  padded or resized by any layout decision), and the interactive chrome is padded
+  off the bars and cutouts by EditorWorkspaceView's inset listener. None of that
+  differs between appearances.
 
   What differs is only the answers below. Every role in `attrs.xml` is given a
-  value once per theme, and no view, drawable or colour state list in the project
-  knows which theme is in force.
+  value once per palette, and no view, drawable or colour state list in the
+  project knows which appearance is in force.
 
-  There is deliberately no `-night` qualifier and no `DayNight` parent: the theme
-  is an explicit user choice in the Display popover, not something the system
-  picks. Following the system automatically is a separate decision that has not
-  been made.
+  All three are DARK, so all three share the Material (dark) parent. That is not
+  decoration: it is what makes the one platform-drawn surface in the product —
+  the destructive re-Freeze confirmation — belong to the same workspace. There is
+  deliberately no `-night` qualifier and no `DayNight` parent: the appearance is
+  an explicit user choice in the Display popover, not something the system picks.
 -->
 <resources>
 
-    <!-- Everything the two themes share: the window, the bars, and the fact
-         that neither has an action bar. Holds no colour of its own. -->
+    <!-- Everything the three appearances share: the window, the bars, and the
+         fact that none of them has an action bar. Holds no colour of its own. -->
     <style name="Theme.ForgeShape.Base" parent="@android:style/Theme.Material.NoActionBar">
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
 
     <!--
-      DARK — the product default.
+      WARM GRAPHITE — the product default.
 
       The window background matches the Vulkan clear colour rather than being
       plain black, so the moment before the surface has content does not flash a
       different shade than the viewport that replaces it.
     -->
-    <style name="Theme.ForgeShape.Dark" parent="Theme.ForgeShape.Base">
-        <item name="android:windowBackground">@color/dark_viewport_background</item>
+    <style name="Theme.ForgeShape.WarmGraphite" parent="Theme.ForgeShape.Base">
+        <item name="android:windowBackground">@color/p1_viewport_background</item>
 
-        <item name="fsChromeSurface">@color/dark_chrome_surface</item>
-        <item name="fsChromeOverlay">@color/dark_chrome_overlay</item>
-        <item name="fsChromeHairline">@color/dark_chrome_hairline</item>
+        <item name="fsSurfaceFloating">@color/p1_surface_floating_translucent</item>
+        <item name="fsSurfaceContext">@color/p1_surface_floating</item>
+        <item name="fsSurfacePrecision">@color/p1_surface_precision</item>
 
-        <item name="fsControlSurface">@color/dark_control_surface</item>
-        <item name="fsControlSurfacePressed">@color/dark_control_surface_pressed</item>
-        <item name="fsControlBorder">@color/dark_control_border</item>
+        <item name="fsChromeSurface">@color/p1_chrome_surface</item>
+        <item name="fsChromeOverlay">@color/p1_surface_floating_translucent</item>
+        <item name="fsChromeHairline">@color/p1_chrome_hairline</item>
 
-        <item name="fsAccent">@color/dark_accent</item>
-        <item name="fsAccentFill">@color/dark_accent_fill</item>
-        <item name="fsAccentFillPressed">@color/dark_accent_fill_pressed</item>
-        <item name="fsAccentBorder">@color/dark_accent_border</item>
-        <item name="fsPrimaryFill">@color/dark_primary_fill</item>
-        <item name="fsPrimaryFillPressed">@color/dark_primary_fill_pressed</item>
-        <item name="fsTextOnPrimary">@color/dark_text_on_primary</item>
+        <item name="fsControlSurface">@color/p1_control_surface</item>
+        <item name="fsControlSurfacePressed">@color/p1_control_surface_pressed</item>
+        <item name="fsControlBorder">@color/p1_control_border</item>
+        <item name="fsFieldSurface">@color/p1_field_surface</item>
 
-        <item name="fsTextPrimary">@color/dark_text_primary</item>
-        <item name="fsTextSecondary">@color/dark_text_secondary</item>
-        <item name="fsTextDisabled">@color/dark_text_disabled</item>
+        <item name="fsAccent">@color/p1_accent</item>
+        <item name="fsAccentFill">@color/p1_selected_rest</item>
+        <item name="fsAccentFillPressed">@color/p1_selected_rest_pressed</item>
+        <item name="fsAccentBorder">@color/p1_accent_border</item>
+        <item name="fsPrimaryFill">@color/p1_accent</item>
+        <item name="fsPrimaryFillPressed">@color/p1_primary_fill_pressed</item>
+        <item name="fsTextOnPrimary">@color/p1_text_on_primary</item>
 
-        <item name="fsTextSuccess">@color/dark_text_success</item>
-        <item name="fsTextError">@color/dark_text_error</item>
-        <item name="fsTextMeasure">@color/dark_text_measure</item>
+        <item name="fsTextPrimary">@color/p1_text_primary</item>
+        <item name="fsTextSecondary">@color/p1_text_secondary</item>
+        <item name="fsTextDisabled">@color/p1_text_disabled</item>
 
-        <item name="fsSliderTrack">@color/dark_slider_track</item>
-        <item name="fsSliderFill">@color/dark_slider_fill</item>
-        <item name="fsSliderThumb">@color/dark_slider_thumb</item>
+        <item name="fsTextSuccess">@color/p1_text_success</item>
+        <item name="fsTextError">@color/p1_text_error</item>
+        <item name="fsTextMeasure">@color/p1_text_measure</item>
 
-        <item name="fsChooserScrim">@color/dark_chooser_scrim</item>
-        <item name="fsChooserCardSurface">@color/dark_chooser_card_surface</item>
+        <item name="fsSliderTrack">@color/p1_slider_track</item>
+        <item name="fsSliderFill">@color/p1_accent</item>
+        <item name="fsSliderThumb">@color/p1_text_primary</item>
+
+        <item name="fsChooserScrim">@color/p1_chooser_scrim</item>
+        <item name="fsChooserCardSurface">@color/p1_field_surface</item>
+    </style>
+
+    <!-- NEUTRAL CHARCOAL / STEEL. -->
+    <style name="Theme.ForgeShape.NeutralCharcoal" parent="Theme.ForgeShape.Base">
+        <item name="android:windowBackground">@color/p2_viewport_background</item>
+
+        <item name="fsSurfaceFloating">@color/p2_surface_floating_translucent</item>
+        <item name="fsSurfaceContext">@color/p2_surface_floating</item>
+        <item name="fsSurfacePrecision">@color/p2_surface_precision</item>
+
+        <item name="fsChromeSurface">@color/p2_chrome_surface</item>
+        <item name="fsChromeOverlay">@color/p2_surface_floating_translucent</item>
+        <item name="fsChromeHairline">@color/p2_chrome_hairline</item>
+
+        <item name="fsControlSurface">@color/p2_control_surface</item>
+        <item name="fsControlSurfacePressed">@color/p2_control_surface_pressed</item>
+        <item name="fsControlBorder">@color/p2_control_border</item>
+        <item name="fsFieldSurface">@color/p2_field_surface</item>
+
+        <item name="fsAccent">@color/p2_accent</item>
+        <item name="fsAccentFill">@color/p2_selected_rest</item>
+        <item name="fsAccentFillPressed">@color/p2_selected_rest_pressed</item>
+        <item name="fsAccentBorder">@color/p2_accent_border</item>
+        <item name="fsPrimaryFill">@color/p2_accent</item>
+        <item name="fsPrimaryFillPressed">@color/p2_primary_fill_pressed</item>
+        <item name="fsTextOnPrimary">@color/p2_text_on_primary</item>
+
+        <item name="fsTextPrimary">@color/p2_text_primary</item>
+        <item name="fsTextSecondary">@color/p2_text_secondary</item>
+        <item name="fsTextDisabled">@color/p2_text_disabled</item>
+
+        <item name="fsTextSuccess">@color/p2_text_success</item>
+        <item name="fsTextError">@color/p2_text_error</item>
+        <item name="fsTextMeasure">@color/p2_text_measure</item>
+
+        <item name="fsSliderTrack">@color/p2_slider_track</item>
+        <item name="fsSliderFill">@color/p2_accent</item>
+        <item name="fsSliderThumb">@color/p2_text_primary</item>
+
+        <item name="fsChooserScrim">@color/p2_chooser_scrim</item>
+        <item name="fsChooserCardSurface">@color/p2_field_surface</item>
+    </style>
+
+    <!-- LIGHT CHARCOAL — the lightest ground in the set. -->
+    <style name="Theme.ForgeShape.LightCharcoal" parent="Theme.ForgeShape.Base">
+        <item name="android:windowBackground">@color/p3_viewport_background</item>
+
+        <item name="fsSurfaceFloating">@color/p3_surface_floating_translucent</item>
+        <item name="fsSurfaceContext">@color/p3_surface_floating</item>
+        <item name="fsSurfacePrecision">@color/p3_surface_precision</item>
+
+        <item name="fsChromeSurface">@color/p3_chrome_surface</item>
+        <item name="fsChromeOverlay">@color/p3_surface_floating_translucent</item>
+        <item name="fsChromeHairline">@color/p3_chrome_hairline</item>
+
+        <item name="fsControlSurface">@color/p3_control_surface</item>
+        <item name="fsControlSurfacePressed">@color/p3_control_surface_pressed</item>
+        <item name="fsControlBorder">@color/p3_control_border</item>
+        <item name="fsFieldSurface">@color/p3_field_surface</item>
+
+        <item name="fsAccent">@color/p3_accent</item>
+        <item name="fsAccentFill">@color/p3_selected_rest</item>
+        <item name="fsAccentFillPressed">@color/p3_selected_rest_pressed</item>
+        <item name="fsAccentBorder">@color/p3_accent_border</item>
+        <item name="fsPrimaryFill">@color/p3_accent</item>
+        <item name="fsPrimaryFillPressed">@color/p3_primary_fill_pressed</item>
+        <item name="fsTextOnPrimary">@color/p3_text_on_primary</item>
+
+        <item name="fsTextPrimary">@color/p3_text_primary</item>
+        <item name="fsTextSecondary">@color/p3_text_secondary</item>
+        <item name="fsTextDisabled">@color/p3_text_disabled</item>
+
+        <item name="fsTextSuccess">@color/p3_text_success</item>
+        <item name="fsTextError">@color/p3_text_error</item>
+        <item name="fsTextMeasure">@color/p3_text_measure</item>
+
+        <item name="fsSliderTrack">@color/p3_slider_track</item>
+        <item name="fsSliderFill">@color/p3_accent</item>
+        <item name="fsSliderThumb">@color/p3_text_primary</item>
+
+        <item name="fsChooserScrim">@color/p3_chooser_scrim</item>
+        <item name="fsChooserCardSurface">@color/p3_field_surface</item>
     </style>
 
     <!--
-      LIGHT.
-
-      The Material.Light parent is not decoration: it is what makes the one
-      platform-drawn surface in the product — the destructive re-Freeze
-      confirmation — light as well. That dialog is the only thing ForgeShape does
-      not draw itself, and a dark dialog over a light workspace would be the most
-      obvious break in the whole theme.
-
-      windowLightStatusBar / windowLightNavigationBar darken the system bar
-      ICONS, which are white by default and invisible on cream. The navigation
-      one arrived in API 27 and is simply ignored on 26; that is a slightly
-      lighter-weight gesture bar on the oldest supported release, not a defect.
+      The manifest's theme. Warm Graphite is the product default; the Activity
+      applies the user's choice with setTheme() before it inflates anything, so
+      this is what a process that has not been asked yet gets.
     -->
-    <style name="Theme.ForgeShape.Light" parent="@android:style/Theme.Material.Light.NoActionBar">
-        <item name="android:statusBarColor">@android:color/transparent</item>
-        <item name="android:navigationBarColor">@android:color/transparent</item>
-        <item name="android:windowLightStatusBar">true</item>
-        <item name="android:windowLightNavigationBar">true</item>
-        <item name="android:windowBackground">@color/light_viewport_background</item>
-
-        <item name="fsChromeSurface">@color/light_chrome_surface</item>
-        <item name="fsChromeOverlay">@color/light_chrome_overlay</item>
-        <item name="fsChromeHairline">@color/light_chrome_hairline</item>
-
-        <item name="fsControlSurface">@color/light_control_surface</item>
-        <item name="fsControlSurfacePressed">@color/light_control_surface_pressed</item>
-        <item name="fsControlBorder">@color/light_control_border</item>
-
-        <item name="fsAccent">@color/light_accent</item>
-        <item name="fsAccentFill">@color/light_accent_fill</item>
-        <item name="fsAccentFillPressed">@color/light_accent_fill_pressed</item>
-        <item name="fsAccentBorder">@color/light_accent_border</item>
-        <item name="fsPrimaryFill">@color/light_primary_fill</item>
-        <item name="fsPrimaryFillPressed">@color/light_primary_fill_pressed</item>
-        <item name="fsTextOnPrimary">@color/light_text_on_primary</item>
-
-        <item name="fsTextPrimary">@color/light_text_primary</item>
-        <item name="fsTextSecondary">@color/light_text_secondary</item>
-        <item name="fsTextDisabled">@color/light_text_disabled</item>
-
-        <item name="fsTextSuccess">@color/light_text_success</item>
-        <item name="fsTextError">@color/light_text_error</item>
-        <item name="fsTextMeasure">@color/light_text_measure</item>
-
-        <item name="fsSliderTrack">@color/light_slider_track</item>
-        <item name="fsSliderFill">@color/light_slider_fill</item>
-        <item name="fsSliderThumb">@color/light_slider_thumb</item>
-
-        <item name="fsChooserScrim">@color/light_chooser_scrim</item>
-        <item name="fsChooserCardSurface">@color/light_chooser_card_surface</item>
-    </style>
-
-    <!--
-      The manifest's theme. Dark is the product default; the Activity applies the
-      user's choice with setTheme() before it inflates anything, so this is what
-      a process that has not been asked yet gets.
-    -->
-    <style name="Theme.ForgeShape" parent="Theme.ForgeShape.Dark" />
+    <style name="Theme.ForgeShape" parent="Theme.ForgeShape.WarmGraphite" />
 </resources>

@@ -1,13 +1,15 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.34.0
+**Status Version:** 0.35.0
 **Updated:** 2026-08-25
-**Result:** TECHNICAL COMPLETE — UI-R3 polished the Editor Workspace's visual
-quality. **Visual acceptance is PENDING OWNER/COORDINATOR SCREENSHOT REVIEW**; no
-part of the look is final until that review returns.
+**Result:** TECHNICAL COMPLETE — UI-R3R2 replaced the appearance set with the
+three owner-approved dark palettes and corrected the composition UI-R3 failed
+visual acceptance on. **Visual acceptance is PENDING OWNER/COORDINATOR SCREENSHOT
+REVIEW**; no part of the look is final until that review returns.
 **Current Phase:** Phase 1 — Native Viewport
 **Workspace:** `D:\TRAVELAPPS\ForgeShape`
-**Accepted implementation baseline:** UI-R3 (visual quality polish) on top of
+**Accepted implementation baseline:** UI-R3R2 (approved dark palettes + visual
+composition correction) on top of UI-R3 (visual quality polish),
 DOC-R1 (documentation compaction), UI-R2 (workspace composition redesign),
 INPUT-R1 (pointer semantics foundation), UI-R1C2 (world grid + adaptive
 workspace), UI-R1C1 (motion + selection feedback), UI-R1B2 (theme system +
@@ -17,7 +19,7 @@ Stage 016 (Plane), Stage 015D (camera projection), Stage 015C-R (front-face
 culling), Stage 015C (shading), Platform Fix P2, Stage 015B, Stage 014, the NDK
 r29 migration (Gate P0) and the Owner Decision Baseline. Per-stage narrative
 lives in Git history; only what still constrains the code is kept here.
-**Next Stage:** **OWNER VISUAL REVIEW** — the UI-R3 screenshot set goes to the
+**Next Stage:** **OWNER VISUAL REVIEW** — the UI-R3R2 screenshot set goes to the
 coordinator before anything else is scheduled. See *Next Stage*.
 
 ## Current state
@@ -31,86 +33,82 @@ truth. No Compose, no AndroidX, no third-party runtime library, no engine.
 A scene holds several Construction Bodies, each an exact primitive (Box, Cylinder,
 Sphere, Cone, Capsule, Plane) with authoritative double-meter dimensions and a
 rigid double-degree placement; any body can be frozen to a Frozen Sculpt Mesh and
-deformed with four brush tools. Two appearances, two shading models, two
-projections, a world reference grid, and an Editor Workspace that re-composes
-itself per window. `ARCHITECTURE.md` owns the ownership map and every invariant;
+deformed with four brush tools. Three approved dark appearances, two shading
+models, two projections, a world reference grid, and an Editor Workspace that
+re-composes itself per window. `ARCHITECTURE.md` owns the ownership map and every invariant;
 `PRODUCT.md` owns the user-visible description; `README.md` owns build/run/verify.
 
 **Blockers: none.** Known costs and accepted debt are in *Technical Debt*;
 environment hazards are in *Known Issues*.
 
-## Current visual state (UI-R3)
+## Current visual state (UI-R3R2)
 
 Runtime-verified on `ForgeShape_Stage006` / `emulator-5580` in three windows —
 compact portrait, compact landscape (short height) and an overridden
-1600 × 2560 @ 240 dpi expanded — in both appearances.
+1600 × 2560 @ 240 dpi expanded — in all three appearances.
 
-**One accent, spent on one thing at a time.** `fsAccentFill` (an active
-selection) and `fsPrimaryFill` (a primary commit) were the same hex on dark, so an
-active chip, an active rail entry, the selected body's row and Apply were one
-indistinguishable blue block — five or more on a single screen. A selection is now
-a quiet blue-leaning surface carrying the accent border and the brightened label;
-a commit is the accent itself. Light already answered the two roles apart and is
-unchanged in value; both themes now follow the same **pattern**, which is what
-makes them read as one product rather than as an inversion of each other.
+**The appearance set is three owner-approved DARK palettes**, and there is no
+light one. Warm Graphite (`#302E2B` ground, the default), Neutral Charcoal
+(`#26282A`) and Light Charcoal (`#3C3F41`) are chosen from a named list in the
+Display popover's Appearance group. Twelve values of each are approved and
+reproduced exactly; everything else is a derived neighbour. The previous
+Dark/Light pair is gone — `ViewportBackground` now names the three grounds, and
+`gridLineColor` authors a palette per ground because the alpha that is a whisper
+over `#26282A` is invisible over `#3C3F41`.
 
-**Resting weight is a role.** Controls that sit inside a surface which already
-frames them — icon-only toolbar controls, Tool Rail entries, Objects rows — draw
-no box until pressed, so the ACTIVE one is the only shape on that surface. Touch
-targets and pressed feedback are unchanged; only the resting outline is gone. This
-is what turned four stacked cards back into one Tool Rail and a column of buttons
-back into a list of bodies.
+**The Global Toolbar stopped being a bar.** It is a transparent container holding
+two floating capsules — an editing group and a utility group — with the model
+visible between and behind them, and the persistent status line moved into a
+small capsule sized to its own text instead of a full-width band. The container
+deliberately no longer consumes touches; each capsule does, so the model between
+them is genuinely reachable, and `chromeRects()` reports the capsules rather than
+the container so the viewport-floor measurement describes what is painted.
 
-**Hierarchy by weight, not by size.** *Back to Construction* is no longer a
-primary commit: it destroys nothing and publishes the Construction Source's own
-mesh, and drawn as a solid accent block it was the loudest thing on the Sculpt
-workspace. *Add Body* is quieter than the rows it appends to. Section spacing in
-both inspector bodies is a real section gap rather than a row gap, so a heading is
-distinguishable from a field caption by more than capitalisation.
+**Three material tiers replaced one card look**, and states became fill-led.
+Floating capsules are the only translucent tier; context panels and the precision
+inspector are opaque. Resting outlines are gone from every control except the two
+that earn one — a numeric field and the stale-source warning — and a reserved
+control is recessed rather than boxed. `fsTextOnPrimary` became an ink rather
+than white, because `#4C8FD6` carries white at only 3.4:1.
 
-**One defect was found and fixed.** In Sculpt Mode on a `COMPACT` window the
-Global Toolbar ran past the window edge and the Hide UI control was drawn clipped,
-measured under the 44 dp floor and partly unreachable — the same defect `R1B1-10b`
-guards in Construction, arriving through the one mode that test never entered.
-"Back to Construction" is the longest transition label in the product and was an
-unbounded wrap-content child; the context label that normally absorbs a squeeze is
-withdrawn on that window. Transition buttons are now bounded and ellipsised, and
-`UIR3-01` guards the floor **and the right edge** in Sculpt: measured 44.2 dp
-each, ending at x=1047 in a 1080 px window.
+**No chrome column spans the window any more.** The compact inspector is an inset
+floating sheet with the viewport visible around it; the docked Objects column and
+both side inspector placements wrap their own content and hang from the top, and
+a docked Tool Rail is top-aligned with them. `sideDockWidthDp` went to 30 %
+capped at 340 dp because at 28 %/320 the docked inspector clipped "Cylinder" to
+"Cyl".
 
-**Also corrected:** the brush captions read *Radius* and *Strength* rather than
-`RAD` and `STR` — the abbreviation was `caption.substring(0, 3)` on a localized
-string, which is not a translation rule in any language and throws on a caption
-shorter than three characters. The dark start-chooser scrim went from 83 % to
-65 % alpha, so the viewport genuinely renders behind it as its own drawable
-claims. Start-chooser icons align to the option's title rather than floating
-against the middle of a wrapped description.
+**The short-height rail keeps its icons.** The compact entry shrinks the glyph to
+18 dp instead of dropping it; icon and caption both measure inside the 44 dp
+entry. `120 px` and `Strength` also read in full in the brush controls, which now
+wear the same capsule material as the rail opposite them.
 
-**Nothing below JNI moved.** Grid on/off, a theme switch, opening the Objects
-panel and collapsing the inspector produce **no** `MESH_UPLOAD_OK`, no
-`RENDER_MESH_BUILD` and no publication; HOME/resume and rotation produce none
-either. Verified by logcat across the walkthrough.
+**Nothing below JNI moved.** A whole walkthrough — two grid toggles, two
+inspector detents and three appearance switches — produced exactly **one**
+`MESH_UPLOAD_OK`, the initial body upload, and no publication. Verified by
+logcat.
 
-**Known visual debt, for the review to rule on.** A docked Objects column, a
-docked side inspector and a side-overlay inspector are each full-height with their
-content at the top, so a scene of one body leaves a large empty panel — inherent
-to the current content, and closing it means either capability this stage may not
-add or a layout that stops filling the column. The compact rail still drops its
-icons and keeps labels only, which is a deliberate documented decision (asserting
-an icon there would assert against it) but is the one place the rail reads
-differently from every other window.
+**What the approved palettes cost.** The twelve anchors are not the UI layer's to
+move, so the theme suite asserts what they deliver rather than a number they
+would have to be redesigned to reach: primary text and every typed value at WCAG
+AA (4.5:1), secondary captions at 3.0:1 (measured 3.6–4.7), verdicts at 2.4:1
+against the precision surface. **That 2.4:1 is the tightest number in the product
+— Light Charcoal's error red on its own inspector surface — and it is below AA.**
+It is a direct consequence of both the red and the ground being owner-fixed, and
+it is the one item in this stage the owner may want to overrule.
 
-**Core document sizes** (hard cap 2000 physical lines each, measured at UI-R3):
-`ARCHITECTURE.md` 1932, `PROJECT_STATUS.md` 1009, `PRODUCT.md` 815,
-`README.md` 404, `CLAUDE.md` 216. DOC-R1 brought `ARCHITECTURE.md` down from 2032
-and this file from 1345; both have grown by what UI-R3 actually verified. Always
-re-measure before quoting a count.
+**Core document sizes** (hard cap 2000 physical lines each, measured at UI-R3R2):
+`ARCHITECTURE.md` 1984, `PROJECT_STATUS.md` ~1010, `PRODUCT.md` 841,
+`README.md` 404, `CLAUDE.md` 216. `ARCHITECTURE.md` is 16 lines from the hard cap
+and roughly double its 700–1000 target: a compaction pass is owed before the next
+stage that adds to it. Always re-measure before quoting a count.
 
 **Stylus / S Pen on real hardware remains UNVERIFIED.** Tool type, pressure and
 tilt are carried end to end and verified synthetically (`MotionEvent.obtain` with
 a tool type and an `AXIS_TILT` value, the same path an S Pen drives); closing it
 needs a person physically moving a pen. Nothing consumes those fields, so no
 behaviour depends on the gap.
+
 
 ## Durable constraints from closed stages
 
@@ -320,12 +318,12 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 | A tap on an already-selected body does not re-pulse; only a change in selection truth does | VERIFIED |
 | Selection feedback mints no revision, rebuilds no render mesh and uploads nothing, in either appearance | VERIFIED |
 | Two bodies' pulse states are independent; deselecting one does not disturb the other | VERIFIED |
-| The selected body stays obvious and the model's form stays readable in Dark and in Light | VERIFIED |
+| The selected body stays obvious and the model's form stays readable in every appearance | VERIFIED |
 | A world reference grid on the XZ plane at y = 0, switchable from the Display popover's View group | VERIFIED |
 | The grid is ON by default and its choice survives rotation, Activity recreation and HOME/resume | VERIFIED |
 | Grid lines at 1 m, a 5 m major rhythm, a 20 m extent that fades radially rather than ending at a border | VERIFIED |
 | The X and Z axes are told apart by a faint warm/cool lean, not by saturated primaries | VERIFIED |
-| The grid is readable in Dark and in Light, and never competes with the model for the eye | VERIFIED |
+| The grid is readable over every one of the three grounds, and never competes with the model for the eye | VERIFIED |
 | The grid is correct in Perspective and in Orthographic, and changes neither projection nor camera pose | VERIFIED |
 | A Construction Plane at world y = 0 shows no z-fighting; two consecutive static frames are byte-identical | VERIFIED |
 | The grid never enters the scene, a snapshot, picking, Freeze, Sculpt or a revision | VERIFIED |
@@ -370,9 +368,9 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 | Sculpt topology fixed; buffers reused, never reallocated during a stroke | VERIFIED |
 | Construction Source bit-identical after sculpting with all four tools | VERIFIED |
 | Lifecycle: shape, placement, identity, unit, mode, tool, sculpt, camera and selection survive home/resume with no re-upload | VERIFIED |
-| Two explicit appearances, Dark and Light, chosen in the Display popover's Appearance group | VERIFIED |
-| Dark is the product default and what a fresh process wears; a process kill returns to it | VERIFIED |
-| Light uses a warm off-white VIEWPORT (`#E6E1D9`), not only light chrome, and not a stark white canvas | VERIFIED |
+| Three explicit approved appearances — Warm Graphite, Neutral Charcoal, Light Charcoal — chosen from a named list in the Display popover's Appearance group | VERIFIED |
+| Warm Graphite is the product default and what a fresh process wears; a process kill returns to it | VERIFIED |
+| Each appearance changes the VIEWPORT ground as well as the chrome (`#302E2B` / `#26282A` / `#3C3F41`), and every ground in the set is dark | VERIFIED |
 | A theme switch publishes no mesh, mints no revision and causes zero GPU upload or render-mesh rebuild | VERIFIED |
 | Scene, active ObjectId, primitive spec, placement, product mode and Frozen Sculpt Mesh survive the switch bit-identically | VERIFIED |
 | The appearance survives rotation and HOME/resume; the start chooser does not reappear because of it | VERIFIED |
@@ -494,7 +492,7 @@ device. `README.md` documents how to read them.
 | `WorkspaceLayoutModeTest` (JVM) | breakpoints, placement, chrome sizing, the Objects dock and rail dock decisions | 16 |
 | `EditorUiStateTest` (JVM) | what the UI may remember and what it refuses | 11 |
 | `LengthUnitTest` (JVM) | exact mm/cm/m round-tripping and parse refusal | 5 |
-| `AppThemeTest` (JVM) | the default, the two appearances, and that choosing one moves nothing else | 10 |
+| `AppThemeTest` (JVM) | the default, the three approved appearances, the JNI index contract, and that choosing one moves nothing else | 11 |
 | `ChromeMotionTest` (JVM) | the durations, and that reduced motion returns 0 rather than a short duration | 4 |
 | `DisplaySettingsContractTest` (JVM) | the shading/surface index contract across JNI | 4 |
 | `EditorWorkspaceControlsTest` | control sets, fields, validation, freeze wording, tools, the six-kind round trip | 23 |
@@ -505,13 +503,13 @@ device. `README.md` documents how to read them.
 | `EditorWorkspaceObjectsTest` | rows by ObjectId, viewport pick sync, the docked surface, 20-body scalability | 10 |
 | `EditorWorkspaceStartFlowTest` | the start question, and the direct Sculpt path's Freeze reuse | 8 |
 | `EditorWorkspaceFoundationTest` | icons, pressed feedback, touch floor in Construction **and in Sculpt** (`UIR3-01`), rail tap-vs-scroll, viewport floor, popover | 8 |
-| `EditorWorkspaceThemeTest` | the control, the switch, state preservation across the recreation, contrast | 17 |
+| `EditorWorkspaceThemeTest` | the three-palette control, the switch, state preservation across the recreation, the material tiers, selection-vs-commit, contrast | 19 |
 | `EditorWorkspaceMotionTest` | popover preserved, inspector interruptibility, chrome hide/restore, viewport stability, reduced motion, gesture priority | 10 |
 | `PointerSemanticsTest` (JVM) | the Android tool-type mapping and its Unknown fallback | 6 |
 | `EditorWorkspacePointerTest` | synthetic stylus transport, per-pointer association, and that tap / navigation / sculpt arbitration are unchanged | 13 |
 | `EditorWorkspaceCompositionTest` | the UI-R2 role split: viewport dominance, the scene panel, one list with one owner, inspector-names-its-body, and that composition rebuilds no geometry | 10 |
 
-**191 tests** (56 JVM, 135 instrumented). No Java test asserts a rendered pixel;
+**194 tests** (57 JVM, 137 instrumented). No Java test asserts a rendered pixel;
 every control is reached by its stable semantic id and no assertion uses a screen
 coordinate. The foundation and theme suites deliberately assert no colour
 literal, radius or shadow — those are judged by eye and by runtime evidence, and
@@ -534,11 +532,11 @@ must never ask for one — and restores it in **both** `@Before` and `@After` so
 case that dies part-way cannot leave animation off for every suite that follows.
 `EditorWorkspaceDisplayTest` restores the display defaults for the same reason.
 
-**A theme switch recreates the Activity**, so `EditorWorkspaceThemeTest.switchTo`
-drives the real chip and polls until a workspace reports the new appearance and
-has been laid out; setting the field directly would prove a boolean changed and
-nothing about whether the workspace survives being rebuilt. Every case leaves the
-process in Dark.
+**An appearance switch recreates the Activity**, so
+`EditorWorkspaceThemeTest.switchTo` drives the real row and polls until a
+workspace reports the new appearance and has been laid out; setting the field
+directly would prove a field changed and nothing about whether the workspace
+survives being rebuilt. Every case leaves the process in Warm Graphite.
 
 **The start question is asked once per process, so every case that is not ABOUT
 it answers it first.** `resetToBaselineConstruction` dismisses it;
@@ -716,13 +714,22 @@ enhancement (outline or cavity) was **explicitly deferred**: both candidates sta
 the post-processing framework the shading stage was told not to build, and the
 vertex-based alternative would expose triangle structure in Smooth mode.
 
-**Documentation size.** Every core document is inside the 2000-line hard cap after
-DOC-R1, and `ARCHITECTURE.md` has a working margin again (1915). It is still over
-its 700–1000 preferred target and this file is still over its 500–800 one; both
-are dense ownership statements rather than narrative, so further reduction means
-retiring facts, not trimming prose. A stage that adds architecture should retire
-superseded prose in the same pass rather than appending. **Always re-measure
-before quoting a count** — recorded numbers have been stale in both directions.
+**Documentation size, and `ARCHITECTURE.md` has almost no margin left.** Every
+core document is inside the 2000-line hard cap, but `ARCHITECTURE.md` is at 1984
+— sixteen lines under it, and roughly double its 700–1000 preferred target; this
+file is still over its 500–800 one. UI-R3R2 retired superseded prose as it went
+and still finished net-longer, so the next stage that adds architecture must
+budget a compaction pass rather than assume room exists. Both files are dense
+ownership statements rather than narrative, so further reduction means retiring
+facts. **Always re-measure before quoting a count** — recorded numbers have been
+stale in both directions.
+
+**A verdict colour is below WCAG AA in one palette.** Light Charcoal's error red
+on its own precision surface measures 2.4:1. Both halves are owner-approved and
+fixed, so the theme suite asserts 2.4:1 rather than a number the palette would
+have to be redesigned to reach. Every verdict stays distinguishable from body
+text, and no typed value is affected — those are held to 4.5:1 in all three
+appearances. Raising it needs an owner decision about the approved value.
 
 **`scripts\run-instrumented-tests.ps1` aborts when javac emits a note.** It runs
 under `$ErrorActionPreference = 'Stop'`, and Windows PowerShell 5.1 wraps a
@@ -921,7 +928,7 @@ regenerated per stage.
 | `app/src/main/java/.../LengthUnit.java` | Exact `BigDecimal` mm/cm/m ↔ meter conversion, parsing and formatting |
 | `app/src/main/java/.../StartChooserView.java` | The New Project question: two ways to begin, over the live viewport. Owns no state, makes no native call |
 | `app/src/main/res/values/*` | `ids.xml` (the stable semantic id contract), `dimens.xml` (radius/type/depth scales), `colors.xml` (role names, dark values), `strings.xml`, `themes.xml` (edge-to-edge) |
-| `app/src/main/java/.../AppTheme.java` | The two appearances: the Android style each applies, and the viewport appearance each hands to native code |
+| `app/src/main/java/.../AppTheme.java` | The three approved appearances: the Android style each applies, and the viewport ground each hands to native code |
 | `app/src/main/java/.../ChromeMotion.java` | The four rules every chrome transition follows: the two durations, the reduced-motion question, cancel-first, and one alpha helper. Not a framework and must not become one |
 | `app/src/main/res/values/attrs.xml`, `themes.xml` | The semantic roles, and the one place each is given a value per theme. Adding a theme touches these two files and nothing else |
 | `app/src/main/res/drawable/*` | 15 icon vector drawables on one 24 dp grid, plus the `bg_*` background state lists every control's look comes from, all written in `?attr/fs*` |
@@ -983,12 +990,13 @@ was added and no marketing claim is made.
 
 **OWNER VISUAL REVIEW — provide the UI-R3 screenshot set to the coordinator.**
 
-UI-R3 is technically complete and its visual result is **not** accepted. The agent
-does not declare the look final; that judgement is the owner's and the
-coordinator's, on the ten-screenshot review set UI-R3 captured (UIR3-S01..S10,
-compact portrait / compact landscape / expanded, Dark and Light). Screenshots are
-deliberately **not** committed to the repository; their local paths are in the
-UI-R3 stage report.
+UI-R3R2 is technically complete and its visual result is **not** accepted. The
+agent does not declare the look final; that judgement is the owner's and the
+coordinator's, on the nine-screenshot review set UI-R3R2 captured (E1..E9: each of
+the three palettes in Construction and in Sculpt, a short-height compact
+landscape proving the rail keeps its icons, an expanded/tablet Construction, and
+the Appearance control showing all three). Screenshots are deliberately **not**
+committed to the repository; their local paths are in the UI-R3R2 stage report.
 
 Nothing further is scheduled until that review returns, and no implementation
 stage may be invented here.

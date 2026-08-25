@@ -2,28 +2,25 @@
 <!--
   A primary commit: Apply Shape, Apply Transform, Freeze, Resume.
 
-  It uses `fsPrimaryFill`, NOT `fsAccentFill`. On the dark theme those are the
-  same colour and the distinction looks pointless; on a light one it is the whole
-  difference between a solid accent button carrying white text and a pale tinted
-  chip that would read as merely selected. See attrs.xml.
+  The one solid accent block in the product, and it carries `fsTextOnPrimary` —
+  a near-black ink rather than white, because #4C8FD6 is a bright accent on which
+  white reads at 3.4:1 and ink reads at 5.5:1. The act that actually changes the
+  model gets a label you can read.
+
+  No stroke: the fill is already the loudest thing on its surface, and outlining
+  it would only thicken it.
 -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:state_pressed="true">
         <shape android:shape="rectangle">
             <solid android:color="?attr/fsPrimaryFillPressed" />
             <corners android:radius="@dimen/radius_control" />
-            <stroke
-                android:width="@dimen/control_border_width"
-                android:color="?attr/fsPrimaryFillPressed" />
         </shape>
     </item>
     <item>
         <shape android:shape="rectangle">
             <solid android:color="?attr/fsPrimaryFill" />
             <corners android:radius="@dimen/radius_control" />
-            <stroke
-                android:width="@dimen/control_border_width"
-                android:color="?attr/fsAccentBorder" />
         </shape>
     </item>
 </selector>

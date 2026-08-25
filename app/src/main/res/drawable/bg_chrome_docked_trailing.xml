@@ -16,7 +16,4 @@
         android:bottomLeftRadius="@dimen/radius_sheet"
         android:topRightRadius="0dp"
         android:bottomRightRadius="0dp" />
-    <stroke
-        android:width="@dimen/control_border_width"
-        android:color="?attr/fsChromeHairline" />
 </shape>
