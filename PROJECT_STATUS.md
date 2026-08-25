@@ -1,26 +1,28 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.35.0
+**Status Version:** 0.36.0
 **Updated:** 2026-08-25
-**Result:** TECHNICAL COMPLETE — UI-R3R2 replaced the appearance set with the
-three owner-approved dark palettes and corrected the composition UI-R3 failed
-visual acceptance on. **Visual acceptance is PENDING OWNER/COORDINATOR SCREENSHOT
-REVIEW**; no part of the look is final until that review returns.
+**Result:** TECHNICAL COMPLETE — UI-R4A rebuilt the Editor Workspace around the
+viewport: no surface owns the bottom of the window at rest, the scene lives in an
+Objects capsule that names the active body and carries creation, and the exact
+values are a precision surface the user asks for from the tool context that owns
+them. **Visual acceptance is PENDING OWNER/COORDINATOR SCREENSHOT REVIEW**; no
+part of the look is final until that review returns.
 **Current Phase:** Phase 1 — Native Viewport
 **Workspace:** `D:\TRAVELAPPS\ForgeShape`
-**Accepted implementation baseline:** UI-R3R2 (approved dark palettes + visual
-composition correction) on top of UI-R3 (visual quality polish),
-DOC-R1 (documentation compaction), UI-R2 (workspace composition redesign),
-INPUT-R1 (pointer semantics foundation), UI-R1C2 (world grid + adaptive
-workspace), UI-R1C1 (motion + selection feedback), UI-R1B2 (theme system +
-Light), UI-R1B1 (visual foundation + start flow), Stage 017 (multi-object scene),
+**Accepted implementation baseline:** UI-R4A (mobile workspace interaction) on top
+of UI-R3R2 (approved dark palettes + visual composition correction), UI-R3
+(visual quality polish), DOC-R1 (documentation compaction), UI-R2 (workspace
+composition redesign), INPUT-R1 (pointer semantics foundation), UI-R1C2 (world
+grid + adaptive workspace), UI-R1C1 (motion + selection feedback), UI-R1B2 (theme
+system), UI-R1B1 (visual foundation + start flow), Stage 017 (multi-object scene),
 the Pre-017 Correctness Repair, Gate P1 (physical ARM64 closure), Stage 016-R2,
 Stage 016 (Plane), Stage 015D (camera projection), Stage 015C-R (front-face
 culling), Stage 015C (shading), Platform Fix P2, Stage 015B, Stage 014, the NDK
 r29 migration (Gate P0) and the Owner Decision Baseline. Per-stage narrative
 lives in Git history; only what still constrains the code is kept here.
-**Next Stage:** **OWNER VISUAL REVIEW** — the UI-R3R2 screenshot set goes to the
-coordinator before anything else is scheduled. See *Next Stage*.
+**Next Stage:** **Stage 019 — Undo/Redo transaction foundation for direct
+transform work.** See *Next Stage*.
 
 ## Current state
 
@@ -41,67 +43,121 @@ re-composes itself per window. `ARCHITECTURE.md` owns the ownership map and ever
 **Blockers: none.** Known costs and accepted debt are in *Technical Debt*;
 environment hazards are in *Known Issues*.
 
-## Current visual state (UI-R3R2)
+## Current interaction model (UI-R4A)
 
 Runtime-verified on `ForgeShape_Stage006` / `emulator-5580` in three windows —
 compact portrait, compact landscape (short height) and an overridden
 1600 × 2560 @ 240 dpi expanded — in all three appearances.
 
+**Nothing owns the bottom of the window at rest.** The Property Inspector used to
+sit there permanently, collapsed to a full-width strip, and a collapsed strip is
+still a structural claim on the edge of a viewport-first tool made by a surface
+nobody asked for. It is now open with its whole body or absent entirely. The
+resting workspace is the model, a transparent toolbar at the top, the Objects
+capsule low on the leading edge, and the tool cluster on the trailing edge.
+
+**Exact values did not become less reachable — they stopped owning the layout.**
+A small control attached directly under the Tool Rail opens the precision surface
+for whatever entry the rail is holding, names what it will open before it is
+pressed, and is drawn active while it is up. What the user last decided is
+remembered per mode and starts closed; no window size can open it by itself,
+which is the rule the previous shell had and which meant a rotation could put a
+surface on screen that had never been asked for.
+
+**Objects became a capsule that says which body is current.** It carries the
+active body's name and a `+`, sits in the same place in both modes, and the
+Global Toolbar's Objects icon is gone with it — an icon can offer to open a list
+but cannot answer the question the list exists for. It is withdrawn exactly when
+the window gives the scene a permanent column.
+
+**Creation is a choice, not an append.** Both `+` controls open **Add Primitive**,
+which offers exactly six tiles — Box, Cylinder, Sphere, Cone, Capsule, Plane —
+each an outlined silhouette with its name. Choosing one calls `sceneAddBody()`
+and then that primitive's own `applyConstruction*()` with parameters read back
+from the new body's own native state; there is no Java-side generator and no
+second table of defaults. There is no *Add from file* and no placeholder.
+
+**Every surface grows out of the control that opened it.** One anchor implements
+it for the scene list, the palette and the precision surface, from the invoker's
+bounds — so the same two surfaces read as attached whether they were opened from
+a capsule low on a phone or from a column high on a tablet.
+
+**The Tool Rail carries only tools that work.** Sketch and Extrude are gone from
+it, along with `ToolRailView`'s whole notion of a reserved entry; Construction's
+two entries are *Shape* and *Transform*. **"Transform" is vocabulary for Stage
+020's direct handles and is not a claim that they exist** — everything behind it
+is exact numeric, and the surface it opens is titled *Exact Transform — Body #N*.
+The one approved-but-unimplemented control left in the product is the global
+`Export`, drawn recessed.
+
+**A standing fault stays visible without a resident panel.** The stale-source
+warning is still in the Sculpt context surface beside the action that resolves
+it, and is now also written to the status line on every refresh in Sculpt, where
+it outranks the gesture hint.
+
+**Nothing below JNI moved.** Opening and closing the scene list, the palette and
+the precision surface, switching rail context, and all three appearance switches
+produced **zero** `MESH_UPLOAD_OK` and zero publications. A HOME/resume and a
+rotation round trip produced zero as well. Verified by logcat. A real sculpt
+stroke produced 29, which is the stroke working.
+
+**Legacy Freeze → stroke → Back → Resume loses nothing.** Verified at runtime and
+guarded by `EditorWorkspaceSculptRetentionTest`: after a real Grab stroke, *Back
+to Construction* shows the Construction Source unchanged (correct — sculpting
+never writes it), and *Resume Sculpt* returns the same revision, vertex count,
+index count, stroke history and ObjectId. The one-way project bridge is **not**
+implemented and this path is still the only thing keeping that work.
+
+## Current visual state (UI-R3R2, unchanged by UI-R4A)
+
 **The appearance set is three owner-approved DARK palettes**, and there is no
 light one. Warm Graphite (`#302E2B` ground, the default), Neutral Charcoal
 (`#26282A`) and Light Charcoal (`#3C3F41`) are chosen from a named list in the
 Display popover's Appearance group. Twelve values of each are approved and
-reproduced exactly; everything else is a derived neighbour. The previous
-Dark/Light pair is gone — `ViewportBackground` now names the three grounds, and
-`gridLineColor` authors a palette per ground because the alpha that is a whisper
-over `#26282A` is invisible over `#3C3F41`.
+reproduced exactly; everything else is a derived neighbour. `ViewportBackground`
+names the three grounds, and `gridLineColor` authors a palette per ground because
+the alpha that is a whisper over `#26282A` is invisible over `#3C3F41`. Every
+surface UI-R4A added maps through the same semantic roles; no colour is written
+in Java anywhere in them.
 
-**The Global Toolbar stopped being a bar.** It is a transparent container holding
-two floating capsules — an editing group and a utility group — with the model
-visible between and behind them, and the persistent status line moved into a
-small capsule sized to its own text instead of a full-width band. The container
-deliberately no longer consumes touches; each capsule does, so the model between
-them is genuinely reachable, and `chromeRects()` reports the capsules rather than
+**The Global Toolbar is not a bar.** A transparent container holding two floating
+capsules with the model visible between and behind them, and the status line in a
+small capsule sized to its own text. The container deliberately does not consume
+touches; each capsule does, and `chromeRects()` reports the capsules rather than
 the container so the viewport-floor measurement describes what is painted.
 
-**Three material tiers replaced one card look**, and states became fill-led.
-Floating capsules are the only translucent tier; context panels and the precision
-inspector are opaque. Resting outlines are gone from every control except the two
-that earn one — a numeric field and the stale-source warning — and a reserved
-control is recessed rather than boxed. `fsTextOnPrimary` became an ink rather
-than white, because `#4C8FD6` carries white at only 3.4:1.
+**Three material tiers, states fill-led.** Floating capsules are the only
+translucent tier; context panels and the precision surface are opaque. Resting
+outlines are gone from every control except the two that earn one — a numeric
+field and the stale-source warning — and a reserved control is recessed rather
+than boxed. `fsTextOnPrimary` is an ink rather than white, because `#4C8FD6`
+carries white at only 3.4:1.
 
-**No chrome column spans the window any more.** The compact inspector is an inset
+**No chrome column spans the window.** The compact precision surface is an inset
 floating sheet with the viewport visible around it; the docked Objects column and
-both side inspector placements wrap their own content and hang from the top, and
-a docked Tool Rail is top-aligned with them. `sideDockWidthDp` went to 30 %
-capped at 340 dp because at 28 %/320 the docked inspector clipped "Cylinder" to
-"Cyl".
+both side placements wrap their own content and hang from the top, and a docked
+Tool Rail is top-aligned with them. `sideDockWidthDp` is 30 % capped at 340 dp
+because at 28 %/320 the docked panel clipped "Cylinder" to "Cyl".
 
 **The short-height rail keeps its icons.** The compact entry shrinks the glyph to
 18 dp instead of dropping it; icon and caption both measure inside the 44 dp
-entry. `120 px` and `Strength` also read in full in the brush controls, which now
-wear the same capsule material as the rail opposite them.
-
-**Nothing below JNI moved.** A whole walkthrough — two grid toggles, two
-inspector detents and three appearance switches — produced exactly **one**
-`MESH_UPLOAD_OK`, the initial body upload, and no publication. Verified by
-logcat.
+entry.
 
 **What the approved palettes cost.** The twelve anchors are not the UI layer's to
 move, so the theme suite asserts what they deliver rather than a number they
 would have to be redesigned to reach: primary text and every typed value at WCAG
 AA (4.5:1), secondary captions at 3.0:1 (measured 3.6–4.7), verdicts at 2.4:1
 against the precision surface. **That 2.4:1 is the tightest number in the product
-— Light Charcoal's error red on its own inspector surface — and it is below AA.**
-It is a direct consequence of both the red and the ground being owner-fixed, and
-it is the one item in this stage the owner may want to overrule.
+— Light Charcoal's error red on its own precision surface — and it is below AA.**
+It is a direct consequence of both the red and the ground being owner-fixed.
+UI-R4A **carried this debt deliberately and changed no approved value**; it is
+still the one item here the owner may want to overrule.
 
-**Core document sizes** (hard cap 2000 physical lines each, measured at UI-R3R2):
-`ARCHITECTURE.md` 1984, `PROJECT_STATUS.md` ~1010, `PRODUCT.md` 841,
-`README.md` 404, `CLAUDE.md` 216. `ARCHITECTURE.md` is 16 lines from the hard cap
-and roughly double its 700–1000 target: a compaction pass is owed before the next
-stage that adds to it. Always re-measure before quoting a count.
+**Core document sizes** (hard cap 2000 physical lines each, measured at UI-R4A):
+`ARCHITECTURE.md` 2084, `PROJECT_STATUS.md` 1101, `PRODUCT.md` 871,
+`README.md` 404, `CLAUDE.md` 216. **`ARCHITECTURE.md` is now OVER the 2000-line
+hard cap** and roughly double its 700–1000 target; a compaction pass is owed
+before anything else adds to it. Always re-measure before quoting a count.
 
 **Stylus / S Pen on real hardware remains UNVERIFIED.** Tool type, pressure and
 tilt are carried end to end and verified synthetically (`MotionEvent.obtain` with
@@ -308,7 +364,11 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 | Dynamic mesh: immutable revisions, fail-closed validation, capacity reuse/growth | VERIFIED |
 | SEVERAL Construction Bodies in one scene, each with exact Box / Cylinder / Sphere / Cone / Capsule / Plane | VERIFIED |
 | Stable per-body ObjectIds, independent of collection index, mesh revision and GPU allocation | VERIFIED |
-| Add Body appends and selects; deterministic insertion order across edits and selection | VERIFIED |
+| Add Primitive creates a body that IS the chosen primitive and selects it; deterministic insertion order across edits and selection | VERIFIED |
+| Resting workspace has no surface spanning the bottom edge, in Construction and in Sculpt, in every window | VERIFIED |
+| Every context surface is anchored to, and grows from, the control that opened it | VERIFIED |
+| Exact Shape and Exact Transform reachable in one contextual action; same validation, units, active-body routing and native read-back as before | VERIFIED |
+| Legacy Freeze → stroke → Back → Resume returns the identical frozen mesh; the Construction Source is untouched | VERIFIED |
 | Primitive and transform edits reach only the active body; A↔B round-trips the exact spec and placement | VERIFIED |
 | Per-body mesh publication: each body its own revision chain; A's edit cannot replace B's mesh | VERIFIED |
 | Renderer draws every body with its own transform and its own GPU buffers | VERIFIED |
@@ -333,11 +393,11 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 | Compact and medium keep the current viewport-first model; Objects stays in the shape editor | VERIFIED |
 | The Tool Rail is drawn flush and level when docked, raised and translucent when floating | VERIFIED |
 | One Objects section, re-parented — no second Java list and no second selection truth | VERIFIED |
-| Row tap, viewport pick and Add Body stay in sync from whichever surface Objects is on | VERIFIED |
+| Row tap, viewport pick and creation stay in sync from whichever surface Objects is on, and the capsule names the same body | VERIFIED |
 | ~20 bodies stay listed, scrollable in the column's own container, and selectable | VERIFIED |
 | The SurfaceView is the whole window in every layout mode; docking never resizes the render target | VERIFIED |
 | Reduced motion goes straight to the resting tint and runs no pulse at all | VERIFIED |
-| Chrome hide/restore and the inspector detent are short, interruptible and always settle at a legitimate resting state | VERIFIED |
+| Chrome hide/restore and every context surface are short, interruptible and always settle at a legitimate resting state | VERIFIED |
 | A chrome transition never resizes the viewport or rebuilds the swapchain | VERIFIED |
 | A viewport gesture outranks chrome motion: a detent change during a real stroke is instant | VERIFIED |
 | Scene picking returns the nearest hit's correct ObjectId; a viewport pick re-points the editors | VERIFIED |
@@ -374,7 +434,7 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 | A theme switch publishes no mesh, mints no revision and causes zero GPU upload or render-mesh rebuild | VERIFIED |
 | Scene, active ObjectId, primitive spec, placement, product mode and Frozen Sculpt Mesh survive the switch bit-identically | VERIFIED |
 | The appearance survives rotation and HOME/resume; the start chooser does not reappear because of it | VERIFIED |
-| The UI session — display unit, inspector detent, Tool Rail entry — survives the recreation that applies a theme | VERIFIED |
+| The UI session — display unit, whether the precision surface was asked for, Tool Rail entry — survives the recreation that applies a theme | VERIFIED |
 | Icons, pressed feedback, active-not-by-colour-alone and 44 dp targets all hold in both appearances | VERIFIED |
 | Property Inspector values, labels and verdicts meet WCAG AA contrast on the light theme; its surfaces stay opaque | VERIFIED |
 | Start chooser: New Project offers exactly Construction/CAD and Sculpt, over the live viewport | VERIFIED |
@@ -490,7 +550,7 @@ device. `README.md` documents how to read them.
 | suite | scope | tests |
 | --- | --- | --- |
 | `WorkspaceLayoutModeTest` (JVM) | breakpoints, placement, chrome sizing, the Objects dock and rail dock decisions | 16 |
-| `EditorUiStateTest` (JVM) | what the UI may remember and what it refuses | 11 |
+| `EditorUiStateTest` (JVM) | what the UI may remember and what it refuses, including that the precision surface starts closed in both modes and no window size opens it | 11 |
 | `LengthUnitTest` (JVM) | exact mm/cm/m round-tripping and parse refusal | 5 |
 | `AppThemeTest` (JVM) | the default, the three approved appearances, the JNI index contract, and that choosing one moves nothing else | 11 |
 | `ChromeMotionTest` (JVM) | the durations, and that reduced motion returns 0 rather than a short duration | 4 |
@@ -502,14 +562,16 @@ device. `README.md` documents how to read them.
 | `EditorWorkspaceDisplayTest` | display/projection ids, presentation-only, resume, refused index, the View/Grid group | 17 |
 | `EditorWorkspaceObjectsTest` | rows by ObjectId, viewport pick sync, the docked surface, 20-body scalability | 10 |
 | `EditorWorkspaceStartFlowTest` | the start question, and the direct Sculpt path's Freeze reuse | 8 |
-| `EditorWorkspaceFoundationTest` | icons, pressed feedback, touch floor in Construction **and in Sculpt** (`UIR3-01`), rail tap-vs-scroll, viewport floor, popover | 8 |
+| `EditorWorkspaceFoundationTest` | icons, pressed feedback, touch floor in Construction **and in Sculpt** (`UIR3-01`) including the precision toggle and the capsule`+`, rail tap-vs-scroll, viewport floor, popover | 8 |
 | `EditorWorkspaceThemeTest` | the three-palette control, the switch, state preservation across the recreation, the material tiers, selection-vs-commit, contrast | 19 |
 | `EditorWorkspaceMotionTest` | popover preserved, inspector interruptibility, chrome hide/restore, viewport stability, reduced motion, gesture priority | 10 |
 | `PointerSemanticsTest` (JVM) | the Android tool-type mapping and its Unknown fallback | 6 |
 | `EditorWorkspacePointerTest` | synthetic stylus transport, per-pointer association, and that tap / navigation / sculpt arbitration are unchanged | 13 |
 | `EditorWorkspaceCompositionTest` | the UI-R2 role split: viewport dominance, the scene panel, one list with one owner, inspector-names-its-body, and that composition rebuilds no geometry | 10 |
+| `EditorWorkspaceMobileTest` | the UI-R4A structural claim: nothing owns the bottom edge in either mode (`UIR4A-01`, `-11`), the Objects capsule (`-02`), Add Primitive anchored to its `+` and offering exactly the six real primitives (`-03`, `-04`), Sphere and Plane routed through native truth (`-05`, `-06`), closing leaves one Objects control (`-07`), exact Shape and Transform one action away (`-08`, `-09`), the rail's icons and touch floor (`-10`), context surfaces rebuild no geometry (`-14`), the new surfaces leak no gesture (`-15`), one vocabulary in every window (`-17`) | 15 |
+| `EditorWorkspaceSculptRetentionTest` | `UIR4A-12`: Freeze → real stroke → Back → Resume returns the same revision, counts, stroke history and ObjectId, with the Construction Source untouched; and that a stale source is readable from the resting workspace | 2 |
 
-**194 tests** (57 JVM, 137 instrumented). No Java test asserts a rendered pixel;
+**211 tests** (57 JVM, 154 instrumented). No Java test asserts a rendered pixel;
 every control is reached by its stable semantic id and no assertion uses a screen
 coordinate. The foundation and theme suites deliberately assert no colour
 literal, radius or shadow — those are judged by eye and by runtime evidence, and
@@ -562,34 +624,40 @@ calling it a regression.
 
 Latest acceptance run, on `ForgeShape_Stage006` / `emulator-5580` unless stated:
 
-- **Native self-tests:** eleven suites, **1691 checks, zero failures** on a clean
-  launch. The Gate P1 picking assertions are intact inside the now-174-check
-  picking suite; `SIDE`, `REFR`, `NOR`, `CAMPROJ` and `PLN` all still green.
-- **JVM:** 56/56.
-- **Instrumented:** 135 run, **134 green**, twice — once compact, once at an
+- **Native self-tests:** eleven suites, **1695 checks, zero failures** on a clean
+  launch, followed by `FORGESHAPE_NATIVE_VIEWPORT_OK`. Nothing below JNI was
+  touched by UI-R4A; the Gate P1 picking assertions are intact inside the
+  174-check picking suite, and `SIDE`, `REFR`, `NOR`, `CAMPROJ` and `PLN` are all
+  still green.
+- **JVM:** 57/57.
+- **Instrumented:** 154 run, **153 green**, twice — once compact, once at an
   overridden 1600 × 2560 @ 240 dpi — through
-  `scripts\run-instrumented-tests.ps1 -Serial emulator-5580`. The one failure is
-  `ui11`, on its own precondition guard ("the soft keyboard did not appear, so
-  this case proves nothing"), which never reaches an assertion about product
-  behaviour. **Confirmed pre-existing at UI-R3** by stashing every change,
-  rebuilding the untouched `006c1e7` tree and reproducing the character-identical
-  message at the same line — the check this file has always prescribed for that
-  case.
+  `scripts\run-instrumented-tests.ps1 -Serial emulator-5580`. The one failure in
+  each run is `ui11`, on its own precondition guard ("the soft keyboard did not
+  appear, so this case proves nothing"), which never reaches an assertion about
+  product behaviour. The message is **character-identical** to the one this file
+  has recorded since Stage 015D and was confirmed pre-existing there and at
+  UI-R1B1 by stashing every change; it is a harness symptom, not a regression.
 - **Device guards:** `DEV2-01`..`07` and `DEV3-01`..`06` all PASS, with no device
   attached and zero `emulator-5554` interaction.
 - **Physical ARM64 (Gate P1):** closed on a Galaxy S25 Ultra —
   `primaryCpuAbi=arm64-v8a`, `PAGE_SIZE` 4096, the mandatory ~10k/~50k/~100k
   ladder and Sculpt at 100k measured on real hardware. Stylus stays UNVERIFIED.
-- **Runtime walkthrough (UI-R3):** cold start and start chooser, Construction,
-  Sculpt, the Objects panel, the Display popover, grid on/off, a theme switch,
-  the inspector in both detents, HOME/resume and rotation — in compact portrait,
-  compact landscape and the expanded window, in both appearances. No crash, no
-  gesture regression, and **no geometry work from any visual state change**:
-  grid, theme, Objects, inspector, HOME/resume and rotation all produced zero
-  `MESH_UPLOAD_OK` and zero `RENDER_MESH_BUILD`. Earlier walkthroughs are in Git
-  history.
-- **Screenshot review set:** UIR3-S01..S10 captured for owner/coordinator review
-  and deliberately not committed. Paths are in the UI-R3 stage report.
+- **Runtime walkthrough (UI-R4A):** cold start and start chooser into
+  Construction; the resting workspace with no bottom surface; the Objects capsule
+  expanded; Add Primitive; a Sphere and a Plane created and both confirmed as
+  their own native primitive; the active body switched from the list; exact Shape
+  and exact Transform opened, edited and dismissed; Freeze, a real Grab stroke,
+  Back to Construction, Resume Sculpt; Radius/Strength; all four brushes; all
+  three appearances; compact portrait, short landscape and the expanded window;
+  HOME/resume and a rotation round trip. No crash, no gesture leakage, the
+  viewport usable throughout, and **no geometry work from any pure UI state
+  change**: opening and closing every context surface, switching rail context,
+  three appearance switches, HOME/resume and rotation produced **zero**
+  `MESH_UPLOAD_OK` and zero publications. A real sculpt stroke produced 29, which
+  is the stroke working. Earlier walkthroughs are in Git history.
+- **Screenshot review set:** UIR4A-S01..S12 captured for owner/coordinator review
+  and deliberately **not committed**. Paths are in the UI-R4A stage report.
 
 **One caveat about capturing self-test evidence.** On both the emulator and the
 physical phone the logcat ring buffer intermittently drops whole suites from the
@@ -914,13 +982,15 @@ regenerated per stage.
 | `app/src/main/java/.../ForgeShapeSurfaceView.java` | Viewport surface, forwards lifecycle + raw per-pointer state (id, position, tool type, pressure, tilt), takes focus back from an editor |
 | `app/src/main/java/.../PointerSemantics.java` | The ONE place an Android `MotionEvent.TOOL_TYPE_*` constant becomes a neutral wire code, plus that mapping's Unknown fallback |
 | `app/src/main/java/.../EditorWorkspaceView.java` | The whole editor UI: region composition, adaptive layout, window insets, chrome visibility, mode/tool wiring, and `syncFromNative()`. Owns no product state |
-| `app/src/main/java/.../WorkspaceLayoutMode.java` | Window-dp breakpoints, inspector placement and chrome sizing, as arithmetic. No Android type |
-| `app/src/main/java/.../EditorUiState.java` | The closed list of UI-owned state: display unit, draft kind, rail selection, detent per mode, chrome-hidden |
-| `app/src/main/java/.../GlobalToolbarView.java` | Editing context, the three mutually exclusive mode transitions, reserved Export, the Display control, chrome hide, and the one status message |
+| `app/src/main/java/.../WorkspaceLayoutMode.java` | Window-dp breakpoints, where the precision surface appears when open, and chrome sizing, as arithmetic. It has no opinion about whether that surface is open. No Android type |
+| `app/src/main/java/.../EditorUiState.java` | The closed list of UI-owned state: display unit, draft kind, rail selection, whether the precision surface was asked for (per mode, false to begin with), chrome-hidden |
+| `app/src/main/java/.../GlobalToolbarView.java` | Editing context, the three mutually exclusive mode transitions, reserved Export, the Display control, chrome hide, and the one status message. Owns no scene control — that is the Objects capsule's |
 | `app/src/main/java/.../DisplaySettingsPopoverView.java` | The compact display popover: Shading (Studio / MatCap / Debug), Surface (Smooth / Faceted) and Projection (Perspective / Orthographic), with short interruptible open/close motion that honours the system animator scale. Owns no state |
-| `app/src/main/java/.../ToolRailView.java` | The edge tool selector for either mode, including reserved entries. Selects; decides nothing |
+| `app/src/main/java/.../ToolRailView.java` | The edge tool selector for either mode. Every entry works — there is no reserved-entry support left. Selects; decides nothing |
 | `app/src/main/java/.../BrushEdgeControlsView.java`, `VerticalSliderView.java` | Direct Radius and Strength, and the custom vertical control behind them. Own no brush value |
-| `app/src/main/java/.../PropertyInspectorView.java` | Contextual, collapsible, scrolling container with a measured height cap. Owns no value |
+| `app/src/main/java/.../PropertyInspectorView.java` | The on-demand precision surface: a scrolling container with a measured height cap that is open or absent, never collapsed. Owns no value |
+| `app/src/main/java/.../ObjectsCapsuleView.java` | The resting scene control: the active body's name, and the `+`. Holds no scene state; both its controls only report which was pressed |
+| `app/src/main/java/.../AddPrimitivePaletteView.java` | The one creation surface: six primitive tiles, shared by both `+` controls. Builds no geometry and defaults no dimension |
 | `app/src/main/java/.../ConstructionShapeEditorView.java` | Primitive chooser, that primitive's exact fields, unit chips, Apply Shape. Owns field text and a DRAFT kind only |
 | `app/src/main/java/.../ConstructionPlacementEditorView.java` | Position/rotation fields, unit chips, Apply Transform. Owns field text only |
 | `app/src/main/java/.../SculptContextView.java` | Frozen-mesh summary, stale-source warning, and the guarded re-Freeze |
@@ -988,31 +1058,46 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**OWNER VISUAL REVIEW — provide the UI-R3 screenshot set to the coordinator.**
+**Stage 019 — Undo/Redo transaction foundation for direct transform work.**
 
-UI-R3R2 is technically complete and its visual result is **not** accepted. The
-agent does not declare the look final; that judgement is the owner's and the
-coordinator's, on the nine-screenshot review set UI-R3R2 captured (E1..E9: each of
-the three palettes in Construction and in Sculpt, a short-height compact
-landscape proving the rail keeps its icons, an expanded/tablet Construction, and
-the Appearance control showing all three). Screenshots are deliberately **not**
-committed to the repository; their local paths are in the UI-R3R2 stage report.
+UI-R4A left the shell ready for direct manipulation and deliberately built none
+of it. The thing that has to exist *before* a gizmo, not after it, is a
+transaction boundary: a drag on a handle produces a continuous stream of
+intermediate states, and without a domain-level notion of "one edit began, one
+edit ended, this is what it can be undone to", every frame of that drag is either
+a separate revision or nothing at all. Undo is also the guard that makes direct
+manipulation safe to offer — a numeric field can be retyped, a dragged handle
+cannot be un-dragged.
 
-Nothing further is scheduled until that review returns, and no implementation
-stage may be invented here.
+So Stage 019 owns the transaction foundation in the platform-neutral domain, not
+a UI feature: what a transaction is, what opens and closes one, what it captures
+for Construction parameters, for a transform and for a sculpt stroke, and what
+the memory ceiling is. The direct transform gizmo (Stage 020) is built on top of
+it and is not part of Stage 019.
 
-Once it does, the only feature the repo currently records as a candidate is
-**Selection
-Outline** — the expensive half of selection feedback, needing either a second
-geometry pass or a screen-space edge filter. It is a *candidate awaiting owner
-decision*, not an approved stage: today's whole-object tint is the shipped
-behaviour, and the readability enhancement (outline or cavity) was explicitly
-deferred because both candidates start the post-processing framework the shading
-stage was told not to build. Nothing may be built against it until the owner
-schedules it.
+**Visual acceptance of UI-R4A remains PENDING**, on the twelve-screenshot review
+set UIR4A-S01..S12 (the resting Construction workspace, the Objects capsule
+expanded, Add Primitive, both precision surfaces, resting Sculpt and its
+Radius/Strength, short landscape, expanded Construction and Sculpt, and the
+Neutral Charcoal and Light Charcoal resting workspaces). Screenshots are
+deliberately **not** committed; their local paths are in the UI-R4A stage report.
+That review is a judgement about the look and is independent of Stage 019, which
+touches the domain rather than the shell.
+
+**Also owed, before anything else adds to it:** `ARCHITECTURE.md` is now 2084
+lines, over its own 2000-line hard cap and roughly double its 700–1000 target. A
+compaction pass is due.
+
+The one feature the repo still records as a candidate is **Selection Outline** —
+the expensive half of selection feedback, needing either a second geometry pass
+or a screen-space edge filter. It is a *candidate awaiting owner decision*, not
+an approved stage: today's whole-object tint is the shipped behaviour, and the
+readability enhancement was deferred because both candidates start the
+post-processing framework the shading stage was told not to build.
 
 **Still out** and unchanged: snap-to-grid and the Sketch grid, a different
 contract from the world reference grid; a View Cube, camera focus or named views;
 blur or glass of any kind; a post-processing framework; persistence; an automatic
-system theme; hierarchy and object commands; Sketch/Extrude; Undo;
-pressure-driven sculpting; and import/export.
+system theme; hierarchy and object commands; Sketch/Extrude; Mirror, Subdivide
+and Remesh; import and *Add from file*; the one-way Construction-to-Sculpt
+project derivation; pressure-driven sculpting; and export.

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Cylinder: a circular section swept along its axis.
+
+  One of the six silhouettes in the Add Primitive palette. They are drawn as
+  outlined SOLIDS on the same 24 dp grid as every other icon in the product, so
+  the palette reads as a row of shapes to choose between rather than as a list
+  of words. Deliberately separate from the Tool Rail's ic_tool_shape, which
+  means "the shape editor" and not "a box".
+
+  Drawn white and tinted at use; see EditorControlStyles.icon().
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M12,2.8 C16.4,2.8 19.2,3.9 19.2,5.3 C19.2,6.7 16.4,7.8 12,7.8 C7.6,7.8 4.8,6.7 4.8,5.3 C4.8,3.9 7.6,2.8 12,2.8 Z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M4.8,5.3 L4.8,18.7 C4.8,20.1 7.6,21.2 12,21.2 C16.4,21.2 19.2,20.1 19.2,18.7 L19.2,5.3" />
+</vector>

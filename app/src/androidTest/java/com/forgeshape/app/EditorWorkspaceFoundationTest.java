@@ -118,10 +118,12 @@ public final class EditorWorkspaceFoundationTest {
         assertNoPseudoIconsAnywhere("in Construction");
 
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            // Both icon-only toolbar controls, the restore chip and the
-            // inspector toggle are now images with real drawables behind them.
+            // Both icon-only toolbar controls, the restore chip, the precision
+            // toggle, the capsule's plus and the inspector's close control are
+            // images with real drawables behind them.
             for (int id : new int[]{R.id.display_settings_button, R.id.hide_ui_toggle,
-                    R.id.restore_ui_chip, R.id.inspector_toggle}) {
+                    R.id.restore_ui_chip, R.id.precision_toggle,
+                    R.id.objects_capsule_add, R.id.inspector_toggle}) {
                 final View control = workspace.findViewById(id);
                 assertNotNull(activity.getResources().getResourceEntryName(id)
                         + " must exist", control);
@@ -166,9 +168,13 @@ public final class EditorWorkspaceFoundationTest {
                     workspace.findViewById(R.id.add_body),
                     workspace.findViewById(R.id.apply_shape),
                     workspace.findViewById(R.id.display_settings_button),
+                    workspace.findViewById(R.id.objects_capsule_active),
+                    workspace.findViewById(R.id.add_primitive_sphere),
             };
             final String[] names = {"a unit chip", "a primitive chip", "a rail entry",
-                    "an Objects row", "Add Body", "Apply Shape", "the Display button"};
+                    "an Objects row", "the Objects column's plus", "Apply Shape",
+                    "the Display button", "the Objects capsule's body name",
+                    "an Add Primitive tile"};
 
             for (int i = 0; i < controls.length; i++) {
                 assertNotNull(names[i] + " must be on screen", controls[i]);
@@ -199,18 +205,19 @@ public final class EditorWorkspaceFoundationTest {
     public void r1b1_10b_everyIconOnlyControlKeepsTheTouchFloor() {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             final int floor = EditorControlStyles.dimen(activity, R.dimen.icon_button_size);
-            // objects_button joined this row in UI-R2, which makes the row one
-            // control wider on exactly the window where it was already tightest
-            // — so it is guarded here rather than assumed.
-            for (int id : new int[]{R.id.objects_button, R.id.display_settings_button,
-                    R.id.hide_ui_toggle, R.id.inspector_toggle}) {
+            // The precision toggle and the capsule's plus joined this row in
+            // UI-R4A. Both are icon-only and both live on the smallest window's
+            // busiest edges, so they are guarded rather than assumed.
+            for (int id : new int[]{R.id.precision_toggle, R.id.objects_capsule_add,
+                    R.id.display_settings_button, R.id.hide_ui_toggle}) {
                 final View control = workspace.findViewById(id);
                 final String name = activity.getResources().getResourceEntryName(id);
-                if (control.getVisibility() != View.VISIBLE) {
-                    // A control the window deliberately withdrew has no touch
-                    // target to guard. objects_button is GONE exactly when the
-                    // window docks Objects in a column, because then the panel
-                    // it opens would duplicate what is already beside the model.
+                // isShown(), not getVisibility(): a control the window withdrew
+                // has no touch target to guard, and it can be withdrawn by its
+                // CONTAINER — the capsule's plus is VISIBLE inside a capsule
+                // that is GONE exactly when the window docks Objects in a
+                // column, because then the column carries its own plus.
+                if (!control.isShown()) {
                     continue;
                 }
                 assertTrue(name + " must be laid out", control.getWidth() > 0);
@@ -257,11 +264,13 @@ public final class EditorWorkspaceFoundationTest {
                     NativeViewport.productMode() == NativeViewport.MODE_SCULPT);
             final int floor = EditorControlStyles.dimen(activity, R.dimen.icon_button_size);
             final int windowWidth = workspace.getWidth();
-            for (int id : new int[]{R.id.objects_button, R.id.display_settings_button,
-                    R.id.hide_ui_toggle}) {
+            for (int id : new int[]{R.id.precision_toggle, R.id.objects_capsule_add,
+                    R.id.display_settings_button, R.id.hide_ui_toggle}) {
                 final View control = workspace.findViewById(id);
                 final String name = activity.getResources().getResourceEntryName(id);
-                if (control.getVisibility() != View.VISIBLE) {
+                // See r1b1_10b: a container can withdraw a control, so the
+                // question is whether it is SHOWN and not merely visible.
+                if (!control.isShown()) {
                     continue;
                 }
                 assertTrue(name + " is " + control.getWidth() + " px wide, under the "
@@ -590,7 +599,7 @@ public final class EditorWorkspaceFoundationTest {
             assertTrue("the model must never be fully covered (" + where + ")",
                     unoccluded > 0.0);
 
-            final boolean inspectorOpen = workspace.propertyInspector().isExpanded();
+            final boolean inspectorOpen = workspace.propertyInspector().isOpen();
             final double floor = workspace.layoutMode() == WorkspaceLayoutMode.EXPANDED
                     ? EXPANDED_FLOOR
                     : (inspectorOpen ? COMPACT_FLOOR_INSPECTOR_OPEN : COMPACT_FLOOR);

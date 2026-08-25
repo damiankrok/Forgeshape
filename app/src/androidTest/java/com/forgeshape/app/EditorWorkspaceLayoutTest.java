@@ -1,8 +1,10 @@
 package com.forgeshape.app;
 
+import static com.forgeshape.app.WorkspaceTestSupport.closePrecision;
 import static com.forgeshape.app.WorkspaceTestSupport.doOnWorkspace;
 import static com.forgeshape.app.WorkspaceTestSupport.isFullyOnScreen;
 import static com.forgeshape.app.WorkspaceTestSupport.onWorkspace;
+import static com.forgeshape.app.WorkspaceTestSupport.openPrecision;
 import static com.forgeshape.app.WorkspaceTestSupport.releaseOrientation;
 import static com.forgeshape.app.WorkspaceTestSupport.resetToBaselineConstruction;
 import static com.forgeshape.app.WorkspaceTestSupport.setOrientation;
@@ -85,6 +87,8 @@ public final class EditorWorkspaceLayoutTest {
                     expected.inspectorPlacement(heightDp), workspace.inspectorPlacement());
 
             final View inspector = workspace.findViewById(R.id.property_inspector);
+            assertEquals("the precision surface is not in the resting workspace",
+                    View.GONE, inspector.getVisibility());
             assertTrue("no panel may occupy the whole window",
                     inspector.getWidth() < workspace.getWidth()
                             || inspector.getHeight() < workspace.getHeight());
@@ -145,7 +149,7 @@ public final class EditorWorkspaceLayoutTest {
             // which is the whole reason it is one instance.
             assertNotNull("the Objects section exists in every layout",
                     workspace.findViewById(R.id.objects_section));
-            assertNotNull("Add Body exists in every layout",
+            assertNotNull("the column host's creation control exists in every layout",
                     workspace.findViewById(R.id.add_body));
             assertEquals("every body has a row in every layout",
                     NativeViewport.sceneBodyCount(), workspace.objectsSection().rowCount());
@@ -158,9 +162,8 @@ public final class EditorWorkspaceLayoutTest {
                 assertTrue("the Objects column is laid out with a real width",
                         dock.getWidth() > 0);
                 assertTrue("the Objects column is on screen", isFullyOnScreen(dock, workspace));
-                assertTrue("and the Property Inspector is on screen beside it",
-                        isFullyOnScreen(workspace.findViewById(R.id.property_inspector),
-                                workspace));
+                assertEquals("the capsule withdraws where a column names the body",
+                        View.GONE, workspace.objectsCapsule().getVisibility());
                 assertEquals("the one Objects section is what is in the column",
                         dock, workspace.objectsSection().getParent());
                 assertEquals("a docked window docks the inspector too",
@@ -176,8 +179,8 @@ public final class EditorWorkspaceLayoutTest {
                 // panel named "Shape" from opening on the list of bodies.
                 assertTrue("Objects lives in the scene panel, not in the inspector",
                         workspace.objectsPopover().hosts(workspace.objectsSection()));
-                assertTrue("and the control that opens it is on screen",
-                        workspace.globalToolbar().objectsActionVisible());
+                assertEquals("and the capsule that opens it is on screen",
+                        View.VISIBLE, workspace.objectsCapsule().getVisibility());
             }
             return null;
         });
@@ -368,24 +371,24 @@ public final class EditorWorkspaceLayoutTest {
     }
 
     // -----------------------------------------------------------------------
-    // UI-12 -- collapsing gives the viewport back
+    // UI-12 -- dismissing the exact values gives the viewport back
     // -----------------------------------------------------------------------
 
     @Test
-    public void ui12_collapsingTheInspectorAndHidingChromeGiveTheViewportBack() {
+    public void ui12_closingTheInspectorAndHidingChromeGiveTheViewportBack() {
         final double open = measureUnoccluded(true);
-        final double collapsed = measureUnoccluded(false);
+        final double closed = measureUnoccluded(false);
         android.util.Log.i("ForgeShape", String.format(java.util.Locale.US,
-                "FORGESHAPE_UI_VIEWPORT detent inspector-open=%.1f%% collapsed=%.1f%%",
-                open * 100.0, collapsed * 100.0));
+                "FORGESHAPE_UI_VIEWPORT precision open=%.1f%% closed=%.1f%%",
+                open * 100.0, closed * 100.0));
 
-        assertTrue("collapsing must give area back: " + open + " -> " + collapsed,
-                collapsed > open);
+        assertTrue("dismissing must give area back: " + open + " -> " + closed,
+                closed > open);
         final boolean expanded = onWorkspace(rule.getScenario(), (activity, workspace) ->
                 workspace.layoutMode() == WorkspaceLayoutMode.EXPANDED);
         if (!expanded) {
-            assertTrue("a collapsed compact or medium window must clear the floor: "
-                    + collapsed, collapsed >= COMPACT_FLOOR);
+            assertTrue("a resting compact or medium window must clear the floor: "
+                    + closed, closed >= COMPACT_FLOOR);
         }
 
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
@@ -410,13 +413,14 @@ public final class EditorWorkspaceLayoutTest {
         });
     }
 
+    /**
+     * UI-12, now about a surface rather than a detent: whether the user asked
+     * for the exact values is remembered per mode across a mode round trip.
+     */
     @Test
     public void ui12_theDetentSurvivesAModeRoundTrip() {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            final PropertyInspectorView inspector = workspace.propertyInspector();
-            if (inspector.isExpanded()) {
-                workspace.findViewById(R.id.inspector_toggle).performClick();
-            }
+            openPrecision(workspace);
             return null;
         });
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
@@ -434,18 +438,22 @@ public final class EditorWorkspaceLayoutTest {
             return null;
         });
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            assertTrue("Construction's detent is remembered across a mode round trip",
-                    !workspace.propertyInspector().isExpanded());
+            assertTrue("Construction's precision surface is remembered across a mode "
+                            + "round trip", workspace.propertyInspector().isOpen());
+            assertTrue("and so is the fact that it was asked for",
+                    workspace.uiState().precisionOpen(false));
             return null;
         });
     }
 
     // -----------------------------------------------------------------------
 
-    private double measureUnoccluded(final boolean inspectorExpanded) {
+    private double measureUnoccluded(final boolean precisionOpen) {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            if (workspace.propertyInspector().isExpanded() != inspectorExpanded) {
-                workspace.findViewById(R.id.inspector_toggle).performClick();
+            if (precisionOpen) {
+                openPrecision(workspace);
+            } else {
+                closePrecision(workspace);
             }
             return null;
         });
@@ -471,7 +479,7 @@ public final class EditorWorkspaceLayoutTest {
             assertTrue("the model must never be fully covered (" + where + "): "
                     + unoccluded, unoccluded > 0.0);
 
-            final boolean inspectorOpen = workspace.propertyInspector().isExpanded();
+            final boolean inspectorOpen = workspace.propertyInspector().isOpen();
             // Logged, not only asserted: the numbers are the evidence for the
             // viewport floor, and a passing assertion does not record them.
             android.util.Log.i("ForgeShape", String.format(java.util.Locale.US,
@@ -481,7 +489,7 @@ public final class EditorWorkspaceLayoutTest {
                     EditorControlStyles.toDp(activity, workspace.getWidth()),
                     EditorControlStyles.toDp(activity, workspace.getHeight()),
                     workspace.layoutMode(), workspace.inspectorPlacement(),
-                    inspectorOpen ? "open" : "collapsed", unoccluded * 100.0));
+                    inspectorOpen ? "open" : "closed", unoccluded * 100.0));
             final double floor = workspace.layoutMode() == WorkspaceLayoutMode.EXPANDED
                     ? 0.40
                     : (inspectorOpen ? COMPACT_FLOOR_INSPECTOR_OPEN : COMPACT_FLOOR);

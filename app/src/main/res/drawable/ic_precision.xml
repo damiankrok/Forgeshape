@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Exact values: the precision surface for the tool context that is held.
+
+  Two tracks with a handle on each, rather than a keyboard or a ruler. A
+  keyboard would name the input method instead of the subject, and a ruler reads
+  as measuring something that already exists; what this opens is where the
+  numbers behind the current tool are READ and SET.
+
+  Drawn white and tinted at use; see EditorControlStyles.icon().
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:pathData="M4,8.5 L20,8.5 M4,15.5 L20,15.5" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M9,8.5 m-3,0 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M15.5,15.5 m-3,0 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0 Z" />
+</vector>

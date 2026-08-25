@@ -21,9 +21,16 @@ import android.widget.TextView;
  * body a row means is its {@link View#getTag() tag}: the {@code Long} ObjectId.
  * Tests select a row by that tag, never by position on screen.
  *
- * <p>Stage 017 scope: root-level bodies only, with add and select. There is
- * deliberately no delete, duplicate, rename, hide, lock, group, nesting or
- * reorder, and no speculative parent field anywhere.
+ * <p>Scope: root-level bodies only, with add and select. There is deliberately
+ * no delete, duplicate, rename, hide, lock, group, nesting or reorder, and no
+ * speculative parent field anywhere.
+ *
+ * <p><b>Its {@code +} creates nothing by itself.</b> It opens the Add Primitive
+ * palette, and a body exists only once a shape has been chosen there. A control
+ * that silently appended a default box is what made creation read as an
+ * administrative operation on a list rather than as a choice about the model —
+ * and it also meant the first thing a user did after creating a body was
+ * change what it was.
  */
 final class ObjectsSectionView extends LinearLayout {
 
@@ -48,16 +55,23 @@ final class ObjectsSectionView extends LinearLayout {
         addView(list, EditorControlStyles.rowParams(
                 EditorControlStyles.dimen(context, R.dimen.row_gap_small)));
 
-        // An action, not a selection, and deliberately QUIETER than the rows it
-        // appends to: the list is what this surface is about, and a filled
-        // bordered Add Body beside borderless rows made the button outweigh its
-        // own subject. Secondary label, no box until pressed.
+        // An anchor, not an act, and deliberately QUIETER than the rows above
+        // it: the list is what this surface is about, and a filled bordered
+        // button beside borderless rows made it outweigh its own subject.
+        //
+        // This is the column host's `+`. The Objects capsule carries the other
+        // one, and both open the same one palette — which is why the palette is
+        // the host's and this only reports which control was pressed.
         final TextView add = EditorControlStyles.secondaryActionChip(context, R.id.add_body,
                 context.getString(R.string.add_body));
+        add.setCompoundDrawablesRelativeWithIntrinsicBounds(R.drawable.ic_add, 0, 0, 0);
+        add.setCompoundDrawablePadding(
+                EditorControlStyles.dimen(context, R.dimen.row_gap_small));
+        add.setCompoundDrawableTintList(EditorControlStyles.contentTint(context));
         add.setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View v) {
-                onAddBodyRequested();
+                host.onAddPrimitiveRequested(v);
             }
         });
         final LinearLayout.LayoutParams addParams = EditorControlStyles.rowParams(
@@ -120,23 +134,6 @@ final class ObjectsSectionView extends LinearLayout {
     /** How many rows are on screen. */
     int rowCount() {
         return list.getChildCount();
-    }
-
-    private void onAddBodyRequested() {
-        final long created = NativeViewport.sceneAddBody();
-        if (created == 0L) {
-            // The only refusal is "not while sculpting", which the Objects
-            // section is not normally reachable in; say so rather than silently
-            // doing nothing.
-            host.showStatus(getContext().getString(R.string.status_nothing_frozen),
-                    R.attr.fsTextError);
-            return;
-        }
-        // Native code already selected the new body; the whole workspace
-        // re-reads, so the Inspector shows the new body's own parameters.
-        host.onNativeStateChanged();
-        host.showStatus(getContext().getString(R.string.status_body_added,
-                getContext().getString(R.string.body_label, created)), R.attr.fsTextSuccess);
     }
 
     private void onBodySelected(long objectId) {

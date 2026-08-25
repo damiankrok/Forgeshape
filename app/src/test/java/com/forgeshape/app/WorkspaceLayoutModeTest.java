@@ -25,8 +25,6 @@ public final class WorkspaceLayoutModeTest {
         final WorkspaceLayoutMode mode = WorkspaceLayoutMode.forWindow(411, 914);
         assertEquals(WorkspaceLayoutMode.COMPACT, mode);
         assertEquals(InspectorPlacement.BOTTOM_SHEET, mode.inspectorPlacement(914));
-        assertFalse("a compact window opens with the model visible",
-                mode.inspectorStartsExpanded(914));
         assertFalse(mode.railDocked());
         assertFalse("a tall window gives the status message its own line",
                 WorkspaceLayoutMode.statusInlineWithControls(914));
@@ -60,8 +58,6 @@ public final class WorkspaceLayoutModeTest {
         final WorkspaceLayoutMode mode = WorkspaceLayoutMode.forWindow(600, 800);
         assertEquals(WorkspaceLayoutMode.MEDIUM, mode);
         assertEquals(InspectorPlacement.BOTTOM_SHEET, mode.inspectorPlacement(800));
-        assertTrue("a roomy window can show the exact values immediately",
-                mode.inspectorStartsExpanded(800));
     }
 
     @Test

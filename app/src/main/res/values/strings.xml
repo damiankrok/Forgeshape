@@ -83,10 +83,17 @@
     <string name="tool_smooth">Smooth</string>
     <string name="tool_inflate">Inflate</string>
     <string name="tool_shape">Shape</string>
-    <string name="tool_place">Place</string>
-    <string name="tool_sketch">Sketch</string>
-    <string name="tool_extrude">Extrude</string>
-    <string name="reserved_not_implemented">%1$s is reserved and not implemented yet.</string>
+    <!--
+      "Transform", not "Place", and deliberately not a promise of a gizmo.
+
+      The rail entry names the CONTEXT the user is in — what the body's position
+      and rotation are — which is the mental model Stage 020's direct handles
+      will join rather than replace. Everything the entry actually opens today
+      is exact numeric, and every surface it opens says so in its own title:
+      "Exact Transform — Body #1". So the vocabulary is ready and no control
+      claims a manipulation the product cannot yet perform.
+    -->
+    <string name="tool_transform">Transform</string>
 
     <!-- Brush -->
     <string name="brush_radius">Radius</string>
@@ -94,11 +101,14 @@
 
     <!-- Property Inspector -->
     <string name="property_inspector">Property Inspector</string>
-    <string name="inspector_collapse">Collapse Property Inspector</string>
-    <string name="inspector_expand">Expand Property Inspector</string>
-    <string name="inspector_shape_title">Shape</string>
-    <string name="inspector_place_title">Placement</string>
-    <string name="inspector_sculpt_title">Sculpt</string>
+    <string name="inspector_close">Close exact values</string>
+    <string name="inspector_sculpt_title">Sculpt details</string>
+    <!-- What the precision toggle opens, named by the held tool. -->
+    <string name="precision_shape">Exact shape</string>
+    <string name="precision_transform">Exact transform</string>
+    <string name="precision_sculpt">Details</string>
+    <string name="precision_open">Open %1$s</string>
+    <string name="precision_close">Close %1$s</string>
 
     <!-- Construction -->
     <string name="primitive_box">Box</string>
@@ -108,13 +118,17 @@
     <string name="primitive_capsule">Capsule</string>
     <string name="primitive_plane">Plane</string>
     <string name="objects">Objects</string>
-    <string name="objects_open">Open Objects</string>
-    <string name="objects_close">Close Objects</string>
-    <string name="inspector_shape_title_for_body">Shape — %1$s</string>
-    <string name="inspector_place_title_for_body">Placement — %1$s</string>
-    <string name="add_body">Add Body</string>
+    <string name="inspector_shape_title_for_body">Exact Shape — %1$s</string>
+    <string name="inspector_place_title_for_body">Exact Transform — %1$s</string>
+    <!-- The `+`. It opens Add Primitive; it never creates a body by itself. -->
+    <string name="add_body">Add body</string>
+    <string name="add_primitive">Add Primitive</string>
+    <string name="add_primitive_close">Close Add Primitive</string>
+    <string name="objects_capsule_active">Objects — %1$s is selected</string>
+    <string name="status_body_created">Added %1$s as a %2$s — it is now selected.</string>
+    <string name="status_body_created_unshaped">Added %1$s, but ForgeShape refused the %2$s and left it a box.</string>
+    <string name="status_body_add_failed">Could not add a body — leave Sculpt first.</string>
     <string name="body_label">Body #%1$d</string>
-    <string name="status_body_added">Added %1$s — it is now the selected body.</string>
     <string name="status_body_selected">%1$s selected.</string>
     <string name="apply_shape">Apply Shape</string>
     <string name="apply_transform">Apply Transform</string>

@@ -1,10 +1,13 @@
 package com.forgeshape.app;
 
+import static com.forgeshape.app.WorkspaceTestSupport.closePrecision;
 import static com.forgeshape.app.WorkspaceTestSupport.describeSnapshotDifference;
 import static com.forgeshape.app.WorkspaceTestSupport.doOnWorkspace;
 import static com.forgeshape.app.WorkspaceTestSupport.nativeSnapshot;
 import static com.forgeshape.app.WorkspaceTestSupport.onWorkspace;
+import static com.forgeshape.app.WorkspaceTestSupport.openPrecision;
 import static com.forgeshape.app.WorkspaceTestSupport.resetToBaselineConstruction;
+import static com.forgeshape.app.WorkspaceTestSupport.settleLayout;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -52,12 +55,8 @@ public final class EditorWorkspaceControlsTest {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             assertNotNull("Construction rail carries the shape editor",
                     workspace.findViewById(R.id.tool_rail_shape));
-            assertNotNull("Construction rail carries the placement editor",
+            assertNotNull("Construction rail carries the transform context",
                     workspace.findViewById(R.id.tool_rail_place));
-            assertNotNull("Sketch is drawn as a reserved home",
-                    workspace.findViewById(R.id.tool_rail_sketch));
-            assertNotNull("Extrude is drawn as a reserved home",
-                    workspace.findViewById(R.id.tool_rail_extrude));
             assertNull("no sculpt brush belongs in Construction",
                     workspace.findViewById(R.id.tool_rail_grab));
 
@@ -71,17 +70,35 @@ public final class EditorWorkspaceControlsTest {
         });
     }
 
+    /**
+     * UIR4A-04b. Every entry on the Tool Rail does something.
+     *
+     * <p>The rail used to carry Sketch and Extrude, drawn and inert. Half of the
+     * one control the user reaches for most spent on features the product does
+     * not have is a worse trade than a rail that grows an entry later, and an
+     * entry that looks like a tool and is not is a promise the shell cannot
+     * keep. Export is deliberately excluded from the rule and is asserted
+     * separately: it is a reserved GLOBAL action the owner approved, it is not a
+     * tool, and it is drawn recessed and says so.
+     */
     @Test
-    public void ui01_reservedRailEntriesAreVisibleAndInert() {
+    public void uir4a04b_noRailEntryIsReservedOrInert() {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            for (int id : new int[]{R.id.tool_rail_sketch, R.id.tool_rail_extrude}) {
-                final View entry = workspace.findViewById(id);
-                assertEquals("a reserved entry stays visible so the shell's shape "
-                        + "does not change when it arrives", View.VISIBLE, entry.getVisibility());
-                assertFalse("a reserved entry must not be operable", entry.isEnabled());
-                assertTrue("and must say why",
-                        String.valueOf(entry.getContentDescription()).contains("not implemented"));
+            final ToolRailView rail = workspace.findViewById(R.id.tool_rail);
+            // Exactly the two Construction contexts, and nothing else. The
+            // count is asserted as well as the state, because two working
+            // entries beside two inert ones would otherwise satisfy the loop.
+            assertEquals("Construction offers exactly its two working contexts",
+                    2, rail.getChildCount());
+            for (int i = 0; i < rail.getChildCount(); i++) {
+                final View entry = rail.getChildAt(i);
+                assertTrue("every rail entry must be operable", entry.isEnabled());
+                assertTrue("and tappable", entry.isClickable());
+                assertFalse("and must not describe itself as unimplemented",
+                        String.valueOf(entry.getContentDescription())
+                                .contains("not implemented"));
             }
+
             final View export = workspace.findViewById(R.id.export_action);
             assertEquals(View.VISIBLE, export.getVisibility());
             assertFalse("Export is approved but not implemented", export.isEnabled());
@@ -157,6 +174,15 @@ public final class EditorWorkspaceControlsTest {
                 {R.id.field_capsule_diameter, R.id.field_capsule_total_height},
                 {R.id.field_plane_width, R.id.field_plane_depth},
         };
+
+        // The fields are asserted to be REACHABLE, which means the surface that
+        // carries them has to be the one the user asked for rather than one the
+        // workspace left open.
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            openPrecision(workspace);
+            return null;
+        });
+        settleLayout();
 
         for (int kind = 0; kind < chips.length; kind++) {
             final int selected = kind;
@@ -745,7 +771,8 @@ public final class EditorWorkspaceControlsTest {
             workspace.findViewById(R.id.primitive_option_cone).performClick();
             workspace.findViewById(R.id.unit_chip_cm).performClick();
             workspace.findViewById(R.id.tool_rail_place).performClick();
-            workspace.findViewById(R.id.inspector_toggle).performClick();
+            openPrecision(workspace);
+            closePrecision(workspace);
             workspace.findViewById(R.id.hide_ui_toggle).performClick();
             workspace.findViewById(R.id.restore_ui_chip).performClick();
             workspace.applyLayoutForWindow(workspace.getWidth(), workspace.getHeight());
@@ -754,7 +781,7 @@ public final class EditorWorkspaceControlsTest {
 
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             final double[] after = nativeSnapshot();
-            assertArrayEquals("drafting, unit, rail, detent, hide and relayout are all UI:"
+            assertArrayEquals("drafting, unit, rail, precision, hide and relayout are all UI:"
                     + describeSnapshotDifference(before, after), before, after, 0.0);
             return null;
         });

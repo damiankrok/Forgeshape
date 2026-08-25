@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Sphere: one diameter, with the equator that makes it read as a solid rather than as a disc.
+
+  One of the six silhouettes in the Add Primitive palette. They are drawn as
+  outlined SOLIDS on the same 24 dp grid as every other icon in the product, so
+  the palette reads as a row of shapes to choose between rather than as a list
+  of words. Deliberately separate from the Tool Rail's ic_tool_shape, which
+  means "the shape editor" and not "a box".
+
+  Drawn white and tinted at use; see EditorControlStyles.icon().
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M12,2.6 A9.4,9.4 0 1,0 12,21.4 A9.4,9.4 0 1,0 12,2.6 Z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M2.6,12 C2.6,13.9 6.8,15.4 12,15.4 C17.2,15.4 21.4,13.9 21.4,12" />
+</vector>

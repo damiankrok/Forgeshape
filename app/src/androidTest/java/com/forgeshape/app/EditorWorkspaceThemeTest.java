@@ -436,6 +436,7 @@ public final class EditorWorkspaceThemeTest {
             switchTo(theme);
             doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
                 for (int id : new int[]{R.id.display_settings_button, R.id.hide_ui_toggle,
+                        R.id.precision_toggle, R.id.objects_capsule_add,
                         R.id.inspector_toggle}) {
                     final View control = workspace.findViewById(id);
                     final String name = theme + "/"
@@ -449,16 +450,19 @@ public final class EditorWorkspaceThemeTest {
                             hasPressedFeedback(control));
                 }
                 for (int id : new int[]{R.id.tool_rail_shape, R.id.primitive_option_box,
-                        R.id.add_body, R.id.apply_shape}) {
+                        R.id.add_body, R.id.apply_shape, R.id.objects_capsule_active,
+                        R.id.add_primitive_sphere}) {
                     assertTrue(theme + "/"
                                     + activity.getResources().getResourceEntryName(id)
                                     + " must still answer a press",
                             hasPressedFeedback(workspace.findViewById(id)));
                 }
-                // A reserved entry must still read as reserved rather than
-                // merely quiet.
-                final View sketch = workspace.findViewById(R.id.tool_rail_sketch);
-                assertFalse(theme + ": Sketch stays inert", sketch.isEnabled());
+                // A reserved control must still read as reserved rather than
+                // merely quiet. The Tool Rail no longer has one — every entry on
+                // it works — so the rule is asserted where it is still true, on
+                // the one approved-but-unimplemented GLOBAL action.
+                final View export = workspace.findViewById(R.id.export_action);
+                assertFalse(theme + ": Export stays inert", export.isEnabled());
                 final int disabled = EditorControlStyles.themeColor(activity, R.attr.fsTextDisabled);
                 final int secondary = EditorControlStyles.themeColor(activity,
                         R.attr.fsTextSecondary);
@@ -779,7 +783,7 @@ public final class EditorWorkspaceThemeTest {
             final Rect[] chrome = workspace.chromeRects();
             final double unoccluded = unoccludedViewportFraction(workspace.getWidth(),
                     workspace.getHeight(), chrome);
-            final boolean inspectorOpen = workspace.propertyInspector().isExpanded();
+            final boolean inspectorOpen = workspace.propertyInspector().isOpen();
             final double floor = workspace.layoutMode() == WorkspaceLayoutMode.EXPANDED
                     ? 0.40 : (inspectorOpen ? 0.50 : 0.60);
             android.util.Log.i("ForgeShape", String.format(java.util.Locale.US,

@@ -3,10 +3,10 @@ package com.forgeshape.app;
 /**
  * What a Property Inspector body may ask of the workspace around it.
  *
- * <p>Deliberately four methods. An inspector body edits one section and reports
- * on it; it does not know about modes, rails, layout or the other bodies, and
- * it cannot reach them through this. Anything a body appears to need beyond
- * these is a sign it is taking on a responsibility that belongs to
+ * <p>Deliberately short. An inspector body edits one section and reports on it;
+ * it does not know about modes, rails, layout or the other bodies, and it
+ * cannot reach them through this. Anything a body appears to need beyond these
+ * is a sign it is taking on a responsibility that belongs to
  * {@link EditorWorkspaceView}.
  */
 interface InspectorHost {
@@ -46,6 +46,20 @@ interface InspectorHost {
      * landed, so the next touch navigates the model instead of typing.
      */
     void finishEditing();
+
+    /**
+     * Asks for the Add Primitive palette, grown out of a given control.
+     *
+     * <p>Routed through the host, and taking the control it grew from, because
+     * creation is a <b>scene-level</b> act with two invoking controls — the
+     * Objects capsule's {@code +} on a phone and the docked Objects column's on
+     * a tablet — and exactly one surface. The host owns that surface and where
+     * it is anchored; the caller owns only which control was pressed.
+     *
+     * <p>Nothing is created by asking. A body exists only once a shape has been
+     * chosen from the palette.
+     */
+    void onAddPrimitiveRequested(android.view.View invoker);
 
     /** The UI-owned draft, presentation and layout state. */
     EditorUiState uiState();

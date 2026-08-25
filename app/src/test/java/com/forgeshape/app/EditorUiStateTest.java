@@ -48,50 +48,55 @@ public final class EditorUiStateTest {
     @Test
     public void refusesAConstructionToolThatIsNotOneOfTheTwo() {
         final EditorUiState state = new EditorUiState();
-        state.setConstructionTool(EditorUiState.CONSTRUCTION_TOOL_PLACE);
-        assertEquals(EditorUiState.CONSTRUCTION_TOOL_PLACE, state.constructionTool());
+        state.setConstructionTool(EditorUiState.CONSTRUCTION_TOOL_TRANSFORM);
+        assertEquals(EditorUiState.CONSTRUCTION_TOOL_TRANSFORM, state.constructionTool());
         state.setConstructionTool(99);
         assertEquals(EditorUiState.CONSTRUCTION_TOOL_SHAPE, state.constructionTool());
     }
 
+    /**
+     * UIR4A-01, at the level the rule is actually decided.
+     *
+     * <p>The resting workspace has no precision surface in it, in either mode
+     * and in every window. This is the arithmetic half of "no permanent bottom
+     * Inspector"; the instrumentation asserts the other half, that nothing is
+     * laid out along the bottom edge as a result.
+     */
     @Test
-    public void remembersTheInspectorDetentPerMode() {
+    public void thePrecisionSurfaceStartsClosedInBothModes() {
         final EditorUiState state = new EditorUiState();
-        state.setInspectorExpanded(false, true);
-        state.setInspectorExpanded(true, false);
-        assertTrue("Construction is where the exact values are typed",
-                state.inspectorExpanded(false));
-        assertFalse("Sculpt's inspector is a status surface and stays out of the way",
-                state.inspectorExpanded(true));
+        assertFalse("Construction rests on the viewport, not on a panel",
+                state.precisionOpen(false));
+        assertFalse("Sculpt rests on the viewport, not on a panel",
+                state.precisionOpen(true));
     }
 
     @Test
-    public void appliesTheOpeningDetentOnceAndThenLeavesTheUserAlone() {
+    public void remembersWhetherThePrecisionSurfaceIsOpenPerMode() {
         final EditorUiState state = new EditorUiState();
-        state.applyInitialDetents(WorkspaceLayoutMode.COMPACT, 914);
-        assertFalse(state.inspectorExpanded(false));
-
-        // The user opens it, then the window is rotated into a shape whose
-        // opening detent would be different. The user's choice must stand.
-        state.setInspectorExpanded(false, true);
-        state.applyInitialDetents(WorkspaceLayoutMode.MEDIUM, 411);
-        assertTrue("a rotation must not undo a deliberate collapse or expand",
-                state.inspectorExpanded(false));
+        state.setPrecisionOpen(false, true);
+        state.setPrecisionOpen(true, false);
+        assertTrue("the exact values were asked for in Construction",
+                state.precisionOpen(false));
+        assertFalse("and were not asked for in Sculpt",
+                state.precisionOpen(true));
     }
 
+    /**
+     * There is deliberately no window-size rule that opens it.
+     *
+     * <p>The previous shell opened the panel by itself on a roomy window, so a
+     * rotation could put a surface on screen the user had never asked for. The
+     * layout decision no longer has an opinion at all — the only thing that
+     * opens the precision surface is the precision toggle — which is why the
+     * layout mode is passed nothing here and there is nothing to pass it to.
+     */
     @Test
-    public void aRoomyWindowOpensTheInspector() {
-        final EditorUiState state = new EditorUiState();
-        state.applyInitialDetents(WorkspaceLayoutMode.EXPANDED, 800);
-        assertTrue(state.inspectorExpanded(false));
-        assertTrue(state.inspectorExpanded(true));
-    }
-
-    @Test
-    public void aShortMediumWindowStillOpensCollapsed() {
-        final EditorUiState state = new EditorUiState();
-        state.applyInitialDetents(WorkspaceLayoutMode.MEDIUM, 411);
-        assertFalse(state.inspectorExpanded(false));
+    public void aFreshWorkspaceStateHasNoSurfaceOpen() {
+        EditorUiState.carryAcrossRecreation(null);
+        final EditorUiState fresh = EditorUiState.forNewWorkspace();
+        assertFalse(fresh.precisionOpen(false));
+        assertFalse(fresh.precisionOpen(true));
     }
 
     // -----------------------------------------------------------------------

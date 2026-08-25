@@ -156,14 +156,14 @@ public class EditorWorkspaceMotionTest {
     @Test
     public void r1c111_theInspectorEndsAtTheSameRestingLayoutEitherWay() {
         for (int round = 0; round < 2; round++) {
-            final boolean expanded = onWorkspace(rule.getScenario(), (activity, workspace) ->
-                    workspace.propertyInspector().isExpanded());
+            final boolean open = onWorkspace(rule.getScenario(), (activity, workspace) ->
+                    workspace.propertyInspector().isOpen());
             doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-                workspace.findViewById(R.id.inspector_toggle).performClick();
+                workspace.precisionToggle().performClick();
                 return null;
             });
             settleLayout();
-            assertInspectorSettled("after toggling from expanded=" + expanded, !expanded);
+            assertInspectorSettled("after toggling from open=" + open, !open);
         }
     }
 
@@ -175,41 +175,45 @@ public class EditorWorkspaceMotionTest {
      */
     @Test
     public void r1c112_rapidTogglingCannotLeaveTheInspectorHalfVisible() {
-        final boolean startExpanded = onWorkspace(rule.getScenario(), (activity, workspace) ->
-                workspace.propertyInspector().isExpanded());
+        final boolean startOpen = onWorkspace(rule.getScenario(), (activity, workspace) ->
+                workspace.propertyInspector().isOpen());
 
         // Six toggles with no settle between them, so several land squarely in
         // the middle of the transition before them.
         for (int i = 0; i < 6; i++) {
             doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-                workspace.findViewById(R.id.inspector_toggle).performClick();
+                workspace.precisionToggle().performClick();
                 return null;
             });
             SystemClock.sleep(30L);
         }
         settleLayout();
-        // Six toggles is an even number, so the detent is back where it began.
-        assertInspectorSettled("after six rapid toggles", startExpanded);
+        // Six toggles is an even number, so the surface is back where it began.
+        assertInspectorSettled("after six rapid toggles", startOpen);
     }
 
-    private void assertInspectorSettled(final String where, final boolean expanded) {
+    private void assertInspectorSettled(final String where, final boolean open) {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             final PropertyInspectorView inspector = workspace.propertyInspector();
-            final View scroll = workspace.findViewById(R.id.inspector_scroll);
-            assertEquals(where + ": the detent is what was asked for",
-                    expanded, inspector.isExpanded());
-            assertEquals(where + ": the body is fully shown or fully gone",
-                    expanded ? View.VISIBLE : View.GONE, scroll.getVisibility());
+            assertEquals(where + ": the surface is where it was asked to be",
+                    open, inspector.isOpen());
+            assertEquals(where + ": it is fully shown or fully gone",
+                    open ? View.VISIBLE : View.GONE, inspector.getVisibility());
             assertEquals(where + ": nothing is left part-way faded",
-                    1.0f, scroll.getAlpha(), 1.0e-6f);
-            assertEquals(where + ": nothing is left displaced",
-                    0.0f, scroll.getTranslationY(), 1.0e-6f);
-            // The chevron points the way the panel will go. An interrupted
+                    1.0f, inspector.getAlpha(), 1.0e-6f);
+            assertEquals(where + ": nothing is left part-way scaled",
+                    1.0f, inspector.getScaleY(), 1.0e-6f);
+            // The toggle says what pressing it will do next. An interrupted
             // transition must never leave it claiming the opposite.
-            assertEquals(where + ": the chevron agrees with the detent",
-                    activity.getString(expanded ? R.string.inspector_collapse
-                            : R.string.inspector_expand),
-                    workspace.findViewById(R.id.inspector_toggle).getContentDescription());
+            final String opens = activity.getString(
+                    NativeViewport.productMode() == NativeViewport.MODE_SCULPT
+                            ? R.string.precision_sculpt : R.string.precision_shape);
+            assertEquals(where + ": the toggle agrees with the surface",
+                    activity.getString(open ? R.string.precision_close
+                            : R.string.precision_open, opens),
+                    workspace.precisionToggle().getContentDescription());
+            assertEquals(where + ": and is drawn active exactly while it is open",
+                    open, workspace.precisionToggle().isActivated());
             return null;
         });
     }
@@ -302,16 +306,16 @@ public class EditorWorkspaceMotionTest {
         setAnimatorScale("0");
 
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            final View scroll = workspace.findViewById(R.id.inspector_scroll);
-            final boolean expanded = workspace.propertyInspector().isExpanded();
-            workspace.findViewById(R.id.inspector_toggle).performClick();
+            final PropertyInspectorView inspector = workspace.propertyInspector();
+            final boolean open = inspector.isOpen();
+            workspace.precisionToggle().performClick();
             // Asserted on the very next line, with no settle at all: reduced
             // motion means the final state is already true.
-            assertEquals("the detent lands at once", !expanded,
-                    workspace.propertyInspector().isExpanded());
-            assertEquals(!expanded ? View.VISIBLE : View.GONE, scroll.getVisibility());
-            assertEquals(1.0f, scroll.getAlpha(), 1.0e-6f);
-            assertEquals(0.0f, scroll.getTranslationY(), 1.0e-6f);
+            assertEquals("the precision surface lands at once", !open,
+                    inspector.isOpen());
+            assertEquals(!open ? View.VISIBLE : View.GONE, inspector.getVisibility());
+            assertEquals(1.0f, inspector.getAlpha(), 1.0e-6f);
+            assertEquals(1.0f, inspector.getScaleY(), 1.0e-6f);
 
             workspace.findViewById(R.id.hide_ui_toggle).performClick();
             assertEquals("chrome hides at once", View.VISIBLE,
@@ -391,15 +395,15 @@ public class EditorWorkspaceMotionTest {
             final long down = SystemClock.uptimeMillis();
             sendViewportTouch(viewport, down, down, MotionEvent.ACTION_DOWN);
 
-            final View scroll = workspace.findViewById(R.id.inspector_scroll);
-            final boolean expanded = workspace.propertyInspector().isExpanded();
-            workspace.findViewById(R.id.inspector_toggle).performClick();
+            final PropertyInspectorView inspector = workspace.propertyInspector();
+            final boolean open = inspector.isOpen();
+            workspace.precisionToggle().performClick();
             // No settle: with a pointer on the model the panel must already be
             // at its resting state rather than part-way through a fade.
-            assertEquals("the detent lands at once during a gesture", !expanded,
-                    workspace.propertyInspector().isExpanded());
-            assertEquals(!expanded ? View.VISIBLE : View.GONE, scroll.getVisibility());
-            assertEquals(1.0f, scroll.getAlpha(), 1.0e-6f);
+            assertEquals("the precision surface lands at once during a gesture", !open,
+                    inspector.isOpen());
+            assertEquals(!open ? View.VISIBLE : View.GONE, inspector.getVisibility());
+            assertEquals(1.0f, inspector.getAlpha(), 1.0e-6f);
 
             // CANCELLED, not lifted. A DOWN/UP pair at the same point is a TAP,
             // and a tap legitimately resolves a selection — which, once the
@@ -415,16 +419,16 @@ public class EditorWorkspaceMotionTest {
         settleLayout();
 
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            // And once the gesture has settled, motion is available again.
-            final View scroll = workspace.findViewById(R.id.inspector_scroll);
-            assertEquals(1.0f, scroll.getAlpha(), 1.0e-6f);
-            assertEquals(0.0f, scroll.getTranslationY(), 1.0e-6f);
+            // And once the gesture has settled, the surface is at rest.
+            final PropertyInspectorView inspector = workspace.propertyInspector();
+            assertEquals(1.0f, inspector.getAlpha(), 1.0e-6f);
+            assertEquals(1.0f, inspector.getScaleY(), 1.0e-6f);
             return null;
         });
 
         final double[] after = onWorkspace(rule.getScenario(),
                 (activity, workspace) -> nativeSnapshot());
-        assertArrayEquals("a chrome detent change is UI and nothing else:"
+        assertArrayEquals("opening the precision surface is UI and nothing else:"
                 + WorkspaceTestSupport.describeSnapshotDifference(before, after),
                 before, after, 0.0);
     }

@@ -6,6 +6,7 @@ import static com.forgeshape.app.WorkspaceTestSupport.dragConsumed;
 import static com.forgeshape.app.WorkspaceTestSupport.isFullyOnScreen;
 import static com.forgeshape.app.WorkspaceTestSupport.nativeSnapshot;
 import static com.forgeshape.app.WorkspaceTestSupport.onWorkspace;
+import static com.forgeshape.app.WorkspaceTestSupport.openPrecision;
 import static com.forgeshape.app.WorkspaceTestSupport.resetToBaselineConstruction;
 import static com.forgeshape.app.WorkspaceTestSupport.settleLayout;
 import static org.junit.Assert.assertArrayEquals;
@@ -57,20 +58,34 @@ public final class EditorWorkspaceGestureTest {
 
     @Test
     public void ui10_everyConstructionChromeSurfaceConsumesItsOwnDrag() {
+        // The precision surface is opened first, because a surface that is not
+        // in the window has no drag to consume and asserting against it would
+        // be asserting nothing.
+        openPrecisionSurface();
         assertChromeConsumesDrags(new int[]{
                 R.id.toolbar_editing_group, R.id.toolbar_utility_group,
-                R.id.tool_rail, R.id.property_inspector,
+                R.id.tool_rail, R.id.objects_capsule, R.id.property_inspector,
                 R.id.inspector_scroll});
     }
 
     @Test
     public void ui10_everySculptChromeSurfaceConsumesItsOwnDragAndTheMeshIsUntouched() {
         enterSculpt();
+        openPrecisionSurface();
         assertChromeConsumesDrags(new int[]{
                 R.id.toolbar_editing_group, R.id.toolbar_utility_group,
-                R.id.tool_rail, R.id.brush_edge_controls,
+                R.id.tool_rail, R.id.objects_capsule, R.id.brush_edge_controls,
                 R.id.brush_radius_slider, R.id.brush_strength_slider,
                 R.id.property_inspector, R.id.inspector_scroll});
+    }
+
+    /** Puts the exact values on screen the way a user does. */
+    private void openPrecisionSurface() {
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            openPrecision(workspace);
+            return null;
+        });
+        settleLayout();
     }
 
     /**
@@ -87,7 +102,8 @@ public final class EditorWorkspaceGestureTest {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             for (int id : new int[]{R.id.toolbar_editing_group,
                     R.id.toolbar_utility_group, R.id.tool_rail,
-                    R.id.brush_edge_controls, R.id.property_inspector}) {
+                    R.id.objects_capsule, R.id.brush_edge_controls,
+                    R.id.property_inspector}) {
                 dragConsumed(workspace.findViewById(id));
             }
             return null;
@@ -172,9 +188,7 @@ public final class EditorWorkspaceGestureTest {
                         .getHeight());
 
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            if (!workspace.propertyInspector().isExpanded()) {
-                workspace.findViewById(R.id.inspector_toggle).performClick();
-            }
+            openPrecision(workspace);
             final EditText field = workspace.findViewById(R.id.field_box_width);
             field.requestFocus();
             final InputMethodManager ime = activity.getSystemService(InputMethodManager.class);
@@ -221,6 +235,7 @@ public final class EditorWorkspaceGestureTest {
     @Test
     public void ui11_aValueTypedWithTheImeUpAppliesExactly() {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            openPrecision(workspace);
             final EditText field = workspace.findViewById(R.id.field_box_width);
             field.requestFocus();
             activity.getSystemService(InputMethodManager.class)

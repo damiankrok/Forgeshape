@@ -14,10 +14,12 @@ import android.widget.TextView;
 /**
  * The mode-independent controls at the top of the Editor Workspace.
  *
- * <p>It carries only what is true in every mode: what is being edited, the way
- * across the Construction/Sculpt seam, the reserved global Export action, the
- * chrome hide control, and — the part that matters most — the status and error
- * message.
+ * <p>It carries only what is true in every mode <b>and</b> is not something the
+ * user works from: what is being edited, the way across the Construction/Sculpt
+ * seam, the reserved global Export action, the chrome hide control, and — the
+ * part that matters most — the status and error message. The scene itself is
+ * not here: it is the Objects capsule's, which can say which body is current
+ * rather than only offering to open a list.
  *
  * <p><b>It is not a bar.</b> This container is transparent and draws nothing of
  * its own; what the user sees is two floating control <i>groups</i> with the
@@ -57,8 +59,6 @@ final class GlobalToolbarView extends LinearLayout {
 
         void onChromeHideRequested();
 
-        void onObjectsRequested();
-
         void onDisplaySettingsRequested();
     }
 
@@ -67,7 +67,6 @@ final class GlobalToolbarView extends LinearLayout {
     private final TextView resumeButton;
     private final TextView backButton;
     private final TextView exportAction;
-    private final ImageView objectsButton;
     private final ImageView displaySettingsButton;
     private final ImageView hideUiToggle;
     private final TextView statusMessage;
@@ -209,25 +208,14 @@ final class GlobalToolbarView extends LinearLayout {
                 context.getString(R.string.export_reserved_note));
         utilityGroup.addView(exportAction, EditorControlStyles.wrap(0));
 
-        // Objects sits here for the same reason Display does: WHICH body is
-        // being edited is true in every mode, so it belongs to no tool and to
-        // no inspector body. Before this it lived inside the Construction shape
-        // editor, which made a scene-level question reachable only by expanding
-        // a panel named after something else.
+        // Objects is deliberately NOT here any more. Which body is being edited
+        // is true in every mode, but it is also the fact the user works FROM,
+        // and a toolbar icon can only open a list — it cannot say which body is
+        // current. That answer now sits in the Objects capsule, which names the
+        // active body at rest and carries the one creation affordance beside
+        // it. Two controls opening the same panel would be two answers to
+        // "where does the scene live".
         //
-        // It is hidden, not disabled, on a window wide enough to give Objects a
-        // permanent column: a control that opens a panel duplicating what is
-        // already on screen is noise. See setObjectsActionVisible.
-        objectsButton = EditorControlStyles.iconButton(context, R.id.objects_button,
-                R.drawable.ic_objects, context.getString(R.string.objects_open));
-        objectsButton.setOnClickListener(new OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                actions.onObjectsRequested();
-            }
-        });
-        utilityGroup.addView(objectsButton, EditorControlStyles.iconButtonParams(context, gap));
-
         // Display sits in the Global Toolbar because it is mode-independent:
         // how the surface is shaded is as true in Sculpt as in Construction, so
         // it does not belong to the Tool Rail or to either inspector body.
@@ -282,37 +270,6 @@ final class GlobalToolbarView extends LinearLayout {
                 getContext(), R.dimen.toolbar_transition_max_width));
         button.setSingleLine(true);
         button.setEllipsize(TextUtils.TruncateAt.END);
-    }
-
-    /**
-     * Shows or hides the Objects control.
-     *
-     * <p>Hidden exactly when the window gives Objects a permanent column of its
-     * own, because then the panel it opens would duplicate what is already
-     * beside the model. {@code GONE} rather than invisible, so it gives its
-     * width back to the context label instead of leaving a hole.
-     */
-    void setObjectsActionVisible(boolean visible) {
-        objectsButton.setVisibility(visible ? VISIBLE : GONE);
-    }
-
-    /**
-     * Draws the Objects control as active while its panel is open, and says so
-     * to accessibility.
-     *
-     * <p>The same pattern the Tool Rail uses for the held tool: a control that
-     * opens a panel should say whether that panel is open, or the only way to
-     * find out is to tap it.
-     */
-    void setObjectsActionOpen(boolean open) {
-        EditorControlStyles.setIconButtonActive(objectsButton, open);
-        objectsButton.setContentDescription(getContext().getString(
-                open ? R.string.objects_close : R.string.objects_open));
-    }
-
-    /** Whether the Objects control is currently on screen. */
-    boolean objectsActionVisible() {
-        return objectsButton.getVisibility() == VISIBLE;
     }
 
     /**

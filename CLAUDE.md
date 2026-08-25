@@ -90,6 +90,14 @@ never run per frame.
   pad or resize it — that would change the render target and rebuild the
   swapchain for a problem about where buttons are drawn. Insets go on the chrome
   containers.
+- **No surface owns the resting workspace.** The viewport is the workspace; the
+  exact-value panel and every context surface are opened from a control, grow out
+  of it, and are absent otherwise. Nothing may reintroduce a permanently visible
+  panel anchored to a window edge — a collapsed panel is still one.
+- **Nothing unimplemented is drawn as a tool or as a creation action.** The one
+  approved exception is the global `Export`, drawn recessed and labelled as not
+  implemented. A control that looks like it works and does not is worse than an
+  absent one.
 - **Every UI control has a stable semantic id, and verification uses it.** Ids
   live in `res/values/ids.xml` and name what a control *does*. No test and no
   evidence script may locate a control by screen coordinate: the workspace
@@ -116,9 +124,11 @@ never run per frame.
   responsibility genuinely clear. One domain concept has one canonical term.
 - **The UI vocabulary is fixed:** *Editor Workspace* (the whole editor UI),
   *Global Toolbar* (mode-independent top/global controls), *Tool Rail* (the edge
-  tool selector), *Property Inspector* (the contextual exact-value panel),
-  *Construction Body* (an editable CAD-like object), *Frozen Sculpt Mesh* (the
-  polygon mesh created by Freeze).
+  tool selector), *Objects capsule* (the resting scene control: the active body's
+  name plus creation), *Add Primitive* (the six-shape creation surface),
+  *precision surface* (the on-demand exact-value panel, implemented by
+  *Property Inspector*), *Construction Body* (an editable CAD-like object),
+  *Frozen Sculpt Mesh* (the polygon mesh created by Freeze).
 - **Comments explain why**, plus ownership, units, lifecycle and constraints —
   never obvious syntax. Worth a comment: why the Android UI must not become
   geometry truth, why a transform-only edit publishes no `MeshRevision`, why a

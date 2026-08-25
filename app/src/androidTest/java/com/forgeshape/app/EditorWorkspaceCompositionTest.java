@@ -1,11 +1,15 @@
 package com.forgeshape.app;
 
+import static com.forgeshape.app.WorkspaceTestSupport.closeObjectsPanel;
+import static com.forgeshape.app.WorkspaceTestSupport.closePrecision;
 import static com.forgeshape.app.WorkspaceTestSupport.describeSnapshotDifference;
 import static com.forgeshape.app.WorkspaceTestSupport.doOnWorkspace;
 import static com.forgeshape.app.WorkspaceTestSupport.dragConsumed;
 import static com.forgeshape.app.WorkspaceTestSupport.isFullyOnScreen;
 import static com.forgeshape.app.WorkspaceTestSupport.nativeSnapshot;
 import static com.forgeshape.app.WorkspaceTestSupport.onWorkspace;
+import static com.forgeshape.app.WorkspaceTestSupport.openObjectsPanel;
+import static com.forgeshape.app.WorkspaceTestSupport.openPrecision;
 import static com.forgeshape.app.WorkspaceTestSupport.resetToBaselineConstruction;
 import static com.forgeshape.app.WorkspaceTestSupport.settle;
 import static com.forgeshape.app.WorkspaceTestSupport.settleLayout;
@@ -98,17 +102,14 @@ public final class EditorWorkspaceCompositionTest {
     public void uir203_everyWindowExposesTheSceneExactlyOneWay() {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             final boolean docked = workspace.objectsDocked();
-            final boolean opener = workspace.globalToolbar().objectsActionVisible();
-            assertTrue("a window either docks Objects or offers the control that opens it",
-                    docked ^ opener);
+            final boolean capsule =
+                    workspace.objectsCapsule().getVisibility() == View.VISIBLE;
+            assertTrue("a window either docks Objects or shows the capsule that opens it",
+                    docked ^ capsule);
 
             if (docked) {
-                // Parallel context: the scene AND the exact values at once.
                 assertTrue("the docked column is on screen",
                         isFullyOnScreen(workspace.findViewById(R.id.objects_dock), workspace));
-                assertTrue("and the Property Inspector is on screen beside it",
-                        isFullyOnScreen(workspace.findViewById(R.id.property_inspector),
-                                workspace));
                 assertFalse("a docked window never also opens the panel",
                         workspace.objectsPopover().isOpen());
             } else {
@@ -138,7 +139,7 @@ public final class EditorWorkspaceCompositionTest {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             assertEquals("closed, the panel occupies nothing",
                     View.GONE, workspace.objectsPopover().getVisibility());
-            workspace.findViewById(R.id.objects_button).performClick();
+            openObjectsPanel(workspace);
             return null;
         });
         settleLayout();
@@ -159,7 +160,7 @@ public final class EditorWorkspaceCompositionTest {
                     workspace.getWidth(), viewport.getWidth());
             assertEquals(workspace.getHeight(), viewport.getHeight());
 
-            workspace.findViewById(R.id.objects_button).performClick();
+            closeObjectsPanel(workspace);
             return null;
         });
         settleLayout();
@@ -212,6 +213,9 @@ public final class EditorWorkspaceCompositionTest {
         final long second = ids[1];
 
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            // The exact values are a surface the user asks for, so this case
+            // asks for it before reading what it says.
+            openPrecision(workspace);
             assertTrue("the inspector title names the active body",
                     titleOf(workspace).contains(bodyLabel(activity, second)));
             assertFalse("and not the other one",
@@ -242,6 +246,11 @@ public final class EditorWorkspaceCompositionTest {
      */
     @Test
     public void uir205b_theShapePanelBeginsWithShape() {
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            openPrecision(workspace);
+            return null;
+        });
+        settleLayout();
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             assertFalse("the scene list is not inside the inspector any more",
                     isDescendantOf(workspace.objectsSection(),
@@ -317,12 +326,12 @@ public final class EditorWorkspaceCompositionTest {
         });
         closeScenePanel();
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            workspace.findViewById(R.id.inspector_toggle).performClick();
+            openPrecision(workspace);
             return null;
         });
         settleLayout();
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            workspace.findViewById(R.id.inspector_toggle).performClick();
+            closePrecision(workspace);
             return null;
         });
         settleLayout();
@@ -405,9 +414,7 @@ public final class EditorWorkspaceCompositionTest {
 
     private void openScenePanel() {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            if (!workspace.objectsDocked() && !workspace.objectsPopover().isOpen()) {
-                workspace.findViewById(R.id.objects_button).performClick();
-            }
+            openObjectsPanel(workspace);
             return null;
         });
         settleLayout();
@@ -415,9 +422,7 @@ public final class EditorWorkspaceCompositionTest {
 
     private void closeScenePanel() {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            if (workspace.objectsPopover().isOpen()) {
-                workspace.findViewById(R.id.objects_button).performClick();
-            }
+            closeObjectsPanel(workspace);
             return null;
         });
         settleLayout();

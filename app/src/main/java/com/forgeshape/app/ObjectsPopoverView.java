@@ -30,8 +30,10 @@ import android.widget.ScrollView;
  * <p>It scrolls, because a scene can grow without limit while a window cannot,
  * and it is capped so it can never become the window the way the old sheet did.
  *
- * <p>Opened from the Global Toolbar, so reaching the scene costs one tap in
- * every mode and every window rather than "expand the inspector, then scroll".
+ * <p>Opened from the Objects capsule and anchored to it, so reaching the scene
+ * costs one tap in every mode and every window, and the list visibly comes out
+ * of the control that names the active body rather than arriving from a window
+ * edge that has nothing to do with it.
  */
 final class ObjectsPopoverView extends LinearLayout {
 
@@ -51,6 +53,14 @@ final class ObjectsPopoverView extends LinearLayout {
 
     private final ScrollView scroll;
     private final FrameLayout body;
+
+    /** Set by the workspace's anchor: which way the panel unfolds out of the
+     *  control that opened it. The Objects capsule is low in the window on a
+     *  phone, so it usually grows upward. */
+    private boolean growsUpward = true;
+
+    /** The state the user asked for; see {@link #isOpen()}. */
+    private boolean open;
 
     ObjectsPopoverView(Context context) {
         super(context);
@@ -97,22 +107,38 @@ final class ObjectsPopoverView extends LinearLayout {
         return objects.getParent() == body;
     }
 
+    /**
+     * Whether the panel is open.
+     *
+     * <p>The <b>target</b> state, not this frame's visibility. A closing panel
+     * is still VISIBLE for the length of its fade, and a caller asking "is this
+     * open" — the control that draws itself active while it is, the workspace
+     * deciding whether a tap opens or closes — means the state the user asked
+     * for, not whether an animation has finished running.
+     */
     boolean isOpen() {
-        return getVisibility() == VISIBLE;
+        return open;
+    }
+
+    /** Which way the panel unfolds from the control that opened it. */
+    void setGrowsUpward(boolean upward) {
+        growsUpward = upward;
     }
 
     /** Opens or closes the panel, growing from the control that opened it. */
     void setOpen(boolean open) {
-        if (open == isOpen()) {
+        if (open == this.open) {
             return;
         }
+        this.open = open;
         // Always interruptible: a second tap while the open animation is still
         // running must close it, not queue behind it.
         ChromeMotion.begin(this);
 
-        // The panel grows out of the toolbar control at the top-right.
-        setPivotX(getWidth());
-        setPivotY(0.0f);
+        // The panel grows out of the Objects capsule, which is on the LEADING
+        // edge — above it on a phone, below it under a docked column.
+        setPivotX(0.0f);
+        setPivotY(growsUpward ? getHeight() : 0.0f);
 
         if (!ChromeMotion.animationsEnabled(getContext())) {
             setVisibility(open ? VISIBLE : GONE);
@@ -154,6 +180,7 @@ final class ObjectsPopoverView extends LinearLayout {
      * would only draw the eye to it.
      */
     void closeImmediately() {
+        open = false;
         ChromeMotion.begin(this);
         setVisibility(GONE);
         setAlpha(1.0f);
@@ -187,16 +214,18 @@ final class ObjectsPopoverView extends LinearLayout {
     }
 
     /**
-     * Where the panel hangs: under the toolbar, on the trailing edge, beneath
-     * the control that opens it.
+     * The panel's layout in the overlay, at its own fixed width.
+     *
+     * <p>Where it actually hangs is decided per open by the workspace's anchor,
+     * from the bounds of the control that opened it. The width is fixed rather
+     * than measured because the anchor has to place the surface before it has
+     * ever been laid out — see {@code EditorWorkspaceView.anchorOverlayTo}.
      */
-    static ViewGroup.LayoutParams anchoredParams(Context context, int topOffsetPx) {
+    static ViewGroup.LayoutParams anchoredParams(Context context) {
         final FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
                 EditorControlStyles.dimen(context, R.dimen.objects_popover_width),
                 ViewGroup.LayoutParams.WRAP_CONTENT);
-        params.gravity = Gravity.TOP | Gravity.END;
-        params.topMargin = topOffsetPx;
-        params.rightMargin = EditorControlStyles.dimen(context, R.dimen.row_gap);
+        params.gravity = Gravity.BOTTOM | Gravity.START;
         return params;
     }
 }

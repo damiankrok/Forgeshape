@@ -86,13 +86,44 @@
     <item name="objects_dock" type="id" />
 
     <!--
-      The Objects panel every window that has NOT earned a column uses instead,
-      and the toolbar control that opens it. Both name a HOST: the one Objects
-      section moves between this panel and objects_dock, so objects_section and
-      object_row keep meaning the same views in either.
+      The Objects panel every window that has NOT earned a column uses instead.
+      It names a HOST: the one Objects section moves between this panel and
+      objects_dock, so objects_section and object_row keep meaning the same
+      views in either.
     -->
     <item name="objects_popover" type="id" />
-    <item name="objects_button" type="id" />
+
+    <!--
+      The Objects capsule: the resting scene control, and the main entry to the
+      scene on a phone. It names which body is active and carries the one
+      creation affordance, and both surfaces it opens are anchored to it rather
+      than to a window edge.
+
+      There is no toolbar Objects button any more. A second control opening the
+      same panel would be a second answer to "where does the scene live", and
+      the capsule is the one that can also SAY which body is current.
+    -->
+    <item name="objects_capsule" type="id" />
+    <item name="objects_capsule_active" type="id" />
+    <item name="objects_capsule_add" type="id" />
+
+    <!--
+      Add Primitive: the creation surface a `+` opens, in either Objects host.
+
+      Exactly six options, one per primitive the product actually builds. There
+      is deliberately no Add-from-file entry, no import, no template and no
+      disabled placeholder: a creation action the product cannot honour has no
+      home here. A later creation CATEGORY arrives as a second group inside this
+      surface, which is why the palette owns its own layout rather than being a
+      row of chips inside the Objects list.
+    -->
+    <item name="add_primitive_palette" type="id" />
+    <item name="add_primitive_box" type="id" />
+    <item name="add_primitive_cylinder" type="id" />
+    <item name="add_primitive_sphere" type="id" />
+    <item name="add_primitive_cone" type="id" />
+    <item name="add_primitive_capsule" type="id" />
+    <item name="add_primitive_plane" type="id" />
 
     <!-- Tool Rail. One rail view; its entries differ by mode. -->
     <item name="tool_rail" type="id" />
@@ -102,8 +133,15 @@
     <item name="tool_rail_inflate" type="id" />
     <item name="tool_rail_shape" type="id" />
     <item name="tool_rail_place" type="id" />
-    <item name="tool_rail_sketch" type="id" />
-    <item name="tool_rail_extrude" type="id" />
+
+    <!--
+      The precision toggle: the one contextual action that opens the exact-value
+      surface for whatever the rail is currently holding. Attached to the rail
+      rather than living in the Global Toolbar, because what it opens depends
+      entirely on the held tool — and because the surface it opens grows out of
+      it.
+    -->
+    <item name="precision_toggle" type="id" />
 
     <!-- Direct Sculpt brush controls -->
     <item name="brush_edge_controls" type="id" />
@@ -112,8 +150,11 @@
     <item name="brush_radius_value" type="id" />
     <item name="brush_strength_value" type="id" />
 
-    <!-- Property Inspector -->
+    <!-- Property Inspector: the on-demand precision surface. -->
     <item name="property_inspector" type="id" />
+    <!-- Closes the precision surface outright. It is not a collapse control:
+         a closed precision surface leaves nothing behind at all, which is the
+         whole reason the resting workspace has no bottom panel. -->
     <item name="inspector_toggle" type="id" />
     <item name="inspector_title" type="id" />
     <item name="inspector_scroll" type="id" />
@@ -173,5 +214,8 @@
     <item name="objects_section" type="id" />
     <item name="objects_list" type="id" />
     <item name="object_row" type="id" />
+    <!-- The column host's own creation affordance. The same act as the
+         capsule's `+`: it opens Add Primitive, and never creates a body by
+         itself. -->
     <item name="add_body" type="id" />
 </resources>

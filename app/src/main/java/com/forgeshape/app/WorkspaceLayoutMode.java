@@ -72,11 +72,16 @@ enum WorkspaceLayoutMode {
     }
 
     /**
-     * Chooses where the Property Inspector goes.
+     * Chooses where the precision surface goes <b>when it is open</b>.
      *
      * <p>An expanded window docks it: there is enough width that a panel beside
      * the model costs the model nothing it needs. Otherwise the window's height
      * decides — a short window can only afford chrome at its sides.
+     *
+     * <p>None of the three is a resting state. Since the mobile workspace
+     * redesign the surface is absent until the precision toggle asks for it, so
+     * this answers where it appears rather than what the window permanently
+     * gives up.
      */
     InspectorPlacement inspectorPlacement(int heightDp) {
         if (this == EXPANDED) {
@@ -115,7 +120,7 @@ enum WorkspaceLayoutMode {
      * How wide a dedicated Objects column is.
      *
      * <p>Fixed rather than proportional, because its content does not scale
-     * with the window: a row reads "Body 7" and Add Body is one chip. A
+     * with the window: a row reads "Body #7" and its `+` is one chip. A
      * proportional column would simply buy whitespace with viewport.
      */
     static final int OBJECTS_DOCK_WIDTH_DP = 180;
@@ -157,8 +162,8 @@ enum WorkspaceLayoutMode {
      * wide is a large phone in landscape or a small tablet, and three permanent
      * chrome columns there is precisely the desktop-CAD clutter UI-OWNER-02
      * rules out. Objects stays where every window without a column keeps it: in
-     * its own panel, one tap from the Global Toolbar, standing on the model only
-     * while it is open.
+     * its own panel, one tap from the Objects capsule, standing on the model
+     * only while it is open.
      */
     boolean objectsDocked(int widthDp) {
         if (this != EXPANDED) {
@@ -167,21 +172,6 @@ enum WorkspaceLayoutMode {
         final int remaining =
                 widthDp - sideDockWidthDp(widthDp) - RAIL_WIDTH_DP - OBJECTS_DOCK_WIDTH_DP;
         return remaining >= MIN_CENTRAL_VIEWPORT_DP;
-    }
-
-    /**
-     * Whether the Property Inspector opens expanded rather than collapsed.
-     *
-     * <p>A compact or short window opens collapsed, so the first thing on
-     * screen is the model and the viewport floor below is met with room to
-     * spare. A roomy window opens it, because there the exact values cost the
-     * model nothing worth having. This is a starting point only —
-     * {@link EditorUiState} remembers what the user chose from then on, and does
-     * not re-open a panel someone deliberately collapsed just because the
-     * window changed shape.
-     */
-    boolean inspectorStartsExpanded(int heightDp) {
-        return this != COMPACT && heightDp >= LOW_HEIGHT_MAX_DP;
     }
 
     // -----------------------------------------------------------------------
@@ -219,17 +209,6 @@ enum WorkspaceLayoutMode {
     static int sideDockWidthDp(int windowWidthDp) {
         return clamp(Math.round(windowWidthDp * 0.30f), 260, 340);
     }
-
-    /**
-     * How wide a side-placed inspector is once collapsed: its toggle plus the
-     * panel's own padding, and nothing else.
-     *
-     * <p>A side panel has to give back <b>width</b> when it collapses. Hiding
-     * only its body would leave a full-height column of chrome standing on the
-     * model and collapsing it would buy the viewport nothing, which is not what
-     * a collapse control promises.
-     */
-    static final int SIDE_COLLAPSED_WIDTH_DP = 68;
 
     /**
      * The Global Toolbar's height.

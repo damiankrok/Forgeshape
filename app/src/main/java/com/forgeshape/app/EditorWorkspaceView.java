@@ -17,11 +17,23 @@ import android.widget.ScrollView;
 /**
  * The whole ForgeShape editor UI.
  *
- * <p>One shell, three regions — the Global Toolbar, the edge surfaces (Tool
- * Rail, and in Sculpt the direct brush controls), and the Property Inspector.
- * Mode and tool decide what those regions <i>contain</i>; they never decide
- * what regions there are. That is what makes the four sculpt brushes and a
- * numeric CAD inspector the same application rather than two.
+ * <p><b>The viewport is the workspace; everything else is an edge.</b> One
+ * shell, four regions — the Global Toolbar along the top, the Objects capsule
+ * low on the leading edge, the tool cluster on the trailing edge (the Tool Rail
+ * and the precision toggle attached under it, plus the direct brush controls
+ * opposite in Sculpt), and the contextual surfaces those controls open. Mode
+ * and tool decide what those regions <i>contain</i>; they never decide what
+ * regions there are. That is what makes the four sculpt brushes and a numeric
+ * CAD inspector the same application rather than two.
+ *
+ * <p><b>Nothing is anchored to the bottom of the window at rest.</b> The
+ * exact-value panel used to be, collapsed, and a collapsed panel is still a
+ * full-width strip claiming the edge of a viewport-first tool for a surface
+ * nobody asked for. Every context surface in the workspace is now opened from a
+ * control and <b>grows out of that control</b> — the scene list and the Add
+ * Primitive palette out of the Objects capsule, the precision surface out of
+ * the rail's toggle — so what the surface is FOR is visible in where it came
+ * from, and the resting workspace is the model with its tools around it.
  *
  * <p><b>The Vulkan viewport is full-bleed and stays that way.</b> The
  * {@code SurfaceView} is the first child, sized to the whole window, and no
@@ -42,9 +54,11 @@ import android.widget.ScrollView;
  */
 final class EditorWorkspaceView extends FrameLayout
         implements InspectorHost, GlobalToolbarView.OnGlobalAction,
-        ToolRailView.OnToolSelected, PropertyInspectorView.OnExpandedChanged,
+        ToolRailView.OnToolSelected, PropertyInspectorView.OnPrecisionSurfaceClosed,
         BrushEdgeControlsView.OnBrushChanged,
         DisplaySettingsPopoverView.OnDisplaySettingChanged,
+        ObjectsCapsuleView.OnObjectsCapsuleAction,
+        AddPrimitivePaletteView.OnPrimitiveChosen,
         StartChooserView.OnStartFlowChosen {
 
     private static final int[] SCULPT_TOOL_HINTS = {
@@ -52,6 +66,13 @@ final class EditorWorkspaceView extends FrameLayout
     };
     private static final int[] SCULPT_TOOL_NAMES = {
             R.string.tool_grab, R.string.tool_clay, R.string.tool_smooth, R.string.tool_inflate
+    };
+
+    /** The six primitives by name, indexed by {@code PRIMITIVE_*}, for the one
+     *  message the Add Primitive palette writes. */
+    private static final int[] PRIMITIVE_NAMES = {
+            R.string.primitive_box, R.string.primitive_cylinder, R.string.primitive_sphere,
+            R.string.primitive_cone, R.string.primitive_capsule, R.string.primitive_plane
     };
 
     /** Adopted from the workspace a theme change destroyed, when there was one;
@@ -64,11 +85,41 @@ final class EditorWorkspaceView extends FrameLayout
     private long lastKnownActiveBodyId = NativeViewport.sceneActiveBodyId();
     private final LinearLayout chromeRoot;
     private final LinearLayout middleRow;
+
+    /**
+     * The workspace's bottom edge: the Objects capsule, and nothing else.
+     *
+     * <p>It wraps its content and holds one capsule on the leading side, which
+     * is the whole difference between this and what it replaced. A row that
+     * spanned the window would be a bar whatever it held, and the bottom edge
+     * of a viewport-first tool is the last place to put one — it is where the
+     * model is closest to the thumb and where a Sculpt stroke most often
+     * begins.
+     */
+    private final LinearLayout bottomRow;
     private final FrameLayout overlayRoot;
 
     private final GlobalToolbarView toolbar;
     private final ToolRailView toolRail;
     private final ScrollView toolRailScroll;
+
+    /**
+     * The trailing tool cluster: the rail, with the precision toggle attached
+     * directly under it.
+     *
+     * <p>They are one column rather than two surfaces because they are one
+     * thought — the tool that is held, and the exact values behind it. The
+     * toggle's meaning is entirely a function of the entry above it, and the
+     * surface it opens grows out of it, so putting it anywhere else would make
+     * the relation something to be remembered rather than seen.
+     */
+    private final LinearLayout railColumn;
+
+    /** The capsule the precision toggle sits in, so it wears the same floating
+     *  material as the rail above it rather than standing bare on the model. */
+    private final LinearLayout precisionGroup;
+    private final ImageView precisionToggle;
+
     private final BrushEdgeControlsView brushControls;
     private final PropertyInspectorView inspector;
     private final ImageView restoreChip;
@@ -110,6 +161,27 @@ final class EditorWorkspaceView extends FrameLayout
     /** Where the scene list lives in every window that has no column for it. */
     private final ObjectsPopoverView objectsPopover;
 
+    /**
+     * The resting scene control: which body is active, and the {@code +}.
+     *
+     * <p>On screen in <b>both</b> modes and in the same place, which is most of
+     * what makes Construction and Sculpt read as one workspace rather than two
+     * applications sharing a viewport. Withdrawn only when the window is wide
+     * enough to give the scene a permanent column, for the same reason the
+     * toolbar's Objects control used to be: a capsule naming the active body
+     * beside a list that already names it is one fact drawn twice.
+     */
+    private final ObjectsCapsuleView objectsCapsule;
+
+    /**
+     * The one creation surface, shared by both {@code +} controls.
+     *
+     * <p>One surface rather than one per host, for exactly the reason there is
+     * one Objects section: creation routes through one place, so the phone and
+     * the tablet cannot drift into creating bodies differently.
+     */
+    private final AddPrimitivePaletteView addPrimitivePalette;
+
     private final ConstructionShapeEditorView shapeEditor;
     private final ConstructionPlacementEditorView placementEditor;
     private final SculptContextView sculptContext;
@@ -135,8 +207,8 @@ final class EditorWorkspaceView extends FrameLayout
      *  outrank motion. */
     private boolean chromeMotionAllowed = true;
 
-    /** What the inspector is currently placed as, so it is re-parented only
-     *  when the answer actually changed. */
+    /** What the precision surface is currently placed as, so it is re-parented
+     *  only when the answer actually changed. */
     private WorkspaceLayoutMode.InspectorPlacement appliedPlacement;
     private int appliedInspectorWidthPx;
 
@@ -271,11 +343,59 @@ final class EditorWorkspaceView extends FrameLayout
         EditorControlStyles.applyFloatingSurface(toolRailScroll);
         toolRailScroll.addView(toolRail, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        // The rail and its precision toggle are one trailing cluster, so they
+        // are one column. The toggle is a separate capsule rather than a fifth
+        // rail entry because it is not a tool: the rail says WHICH tool is
+        // held, and this says "show me the numbers behind it". Making it look
+        // like an entry would put a fifth selectable thing in a control whose
+        // whole job is that exactly one of its children is active.
+        railColumn = new LinearLayout(context);
+        railColumn.setOrientation(LinearLayout.VERTICAL);
+        railColumn.setGravity(Gravity.END);
+        EditorControlStyles.allowChildShadows(railColumn);
+        railColumn.addView(toolRailScroll, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        precisionGroup = EditorControlStyles.controlGroup(context);
+        precisionToggle = EditorControlStyles.iconButton(context, R.id.precision_toggle,
+                R.drawable.ic_precision, context.getString(R.string.precision_shape));
+        precisionToggle.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                onPrecisionToggleRequested();
+            }
+        });
+        precisionGroup.addView(precisionToggle,
+                EditorControlStyles.iconButtonParams(context, 0));
+        final LinearLayout.LayoutParams precisionParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        precisionParams.topMargin =
+                EditorControlStyles.dimen(context, R.dimen.row_gap_small);
+        railColumn.addView(precisionGroup, precisionParams);
+
         final LinearLayout.LayoutParams railParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         railParams.gravity = Gravity.CENTER_VERTICAL;
         railParams.rightMargin = EditorControlStyles.dimen(context, R.dimen.brush_gap);
-        middleRow.addView(toolRailScroll, railParams);
+        middleRow.addView(railColumn, railParams);
+
+        // The bottom edge: one capsule, wrapping its own content, on the
+        // leading side. Added to the chrome root AFTER the weighted middle row
+        // and BEFORE the precision surface's bottom-sheet placement, so an open
+        // sheet stands below the capsule rather than covering it.
+        bottomRow = new LinearLayout(context);
+        bottomRow.setOrientation(LinearLayout.HORIZONTAL);
+        bottomRow.setGravity(Gravity.CENTER_VERTICAL);
+        EditorControlStyles.allowChildShadows(bottomRow);
+        final int edgePad = EditorControlStyles.dimen(context, R.dimen.row_gap);
+        bottomRow.setPadding(edgePad, 0, edgePad, edgePad);
+        chromeRoot.addView(bottomRow, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        objectsCapsule = new ObjectsCapsuleView(context, this);
+        bottomRow.addView(objectsCapsule, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         inspector = new PropertyInspectorView(context, this);
 
@@ -318,8 +438,14 @@ final class EditorWorkspaceView extends FrameLayout
         // hosts" true rather than aspirational.
         objectsSection = new ObjectsSectionView(context, this);
         objectsPopover = new ObjectsPopoverView(context);
-        overlayRoot.addView(objectsPopover, ObjectsPopoverView.anchoredParams(context,
-                EditorControlStyles.dimen(context, R.dimen.toolbar_height)));
+        overlayRoot.addView(objectsPopover, ObjectsPopoverView.anchoredParams(context));
+
+        // The one creation surface, in the overlay for the same reason the two
+        // panels above it are: it has to be able to stand over the chrome that
+        // opened it without becoming part of a measured row.
+        addPrimitivePalette = new AddPrimitivePaletteView(context, this);
+        overlayRoot.addView(addPrimitivePalette,
+                AddPrimitivePaletteView.anchoredParams(context));
 
         shapeEditor = new ConstructionShapeEditorView(context, this);
         placementEditor = new ConstructionPlacementEditorView(context, this);
@@ -438,7 +564,6 @@ final class EditorWorkspaceView extends FrameLayout
         final int heightDp = EditorControlStyles.toDp(context, heightPx);
 
         layoutMode = WorkspaceLayoutMode.forWindow(widthDp, heightDp);
-        uiState.applyInitialDetents(layoutMode, heightDp);
 
         toolbar.setStatusInline(WorkspaceLayoutMode.statusInlineWithControls(heightDp));
         // A compact window cannot fit the context label AND every global action
@@ -455,7 +580,6 @@ final class EditorWorkspaceView extends FrameLayout
         placeObjects(layoutMode.objectsDocked(widthDp));
         applyRailDock(layoutMode.railDocked());
         placeInspector(layoutMode.inspectorPlacement(heightDp), widthDp, heightDp);
-        showInspectorDetent();
     }
 
     /**
@@ -480,9 +604,12 @@ final class EditorWorkspaceView extends FrameLayout
         }
         appliedObjectsDocked = docked;
 
-        // The control that opens the panel exists only while the panel is the
-        // way to reach the scene. A docked column IS the scene, permanently.
-        toolbar.setObjectsActionVisible(!docked);
+        // The capsule exists only while the panel is the way to reach the
+        // scene. A docked column IS the scene, permanently, and names the
+        // active body itself — so a capsule beside it would draw one fact
+        // twice. GONE rather than invisible: the bottom row then wraps to
+        // nothing and the viewport reaches the window edge.
+        objectsCapsule.setVisibility(docked ? GONE : VISIBLE);
 
         if (!docked) {
             objectsDock.setVisibility(GONE);
@@ -495,9 +622,11 @@ final class EditorWorkspaceView extends FrameLayout
             objectsSection.refreshFromNative();
             return;
         }
-        // Losing the column's opener must also close the panel it opened, or a
-        // window that grows would leave two copies of the same list on screen.
+        // Losing the capsule must also close the surfaces it opened, or a
+        // window that grows would leave two copies of the same list on screen
+        // and a palette anchored to a control that is no longer there.
         setObjectsPanelOpen(false);
+        setAddPrimitiveOpen(false, null);
         if (objectsSection.getParent() instanceof ViewGroup) {
             ((ViewGroup) objectsSection.getParent()).removeView(objectsSection);
         }
@@ -527,13 +656,198 @@ final class EditorWorkspaceView extends FrameLayout
             return;
         }
         if (open) {
-            // Two panels hang from the same toolbar edge, so opening one closes
-            // the other rather than stacking them.
+            // The capsule's two surfaces are alternatives, not a stack, and the
+            // Display popover is a third: opening any one closes the others.
             displayPopover.setOpen(false);
+            toolbar.showDisplaySettingsOpen(false);
+            setAddPrimitiveOpen(false, null);
             objectsSection.refreshFromNative();
+            anchorOverlayTo(objectsPopover, objectsCapsule);
         }
         objectsPopover.setOpen(open);
-        toolbar.setObjectsActionOpen(objectsPopover.isOpen());
+        // Drawn from what was ASKED FOR, not from what the panel currently
+        // looks like: a closing panel is still visible for the length of its
+        // fade, and a control that read that would stay lit after the surface
+        // had gone.
+        objectsCapsule.showObjectsOpen(objectsPopover.isOpen());
+    }
+
+    // -----------------------------------------------------------------------
+    // Creating a body
+    // -----------------------------------------------------------------------
+
+    /**
+     * Opens the Add Primitive palette out of whichever plus was pressed.
+     *
+     * <p>Anchored to the invoking control rather than to a window edge, because
+     * there are two of them — the Objects capsule's on a phone, the docked
+     * column's on a tablet — and a surface that appeared in the same corner
+     * whichever was pressed would say nothing about what it belongs to.
+     */
+    @Override
+    public void onAddPrimitiveRequested(View invoker) {
+        setAddPrimitiveOpen(!addPrimitivePalette.isOpen(), invoker);
+    }
+
+    /** The Objects capsule's own plus. */
+    @Override
+    public void onAddPrimitiveRequested() {
+        onAddPrimitiveRequested(objectsCapsule.addControl());
+    }
+
+    private void setAddPrimitiveOpen(boolean open, View invoker) {
+        if (open) {
+            // One surface at a time, exactly as the scene list and the Display
+            // popover are.
+            setObjectsPanelOpen(false);
+            displayPopover.setOpen(false);
+            toolbar.showDisplaySettingsOpen(false);
+            anchorOverlayTo(addPrimitivePalette,
+                    invoker != null ? invoker : objectsCapsule.addControl());
+        }
+        addPrimitivePalette.setOpen(open);
+        objectsCapsule.showAddOpen(addPrimitivePalette.isOpen());
+    }
+
+    /**
+     * Creates a body and makes it the chosen primitive, through the product's
+     * own two entry points and nothing else.
+     *
+     * <p><b>Every step is an existing, verified path.</b> The scene's own
+     * {@code sceneAddBody()} creates and selects; then that primitive's own
+     * {@code applyConstruction*()} is called with the parameters <b>read back
+     * from the new body's own native state</b>, so the sizes are the domain's
+     * canonical defaults rather than constants invented in Java. Nothing about
+     * primitive construction, defaulting or validation is duplicated here, and
+     * a shape chosen from a palette can be refused exactly as a typed one can.
+     *
+     * <p>{@code UNCHANGED} is a success: a newly added body is already a box,
+     * so choosing Box legitimately changes nothing.
+     *
+     * <p>On a refusal the body still exists and is still a box, and the status
+     * line says exactly that. It is deliberately not repaired and the body is
+     * deliberately not removed — there is no scene delete in the product, and
+     * inventing one to tidy up after a refusal would put a destructive path
+     * into the shell for the sake of a tidier message.
+     */
+    @Override
+    public void onAddPrimitiveChosen(int primitiveKind) {
+        final Context context = getContext();
+        final long created = NativeViewport.sceneAddBody();
+        if (created == 0L) {
+            // The only refusal is "not while sculpting".
+            showStatus(context.getString(R.string.status_body_add_failed), R.attr.fsTextError);
+            setAddPrimitiveOpen(false, null);
+            return;
+        }
+        final int applied = applyPrimitiveToActiveBody(primitiveKind);
+        final boolean shaped = applied == NativeViewport.APPLY_APPLIED
+                || applied == NativeViewport.APPLY_UNCHANGED;
+
+        // The palette has done its work; the focus belongs back on the model,
+        // which is where the new body now is.
+        setAddPrimitiveOpen(false, null);
+        finishEditing();
+        onNativeStateChanged();
+
+        final String body = context.getString(R.string.body_label, created);
+        final String kind = context.getString(PRIMITIVE_NAMES[primitiveKind]);
+        showStatus(context.getString(shaped ? R.string.status_body_created
+                        : R.string.status_body_created_unshaped, body, kind),
+                shaped ? R.attr.fsTextSuccess : R.attr.fsTextError);
+    }
+
+    /**
+     * Submits one primitive through its own native method, with that
+     * primitive's own parameters read back from the active body.
+     *
+     * <p>Each branch reads exactly the slots that primitive has and calls the
+     * method that takes exactly those parameters, so there is no point at which
+     * a value is carried in a slot whose meaning depends on a separate kind —
+     * the same rule the shape editor's Apply follows.
+     */
+    private int applyPrimitiveToActiveBody(int primitiveKind) {
+        final double[] primitive = new double[NativeViewport.PRIMITIVE_STATE_SIZE];
+        NativeViewport.constructionPrimitive(primitive);
+        switch (primitiveKind) {
+            case NativeViewport.PRIMITIVE_CYLINDER:
+                return NativeViewport.applyConstructionCylinder(
+                        primitive[NativeViewport.PRIMITIVE_CYLINDER_DIAMETER],
+                        primitive[NativeViewport.PRIMITIVE_CYLINDER_DIAMETER + 1]);
+            case NativeViewport.PRIMITIVE_SPHERE:
+                return NativeViewport.applyConstructionSphere(
+                        primitive[NativeViewport.PRIMITIVE_SPHERE_DIAMETER]);
+            case NativeViewport.PRIMITIVE_CONE:
+                return NativeViewport.applyConstructionCone(
+                        primitive[NativeViewport.PRIMITIVE_CONE_BOTTOM_DIAMETER],
+                        primitive[NativeViewport.PRIMITIVE_CONE_BOTTOM_DIAMETER + 1]);
+            case NativeViewport.PRIMITIVE_CAPSULE:
+                return NativeViewport.applyConstructionCapsule(
+                        primitive[NativeViewport.PRIMITIVE_CAPSULE_DIAMETER],
+                        primitive[NativeViewport.PRIMITIVE_CAPSULE_DIAMETER + 1]);
+            case NativeViewport.PRIMITIVE_PLANE:
+                return NativeViewport.applyConstructionPlane(
+                        primitive[NativeViewport.PRIMITIVE_PLANE_WIDTH],
+                        primitive[NativeViewport.PRIMITIVE_PLANE_WIDTH + 1]);
+            default:
+                return NativeViewport.applyConstructionBox(
+                        primitive[NativeViewport.PRIMITIVE_BOX_WIDTH],
+                        primitive[NativeViewport.PRIMITIVE_BOX_WIDTH + 1],
+                        primitive[NativeViewport.PRIMITIVE_BOX_WIDTH + 2]);
+        }
+    }
+
+    /**
+     * Anchors a context surface to the control it grew out of.
+     *
+     * <p>The rule is the one thing every surface the workspace opens has in
+     * common: it appears beside the control that opened it and unfolds from
+     * that corner. So the position is arithmetic on the invoker's bounds rather
+     * than a gravity chosen per panel — the Objects capsule is low in the window
+     * on a phone and its plus sits under a column on a tablet, and both have to
+     * work.
+     *
+     * <p>The surface's own width is read from its layout params, because this
+     * runs before it has ever been measured. Coordinates come out of the
+     * overlay's inset padding, since the chrome container the invoker lives in
+     * carries the same padding.
+     */
+    private void anchorOverlayTo(View overlay, View invoker) {
+        if (invoker == null || invoker.getWidth() <= 0
+                || getWidth() <= 0 || getHeight() <= 0) {
+            return;
+        }
+        final Rect bounds = new Rect(0, 0, invoker.getWidth(), invoker.getHeight());
+        offsetDescendantRectToMyCoords(invoker, bounds);
+
+        final FrameLayout.LayoutParams params =
+                (FrameLayout.LayoutParams) overlay.getLayoutParams();
+        final int gap = EditorControlStyles.dimen(getContext(), R.dimen.overlay_anchor_gap);
+        final int width = params.width > 0 ? params.width : overlay.getWidth();
+
+        // Above the invoker when it sits in the lower half of the window, below
+        // it otherwise: a surface must never have to grow off the edge it is
+        // nearest to.
+        final boolean upward = bounds.centerY() > getHeight() / 2;
+        params.gravity = (upward ? Gravity.BOTTOM : Gravity.TOP) | Gravity.START;
+        params.leftMargin = Math.max(0,
+                Math.min(bounds.left, getWidth() - width - gap)
+                        - overlayRoot.getPaddingLeft());
+        params.rightMargin = 0;
+        params.topMargin = upward ? 0
+                : Math.max(0, bounds.bottom + gap - overlayRoot.getPaddingTop());
+        params.bottomMargin = upward
+                ? Math.max(0, getHeight() - bounds.top + gap - overlayRoot.getPaddingBottom())
+                : 0;
+        overlay.setLayoutParams(params);
+
+        if (overlay == objectsPopover) {
+            objectsPopover.setGrowsUpward(upward);
+        } else if (overlay == addPrimitivePalette) {
+            addPrimitivePalette.setGrowsUpward(upward);
+        } else if (overlay == inspector) {
+            inspector.setGrowsUpward(upward);
+        }
     }
 
     /**
@@ -563,27 +877,31 @@ final class EditorWorkspaceView extends FrameLayout
         } else {
             EditorControlStyles.applyFloatingSurface(toolRailScroll);
         }
-        final ViewGroup.LayoutParams params = toolRailScroll.getLayoutParams();
+        // The precision toggle keeps its floating capsule in both cases. It is
+        // not part of the docked frame even when the rail above it is: it opens
+        // a surface over the model, and a flush toggle hanging off the bottom of
+        // a docked column would claim to be a fifth rail entry.
+        final ViewGroup.LayoutParams params = railColumn.getLayoutParams();
         if (params instanceof LinearLayout.LayoutParams) {
             final LinearLayout.LayoutParams rail = (LinearLayout.LayoutParams) params;
             // A docked rail sits flush against the panel beside it; a floating
             // one keeps the gap that lets the model show around it.
             rail.rightMargin =
                     docked ? 0 : EditorControlStyles.dimen(getContext(), R.dimen.brush_gap);
-            // And it starts where the docked inspector starts.
+            // And it starts where the docked precision surface starts.
             //
             // This is what makes "part of the layout" a true claim rather than a
             // style. A docked rail centred on the window height while the panel
             // beside it hangs from the top is not a layout: it is one surface
             // stranded halfway down the model, which is exactly how it read once
             // the side panels stopped spanning the full window. Top-aligned, the
-            // rail and the inspector are one trailing cluster. A FLOATING rail
-            // stays centred, because a capsule standing on the picture belongs
-            // where the thumb is, not where the chrome above it ended.
+            // rail and the panel are one trailing cluster. A FLOATING rail stays
+            // centred, because a capsule standing on the picture belongs where
+            // the thumb is, not where the chrome above it ended.
             rail.gravity = docked ? Gravity.TOP : Gravity.CENTER_VERTICAL;
             rail.topMargin =
                     docked ? EditorControlStyles.dimen(getContext(), R.dimen.row_gap) : 0;
-            toolRailScroll.setLayoutParams(rail);
+            railColumn.setLayoutParams(rail);
         }
     }
 
@@ -670,29 +988,6 @@ final class EditorWorkspaceView extends FrameLayout
         // Objects column is: nothing above this is an opaque strip any more.
         params.topMargin = EditorControlStyles.dimen(context, R.dimen.row_gap);
         middleRow.addView(inspector, params);
-        applyInspectorSideWidth();
-    }
-
-    /**
-     * Narrows a side-placed inspector to its toggle when it is collapsed.
-     *
-     * <p>A bottom sheet gives back height by hiding its body; a side panel has
-     * to give back width, or collapsing it buys the model nothing at all.
-     */
-    private void applyInspectorSideWidth() {
-        if (inspectorPlacement == WorkspaceLayoutMode.InspectorPlacement.BOTTOM_SHEET) {
-            return;
-        }
-        final ViewGroup.LayoutParams params = inspector.getLayoutParams();
-        if (params == null) {
-            return;
-        }
-        final int wanted = inspector.isExpanded() ? appliedInspectorWidthPx
-                : dpToPx(WorkspaceLayoutMode.SIDE_COLLAPSED_WIDTH_DP);
-        if (params.width != wanted) {
-            params.width = wanted;
-            inspector.setLayoutParams(params);
-        }
     }
 
     private int dpToPx(int dp) {
@@ -743,7 +1038,9 @@ final class EditorWorkspaceView extends FrameLayout
             displayPopover.closeImmediately();
             toolbar.showDisplaySettingsOpen(false);
             objectsPopover.closeImmediately();
-            toolbar.setObjectsActionOpen(false);
+            objectsCapsule.showObjectsOpen(false);
+            addPrimitivePalette.closeImmediately();
+            objectsCapsule.showAddOpen(false);
         }
     }
 
@@ -898,8 +1195,9 @@ final class EditorWorkspaceView extends FrameLayout
             placementEditor.refreshFromNative();
             toolRail.showActive(uiState.constructionTool());
         }
+        objectsCapsule.refreshFromNative();
         showActiveInspectorBody(sculpting);
-        showInspectorDetent();
+        showPrecisionToggle(sculpting);
         showDefaultStatus(sculpting);
     }
 
@@ -919,6 +1217,19 @@ final class EditorWorkspaceView extends FrameLayout
                     R.attr.fsTextSecondary);
             return;
         }
+        // A stale Construction Source outranks the gesture hint.
+        //
+        // The warning used to live in the Sculpt inspector, which opened by
+        // itself on a roomy window. It does not open by itself any more, so a
+        // standing fault would otherwise be reachable only by a user who
+        // already suspected it. It is a persistent state rather than a verdict,
+        // so it is written here, on every refresh, and re-asserts itself after
+        // any message that overwrites it.
+        if (nativeSculpt[NativeViewport.SCULPT_SOURCE_STALE] != 0.0) {
+            showStatus(context.getString(R.string.stale_source_warning),
+                    R.attr.fsTextMeasure);
+            return;
+        }
         final int tool = (int) nativeSculpt[NativeViewport.SCULPT_TOOL];
         final int index = (tool >= 0 && tool < SCULPT_TOOL_HINTS.length)
                 ? tool : NativeViewport.TOOL_GRAB;
@@ -936,32 +1247,40 @@ final class EditorWorkspaceView extends FrameLayout
             toolRail.setEntries(new ToolRailView.Entry[]{
                     new ToolRailView.Entry(R.id.tool_rail_grab, R.drawable.ic_tool_grab,
                             context.getString(R.string.tool_grab),
-                            NativeViewport.TOOL_GRAB, false),
+                            NativeViewport.TOOL_GRAB),
                     new ToolRailView.Entry(R.id.tool_rail_clay, R.drawable.ic_tool_clay,
                             context.getString(R.string.tool_clay),
-                            NativeViewport.TOOL_CLAY, false),
+                            NativeViewport.TOOL_CLAY),
                     new ToolRailView.Entry(R.id.tool_rail_smooth, R.drawable.ic_tool_smooth,
                             context.getString(R.string.tool_smooth),
-                            NativeViewport.TOOL_SMOOTH, false),
+                            NativeViewport.TOOL_SMOOTH),
                     new ToolRailView.Entry(R.id.tool_rail_inflate, R.drawable.ic_tool_inflate,
                             context.getString(R.string.tool_inflate),
-                            NativeViewport.TOOL_INFLATE, false),
+                            NativeViewport.TOOL_INFLATE),
             });
         } else {
-            // Sketch and Extrude are drawn from day one and are inert. Their
-            // presence is the point: when they arrive, the shell's content
-            // changes and its shape does not.
+            // Two entries, and both of them work.
+            //
+            // Sketch and Extrude used to be drawn here, inert. The argument was
+            // that the shell's shape should not change when they arrive — but
+            // the cost was half of the one control the user reaches for most
+            // spent on features the product does not have, on the smallest
+            // window, next to the two that do. A rail is a set of tools; an
+            // entry that looks like a tool and does nothing is worse than an
+            // absent one, and nothing about this rail's structure has to change
+            // to take a third working entry later.
+            //
+            // "Transform" rather than "Place" is the vocabulary Stage 020's
+            // direct handles will join. It is not a claim that they exist: what
+            // this entry opens today is exact numeric and its own title says
+            // so — "Exact Transform — Body #1".
             toolRail.setEntries(new ToolRailView.Entry[]{
                     new ToolRailView.Entry(R.id.tool_rail_shape, R.drawable.ic_tool_shape,
                             context.getString(R.string.tool_shape),
-                            EditorUiState.CONSTRUCTION_TOOL_SHAPE, false),
+                            EditorUiState.CONSTRUCTION_TOOL_SHAPE),
                     new ToolRailView.Entry(R.id.tool_rail_place, R.drawable.ic_tool_place,
-                            context.getString(R.string.tool_place),
-                            EditorUiState.CONSTRUCTION_TOOL_PLACE, false),
-                    new ToolRailView.Entry(R.id.tool_rail_sketch, R.drawable.ic_tool_sketch,
-                            context.getString(R.string.tool_sketch), -1, true),
-                    new ToolRailView.Entry(R.id.tool_rail_extrude, R.drawable.ic_tool_extrude,
-                            context.getString(R.string.tool_extrude), -1, true),
+                            context.getString(R.string.tool_transform),
+                            EditorUiState.CONSTRUCTION_TOOL_TRANSFORM),
             });
         }
     }
@@ -993,7 +1312,7 @@ final class EditorWorkspaceView extends FrameLayout
         }
         final String body = context.getString(R.string.body_label,
                 NativeViewport.sceneActiveBodyId());
-        if (uiState.constructionTool() == EditorUiState.CONSTRUCTION_TOOL_PLACE) {
+        if (uiState.constructionTool() == EditorUiState.CONSTRUCTION_TOOL_TRANSFORM) {
             inspector.setBody(placementEditor,
                     context.getString(R.string.inspector_place_title_for_body, body));
         } else {
@@ -1002,9 +1321,79 @@ final class EditorWorkspaceView extends FrameLayout
         }
     }
 
-    private void showInspectorDetent() {
-        inspector.showExpanded(uiState.inspectorExpanded(isSculpting()));
-        applyInspectorSideWidth();
+    /**
+     * Puts the precision toggle and its surface in step with the held tool.
+     *
+     * <p>The toggle names what it will open, so a user never has to press it to
+     * find out; the surface itself is opened or closed from what the user last
+     * decided for this mode, which starts closed.
+     */
+    private void showPrecisionToggle(boolean sculpting) {
+        final Context context = getContext();
+        final String opens = context.getString(precisionSurfaceName(sculpting));
+        final boolean open = uiState.precisionOpen(sculpting);
+        precisionToggle.setContentDescription(context.getString(
+                open ? R.string.precision_close : R.string.precision_open, opens));
+        EditorControlStyles.setIconButtonActive(precisionToggle, open);
+        applyPrecisionOpen(open);
+    }
+
+    /** What the precision toggle opens, given the mode and the held entry. */
+    private int precisionSurfaceName(boolean sculpting) {
+        if (sculpting) {
+            return R.string.precision_sculpt;
+        }
+        return uiState.constructionTool() == EditorUiState.CONSTRUCTION_TOOL_TRANSFORM
+                ? R.string.precision_transform : R.string.precision_shape;
+    }
+
+    /**
+     * The user asked for, or dismissed, the exact values behind the held tool.
+     *
+     * <p>Recorded per mode so it survives a refresh and a rotation, and applied
+     * at once. It makes <b>no native call</b>: opening a panel of numbers reads
+     * state that is already there, publishes nothing and uploads nothing.
+     */
+    private void onPrecisionToggleRequested() {
+        setPrecisionOpen(!inspector.isOpen());
+    }
+
+    @Override
+    public void onPrecisionCloseRequested() {
+        setPrecisionOpen(false);
+    }
+
+    private void setPrecisionOpen(boolean open) {
+        final boolean sculpting = isSculpting();
+        uiState.setPrecisionOpen(sculpting, open);
+        if (open) {
+            // The precision surface is a context surface like any other, so it
+            // takes the screen from whatever else was standing on the model.
+            setObjectsPanelOpen(false);
+            setAddPrimitiveOpen(false, null);
+            displayPopover.setOpen(false);
+            toolbar.showDisplaySettingsOpen(false);
+        } else {
+            // Typing is over; the keyboard and the focus belong back on the
+            // model rather than on a field that has just left the window.
+            finishEditing();
+        }
+        showPrecisionToggle(sculpting);
+    }
+
+    /**
+     * Opens or closes the panel, growing it out of the toggle that owns it.
+     *
+     * <p>The anchor runs only for a bottom sheet: the two side placements are
+     * laid out in the chrome row beside the model rather than in the overlay,
+     * so their position is the layout's and not this method's.
+     */
+    private void applyPrecisionOpen(boolean open) {
+        if (open && inspectorPlacement
+                == WorkspaceLayoutMode.InspectorPlacement.BOTTOM_SHEET) {
+            inspector.setGrowsUpward(true);
+        }
+        inspector.setOpen(open);
     }
 
     /**
@@ -1053,6 +1442,12 @@ final class EditorWorkspaceView extends FrameLayout
         uiState.setConstructionTool(key);
         toolRail.showActive(uiState.constructionTool());
         showActiveInspectorBody(false);
+        // The toggle belongs to the entry above it, so it re-names itself with
+        // the entry. Whether the surface is OPEN is unchanged: switching
+        // context while the numbers are on screen swaps the body rather than
+        // dismissing the panel, and switching while it is closed leaves it
+        // closed.
+        showPrecisionToggle(false);
         showStatus(getContext().getString(R.string.status_construction_hint),
                 R.attr.fsTextSecondary);
     }
@@ -1061,22 +1456,6 @@ final class EditorWorkspaceView extends FrameLayout
     public void onBrushChanged() {
         showStatus(getContext().getString(R.string.status_brush, brushControls.describeRadius(),
                 brushControls.describeStrength()), R.attr.fsTextSecondary);
-    }
-
-    @Override
-    public void onInspectorExpandedChanged(boolean expanded) {
-        // The decision, recorded at once: a rotation part-way through a collapse
-        // must come back collapsed.
-        uiState.setInspectorExpanded(isSculpting(), expanded);
-    }
-
-    @Override
-    public void onInspectorLayoutSettled() {
-        // The width, applied only once the panel is at its resting size. A side
-        // placement gives back WIDTH when it collapses, and narrowing the column
-        // while the body is still on screen would clip the content that is
-        // leaving.
-        applyInspectorSideWidth();
     }
 
     /**
@@ -1161,37 +1540,26 @@ final class EditorWorkspaceView extends FrameLayout
     // exactly the kind of surprise a display control must never cause.
 
     /**
-     * The Global Toolbar's Objects control.
+     * The Objects capsule's expand control.
      *
-     * <p>Toggles the scene panel. Nothing about the scene, the active body or
-     * any geometry changes here: opening a list is presentation, and the rows
-     * themselves are still the only thing that asks native code to select.
+     * <p>Toggles the scene panel, grown out of the capsule itself. Nothing
+     * about the scene, the active body or any geometry changes here: opening a
+     * list is presentation, and the rows themselves are still the only thing
+     * that asks native code to select.
      */
     @Override
     public void onObjectsRequested() {
-        final boolean opening = !objectsPopover.isOpen();
-        if (opening) {
-            // Hang the panel below the toolbar's ACTUAL height, for the same
-            // reason the Display popover does: the toolbar grows a second line
-            // when the status message cannot share the control row.
-            final ViewGroup.MarginLayoutParams params =
-                    (ViewGroup.MarginLayoutParams) objectsPopover.getLayoutParams();
-            final int toolbarHeight = toolbar.getHeight();
-            if (toolbarHeight > 0 && params.topMargin != toolbarHeight) {
-                params.topMargin = toolbarHeight;
-                objectsPopover.setLayoutParams(params);
-            }
-        }
-        setObjectsPanelOpen(opening);
+        setObjectsPanelOpen(!objectsPopover.isOpen());
     }
 
     @Override
     public void onDisplaySettingsRequested() {
         final boolean opening = !displayPopover.isOpen();
         if (opening) {
-            // Two panels hang from the same toolbar edge; opening one closes
-            // the other rather than stacking them.
+            // One context surface at a time; opening one closes the others
+            // rather than stacking them.
             setObjectsPanelOpen(false);
+            setAddPrimitiveOpen(false, null);
             refreshDisplaySettings();
             // Hang the popover below the toolbar's ACTUAL height, not a nominal
             // one. The toolbar grows a second line when the status message
@@ -1422,6 +1790,43 @@ final class EditorWorkspaceView extends FrameLayout
         return objectsPopover;
     }
 
+    /**
+     * The resting scene control.
+     *
+     * <p>The same instance in every mode and every window — that is the point.
+     * A test asserts what it exposes, not where it currently hangs.
+     */
+    ObjectsCapsuleView objectsCapsule() {
+        return objectsCapsule;
+    }
+
+    /** The one creation surface, so a test can enumerate what it offers. */
+    AddPrimitivePaletteView addPrimitivePalette() {
+        return addPrimitivePalette;
+    }
+
+    /** The rail's precision toggle, so a test can open the exact values the way
+     *  a user does rather than by calling into the workspace. */
+    ImageView precisionToggle() {
+        return precisionToggle;
+    }
+
+    /** The capsule the precision toggle sits in, which is what actually stands
+     *  on the model and therefore what a chrome measurement must use. */
+    View precisionGroup() {
+        return precisionGroup;
+    }
+
+    /** The trailing tool cluster: rail plus precision toggle. */
+    View railColumn() {
+        return railColumn;
+    }
+
+    /** The workspace's bottom edge, so a test can prove what it costs. */
+    View bottomRow() {
+        return bottomRow;
+    }
+
     /** The Global Toolbar, so a test can reach a global control by id. */
     GlobalToolbarView globalToolbar() {
         return toolbar;
@@ -1475,7 +1880,8 @@ final class EditorWorkspaceView extends FrameLayout
         // report a bar the user cannot see. What actually stands on the model up
         // there is its two control capsules and the status capsule, which is
         // exactly what the toolbar reports.
-        final View[] surfaces = {brushControls, toolRailScroll, inspector, objectsDock};
+        final View[] surfaces = {brushControls, toolRailScroll, precisionGroup,
+                objectsCapsule, inspector, objectsDock};
         final View[] top = toolbar.occludingSurfaces();
         final View[] all = new View[surfaces.length + top.length];
         System.arraycopy(surfaces, 0, all, 0, surfaces.length);

@@ -58,7 +58,7 @@ forgeshape_jni.cpp            render thread, ANativeWindow, MotionEvent ->
 | --- | --- | --- |
 | Activity lifecycle, edge-to-edge window | `ForgeShapeActivity` | — |
 | Which surfaces are on screen, adaptive layout, window insets, chrome visibility | `EditorWorkspaceView` | it decides no mode — `syncFromNative()` *reads* `NativeViewport.productMode()` and builds from that |
-| Display unit, the *draft* primitive kind, the Construction rail selection, inspector detent, chrome-hidden | `EditorUiState` | every field is safe to lose; none of them can change the model |
+| Display unit, the *draft* primitive kind, the Construction rail selection, whether the precision surface was asked for, chrome-hidden | `EditorUiState` | every field is safe to lose; none of them can change the model |
 | The window-dp breakpoints and chrome sizing rules | `WorkspaceLayoutMode` | it holds no Android type and reads no state; it is arithmetic |
 | Shape/transform field text and input validation messages | `ConstructionShapeEditorView`, `ConstructionPlacementEditorView` | neither owns a parameter, a kind, a transform, a mesh or a publish decision |
 | Brush slider positions, which rail entry looks active, the sculpt mesh summary | `BrushEdgeControlsView`, `ToolRailView`, `SculptContextView` | none owns a vertex, a brush value, a tool or a mode; all four are read back from native state |
@@ -139,24 +139,105 @@ The Activity's content view is `EditorWorkspaceView`, a `FrameLayout` with three
 children in z-order: the `SurfaceView` at the **whole window size**; `chromeRoot`,
 a transparent, non-clickable vertical `LinearLayout` holding every interactive
 surface; and `overlayRoot`, holding what must survive chrome being hidden — the
-restore chip, the Display popover, the Objects panel and the start chooser.
+restore chip, the Display popover, the Objects panel, the Add Primitive palette
+and the start chooser.
 
-Inside `chromeRoot`: `GlobalToolbarView` at the top, then a weighted horizontal
+Inside `chromeRoot`: `GlobalToolbarView` at the top; then a weighted horizontal
 row carrying — leading edge first — the Objects column (expanded windows only),
 `BrushEdgeControlsView` (Sculpt only), a weighted gap where the model lives, and
-the `ToolRailView` inside a `ScrollView` (trailing edge). `PropertyInspectorView`
-is placed either after that row (bottom sheet) or inside it (side placement). All
-are plain framework views built in code; no Compose, no AndroidX in the product,
-no design system, no drawer.
+the trailing **tool cluster** (`railColumn`: the `ToolRailView` in a `ScrollView`,
+with the precision toggle attached under it); then `bottomRow`, which wraps its
+content and holds the Objects capsule on the leading side and nothing else.
+`PropertyInspectorView` is added after `bottomRow` (bottom sheet) or inside the
+middle row (side placement) — and **only while it is open**. All are plain
+framework views built in code; no Compose, no AndroidX in the product, no design
+system, no drawer.
+
+**The viewport is the workspace; everything else is an edge.** Nothing spans the
+bottom of the window at rest. The exact-value panel used to, collapsed, and a
+collapsed panel is still a full-width strip anchored to the edge of a
+viewport-first tool — a permanent structural claim made by a surface nobody had
+asked for. It is now either open with its whole body or absent from the window
+entirely, and the model reaches the bottom edge. Exact values are ForgeShape's
+advantage and did not become less reachable: they are one tap from the tool
+context that owns them. What changed is which of the two owns the resting layout.
+
+**Every context surface grows out of the control that opened it.** The scene list
+and the Add Primitive palette out of the Objects capsule; the precision surface
+out of the rail's toggle. `anchorOverlayTo(overlay, invoker)` is the one
+implementation: it takes the invoker's bounds in workspace coordinates, aligns
+the surface's leading edge with it, places it above or below according to which
+half of the window the invoker sits in, and tells the surface which way to
+unfold so the growth animation starts from that corner. Positions are arithmetic
+on the invoker rather than a gravity chosen per panel, because the same two
+surfaces are opened from a capsule low on a phone and from a column high on a
+tablet, and both have to read as attached. The overlay's own fixed width is read
+from its layout params, since the anchor runs before the surface has ever been
+measured, and the overlay container's inset padding is subtracted because the
+chrome container the invoker lives in carries the same padding.
 
 **Each surface answers one question, and only one.** The Global Toolbar says what
-mode this is and carries the acts true in every mode; the Tool Rail says which
-tool is held; the Objects surface says what the scene HOLDS and which body is
-current; the Property Inspector says what that body's exact values ARE, naming it
-in its own title — "Shape — Body #1". Scene-level content inside the active-body
-value panel is a role confusion: it buries the fields the panel is named after
-below the fold, nests one scroll in another, and vanishes in every mode that
-editor is not the inspector's body.
+mode this is and carries the acts true in every mode that the user does not work
+*from*; the Tool Rail says which tool is held and its toggle opens the numbers
+behind it; the Objects capsule says which body is current and offers the one
+creation affordance; the Property Inspector says what that body's exact values
+ARE, naming it in its own title — "Exact Shape — Body #1". Scene-level content
+inside the active-body value panel is a role confusion: it buries the fields the
+panel is named after below the fold, nests one scroll in another, and vanishes in
+every mode that editor is not the inspector's body.
+
+**Objects is a capsule, not a toolbar button.** `ObjectsCapsuleView` is a Tier 1
+floating capsule holding the active body's name and a `+`. It is the main entry
+to the scene on a phone and is in the same place in **both** modes, which is most
+of what makes Construction and Sculpt read as one workspace rather than two
+applications sharing a viewport. It holds no scene state: the label is written
+from `sceneActiveBodyId()` on every refresh. The Global Toolbar's Objects icon is
+gone — a toolbar icon can only offer to open a list, it cannot say which body is
+current, and two controls opening the same panel would be two answers to "where
+does the scene live". The capsule is withdrawn exactly when the window gives the
+scene a permanent column, for the reason the icon used to be: a capsule naming
+the active body beside a list that already names it is one fact drawn twice.
+
+**Creation is a choice, not an append.** Both `+` controls — the capsule's and the
+docked column's — are *anchors*: they open `AddPrimitivePaletteView` and create
+nothing. A body exists only once a shape has been chosen. The palette offers
+exactly six tiles, one per primitive the product builds, and choosing one runs
+the two calls a user would make by hand: `sceneAddBody()`, then that primitive's
+own `applyConstruction*()` with the parameters **read back from the new body's own
+native state**. There is no Java-side generator, no second table of default sizes
+and no second validation, so a shape chosen from a palette can be refused exactly
+as a typed one can — and on a refusal the body stays a box and the status line
+says so, because there is no scene delete and inventing one to tidy up after a
+refusal would put a destructive path into the shell. There is deliberately no
+*Add from file*, no template and no disabled placeholder: the seam for a later
+creation **category** is structural — the palette owns its own layout and routing
+— rather than drawn.
+
+**Every entry on the Tool Rail does something.** Sketch and Extrude used to be
+drawn there, inert. Half of the one control the user reaches for most, spent on
+features the product does not have, on the smallest window, beside the two that
+work, is a worse trade than a rail that grows an entry later; an entry that looks
+like a tool and is not is a promise the shell cannot keep. Construction's two
+entries are *Shape* and *Transform*. **"Transform" is the vocabulary Stage 020's
+direct handles will join, and is deliberately not a claim that they exist**:
+everything behind that entry today is exact numeric, and every surface it opens
+says so in its own title — "Exact Transform — Body #1". `ToolRailView` no longer
+has any notion of a reserved entry. The one approved-but-unimplemented control
+left in the product is the global `Export`, which is drawn recessed and says why.
+
+**The precision toggle belongs to the rail, not to the toolbar.** What it opens is
+entirely a function of the entry above it — *Exact shape*, *Exact transform*, or
+in Sculpt the mesh *Details* — so it is attached under the rail as its own small
+capsule rather than as a fifth rail entry: the rail's whole job is that exactly
+one of its children is active, and a fifth selectable thing in it would break
+that. It names what it will open, so a user never has to press it to find out,
+and it is drawn active exactly while the surface is up.
+
+**A standing fault is visible without opening anything.** The stale-source warning
+still lives in the Sculpt context surface next to the action that resolves it,
+but that surface no longer opens by itself, so the warning is also written to the
+status line on every refresh in Sculpt, where it outranks the gesture hint and
+re-asserts itself after any message that overwrites it.
 
 ### Appearance: roles, not colours
 
@@ -187,7 +268,8 @@ ground in the set is chosen so a neutral clay render reads as lit.
 toolbar's two capsules, the Tool Rail, the brush controls — and is the only
 translucent tier, because the model behind a narrow capsule is informative.
 `fsSurfaceContext` (Tier 2) is an expanded surface carrying a body of content to
-be read: the Display popover, the Objects panel, the start chooser.
+be read: the Display popover, the Objects panel, the Add Primitive palette,
+the start chooser.
 `fsSurfacePrecision` (Tier 3) is the Property Inspector, where exact values are
 typed. **Nothing blurs and nothing pretends to**: the viewport is a `SurfaceView`
 and the platform cannot blur what is behind one, so "glass" is tone plus opacity
@@ -220,7 +302,13 @@ asserts what they deliver: primary text and every typed value at WCAG AA (4.5:1)
 secondary captions at 3.0:1 (measured 3.6–4.7 across the three), and verdicts at
 2.4:1 against the precision surface — the tightest number in the product, Light
 Charcoal's error red on its own inspector surface, and a consequence of both the
-red and the ground being fixed.
+red and the ground being fixed. That debt is **carried, not silently repaired**:
+the twelve anchors are owner-approved values and are not the UI layer's to move.
+
+Every surface UI-R4A added — the Objects capsule, the Add Primitive palette, the
+precision toggle — maps through those same roles. The capsule and the toggle are
+Tier 1, the palette is Tier 2, and no colour, tint or state anywhere in them is
+written in Java, so the three appearances still cost one component tree.
 
 **The appearance itself is UI-owned, process-scoped and losable**, in the one static
 field in `EditorUiState` beside the start choice. It is applied by `setTheme()`
@@ -289,17 +377,24 @@ dp — never display size and never orientation, so a rotation, a split-window
 resize and a free-form drag all take one path. It holds no Android type and is
 unit-tested on the JVM.
 
-| window | class | inspector |
+| window | class | precision surface, **when open** |
 | --- | --- | --- |
-| width < 600 dp | `COMPACT` | bottom sheet, capped at 30 % of window height |
+| width < 600 dp | `COMPACT` | inset bottom sheet, capped at 30 % of window height |
 | 600–839 dp, or any width with height < 480 dp | `MEDIUM` | bottom sheet, or **side overlay** when height < 480 dp |
-| ≥ 840 dp wide **and** ≥ 480 dp tall | `EXPANDED` | docked side panel, ≤ 30 % of width |
+| ≥ 840 dp wide **and** ≥ 480 dp tall | `EXPANDED` | side panel beside the model, ≤ 30 % of width |
+
+None of the three is a resting state: the table says where the surface *appears*,
+not what the window permanently gives up. `WorkspaceLayoutMode` has no opinion at
+all about whether it is open — the only thing that opens it is the precision
+toggle, and what the user last decided is remembered per mode in `EditorUiState`.
+The rule the previous shell had, where a roomy window opened the panel by itself,
+is gone with it: a rotation could otherwise put a surface on screen that had
+never been asked for.
 
 The height gate does two things at once: a short window never gets a bottom sheet,
 and a 914 × 411 dp phone in landscape is not classified as a tablet merely because
-it is wide. The inspector's body always scrolls, its bottom-sheet height is capped
-in `onMeasure`, and a side placement narrows to its toggle when collapsed — a
-panel that hid only its body would give the model back nothing.
+it is wide. The surface's body always scrolls and its bottom-sheet height is
+capped in `onMeasure`.
 
 **No chrome column spans the window.** Both side placements and the Objects
 column wrap their own content and hang from the top of the row: a panel stretched
@@ -343,8 +438,9 @@ shadow it wraps.
 **The Objects surface is one view with two hosts, owned by the workspace.** An
 expanded window with room gives the scene list a leading-edge column
 (`objectsDock`, a `ScrollView`); every other window gives it `ObjectsPopoverView`,
-a floating overlay panel opened by one Global Toolbar control and capped at 55 %
-of the window. The **same `ObjectsSectionView` instance** moves between them, and
+a floating overlay panel opened from the Objects capsule, anchored to it, and
+capped at 55 % of the window. The **same `ObjectsSectionView` instance** moves
+between them, and
 `EditorWorkspaceView` owns it and refreshes it from `syncFromNative()` in **every**
 mode — never a second list, because a second Java Objects view would be a second
 place for "which body is active" to be remembered, and that answer lives below
@@ -353,10 +449,12 @@ the same native fact and the same `refreshFromNative()`, and no Objects list is
 ever nested inside the inspector's scroll.
 
 The two hosts are mutually exclusive, and enforced rather than assumed: the
-toolbar control is `GONE` exactly when the column is up, opening either panel
-closes the other, hiding the chrome closes both, and a window that grows into a
-column closes the panel on the way. A column is presentation the window pays for
-permanently; the panel is presentation the user asks for and dismisses.
+Objects **capsule** is `GONE` exactly when the column is up, opening any context
+surface closes the others, hiding the chrome closes all of them, and a window
+that grows into a column closes both the panel and the palette on the way — the
+palette because it would otherwise be anchored to a control that is no longer
+there. A column is presentation the window pays for permanently; the panel is
+presentation the user asks for and dismisses.
 
 Whether it docks is arithmetic, **not a fourth breakpoint**: `EXPANDED` is
 necessary and not sufficient, and a window qualifies only when a 180 dp Objects
@@ -372,8 +470,9 @@ the render target:** the `SurfaceView` is the whole window in every layout mode.
 ### Property Inspector ownership boundary
 
 `EditorUiState` is the closed list of what the UI may remember: display unit,
-draft primitive kind, which Construction editor the rail points at, inspector
-detent per mode, chrome-hidden, and whether the start question has been answered.
+draft primitive kind, which Construction context the rail points at, whether the
+precision surface was asked for (per mode, and **false** to begin with),
+chrome-hidden, and whether the start question has been answered.
 Every field is safe to lose — kill the process and the object is exactly what it
 was. Anything that would change the model if it were wrong belongs in native code
 instead. The start flag and the theme are the **static** members, and deliberately
@@ -1862,9 +1961,10 @@ Three rules constrain every caller. **Nothing on the path of a pointer sample:**
 chrome transition never runs while a viewport gesture is in flight, because input
 responsiveness outranks motion. **Nothing that changes a size:** chrome
 hide/restore is alpha only, because the `SurfaceView` is full-bleed and a
-transition that changed a size would rebuild the swapchain, and the Property
-Inspector changes its size **once** per detent change rather than animating a
-height that would `requestLayout` per frame and re-run the whole adaptive decision.
+transition that changed a size would rebuild the swapchain, and every context
+surface — the scene list, the Add Primitive palette and the precision surface —
+animates **alpha and scale about the corner it grew from**, never a height that
+would `requestLayout` per frame and re-run the whole adaptive decision.
 **Only a user act animates** — the instant, idempotent paths are what the measure
 pass and every state refresh call, which is also why the Objects re-parent does
 not animate.

@@ -85,7 +85,7 @@
     <!-- 4dp rather than 6dp. Inside a control group's own capsule the gap is
          separating two borderless controls that already share a material, so it
          only has to keep their touch targets apart — and the row still has to
-         fit one transition button, Export and three icon controls on a 411 dp
+         fit one transition button, Export and two icon controls on a 411 dp
          window. -->
     <dimen name="toolbar_gap">4dp</dimen>
     <!-- How wide the editing-context label may grow before it ellipsises. It
@@ -164,9 +164,6 @@
       claim the Tool Rail and the toolbar's control groups already make.
     -->
     <dimen name="inspector_sheet_inset">8dp</dimen>
-    <dimen name="inspector_side_width">320dp</dimen>
-    <dimen name="inspector_side_overlay_width">360dp</dimen>
-    <dimen name="inspector_max_sheet_height">300dp</dimen>
 
     <!-- Controls. -->
     <dimen name="control_height">44dp</dimen>
@@ -206,6 +203,40 @@
          stands ON the model rather than beside it, and a panel that overlays
          the picture should at least be comfortable to hit. -->
     <dimen name="objects_popover_width">220dp</dimen>
+
+    <!--
+      The Add Primitive palette: six shape tiles, two to a row.
+
+      Fixed rather than proportional for the same reason the Objects panel is —
+      its content is six fixed tiles, so a proportional width would buy
+      whitespace with viewport. Two columns rather than three because each tile
+      carries a 28 dp silhouette above its name, and at three columns "Cylinder"
+      no longer fits under its own icon on a 360 dp window.
+    -->
+    <dimen name="add_primitive_palette_width">268dp</dimen>
+    <dimen name="add_primitive_tile_height">76dp</dimen>
+    <dimen name="add_primitive_icon_size">26dp</dimen>
+
+    <!--
+      How far a surface stands off the control it grew out of.
+
+      Every context surface in the workspace is anchored to its invoking control
+      rather than to a window edge — the Objects panel and Add Primitive to a
+      `+` or a capsule, the precision surface to the rail's precision toggle.
+      This is the one gap between the two, so the relation reads as attachment
+      rather than as two unrelated surfaces that happen to be near each other.
+    -->
+    <dimen name="overlay_anchor_gap">8dp</dimen>
+
+    <!--
+      The Objects capsule, the resting scene control.
+
+      Sized to its own content, like every other floating capsule: it holds a
+      body name and a `+`, and a fixed width would either clip "Body #12" or
+      leave a bar across the bottom of the viewport — which is exactly the shape
+      this stage removed.
+    -->
+    <dimen name="objects_capsule_max_label_width">148dp</dimen>
 
     <!-- Start chooser. -->
     <dimen name="chooser_padding">24dp</dimen>

@@ -16,17 +16,21 @@ import android.widget.TextView;
  * The edge tool selector.
  *
  * <p>One rail class serves both modes. Its entries change — the four sculpt
- * brushes, or the Construction editors plus the reserved Sketch and Extrude —
- * but its structure never does, which is the whole point of the shell: mode and
- * tool decide content, not shape.
+ * brushes, or the two Construction contexts — but its structure never does,
+ * which is the whole point of the shell: mode and tool decide content, not
+ * shape.
  *
  * <p><b>It selects; it does not decide.</b> Tapping an entry asks for a tool.
  * Which entry is drawn active comes from {@link #showActive(int)}, and the
  * caller reads that back from native state after the request. The rail can
  * therefore never claim a tool the session is not actually holding.
  *
- * <p>Reserved entries are visible and clearly disabled from day one, so the
- * shell's shape does not change when Sketch and Extrude arrive.
+ * <p><b>Every entry on the rail does something.</b> There are no reserved,
+ * disabled or placeholder entries: a rail carrying two inert tools spends a
+ * quarter of the one control the user reaches for most on features the product
+ * does not have, and a control that looks like a tool and is not is worse than
+ * an absent one. When Sketch and Extrude arrive they arrive as entries that
+ * work, and the rail's structure will not change to accommodate them.
  *
  * <p><b>An entry owns its own gesture against the scroll container.</b> See
  * {@link RailEntryView}: the rail lives inside a {@code ScrollView} so a window
@@ -36,7 +40,7 @@ import android.widget.TextView;
  */
 final class ToolRailView extends LinearLayout {
 
-    /** Told which entry was tapped. Reserved entries never call this. */
+    /** Told which entry was tapped. Every entry on the rail is tappable. */
     interface OnToolSelected {
         void onToolSelected(int key);
     }
@@ -50,14 +54,12 @@ final class ToolRailView extends LinearLayout {
         /** The caller's meaning for this entry: a {@code TOOL_*} constant in
          *  Sculpt, an {@code EditorUiState.CONSTRUCTION_TOOL_*} in Construction. */
         final int key;
-        final boolean reserved;
 
-        Entry(int viewId, int iconRes, String label, int key, boolean reserved) {
+        Entry(int viewId, int iconRes, String label, int key) {
             this.viewId = viewId;
             this.iconRes = iconRes;
             this.label = label;
             this.key = key;
-            this.reserved = reserved;
         }
     }
 
@@ -157,30 +159,15 @@ final class ToolRailView extends LinearLayout {
         item.addView(label, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        if (entry.reserved) {
-            // Visible, readable and inert. The content description says why,
-            // so a screen reader is not left to infer it from a grey label.
-            //
-            // It keeps the borderless resting background rather than taking
-            // bg_control_reserved: in a rail where only the HELD tool is drawn
-            // as a shape, outlining the two entries that do nothing would make
-            // them the second-loudest thing on the surface. Disabled is already
-            // carried by the icon and label tint, and setEnabled(false) is what
-            // makes it inert — the pressed state below it can never be reached.
-            item.setEnabled(false);
-            item.setContentDescription(
-                    context.getString(R.string.reserved_not_implemented, entry.label));
-        } else {
-            item.setContentDescription(entry.label);
-            item.setClickable(true);
-            item.setFocusable(true);
-            item.setOnClickListener(new OnClickListener() {
-                @Override
-                public void onClick(View v) {
-                    listener.onToolSelected(entry.key);
-                }
-            });
-        }
+        item.setContentDescription(entry.label);
+        item.setClickable(true);
+        item.setFocusable(true);
+        item.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                listener.onToolSelected(entry.key);
+            }
+        });
         return item;
     }
 
@@ -190,9 +177,6 @@ final class ToolRailView extends LinearLayout {
      */
     void showActive(int activeKey) {
         for (Entry entry : entries) {
-            if (entry.reserved) {
-                continue;
-            }
             final View item = findViewById(entry.viewId);
             if (item == null) {
                 continue;

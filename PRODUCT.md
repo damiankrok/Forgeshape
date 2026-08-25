@@ -143,23 +143,36 @@ body.
 
 ## The Editor Workspace
 
-The editor is one workspace, and the model is the largest thing in it. There is
-no bar across the top: the **Global Toolbar**'s controls sit in two small
+The editor is one workspace, and **the model is the workspace**. Everything else
+stands at an edge and is small, and nothing at all sits across the bottom of the
+screen waiting to be used.
+
+There is no bar across the top: the **Global Toolbar**'s controls sit in two small
 floating groups with the model visible between and behind them — an editing group
 on the leading edge carrying what is being edited and the control that crosses
 between constructing and sculpting, and a utility group on the trailing edge
-carrying the way to reach the **Objects** list, the viewport's appearance
-settings and the control that hides the chrome. Every status and error message
-appears in a quiet capsule of its own just below them, sized to its own text. A
-**Tool Rail** stands at the trailing edge. A **Property Inspector** floats above
-the bottom edge with the viewport visible around it — at the side when the window
-is short or wide — carries the exact values of the body you are editing and names
-it in its own title, and it collapses to a single strip when the model is what
-matters. A control in the utility group hides all of it at once, leaving the bare
-model and one chip to bring it back.
+carrying the viewport's appearance settings and the control that hides the chrome.
+Every status and error message appears in a quiet capsule of its own just below
+them, sized to its own text.
 
-Touching the model between the two groups navigates: they are surfaces, not a
-bar, and only the surfaces themselves take a touch.
+Low on the leading edge, where a thumb reaches, is the **Objects capsule**: it
+names the body you are working on and carries a **+** beside it. It is in the same
+place whether you are constructing or sculpting.
+
+At the trailing edge is the **Tool Rail**, and attached directly under it a single
+small control that opens the **exact values** behind whichever tool the rail is
+holding. That surface is not there until you ask for it. When you do, it grows
+out of that control, carries the numbers, and goes away again when you dismiss it
+— and the model has the bottom of the screen back. A control in the utility group
+hides all of it at once, leaving the bare model and one chip to bring it back.
+
+Every panel in the workspace comes out of the control that opened it. The list of
+bodies and the shape palette rise out of the Objects capsule; the exact values
+unfold from the control beside the rail. Nothing arrives from an edge that has
+nothing to do with what you just pressed.
+
+Touching the model between the two toolbar groups navigates: they are surfaces,
+not a bar, and only the surfaces themselves take a touch.
 
 The same regions are there in both modes. What changes is what they carry, never
 where they are. Each answers one question and only one: what mode this is, which
@@ -167,14 +180,13 @@ tool is held, what the scene holds, and what the selected body's numbers are.
 
 **A bigger window buys more of the model in view at once, not just more space
 around it.** On a phone the workspace is viewport-first: the list of bodies opens
-as a small panel over the model from one toolbar control and is dismissed again,
+as a small panel over the model from the Objects capsule and is dismissed again,
 and the Tool Rail floats over the edge of the model as a small raised card. On a
-tablet-sized window there is room to stop stacking things,
-so the **list of bodies gets a panel of its own** on the leading edge and the
-Tool Rail sits flush beside the exact-value panel as part of the layout rather
-than standing on the picture. The exact values stay in their own panel on the
-other side, so you can see what you are editing and what its numbers are at the
-same time, with the model between them.
+tablet-sized window there is room to stop stacking things, so the **list of bodies
+gets a panel of its own** on the leading edge — carrying its own **+** — and the
+Tool Rail sits flush at the other edge as part of the layout rather than standing
+on the picture. The exact values still open only when you ask for them, in the
+same way, from the same control.
 
 **None of those side panels is a full-height column.** Each ends where its own
 content ends — a scene of two bodies is a short card, not an arm's length of
@@ -185,8 +197,8 @@ That only happens where it genuinely fits. A window that is merely wide — a la
 phone in landscape — keeps the phone arrangement, because three permanent columns
 there would take more from the model than they give back. Whichever window you are
 in, the list of bodies behaves identically: the same rows, the same order, the
-same Add Body, and a body picked in the viewport highlights in the list either
-way. A long list scrolls.
+same way to add a body, and a body picked in the viewport highlights in the list
+either way. A long list scrolls.
 
 Touching any of that chrome never moves the camera and never sculpts: a surface
 owns its own gesture completely. Touching the viewport anywhere else navigates
@@ -257,23 +269,29 @@ you see, so a tap that hits the model in portrait hits it in landscape too.
 
 ## Several bodies, and which one you are editing
 
-The **Objects** control in the Global Toolbar opens the scene list: one row per
-body, labelled `Body #1`, `Body #2` and so on, with the selected one visibly
-active, and **Add Body** beneath them. It opens over the model and closes again
-on a second tap, so while it is shut it costs the picture nothing. On a window
-wide enough for it the same list is a permanent column beside the model instead,
-and the toolbar control goes away — there is never a second copy of it on screen.
-The list is reachable the same way in both modes.
+The **Objects capsule**, low on the leading edge, names the body you are working
+on. Tapping that name opens the scene list, which rises out of the capsule: one
+row per body, labelled `Body #1`, `Body #2` and so on, with the selected one
+visibly active, and a **+** to add another. It closes again on a second tap, so
+while it is shut it costs the picture nothing. On a window wide enough for it the
+same list is a permanent column beside the model instead, and the capsule goes
+away — there is never a second copy of it on screen. The capsule is in the same
+place, and works the same way, in both modes.
 
-The Property Inspector names the body it is editing — *Shape — Body #1* — so the
-numbers on screen always say whose they are without the list being open.
+The exact-value surface names the body it is editing — *Exact Shape — Body #1* —
+so when you do open it, the numbers on screen always say whose they are.
 
-**Add Body** adds one more body with the same defaults the first one had — the
-2.0 × 1.0 × 0.5 m box, unrotated, at the world origin — and selects it. The new
-body therefore starts out sitting exactly on top of whatever is already at the
-origin; move it with the ordinary Position fields. Nothing is offset for you,
-because guessing where you wanted it would be worse than putting it somewhere
-you can see and type over.
+**The + does not add a body by itself.** It opens **Add Primitive**, which grows
+out of it: six shapes — Box, Cylinder, Sphere, Cone, Capsule and Plane — each
+drawn as its own outline with its name under it. Choosing one creates a body that
+*is* that shape, selects it, and puts the palette away. There is nothing else in
+that palette: every shape it offers is a shape ForgeShape actually builds.
+
+A new body starts at the shape's own default size, unrotated, at the world
+origin. It therefore sits exactly on top of whatever is already at the origin;
+move it with the ordinary Position fields. Nothing is offset for you, because
+guessing where you wanted it would be worse than putting it somewhere you can see
+and type over.
 
 Selecting a body is two equivalent things: tap its row in the Objects list, or
 tap the body itself in the viewport. Either way the shape fields, the placement
@@ -287,22 +305,32 @@ dimension, applying a placement, Freezing and sculpting all reach that body and
 no other. Switching to another body and back brings the first one's exact
 numbers back unchanged.
 
-What Stage 017 deliberately does **not** offer: there is no way to delete,
+What the scene deliberately does **not** offer: there is no way to delete,
 duplicate, rename, hide or lock a body, no groups or nesting, no reordering the
 list, and no Undo. Bodies are not saved when the app closes.
 
 ## Choosing and sizing the shape
 
-The Tool Rail in Construction carries **Shape** and **Place**, plus **Sketch**
-and **Extrude**, which are drawn but clearly not available. Choosing Shape puts
-the Objects list described above, a
-**primitive chooser** — Box, Cylinder, Sphere, Cone, Capsule and Plane — the
-chosen shape's dimensions, a display unit (**mm**, **cm** or **m**) shared by
-every length, and an **Apply Shape** button into the Property Inspector. Only the
-chosen shape's fields are on screen, so nothing in the inspector can be mistaken
-for another shape's dimension. Choosing Place puts the object's position and
-rotation there instead, described further down. The rest of the viewport stays
-visible and usable while editing.
+The Tool Rail in Construction carries exactly two entries, **Shape** and
+**Transform**, and both of them work. Nothing is drawn there that ForgeShape
+cannot do.
+
+Which one is held decides what the control beneath the rail opens. With Shape
+held it opens **Exact Shape**: a **primitive chooser** — Box, Cylinder, Sphere,
+Cone, Capsule and Plane — the chosen shape's dimensions, a display unit (**mm**,
+**cm** or **m**) shared by every length, and an **Apply Shape** button. Only the
+chosen shape's fields are on screen, so nothing there can be mistaken for another
+shape's dimension. With Transform held it opens **Exact Transform**: the object's
+position and rotation, described further down, with its own Apply.
+
+*Transform* is what the entry is called because that is what it is about — where
+the body sits. Today everything behind it is typed: there are no handles on the
+model to drag yet, which is why the surface it opens says *Exact Transform* in
+its own title rather than promising something that is not there.
+
+Either surface is one tap away and goes away again on the next one. While it is
+shut the model has the whole screen; while it is open the rest of the viewport
+stays visible and usable.
 
 The numbers in the fields are always the object's real dimensions, read from the
 model itself.
@@ -420,8 +448,8 @@ number". The object keeps the shape, size and place it already had.
 
 ## Moving and rotating the object
 
-Choosing **Place** in the Tool Rail puts the object's **placement** in the
-Property Inspector: a Position X/Y/Z in the shared display unit, a Rotation
+Holding **Transform** in the Tool Rail and opening the exact values gives you the
+object's **placement**: a Position X/Y/Z in the shared display unit, a Rotation
 X/Y/Z in degrees, and a separate **Apply Transform** button.
 
 The object starts at position 0, 0, 0 m with rotation 0, 0, 0°. Placement belongs
@@ -739,7 +767,10 @@ focus-on-selection command and any camera animation are not implemented — the
 projection can be switched, but the camera is aimed only by hand. Scaling the
 object, transform gizmos, an editable tessellation and booleans are not
 implemented: shape, position and rotation are edited only by typing exact values
-and pressing an Apply button. Sculpting has exactly the four tools above — other
+and pressing an Apply button. **There are no handles on the model to drag** —
+nothing in the viewport moves, rotates or scales a body, and the Tool Rail's
+*Transform* entry names what its numbers are about rather than promising a
+manipulator that does not exist yet. Sculpting has exactly the four tools above — other
 brushes (Flatten, Crease, Pinch and the rest), remesh, sculpt undo, symmetry,
 masking, layers, brush presets and stylus pressure are not implemented.
 
@@ -775,12 +806,17 @@ HDRI, no movable or additional lights, no shadows, no ambient occlusion, and no
 outline around the selected object — selection is a tint. A photoreal (PBR)
 preview belongs to later work on materials and export.
 
-**Sketch, Extrude and Export have visible homes and no implementation.** They
-appear in the Editor Workspace — Sketch and Extrude in the Construction Tool
-Rail, Export in the Global Toolbar — drawn so they can be read and clearly not
-available, and pressing them does nothing. They are there so the workspace does
-not change shape when they arrive; nothing about them works today. Nothing in the
-workspace exports anything.
+**Only one unimplemented control is drawn anywhere: Export.** It sits in the
+Global Toolbar, recessed, readable and clearly unavailable, and pressing it does
+nothing. Nothing in the workspace exports anything.
+
+Sketch and Extrude used to be drawn beside Shape and Transform in the Tool Rail,
+inert. They are **gone** — not implemented, and no longer taking up half of the
+control you reach for most on the smallest screen. Every entry on the Tool Rail
+now does something, and so does every shape in Add Primitive.
+
+There is no **Add from file** and no import of any kind. Add Primitive offers the
+six shapes ForgeShape builds and nothing else.
 
 ## Accepted product direction — decided, not built
 

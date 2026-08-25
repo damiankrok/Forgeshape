@@ -65,17 +65,23 @@ final class EditorUiState {
     }
 
     /**
-     * Which Construction editor the Tool Rail is pointing at.
+     * Which Construction context the Tool Rail is pointing at.
      *
      * <p>These are not native tools and native code has never heard of them.
      * Construction has exactly two kinds of exact value — what the object
      * <i>is</i> and where it <i>sits</i> — with separate Apply boundaries
      * because they have different consequences, and this says which of the two
-     * the Property Inspector is showing. It is rail selection as drawn, which
-     * §13 of the UI architecture assigns to the UI as layout state.
+     * the precision surface shows when it is opened. It is rail selection as
+     * drawn, which the UI architecture assigns to the UI as layout state.
+     *
+     * <p>{@code TRANSFORM} rather than {@code PLACE} because that is the term
+     * the rail, the precision surface and the documentation all use, and one
+     * concept gets one name. It is deliberately <b>not</b> a claim that direct
+     * handles exist: everything behind it today is exact numeric, and the
+     * surface it opens says so in its own title.
      */
     static final int CONSTRUCTION_TOOL_SHAPE = 0;
-    static final int CONSTRUCTION_TOOL_PLACE = 1;
+    static final int CONSTRUCTION_TOOL_TRANSFORM = 1;
 
     /**
      * The unit every length on screen is written in.
@@ -100,14 +106,20 @@ final class EditorUiState {
     private int constructionTool = CONSTRUCTION_TOOL_SHAPE;
 
     /**
-     * Inspector expansion, remembered per mode for the process lifetime.
+     * Whether the precision surface is open, remembered per mode for the
+     * process lifetime.
      *
-     * <p>Per mode rather than globally because the two modes ask different
-     * things of it: Construction's inspector is where the work happens, Sculpt's
-     * is a status surface the user will usually want out of the way.
+     * <p><b>Both start closed, and that is the whole mobile workspace rule.</b>
+     * The resting workspace is a viewport with its tools around the edges; the
+     * exact-value surface is something the user asks for from the tool context
+     * that owns it and dismisses when the numbers are set. A panel that opened
+     * itself would be back to owning the layout it was just taken out of.
+     *
+     * <p>Per mode rather than globally because the two modes open different
+     * bodies and the answer to "did I leave this open" belongs to each.
      */
-    private boolean constructionInspectorExpanded = true;
-    private boolean sculptInspectorExpanded = true;
+    private boolean constructionPrecisionOpen;
+    private boolean sculptPrecisionOpen;
 
     /**
      * Whether this PROCESS has already chosen how it started.
@@ -151,10 +163,6 @@ final class EditorUiState {
     /** Whether every chrome surface is hidden, leaving the bare model. */
     private boolean chromeHidden;
 
-    /** Set once, from the first layout, so a rotation does not re-open a panel
-     *  the user deliberately collapsed. */
-    private boolean inspectorDefaultsApplied;
-
     LengthUnit displayUnit() {
         return displayUnit;
     }
@@ -179,19 +187,19 @@ final class EditorUiState {
     }
 
     void setConstructionTool(int tool) {
-        constructionTool = (tool == CONSTRUCTION_TOOL_PLACE)
-                ? CONSTRUCTION_TOOL_PLACE : CONSTRUCTION_TOOL_SHAPE;
+        constructionTool = (tool == CONSTRUCTION_TOOL_TRANSFORM)
+                ? CONSTRUCTION_TOOL_TRANSFORM : CONSTRUCTION_TOOL_SHAPE;
     }
 
-    boolean inspectorExpanded(boolean sculpting) {
-        return sculpting ? sculptInspectorExpanded : constructionInspectorExpanded;
+    boolean precisionOpen(boolean sculpting) {
+        return sculpting ? sculptPrecisionOpen : constructionPrecisionOpen;
     }
 
-    void setInspectorExpanded(boolean sculpting, boolean expanded) {
+    void setPrecisionOpen(boolean sculpting, boolean open) {
         if (sculpting) {
-            sculptInspectorExpanded = expanded;
+            sculptPrecisionOpen = open;
         } else {
-            constructionInspectorExpanded = expanded;
+            constructionPrecisionOpen = open;
         }
     }
 
@@ -273,24 +281,5 @@ final class EditorUiState {
 
     void setChromeHidden(boolean hidden) {
         chromeHidden = hidden;
-    }
-
-    /**
-     * Applies the layout mode's opening detent, once.
-     *
-     * <p>A compact window opens with the inspector collapsed so the model is
-     * the first thing on screen; anything wider opens it. After that the user's
-     * choice stands, including across a rotation — re-opening a panel someone
-     * just collapsed because the window changed shape is the kind of helpfulness
-     * that reads as a bug.
-     */
-    void applyInitialDetents(WorkspaceLayoutMode mode, int windowHeightDp) {
-        if (inspectorDefaultsApplied) {
-            return;
-        }
-        inspectorDefaultsApplied = true;
-        final boolean expanded = mode.inspectorStartsExpanded(windowHeightDp);
-        constructionInspectorExpanded = expanded;
-        sculptInspectorExpanded = expanded;
     }
 }

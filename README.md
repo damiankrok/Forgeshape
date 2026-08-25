@@ -227,12 +227,21 @@ See `PRODUCT.md` for the full gesture contract.
 
 ## Editing the object
 
-The Construction **Tool Rail** chooses what the **Property Inspector** edits:
-*Shape* (Box, Cylinder, Sphere, Cone, Capsule or Plane, and that shape's dimensions) or
-*Place* (position X/Y/Z, rotation X/Y/Z), each with its own Apply. Pick a display
-unit (mm / cm / m) for lengths — rotation is always degrees — type the values,
-and press the matching Apply. Nothing changes until then, including choosing a
-primitive. Touches on any chrome surface never move the camera.
+Add a body from the **Objects capsule** at the bottom leading edge: its `+` opens
+**Add Primitive**, and the shape you pick there is what the new body is. Tapping
+the body name beside it opens the scene list.
+
+The Construction **Tool Rail** chooses what the **precision surface** edits, and
+the small control attached under the rail is what opens it: *Shape* (Box,
+Cylinder, Sphere, Cone, Capsule or Plane, and that shape's dimensions) or
+*Transform* (position X/Y/Z, rotation X/Y/Z), each with its own Apply. Pick a
+display unit (mm / cm / m) for lengths — rotation is always degrees — type the
+values, and press the matching Apply. Nothing changes until then, including
+choosing a primitive. Touches on any chrome surface never move the camera.
+
+**Nothing is on screen at rest but the model and the edge controls.** The exact
+values are absent until the precision toggle is pressed, so a verification script
+must open that surface before looking for a field in it.
 
 **Freeze to Sculpt** in the Global Toolbar copies the object's current
 Construction mesh into a Frozen Sculpt Mesh and switches to Sculpt Mode, where
@@ -247,8 +256,11 @@ Every control has a stable semantic id in `res/values/ids.xml`. Drive UI-based
 verification by resolving those ids from a live `uiautomator dump` and tapping
 the resulting bounds — never by reusing coordinates from an older run, because
 the workspace re-arranges itself per window. Note that `uiautomator dump` omits
-views scrolled out of the Property Inspector's `ScrollView`: scroll the inspector
-before looking for `apply_shape` or `apply_transform`.
+views scrolled out of the precision surface's `ScrollView`, and omits every
+surface that is closed: tap `precision_toggle` first, then scroll, before looking
+for `apply_shape` or `apply_transform`. Likewise `objects_capsule_active` opens
+the scene list and `objects_capsule_add` opens Add Primitive — the rows and the
+shape tiles do not exist in a dump until they do.
 
 The brush sliders are a custom control, so one `input tap` on the track sets the
 value from its y position; the value native code actually kept is logged and is

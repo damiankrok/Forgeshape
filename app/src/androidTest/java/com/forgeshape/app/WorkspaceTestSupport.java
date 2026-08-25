@@ -84,12 +84,86 @@ final class WorkspaceTestSupport {
                 workspace.uiState().setDisplayUnit(LengthUnit.METERS);
                 workspace.uiState().setConstructionTool(
                         EditorUiState.CONSTRUCTION_TOOL_SHAPE);
-                workspace.uiState().setInspectorExpanded(false, true);
-                workspace.uiState().setInspectorExpanded(true, true);
+                // The resting workspace has no precision surface in it, in
+                // EITHER mode — set for both, not only the one this reset
+                // happens to leave the product in, so a Sculpt case cannot
+                // inherit a panel a Construction case opened. A case that needs
+                // the exact values opens them the way a user does; see
+                // openPrecision.
+                workspace.uiState().setPrecisionOpen(false, false);
+                workspace.uiState().setPrecisionOpen(true, false);
+                closeObjectsPanel(workspace);
+                closeAddPrimitive(workspace);
                 workspace.syncFromNative();
                 return null;
             }
         });
+    }
+
+    // -----------------------------------------------------------------------
+    // Contextual surfaces
+    //
+    // Every one of these drives the control a user would press rather than
+    // calling into the workspace, so a case that opens the exact values is
+    // exercising the same path the product ships. None of them locates a
+    // control by coordinate.
+    // -----------------------------------------------------------------------
+
+    /** Opens the precision surface from the Tool Rail's own toggle. */
+    static void openPrecision(EditorWorkspaceView workspace) {
+        if (!workspace.propertyInspector().isOpen()) {
+            workspace.precisionToggle().performClick();
+        }
+    }
+
+    /** Closes it from the same control. */
+    static void closePrecision(EditorWorkspaceView workspace) {
+        if (workspace.propertyInspector().isOpen()) {
+            workspace.precisionToggle().performClick();
+        }
+    }
+
+    /**
+     * Opens the scene list from the Objects capsule.
+     *
+     * <p>Does nothing in a window whose Objects section already has a column:
+     * there the list is permanently on screen and there is no panel to open.
+     */
+    static void openObjectsPanel(EditorWorkspaceView workspace) {
+        if (!workspace.objectsDocked() && !workspace.objectsPopover().isOpen()) {
+            workspace.objectsCapsule().findViewById(R.id.objects_capsule_active)
+                    .performClick();
+        }
+    }
+
+    static void closeObjectsPanel(EditorWorkspaceView workspace) {
+        if (workspace.objectsPopover().isOpen()) {
+            workspace.objectsCapsule().findViewById(R.id.objects_capsule_active)
+                    .performClick();
+        }
+    }
+
+    /** Opens Add Primitive from whichever host currently carries the plus. */
+    static void openAddPrimitive(EditorWorkspaceView workspace) {
+        if (workspace.addPrimitivePalette().isOpen()) {
+            return;
+        }
+        if (workspace.objectsDocked()) {
+            workspace.objectsSection().findViewById(R.id.add_body).performClick();
+            return;
+        }
+        workspace.objectsCapsule().findViewById(R.id.objects_capsule_add).performClick();
+    }
+
+    static void closeAddPrimitive(EditorWorkspaceView workspace) {
+        if (!workspace.addPrimitivePalette().isOpen()) {
+            return;
+        }
+        if (workspace.objectsDocked()) {
+            workspace.objectsSection().findViewById(R.id.add_body).performClick();
+            return;
+        }
+        workspace.objectsCapsule().findViewById(R.id.objects_capsule_add).performClick();
     }
 
     static void settle() {

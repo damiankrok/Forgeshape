@@ -2,7 +2,9 @@ package com.forgeshape.app;
 
 import static com.forgeshape.app.WorkspaceTestSupport.doOnWorkspace;
 import static com.forgeshape.app.WorkspaceTestSupport.onWorkspace;
+import static com.forgeshape.app.WorkspaceTestSupport.openAddPrimitive;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
@@ -55,8 +57,8 @@ public final class EditorWorkspaceObjectsTest {
     public void s17_21_addBodyCreatesARowAndSelectsTheNewBody() {
         final int[] countBox = new int[1];
         final long before = onWorkspace(rule.getScenario(), (activity, workspace) -> {
-            // Add Body is refused in Sculpt mode; an earlier test may have left
-            // the product there.
+            // Creating a body is refused in Sculpt mode; an earlier test may
+            // have left the product there.
             if (NativeViewport.productMode() != NativeViewport.MODE_CONSTRUCTION) {
                 NativeViewport.enterConstructionMode();
             }
@@ -67,17 +69,30 @@ public final class EditorWorkspaceObjectsTest {
         });
         final int countBefore = countBox[0];
 
+        // The `+` is an ANCHOR, not an act: it must open the palette and create
+        // nothing. Creation happens when a shape is chosen, and this asserts
+        // both halves in order.
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            openAddPrimitive(workspace);
+            assertTrue("the plus opens Add Primitive",
+                    workspace.addPrimitivePalette().isOpen());
+            assertEquals("and creates nothing by itself",
+                    countBefore, NativeViewport.sceneBodyCount());
+            return null;
+        });
         final long created = onWorkspace(rule.getScenario(), (activity, workspace) -> {
-            workspace.objectsSection().findViewById(R.id.add_body).performClick();
+            workspace.findViewById(R.id.add_primitive_box).performClick();
             return NativeViewport.sceneActiveBodyId();
         });
 
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            assertEquals("Add Body appends exactly one body",
+            assertEquals("choosing a shape appends exactly one body",
                     countBefore + 1, NativeViewport.sceneBodyCount());
             assertNotEquals("the new body has its own id", before, created);
-            assertEquals("Add Body selects what it added",
+            assertEquals("and it is what is now selected",
                     created, NativeViewport.sceneActiveBodyId());
+            assertFalse("the palette closes once it has done its work",
+                    workspace.addPrimitivePalette().isOpen());
             assertEquals("the list shows one row per body",
                     NativeViewport.sceneBodyCount(), workspace.objectsSection().rowCount());
             assertNotNull("the new body has a row of its own",
@@ -301,7 +316,8 @@ public final class EditorWorkspaceObjectsTest {
                     workspace.getHeight(), viewport.getHeight());
             assertNotNull("the Objects section is present",
                     workspace.findViewById(R.id.objects_section));
-            assertNotNull("Add Body is present", workspace.findViewById(R.id.add_body));
+            assertNotNull("the column host's creation control is present",
+                    workspace.findViewById(R.id.add_body));
             assertEquals("every body has a row in this layout",
                     NativeViewport.sceneBodyCount(), workspace.objectsSection().rowCount());
             return null;

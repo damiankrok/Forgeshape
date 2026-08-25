@@ -12,64 +12,74 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 
 /**
- * The contextual exact-value panel.
+ * The contextual exact-value panel — a precision surface the user <b>asks
+ * for</b>.
  *
  * <p>One container, three different bodies: the Construction shape editor, the
  * Construction placement editor, or the Sculpt context. Which body it holds is
  * a function of the active mode and the active Tool Rail entry, and swapping it
  * changes the inspector's content and never its structure.
  *
- * <p>Two things about it are load-bearing rather than cosmetic:
+ * <p><b>Closed means absent, not collapsed.</b> This is the load-bearing change
+ * of the mobile workspace: the panel used to have a resting detent, and a
+ * collapsed detent is still a full-width strip anchored to the bottom of the
+ * window — a permanent structural claim on the workspace made by a surface
+ * nobody had asked for. It is now either open, carrying its whole body, or it
+ * is not in the window at all, and the viewport reaches the bottom edge. Exact
+ * values are ForgeShape's advantage and are one tap away from the tool context
+ * that owns them; what changed is which of the two owns the resting layout.
  *
- * <ul>
- *   <li><b>Its body scrolls.</b> The absence of any scroll container in the
- *       Android layer is the direct cause of the landscape defect this stage
- *       exists to fix; a body that does not fit is reachable, not lost.</li>
- *   <li><b>It collapses.</b> Collapsed it costs one header strip, which is what
- *       makes the viewport floor achievable on a compact window without
- *       removing a control from anywhere.</li>
- * </ul>
+ * <p><b>It grows out of the control that opened it</b> — the Tool Rail's
+ * precision toggle — rather than sliding in from an edge, so the relation
+ * between the tool being held and the numbers behind it is spatial rather than
+ * something to be remembered.
+ *
+ * <p><b>Its body still scrolls</b>, and is still capped when it is a bottom
+ * sheet: a body that does not fit must be reachable, not lost, and an uncapped
+ * wrap-content sheet grows to whatever its content wants.
  *
  * <p><b>Owns no value.</b> The bodies read and submit; this is a frame with a
- * title, a toggle and a scroll container.
+ * title, a close control and a scroll container.
  */
 final class PropertyInspectorView extends LinearLayout {
 
-    /** Told the user collapsed or expanded the panel. */
-    interface OnExpandedChanged {
+    /** Told the user dismissed the precision surface. */
+    interface OnPrecisionSurfaceClosed {
         /**
-         * The user's decision, reported the moment it is made — before any
-         * transition finishes. What the UI REMEMBERS must be the target, or a
-         * rotation part-way through a collapse would come back expanded.
-         */
-        void onInspectorExpandedChanged(boolean expanded);
-
-        /**
-         * The panel has finished changing size and is at its resting layout.
+         * The user closed the panel from its own header.
          *
-         * <p>Separate from the decision because a side-placed panel gives back
-         * WIDTH when it collapses, and narrowing the column while the body is
-         * still on screen would clip the very content that is leaving.
+         * <p>Reported rather than acted on here, because what a closed
+         * precision surface means to the workspace — which tool context is
+         * still held, which control returns to its resting state — is the
+         * workspace's business and not this frame's.
          */
-        void onInspectorLayoutSettled();
+        void onPrecisionCloseRequested();
     }
 
+    /** Matches the Objects panel and the Add Primitive palette, so every
+     *  surface the workspace opens on demand behaves the same way. */
+    private static final long OPEN_DURATION_MS = 140L;
+    private static final long CLOSE_DURATION_MS = 100L;
+
     private final TextView title;
-    private final ImageView toggle;
     private final ScrollView scroll;
     private final FrameLayout body;
-    private final OnExpandedChanged listener;
-
-    private boolean expanded = true;
+    private final OnPrecisionSurfaceClosed listener;
 
     /** See {@link #setMotionAllowed}. */
     private boolean motionAllowed = true;
+
+    /** Set by the anchor: which way the surface unfolds from its toggle. */
+    private boolean growsUpward = true;
+
+    /** The state the user asked for; see {@link #isOpen()}. */
+    private boolean open;
 
     /** Zero disables the cap; a bottom sheet sets it so it cannot grow to fill
      *  the window, which is exactly what the previous panel did. */
     private int maxHeightPx;
 
-    PropertyInspectorView(Context context, OnExpandedChanged listener) {
+    PropertyInspectorView(Context context, OnPrecisionSurfaceClosed listener) {
         super(context);
         this.listener = listener;
         setId(R.id.property_inspector);
@@ -84,12 +94,12 @@ final class PropertyInspectorView extends LinearLayout {
         header.setOrientation(HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
         header.setPadding(pad, 0, pad, 0);
-        // The whole header toggles, not only the chip: it is the largest target
-        // in the panel and the one a thumb reaches for first.
+        // The whole header dismisses, not only the chip: it is the largest
+        // target in the panel and the one a thumb reaches for first.
         header.setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View v) {
-                toggleExpanded();
+                requestClose();
             }
         });
         addView(header, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
@@ -100,16 +110,15 @@ final class PropertyInspectorView extends LinearLayout {
         header.addView(title, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
 
-        toggle = EditorControlStyles.iconButton(context, R.id.inspector_toggle,
-                R.drawable.ic_chevron_down,
-                context.getString(R.string.inspector_collapse));
-        toggle.setOnClickListener(new OnClickListener() {
+        final ImageView close = EditorControlStyles.iconButton(context, R.id.inspector_toggle,
+                R.drawable.ic_chevron_down, context.getString(R.string.inspector_close));
+        close.setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View v) {
-                toggleExpanded();
+                requestClose();
             }
         });
-        header.addView(toggle, EditorControlStyles.iconButtonParams(context, 0));
+        header.addView(close, EditorControlStyles.iconButtonParams(context, 0));
 
         scroll = new ScrollView(context);
         scroll.setId(R.id.inspector_scroll);
@@ -124,7 +133,9 @@ final class PropertyInspectorView extends LinearLayout {
         scroll.addView(body, new ScrollView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        showExpanded(true);
+        // Absent until asked for. Nothing about the resting workspace is this
+        // panel's to occupy.
+        setVisibility(GONE);
     }
 
     /** Replaces the contextual body. The caller owns which one belongs here. */
@@ -148,42 +159,94 @@ final class PropertyInspectorView extends LinearLayout {
         scroll.scrollTo(0, 0);
     }
 
-    boolean isExpanded() {
-        return expanded;
+    /**
+     * Whether the precision surface is open.
+     *
+     * <p>The <b>target</b> state, not this frame's visibility: a closing panel
+     * is still VISIBLE for the length of its fade, and the toggle that draws
+     * itself active while it is open must not be lit by an animation that has
+     * not finished running.
+     */
+    boolean isOpen() {
+        return open;
     }
 
     /**
-     * Puts the panel in a detent with no transition.
+     * Which way the surface unfolds from the control that opened it.
      *
-     * <p>Idempotent, and deliberately instant: this is what the measure pass
-     * and every state refresh call, and a layout traversal is no place to start
-     * an animation. Motion belongs to the one path that is a user ACT — see
-     * {@link #toggleExpanded}.
+     * <p>A compact window's precision toggle is roughly mid-height beside the
+     * rail and the sheet arrives from the bottom; a docked one hangs from the
+     * top. Set by the workspace's anchor, for the same reason the Objects panel
+     * and the Add Primitive palette take it.
      */
-    void showExpanded(boolean value) {
-        if (value == expanded && scroll.getVisibility() == (value ? VISIBLE : GONE)
-                && scroll.getAlpha() == 1.0f) {
+    void setGrowsUpward(boolean upward) {
+        growsUpward = upward;
+    }
+
+    /**
+     * Opens or closes the whole surface.
+     *
+     * <p>The one path that animates, and it animates the panel's <b>drawing</b>
+     * rather than its height: animating a height would mean a
+     * {@code requestLayout} on every frame, which re-runs the workspace's whole
+     * adaptive layout decision — it lives in {@code onMeasure} — dozens of times
+     * for a panel that is going to end up exactly where it always did. Alpha and
+     * scale cost no traversal at all.
+     *
+     * <p>Not animated while a viewport gesture is in flight, or when the
+     * platform asks for reduced motion. Both are the instant path.
+     */
+    void setOpen(boolean open) {
+        if (open == this.open) {
             return;
         }
-        expanded = value;
-        ChromeMotion.settle(scroll, value);
-        showToggleGlyph(value);
+        this.open = open;
+        // Always interruptible: a second tap while a transition is running must
+        // reverse it, not queue behind it.
+        ChromeMotion.begin(this);
+        setPivotX(0.0f);
+        setPivotY(growsUpward ? getHeight() : 0.0f);
+
+        final long durationMs = ChromeMotion.duration(
+                open ? OPEN_DURATION_MS : CLOSE_DURATION_MS,
+                motionAllowed ? ChromeMotion.animatorScale(getContext()) : 0.0f);
+        if (durationMs <= 0L) {
+            settle(open);
+            return;
+        }
+        if (open) {
+            setAlpha(0.0f);
+            setScaleX(0.98f);
+            setScaleY(0.96f);
+            setVisibility(VISIBLE);
+            animate().alpha(1.0f).scaleX(1.0f).scaleY(1.0f)
+                    .setDuration(durationMs).start();
+        } else {
+            animate().alpha(0.0f).scaleX(0.98f).scaleY(0.96f)
+                    .setDuration(durationMs)
+                    .withEndAction(new Runnable() {
+                        @Override
+                        public void run() {
+                            // Reached only when the fade finished; a reversal
+                            // cancels it, and the reversal owns the state.
+                            settle(false);
+                        }
+                    }).start();
+        }
     }
 
-    /**
-     * The chevron, its content description, and nothing else.
-     *
-     * <p>Set from the TARGET detent at the start of a transition rather than at
-     * its end. An interrupted collapse must never leave a control claiming the
-     * panel will do the opposite of what it is doing, and the glyph is the only
-     * thing in the panel that could say so.
-     */
-    private void showToggleGlyph(boolean value) {
-        // The chevron points the way the panel will go, not the way it is.
-        toggle.setImageResource(
-                value ? R.drawable.ic_chevron_down : R.drawable.ic_chevron_up);
-        toggle.setContentDescription(getContext().getString(
-                value ? R.string.inspector_collapse : R.string.inspector_expand));
+    /** Lands on a resting state with no animation running on the view. */
+    private void settle(boolean open) {
+        setVisibility(open ? VISIBLE : GONE);
+        setAlpha(1.0f);
+        setScaleX(1.0f);
+        setScaleY(1.0f);
+    }
+
+    private void requestClose() {
+        if (listener != null) {
+            listener.onPrecisionCloseRequested();
+        }
     }
 
     /**
@@ -215,78 +278,12 @@ final class PropertyInspectorView extends LinearLayout {
     }
 
     /**
-     * The user changed the detent: the one path that animates.
-     *
-     * <p><b>The panel's size changes exactly once per toggle</b>, and the body
-     * fades and slides the short distance either side of that. Animating the
-     * HEIGHT would mean a {@code requestLayout} on every frame of the
-     * transition, re-running the workspace's whole adaptive layout decision
-     * — which lives in {@code onMeasure} — dozens of times for a panel that is
-     * going to end up exactly where it always did. Alpha and translation are
-     * drawing properties: they cost no traversal at all.
-     *
-     * <p>So the two directions are deliberately sequenced rather than
-     * symmetric. Expanding opens the space first and lets the body arrive into
-     * it; collapsing lets the body leave first and then closes the space. Both
-     * end at the identical resting layout the instant path produces.
-     *
-     * <p>Not animated at all while a viewport gesture is in flight, or when the
-     * platform asks for reduced motion. In both cases this is the instant path.
-     */
-    private void toggleExpanded() {
-        final boolean value = !expanded;
-        expanded = value;
-        showToggleGlyph(value);
-        if (listener != null) {
-            listener.onInspectorExpandedChanged(value);
-        }
-
-        final long durationMs = ChromeMotion.duration(
-                value ? ChromeMotion.ENTER_MS : ChromeMotion.EXIT_MS,
-                ChromeMotion.animatorScale(getContext()));
-        if (durationMs == 0L || !motionAllowed) {
-            ChromeMotion.settle(scroll, value);
-            notifyLayoutSettled();
-            return;
-        }
-
-        ChromeMotion.begin(scroll);
-        final float offset = EditorControlStyles.dimen(getContext(), R.dimen.row_gap);
-        if (value) {
-            scroll.setVisibility(VISIBLE);
-            scroll.setAlpha(0.0f);
-            scroll.setTranslationY(-offset);
-            // The space is already open, so this is the resting layout from the
-            // first frame; only the body's own drawing is still arriving.
-            notifyLayoutSettled();
-            scroll.animate().alpha(1.0f).translationY(0.0f).setDuration(durationMs).start();
-        } else {
-            scroll.animate().alpha(0.0f).translationY(-offset).setDuration(durationMs)
-                    .withEndAction(new Runnable() {
-                        @Override
-                        public void run() {
-                            // Reached only when the fade finished; a reversal
-                            // cancels it, and the reversal owns the state.
-                            ChromeMotion.settle(scroll, false);
-                            notifyLayoutSettled();
-                        }
-                    }).start();
-        }
-    }
-
-    private void notifyLayoutSettled() {
-        if (listener != null) {
-            listener.onInspectorLayoutSettled();
-        }
-    }
-
-    /**
-     * Whether this panel may spend time on a detent change.
+     * Whether this panel may spend time on a transition.
      *
      * <p>Set false by the workspace while a viewport gesture — a camera orbit
      * or, in Sculpt Mode, a real stroke — is in flight. A chrome transition
      * must never compete with pointer samples for the main thread: input
-     * responsiveness outranks motion, so the panel simply snaps instead.
+     * responsiveness outranks motion, so the panel simply appears instead.
      */
     void setMotionAllowed(boolean allowed) {
         motionAllowed = allowed;

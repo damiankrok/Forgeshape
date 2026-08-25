@@ -121,15 +121,15 @@ public final class AppThemeTest {
     public void choosingAnAppearanceTouchesNothingElseTheUiRemembers() {
         final EditorUiState state = new EditorUiState();
         state.setDisplayUnit(LengthUnit.MILLIMETERS);
-        state.setConstructionTool(EditorUiState.CONSTRUCTION_TOOL_PLACE);
-        state.setInspectorExpanded(false, false);
+        state.setConstructionTool(EditorUiState.CONSTRUCTION_TOOL_TRANSFORM);
+        state.setPrecisionOpen(false, true);
 
         EditorUiState.setCurrentAppTheme(AppTheme.NEUTRAL_CHARCOAL);
 
         assertEquals("an appearance is presentation and may not move a display unit",
                 LengthUnit.MILLIMETERS, state.displayUnit());
-        assertEquals(EditorUiState.CONSTRUCTION_TOOL_PLACE, state.constructionTool());
-        assertFalse(state.inspectorExpanded(false));
+        assertEquals(EditorUiState.CONSTRUCTION_TOOL_TRANSFORM, state.constructionTool());
+        assertTrue(state.precisionOpen(false));
     }
 
     // -----------------------------------------------------------------------
@@ -147,8 +147,8 @@ public final class AppThemeTest {
     public void theSessionSurvivesTheRecreationThatAppliesATheme() {
         final EditorUiState before = new EditorUiState();
         before.setDisplayUnit(LengthUnit.MILLIMETERS);
-        before.setConstructionTool(EditorUiState.CONSTRUCTION_TOOL_PLACE);
-        before.setInspectorExpanded(false, false);
+        before.setConstructionTool(EditorUiState.CONSTRUCTION_TOOL_TRANSFORM);
+        before.setPrecisionOpen(false, true);
         before.recordStartChoice();
 
         EditorUiState.carryAcrossRecreation(before);
@@ -156,8 +156,8 @@ public final class AppThemeTest {
 
         assertSame("changing colour must not also reset the session", before, after);
         assertEquals(LengthUnit.MILLIMETERS, after.displayUnit());
-        assertEquals(EditorUiState.CONSTRUCTION_TOOL_PLACE, after.constructionTool());
-        assertFalse(after.inspectorExpanded(false));
+        assertEquals(EditorUiState.CONSTRUCTION_TOOL_TRANSFORM, after.constructionTool());
+        assertTrue(after.precisionOpen(false));
     }
 
     @Test
