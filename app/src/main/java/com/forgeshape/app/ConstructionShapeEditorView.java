@@ -108,8 +108,14 @@ final class ConstructionShapeEditorView extends LinearLayout {
             addView(row, EditorControlStyles.rowParams(gap));
         }
 
+        // A SECTION gap, not a row gap. What follows is a different question —
+        // "in what unit am I reading these" rather than "how big is it" — and at
+        // the row gap the panel was one undifferentiated stack from the chooser
+        // to Apply, with nothing to tell a caption apart from a heading.
+        final int sectionGap = EditorControlStyles.dimen(context, R.dimen.section_gap);
         addView(EditorControlStyles.sectionLabel(context,
-                context.getString(R.string.unit_selector)), EditorControlStyles.rowParams(gap));
+                        context.getString(R.string.unit_selector)),
+                EditorControlStyles.rowParams(sectionGap));
         unitChips = new UnitChipsView(context, new UnitChipsView.OnUnitSelected() {
             @Override
             public void onUnitSelected(LengthUnit unit) {
@@ -127,7 +133,10 @@ final class ConstructionShapeEditorView extends LinearLayout {
                 onApplyShape();
             }
         });
-        final LinearLayout.LayoutParams applyParams = EditorControlStyles.rowParams(gap);
+        // The commit is separated from the values it commits, so it reads as the
+        // end of the panel rather than as one more row in it.
+        final LinearLayout.LayoutParams applyParams =
+                EditorControlStyles.rowParams(sectionGap);
         applyParams.width = ViewGroup.LayoutParams.MATCH_PARENT;
         addView(apply, applyParams);
 

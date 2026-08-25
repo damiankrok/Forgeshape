@@ -126,7 +126,12 @@ final class StartChooserView extends FrameLayout {
         final LinearLayout option = new LinearLayout(context);
         option.setId(id);
         option.setOrientation(LinearLayout.HORIZONTAL);
-        option.setGravity(Gravity.CENTER_VERTICAL);
+        // TOP, not CENTER_VERTICAL. Centred against a three-line description the
+        // icon floated beside the second line of prose with nothing to relate
+        // to, and the title it actually names sat above it. Aligned to the top
+        // it reads with the title, and the two options line up with each other
+        // even though their descriptions wrap to different heights.
+        option.setGravity(Gravity.TOP);
         option.setBackgroundResource(R.drawable.bg_chooser_card);
         final int pad = EditorControlStyles.dimen(context, R.dimen.chooser_option_padding);
         option.setPadding(pad, pad, pad, pad);
@@ -138,8 +143,16 @@ final class StartChooserView extends FrameLayout {
         option.setContentDescription(title + ". " + description);
         option.setOnClickListener(onChosen);
 
-        option.addView(EditorControlStyles.icon(context, iconRes,
-                R.dimen.chooser_option_icon_size));
+        final View optionIcon = EditorControlStyles.icon(context, iconRes,
+                R.dimen.chooser_option_icon_size);
+        // Optically centred on the TITLE's line rather than sitting on its cap
+        // height: a 28 dp glyph top-aligned against 15 sp type reads as riding
+        // slightly high, and this is the one place in the product where an icon
+        // is paired with a heading instead of with a label beneath it.
+        final LinearLayout.LayoutParams iconParams =
+                (LinearLayout.LayoutParams) optionIcon.getLayoutParams();
+        iconParams.topMargin = EditorControlStyles.dimen(context, R.dimen.row_gap_small);
+        option.addView(optionIcon, iconParams);
 
         final LinearLayout text = new LinearLayout(context);
         text.setOrientation(LinearLayout.VERTICAL);

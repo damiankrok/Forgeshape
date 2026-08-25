@@ -48,10 +48,11 @@ final class ObjectsSectionView extends LinearLayout {
         addView(list, EditorControlStyles.rowParams(
                 EditorControlStyles.dimen(context, R.dimen.row_gap_small)));
 
-        // An action, not a selection: it has no active state to be in, so its
-        // label stays primary rather than sitting permanently dimmed beside
-        // the rows, which would read as disabled.
-        final TextView add = EditorControlStyles.actionChip(context, R.id.add_body,
+        // An action, not a selection, and deliberately QUIETER than the rows it
+        // appends to: the list is what this surface is about, and a filled
+        // bordered Add Body beside borderless rows made the button outweigh its
+        // own subject. Secondary label, no box until pressed.
+        final TextView add = EditorControlStyles.secondaryActionChip(context, R.id.add_body,
                 context.getString(R.string.add_body));
         add.setOnClickListener(new OnClickListener() {
             @Override
@@ -86,12 +87,12 @@ final class ObjectsSectionView extends LinearLayout {
         final int gap = EditorControlStyles.dimen(getContext(), R.dimen.row_gap_small);
         for (int i = 0; i < written; i++) {
             final long objectId = idBuffer[i];
-            final TextView row = EditorControlStyles.chip(getContext(), R.id.object_row,
+            final TextView row = EditorControlStyles.listRow(getContext(), R.id.object_row,
                     getContext().getString(R.string.body_label, objectId));
             // The row's identity, and what a test selects it by. Never its
             // index and never where it happens to sit on screen.
             row.setTag(Long.valueOf(objectId));
-            EditorControlStyles.setChipActive(row, objectId == activeId);
+            EditorControlStyles.setListRowActive(row, objectId == activeId);
             row.setOnClickListener(new OnClickListener() {
                 @Override
                 public void onClick(View v) {

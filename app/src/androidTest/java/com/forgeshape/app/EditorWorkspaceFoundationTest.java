@@ -225,6 +225,60 @@ public final class EditorWorkspaceFoundationTest {
         });
     }
 
+    /**
+     * The same floor, in <b>Sculpt Mode</b>, where the row is at its widest.
+     *
+     * <p>UI-R3 found the original defect alive in the one mode {@code R1B1-10b}
+     * never entered. "Back to Construction" is the longest transition label in
+     * the product, and it was an unbounded wrap-content child; a {@code COMPACT}
+     * window withdraws the context label that normally absorbs a squeeze, so the
+     * row ran past the window edge and the LAST child — Hide UI — was drawn
+     * clipped, measured under the floor and partly unreachable.
+     *
+     * <p>Guarded by measuring the RIGHT EDGE as well as the width: a control can
+     * report its full requested width while sitting half outside the window, so
+     * width alone would not have caught this.
+     */
+    @Test
+    public void uir3_01_everyIconOnlyControlKeepsTheTouchFloorInSculptToo() {
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            // Whichever transition this process's state currently offers: the
+            // suite shares one process and an earlier case may already have
+            // frozen, in which case Freeze is GONE and Resume is the way in.
+            final double[] sculpt = new double[NativeViewport.SCULPT_STATE_SIZE];
+            NativeViewport.sculptState(sculpt);
+            workspace.findViewById(sculpt[NativeViewport.SCULPT_HAS_MESH] != 0.0
+                    ? R.id.resume_sculpt : R.id.freeze_to_sculpt).performClick();
+            return null;
+        });
+        settleLayout();
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            assertTrue("this case only means something in Sculpt Mode",
+                    NativeViewport.productMode() == NativeViewport.MODE_SCULPT);
+            final int floor = EditorControlStyles.dimen(activity, R.dimen.icon_button_size);
+            final int windowWidth = workspace.getWidth();
+            for (int id : new int[]{R.id.objects_button, R.id.display_settings_button,
+                    R.id.hide_ui_toggle}) {
+                final View control = workspace.findViewById(id);
+                final String name = activity.getResources().getResourceEntryName(id);
+                if (control.getVisibility() != View.VISIBLE) {
+                    continue;
+                }
+                assertTrue(name + " is " + control.getWidth() + " px wide, under the "
+                                + floor + " px touch floor", control.getWidth() >= floor);
+                final int[] onScreen = new int[2];
+                control.getLocationInWindow(onScreen);
+                assertTrue(name + " ends at x=" + (onScreen[0] + control.getWidth())
+                                + " in a " + windowWidth + " px window, so part of its"
+                                + " touch target is off screen",
+                        onScreen[0] + control.getWidth() <= windowWidth);
+            }
+            return null;
+        });
+        resetToBaselineConstruction(rule.getScenario());
+        settleLayout();
+    }
+
     // -----------------------------------------------------------------------
     // R1B1-11 / R1B1-12 -- a tap is a tap, and a scroll is a scroll
     //

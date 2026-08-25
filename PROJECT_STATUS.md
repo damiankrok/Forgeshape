@@ -1,14 +1,15 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.33.0
+**Status Version:** 0.34.0
 **Updated:** 2026-08-25
-**Result:** COMPLETE — DOC-R1 compacted the core documentation and closed the one
-formal blocker left by UI-R2. Every core document is inside its 2000-line hard cap
-with a working margin, and UI-R2 is formally complete.
+**Result:** TECHNICAL COMPLETE — UI-R3 polished the Editor Workspace's visual
+quality. **Visual acceptance is PENDING OWNER/COORDINATOR SCREENSHOT REVIEW**; no
+part of the look is final until that review returns.
 **Current Phase:** Phase 1 — Native Viewport
 **Workspace:** `D:\TRAVELAPPS\ForgeShape`
-**Accepted implementation baseline:** UI-R2 (workspace composition redesign) on
-top of INPUT-R1 (pointer semantics foundation), UI-R1C2 (world grid + adaptive
+**Accepted implementation baseline:** UI-R3 (visual quality polish) on top of
+DOC-R1 (documentation compaction), UI-R2 (workspace composition redesign),
+INPUT-R1 (pointer semantics foundation), UI-R1C2 (world grid + adaptive
 workspace), UI-R1C1 (motion + selection feedback), UI-R1B2 (theme system +
 Light), UI-R1B1 (visual foundation + start flow), Stage 017 (multi-object scene),
 the Pre-017 Correctness Repair, Gate P1 (physical ARM64 closure), Stage 016-R2,
@@ -16,8 +17,8 @@ Stage 016 (Plane), Stage 015D (camera projection), Stage 015C-R (front-face
 culling), Stage 015C (shading), Platform Fix P2, Stage 015B, Stage 014, the NDK
 r29 migration (Gate P0) and the Owner Decision Baseline. Per-stage narrative
 lives in Git history; only what still constrains the code is kept here.
-**Next Stage:** **OWNER DECISION** — schedule Selection Outline or choose the next
-roadmap stage. See *Next Stage*.
+**Next Stage:** **OWNER VISUAL REVIEW** — the UI-R3 screenshot set goes to the
+coordinator before anything else is scheduled. See *Next Stage*.
 
 ## Current state
 
@@ -35,14 +36,75 @@ projections, a world reference grid, and an Editor Workspace that re-composes
 itself per window. `ARCHITECTURE.md` owns the ownership map and every invariant;
 `PRODUCT.md` owns the user-visible description; `README.md` owns build/run/verify.
 
-**Blockers: none.** The documentation-size blocker recorded at UI-R2 is closed.
-Known costs and accepted debt are in *Technical Debt*; environment hazards are in
-*Known Issues*.
+**Blockers: none.** Known costs and accepted debt are in *Technical Debt*;
+environment hazards are in *Known Issues*.
 
-**Core document sizes** (hard cap 2000 physical lines each, measured at DOC-R1):
-`ARCHITECTURE.md` 1915 (was 2032), `PROJECT_STATUS.md` 927 (was 1345),
-`PRODUCT.md` 814, `README.md` 404, `CLAUDE.md` 216. Always re-measure before
-quoting a count.
+## Current visual state (UI-R3)
+
+Runtime-verified on `ForgeShape_Stage006` / `emulator-5580` in three windows —
+compact portrait, compact landscape (short height) and an overridden
+1600 × 2560 @ 240 dpi expanded — in both appearances.
+
+**One accent, spent on one thing at a time.** `fsAccentFill` (an active
+selection) and `fsPrimaryFill` (a primary commit) were the same hex on dark, so an
+active chip, an active rail entry, the selected body's row and Apply were one
+indistinguishable blue block — five or more on a single screen. A selection is now
+a quiet blue-leaning surface carrying the accent border and the brightened label;
+a commit is the accent itself. Light already answered the two roles apart and is
+unchanged in value; both themes now follow the same **pattern**, which is what
+makes them read as one product rather than as an inversion of each other.
+
+**Resting weight is a role.** Controls that sit inside a surface which already
+frames them — icon-only toolbar controls, Tool Rail entries, Objects rows — draw
+no box until pressed, so the ACTIVE one is the only shape on that surface. Touch
+targets and pressed feedback are unchanged; only the resting outline is gone. This
+is what turned four stacked cards back into one Tool Rail and a column of buttons
+back into a list of bodies.
+
+**Hierarchy by weight, not by size.** *Back to Construction* is no longer a
+primary commit: it destroys nothing and publishes the Construction Source's own
+mesh, and drawn as a solid accent block it was the loudest thing on the Sculpt
+workspace. *Add Body* is quieter than the rows it appends to. Section spacing in
+both inspector bodies is a real section gap rather than a row gap, so a heading is
+distinguishable from a field caption by more than capitalisation.
+
+**One defect was found and fixed.** In Sculpt Mode on a `COMPACT` window the
+Global Toolbar ran past the window edge and the Hide UI control was drawn clipped,
+measured under the 44 dp floor and partly unreachable — the same defect `R1B1-10b`
+guards in Construction, arriving through the one mode that test never entered.
+"Back to Construction" is the longest transition label in the product and was an
+unbounded wrap-content child; the context label that normally absorbs a squeeze is
+withdrawn on that window. Transition buttons are now bounded and ellipsised, and
+`UIR3-01` guards the floor **and the right edge** in Sculpt: measured 44.2 dp
+each, ending at x=1047 in a 1080 px window.
+
+**Also corrected:** the brush captions read *Radius* and *Strength* rather than
+`RAD` and `STR` — the abbreviation was `caption.substring(0, 3)` on a localized
+string, which is not a translation rule in any language and throws on a caption
+shorter than three characters. The dark start-chooser scrim went from 83 % to
+65 % alpha, so the viewport genuinely renders behind it as its own drawable
+claims. Start-chooser icons align to the option's title rather than floating
+against the middle of a wrapped description.
+
+**Nothing below JNI moved.** Grid on/off, a theme switch, opening the Objects
+panel and collapsing the inspector produce **no** `MESH_UPLOAD_OK`, no
+`RENDER_MESH_BUILD` and no publication; HOME/resume and rotation produce none
+either. Verified by logcat across the walkthrough.
+
+**Known visual debt, for the review to rule on.** A docked Objects column, a
+docked side inspector and a side-overlay inspector are each full-height with their
+content at the top, so a scene of one body leaves a large empty panel — inherent
+to the current content, and closing it means either capability this stage may not
+add or a layout that stops filling the column. The compact rail still drops its
+icons and keeps labels only, which is a deliberate documented decision (asserting
+an icon there would assert against it) but is the one place the rail reads
+differently from every other window.
+
+**Core document sizes** (hard cap 2000 physical lines each, measured at UI-R3):
+`ARCHITECTURE.md` 1932, `PROJECT_STATUS.md` 1009, `PRODUCT.md` 815,
+`README.md` 404, `CLAUDE.md` 216. DOC-R1 brought `ARCHITECTURE.md` down from 2032
+and this file from 1345; both have grown by what UI-R3 actually verified. Always
+re-measure before quoting a count.
 
 **Stylus / S Pen on real hardware remains UNVERIFIED.** Tool type, pressure and
 tilt are carried end to end and verified synthetically (`MotionEvent.obtain` with
@@ -442,19 +504,21 @@ device. `README.md` documents how to read them.
 | `EditorWorkspaceDisplayTest` | display/projection ids, presentation-only, resume, refused index, the View/Grid group | 17 |
 | `EditorWorkspaceObjectsTest` | rows by ObjectId, viewport pick sync, the docked surface, 20-body scalability | 10 |
 | `EditorWorkspaceStartFlowTest` | the start question, and the direct Sculpt path's Freeze reuse | 8 |
-| `EditorWorkspaceFoundationTest` | icons, pressed feedback, touch floor, rail tap-vs-scroll, viewport floor, popover | 7 |
+| `EditorWorkspaceFoundationTest` | icons, pressed feedback, touch floor in Construction **and in Sculpt** (`UIR3-01`), rail tap-vs-scroll, viewport floor, popover | 8 |
 | `EditorWorkspaceThemeTest` | the control, the switch, state preservation across the recreation, contrast | 17 |
 | `EditorWorkspaceMotionTest` | popover preserved, inspector interruptibility, chrome hide/restore, viewport stability, reduced motion, gesture priority | 10 |
 | `PointerSemanticsTest` (JVM) | the Android tool-type mapping and its Unknown fallback | 6 |
 | `EditorWorkspacePointerTest` | synthetic stylus transport, per-pointer association, and that tap / navigation / sculpt arbitration are unchanged | 13 |
 | `EditorWorkspaceCompositionTest` | the UI-R2 role split: viewport dominance, the scene panel, one list with one owner, inspector-names-its-body, and that composition rebuilds no geometry | 10 |
 
-**190 tests** (56 JVM, 134 instrumented), all green. No Java test asserts a rendered pixel;
+**191 tests** (56 JVM, 135 instrumented). No Java test asserts a rendered pixel;
 every control is reached by its stable semantic id and no assertion uses a screen
 coordinate. The foundation and theme suites deliberately assert no colour
 literal, radius or shadow — those are judged by eye and by runtime evidence, and
-pinning them would break on every deliberate restyle. What the theme suite
-asserts instead is *relational*, plus WCAG contrast ratios computed in the test.
+pinning them would break on every deliberate restyle, which is exactly what UI-R3
+did. What the theme suite asserts instead is *relational*, plus WCAG contrast
+ratios computed in the test; that is why a whole palette and every resting
+background could change with no test edit beyond the one UI-R3 added.
 
 **The suite is run in TWO windows** — the default compact phone window and an
 overridden 1600 x 2560 @ 240 dpi expanded window. The adaptive cases read the
@@ -504,20 +568,30 @@ Latest acceptance run, on `ForgeShape_Stage006` / `emulator-5580` unless stated:
   launch. The Gate P1 picking assertions are intact inside the now-174-check
   picking suite; `SIDE`, `REFR`, `NOR`, `CAMPROJ` and `PLN` all still green.
 - **JVM:** 56/56.
-- **Instrumented:** 134 run, **134 green**, twice — once compact, once at an
+- **Instrumented:** 135 run, **134 green**, twice — once compact, once at an
   overridden 1600 × 2560 @ 240 dpi — through
-  `scripts\run-instrumented-tests.ps1 -Serial emulator-5580`.
+  `scripts\run-instrumented-tests.ps1 -Serial emulator-5580`. The one failure is
+  `ui11`, on its own precondition guard ("the soft keyboard did not appear, so
+  this case proves nothing"), which never reaches an assertion about product
+  behaviour. **Confirmed pre-existing at UI-R3** by stashing every change,
+  rebuilding the untouched `006c1e7` tree and reproducing the character-identical
+  message at the same line — the check this file has always prescribed for that
+  case.
 - **Device guards:** `DEV2-01`..`07` and `DEV3-01`..`06` all PASS, with no device
   attached and zero `emulator-5554` interaction.
 - **Physical ARM64 (Gate P1):** closed on a Galaxy S25 Ultra —
   `primaryCpuAbi=arm64-v8a`, `PAGE_SIZE` 4096, the mandatory ~10k/~50k/~100k
   ladder and Sculpt at 100k measured on real hardware. Stylus stays UNVERIFIED.
-- **Runtime walkthrough (UI-R2):** cold start, tap selection, orbit, Freeze,
-  pending-then-promote, a committed Grab stroke, the scene panel in both
-  Construction and Sculpt, HOME/resume and rotation — bounded swapchain rebuilds,
-  zero while idle. Earlier walkthroughs are in Git history.
-- **Documentation:** DOC-R1 is a documentation-only change; no product, test,
-  build or script file was touched, so the runtime evidence above still stands.
+- **Runtime walkthrough (UI-R3):** cold start and start chooser, Construction,
+  Sculpt, the Objects panel, the Display popover, grid on/off, a theme switch,
+  the inspector in both detents, HOME/resume and rotation — in compact portrait,
+  compact landscape and the expanded window, in both appearances. No crash, no
+  gesture regression, and **no geometry work from any visual state change**:
+  grid, theme, Objects, inspector, HOME/resume and rotation all produced zero
+  `MESH_UPLOAD_OK` and zero `RENDER_MESH_BUILD`. Earlier walkthroughs are in Git
+  history.
+- **Screenshot review set:** UIR3-S01..S10 captured for owner/coordinator review
+  and deliberately not committed. Paths are in the UI-R3 stage report.
 
 **One caveat about capturing self-test evidence.** On both the emulator and the
 physical phone the logcat ring buffer intermittently drops whole suites from the
@@ -907,12 +981,20 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**OWNER DECISION — schedule Selection Outline, or choose the next roadmap stage.**
+**OWNER VISUAL REVIEW — provide the UI-R3 screenshot set to the coordinator.**
 
-DOC-R1 closed the documentation-size blocker and with it UI-R2. No implementation
-stage is currently scheduled, and none may be invented here.
+UI-R3 is technically complete and its visual result is **not** accepted. The agent
+does not declare the look final; that judgement is the owner's and the
+coordinator's, on the ten-screenshot review set UI-R3 captured (UIR3-S01..S10,
+compact portrait / compact landscape / expanded, Dark and Light). Screenshots are
+deliberately **not** committed to the repository; their local paths are in the
+UI-R3 stage report.
 
-The only feature the repo currently records as a candidate is **Selection
+Nothing further is scheduled until that review returns, and no implementation
+stage may be invented here.
+
+Once it does, the only feature the repo currently records as a candidate is
+**Selection
 Outline** — the expensive half of selection feedback, needing either a second
 geometry pass or a screen-space edge filter. It is a *candidate awaiting owner
 decision*, not an approved stage: today's whole-object tint is the shipped

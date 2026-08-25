@@ -34,12 +34,35 @@
     <color name="dark_control_border">#FF3A4757</color>
 
     <color name="dark_accent">#FF4C8FD8</color>
-    <color name="dark_accent_fill">#FF20456E</color>
-    <color name="dark_accent_fill_pressed">#FF2A5688</color>
+    <!--
+      ACTIVE-SELECTION fill, and it is deliberately NOT the primary commit's.
+
+      These two were literally the same hex, so on a dark ground an active chip,
+      an active rail entry, the selected body's row and a commit button were one
+      indistinguishable blue block — five or more of them on a single screen,
+      none of which read as more important than any other. The light theme never
+      had that problem because it already answered the two roles differently.
+
+      A selection is now a blue-leaning SURFACE: clearly lifted and clearly
+      cooler than `dark_control_surface`, and far short of the accent. Active
+      still never rests on colour alone — the thicker accent border and the
+      brightened label are unchanged, and on this quieter fill the border
+      carries more of the signal, exactly as it does on light.
+    -->
+    <color name="dark_accent_fill">#FF1D3A55</color>
+    <color name="dark_accent_fill_pressed">#FF264A6B</color>
     <color name="dark_accent_border">#A64C8FD8</color>
-    <color name="dark_primary_fill">#FF20456E</color>
-    <color name="dark_primary_fill_pressed">#FF4C8FD8</color>
-    <color name="dark_text_on_primary">#FFE8EDF4</color>
+    <!--
+      PRIMARY COMMIT fill: Apply Shape, Apply Transform, Freeze, Resume.
+
+      Now a confident accent rather than the same near-surface blue as a
+      selection, so the one act that changes the model is the one loud thing on
+      the screen. It is the same blue the light theme commits with — one accent
+      family across both themes, as the note at the top of this file claims.
+    -->
+    <color name="dark_primary_fill">#FF2C6FB5</color>
+    <color name="dark_primary_fill_pressed">#FF3C82CC</color>
+    <color name="dark_text_on_primary">#FFFFFFFF</color>
 
     <color name="dark_text_primary">#FFE8EDF4</color>
     <color name="dark_text_secondary">#FF8B99AC</color>
@@ -53,7 +76,13 @@
     <color name="dark_slider_fill">#FF4C8FD8</color>
     <color name="dark_slider_thumb">#FFE8EDF4</color>
 
-    <color name="dark_chooser_scrim">#D40A0E14</color>
+    <!--
+      Lightened from 83% to 65% alpha. The drawable that uses this says the
+      viewport keeps rendering behind the chooser so the first thing ForgeShape
+      shows is still the model — at 83% over a near-black clear colour that was
+      not true in practice, and the claim and the picture have to agree.
+    -->
+    <color name="dark_chooser_scrim">#A6070B11</color>
     <color name="dark_chooser_card_surface">#FF161E29</color>
 
     <!--

@@ -62,17 +62,37 @@
          viewport pays for at the top. -->
     <dimen name="toolbar_height">48dp</dimen>
     <dimen name="toolbar_padding_horizontal">10dp</dimen>
-    <dimen name="toolbar_gap">8dp</dimen>
+    <!-- 6dp rather than 8dp. The row carries one transition button, Export and
+         three icon controls on a 411 dp window, and the icon controls no longer
+         draw a box of their own — so the gaps are what separate them and they
+         no longer have to clear two adjacent borders. -->
+    <dimen name="toolbar_gap">6dp</dimen>
     <!-- How wide the editing-context label may grow before it ellipsises. It
          absorbs the squeeze so no action button is ever clipped on a narrow
          window, which is why it is a shared contract and not a local number. -->
     <dimen name="toolbar_context_max_width">152dp</dimen>
+    <!--
+      How wide a mode-transition button (Freeze / Resume / Back) may grow.
+
+      The context label absorbs squeeze first, but a COMPACT window withdraws it
+      outright — and with it gone, the row's next-widest child was an unbounded
+      wrap-content button. "Back to Construction" measured wider than the space
+      left, so the LAST child took the squeeze and the Hide UI control was drawn
+      clipped by the window edge, below the touch floor and partly unreachable.
+      Bounded here, the button ellipsises instead and every icon control keeps
+      the size it asked for. Wide enough for "Freeze to Sculpt" in full.
+    -->
+    <dimen name="toolbar_transition_max_width">156dp</dimen>
 
     <!-- Tool Rail. 56 x 64 dp per entry: comfortably past the 44 dp floor with
          room for a label under the icon, because icon-only costs learning. -->
     <dimen name="rail_item_width">56dp</dimen>
     <dimen name="rail_item_height">64dp</dimen>
-    <dimen name="rail_item_gap">4dp</dimen>
+    <!-- 2dp rather than 4dp. Entries are borderless at rest now, so the gap is
+         no longer separating two drawn boxes — it is only keeping the ACTIVE
+         entry's shape off its neighbours, and a wide gap made one rail read as
+         a stack of separate cards. -->
+    <dimen name="rail_item_gap">2dp</dimen>
     <dimen name="rail_padding">6dp</dimen>
     <dimen name="rail_icon_size">22dp</dimen>
     <dimen name="rail_label_size">10sp</dimen>
@@ -115,7 +135,13 @@
 
     <dimen name="row_gap">8dp</dimen>
     <dimen name="row_gap_small">4dp</dimen>
-    <dimen name="section_gap">12dp</dimen>
+    <!-- 18dp rather than 12dp. This is the only gap in the inspector that
+         separates one QUESTION from the next — which primitive, what size, in
+         what unit — and at 12dp it was barely larger than the 8dp between two
+         rows inside a section, so every panel read as one undifferentiated
+         stack. Section spacing is the cheapest hierarchy in the product and it
+         was the one thing not being spent on. -->
+    <dimen name="section_gap">18dp</dimen>
 
     <!-- The Objects panel, in windows that have not earned a column of their
          own. Fixed rather than proportional for the same reason the docked

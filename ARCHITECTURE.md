@@ -175,8 +175,21 @@ tree** — one `bg_control.xml`, one `chip()`, one `control_content_tint.xml`, n
 `if (light)` anywhere, so a third theme would touch two resource files and
 nothing else. `fsAccentFill` (what an ACTIVE control is filled with) and
 `fsPrimaryFill` (what a PRIMARY COMMIT is filled with, carrying `fsTextOnPrimary`)
-are two roles rather than one because on light an active chip wants a pale tint
-with dark text while Apply wants a solid accent with white.
+are two roles rather than one, and **both themes now answer them differently**: a
+selection is a quiet blue-leaning surface and a commit is the accent itself. They
+were the same hex on dark, which made an active chip, an active rail entry, the
+selected body's row and Apply one indistinguishable block — several of them on a
+single screen, none reading as more important than any other. Active still never
+rests on colour alone: the thicker accent border and the brightened label are
+what carry it, exactly as they always did on light.
+
+**Resting weight is a third thing a role decides.** Controls that sit inside a
+surface which already frames them — icon-only toolbar controls, Tool Rail entries,
+Objects rows — draw no box until pressed (`bg_icon_button`, `bg_rail_entry`,
+`bg_list_row`), so the ACTIVE one is the only shape on that surface. The touch
+target and the pressed state are unchanged; only the resting outline is gone. A
+control that stands alone on the chrome (a chip, a field, a commit) keeps its box,
+because there is nothing else there to frame it.
 
 Icons are local vector drawables on one 24 dp grid, drawn white and tinted from
 the same state list, so an entry's glyph and its caption cannot disagree about
@@ -213,7 +226,11 @@ Two chrome layout contracts are load-bearing. In the Global Toolbar the
 the label rather than squeezing the last action below the 44 dp touch floor — and
 a `COMPACT` window withdraws the label outright, because there it measures to
 nothing while the status line beneath and the inspector's own title already name
-the mode and the body. And a **Tool Rail entry holds its gesture against the
+the mode and the body. **The mode-transition button is bounded for the same
+reason**: once the label is withdrawn it is the row's widest child, and unbounded
+it pushed the last icon control past the window edge in Sculpt Mode, where the
+label is the longest in the product. Both give up their own width first; no action
+ever gives up its touch target. And a **Tool Rail entry holds its gesture against the
 enclosing `ScrollView`**: it disallows interception on Down and allows it again
 once travel passes twice the platform slop, at which point the container takes the
 next event and the platform's `ACTION_CANCEL` prevents the click — otherwise a

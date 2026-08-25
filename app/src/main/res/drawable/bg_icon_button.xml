@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  An icon-only chrome control at rest: Display, Objects, Hide UI, the inspector
+  toggle, the restore chip.
+
+  Borderless until touched. These controls sit in a row on an already-opaque
+  toolbar, and giving each of them its own filled, stroked box drew three or
+  four competing rectangles across the top of the model for glyphs that are
+  perfectly legible on the strip itself. The box was carrying no information:
+  the surface underneath already says "this is chrome", and the icon already
+  says what the control does.
+
+  It stays a state list rather than becoming a null background, because the
+  pressed answer is the part that matters — a control that looks dead until
+  native code replies is the defect the whole state-list mechanism exists to
+  prevent. The ACTIVE form is unchanged and still bg_control_active, so a
+  control whose panel is open is the only one in the row wearing a box, which
+  is what makes "open" readable at a glance.
+-->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_pressed="true">
+        <shape android:shape="rectangle">
+            <solid android:color="?attr/fsControlSurfacePressed" />
+            <corners android:radius="@dimen/radius_control" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@android:color/transparent" />
+            <corners android:radius="@dimen/radius_control" />
+        </shape>
+    </item>
+</selector>

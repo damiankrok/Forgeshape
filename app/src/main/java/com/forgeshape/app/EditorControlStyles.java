@@ -261,6 +261,41 @@ final class EditorControlStyles {
         return chip;
     }
 
+    /**
+     * A row in a list of things the scene holds: one Construction Body.
+     *
+     * <p>Left-aligned and borderless at rest, which is the difference between a
+     * <i>list</i> and a column of buttons. Centred, boxed rows made a scene of
+     * one body look like a second Add Body sitting above the real one; the eye
+     * reads a left edge as content and a centred pill as a control.
+     *
+     * <p>The ACTIVE row is unchanged — {@link #setChipActive} still gives it the
+     * tinted fill, the thicker accent border and the brightened label — so the
+     * one shape in the list is the answer to the only question the surface asks.
+     */
+    static TextView listRow(Context context, int id, CharSequence text) {
+        final TextView row = chip(context, id, text);
+        row.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
+        row.setBackgroundResource(R.drawable.bg_list_row);
+        return row;
+    }
+
+    /**
+     * A secondary action that sits beneath content it adds to: Add Body.
+     *
+     * <p>Quieter than the content above it on purpose. A filled, bordered
+     * <i>Add Body</i> beside borderless rows outweighed the list it belongs to —
+     * the panel's own subject read as less important than the button that
+     * appends to it. Secondary label, no box until pressed.
+     */
+    static TextView secondaryActionChip(Context context, int id, CharSequence text) {
+        final TextView chip = chip(context, id, text);
+        chip.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
+        chip.setTextColor(themeColor(context, R.attr.fsTextSecondary));
+        chip.setBackgroundResource(R.drawable.bg_list_row);
+        return chip;
+    }
+
     /** Repaints a chip for its selected state, background and label together. */
     static void setChipActive(TextView chip, boolean active) {
         chip.setBackgroundResource(
@@ -268,6 +303,21 @@ final class EditorControlStyles {
         // The label follows from the state list, so this one call is the whole
         // repaint. setActivated is also what verification reads.
         chip.setActivated(active);
+    }
+
+    /**
+     * The same repaint for a {@link #listRow}, whose resting background is
+     * borderless rather than a box.
+     *
+     * <p>Separate from {@link #setChipActive} because that one restores
+     * {@code bg_control}, which would quietly re-box a row the first time it was
+     * deselected — the list would then look different before and after the user
+     * had ever touched it.
+     */
+    static void setListRowActive(TextView row, boolean active) {
+        row.setBackgroundResource(
+                active ? R.drawable.bg_control_active : R.drawable.bg_list_row);
+        row.setActivated(active);
     }
 
     /** A chip that names something the product does not have yet. */
@@ -329,12 +379,20 @@ final class EditorControlStyles {
     }
 
     /**
-     * An icon-only control: Display, Hide UI, the restore chip, the inspector
-     * toggle.
+     * An icon-only control: Display, Objects, Hide UI, the restore chip, the
+     * inspector toggle.
      *
      * <p>Square at the 44 dp touch floor, so an icon that reads at 20 dp is
      * still reachable with a fingertip. The content description is mandatory
      * and is the only name this control has.
+     *
+     * <p><b>Borderless at rest.</b> The touch target is unchanged — only the box
+     * is gone. Three or four of these sit in a row on an already-opaque toolbar,
+     * and drawing a filled, stroked rectangle around each one put competing
+     * shapes across the top of the model for glyphs that read perfectly well on
+     * the strip itself. Pressed feedback and the active box are both kept, so
+     * the control still answers a touch immediately and a control whose panel is
+     * open is the only one in the row wearing a shape.
      */
     static ImageView iconButton(Context context, int id, int iconRes,
                                 CharSequence description) {
@@ -347,7 +405,7 @@ final class EditorControlStyles {
         final int inset = (dimen(context, R.dimen.icon_button_size)
                 - dimen(context, R.dimen.icon_size)) / 2;
         button.setPadding(inset, inset, inset, inset);
-        button.setBackgroundResource(R.drawable.bg_control);
+        button.setBackgroundResource(R.drawable.bg_icon_button);
         button.setClickable(true);
         button.setFocusable(true);
         return button;
@@ -356,7 +414,7 @@ final class EditorControlStyles {
     /** Marks an icon-only control active, background and tint together. */
     static void setIconButtonActive(ImageView button, boolean active) {
         button.setBackgroundResource(
-                active ? R.drawable.bg_control_active : R.drawable.bg_control);
+                active ? R.drawable.bg_control_active : R.drawable.bg_icon_button);
         button.setActivated(active);
     }
 

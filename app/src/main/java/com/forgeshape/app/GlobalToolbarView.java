@@ -105,6 +105,7 @@ final class GlobalToolbarView extends LinearLayout {
 
         freezeButton = EditorControlStyles.primaryButton(context, R.id.freeze_to_sculpt,
                 context.getString(R.string.freeze_to_sculpt));
+        boundTransitionWidth(freezeButton);
         freezeButton.setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -119,6 +120,7 @@ final class GlobalToolbarView extends LinearLayout {
         // returns to the sculpt work exactly as it was left.
         resumeButton = EditorControlStyles.primaryButton(context, R.id.resume_sculpt,
                 context.getString(R.string.resume_sculpt));
+        boundTransitionWidth(resumeButton);
         resumeButton.setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -127,8 +129,17 @@ final class GlobalToolbarView extends LinearLayout {
         });
         controlsRow.addView(resumeButton, EditorControlStyles.wrap(0));
 
-        backButton = EditorControlStyles.primaryButton(context, R.id.back_to_construction,
+        // NOT a primary commit, and this is the one transition where that
+        // distinction is real. Freeze and Resume change which representation is
+        // being edited and Freeze builds a mesh; Back to Construction destroys
+        // nothing, publishes the Construction Source's own mesh and is pure
+        // navigation. Drawn as a solid accent block it was the loudest thing on
+        // the Sculpt workspace — louder than the model — for the act of leaving.
+        backButton = EditorControlStyles.chip(context, R.id.back_to_construction,
                 context.getString(R.string.back_to_construction));
+        backButton.setTextColor(
+                EditorControlStyles.themeColor(context, R.attr.fsTextPrimary));
+        boundTransitionWidth(backButton);
         backButton.setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -194,6 +205,31 @@ final class GlobalToolbarView extends LinearLayout {
         statusMessage.setMaxLines(2);
         statusMessage.setEllipsize(TextUtils.TruncateAt.END);
         attachStatus(true);
+    }
+
+    /**
+     * Bounds a mode-transition button's width so it can never push an icon
+     * control off the end of the row.
+     *
+     * <p>The context label is normally the child that absorbs a squeeze, but a
+     * {@code COMPACT} window withdraws it outright — and with it gone the
+     * row's next-widest child was an unbounded wrap-content button. On a 411 dp
+     * window in Sculpt Mode, "Back to Construction" plus Export plus three icon
+     * controls measured wider than the window, and a {@code LinearLayout} that
+     * has run out squeezes its LAST child: the Hide UI control was drawn clipped
+     * by the window edge, under the touch floor and partly unreachable. That is
+     * the same defect {@code R1B1-10b} guards in Construction, arriving through
+     * the one mode that test never entered.
+     *
+     * <p>Bounded and ellipsised, the button gives up its own width first and
+     * every icon control keeps the size it asked for. The full wording stays as
+     * the content description, so nothing is lost to a screen reader.
+     */
+    private void boundTransitionWidth(TextView button) {
+        button.setMaxWidth(EditorControlStyles.dimen(
+                getContext(), R.dimen.toolbar_transition_max_width));
+        button.setSingleLine(true);
+        button.setEllipsize(TextUtils.TruncateAt.END);
     }
 
     /**

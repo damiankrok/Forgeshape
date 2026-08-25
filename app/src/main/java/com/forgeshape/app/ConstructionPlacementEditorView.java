@@ -50,8 +50,13 @@ final class ConstructionPlacementEditorView extends LinearLayout {
         this.host = host;
         setOrientation(VERTICAL);
 
-        final int gap = EditorControlStyles.dimen(context, R.dimen.row_gap);
         final int smallGap = EditorControlStyles.dimen(context, R.dimen.row_gap_small);
+        // Position, Rotation and the unit are three separate questions, so each
+        // heading gets the SECTION gap and only a heading's own fields sit at
+        // the small gap beneath it. At one shared row gap the three groups ran
+        // together and a heading was distinguishable from a field caption by
+        // capitalisation alone.
+        final int sectionGap = EditorControlStyles.dimen(context, R.dimen.section_gap);
 
         positionSectionLabel = EditorControlStyles.sectionLabel(context, positionSectionTitle());
         addView(positionSectionLabel, EditorControlStyles.rowParams(0));
@@ -60,12 +65,13 @@ final class ConstructionPlacementEditorView extends LinearLayout {
 
         addView(EditorControlStyles.sectionLabel(context,
                 context.getString(R.string.section_rotation)),
-                EditorControlStyles.rowParams(gap));
+                EditorControlStyles.rowParams(sectionGap));
         addView(buildRow(context, rotationFields, ROTATION_IDS, ROTATION_LABELS),
                 EditorControlStyles.rowParams(smallGap));
 
         addView(EditorControlStyles.sectionLabel(context,
-                context.getString(R.string.unit_selector)), EditorControlStyles.rowParams(gap));
+                        context.getString(R.string.unit_selector)),
+                EditorControlStyles.rowParams(sectionGap));
         unitChips = new UnitChipsView(context, new UnitChipsView.OnUnitSelected() {
             @Override
             public void onUnitSelected(LengthUnit unit) {
@@ -82,7 +88,8 @@ final class ConstructionPlacementEditorView extends LinearLayout {
                 onApplyTransform();
             }
         });
-        final LinearLayout.LayoutParams applyParams = EditorControlStyles.rowParams(gap);
+        final LinearLayout.LayoutParams applyParams =
+                EditorControlStyles.rowParams(sectionGap);
         applyParams.width = ViewGroup.LayoutParams.MATCH_PARENT;
         addView(apply, applyParams);
 

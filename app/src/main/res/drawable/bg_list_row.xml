@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  A row in the Objects list at rest.
+
+  A list of bodies is CONTENT, not a column of buttons, and drawing every row as
+  a filled bordered box said the opposite: in a 220 dp popover holding one body
+  and one action, the row and the action were the same object with different
+  words in them. Borderless at rest, the list reads as a list and the ACTIVE
+  row — still bg_control_active, still a tinted fill plus a thicker accent
+  border plus a brightened label — is the only shape in it, which is precisely
+  the question the surface exists to answer: which body is current.
+
+  Kept separate from bg_rail_entry although the two are identical today. A rail
+  entry and a scene row are different things, and sharing one file is how a
+  later change to one silently restyles the other.
+-->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_pressed="true">
+        <shape android:shape="rectangle">
+            <solid android:color="?attr/fsControlSurfacePressed" />
+            <corners android:radius="@dimen/radius_control" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@android:color/transparent" />
+            <corners android:radius="@dimen/radius_control" />
+        </shape>
+    </item>
+</selector>

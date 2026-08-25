@@ -126,13 +126,22 @@ final class BrushEdgeControlsView extends LinearLayout {
         column.addView(slider, trackParams);
 
         final TextView label = new TextView(context);
-        // Three letters, because the column is as narrow as a thumb and the
-        // value chip above already says what the number is.
-        label.setText(caption.substring(0, 3).toUpperCase(java.util.Locale.US));
+        // The caption in full — "Radius", not "RAD".
+        //
+        // It was truncated to three upper-case letters on the grounds that the
+        // column is as narrow as a thumb, but both words fit the 52 dp column at
+        // this size, and the abbreviations read as register names rather than as
+        // the two things a sculptor adjusts most. Cutting a localized string
+        // with substring(0, 3) was also a hazard of its own: it is not a
+        // translation rule in any language, and it throws outright on a caption
+        // shorter than three characters.
+        label.setText(caption);
         label.setTextSize(TypedValue.COMPLEX_UNIT_PX,
                 EditorControlStyles.dimen(context, R.dimen.rail_label_size));
         label.setTextColor(EditorControlStyles.themeColor(context, R.attr.fsTextSecondary));
         label.setGravity(Gravity.CENTER);
+        label.setSingleLine(true);
+        label.setEllipsize(android.text.TextUtils.TruncateAt.END);
         column.addView(label);
         return column;
     }

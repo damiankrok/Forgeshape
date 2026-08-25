@@ -158,9 +158,10 @@ where they are. Each answers one question and only one: what mode this is, which
 tool is held, what the scene holds, and what the selected body's numbers are.
 
 **A bigger window buys more of the model in view at once, not just more space
-around it.** On a phone the workspace is viewport-first: the list of bodies lives
-inside the shape panel, and the Tool Rail floats over the edge of the model as a
-small raised card. On a tablet-sized window there is room to stop stacking things,
+around it.** On a phone the workspace is viewport-first: the list of bodies opens
+as a small panel over the model from one toolbar control and is dismissed again,
+and the Tool Rail floats over the edge of the model as a small raised card. On a
+tablet-sized window there is room to stop stacking things,
 so the **list of bodies gets a column of its own** down the leading edge and the
 Tool Rail sits flush against the trailing edge as part of the layout rather than
 standing on the picture. The exact values stay in their own panel on the other

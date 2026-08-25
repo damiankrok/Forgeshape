@@ -124,7 +124,11 @@ final class ToolRailView extends LinearLayout {
         item.setId(entry.viewId);
         item.setOrientation(VERTICAL);
         item.setGravity(Gravity.CENTER);
-        item.setBackgroundResource(R.drawable.bg_control);
+        // Borderless at rest. The rail already draws one surface and one
+        // hairline around all of its entries, so a filled bordered box per entry
+        // framed the same content twice and four tools read as four stacked
+        // cards. Only the held tool wears a shape — see showActive.
+        item.setBackgroundResource(R.drawable.bg_rail_entry);
 
         // A compact window drops the icon rather than the label: the label is
         // the part that says which tool this is without prior learning.
@@ -150,10 +154,16 @@ final class ToolRailView extends LinearLayout {
         if (entry.reserved) {
             // Visible, readable and inert. The content description says why,
             // so a screen reader is not left to infer it from a grey label.
+            //
+            // It keeps the borderless resting background rather than taking
+            // bg_control_reserved: in a rail where only the HELD tool is drawn
+            // as a shape, outlining the two entries that do nothing would make
+            // them the second-loudest thing on the surface. Disabled is already
+            // carried by the icon and label tint, and setEnabled(false) is what
+            // makes it inert — the pressed state below it can never be reached.
             item.setEnabled(false);
             item.setContentDescription(
                     context.getString(R.string.reserved_not_implemented, entry.label));
-            item.setBackgroundResource(R.drawable.bg_control_reserved);
         } else {
             item.setContentDescription(entry.label);
             item.setClickable(true);
@@ -183,7 +193,7 @@ final class ToolRailView extends LinearLayout {
             }
             final boolean active = entry.key == activeKey;
             item.setBackgroundResource(
-                    active ? R.drawable.bg_control_active : R.drawable.bg_control);
+                    active ? R.drawable.bg_control_active : R.drawable.bg_rail_entry);
             // The icon and the label follow from the entry's own state, so this
             // is the whole repaint. It is also what verification reads.
             item.setActivated(active);
