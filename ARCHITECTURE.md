@@ -120,30 +120,26 @@ it.**
 
 The practical test is one question: *if this file had to compile on a platform
 that has no Android, what would break?* For everything below `forgeshape_jni.cpp`
-the answer must stay "nothing". This is deliberately **not** an abstraction
-layer — no renderer interface, no platform façade, no `#ifdef` for an operating
-system that has no target. What is required is only that the seams stay where
-they are and that nothing new crosses them.
+the answer must stay "nothing". This is deliberately **not** an abstraction layer
+— no renderer interface, no platform façade, no `#ifdef` for an operating system
+that has no target. The seams stay where they are; nothing new crosses them.
 
 ## Android layer
 
 `ForgeShapeSurfaceView` is a plain `android.view.SurfaceView` (no Compose, no
 AndroidX). Its whole contribution to navigation is `onTouchEvent`, which copies
-the masked action, the id of any lifting pointer, and each pointer's stable id
-and view-local x/y into preallocated arrays, then makes one JNI call.
-`GestureDetector` / `ScaleGestureDetector` are deliberately unused: they would
-move camera semantics into the Android layer.
+the masked action, the id of any lifting pointer, and each pointer's semantic
+sample into preallocated arrays, then makes one JNI call. `GestureDetector` /
+`ScaleGestureDetector` are deliberately unused: they would move camera semantics
+into the Android layer.
 
 ### Editor Workspace composition
 
 The Activity's content view is `EditorWorkspaceView`, a `FrameLayout` with three
-children in z-order:
-
-1. the `SurfaceView`, at the **whole window size**;
-2. `chromeRoot`, a transparent, non-clickable vertical `LinearLayout` holding
-   every interactive surface;
-3. `overlayRoot`, holding what must survive chrome being hidden — the restore
-   chip, the Display popover, the Objects panel and the start chooser.
+children in z-order: the `SurfaceView` at the **whole window size**; `chromeRoot`,
+a transparent, non-clickable vertical `LinearLayout` holding every interactive
+surface; and `overlayRoot`, holding what must survive chrome being hidden — the
+restore chip, the Display popover, the Objects panel and the start chooser.
 
 Inside `chromeRoot`: `GlobalToolbarView` at the top, then a weighted horizontal
 row carrying — leading edge first — the Objects column (expanded windows only),
@@ -157,11 +153,10 @@ no design system, no drawer.
 mode this is and carries the acts true in every mode; the Tool Rail says which
 tool is held; the Objects surface says what the scene HOLDS and which body is
 current; the Property Inspector says what that body's exact values ARE, naming it
-in its own title — "Shape — Body #1". Keeping the scene list out of the inspector
-is what makes that true: owned by the shape editor it made a panel titled "Shape"
-open on the list of bodies, pushed the dimensions below the fold of a 30 %-capped
-sheet, nested one scroll in another, and vanished in any mode that editor was not
-the inspector's body.
+in its own title — "Shape — Body #1". Scene-level content inside the active-body
+value panel is a role confusion: it buries the fields the panel is named after
+below the fold of a 30 %-capped sheet, nests one scroll in another, and vanishes
+in every mode that editor is not the inspector's body.
 
 ### Appearance: roles, not colours
 
@@ -178,11 +173,10 @@ instead of a repaint call; instances share one parsed `ConstantState` rather tha
 allocating a `GradientDrawable` per control; and **two themes cost one component
 tree** — one `bg_control.xml`, one `chip()`, one `control_content_tint.xml`, no
 `if (light)` anywhere, so a third theme would touch two resource files and
-nothing else. Two roles exist only because a light theme forced them apart:
-`fsAccentFill` (what an ACTIVE control is filled with) and `fsPrimaryFill` (what a
-PRIMARY COMMIT is filled with, carrying `fsTextOnPrimary`) are the same colour on
-dark, but on light an active chip wants a pale tint with dark text while Apply
-wants a solid accent with white, and one attribute could not be both.
+nothing else. `fsAccentFill` (what an ACTIVE control is filled with) and
+`fsPrimaryFill` (what a PRIMARY COMMIT is filled with, carrying `fsTextOnPrimary`)
+are two roles rather than one because on light an active chip wants a pale tint
+with dark text while Apply wants a solid accent with white.
 
 Icons are local vector drawables on one 24 dp grid, drawn white and tinted from
 the same state list, so an entry's glyph and its caption cannot disagree about
@@ -196,8 +190,8 @@ field in `EditorUiState` beside the start choice. It is applied by `setTheme()`
 clean way to re-resolve themed resources for a UI built entirely in code. Safe,
 because nothing that matters lives in the Activity: scene, bodies, active
 ObjectId, mode, Frozen Sculpt Mesh, camera and display settings are process-scoped
-native state. Free, because `onDestroy` skips `NativeViewport.stop()` while
-`isChangingConfigurations()`, so the render thread, the Vulkan device and every
+native state. Free, because **`onDestroy` skips `NativeViewport.stop()` while
+`isChangingConfigurations()`**, so the render thread, the Vulkan device and every
 GPU buffer survive and `start()` returns early rather than re-running the
 self-tests. `EditorUiState` is handed to the incoming workspace. Nothing is
 persisted: a real process kill returns to Dark.
@@ -247,12 +241,11 @@ unit-tested on the JVM.
 | 600–839 dp, or any width with height < 480 dp | `MEDIUM` | bottom sheet, or **side overlay** when height < 480 dp |
 | ≥ 840 dp wide **and** ≥ 480 dp tall | `EXPANDED` | docked side panel, ≤ 28 % of width |
 
-The height gate is what fixes the landscape failure, twice over: a short window
-never gets a bottom sheet, and a 914 × 411 dp phone in landscape is not
-classified as a tablet merely because it is wide. The inspector's body always
-scrolls, its bottom-sheet height is capped in `onMeasure`, and a side placement
-narrows to its toggle when collapsed — a panel that hid only its body would give
-the model back nothing.
+The height gate does two things at once: a short window never gets a bottom sheet,
+and a 914 × 411 dp phone in landscape is not classified as a tablet merely because
+it is wide. The inspector's body always scrolls, its bottom-sheet height is capped
+in `onMeasure`, and a side placement narrows to its toggle when collapsed — a
+panel that hid only its body would give the model back nothing.
 
 The decision runs at the top of `EditorWorkspaceView.onMeasure`, not in
 `onSizeChanged`: a surface added or re-parented during the layout pass is
@@ -261,8 +254,7 @@ so it converges within one traversal. `configChanges` is kept and widened with
 `smallestScreenSize` so no window change destroys the Vulkan surface;
 `onConfigurationChanged` discards the cached window and re-runs the decision.
 
-The app is edge-to-edge (`Theme.ForgeShape`, `setDecorFitsSystemWindows(false)`),
-replacing the deprecated fullscreen theme that merely hid the system bars.
+The app is edge-to-edge (`Theme.ForgeShape`, `setDecorFitsSystemWindows(false)`).
 `setOnApplyWindowInsetsListener` applies `systemBars | displayCutout` — plus the
 `ime()` inset, which replaces rather than adds to the navigation bar — as padding
 to the chrome containers only. `windowSoftInputMode` is `adjustResize`, but with
@@ -272,13 +264,12 @@ chrome absorbs and the surface is untouched.
 **Chrome depth, and what "docked" claims.** Surfaces that float over the model
 carry a small elevation; **docked** surfaces deliberately carry none and are drawn
 opaque and flush, because they sit *beside* the model rather than over it. That is
-a claim about the layout and it has to be true, which is why it is answered by the
-window rather than by taste. `railDocked()` and `objectsDocked(widthDp)` are the
-two predicates; the Property Inspector has followed the same rule since Stage 015B.
-Containers set `clipChildren(false)`, since a shadow is drawn outside its child's
-bounds — drawing only, never hit-testing. The rail's surface and elevation live on
-its `ScrollView` rather than on the rail, or the container would clip exactly the
-shadow it wraps.
+a claim about the layout, which is why it is answered by the window rather than by
+taste: `railDocked()` and `objectsDocked(widthDp)` are the two predicates, and the
+Property Inspector follows the same rule. Containers set `clipChildren(false)`,
+since a shadow is drawn outside its child's bounds — drawing only, never
+hit-testing. The rail's surface and elevation live on its `ScrollView` rather than
+on the rail, or the container would clip exactly the shadow it wraps.
 
 **The Objects surface is one view with two hosts, owned by the workspace.** An
 expanded window with room gives the scene list a leading-edge column
@@ -288,12 +279,9 @@ of the window. The **same `ObjectsSectionView` instance** moves between them, an
 `EditorWorkspaceView` owns it and refreshes it from `syncFromNative()` in **every**
 mode — never a second list, because a second Java Objects view would be a second
 place for "which body is active" to be remembered, and that answer lives below
-JNI. Before UI-R2 it was owned by the shape editor and refreshed as a side effect
-of that editor's re-read, so a docked column went stale on the way into Sculpt and
-the list was unreachable in any mode the editor was not on screen for. Because one
-view moves, a viewport pick, a row tap and Add Body all end at the same native
-fact and the same `refreshFromNative()`, and no Objects list is ever nested inside
-the inspector's scroll.
+JNI. Because one view moves, a viewport pick, a row tap and Add Body all end at
+the same native fact and the same `refreshFromNative()`, and no Objects list is
+ever nested inside the inspector's scroll.
 
 The two hosts are mutually exclusive, and enforced rather than assumed: the
 toolbar control is `GONE` exactly when the column is up, opening either panel
@@ -304,14 +292,13 @@ permanently; the panel is presentation the user asks for and dismisses.
 Whether it docks is arithmetic, **not a fourth breakpoint**: `EXPANDED` is
 necessary and not sufficient, and a window qualifies only when a 180 dp Objects
 column, the rail and the inspector still leave a central viewport at least 480 dp
-wide — the floor the expanded layout has always been held to. Deriving it means a
-later change to any column width moves the answer instead of silently violating
-the floor, and it is why the bottom of the expanded range gets no third column:
-three permanent chrome columns on a large phone in landscape is the desktop-CAD
-clutter UI-OWNER-02 rules out. The re-parent is **instant**, because it runs
-inside `onMeasure` and starting an animation there is the same defect as running
-the decision in `onSizeChanged`. **None of it touches the render target:** the
-`SurfaceView` is the whole window in every layout mode.
+wide. Deriving it means a later change to any column width moves the answer
+instead of silently violating that floor, and it is why the bottom of the expanded
+range gets no third column: three permanent chrome columns on a large phone in
+landscape is the desktop-CAD clutter UI-OWNER-02 rules out. The re-parent is
+**instant**, because it runs inside `onMeasure` and starting an animation there is
+the same defect as running the decision in `onSizeChanged`. **None of it touches
+the render target:** the `SurfaceView` is the whole window in every layout mode.
 
 ### Property Inspector ownership boundary
 
@@ -320,13 +307,11 @@ draft primitive kind, which Construction editor the rail points at, inspector
 detent per mode, chrome-hidden, and whether the start question has been answered.
 Every field is safe to lose — kill the process and the object is exactly what it
 was. Anything that would change the model if it were wrong belongs in native code
-instead.
-
-The start flag and the theme are the **static** members, and deliberately so:
-both questions are per *process*, not per Activity, and an instance field would
-be destroyed by the very recreation that applies a theme. The start flag records
-only *that* an answer was given, never which one — the mode is native truth, read
-back on every refresh, and a copy here could disagree with it.
+instead. The start flag and the theme are the **static** members, and deliberately
+so: both questions are per *process*, not per Activity, and an instance field
+would be destroyed by the very recreation that applies a theme. The start flag
+records only *that* an answer was given, never which one — the mode is native
+truth, read back on every refresh, and a copy here could disagree with it.
 
 The primitive chooser is a **draft**: it swaps which parameter fields are on
 screen and nothing else. The kind changes only when Apply Shape reads the drafted
@@ -363,37 +348,33 @@ key listener accepts `0123456789.,-`, and the minus matters twice over: a negati
 coordinate or angle is ordinary, and a negative *dimension* must be enterable so
 it can be visibly refused rather than unreachable.
 
-### Start flow ownership
+### Start flow, and the destructive-act guard
 
 `StartChooserView` asks which representation the model begins in, over the live
-viewport. It owns no state and makes no native call; it reports which option was
-pressed.
-
-**Native state already exists when it is asked.** The Activity starts native code
-before building any view, so the scene, the default Body and its ObjectId are the
-same in both branches — neither answer creates anything, and startup is still one
-default Box at identity (`S17-01`). *Construction* therefore only stops asking and
-re-reads. *Sculpt* makes exactly the two calls a user would make by hand:
-`applyConstructionSphere` with the diameter **read back from native state** rather
-than a constant invented in Java, then `freezeToSculpt`. Nothing about Freeze is
-duplicated, so *Back to Construction* finds the exact sphere and *Resume Sculpt*
-returns the same frozen mesh for the ordinary reasons. A refusal leaves the
-product in Construction, unchanged, and says so.
-
-### The destructive-act guard
+viewport, once per process. It owns no state and makes no native call; it reports
+which option was pressed. **Native state already exists when it is asked** — the
+Activity starts native code before building any view — so the scene, the default
+Body and its ObjectId are the same in both branches, neither answer creates
+anything, and startup is still one default Box at identity. *Construction*
+therefore only stops asking and re-reads. *Sculpt* makes exactly the two calls a
+user would make by hand: `applyConstructionSphere` with the diameter **read back
+from native state** rather than a constant invented in Java, then `freezeToSculpt`.
+Nothing about Freeze is duplicated, so *Back to Construction* finds the exact
+sphere and *Resume Sculpt* returns the same frozen mesh for the ordinary reasons.
+A refusal leaves the product in Construction, unchanged, and says so.
 
 Three mode transitions live in the Global Toolbar and exactly one is on screen:
 *Freeze to Sculpt* while no Frozen Sculpt Mesh exists, *Resume Sculpt* once one
 does, *Back to Construction* while sculpting. None is guarded, and none needs to
-be: the first can discard nothing, and the second and third discard nothing.
+be: none of the three discards anything.
 
 The one irreversible act in the product is **re-Freeze**, which rebuilds the
 sculpt mesh from the current Construction shape and throws away what was
 sculpted into the old one. It lives in the Sculpt inspector as *Freeze again…*
 and it confirms **only when `SCULPT_HAS_EDITS` says the CURRENT frozen mesh has
 edits** — deliberately not the session-lifetime stroke count, which describes
-meshes that no longer exist and made every later re-Freeze of an untouched mesh
-raise a dialog with nothing behind it. Cancel makes no native call at all.
+meshes that no longer exist and would raise a dialog with nothing behind it on
+every later re-Freeze of an untouched mesh. Cancel makes no native call at all.
 
 ### Android UI verification boundary
 
@@ -404,19 +385,16 @@ control is reached by its stable semantic id from `res/values/ids.xml`, and no
 assertion depends on a screen coordinate. `src/test` is JVM/JUnit only, over the
 pieces deliberately free of Android types; `src/androidTest` is instrumentation
 with Espresso deliberately absent — the assertions are view state, measured
-geometry and touch consumption read directly from the view tree.
-
-Two techniques carry most of the weight. "A UI action changed nothing" is asserted
-by comparing a **bit-identical** snapshot of the native primitive, transform and
-sculpt arrays across the action. "Chrome does not leak a gesture" is asserted by
-dispatching a drag to the surface and requiring it to return `true`, plus the
-native sculpt revision and stroke count being unchanged. The camera has no
-read-back across JNI, so camera immobility is proven at runtime instead, by a
-pixel-identical viewport region across a chrome drag.
-
-An **adaptive** case reads the window it is actually in and asserts the contract
-belonging to that window, so running the suite under an overridden window size is
-a genuine expanded-layout run rather than a simulation.
+geometry and touch consumption read directly from the view tree. "A UI action
+changed nothing" is asserted by comparing a **bit-identical** snapshot of the
+native primitive, transform and sculpt arrays across the action; "chrome does not
+leak a gesture" by dispatching a drag to the surface and requiring it to return
+`true` with the native sculpt revision and stroke count unchanged. The camera has
+no read-back across JNI, so camera immobility is proven at runtime instead, by a
+pixel-identical viewport region across a chrome drag. An **adaptive** case reads
+the window it is actually in and asserts the contract belonging to that window,
+so running the suite under an overridden window size is a genuine expanded-layout
+run rather than a simulation.
 
 ## JNI boundary
 
@@ -450,14 +428,20 @@ fixed meaning whatever the active kind is.
 `kind + a + b + c` entry point: a signature whose third double means "depth, or
 nothing, depending on an int" is a boundary that only documentation can keep
 correct. Each method's parameter list *is* that primitive's parameter list, so
-Java cannot ask for a cylinder while sending box dimensions, cannot put a height
-where a depth belongs, and has no spare number to get wrong when asking for a
-sphere.
+Java cannot ask for a cylinder while sending box dimensions and has no spare
+number to get wrong. Below the boundary all six build the matching typed
+`PrimitiveSpec` and go straight into `applyConstructionPrimitive`, so the per-kind
+split is a boundary shape only and the update-then-publish rule still has exactly
+one implementation. The JNI layer adds logging and the status code and nothing
+else — it decides no validity, decides no publication, and never touches
+`MeshStore` or the transform. The DEBUG primitive driver calls the same function.
 
 Every length crosses in meters and every angle in degrees, so no display unit and
 no radian ever reaches native code. Writing carries a whole section in one call
 and returns a status code (`APPLY_APPLIED`, `APPLY_UNCHANGED`, or one of the
-`APPLY_REJECTED_*` reasons). There is no `setWidth`, no `setRotationX`, no
+`APPLY_REJECTED_*` reasons; the transform path reuses the same vocabulary, where
+`APPLY_REJECTED_NOT_POSITIVE` simply cannot occur because zero and negative are
+ordinary coordinates and angles). There is no `setWidth`, no `setRotationX`, no
 `setKind`, no separate `publish`, and no way for Java to observe or produce a
 half-applied state. Nothing is ever measured back from the mesh, from GPU data or
 from a model matrix.
@@ -471,18 +455,6 @@ boundary in either direction — a stroke is driven entirely by the existing
 `MeshStore` exactly as every other revision does. In particular there is no
 method for the arbitration: whether a Down becomes a stroke is decided below the
 boundary, where the mesh actually is.
-
-Below the boundary all six shape methods build the matching typed
-`PrimitiveSpec` and go straight into `applyConstructionPrimitive`, so the
-per-kind split is a boundary shape only: the update-then-publish rule still has
-exactly one implementation. The JNI layer adds logging and the status code and
-nothing else — it does not decide validity, does not decide whether to publish,
-and never touches `MeshStore` or the transform. The DEBUG primitive driver calls
-the same function.
-
-The transform path reuses the same `APPLY_*` vocabulary.
-`APPLY_REJECTED_NOT_POSITIVE` simply cannot occur there, because zero and
-negative are ordinary coordinates and angles.
 
 ### Pointer semantics
 
@@ -533,10 +505,10 @@ Sculpt stage's work, and it will have to change the brush kernel to do it.
 truth and contains no JNI, Android or Vulkan types. It owns `target` (orbit
 centre), `yaw`, `pitch`, `distance`; the **projection mode and the orthographic
 world span**; FOV, near and far planes; viewport width/height and therefore
-projection aspect; and the gesture state machine (mode, tracked pointer ids,
-anchors). It produces a `CameraSnapshot` — view matrix, projection matrix, eye,
-target, pose scalars, the active `ProjectionMode` and the visible half-height —
-which is the only thing the renderer, picking and sculpt ever see.
+projection aspect; and the gesture state machine. It produces a `CameraSnapshot`
+— view matrix, projection matrix, eye, target, pose scalars, the active
+`ProjectionMode` and the visible half-height — which is the only thing the
+renderer, picking and sculpt ever see.
 
 Gesture rule: every touch event recomputes the set of pointers that are still
 down, sorted by pointer id. If that set differs from the tracked one, the
@@ -555,9 +527,8 @@ It is **camera/presentation state, never geometry truth**. Changing it mints no
 `MeshRevision` and no `SculptRevision`, moves no vertex, and touches no
 Construction parameter, `PrimitiveKind`, transform or `ObjectId`. It changes
 which pixels a fixed piece of geometry lands on, and nothing else. Like the
-camera pose and the display settings it is process-scoped, which is why it
-survives HOME/resume and Surface recreation with no save/restore code in the
-Android layer.
+camera pose and the display settings it is process-scoped — see *Lifecycle
+contract*.
 
 | | Perspective | Orthographic |
 | --- | --- | --- |
@@ -571,20 +542,13 @@ Android layer.
 
 **The orthographic scale is a world length, not a zoom factor.**
 `orthoHalfHeightMeters` is half the world-space height the viewport shows, in
-meters, measured at the target plane — so it can be reasoned about against an
-exact Construction dimension rather than against an abstract multiplier. The
-snapshot carries it in **both** modes: in Perspective it is the equivalent
-framing `distance × tan(fovY / 2)`, so the field is always a live, physically
-interpretable span rather than a stale leftover.
+meters, measured at the target plane, so it can be reasoned about against an exact
+Construction dimension. The snapshot carries it in **both** modes: in Perspective
+it is the equivalent framing `distance × tan(fovY / 2)`, never a stale leftover.
 
 **Switching preserves the framing at the target plane**, converting between the
-two descriptions rather than resetting:
-
-```
-Perspective -> Orthographic:  orthoHalfHeight = distance * tan(fovY / 2)
-Orthographic -> Perspective:  distance        = orthoHalfHeight / tan(fovY / 2)
-```
-
+two descriptions rather than resetting — `orthoHalfHeight = distance ×
+tan(fovY/2)` one way and `distance = orthoHalfHeight / tan(fovY/2)` the other.
 These are one identity read in opposite directions, so a round trip returns to
 where it started (up to the distance clamps). The target, yaw and pitch are never
 touched, so the frame keeps its centre and its viewing direction and the object
@@ -618,11 +582,11 @@ tweak to a constant:
 | Orthographic | depends on the pixel; slides across the view plane | one shared direction — the view axis |
 
 Both are inverted out of `camera.proj` and `camera.view`; neither restates a
-field of view, an orthographic span or an aspect. Picking keeping a perspective
-origin under an orthographic image would agree with the picture only at the
-screen centre and drift further from it toward every edge — which is why the
-picking suite probes off-centre pixels and round-trips each hit back through the
-same matrices to the pixel it came from.
+field of view, an orthographic span or an aspect. Keeping a perspective origin
+under an orthographic image would agree with the picture only at the screen
+centre and drift further toward every edge — which is why the picking suite
+probes off-centre pixels and round-trips each hit back through the same matrices
+to the pixel it came from.
 
 The same split governs the sculpt brush. `worldPerPixelAtDepth` reads
 `proj.m[5]` in both modes, but multiplies by the hit depth only in Perspective:
@@ -650,10 +614,9 @@ frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE
 
 CPU picking accepts front faces only, under the same rule, so what can be picked
 is exactly what the rasterizer draws. The self-tests assert the convention
-triangle by triangle (`NOR-01`), assert that render normals and the model→view
-normal transform stay outward (`NOR-02`..`NOR-09`), and assert that a ray fired
-from inside a closed solid misses under front-face-only picking; that is what
-keeps the data, the rasterizer and the picker from drifting apart.
+triangle by triangle, assert that render normals and the model→view normal
+transform stay outward (`NOR-01`..`NOR-10`), and assert that a ray fired from
+inside a closed solid misses under front-face-only picking.
 
 **The Plane is a bounded, explicitly named exception to both halves of this
 rule**, never a change to the rule itself. It is the one primitive with no
@@ -682,10 +645,9 @@ and the three consumers all read the last link and nothing else:
 **No consumer may re-derive this from `PrimitiveKind`.** A Frozen Sculpt Mesh
 outlives the Source it was frozen from, so the Source can be a Plane while the
 frozen geometry is a closed solid, and the reverse — asking the Source is wrong
-in both directions, and in neither case has the geometry changed at all.
-`forgeshape_selection.cpp` deliberately does not include
+in both directions. `forgeshape_selection.cpp` deliberately does not include
 `forgeshape_construction.h`, so the dependency that permits the mistake is absent
-rather than merely unused. `SIDE-01`..`09` assert the chain, both stale-source
+rather than merely unused; `SIDE-01`..`09` assert the chain, both stale-source
 directions included. The pipeline is untouched: one global
 `VK_CULL_MODE_BACK_BIT` / `VK_FRONT_FACE_COUNTER_CLOCKWISE` for every primitive
 including the Plane.
@@ -716,19 +678,17 @@ that used to be process-global singletons:
 | `MeshStore` | its own publication chain, so revisions are per body and A's edit cannot replace B's mesh |
 | `FrozenSculpt` | its Frozen Sculpt Mesh and its stale-source flag |
 
-Bodies are held by `unique_ptr`, so their addresses are stable as the
-collection grows — a `SceneObject` owns a mutex through `MeshStore` and must
-not move. `SceneObject` is non-copyable: duplicating one would duplicate
-identity, which is the one thing an `ObjectId` exists to prevent.
+Bodies are held by `unique_ptr`, so their addresses are stable as the collection
+grows — a `SceneObject` owns a mutex through `MeshStore` and must not move — and
+`SceneObject` is non-copyable, because duplicating one would duplicate identity.
 
-**`constructionObject()`, `meshStore()` and `sculptSession()` still exist under
-their original names but now mean "the ACTIVE body's".** They are defined in
-`forgeshape_scene.cpp` rather than beside their own types, because their answer
-is a scene question and defining them in their own translation units would make
-those units depend on the scene, which depends on them. Keeping the names is
-what made the multi-object migration small: every caller that means "the object
-the user is editing" is still correct unchanged, and only code that means
-"every body in the scene" — the renderer and scene picking — was rewritten.
+**`constructionObject()`, `meshStore()` and `sculptSession()` mean "the ACTIVE
+body's".** They are defined in `forgeshape_scene.cpp` rather than beside their own
+types, because their answer is a scene question and defining them in their own
+translation units would make those units depend on the scene, which depends on
+them. Every caller that means "the object the user is editing" reads correctly;
+only code meaning "every body in the scene" — the renderer and scene picking —
+enumerates the collection.
 
 **`ObjectId` allocation.** Monotonic, minted by the scene, never reused, and
 never derived from a collection index, a `MeshRevision` or a GPU resource. It
@@ -755,11 +715,10 @@ generation, a GPU upload or a triangle scan. Because each item holds a
 self-consistent even while newer revisions are published, and a body with
 nothing published yet is simply absent rather than a null to guard against.
 
-**Lock order is unchanged**: the one state mutex, then `MeshStore`'s own mutex
-inside `publish`/`current`. `ConstructionScene` is deliberately *not* internally
-synchronised — adding a second scene-level lock would have introduced a new
-ordering to get wrong, for a collection whose callers already hold the state
-mutex the singletons required.
+**Lock order:** the one state mutex, then `MeshStore`'s own mutex inside
+`publish`/`current`. `ConstructionScene` is deliberately *not* internally
+synchronised — a second scene-level lock would add a new ordering to get wrong,
+for a collection whose callers already hold the state mutex.
 
 ### The one active body's object
 
@@ -774,13 +733,11 @@ it is:
   holding its own exact parameters;
 - a `ConstructionTransform` holding its placement.
 
-One per Construction Body, owned by that body's `SceneObject`. It is still not
-a registry — it contains no container, no list, no parent and no child; the
-collection is the scene's job, above it.
-
-`constructionTransform()` returns `constructionObject().transform()` rather than
-owning a singleton of its own, so identity, shape and placement are one body's
-state and cannot drift apart.
+One per Construction Body, owned by that body's `SceneObject`. It is not a
+registry — no container, no list, no parent and no child; the collection is the
+scene's job, above it. `constructionTransform()` returns
+`constructionObject().transform()` rather than owning a singleton of its own, so
+identity, shape and placement are one body's state and cannot drift apart.
 
 **Every** primitive's parameters are retained across a kind change. Switching
 Box → Cylinder → Sphere → Box does not silently forget the box's dimensions; only
@@ -801,7 +758,6 @@ the active one and nothing for a caller to read by mistake.
 A cone's `(diameter, height)` and a capsule's `(diameter, totalHeight)` are the
 same two numbers in the same order meaning different things; the payload makes
 reading one as the other impossible rather than merely discouraged.
-
 `kind()` is **derived** from the payload's alternative index rather than stored
 beside it, so tag and data cannot disagree; a `static_assert` pins the variant's
 alternative order to `PrimitiveKind`'s. Access is typed — `box()` … `plane()`
@@ -834,11 +790,10 @@ ConstructionTransform        (double-meter position, double-degree rotation)
 
 These directions are the only ones that exist. Nothing infers a parameter from
 mesh vertices, from a bounding box, from a model matrix or from GPU data; the
-parameters are read, the mesh is regenerated, and the mesh is republished.
-
-The two branches are independent, and that independence is the point: a shape
-change republishes the mesh and leaves the placement alone, while a placement
-change changes one 4×4 matrix and publishes nothing.
+parameters are read, the mesh is regenerated, and the mesh is republished. The two
+branches are independent, and that independence is the point: a shape change
+republishes the mesh and leaves the placement alone, while a placement change
+changes one 4×4 matrix and publishes nothing.
 
 ### Unit contract
 
@@ -919,15 +874,14 @@ unchanged, and `V - E + F = 2` is what would fail if the base were left open.
 
 **The capsule's middle is not a special case in the index loop** - just the band
 between the two seam rings, from the same code as every other band, centred on
-the origin so its ends sit at half the middle length either side. The poles are
-written down from the authoritative **total** height rather than accumulated as
-`middle/2 + radius`.
+the origin. The poles are written down from the authoritative **total** height
+rather than accumulated as `middle/2 + radius`.
 
 **The capsule equality case is a sphere, and is generated as one.**
 `totalHeight == diameter` describes a capsule with no middle: the two seam rings
 are **the same ring**, `R` is one smaller, that band does not exist, and the
-result is exactly the sphere's 482 : 2880 - pinned by a `static_assert`, which is
-what keeps the degenerate case free of zero-length rings and zero-area triangles.
+result is exactly the sphere's 482 : 2880 - pinned by a `static_assert`, which
+keeps the degenerate case free of zero-length rings and zero-area triangles.
 Capsule topology is therefore a deterministic *function* of the parameters (the
 two sides of one exact `double` comparison), making the capsule the one primitive
 whose edit can change a vertex count and so trigger a buffer growth.
@@ -939,9 +893,9 @@ exactly `(0, 1, 0)`. Width and depth are validated independently by the same
 `validateDimensionMeters` as every other per-length field; there is no
 cross-field rule because the two extents do not constrain each other. Being the
 one open, single-sided primitive, it is the one whose `ConstructionMesh` sets
-`renderBothSides = true` - see *Derived render geometry and shading* and *Picking
-and selection*. It is also the one primitive that can sit exactly coplanar with
-the world reference grid, which is why the grid carries a depth nudge.
+`renderBothSides = true`. It is also the one primitive that can sit exactly
+coplanar with the world reference grid, which is why the grid carries a depth
+nudge.
 
 ### The capsule relation, and float resolvability
 
@@ -952,18 +906,16 @@ rule. `validateCapsuleMeters` owns both halves:
 - `totalHeight >= diameter`, because the two hemispherical ends alone are already
   `diameter` tall. Violating it reports `DimensionValidation::RelationInvalid`, a
   reason distinct from `NotPositive` because "0.5 m is not a length" and "0.5 m is
-  too short to be this capsule's total height" are different problems and deserve
-  different messages. It surfaces at the JNI boundary as
-  `APPLY_REJECTED_RELATION`.
+  too short to be this capsule's total height" deserve different messages. It
+  surfaces at the JNI boundary as `APPLY_REJECTED_RELATION`.
 - **float resolvability**: the generated positions must not merely be finite,
   they must be far enough apart to describe the shape. A 1e30 m capsule 1e-6 m
   across is finite in every coordinate and yet its whole hemisphere rounds to a
   single float, which would be a mesh of zero-area triangles. The check compares
   the pole against the first ring below it — the smallest latitude step anywhere
   on a hemisphere, so resolving it resolves all of them — and refuses the request
-  as `NotRepresentable`. This is the one validation coupled to the tessellation
-  constant, deliberately: the question it asks is "can this shape be built at this
-  fidelity".
+  as `NotRepresentable`. This is the one validation deliberately coupled to the
+  tessellation constant: it asks "can this shape be built at this fidelity".
 
 The UI restates neither half. It refuses only what it can name from the text
 alone (blank, non-numeric, non-positive), and the relation is reported back to it
@@ -979,8 +931,7 @@ as an ordinary rejection.
   before anything at all is written, so a bad depth cannot leave a half-applied
   width behind *and a bad diameter cannot leave the kind switched*. The previous
   kind, parameters, transform and mesh revision all stand. The only limits are
-  physical validity and float representability — there is no arbitrary product
-  size policy.
+  physical validity and float representability — no arbitrary size policy.
 - **Unchanged** — the request is valid, the kind matches and every relevant
   parameter matches. Nothing is written and no revision is published, so a
   redundant edit cannot cost a mesh revision or a GPU upload.
@@ -996,20 +947,16 @@ exactly those parameters: the object is a different shape afterwards.
 becomes a mesh revision. It validates, updates and publishes, and returns a
 `PrimitiveApplyResult` carrying the status, the rejection reason, the
 authoritative spec after the call, the published vertex/index counts, the store's
-resulting revision and whether anything was actually published.
-
-`PrimitiveSpec` carries the typed payload described above, so `applyPrimitive`
-never branches on a kind field that could disagree with the numbers beside it: it
-validates and compares whichever parameters the request actually contains.
+resulting revision and whether anything was actually published. Because
+`PrimitiveSpec` carries the typed payload described above, it never branches on a
+kind field that could disagree with the numbers beside it.
 
 Callers therefore decide nothing. The product UI path (for all six primitives)
 and the DEBUG driver all go through it, so there is exactly one implementation of
 the rule in the process. `publishConstructionObject` remains separately callable
-for the startup publish, which changes no parameter.
-
-The atomicity that matters is preserved by construction: nothing is written
-unless every relevant value is valid, and no caller can observe a changed shape
-without the matching published revision.
+for the startup publish, which changes no parameter. Atomicity is preserved by
+construction: nothing is written unless every relevant value is valid, and no
+caller can observe a changed shape without the matching published revision.
 
 **The transform is never read, written or reset by this call**, in any outcome.
 That is what makes "change the shape, keep the placement" true by construction
@@ -1025,13 +972,8 @@ does not create a new object; it changes what this object is.
 `forgeshape_transform.{h,cpp}` owns **where** the object is; the primitive
 parameters own **what** it is. They are separate truths on purpose, and neither
 reads the other. Both are held by the same `ConstructionObject`, so they cannot
-become inconsistent about which object they describe.
-
-```
-active primitive parameters (double meters) -> LOCAL geometry -> MeshStore -> GPU
-ConstructionTransform P (double meters)     -> modelMatrix()  -> Renderer
-                      R (double degrees)    -> inverseModel() -> picking
-```
+become inconsistent about which object they describe; the two branches of the
+source-of-truth hierarchy above are exactly these two.
 
 The published `RuntimeMesh` is the object's geometry in **object space**. The
 transform never touches it. That is the whole point: moving or rotating the
@@ -1041,13 +983,11 @@ could not publish one if it wanted to; it has no access to `MeshStore`. The
 independence runs both ways: a shape change republishes the mesh and leaves the
 placement exactly as it was, including across any switch among the six kinds.
 
-### Unit contract
-
-Position is `double` **meters**, rotation is `double` **degrees**, named
-`...Meters` and `...Degrees` at every boundary. Degrees are authoritative because
-degrees are what the product exposes; radians exist only inside the derived
-trigonometry. mm/cm/m applies to position exactly as it applies to a dimension,
-and never to rotation.
+**Unit contract.** Position is `double` **meters**, rotation is `double`
+**degrees**, named `...Meters` and `...Degrees` at every boundary. Degrees are
+authoritative because degrees are what the product exposes; radians exist only
+inside the derived trigonometry. mm/cm/m applies to position exactly as it
+applies to a dimension, and never to rotation.
 
 ### Axis and Euler convention
 
@@ -1069,12 +1009,9 @@ There is exactly one convention in ForgeShape. The renderer consumes
 `modelMatrix()` and the picker consumes `inverseModelMatrix()`; neither builds a
 rotation itself, so they cannot drift apart. The inverse is composed from the
 authoritative values rather than inverted numerically, which is exact for a rigid
-transform and cannot disagree with the model it undoes.
-
-The self-tests assert the convention directly: `Rx(+90)` takes +Y to +Z,
-`Ry(+90)` takes +Z to +X, `Rz(+90)` takes +X to +Y, the X-then-Y composition
-lands where only the documented order puts it, and `Model * Model⁻¹` is the
-identity in both directions.
+transform and cannot disagree with the model it undoes. The self-tests assert the
+convention directly — `Rx(+90)` takes +Y to +Z, `Ry(+90)` takes +Z to +X,
+`Rz(+90)` takes +X to +Y, and `Model * Model⁻¹` is the identity both ways.
 
 ### Rotation values are not canonicalized
 
@@ -1088,13 +1025,12 @@ same derived matrix.
 
 A transform value is refused only when it is not finite, or when it could not
 survive into the derived `float` matrix. Zero and negative are **ordinary** for
-all six: a coordinate is a place and an angle is a direction, neither is a size.
-There is no arbitrary product limit.
-
-`applyBoxTransform` (`applyTransformValues` / `applyConstructionTransform`) is the
-one entry point. It fails closed: all six are validated before any is written, so
-a bad rotation cannot leave a half-applied position behind. It reports `Applied`,
-`Unchanged` or `Rejected` exactly as the dimension path does.
+all six: a coordinate is a place and an angle is a direction, neither is a size,
+and there is no arbitrary product limit. `applyBoxTransform`
+(`applyTransformValues` / `applyConstructionTransform`) is the one entry point.
+It fails closed: all six are validated before any is written, so a bad rotation
+cannot leave a half-applied position behind. It reports `Applied`, `Unchanged` or
+`Rejected` exactly as the dimension path does.
 
 ### Picking a transformed object
 
@@ -1104,10 +1040,8 @@ intersected there — the same vertices the GPU already holds. The hit point is
 carried back to world space for reporting; the distance needs no conversion,
 because a rigid transform preserves length. The transform has no reflection, so
 winding is unchanged and front-face-only picking means the same thing in either
-space.
-
-This is what keeps "what is drawn" and "what is pickable" identical under a
-transform, with no second collision representation to keep in sync.
+space. That is what keeps "what is drawn" and "what is pickable" identical under
+a transform, with no second collision representation to keep in sync.
 
 ## Sculpt domain
 
@@ -1117,8 +1051,6 @@ Vulkan, renderer or UI type, and it holds no GPU resource.
 
 ### What is per body, and what is the session
 
-This split is load-bearing and was got wrong once, so it is stated explicitly.
-
 | Per body — `FrozenSculpt`, owned by `SceneObject` | Session-wide — one `SculptSession` |
 | --- | --- |
 | the Frozen Sculpt Mesh (`SculptMesh`) | the product mode (Construction / Sculpt) |
@@ -1127,16 +1059,14 @@ This split is load-bearing and was got wrong once, so it is stated explicitly.
 | — | the stroke in progress, and the session-lifetime stroke count |
 
 `sculptSession()` re-points the one session at the **active body's**
-`FrozenSculpt` on every access. It is a single pointer write, and rebinding
-every time rather than only on a selection change removes the whole class of bug
-where the session is left pointing at the body the user just navigated away from.
-
-Making `SculptSession` itself per body — the obvious first move — is wrong twice
-over. The product mode becomes ambiguous: `productMode()` would answer for
-whichever body is active, so selecting a body that was itself left in Sculpt mode
-would refuse every later selection. And **"Radius and Strength are shared" is a
-product contract** — switching bodies must no more change the brush than
-switching tools does — which a per-body copy breaks silently.
+`FrozenSculpt` on every access — a single pointer write, and rebinding every time
+rather than only on a selection change removes the whole class of bug where the
+session is left pointing at the body the user just navigated away from. Making
+`SculptSession` itself per body is wrong twice over: `productMode()` would answer
+for whichever body is active, so selecting a body left in Sculpt mode would refuse
+every later selection; and **"Radius and Strength are shared" is a product
+contract** — switching bodies must no more change the brush than switching tools
+does — which a per-body copy breaks silently.
 
 Body switching is refused while in Sculpt mode. The Sculpt target is fixed for
 the duration of the mode and the user returns to Construction to change bodies,
@@ -1156,8 +1086,7 @@ These are separate truths and neither writes to the other:
 
 - **Freeze copies.** `SculptMesh::freezeFrom` takes the Construction object's
   currently generated local mesh wholesale. Nothing is shared, so no sculpt edit
-  can reach back into Construction data, and the Construction Source can still
-  regenerate its own mesh at any moment.
+  can reach back into Construction data.
 - **A sculpt edit changes no parameter, no kind and no transform.** It cannot: the
   sculpt module has no mutable access to `ConstructionObject`, and the only
   mutation `SculptMesh` offers is a single vertex POSITION — nothing here can add,
@@ -1174,14 +1103,11 @@ These are separate truths and neither writes to the other:
 
 ### Mode ownership
 
-`SculptSession` owns `ProductMode` — `Construction` or `Sculpt` — plus the one
-`SculptMesh`, the active `SculptTool`, the brush settings and the live stroke, and
-is process-scoped like the camera, the selection and the mesh store.
-
-The mode is **native state**. The Android UI may request a change and is then told
-what the mode actually is; `syncFromNative()` reads `productMode()` back rather
-than assuming its request succeeded, so a refused request (entering Sculpt with
-nothing frozen) cannot leave surfaces on screen that lie about what is being
+`SculptSession` is process-scoped like the camera, the selection and the mesh
+store. The mode is **native state**: the Android UI may request a change and is
+then told what the mode actually is; `syncFromNative()` reads `productMode()` back
+rather than assuming its request succeeded, so a refused request (entering Sculpt
+with nothing frozen) cannot leave surfaces on screen that lie about what is being
 edited. The active tool is read back the same way.
 
 - **Freeze to Sculpt** snapshots the current Construction local mesh, creates the
@@ -1199,9 +1125,8 @@ edited. The active tool is read back the same way.
 When the Construction Source changes while a Frozen Sculpt Mesh exists, the
 sculpt mesh is **never** silently replaced or re-derived. It is marked
 `sourceStale`, the Sculpt panel says so in as many words, and adopting the new
-source stays an explicit user act — another Freeze, which is the only thing that
-clears the flag. There is no automatic sculpt-edit transfer, and there will not
-be one until a stage pays for what it would cost.
+source stays an explicit user act — another Freeze, the only thing that clears
+the flag. There is no automatic sculpt-edit transfer.
 
 ### Active representation
 
@@ -1210,11 +1135,10 @@ Exactly one place decides which representation the renderer and the picker see:
 mesh in Construction mode and the Frozen Sculpt Mesh in Sculpt mode, both through
 the existing `MeshStore` path.
 
-That is the whole of the sculpt render/pick integration. The renderer already
-draws the store's current revision and picking already reads it, so making the
-sculpt mesh active is a *publication*, not a renderer change — the renderer still
-owns no geometry truth, there is no second upload mechanism, and the two
-consumers cannot end up looking at different representations.
+That is the whole of the sculpt render/pick integration: making the sculpt mesh
+active is a *publication*, not a renderer change. The renderer still owns no
+geometry truth, there is no second upload mechanism, and the two consumers
+cannot end up looking at different representations.
 
 ### Fixed topology: adjacency and normals
 
@@ -1238,12 +1162,9 @@ same canonical outward normal picking uses, whose length is twice the area — t
 all three corners, then each vertex normal is normalized. A degenerate triangle
 contributes a zero vector rather than a NaN, and a vertex with no usable
 accumulated direction gets the **zero** vector rather than an invented axis, so a
-normal-based brush simply does not move it.
-
-**When normals are recomputed:** the cache is marked dirty by every accepted
-`setVertexPosition` and recomputed on the next read. That is the whole rule — at
-most once per batch of position writes, in practice once per brush move that
-changed something, and never per frame and never when nothing has moved.
+normal-based brush simply does not move it. The cache is marked dirty by every
+accepted `setVertexPosition` and recomputed on the next read — at most once per
+batch of position writes, never per frame and never when nothing has moved.
 
 ### The brush kernel
 
@@ -1267,10 +1188,9 @@ UP     finalize        CANCEL  drop the stroke
 ```
 
 Everything above the dispatch is shared. **A tool is a deformation rule and
-nothing else**, selected by a closed enum and a switch — there is no brush base
-class, registry, plugin surface or reflection, because four tools do not justify
-a framework and a framework would have to be persisted, versioned and validated
-like real authored state.
+nothing else**, selected by a closed enum and a switch — no brush base class,
+registry, plugin surface or reflection, because a framework would have to be
+persisted, versioned and validated like real authored state.
 
 Deliberate properties of the kernel, shared by all four tools:
 
@@ -1311,11 +1231,9 @@ Deliberate properties of the kernel, shared by all four tools:
 | Smooth | pointer **path length** | toward the 1-ring neighbour mean | yes |
 | Inflate | pointer **path length** | each vertex's normal **right now** | yes |
 
-**Grab** is position-driven: every Move recomputes `base + delta * weight` rather
-than accumulating, so the result depends only on where the finger *is*, never on
-how many events it took to get there.
-
-The other three are **path-driven**. Per move,
+**Grab** is position-driven, so its result depends only on where the finger *is*,
+never on how many events it took to get there. The other three are
+**path-driven**. Per move,
 `travelFraction = pointer travel this move / brush radius` (both in pixels), and
 
 ```
@@ -1378,8 +1296,8 @@ gesture which turns out to be navigation cannot have mutated the sculpt mesh.
 Anchoring the promoted stroke at the original down point makes the deferral free:
 the hit, the affected set and the weights are exactly what they would have been
 had the stroke begun on Down. The camera re-anchors on any pointer-set change so
-an abandoned gesture produces no jump, and the selection never saw the Down. While
-a stroke owns the gesture neither controller sees the event at all, which is what
+an abandoned gesture produces no jump, the selection never saw the Down, and while
+a stroke owns the gesture neither controller sees the event at all — which is what
 makes a brush gesture structurally unable to orbit, select or clear.
 
 The 8 px threshold sits between touch jitter and the 24 px tap slop, and the
@@ -1399,10 +1317,8 @@ number, interleaved `MeshVertex` (position + colour) data and `uint32_t` indices
 The only way to build one is `createRuntimeMesh`, which validates first, so a
 `RuntimeMesh` that exists has already been proven usable. Consumers hold it
 through a `shared_ptr<const RuntimeMesh>`, so a pick in progress keeps reading
-its own revision even while a newer one is published.
-
-`MeshStore` is the single publication point and is process-scoped. It mints
-monotonically increasing revisions, and:
+its own revision even while a newer one is published. `MeshStore` is the single
+publication point, one per body. It mints monotonically increasing revisions, and:
 
 - invalid data **fails closed** — the previous revision stays current and the
   reason is reported (null data, zero counts, index count not a multiple of
@@ -1415,14 +1331,11 @@ monotonically increasing revisions, and:
   observations are **coalesced away**, deliberately: that is what bounds the GPU
   upload path.
 
-The publication path is synchronous and republishes the whole mesh, which is
-O(vertices) per sculpt move regardless of how few vertices the brush touched.
-That is measured as free at these sizes and is the known cost to compare a future
-partial-update or async path against.
+The publication path is synchronous and republishes the whole mesh, O(vertices)
+per sculpt move regardless of how few vertices the brush touched — the known cost
+a future partial-update or asynchronous path has to beat.
 
-### Index width
-
-The runtime and render paths use **32-bit indices** (`uint32_t` /
+**Index width.** The runtime and render paths use **32-bit indices** (`uint32_t` /
 `VK_INDEX_TYPE_UINT32`). 16-bit indices would structurally cap every mesh at
 65,535 vertices, and there is no measured benefit at these sizes; the CPU
 `TriangleMeshView` and the GPU index buffer agree on one width, so they cannot
@@ -1459,12 +1372,11 @@ normal, so a corner on a crease becomes several **render** vertices. Therefore:
   `FORGESHAPE_RENDER_MESH_BUILD` reports both explicitly.
 
 The measured per-primitive counts live in `PROJECT_STATUS.md`'s shading cost
-record and are not restated here. Two shapes of result matter architecturally: a
-fully smooth closed surface has no crease to split on, so its render mesh *is* its
-source topology — the cheapest available proof that the grouping does not fragment
-a smooth surface — and the Plane's doubled count is the **other** reason a render
-count can exceed a source one, not a crease split but the bounded two-sided
-exception below.
+record. Two shapes of result matter architecturally: a fully smooth closed surface
+has no crease to split on, so its render mesh *is* its source topology — the
+cheapest available proof that the grouping does not fragment a smooth surface —
+and the Plane's doubled count is the **other** reason a render count can exceed a
+source one, the bounded two-sided exception below rather than a crease split.
 
 ### The two-sided render exception
 
@@ -1478,7 +1390,7 @@ reversed winding, on the duplicated vertex set. Nothing about the source
 `RuntimeMesh` changes and nothing is re-validated against a different rule;
 this runs entirely on already-built render data.
 
-The reason this needs no pipeline, culling or material change is the winding
+This needs no pipeline, culling or material change because of the winding
 reversal itself: from the front, the duplicate is the **back**-facing triangle and
 the existing `VK_CULL_MODE_BACK_BIT` culls it; from the far side the original is
 back-facing and culled, leaving the duplicate, whose negated normal is correct for
@@ -1497,19 +1409,19 @@ become one group even though its extreme members are far apart in azimuth.
 
 The value must clear the coarsest curved adjacency (360/32 = 11.25°) and stay
 well under the sharpest edge a primitive presents (90°); 40° is near the middle
-of that band, so neither bound is close. That single rule produces every
-per-primitive contract — a box's hard 90° edges, a cylinder's smooth side with
-flat caps and hard rims, a sphere's continuous shading and stable poles, a cone's
-smooth side with a hard base rim and an on-axis apex normal, and a capsule's
-seamless hemisphere-to-middle transition — with no per-primitive special case.
+of that band. That single rule produces every per-primitive contract — a box's
+hard 90° edges, a cylinder's smooth side with flat caps and hard rims, a sphere's
+continuous shading and stable poles, a cone's smooth side with a hard base rim and
+an on-axis apex normal, and a capsule's seamless hemisphere-to-middle transition —
+with no per-primitive special case.
 
 Normals are area-weighted (`(v1-v0) x (v2-v0)`), the same weighting
 `computeVertexNormals` uses for the sculpt cache, so a surface does not change
 character between the two paths. A degenerate triangle contributes the zero
 vector rather than a NaN, and a group with no usable length keeps the zero
-normal — honest, and handled by a documented shader fallback. Faceted shading is
-the other branch: three private vertices per triangle carrying that triangle's
-flat normal, intentionally exposing triangle structure.
+normal — handled by a documented shader fallback. Faceted shading is the other
+branch: three private vertices per triangle carrying that triangle's flat normal,
+intentionally exposing triangle structure.
 
 ### Rebuild policy
 
@@ -1519,9 +1431,6 @@ rotation, a window resize, a unit switch, an inspector toggle, a mode or tool
 change, or a Studio<->MatCap change, because that last one is a fragment-stage
 uniform touching no geometry at all. The renderer gates on the same pair before
 calling in, so a steady frame costs two integer comparisons.
-
-The measured frame-to-rebuild ratio and the per-primitive rebuild costs live in
-`PROJECT_STATUS.md`'s shading cost record, which owns runtime evidence.
 
 The cache derives its own adjacency from the index buffer and deliberately does
 **not** reuse `SculptTopology`: the renderer depends on the published
@@ -1543,14 +1452,12 @@ matte and even, for judging planar faces and exact silhouettes. MatCap is a
 single texture lookup at `uv = n.xy * 0.5 + 0.5`, tuned glossier and
 higher-contrast, for reading curvature and sculpt deformation. They share one
 geometry of light — same key direction, same fill, same hemispherical ambient —
-so switching does not relight the object.
-
-Both fills are placed lower-**front**, not opposite the key: a fill opposite the
-key lifts exactly the planes the key leaves dark, so a box's left and right faces
-end up nearly the same value and the form stops reading.
-
-There is no PBR here and none is implied: no metalness, no roughness, no
-environment probe, no shadow map, no ambient occlusion and no tone-mapping stack.
+so switching does not relight the object. Both fills are placed lower-**front**,
+not opposite the key: a fill opposite the key lifts exactly the planes the key
+leaves dark, so a box's left and right faces end up nearly the same value and the
+form stops reading. There is no PBR here and none is implied: no metalness, no
+roughness, no environment probe, no shadow map, no ambient occlusion and no
+tone-mapping stack.
 
 ### The MatCap asset
 
@@ -1560,20 +1467,18 @@ nothing downloaded, nothing derived from another application's asset — and it 
 the only option that respects the no-third-party-library rule, since decoding a
 PNG would need a decoder ForgeShape may not depend on. Texels outside the unit
 disc are clamped to the rim value in the same direction, and the sampler uses
-`CLAMP_TO_EDGE`, so filtering at a silhouette does not bleed.
-
-Exactly one preset. No library, no browser, no import, no per-object material.
+`CLAMP_TO_EDGE`, so filtering at a silhouette does not bleed. Exactly one preset:
+no library, no browser, no import, no per-object material.
 
 ### Display settings ownership
 
-`forgeshape_display.{h,cpp}` holds the shading model, the surface shading and the
-**viewport background** as process-scoped atomics. Native owns them exactly as it
-owns the product mode and the active tool; the Android UI may request a change and
-read the value back, but does not hold it — which is why they survive HOME/resume
-with no save/restore code in the Android layer. A snapshot is pushed into the
-renderer per frame, outside the state mutex, because no domain invariant depends
-on it and a frame must never wait on the geometry lock to learn which shading
-model to draw with.
+`forgeshape_display.{h,cpp}` holds the shading model, the surface shading, the
+**viewport background**, grid visibility and the reduced-motion bool as
+process-scoped atomics. Native owns them exactly as it owns the product mode and
+the active tool; the Android UI may request a change and read the value back, but
+does not hold it. A snapshot is pushed into the renderer per frame, outside the
+state mutex, because no domain invariant depends on it and a frame must never
+wait on the geometry lock to learn which shading model to draw with.
 
 **The viewport background is the whole of what a theme means below JNI.** It is a
 closed `ViewportBackground` enum — `NeutralDark`, `WarmLight` — and what crosses
@@ -1585,20 +1490,17 @@ render pass records its clear value, which happens every frame anyway, so a swit
 rebuilds no geometry, mints no revision, re-uploads nothing and does not touch the
 swapchain, the pipeline, the descriptor set or any buffer. The two float triples
 are duplicated in `colors.xml` as the Android *window* background — what covers
-the moment before the surface has content — and `display_dark_background_is_0e121b`
-and `display_light_background_is_e6e1d9` pin them so the pair cannot drift into a
-launch flash.
+the moment before the surface has content — and two self-tests pin them so the
+pair cannot drift into a launch flash.
 
 ## GPU mesh upload
 
 `Renderer` owns every mesh-related `VkBuffer`, `VkDeviceMemory`, copy and
 destroy, and performs all of them on the render thread. Publishers never touch
-Vulkan.
-
-Steady-state vertex and index buffers are **DEVICE_LOCAL** with `TRANSFER_DST`
-usage. They are written through one reused **HOST_VISIBLE** staging buffer that
-carries the vertex block followed by the index block, copied in a single command
-buffer with one memory barrier
+Vulkan. Steady-state vertex and index buffers are **DEVICE_LOCAL** with
+`TRANSFER_DST` usage, written through one reused **HOST_VISIBLE** staging buffer
+that carries the vertex block followed by the index block, copied in a single
+command buffer with one memory barrier
 (`TRANSFER_WRITE` → `VERTEX_ATTRIBUTE_READ | INDEX_READ`).
 
 Capacity policy (`growCapacityBytes`, pure arithmetic, self-tested):
@@ -1610,11 +1512,9 @@ Capacity policy (`growCapacityBytes`, pure arithmetic, self-tested):
 - everything is bounded by a hard cap, so the size arithmetic cannot overflow.
 
 The "reuse a smaller mesh" rule earns its keep now that render vertex counts are
-derived. A sculpt stroke that deforms a surface enough to create genuine creases
-splits vertices, so the **render** count drifts move to move (measured: 482 → 492,
-oscillating 491/492) even though the source count is fixed. Because capacity
-never shrinks, that whole stroke ran with **every upload `reuse` and zero buffer
-growth** — the fluctuation costs nothing.
+derived: a sculpt stroke that creates genuine creases splits vertices, so the
+**render** count drifts move to move even though the source count is fixed, and
+because capacity never shrinks that whole stroke uploads with zero buffer growth.
 
 ### In-flight resource safety
 
@@ -1623,14 +1523,12 @@ frame fences** — all `kMaxFramesInFlight` of them — so no submitted frame ca
 still be reading it. The transfer itself is submitted with a dedicated upload
 fence that is waited on before the staging buffer or the upload command buffer is
 reused. A retired buffer is therefore destroyed only after every frame that could
-reference it has finished, and exactly one vertex buffer and one index buffer are
-live at any time. Retired buffers are freed inline after that fence wait rather
-than through a deferred-destruction queue, which is what makes the wait
-necessary.
-
-The mesh update path deliberately calls **neither `vkDeviceWaitIdle` nor
-`vkQueueWaitIdle`**. Those remain only where they already were: process teardown,
-surface detach and swapchain rebuild.
+reference it has finished, and per body exactly one vertex buffer and one index
+buffer are live at any time. Retired buffers are freed inline after that fence
+wait rather than through a deferred-destruction queue, which is what makes the
+wait necessary. The mesh update path deliberately calls **neither
+`vkDeviceWaitIdle` nor `vkQueueWaitIdle`**; those remain only where they already
+were — process teardown, surface detach and swapchain rebuild.
 
 Mesh buffers are device-scoped, not surface-scoped: a Surface swap does not touch
 them, so the uploaded revision survives home/resume with no re-upload.
@@ -1652,27 +1550,21 @@ is each body where it actually appears. Distances are directly comparable
 between bodies because every Construction transform is rigid, which is what
 makes "nearest wins" meaningful across the scene; ties keep the earlier body in
 scene order, so the result is deterministic rather than an iteration accident.
-Because each item is whichever representation that body has published,
-generated from current parameters or sculpted, picking automatically follows an
-edit with no separate collision representation to keep in sync. Picking is a
-linear scan over bodies and over triangles; there is no spatial acceleration.
+Because each item is whichever representation that body has published, picking
+automatically follows an edit with no separate collision representation to keep
+in sync. Picking is a linear scan over bodies and over triangles; there is no
+spatial acceleration. Taking the snapshot as a parameter is deliberate: it lets a
+self-test pick a scene it built itself, and it lets the caller take the snapshot
+under the state mutex and then scan triangles with that mutex released.
 
-Taking the snapshot as a parameter is deliberate: it lets a self-test pick a
-scene it built itself, and it lets the caller take the snapshot under the state
-mutex and then scan triangles with that mutex released.
-
-**The two-sided picking exception is one boolean, computed once per item.** The
-process-scoped `pickScene` reads the sidedness of the mesh it is about to
-intersect and passes its negation as `frontFacesOnly` to the explicit-transform
-overload, which forwards it to `pickTriangleMesh`. That argument defaults to
-`true`, so every other caller — including the self-tests, which use the explicit
-overload precisely to avoid depending on process-scoped state — is unaffected.
-
-This reads the **published mesh**, never `constructionObject().kind()`: a
-Construction edit after a Freeze leaves the frozen mesh untouched and stale by
-design, so the Source and the active mesh can disagree about shape entirely, and
-then the kind describes geometry that is not on screen. See *Canonical winding
-and culling* for the single ownership chain and `SIDE-01`..`09`.
+**The two-sided picking exception is one boolean, computed once per item.**
+`pickScene` reads the sidedness of the **published mesh** it is about to intersect
+— never `constructionObject().kind()`, which after a Freeze can describe geometry
+that is not on screen — and passes its negation as `frontFacesOnly` to the
+explicit-transform overload, which forwards it to `pickTriangleMesh`. That
+argument defaults to `true`, so every other caller, including the self-tests that
+use the explicit overload precisely to avoid process-scoped state, is unaffected.
+See *Canonical winding and culling* for the single ownership chain.
 
 `SelectionController` (`forgeshape_selection.{h,cpp}`) owns the selected
 `ObjectId` and the tap-versus-navigation decision. `ObjectId` is an opaque
@@ -1683,11 +1575,10 @@ time — no multi-select, no lasso or box selection, and no hierarchy.
 
 ## Tap versus orbit
 
-Both controllers receive the same `forgeshape::TouchAction` event. Camera and
-selection never consult each other.
-
-Tap candidacy is one-way — it can only be revoked during a gesture, never
-restored, and only a fresh `Down` starts a new candidate. It is revoked when:
+Both controllers receive the same `forgeshape::TouchAction` event, and camera and
+selection never consult each other. Tap candidacy is one-way — it can only be
+revoked during a gesture, never restored, and only a fresh `Down` starts a new
+candidate. It is revoked when:
 
 - total displacement from the **original** down position exceeds
   `kTapSlopPixels` (24 px) — measured from the down point, not per-move, so a
@@ -1708,13 +1599,11 @@ queues, surface, swapchain, depth resources, render pass, pipeline, command
 buffers, synchronization and the geometry buffers. It exposes
 `setCamera(const CameraSnapshot&)` and `setScene(SceneSnapshot)` and consumes
 both verbatim; it derives no camera pose, builds no rotation, owns no Euler
-convention, interprets no pointer data and holds no geometry truth.
-
-The mesh vertices are each body's **local** geometry and never move. Where a
-body appears comes from its own model transform, where the viewer stands comes
-from the camera snapshot, and the renderer only composes them as
-`mvp = proj * view * model` — so a screen-space change is always attributable:
-the camera moved, or that body did.
+convention, interprets no pointer data and holds no geometry truth. The mesh
+vertices are each body's **local** geometry and never move: where a body appears
+comes from its own model transform, where the viewer stands comes from the camera
+snapshot, and the renderer only composes them as `mvp = proj * view * model` — so
+a screen-space change is always attributable to the camera or to that body.
 
 ### Per-body GPU resources
 
@@ -1742,9 +1631,7 @@ and stop, for every body.
 matrix, its own buffers and its own selection flag. Selection reaches the
 fragment shader as a tint push constant **per draw**; there is deliberately no
 renderer-wide selection bool, because a single one would tint every body at once
-as soon as anything was picked. The renderer is still never told *which* object
-is selected — the snapshot carries a plain bool per item and identity stays with
-`SelectionController`.
+as soon as anything was picked.
 
 `FORGESHAPE_RENDER_MESH_BUILD` and `FORGESHAPE_MESH_UPLOAD_OK` carry a `body=`
 field, appended so the historical prefix keeps parsing. With several bodies an
@@ -1772,8 +1659,6 @@ implementations exposing only the minimum:
 A `static_assert` pins the size. The shading model rides in an otherwise-dead
 `w` component rather than taking a fifth 16-byte slot the budget does not have;
 the next thing needing per-draw uniform data belongs in a descriptor, not here.
-The selection pulse added no byte to this block: `selectionTint.a` was already
-here, and what changed is only what is written into it.
 
 Normals are transformed by the upper-left 3x3 of `view * model` applied
 **directly**, not as an inverse-transpose. That is valid only because both
@@ -1782,27 +1667,24 @@ documented as rotation + translation with no scale — so the product is
 orthonormal and its inverse-transpose is itself. **Adding scale to the transform
 would make normals silently wrong on scaled objects**; it is one of exactly two
 places that shortcut is taken, the other being picking's "local distance is world
-distance". The fix would be CPU-side; the shader would not change.
+distance".
 
 ### The one descriptor set
 
 The MatCap sampler is the only sampled image in ForgeShape and therefore the only
-reason a descriptor set exists — everything else still travels as push constants,
-and the grid pipeline declares no set at all. One `COMBINED_IMAGE_SAMPLER` at set
-0 binding 0, allocated once and never updated again because the image is immutable
+reason a descriptor set exists — everything else travels as push constants, and
+the grid pipeline declares no set at all. One `COMBINED_IMAGE_SAMPLER` at set 0
+binding 0, allocated once and never updated again because the image is immutable
 for the life of the device. It is bound unconditionally even in Studio Solid,
-since leaving a declared binding unbound is invalid usage regardless of which
-branch runs. Image, view, sampler and set are device-scoped, so a HOME/resume
-neither regenerates nor re-uploads the MatCap.
+since leaving a declared binding unbound is invalid usage whichever branch runs.
+Image, view, sampler and set are device-scoped.
 
 ### Surface orientation convention
 
-There is exactly one orientation convention, and it is this: **ForgeShape always
-renders in Android window orientation.** The swapchain image is the size of the
-window the user sees, and any display rotation is performed by the presentation
-engine, never by this renderer.
-
-Concretely, `Renderer::createSwapchain` requests
+There is exactly one orientation convention: **ForgeShape always renders in
+Android window orientation.** The swapchain image is the size of the window the
+user sees, and any display rotation is performed by the presentation engine, never
+by this renderer. `Renderer::createSwapchain` requests
 `preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR` whenever identity appears
 in `caps.supportedTransforms`, and takes `imageExtent` from `caps.currentExtent`,
 which on Android is the window's own width and height. So one coordinate space —
@@ -1818,7 +1700,6 @@ the window at 90° and 270° — plus a matching clip-space rotation and camera
 aspect. Declaring `preTransform = caps.currentTransform` while passing the
 window-space extent is the inconsistent combination: SurfaceFlinger rotates the
 buffer into the transposed layout and stretches it back, an anisotropic scale.
-That, not the projection, was the rotated-landscape defect.
 
 The cost is one compositor rotation on a rotated display, which every
 non-pre-rotated Android application already pays. Its consequence is that
@@ -1835,8 +1716,7 @@ single frame while rotated.
 One non-per-frame `FORGESHAPE_SURFACE_CONFIG` line per swapchain creation records
 the window size, `currentExtent`, `currentTransform`, `supportedTransforms`, the
 chosen extent and the chosen `preTransform`, so the whole chain is auditable from
-a log without adding instrumentation; `FORGESHAPE_CAMERA_VIEWPORT` is its
-companion for the camera half.
+a log; `FORGESHAPE_CAMERA_VIEWPORT` is its companion for the camera half.
 
 ### The world reference grid
 
@@ -1855,12 +1735,11 @@ generator and the palette per `ViewportBackground`. `DisplaySettingsStore` owns
 
 **Generated once, never regenerated.** The vertex count is a compile-time
 constant, so `createGridResources()` uploads 2624 bytes at device creation and is
-never called again — no input can change, no cache to invalidate, no revision to
-follow. Device-scoped like the MatCap, so a Surface swap or rotation does not
-re-upload it, and `FORGESHAPE_GRID_UPLOAD_OK` appears once per device. Showing or
-hiding the grid decides only whether **one** already-built `vkCmdDraw` is
-recorded. The tier travels in the vertex buffer and the colour does not: the four
-tier colours ride in a second 128-byte push block, so switching appearance
+never called again. Device-scoped like the MatCap, so a Surface swap or rotation
+does not re-upload it, and `FORGESHAPE_GRID_UPLOAD_OK` appears once per device.
+Showing or hiding the grid decides only whether **one** already-built `vkCmdDraw`
+is recorded. The tier travels in the vertex buffer and the colour does not: the
+four tier colours ride in a second 128-byte push block, so switching appearance
 re-uploads nothing.
 
 It has **its own pipeline and layout with `setLayoutCount = 0`**, because it
@@ -1868,12 +1747,12 @@ consults no sampler — no normal, no light, no shading model — and it is the 
 blended pipeline** in the renderer, which is not an invitation to reuse it as a
 general overlay path. Depth is **tested, not written**, and it draws after every
 body, so the model occludes it and it contributes nothing a later draw could be
-occluded by. Three constraints are non-obvious enough that each was wrong once,
-and all three are documented at their sites in `forgeshape_renderer.cpp` and
-`shaders/grid.{vert,frag}`: `polygonMode` must be `FILL` under `LINE_LIST`; the
-destination **alpha channel must be preserved**, or the compositor punches the
-viewport translucent along every line; and the radial fade must be **per
-fragment**, because a line's only two vertices are its fully-faded endpoints.
+occluded by. Three non-obvious constraints are documented at their sites in
+`forgeshape_renderer.cpp` and `shaders/grid.{vert,frag}`: `polygonMode` must be
+`FILL` under `LINE_LIST`; the destination **alpha channel must be preserved**, or
+the compositor punches the viewport translucent along every line; and the radial
+fade must be **per fragment**, because a line's only two vertices are its
+fully-faded endpoints.
 
 **The coplanar case is settled in the vertex shader.** A Construction Plane at
 world `y = 0` shares the grid's plane exactly, so the grid is pushed `1e-4` of the
@@ -1890,8 +1769,11 @@ follows: nothing here is truth, nothing mints a revision, and nothing may be rea
 back out.
 
 **Selection feedback is renderer-owned and per body.**
-`forgeshape_selection_pulse.{h,cpp}` owns the peak alpha, the resting alpha, the
-decay and one pure function over an explicit frame delta. It holds no `ObjectId`,
+`forgeshape_selection_pulse.{h,cpp}` owns the peak alpha (**0.55**), the decay
+(**220 ms**, smoothstep, monotone and bounded), the resting alpha (**0.20**) and
+one pure function over an explicit frame delta; a delta over 100 ms is a resume or
+a stall and is clamped. A pulse acknowledges a **change in selection truth**, not
+a tap, and the tint hue is unchanged by it. It holds no `ObjectId`,
 reads no clock and touches no `MeshStore`, so a whole selection cycle beside a
 published mesh leaves that mesh bit-identical *structurally* rather than by
 promise. `Renderer::advanceSelectionFeedback` runs once per frame from
@@ -1899,13 +1781,14 @@ promise. `Renderer::advanceSelectionFeedback` runs once per frame from
 to keep decaying on the frames where nothing was published, which is nearly all
 of them — and writes one float into the `BodyRenderResources` entry that already
 keys that body's GPU buffers by stable `ObjectId`. That keying is what makes A's
-pulse structurally unable to reach B's. The renderer is still never told which
-object is selected: `SceneDrawItem` carries a plain bool and identity stays with
-`SelectionController`.
+pulse structurally unable to reach B's. The renderer is still never told *which*
+object is selected: `SceneDrawItem` carries a plain bool per item and identity
+stays with `SelectionController`.
 
 **Motion is a shared helper, not a system.** `ChromeMotion` (Java) owns exactly
-four decisions — the two durations, the reduced-motion question, cancel-first, and
-one alpha helper — and nothing may be added to it that describes motion as data.
+four decisions — the two durations (**120 ms** arriving, **90 ms** leaving), the
+reduced-motion question, cancel-first, and one alpha helper — and nothing may be
+added to it that describes motion as data.
 Three rules constrain every caller. **Nothing on the path of a pointer sample:** a
 chrome transition never runs while a viewport gesture is in flight, because input
 responsiveness outranks motion. **Nothing that changes a size:** chrome
@@ -1914,8 +1797,8 @@ transition that changed a size would rebuild the swapchain, and the Property
 Inspector changes its size **once** per detent change rather than animating a
 height that would `requestLayout` per frame and re-run the whole adaptive decision.
 **Only a user act animates** — the instant, idempotent paths are what the measure
-pass and every state refresh call, which is also why the UI-R1C2 Objects re-parent
-does not animate.
+pass and every state refresh call, which is also why the Objects re-parent does
+not animate.
 
 **Reduced motion crosses the boundary as one bool.** The Android layer reads
 `ANIMATOR_DURATION_SCALE`, decides what it means, and hands the answer to
@@ -1923,16 +1806,18 @@ does not animate.
 same per-frame snapshot as the shading model — the same seam shape as
 `ViewportBackground`: native code is given the *meaning*, never the platform
 value. It deliberately does not advance the store's `changeCount_`, which exists
-to prove a display transition the user chose.
+to prove a display transition the user chose. `ChromeMotion.duration` returns
+**0** rather than a small number, and every caller branches on that zero to land
+directly on the final state; in the viewport, reduced motion goes straight to the
+resting tint and runs no pulse.
 
 ## Threading
 
 - Android UI thread: surface callbacks, `onTouchEvent` → JNI, both panels and
   both Applies, Construction publication, every brush stroke and its per-move
-  sculpt publication, and DEBUG mesh fixture publication. `ConstructionObject` —
-  its kind, every primitive's parameters and its transform — and `SculptSession`
-  are both mutated from this thread only, which is why neither carries a mutex of
-  its own; `MeshStore` has one and is what the render thread reads.
+  sculpt publication, and DEBUG mesh fixture publication. `ConstructionObject` and
+  `SculptSession` are mutated from this thread only, which is why neither carries
+  a mutex of its own; `MeshStore` has one and is what the render thread reads.
 - Render thread (owned by `forgeshape_jni.cpp`): Vulkan work, presentation and
   every mesh buffer create/copy/destroy.
 - One short-lived thread per DEBUG stress run, which publishes CPU revisions and
@@ -1957,14 +1842,14 @@ is invalid to draw.
 
 The `CameraController`, the `SelectionController`, the `MeshStore`, the
 `ConstructionObject` and the `SculptSession` are all process-scoped and outlive
-every Surface: camera pose, selected `ObjectId`, the active primitive, its
-authoritative parameters, its authoritative placement, the current mesh revision,
-the active product mode, the active tool and every sculpted vertex survive
-home/resume and swapchain recreation. There is no rehydration step, because
-nothing was discarded — the GPU mesh buffers are device-scoped and are not
-destroyed when the Surface goes away, so a resume re-presents the same revision
-without re-uploading it. Nothing survives a process restart, because there is no
-save, no load and no undo.
+every Surface: camera pose and projection, selected `ObjectId`, the active
+primitive, its authoritative parameters and placement, the current mesh revision,
+the active product mode, the active tool, the display settings and every sculpted
+vertex survive home/resume and swapchain recreation. There is no rehydration step,
+because nothing was discarded — the GPU mesh buffers, the MatCap and the grid are
+device-scoped and are not destroyed when the Surface goes away, so a resume
+re-presents the same revision without re-uploading it. Nothing survives a process
+restart, because there is no save, no load and no undo.
 
 Gesture tracking is separate: camera anchors and tap candidacy are both reset on
 `ACTION_CANCEL`, on `surfaceDestroyed` and on `surfaceCreated`, and a live brush
@@ -1972,7 +1857,6 @@ stroke and any pending one are cancelled with them — so a Surface swap can nev
 leave a stale touch anchor, a half-finished tap or a half-finished stroke behind,
 and never disturbs what is selected or what has been sculpted. Neither camera
 state nor selected identity is stored inside swapchain or surface resources.
-
 `surfaceDestroyed` blocks until native code has released the `ANativeWindow`, so
 the render thread can never touch a destroyed window.
 
@@ -2007,19 +1891,18 @@ own, and naming them is what stops one arriving by accident.
   translation only — which is what lets the picker use an exact composed inverse
   and keep the ray's distance in world units. Scale breaks both and is a domain
   change, not a matrix change.
-- **No editable tessellation.** A consequence worth naming: the capsule's
-  cylindrical middle is a single band between its seam rings however long it is,
-  as the cylinder's side wall is. Shape, bounds and picking stay exact, but that
-  middle carries no interior rings, so a small brush placed there has very few
-  vertices to capture — a fidelity limitation, not a correctness one.
+- **No editable tessellation.** The capsule's cylindrical middle is a single band
+  between its seam rings however long it is, as the cylinder's side wall is.
+  Shape, bounds and picking stay exact, but that middle carries no interior rings,
+  so a small brush placed there has very few vertices to capture — a fidelity
+  limitation, not a correctness one.
 - **No property-editor framework.** The Property Inspector is three hand-written
   bodies: no property model, binding layer, editor registry or reflection.
   `NumericPropertyRow` and `UnitChipsView` know what a labelled number and a unit
   are, and nothing about primitives.
-- **No design system and no motion framework.** Themes are two styles over one
-  set of semantic attributes; the Objects section is a flat list of rows, not an
-  object browser. `ChromeMotion` is four shared decisions, not a transition
-  system.
+- **No design system and no motion framework.** Themes are two styles over one set
+  of semantic attributes; the Objects section is a flat list of rows, not an object
+  browser. `ChromeMotion` is four shared decisions, not a transition system.
 - **No persistence.** Nothing is written to disk — not the scene, camera, start
   choice, theme or grid. A process kill is a clean slate.
 - **`RuntimeMesh` is not a Construction mesh format**, and the debug paths are

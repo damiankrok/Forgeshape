@@ -18,8 +18,8 @@ adb -s <serial> logcat -s ForgeShape:V
 
 APK: `app/build/outputs/apk/debug/app-debug.apk`
 
-A clean debug launch emits **ten** `*_SELFTEST_OK` tokens, then
-`FORGESHAPE_NATIVE_VIEWPORT_OK`. All ten, in emission order:
+A clean debug launch emits **eleven** `*_SELFTEST_OK` tokens, then
+`FORGESHAPE_NATIVE_VIEWPORT_OK`. All eleven, in emission order:
 
 ```
 FORGESHAPE_CAMERA_SELFTEST_OK
@@ -32,6 +32,7 @@ FORGESHAPE_CONSTRUCTION_SPHERE_SELFTEST_OK
 FORGESHAPE_CONE_CAPSULE_SELFTEST_OK
 FORGESHAPE_SCULPT_BRUSH_KERNEL_SELFTEST_OK
 FORGESHAPE_RENDER_SHADING_SELFTEST_OK
+FORGESHAPE_SCENE_SELFTEST_OK
 ```
 
 Failures: `FORGESHAPE_NATIVE_VIEWPORT_FAIL:*` and the matching `*_SELFTEST_FAIL`.

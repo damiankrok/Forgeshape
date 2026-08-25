@@ -141,7 +141,7 @@ emit several hundred lines in a few milliseconds and the default buffer silently
 drops the tail, which reads exactly like a self-test that stopped partway
 through. That is a logging limit, not an app failure.
 
-A clean debug launch emits **ten** `*_SELFTEST_OK` tokens, in this order, then
+A clean debug launch emits **eleven** `*_SELFTEST_OK` tokens, in this order, then
 `FORGESHAPE_NATIVE_VIEWPORT_OK` once the first frame is presented:
 
 ```
@@ -155,6 +155,7 @@ FORGESHAPE_CONSTRUCTION_SPHERE_SELFTEST_OK
 FORGESHAPE_CONE_CAPSULE_SELFTEST_OK
 FORGESHAPE_SCULPT_BRUSH_KERNEL_SELFTEST_OK
 FORGESHAPE_RENDER_SHADING_SELFTEST_OK
+FORGESHAPE_SCENE_SELFTEST_OK
 ```
 
 Each suite reports `(<n> checks)` and fails as `<SUITE>_CASE_FAIL:<name>` plus
