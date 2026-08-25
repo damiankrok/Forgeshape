@@ -32,6 +32,7 @@
 #include "forgeshape_construction.h"
 #include "forgeshape_construction_selftest.h"
 #include "forgeshape_display.h"
+#include "forgeshape_input.h"
 #include "forgeshape_mesh.h"
 #include "forgeshape_mesh_fixtures.h"
 #include "forgeshape_mesh_selftest.h"
@@ -164,6 +165,16 @@ constexpr jint kActionCancel = 3;
 constexpr jint kActionPointerDown = 5;
 constexpr jint kActionPointerUp = 6;
 
+// The last touch event's platform-neutral pointer data, kept for the DEBUG-ONLY
+// read-back hook further down. It is a diagnostic mirror and never a source of
+// truth: nothing in the product reads it, and it does not exist at all in a
+// release build. Guarded by g_stateMutex, like everything else the touch path
+// writes.
+#ifndef NDEBUG
+forgeshape::TouchPointer g_lastPointers[forgeshape::kMaxTrackedPointers];
+int g_lastPointerCount = -1;
+#endif
+
 bool translateAction(jint androidAction, forgeshape::TouchAction* out) {
     switch (androidAction) {
         case kActionDown:        *out = forgeshape::TouchAction::Down; return true;
@@ -174,6 +185,42 @@ bool translateAction(jint androidAction, forgeshape::TouchAction* out) {
         case kActionPointerUp:   *out = forgeshape::TouchAction::PointerUp; return true;
         default: return false;  // hover/scroll/button events are not navigation
     }
+}
+
+// Copies at most `count` entries out of an OPTIONAL Java array.
+//
+// Optional is the whole point: a caller with nothing to say about tilt passes
+// null, and the pointer keeps its documented default rather than the event being
+// refused. A null, short or unreadable array is a missing value, not an error --
+// a stylus angle is never worth dropping a gesture over.
+bool readOptionalFloatRegion(JNIEnv* env, jfloatArray array, int count, jfloat* out) {
+    if (array == nullptr || count <= 0) {
+        return false;
+    }
+    if (env->GetArrayLength(array) < count) {
+        return false;
+    }
+    env->GetFloatArrayRegion(array, 0, count, out);
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        return false;
+    }
+    return true;
+}
+
+bool readOptionalIntRegion(JNIEnv* env, jintArray array, int count, jint* out) {
+    if (array == nullptr || count <= 0) {
+        return false;
+    }
+    if (env->GetArrayLength(array) < count) {
+        return false;
+    }
+    env->GetIntArrayRegion(array, 0, count, out);
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        return false;
+    }
+    return true;
 }
 
 void runCameraSelfTestsAndLog() {
@@ -1018,6 +1065,68 @@ void freezeStressMeshToSculpt() {
 }
 #endif  // NDEBUG
 
+// DEBUG-ONLY read-back of the platform-neutral pointer data the last touch
+// event produced.
+//
+// Test infrastructure. It exists so an instrumented test can prove that a tool
+// type, a pressure and a tilt survive MotionEvent -> SurfaceView -> JNI ->
+// native intact and stay attached to the right pointer, without a debug overlay
+// and without the Java layer ever owning pointer data. It READS a bounded
+// snapshot and changes nothing: no mesh, no revision, no camera, no selection.
+//
+// Layout, matching NativeViewport's slot constants: slot 0 is the pointer
+// count, then seven floats per pointer -- id, x, y, tool-type wire code,
+// pressure, tilt, tilt orientation.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_debugLastPointerEvent(JNIEnv* env, jclass,
+                                                             jfloatArray outState) {
+#ifdef NDEBUG
+    (void)env;
+    (void)outState;
+    return -1;
+#else
+    constexpr int kStride = 7;
+    constexpr int kSize = 1 + forgeshape::kMaxTrackedPointers * kStride;
+    if (outState == nullptr || env->GetArrayLength(outState) < kSize) {
+        return -1;
+    }
+
+    jfloat buffer[kSize];
+    for (int i = 0; i < kSize; ++i) {
+        buffer[i] = 0.0f;
+    }
+
+    int count = 0;
+    bool sawAnyEvent = false;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        sawAnyEvent = g_lastPointerCount >= 0;
+        count = sawAnyEvent ? g_lastPointerCount : 0;
+        buffer[0] = static_cast<jfloat>(count);
+        for (int i = 0; i < count && i < forgeshape::kMaxTrackedPointers; ++i) {
+            const forgeshape::TouchPointer& p = g_lastPointers[i];
+            jfloat* slot = buffer + 1 + i * kStride;
+            slot[0] = static_cast<jfloat>(p.id);
+            slot[1] = p.x;
+            slot[2] = p.y;
+            slot[3] = static_cast<jfloat>(forgeshape::pointerToolTypeCode(p.toolType));
+            slot[4] = p.pressure;
+            slot[5] = p.tiltRadians;
+            slot[6] = p.tiltOrientationRadians;
+        }
+    }
+
+    env->SetFloatArrayRegion(outState, 0, kSize, buffer);
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        return -1;
+    }
+    // -1 also means "no touch event has reached native code yet", which is
+    // distinct from an event that legitimately carried zero pointers.
+    return static_cast<jint>(sawAnyEvent ? count : -1);
+#endif
+}
+
 // DEBUG-ONLY mesh fixture trigger.
 //
 // Compiled to a no-op in release, so no product surface, no exported component
@@ -1791,11 +1900,22 @@ Java_com_forgeshape_app_NativeViewport_surfaceDestroyed(JNIEnv*, jclass) {
 }
 
 // One compact call carries the complete pointer state of a single MotionEvent.
-// The Java side computes nothing: it copies ids and view-local coordinates.
+//
+// The Java side computes nothing except the tool-type mapping, which is the one
+// thing that HAS to happen there because it is the last place an Android
+// constant is allowed to exist. Everything else -- ids, view-local coordinates,
+// pressure, tilt -- crosses raw, and the range and fallback rules in
+// forgeshape_input.h are applied here, once, so no consumer can be handed a NaN
+// or an out-of-range angle.
+//
+// Every array is indexed by pointer index, so slot i of each describes the same
+// pointer, and each is read only up to the bounded pointer count.
 JNIEXPORT void JNICALL
 Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint action,
                                                   jint actionPointerId, jint pointerCount,
                                                   jintArray ids, jfloatArray xs, jfloatArray ys,
+                                                  jintArray toolTypes, jfloatArray pressures,
+                                                  jfloatArray tilts, jfloatArray tiltOrientations,
                                                   jint viewWidth, jint viewHeight) {
     forgeshape::TouchAction translated;
     if (!translateAction(action, &translated)) {
@@ -1813,6 +1933,9 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
         count = 0;
     }
 
+    // Defaults everywhere: an event that carries no stylus arrays at all still
+    // produces full-pressure, untilted fingers, which is exactly the behaviour
+    // that existed before the stylus fields did.
     forgeshape::TouchPointer pointers[forgeshape::kMaxTrackedPointers];
     if (count > 0) {
         jint idBuf[forgeshape::kMaxTrackedPointers];
@@ -1825,10 +1948,39 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
             env->ExceptionClear();
             return;
         }
+
+        // The stylus arrays are optional, and each is optional on its own: a
+        // caller that has no tilt to report simply passes null and every pointer
+        // keeps the untilted default. A short or unreadable array is treated the
+        // same way rather than aborting the event -- losing a stylus angle must
+        // never lose the gesture.
+        jint toolBuf[forgeshape::kMaxTrackedPointers];
+        jfloat pressureBuf[forgeshape::kMaxTrackedPointers];
+        jfloat tiltBuf[forgeshape::kMaxTrackedPointers];
+        jfloat orientationBuf[forgeshape::kMaxTrackedPointers];
+        const bool haveTools = readOptionalIntRegion(env, toolTypes, count, toolBuf);
+        const bool havePressures = readOptionalFloatRegion(env, pressures, count, pressureBuf);
+        const bool haveTilts = readOptionalFloatRegion(env, tilts, count, tiltBuf);
+        const bool haveOrientations =
+            readOptionalFloatRegion(env, tiltOrientations, count, orientationBuf);
+
         for (int i = 0; i < count; ++i) {
             pointers[i].id = static_cast<int32_t>(idBuf[i]);
             pointers[i].x = xBuf[i];
             pointers[i].y = yBuf[i];
+            if (haveTools) {
+                pointers[i].toolType =
+                    forgeshape::pointerToolTypeFromCode(static_cast<int32_t>(toolBuf[i]));
+            }
+            if (havePressures) {
+                pointers[i].pressure = forgeshape::sanitizePointerPressure(pressureBuf[i]);
+            }
+            if (haveTilts || haveOrientations) {
+                forgeshape::sanitizePointerTilt(
+                    haveTilts ? tiltBuf[i] : forgeshape::kPointerTiltNoneRadians,
+                    haveOrientations ? orientationBuf[i] : 0.0f,
+                    &pointers[i].tiltRadians, &pointers[i].tiltOrientationRadians);
+            }
         }
     }
 
@@ -1863,6 +2015,16 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
         if (viewWidth > 0 && viewHeight > 0) {
             g_camera.setViewport(viewWidth, viewHeight);
         }
+
+#ifndef NDEBUG
+        // Diagnostic mirror only, and taken BEFORE any arbitration, so what a
+        // test reads back is precisely what the camera, the selection and the
+        // sculpt arbitration are about to be handed.
+        g_lastPointerCount = count;
+        for (int i = 0; i < count; ++i) {
+            g_lastPointers[i] = pointers[i];
+        }
+#endif
 
         // -------------------------------------------------------------------
         // Sculpt-mode gesture rule

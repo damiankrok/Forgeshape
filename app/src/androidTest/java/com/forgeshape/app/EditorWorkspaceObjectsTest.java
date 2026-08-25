@@ -618,8 +618,11 @@ public final class EditorWorkspaceObjectsTest {
     }
 
     private static void send(int action, float x, float y, int width, int height) {
+        // Null stylus arrays on purpose: this is a plain finger, and native code
+        // fills in the documented defaults -- full pressure, no tilt -- exactly as
+        // it does for hardware that reports nothing.
         NativeViewport.touchEvent(action, -1, 1, new int[] {0}, new float[] {x},
-                new float[] {y}, width, height);
+                new float[] {y}, null, null, null, null, width, height);
     }
 
     /**

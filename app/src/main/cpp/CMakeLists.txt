@@ -53,6 +53,7 @@ add_library(forgeshape_native SHARED
     forgeshape_demo_mesh.cpp
     forgeshape_display.cpp
     forgeshape_grid.cpp
+    forgeshape_input.cpp
     forgeshape_matcap.cpp
     forgeshape_mesh.cpp
     forgeshape_mesh_fixtures.cpp

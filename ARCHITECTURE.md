@@ -91,7 +91,7 @@ forgeshape_jni.cpp            render thread, ANativeWindow, MotionEvent ->
 | MotionEvent action decoding | `forgeshape_jni.cpp` | camera module never sees Android constants |
 | Render thread, `ANativeWindow` | `forgeshape_jni.cpp` | renderer never creates/releases the window |
 | Camera pose, gestures, projection | `CameraController` | renderer and Java own none of it |
-| Platform-neutral touch event data | `forgeshape_input.h` | one shared type, not an input framework |
+| Platform-neutral pointer event data | `forgeshape_input.h` | one shared type, not an input framework. Carries tool type, pressure and tilt as well as id and position |
 | Tap-vs-navigation decision, selected `ObjectId` | `SelectionController` | renderer and camera own no selection |
 | Screen ray, ray/triangle, nearest hit | `forgeshape_picking.{h,cpp}` | no JNI/Android/Vulkan/renderer types |
 | Current CPU mesh, revisions, validation | `MeshStore` / `RuntimeMesh` (`forgeshape_mesh.{h,cpp}`) | no JNI/Android/Vulkan types; owns no GPU resource |
@@ -114,7 +114,7 @@ it.**
 | Domain code | Construction, geometry, sculpt, picking, camera and selection stay platform-neutral C++17. `forgeshape_camera`, `forgeshape_construction`, `forgeshape_transform`, `forgeshape_picking`, `forgeshape_selection`, `forgeshape_mesh` and `forgeshape_sculpt` contain no JNI, Android, Vulkan, renderer or UI type — that is asserted throughout the ownership table above and must stay asserted |
 | Android types | `View`, `Activity`, `MotionEvent`, `Surface`, `jobject` and every other Android or JNI type may never become domain truth. They reach exactly as far as `forgeshape_jni.cpp` and stop |
 | The Android UI | is a platform shell/adapter. It owns draft, presentation and layout state and nothing else, and reads authoritative state back from native code rather than assuming it |
-| Input | crosses the boundary as **semantic, platform-neutral** data. `forgeshape_input.h`'s `TouchAction`/`TouchPointer` is that boundary today; it is the type that would grow pressure, tilt, hover and tool type, and the reason a pointer sample is translated out of Android's vocabulary in `forgeshape_jni.cpp` rather than carried inward |
+| Input | crosses the boundary as **semantic, platform-neutral** data. `forgeshape_input.h`'s `TouchAction`/`TouchPointer` is that boundary, and it carries tool type, pressure and tilt alongside id and position -- in ForgeShape's own enum and its own units, never Android's. A pointer sample is translated out of Android's vocabulary in the Android layer rather than carried inward. Hover and generic (non-touch) motion are still outside the vocabulary and stay a consumer-driven question |
 | Platform services | future file, storage and system services get narrow boundaries of their own, for the same reason input has one |
 | Renderer coupling | the renderer's dependency on a platform surface stays **explicit and local**: `forgeshape_jni.cpp` owns the `ANativeWindow` and hands it over, and `Renderer` never creates or releases one. That single visible seam is what a second backend would be added beside |
 
@@ -402,7 +402,10 @@ a genuine expanded-layout run rather than a simulation.
 `NativeViewport` is the entire boundary, in six groups. **Lifecycle**: `start`,
 `surfaceCreated`, `surfaceChanged`, `surfaceDestroyed` (blocks until the
 `ANativeWindow` is released), `stop`. **Input**: one `touchEvent` carrying the
-masked action, the lifting pointer's id, and stable ids with view-local pixels.
+masked action, the lifting pointer's id, and per pointer a stable id, view-local
+pixels, a neutral tool type, a pressure and a tilt -- see *Pointer semantics*
+below. Plus one DEBUG-only reader, `debugLastPointerEvent`, which exists so a
+test can observe what actually crossed; it is compiled out of a release build.
 **Construction**: `constructionPrimitive` / `boxTransform` to read, one
 `applyConstruction*` per primitive plus `applyBoxTransform` to submit.
 **Scene**: `sceneBodyCount`, `sceneBodyIds`, `sceneActiveBodyId`,
@@ -460,10 +463,48 @@ The transform path reuses the same `APPLY_*` vocabulary.
 `APPLY_REJECTED_NOT_POSITIVE` simply cannot occur there, because zero and
 negative are ordinary coordinates and angles.
 
-One JNI call carries one complete `MotionEvent`, never one call per pointer.
-`forgeshape_jni.cpp` translates Android's masked action constants into
-`forgeshape::TouchAction`; unrecognised actions (hover, scroll, button) are
-dropped rather than forwarded.
+### Pointer semantics
+
+One JNI call carries one complete `MotionEvent`, never one call per pointer, and
+never more than `kMaxTrackedPointers` (6) of them. `forgeshape_jni.cpp`
+translates Android's masked action constants into `forgeshape::TouchAction`;
+unrecognised actions (hover, scroll, button) are dropped rather than forwarded,
+which is why hover has no representation below the boundary yet.
+
+**A `TouchPointer` carries what a stylus reports, in ForgeShape's own
+vocabulary.** Beyond the stable id and view-local pixels it carries:
+
+| field | meaning | units / range | fallback |
+| --- | --- | --- | --- |
+| `toolType` | `PointerToolType`: Unknown, Finger, Stylus, Eraser, Mouse | closed enum, ForgeShape's own wire codes | `Unknown` -- an ordinary contact pointer, never a dropped event |
+| `pressure` | normalised contact force | `[0, 1]`, 1 = the device's full force | `1.0` (full contact) when non-finite or unreported; clamped otherwise |
+| `tiltRadians` | lean away from perpendicular | radians, `[0, pi/2]`; 0 = straight up | `0` when non-finite; clamped otherwise |
+| `tiltOrientationRadians` | which way it leans, in the screen plane | radians, `(-pi, pi]`; 0 = screen -y | `0` when non-finite or when there is no tilt; **wrapped**, not clamped, because it is periodic |
+
+The two-angle tilt model is the smallest one that keeps direction. Android
+reports exactly these two axes, and an Apple Pencil's altitude/azimuth converts
+into them with arithmetic alone (`tilt = pi/2 - altitude`), which is what keeps
+the contract portable without a portability layer. It is deliberately **not** a
+full stylus pose: no barrel rotation, no hover distance, no button state.
+
+**The mapping has one home each way.** Android's `MotionEvent.TOOL_TYPE_*`
+constants reach exactly as far as `PointerSemantics` in the Android layer, which
+turns them into wire codes; an unrecognised code -- including one a future
+Android release invents -- becomes `Unknown` rather than being guessed at.
+Ranges and non-finite fallbacks are owned once, natively, in `forgeshape_input.h`
+and applied in `forgeshape_jni.cpp`, so the two sides cannot disagree and no NaN
+can reach a domain consumer. The stylus arrays are individually optional: a
+caller with nothing to say about tilt passes null and every pointer keeps its
+documented default, which is also why the pre-stylus behaviour is exactly the
+default behaviour.
+
+**Carried is not consumed.** No brush, camera or selection rule reads
+`toolType`, `pressure` or tilt. A stylus and a finger tracing the same pixels
+produce bit-identical geometry, an eraser switches no tool, and a mouse gets no
+wheel, hover or context behaviour. That is asserted, not assumed: the sculpt
+suite drives the same stroke path at both ends of the pressure range for all four
+tools and compares vertices bit-exactly. Making pressure *mean* something is a
+Sculpt stage's work, and it will have to change the brush kernel to do it.
 
 ## Camera ownership
 

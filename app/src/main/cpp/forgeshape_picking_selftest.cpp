@@ -5,6 +5,7 @@
 #include "forgeshape_camera.h"
 #include "forgeshape_construction.h"
 #include "forgeshape_demo_mesh.h"
+#include "forgeshape_input.h"
 #include "forgeshape_math.h"
 #include "forgeshape_mesh.h"
 #include "forgeshape_picking.h"
@@ -970,6 +971,243 @@ void testPlaneRotatedPickingBothProjections(Recorder& r) {
     r.check("plane_rotated_back_misses_without_exception", !backOrdinary.hit);
 }
 
+// ---------------------------------------------------------------------------
+// The platform-neutral pointer contract
+// ---------------------------------------------------------------------------
+//
+// These checks are about the boundary itself, not about picking: what a pointer
+// is allowed to carry, what a missing or nonsensical value becomes, and the fact
+// that carrying stylus data changes nothing a finger already did. They live here
+// because this is the suite that owns TouchPointer and the selection rules the
+// same events drive.
+//
+// The Android tool-type constants are deliberately NOT visible from here. The
+// adapter maps them onto ForgeShape's own wire codes before anything crosses
+// JNI, and it is those codes that this suite exercises; the Android half of the
+// mapping is instrumented, where a real MotionEvent exists.
+void testPointerSemantics(Recorder& r) {
+    // Wire code -> enum, and the fallback for everything else.
+    r.check("pointer_tool_code_maps_finger",
+            pointerToolTypeFromCode(1) == PointerToolType::Finger);
+    r.check("pointer_tool_code_maps_stylus",
+            pointerToolTypeFromCode(2) == PointerToolType::Stylus);
+    r.check("pointer_tool_code_maps_eraser",
+            pointerToolTypeFromCode(3) == PointerToolType::Eraser);
+    r.check("pointer_tool_code_maps_mouse",
+            pointerToolTypeFromCode(4) == PointerToolType::Mouse);
+    r.check("pointer_tool_code_zero_is_unknown",
+            pointerToolTypeFromCode(0) == PointerToolType::Unknown);
+    r.check("pointer_tool_future_code_falls_back_to_unknown",
+            pointerToolTypeFromCode(kPointerToolTypeCodeCount) == PointerToolType::Unknown &&
+                pointerToolTypeFromCode(9999) == PointerToolType::Unknown);
+    r.check("pointer_tool_negative_code_falls_back_to_unknown",
+            pointerToolTypeFromCode(-1) == PointerToolType::Unknown);
+    r.check("pointer_tool_code_round_trips",
+            pointerToolTypeFromCode(pointerToolTypeCode(PointerToolType::Stylus)) ==
+                    PointerToolType::Stylus &&
+                pointerToolTypeFromCode(pointerToolTypeCode(PointerToolType::Eraser)) ==
+                    PointerToolType::Eraser);
+    r.check("pointer_tool_name_is_never_null",
+            pointerToolTypeName(PointerToolType::Mouse) != nullptr &&
+                pointerToolTypeName(PointerToolType::Unknown) != nullptr);
+
+    // The defaults are the compatibility guarantee: every call site that existed
+    // before stylus data did still means "a finger, in full contact, held
+    // perpendicular".
+    {
+        TouchPointer legacy{7, 100.0f, 200.0f};
+        r.check("pointer_default_tool_is_finger", legacy.toolType == PointerToolType::Finger);
+        r.check("pointer_default_pressure_is_full",
+                legacy.pressure == kPointerPressureDefault && legacy.pressure == 1.0f);
+        r.check("pointer_default_tilt_is_none",
+                legacy.tiltRadians == kPointerTiltNoneRadians &&
+                    legacy.tiltOrientationRadians == 0.0f);
+        r.check("pointer_default_keeps_id_and_position",
+                legacy.id == 7 && legacy.x == 100.0f && legacy.y == 200.0f);
+    }
+
+    // A stylus carries what it was given, unchanged, when it is already in range.
+    {
+        TouchPointer stylus{3, 10.0f, 20.0f, PointerToolType::Stylus, 0.42f, 0.75f, -1.25f};
+        r.check("stylus_pointer_carries_tool_type", stylus.toolType == PointerToolType::Stylus);
+        r.check("stylus_pointer_carries_pressure", stylus.pressure == 0.42f);
+        r.check("stylus_pointer_carries_tilt", stylus.tiltRadians == 0.75f);
+        r.check("stylus_pointer_carries_tilt_orientation",
+                stylus.tiltOrientationRadians == -1.25f);
+    }
+
+    // Eraser and mouse are representable and distinct. Neither implies any
+    // behaviour: nothing in the product switches on them.
+    {
+        TouchPointer eraser{1, 0.0f, 0.0f, PointerToolType::Eraser};
+        TouchPointer mouse{2, 0.0f, 0.0f, PointerToolType::Mouse};
+        r.check("eraser_and_mouse_are_distinct_tool_types",
+                eraser.toolType != mouse.toolType &&
+                    eraser.toolType != PointerToolType::Stylus);
+        r.check("eraser_and_mouse_keep_the_default_pressure",
+                eraser.pressure == kPointerPressureDefault &&
+                    mouse.pressure == kPointerPressureDefault);
+    }
+
+    // Pressure: clamped in range, defaulted when the platform says nothing usable.
+    r.check("pressure_passes_a_valid_value", sanitizePointerPressure(0.5f) == 0.5f);
+    r.check("pressure_clamps_below_zero", sanitizePointerPressure(-3.0f) == kPointerPressureMin);
+    r.check("pressure_clamps_above_one", sanitizePointerPressure(4.0f) == kPointerPressureMax);
+    r.check("pressure_nan_falls_back_to_full",
+            sanitizePointerPressure(std::nanf("")) == kPointerPressureDefault);
+    r.check("pressure_infinity_falls_back_to_full",
+            sanitizePointerPressure(INFINITY) == kPointerPressureDefault &&
+                sanitizePointerPressure(-INFINITY) == kPointerPressureDefault);
+    {
+        const float probes[] = {std::nanf(""), INFINITY, -INFINITY, -1e30f, 1e30f, 0.0f, 1.0f};
+        bool inRange = true;
+        for (float probe : probes) {
+            const float v = sanitizePointerPressure(probe);
+            inRange = inRange && std::isfinite(v) && v >= kPointerPressureMin &&
+                      v <= kPointerPressureMax;
+        }
+        r.check("sanitized_pressure_is_always_finite_and_in_range", inRange);
+    }
+
+    // Tilt magnitude: unsigned, bounded by perpendicular-to-flat.
+    r.check("tilt_passes_a_valid_value", sanitizePointerTiltRadians(0.6f) == 0.6f);
+    r.check("tilt_clamps_negative_to_none",
+            sanitizePointerTiltRadians(-0.4f) == kPointerTiltNoneRadians);
+    r.check("tilt_clamps_beyond_flat", sanitizePointerTiltRadians(3.0f) == kPointerTiltMaxRadians);
+    r.check("tilt_nan_falls_back_to_none",
+            sanitizePointerTiltRadians(std::nanf("")) == kPointerTiltNoneRadians);
+    r.check("tilt_infinity_is_clamped_not_defaulted",
+            sanitizePointerTiltRadians(INFINITY) == kPointerTiltMaxRadians &&
+                sanitizePointerTiltRadians(-INFINITY) == kPointerTiltNoneRadians);
+    r.check("tilt_max_is_a_quarter_turn_in_radians",
+            nearly(kPointerTiltMaxRadians, 1.5707963f, 1e-6f));
+
+    // Tilt orientation: wrapped, not clamped, because it is periodic.
+    r.check("tilt_orientation_passes_a_valid_value",
+            nearly(sanitizePointerTiltOrientationRadians(1.0f), 1.0f, 1e-6f));
+    {
+        const float pi = 3.14159265f;
+        const float justPast = sanitizePointerTiltOrientationRadians(pi + 0.1f);
+        r.check("tilt_orientation_wraps_just_past_pi",
+                justPast < 0.0f && std::fabs(justPast - (-pi + 0.1f)) < 1e-4f);
+        const float twoPi = 6.28318531f;
+        r.check("tilt_orientation_wraps_a_full_turn_to_itself",
+                std::fabs(sanitizePointerTiltOrientationRadians(0.3f + twoPi) - 0.3f) < 1e-4f);
+    }
+    r.check("tilt_orientation_nonfinite_falls_back_to_zero",
+            sanitizePointerTiltOrientationRadians(std::nanf("")) == 0.0f &&
+                sanitizePointerTiltOrientationRadians(INFINITY) == 0.0f);
+    {
+        const float pi = 3.14159265358979f;
+        const float probes[] = {-100.0f, -7.0f, -3.2f, 0.0f, 3.2f, 7.0f, 100.0f, 1e7f};
+        bool inRange = true;
+        for (float probe : probes) {
+            const float v = sanitizePointerTiltOrientationRadians(probe);
+            inRange = inRange && std::isfinite(v) && v > -pi - 1e-4f && v <= pi + 1e-4f;
+        }
+        r.check("sanitized_tilt_orientation_stays_in_range", inRange);
+    }
+
+    // The pairing rule: no lean means no lean direction.
+    {
+        float tilt = -1.0f;
+        float orientation = -1.0f;
+        sanitizePointerTilt(kPointerTiltNoneRadians, 2.0f, &tilt, &orientation);
+        r.check("no_tilt_reports_no_tilt_direction",
+                tilt == kPointerTiltNoneRadians && orientation == 0.0f);
+
+        sanitizePointerTilt(0.5f, 2.0f, &tilt, &orientation);
+        r.check("a_real_tilt_keeps_its_direction",
+                nearly(tilt, 0.5f, 1e-6f) && nearly(orientation, 2.0f, 1e-6f));
+
+        sanitizePointerTilt(std::nanf(""), std::nanf(""), &tilt, &orientation);
+        r.check("nonfinite_tilt_pair_falls_back_safely",
+                tilt == kPointerTiltNoneRadians && orientation == 0.0f);
+
+        // Null outs are accepted so a caller may ask for one angle only.
+        sanitizePointerTilt(0.5f, 1.0f, nullptr, nullptr);
+        r.check("tilt_sanitizer_tolerates_null_outputs", true);
+    }
+
+    // Per-index association survives a copy, which is what the JNI unpack does.
+    {
+        TouchPointer packed[kMaxTrackedPointers];
+        for (int i = 0; i < kMaxTrackedPointers; ++i) {
+            packed[i] = TouchPointer{
+                static_cast<int32_t>(100 + i),
+                static_cast<float>(i) * 10.0f,
+                static_cast<float>(i) * 20.0f,
+                pointerToolTypeFromCode(i % kPointerToolTypeCodeCount),
+                static_cast<float>(i) / static_cast<float>(kMaxTrackedPointers),
+                static_cast<float>(i) * 0.2f,
+                static_cast<float>(i) * 0.3f - 1.0f};
+        }
+        TouchPointer copy[kMaxTrackedPointers];
+        for (int i = 0; i < kMaxTrackedPointers; ++i) {
+            copy[i] = packed[i];
+        }
+        bool preserved = true;
+        for (int i = 0; i < kMaxTrackedPointers; ++i) {
+            preserved = preserved && copy[i].id == packed[i].id && copy[i].x == packed[i].x &&
+                        copy[i].y == packed[i].y && copy[i].toolType == packed[i].toolType &&
+                        copy[i].pressure == packed[i].pressure &&
+                        copy[i].tiltRadians == packed[i].tiltRadians &&
+                        copy[i].tiltOrientationRadians == packed[i].tiltOrientationRadians;
+        }
+        r.check("pointer_copy_preserves_every_field_per_index", preserved);
+
+        // Distinctness matters more than the values: a packing bug that shifted
+        // everything by one slot would still copy "correctly".
+        r.check("packed_pointers_are_distinguishable",
+                packed[0].id != packed[1].id && packed[1].toolType != packed[2].toolType &&
+                    packed[2].pressure != packed[3].pressure);
+    }
+
+    // The bound has not moved, and it is still the same bound the JNI layer
+    // clamps a MotionEvent's pointer count to.
+    r.check("max_tracked_pointers_is_unchanged_at_six", kMaxTrackedPointers == 6);
+
+    // Stylus data reaches the SELECTION owner without changing what it decides.
+    // Same pixels, same tap; the tool type, pressure and tilt are inert.
+    {
+        SelectionController fingerRun;
+        SelectionController stylusRun;
+        float fx = 0.0f, fy = 0.0f, sx = 0.0f, sy = 0.0f;
+
+        TouchPointer finger{1, 500.0f, 1200.0f};
+        fingerRun.onTouch(TouchAction::Down, -1, &finger, 1, &fx, &fy);
+        const bool fingerTap = fingerRun.onTouch(TouchAction::Up, 1, &finger, 1, &fx, &fy);
+
+        TouchPointer stylus{1, 500.0f, 1200.0f, PointerToolType::Stylus, 0.05f, 1.1f, 0.9f};
+        stylusRun.onTouch(TouchAction::Down, -1, &stylus, 1, &sx, &sy);
+        const bool stylusTap = stylusRun.onTouch(TouchAction::Up, 1, &stylus, 1, &sx, &sy);
+
+        r.check("stylus_resolves_the_same_tap_as_a_finger",
+                fingerTap && stylusTap && fx == sx && fy == sy);
+    }
+
+    // ...and the CAMERA owner, likewise. A hard-pressed, steeply tilted stylus
+    // orbits exactly as far as a light finger over the same travel.
+    {
+        CameraController fingerCam = makeController();
+        CameraController stylusCam = makeController();
+
+        TouchPointer f0{1, 400.0f, 1000.0f};
+        TouchPointer f1{1, 520.0f, 1080.0f};
+        fingerCam.onTouch(TouchAction::Down, -1, &f0, 1);
+        fingerCam.onTouch(TouchAction::Move, -1, &f1, 1);
+
+        TouchPointer s0{1, 400.0f, 1000.0f, PointerToolType::Stylus, 0.02f, 1.4f, -2.0f};
+        TouchPointer s1{1, 520.0f, 1080.0f, PointerToolType::Eraser, 1.0f, 0.1f, 3.0f};
+        stylusCam.onTouch(TouchAction::Down, -1, &s0, 1);
+        stylusCam.onTouch(TouchAction::Move, -1, &s1, 1);
+
+        r.check("stylus_orbits_exactly_as_a_finger_does",
+                fingerCam.yaw() == stylusCam.yaw() && fingerCam.pitch() == stylusCam.pitch() &&
+                    fingerCam.distance() == stylusCam.distance());
+    }
+}
+
 }  // namespace
 
 int runPickingSelfTests(PickingSelfTestResult* out, int maxOut) {
@@ -986,6 +1224,7 @@ int runPickingSelfTests(PickingSelfTestResult* out, int maxOut) {
     testPlaneFrontAndBackPicking(r);
     testPlaneOutsideRectangleMisses(r);
     testPlaneRotatedPickingBothProjections(r);
+    testPointerSemantics(r);
     return r.n;
 }
 

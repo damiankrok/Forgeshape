@@ -1,13 +1,16 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.29.0
-**Updated:** 2026-08-24
-**Result:** COMPLETE — UI-R1C2 is closed; the viewport has a world reference
-grid, and a large window now buys parallel context rather than padding
+**Status Version:** 0.30.0
+**Updated:** 2026-08-25
+**Result:** PARTIAL — INPUT-R1 carries stylus pointer semantics across the
+whole boundary and is green on build, native self-test authoring and the JVM
+suite; the on-device instrumented run is UNVERIFIED because the ForgeShape-owned
+emulator would not boot
 **Current Phase:** Phase 1 — Native Viewport
 **Workspace:** `D:\TRAVELAPPS\ForgeShape`
 **Accepted implementation baseline:** UI-R1C2 — world grid + adaptive workspace,
-on top of UI-R1C1 (motion + selection feedback), UI-R1B2 (theme system + Light),
+with INPUT-R1 (pointer semantics) implemented on top but NOT yet accepted, on
+top of UI-R1C1 (motion + selection feedback), UI-R1B2 (theme system + Light),
 UI-R1B1 (visual foundation + start flow), Stage 017 (multi-object scene +
 hierarchy foundation), the Pre-017 Correctness Repair (active representation
 sidedness + re-Freeze guard + device verifier), Gate P1 (physical ARM64
@@ -15,7 +18,75 @@ closure), Stage 016-R2, Stage 016 (Plane), Stage 015D (camera projection),
 Stage 015C-R (front-face culling), Stage 015C (shading), Platform Fix P2,
 Stage 015B, Stage 014, the NDK r29 migration (Gate P0) and the owner decision
 baseline.
-**Next Stage:** INPUT-R1 — Pointer Semantics Foundation.
+**Next Stage:** UI-R2 — Workspace Composition Redesign.
+
+## INPUT-R1 — Pointer Semantics Foundation (IMPLEMENTED, on-device run UNVERIFIED)
+
+**What crosses the boundary now.** A `TouchPointer` carries a stable id and
+view-local pixels as it always did, plus three things it did not: a
+platform-neutral tool type, a contact pressure and a two-angle tilt. The path is
+`MotionEvent` → `ForgeShapeSurfaceView` → `PointerSemantics` → `NativeViewport.touchEvent`
+→ `forgeshape_jni.cpp` → `forgeshape::TouchPointer`, and no Android constant, axis
+id or Java value exists past the Android layer.
+
+| field | units / range | fallback |
+| --- | --- | --- |
+| `toolType` | `PointerToolType`: Unknown, Finger, Stylus, Eraser, Mouse | `Unknown` — an ordinary contact pointer, never a dropped event |
+| `pressure` | `[0, 1]`, normalised; 1 = the device's full force | `1.0` when non-finite or unreported; clamped otherwise |
+| `tiltRadians` | radians `[0, pi/2]` from perpendicular | `0` when non-finite; clamped otherwise |
+| `tiltOrientationRadians` | radians `(-pi, pi]` in the screen plane, 0 = screen -y | `0` when non-finite or when tilt is 0; **wrapped**, not clamped |
+
+**Full pressure is the no-sensor default, not zero.** A finger on a screen with
+no force sensor IS in full contact, and a `0.0` default would make a future
+pressure-driven brush do nothing on most hardware. That is also why every
+pre-existing `TouchPointer{id, x, y}` call site still compiles and still means
+exactly what it meant: the struct's defaults are Finger, full pressure, no tilt.
+
+**Pressure and tilt are CARRIED, not CONSUMED, and that is asserted.** No brush,
+camera or selection rule reads them. The sculpt suite drives the same stroke
+geometry at both ends of the pressure range, with opposite tilts, for all four
+tools on freshly frozen meshes, and compares vertices **bit-exactly** — a
+tolerance would have hidden precisely the small modulation the check exists to
+catch. Eraser switches no tool; Mouse gets no wheel, hover or context behaviour.
+
+**Hover stays deferred.** `translateAction` still drops hover, scroll and button
+actions rather than forwarding them, so hover has no representation below the
+boundary at all. Giving it one is a consumer-driven question and belongs to
+whichever stage first has a consumer.
+
+**The tilt model is two angles because that is the smallest one that keeps
+direction.** Android reports exactly these two axes; an Apple Pencil's
+altitude/azimuth converts into them with arithmetic alone
+(`tilt = pi/2 - altitude`). It is deliberately not a full stylus pose — no
+barrel rotation, no hover distance, no button state.
+
+**Ownership is split once, each way.** The Android tool-type constants stop at
+`PointerSemantics`, which maps them onto ForgeShape's own wire codes; ranges and
+non-finite fallbacks are owned natively in `forgeshape_input.h` and applied in
+`forgeshape_jni.cpp`. Neither side repeats the other's rule, so they cannot
+disagree. The four stylus arrays are individually optional: pass null and every
+pointer keeps its documented default, which is exactly the pre-stylus behaviour
+and is the path the older instrumented touch helpers now take.
+
+**`debugLastPointerEvent` is the observation seam** — DEBUG-only, bounded to
+`kMaxTrackedPointers`, read-only, compiled to a `-1` stub in a release build. It
+exists so an instrumented test can prove transport without a debug overlay and
+without Java ever owning pointer data. It is snapshotted BEFORE arbitration, so
+what a test reads is what the camera, the selection and the sculpt arbitration
+are about to be handed.
+
+**Nothing about existing behaviour moved.** No renderer, scene, geometry,
+`ObjectId`, `SceneSnapshot`, `MeshRevision` or brush-algorithm change is in this
+stage, and the 8 px sculpt promotion threshold, the pending-then-promote rule,
+the two-finger navigation rule, the tap slop and the 6-pointer bound are
+untouched.
+
+**What is UNVERIFIED.** The instrumented suite and the runtime walkthrough did
+not run: `ForgeShape_Stage006` failed to reach a ready state on two launch
+attempts and the owner elected to defer device testing. The 13 new instrumented
+cases compile and are packaged into the test APK, but no on-device result exists
+for them, for the 45 + 14 new native checks, or for the walkthrough. Real stylus
+hardware remains UNVERIFIED as it was before this stage.
 
 ## UI-R1C2 — World Grid + Adaptive Workspace (COMPLETE)
 
@@ -788,19 +859,20 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 ## Self-test suite
 
 Eleven debug-only native suites run once from `NativeViewport.start()` — never
-per frame — and total **1631 checks, zero failures**:
+per frame — and total **1690 checks** (1631 with zero failures as of UI-R1C2;
+the 59 INPUT-R1 checks are authored and compile but have no on-device run yet):
 
 | suite token | checks |
 | --- | --- |
 | `FORGESHAPE_CAMERA_SELFTEST_OK` | 119 |
-| `FORGESHAPE_PICKING_SELFTEST_OK` | 128 |
+| `FORGESHAPE_PICKING_SELFTEST_OK` | 173 |
 | `FORGESHAPE_DYNAMIC_MESH_SELFTEST_OK` | 91 |
 | `FORGESHAPE_CONSTRUCTION_BOX_SELFTEST_OK` | 100 |
 | `FORGESHAPE_CONSTRUCTION_TRANSFORM_SELFTEST_OK` | 94 |
 | `FORGESHAPE_CONSTRUCTION_PRIMITIVE_SELFTEST_OK` | 125 |
 | `FORGESHAPE_CONSTRUCTION_SPHERE_SELFTEST_OK` | 105 |
 | `FORGESHAPE_CONE_CAPSULE_SELFTEST_OK` | 163 |
-| `FORGESHAPE_SCULPT_BRUSH_KERNEL_SELFTEST_OK` | 302 |
+| `FORGESHAPE_SCULPT_BRUSH_KERNEL_SELFTEST_OK` | 316 |
 | `FORGESHAPE_RENDER_SHADING_SELFTEST_OK` | 325 |
 | `FORGESHAPE_SCENE_SELFTEST_OK` | 79 |
 
@@ -833,6 +905,16 @@ member that would fail if the behaviour collapsed to a constant —
 `nor_outwardness_fails_on_global_normal_flip` asserts the measurement inverts
 under a global `normal *= -1`, which is the property the rest of the suite lacked.
 
+**The picking suite also owns the POINTER BOUNDARY** (`128` → `173`), because it
+is the suite that already owns `TouchPointer` and the selection rules the same
+events drive. Those 45 checks cover the tool-type wire codes and their Unknown
+fallback, the struct defaults, pressure and tilt range/wrap/non-finite behaviour,
+per-index packing, the unchanged 6-pointer bound, and the proof that a stylus
+resolves the same tap and orbits the same distance as a finger. The Android half
+of the tool-type mapping is deliberately not here: it is JVM and instrumented,
+where `MotionEvent` exists. The sculpt suite's 14 added checks (`302` → `316`)
+are the pressure-independence teeth, four tools → three assertions each.
+
 Three non-per-frame diagnostics exist. `FORGESHAPE_SURFACE_CONFIG` (one per
 swapchain creation) and `FORGESHAPE_CAMERA_VIEWPORT` (one per `surfaceChanged`)
 audit the orientation chain; `FORGESHAPE_RENDER_MESH_BUILD` (one per accepted
@@ -860,17 +942,21 @@ device. `README.md` documents how to read them.
 | `EditorWorkspaceFoundationTest` | icons, pressed feedback, touch floor, rail tap-vs-scroll, viewport floor, popover | 7 |
 | `EditorWorkspaceThemeTest` | the control, the switch, state preservation across the recreation, contrast | 17 |
 | `EditorWorkspaceMotionTest` | popover preserved, inspector interruptibility, chrome hide/restore, viewport stability, reduced motion, gesture priority | 10 |
+| `PointerSemanticsTest` (JVM) | the Android tool-type mapping and its Unknown fallback | 6 |
+| `EditorWorkspacePointerTest` | synthetic stylus transport, per-pointer association, and that tap / navigation / sculpt arbitration are unchanged | 13 |
 
-**161 tests** (50 JVM, 111 instrumented). No Java test asserts a rendered pixel;
+**180 tests** (56 JVM, 124 instrumented). The JVM set is green at 56/56; the
+instrumented set has no run for this stage — see INPUT-R1 above. No Java test asserts a rendered pixel;
 every control is reached by its stable semantic id and no assertion uses a screen
 coordinate. The foundation and theme suites deliberately assert no colour
 literal, radius or shadow — those are judged by eye and by runtime evidence, and
 pinning them would break on every deliberate restyle. What the theme suite
 asserts instead is *relational*, plus WCAG contrast ratios computed in the test.
 
-**110 of the 111 instrumented tests pass**; the one failure is the `ui11` IME
-case described below. Pre-017 took the count 46 → 50, Stage 017 50 → 56, UI-R1B1
-56 → 71, UI-R1B2 71 → 88, UI-R1C1 88 → 98, UI-R1C2 98 → 111.
+**110 of the 111 instrumented tests passed at UI-R1C2**; the one failure is the
+`ui11` IME case described below. Pre-017 took the count 46 → 50, Stage 017
+50 → 56, UI-R1B1 56 → 71, UI-R1B2 71 → 88, UI-R1C1 88 → 98, UI-R1C2 98 → 111,
+INPUT-R1 111 → 124 (unrun).
 
 **The suite is run in TWO windows** — the default compact phone window and an
 overridden 1600 x 2560 @ 240 dpi expanded window. The adaptive cases read the
@@ -971,6 +1057,16 @@ duration scale skips them outright rather than shortening them.
 
 ## Known Issues / Blockers
 
+- **INPUT-R1 has no on-device verification.** `ForgeShape_Stage006` failed to
+  reach a ready state on two consecutive detached launches at port 5580 (the
+  emulator process stayed alive but never came up on adb; the first attempt's
+  process later died outright), and the owner elected to defer device testing
+  rather than keep retrying. So the 59 new native checks, the 13 new
+  instrumented cases and the INPUT-R1 runtime walkthrough are UNVERIFIED. The
+  build, the packaged test APK and the JVM suite are green. This is a
+  verification debt against the current tree — run
+  `scripts\run-instrumented-tests.ps1 -Serial <serial>` on a ForgeShape-owned
+  target and record the result before UI-R2 is accepted.
 - **16 KB page size *and* ARM64 in the same target is UNVERIFIED.** 16 KB page
   behaviour is VERIFIED on the x86_64 `ForgeShape_16K` AVD (`PAGE_SIZE` 16384) and
   ARM64 is VERIFIED on a 4 KB-page phone, so each dimension is proven but not both
@@ -1246,7 +1342,8 @@ regenerated per stage.
 | `app/build.gradle` | Android app module config, SDK/NDK/CMake/ABI pinning |
 | `app/src/main/AndroidManifest.xml` | App/activity declaration, Vulkan feature requirement |
 | `app/src/main/java/.../ForgeShapeActivity.java` | Android lifecycle, edge-to-edge window, resume refresh, DEBUG key hook |
-| `app/src/main/java/.../ForgeShapeSurfaceView.java` | Viewport surface, forwards lifecycle + raw pointer state, takes focus back from an editor |
+| `app/src/main/java/.../ForgeShapeSurfaceView.java` | Viewport surface, forwards lifecycle + raw per-pointer state (id, position, tool type, pressure, tilt), takes focus back from an editor |
+| `app/src/main/java/.../PointerSemantics.java` | The ONE place an Android `MotionEvent.TOOL_TYPE_*` constant becomes a neutral wire code, plus that mapping's Unknown fallback |
 | `app/src/main/java/.../EditorWorkspaceView.java` | The whole editor UI: region composition, adaptive layout, window insets, chrome visibility, mode/tool wiring, and `syncFromNative()`. Owns no product state |
 | `app/src/main/java/.../WorkspaceLayoutMode.java` | Window-dp breakpoints, inspector placement and chrome sizing, as arithmetic. No Android type |
 | `app/src/main/java/.../EditorUiState.java` | The closed list of UI-owned state: display unit, draft kind, rail selection, detent per mode, chrome-hidden |
@@ -1269,9 +1366,9 @@ regenerated per stage.
 | `app/src/main/res/color/*` | `control_content_tint.xml` — the one state list an icon and its label both read, so they cannot disagree |
 | `app/src/test/java/...` | JVM suites: layout arithmetic, UI-owned state, unit conversion |
 | `app/src/androidTest/java/...` | Instrumented Editor Workspace suites plus `WorkspaceTestSupport` (native snapshots, drag consumption, exact chrome-union viewport measurement) |
-| `app/src/main/java/.../NativeViewport.java` | JNI declarations, library load, `APPLY_*` / `SCULPT_*` status codes, `MODE_*`, `TOOL_*` |
-| `app/src/main/cpp/forgeshape_jni.cpp` | JNI boundary, render thread, `ANativeWindow`, MotionEvent→`TouchAction`, camera + selection locking, stroke arbitration, `publishActiveRepresentation` |
-| `app/src/main/cpp/forgeshape_input.h` | Platform-neutral touch event data (`TouchAction`, `TouchPointer`) |
+| `app/src/main/java/.../NativeViewport.java` | JNI declarations, library load, `APPLY_*` / `SCULPT_*` status codes, `MODE_*`, `TOOL_*`, `POINTER_SAMPLE_*` slots and the DEBUG-only `debugLastPointerEvent` observation seam |
+| `app/src/main/cpp/forgeshape_jni.cpp` | JNI boundary, render thread, `ANativeWindow`, MotionEvent→`TouchAction`, pointer sanitization and unpacking, camera + selection locking, stroke arbitration, `publishActiveRepresentation` |
+| `app/src/main/cpp/forgeshape_input.{h,cpp}` | Platform-neutral pointer event data: `TouchAction`, `PointerToolType`, `TouchPointer` (id, position, tool type, pressure, tilt), and THE range/wrap/non-finite sanitizers those fields are defined by |
 | `app/src/main/cpp/forgeshape_camera.{h,cpp}` | Camera pose, the `ProjectionMode` enum and the orthographic world span, both projections, the framing-preserving switch, gesture state machine |
 | `app/src/main/cpp/forgeshape_construction.{h,cpp}` | `ConstructionObject` (identity + active `PrimitiveKind` + all five primitives + transform), the five `Construction*` generators, shared tessellation constants, the typed `PrimitiveSpec` payload variant, dimension validation including `validateCapsuleMeters`, publication into `MeshStore`, and `applyPrimitive` — the one update-and-publish entry point |
 | `app/src/main/cpp/forgeshape_transform.{h,cpp}` | `ConstructionTransform`: authoritative double-meter position and double-degree rotation, THE axis/Euler convention, validation, atomic apply, derived model and inverse-model matrices |
@@ -1323,24 +1420,22 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**INPUT-R1 — Pointer Semantics Foundation**
+**UI-R2 — Workspace Composition Redesign**
 
-The seam INPUT-OWNER-01 has been pointing at since the owner decision baseline,
-and the one piece of architecture every later input feature has to stand on.
-`forgeshape_input.h` already carries platform-neutral `TouchAction` /
-`TouchPointer` samples, and `forgeshape_jni.cpp` is already the one place an
-Android `MotionEvent` stops. What it does not carry is what a stylus actually
-reports: tool type, pressure, tilt and hover are not in the vocabulary, so no
-code below JNI can express them and every future brush, gesture or precision
-affordance would have to widen the boundary first.
+The Editor Workspace has grown one control group at a time — Global Toolbar,
+Tool Rail, Property Inspector, the Objects section, the display popover, the
+theme control, the Grid chips — and each addition was judged against its own
+stage rather than against the whole. UI-R2 is where the composition is decided
+as one thing: what the workspace looks like when every group that exists today
+has to share one window, at both breakpoints, in both appearances.
 
-This is a **foundation** stage, not a feature stage. Widening the semantic
-sample and proving the boundary still holds is the work; changing what Sculpt
-DOES with pressure is explicitly not, and UI-OWNER-06 defers that to a dedicated
-Sculpt stage. Stylus behaviour on real hardware also remains UNVERIFIED and
-needs a person physically moving a pen, so what this stage can close by machine
-and what needs a human are different questions and should be separated in the
-gate.
+Nothing about the pointer boundary INPUT-R1 just built is UI-R2's to change.
+
+**Before UI-R2 is accepted, INPUT-R1 still needs an on-device run.** The
+implementation is complete and the JVM suite is green, but the instrumented
+suite, the 59 new native checks and the runtime walkthrough have no device
+result — see INPUT-R1 above. That is a verification debt against this tree, not
+a design question.
 
 **Still out:** Selection Outline — the expensive half of selection feedback,
 needing either a second geometry pass or a screen-space edge filter and its own

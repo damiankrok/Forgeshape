@@ -6,6 +6,7 @@
 
 #include "forgeshape_camera.h"
 #include "forgeshape_construction.h"
+#include "forgeshape_input.h"
 #include "forgeshape_math.h"
 #include "forgeshape_mesh.h"
 #include "forgeshape_picking.h"
@@ -2069,6 +2070,109 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
     // frozen from, so the Source can be a Plane while the frozen geometry is a
     // solid, and vice versa.
     runSidednessSelfTests(r);
+
+    // -----------------------------------------------------------------------
+    // Stylus pressure is CARRIED, never CONSUMED
+    // -----------------------------------------------------------------------
+    //
+    // The teeth behind "the pointer boundary adds infrastructure, not
+    // behaviour". Two strokes trace the SAME pixels with the same tool, radius
+    // and strength; one is driven by pointers reporting the lightest pressure
+    // the contract allows, the other by pointers reporting the heaviest, held
+    // almost flat. If any brush arithmetic had started reading pressure or tilt,
+    // the two meshes would differ.
+    //
+    // Bit-exact, not approximate: "pressure changed nothing" is a statement
+    // about identical data, and a tolerance would hide a small modulation --
+    // which is precisely the bug this check exists to catch. Run for all four
+    // tools, because one kernel does not mean one code path through it.
+    {
+        ConstructionObject object = makeSphereObject();
+        const ConstructionMesh source = object.generateMesh();
+
+        // The geometric path, authored once so the two runs cannot drift apart.
+        const float pathX[] = {kCentreX + 20.0f, kCentreX + 60.0f, kCentreX + 110.0f,
+                               kCentreX + 140.0f};
+        const float pathY[] = {kCentreY - 10.0f, kCentreY - 25.0f, kCentreY + 15.0f,
+                               kCentreY + 60.0f};
+        constexpr int kSampleCount = 4;
+
+        // Two pressure/tilt profiles over that one path. The pointers are built
+        // explicitly so this reads as what it is -- a stylus stroke -- even
+        // though the brush is handed only the coordinates, which is the whole
+        // point.
+        TouchPointer light[kSampleCount];
+        TouchPointer heavy[kSampleCount];
+        for (int i = 0; i < kSampleCount; ++i) {
+            light[i] = TouchPointer{1, pathX[i], pathY[i], PointerToolType::Stylus,
+                                    kPointerPressureMin, kPointerTiltNoneRadians, 0.0f};
+            heavy[i] = TouchPointer{1, pathX[i], pathY[i], PointerToolType::Stylus,
+                                    kPointerPressureMax, kPointerTiltMaxRadians, 2.5f};
+        }
+        r.check("pressure_profiles_actually_differ",
+                light[0].pressure != heavy[0].pressure &&
+                    light[2].tiltRadians != heavy[2].tiltRadians);
+        r.check("pressure_profiles_trace_the_same_pixels", [&] {
+            for (int i = 0; i < kSampleCount; ++i) {
+                if (light[i].x != heavy[i].x || light[i].y != heavy[i].y) {
+                    return false;
+                }
+            }
+            return true;
+        }());
+
+        // One name per tool per assertion, so a failure says which tool broke.
+        static const char* const kVertexNames[kSculptToolCount] = {
+            "grab_result_is_pressure_independent", "clay_result_is_pressure_independent",
+            "smooth_result_is_pressure_independent", "inflate_result_is_pressure_independent"};
+        static const char* const kRevisionNames[kSculptToolCount] = {
+            "grab_revision_is_pressure_independent", "clay_revision_is_pressure_independent",
+            "smooth_revision_is_pressure_independent", "inflate_revision_is_pressure_independent"};
+        static const char* const kAffectedNames[kSculptToolCount] = {
+            "grab_affected_set_is_pressure_independent",
+            "clay_affected_set_is_pressure_independent",
+            "smooth_affected_set_is_pressure_independent",
+            "inflate_affected_set_is_pressure_independent"};
+
+        for (int toolIndex = 0; toolIndex < kSculptToolCount; ++toolIndex) {
+            SculptTool tool = SculptTool::Grab;
+            sculptToolFromIndex(toolIndex, &tool);
+
+            SculptSession lightRun;
+            lightRun.freezeToSculpt(source, object.objectId());
+            lightRun.setTool(tool);
+            lightRun.setRadiusPixels(180.0f);
+            lightRun.setStrength(0.8f);
+            lightRun.beginStroke(camera, kCentreX, kCentreY, kViewportWidth, kViewportHeight,
+                                 identity, identity);
+
+            SculptSession heavyRun;
+            heavyRun.freezeToSculpt(source, object.objectId());
+            heavyRun.setTool(tool);
+            heavyRun.setRadiusPixels(180.0f);
+            heavyRun.setStrength(0.8f);
+            heavyRun.beginStroke(camera, kCentreX, kCentreY, kViewportWidth, kViewportHeight,
+                                 identity, identity);
+
+            for (int i = 0; i < kSampleCount; ++i) {
+                lightRun.updateStroke(light[i].x, light[i].y);
+                heavyRun.updateStroke(heavy[i].x, heavy[i].y);
+            }
+            // Read the affected set while the strokes are still live.
+            const int lightAffected = lightRun.stroke().affectedVertexCount();
+            const int heavyAffected = heavyRun.stroke().affectedVertexCount();
+            lightRun.endStroke();
+            heavyRun.endStroke();
+
+            r.check(kVertexNames[toolIndex],
+                    sameVertices(lightRun.mesh().vertices(), heavyRun.mesh().vertices()));
+            r.check(kRevisionNames[toolIndex],
+                    lightRun.mesh().revision() == heavyRun.mesh().revision() &&
+                        lightRun.mesh().revision() > kFrozenSculptRevision);
+            r.check(kAffectedNames[toolIndex],
+                    lightAffected == heavyAffected && lightAffected > 0);
+        }
+    }
 
     return r.n;
 }

@@ -24,10 +24,22 @@ final class ForgeShapeSurfaceView extends SurfaceView implements SurfaceHolder.C
     /** Pointers beyond this are ignored; navigation only ever needs two. */
     private static final int MAX_POINTERS = 6;
 
-    // Reused across events. Touch delivery is single-threaded on the UI thread.
+    // Reused across events. Touch delivery is single-threaded on the UI thread,
+    // and a MOVE arrives at the display rate, so nothing here may allocate.
     private final int[] pointerIds = new int[MAX_POINTERS];
     private final float[] pointerXs = new float[MAX_POINTERS];
     private final float[] pointerYs = new float[MAX_POINTERS];
+
+    // Stylus semantics, carried across the boundary for Sketch and Sculpt to
+    // use later. Nothing in this view interprets them, and nothing downstream
+    // consumes them yet: a stylus and a finger tracing the same pixels still
+    // produce exactly the same result. Ranges and fallbacks are native
+    // ForgeShape's to own -- see forgeshape_input.h -- so these arrays carry
+    // what Android reported, unrepaired, apart from the tool-type mapping.
+    private final int[] pointerToolTypes = new int[MAX_POINTERS];
+    private final float[] pointerPressures = new float[MAX_POINTERS];
+    private final float[] pointerTilts = new float[MAX_POINTERS];
+    private final float[] pointerTiltOrientations = new float[MAX_POINTERS];
 
     private OnViewportGestureSettled gestureSettled;
 
@@ -68,6 +80,14 @@ final class ForgeShapeSurfaceView extends SurfaceView implements SurfaceHolder.C
             pointerIds[i] = event.getPointerId(i);
             pointerXs[i] = event.getX(i);
             pointerYs[i] = event.getY(i);
+            pointerToolTypes[i] = PointerSemantics.neutralToolType(event.getToolType(i));
+            pointerPressures[i] = event.getPressure(i);
+            // AXIS_TILT is radians from perpendicular and reads 0 on hardware
+            // that cannot measure it; getOrientation is radians in the screen
+            // plane. Both are passed through as reported -- native code decides
+            // what a missing or nonsensical value means.
+            pointerTilts[i] = event.getAxisValue(MotionEvent.AXIS_TILT, i);
+            pointerTiltOrientations[i] = event.getOrientation(i);
         }
 
         // Only up-style actions designate a specific pointer that is leaving.
@@ -77,7 +97,9 @@ final class ForgeShapeSurfaceView extends SurfaceView implements SurfaceHolder.C
         }
 
         NativeViewport.touchEvent(action, actionPointerId, count,
-                pointerIds, pointerXs, pointerYs, getWidth(), getHeight());
+                pointerIds, pointerXs, pointerYs,
+                pointerToolTypes, pointerPressures, pointerTilts, pointerTiltOrientations,
+                getWidth(), getHeight());
 
         // A gesture that ended may have resolved a tap, and a tap that hit a
         // body makes that body the edit target down in native code. Nothing is

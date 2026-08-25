@@ -35,17 +35,102 @@ final class NativeViewport {
     /**
      * Forwards one complete Android touch event to the native camera owner.
      *
-     * <p>Nothing here is interpreted on the Java side: {@code action} is the raw
+     * <p>Nothing here is interpreted on the Java side beyond mapping the Android
+     * tool type onto ForgeShape's own wire codes: {@code action} is the raw
      * {@link android.view.MotionEvent} masked action, and the arrays carry stable
      * pointer ids with view-local pixel coordinates. Native code decides what the
      * gesture means.
      *
+     * <p>The stylus arrays are <b>carried, not consumed</b>. No brush, camera or
+     * selection rule reads them, so a stylus and a finger tracing the same pixels
+     * produce identical geometry. Their ranges and their fallback rules belong to
+     * native ForgeShape ({@code forgeshape_input.h}), which is why the values are
+     * passed through exactly as Android reported them.
+     *
+     * <p>Every array is indexed the same way, by pointer index, so slot {@code i}
+     * of each describes one pointer. All are at least {@code pointerCount} long
+     * and native code reads no further than {@code pointerCount} entries, itself
+     * bounded by the native pointer limit.
+     *
      * @param actionPointerId the id of the pointer that is lifting on an up-style
      *                        action, or {@code -1} when the action has no such pointer
+     * @param toolTypes       one {@code PointerSemantics.TOOL_*} wire code per pointer
+     * @param pressures       raw Android pressure per pointer; native clamps to [0, 1]
+     *                        and substitutes full pressure for anything non-finite
+     * @param tilts           raw {@code AXIS_TILT} per pointer, radians from
+     *                        perpendicular; native clamps to [0, pi/2]
+     * @param tiltOrientations raw {@code getOrientation} per pointer, radians in the
+     *                        screen plane; native wraps to (-pi, pi] and zeroes it
+     *                        when there is no tilt
      */
     static native void touchEvent(int action, int actionPointerId, int pointerCount,
                                   int[] ids, float[] xs, float[] ys,
+                                  int[] toolTypes, float[] pressures,
+                                  float[] tilts, float[] tiltOrientations,
                                   int viewWidth, int viewHeight);
+
+    // -----------------------------------------------------------------------
+    // Pointer semantics observation -- DEBUG/TEST ONLY
+    // -----------------------------------------------------------------------
+    //
+    // Test infrastructure, not product functionality. There is no UI for it,
+    // no exported component, and native code compiles it to a no-op in a
+    // release build. It only READS a bounded snapshot of the last touch event
+    // native code received; it holds no model truth, drives nothing, and the
+    // Java side never becomes an owner of pointer data because of it.
+
+    /** Stride of one pointer's record inside the debug snapshot. */
+    static final int POINTER_SAMPLE_STRIDE = 7;
+
+    /** Largest pointer count native code will accept from one event. */
+    static final int POINTER_SAMPLE_MAX = 6;
+
+    /**
+     * Length of the array {@link #debugLastPointerEvent} fills: one leading
+     * pointer count, then {@link #POINTER_SAMPLE_STRIDE} floats per pointer.
+     */
+    static final int POINTER_EVENT_STATE_SIZE = 1 + POINTER_SAMPLE_MAX * POINTER_SAMPLE_STRIDE;
+
+    /** Slot 0: how many pointers the last event carried into native code. */
+    static final int POINTER_EVENT_COUNT = 0;
+
+    /** Offset of pointer {@code i}'s first slot. */
+    static int pointerSampleBase(int index) {
+        return 1 + index * POINTER_SAMPLE_STRIDE;
+    }
+
+    /** Stable pointer id, relative to {@link #pointerSampleBase}. */
+    static final int POINTER_SAMPLE_ID = 0;
+
+    /** View-local x in pixels. */
+    static final int POINTER_SAMPLE_X = 1;
+
+    /** View-local y in pixels. */
+    static final int POINTER_SAMPLE_Y = 2;
+
+    /** The neutral tool type, one of the {@code PointerSemantics.TOOL_*} codes. */
+    static final int POINTER_SAMPLE_TOOL_TYPE = 3;
+
+    /** Sanitized pressure in [0, 1]. */
+    static final int POINTER_SAMPLE_PRESSURE = 4;
+
+    /** Sanitized tilt in radians, [0, pi/2], measured from perpendicular. */
+    static final int POINTER_SAMPLE_TILT = 5;
+
+    /** Sanitized tilt orientation in radians, (-pi, pi]; 0 when there is no tilt. */
+    static final int POINTER_SAMPLE_TILT_ORIENTATION = 6;
+
+    /**
+     * DEBUG-ONLY test hook: reads back the platform-neutral pointer data the
+     * last {@link #touchEvent} call produced, exactly as native consumers saw
+     * it.
+     *
+     * @param outState caller-allocated array of at least
+     *                 {@link #POINTER_EVENT_STATE_SIZE} floats
+     * @return the pointer count written, or {@code -1} in a release build or
+     *         when the array is too small
+     */
+    static native int debugLastPointerEvent(float[] outState);
 
     /** Stops the native render thread and tears down Vulkan. */
     static native void stop();
