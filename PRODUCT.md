@@ -386,12 +386,13 @@ Cone, Capsule and Plane — the chosen shape's dimensions, a display unit (**mm*
 **cm** or **m**) shared by every length, and an **Apply Shape** button. Only the
 chosen shape's fields are on screen, so nothing there can be mistaken for another
 shape's dimension. With Transform held it opens **Exact Transform**: the object's
-position and rotation, described further down, with its own Apply.
+position, rotation and scale, described further down, with its own Apply.
 
 *Transform* is what the entry is called because that is what it is about — where
-the body sits. Today everything behind it is typed: there are no handles on the
-model to drag yet, which is why the surface it opens says *Exact Transform* in
-its own title rather than promising something that is not there.
+the body sits and how large it is drawn. Holding it also puts **handles on the
+model** and the two controls that decide what they do; the surface it opens is
+called *Exact Transform* because it is the typed half of the same thing, not
+because it is the only half.
 
 Either surface is one tap away and goes away again on the next one. While it is
 shut the model has the whole screen; while it is open the rest of the viewport
@@ -511,39 +512,69 @@ and the offending field is focused ready to be fixed — a zero diameter is
 reported as "Diameter must be greater than 0" and `1.2.3` as "Diameter is not a
 number". The object keeps the shape, size and place it already had.
 
-## Moving and rotating the object
+## Moving, rotating and sizing the object
 
 Holding **Transform** in the Tool Rail gives you two ways to place the object,
 and they are two front ends to the same thing. **Handles in the viewport** are
-the direct one: grab an axis and drag. **Exact values** are the precise one:
-type a number and Apply. Whichever you use, the object's **placement** is one
-set of numbers — a Position X/Y/Z in the shared display unit and a Rotation
-X/Y/Z in degrees — so a drag shows up in the fields the moment you open them,
-and a typed Apply moves the handles at once.
+the direct one: grab one and drag. **Exact values** are the precise one: type a
+number and Apply. Whichever you use, the object's **placement** is one set of
+numbers — a Position X/Y/Z in the shared display unit, a Rotation X/Y/Z in
+degrees and a Scale X/Y/Z as plain multipliers — so a drag shows up in the
+fields the moment you open them, and a typed Apply moves the handles at once.
 
 ### Dragging the handles
 
-Holding Transform draws a small instrument on the active body, and a two-button
-control beside the Tool Rail chooses what it does:
+Holding Transform draws a small instrument on the active body, and two controls
+beside the Tool Rail decide what it does. The first chooses **what kind** of
+change the handles make:
 
 - **Move handles** — three arrowed shafts, one per axis, meeting at a marked
-  point. Drag one and the object slides along that axis only.
+  point, plus three small squares between each pair of axes. Drag a shaft and
+  the object slides along that axis only; drag a square and it slides in that
+  plane, never out of it.
 - **Rotate handles** — three rings, one per axis. Drag one and the object turns
-  about that axis only.
+  about that ring.
+- **Scale handles** — three shafts ending in cubes, the same three plane
+  squares, and a cube at the centre. Drag an axis cube and the object stretches
+  along that axis; drag a plane square and it stretches in two at once; drag the
+  centre cube and it grows or shrinks as a whole, keeping its proportions.
 
-The axes are the world's, not the object's: they keep pointing the same way
-however the object is turned, and they are coloured to match the world grid's
-own axis lines. The point everything happens about is the object's own position,
-so a rotation turns it in place rather than swinging it around the origin.
+The second control chooses **which axes** the handles point along:
 
-The handles stay about the same size on screen however far the camera is, so
-they never shrink to nothing when you pull back or fill the viewport when you
-push in. They are drawn over the model on purpose — a handle you can see the
-effect of but cannot reach would be worse than one that overlaps.
+- **World axes** — they keep pointing the way the world does, however the object
+  is turned.
+- **Local axes** — they turn with the object, so a Move handle slides it along
+  its own length rather than along the world's.
+
+Scale is always about the object's own axes, so the World/Local control is not
+drawn while Scale is held. When you leave Scale, the choice you had before comes
+back.
+
+The three axes are coloured to match the world grid's own axis lines, and a
+plane square takes the colour of the axis it faces. Whichever handle you are
+holding is drawn in a warm highlight while the others fade back, so there is
+never any doubt about what a drag is about to change.
+
+The point everything happens about is the object's own position, so a rotation
+turns it in place rather than swinging it around the origin, and a scale grows it
+about itself rather than sliding it away. A touch right at that point grabs
+nothing in Move and Rotate — every handle meets there, so it would be a coin toss
+— and in Scale it is the centre cube.
+
+The handles stay about the same size on screen however far the camera is, and
+**however large the object is**: stretching a body does not stretch the
+instrument you stretched it with. They never shrink to nothing when you pull back
+or fill the viewport when you push in, and they are drawn over the model on
+purpose — a handle you can see the effect of but cannot reach would be worse than
+one that overlaps.
+
+A handle pointing almost straight at you cannot be grabbed, and a plane seen
+edge-on cannot either. That is deliberate: there is no reliable direction to drag
+it in, so orbit a little and it comes back.
 
 **One drag is one change.** However long you drag, a single **Undo** puts the
-object back where it was before you touched it. Pressing a handle and releasing
-without moving changes nothing at all.
+object back exactly as it was before you touched it. Pressing a handle and
+releasing without moving changes nothing at all.
 
 **Only the handles belong to the gizmo.** A drag that starts anywhere else in
 the viewport still orbits, pans and zooms exactly as before, and a tap still
@@ -552,38 +583,55 @@ finger lands, the drag is abandoned and the object jumps straight back to where
 it started rather than trying to be moved and orbited at once. A stylus grabs a
 handle exactly as a finger does.
 
-Handles are a Construction tool. There are none while sculpting, and the
-Move/Rotate control is not there either.
+Handles are a Construction tool. There are none while sculpting, and neither
+control is there either.
 
-Switching between Move and Rotate is not a change to the model: it records
-nothing, and Undo is unaffected by it.
+Switching what the handles do, or which axes they use, is not a change to the
+model: it records nothing, and Undo is unaffected by it.
 
 ### Exact values
 
 Opening the exact values from the control below the Tool Rail gives the same
-placement as numbers: Position X/Y/Z, Rotation X/Y/Z, and a separate **Apply
-Transform** button.
+placement as numbers: Position X/Y/Z, Rotation X/Y/Z, Scale X/Y/Z, and a single
+**Apply Transform** button.
 
-The object starts at position 0, 0, 0 m with rotation 0, 0, 0°. Placement belongs
-to the object, not to the shape, so it survives any change of shape untouched —
-Box, Cylinder, Sphere, Cone and Capsule alike.
+The object starts at position 0, 0, 0 m, rotation 0, 0, 0° and scale 1, 1, 1.
+Placement belongs to the object, not to the shape, so it survives any change of
+shape untouched — Box, Cylinder, Sphere, Cone and Capsule alike.
 
-### Moving is not resizing
+### Scaling is not redimensioning
 
 Shape and placement are two independent things, and each has its own Apply.
 
 - **Apply Shape** changes what the object *is*. It is rebuilt at the new shape
   and dimensions and keeps exactly where it was — turning a moved, rotated box
   into a cylinder leaves the cylinder moved and rotated the same way.
-- **Apply Transform** changes where the object *sits*. Its shape and dimensions
-  are untouched, and so is the geometry itself: the object is moved and rotated,
-  never rebuilt.
+- **Apply Transform** changes where the object *sits* and how large it is drawn.
+  Its shape and dimensions are untouched, and so is the geometry itself: the
+  object is moved, turned and stretched, never rebuilt.
 
-### Position and rotation
+That is the difference between **Scale** and a **dimension**, and it is worth
+being exact about. A 2 m box at scale 2 is drawn 4 m across, and its Width is
+still 2 m: Scale is a multiplier on the drawing, not a new size for the shape.
+If you want the box to *be* 4 m wide, retype its Width; if you want this copy of
+it drawn twice as large, set its Scale.
+
+### Position, rotation and scale
 
 Position is measured in the display unit, from the world origin, and is applied
 to the centre of the object. Zero and negative values are ordinary — a coordinate
 is a place, not a size — so −1.25 m is as valid as 1.25 m.
+
+Scale has **no unit at all**, in any display unit: it is a plain multiplier, so
+1 is true size, 2 is twice as large and 0.5 is half. Switching between mm, cm and
+m leaves the scale fields alone, exactly as it leaves the rotation fields alone.
+Unlike a position, a scale **must be greater than zero**: 0 would collapse the
+object to nothing, and a negative value would turn it inside out, which is a
+mirror and not something ForgeShape does. Either is refused with the field named,
+and nothing else in the transform is applied when it is.
+
+Each axis scales along the object's **own** direction, so a turned object
+stretches along its own length rather than along the world's.
 
 Rotation is always in **degrees**, never in the display unit, and switching
 between mm, cm and m leaves the rotation fields alone. Each axis turns the object
@@ -595,7 +643,9 @@ are ordinary, and an angle is kept exactly as typed: 370° stays 370° in the
 fields rather than being rewritten as 10°, even though the two point the same
 way.
 
-Moving or rotating the object moves and rotates what can be tapped with it. A
+Moving, rotating or scaling the object moves, rotates and scales what can be
+tapped with it: a stretched body is tappable exactly where it is drawn, not
+where it would have been at its true size. A
 sphere is the honest exception: it is the same shape from every direction, so
 rotating one changes nothing about its outline or about where it can be tapped.
 The rotation is still real and is kept exactly as typed — it simply has nothing
@@ -603,10 +653,12 @@ to show.
 
 ### Apply Transform
 
-Like the shape, the six values are submitted together and the result is
-**applied**, **unchanged** or **rejected**. Rejected leaves all six exactly as
-they were, and a value that is not a number at all is reported with the field
-named. Editing the text does nothing until Apply Transform is pressed.
+Like the shape, all nine values are submitted together and the result is
+**applied**, **unchanged** or **rejected**. Rejected leaves all nine exactly as
+they were — a scale of zero cannot leave a new position half applied — and a
+value that is not a number at all, or a scale that is not greater than zero, is
+reported with the field named. Editing the text does nothing until Apply
+Transform is pressed.
 
 ## Undo and Redo
 
@@ -621,8 +673,8 @@ there is no message and no animation, because the model changing is the answer.
 - **Apply Shape** — however many fields you retyped first, and whether or not you
   also changed which primitive it is. Undo brings back the previous shape, every
   one of its exact dimensions and the same object.
-- **Apply Transform** — all six values together. Undo cannot put X back without
-  Y and Z.
+- **Apply Transform** — all nine values together. Undo cannot put Position X back
+  without Y, Z, the rotation and the scale.
 - **Adding a body** — choosing Sphere from *Add Primitive* is one act. Undo makes
   the whole body disappear; it never leaves a leftover box behind. Redo brings
   back *the same body*, with the same name, the same shape, the same placement
@@ -915,7 +967,7 @@ that used to be its surface is empty and taps now land 0.3 m from its centre.
 
 ## What survives
 
-The object's shape, its size, its position and rotation, its identity, the chosen
+The object's shape, its size, its position, rotation and scale, its identity, the chosen
 display unit, which mode is active, which sculpt tool is in hand, every sculpted
 deformation, the camera pose, the chosen projection and its framing, and the
 selection all survive sending ForgeShape to
@@ -936,18 +988,24 @@ when the process restarts.
 
 Standard named views (Front, Top, Right and the rest), a view cube, a
 focus-on-selection command and any camera animation are not implemented — the
-projection can be switched, but the camera is aimed only by hand. Scaling the
-object, an editable tessellation and booleans are not implemented, and **shape is
-still edited only by typing exact values and pressing Apply**: there are no
-handles that resize a body.
+projection can be switched, but the camera is aimed only by hand. An editable
+tessellation and booleans are not implemented, and **shape is still edited only
+by typing exact values and pressing Apply**: there are no handles that change a
+body's *dimensions*. The Scale handles change how large it is drawn, which is a
+different thing — see *Scaling is not redimensioning*.
 
-**The handles that do exist Move and Rotate, and only along world axes.** There
-is no scale handle. There is no way to switch them to the object's own axes and
-no Local/World control, so a handle always points the way the world does. There
-is no centre handle for free movement and no plane handles for moving in two
-axes at once: each drag is one axis. The point they turn and slide about is
-always the object's own position and cannot be moved. Handles are Construction's
-alone — sculpting has none.
+**The handles Move, Rotate and Scale, in World or Local axes, and that is all
+they do.** There is no **Mirror**: a scale must be greater than zero, so an
+object cannot be flipped by making one negative. There is no parent or explicit
+coordinate space beyond World and Local, no centre handle for free movement, and
+no arcball or free rotation — a rotation is always about one ring. The point the
+handles turn and scale about is always the object's own position and cannot be
+moved. Handles are Construction's alone — sculpting has none.
+
+A body carrying a non-uniform scale can still be sculpted, but the brush is
+shaped in the body's own space, so on a heavily stretched body a round brush
+leaves an oval mark. That is a known limitation of combining the two, not a
+defect in either.
 
 Sculpting has exactly the four tools above — other
 brushes (Flatten, Crease, Pinch and the rest), remesh, **sculpt undo**, symmetry,

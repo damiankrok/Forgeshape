@@ -107,21 +107,25 @@ struct GridPush {
 static_assert(sizeof(GridPush) == 128,
               "the grid push constant block must stay inside the guaranteed 128-byte budget");
 
-// The gizmo's per-draw uniform block, mirrored by shaders/gizmo.vert.
+// The gizmo per-draw uniform block, mirrored by shaders/gizmo.vert.
 //
-// Also exactly 128 bytes and also at the guaranteed minimum. There is ONE
-// matrix and no model/normal split, because a handle has no normal and takes no
-// light; what fills the rest is one colour per world axis plus the four control
-// floats that say which handle is held and how strongly the rest are drawn — so
-// highlighting a grabbed axis is four bytes of push constant and no upload.
+// Also exactly 128 bytes and also at the guaranteed minimum. There is ONE matrix
+// and no model/normal split, because a handle has no normal and takes no light.
+// That leaves precisely four vec4s, and the gizmo needs five values plus three
+// colours — so the three axis colours carry the extra scalars in their
+// otherwise-wasted w components, exactly the way the surface block carries its
+// shading model. The packing is documented once, in gizmo.vert, and written once,
+// here. Highlighting a grabbed handle is one float and no upload.
 struct GizmoPush {
     float mvp[16];        // offset 0
+    // rgb = axis colour; w = neutral grey level (the uniform-scale cube)
     float axisXColor[4];  // offset 64
+    // rgb = axis colour; w = which HANDLE is held, as a GizmoHandle code
     float axisYColor[4];  // offset 80
+    // rgb = axis colour; w = alpha multiplier for the handles NOT held
     float axisZColor[4];  // offset 96
-    // x: held axis (0 none, 1 X, 2 Y, 3 Z)   y: alpha scale for the others
-    // z: alpha scale for the held one        w: unused
-    float control[4];     // offset 112
+    // rgb = the colour a held handle is drawn in; w = base alpha
+    float highlight[4];   // offset 112
 };
 
 static_assert(sizeof(GizmoPush) == 128,
@@ -1201,10 +1205,12 @@ bool Renderer::createGizmoResources() {
     // Logged ONCE per device. A second occurrence of this line in a session log
     // is direct evidence that a drag, an orbit or a mode switch re-uploaded
     // geometry it must never touch.
-    FS_LOGI("FORGESHAPE_GIZMO_UPLOAD_OK vertices=%u bytes=%llu move=[%d,%d) rotate=[%d,%d)",
+    FS_LOGI("FORGESHAPE_GIZMO_UPLOAD_OK vertices=%u bytes=%llu move=[%d,%d) rotate=[%d,%d) "
+            "scale=[%d,%d)",
             gizmoVertexCount_, (unsigned long long)bytes, kGizmoMoveFirstVertex,
             kGizmoMoveFirstVertex + kGizmoMoveVertexCount, kGizmoRotateFirstVertex,
-            kGizmoRotateFirstVertex + kGizmoRotateVertexCount);
+            kGizmoRotateFirstVertex + kGizmoRotateVertexCount, kGizmoScaleFirstVertex,
+            kGizmoScaleFirstVertex + kGizmoScaleVertexCount);
     return true;
 }
 
@@ -2027,13 +2033,16 @@ bool Renderer::createGizmoPipeline() {
     stages[1].module = gizmoFragShader_;
     stages[1].pName = "main";
 
-    // GizmoVertex: a position and an AXIS TAG, and no normal and no colour.
+    // GizmoVertex: a position, a COLOUR TAG and a HANDLE code — and no normal
+    // and no colour. The two tags are separate because a plane handle borrows
+    // its hue from the axis perpendicular to it, so holding that axis must not
+    // also light the plane.
     VkVertexInputBindingDescription binding{};
     binding.binding = 0;
     binding.stride = sizeof(GizmoVertex);
     binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-    VkVertexInputAttributeDescription attributes[2]{};
+    VkVertexInputAttributeDescription attributes[3]{};
     attributes[0].location = 0;
     attributes[0].binding = 0;
     attributes[0].format = VK_FORMAT_R32G32B32_SFLOAT;
@@ -2042,12 +2051,16 @@ bool Renderer::createGizmoPipeline() {
     attributes[1].binding = 0;
     attributes[1].format = VK_FORMAT_R32_SFLOAT;
     attributes[1].offset = offsetof(GizmoVertex, axis);
+    attributes[2].location = 2;
+    attributes[2].binding = 0;
+    attributes[2].format = VK_FORMAT_R32_SFLOAT;
+    attributes[2].offset = offsetof(GizmoVertex, handle);
 
     VkPipelineVertexInputStateCreateInfo vertexInput{};
     vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
     vertexInput.vertexBindingDescriptionCount = 1;
     vertexInput.pVertexBindingDescriptions = &binding;
-    vertexInput.vertexAttributeDescriptionCount = 2;
+    vertexInput.vertexAttributeDescriptionCount = 3;
     vertexInput.pVertexAttributeDescriptions = attributes;
 
     VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
@@ -2316,19 +2329,25 @@ void Renderer::recordBodyDraw(VkCommandBuffer cmd, const SceneDrawItem& item) {
     SurfacePush push{};
     std::memcpy(push.mvp, mvp.m, sizeof(push.mvp));
 
-    // The upper-left 3x3 of modelView, by ROWS. Storage is column-major
+    // The view-space NORMAL matrix, by ROWS. Storage is column-major
     // (m[column * 4 + row]), so row r is {m[0*4+r], m[1*4+r], m[2*4+r]}.
     //
-    // Handing the shader this matrix directly instead of its inverse-transpose
-    // is correct ONLY because both factors are rigid — the look-at view matrix
-    // and a rotation+translation ConstructionTransform. Adding scale to the
-    // transform would make the normals wrong here, silently and only on scaled
-    // objects; see the matching note in shaders/surface.vert.
+    // This is view * (R * S^-1) and NOT view * model. The two are the same
+    // matrix for every unscaled body, and they part company the moment a body
+    // carries a non-uniform scale: the model stretches a normal the same way it
+    // stretches a position, which tilts it the wrong way on every face that is
+    // not perpendicular to a scaled axis. The scene hands the correct one over
+    // as `normalModel` — the inverse transpose of the model's upper-left 3x3,
+    // built from the authoritative scale rather than inverted numerically.
+    //
+    // The view factor still needs no inverse-transpose of its own, because a
+    // look-at matrix is rigid and is its own. See forgeshape_transform.h.
+    const Mat4 viewNormal = mat4Multiply(camera_.view, item.normalModel);
     for (int row = 0; row < 3; ++row) {
         float* dst = (row == 0) ? push.normalRow0 : (row == 1) ? push.normalRow1 : push.normalRow2;
-        dst[0] = modelView.m[0 * 4 + row];
-        dst[1] = modelView.m[1 * 4 + row];
-        dst[2] = modelView.m[2 * 4 + row];
+        dst[0] = viewNormal.m[0 * 4 + row];
+        dst[1] = viewNormal.m[1 * 4 + row];
+        dst[2] = viewNormal.m[2 * 4 + row];
         dst[3] = 0.0f;
     }
     // Packed into row 0's otherwise-dead w to stay inside the guaranteed
@@ -2410,21 +2429,26 @@ void Renderer::recordGizmoDraw(VkCommandBuffer cmd) {
 
     // Canonical gizmo space -> world -> clip. The canonical vertices are
     // authored in REFERENCE UNITS, so one uniform scale by the world length of a
-    // reference unit at the pivot's depth is exactly what keeps the handles a
+    // reference unit at the pivot depth is exactly what keeps the handles a
     // near-constant size on screen at any zoom.
     //
-    // There is deliberately NO rotation in this matrix. The gizmo is world-axis
-    // aligned and does not turn with the body: that is the stage's one stated
-    // transform convention, and it lives here as an absence rather than as a
-    // choice made somewhere else.
-    Mat4 model = mat4Identity();
+    // The rotation in this matrix is the gizmo BASIS the session decided —
+    // identity in World space, the body orientation in Local — and it is taken
+    // from the snapshot rather than recomputed, so the drawn handles and the
+    // hit-tested handles cannot point different ways. The body own SCALE is
+    // deliberately absent: stretching a body must not stretch the instrument
+    // used to stretch it, and the snapshot carries no scale for it to reach.
     const float scale = gizmo_.worldPerReferenceUnit;
-    model.m[0] = scale;
-    model.m[5] = scale;
-    model.m[10] = scale;
+    Mat4 model = gizmo_.orientation;
+    for (int column = 0; column < 3; ++column) {
+        for (int row = 0; row < 3; ++row) {
+            model.m[column * 4 + row] *= scale;
+        }
+    }
     model.m[12] = gizmo_.pivot.x;
     model.m[13] = gizmo_.pivot.y;
     model.m[14] = gizmo_.pivot.z;
+    model.m[15] = 1.0f;
 
     const Mat4 viewProj = mat4Multiply(camera_.proj, camera_.view);
     const Mat4 mvp = mat4Multiply(viewProj, model);
@@ -2437,13 +2461,13 @@ void Renderer::recordGizmoDraw(VkCommandBuffer cmd) {
     gizmoAxisColor(display_.background, GizmoAxis::X, push.axisXColor);
     gizmoAxisColor(display_.background, GizmoAxis::Y, push.axisYColor);
     gizmoAxisColor(display_.background, GizmoAxis::Z, push.axisZColor);
-    push.control[0] = static_cast<float>(gizmo_.activeAxis == GizmoAxis::X   ? 1
-                                         : gizmo_.activeAxis == GizmoAxis::Y ? 2
-                                         : gizmo_.activeAxis == GizmoAxis::Z ? 3
-                                                                             : 0);
-    push.control[1] = kGizmoIdleAxisAlphaScale;
-    push.control[2] = kGizmoHeldAxisAlphaScale;
-    push.control[3] = 0.0f;
+    gizmoHighlightColor(display_.background, push.highlight);
+    // The packed scalars. See GizmoPush and gizmo.vert: the alpha slots of the
+    // three axis colours are the only bytes left inside the guaranteed budget.
+    push.axisXColor[3] = gizmoNeutralLevel(display_.background);
+    push.axisYColor[3] = static_cast<float>(gizmoHandleCode(gizmo_.activeHandle));
+    push.axisZColor[3] = kGizmoIdleAxisAlphaScale;
+    push.highlight[3] = kGizmoAxisAlpha;
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, gizmoPipeline_);
     vkCmdPushConstants(cmd, gizmoPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GizmoPush),
@@ -2452,14 +2476,15 @@ void Renderer::recordGizmoDraw(VkCommandBuffer cmd) {
     VkDeviceSize offset = 0;
     vkCmdBindVertexBuffers(cmd, 0, 1, &gizmoVertexBuffer_, &offset);
     // A RANGE of the one buffer, not a second buffer and not a re-upload:
-    // switching Move to Rotate changes two integers on this call and nothing
-    // else in the whole renderer.
-    const uint32_t first = (gizmo_.mode == GizmoMode::Rotate)
-                               ? static_cast<uint32_t>(kGizmoRotateFirstVertex)
-                               : static_cast<uint32_t>(kGizmoMoveFirstVertex);
-    const uint32_t count = (gizmo_.mode == GizmoMode::Rotate)
-                               ? static_cast<uint32_t>(kGizmoRotateVertexCount)
-                               : static_cast<uint32_t>(kGizmoMoveVertexCount);
+    // switching Move to Rotate to Scale changes two integers on this call and
+    // nothing else in the whole renderer.
+    int firstVertex = 0;
+    int vertexCount = 0;
+    if (!gizmoVertexRange(gizmo_.mode, &firstVertex, &vertexCount)) {
+        return;
+    }
+    const uint32_t first = static_cast<uint32_t>(firstVertex);
+    const uint32_t count = static_cast<uint32_t>(vertexCount);
     if (first + count > gizmoVertexCount_) {
         return;
     }

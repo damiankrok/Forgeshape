@@ -542,6 +542,330 @@ void testApplyEntryPoint(Recorder& r) {
             rejected.values.positionX == 0.75 && rejected.values.rotationZ == 10.0);
 }
 
+// ---------------------------------------------------------------------------
+// Scale: the default, the one positivity rule, and the derived matrices
+// ---------------------------------------------------------------------------
+
+void testScaleDomain(Recorder& r) {
+    ConstructionTransform t;
+    r.check("scale_defaults_to_one",
+            t.scaleXFactor() == 1.0 && t.scaleYFactor() == 1.0 && t.scaleZFactor() == 1.0 &&
+                t.isUnscaled() && t.isIdentity());
+
+    // Ordinary values, both sides of one.
+    TransformValues values;
+    values.scaleX = 3.0;
+    values.scaleY = 0.25;
+    values.scaleZ = 1.0;
+    r.check("an_ordinary_scale_applies",
+            t.setValues(values) == TransformUpdateStatus::Applied && t.scaleXFactor() == 3.0 &&
+                t.scaleYFactor() == 0.25 && !t.isUnscaled() && !t.isIdentity());
+    r.check("the_same_scale_again_is_unchanged",
+            t.setValues(values) == TransformUpdateStatus::Unchanged);
+
+    // The one positivity rule on this transform, and the whole no-Mirror
+    // decision expressed as a refusal rather than as a comment.
+    const double refused[4] = {0.0, -1.0, -0.5, kMinScaleFactor};
+    bool allRefused = true;
+    for (double bad : refused) {
+        TransformValues request = values;
+        request.scaleY = bad;
+        TransformValidation why = TransformValidation::Ok;
+        allRefused = allRefused && t.setValues(request, &why) == TransformUpdateStatus::Rejected &&
+                     why == TransformValidation::NotPositive;
+    }
+    r.check("zero_and_negative_scale_are_refused", allRefused);
+    r.check("a_refused_scale_leaves_every_previous_value_standing",
+            t.scaleXFactor() == 3.0 && t.scaleYFactor() == 0.25 && t.scaleZFactor() == 1.0);
+
+    // A non-finite scale is refused for the shared reason, not the positivity
+    // one, so the message a user sees names the right problem.
+    {
+        TransformValues request = values;
+        request.scaleZ = std::numeric_limits<double>::quiet_NaN();
+        TransformValidation why = TransformValidation::Ok;
+        r.check("a_non_finite_scale_is_refused_as_not_finite",
+                t.setValues(request, &why) == TransformUpdateStatus::Rejected &&
+                    why == TransformValidation::NotFinite);
+    }
+
+    // FAILS CLOSED across the whole nine: a bad scale must not leave a good
+    // position half applied.
+    {
+        TransformValues request;
+        request.positionX = 99.0;
+        request.rotationZ = 45.0;
+        request.scaleX = -2.0;
+        const TransformApplyResult result = applyTransformValues(t, request);
+        r.check("a_bad_scale_leaves_the_position_untouched",
+                result.status == TransformUpdateStatus::Rejected &&
+                    t.positionXMeters() == 0.0 && t.rotationZDegrees() == 0.0);
+    }
+
+    // Position and rotation keep their freedom: only a scale is constrained.
+    r.check("zero_and_negative_coordinates_are_still_ordinary",
+            validateTransformValue(0.0) == TransformValidation::Ok &&
+                validateTransformValue(-12.5) == TransformValidation::Ok &&
+                validateScaleValue(1.0) == TransformValidation::Ok);
+}
+
+void testScaledMatrices(Recorder& r) {
+    ConstructionTransform t;
+    TransformValues values;
+    values.positionX = 2.0;
+    values.rotationY = 90.0;
+    values.scaleX = 4.0;
+    values.scaleY = 0.5;
+    values.scaleZ = 2.0;
+    t.setValues(values);
+
+    // Model = T * R * S: the scale acts on the object FIRST, so the local +X of
+    // a body turned 90 degrees about Y is stretched by scaleX and then points
+    // along world -Z.
+    const Vec3 localX = mat4TransformPoint(t.modelMatrix(), Vec3{1.0f, 0.0f, 0.0f});
+    r.check("scale_is_applied_in_object_space_before_the_rotation",
+            nearlyVec(vec3Sub(localX, Vec3{2.0f, 0.0f, 0.0f}), 0.0f, 0.0f, -4.0f));
+    const Vec3 localY = mat4TransformPoint(t.modelMatrix(), Vec3{0.0f, 1.0f, 0.0f});
+    r.check("a_second_scaled_axis_is_scaled_by_its_own_factor",
+            nearlyVec(vec3Sub(localY, Vec3{2.0f, 0.0f, 0.0f}), 0.0f, 0.5f, 0.0f));
+
+    // The inverse really is the inverse, built from the values rather than
+    // numerically, so it cannot drift from the model it undoes.
+    const Mat4 round = mat4Multiply(t.inverseModelMatrix(), t.modelMatrix());
+    r.check("the_scaled_inverse_undoes_the_scaled_model", nearlyIdentity(round, 2.0f));
+
+    // A world ray carried into local space keeps its PARAMETER, which is what
+    // makes a hit distance still mean world meters on a stretched body. See the
+    // note in transformRayToLocal.
+    {
+        Ray world{};
+        world.origin = Vec3{5.0f, 3.0f, 1.0f};
+        world.direction = vec3Normalize(Vec3{-1.0f, -0.4f, 0.2f});
+        Ray local{};
+        const bool moved = transformRayToLocal(world, t.inverseModelMatrix(), &local);
+        const float parameter = 2.75f;
+        const Vec3 localPoint = vec3Add(local.origin, vec3Scale(local.direction, parameter));
+        const Vec3 backToWorld = mat4TransformPoint(t.modelMatrix(), localPoint);
+        const Vec3 alongWorld = vec3Add(world.origin, vec3Scale(world.direction, parameter));
+        r.check("a_local_ray_parameter_is_still_world_distance_under_scale",
+                moved && nearlyVec(vec3Sub(backToWorld, alongWorld), 0.0f, 0.0f, 0.0f));
+    }
+
+    // The normal matrix is R * S^-1, not R * S. The test that separates them:
+    // a face whose object-space normal is +X on a body stretched along X must
+    // still come out perpendicular to that face, and the two matrices disagree
+    // about that the moment the scale is non-uniform.
+    {
+        const Mat4 normal = t.normalMatrix();
+        const Vec3 carried = mat4TransformDirection(normal, Vec3{1.0f, 0.0f, 0.0f});
+        const Vec3 expected{0.0f, 0.0f, -0.25f};  // 1/4 along the rotated +X
+        r.check("the_normal_matrix_uses_the_inverse_scale",
+                nearlyVec(vec3Sub(carried, expected), 0.0f, 0.0f, 0.0f));
+
+        // And the property that actually matters: a normal stays perpendicular
+        // to a tangent it was perpendicular to in object space.
+        const Vec3 tangent = mat4TransformDirection(t.modelMatrix(), Vec3{0.0f, 1.0f, 0.0f});
+        r.check("a_carried_normal_stays_perpendicular_to_a_carried_tangent",
+                std::fabs(vec3Dot(vec3Normalize(carried), vec3Normalize(tangent))) < kEpsilon);
+    }
+
+    // An unscaled body is untouched by any of it: the normal matrix IS the
+    // rotation, which is why nothing about the existing product changes.
+    {
+        ConstructionTransform plain;
+        TransformValues rotated;
+        rotated.rotationX = 21.0;
+        rotated.rotationY = -33.0;
+        rotated.rotationZ = 57.0;
+        plain.setValues(rotated);
+        const Mat4 normal = plain.normalMatrix();
+        const Mat4 rotation = plain.rotationMatrix();
+        bool same = true;
+        for (int i = 0; i < 16; ++i) {
+            same = same && nearly(normal.m[i], rotation.m[i]);
+        }
+        r.check("an_unscaled_normal_matrix_is_the_rotation", same && plain.isUnscaled());
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Euler decomposition: the branch-continuous bridge the gizmo rotates through
+// ---------------------------------------------------------------------------
+
+bool sameRotation(const Mat4& a, const Mat4& b, float tolerance) {
+    for (int column = 0; column < 3; ++column) {
+        for (int row = 0; row < 3; ++row) {
+            if (std::fabs(a.m[column * 4 + row] - b.m[column * 4 + row]) > tolerance) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+void testEulerDecomposition(Recorder& r) {
+    // Round trip: whatever branch is chosen, rebuilding it must give the matrix
+    // back. That is the ONLY property a decomposition owes, and it is what makes
+    // every other case below a statement about continuity rather than about
+    // correctness.
+    const EulerDegrees samples[6] = {
+        {0.0, 0.0, 0.0},      {37.0, -52.0, 24.0}, {170.0, 12.0, -95.0},
+        {-140.0, 61.0, 33.0}, {5.0, 89.0, -7.0},   {12.0, -89.5, 44.0},
+    };
+    bool roundTrips = true;
+    for (const EulerDegrees& sample : samples) {
+        const Mat4 rotation = rotationMatrixFromEuler(sample);
+        EulerDegrees back{};
+        roundTrips = roundTrips && eulerFromRotationMatrix(rotation, sample, &back) &&
+                     sameRotation(rotationMatrixFromEuler(back), rotation, 1e-4f);
+    }
+    r.check("every_decomposition_rebuilds_its_own_matrix", roundTrips);
+
+    // Given the same triple it started from, the decomposition returns it
+    // unchanged rather than an equivalent one — which is what stops the
+    // exact-value editors rewriting themselves when nothing happened.
+    {
+        const EulerDegrees start{37.0, -52.0, 24.0};
+        EulerDegrees back{};
+        r.check("a_decomposition_prefers_the_triple_it_was_given",
+                eulerFromRotationMatrix(rotationMatrixFromEuler(start), start, &back) &&
+                    nearly(static_cast<float>(back.x), 37.0f) &&
+                    nearly(static_cast<float>(back.y), -52.0f) &&
+                    nearly(static_cast<float>(back.z), 24.0f));
+    }
+
+    // Continuity through +/-180, past 360 and past 720. Ten degrees at a time
+    // about world Z from an unturned start, exactly as a slow drag samples it:
+    // the Z field has to climb monotonically through every one of those
+    // boundaries rather than wrapping.
+    {
+        EulerDegrees previous{};
+        bool monotone = true;
+        bool reached = false;
+        double last = 0.0;
+        for (int step = 1; step <= 80; ++step) {
+            const double angle = static_cast<double>(step) * 10.0;
+            const Mat4 target = mat4Multiply(elementaryRotationMatrix(2, angle),
+                                             rotationMatrixFromEuler(EulerDegrees{}));
+            EulerDegrees next{};
+            if (!eulerFromRotationMatrix(target, previous, &next)) {
+                monotone = false;
+                break;
+            }
+            // A hundredth of a degree. The matrix is float and the angle comes
+            // back through an atan2 of two of its entries, so the residual is a
+            // few thousandths of a degree at these magnitudes — far above an
+            // exact match and far below anything a wrapped answer could look
+            // like, which would be wrong by a whole 360.
+            monotone = monotone && next.z > last - 1e-3 && std::fabs(next.z - angle) < 1e-2;
+            last = next.z;
+            previous = next;
+        }
+        reached = last > 720.0;
+        r.check("a_stepped_turn_climbs_past_720_without_wrapping", monotone && reached);
+    }
+
+    // The same, downward, so the negative direction is not a separate accident.
+    {
+        EulerDegrees previous{};
+        bool monotone = true;
+        double last = 0.0;
+        for (int step = 1; step <= 60; ++step) {
+            const double angle = static_cast<double>(step) * -10.0;
+            const Mat4 target = mat4Multiply(elementaryRotationMatrix(0, angle),
+                                             rotationMatrixFromEuler(EulerDegrees{}));
+            EulerDegrees next{};
+            if (!eulerFromRotationMatrix(target, previous, &next)) {
+                monotone = false;
+                break;
+            }
+            monotone = monotone && next.x < last + 1e-3;
+            last = next.x;
+            previous = next;
+        }
+        r.check("a_stepped_turn_the_other_way_falls_past_minus_360",
+                monotone && last < -360.0);
+    }
+
+    // The branch choice. From a `previous` that sits on the SECOND branch, the
+    // decomposition must return that branch rather than the principal one: a
+    // swap mid-drag would flip all three fields for no motion the user made.
+    {
+        const EulerDegrees principal{20.0, 30.0, -40.0};
+        const Mat4 rotation = rotationMatrixFromEuler(principal);
+        const EulerDegrees other{20.0 + 180.0, 180.0 - 30.0, -40.0 + 180.0};
+        EulerDegrees back{};
+        const bool decomposed = eulerFromRotationMatrix(rotation, other, &back);
+        // A thousandth of a degree, for the float-matrix reason above. What is
+        // being asserted is which BRANCH came back, and the two branches are 180
+        // degrees apart in every component — there is no way to confuse them at
+        // this tolerance.
+        r.check("the_branch_nearest_the_previous_answer_wins",
+                decomposed && std::fabs(back.x - other.x) < 1e-3 &&
+                    std::fabs(back.y - other.y) < 1e-3 && std::fabs(back.z - other.z) < 1e-3);
+        r.check("the_chosen_branch_is_still_the_same_orientation",
+                decomposed && sameRotation(rotationMatrixFromEuler(back), rotation, 1e-4f));
+    }
+
+    // A component the rotation never touched comes back EXACTLY as it was, not
+    // as a few times 1e-14 — see kEulerStickyDegrees. This is what keeps the
+    // exact-value editors from showing a rotation of -0.00000000000006.
+    {
+        const EulerDegrees start{0.0, 0.0, 0.0};
+        const Mat4 target = mat4Multiply(elementaryRotationMatrix(1, 100.0),
+                                         rotationMatrixFromEuler(start));
+        EulerDegrees back{};
+        r.check("an_untouched_euler_component_comes_back_exactly",
+                eulerFromRotationMatrix(target, start, &back) && back.x == 0.0 &&
+                    back.z == 0.0 && nearly(static_cast<float>(back.y), 100.0f));
+    }
+
+    // Gimbal lock: pitch at exactly +/-90. Only the sum or difference of the
+    // outer two is determined, so the only assertable property is that the
+    // matrix comes back — and that nothing is non-finite.
+    {
+        bool singularOk = true;
+        const double pitches[2] = {90.0, -90.0};
+        for (double pitch : pitches) {
+            const EulerDegrees at{15.0, pitch, -25.0};
+            const Mat4 rotation = rotationMatrixFromEuler(at);
+            EulerDegrees back{};
+            singularOk = singularOk && eulerFromRotationMatrix(rotation, at, &back) &&
+                         std::isfinite(back.x) && std::isfinite(back.y) &&
+                         std::isfinite(back.z) &&
+                         sameRotation(rotationMatrixFromEuler(back), rotation, 1e-3f);
+        }
+        r.check("a_singular_orientation_is_finite_and_orientation_correct", singularOk);
+    }
+
+    // Refusals: nothing is written and the caller holds its last good value.
+    {
+        Mat4 bad = mat4Identity();
+        bad.m[5] = std::numeric_limits<float>::quiet_NaN();
+        EulerDegrees back{1.0, 2.0, 3.0};
+        const EulerDegrees previous{};
+        r.check("a_non_finite_matrix_has_no_decomposition",
+                !eulerFromRotationMatrix(bad, previous, &back) && back.x == 1.0);
+        EulerDegrees badPrevious{std::numeric_limits<double>::quiet_NaN(), 0.0, 0.0};
+        r.check("a_non_finite_previous_has_no_decomposition",
+                !eulerFromRotationMatrix(mat4Identity(), badPrevious, &back) && back.x == 1.0);
+    }
+
+    // The elementary rotations are the ones the convention names, and an
+    // unknown axis is the identity rather than a silent X.
+    {
+        r.check("elementary_rotations_match_the_convention",
+                sameRotation(elementaryRotationMatrix(0, 30.0),
+                             rotationMatrixFromEuler(EulerDegrees{30.0, 0.0, 0.0}), 1e-6f) &&
+                    sameRotation(elementaryRotationMatrix(1, 30.0),
+                                 rotationMatrixFromEuler(EulerDegrees{0.0, 30.0, 0.0}), 1e-6f) &&
+                    sameRotation(elementaryRotationMatrix(2, 30.0),
+                                 rotationMatrixFromEuler(EulerDegrees{0.0, 0.0, 30.0}), 1e-6f));
+        r.check("an_unknown_elementary_axis_is_the_identity",
+                sameRotation(elementaryRotationMatrix(7, 30.0), mat4Identity(), 1e-6f));
+    }
+}
+
 }  // namespace
 
 int runTransformSelfTests(TransformSelfTestResult* out, int max) {
@@ -560,6 +884,9 @@ int runTransformSelfTests(TransformSelfTestResult* out, int max) {
     testTransformedBoxHit(r);
     testTransformDoesNotTouchMesh(r);
     testApplyEntryPoint(r);
+    testScaleDomain(r);
+    testScaledMatrices(r);
+    testEulerDecomposition(r);
     return r.n;
 }
 

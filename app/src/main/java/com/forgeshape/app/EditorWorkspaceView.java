@@ -149,9 +149,14 @@ final class EditorWorkspaceView extends FrameLayout
      * after every request, exactly as the Tool Rail reads back the held tool, so
      * this can never claim a mode the session is not in.
      */
+    private final LinearLayout transformSelectorRow;
     private final LinearLayout transformModeGroup;
     private final ImageView transformMoveAction;
     private final ImageView transformRotateAction;
+    private final ImageView transformScaleAction;
+    private final LinearLayout transformSpaceGroup;
+    private final ImageView transformSpaceWorldAction;
+    private final ImageView transformSpaceLocalAction;
 
     /** The capsule the precision toggle sits in, so it wears the same floating
      *  material as the rail above it rather than standing bare on the model. */
@@ -454,21 +459,21 @@ final class EditorWorkspaceView extends FrameLayout
         railColumn.addView(toolRailScroll, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        // The Move / Rotate selector: a two-button capsule directly under the
-        // rail, inside the same trailing cluster the Transform entry lives in.
+        // The Move / Rotate / Scale selector: a three-button capsule directly
+        // under the rail, inside the same trailing cluster the Transform entry
+        // lives in.
         //
         // Not three rail entries. The rail says WHICH Construction context is
-        // held — Shape or Transform — and splitting Transform into Move and
-        // Rotate up there would put two entries on a permanent control for a
-        // choice that only exists inside one of them. This is the contextual
-        // half of that entry, and it is absent everywhere the context is.
+        // held — Shape or Transform — and splitting Transform up there would put
+        // three entries on a permanent control for a choice that only exists
+        // inside one of them. This is the contextual half of that entry, and it
+        // is absent everywhere the context is.
         //
         // Vertical wherever the window has the height for it, so the cluster
-        // keeps the width the rail already occupies: a horizontal pair would
-        // push the trailing edge inward on every window, for a control that is
-        // on screen only some of the time. A window too short for a third
-        // stacked capsule turns it on its side instead — see
-        // applyTransformModeOrientation.
+        // keeps the width the rail already occupies: a horizontal row would push
+        // the trailing edge inward on every window, for a control that is on
+        // screen only some of the time. A window too short turns it on its side
+        // instead — see applyTransformSelectorOrientation.
         transformModeGroup = EditorControlStyles.controlGroup(context);
         transformModeGroup.setId(R.id.transform_mode_group);
         transformModeGroup.setOrientation(LinearLayout.VERTICAL);
@@ -492,16 +497,90 @@ final class EditorWorkspaceView extends FrameLayout
                 onTransformModeRequested(NativeViewport.GIZMO_MODE_ROTATE);
             }
         });
-        final LinearLayout.LayoutParams rotateParams =
-                EditorControlStyles.iconButtonParams(context, 0);
-        rotateParams.topMargin = EditorControlStyles.dimen(context, R.dimen.toolbar_gap);
-        transformModeGroup.addView(transformRotateAction, rotateParams);
+        transformModeGroup.addView(transformRotateAction, selectorFollowerParams(context));
+        transformScaleAction = EditorControlStyles.iconButton(context, R.id.transform_mode_scale,
+                R.drawable.ic_gizmo_scale, context.getString(R.string.transform_mode_scale));
+        transformScaleAction.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                onTransformModeRequested(NativeViewport.GIZMO_MODE_SCALE);
+            }
+        });
+        transformModeGroup.addView(transformScaleAction, selectorFollowerParams(context));
         transformModeGroup.setVisibility(GONE);
-        final LinearLayout.LayoutParams transformModeParams = new LinearLayout.LayoutParams(
+
+        // The two selectors share ONE slot in the trailing cluster.
+        //
+        // Stacked, they are two more capsules under a rail that already has to
+        // fit above a precision toggle, and on a short window the column then
+        // overflows — where Android squeezes the LAST child, which is a shipped
+        // 48 dp control. Giving them a row of their own is what lets a short
+        // window lay them side by side instead: the cluster then costs the
+        // height of ONE capsule rather than two, and the width a landscape
+        // window has to spare. See applyTransformSelectorOrientation.
+        transformSelectorRow = new LinearLayout(context);
+        transformSelectorRow.setOrientation(LinearLayout.VERTICAL);
+        transformSelectorRow.setGravity(Gravity.END);
+        EditorControlStyles.allowChildShadows(transformSelectorRow);
+        transformSelectorRow.setVisibility(GONE);
+        transformSelectorRow.addView(transformModeGroup, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        final LinearLayout.LayoutParams transformRowParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        transformModeParams.topMargin =
+        transformRowParams.gravity = Gravity.END;
+        transformRowParams.topMargin =
                 EditorControlStyles.dimen(context, R.dimen.row_gap_small);
-        railColumn.addView(transformModeGroup, transformModeParams);
+        railColumn.addView(transformSelectorRow, transformRowParams);
+
+        // The World / Local selector: a second capsule beside the mode one in
+        // the selector row, in the same idiom, because it answers a second
+        // question about the same instrument — not which handles, but which axes
+        // they point along.
+        //
+        // BOTH states are drawn rather than one toggle. The space changes what
+        // every handle means, so which alternative exists is worth 48 dp; a
+        // toggle showing only the current value would make the other one
+        // something the user has to remember is there.
+        //
+        // It is ABSENT in Scale rather than disabled. A world-axis scale of a
+        // rotated body is a shear, which the transform cannot hold at all, and a
+        // control that cannot succeed is not drawn. The native guard stays
+        // regardless — removing a control is not removing a guard.
+        transformSpaceGroup = EditorControlStyles.controlGroup(context);
+        transformSpaceGroup.setId(R.id.transform_space_group);
+        transformSpaceGroup.setOrientation(LinearLayout.VERTICAL);
+        transformSpaceGroup.setGravity(Gravity.CENTER_HORIZONTAL);
+        transformSpaceWorldAction = EditorControlStyles.iconButton(context,
+                R.id.transform_space_world, R.drawable.ic_space_world,
+                context.getString(R.string.transform_space_world));
+        transformSpaceWorldAction.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                onTransformSpaceRequested(NativeViewport.GIZMO_SPACE_WORLD);
+            }
+        });
+        transformSpaceGroup.addView(transformSpaceWorldAction,
+                EditorControlStyles.iconButtonParams(context, 0));
+        transformSpaceLocalAction = EditorControlStyles.iconButton(context,
+                R.id.transform_space_local, R.drawable.ic_space_local,
+                context.getString(R.string.transform_space_local));
+        transformSpaceLocalAction.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                onTransformSpaceRequested(NativeViewport.GIZMO_SPACE_LOCAL);
+            }
+        });
+        transformSpaceGroup.addView(transformSpaceLocalAction, selectorFollowerParams(context));
+        transformSpaceGroup.setVisibility(GONE);
+        // The gap to the mode selector, on whichever axis the row is laid out
+        // along — moved by applyTransformSelectorOrientation, exactly as the
+        // gap between two buttons inside a group is.
+        final LinearLayout.LayoutParams transformSpaceParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        transformSpaceParams.gravity = Gravity.END;
+        transformSpaceParams.topMargin =
+                EditorControlStyles.dimen(context, R.dimen.row_gap_small);
+        transformSelectorRow.addView(transformSpaceGroup, transformSpaceParams);
 
         precisionGroup = EditorControlStyles.controlGroup(context);
         precisionToggle = EditorControlStyles.iconButton(context, R.id.precision_toggle,
@@ -748,7 +827,7 @@ final class EditorWorkspaceView extends FrameLayout
         toolbar.setContextLabelVisible(layoutMode != WorkspaceLayoutMode.COMPACT);
         final boolean shortWindow = heightDp < WorkspaceLayoutMode.LOW_HEIGHT_MAX_DP;
         toolRail.setCompactEntries(shortWindow);
-        applyTransformModeOrientation(shortWindow);
+        applyTransformSelectorOrientation(shortWindow);
         // Roughly half the window's height for the two brush tracks, bounded by
         // the control's own sensible range, so they shrink with the window
         // instead of being clipped by it.
@@ -761,37 +840,72 @@ final class EditorWorkspaceView extends FrameLayout
     }
 
     /**
-     * Lays the Move / Rotate pair out along the axis the window has room on.
+     * Layout params for every selector button after the first: the gap between
+     * neighbours, on whichever axis the group is currently laid out along.
      *
-     * <p>A short window is the one that cannot take a third stacked capsule in
-     * the trailing cluster. Left vertical there, the column overflows and the
-     * LAST child — the precision toggle — is the one Android squeezes, which
-     * put a shipped 48 dp control at 14 dp. The pair turns on its side instead:
-     * a landscape window is short and wide, so a row of two costs width it has
-     * and returns the height it does not.
+     * <p>Declared once here rather than at each call site so the two selectors
+     * cannot drift apart, and so {@link #applyTransformSelectorOrientation} has
+     * exactly one shape of margin to move.
+     */
+    private static LinearLayout.LayoutParams selectorFollowerParams(Context context) {
+        final LinearLayout.LayoutParams params =
+                EditorControlStyles.iconButtonParams(context, 0);
+        params.topMargin = EditorControlStyles.dimen(context, R.dimen.toolbar_gap);
+        return params;
+    }
+
+    /**
+     * Lays the two transform selectors out along the axis the window has room
+     * on.
      *
-     * <p>Nothing else about the control changes — same two ids, same glyphs,
-     * same 48 dp targets, same capsule. It is the same control in a different
+     * <p>A short window is the one that cannot take the stacked capsules in the
+     * trailing cluster. Left vertical there, the column overflows and the LAST
+     * child — the precision toggle — is the one Android squeezes, which put a
+     * shipped 48 dp control at 14 dp. The selectors turn on their side instead:
+     * a landscape window is short and wide, so a row costs width it has and
+     * returns the height it does not.
+     *
+     * <p>Nothing else about either control changes — same ids, same glyphs, same
+     * 48 dp targets, same capsule. They are the same controls in a different
      * window, not a second design for one.
      */
-    private void applyTransformModeOrientation(boolean shortWindow) {
+    private void applyTransformSelectorOrientation(boolean shortWindow) {
+        // The buttons inside each capsule, and then the two capsules relative to
+        // each other. Both turn together, so the cluster costs one capsule of
+        // height on a short window instead of two.
+        applyGroupOrientation(transformModeGroup, shortWindow, transformRotateAction,
+                transformScaleAction);
+        applyGroupOrientation(transformSpaceGroup, shortWindow, transformSpaceLocalAction);
+        applyGroupOrientation(transformSelectorRow, shortWindow, transformSpaceGroup);
+    }
+
+    private void applyGroupOrientation(LinearLayout group, boolean shortWindow,
+                                       View... followers) {
         final int orientation = shortWindow ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL;
-        if (transformModeGroup.getOrientation() == orientation) {
+        if (group.getOrientation() == orientation) {
             return;
         }
-        transformModeGroup.setOrientation(orientation);
-        transformModeGroup.setGravity(shortWindow
-                ? Gravity.CENTER_VERTICAL : Gravity.CENTER_HORIZONTAL);
-        // The gap moves with the axis: whichever margin was separating the two
-        // is cleared and the other takes it, so the pair never carries a stale
-        // offset from the layout it used to be in.
+        group.setOrientation(orientation);
+        // The selector ROW keeps its trailing alignment in both axes: it is part
+        // of a right-aligned cluster, and centring it would leave the two
+        // capsules hanging off the edge the rail is flush with.
+        if (group == transformSelectorRow) {
+            group.setGravity(shortWindow ? Gravity.BOTTOM : Gravity.END);
+        } else {
+            group.setGravity(shortWindow ? Gravity.CENTER_VERTICAL : Gravity.CENTER_HORIZONTAL);
+        }
+        // The gap moves with the axis: whichever margin was separating the
+        // buttons is cleared and the other takes it, so a group never carries a
+        // stale offset from the layout it used to be in.
         final int gap = EditorControlStyles.dimen(getContext(), R.dimen.toolbar_gap);
-        final ViewGroup.LayoutParams params = transformRotateAction.getLayoutParams();
-        if (params instanceof LinearLayout.LayoutParams) {
-            final LinearLayout.LayoutParams rotate = (LinearLayout.LayoutParams) params;
-            rotate.topMargin = shortWindow ? 0 : gap;
-            rotate.leftMargin = shortWindow ? gap : 0;
-            transformRotateAction.setLayoutParams(rotate);
+        for (View follower : followers) {
+            final ViewGroup.LayoutParams params = follower.getLayoutParams();
+            if (params instanceof LinearLayout.LayoutParams) {
+                final LinearLayout.LayoutParams typed = (LinearLayout.LayoutParams) params;
+                typed.topMargin = shortWindow ? 0 : gap;
+                typed.leftMargin = shortWindow ? gap : 0;
+                follower.setLayoutParams(typed);
+            }
         }
     }
 
@@ -1594,8 +1708,10 @@ final class EditorWorkspaceView extends FrameLayout
                 && uiState.constructionTool() == EditorUiState.CONSTRUCTION_TOOL_TRANSFORM
                 && NativeViewport.sceneActiveBodyId() != NativeViewport.NO_OBJECT;
         NativeViewport.setGizmoActive(offered);
+        transformSelectorRow.setVisibility(offered ? VISIBLE : GONE);
         transformModeGroup.setVisibility(offered ? VISIBLE : GONE);
         if (!offered) {
+            transformSpaceGroup.setVisibility(GONE);
             return;
         }
         NativeViewport.gizmoState(nativeGizmo);
@@ -1604,18 +1720,48 @@ final class EditorWorkspaceView extends FrameLayout
                 mode == NativeViewport.GIZMO_MODE_MOVE);
         EditorControlStyles.setIconButtonActive(transformRotateAction,
                 mode == NativeViewport.GIZMO_MODE_ROTATE);
+        EditorControlStyles.setIconButtonActive(transformScaleAction,
+                mode == NativeViewport.GIZMO_MODE_SCALE);
+
+        // WHETHER there is a space to choose is native state too, not a mode
+        // comparison repeated on this side: Scale is Local-only, and a second
+        // copy of that rule here would be a second thing to keep in step.
+        final boolean spaceSelectable =
+                nativeGizmo[NativeViewport.GIZMO_SPACE_SELECTABLE] != 0.0;
+        transformSpaceGroup.setVisibility(spaceSelectable ? VISIBLE : GONE);
+        final int space = (int) nativeGizmo[NativeViewport.GIZMO_SPACE];
+        EditorControlStyles.setIconButtonActive(transformSpaceWorldAction,
+                space == NativeViewport.GIZMO_SPACE_WORLD);
+        EditorControlStyles.setIconButtonActive(transformSpaceLocalAction,
+                space == NativeViewport.GIZMO_SPACE_LOCAL);
     }
 
     /**
-     * Asks for Move or Rotate, then redraws from what the session reports.
+     * Asks for Move, Rotate or Scale, then redraws from what the session
+     * reports.
      *
      * <p>Costs the model nothing: no mesh revision, no geometry publication and
      * no history step. It deliberately does not re-read the exact-value editors
      * either — nothing about the object changed, and a refresh would discard a
      * half-typed draft for a presentation-only act.
+     *
+     * <p>Entering and leaving Scale moves the SPACE as well, which is why the
+     * redraw reads both back rather than only the mode: the session owns that
+     * coupling and this layer only shows what it decided.
      */
     private void onTransformModeRequested(int mode) {
         NativeViewport.setGizmoMode(mode);
+        refreshTransformGizmo(false);
+    }
+
+    /**
+     * Asks for World or Local, then redraws from what the session reports.
+     *
+     * <p>Exactly as cheap as the mode: presentation state, no revision, no
+     * publication, no history step, and no re-read of the exact-value editors.
+     */
+    private void onTransformSpaceRequested(int space) {
+        NativeViewport.setGizmoSpace(space);
         refreshTransformGizmo(false);
     }
 
@@ -2362,8 +2508,9 @@ final class EditorWorkspaceView extends FrameLayout
         return brushControls;
     }
 
-    /** The Move / Rotate selector, so a test can read whether it is on screen
-     *  and press it the way a user does rather than calling into the workspace. */
+    /** The Move / Rotate / Scale selector, so a test can read whether it is on
+     *  screen and press it the way a user does rather than calling into the
+     *  workspace. */
     LinearLayout transformModeGroup() {
         return transformModeGroup;
     }
@@ -2374,6 +2521,24 @@ final class EditorWorkspaceView extends FrameLayout
 
     ImageView transformRotateAction() {
         return transformRotateAction;
+    }
+
+    ImageView transformScaleAction() {
+        return transformScaleAction;
+    }
+
+    /** The World / Local selector, which is ABSENT in Scale — so a test can
+     *  assert the absence as well as the choice. */
+    LinearLayout transformSpaceGroup() {
+        return transformSpaceGroup;
+    }
+
+    ImageView transformSpaceWorldAction() {
+        return transformSpaceWorldAction;
+    }
+
+    ImageView transformSpaceLocalAction() {
+        return transformSpaceLocalAction;
     }
 
     /** The rail's precision toggle, so a test can open the exact values the way
@@ -2471,8 +2636,10 @@ final class EditorWorkspaceView extends FrameLayout
         // capsules inside it are: the row spans the window and paints nothing,
         // and counting it would report the bottom bar the composition
         // deliberately does not have.
-        final View[] surfaces = {brushControls, toolRailScroll, transformModeGroup, precisionGroup,
-                objectsCapsule, historyGroup, inspector, objectsDock};
+        final View[] surfaces = {brushControls, toolRailScroll, transformModeGroup,
+                transformSpaceGroup, precisionGroup, objectsCapsule, historyGroup, inspector,
+                objectsDock};
+
         final View[] top = toolbar.occludingSurfaces();
         final View[] all = new View[surfaces.length + top.length];
         System.arraycopy(surfaces, 0, all, 0, surfaces.length);

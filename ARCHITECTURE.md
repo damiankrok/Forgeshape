@@ -87,11 +87,11 @@ forgeshape_jni.cpp            render thread, ANativeWindow, MotionEvent ->
 | Which parameters belong to which primitive | `PrimitiveSpec`'s payload variant | no caller reads a primitive's numbers as another's; the kind is derived from the payload, not stored beside it |
 | Authoritative primitive update **and** its mesh publication | `applyPrimitive` (`forgeshape_construction.{h,cpp}`) | JNI and Java restate none of this rule |
 | The Construction transaction boundary and the whole Undo/Redo history | `ConstructionHistory` (`forgeshape_history.{h,cpp}`) | Java holds no history, no depth counter and no mirror scene; it holds no sculpt vertex, no `SculptRevision` and no mesh data of any kind |
-| Which handle a touch landed on, the drag solver, and the transaction around one drag | `GizmoSession` (`forgeshape_gizmo.{h,cpp}`) | it owns NO transform of its own — the authoritative `ConstructionTransform` moves throughout the drag; Java owns no pivot, no solver and no captured pointer |
-| Whether there IS a gizmo at all (product mode, rail context, a body to act on) | `EditorWorkspaceView` | it decides nothing about where the handles are, how large they are or what a drag means; it pushes one boolean, one mode index and the display's pixel scale |
-| The gizmo's canonical geometry, axis colours and reference-unit sizes | `forgeshape_gizmo.{h,cpp}` | it is not a `SceneObject`, has no `ObjectId` or revision, is never published, is not pickable by `pickScene`, and is not exported |
-| The raw-delta → applied-delta quantization seam | `quantizeGizmoTranslation` / `quantizeGizmoRotation` | the identity today; there is no Grid Snap contract, no setting and no hidden snapping |
-| Authoritative placement (double-meter position, double-degree rotation) and the derived model/inverse matrices | `ConstructionTransform` (`forgeshape_transform.{h,cpp}`) | no JNI/Android/Vulkan/renderer/UI types; it cannot publish a mesh because it cannot reach `MeshStore` |
+| Which handle a touch landed on, the Move/Rotate/Scale solvers, the frozen World or Local drag basis, and the transaction around one drag | `GizmoSession` (`forgeshape_gizmo.{h,cpp}`) | it owns NO transform of its own — the authoritative `ConstructionTransform` moves throughout the drag; Java owns no pivot, no solver, no basis and no captured pointer |
+| Whether there IS a gizmo at all (product mode, rail context, a body to act on) | `EditorWorkspaceView` | it decides nothing about where the handles are, how large they are or what a drag means; it pushes one boolean, a mode index, a space index and the display pixel scale, and reads back which of them the session actually took — including whether a space is offered at all |
+| The gizmo canonical geometry, its axis/highlight/neutral colours and its reference-unit sizes | `forgeshape_gizmo.{h,cpp}` | it is not a `SceneObject`, has no `ObjectId` or revision, is never published, is not pickable by `pickScene`, and is not exported |
+| The solved-target → applied-target placement and quantization seam | `applyGizmoPlacementModifier` plus `quantizeGizmoTranslation` / `...Rotation` / `...Scale` | all four are the identity today; neither Surface Snap nor Grid Snap has an approved contract, so there is no setting, no indicator and no hidden snapping |
+| Authoritative placement (double-meter position, double-degree rotation, unitless positive scale) and the derived model / inverse / rotation / normal matrices | `ConstructionTransform` (`forgeshape_transform.{h,cpp}`) | no JNI/Android/Vulkan/renderer/UI types; it cannot publish a mesh because it cannot reach `MeshStore` |
 | The axis and Euler convention | `forgeshape_transform.h` | the renderer and the picker define none of their own |
 | World ray → local object ray | `transformRayToLocal` (`forgeshape_picking.{h,cpp}`) | no Vulkan state is consulted |
 | Surface create/change/destroy | `ForgeShapeSurfaceView` | native code does not touch Android views |
@@ -241,11 +241,23 @@ drawn there, inert. Half of the one control the user reaches for most, spent on
 features the product does not have, on the smallest window, beside the two that
 work, is a worse trade than a rail that grows an entry later; an entry that looks
 like a tool and is not is a promise the shell cannot keep. Construction's two
-entries are *Shape* and *Transform*. **"Transform" is the vocabulary Stage 020's
-direct handles will join, and is deliberately not a claim that they exist**:
-everything behind that entry today is exact numeric, and every surface it opens
-says so in its own title — "Exact Transform — Body #1". `ToolRailView` no longer
-has any notion of a reserved entry. The one approved-but-unimplemented control
+entries are *Shape* and *Transform*. **"Transform" now carries both halves**: the
+direct handles in the viewport and the exact numbers behind the precision
+toggle, which are two front ends to one placement. The surface still names
+itself "Exact Transform — Body #1", because that is what it is — the typed half
+— and not because it is the only half. `ToolRailView` has no notion of a
+reserved entry.
+
+**The transform selectors are contextual to that one entry, and live in a row of
+their own.** *Transform mode* (Move / Rotate / Scale) and *coordinate space*
+(World / Local) are two capsules inside one `transformSelectorRow` under the
+rail, absent everywhere the gizmo is. They are not rail entries: the rail says
+which Construction context is held, and putting five more selectable things on a
+permanent control for a choice that exists inside one of them would break the
+rail's one invariant. The row exists so a short window can lay the two capsules
+**side by side** instead of stacked — the trailing cluster then costs the height
+of one capsule rather than two, which is the difference between fitting and
+Android squeezing the last child (the precision toggle) down to 14 dp. The one approved-but-unimplemented control
 left in the product is the global `Export`, which is drawn recessed and says why.
 
 **The precision toggle belongs to the rail, not to the toolbar.** What it opens is
@@ -1446,11 +1458,11 @@ sample and a drag of a thousand cost the history the same, and a tap costs it
 nothing — because the commit compares Construction state rather than trusting
 that a gesture happened.
 
-## The Construction Move / Rotate gizmo
+## The Construction transform gizmo
 
 `forgeshape_gizmo.{h,cpp}` owns direct manipulation of a body's placement:
-which handle a pointer landed on, which pointer is captured, the drag solver,
-and the transaction around one drag. It is platform-neutral C++17 — a
+which handle a pointer landed on, which pointer is captured, the three drag
+solvers, and the transaction around one drag. It is platform-neutral C++17 — a
 `CameraSnapshot`, a viewport size in pixels and a platform-neutral pointer
 position cross in; a snapshot the renderer can draw crosses out.
 
@@ -1459,22 +1471,81 @@ captured body moves throughout the drag, so the renderer, the picker and the
 exact-value editors read the same numbers mid-drag that they read at rest.
 There is no second solver, no parallel pivot and no Java-side placement.
 
-### World axes, and the pivot
+### Three modes, two spaces, one pivot
 
-The three Move handles and the three Rotate rings are world X, Y and Z. They do
-not rotate with the body; there is no Local/World toggle, no custom pivot, no
-plane or free-move handle and no Scale. The pivot is the body's authoritative
-Construction placement origin — never a mesh AABB centre, a screen-space
-centroid or a camera-facing proxy, all of which are derived products of the
-truth this gizmo writes.
+| mode | handles | World | Local |
+| --- | --- | --- | --- |
+| Move | axis X/Y/Z, plane XY/XZ/YZ | yes | yes |
+| Rotate | ring X/Y/Z | yes | yes |
+| Scale | axis X/Y/Z, plane XY/XZ/YZ, uniform | no | yes |
 
-Rotation goes through the **existing** exact-transform convention and invents no
-second one: a ring accumulates a signed angle and adds it to that axis's Euler
-component, which is what the Property Inspector reads and writes. Since
-`Model = T * Rz * Ry * Rx`, the Z ring is a true world-Z rotation always, and
-the X and Y rings are world-true whenever the components outside them are zero.
-That is the MVP's stated limit — and it is why there is no local-axis mode: one
-would have to invent a second Euler order to deliver it.
+`GizmoMode` and `GizmoSpace` are the closed enums; `GizmoHandle` is what a
+pointer actually grabbed, separate from `GizmoAxis` because a plane handle is
+constrained to two basis directions and a uniform handle to none — neither is an
+axis and neither may be nameable as one.
+
+**WORLD** is the world basis. **LOCAL** is the body's own basis: the three
+columns of its rotation matrix, deliberately *scale-free*, so a stretched body
+still has a local X that points one way and a handle direction never depends on
+how large the body happens to be. One drag freezes its basis at the pointer
+down — in Local a rotate drag is changing the very rotation the basis comes
+from, and a basis re-read every sample would chase its own output.
+
+**Scale has no World**, and that is a domain fact rather than a scope decision:
+a world-axis scale of a turned body is a shear, which cannot be written as
+`T · R · S` for any diagonal `S`, so it could neither be stored in the
+authoritative transform nor read back by the exact-value editors. The selector is
+absent in Scale rather than shown and refused, and `setSpace` refuses World
+there regardless — removing a control is not removing a guard.
+
+The pivot is always the body's authoritative Construction placement origin —
+never a mesh AABB centre, a screen-space centroid or a camera-facing proxy, all
+of which are derived products of the truth this gizmo writes.
+
+### Rotation is composed as matrices and stored as Euler degrees
+
+A ring drag does **not** add its angle to one Euler component. That is only
+correct when the other two are zero, and on a mixed orientation it turns the
+body about neither the world axis nor the local one — the Stage 020 defect this
+stage removes. Each sample composes from the **immutable start orientation** and
+the accumulated angle:
+
+```
+World:  R_target = Relem(A, delta) * R_start     (turn, then place)
+Local:  R_target = R_start * Relem(A, delta)     (place, then turn)
+```
+
+Both are "rotate about the ring the user can see": in World the ring normal is
+the world axis, in Local it is `R_start · e_A`, and the conjugation identity
+makes the two formulations agree with the drawn geometry.
+
+`R_target` is then decomposed back to the authoritative Euler degrees by
+`eulerFromRotationMatrix` — the ONE bridge between the two forms, in
+`forgeshape_transform.{h,cpp}`. A correct rotation on a mixed orientation
+legitimately moves more than one Euler field, so correctness is a statement about
+the **orientation** and every test asserts against matrices rather than fields.
+
+### Branch-continuous Euler decomposition
+
+A ZYX triple is not unique, and two facts make the naive answer wrong for a drag:
+every component is periodic, and `(x, y, z)` and `(x+180, 180−y, z+180)` name the
+same orientation. So both branches are generated, every component is shifted by
+whole turns into a half-turn window around the **last accepted** answer, and the
+closer branch wins. That is what makes a drag continuous through ±180°, keeps it
+counting past 360° and past 720° instead of wrapping, and stops all three fields
+flipping at once for no motion the user made.
+
+Near ±90° of pitch the outer two angles are genuinely inseparable. There the yaw
+is held at its previous value and the whole remaining turn goes into roll:
+deterministic, finite, and orientation-correct — the matrix it rebuilds is the
+matrix it was given, which is the only property assertable at a singularity.
+
+A component the drag never touched comes back **exactly** as it was.
+`kEulerStickyDegrees` (1e-9°) is what makes that true: a float matrix and an
+`atan2` return a few times 1e-14 rather than the zero the component started at,
+and the exact-value editors would otherwise show a body rotated about world Y as
+carrying −0.00000000000006 about X. A billionth of a degree is far below anything
+a gesture can express and far above the residue of a matrix round trip.
 
 ### One scale for drawing and for grabbing
 
@@ -1484,30 +1555,60 @@ unit from the camera's own projection matrix and the pivot's depth — reading
 `proj.m[5]` rather than a remembered field of view, so it cannot drift from what
 is drawn. Both the renderer's model matrix and the hit test use that same scale,
 which is what keeps what the user sees and what the finger can grab from ever
-disagreeing.
+disagreeing. The **body's** scale is not part of it: stretching a body must not
+stretch the instrument used to stretch it, and the snapshot carries no scale for
+the renderer to reach.
 
 Hit-testing is done in **pixels**, against the projected geometry, rather than
-as three ray/cylinder and three ray/torus tests: measuring in pixels is what
-lets the 48-unit hit corridor (`2 * kGizmoHitSlopUnits`) be a number the domain
-states rather than an aspiration. The inner quarter of each shaft is excluded,
-because all three converge at the pivot and a touch there names no axis. The
-three rings genuinely intersect — the X and Z rings both pass through +Y, and so
-on — so a touch at a crossing is resolved deterministically (X, then Y, then Z,
-on an exact tie), and `gizmoRingGrabOffset` is the one definition of a point
-that names a single ring.
+as ray/cylinder, ray/torus and ray/box tests: measuring in pixels is what lets
+the 48-unit floor be a number the domain states rather than an aspiration. Every
+target meets it — `2 * kGizmoHitSlopUnits` for a shaft or an arc,
+`2 * kGizmoPlaneHitRadiusUnits` around a plane square's centre,
+`2 * kGizmoUniformHitRadiusUnits` around the pivot.
 
-### The Move solver, and its degeneracy
+Handles resolve in **priority tiers**, smallest target first: uniform, then
+planes, then axes, nearest-within-tier, with the enumeration order breaking an
+exact tie deterministically. Without the tiers the three shafts, which are long,
+would win every contest against the small handles between them. The drawn plane
+square starts outside the axis corridor (`kGizmoPlaneInnerUnits >
+kGizmoHitSlopUnits`), so priority is a tie-break rather than a way of hiding an
+overlap.
 
-Closest approach between the pick ray and the infinite axis line. The
+A touch inside `kGizmoPivotDeadRadiusUnits` of the projected pivot names **no
+handle at all** in Move and Rotate: every shaft converges there and every ring
+passes around it. Excluding the inner span alone was not enough — the corridor
+*around* that span reaches back to the pivot, and foreshortening pulls it further
+in. In Scale the same disc IS the uniform handle, so the exclusion is per-mode
+rather than a property of the pivot.
+
+The three rings genuinely intersect — the X and Z rings both pass through +Y,
+and so on — so `gizmoRingGrabOffset` is the one definition of a point that names
+a single ring. `gizmoHandleGrabPoint` is the one definition of where ANY handle
+is grabbed, and drawing, hit-testing, the scale reference direction, the JNI
+diagnostic and verification all read it.
+
+### The Move solvers, and their degeneracy
+
+**Axis.** Closest approach between the pick ray and the infinite basis line. The
 denominator is `1 - cos²` of the angle between them and vanishes exactly when
 they are parallel; below `kGizmoAxisParallelDenominator` (about 8°) the solver
 falls back to the intersection with the camera-facing plane **through** the
 axis, projected back onto the axis — the constraint is still the axis, only the
 surface read against has changed. When that plane is edge-on too, the result is
 `Unresolvable`: the drag writes nothing and holds its last good value. Guessing
-there is what produces the jump the status exists to prevent. Every sample is
-applied from the START values rather than incrementally, so a long drag cannot
-accumulate the solver's own rounding.
+there is what produces the jump the status exists to prevent.
+
+**Plane.** The pointer ray meets the plane through the pivot whose normal is the
+third basis direction, and the displacement from the down-point is **projected
+onto the two allowed directions**. The third component is therefore untouched by
+construction rather than by a subsequent correction, which is what makes "a plane
+drag never leaves its plane" a property of the arithmetic. An edge-on plane is
+refused and the drag holds, exactly as an edge-on ring does.
+
+Both apply from the START values rather than incrementally, so a long drag cannot
+accumulate the solver's own rounding, and the world displacement is accumulated
+in `double` so a world-axis drag writes the same exact number a typed Apply
+would.
 
 ### The Rotate solver, and its degeneracy
 
@@ -1521,6 +1622,34 @@ itself reduced, a drag past a full turn keeps going — 350 + 30 reads back as
 edge-on ring is refused by `intersectRayPlane`, and refusing IS the documented
 fallback: the body stops rather than spinning on noise, and resumes the moment
 the plane has something to intersect again.
+
+### The Scale solver
+
+One formula for all three scale handles, so there is one thing to describe and
+one thing to test:
+
+```
+factor = 1 + (pointer - down) · dir / referencePixels
+```
+
+`dir` is the handle's own **screen** direction and `referencePixels` is how long
+that handle is on screen: the projected shaft for an axis, the projected in-plane
+diagonal for a plane, and the screen diagonal (right and up) at one shaft length
+for the uniform handle, which has no direction of its own. Screen space is the
+right space for this because a scale factor is a screen-space question — there is
+no world quantity a pointer offset could be intersected against.
+
+Measured from the **pointer down point** rather than from the pivot, so the
+factor is exactly 1 at zero drag wherever on the handle the user grabbed. It is
+monotone in the pointer displacement, finite, and clamped at
+`kGizmoMinScaleFactor`, so dragging past the pivot pins the body at a sliver
+rather than passing through zero into a mirror. A handle that projects shorter
+than `kGizmoScaleMinReferenceUnits` has no usable screen direction and the
+capture is **refused** rather than anchored on rounding error.
+
+An axis handle writes one component, a plane handle writes its two by the same
+factor, and the uniform handle writes all three — which preserves an existing
+non-uniform body's proportions exactly.
 
 ### Input arbitration
 
@@ -1544,22 +1673,46 @@ regenerates no primitive, because `applyTransformValues` cannot reach a
 `MeshStore` — the same structural guarantee a typed Apply already had. The
 renderer's gizmo geometry is a compile-time constant uploaded once with the
 device (`FORGESHAPE_GIZMO_UPLOAD_OK`, logged once per device); where the gizmo
-is and how large it looks are a push-constant matrix per frame. Switching Move
-to Rotate changes two integers on one `vkCmdDraw`.
+is, which way it points and how large it looks are a push-constant matrix per
+frame. Switching Move to Rotate to Scale changes two integers on one
+`vkCmdDraw`, and switching World to Local changes the rotation in that matrix.
+
+The gizmo push block is also exactly 128 bytes — the guaranteed minimum — which
+leaves four `vec4`s after the matrix for three axis colours plus a highlight, a
+neutral grey, the held-handle code and the idle alpha. The three extra scalars
+ride in the axis colours' otherwise-wasted `w` components, the same technique the
+surface block uses for its shading model; the packing is documented once in
+`shaders/gizmo.vert` and written once in `GizmoPush`. Each vertex carries a
+colour tag AND a handle code, separately, because a plane handle borrows the hue
+of the axis perpendicular to it and holding that axis must not light the plane
+too.
 
 The gizmo pass is last in the frame, on its own pipeline with no descriptor set,
 with depth test AND depth write off. Off so a handle stays reachable where it
 passes through the body it moves; no write so the depth buffer is left exactly
 as the bodies and the grid left it.
 
-### The quantization seam
+### The quantization and placement seam
 
-`quantizeGizmoTranslation` and `quantizeGizmoRotation` are the one place a raw
-constrained delta becomes the applied one. Both are the identity. Grid Snap has
-no approved contract — no translational increment, no relation to the display
-unit, no rotational increment — so there is no setting, no indicator and no
-hidden snapping; the seam exists so that an approved contract lands in two
-functions instead of in the gesture architecture.
+One pipeline, stated once:
+
+```
+raw pointer -> coordinate constraint (the solvers) -> placement / snap modifier -> authoritative apply
+```
+
+`quantizeGizmoTranslation`, `quantizeGizmoRotation` and `quantizeGizmoScale` are
+the per-component half; `applyGizmoPlacementModifier` is the whole-placement
+half, and it takes the solved target, the pre-drag placement, the mode, the
+handle and the space, so an approved snap can consult all five without any solver
+learning about it. `GizmoSession::applyTarget` is the only path from a solved
+target to the transform, so nothing can bypass the seam.
+
+All four are the identity today and the self-tests assert that they are. Neither
+Surface Snap nor Grid Snap has an approved contract — no translational increment,
+no relation to the display unit, no rotational increment, and no definition of
+what a surface even means for a body that has not been picked — so there is no
+setting, no indicator and no hidden snapping. The seam exists so an approved
+contract lands in these functions instead of in the gesture architecture.
 
 ## Construction transform
 
@@ -1570,42 +1723,67 @@ become inconsistent about which object they describe; the two branches of the
 source-of-truth hierarchy above are exactly these two.
 
 The published `RuntimeMesh` is the object's geometry in **object space**. The
-transform never touches it. That is the whole point: moving or rotating the
-object changes one derived 4×4 matrix and nothing else — no vertex is rewritten,
-no `MeshRevision` is published and no GPU upload happens. `ConstructionTransform`
-could not publish one if it wanted to; it has no access to `MeshStore`. The
-independence runs both ways: a shape change republishes the mesh and leaves the
-placement exactly as it was, including across any switch among the six kinds.
+transform never touches it. That is the whole point: moving, rotating **or
+scaling** the object changes derived 4×4 matrices and nothing else — no vertex is
+rewritten, no `MeshRevision` is published and no GPU upload happens.
+`ConstructionTransform` could not publish one if it wanted to; it has no access
+to `MeshStore`. The independence runs both ways: a shape change republishes the
+mesh and leaves the placement exactly as it was, including across any switch
+among the six kinds.
 
 **Unit contract.** Position is `double` **meters**, rotation is `double`
-**degrees**, named `...Meters` and `...Degrees` at every boundary. Degrees are
-authoritative because degrees are what the product exposes; radians exist only
-inside the derived trigonometry. mm/cm/m applies to position exactly as it
-applies to a dimension, and never to rotation.
+**degrees**, scale is a `double` **unitless multiplier**, named `...Meters`,
+`...Degrees` and `...Factor` at every boundary. Degrees are authoritative because
+degrees are what the product exposes; radians exist only inside the derived
+trigonometry. mm/cm/m applies to position exactly as it applies to a dimension,
+and never to rotation or to scale.
+
+**Scale is not a dimension.** A 2 m box at scale 2 is drawn 4 m across and its
+Construction parameter is still 2 m. That separation is the whole reason a scale
+may live on the transform at all: it moves a derived matrix and never a primitive
+parameter, so the Construction Source is untouched by it and the exact-value
+surfaces stay two clearly different questions — what the body IS, and where and
+how large it is drawn.
 
 ### Axis and Euler convention
 
 Right-handed world space, **+Y up**, column-vector math (`p' = M * p`), storage
 column-major. A positive angle rotates by the **right-hand rule**. Rotations
-compose in **local X → Y → Z** order, which for column vectors is written right
-to left:
+compose in **local X → Y → Z** order, and the scale sits **inside** all of them,
+which for column vectors is written right to left:
 
 ```
-Model    = T * Rz * Ry * Rx
-Model^-1 = Rx(-x) * Ry(-y) * Rz(-z) * T(-p)
+Model      = T * Rz * Ry * Rx * S
+Model^-1   = S^-1 * Rx(-x) * Ry(-y) * Rz(-z) * T(-p)
+NormalM    = R * S^-1
 ```
 
-so `Rx` acts on the object first and the translation last — a rotated object at
-(2, 0, 0) is still centred at (2, 0, 0), because the rotation does not turn its
-own translation.
+so `S` acts on the object first, then `Rx`, and the translation last — a rotated
+object at (2, 0, 0) is still centred at (2, 0, 0), because the rotation does not
+turn its own translation, and a scaled one grows about its own origin rather than
+sliding away from it. Scale is therefore **local / object space**: it stretches
+the body along the body's own axes, which is the only meaning that survives a
+rotation without inventing a shear, and is why the product offers no world-space
+scale.
+
+`NormalM` is the third derived matrix, and it is a real inverse transpose:
+`(R·S)^-T = R^-T·S^-T = R·S^-1` for an orthonormal `R` and a diagonal positive
+`S`. It equals `R` exactly when the scale is (1,1,1), which is why nothing about
+an unscaled body changes. The renderer composes `view · NormalM` for the shader
+and never `view · Model` — the two agree for every unscaled body and part company
+the moment a body is stretched, where the model would tilt a normal off the
+surface it belongs to.
 
 There is exactly one convention in ForgeShape. The renderer consumes
-`modelMatrix()` and the picker consumes `inverseModelMatrix()`; neither builds a
-rotation itself, so they cannot drift apart. The inverse is composed from the
-authoritative values rather than inverted numerically, which is exact for a rigid
-transform and cannot disagree with the model it undoes. The self-tests assert the
-convention directly — `Rx(+90)` takes +Y to +Z, `Ry(+90)` takes +Z to +X,
-`Rz(+90)` takes +X to +Y, and `Model * Model⁻¹` is the identity both ways.
+`modelMatrix()` and `normalMatrix()`, the picker consumes
+`inverseModelMatrix()`, and the gizmo's Local basis consumes `rotationMatrix()`;
+none of them builds a rotation itself, so they cannot drift apart. The inverse is
+composed from the authoritative values — each factor inverted, the order
+reversed, the scale by reciprocal — rather than inverted numerically, so it
+cannot disagree with the model it undoes. The self-tests assert the convention
+directly: `Rx(+90)` takes +Y to +Z, `Ry(+90)` takes +Z to +X, `Rz(+90)` takes +X
+to +Y, `Model * Model⁻¹` is the identity both ways under scale, and a carried
+normal stays perpendicular to a carried tangent.
 
 ### Rotation values are not canonicalized
 
@@ -1617,25 +1795,51 @@ same derived matrix.
 
 ### Validation
 
-A transform value is refused only when it is not finite, or when it could not
-survive into the derived `float` matrix. Zero and negative are **ordinary** for
-all six: a coordinate is a place and an angle is a direction, neither is a size,
-and there is no arbitrary product limit. `applyBoxTransform`
-(`applyTransformValues` / `applyConstructionTransform`) is the one entry point.
-It fails closed: all six are validated before any is written, so a bad rotation
-cannot leave a half-applied position behind. It reports `Applied`, `Unchanged` or
-`Rejected` exactly as the dimension path does.
+A position or rotation value is refused only when it is not finite, or when it
+could not survive into the derived `float` matrix. Zero and negative are
+**ordinary** for all six: a coordinate is a place and an angle is a direction,
+neither is a size, and there is no arbitrary product limit.
+
+A **scale** carries that rule and one more: it must stay strictly above
+`kMinScaleFactor`. Zero would make the model matrix singular — no inverse, no
+local ray for picking, a divide by zero in the normal matrix — and negative would
+be a **Mirror**, which this product does not have and which would silently invert
+winding order and make every normal and every front-face test wrong. The floor is
+a REFUSAL threshold and not a rounding rule: a request at or below it leaves
+every previous value standing rather than being clamped into a size the user did
+not ask for. It surfaces as `NotPositive`, the same code a non-positive dimension
+uses, because it means the same thing to a reader.
+
+`applyBoxTransform` (`applyTransformValues` / `applyConstructionTransform`) is
+the one entry point. It fails closed: **all nine** are validated before any is
+written, so a bad scale cannot leave a half-applied position behind. It reports
+`Applied`, `Unchanged` or `Rejected` exactly as the dimension path does.
 
 ### Picking a transformed object
 
 The ray moves, not the mesh. `transformRayToLocal` carries the world ray into
 object space with the inverse model, and the unchanged local `RuntimeMesh` is
 intersected there — the same vertices the GPU already holds. The hit point is
-carried back to world space for reporting; the distance needs no conversion,
-because a rigid transform preserves length. The transform has no reflection, so
-winding is unchanged and front-face-only picking means the same thing in either
-space. That is what keeps "what is drawn" and "what is pickable" identical under
-a transform, with no second collision representation to keep in sync.
+carried back to world space for reporting.
+
+The distance needs no conversion, and that stays true under a **non-uniform
+scale** precisely because the local direction is never renormalized:
+
+```
+localOrigin + t * localDirection = M^-1 * (worldOrigin + t * worldDirection)
+```
+
+holds for any invertible `M`, so the `t` a local intersection reports is exactly
+the parameter along the world ray it came from — and since the world ray is unit
+length, that parameter is world meters. Renormalizing is what would break it: on
+a stretched body the local direction is genuinely not unit length, and rescaling
+it would rescale every hit distance by a factor that varies with the direction
+the ray happens to point.
+
+Scale is strictly positive, so the transform still has no reflection: winding is
+unchanged and front-face-only picking means the same thing in either space. That
+is what keeps "what is drawn" and "what is pickable" identical under a transform,
+with no second collision representation to keep in sync.
 
 ## Sculpt domain
 
@@ -2498,10 +2702,12 @@ own, and naming them is what stops one arriving by accident.
   different contract with its own approval and must not be grown out of
   `forgeshape_grid.h`. Nor is there a Selection Outline, View Cube, camera focus,
   named views, blur/glass or any post-processing framework.
-- **No scale and no gizmo.** `ConstructionTransform` is rigid — rotation and
-  translation only — which is what lets the picker use an exact composed inverse
-  and keep the ray's distance in world units. Scale breaks both and is a domain
-  change, not a matrix change.
+- **No Mirror, no shear, no custom pivot, no hierarchy.** `ConstructionTransform`
+  is translation, rotation and a strictly positive per-axis scale, and nothing
+  else. A negative factor would be a Mirror — inverted winding, wrong normals,
+  wrong front-face picking — and is refused rather than clamped. There is no
+  parent, no explicit coordinate space beyond World and Local, no pivot the user
+  can move, no centre free-move, no arcball and no snapping.
 - **No editable tessellation.** The capsule's cylindrical middle is a single band
   between its seam rings however long it is, as the cylinder's side wall is.
   Shape, bounds and picking stay exact, but that middle carries no interior rings,

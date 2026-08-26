@@ -89,6 +89,13 @@ struct SceneDrawItem {
     RuntimeMeshPtr mesh;  // immutable; keeps this exact revision alive
     Mat4 model;
     Mat4 inverseModel;
+    // How a NORMAL is carried out of object space: R * S^-1, the inverse
+    // transpose of the model's upper-left 3x3. It is carried beside the model
+    // rather than derived from it because a non-uniform scale makes the two
+    // genuinely different matrices, and a renderer that reached for `model`
+    // would shade a stretched body wrong in a way nothing else would show.
+    // Equal to the model's rotation for every unscaled body.
+    Mat4 normalModel;
     bool selected = false;
 };
 

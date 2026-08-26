@@ -116,6 +116,7 @@ SceneSnapshot ConstructionScene::snapshot() const {
         item.mesh = std::move(mesh);
         item.model = body->transform().modelMatrix();
         item.inverseModel = body->transform().inverseModelMatrix();
+        item.normalModel = body->transform().normalMatrix();
         // Highlighting is per body. A single global "something is selected"
         // flag would tint every body at once the moment anything was picked.
         item.selected = (body->objectId() == activeBodyId_);

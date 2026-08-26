@@ -138,9 +138,19 @@ bool buildPickRay(const CameraSnapshot& camera, float screenX, float screenY,
 // untouched by a transform, so a move or a rotate costs no mesh revision.
 //
 // The origin is a POSITION (translation applies) and the direction is a
-// DIRECTION (translation does not). Because the inverse is rigid, the direction
-// is not renormalized: it already has unit length, and rescaling it would
-// silently change the meaning of the returned distance.
+// DIRECTION (translation does not). The direction is deliberately NOT
+// renormalized, and that is what keeps the returned distance meaningful under a
+// scaled transform as well as a rigid one:
+//
+//     localOrigin + t * localDirection = M^-1 * (worldOrigin + t * worldDirection)
+//
+// holds for ANY invertible M, so the t a local intersection reports is exactly
+// the parameter along the WORLD ray it came from — and since the world ray is
+// unit length, that parameter is world meters. Renormalizing the local
+// direction is precisely what would break this: on a body with a non-uniform
+// scale the local direction is genuinely not unit length, and rescaling it
+// would rescale every hit distance by a factor that varies with the direction
+// the ray happens to point.
 bool transformRayToLocal(const Ray& worldRay, const Mat4& inverseModel, Ray* out) {
     if (out == nullptr) {
         return false;

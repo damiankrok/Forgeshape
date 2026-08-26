@@ -1238,7 +1238,13 @@ bool sameConstructionPlacement(const ConstructionObjectState& a,
         && a.transform.positionZ == b.transform.positionZ
         && a.transform.rotationX == b.transform.rotationX
         && a.transform.rotationY == b.transform.rotationY
-        && a.transform.rotationZ == b.transform.rotationZ;
+        && a.transform.rotationZ == b.transform.rotationZ
+        // Scale is part of the PLACEMENT and not of the shape: it changes a
+        // derived matrix and no primitive parameter, so a restore that differs
+        // only here republishes nothing, exactly as a move does.
+        && a.transform.scaleX == b.transform.scaleX
+        && a.transform.scaleY == b.transform.scaleY
+        && a.transform.scaleZ == b.transform.scaleZ;
 }
 
 ConstructionMesh ConstructionObject::generateMesh() const {

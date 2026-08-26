@@ -296,33 +296,49 @@ final class NativeViewport {
     // Construction transform.
     //
     // Position is authoritative double METERS, rotation is authoritative double
-    // DEGREES, and both live in native code. A transform edit moves and rotates
-    // the box without touching its mesh: no revision is published and nothing
-    // is uploaded.
+    // DEGREES, scale is an authoritative unitless double multiplier, and all
+    // three live in native code. A transform edit moves, rotates and stretches
+    // the body without touching its mesh: no revision is published and nothing
+    // is uploaded, because the mesh is the body LOCAL geometry and only a
+    // derived matrix changes.
     // ---------------------------------------------------------------------
+
+    /** How many doubles {@link #boxTransform} fills: position, rotation, scale. */
+    static final int TRANSFORM_SIZE = 9;
+    /** Index of position X in the {@link #boxTransform} array; Y and Z follow. */
+    static final int TRANSFORM_POSITION = 0;
+    /** Index of rotation X; Y and Z follow. */
+    static final int TRANSFORM_ROTATION = 3;
+    /** Index of scale X; Y and Z follow. */
+    static final int TRANSFORM_SCALE = 6;
 
     /**
      * Reads the authoritative Construction transform.
      *
-     * @param outPositionRotation caller-allocated array of at least 6 doubles,
-     *                            filled with position X/Y/Z in meters followed by
-     *                            rotation X/Y/Z in degrees
+     * @param outPlacement caller-allocated array of at least
+     *                     {@link #TRANSFORM_SIZE} doubles, filled with position
+     *                     X/Y/Z in meters, rotation X/Y/Z in degrees, then
+     *                     scale X/Y/Z as unitless multipliers
      */
-    static native void boxTransform(double[] outPositionRotation);
+    static native void boxTransform(double[] outPlacement);
 
     /**
-     * Submits all six Construction transform values as one atomic request.
+     * Submits all nine Construction transform values as one atomic request.
      *
-     * <p>Native code validates all six before writing any of them. Zero and
-     * negative are valid for every one of them: a coordinate is a place, not a
-     * size. The result reuses the {@code APPLY_*} constants;
-     * {@link #APPLY_REJECTED_NOT_POSITIVE} cannot occur here.
+     * <p>Native code validates all nine before writing any of them, so a
+     * refused scale cannot leave a position half applied. Zero and negative are
+     * valid for every position and every rotation — a coordinate is a place and
+     * an angle is a direction, neither is a size — but a SCALE must be strictly
+     * positive: zero would make the transform singular and negative would be a
+     * Mirror, which this product does not have. That case returns
+     * {@link #APPLY_REJECTED_NOT_POSITIVE}.
      *
      * @return one of the {@code APPLY_*} constants
      */
     static native int applyBoxTransform(double positionXMeters, double positionYMeters,
                                         double positionZMeters, double rotationXDegrees,
-                                        double rotationYDegrees, double rotationZDegrees);
+                                        double rotationYDegrees, double rotationZDegrees,
+                                        double scaleX, double scaleY, double scaleZ);
 
     // ---------------------------------------------------------------------
     // Product mode and the Frozen Sculpt Mesh.
@@ -490,7 +506,7 @@ final class NativeViewport {
     static native long constructionMeshRevision();
 
     // -----------------------------------------------------------------------
-    // The Construction Move / Rotate gizmo
+    // The Construction transform gizmo
     // -----------------------------------------------------------------------
     //
     // This side owns WHEN there is a gizmo — which product mode, which Tool Rail
@@ -504,13 +520,20 @@ final class NativeViewport {
     // solver here. A drag writes the authoritative placement directly, so the
     // exact-value editors read the same numbers mid-drag that they read at rest.
 
-    /** Direct manipulation with the axis handles. */
+    /** Direct manipulation with the arrow handles and the plane squares. */
     static final int GIZMO_MODE_MOVE = 0;
     /** Direct manipulation with the axis rings. */
     static final int GIZMO_MODE_ROTATE = 1;
+    /** Direct manipulation with the cube handles. Local space only. */
+    static final int GIZMO_MODE_SCALE = 2;
+
+    /** Handles are constrained to the world axes. */
+    static final int GIZMO_SPACE_WORLD = 0;
+    /** Handles are constrained to the body own axes. */
+    static final int GIZMO_SPACE_LOCAL = 1;
 
     /** Size of the array {@link #gizmoState(double[])} fills. */
-    static final int GIZMO_STATE_SIZE = 10;
+    static final int GIZMO_STATE_SIZE = 12;
     /** 1 when the workspace is offering direct transform at all. */
     static final int GIZMO_ACTIVE = 0;
     /** One of the {@code GIZMO_MODE_*} constants. */
@@ -519,8 +542,8 @@ final class NativeViewport {
     static final int GIZMO_CAPTURING = 2;
     /** The captured pointer id, or -1. */
     static final int GIZMO_POINTER_ID = 3;
-    /** The captured axis: 0 none, 1 X, 2 Y, 3 Z. */
-    static final int GIZMO_AXIS = 4;
+    /** The captured handle: one of the {@code GIZMO_HANDLE_*} constants. */
+    static final int GIZMO_HANDLE = 4;
     /** The ObjectId the drag is bound to, or 0. */
     static final int GIZMO_OBJECT_ID = 5;
     /** How many updates the current or last drag applied. Diagnostic. */
@@ -531,12 +554,27 @@ final class NativeViewport {
     static final int GIZMO_WORLD_PER_UNIT = 8;
     /** How many drags have committed a history step this session. Monotone. */
     static final int GIZMO_COMMITTED_DRAGS = 9;
+    /** One of the {@code GIZMO_SPACE_*} constants. */
+    static final int GIZMO_SPACE = 10;
+    /**
+     * 1 when the space is the user choice rather than a consequence of the mode.
+     *
+     * <p>The workspace draws the space selector exactly when this is 1, which is
+     * everywhere except Scale — a world-axis scale of a rotated body is a shear,
+     * so the choice is withdrawn rather than shown and refused.
+     */
+    static final int GIZMO_SPACE_SELECTABLE = 11;
 
     /** No handle is under that pixel. */
-    static final int GIZMO_AXIS_NONE = 0;
-    static final int GIZMO_AXIS_X = 1;
-    static final int GIZMO_AXIS_Y = 2;
-    static final int GIZMO_AXIS_Z = 3;
+    static final int GIZMO_HANDLE_NONE = 0;
+    static final int GIZMO_HANDLE_AXIS_X = 1;
+    static final int GIZMO_HANDLE_AXIS_Y = 2;
+    static final int GIZMO_HANDLE_AXIS_Z = 3;
+    static final int GIZMO_HANDLE_PLANE_XY = 4;
+    static final int GIZMO_HANDLE_PLANE_XZ = 5;
+    static final int GIZMO_HANDLE_PLANE_YZ = 6;
+    /** The centre cube: one factor on all three axes. Scale only. */
+    static final int GIZMO_HANDLE_UNIFORM = 7;
 
     /**
      * Whether the workspace is currently offering direct transform.
@@ -552,13 +590,29 @@ final class NativeViewport {
     static native void setGizmoActive(boolean active);
 
     /**
-     * Chooses Move or Rotate.
+     * Chooses Move, Rotate or Scale.
      *
      * <p>Presentation state: no mesh revision, no geometry publication, no
      * history step. Returns false for an unknown index and while a drag holds a
      * pointer — a mode must not change under a moving finger.
+     *
+     * <p>Entering Scale forces {@link #GIZMO_SPACE_LOCAL} and remembers the
+     * space that was in use; leaving Scale puts that space back, so a round trip
+     * through Scale does not quietly change what a Move handle means.
      */
     static native boolean setGizmoMode(int mode);
+
+    /**
+     * Chooses the world or the body own axes.
+     *
+     * <p>Presentation state on the same terms as the mode. Returns false for an
+     * unknown index, while a drag holds a pointer, and for
+     * {@link #GIZMO_SPACE_WORLD} while the mode is Scale — a world-axis scale of
+     * a rotated body is a shear and cannot be stored in the transform at all.
+     * The workspace withdraws the selector there as well; removing a control is
+     * not removing a guard.
+     */
+    static native boolean setGizmoSpace(int space);
 
     /**
      * How many physical pixels one reference unit is on this display.
@@ -580,25 +634,25 @@ final class NativeViewport {
      * ask where a handle is rather than encoding a coordinate that would be true
      * for one window and one camera only.
      *
-     * @return one of the {@code GIZMO_AXIS_*} constants
+     * @return one of the {@code GIZMO_HANDLE_*} constants
      */
     static native int gizmoHitTest(float x, float y);
 
     /**
-     * Where an axis handle can be grabbed, in view-local pixels.
+     * Where a handle can be grabbed, in view-local pixels.
      *
      * <p>Derived from the same projection the hit test uses, so a synthetic
      * pointer sent here reaches the same handle a finger would. Returns false,
      * writing nothing, when that handle is not on screen.
      *
-     * @param axis one of the {@code GIZMO_AXIS_*} constants. {@code
-     *             GIZMO_AXIS_NONE} asks for the PIVOT rather than a handle —
-     *             not something that can be grabbed, but the point a caller
-     *             needs in order to know which way along the screen an axis
-     *             actually runs
-     * @param out  two floats: x, y
+     * @param handle one of the {@code GIZMO_HANDLE_*} constants. {@code
+     *               GIZMO_HANDLE_NONE} asks for the PIVOT rather than a handle
+     *               — in Move and Rotate not something that can be grabbed, but
+     *               the point a caller needs in order to know which way along
+     *               the screen a handle actually runs
+     * @param out    two floats: x, y
      */
-    static native boolean gizmoHandlePoint(int axis, float[] out);
+    static native boolean gizmoHandlePoint(int handle, float[] out);
 
     /** Length of the array {@link #debugCameraPose} fills. */
     static final int CAMERA_POSE_SIZE = 3;

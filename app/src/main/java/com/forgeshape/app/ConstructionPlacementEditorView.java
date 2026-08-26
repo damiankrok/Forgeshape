@@ -9,20 +9,24 @@ import android.widget.TextView;
 import java.math.BigDecimal;
 
 /**
- * The exact-value editor for where the Construction Body <i>sits</i>.
+ * The exact-value editor for where the Construction Body <i>sits</i> and how
+ * large it is drawn.
  *
- * <p>Position in the shared display unit, rotation always in degrees, and one
- * Apply that submits all six as a single atomic request.
+ * <p>Position in the shared display unit, rotation always in degrees, scale
+ * always unitless, and one Apply that submits all nine as a single atomic
+ * request.
  *
  * <p>It is a separate editor from the shape editor and has a separate Apply on
  * purpose, because the two commits have different consequences: applying a
  * shape republishes the mesh, applying a placement <b>publishes no revision and
  * uploads nothing</b>. Merging them into one button would hide a domain rule
- * behind a convenience.
+ * behind a convenience. Scale belongs on this side of that split for exactly
+ * that reason: it is a multiplier on a derived matrix, never a dimension, and a
+ * 2 m box at scale 2 still has a Construction width of 2 m.
  *
  * <p><b>Presentation and input only.</b> It holds field text and no transform;
- * the authoritative position is double meters and the authoritative rotation is
- * double degrees, both native.
+ * the authoritative position is double meters, the authoritative rotation is
+ * double degrees and the authoritative scale is a unitless double, all native.
  */
 final class ConstructionPlacementEditorView extends LinearLayout {
 
@@ -34,16 +38,21 @@ final class ConstructionPlacementEditorView extends LinearLayout {
             R.id.field_rot_z};
     private static final int[] ROTATION_LABELS = {R.string.label_rot_x, R.string.label_rot_y,
             R.string.label_rot_z};
+    private static final int[] SCALE_IDS = {R.id.field_scale_x, R.id.field_scale_y,
+            R.id.field_scale_z};
+    private static final int[] SCALE_LABELS = {R.string.label_scale_x, R.string.label_scale_y,
+            R.string.label_scale_z};
 
     private final InspectorHost host;
     private final TextView positionSectionLabel;
     private final NumericPropertyRow[] positionFields = new NumericPropertyRow[3];
     private final NumericPropertyRow[] rotationFields = new NumericPropertyRow[3];
+    private final NumericPropertyRow[] scaleFields = new NumericPropertyRow[3];
     private final UnitChipsView unitChips;
 
     /** Reused across reads; native fills this with authoritative values:
-     *  position X/Y/Z in meters then rotation X/Y/Z in degrees. */
-    private final double[] nativeTransform = new double[6];
+     *  position X/Y/Z in meters, rotation X/Y/Z in degrees, scale X/Y/Z. */
+    private final double[] nativeTransform = new double[NativeViewport.TRANSFORM_SIZE];
 
     ConstructionPlacementEditorView(Context context, final InspectorHost host) {
         super(context);
@@ -67,6 +76,16 @@ final class ConstructionPlacementEditorView extends LinearLayout {
                 context.getString(R.string.section_rotation)),
                 EditorControlStyles.rowParams(sectionGap));
         addView(buildRow(context, rotationFields, ROTATION_IDS, ROTATION_LABELS),
+                EditorControlStyles.rowParams(smallGap));
+
+        // Scale sits after Rotation and before the unit selector, in the order
+        // the transform composes: place, turn, size. It deliberately carries NO
+        // unit in its heading — a multiplier is not a length, and offering it
+        // millimetres would say it was.
+        addView(EditorControlStyles.sectionLabel(context,
+                context.getString(R.string.section_scale)),
+                EditorControlStyles.rowParams(sectionGap));
+        addView(buildRow(context, scaleFields, SCALE_IDS, SCALE_LABELS),
                 EditorControlStyles.rowParams(smallGap));
 
         addView(EditorControlStyles.sectionLabel(context,
@@ -116,8 +135,9 @@ final class ConstructionPlacementEditorView extends LinearLayout {
     /**
      * Re-expresses the position fields in another unit, exactly.
      *
-     * <p>Rotation is deliberately untouched: an angle is not a length, and
-     * degrees are degrees whichever unit the lengths are written in.
+     * <p>Rotation and scale are deliberately untouched: an angle is not a
+     * length and a multiplier is not a length either, so degrees stay degrees
+     * and a scale of 2 stays 2 whichever unit the lengths are written in.
      *
      * @return whether every position field was a number and was converted
      */
@@ -133,29 +153,44 @@ final class ConstructionPlacementEditorView extends LinearLayout {
     }
 
     /**
-     * Rewrites all six fields from authoritative native state: position in the
-     * selected display unit, rotation in degrees.
+     * Rewrites all nine fields from authoritative native state: position in the
+     * selected display unit, rotation in degrees, scale as a bare multiplier.
+     *
+     * <p>This is also what a gizmo drag comes back through: the handles write
+     * the same authoritative transform these fields read, so the two can never
+     * disagree about where the body is.
      */
     void refreshFromNative() {
         NativeViewport.boxTransform(nativeTransform);
         final LengthUnit unit = host.uiState().displayUnit();
         for (int i = 0; i < 3; i++) {
-            positionFields[i].setText(unit.format(nativeTransform[i]));
+            positionFields[i].setText(
+                    unit.format(nativeTransform[NativeViewport.TRANSFORM_POSITION + i]));
             // Degrees are not a length: they are presented as-is, in every unit.
-            rotationFields[i].setText(
-                    LengthUnit.present(BigDecimal.valueOf(nativeTransform[3 + i])));
+            rotationFields[i].setText(LengthUnit.present(
+                    BigDecimal.valueOf(nativeTransform[NativeViewport.TRANSFORM_ROTATION + i])));
+            // And a multiplier is not a length either.
+            scaleFields[i].setText(LengthUnit.present(
+                    BigDecimal.valueOf(nativeTransform[NativeViewport.TRANSFORM_SCALE + i])));
         }
         positionSectionLabel.setText(positionSectionTitle());
         unitChips.showSelected(unit);
     }
 
     /**
-     * Parses all six placement values and submits them as one atomic native
+     * Parses all nine placement values and submits them as ONE atomic native
      * request.
      *
-     * <p>Zero and negative are valid for all six — a coordinate is a place and
-     * an angle is a direction, neither is a size — so the only thing refused
-     * here is text that is not a number at all.
+     * <p>Zero and negative are valid for every position and every rotation — a
+     * coordinate is a place and an angle is a direction, neither is a size — so
+     * for those six the only thing refused here is text that is not a number at
+     * all. A SCALE is the exception, and the refusal is native: zero would make
+     * the transform singular and negative would be a Mirror, which this product
+     * does not have. This layer does not re-implement that rule; it submits the
+     * value and reports what native code decided.
+     *
+     * <p>One Apply is one history step and one atomic write, so a bad scale
+     * cannot leave a good position half applied.
      *
      * <p>The shape is not part of this request and is never disturbed by it,
      * and a placement that lands publishes no mesh revision.
@@ -163,6 +198,7 @@ final class ConstructionPlacementEditorView extends LinearLayout {
     private void onApplyTransform() {
         final BigDecimal[] position = new BigDecimal[3];
         final BigDecimal[] rotation = new BigDecimal[3];
+        final BigDecimal[] scale = new BigDecimal[3];
         for (int i = 0; i < 3; i++) {
             position[i] = readField(positionFields[i]);
             if (position[i] == null) {
@@ -175,6 +211,12 @@ final class ConstructionPlacementEditorView extends LinearLayout {
                 return;
             }
         }
+        for (int i = 0; i < 3; i++) {
+            scale[i] = readField(scaleFields[i]);
+            if (scale[i] == null) {
+                return;
+            }
+        }
 
         final LengthUnit unit = host.uiState().displayUnit();
         switch (NativeViewport.applyBoxTransform(
@@ -182,7 +224,8 @@ final class ConstructionPlacementEditorView extends LinearLayout {
                 unit.toMeters(position[1]).doubleValue(),
                 unit.toMeters(position[2]).doubleValue(),
                 rotation[0].doubleValue(), rotation[1].doubleValue(),
-                rotation[2].doubleValue())) {
+                rotation[2].doubleValue(),
+                scale[0].doubleValue(), scale[1].doubleValue(), scale[2].doubleValue())) {
             case NativeViewport.APPLY_APPLIED:
                 host.onNativeStateChanged();
                 host.showStatus(getContext().getString(R.string.status_transform_applied,
@@ -194,6 +237,10 @@ final class ConstructionPlacementEditorView extends LinearLayout {
                 host.showStatus(getContext().getString(R.string.status_transform_unchanged,
                         describeTransform()), R.attr.fsTextSecondary);
                 host.finishEditing();
+                break;
+            case NativeViewport.APPLY_REJECTED_NOT_POSITIVE:
+                host.showStatus(getContext().getString(
+                        R.string.reject_transform_scale_not_positive), R.attr.fsTextError);
                 break;
             case NativeViewport.APPLY_REJECTED_NOT_REPRESENTABLE:
                 host.showStatus(getContext().getString(
@@ -209,8 +256,9 @@ final class ConstructionPlacementEditorView extends LinearLayout {
     /**
      * Parses one field, reporting and focusing it on failure.
      *
-     * <p>No positivity check anywhere in this editor: every one of these six
-     * values is legitimately zero or negative.
+     * <p>The only check here is that the text is a number. Positivity is a
+     * DOMAIN rule and it stays below JNI: duplicating it on this side would make
+     * two places able to disagree about what a valid scale is.
      */
     private BigDecimal readField(NumericPropertyRow row) {
         final String raw = row.text();
@@ -231,11 +279,18 @@ final class ConstructionPlacementEditorView extends LinearLayout {
     private String describeTransform() {
         NativeViewport.boxTransform(nativeTransform);
         final LengthUnit unit = host.uiState().displayUnit();
-        return unit.format(nativeTransform[0]) + ", " + unit.format(nativeTransform[1]) + ", "
-                + unit.format(nativeTransform[2]) + " " + unit.label() + " @ "
-                + LengthUnit.present(BigDecimal.valueOf(nativeTransform[3])) + ", "
-                + LengthUnit.present(BigDecimal.valueOf(nativeTransform[4])) + ", "
-                + LengthUnit.present(BigDecimal.valueOf(nativeTransform[5])) + " deg";
+        final int p = NativeViewport.TRANSFORM_POSITION;
+        final int r = NativeViewport.TRANSFORM_ROTATION;
+        final int s = NativeViewport.TRANSFORM_SCALE;
+        return unit.format(nativeTransform[p]) + ", " + unit.format(nativeTransform[p + 1]) + ", "
+                + unit.format(nativeTransform[p + 2]) + " " + unit.label() + " @ "
+                + LengthUnit.present(BigDecimal.valueOf(nativeTransform[r])) + ", "
+                + LengthUnit.present(BigDecimal.valueOf(nativeTransform[r + 1])) + ", "
+                + LengthUnit.present(BigDecimal.valueOf(nativeTransform[r + 2])) + " deg"
+                // No unit after the scale, deliberately: a multiplier has none.
+                + " x " + LengthUnit.present(BigDecimal.valueOf(nativeTransform[s])) + ", "
+                + LengthUnit.present(BigDecimal.valueOf(nativeTransform[s + 1])) + ", "
+                + LengthUnit.present(BigDecimal.valueOf(nativeTransform[s + 2]));
     }
 
     void clearEditFocus() {
@@ -243,6 +298,9 @@ final class ConstructionPlacementEditorView extends LinearLayout {
             field.clearEditFocus();
         }
         for (NumericPropertyRow field : rotationFields) {
+            field.clearEditFocus();
+        }
+        for (NumericPropertyRow field : scaleFields) {
             field.clearEditFocus();
         }
     }

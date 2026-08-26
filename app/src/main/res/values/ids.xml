@@ -168,6 +168,10 @@
     <item name="transform_mode_group" type="id" />
     <item name="transform_mode_move" type="id" />
     <item name="transform_mode_rotate" type="id" />
+    <item name="transform_mode_scale" type="id" />
+    <item name="transform_space_group" type="id" />
+    <item name="transform_space_world" type="id" />
+    <item name="transform_space_local" type="id" />
 
     <!-- Direct Sculpt brush controls -->
     <item name="brush_edge_controls" type="id" />
@@ -221,6 +225,9 @@
     <item name="field_rot_x" type="id" />
     <item name="field_rot_y" type="id" />
     <item name="field_rot_z" type="id" />
+    <item name="field_scale_x" type="id" />
+    <item name="field_scale_y" type="id" />
+    <item name="field_scale_z" type="id" />
     <item name="apply_transform" type="id" />
 
     <!-- Display unit. Shared by both Construction inspector bodies. -->

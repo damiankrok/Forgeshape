@@ -111,7 +111,25 @@ result never depends on what a live session left behind.
   transaction: a second pointer or a cancel restores the pre-drag state and
   records nothing, and a gesture that starts off a handle still navigates
   exactly as before. A degenerate viewpoint holds the last good value rather
-  than guessing — no NaN, no jump.
+  than guessing — no NaN, no jump. The camera alone sizes the instrument: the
+  BODY's scale never reaches it, and a drag's basis is frozen at the pointer
+  down and is scale-free.
+- **A rotation is composed as a matrix and stored as Euler degrees.** A handle
+  drag may never add its angle to one Euler component — that is only correct
+  when the other two are zero. Every sample composes from the IMMUTABLE start
+  orientation (`Relem·R_start` for World, `R_start·Relem` for Local) and comes
+  back through the one branch-continuous decomposition in
+  `forgeshape_transform.h`, which is the ONLY bridge between the two forms. A
+  correct rotation on a mixed orientation legitimately moves more than one Euler
+  field, so a test asserts an ORIENTATION and never "one ring, one field".
+- **Scale is a transform multiplier, never a dimension.** It is unitless, has no
+  display unit, is strictly positive (zero is singular and negative is a Mirror
+  this product does not have — both are refused, never clamped), and it is
+  LOCAL-only, because a world-axis scale of a turned body is a shear no diagonal
+  `S` can express. `Model = T·Rz·Ry·Rx·S`; it writes no primitive parameter and
+  publishes no `MeshRevision`. Anything consuming the transform must be
+  non-uniform-scale correct: normals ride `R·S⁻¹`, and picking's local ray
+  direction stays un-normalized so its parameter is still world distance.
 - **Shading is presentation, never truth.** Normals, the derived render mesh and
   every display setting are one-way products of a published `RuntimeMesh`.
   Nothing may read a dimension, a Construction parameter, a sculpt deformation,
@@ -185,7 +203,10 @@ result never depends on what a live session left behind.
   control that opened it; `AnchoredSurfaceView` owns the growth for all of them),
   *Construction Body* (an editable CAD-like object), *Frozen Sculpt Mesh* (the
   polygon mesh `SculptMesh::freezeFrom` creates), *history capsule* (the bottom
-  trailing capsule holding Undo and Redo).
+  trailing capsule holding Undo and Redo), *transform mode selector* (Move /
+  Rotate / Scale) and *coordinate-space selector* (World / Local) — two capsules
+  in one *selector row* under the Tool Rail, contextual to Transform and absent
+  everywhere else.
 - **The user never reads "Freeze".** *Freeze*, *re-Freeze* and *Frozen Sculpt
   Mesh* stay in the C++, the view ids and the architecture docs, because they name
   what the operation does. Every user-facing string says **Start Sculpting**,

@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Scale: drag the cube handles to change the Body's Scale.
+
+  Two shafts leaving a marked pivot and ending in solid SQUARE caps, around the
+  same pivot dot the Move and Rotate glyphs carry, so the three read as one
+  instrument in three states. Cubes rather than arrowheads is the whole
+  distinction: an arrowhead says "this goes somewhere" and a cube says "this end
+  is a size", which is the vocabulary every professional modelling tool already
+  uses and the one thing that has to survive at 20 dp.
+
+  The caps are deliberately SQUARE and the same size as each other. Drawn as
+  rectangles of different proportions they read as two bars and the glyph
+  becomes a "T" — which is exactly what the first version did.
+
+  Only two of the three axes are drawn, exactly as the Move glyph draws two: a
+  third would be a foreshortened diagonal that reads as noise at this size.
+
+  Drawn white and tinted at use; see EditorControlStyles.iconButton(). Nothing
+  here encodes a state — active and pressed come from the same tint list every
+  other control reads.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:pathData="M12,12 L12,7.2 M12,12 L16.8,12" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M9.2,1.8 L14.8,1.8 L14.8,7.4 L9.2,7.4 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M16.6,9.2 L22.2,9.2 L22.2,14.8 L16.6,14.8 Z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:pathData="M12,12 L12,17.5 M12,12 L6.5,12" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,10.1 A1.9,1.9 0 1,1 11.99,10.1 Z" />
+</vector>

@@ -33,16 +33,63 @@ float pointSegmentDistanceSq(float px, float py, float ax, float ay, float bx, f
     return dx * dx + dy * dy;
 }
 
+Vec3 canonicalAxis(int index) {
+    switch (index) {
+        case 0: return Vec3{1.0f, 0.0f, 0.0f};
+        case 1: return Vec3{0.0f, 1.0f, 0.0f};
+        case 2: return Vec3{0.0f, 0.0f, 1.0f};
+        default: break;
+    }
+    return Vec3{0.0f, 0.0f, 0.0f};
+}
+
+// The COLOUR tag a vertex carries: 0 neutral, 1 X, 2 Y, 3 Z. See GizmoVertex.
+float colorTagFor(GizmoAxis axis) {
+    switch (axis) {
+        case GizmoAxis::X: return 1.0f;
+        case GizmoAxis::Y: return 2.0f;
+        case GizmoAxis::Z: return 3.0f;
+        case GizmoAxis::None: break;
+    }
+    return 0.0f;
+}
+
+GizmoAxis axisFromIndex(int index) {
+    switch (index) {
+        case 0: return GizmoAxis::X;
+        case 1: return GizmoAxis::Y;
+        case 2: return GizmoAxis::Z;
+        default: break;
+    }
+    return GizmoAxis::None;
+}
+
+GizmoHandle axisHandleFromIndex(int index) {
+    switch (index) {
+        case 0: return GizmoHandle::AxisX;
+        case 1: return GizmoHandle::AxisY;
+        case 2: return GizmoHandle::AxisZ;
+        default: break;
+    }
+    return GizmoHandle::None;
+}
+
+// The three plane handles in a fixed order, so drawing, hit testing and the
+// self-tests all enumerate them the same way.
+const GizmoHandle kPlaneHandles[3] = {GizmoHandle::PlaneXY, GizmoHandle::PlaneXZ,
+                                      GizmoHandle::PlaneYZ};
+
 }  // namespace
 
 // ---------------------------------------------------------------------------
-// The two closed enums
+// The closed enums
 // ---------------------------------------------------------------------------
 
 const char* gizmoModeName(GizmoMode mode) {
     switch (mode) {
         case GizmoMode::Move: return "move";
         case GizmoMode::Rotate: return "rotate";
+        case GizmoMode::Scale: return "scale";
     }
     return "unknown";
 }
@@ -54,13 +101,35 @@ bool gizmoModeFromIndex(int index, GizmoMode* out) {
     switch (index) {
         case 0: if (out) *out = GizmoMode::Move; return true;
         case 1: if (out) *out = GizmoMode::Rotate; return true;
-        default: return false;
+        case 2: if (out) *out = GizmoMode::Scale; return true;
+        default: break;
     }
+    return false;
 }
 
 int gizmoModeIndex(GizmoMode mode) {
-    return mode == GizmoMode::Rotate ? 1 : 0;
+    switch (mode) {
+        case GizmoMode::Move: return 0;
+        case GizmoMode::Rotate: return 1;
+        case GizmoMode::Scale: return 2;
+    }
+    return 0;
 }
+
+const char* gizmoSpaceName(GizmoSpace space) {
+    return space == GizmoSpace::Local ? "local" : "world";
+}
+
+bool gizmoSpaceFromIndex(int index, GizmoSpace* out) {
+    switch (index) {
+        case 0: if (out) *out = GizmoSpace::World; return true;
+        case 1: if (out) *out = GizmoSpace::Local; return true;
+        default: break;
+    }
+    return false;
+}
+
+int gizmoSpaceIndex(GizmoSpace space) { return space == GizmoSpace::Local ? 1 : 0; }
 
 const char* gizmoAxisName(GizmoAxis axis) {
     switch (axis) {
@@ -74,56 +143,245 @@ const char* gizmoAxisName(GizmoAxis axis) {
 
 Vec3 gizmoAxisDirection(GizmoAxis axis) {
     switch (axis) {
-        case GizmoAxis::X: return Vec3{1.0f, 0.0f, 0.0f};
-        case GizmoAxis::Y: return Vec3{0.0f, 1.0f, 0.0f};
-        case GizmoAxis::Z: return Vec3{0.0f, 0.0f, 1.0f};
+        case GizmoAxis::X: return canonicalAxis(0);
+        case GizmoAxis::Y: return canonicalAxis(1);
+        case GizmoAxis::Z: return canonicalAxis(2);
         case GizmoAxis::None: break;
     }
     return Vec3{0.0f, 0.0f, 0.0f};
 }
 
-Degrees transformRotationForAxis(const TransformValues& values, GizmoAxis axis) {
-    switch (axis) {
-        case GizmoAxis::X: return values.rotationX;
-        case GizmoAxis::Y: return values.rotationY;
-        case GizmoAxis::Z: return values.rotationZ;
-        case GizmoAxis::None: break;
+const char* gizmoHandleName(GizmoHandle handle) {
+    switch (handle) {
+        case GizmoHandle::None: return "none";
+        case GizmoHandle::AxisX: return "x";
+        case GizmoHandle::AxisY: return "y";
+        case GizmoHandle::AxisZ: return "z";
+        case GizmoHandle::PlaneXY: return "xy";
+        case GizmoHandle::PlaneXZ: return "xz";
+        case GizmoHandle::PlaneYZ: return "yz";
+        case GizmoHandle::Uniform: return "uniform";
+    }
+    return "unknown";
+}
+
+int gizmoHandleCode(GizmoHandle handle) {
+    switch (handle) {
+        case GizmoHandle::None: return 0;
+        case GizmoHandle::AxisX: return 1;
+        case GizmoHandle::AxisY: return 2;
+        case GizmoHandle::AxisZ: return 3;
+        case GizmoHandle::PlaneXY: return 4;
+        case GizmoHandle::PlaneXZ: return 5;
+        case GizmoHandle::PlaneYZ: return 6;
+        case GizmoHandle::Uniform: return 7;
+    }
+    return 0;
+}
+
+bool gizmoHandleFromCode(int code, GizmoHandle* out) {
+    switch (code) {
+        case 0: if (out) *out = GizmoHandle::None; return true;
+        case 1: if (out) *out = GizmoHandle::AxisX; return true;
+        case 2: if (out) *out = GizmoHandle::AxisY; return true;
+        case 3: if (out) *out = GizmoHandle::AxisZ; return true;
+        case 4: if (out) *out = GizmoHandle::PlaneXY; return true;
+        case 5: if (out) *out = GizmoHandle::PlaneXZ; return true;
+        case 6: if (out) *out = GizmoHandle::PlaneYZ; return true;
+        case 7: if (out) *out = GizmoHandle::Uniform; return true;
+        default: break;
+    }
+    return false;
+}
+
+bool gizmoHandleIsAxis(GizmoHandle handle) {
+    return handle == GizmoHandle::AxisX || handle == GizmoHandle::AxisY ||
+           handle == GizmoHandle::AxisZ;
+}
+
+bool gizmoHandleIsPlane(GizmoHandle handle) {
+    return handle == GizmoHandle::PlaneXY || handle == GizmoHandle::PlaneXZ ||
+           handle == GizmoHandle::PlaneYZ;
+}
+
+int gizmoHandleAxisIndex(GizmoHandle handle) {
+    switch (handle) {
+        case GizmoHandle::AxisX: return 0;
+        case GizmoHandle::AxisY: return 1;
+        case GizmoHandle::AxisZ: return 2;
+        default: break;
+    }
+    return -1;
+}
+
+bool gizmoPlaneAxisIndices(GizmoHandle handle, int* outFirst, int* outSecond) {
+    int a = 0;
+    int b = 0;
+    switch (handle) {
+        case GizmoHandle::PlaneXY: a = 0; b = 1; break;
+        case GizmoHandle::PlaneXZ: a = 0; b = 2; break;
+        case GizmoHandle::PlaneYZ: a = 1; b = 2; break;
+        default: return false;
+    }
+    if (outFirst) *outFirst = a;
+    if (outSecond) *outSecond = b;
+    return true;
+}
+
+int gizmoPlaneNormalIndex(GizmoHandle handle) {
+    switch (handle) {
+        case GizmoHandle::PlaneXY: return 2;
+        case GizmoHandle::PlaneXZ: return 1;
+        case GizmoHandle::PlaneYZ: return 0;
+        default: break;
+    }
+    return -1;
+}
+
+GizmoAxis gizmoHandleColorAxis(GizmoHandle handle) {
+    if (gizmoHandleIsAxis(handle)) {
+        return axisFromIndex(gizmoHandleAxisIndex(handle));
+    }
+    if (gizmoHandleIsPlane(handle)) {
+        // The axis PERPENDICULAR to the plane: the XY square is the blue one,
+        // which is the convention every professional tool draws and is what
+        // makes a plane handle nameable at a glance.
+        return axisFromIndex(gizmoPlaneNormalIndex(handle));
+    }
+    return GizmoAxis::None;
+}
+
+int gizmoHandlesForMode(GizmoMode mode, GizmoHandle* out, int capacity) {
+    // Smallest target first, which is the order hitTest resolves tiers in: the
+    // uniform handle sits inside the plane handles, which sit between the
+    // shafts, and a long shaft would otherwise win every contest.
+    GizmoHandle move[6] = {GizmoHandle::PlaneXY, GizmoHandle::PlaneXZ, GizmoHandle::PlaneYZ,
+                           GizmoHandle::AxisX,   GizmoHandle::AxisY,   GizmoHandle::AxisZ};
+    GizmoHandle rotate[3] = {GizmoHandle::AxisX, GizmoHandle::AxisY, GizmoHandle::AxisZ};
+    GizmoHandle scale[7] = {GizmoHandle::Uniform, GizmoHandle::PlaneXY, GizmoHandle::PlaneXZ,
+                            GizmoHandle::PlaneYZ, GizmoHandle::AxisX,   GizmoHandle::AxisY,
+                            GizmoHandle::AxisZ};
+    const GizmoHandle* source = move;
+    int count = 6;
+    if (mode == GizmoMode::Rotate) {
+        source = rotate;
+        count = 3;
+    } else if (mode == GizmoMode::Scale) {
+        source = scale;
+        count = 7;
+    }
+    if (out == nullptr || capacity < count) {
+        return 0;
+    }
+    for (int i = 0; i < count; ++i) {
+        out[i] = source[i];
+    }
+    return count;
+}
+
+void gizmoPerpendicularIndices(int axisIndex, int* outU, int* outV) {
+    int u = 0;
+    int v = 1;
+    switch (axisIndex) {
+        case 0: u = 1; v = 2; break;
+        case 1: u = 2; v = 0; break;
+        default: u = 0; v = 1; break;
+    }
+    if (outU) *outU = u;
+    if (outV) *outV = v;
+}
+
+// ---------------------------------------------------------------------------
+// The constrained basis
+// ---------------------------------------------------------------------------
+
+GizmoBasis gizmoBasisFor(GizmoSpace space, const TransformValues& values) {
+    GizmoBasis basis;
+    for (int i = 0; i < 3; ++i) {
+        basis.axis[i] = canonicalAxis(i);
+    }
+    if (space != GizmoSpace::Local) {
+        return basis;
+    }
+    // The three COLUMNS of the body rotation matrix, which are the world
+    // directions its local X, Y and Z point along. Deliberately built from
+    // rotationMatrix() and not modelMatrix(): a scaled body still has a local X
+    // that points one way, and letting the scale in would make a handle
+    // direction depend on how large the body happens to be.
+    const Mat4 rotation = rotationMatrixFromEuler(eulerOf(values));
+    if (!mat4Finite(rotation)) {
+        return basis;  // world axes rather than a basis nothing can be solved in
+    }
+    for (int i = 0; i < 3; ++i) {
+        const Vec3 column{rotation.m[i * 4 + 0], rotation.m[i * 4 + 1], rotation.m[i * 4 + 2]};
+        const Vec3 unit = vec3Normalize(column);
+        // A rotation matrix is orthonormal, so this normalize is defensive
+        // rather than corrective. A degenerate column would mean the matrix was
+        // not a rotation at all, and holding the world axis is the honest answer.
+        if (vec3Dot(unit, unit) > 0.5f) {
+            basis.axis[i] = unit;
+        }
+    }
+    return basis;
+}
+
+Mat4 gizmoBasisMatrix(const GizmoBasis& basis) {
+    Mat4 m = mat4Identity();
+    for (int i = 0; i < 3; ++i) {
+        m.m[i * 4 + 0] = basis.axis[i].x;
+        m.m[i * 4 + 1] = basis.axis[i].y;
+        m.m[i * 4 + 2] = basis.axis[i].z;
+        m.m[i * 4 + 3] = 0.0f;
+    }
+    return m;
+}
+
+// ---------------------------------------------------------------------------
+// Component accessors
+// ---------------------------------------------------------------------------
+
+Meters transformPositionAt(const TransformValues& values, int axisIndex) {
+    switch (axisIndex) {
+        case 0: return values.positionX;
+        case 1: return values.positionY;
+        case 2: return values.positionZ;
+        default: break;
     }
     return 0.0;
 }
 
-void setTransformRotationForAxis(TransformValues* values, GizmoAxis axis, Degrees value) {
+void setTransformPositionAt(TransformValues* values, int axisIndex, Meters value) {
     if (values == nullptr) return;
-    switch (axis) {
-        case GizmoAxis::X: values->rotationX = value; break;
-        case GizmoAxis::Y: values->rotationY = value; break;
-        case GizmoAxis::Z: values->rotationZ = value; break;
-        case GizmoAxis::None: break;
+    switch (axisIndex) {
+        case 0: values->positionX = value; break;
+        case 1: values->positionY = value; break;
+        case 2: values->positionZ = value; break;
+        default: break;
     }
 }
 
-Meters transformPositionForAxis(const TransformValues& values, GizmoAxis axis) {
-    switch (axis) {
-        case GizmoAxis::X: return values.positionX;
-        case GizmoAxis::Y: return values.positionY;
-        case GizmoAxis::Z: return values.positionZ;
-        case GizmoAxis::None: break;
+ScaleFactor transformScaleAt(const TransformValues& values, int axisIndex) {
+    switch (axisIndex) {
+        case 0: return values.scaleX;
+        case 1: return values.scaleY;
+        case 2: return values.scaleZ;
+        default: break;
     }
-    return 0.0;
+    return kDefaultScaleFactor;
 }
 
-void setTransformPositionForAxis(TransformValues* values, GizmoAxis axis, Meters value) {
+void setTransformScaleAt(TransformValues* values, int axisIndex, ScaleFactor value) {
     if (values == nullptr) return;
-    switch (axis) {
-        case GizmoAxis::X: values->positionX = value; break;
-        case GizmoAxis::Y: values->positionY = value; break;
-        case GizmoAxis::Z: values->positionZ = value; break;
-        case GizmoAxis::None: break;
+    switch (axisIndex) {
+        case 0: values->scaleX = value; break;
+        case 1: values->scaleY = value; break;
+        case 2: values->scaleZ = value; break;
+        default: break;
     }
 }
 
 // ---------------------------------------------------------------------------
-// The adapter's one number
+// The adapter one number
 // ---------------------------------------------------------------------------
 
 bool setGizmoPixelsPerReferenceUnit(float scale) {
@@ -167,7 +425,7 @@ bool projectWorldToScreen(const CameraSnapshot& camera, const Vec3& world, int v
     }
     const float ndcX = x / w;
     const float ndcY = y / w;
-    // NDC to view-local pixels. The projection matrices already carry Vulkan's
+    // NDC to view-local pixels. The projection matrices already carry Vulkan
     // Y flip (see mat4Perspective), so +y in NDC is already DOWN the screen and
     // nothing is flipped a second time here — which is what makes this the exact
     // inverse of buildPickRay rather than its mirror image.
@@ -351,15 +609,30 @@ float unwrapAngleDelta(float radians) {
 }
 
 // ---------------------------------------------------------------------------
-// The quantization seam
+// The quantization and placement seam
 // ---------------------------------------------------------------------------
 //
 // The identity, today and deliberately. See the header: the seam exists so a
-// future approved Grid Snap contract lands here instead of in the gesture
-// architecture, and there is no snapping, no setting and no indicator until one
-// is approved.
+// future approved Surface Snap or Grid Snap contract lands here instead of in
+// the gesture architecture, and there is no snapping, no setting and no
+// indicator until one is approved.
 Meters quantizeGizmoTranslation(Meters raw) { return raw; }
 Degrees quantizeGizmoRotation(Degrees raw) { return raw; }
+ScaleFactor quantizeGizmoScale(ScaleFactor raw) { return raw; }
+
+TransformValues applyGizmoPlacementModifier(const TransformValues& target,
+                                            const TransformValues& start, GizmoMode mode,
+                                            GizmoHandle handle, GizmoSpace space) {
+    // Every argument is deliberately taken and deliberately unused. An approved
+    // snap needs all four — where the drag started, what kind of drag it is and
+    // in which basis — and the whole point of declaring the seam now is that
+    // adding one changes this function and nothing else.
+    (void)start;
+    (void)mode;
+    (void)handle;
+    (void)space;
+    return target;
+}
 
 // ---------------------------------------------------------------------------
 // The drawn geometry
@@ -367,69 +640,94 @@ Degrees quantizeGizmoRotation(Degrees raw) { return raw; }
 
 namespace {
 
-// The two unit vectors spanning the plane PERPENDICULAR to an axis. Taken from
-// the axis enum's own partners rather than from a general orthonormal-basis
-// routine, which would carry a degenerate case this closed set of three does
-// not have.
-void axisPlaneBasis(GizmoAxis axis, Vec3* outU, Vec3* outV) {
-    switch (axis) {
-        case GizmoAxis::X: *outU = Vec3{0, 1, 0}; *outV = Vec3{0, 0, 1}; break;
-        case GizmoAxis::Y: *outU = Vec3{0, 0, 1}; *outV = Vec3{1, 0, 0}; break;
-        default:           *outU = Vec3{1, 0, 0}; *outV = Vec3{0, 1, 0}; break;
-    }
-}
-
 struct GizmoVertexWriter {
     GizmoVertex* out;
     int capacity;
     int written;
 
-    void line(const Vec3& a, const Vec3& b, GizmoAxis axis) {
+    void line(const Vec3& a, const Vec3& b, GizmoAxis colorAxis, GizmoHandle handle) {
         if (written + 2 > capacity) {
             return;
         }
-        const float tag = static_cast<float>(axis == GizmoAxis::X   ? 1
-                                             : axis == GizmoAxis::Y ? 2
-                                                                    : 3);
+        const float tag = colorTagFor(colorAxis);
+        const float handleCode = static_cast<float>(gizmoHandleCode(handle));
         const Vec3 ends[2] = {a, b};
         for (int i = 0; i < 2; ++i) {
             out[written].position[0] = ends[i].x;
             out[written].position[1] = ends[i].y;
             out[written].position[2] = ends[i].z;
             out[written].axis = tag;
+            out[written].handle = handleCode;
             ++written;
         }
     }
-};
 
-}  // namespace
-
-int generateGizmoVertices(GizmoVertex* out, int capacity) {
-    if (out == nullptr || capacity < kGizmoVertexCount) {
-        return 0;
+    // Twelve edges of an axis-aligned box, in CANONICAL gizmo space. The basis
+    // rotation is applied by the model matrix, so a cube drawn here is a cube
+    // aligned to whichever basis the gizmo is currently in.
+    void cube(const Vec3& centre, float half, GizmoAxis colorAxis, GizmoHandle handle) {
+        Vec3 corner[8];
+        for (int i = 0; i < 8; ++i) {
+            corner[i] = Vec3{centre.x + ((i & 1) ? half : -half),
+                             centre.y + ((i & 2) ? half : -half),
+                             centre.z + ((i & 4) ? half : -half)};
+        }
+        // Each pair differs in exactly one bit, which is exactly an edge.
+        for (int i = 0; i < 8; ++i) {
+            for (int bit = 1; bit <= 4; bit <<= 1) {
+                const int j = i | bit;
+                if (j != i) {
+                    line(corner[i], corner[j], colorAxis, handle);
+                }
+            }
+        }
     }
-    GizmoVertexWriter writer{out, capacity, 0};
-    const GizmoAxis axes[3] = {GizmoAxis::X, GizmoAxis::Y, GizmoAxis::Z};
 
-    // --- Move: pivot marker, shafts, arrowheads --------------------------
-    const float length = kGizmoHandleLengthUnits;
-    const float arrow = length * kGizmoArrowLengthFraction;
-    const float arrowHalfWidth = length * kGizmoArrowHalfWidthFraction;
-    const float marker = length * kGizmoPivotMarkerFraction;
-    for (int i = 0; i < 3; ++i) {
-        const Vec3 direction = gizmoAxisDirection(axes[i]);
-        // The pivot marker: a short arm through the origin on each axis, so the
-        // point the transform is actually about is visible even when a shaft is
-        // pointing away from the viewer and projects to almost nothing.
-        writer.line(vec3Scale(direction, -marker), vec3Scale(direction, marker), axes[i]);
+    // One plane handle: a square in the (u, v) plane, drawn twice a stroke
+    // offset apart for the same legibility reason the shafts are bundled.
+    void planeSquare(GizmoHandle handle) {
+        int a = 0;
+        int b = 0;
+        if (!gizmoPlaneAxisIndices(handle, &a, &b)) {
+            return;
+        }
+        const GizmoAxis colorAxis = gizmoHandleColorAxis(handle);
+        const Vec3 u = canonicalAxis(a);
+        const Vec3 v = canonicalAxis(b);
+        for (int pass = 0; pass < 2; ++pass) {
+            const float grow = static_cast<float>(pass) * kGizmoStrokeOffsetUnits;
+            const float inner = kGizmoPlaneInnerUnits - grow;
+            const float outer = kGizmoPlaneOuterUnits + grow;
+            const Vec3 corners[4] = {
+                vec3Add(vec3Scale(u, inner), vec3Scale(v, inner)),
+                vec3Add(vec3Scale(u, outer), vec3Scale(v, inner)),
+                vec3Add(vec3Scale(u, outer), vec3Scale(v, outer)),
+                vec3Add(vec3Scale(u, inner), vec3Scale(v, outer)),
+            };
+            for (int i = 0; i < 4; ++i) {
+                line(corners[i], corners[(i + 1) % 4], colorAxis, handle);
+            }
+        }
+    }
 
-        Vec3 u{}, v{};
-        axisPlaneBasis(axes[i], &u, &v);
+    // The pivot marker and the bundled shaft an axis handle shares between Move
+    // and Scale. `shaftEnd` is where the tip decoration begins.
+    void axisShaft(int index, float shaftEnd) {
+        const GizmoAxis colorAxis = axisFromIndex(index);
+        const GizmoHandle handle = axisHandleFromIndex(index);
+        const Vec3 direction = canonicalAxis(index);
+        // A short arm through the origin on each axis, so the point the
+        // transform is actually about is visible even when a shaft points away
+        // from the viewer and projects to almost nothing.
+        const float marker = kGizmoHandleLengthUnits * kGizmoPivotMarkerFraction;
+        line(vec3Scale(direction, -marker), vec3Scale(direction, marker), colorAxis, handle);
 
-        // The shaft, stopping where the arrowhead begins, drawn as a bundle: the
-        // centre line plus four offset a stroke width around it. See
-        // kGizmoStrokeOffsetUnits for why this is not one wide line.
-        const Vec3 shaftEnd = vec3Scale(direction, length - arrow);
+        int ui = 0;
+        int vi = 0;
+        gizmoPerpendicularIndices(index, &ui, &vi);
+        const Vec3 u = canonicalAxis(ui);
+        const Vec3 v = canonicalAxis(vi);
+        const Vec3 end = vec3Scale(direction, shaftEnd);
         const Vec3 strokeOffsets[kGizmoStrokeBundle] = {
             Vec3{0.0f, 0.0f, 0.0f},
             vec3Scale(u, kGizmoStrokeOffsetUnits),
@@ -438,27 +736,73 @@ int generateGizmoVertices(GizmoVertex* out, int capacity) {
             vec3Scale(v, -kGizmoStrokeOffsetUnits),
         };
         for (int s = 0; s < kGizmoStrokeBundle; ++s) {
-            writer.line(strokeOffsets[s], vec3Add(shaftEnd, strokeOffsets[s]), axes[i]);
+            line(strokeOffsets[s], vec3Add(end, strokeOffsets[s]), colorAxis, handle);
         }
+    }
+};
+
+}  // namespace
+
+bool gizmoVertexRange(GizmoMode mode, int* outFirst, int* outCount) {
+    int first = kGizmoMoveFirstVertex;
+    int count = kGizmoMoveVertexCount;
+    switch (mode) {
+        case GizmoMode::Move: break;
+        case GizmoMode::Rotate:
+            first = kGizmoRotateFirstVertex;
+            count = kGizmoRotateVertexCount;
+            break;
+        case GizmoMode::Scale:
+            first = kGizmoScaleFirstVertex;
+            count = kGizmoScaleVertexCount;
+            break;
+    }
+    if (outFirst) *outFirst = first;
+    if (outCount) *outCount = count;
+    return count > 0;
+}
+
+int generateGizmoVertices(GizmoVertex* out, int capacity) {
+    if (out == nullptr || capacity < kGizmoVertexCount) {
+        return 0;
+    }
+    GizmoVertexWriter writer{out, capacity, 0};
+
+    // --- Move: pivot marker, shafts, arrowheads, plane squares -----------
+    const float length = kGizmoHandleLengthUnits;
+    const float arrow = length * kGizmoArrowLengthFraction;
+    const float arrowHalfWidth = length * kGizmoArrowHalfWidthFraction;
+    for (int i = 0; i < 3; ++i) {
+        writer.axisShaft(i, length - arrow);
 
         // A four-line arrowhead rather than a cone: it reads as a direction from
         // every angle, costs four lines, and needs no second pipeline for solid
         // geometry.
+        int ui = 0;
+        int vi = 0;
+        gizmoPerpendicularIndices(i, &ui, &vi);
+        const Vec3 direction = canonicalAxis(i);
         const Vec3 tip = vec3Scale(direction, length);
         const Vec3 base = vec3Scale(direction, length - arrow);
-        const Vec3 spokes[4] = {vec3Scale(u, arrowHalfWidth), vec3Scale(u, -arrowHalfWidth),
-                                vec3Scale(v, arrowHalfWidth), vec3Scale(v, -arrowHalfWidth)};
+        const Vec3 spokes[4] = {vec3Scale(canonicalAxis(ui), arrowHalfWidth),
+                                vec3Scale(canonicalAxis(ui), -arrowHalfWidth),
+                                vec3Scale(canonicalAxis(vi), arrowHalfWidth),
+                                vec3Scale(canonicalAxis(vi), -arrowHalfWidth)};
         for (int s = 0; s < 4; ++s) {
-            writer.line(tip, vec3Add(base, spokes[s]), axes[i]);
+            writer.line(tip, vec3Add(base, spokes[s]), axisFromIndex(i), axisHandleFromIndex(i));
         }
     }
+    for (int p = 0; p < 3; ++p) {
+        writer.planeSquare(kPlaneHandles[p]);
+    }
 
-    // --- Rotate: three world-axis rings ----------------------------------
+    // --- Rotate: three rings in the current basis ------------------------
     //
-    // The ring PLANE is the axis's plane and stays there. It is deliberately not
-    // billboarded toward the camera: a ring that turned to face the viewer would
-    // stop showing which plane the rotation happens in, which is the one thing
-    // it is there to say.
+    // The ring PLANE is the basis axis plane and stays there. It is deliberately
+    // not billboarded toward the camera: a ring that turned to face the viewer
+    // would stop showing which plane the rotation happens in, which is the one
+    // thing it is there to say.
+    //
     // Two concentric passes a stroke width apart, for the legibility reason the
     // shafts are bundled. The HIT test still measures against the nominal radius
     // alone: the corridor is 48 units wide and a one-unit ring thickness is
@@ -466,8 +810,11 @@ int generateGizmoVertices(GizmoVertex* out, int capacity) {
     const float radii[2] = {kGizmoRingRadiusUnits,
                             kGizmoRingRadiusUnits + kGizmoStrokeOffsetUnits};
     for (int i = 0; i < 3; ++i) {
-        Vec3 u{}, v{};
-        axisPlaneBasis(axes[i], &u, &v);
+        int ui = 0;
+        int vi = 0;
+        gizmoPerpendicularIndices(i, &ui, &vi);
+        const Vec3 u = canonicalAxis(ui);
+        const Vec3 v = canonicalAxis(vi);
         for (int pass = 0; pass < 2; ++pass) {
             const float radius = radii[pass];
             for (int s = 0; s < kGizmoRingSegments; ++s) {
@@ -479,10 +826,31 @@ int generateGizmoVertices(GizmoVertex* out, int capacity) {
                                         vec3Scale(v, radius * std::sin(a0)));
                 const Vec3 p1 = vec3Add(vec3Scale(u, radius * std::cos(a1)),
                                         vec3Scale(v, radius * std::sin(a1)));
-                writer.line(p0, p1, axes[i]);
+                writer.line(p0, p1, axisFromIndex(i), axisHandleFromIndex(i));
             }
         }
     }
+
+    // --- Scale: cubes instead of arrowheads, plus the uniform cube -------
+    //
+    // A cube endpoint is the professional vocabulary for "this stretches" the
+    // same way an arrowhead is for "this moves", and it is what makes the two
+    // modes readable apart at a glance rather than by remembering which one is
+    // selected.
+    for (int i = 0; i < 3; ++i) {
+        const float cubeCentre = length - kGizmoScaleCubeHalfUnits;
+        writer.axisShaft(i, cubeCentre);
+        writer.cube(vec3Scale(canonicalAxis(i), cubeCentre), kGizmoScaleCubeHalfUnits,
+                    axisFromIndex(i), axisHandleFromIndex(i));
+    }
+    for (int p = 0; p < 3; ++p) {
+        writer.planeSquare(kPlaneHandles[p]);
+    }
+    // The uniform handle: one cube at the pivot, drawn NEUTRAL because it
+    // belongs to no axis and lighting it in an axis hue would say it did.
+    writer.cube(Vec3{0.0f, 0.0f, 0.0f}, kGizmoUniformCubeHalfUnits, GizmoAxis::None,
+                GizmoHandle::Uniform);
+
     return writer.written;
 }
 
@@ -490,51 +858,122 @@ Vec3 gizmoRingGrabOffset(GizmoAxis axis, float radius) {
     if (axis == GizmoAxis::None || !std::isfinite(radius)) {
         return Vec3{0.0f, 0.0f, 0.0f};
     }
-    Vec3 u{}, v{};
-    axisPlaneBasis(axis, &u, &v);
-    // 45 degrees between the plane's own two basis directions: the two ring
+    int index = 0;
+    switch (axis) {
+        case GizmoAxis::Y: index = 1; break;
+        case GizmoAxis::Z: index = 2; break;
+        default: index = 0; break;
+    }
+    int ui = 0;
+    int vi = 0;
+    gizmoPerpendicularIndices(index, &ui, &vi);
+    // 45 degrees between the plane own two basis directions: the two ring
     // crossings sit exactly on those directions, so the bisector is the point on
     // this ring furthest from either of them. See the header.
     const float half = radius * 0.70710678f;
-    return vec3Add(vec3Scale(u, half), vec3Scale(v, half));
+    return vec3Add(vec3Scale(canonicalAxis(ui), half), vec3Scale(canonicalAxis(vi), half));
+}
+
+bool gizmoHandleGrabPoint(const GizmoSnapshot& state, GizmoHandle handle, Vec3* out) {
+    if (out == nullptr || !state.visible || handle == GizmoHandle::None ||
+        !(state.worldPerReferenceUnit > 0.0f)) {
+        return false;
+    }
+    // The basis, read back out of the snapshot the renderer is drawing with, so
+    // there is no second copy of "which way does local X point".
+    const Mat4& basis = state.orientation;
+    auto basisAxis = [&basis](int index) {
+        return Vec3{basis.m[index * 4 + 0], basis.m[index * 4 + 1], basis.m[index * 4 + 2]};
+    };
+    const float scale = state.worldPerReferenceUnit;
+
+    if (handle == GizmoHandle::Uniform) {
+        *out = state.pivot;
+        return true;
+    }
+    if (gizmoHandleIsPlane(handle)) {
+        int a = 0;
+        int b = 0;
+        gizmoPlaneAxisIndices(handle, &a, &b);
+        const float d = kGizmoPlaneCentreUnits * scale;
+        *out = vec3Add(state.pivot, vec3Add(vec3Scale(basisAxis(a), d), vec3Scale(basisAxis(b), d)));
+        return vec3Finite(*out);
+    }
+    const int index = gizmoHandleAxisIndex(handle);
+    if (index < 0) {
+        return false;
+    }
+    if (state.mode == GizmoMode::Rotate) {
+        // Deliberately NOT on a basis direction: that is exactly where two rings
+        // cross, and a point there names no single axis. See gizmoRingGrabOffset.
+        int ui = 0;
+        int vi = 0;
+        gizmoPerpendicularIndices(index, &ui, &vi);
+        const float half = kGizmoRingRadiusUnits * scale * 0.70710678f;
+        *out = vec3Add(state.pivot,
+                       vec3Add(vec3Scale(basisAxis(ui), half), vec3Scale(basisAxis(vi), half)));
+        return vec3Finite(*out);
+    }
+    const float middle =
+        0.5f * (kGizmoShaftGrabStartFraction + kGizmoShaftGrabEndFraction);
+    *out = vec3Add(state.pivot,
+                   vec3Scale(basisAxis(index), kGizmoHandleLengthUnits * scale * middle));
+    return vec3Finite(*out);
 }
 
 // ---------------------------------------------------------------------------
 // Colour
 // ---------------------------------------------------------------------------
 
+namespace {
+
+struct GizmoPalette {
+    float x[3];
+    float y[3];
+    float z[3];
+    float highlight[3];
+    float neutral;
+};
+
+// The three hues extend the convention the world grid already draws with — a
+// warm X and a cool Z — by adding the Y the grid has no line for, and raise all
+// three to tool weight. A handle must read as an instrument the user can grab,
+// which a 0.5-alpha reference line does not.
+//
+// The two dark appearances share a palette: they differ in the ground they are
+// drawn on and not in what an axis MEANS, and giving them separate handle hues
+// would be three variants of one instrument for no reading gain.
+const GizmoPalette kDarkPalette = {
+    {0.94f, 0.42f, 0.36f},
+    {0.52f, 0.86f, 0.44f},
+    {0.40f, 0.62f, 0.96f},
+    // Held: a warm amber that no axis owns, so it can never be misread as an
+    // axis identity.
+    {1.00f, 0.84f, 0.28f},
+    0.92f,
+};
+
+// Darker and more saturated on the light ground, so contrast against the
+// background is comparable rather than the hue being nominally "the same".
+const GizmoPalette kLightPalette = {
+    {0.80f, 0.22f, 0.18f},
+    {0.16f, 0.56f, 0.24f},
+    {0.13f, 0.40f, 0.84f},
+    {0.86f, 0.56f, 0.02f},
+    0.18f,
+};
+
+const GizmoPalette& paletteFor(ViewportBackground background) {
+    return (background == ViewportBackground::LightCharcoal) ? kLightPalette : kDarkPalette;
+}
+
+}  // namespace
+
 void gizmoAxisColor(ViewportBackground background, GizmoAxis axis, float* outRgba) {
     if (outRgba == nullptr) {
         return;
     }
-    struct Palette {
-        float x[4];
-        float y[4];
-        float z[4];
-    };
-    // The three hues extend the convention the world grid already draws with —
-    // a warm X and a cool Z — by adding the Y the grid has no line for, and
-    // raise all three to tool weight. A handle must read as an instrument the
-    // user can grab, which a 0.5-alpha reference line does not.
-    //
-    // The two dark appearances share a palette: they differ in the ground they
-    // are drawn on and not in what an axis MEANS, and giving them separate
-    // handle hues would be three variants of one instrument for no reading gain.
-    static const Palette kDark = {
-        {0.94f, 0.42f, 0.36f, 0.95f},
-        {0.52f, 0.86f, 0.44f, 0.95f},
-        {0.40f, 0.62f, 0.96f, 0.95f},
-    };
-    // Darker and more saturated on the light ground, so contrast against the
-    // background is comparable rather than the hue being nominally "the same".
-    static const Palette kLight = {
-        {0.80f, 0.22f, 0.18f, 0.95f},
-        {0.16f, 0.56f, 0.24f, 0.95f},
-        {0.13f, 0.40f, 0.84f, 0.95f},
-    };
-
-    const Palette& palette =
-        (background == ViewportBackground::LightCharcoal) ? kLight : kDark;
+    const GizmoPalette& palette = paletteFor(background);
     const float* source = palette.x;
     switch (axis) {
         case GizmoAxis::Y: source = palette.y; break;
@@ -542,10 +981,23 @@ void gizmoAxisColor(ViewportBackground background, GizmoAxis axis, float* outRgb
         case GizmoAxis::X:
         case GizmoAxis::None: break;
     }
-    for (int i = 0; i < 4; ++i) {
+    for (int i = 0; i < 3; ++i) {
         outRgba[i] = source[i];
     }
+    outRgba[3] = kGizmoAxisAlpha;
 }
+
+void gizmoHighlightColor(ViewportBackground background, float* outRgb) {
+    if (outRgb == nullptr) {
+        return;
+    }
+    const GizmoPalette& palette = paletteFor(background);
+    for (int i = 0; i < 3; ++i) {
+        outRgb[i] = palette.highlight[i];
+    }
+}
+
+float gizmoNeutralLevel(ViewportBackground background) { return paletteFor(background).neutral; }
 
 // ---------------------------------------------------------------------------
 // GizmoSession
@@ -563,8 +1015,12 @@ void GizmoSession::setActive(bool active) {
     }
     active_ = active;
     if (active_) {
-        // Move on entry, every time. See mode_.
+        // Move in World on entry, every time. A tool that reopened in whatever
+        // sub-mode and basis it was last left in would make the first drag after
+        // a context switch a guess.
         mode_ = GizmoMode::Move;
+        space_ = GizmoSpace::World;
+        restoreSpace_ = GizmoSpace::World;
     }
 }
 
@@ -572,7 +1028,33 @@ bool GizmoSession::setMode(GizmoMode mode) {
     if (capturing_) {
         return false;
     }
+    if (mode == GizmoMode::Scale) {
+        if (mode_ != GizmoMode::Scale) {
+            // Remembered so leaving Scale can put it back. A round trip through
+            // Scale must not quietly change what a Move handle means.
+            restoreSpace_ = space_;
+        }
+        space_ = GizmoSpace::Local;
+    } else if (mode_ == GizmoMode::Scale) {
+        space_ = restoreSpace_;
+    }
     mode_ = mode;
+    return true;
+}
+
+bool GizmoSession::setSpace(GizmoSpace space) {
+    if (capturing_) {
+        return false;
+    }
+    if (mode_ == GizmoMode::Scale) {
+        // Local is already what Scale is in, so asking for it is honoured as a
+        // no-op; World is refused rather than silently applied, because a
+        // world-axis scale of a rotated body is a shear. The workspace withdraws
+        // the selector here as well — removing a control is not removing a guard.
+        return space == GizmoSpace::Local;
+    }
+    space_ = space;
+    restoreSpace_ = space;
     return true;
 }
 
@@ -595,12 +1077,19 @@ GizmoSnapshot GizmoSession::snapshot(const CameraSnapshot& camera, int viewportW
         return out;
     }
     out.visible = true;
-    // The mode being DRAWN while a drag is live is the drag's mode, which cannot
-    // differ from mode_ because setMode is refused mid-drag — stated here so a
-    // future relaxation of that refusal cannot silently draw the wrong handles.
+    // The mode and space being DRAWN while a drag is live are the drag own,
+    // which cannot differ from the session because both setters are refused
+    // mid-drag — stated here so a future relaxation of that refusal cannot
+    // silently draw the wrong handles.
     out.mode = capturing_ ? dragMode_ : mode_;
-    out.activeAxis = capturing_ ? axis_ : GizmoAxis::None;
+    out.space = capturing_ ? dragSpace_ : space_;
+    out.activeHandle = capturing_ ? handle_ : GizmoHandle::None;
     out.pivot = pivot;
+    // Frozen basis while capturing, for the reason GizmoBasis states: in Local
+    // a rotate drag is changing the very rotation the basis comes from, and a
+    // basis re-read every frame would turn under the finger that is turning it.
+    out.orientation = gizmoBasisMatrix(capturing_ ? basis_
+                                                  : gizmoBasisFor(space_, values));
     out.worldPerReferenceUnit = scale;
     return out;
 }
@@ -610,95 +1099,154 @@ GizmoSnapshot GizmoSession::snapshot(const CameraSnapshot& camera, int viewportW
 // ---------------------------------------------------------------------------
 //
 // In PIXELS, against the same geometry the renderer draws at the same scale.
-// The alternative — three ray/cylinder and three ray/torus tests in world space
-// — answers a different question from the one the user is asking, which is "is
-// my finger on that line I can see". Measuring in pixels is also what makes the
+// The alternative — ray/cylinder, ray/torus, ray/box tests in world space —
+// answers a different question from the one the user is asking, which is "is my
+// finger on that thing I can see". Measuring in pixels is also what makes the
 // 48-unit floor a number this file can state rather than an aspiration.
-GizmoAxis GizmoSession::hitTest(const CameraSnapshot& camera, float screenX, float screenY,
-                                int viewportWidth, int viewportHeight) const {
+GizmoHandle GizmoSession::hitTest(const CameraSnapshot& camera, float screenX, float screenY,
+                                  int viewportWidth, int viewportHeight) const {
     const GizmoSnapshot state = snapshot(camera, viewportWidth, viewportHeight);
     if (!state.visible || !std::isfinite(screenX) || !std::isfinite(screenY)) {
-        return GizmoAxis::None;
+        return GizmoHandle::None;
     }
-    const float slopPixels = kGizmoHitSlopUnits * gizmoPixelsPerReferenceUnit();
-    const float slopSq = slopPixels * slopPixels;
+    const float pixelsPerUnit = gizmoPixelsPerReferenceUnit();
+    const Mat4& basis = state.orientation;
+    auto basisAxis = [&basis](int index) {
+        return Vec3{basis.m[index * 4 + 0], basis.m[index * 4 + 1], basis.m[index * 4 + 2]};
+    };
 
-    GizmoAxis best = GizmoAxis::None;
-    float bestDistanceSq = slopSq;
-
-    const GizmoAxis axes[3] = {GizmoAxis::X, GizmoAxis::Y, GizmoAxis::Z};
-    for (int i = 0; i < 3; ++i) {
-        const Vec3 direction = gizmoAxisDirection(axes[i]);
-        float distanceSq = 0.0f;
-        bool measured = false;
-
-        if (state.mode == GizmoMode::Move) {
-            const float length = kGizmoHandleLengthUnits * state.worldPerReferenceUnit;
-            const Vec3 start = vec3Add(
-                state.pivot, vec3Scale(direction, length * kGizmoShaftGrabStartFraction));
-            const Vec3 end =
-                vec3Add(state.pivot, vec3Scale(direction, length * kGizmoShaftGrabEndFraction));
-            float ax = 0.0f, ay = 0.0f, bx = 0.0f, by = 0.0f;
-            if (projectWorldToScreen(camera, start, viewportWidth, viewportHeight, &ax, &ay) &&
-                projectWorldToScreen(camera, end, viewportWidth, viewportHeight, &bx, &by)) {
-                distanceSq = pointSegmentDistanceSq(screenX, screenY, ax, ay, bx, by);
-                measured = true;
+    // The pivot disc, in Move and Rotate: a touch at the centre names no handle
+    // rather than an arbitrary one. See kGizmoPivotDeadRadiusUnits. In Scale the
+    // disc is the uniform handle, so the exclusion is skipped there.
+    if (state.mode != GizmoMode::Scale) {
+        float px = 0.0f, py = 0.0f;
+        if (projectWorldToScreen(camera, state.pivot, viewportWidth, viewportHeight, &px, &py)) {
+            const float dead = kGizmoPivotDeadRadiusUnits * pixelsPerUnit;
+            const float dx = screenX - px;
+            const float dy = screenY - py;
+            if (dx * dx + dy * dy < dead * dead) {
+                return GizmoHandle::None;
             }
-        } else {
-            // The ring, as the polyline it is drawn as. An edge-on ring projects
-            // to a segment and this still measures it correctly, which is what
-            // keeps a ring grabbable from every camera angle instead of only the
-            // face-on ones.
-            const float radius = kGizmoRingRadiusUnits * state.worldPerReferenceUnit;
-            Vec3 u{}, v{};
-            // Two unit vectors spanning the ring's plane. Which two does not
-            // matter — the ring is a circle — so they are taken from the axis
-            // enum's own partners rather than from a general orthonormal basis
-            // routine that would have its own degenerate case.
-            switch (axes[i]) {
-                case GizmoAxis::X: u = Vec3{0, 1, 0}; v = Vec3{0, 0, 1}; break;
-                case GizmoAxis::Y: u = Vec3{0, 0, 1}; v = Vec3{1, 0, 0}; break;
-                default:           u = Vec3{1, 0, 0}; v = Vec3{0, 1, 0}; break;
-            }
-            float previousX = 0.0f, previousY = 0.0f;
-            bool havePrevious = false;
-            float ringBest = slopSq;
-            for (int s = 0; s <= kGizmoRingSegments; ++s) {
-                const float angle = kTwoPi * static_cast<float>(s) /
-                                    static_cast<float>(kGizmoRingSegments);
-                const Vec3 point = vec3Add(
-                    state.pivot, vec3Add(vec3Scale(u, radius * std::cos(angle)),
-                                         vec3Scale(v, radius * std::sin(angle))));
+        }
+    }
+
+    GizmoHandle handles[kGizmoMaxHandles];
+    const int count = gizmoHandlesForMode(state.mode, handles, kGizmoMaxHandles);
+
+    // Resolved in TIERS. `gizmoHandlesForMode` returns smallest target first, so
+    // walking it and returning as soon as a tier produces a hit is exactly the
+    // priority the header states: uniform, then planes, then axes. Without it
+    // the three shafts, which are long, would win every contest against the
+    // small handles that sit between them.
+    auto tierOf = [](GizmoHandle handle) {
+        if (handle == GizmoHandle::Uniform) return 0;
+        return gizmoHandleIsPlane(handle) ? 1 : 2;
+    };
+
+    int index = 0;
+    while (index < count) {
+        const int tier = tierOf(handles[index]);
+        GizmoHandle best = GizmoHandle::None;
+        float bestDistanceSq = 0.0f;
+
+        while (index < count && tierOf(handles[index]) == tier) {
+            const GizmoHandle handle = handles[index];
+            ++index;
+
+            float slopPixels = kGizmoHitSlopUnits * pixelsPerUnit;
+            float distanceSq = 0.0f;
+            bool measured = false;
+
+            if (handle == GizmoHandle::Uniform) {
+                slopPixels = kGizmoUniformHitRadiusUnits * pixelsPerUnit;
                 float px = 0.0f, py = 0.0f;
-                if (!projectWorldToScreen(camera, point, viewportWidth, viewportHeight, &px,
-                                          &py)) {
-                    havePrevious = false;
-                    continue;
+                if (projectWorldToScreen(camera, state.pivot, viewportWidth, viewportHeight, &px,
+                                         &py)) {
+                    distanceSq = (screenX - px) * (screenX - px) + (screenY - py) * (screenY - py);
+                    measured = true;
                 }
-                if (havePrevious) {
-                    const float d =
-                        pointSegmentDistanceSq(screenX, screenY, previousX, previousY, px, py);
-                    if (d < ringBest) {
-                        ringBest = d;
-                        measured = true;
+            } else if (gizmoHandleIsPlane(handle)) {
+                slopPixels = kGizmoPlaneHitRadiusUnits * pixelsPerUnit;
+                Vec3 centre{};
+                float px = 0.0f, py = 0.0f;
+                if (gizmoHandleGrabPoint(state, handle, &centre) &&
+                    projectWorldToScreen(camera, centre, viewportWidth, viewportHeight, &px,
+                                         &py)) {
+                    distanceSq = (screenX - px) * (screenX - px) + (screenY - py) * (screenY - py);
+                    measured = true;
+                }
+            } else if (state.mode == GizmoMode::Rotate) {
+                // The ring, as the polyline it is drawn as. An edge-on ring
+                // projects to a segment and this still measures it correctly,
+                // which is what keeps a ring grabbable from every camera angle
+                // instead of only the face-on ones.
+                const int axisIndex = gizmoHandleAxisIndex(handle);
+                const float radius = kGizmoRingRadiusUnits * state.worldPerReferenceUnit;
+                int ui = 0;
+                int vi = 0;
+                gizmoPerpendicularIndices(axisIndex, &ui, &vi);
+                const Vec3 u = basisAxis(ui);
+                const Vec3 v = basisAxis(vi);
+                float previousX = 0.0f, previousY = 0.0f;
+                bool havePrevious = false;
+                float ringBest = slopPixels * slopPixels;
+                for (int s = 0; s <= kGizmoRingSegments; ++s) {
+                    const float angle = kTwoPi * static_cast<float>(s) /
+                                        static_cast<float>(kGizmoRingSegments);
+                    const Vec3 point = vec3Add(
+                        state.pivot, vec3Add(vec3Scale(u, radius * std::cos(angle)),
+                                             vec3Scale(v, radius * std::sin(angle))));
+                    float px = 0.0f, py = 0.0f;
+                    if (!projectWorldToScreen(camera, point, viewportWidth, viewportHeight, &px,
+                                              &py)) {
+                        havePrevious = false;
+                        continue;
                     }
+                    if (havePrevious) {
+                        const float d = pointSegmentDistanceSq(screenX, screenY, previousX,
+                                                               previousY, px, py);
+                        if (d < ringBest) {
+                            ringBest = d;
+                            measured = true;
+                        }
+                    }
+                    previousX = px;
+                    previousY = py;
+                    havePrevious = true;
                 }
-                previousX = px;
-                previousY = py;
-                havePrevious = true;
+                distanceSq = ringBest;
+            } else {
+                const int axisIndex = gizmoHandleAxisIndex(handle);
+                const Vec3 direction = basisAxis(axisIndex);
+                const float length = kGizmoHandleLengthUnits * state.worldPerReferenceUnit;
+                const Vec3 start = vec3Add(
+                    state.pivot, vec3Scale(direction, length * kGizmoShaftGrabStartFraction));
+                const Vec3 end =
+                    vec3Add(state.pivot, vec3Scale(direction, length * kGizmoShaftGrabEndFraction));
+                float ax = 0.0f, ay = 0.0f, bx = 0.0f, by = 0.0f;
+                if (projectWorldToScreen(camera, start, viewportWidth, viewportHeight, &ax, &ay) &&
+                    projectWorldToScreen(camera, end, viewportWidth, viewportHeight, &bx, &by)) {
+                    distanceSq = pointSegmentDistanceSq(screenX, screenY, ax, ay, bx, by);
+                    measured = true;
+                }
             }
-            distanceSq = ringBest;
+
+            const float slopSq = slopPixels * slopPixels;
+            // Strictly nearer wins, so the enumeration order breaks an exact tie
+            // deterministically — X before Y before Z, XY before XZ before YZ —
+            // rather than iteration order being read as significance.
+            if (measured && distanceSq <= slopSq &&
+                (best == GizmoHandle::None || distanceSq < bestDistanceSq)) {
+                bestDistanceSq = distanceSq;
+                best = handle;
+            }
         }
 
-        // Strictly nearer wins, so X beats Y beats Z on an exact tie and the
-        // answer is deterministic rather than dependent on iteration order
-        // being read as significant.
-        if (measured && distanceSq < bestDistanceSq) {
-            bestDistanceSq = distanceSq;
-            best = axes[i];
+        if (best != GizmoHandle::None) {
+            return best;
         }
     }
-    return best;
+    return GizmoHandle::None;
 }
 
 // ---------------------------------------------------------------------------
@@ -714,13 +1262,33 @@ bool GizmoSession::capturedBodyTransform(TransformValues* out) const {
     return true;
 }
 
+Vec3 GizmoSession::basisDirection(int axisIndex) const {
+    if (axisIndex < 0 || axisIndex > 2) {
+        return Vec3{0.0f, 0.0f, 0.0f};
+    }
+    return basis_.axis[axisIndex];
+}
+
+bool GizmoSession::applyTarget(const TransformValues& values) {
+    SceneObject* body = scene_.findBody(objectId_);
+    if (body == nullptr) {
+        return false;
+    }
+    // THE placement seam, and the only path from a solved target to the
+    // authoritative transform. See applyGizmoPlacementModifier.
+    const TransformValues constrained =
+        applyGizmoPlacementModifier(values, startValues_, dragMode_, handle_, dragSpace_);
+    const TransformApplyResult result = applyTransformValues(body->transform(), constrained);
+    return result.status == TransformUpdateStatus::Applied;
+}
+
 bool GizmoSession::beginDrag(int32_t pointerId, const CameraSnapshot& camera, float screenX,
                              float screenY, int viewportWidth, int viewportHeight) {
     if (capturing_) {
         return false;
     }
-    const GizmoAxis axis = hitTest(camera, screenX, screenY, viewportWidth, viewportHeight);
-    if (axis == GizmoAxis::None) {
+    const GizmoHandle handle = hitTest(camera, screenX, screenY, viewportWidth, viewportHeight);
+    if (handle == GizmoHandle::None) {
         // Nothing captured and — the part that matters — no edit opened. A touch
         // that misses every handle is an ordinary viewport gesture and must cost
         // the history nothing at all.
@@ -741,10 +1309,14 @@ bool GizmoSession::beginDrag(int32_t pointerId, const CameraSnapshot& camera, fl
     }
 
     objectId_ = body->objectId();
-    axis_ = axis;
+    handle_ = handle;
     dragMode_ = state.mode;
+    dragSpace_ = state.space;
     pivot_ = state.pivot;
     startValues_ = body->transform().values();
+    basis_ = gizmoBasisFor(dragSpace_, startValues_);
+    startRotation_ = rotationMatrixFromEuler(eulerOf(startValues_));
+    lastEuler_ = eulerOf(startValues_);
     dragUpdates_ = 0;
     lastSolve_ = AxisSolveStatus::Resolved;
     haveRingSample_ = false;
@@ -752,42 +1324,112 @@ bool GizmoSession::beginDrag(int32_t pointerId, const CameraSnapshot& camera, fl
     lastRingAngle_ = 0.0f;
     startAxisT_ = 0.0f;
 
-    const Vec3 direction = gizmoAxisDirection(axis_);
+    // Everything a drag needs to be anchored on is worked out HERE, once, and a
+    // failure to anchor refuses the capture outright. A drag anchored on a guess
+    // would jump on its first move, which is the whole reason each of these
+    // paths refuses rather than substituting something plausible.
+    const int axisIndex = gizmoHandleAxisIndex(handle_);
     if (dragMode_ == GizmoMode::Move) {
-        float t = 0.0f;
-        const AxisSolveStatus status = solveAxisParameter(ray, pivot_, direction, &t);
-        lastSolve_ = status;
-        if (status == AxisSolveStatus::Unresolvable) {
-            // The handle is drawn and was hit, but the axis points so nearly at
-            // the viewer that no starting parameter exists. Refusing the capture
-            // is the honest answer: a drag anchored on a guess would jump on its
-            // first move.
-            objectId_ = kNoObject;
-            axis_ = GizmoAxis::None;
-            return false;
+        if (gizmoHandleIsPlane(handle_)) {
+            const int normalIndex = gizmoPlaneNormalIndex(handle_);
+            if (!intersectRayPlane(ray, pivot_, basisDirection(normalIndex), &startPlaneHit_)) {
+                objectId_ = kNoObject;
+                handle_ = GizmoHandle::None;
+                return false;
+            }
+        } else {
+            float t = 0.0f;
+            const AxisSolveStatus status =
+                solveAxisParameter(ray, pivot_, basisDirection(axisIndex), &t);
+            lastSolve_ = status;
+            if (status == AxisSolveStatus::Unresolvable) {
+                objectId_ = kNoObject;
+                handle_ = GizmoHandle::None;
+                return false;
+            }
+            startAxisT_ = t;
         }
-        startAxisT_ = t;
-    } else {
+    } else if (dragMode_ == GizmoMode::Rotate) {
+        ringNormal_ = basisDirection(axisIndex);
         Vec3 hit{};
-        if (!intersectRayPlane(ray, pivot_, direction, &hit)) {
+        if (!intersectRayPlane(ray, pivot_, ringNormal_, &hit)) {
             objectId_ = kNoObject;
-            axis_ = GizmoAxis::None;
+            handle_ = GizmoHandle::None;
             return false;
         }
         float angle = 0.0f;
-        if (!signedAngleAround(direction, Vec3{1.0f, 0.0f, 0.0f}, vec3Sub(hit, pivot_), &angle)) {
-            // The reference direction is arbitrary and cancels out: only
-            // DIFFERENCES of this angle are ever used, so any fixed vector not
-            // parallel to the axis would do. Only its own degeneracy matters.
-            const Vec3 alternate{0.0f, 1.0f, 0.0f};
-            if (!signedAngleAround(direction, alternate, vec3Sub(hit, pivot_), &angle)) {
-                objectId_ = kNoObject;
-                axis_ = GizmoAxis::None;
-                return false;
-            }
+        // The reference direction is arbitrary and cancels out: only DIFFERENCES
+        // of this angle are ever used, so any fixed vector not parallel to the
+        // ring normal would do. Only its own degeneracy matters.
+        if (!signedAngleAround(ringNormal_, Vec3{1.0f, 0.0f, 0.0f}, vec3Sub(hit, pivot_),
+                               &angle) &&
+            !signedAngleAround(ringNormal_, Vec3{0.0f, 1.0f, 0.0f}, vec3Sub(hit, pivot_),
+                               &angle)) {
+            objectId_ = kNoObject;
+            handle_ = GizmoHandle::None;
+            return false;
         }
         lastRingAngle_ = angle;
         haveRingSample_ = true;
+    } else {
+        // Scale. The reference is a SCREEN direction and a SCREEN length: see
+        // the scale mapping in the header.
+        const float pixelsPerUnit = gizmoPixelsPerReferenceUnit();
+        if (handle_ == GizmoHandle::Uniform) {
+            // The uniform handle has no direction of its own, so the drag reads
+            // the screen diagonal — right and up, which is "bigger" in every
+            // tool that has one. Screen Y grows downward, hence the negative.
+            scaleDirX_ = 0.70710678f;
+            scaleDirY_ = -0.70710678f;
+            scaleReferencePixels_ = kGizmoUniformScaleReferenceUnits * pixelsPerUnit;
+        } else {
+            // The DRAWN extent of this handle, not the point the finger landed
+            // on: the reference length is "how long is this handle on screen",
+            // so a shaft measures a full shaft and a plane square measures its
+            // centre diagonal. Taking the grab point instead would make the
+            // sensitivity depend on where along the handle the user grabbed.
+            Vec3 reference{};
+            bool haveReference = false;
+            if (gizmoHandleIsPlane(handle_)) {
+                haveReference = gizmoHandleGrabPoint(state, handle_, &reference);
+            } else {
+                reference = vec3Add(pivot_,
+                                    vec3Scale(basisDirection(axisIndex),
+                                              kGizmoHandleLengthUnits * state.worldPerReferenceUnit));
+                haveReference = vec3Finite(reference);
+            }
+            float px = 0.0f, py = 0.0f, hx = 0.0f, hy = 0.0f;
+            if (!haveReference ||
+                !projectWorldToScreen(camera, pivot_, viewportWidth, viewportHeight, &px, &py) ||
+                !projectWorldToScreen(camera, reference, viewportWidth, viewportHeight, &hx,
+                                      &hy)) {
+                objectId_ = kNoObject;
+                handle_ = GizmoHandle::None;
+                return false;
+            }
+            const float dx = hx - px;
+            const float dy = hy - py;
+            const float length = std::sqrt(dx * dx + dy * dy);
+            if (!std::isfinite(length) ||
+                length < kGizmoScaleMinReferenceUnits * pixelsPerUnit) {
+                // The handle points at the viewer: it has no usable screen
+                // direction, and anchoring on one that is mostly rounding error
+                // is exactly the jump this refusal prevents.
+                objectId_ = kNoObject;
+                handle_ = GizmoHandle::None;
+                return false;
+            }
+            scaleDirX_ = dx / length;
+            scaleDirY_ = dy / length;
+            scaleReferencePixels_ = length;
+        }
+        if (!std::isfinite(scaleReferencePixels_) || scaleReferencePixels_ <= 0.0f) {
+            objectId_ = kNoObject;
+            handle_ = GizmoHandle::None;
+            return false;
+        }
+        scaleDownX_ = screenX;
+        scaleDownY_ = screenY;
     }
 
     // ONE edit for the whole drag, opened here and closed exactly once in
@@ -801,50 +1443,81 @@ bool GizmoSession::beginDrag(int32_t pointerId, const CameraSnapshot& camera, fl
 }
 
 bool GizmoSession::applyMoveSample(const Ray& ray) {
-    const Vec3 direction = gizmoAxisDirection(axis_);
-    float t = 0.0f;
-    const AxisSolveStatus status = solveAxisParameter(ray, pivot_, direction, &t);
-    lastSolve_ = status;
-    if (status == AxisSolveStatus::Unresolvable) {
-        // Hold. The placement keeps its last good value, which is a stationary
-        // handle rather than a jump — and nothing non-finite can reach the
-        // transform, because nothing is written at all.
-        return false;
+    // The world displacement this sample asks for, accumulated in DOUBLE so a
+    // world-axis drag writes the same exact number the typed editor would.
+    double offset[3] = {0.0, 0.0, 0.0};
+
+    if (gizmoHandleIsPlane(handle_)) {
+        int a = 0;
+        int b = 0;
+        gizmoPlaneAxisIndices(handle_, &a, &b);
+        const int normalIndex = gizmoPlaneNormalIndex(handle_);
+        Vec3 hit{};
+        if (!intersectRayPlane(ray, pivot_, basisDirection(normalIndex), &hit)) {
+            // Hold: the plane is edge-on to the pointer. The placement keeps its
+            // last good value, which is a stationary handle rather than a jump.
+            return false;
+        }
+        const Vec3 raw = vec3Sub(hit, startPlaneHit_);
+        // PROJECTED onto the two allowed directions rather than used whole. The
+        // third basis component is therefore untouched by construction and not
+        // by a subsequent correction — which is what makes "a plane drag never
+        // moves the body off its plane" a property rather than a promise.
+        const Vec3 first = basisDirection(a);
+        const Vec3 second = basisDirection(b);
+        const double du = quantizeGizmoTranslation(static_cast<double>(vec3Dot(raw, first)));
+        const double dv = quantizeGizmoTranslation(static_cast<double>(vec3Dot(raw, second)));
+        if (!std::isfinite(du) || !std::isfinite(dv)) {
+            return false;
+        }
+        offset[0] = static_cast<double>(first.x) * du + static_cast<double>(second.x) * dv;
+        offset[1] = static_cast<double>(first.y) * du + static_cast<double>(second.y) * dv;
+        offset[2] = static_cast<double>(first.z) * du + static_cast<double>(second.z) * dv;
+    } else {
+        const int axisIndex = gizmoHandleAxisIndex(handle_);
+        const Vec3 direction = basisDirection(axisIndex);
+        float t = 0.0f;
+        const AxisSolveStatus status = solveAxisParameter(ray, pivot_, direction, &t);
+        lastSolve_ = status;
+        if (status == AxisSolveStatus::Unresolvable) {
+            // Hold. Nothing non-finite can reach the transform, because nothing
+            // is written at all.
+            return false;
+        }
+        const double delta = quantizeGizmoTranslation(static_cast<double>(t - startAxisT_));
+        if (!std::isfinite(delta)) {
+            return false;
+        }
+        offset[0] = static_cast<double>(direction.x) * delta;
+        offset[1] = static_cast<double>(direction.y) * delta;
+        offset[2] = static_cast<double>(direction.z) * delta;
     }
-    const double delta = quantizeGizmoTranslation(static_cast<double>(t - startAxisT_));
-    if (!std::isfinite(delta)) {
-        return false;
-    }
-    TransformValues values = startValues_;
-    setTransformPositionForAxis(
-        &values, axis_, transformPositionForAxis(startValues_, axis_) + delta);
+
     // From the START values every time, never from the current ones: an
-    // incremental application would accumulate the solver's own rounding over a
+    // incremental application would accumulate the solver own rounding over a
     // long drag, and a held sample would then be a permanent small error rather
     // than a pause.
-    SceneObject* body = scene_.findBody(objectId_);
-    if (body == nullptr) {
-        return false;
+    TransformValues values = startValues_;
+    for (int i = 0; i < 3; ++i) {
+        setTransformPositionAt(&values, i, transformPositionAt(startValues_, i) + offset[i]);
     }
-    const TransformApplyResult result = applyTransformValues(body->transform(), values);
-    return result.status == TransformUpdateStatus::Applied;
+    return applyTarget(values);
 }
 
 bool GizmoSession::applyRotateSample(const Ray& ray) {
-    const Vec3 direction = gizmoAxisDirection(axis_);
-    // The ring plane is edge-on to the pointer when the axis is perpendicular to
-    // the ray. intersectRayPlane refuses that case, and refusing IS the
-    // documented fallback: the drag holds its last valid sample, so the body
-    // stops moving instead of spinning on noise, and resumes the moment the
-    // camera or the finger gives the plane something to intersect again.
+    // The ring plane is edge-on to the pointer when the ring normal is
+    // perpendicular to the ray. intersectRayPlane refuses that case, and
+    // refusing IS the documented fallback: the drag holds its last valid sample,
+    // so the body stops turning instead of spinning on noise, and resumes the
+    // moment the camera or the finger gives the plane something to intersect.
     Vec3 hit{};
-    if (!intersectRayPlane(ray, pivot_, direction, &hit)) {
+    if (!intersectRayPlane(ray, pivot_, ringNormal_, &hit)) {
         return false;
     }
     const Vec3 spoke = vec3Sub(hit, pivot_);
     float angle = 0.0f;
-    if (!signedAngleAround(direction, Vec3{1.0f, 0.0f, 0.0f}, spoke, &angle) &&
-        !signedAngleAround(direction, Vec3{0.0f, 1.0f, 0.0f}, spoke, &angle)) {
+    if (!signedAngleAround(ringNormal_, Vec3{1.0f, 0.0f, 0.0f}, spoke, &angle) &&
+        !signedAngleAround(ringNormal_, Vec3{0.0f, 1.0f, 0.0f}, spoke, &angle)) {
         return false;
     }
     if (!haveRingSample_) {
@@ -867,18 +1540,81 @@ bool GizmoSession::applyRotateSample(const Ray& ray) {
     if (!std::isfinite(delta)) {
         return false;
     }
-    TransformValues values = startValues_;
-    // Added to the START value and never canonicalised, so 350 + 30 is 380 and
-    // the Property Inspector reads back 380 — the exact-transform convention
-    // keeps what the user did rather than reducing it modulo a turn.
-    setTransformRotationForAxis(
-        &values, axis_, transformRotationForAxis(startValues_, axis_) + delta);
-    SceneObject* body = scene_.findBody(objectId_);
-    if (body == nullptr) {
+
+    // The composition, from the IMMUTABLE start orientation every sample:
+    //
+    //     World:  R_target = Relem(A, delta) * R_start   (turn, then place)
+    //     Local:  R_target = R_start * Relem(A, delta)   (place, then turn)
+    //
+    // Adding `delta` to one Euler component instead is only correct when the
+    // other two are zero, and on a mixed orientation it turns the body about
+    // neither the world axis nor the local one. That is the defect this stage
+    // exists to remove, and the reason a mixed drag legitimately changes more
+    // than one Euler field.
+    const int axisIndex = gizmoHandleAxisIndex(handle_);
+    const Mat4 elementary = elementaryRotationMatrix(axisIndex, delta);
+    const Mat4 target = (dragSpace_ == GizmoSpace::World)
+                            ? mat4Multiply(elementary, startRotation_)
+                            : mat4Multiply(startRotation_, elementary);
+
+    EulerDegrees euler{};
+    // The branch nearest the LAST ACCEPTED answer, which is what keeps a drag
+    // continuous through +/-180, past 360 and past 720, and keeps the fields the
+    // drag is not moving reading exactly what they read before.
+    if (!eulerFromRotationMatrix(target, lastEuler_, &euler)) {
         return false;
     }
-    const TransformApplyResult result = applyTransformValues(body->transform(), values);
-    return result.status == TransformUpdateStatus::Applied;
+    TransformValues values = startValues_;
+    setEuler(&values, euler);
+    const bool changed = applyTarget(values);
+    // Advanced whenever the decomposition succeeded, not only when the transform
+    // moved: a sample that resolved to the same numbers is still the anchor the
+    // next one must be continuous with.
+    lastEuler_ = euler;
+    return changed;
+}
+
+bool GizmoSession::applyScaleSample(float screenX, float screenY) {
+    if (!std::isfinite(screenX) || !std::isfinite(screenY)) {
+        return false;
+    }
+    // ONE formula for all three scale handles. See the scale mapping in the
+    // header: measured from the pointer DOWN point, so the factor is exactly 1
+    // at zero drag wherever on the handle the user grabbed.
+    const double along = static_cast<double>(screenX - scaleDownX_) *
+                             static_cast<double>(scaleDirX_) +
+                         static_cast<double>(screenY - scaleDownY_) *
+                             static_cast<double>(scaleDirY_);
+    double factor = quantizeGizmoScale(1.0 + along / static_cast<double>(scaleReferencePixels_));
+    if (!std::isfinite(factor)) {
+        return false;
+    }
+    // Clamped strictly positive so a pointer dragged past the pivot pins the
+    // body at a sliver rather than passing through zero into a mirror. A floor,
+    // not a rounding rule.
+    if (factor < kGizmoMinScaleFactor) {
+        factor = kGizmoMinScaleFactor;
+    }
+
+    TransformValues values = startValues_;
+    if (handle_ == GizmoHandle::Uniform) {
+        // One factor on all three, so the existing ratios are preserved exactly:
+        // a body already twice as tall as it is wide stays twice as tall.
+        for (int i = 0; i < 3; ++i) {
+            setTransformScaleAt(&values, i, transformScaleAt(startValues_, i) * factor);
+        }
+    } else if (gizmoHandleIsPlane(handle_)) {
+        int a = 0;
+        int b = 0;
+        gizmoPlaneAxisIndices(handle_, &a, &b);
+        setTransformScaleAt(&values, a, transformScaleAt(startValues_, a) * factor);
+        setTransformScaleAt(&values, b, transformScaleAt(startValues_, b) * factor);
+    } else {
+        const int axisIndex = gizmoHandleAxisIndex(handle_);
+        setTransformScaleAt(&values, axisIndex,
+                            transformScaleAt(startValues_, axisIndex) * factor);
+    }
+    return applyTarget(values);
 }
 
 bool GizmoSession::updateDrag(int32_t pointerId, const CameraSnapshot& camera, float screenX,
@@ -894,12 +1630,20 @@ bool GizmoSession::updateDrag(int32_t pointerId, const CameraSnapshot& camera, f
     if (!capturedBodyTransform(&current)) {
         return false;
     }
-    Ray ray{};
-    if (!buildPickRay(camera, screenX, screenY, viewportWidth, viewportHeight, &ray)) {
-        return false;
+
+    bool changed = false;
+    if (dragMode_ == GizmoMode::Scale) {
+        // The only solver that works in screen space, because a scale factor is
+        // a screen-space question: there is no world quantity a pointer offset
+        // could be intersected against.
+        changed = applyScaleSample(screenX, screenY);
+    } else {
+        Ray ray{};
+        if (!buildPickRay(camera, screenX, screenY, viewportWidth, viewportHeight, &ray)) {
+            return false;
+        }
+        changed = (dragMode_ == GizmoMode::Move) ? applyMoveSample(ray) : applyRotateSample(ray);
     }
-    const bool changed = (dragMode_ == GizmoMode::Move) ? applyMoveSample(ray)
-                                                        : applyRotateSample(ray);
     if (changed) {
         ++dragUpdates_;
     }
@@ -912,7 +1656,7 @@ bool GizmoSession::commitDrag() {
     }
     capturing_ = false;
     pointerId_ = -1;
-    axis_ = GizmoAxis::None;
+    handle_ = GizmoHandle::None;
     // Exactly one commit, and it records a step only if the Construction state
     // genuinely differs from the pre-drag one. A tap, and a drag that came back
     // to where it started, both end here with nothing recorded and — crucially —
@@ -930,7 +1674,7 @@ void GizmoSession::cancelDrag() {
     }
     capturing_ = false;
     pointerId_ = -1;
-    axis_ = GizmoAxis::None;
+    handle_ = GizmoHandle::None;
     // The captured state goes back exactly, including the case where the drag
     // never moved anything. Nothing is recorded and the redo stack is left
     // alone: a cancelled drag is not a new branch of history.

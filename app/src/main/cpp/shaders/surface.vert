@@ -35,18 +35,18 @@ layout(location = 1) out vec3 fragColor;
 void main() {
     gl_Position = pc.mvp * vec4(inPosition, 1.0);
 
-    // Normals are transformed into VIEW space by the upper-left 3x3 of
-    // (view * model), applied directly rather than as an inverse-transpose.
+    // Normals are transformed into VIEW space by a matrix the CPU has already
+    // built as a real inverse-transpose: view * (R * S^-1), where S is the
+    // body's local scale. See ConstructionTransform::normalMatrix.
     //
-    // That shortcut is valid because BOTH factors are rigid: the camera's view
-    // matrix is a look-at (rotation + translation) and ConstructionTransform is
-    // documented as rotation + translation with NO scale, so the product is
-    // orthonormal and its inverse-transpose is itself.
+    // It is NOT the upper-left 3x3 of (view * model). The two agree exactly for
+    // every unscaled body and part company the moment a body carries a
+    // non-uniform scale, where the model would stretch a normal the same way it
+    // stretches a position and tilt it off the surface it belongs to.
     //
-    // If scale is ever added to the transform, this is one of the two places
-    // that silently becomes wrong (the other is picking's "local distance is
-    // world distance" shortcut). The CPU must then send a real inverse-
-    // transpose; the shader itself would not have to change.
+    // The result is deliberately left UNNORMALISED here: a non-uniform scale
+    // changes a normal's length as well as its direction, and the fragment
+    // stage normalises once per fragment anyway (see safeViewNormal).
     fragViewNormal = vec3(dot(pc.normalRow0.xyz, inNormal),
                           dot(pc.normalRow1.xyz, inNormal),
                           dot(pc.normalRow2.xyz, inNormal));

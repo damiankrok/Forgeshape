@@ -1,5 +1,5 @@
-// The Construction Move / Rotate gizmo — direct manipulation of a Body's
-// placement, in the viewport, with the finger or the stylus.
+// The Construction transform gizmo — direct manipulation of a Body placement,
+// in the viewport, with the finger or the stylus.
 //
 // Platform-neutral C++17: no JNI, no Android, no Vulkan, no renderer type and
 // no UI type appears here. What crosses in is a CameraSnapshot, a viewport size
@@ -9,39 +9,61 @@
 // What this owns, and what it deliberately does not
 // -------------------------------------------------
 // It owns: which handle a pointer landed on, which pointer is captured, the
-// drag solver, and the transaction boundary around one drag. It owns NO
-// transform of its own — the authoritative Position and Rotation stay on the
-// active body's ConstructionTransform throughout, so the renderer, the picker
+// drag solvers, and the transaction boundary around one drag. It owns NO
+// transform of its own — the authoritative Position, Rotation and Scale stay on
+// the active body ConstructionTransform throughout, so the renderer, the picker
 // and the exact-value editors all read the same numbers mid-drag as they do at
 // rest. There is no second solver above JNI and no parallel placement anywhere.
 //
-// One convention, stated once: WORLD AXES
-// ---------------------------------------
-// The three Move handles and the three Rotate rings are world X, Y and Z. They
-// do not rotate with the body, there is no Local/World toggle, and the pivot is
-// always the body's authoritative Construction placement origin — never a mesh
-// bounding-box centre, never a screen-space centroid, never a camera-facing
-// proxy. Those are derived products of the truth, and steering the truth by one
-// of them is exactly the loop this project forbids.
+// Three modes, two spaces, one pivot
+// ----------------------------------
+//     Move    axis X/Y/Z and plane XY/XZ/YZ    World or Local
+//     Rotate  ring X/Y/Z                       World or Local
+//     Scale   axis, plane and uniform          Local only
 //
-// Rotation is applied through the EXISTING exact-transform convention and no
-// second one is invented: the ring for an axis accumulates a signed angle and
-// adds it to that axis's Euler component, which is what the Property Inspector
-// reads and writes. Model = T * Rz * Ry * Rx (see forgeshape_transform.h), so
-// the Z ring is a true world-Z rotation always, and the X and Y rings are
-// world-true whenever the components outside them are zero. That is the MVP's
-// stated limit, not an accident, and it is why there is no local-axis mode: a
-// gizmo that claimed local axes would have to invent a second Euler order to
-// deliver them.
+// The pivot is ALWAYS the body authoritative Construction placement origin —
+// never a mesh bounding-box centre, never a screen-space centroid, never a
+// camera-facing proxy. Those are derived products of the truth, and steering the
+// truth by one of them is exactly the loop this project forbids.
+//
+// WORLD means the world basis X/Y/Z. LOCAL means the body own basis, which is
+// the three columns of its rotation matrix — the SCALE is deliberately left out
+// of that basis, so a stretched body still has a local X that points one way and
+// a handle direction never depends on how large the body happens to be.
+//
+// Why Scale has no World
+// ----------------------
+// A world-axis scale of a rotated body is a shear, not a scale: it cannot be
+// written as T * R * S for any diagonal S, so it could not be stored in the
+// authoritative transform and could not be read back by the exact-value editors.
+// The honest answer is to not offer it, and the space selector is ABSENT in
+// Scale rather than shown and refused.
+//
+// Rotation, composed as matrices and stored as Euler degrees
+// ----------------------------------------------------------
+// A ring drag never adds its angle to one Euler component. That is only correct
+// when the other two are zero, and it is exactly the defect this stage exists to
+// remove: on a mixed orientation it produces a rotation about neither the world
+// axis nor the local one. Instead each sample composes
+//
+//     World:  R_target = Relem(A, delta) * R_start
+//     Local:  R_target = R_start * Relem(A, delta)
+//
+// from the IMMUTABLE start orientation and the accumulated angle, and then
+// decomposes R_target back to the authoritative Euler degrees through the one
+// branch-continuous helper in forgeshape_transform.h. A mixed drag therefore
+// legitimately moves more than one Euler field, and correctness is a statement
+// about the ORIENTATION rather than about which field changed.
 //
 // Screen-constant size
 // --------------------
 // The gizmo is anchored in 3D and SIZED in screen units, so it stays reachable
 // at any zoom instead of becoming microscopic when the camera pulls back or
 // swallowing the viewport when it dollies in. One uniform world scale is derived
-// from the camera and the pivot's depth, and BOTH the drawing and the hit test
-// use that same scale — which is what keeps what the user sees and what the
-// finger can grab from ever disagreeing.
+// from the camera and the pivot depth, and BOTH the drawing and the hit test use
+// that same scale — which is what keeps what the user sees and what the finger
+// can grab from ever disagreeing. The BODY scale is not part of it: stretching a
+// body must not stretch the instrument used to stretch it.
 #pragma once
 
 #include <cstdint>
@@ -58,28 +80,37 @@
 namespace forgeshape {
 
 // ---------------------------------------------------------------------------
-// What a gizmo is, in two closed enums
+// What a gizmo is, in three closed enums
 // ---------------------------------------------------------------------------
 
-// Exactly two modes. Scale is deliberately absent: a scale handle that wrote a
-// primitive parameter would be a Construction shape edit wearing a transform
-// gesture, and one that wrote a transform would need a scale the transform does
-// not have. Neither is this stage's to decide.
 enum class GizmoMode {
     Move,
     Rotate,
+    Scale,
 };
 
-constexpr int kGizmoModeCount = 2;
+constexpr int kGizmoModeCount = 3;
 
 const char* gizmoModeName(GizmoMode mode);
 bool gizmoModeFromIndex(int index, GizmoMode* out);
 int gizmoModeIndex(GizmoMode mode);
 
-// Which world axis a handle is, or None for "no handle".
+// Which basis a drag is constrained to.
+enum class GizmoSpace {
+    World,
+    Local,
+};
+
+constexpr int kGizmoSpaceCount = 2;
+
+const char* gizmoSpaceName(GizmoSpace space);
+bool gizmoSpaceFromIndex(int index, GizmoSpace* out);
+int gizmoSpaceIndex(GizmoSpace space);
+
+// Which basis axis a handle is ABOUT or COLOURED BY, or None.
 //
-// There is no Free, no XY/XZ/YZ plane and no Screen entry, because there is no
-// such handle: a control that cannot be drawn must not be nameable.
+// This is identity, not geometry: it names the hue and the basis column, and it
+// is what a plane handle borrows from the axis perpendicular to it.
 enum class GizmoAxis {
     None,
     X,
@@ -89,17 +120,92 @@ enum class GizmoAxis {
 
 const char* gizmoAxisName(GizmoAxis axis);
 
-// The unit world direction of an axis. None is the zero vector, which every
-// caller treats as "no handle" rather than as a direction.
+// The unit WORLD direction of an axis. None is the zero vector, which every
+// caller treats as "no handle" rather than as a direction. Local-space
+// directions do not come from here — they come from a GizmoBasis.
 Vec3 gizmoAxisDirection(GizmoAxis axis);
 
-// Which Euler component of a TransformValues this axis names, written as a
-// small accessor pair rather than an index so no caller has to know the field
-// order. Position and rotation share the axis enum because they share the axes.
-Degrees transformRotationForAxis(const TransformValues& values, GizmoAxis axis);
-void setTransformRotationForAxis(TransformValues* values, GizmoAxis axis, Degrees value);
-Meters transformPositionForAxis(const TransformValues& values, GizmoAxis axis);
-void setTransformPositionForAxis(TransformValues* values, GizmoAxis axis, Meters value);
+// Which thing a pointer actually grabbed.
+//
+// Separate from GizmoAxis because a plane handle and a uniform handle are not
+// axes and must not be nameable as one: the XY plane is constrained to two basis
+// directions and the uniform handle to none at all.
+enum class GizmoHandle {
+    None,
+    AxisX,
+    AxisY,
+    AxisZ,
+    PlaneXY,
+    PlaneXZ,
+    PlaneYZ,
+    Uniform,
+};
+
+// The transport encoding, and the ONE place it is written down. 1..3 are the
+// three axes and keep the values the axis-only gizmo already reported, so a
+// reader of the older code and a reader of this one agree about what a 2 means.
+constexpr int kGizmoHandleCodeNone = 0;
+constexpr int kGizmoHandleCodeCount = 8;
+
+const char* gizmoHandleName(GizmoHandle handle);
+int gizmoHandleCode(GizmoHandle handle);
+bool gizmoHandleFromCode(int code, GizmoHandle* out);
+
+bool gizmoHandleIsAxis(GizmoHandle handle);
+bool gizmoHandleIsPlane(GizmoHandle handle);
+
+// 0 X, 1 Y, 2 Z for an axis handle; -1 for everything else.
+int gizmoHandleAxisIndex(GizmoHandle handle);
+
+// The two basis indices a plane handle moves in, and the one it does not.
+// Returns false for a handle that is not a plane.
+bool gizmoPlaneAxisIndices(GizmoHandle handle, int* outFirst, int* outSecond);
+int gizmoPlaneNormalIndex(GizmoHandle handle);
+
+// The axis whose HUE this handle is drawn in. An axis handle uses its own; a
+// plane handle uses the axis PERPENDICULAR to it, which is the convention every
+// professional tool draws and is what makes "the blue square" unambiguously the
+// XY plane; the uniform handle has no axis and is drawn neutral.
+GizmoAxis gizmoHandleColorAxis(GizmoHandle handle);
+
+// Which handles exist in a mode, in hit-test priority order. Fills `out` and
+// returns how many were written; `capacity` below the count writes nothing.
+constexpr int kGizmoMaxHandles = 7;
+int gizmoHandlesForMode(GizmoMode mode, GizmoHandle* out, int capacity);
+
+// ---------------------------------------------------------------------------
+// The constrained basis
+// ---------------------------------------------------------------------------
+
+// The three unit directions ONE drag is constrained to, frozen when the pointer
+// went down.
+//
+// Frozen, and that is the whole point: in Local space the basis is derived from
+// the body own rotation, and a rotate drag changes that rotation continuously.
+// A basis re-read every sample would chase its own output and spiral.
+struct GizmoBasis {
+    Vec3 axis[3];
+};
+
+// World gives the world axes; Local gives the columns of the body rotation
+// matrix. Scale-free in both cases — see the file comment.
+GizmoBasis gizmoBasisFor(GizmoSpace space, const TransformValues& values);
+
+// The basis as a matrix, for the renderer: the three directions as columns, no
+// translation and no scale. Identity for World.
+Mat4 gizmoBasisMatrix(const GizmoBasis& basis);
+
+// ---------------------------------------------------------------------------
+// Reading and writing one component of a TransformValues by basis index
+// ---------------------------------------------------------------------------
+//
+// Written as small accessors rather than an index into the struct so no caller
+// has to know the field order, and so a caller cannot reach a position when it
+// meant a scale.
+Meters transformPositionAt(const TransformValues& values, int axisIndex);
+void setTransformPositionAt(TransformValues* values, int axisIndex, Meters value);
+ScaleFactor transformScaleAt(const TransformValues& values, int axisIndex);
+void setTransformScaleAt(TransformValues* values, int axisIndex, ScaleFactor value);
 
 // ---------------------------------------------------------------------------
 // Size, in reference units
@@ -113,7 +219,8 @@ void setTransformPositionForAxis(TransformValues* values, GizmoAxis axis, Meters
 // Sizing here rather than in the shell is what makes the 48-unit hit floor a
 // property of the product instead of a property of one layout file.
 
-// How long an axis shaft is, from the pivot to the tip of its arrowhead.
+// How long an axis shaft is, from the pivot to the tip of its arrowhead (Move)
+// or the far face of its cube (Scale).
 constexpr float kGizmoHandleLengthUnits = 96.0f;
 
 // The ring radius for Rotate. Slightly inside the Move shaft length so the two
@@ -125,19 +232,58 @@ constexpr float kGizmoRingRadiusUnits = 78.0f;
 // by drawing a 48-unit-thick line. The stroke stays thin; the target does not.
 constexpr float kGizmoHitSlopUnits = 24.0f;
 
-// Where a shaft's grabbable span starts, as a fraction of its length. The inner
+// Where a shaft grabbable span starts, as a fraction of its length. The inner
 // quarter is excluded on purpose: all three shafts converge at the pivot, so a
-// touch there is a coin toss between axes rather than a choice of one.
+// touch there is a coin toss between axes rather than a choice of one — and in
+// Scale it is where the uniform handle lives.
 constexpr float kGizmoShaftGrabStartFraction = 0.25f;
 
-// And where it ends — past 1.0 so the arrowhead itself is inside the corridor.
+// And where it ends — past 1.0 so the arrowhead or the cube is inside it.
 constexpr float kGizmoShaftGrabEndFraction = 1.12f;
 
-// The pivot marker's arm length, and the arrowhead's, both as fractions of the
+// The pivot marker arm length, and the arrowhead, both as fractions of the
 // shaft. Drawing only; nothing hit-tests against them separately.
 constexpr float kGizmoPivotMarkerFraction = 0.10f;
 constexpr float kGizmoArrowLengthFraction = 0.20f;
 constexpr float kGizmoArrowHalfWidthFraction = 0.075f;
+
+// The two-axis plane handle: a square in the plane, spanning these distances
+// along each of its two basis directions.
+//
+// The near edge is deliberately just OUTSIDE the 24-unit axis corridor, so the
+// drawn square never overlaps the drawn axis targets. The centre is where the
+// handle is grabbed and where a drag reads its reference direction from.
+constexpr float kGizmoPlaneInnerUnits = 27.0f;
+constexpr float kGizmoPlaneOuterUnits = 53.0f;
+constexpr float kGizmoPlaneCentreUnits =
+    0.5f * (kGizmoPlaneInnerUnits + kGizmoPlaneOuterUnits);
+
+// The radius, around the projected centre of a plane handle, inside which a
+// touch grabs it: 48 units across, the same floor every other handle meets.
+constexpr float kGizmoPlaneHitRadiusUnits = 24.0f;
+
+// The uniform-scale handle at the pivot, and the cubes at the ends of the three
+// Scale shafts. Half-extents, in reference units.
+constexpr float kGizmoUniformCubeHalfUnits = 9.0f;
+constexpr float kGizmoScaleCubeHalfUnits = 7.0f;
+
+// And the radius around the projected PIVOT inside which a touch grabs the
+// uniform handle. Also 48 units across.
+constexpr float kGizmoUniformHitRadiusUnits = 24.0f;
+
+// The same disc, in MOVE and ROTATE, names no handle at all.
+//
+// All three shafts converge at the pivot and all three rings pass around it, so
+// a touch at the centre is a coin toss between axes rather than a choice of one.
+// kGizmoShaftGrabStartFraction alone does not achieve that: it starts the
+// grabbable span a quarter of the way out, but the 24-unit corridor AROUND that
+// span reaches all the way back to the pivot again, and foreshortening pulls it
+// further in. Excluding the disc outright is what makes "the inner quarter is
+// not a handle" true rather than intended.
+//
+// In SCALE the same disc IS a handle — the uniform cube — so the exclusion is
+// deliberately per-mode rather than a property of the pivot.
+constexpr float kGizmoPivotDeadRadiusUnits = 24.0f;
 
 // How many segments a ring is drawn and hit-tested with. Even, so the ring is
 // symmetric about every axis plane; large enough that the polyline is visually a
@@ -145,8 +291,8 @@ constexpr float kGizmoArrowHalfWidthFraction = 0.075f;
 // touch is arithmetic rather than work.
 constexpr int kGizmoRingSegments = 64;
 
-// The adapter's one number: physical pixels per reference unit. Process-scoped
-// because the viewport is, and pushed again whenever the window's display
+// The adapter one number: physical pixels per reference unit. Process-scoped
+// because the viewport is, and pushed again whenever the window display
 // changes. Out-of-range or non-finite input is refused rather than clamped into
 // a silently wrong scale, and the default below is a mid-density phone so a
 // process that never pushes one is still usable rather than invisible.
@@ -169,18 +315,18 @@ float gizmoPixelsPerReferenceUnit();
 bool projectWorldToScreen(const CameraSnapshot& camera, const Vec3& world, int viewportWidth,
                           int viewportHeight, float* outX, float* outY);
 
-// How many world meters one pixel spans at `worldPoint`'s depth.
+// How many world meters one pixel spans at `worldPoint` depth.
 //
-// In Perspective this depends on the point's distance from the eye; in
+// In Perspective this depends on the point distance from the eye; in
 // Orthographic it is the same everywhere and the point is ignored except for
-// its finiteness. Both come out of the camera's own projection matrix rather
-// than from a second copy of the field of view, so this can never drift from
-// what is drawn. Returns false for a degenerate camera or viewport.
+// its finiteness. Both come out of the camera own projection matrix rather than
+// from a second copy of the field of view, so this can never drift from what is
+// drawn. Returns false for a degenerate camera or viewport.
 bool worldMetersPerPixel(const CameraSnapshot& camera, const Vec3& worldPoint,
                          int viewportHeight, float* out);
 
 // The one uniform world scale the gizmo is drawn and hit-tested at: the world
-// length of one reference unit at the pivot's depth.
+// length of one reference unit at the pivot depth.
 //
 // Everything else is a multiple of this. Returns false when the camera cannot
 // produce one, and callers treat that as "no gizmo this frame" rather than
@@ -234,7 +380,7 @@ bool intersectRayPlane(const Ray& ray, const Vec3& planePoint, const Vec3& plane
 // The signed angle from `from` to `to` measured about `axis`, by the right-hand
 // rule, in radians and in (-pi, pi].
 //
-// atan2 of the cross product's axial component against the dot product, rather
+// atan2 of the cross product axial component against the dot product, rather
 // than an acos: acos loses all precision near 0 and pi and cannot produce a
 // sign at all. Returns false when either vector is degenerate.
 bool signedAngleAround(const Vec3& axis, const Vec3& from, const Vec3& to, float* outRadians);
@@ -257,37 +403,92 @@ constexpr float kGizmoRingEdgeOnEpsilon = 0.02f;
 constexpr float kGizmoRingMinRadiusFraction = 0.08f;
 
 // ---------------------------------------------------------------------------
-// The quantization seam
+// The scale mapping
 // ---------------------------------------------------------------------------
 //
-// ONE place where a raw constrained delta becomes the applied one. Grid Snap is
-// not this stage's to design — there is no approved contract for a translational
-// increment, its relation to the display unit, or a rotational one — and there
-// is deliberately no setting, no indicator and no hidden snapping here.
+// ONE formula for all three scale handles, so there is one thing to describe and
+// one thing to test:
 //
-// What exists is the seam, so that when a snap contract IS approved it lands in
-// two functions rather than in the gesture architecture. Both are the identity
-// today, and a test asserts that they are.
+//     factor = 1 + (pointer - down) . dir / referencePixels
+//
+// where `dir` is the handle own direction ON SCREEN and `referencePixels` is
+// how long that handle is on screen. It is measured from the POINTER DOWN point
+// rather than from the pivot, so the factor is exactly 1 at zero drag wherever
+// on the handle the user grabbed; it is monotone in the pointer displacement,
+// finite, and clamped strictly positive so it can never pass through zero into a
+// mirror.
+//
+// The reference direction is the projected handle direction for an axis, the
+// projected in-plane diagonal for a plane, and the screen diagonal (right and
+// up) for the uniform handle, which has no direction of its own.
+
+// The smallest factor a drag may produce. A floor, not a rounding rule: pulling
+// the pointer past the pivot pins the body at a sliver rather than turning it
+// inside out.
+constexpr double kGizmoMinScaleFactor = 1e-3;
+
+// How long the uniform handle is treated as being on screen, in reference
+// units: one shaft, so a uniform drag and an axis drag of the same pixel length
+// scale by roughly the same amount and the tool feels like one instrument.
+constexpr float kGizmoUniformScaleReferenceUnits = kGizmoHandleLengthUnits;
+
+// A handle that projects shorter than this has no usable screen direction — it
+// is pointing at the viewer — and a scale drag on it is REFUSED at capture
+// rather than anchored on a direction that is mostly rounding error.
+constexpr float kGizmoScaleMinReferenceUnits = 16.0f;
+
+// ---------------------------------------------------------------------------
+// The quantization and placement seam
+// ---------------------------------------------------------------------------
+//
+// ONE place where a solved target becomes the applied one:
+//
+//     raw pointer -> coordinate constraint (the solvers above)
+//                 -> optional placement / snap modifier (HERE)
+//                 -> authoritative apply
+//
+// Surface Snap and Grid Snap are not this stage to design — there is no approved
+// contract for a translational increment, its relation to the display unit, a
+// rotational one, or what a surface even means for a body that has not been
+// picked. What exists is the seam, so that when one IS approved it lands in
+// these functions rather than in the gesture architecture.
+//
+// All four are the identity today, and self-tests assert that they are. There is
+// deliberately no setting, no indicator and no hidden snapping anywhere.
 Meters quantizeGizmoTranslation(Meters raw);
 Degrees quantizeGizmoRotation(Degrees raw);
+ScaleFactor quantizeGizmoScale(ScaleFactor raw);
+
+// The whole-placement modifier: the last thing between a solved target and the
+// authoritative apply. It receives the solved target, the placement the drag
+// started from, and what kind of drag this is, so an approved snap can consult
+// all three without any of the solvers learning about it.
+TransformValues applyGizmoPlacementModifier(const TransformValues& target,
+                                            const TransformValues& start, GizmoMode mode,
+                                            GizmoHandle handle, GizmoSpace space);
 
 // ---------------------------------------------------------------------------
 // What the renderer is handed
 // ---------------------------------------------------------------------------
 
 // Everything needed to draw the gizmo, and nothing that could be read back as
-// truth: no ObjectId, no dimension, no primitive parameter. The renderer cannot
-// learn which body this is, and must not.
+// truth: no ObjectId, no dimension, no primitive parameter, no body scale. The
+// renderer cannot learn which body this is, and must not.
 struct GizmoSnapshot {
     bool visible = false;
     GizmoMode mode = GizmoMode::Move;
+    GizmoSpace space = GizmoSpace::World;
     // The handle currently held, or None. Drawn stronger; the others dimmer.
-    GizmoAxis activeAxis = GizmoAxis::None;
-    // World-space pivot: the active body's authoritative placement origin.
+    GizmoHandle activeHandle = GizmoHandle::None;
+    // World-space pivot: the active body authoritative placement origin.
     Vec3 pivot{0.0f, 0.0f, 0.0f};
+    // The basis the handles point along, as a rotation matrix. Identity in
+    // World; the body orientation in Local. It carries NO scale, so a stretched
+    // body does not stretch the instrument.
+    Mat4 orientation = mat4Identity();
     // World length of ONE reference unit at that pivot. The renderer scales the
-    // canonical gizmo by kGizmoHandleLengthUnits * this, so it and the hit test
-    // are the same size by construction.
+    // canonical gizmo by this, so it and the hit test are the same size by
+    // construction.
     float worldPerReferenceUnit = 0.0f;
 };
 
@@ -296,68 +497,90 @@ struct GizmoSnapshot {
 // ---------------------------------------------------------------------------
 //
 // Authored ONCE, in a canonical space whose unit IS the reference unit, and
-// never regenerated: the pivot and the camera-derived scale are a matrix, not a
-// buffer rewrite, so moving a body or dollying the camera re-uploads nothing.
+// never regenerated: the pivot, the basis and the camera-derived scale are a
+// matrix, not a buffer rewrite, so moving a body, turning it, switching space or
+// dollying the camera re-uploads nothing.
 //
-// It is a line list for the same reason the grid is: an axis handle and a ring
-// are lines, and giving them solid geometry would put a second kind of surface
-// in a renderer whose one surface pipeline exists for Construction Bodies.
+// It is a line list for the same reason the grid is: an axis handle, a ring, a
+// square and a cube are all lines, and giving them solid geometry would put a
+// second kind of surface in a renderer whose one surface pipeline exists for
+// Construction Bodies.
 
-// One end of one line. `axis` carries a GizmoAxis's numeric value (1 X, 2 Y,
-// 3 Z) as a float because it travels as a vertex attribute. The COLOUR is not
-// baked in — see shaders/gizmo.vert.
+// One end of one line.
+//
+// `axis` carries the COLOUR tag: 0 neutral, 1 X, 2 Y, 3 Z. `handle` carries the
+// GizmoHandle code, so the held handle can be drawn stronger without a plane and
+// the axis it borrows its hue from being highlighted together. Both travel as
+// vertex attributes; the colours themselves do not — see shaders/gizmo.vert.
 struct GizmoVertex {
     float position[3];
     float axis;
+    float handle;
 };
 
-// The buffer holds both modes back to back, so switching Move to Rotate changes
-// which RANGE is drawn and nothing else: no upload, no reallocation, no
-// pipeline change.
-//
 // A stroke is drawn as a BUNDLE of parallel lines rather than as one wide one.
 //
-// Vulkan's `lineWidth` above 1.0 requires the `wideLines` device feature, which
+// Vulkan `lineWidth` above 1.0 requires the `wideLines` device feature, which
 // ForgeShape does not request and must not start requesting to draw a handle.
 // A single one-pixel line is legible but thin — and on a body sitting at the
-// world origin it lands exactly on the grid's own axis line, where a hairline
-// tool and a hairline reference are hard to tell apart. Four lines offset a
-// reference unit around the stroke's own direction merge into a band that reads
-// as an instrument at every density, and cost nothing but vertices in a buffer
-// that is uploaded once.
+// world origin it lands exactly on the grid own axis line, where a hairline tool
+// and a hairline reference are hard to tell apart. Four lines offset a reference
+// unit around the stroke own direction merge into a band that reads as an
+// instrument at every density, and cost nothing but vertices in a buffer that is
+// uploaded once.
 //
-// The offset is in the gizmo's own space, so a shaft pointing at the viewer
-// thins as it foreshortens. That is the correct behaviour and not a defect: it
-// is exactly the orientation in which the shaft is nearly invisible anyway, and
-// the drag solver refuses it for the same reason.
+// The offset is in the gizmo own space, so a shaft pointing at the viewer thins
+// as it foreshortens. That is the correct behaviour and not a defect: it is
+// exactly the orientation in which the shaft is nearly invisible anyway, and the
+// drag solvers refuse it for the same reason.
 constexpr float kGizmoStrokeOffsetUnits = 1.1f;
 constexpr int kGizmoStrokeBundle = 5;  // the centre line plus four offsets
 
-// Move: three pivot-marker arms (3 lines), three bundled shafts (3 * 5), three
-// arrowheads of four lines each (12).
-constexpr int kGizmoMoveLineCount = 3 + 3 * kGizmoStrokeBundle + 12;
+// A plane handle square, drawn twice a stroke offset apart for the same
+// legibility reason the shafts are bundled.
+constexpr int kGizmoPlaneLineCount = 3 * 2 * 4;
+// A cube is twelve edges.
+constexpr int kGizmoCubeLineCount = 12;
+
+// Move: three pivot-marker arms, three bundled shafts, three four-line
+// arrowheads, and the three plane squares.
+constexpr int kGizmoMoveLineCount = 3 + 3 * kGizmoStrokeBundle + 12 + kGizmoPlaneLineCount;
 constexpr int kGizmoMoveVertexCount = 2 * kGizmoMoveLineCount;
+
 // Rotate: three rings of kGizmoRingSegments segments, each drawn twice — once at
-// the radius and once a stroke offset outside it, for the same legibility reason
-// the shafts are bundled. A full bundle per ring would be four times the
-// vertices for an arc that is already long and easy to see.
+// the radius and once a stroke offset outside it. A full bundle per ring would
+// be four times the vertices for an arc that is already long and easy to see.
 constexpr int kGizmoRotateLineCount = 2 * 3 * kGizmoRingSegments;
 constexpr int kGizmoRotateVertexCount = 2 * kGizmoRotateLineCount;
-constexpr int kGizmoVertexCount = kGizmoMoveVertexCount + kGizmoRotateVertexCount;
 
-// Where each mode's vertices begin, so the caller draws a range rather than
+// Scale: the same pivot marker and shafts, a cube at the end of each shaft
+// instead of an arrowhead, the three plane squares, and the uniform cube at the
+// pivot.
+constexpr int kGizmoScaleLineCount =
+    3 + 3 * kGizmoStrokeBundle + 3 * kGizmoCubeLineCount + kGizmoPlaneLineCount +
+    kGizmoCubeLineCount;
+constexpr int kGizmoScaleVertexCount = 2 * kGizmoScaleLineCount;
+
+constexpr int kGizmoVertexCount =
+    kGizmoMoveVertexCount + kGizmoRotateVertexCount + kGizmoScaleVertexCount;
+
+// Where each mode vertices begin, so the caller draws a range rather than
 // deciding an offset from arithmetic of its own.
 constexpr int kGizmoMoveFirstVertex = 0;
 constexpr int kGizmoRotateFirstVertex = kGizmoMoveVertexCount;
+constexpr int kGizmoScaleFirstVertex = kGizmoRotateFirstVertex + kGizmoRotateVertexCount;
 
-// Fills `out` with kGizmoVertexCount vertices, Move's range first. Pure,
-// deterministic and allocation-free; returns how many were written so a caller
-// sizing a buffer from the constant and a caller reading the result cannot
-// disagree.
+// The vertex range one mode draws. Returns false for nothing to draw.
+bool gizmoVertexRange(GizmoMode mode, int* outFirst, int* outCount);
+
+// Fills `out` with kGizmoVertexCount vertices, Move then Rotate then Scale.
+// Pure, deterministic and allocation-free; returns how many were written so a
+// caller sizing a buffer from the constant and a caller reading the result
+// cannot disagree.
 int generateGizmoVertices(GizmoVertex* out, int capacity);
 
-// A point on one ring, relative to the pivot, that lies on THAT ring and on no
-// other one.
+// A point on one ring, relative to the pivot IN CANONICAL GIZMO SPACE, that lies
+// on THAT ring and on no other one.
 //
 // The three rings genuinely intersect: the X ring (the YZ plane) and the Z ring
 // (the XY plane) both pass through the +Y direction, and so on for all three
@@ -367,28 +590,61 @@ int generateGizmoVertices(GizmoVertex* out, int capacity);
 //
 // Anything that needs to name a ring UNAMBIGUOUSLY therefore has to stay away
 // from the crossings, and this is the one definition of where. It is 45 degrees
-// between the ring plane's own two basis directions, which is as far from both
+// between the ring plane own two basis directions, which is as far from both
 // crossings as a point on the ring can be.
 Vec3 gizmoRingGrabOffset(GizmoAxis axis, float radius);
+
+// The two basis INDICES spanning the plane perpendicular to an axis index, in a
+// fixed order, so a ring and its hit test cannot disagree about which way round
+// they are.
+void gizmoPerpendicularIndices(int axisIndex, int* outU, int* outV);
+
+// Where a handle is grabbed, in WORLD space: the middle of a shaft grab span,
+// a point on a ring away from the crossings, the centre of a plane square, or
+// the pivot for the uniform handle.
+//
+// Derived from the same snapshot the renderer draws and the hit test measures,
+// so the ONE definition of "where the handle is" serves drawing, hit testing,
+// the scale reference direction and verification alike. A test that hard-coded
+// a pixel would be true for one window and one camera only.
+//
+// Returns false, writing nothing, for an invisible snapshot or GizmoHandle::None.
+bool gizmoHandleGrabPoint(const GizmoSnapshot& state, GizmoHandle handle, Vec3* out);
 
 // ---------------------------------------------------------------------------
 // Colour
 // ---------------------------------------------------------------------------
 //
-// Viewport TOOL semantics, not a theme change: these are the same class of
-// value as the grid's axis colours and are owned here for the same reason —
-// nothing above JNI authors them, and the three approved UI appearance palettes
-// are untouched by them.
+// Viewport TOOL semantics, not a theme change: these are the same class of value
+// as the grid axis colours and are owned here for the same reason — nothing
+// above JNI authors them, and the three approved UI appearance palettes are
+// untouched by them.
 //
-// Axis identity never rests on brightness alone. Each axis has its own hue AND
-// its own geometry — a shaft that points one way, a ring that lies in one plane
-// — so the three remain distinguishable to a reader who cannot separate the
-// hues at all.
+// Axis identity never rests on colour alone. Each axis has its own hue AND its
+// own geometry — a shaft that points one way, a ring that lies in one plane, a
+// square in one plane, a cube on one shaft — so the three remain distinguishable
+// to a reader who cannot separate the hues at all.
+
+// The alpha every handle is drawn at, before the held/idle weight below.
+constexpr float kGizmoAxisAlpha = 0.95f;
+
 void gizmoAxisColor(ViewportBackground background, GizmoAxis axis, float* outRgba);
+
+// The colour a HELD handle is drawn in.
+//
+// One warm hue that NO axis owns, so it can never be mistaken for an axis
+// identity, and so "which handle is this" and "is it the one I am holding" stay
+// two independent readings. It is stated alongside the weight below rather than
+// instead of it: a reader who cannot separate the hue still sees the other
+// handles drop away.
+void gizmoHighlightColor(ViewportBackground background, float* outRgb);
+
+// The grey a handle with no axis is drawn at — today, the uniform-scale cube.
+float gizmoNeutralLevel(ViewportBackground background);
 
 // How strongly a handle is drawn while ANOTHER one is held, and while it is the
 // one held. Nothing is dimmed at rest: a resting gizmo is one instrument, not
-// one bright axis and two faded ones.
+// one bright handle and six faded ones.
 constexpr float kGizmoIdleAxisAlphaScale = 0.30f;
 constexpr float kGizmoHeldAxisAlphaScale = 1.0f;
 
@@ -422,11 +678,27 @@ public:
     void setActive(bool active);
     bool active() const { return active_; }
 
-    // Move or Rotate. Presentation state: it mints no revision, publishes no
-    // geometry and records no history — switching is not an edit. Refused while
-    // a drag is captured, so a mode cannot change under a moving finger.
+    // Move, Rotate or Scale. Presentation state: it mints no revision, publishes
+    // no geometry and records no history — switching is not an edit. Refused
+    // while a drag is captured, so a mode cannot change under a moving finger.
+    //
+    // Entering Scale forces Local and REMEMBERS the space the user had; leaving
+    // Scale puts that space back, so a round trip through Scale does not quietly
+    // change what a Move handle means.
     bool setMode(GizmoMode mode);
     GizmoMode mode() const { return mode_; }
+
+    // World or Local. Presentation state on the same terms as the mode.
+    //
+    // Refused while capturing, and refused in Scale for anything but Local:
+    // a world-axis scale of a rotated body is a shear (see the file comment),
+    // and the selector is absent there rather than shown and refused.
+    bool setSpace(GizmoSpace space);
+    GizmoSpace space() const { return space_; }
+
+    // True when the space is the user choice rather than a consequence of the
+    // mode. The shell draws the selector exactly when this is true.
+    bool spaceIsSelectable() const { return mode_ != GizmoMode::Scale; }
 
     // What the renderer draws this frame. Invisible when inactive, when the
     // scene has no active body, or when the camera cannot produce a scale.
@@ -440,17 +712,23 @@ public:
     // Which handle, if any, a pointer at this pixel would grab. Pure: it starts
     // nothing, captures nothing and mutates nothing, which is what lets the
     // input arbitration ask "is this gesture mine?" before deciding.
-    GizmoAxis hitTest(const CameraSnapshot& camera, float screenX, float screenY,
-                      int viewportWidth, int viewportHeight) const;
+    //
+    // Resolved in PRIORITY TIERS, smallest target first — the uniform handle,
+    // then the plane handles, then the axes — and by nearest projected distance
+    // within a tier, X before Y before Z on an exact tie. Without the tiers the
+    // three shafts, which are long, would win every contest against the small
+    // handles that sit between them.
+    GizmoHandle hitTest(const CameraSnapshot& camera, float screenX, float screenY,
+                        int viewportWidth, int viewportHeight) const;
 
     // -----------------------------------------------------------------------
     // One drag = one pointer = one transaction = one history step
     // -----------------------------------------------------------------------
 
     // Captures `pointerId` on whichever handle is under the pixel, opens ONE
-    // Construction edit, and remembers the body, the axis, the pivot and the
-    // transform to go back to. Returns false — capturing nothing and opening
-    // nothing — when no handle is there.
+    // Construction edit, and remembers the body, the handle, the pivot, the
+    // frozen basis and the transform to go back to. Returns false — capturing
+    // nothing and opening nothing — when no handle is there.
     bool beginDrag(int32_t pointerId, const CameraSnapshot& camera, float screenX, float screenY,
                    int viewportWidth, int viewportHeight);
 
@@ -476,7 +754,7 @@ public:
 
     bool capturing() const { return capturing_; }
     int32_t capturedPointerId() const { return pointerId_; }
-    GizmoAxis capturedAxis() const { return axis_; }
+    GizmoHandle capturedHandle() const { return handle_; }
     ObjectId capturedObjectId() const { return objectId_; }
 
     // Introspection for logging and self-tests. How many updates the current or
@@ -498,8 +776,16 @@ private:
     // that body is no longer in the scene.
     bool capturedBodyTransform(TransformValues* out) const;
 
+    // The world direction a handle points along, in the frozen basis.
+    Vec3 basisDirection(int axisIndex) const;
+
+    // Writes `values` to the captured body through the placement seam and the
+    // one authoritative entry point. Returns whether anything actually changed.
+    bool applyTarget(const TransformValues& values);
+
     bool applyMoveSample(const Ray& ray);
     bool applyRotateSample(const Ray& ray);
+    bool applyScaleSample(float screenX, float screenY);
 
     ConstructionScene& scene_;
     ConstructionHistory& history_;
@@ -508,28 +794,59 @@ private:
     // Move on entry, always. A tool that reopened in whatever sub-mode it was
     // last left in would make the first drag after a context switch a guess.
     GizmoMode mode_ = GizmoMode::Move;
+    // And World on entry: the space a user has never chosen is the one that
+    // needs no explanation.
+    GizmoSpace space_ = GizmoSpace::World;
+    // The space to go back to when Scale is left. Not a second truth about the
+    // current space — it is only ever read at the moment Scale is left.
+    GizmoSpace restoreSpace_ = GizmoSpace::World;
 
     // --- capture state, valid only while capturing_ -------------------------
     bool capturing_ = false;
     // The ONE pointer this drag follows, by stable id and never by index. A
     // second finger is not a second chance to steer it; it cancels the drag.
     int32_t pointerId_ = -1;
-    GizmoAxis axis_ = GizmoAxis::None;
+    GizmoHandle handle_ = GizmoHandle::None;
     // Which body was grabbed. Checked on every update: a drag can only ever move
     // the body it started on, whatever the selection does underneath it.
     ObjectId objectId_ = kNoObject;
     GizmoMode dragMode_ = GizmoMode::Move;
+    GizmoSpace dragSpace_ = GizmoSpace::World;
     Vec3 pivot_{0.0f, 0.0f, 0.0f};
     TransformValues startValues_{};
-    // Move: the axis parameter under the finger when it went down.
+    // Frozen at the down. See GizmoBasis: in Local it is derived from a rotation
+    // a rotate drag is about to change, so re-reading it would chase itself.
+    GizmoBasis basis_{};
+    // The start orientation, kept as a matrix so every sample composes from an
+    // immutable start rather than from its own previous output.
+    Mat4 startRotation_ = mat4Identity();
+    // The last Euler triple the decomposition produced and the transform
+    // accepted. It is the continuity anchor: the next decomposition picks the
+    // branch nearest this one.
+    EulerDegrees lastEuler_{};
+
+    // Move, axis: the axis parameter under the finger when it went down.
     float startAxisT_ = 0.0f;
-    // Rotate: the last raw ring angle, and the unwrapped total since the down.
-    // The total is deliberately NOT reduced modulo a turn — a drag past 360
-    // degrees is a real thing the user did, and the exact-value convention keeps
-    // what they did rather than canonicalising it.
+    // Move, plane: the in-plane point under the finger when it went down.
+    Vec3 startPlaneHit_{0.0f, 0.0f, 0.0f};
+
+    // Rotate: the world direction the ring turns about, the last raw ring angle,
+    // and the unwrapped total since the down. The total is deliberately NOT
+    // reduced modulo a turn — a drag past 360 degrees is a real thing the user
+    // did, and the exact-value convention keeps what they did rather than
+    // canonicalising it.
+    Vec3 ringNormal_{0.0f, 1.0f, 0.0f};
     float lastRingAngle_ = 0.0f;
     float accumulatedAngle_ = 0.0f;
     bool haveRingSample_ = false;
+
+    // Scale: where the pointer went down, the handle unit direction on screen,
+    // and how long that handle is on screen. See the scale mapping above.
+    float scaleDownX_ = 0.0f;
+    float scaleDownY_ = 0.0f;
+    float scaleDirX_ = 1.0f;
+    float scaleDirY_ = 0.0f;
+    float scaleReferencePixels_ = 1.0f;
 
     uint64_t dragUpdates_ = 0;
     uint64_t committedDrags_ = 0;

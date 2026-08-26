@@ -1,36 +1,52 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.40.0
+**Status Version:** 0.41.0
 **Updated:** 2026-08-26
-**Result:** TECHNICAL COMPLETE — Stage 020 added the first real direct
-manipulation in ForgeShape: a Construction **Move / Rotate gizmo**. Holding
-Transform draws handles on the active body, and a drag on one changes the
-authoritative placement directly — three world-axis shafts for Position, three
-world-axis rings for Rotation, pivoted on the body's own Construction origin.
-One native `GizmoSession` owns hit-testing, the drag solvers and the transaction
-around one drag; it owns no transform of its own, and Java owns no pivot, no
-solver and no captured pointer. **One drag is exactly one Undo step** however
-many samples it carried; a tap records nothing, and a cancel — an
-`ACTION_CANCEL` or a second finger — restores the pre-drag placement exactly.
-Exact Transform is unchanged and is now the precision front end to the same
-native truth in both directions. A transform-only drag, commit, undo and redo
-publish **no mesh revision at all**; the gizmo's own geometry is uploaded once
-per device and placed by a push-constant matrix thereafter. **No Scale, no
-local-axis mode, no custom pivot, no plane or free move, and no snapping** — the
-quantization seam exists and is the identity.
+**Result:** TECHNICAL COMPLETE — Stage 020R2 turned the axis-only gizmo into the
+first **complete Construction transform workflow**: Move, Rotate and Scale, in
+World or Local axes, with plane handles and a uniform handle.
 
-Stage 020 also closed a Stage 019 startup-history edge case that was
-production-reachable: answering the start question with **Sculpt** seeded a real
-Construction shape change, which would have been the user's first Undo. A
-production session-initialization boundary now brackets both start answers, so
-**a new session has an empty Construction history before the first user act**.
+| mode | handles | World | Local |
+| --- | --- | --- | --- |
+| Move | axis X/Y/Z, plane XY/XZ/YZ | yes | yes |
+| Rotate | ring X/Y/Z | yes | yes |
+| Scale | axis X/Y/Z, plane XY/XZ/YZ, uniform | no — a world-axis scale of a turned body is a shear | yes |
+
+The authoritative `ConstructionTransform` now carries **nine** values: Position
+in meters, Rotation in degrees and a unitless, strictly positive **Scale**, with
+`Model = T · Rz · Ry · Rx · S`. Scale is a multiplier on a derived matrix and
+never a primitive parameter, so it publishes no mesh revision and uploads
+nothing, exactly as a move does. Zero and negative are refused: there is no
+Mirror.
+
+Stage 020R2 also **corrected the Stage 020 world-rotation defect**. A ring drag
+no longer adds its angle to one Euler component — only correct when the other
+two are zero. Every sample composes from the immutable start orientation
+(`Relem·R_start` for World, `R_start·Relem` for Local) and decomposes back
+through one **branch-continuous** helper, so a mixed orientation turns about the
+axis the ring actually draws, a drag stays continuous across ±180°, past 360°
+and past 720°, and the components a drag does not move read back exactly
+unchanged.
+
+One native `GizmoSession` still owns hit-testing, the three solvers, the frozen
+drag basis and the transaction around one drag; it owns no transform of its own,
+and Java owns no pivot, no solver, no basis and no captured pointer. **One drag
+is exactly one Undo step** however many samples it carried; a tap records
+nothing, and a cancel — an `ACTION_CANCEL` or a second finger — restores all
+nine values exactly. Exact Transform is now Position + Rotation + **Scale**, one
+atomic Apply. Renderer and picking are scale-correct: normals ride a real
+inverse-transpose (`R·S⁻¹`) and a local ray parameter is still world distance.
+**Surface Snap and Grid Snap remain absent** — the quantization and placement
+seam exists and is the identity.
 **Visual acceptance remains PENDING OWNER/COORDINATOR SCREENSHOT REVIEW** on the
-UIR4C-S01..S10 and S019-S01..S06 sets, now joined by the focused
-S020-S01..S11 gizmo set; no part of the look is final until those reviews return.
+UIR4C-S01..S10, S019-S01..S06 and S020-S01..S11 sets, now joined by the
+S020R2-S01..S10 full-transform set; no part of the look is final until those
+reviews return.
 **Current Phase:** Phase 1 — Native Viewport
 **Workspace:** `D:\TRAVELAPPS\ForgeShape`
-**Accepted implementation baseline:** Stage 020 (Construction Move/Rotate gizmo)
-on top of Stage 019 (Construction transaction and
+**Accepted implementation baseline:** Stage 020R2 (full Construction transform
+gizmo — Move/Rotate/Scale, World/Local, plane and uniform handles) on top of
+Stage 020 (Construction Move/Rotate gizmo) and Stage 019 (Construction transaction and
 Undo/Redo), UI-R4C (final visual composition cleanup), UI-R4B (workspace
 visual and motion
 correction), UI-R4A (mobile workspace interaction), UI-R3R2 (approved
@@ -44,7 +60,7 @@ Stage 016 (Plane), Stage 015D (camera projection), Stage 015C-R (front-face
 culling), Stage 015C (shading), Platform Fix P2, Stage 015B, Stage 014, the NDK
 r29 migration (Gate P0) and the Owner Decision Baseline. Per-stage narrative
 lives in Git history; only what still constrains the code is kept here.
-**Next Stage:** **Owner/coordinator Stage 020 screenshot review.** See
+**Next Stage:** **Owner/coordinator Stage 020R2 screenshot review.** See
 *Next Stage*.
 
 ## Current state
@@ -57,7 +73,8 @@ truth. No Compose, no AndroidX, no third-party runtime library, no engine.
 
 A scene holds several Construction Bodies, each an exact primitive (Box, Cylinder,
 Sphere, Cone, Capsule, Plane) with authoritative double-meter dimensions and a
-rigid double-degree placement; any body can be frozen to a Frozen Sculpt Mesh and
+nine-value placement — double-meter Position, double-degree Rotation and a
+unitless positive Scale; any body can be frozen to a Frozen Sculpt Mesh and
 deformed with four brush tools. Three approved dark appearances, two shading
 models, two projections, a world reference grid, and an Editor Workspace that
 re-composes itself per window. `ARCHITECTURE.md` owns the ownership map and every invariant;
@@ -611,7 +628,7 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 | Carrying stylus data changes no brush result: same stroke, opposite pressure and tilt, bit-identical vertices for all four tools | VERIFIED (INPUT-R1) |
 | One native-owned Construction history: Java holds no mirror scene, no snapshot list and no depth counter | VERIFIED (Stage 019) |
 | Exact Shape Apply is one atomic undo step whatever it changed; a rejected or identical Apply is none | VERIFIED (Stage 019) |
-| Exact Position+Rotation Apply is one atomic step; all six values move together and 370° survives un-canonicalized | VERIFIED (Stage 019) |
+| Exact Position+Rotation+Scale Apply is one atomic step; all nine values move together, 370° survives un-canonicalized, and a refused scale leaves the position untouched and records nothing | VERIFIED (Stage 019, extended Stage 020R2) |
 | Add Primitive is ONE creation transaction: undo removes the body with no default-Box remnant | VERIFIED (Stage 019) |
 | Redo of a creation restores the same ObjectId, primitive, parameters, placement and scene position, and re-selects it | VERIFIED (Stage 019) |
 | Interleaved edits across bodies undo and redo in chronological order, each touching only its own body; ordered ObjectIds preserved | VERIFIED (Stage 019) |
@@ -624,25 +641,32 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 | Construction Undo/Redo are withdrawn in Sculpt, and the native guard refuses them there regardless | VERIFIED (Stage 019) |
 | Transaction wrapping added no geometry work: one Apply is still one publication, a commit is none, a placement drag publishes nothing | VERIFIED (Stage 019) |
 | **A new session's Construction history is empty before the first user act, whichever way the start question is answered** — the direct-Sculpt path's sphere seed runs inside a production initialization boundary and is not an Undo step | VERIFIED (Stage 020) |
-| **Move handles for world X/Y/Z on the active body; a drag changes the authoritative Position on that axis alone and leaves every rotation exact** | VERIFIED (Stage 020) |
-| **Rotate rings for world X/Y/Z; a drag turns that axis's rotation alone, leaves Position exact, crosses ±180° without a jump and accumulates past 360° un-canonicalised** | VERIFIED (Stage 020) |
-| Handles pivot on the body's Construction placement origin — never a mesh AABB centre, a screen centroid or a camera-facing proxy — and world axes never rotate with the body | VERIFIED (Stage 020) |
-| Drawing and hit-testing share one camera-derived scale: the gizmo stays between 30 dp and 160 dp of shaft length from 3 m to 30 m of camera distance, with a 48 dp-class hit corridor | VERIFIED (Stage 020) |
+| **Move handles for axis X/Y/Z and plane XY/XZ/YZ, in World or Local; an axis drag moves along that basis direction alone and a plane drag never leaves its plane** | VERIFIED (Stage 020R2) |
+| **Rotate rings for X/Y/Z in World or Local, composed as matrices from the immutable start orientation (`Relem·R_start` / `R_start·Relem`) — correct on a mixed orientation, where a per-Euler-component add is not** | VERIFIED (Stage 020R2) |
+| **Euler decomposition is branch-continuous: no ±360 jump, a drag keeps counting past 360° and past 720°, a singular pitch stays finite and orientation-correct, and an untouched component reads back exactly unchanged** | VERIFIED (Stage 020R2) |
+| **Scale handles for axis X/Y/Z, plane XY/XZ/YZ and uniform, Local only; one screen-space formula, factor 1 at zero drag, monotone, never at or through zero, ratios preserved by uniform** | VERIFIED (Stage 020R2) |
+| **Scale is a unitless multiplier on a derived matrix: `Model = T·Rz·Ry·Rx·S`, no primitive parameter touched, no revision published; zero and negative refused, so there is no Mirror** | VERIFIED (Stage 020R2) |
+| **Renderer and picking are non-uniform-scale correct: normals ride `R·S⁻¹`, and a local ray parameter is still world distance because the local direction is never renormalized** | VERIFIED (Stage 020R2) |
+| **The gizmo is sized from the camera alone — a stretched body does not stretch its own instrument, and the drag basis is scale-free** | VERIFIED (Stage 020R2) |
+| **The space selector is World/Local for Move and Rotate and ABSENT in Scale; leaving Scale restores the remembered space; mode and space changes cost no step and no revision** | VERIFIED (Stage 020R2) |
+| Handles pivot on the body's Construction placement origin — never a mesh AABB centre, a screen centroid or a camera-facing proxy | VERIFIED (Stage 020) |
+| A touch at the pivot names the uniform handle in Scale and NO handle in Move and Rotate, where every shaft and ring converges there | VERIFIED (Stage 020R2) |
+| Drawing and hit-testing share one camera-derived scale: the gizmo stays between 30 dp and 160 dp of shaft length from 3 m to 30 m of camera distance, and every target — shaft, arc, plane square and uniform cube — is 48 dp-class | VERIFIED (Stage 020, extended Stage 020R2) |
 | One pointer drag is exactly one history step whatever the sample count; a tap records none; a cancel or a second finger restores the pre-drag placement exactly and records none | VERIFIED (Stage 020) |
 | A drag on a handle suppresses the camera for that pointer; a drag anywhere else in the viewport orbits, pans and picks exactly as before | VERIFIED (Stage 020) |
 | A stylus grabs and drags a handle through the same solver, tracked by its own pointer id | VERIFIED (Stage 020) |
 | A drag can only move the body it started on, whatever the selection does underneath it | VERIFIED (Stage 020) |
 | Gizmo and Exact Transform are two front ends to one native placement, in both directions | VERIFIED (Stage 020) |
-| A transform-only drag, its commit, its undo and its redo publish no mesh revision, upload nothing and regenerate no primitive; a shape change still does | VERIFIED (Stage 020) |
-| No Scale handle, no local-axis mode, no custom pivot, no plane or free move, and no snapping of any kind — the quantization seam is the identity | VERIFIED (Stage 020) |
-| Sculpt draws no handles and no Move/Rotate selector, and the native guard refuses a gizmo there regardless | VERIFIED (Stage 020) |
+| A transform-only drag — Move, Rotate OR Scale — its commit, its undo and its redo publish no mesh revision, upload nothing and regenerate no primitive; a shape change still does | VERIFIED (Stage 020, extended Stage 020R2) |
+| No custom pivot, no centre free move, no arcball, no Mirror, no parent/explicit coordinate space, and no snapping of any kind — the quantization and placement seam is the identity | VERIFIED (Stage 020R2) |
+| Sculpt draws no handles and neither selector, and the native guard refuses a gizmo there regardless | VERIFIED (Stage 020) |
 | 16 KB page size *and* ARM64 in one target | **UNVERIFIED** — see Known Issues |
 | Stylus / S Pen tool type and pressure on real hardware | **UNVERIFIED** — verified synthetically end to end in INPUT-R1; closing it needs a person physically moving an S Pen |
 
 ## Self-test suite
 
 Thirteen debug-only native suites run once from `NativeViewport.start()` — never
-per frame — and total **1889 checks, zero failures**:
+per frame — and total **1961 checks, zero failures**:
 
 | suite token | checks |
 | --- | --- |
@@ -650,7 +674,7 @@ per frame — and total **1889 checks, zero failures**:
 | `FORGESHAPE_PICKING_SELFTEST_OK` | 174 |
 | `FORGESHAPE_DYNAMIC_MESH_SELFTEST_OK` | 91 |
 | `FORGESHAPE_CONSTRUCTION_BOX_SELFTEST_OK` | 100 |
-| `FORGESHAPE_CONSTRUCTION_TRANSFORM_SELFTEST_OK` | 94 |
+| `FORGESHAPE_CONSTRUCTION_TRANSFORM_SELFTEST_OK` | 121 |
 | `FORGESHAPE_CONSTRUCTION_PRIMITIVE_SELFTEST_OK` | 125 |
 | `FORGESHAPE_CONSTRUCTION_SPHERE_SELFTEST_OK` | 105 |
 | `FORGESHAPE_CONE_CAPSULE_SELFTEST_OK` | 163 |
@@ -658,32 +682,63 @@ per frame — and total **1889 checks, zero failures**:
 | `FORGESHAPE_RENDER_SHADING_SELFTEST_OK` | 329 |
 | `FORGESHAPE_SCENE_SELFTEST_OK` | 79 |
 | `FORGESHAPE_CONSTRUCTION_HISTORY_SELFTEST_OK` | 114 |
-| `FORGESHAPE_GIZMO_SELFTEST_OK` | 80 |
+| `FORGESHAPE_GIZMO_SELFTEST_OK` | 135 |
 
 followed by `FORGESHAPE_MESH_UPLOAD_OK`, `FORGESHAPE_GRID_UPLOAD_OK`,
 `FORGESHAPE_GIZMO_UPLOAD_OK` and `FORGESHAPE_NATIVE_VIEWPORT_OK`.
 
 **The gizmo suite owns direct manipulation's math and its transaction**, and —
 like the scene and history suites — it builds its own `ConstructionScene`,
-`ConstructionHistory` and `GizmoSession` per case. Its 80 checks cover the two
-closed enums and their refusal of an unknown index, the quantization seam being
-the identity, `projectWorldToScreen` and `buildPickRay` being exact inverses,
-the screen-constant scale doubling at twice the distance in Perspective and
-being depth-independent in Orthographic, the drawn handle length staying within
-5% of its reference-unit constant near and far, the 48-unit hit corridor, the
-ray/axis closest-point solver over perpendicular, negative and skew rays, the
-plane fallback firing near-parallel and the exactly-parallel case being
-unresolvable rather than guessed, non-finite and degenerate-axis guards,
-ray/ring-plane intersection including the edge-on refusal, the signed angle's
-sign and its indifference to the out-of-plane component, the unwrap across a
-near-full turn, accumulation past 360°, per-handle hit-testing in both modes,
-one drag being exactly one step whatever the sample count, a tap recording
-nothing, cancel restoring exactly, a non-captured pointer moving nothing, a drag
-never retargeting when the selection changes underneath it, mode being refused
-mid-drag, a ring drag passing a full turn without canonicalising, edge-on and
+`ConstructionHistory` and `GizmoSession` per case. Its 135 checks cover the three
+closed enums and their refusal of an unknown index, the eight handle codes round
+tripping with the three axis codes unchanged from Stage 020, plane handles
+naming their two basis axes and borrowing the perpendicular hue, the
+quantization and placement seams being the identity, the World basis being the
+world axes and the Local basis being the body's rotation columns *and staying
+scale-free*, `projectWorldToScreen` and `buildPickRay` being exact inverses, the
+screen-constant scale doubling at twice the distance in Perspective and being
+depth-independent in Orthographic, the drawn handle length staying within 5% of
+its reference-unit constant near and far, every hit target meeting the 48-unit
+floor and the plane square clearing the axis corridor, the ray/axis
+closest-point solver over perpendicular, negative and skew rays, the plane
+fallback firing near-parallel and the exactly-parallel case being unresolvable
+rather than guessed, non-finite and degenerate-axis guards, ray/plane
+intersection including the edge-on refusal, the signed angle's sign and its
+indifference to the out-of-plane component, the unwrap across a near-full turn,
+accumulation past 360°, per-handle hit-testing in all three modes, the pivot
+being the uniform handle in Scale and no handle in Move, Scale forcing Local and
+restoring the remembered space on the way out, every world Move axis and plane
+moving only what it may, a Local axis drag moving *along the body's own axis*
+and a Local plane drag staying in the body's own plane on a mixed orientation,
+World rotation matching pre-multiplication and Local matching
+post-multiplication against matrices rather than Euler fields, the two spaces
+producing different but individually correct orientations from one start, a ring
+drag passing two full turns without canonicalising, a drag through the pitch
+singularity staying finite and orientation-correct, axis/plane/uniform scale
+with the ratios preserved and never reaching zero, a stretched body leaving its
+own instrument alone, one drag being exactly one step whatever the sample count,
+a tap recording nothing, cancel restoring all nine values exactly, a
+non-captured pointer moving nothing, a drag never retargeting when the selection
+changes underneath it, mode and space both refused mid-drag, edge-on and
 near-camera-parallel drags staying finite, multi-object chronology, and the
 session-initialization boundary leaving an empty history without undoing the
 seed.
+
+**The Construction-transform suite owns the nine authoritative values and the
+one Euler bridge.** Its 121 checks add, on top of the existing rigid-transform
+cases: the default scale of one, an ordinary scale applying and re-applying as
+Unchanged, zero and negative refused as `NotPositive` while a non-finite scale is
+refused as `NotFinite`, a bad scale leaving the position untouched, scale acting
+in object space before the rotation, the scaled inverse undoing the scaled model,
+a local ray parameter still being world distance under scale, the normal matrix
+using the INVERSE scale and keeping a carried normal perpendicular to a carried
+tangent, an unscaled normal matrix being exactly the rotation, every
+decomposition rebuilding its own matrix, a decomposition preferring the triple it
+was given, a stepped turn climbing past 720° and falling past −360° without
+wrapping, the branch nearest the previous answer winning while still naming the
+same orientation, an untouched component coming back exactly, a singular
+orientation staying finite and orientation-correct, and the refusal paths writing
+nothing.
 
 **The Construction-history suite owns the transaction boundary and every
 undo/redo invariant**, and — like the scene suite — it builds its own
@@ -768,9 +823,9 @@ device. `README.md` documents how to read them.
 | `EditorWorkspaceChromeCompositionTest` | the UI-R4C composition cleanup: back navigation drawn in full with no ellipsis and no clipping in the window under test (`UIR4C-01`, `-03`) and in short landscape (`-02`), Add Primitive intersecting neither the tool cluster nor the precision control in either window (`-04`), the six primitives and their native routing after the reflow (`-05`), a single-member editing group drawn as one control and a two-member one still a capsule (`-06`), Resume Sculpt on the same geometry returning the same revision and mesh (`-07`), the 48 dp floor after the reduction (`-08`), no instructional capsule at rest (`-09`) or with the exact values open, with the transient path intact (`-10`), three appearances and no new colour in the lone-control forms (`-11`), zero native change across the whole sequence (`-12`) | 12 |
 | `EditorWorkspaceHistoryTest` | Stage 019, from the product side of JNI: an empty history and both controls disabled (`S019-01`, `-27`), one Apply as one reversible step down to the ObjectId (`-02`..`-04`), rejection and no-op writing nothing and publishing nothing (`-05`, `-06`), six placement values as one atomic step with 370° intact (`-07`, `-08`), Add Primitive as one creation transaction with no default-Box remnant and a redo restoring the same id, order and parameters (`-09`, `-10`), interleaved multi-object undo/redo in chronological order (`-11`), redo invalidation and the three things that do not invalidate it (`-12`, `-13`), no history from selection, context, surfaces, unit, grid, shading or chrome-hide (`-14`), begin/many-updates/commit as one step and cancel as none (`-15`, `-16`), bounded capacity with a clean exhaustion (`-17`), rotation and HOME/resume retention with the rebuilt chrome reading native state (`-18`, `-19`), the Sculpt seam writing nothing and withdrawing the pair while the native guard stands (`-20`, `-24`), a real Grab stroke writing no Construction history and a Construction undo leaving the sculpt mesh's revision, counts, strokes and identity alone except for the existing stale-source flag (`-21`, `-22`), enabled state always native state including across a rotation (`-23`), the 48 dp floor and no intersection with any other chrome surface (`-25`), and one Apply still exactly one publication with a commit adding none (`-26`) | 20 |
 
-| `EditorWorkspaceGizmoTest` | Stage 020, from the product side of JNI: both start answers leaving an empty history and the direct-Sculpt path being source-classified as production (`S020-PRE-01`..`-05`), the Shape context and Sculpt drawing no handles and no mode selector while the native guard still refuses (`S020-01`, `-03`), Transform with a body drawing both and entering on Move (`-02`), body switching retargeting the pivot without a step (`-04`), the mode selector recording nothing and publishing nothing (`-05`), each Move axis changing only its own coordinate through a real `MotionEvent` on the real handle (`-06`..`-09`), a near-camera-parallel axis staying finite (`-10`), a tap costing nothing and a 48-sample drag costing exactly one step (`-11`, `-12`), cancel restoring exactly (`-13`), each ring turning only its own component and leaving Position (`-14`..`-17`), a 300-sample ring drag with no sample jumping a quarter turn and the total passing 360° un-canonicalised (`-18`..`-20`), one ring drag as one step and its cancel (`-21`, `-22`), undo/redo bracketing a Move and a Rotate exactly (`-23`, `-24`), the exact-value FIELDS reading the gizmo's result and a typed Apply moving the pivot (`-25`, `-26`), redo invalidation (`-27`), two bodies undoing chronologically and independently (`-28`), a captured handle not orbiting while a drag off the handles still does (`-29`, `-30`), cancel and a second pointer leaving no open transaction and no partial transform (`-31`, `-32`), a stylus driving the same solver under its own pointer id (`-33`), chrome consuming its own touches (`-34`), the 48 dp hit corridor measured perpendicular to the shaft (`-35`), the drawn size staying in band from 3 m to 30 m (`-36`), the selector and the precision toggle both at 48 dp and collision-free in portrait and landscape (`-37`), a whole drag/commit/undo/redo publishing no revision with a positive control that does (`-38`..`-40`), and the gizmo surviving display switching (`-41`) | 33 |
+| `EditorWorkspaceGizmoTest` | Stage 020 and Stage 020R2, from the product side of JNI: both start answers leaving an empty history and the direct-Sculpt path being source-classified as production (`S020-PRE-01`..`-05`), the Shape context and Sculpt drawing no handles and no mode selector while the native guard still refuses (`S020-01`, `-03`), Transform with a body drawing both and entering on Move (`-02`), body switching retargeting the pivot without a step (`-04`), the mode selector recording nothing and publishing nothing (`-05`), each Move axis changing only its own coordinate through a real `MotionEvent` on the real handle (`-06`..`-09`), a near-camera-parallel axis staying finite (`-10`), a tap costing nothing and a 48-sample drag costing exactly one step (`-11`, `-12`), cancel restoring exactly (`-13`), each ring turning only its own component and leaving Position (`-14`..`-17`), a 300-sample ring drag with no sample jumping a quarter turn and the total passing 360° un-canonicalised (`-18`..`-20`), one ring drag as one step and its cancel (`-21`, `-22`), undo/redo bracketing a Move and a Rotate exactly (`-23`, `-24`), the exact-value FIELDS reading the gizmo's result and a typed Apply moving the pivot (`-25`, `-26`), redo invalidation (`-27`), two bodies undoing chronologically and independently (`-28`), a captured handle not orbiting while a drag off the handles still does (`-29`, `-30`), cancel and a second pointer leaving no open transaction and no partial transform (`-31`, `-32`), a stylus driving the same solver under its own pointer id (`-33`), chrome consuming its own touches (`-34`), the 48 dp hit corridor measured perpendicular to the shaft (`-35`), the drawn size staying in band from 3 m to 30 m (`-36`), the selector and the precision toggle both at 48 dp and collision-free in portrait and landscape (`-37`), a whole drag/commit/undo/redo publishing no revision with a positive control that does (`-38`..`-40`), and the gizmo surviving display switching (`-41`). Stage 020R2 adds: scale round-tripping through the history (`S020R2-01`), one Apply being atomic across all nine with an impossible scale refused and a no-op recording nothing (`-02`), every Move plane moving in its plane and never off it (`-03`), Local space moving along the body own axis where World moves only X (`-04`), World and Local rotation being different answers to the same gesture on a mixed body (`-05`..`-07`), axis, plane and uniform scale with the ratios preserved (`-09`..`-11`), one scale drag as one step with a tap costing nothing and a second pointer restoring all nine (`-12`, `-13`), the handles and the exact-value fields being one truth in both directions including the scale (`-14`), a non-uniform scale reaching PICKING and not the instrument (`-15`), every handle classified at its own pixel with the pivot naming the uniform handle in Scale and none in Move, and the held handle reported while held (`-16`), Scale being Local-only with the space selector absent there and the remembered space restored on the way out (`-18`), both selectors at 48 dp and collision-free in portrait and landscape (`-18` layout), and a long scale drag with its undo and redo publishing no revision against a positive control that does (`-20`) | 46 |
 
-**315 tests** (60 JVM, 255 instrumented). No Java test asserts a rendered pixel;
+**328 tests** (60 JVM, 268 instrumented). No Java test asserts a rendered pixel;
 every control is reached by its stable semantic id and no assertion uses a screen
 coordinate. The foundation and theme suites deliberately assert no colour
 literal, radius or shadow — those are judged by eye and by runtime evidence, and
@@ -862,42 +917,86 @@ this baseline before calling it a regression.
 
 Latest acceptance run, on `ForgeShape_Stage006` / `emulator-5580` unless stated:
 
-- **Native self-tests:** **thirteen** suites, **1889 checks, zero failures** on a
-  clean launch, followed by `FORGESHAPE_NATIVE_VIEWPORT_OK`. The twelve that
-  existed are byte-for-byte their previous totals — the Gate P1 picking
-  assertions are intact inside the 174-check picking suite, `SIDE`, `REFR`,
-  `NOR`, `CAMPROJ` and `PLN` are all still green, and the history suite is still
-  114 — plus the new 80-check `FORGESHAPE_GIZMO_SELFTEST_OK`.
+- **Native self-tests:** **thirteen** suites, **1961 checks, zero failures** on a
+  clean launch, followed by `FORGESHAPE_GIZMO_UPLOAD_OK vertices=1056
+  move=[0,108) rotate=[108,876) scale=[876,1056)` and
+  `FORGESHAPE_NATIVE_VIEWPORT_OK`. Eleven suites are byte-for-byte their previous
+  totals — the Gate P1 picking assertions are intact inside the 174-check picking
+  suite, `SIDE`, `REFR`, `NOR`, `CAMPROJ` and `PLN` are all still green, and the
+  history suite is still 114 — and the two Stage 020R2 touched grew:
+  `FORGESHAPE_CONSTRUCTION_TRANSFORM_SELFTEST_OK` 94 → **121** and
+  `FORGESHAPE_GIZMO_SELFTEST_OK` 80 → **135**.
 - **JVM:** 60/60.
-- **Instrumented: 254/255 in BOTH windows** — the default compact phone window
-  and an overridden 1600 × 2560 @ 240 dpi — plus **131/131 in a short landscape
-  window** (2400 × 1080: the gizmo, history, chrome-composition, correction,
-  layout, foundation, composition and sculpt-retention suites), all through
-  `scripts\run-instrumented-tests.ps1 -Serial emulator-5580`. The one failure in
-  each full run is `ui11`, on its own precondition guard — see below. The new
-  `EditorWorkspaceGizmoTest` is **33/33 in all three windows**.
-- **`ui11` failed on its guard in both windows, and it is not a regression.** The
-  message is character-identical to the one this file has recorded since Stage
-  015D — "the soft keyboard did not appear, so this case proves nothing" — from
-  the identical line (`EditorWorkspaceGestureTest.java:203`), and the case never
-  reaches an assertion about product behaviour. Stage 020 touches no field, no
-  IME path and nothing in that suite's gesture arbitration. The device has a soft
-  keyboard installed (`com.google.android.inputmethod.latin`); whether it appears
-  in time is a function of host load, exactly as recorded below.
-- **Two harness interruptions, diagnosed rather than waived, both the signature
-  already recorded here.** A full run and an expanded run each ended with
-  `INSTRUMENTATION_ABORTED: System has crashed.` and then `cmd: Can't find
-  service: package` at the uninstall step — the device's system server had
-  restarted mid-run, once during `EditorWorkspaceObjectsTest` and once at
-  `EditorWorkspaceThemeTest`. Both times 249+ cases had already passed, the gizmo
-  suite among them. The prescribed remedy was followed each time — reboot the
-  emulator, re-run in full — and both repeats are the 254/255 recorded above.
-  Nothing in ForgeShape's own log was involved on either occasion.
+- **Instrumented: 268/268, zero failures.** Every one of the eighteen suites is
+  green in the default compact phone window, through
+  `scripts\run-instrumented-tests.ps1 -Serial emulator-5580`. The adaptive
+  subset — gizmo, layout, chrome-composition, correction, history, composition,
+  foundation, sculpt-retention, **144 cases** — is additionally **144/144 in a
+  short landscape window** (2400 × 1080) and **144/144 in an expanded window**
+  (1600 × 2560 @ 240 dpi). The rebuilt `EditorWorkspaceGizmoTest` is **46/46 in
+  all three windows**.
+- **`ui11` passed this time**, which is itself informative: the case has failed
+  on its own precondition guard ("the soft keyboard did not appear, so this case
+  proves nothing") in past runs, and that guard is a function of host load rather
+  than of the product. It is recorded here as green rather than waived.
+- **Three harness interruptions, diagnosed rather than waived, all the signature
+  already recorded here.** Two full runs ended with `INSTRUMENTATION_ABORTED:
+  System has crashed.` — once in `EditorWorkspaceStartFlowTest` (an
+  `Input dispatching timed out ... Waited 5009ms for FocusEvent`) and once in
+  `EditorWorkspacePointerTest` — and one ended with `cmd: Can't find service:
+  package` at the uninstall step, the emulator's system server having restarted
+  under it. 227 cases had already passed in the last of them with zero failures,
+  the whole gizmo suite among them. The prescribed remedy was followed each time
+  — stop the Gradle daemon, reboot the emulator, re-run — and **every suite that
+  an aborted run had not reached was then run on its own and passed**:
+  `Pointer 13/13`, `SculptRetention 2/2`, `StartFlow 8/8`, `Theme 19/19`. No
+  ForgeShape assertion failed at any point in any of the runs, and nothing in
+  ForgeShape's own log was involved on any occasion.
 - **Device guards:** `DEV2-01`..`07` and `DEV3-01`..`06` all PASS, with no device
   attached and zero `emulator-5554` interaction.
 - **Physical ARM64 (Gate P1):** closed on a Galaxy S25 Ultra —
   `primaryCpuAbi=arm64-v8a`, `PAGE_SIZE` 4096, the mandatory ~10k/~50k/~100k
   ladder and Sculpt at 100k measured on real hardware. Stylus stays UNVERIFIED.
+- **Runtime walkthrough (Stage 020R2),** on `ForgeShape_Stage006` /
+  `emulator-5580`. Every chrome control was resolved from a live `uiautomator
+  dump` by its stable semantic id, and **every handle pixel was read back from
+  native code** through the debug driver (keyevent `35`) immediately before the
+  gesture that used it. Cold start: thirteen `*_SELFTEST_OK`, zero failures.
+  Holding Transform drew **seven** new ids — `transform_mode_group`,
+  `_move`/`_rotate`/`_scale`, `transform_space_group`, `_world`/`_local` — and
+  `GIZMO_HANDLES:move/world` listed the plane handles beside the axes.
+  * A **World XY plane** drag logged `DRAG_BEGIN:move axis=xy` then
+    `DRAG_COMMIT:recorded updates=30 undo=1` and left
+    `pos=(0.517990,0.520885,0.000000)` — thirty samples, one step, and **Z
+    exactly 0.000000**: the plane constraint is arithmetic, not a correction.
+  * A **World Y ring** drag left `rot=(0.000000,19.570949,0.000000)` — X and Z
+    **exactly zero**, which is `kEulerStickyDegrees` doing its job in the shipped
+    product rather than in a test.
+  * Switching to **Local** moved the reported ring pixels (x=553.6,1033.3 →
+    600.5,1044.5) and a Local X ring drag gave
+    `rot=(117.584251,19.570949,0.000000)` — the Y component **bit-identical** to
+    what it was, which is exactly `R_start · Relem(X, Δ)`.
+  * A **Local X move** on that mixed body gave `pos=(-0.046678,0.513135,
+    0.198009)`: X and Z both moved and Y stayed bit-identical, because that
+    body's local X is `(0.942, 0, -0.335)`. A world X move cannot do that.
+  * In **Scale** the space selector was **ABSENT** from the live dump. An axis,
+    a plane and a uniform drag were three steps (`undo=5,6,7`) and left
+    `scale=(2.134748,2.211988,2.211988)` — the YZ plane's two components
+    **bit-identical** to each other — with position and rotation untouched.
+  * Opening the exact values showed `Pos X -0.04667829`, `Rot X 117.5842512`,
+    `Rot Y 19.5709491`, **`Rot Z 0`** and `Scale 2.134747617 / 2.211987980 /
+    2.211987980` under a `Scale (multiplier)` heading with no unit — the gizmo's
+    own result, in the fields.
+  * A second body was added and dragged; only it moved, and **only the active
+    body carried a gizmo**. In Sculpt both selectors were **ABSENT** and the
+    driver reported `GIZMO_HANDLES:absent`. Short landscape laid the two
+    selectors **side by side** with the precision toggle unsqueezed below them;
+    the expanded window stacked them beside a docked Objects column with no
+    collision.
+  * The two-finger cancel is still the one case `adb shell input` cannot produce
+    — it cannot inject a genuine concurrent second pointer — and is covered
+    instead by `S020-32` and `S020R2-13`, which dispatch real two-pointer
+    `MotionEvent`s and pass in all three windows.
 - **Runtime walkthrough (Stage 020),** on `ForgeShape_Stage006` /
   `emulator-5580`. Every chrome control was resolved from a live `uiautomator
   dump` by its stable semantic id, and **every handle pixel was read back from
@@ -974,9 +1073,13 @@ Latest acceptance run, on `ForgeShape_Stage006` / `emulator-5580` unless stated:
   box change, logged exactly 1 of each.
 - **Screenshot review sets:** `artifacts/uir4a/` (UIR4A-S01..S12 plus three
   walkthrough frames), `artifacts/uir4b/` (UIR4B-S01..S12), `artifacts/uir4c/`
-  (UIR4C-S01..S10) and `artifacts/stage019/` (S019-S01..S06 — the resting
+  (UIR4C-S01..S10), `artifacts/stage019/` (S019-S01..S06 — the resting
   workspace with both controls disabled, Undo live after an edit, Redo live
   after an undo, short landscape, expanded, and Sculpt with the pair absent),
+  `artifacts/stage020/` (S020-S01..S10, the axis-only gizmo) and
+  `artifacts/stage020r2/` (S01..S10 — Move with a plane handle, Move in Local,
+  Rotate in World and in Local, the three kinds of Scale, Exact Transform showing
+  the scale, short landscape, expanded, multi-object, and Sculpt with no gizmo),
   all **committed**. `/artifacts/` is
   deliberately not ignored because the cited runtime evidence is versioned
   repository content; each review's set sits under its own folder so the reviews
@@ -1105,10 +1208,27 @@ enhancement (outline or cavity) was **explicitly deferred**: both candidates sta
 the post-processing framework the shading stage was told not to build, and the
 vertex-based alternative would expose triangle structure in Smooth mode.
 
-**Documentation size, and `ARCHITECTURE.md` has almost no margin left.** Every
-core document is inside the 2000-line hard cap, but `ARCHITECTURE.md` is at 1984
-— sixteen lines under it, and roughly double its 700–1000 preferred target; this
-file is still over its 500–800 one. UI-R3R2 retired superseded prose as it went
+**A sculpt brush on a non-uniformly scaled body is anisotropic.** The brush
+radius is carried into the body's own space through the inverse model, so on a
+body stretched 4× along X a round brush leaves an oval mark. It is correct that
+sculpting happens in object space — the Frozen Sculpt Mesh lives there — and it
+is correct that the transform carries a scale; what is missing is a decision
+about what a brush radius *means* on a stretched body, and inventing one without
+an approved contract would be worse than the current honest behaviour. Nothing
+regressed: scale is new, defaults to (1,1,1), and every existing sculpt path is
+bit-identical at that default. `PRODUCT.md` states the limitation plainly.
+
+**Documentation size — `ARCHITECTURE.md` is PAST the 2000-line hard cap, and was
+already past it before this stage.** Measured at the end of Stage 020R2:
+`ARCHITECTURE.md` **2732** (cap 2000, target 700–1000), `PROJECT_STATUS.md`
+**1554** (target 500–800), `PRODUCT.md` **1111** (target 300–450), `README.md`
+481 (target 150–250), `CLAUDE.md` 311. The `1984` this entry used to quote was stale — which is exactly
+the failure mode the last sentence of this paragraph warns about. Stage 020R2
+rewrote the gizmo and transform sections in place and retired the prose it
+superseded rather than appending beside it, and all three still grew, because the
+stage genuinely added three modes, two spaces, a ninth authoritative value and a
+new decomposition contract. **A compaction pass is now overdue rather than due
+and must be taken before the next stage adds a section to any of them.** UI-R3R2 retired superseded prose as it went
 and still finished net-longer, so the next stage that adds architecture must
 budget a compaction pass rather than assume room exists. Both files are dense
 ownership statements rather than narrative, so further reduction means retiring
@@ -1345,7 +1465,7 @@ regenerated per stage.
 | `app/src/main/cpp/forgeshape_render_mesh.{h,cpp}` | Derived render geometry: `RenderVertex` (position + normal + colour), `SurfaceShading`, THE crease policy (`kCreaseAngleDegrees`), per-vertex crease grouping with render-only duplication, and `RenderMeshCache`'s rebuild gate. Presentation only |
 | `app/src/main/cpp/forgeshape_matcap.{h,cpp}` | The one ForgeShape-owned MatCap, computed at device init from the closed-form model in that file. No asset, no decoder, one preset |
 | `app/src/main/cpp/forgeshape_display.{h,cpp}` | `ShadingModel`, `ViewportBackground`, grid visibility, the reduced-motion bool, the process-scoped `DisplaySettingsStore`, and the UI index mapping. Presentation state, never truth |
-| `app/src/main/cpp/forgeshape_gizmo.{h,cpp}` | `GizmoSession`: which handle a pointer landed on, the captured pointer, the Move and Rotate drag solvers with their degeneracy fallbacks, and the transaction around ONE drag (over a `ConstructionScene` and `ConstructionHistory` handed in by reference). Also the canonical reference-unit geometry, the screen-constant scale, the axis palette and the quantization seam. Owns no transform of its own |
+| `app/src/main/cpp/forgeshape_gizmo.{h,cpp}` | `GizmoSession`: which handle a pointer landed on, the captured pointer, the frozen World or Local drag basis, the Move/Rotate/Scale solvers with their degeneracy fallbacks, and the transaction around ONE drag (over a `ConstructionScene` and `ConstructionHistory` handed in by reference). Also the closed mode/space/handle enums, the canonical reference-unit geometry for all three modes, the screen-constant scale, the axis/highlight/neutral palette, and the placement and quantization seam. Owns no transform of its own |
 | `app/src/main/cpp/forgeshape_grid.{h,cpp}` | The world reference grid's CONTRACT: the XZ plane at y = 0, the 1 m / 5 m / 20 m spacing and extent, `GridLineTier`, one pure vertex generator and the per-appearance palette. No ObjectId, no revision, not in the scene, not pickable |
 | `app/src/main/cpp/forgeshape_selection_pulse.{h,cpp}` | How a SELECTED body is drawn, never which one is: the peak, the resting alpha, the decay, and one pure function over an explicit frame delta. Holds no ObjectId and reads no clock |
 | `app/src/main/cpp/forgeshape_renderer.{h,cpp}` | Vulkan renderer, frame loop, camera snapshot + model transform + selection highlight consumer |
@@ -1385,15 +1505,19 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Owner/coordinator Stage 020 screenshot review.** Technical COMPLETE does not
+**Owner/coordinator Stage 020R2 screenshot review.** Technical COMPLETE does not
 grant visual acceptance: the gizmo is the first thing in ForgeShape a user
-manipulates directly, and whether the handles read as an instrument — legible
-without being giant, obvious about which axis is held, clear of the chrome, and
-coherent in all three appearances — is a judgement no assertion in the suite can
-make. The focused set is `artifacts/stage020/S020-S01..S11`.
+manipulates directly, and whether the full instrument reads as one — the plane
+squares legible without crowding the shafts, World and Local visibly different,
+the Scale cubes obviously not arrowheads, the held handle unmistakable, the two
+selectors not adding up to a desktop toolbar slab, and the model still dominant —
+is a judgement no assertion in the suite can make. The focused set is
+`artifacts/stage020r2/S01..S10`, beside the Stage 020 set it supersedes.
 
-**If that review passes: Stage 018 — Object Commands and Hierarchy.** Nothing
-else is next, and no part of Stage 018 has been started.
+**If that review passes: Stage 020S — Surface Snap.** The seam it lands in
+already exists and is the identity (`applyGizmoPlacementModifier`); no part of
+Stage 020S has been started, and Grid Snap remains a separate unapproved
+contract.
 
 **Visual acceptance remains PENDING**, on three sets. The UI-R4C ten-screenshot set
 `artifacts/uir4c/UIR4C-S01..S10` — the resting Construction workspace, Add
@@ -1406,13 +1530,14 @@ beside it so the reviews can be compared. And the focused Stage 019 set
 history capsule sits truthfully in the accepted shell, reads clearly in both
 states, and is absent in Sculpt.
 
-**Also owed, and now overdue:** `ARCHITECTURE.md` is past its own 2000-line hard
-cap and more than triple its 700–1000 target; `PRODUCT.md` is over its 300–450
-target and `PROJECT_STATUS.md` over its 500–800. Stage 020 added the gizmo
-ownership section, its capability rows and the thirteenth suite because they are
-current truth that nothing else records, and it removed only what it superseded,
-so all three grew again. **A compaction pass is genuinely due and should be
-taken before the next stage adds a section to each of them.**
+**Also owed, and now overdue:** `ARCHITECTURE.md` is at **2732** lines against a
+2000 hard cap and a 700–1000 target, `PROJECT_STATUS.md` at **1554** against
+500–800, and `PRODUCT.md` at **1111** against 300–450. Stage 020R2 rewrote the
+gizmo and transform sections in place and retired what it superseded, and all
+three still grew, because three modes, two spaces, a ninth authoritative value
+and a decomposition contract are all current truth nothing else records. **A
+compaction pass must be taken before the next stage adds a section to any of
+them.** See *Technical Debt* for the measured numbers.
 
 The one feature the repo still records as a candidate is **Selection Outline** —
 the expensive half of selection feedback, needing either a second geometry pass

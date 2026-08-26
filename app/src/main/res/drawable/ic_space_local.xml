@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Local axes: the handles point along the Body's own X, Y and Z, so they turn
+  with it.
+
+  A TILTED box with two short axis stubs leaving one corner. The tilt is the
+  whole message and is the one difference from ic_space_world: a frame that has
+  been turned, against a world that has not. The stubs say the frame is a set of
+  axes rather than a solid, which is what stops this reading as the Objects or
+  Add Primitive box glyph.
+
+  Drawn white and tinted at use; see EditorControlStyles.iconButton().
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineJoin="round"
+        android:pathData="M10.4,4.2 L19.8,8.0 L13.6,19.8 L4.2,16.0 Z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:pathData="M10.4,4.2 L8.2,10.6 M10.4,4.2 L16.8,2.6" />
+</vector>

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  World axes: the handles point along the world X, Y and Z whatever the Body is
+  doing.
+
+  A globe — a circle with one meridian and one equator — because the world is
+  the thing that does not turn, and a sphere ruled by fixed lines is the oldest
+  drawing of exactly that. It is deliberately upright and symmetric, so the pair
+  with ic_space_local reads as "fixed" against "turned" at a glance rather than
+  by reading a label.
+
+  Drawn white and tinted at use; see EditorControlStyles.iconButton().
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:pathData="M12,3.2 A8.8,8.8 0 1,1 11.99,3.2 Z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.6"
+        android:strokeLineCap="round"
+        android:pathData="M3.2,12 L20.8,12" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.6"
+        android:pathData="M12,3.2 A4.6,8.8 0 0,1 12,20.8 A4.6,8.8 0 0,1 12,3.2 Z" />
+</vector>

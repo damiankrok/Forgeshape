@@ -494,8 +494,8 @@ void runRenderMeshSelfTestsAndLog() {
 
 void runTransformSelfTestsAndLog() {
 #ifndef NDEBUG
-    forgeshape::TransformSelfTestResult results[128];
-    const int count = forgeshape::runTransformSelfTests(results, 128);
+    forgeshape::TransformSelfTestResult results[192];
+    const int count = forgeshape::runTransformSelfTests(results, 192);
     int failed = 0;
     for (int i = 0; i < count; ++i) {
         if (!results[i].passed) {
@@ -726,25 +726,30 @@ forgeshape::TransformApplyResult applyBoxTransform(const char* label,
     switch (result.status) {
         case forgeshape::TransformUpdateStatus::Applied:
             FS_LOGI("FORGESHAPE_CONSTRUCTION_TRANSFORM:%s pos=(%.6f,%.6f,%.6f)m "
-                    "rot=(%.6f,%.6f,%.6f)deg updates=%llu rev=%llu",
+                    "rot=(%.6f,%.6f,%.6f)deg scale=(%.6f,%.6f,%.6f) updates=%llu rev=%llu",
                     label, v.positionX, v.positionY, v.positionZ, v.rotationX, v.rotationY,
-                    v.rotationZ, (unsigned long long)transform.updateCount(),
+                    v.rotationZ, v.scaleX, v.scaleY, v.scaleZ,
+                    (unsigned long long)transform.updateCount(),
                     (unsigned long long)forgeshape::meshStore().currentRevision());
             break;
         case forgeshape::TransformUpdateStatus::Unchanged:
             FS_LOGI("FORGESHAPE_CONSTRUCTION_TRANSFORM_UNCHANGED:%s pos=(%.6f,%.6f,%.6f)m "
-                    "rot=(%.6f,%.6f,%.6f)deg rev=%llu",
+                    "rot=(%.6f,%.6f,%.6f)deg scale=(%.6f,%.6f,%.6f) rev=%llu",
                     label, v.positionX, v.positionY, v.positionZ, v.rotationX, v.rotationY,
-                    v.rotationZ, (unsigned long long)forgeshape::meshStore().currentRevision());
+                    v.rotationZ, v.scaleX, v.scaleY, v.scaleZ,
+                    (unsigned long long)forgeshape::meshStore().currentRevision());
             break;
         case forgeshape::TransformUpdateStatus::Rejected:
             FS_LOGE("FORGESHAPE_CONSTRUCTION_TRANSFORM_REJECTED:%s:%s "
-                    "requested=(%.6f,%.6f,%.6f,%.6f,%.6f,%.6f) retained pos=(%.6f,%.6f,%.6f)m "
-                    "rot=(%.6f,%.6f,%.6f)deg rev=%llu rejects=%llu",
+                    "requested=(%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f) "
+                    "retained pos=(%.6f,%.6f,%.6f)m rot=(%.6f,%.6f,%.6f)deg "
+                    "scale=(%.6f,%.6f,%.6f) rev=%llu rejects=%llu",
                     label, forgeshape::transformValidationName(result.validation),
                     requested.positionX, requested.positionY, requested.positionZ,
-                    requested.rotationX, requested.rotationY, requested.rotationZ, v.positionX,
-                    v.positionY, v.positionZ, v.rotationX, v.rotationY, v.rotationZ,
+                    requested.rotationX, requested.rotationY, requested.rotationZ,
+                    requested.scaleX, requested.scaleY, requested.scaleZ, v.positionX,
+                    v.positionY, v.positionZ, v.rotationX, v.rotationY, v.rotationZ, v.scaleX,
+                    v.scaleY, v.scaleZ,
                     (unsigned long long)forgeshape::meshStore().currentRevision(),
                     (unsigned long long)transform.rejectedUpdateCount());
             break;
@@ -783,6 +788,12 @@ jint transformResultToJni(const forgeshape::TransformApplyResult& result) {
     switch (result.validation) {
         case forgeshape::TransformValidation::NotRepresentable:
             return kApplyRejectedNotRepresentable;
+        // A scale at or below the floor. It reuses the dimension code because it
+        // means the same thing to a reader — a size that is not a size — even
+        // though a coordinate and an angle on this same transform are perfectly
+        // free to be zero or negative.
+        case forgeshape::TransformValidation::NotPositive:
+            return kApplyRejectedNotPositive;
         case forgeshape::TransformValidation::NotFinite:
         case forgeshape::TransformValidation::Ok: break;
     }
@@ -860,9 +871,11 @@ void logMeshDiagnostics(const char* reason) {
     }
     const forgeshape::ConstructionTransform& transform = forgeshape::constructionTransform();
     FS_LOGI("FORGESHAPE_CONSTRUCTION_TRANSFORM_STATE:%s pos=(%.6f,%.6f,%.6f)m "
-            "rot=(%.6f,%.6f,%.6f)deg identity=%d updates=%llu rejects=%llu",
+            "rot=(%.6f,%.6f,%.6f)deg scale=(%.6f,%.6f,%.6f) identity=%d unscaled=%d "
+            "updates=%llu rejects=%llu",
             reason, t.positionX, t.positionY, t.positionZ, t.rotationX, t.rotationY, t.rotationZ,
-            transform.isIdentity() ? 1 : 0, (unsigned long long)transform.updateCount(),
+            t.scaleX, t.scaleY, t.scaleZ, transform.isIdentity() ? 1 : 0,
+            transform.isUnscaled() ? 1 : 0, (unsigned long long)transform.updateCount(),
             (unsigned long long)transform.rejectedUpdateCount());
     logSculptState(reason);
 }
@@ -1256,35 +1269,25 @@ Java_com_forgeshape_app_NativeViewport_debugMeshCommand(JNIEnv*, jclass, jint co
             }
             float px = 0.0f, py = 0.0f;
             forgeshape::projectWorldToScreen(camera, state.pivot, width, height, &px, &py);
-            char line[256];
+            char line[512];
             int written = snprintf(line, sizeof(line),
-                                   "FORGESHAPE_GIZMO_HANDLES:%s pivot=%.1f,%.1f",
-                                   forgeshape::gizmoModeName(state.mode), px, py);
-            const forgeshape::GizmoAxis axes[3] = {
-                forgeshape::GizmoAxis::X, forgeshape::GizmoAxis::Y, forgeshape::GizmoAxis::Z};
-            for (int i = 0; i < 3 && written > 0 && written < (int)sizeof(line); ++i) {
+                                   "FORGESHAPE_GIZMO_HANDLES:%s/%s pivot=%.1f,%.1f",
+                                   forgeshape::gizmoModeName(state.mode),
+                                   forgeshape::gizmoSpaceName(state.space), px, py);
+            // Every handle this MODE actually offers, from the one definition of
+            // where a handle is. A list that hard-coded three axes would go
+            // silent about the plane and uniform handles the moment they existed.
+            forgeshape::GizmoHandle handles[forgeshape::kGizmoMaxHandles];
+            const int handleCount = forgeshape::gizmoHandlesForMode(
+                state.mode, handles, forgeshape::kGizmoMaxHandles);
+            for (int i = 0; i < handleCount && written > 0 && written < (int)sizeof(line); ++i) {
                 forgeshape::Vec3 world{};
-                if (state.mode == forgeshape::GizmoMode::Move) {
-                    const float length =
-                        forgeshape::kGizmoHandleLengthUnits * state.worldPerReferenceUnit;
-                    const float middle = 0.5f * (forgeshape::kGizmoShaftGrabStartFraction +
-                                                 forgeshape::kGizmoShaftGrabEndFraction);
-                    world = forgeshape::vec3Add(
-                        state.pivot,
-                        forgeshape::vec3Scale(forgeshape::gizmoAxisDirection(axes[i]),
-                                              length * middle));
-                } else {
-                    world = forgeshape::vec3Add(
-                        state.pivot,
-                        forgeshape::gizmoRingGrabOffset(axes[i],
-                                                        forgeshape::kGizmoRingRadiusUnits *
-                                                            state.worldPerReferenceUnit));
-                }
                 float hx = 0.0f, hy = 0.0f;
                 const bool on =
+                    forgeshape::gizmoHandleGrabPoint(state, handles[i], &world) &&
                     forgeshape::projectWorldToScreen(camera, world, width, height, &hx, &hy);
                 written += snprintf(line + written, sizeof(line) - written, " %s=%.1f,%.1f%s",
-                                    forgeshape::gizmoAxisName(axes[i]), hx, hy,
+                                    forgeshape::gizmoHandleName(handles[i]), hx, hy,
                                     on ? "" : "(offscreen)");
             }
             FS_LOGI("%s", line);
@@ -1445,11 +1448,12 @@ Java_com_forgeshape_app_NativeViewport_applyConstructionPlane(JNIEnv*, jclass,
 }
 
 // Reads the AUTHORITATIVE Construction transform for display: position in
-// meters, rotation in degrees. Nothing is recovered from the model matrix.
+// meters, rotation in degrees, scale unitless. Nothing is recovered from the
+// model matrix.
 JNIEXPORT void JNICALL
 Java_com_forgeshape_app_NativeViewport_boxTransform(JNIEnv* env, jclass,
-                                                    jdoubleArray outPositionRotation) {
-    if (outPositionRotation == nullptr || env->GetArrayLength(outPositionRotation) < 6) {
+                                                    jdoubleArray outPlacement) {
+    if (outPlacement == nullptr || env->GetArrayLength(outPlacement) < 9) {
         return;
     }
     forgeshape::TransformValues v;
@@ -1457,19 +1461,23 @@ Java_com_forgeshape_app_NativeViewport_boxTransform(JNIEnv* env, jclass,
         std::lock_guard<std::mutex> lock(g_stateMutex);
         v = forgeshape::constructionTransform().values();
     }
-    const jdouble values[6] = {v.positionX, v.positionY, v.positionZ,
-                               v.rotationX, v.rotationY, v.rotationZ};
-    env->SetDoubleArrayRegion(outPositionRotation, 0, 6, values);
+    const jdouble values[9] = {v.positionX, v.positionY, v.positionZ,
+                               v.rotationX, v.rotationY, v.rotationZ,
+                               v.scaleX,    v.scaleY,    v.scaleZ};
+    env->SetDoubleArrayRegion(outPlacement, 0, 9, values);
 }
 
-// The product transform edit path. One call carries all six values — position in
-// meters, rotation in degrees — into the one native Construction transform entry
-// point. It publishes no mesh revision and triggers no upload.
+// The product transform edit path. One call carries all nine values — position
+// in meters, rotation in degrees, scale unitless — into the one native
+// Construction transform entry point, as ONE atomic request: a bad scale leaves
+// the position untouched, and one Apply is one history step. It publishes no
+// mesh revision and triggers no upload.
 JNIEXPORT jint JNICALL
 Java_com_forgeshape_app_NativeViewport_applyBoxTransform(JNIEnv*, jclass, jdouble positionX,
                                                           jdouble positionY, jdouble positionZ,
                                                           jdouble rotationX, jdouble rotationY,
-                                                          jdouble rotationZ) {
+                                                          jdouble rotationZ, jdouble scaleX,
+                                                          jdouble scaleY, jdouble scaleZ) {
     forgeshape::TransformValues requested;
     requested.positionX = positionX;
     requested.positionY = positionY;
@@ -1477,6 +1485,9 @@ Java_com_forgeshape_app_NativeViewport_applyBoxTransform(JNIEnv*, jclass, jdoubl
     requested.rotationX = rotationX;
     requested.rotationY = rotationY;
     requested.rotationZ = rotationZ;
+    requested.scaleX = scaleX;
+    requested.scaleY = scaleY;
+    requested.scaleZ = scaleZ;
     return transformResultToJni(applyBoxTransform("ui", requested));
 }
 
@@ -1802,14 +1813,37 @@ Java_com_forgeshape_app_NativeViewport_setGizmoPixelScale(JNIEnv*, jclass, jfloa
     return accepted ? JNI_TRUE : JNI_FALSE;
 }
 
+// World or Local. Presentation state on the same terms as the mode: no
+// revision, no publication, no history. Returns false for an unknown index,
+// while a drag is captured, and for World while the mode is Scale — a
+// world-axis scale of a rotated body is a shear, so the workspace withdraws the
+// selector there and this guard stays regardless.
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_setGizmoSpace(JNIEnv*, jclass, jint spaceIndex) {
+    forgeshape::GizmoSpace space;
+    if (!forgeshape::gizmoSpaceFromIndex(static_cast<int>(spaceIndex), &space)) {
+        FS_LOGE("FORGESHAPE_GIZMO_SPACE_REJECTED:%d", (int)spaceIndex);
+        return JNI_FALSE;
+    }
+    bool accepted = false;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        accepted = forgeshape::gizmoSession().setSpace(space);
+    }
+    FS_LOGI("FORGESHAPE_GIZMO_SPACE:%s accepted=%d", forgeshape::gizmoSpaceName(space),
+            accepted ? 1 : 0);
+    return accepted ? JNI_TRUE : JNI_FALSE;
+}
+
 // Reads the authoritative gizmo state for display and verification. Nothing here
 // is a second truth: every value is read back from the one session.
 //
 //   [0] 1 when the gizmo is offered at all
-//   [1] mode index (0 move, 1 rotate)
+//   [1] mode index (0 move, 1 rotate, 2 scale)
 //   [2] 1 when a drag is capturing a pointer
 //   [3] captured pointer id, or -1
-//   [4] captured axis (0 none, 1 X, 2 Y, 3 Z)
+//   [4] captured handle code (0 none, 1..3 axis X/Y/Z, 4..6 plane XY/XZ/YZ,
+//       7 uniform)
 //   [5] captured ObjectId, or 0
 //   [6] how many updates the current or last drag applied — diagnostic, and how
 //       "a drag of any length is one step" is checked rather than asserted
@@ -1818,12 +1852,16 @@ Java_com_forgeshape_app_NativeViewport_setGizmoPixelScale(JNIEnv*, jclass, jfloa
 //   [9] how many drags have committed a history step this session — monotone,
 //       so the shell can tell "the model moved under the finger" from "the
 //       camera orbited" with one comparison
+//   [10] space index (0 world, 1 local)
+//   [11] 1 when the space is the user choice rather than a consequence of the
+//        mode — the shell draws the space selector exactly when this is 1
 JNIEXPORT void JNICALL Java_com_forgeshape_app_NativeViewport_gizmoState(JNIEnv* env, jclass,
                                                                         jdoubleArray out) {
-    if (out == nullptr || env->GetArrayLength(out) < 10) {
+    constexpr jsize kGizmoStateSize = 12;
+    if (out == nullptr || env->GetArrayLength(out) < kGizmoStateSize) {
         return;
     }
-    jdouble values[10];
+    jdouble values[kGizmoStateSize];
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
         const forgeshape::GizmoSession& gizmo = forgeshape::gizmoSession();
@@ -1833,39 +1871,34 @@ JNIEXPORT void JNICALL Java_com_forgeshape_app_NativeViewport_gizmoState(JNIEnv*
         values[1] = static_cast<double>(forgeshape::gizmoModeIndex(gizmo.mode()));
         values[2] = gizmo.capturing() ? 1.0 : 0.0;
         values[3] = static_cast<double>(gizmo.capturedPointerId());
-        const forgeshape::GizmoAxis axis = gizmo.capturedAxis();
-        values[4] = axis == forgeshape::GizmoAxis::X   ? 1.0
-                    : axis == forgeshape::GizmoAxis::Y ? 2.0
-                    : axis == forgeshape::GizmoAxis::Z ? 3.0
-                                                       : 0.0;
+        values[4] = static_cast<double>(forgeshape::gizmoHandleCode(gizmo.capturedHandle()));
         values[5] = static_cast<double>(gizmo.capturedObjectId());
         values[6] = static_cast<double>(gizmo.dragUpdateCount());
         values[7] = state.visible ? 1.0 : 0.0;
         values[8] = static_cast<double>(state.worldPerReferenceUnit);
         values[9] = static_cast<double>(gizmo.committedDragCount());
+        values[10] = static_cast<double>(forgeshape::gizmoSpaceIndex(gizmo.space()));
+        values[11] = gizmo.spaceIsSelectable() ? 1.0 : 0.0;
     }
-    env->SetDoubleArrayRegion(out, 0, 10, values);
+    env->SetDoubleArrayRegion(out, 0, kGizmoStateSize, values);
 }
 
-// Which handle a pixel would grab, without grabbing it: 0 none, 1 X, 2 Y, 3 Z.
+// Which handle a pixel would grab, without grabbing it, as a GizmoHandle code.
 //
-// Pure, and that is the point — the workspace's own verification can ask where a
+// Pure, and that is the point — the workspace own verification can ask where a
 // handle IS without starting a transaction, which is what lets an instrumented
 // case drive a real drag through the real gesture path instead of fabricating
 // coordinates.
 JNIEXPORT jint JNICALL Java_com_forgeshape_app_NativeViewport_gizmoHitTest(JNIEnv*, jclass,
                                                                           jfloat x, jfloat y) {
     std::lock_guard<std::mutex> lock(g_stateMutex);
-    const forgeshape::GizmoAxis axis = forgeshape::gizmoSession().hitTest(
-        g_camera.snapshot(), x, y, g_camera.viewportWidth(), g_camera.viewportHeight());
-    return axis == forgeshape::GizmoAxis::X   ? 1
-           : axis == forgeshape::GizmoAxis::Y ? 2
-           : axis == forgeshape::GizmoAxis::Z ? 3
-                                              : 0;
+    return static_cast<jint>(forgeshape::gizmoHandleCode(forgeshape::gizmoSession().hitTest(
+        g_camera.snapshot(), x, y, g_camera.viewportWidth(), g_camera.viewportHeight())));
 }
 
-// Where a handle's grabbable point is, in view-local pixels: the middle of the
-// shaft's grab span for Move, and a point on the ring for Rotate.
+// Where a handle grabbable point is, in view-local pixels: the middle of the
+// shaft grab span, a point on a ring away from the crossings, the centre of a
+// plane square, or the pivot for the uniform handle.
 //
 // Verification needs SOME pixel to send a synthetic pointer to, and the only
 // honest source of one is the same projection the hit test uses. Deriving it
@@ -1875,23 +1908,14 @@ JNIEXPORT jint JNICALL Java_com_forgeshape_app_NativeViewport_gizmoHitTest(JNIEn
 //
 // Returns false, writing nothing, when there is no such handle on screen.
 JNIEXPORT jboolean JNICALL
-Java_com_forgeshape_app_NativeViewport_gizmoHandlePoint(JNIEnv* env, jclass, jint axisIndex,
+Java_com_forgeshape_app_NativeViewport_gizmoHandlePoint(JNIEnv* env, jclass, jint handleCode,
                                                         jfloatArray out) {
     if (out == nullptr || env->GetArrayLength(out) < 2) {
         return JNI_FALSE;
     }
-    forgeshape::GizmoAxis axis = forgeshape::GizmoAxis::None;
-    switch (axisIndex) {
-        // 0 is the PIVOT itself, which is not a handle and cannot be grabbed.
-        // It is here because a caller driving a synthetic drag needs to know
-        // which way along the screen an axis actually runs, and the honest
-        // answer is the projected direction from the pivot to the handle — not
-        // a screen direction guessed from the axis's name.
-        case 0: break;
-        case 1: axis = forgeshape::GizmoAxis::X; break;
-        case 2: axis = forgeshape::GizmoAxis::Y; break;
-        case 3: axis = forgeshape::GizmoAxis::Z; break;
-        default: return JNI_FALSE;
+    forgeshape::GizmoHandle handle = forgeshape::GizmoHandle::None;
+    if (!forgeshape::gizmoHandleFromCode(static_cast<int>(handleCode), &handle)) {
+        return JNI_FALSE;
     }
     float point[2] = {0.0f, 0.0f};
     bool found = false;
@@ -1903,28 +1927,18 @@ Java_com_forgeshape_app_NativeViewport_gizmoHandlePoint(JNIEnv* env, jclass, jin
         const forgeshape::GizmoSnapshot state =
             forgeshape::gizmoSession().snapshot(camera, width, height);
         if (state.visible) {
-            const forgeshape::Vec3 direction = forgeshape::gizmoAxisDirection(axis);
             forgeshape::Vec3 world{};
-            if (axis == forgeshape::GizmoAxis::None) {
-                world = state.pivot;
-            } else if (state.mode == forgeshape::GizmoMode::Move) {
-                const float length =
-                    forgeshape::kGizmoHandleLengthUnits * state.worldPerReferenceUnit;
-                const float middle = 0.5f * (forgeshape::kGizmoShaftGrabStartFraction +
-                                             forgeshape::kGizmoShaftGrabEndFraction);
-                world = forgeshape::vec3Add(state.pivot,
-                                            forgeshape::vec3Scale(direction, length * middle));
-            } else {
-                // Deliberately NOT on a basis direction: that is exactly where
-                // two rings cross, and a point there names no single axis. See
-                // gizmoRingGrabOffset.
-                world = forgeshape::vec3Add(
-                    state.pivot,
-                    forgeshape::gizmoRingGrabOffset(
-                        axis, forgeshape::kGizmoRingRadiusUnits * state.worldPerReferenceUnit));
-            }
-            found = forgeshape::projectWorldToScreen(camera, world, width, height, &point[0],
-                                                     &point[1]);
+            // Code 0 is the PIVOT itself, which is not a handle and cannot be
+            // grabbed. It is answerable because a caller driving a synthetic
+            // drag needs to know which way along the SCREEN a handle actually
+            // runs, and the honest answer is the projected direction from the
+            // pivot to the handle — not a screen direction guessed from a name.
+            const bool haveWorld =
+                (handle == forgeshape::GizmoHandle::None)
+                    ? (world = state.pivot, true)
+                    : forgeshape::gizmoHandleGrabPoint(state, handle, &world);
+            found = haveWorld && forgeshape::projectWorldToScreen(camera, world, width, height,
+                                                                 &point[0], &point[1]);
         }
     }
     if (!found) {
@@ -2704,7 +2718,7 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
             if (gizmo.beginDrag(pointers[0].id, g_camera.snapshot(), pointers[0].x, pointers[0].y,
                                 viewWidth, viewHeight)) {
                 gizmoBegan = true;
-                gizmoAxis = forgeshape::gizmoAxisName(gizmo.capturedAxis());
+                gizmoAxis = forgeshape::gizmoHandleName(gizmo.capturedHandle());
                 gizmoObjectId = gizmo.capturedObjectId();
                 gizmoHandled = true;
                 // Swallowed: neither the camera nor the selection sees a Down

@@ -239,17 +239,23 @@ Add a body from the **Objects capsule** at the bottom leading edge: its `+` open
 **Add Primitive**, and the shape you pick there is what the new body is. Tapping
 the body name beside it opens the scene list.
 
-Holding **Transform** in the Tool Rail also draws the handles, with a two-button
-control beside the rail choosing **Move handles** or **Rotate handles**. Dragging
-one is the direct way to place a body; the exact values below are the precise
-way, and both write the same placement.
+Holding **Transform** in the Tool Rail also draws the handles, with two controls
+beside the rail: one choosing **Move handles**, **Rotate handles** or **Scale
+handles** (ids `transform_mode_move` / `_rotate` / `_scale`), and one choosing
+**World axes** or **Local axes** (`transform_space_world` / `_local`). The space
+control is absent while Scale is held, because a scale is always about the
+body's own axes. Move offers three axis shafts and three plane squares, Rotate
+three rings, and Scale three axis cubes, three plane squares and a centre cube
+for uniform scaling. Dragging one is the direct way to place a body; the exact
+values below are the precise way, and both write the same placement.
 
 The Construction **Tool Rail** chooses what the **precision surface** edits, and
 the small control attached under the rail is what opens it: *Shape* (Box,
 Cylinder, Sphere, Cone, Capsule or Plane, and that shape's dimensions) or
-*Transform* (position X/Y/Z, rotation X/Y/Z), each with its own Apply. Pick a
-display unit (mm / cm / m) for lengths — rotation is always degrees — type the
-values, and press the matching Apply. Nothing changes until then, including
+*Transform* (position X/Y/Z, rotation X/Y/Z, scale X/Y/Z), each with its own
+Apply. Pick a display unit (mm / cm / m) for lengths — rotation is always
+degrees and scale is always a bare multiplier — type the values, and press the
+matching Apply. Nothing changes until then, including
 choosing a primitive. Touches on any chrome surface never move the camera.
 
 **Nothing is on screen at rest but the model and the edge controls.** The exact
