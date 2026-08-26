@@ -32,6 +32,8 @@
 #include "forgeshape_construction.h"
 #include "forgeshape_construction_selftest.h"
 #include "forgeshape_display.h"
+#include "forgeshape_gizmo.h"
+#include "forgeshape_gizmo_selftest.h"
 #include "forgeshape_history.h"
 #include "forgeshape_history_selftest.h"
 #include "forgeshape_input.h"
@@ -313,6 +315,28 @@ void runHistorySelfTestsAndLog() {
 #endif
 }
 
+
+void runGizmoSelfTestsAndLog() {
+#ifndef NDEBUG
+    constexpr int kMaxGizmoChecks = 256;
+    static forgeshape::GizmoSelfTestResult results[kMaxGizmoChecks];
+    const int count = forgeshape::runGizmoSelfTests(results, kMaxGizmoChecks);
+    int failed = 0;
+    for (int i = 0; i < count; ++i) {
+        if (!results[i].passed) {
+            ++failed;
+            FS_LOGE("FORGESHAPE_GIZMO_SELFTEST_CASE_FAIL:%s", results[i].name);
+        } else {
+            FS_LOGI("gizmo selftest pass: %s", results[i].name);
+        }
+    }
+    if (failed == 0) {
+        FS_LOGI("FORGESHAPE_GIZMO_SELFTEST_OK (%d checks)", count);
+    } else {
+        FS_LOGE("FORGESHAPE_GIZMO_SELFTEST_FAIL (%d of %d checks failed)", failed, count);
+    }
+#endif
+}
 void runMeshSelfTestsAndLog() {
 #ifndef NDEBUG
     forgeshape::MeshSelfTestResult results[128];
@@ -973,6 +997,14 @@ void renderThreadMain() {
                 // is released, because the snapshot holds shared_ptrs rather
                 // than borrowing anything the scene could change underneath.
                 renderer.setScene(forgeshape::constructionScene().snapshot());
+                // Taken under the SAME mutex and from the same instant as the
+                // camera and the scene, so the pivot the handles are drawn
+                // around is the placement this frame's body is drawn at. Taking
+                // it separately is exactly how a handle would lag a drag by a
+                // frame.
+                renderer.setGizmo(forgeshape::gizmoSession().snapshot(
+                    g_camera.snapshot(), g_camera.viewportWidth(),
+                    g_camera.viewportHeight()));
             }
             // Presentation only, and deliberately OUTSIDE the state mutex: the
             // display settings are plain atomics that no domain invariant
@@ -1030,6 +1062,7 @@ Java_com_forgeshape_app_NativeViewport_start(JNIEnv*, jclass) {
     runRenderMeshSelfTestsAndLog();
     runSceneSelfTestsAndLog();
     runHistorySelfTestsAndLog();
+    runGizmoSelfTestsAndLog();
     // The mesh and construction self-tests publish revisions of their own into
     // the store, so republish the ACTIVE representation: the app must always
     // come up showing what the current product mode says it is showing. At a
@@ -1202,6 +1235,61 @@ Java_com_forgeshape_app_NativeViewport_debugMeshCommand(JNIEnv*, jclass, jint co
         case 5:
             logMeshDiagnostics("on_request");
             return JNI_TRUE;
+        // Where the gizmo's pivot and its three handles are on screen RIGHT NOW.
+        //
+        // The one thing a shell-driven walkthrough cannot work out for itself: a
+        // handle's pixel is a live function of the camera, the window and the
+        // body's placement, so a script that wrote one down would be recording
+        // something true for exactly one run. This publishes the same answer the
+        // hit test uses, from the same projection, so evidence can drive a real
+        // drag against a real handle without ever encoding a coordinate.
+        case 23: {
+            std::lock_guard<std::mutex> lock(g_stateMutex);
+            const forgeshape::CameraSnapshot camera = g_camera.snapshot();
+            const int width = g_camera.viewportWidth();
+            const int height = g_camera.viewportHeight();
+            const forgeshape::GizmoSnapshot state =
+                forgeshape::gizmoSession().snapshot(camera, width, height);
+            if (!state.visible) {
+                FS_LOGI("FORGESHAPE_GIZMO_HANDLES:absent");
+                return JNI_FALSE;
+            }
+            float px = 0.0f, py = 0.0f;
+            forgeshape::projectWorldToScreen(camera, state.pivot, width, height, &px, &py);
+            char line[256];
+            int written = snprintf(line, sizeof(line),
+                                   "FORGESHAPE_GIZMO_HANDLES:%s pivot=%.1f,%.1f",
+                                   forgeshape::gizmoModeName(state.mode), px, py);
+            const forgeshape::GizmoAxis axes[3] = {
+                forgeshape::GizmoAxis::X, forgeshape::GizmoAxis::Y, forgeshape::GizmoAxis::Z};
+            for (int i = 0; i < 3 && written > 0 && written < (int)sizeof(line); ++i) {
+                forgeshape::Vec3 world{};
+                if (state.mode == forgeshape::GizmoMode::Move) {
+                    const float length =
+                        forgeshape::kGizmoHandleLengthUnits * state.worldPerReferenceUnit;
+                    const float middle = 0.5f * (forgeshape::kGizmoShaftGrabStartFraction +
+                                                 forgeshape::kGizmoShaftGrabEndFraction);
+                    world = forgeshape::vec3Add(
+                        state.pivot,
+                        forgeshape::vec3Scale(forgeshape::gizmoAxisDirection(axes[i]),
+                                              length * middle));
+                } else {
+                    world = forgeshape::vec3Add(
+                        state.pivot,
+                        forgeshape::gizmoRingGrabOffset(axes[i],
+                                                        forgeshape::kGizmoRingRadiusUnits *
+                                                            state.worldPerReferenceUnit));
+                }
+                float hx = 0.0f, hy = 0.0f;
+                const bool on =
+                    forgeshape::projectWorldToScreen(camera, world, width, height, &hx, &hy);
+                written += snprintf(line + written, sizeof(line) - written, " %s=%.1f,%.1f%s",
+                                    forgeshape::gizmoAxisName(axes[i]), hx, hy,
+                                    on ? "" : "(offscreen)");
+            }
+            FS_LOGI("%s", line);
+            return JNI_TRUE;
+        }
         // Construction primitive states. These drive the AUTHORITATIVE
         // double-meter parameters through the same entry point the UI uses; the
         // mesh is regenerated and republished from them, never edited directly.
@@ -1636,6 +1724,289 @@ Java_com_forgeshape_app_NativeViewport_constructionRedoAvailable(JNIEnv*, jclass
 JNIEXPORT jlong JNICALL
 Java_com_forgeshape_app_NativeViewport_constructionMeshRevision(JNIEnv*, jclass) {
     return static_cast<jlong>(forgeshape::meshStore().currentRevision());
+}
+
+// ---------------------------------------------------------------------------
+// The Construction Move / Rotate gizmo
+// ---------------------------------------------------------------------------
+//
+// Java owns WHEN there is a gizmo — which product mode, which Tool Rail
+// context, whether a body exists — because those are workspace facts. It owns
+// nothing about WHERE the handles are, how large they are on screen, which one a
+// touch landed on, what a drag means in world space, or when a transaction opens
+// and closes: every one of those needs the camera, the projection and the
+// Construction placement, and there is exactly one owner of each.
+//
+// There is deliberately no Java-side transform, no parallel pivot and no second
+// solver. A drag writes the authoritative ConstructionTransform directly, so the
+// renderer, the picker and the exact-value editors read the same numbers
+// mid-drag that they read at rest.
+
+// Whether the workspace is currently offering direct transform. Refused with no
+// effect while sculpting, which is a guard and not a UI decision: the workspace
+// also withdraws the controls there, and removing a control is not removing a
+// guard.
+JNIEXPORT void JNICALL Java_com_forgeshape_app_NativeViewport_setGizmoActive(JNIEnv*, jclass,
+                                                                            jboolean active) {
+    bool refusedInSculpt = false;
+    bool nowActive = false;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        if (active == JNI_TRUE && forgeshape::sculptSession().inSculptMode()) {
+            refusedInSculpt = true;
+            // Still turned OFF, so entering Sculpt with a gizmo up cannot leave
+            // one standing — and a captured handle is cancelled by setActive.
+            forgeshape::gizmoSession().setActive(false);
+        } else {
+            forgeshape::gizmoSession().setActive(active == JNI_TRUE);
+        }
+        nowActive = forgeshape::gizmoSession().active();
+    }
+    if (refusedInSculpt) {
+        FS_LOGI("FORGESHAPE_GIZMO_REFUSED:in_sculpt_mode");
+        return;
+    }
+    FS_LOGI("FORGESHAPE_GIZMO_ACTIVE:%d", nowActive ? 1 : 0);
+}
+
+// Move or Rotate. Presentation state: no revision, no publication, no history.
+// Returns false for an unknown index and while a drag is captured — a mode must
+// not change under a moving finger.
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_setGizmoMode(JNIEnv*, jclass, jint modeIndex) {
+    forgeshape::GizmoMode mode;
+    if (!forgeshape::gizmoModeFromIndex(static_cast<int>(modeIndex), &mode)) {
+        FS_LOGE("FORGESHAPE_GIZMO_MODE_REJECTED:%d", (int)modeIndex);
+        return JNI_FALSE;
+    }
+    bool accepted = false;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        accepted = forgeshape::gizmoSession().setMode(mode);
+    }
+    FS_LOGI("FORGESHAPE_GIZMO_MODE:%s accepted=%d", forgeshape::gizmoModeName(mode),
+            accepted ? 1 : 0);
+    return accepted ? JNI_TRUE : JNI_FALSE;
+}
+
+// How many physical pixels one reference unit is on this display. The one number
+// the platform adapter owns about gizmo size; the sizes themselves are the
+// domain's, in forgeshape_gizmo.h, so the 48-unit hit floor is a property of the
+// product and not of a layout file.
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_setGizmoPixelScale(JNIEnv*, jclass, jfloat scale) {
+    const bool accepted = forgeshape::setGizmoPixelsPerReferenceUnit(scale);
+    if (!accepted) {
+        FS_LOGE("FORGESHAPE_GIZMO_SCALE_REJECTED:%.4f", (double)scale);
+    }
+    return accepted ? JNI_TRUE : JNI_FALSE;
+}
+
+// Reads the authoritative gizmo state for display and verification. Nothing here
+// is a second truth: every value is read back from the one session.
+//
+//   [0] 1 when the gizmo is offered at all
+//   [1] mode index (0 move, 1 rotate)
+//   [2] 1 when a drag is capturing a pointer
+//   [3] captured pointer id, or -1
+//   [4] captured axis (0 none, 1 X, 2 Y, 3 Z)
+//   [5] captured ObjectId, or 0
+//   [6] how many updates the current or last drag applied — diagnostic, and how
+//       "a drag of any length is one step" is checked rather than asserted
+//   [7] 1 when the gizmo is currently visible for the active body
+//   [8] the world length of one reference unit at the pivot, or 0
+//   [9] how many drags have committed a history step this session — monotone,
+//       so the shell can tell "the model moved under the finger" from "the
+//       camera orbited" with one comparison
+JNIEXPORT void JNICALL Java_com_forgeshape_app_NativeViewport_gizmoState(JNIEnv* env, jclass,
+                                                                        jdoubleArray out) {
+    if (out == nullptr || env->GetArrayLength(out) < 10) {
+        return;
+    }
+    jdouble values[10];
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const forgeshape::GizmoSession& gizmo = forgeshape::gizmoSession();
+        const forgeshape::GizmoSnapshot state = gizmo.snapshot(
+            g_camera.snapshot(), g_camera.viewportWidth(), g_camera.viewportHeight());
+        values[0] = gizmo.active() ? 1.0 : 0.0;
+        values[1] = static_cast<double>(forgeshape::gizmoModeIndex(gizmo.mode()));
+        values[2] = gizmo.capturing() ? 1.0 : 0.0;
+        values[3] = static_cast<double>(gizmo.capturedPointerId());
+        const forgeshape::GizmoAxis axis = gizmo.capturedAxis();
+        values[4] = axis == forgeshape::GizmoAxis::X   ? 1.0
+                    : axis == forgeshape::GizmoAxis::Y ? 2.0
+                    : axis == forgeshape::GizmoAxis::Z ? 3.0
+                                                       : 0.0;
+        values[5] = static_cast<double>(gizmo.capturedObjectId());
+        values[6] = static_cast<double>(gizmo.dragUpdateCount());
+        values[7] = state.visible ? 1.0 : 0.0;
+        values[8] = static_cast<double>(state.worldPerReferenceUnit);
+        values[9] = static_cast<double>(gizmo.committedDragCount());
+    }
+    env->SetDoubleArrayRegion(out, 0, 10, values);
+}
+
+// Which handle a pixel would grab, without grabbing it: 0 none, 1 X, 2 Y, 3 Z.
+//
+// Pure, and that is the point — the workspace's own verification can ask where a
+// handle IS without starting a transaction, which is what lets an instrumented
+// case drive a real drag through the real gesture path instead of fabricating
+// coordinates.
+JNIEXPORT jint JNICALL Java_com_forgeshape_app_NativeViewport_gizmoHitTest(JNIEnv*, jclass,
+                                                                          jfloat x, jfloat y) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    const forgeshape::GizmoAxis axis = forgeshape::gizmoSession().hitTest(
+        g_camera.snapshot(), x, y, g_camera.viewportWidth(), g_camera.viewportHeight());
+    return axis == forgeshape::GizmoAxis::X   ? 1
+           : axis == forgeshape::GizmoAxis::Y ? 2
+           : axis == forgeshape::GizmoAxis::Z ? 3
+                                              : 0;
+}
+
+// Where a handle's grabbable point is, in view-local pixels: the middle of the
+// shaft's grab span for Move, and a point on the ring for Rotate.
+//
+// Verification needs SOME pixel to send a synthetic pointer to, and the only
+// honest source of one is the same projection the hit test uses. Deriving it
+// here rather than in a test is what keeps a case from encoding a coordinate
+// that is true for one window and one camera — the rule the workspace chrome
+// already follows with semantic ids.
+//
+// Returns false, writing nothing, when there is no such handle on screen.
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_gizmoHandlePoint(JNIEnv* env, jclass, jint axisIndex,
+                                                        jfloatArray out) {
+    if (out == nullptr || env->GetArrayLength(out) < 2) {
+        return JNI_FALSE;
+    }
+    forgeshape::GizmoAxis axis = forgeshape::GizmoAxis::None;
+    switch (axisIndex) {
+        // 0 is the PIVOT itself, which is not a handle and cannot be grabbed.
+        // It is here because a caller driving a synthetic drag needs to know
+        // which way along the screen an axis actually runs, and the honest
+        // answer is the projected direction from the pivot to the handle — not
+        // a screen direction guessed from the axis's name.
+        case 0: break;
+        case 1: axis = forgeshape::GizmoAxis::X; break;
+        case 2: axis = forgeshape::GizmoAxis::Y; break;
+        case 3: axis = forgeshape::GizmoAxis::Z; break;
+        default: return JNI_FALSE;
+    }
+    float point[2] = {0.0f, 0.0f};
+    bool found = false;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const forgeshape::CameraSnapshot camera = g_camera.snapshot();
+        const int width = g_camera.viewportWidth();
+        const int height = g_camera.viewportHeight();
+        const forgeshape::GizmoSnapshot state =
+            forgeshape::gizmoSession().snapshot(camera, width, height);
+        if (state.visible) {
+            const forgeshape::Vec3 direction = forgeshape::gizmoAxisDirection(axis);
+            forgeshape::Vec3 world{};
+            if (axis == forgeshape::GizmoAxis::None) {
+                world = state.pivot;
+            } else if (state.mode == forgeshape::GizmoMode::Move) {
+                const float length =
+                    forgeshape::kGizmoHandleLengthUnits * state.worldPerReferenceUnit;
+                const float middle = 0.5f * (forgeshape::kGizmoShaftGrabStartFraction +
+                                             forgeshape::kGizmoShaftGrabEndFraction);
+                world = forgeshape::vec3Add(state.pivot,
+                                            forgeshape::vec3Scale(direction, length * middle));
+            } else {
+                // Deliberately NOT on a basis direction: that is exactly where
+                // two rings cross, and a point there names no single axis. See
+                // gizmoRingGrabOffset.
+                world = forgeshape::vec3Add(
+                    state.pivot,
+                    forgeshape::gizmoRingGrabOffset(
+                        axis, forgeshape::kGizmoRingRadiusUnits * state.worldPerReferenceUnit));
+            }
+            found = forgeshape::projectWorldToScreen(camera, world, width, height, &point[0],
+                                                     &point[1]);
+        }
+    }
+    if (!found) {
+        return JNI_FALSE;
+    }
+    env->SetFloatArrayRegion(out, 0, 2, point);
+    return JNI_TRUE;
+}
+
+// DEBUG-ONLY: reads the orbit pose, and places it.
+//
+// Verification infrastructure, not product functionality: no UI reaches either,
+// and both compile to nothing in a release build. The read exists so a case can
+// assert that a captured handle did NOT orbit the camera; the write exists so a
+// case can say "from a viewpoint where this axis is nearly edge-on" without
+// synthesising an orbit gesture of exactly the right pixel length first.
+//
+//   [0] yaw, radians   [1] pitch, radians   [2] orbit distance, meters
+JNIEXPORT void JNICALL Java_com_forgeshape_app_NativeViewport_debugCameraPose(JNIEnv* env, jclass,
+                                                                             jfloatArray out) {
+#ifndef NDEBUG
+    if (out == nullptr || env->GetArrayLength(out) < 3) {
+        return;
+    }
+    jfloat pose[3];
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        pose[0] = g_camera.yaw();
+        pose[1] = g_camera.pitch();
+        pose[2] = g_camera.distance();
+    }
+    env->SetFloatArrayRegion(out, 0, 3, pose);
+#else
+    (void)env;
+    (void)out;
+#endif
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_debugSetCameraPose(JNIEnv*, jclass, jfloat yaw,
+                                                          jfloat pitch, jfloat distance) {
+#ifndef NDEBUG
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    return g_camera.setPose(yaw, pitch, distance) ? JNI_TRUE : JNI_FALSE;
+#else
+    (void)yaw;
+    (void)pitch;
+    (void)distance;
+    return JNI_FALSE;
+#endif
+}
+
+// The production session-initialization boundary.
+//
+// The Android shell answers the start question by driving the SAME entry points
+// a user would, which is what keeps Freeze from being re-implemented — and which
+// means seeding a session in Sculpt performs a real Construction shape change.
+// That is a change the user did not make, so it is bracketed rather than
+// recorded: see ConstructionHistory's boundary comment. Nothing else in the
+// product may call these, and nothing else does — Back to Construction, a
+// rotation, a resume and every ordinary edit are outside the bracket.
+JNIEXPORT void JNICALL
+Java_com_forgeshape_app_NativeViewport_beginSessionInitialization(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    forgeshape::constructionHistory().beginSessionInitialization();
+    FS_LOGI("FORGESHAPE_SESSION_INIT_BEGIN");
+}
+
+JNIEXPORT void JNICALL
+Java_com_forgeshape_app_NativeViewport_endSessionInitialization(JNIEnv*, jclass) {
+    size_t undoDepth = 0;
+    size_t redoDepth = 0;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        forgeshape::ConstructionHistory& history = forgeshape::constructionHistory();
+        history.endSessionInitialization();
+        undoDepth = history.undoDepth();
+        redoDepth = history.redoDepth();
+    }
+    // The postcondition, in the log, so "a new session starts with an empty
+    // history" is a thing a captured run states rather than a claim.
+    FS_LOGI("FORGESHAPE_SESSION_INIT_END undo=%d redo=%d", (int)undoDepth, (int)redoDepth);
 }
 
 // DEBUG-ONLY: forgets the Construction history without moving the scene.
@@ -2199,6 +2570,18 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
     forgeshape::SceneHit hit{};
     forgeshape::ObjectId selectedNow = forgeshape::kNoObject;
 
+    // Gizmo reporting, gathered under the lock and logged outside it. `handled`
+    // is the arbitration answer: true means this event belonged to a handle and
+    // neither the camera nor the selection may see it.
+    bool gizmoHandled = false;
+    bool gizmoBegan = false;
+    bool gizmoMoved = false;
+    bool gizmoCommitted = false;
+    bool gizmoRecorded = false;
+    bool gizmoCancelled = false;
+    const char* gizmoAxis = "";
+    forgeshape::ObjectId gizmoObjectId = forgeshape::kNoObject;
+
     // Brush-stroke reporting, gathered under the lock and logged outside it.
     bool grabBegan = false;
     bool grabEnded = false;
@@ -2228,6 +2611,111 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
             g_lastPointers[i] = pointers[i];
         }
 #endif
+
+        // -------------------------------------------------------------------
+        // Construction gizmo arbitration
+        // -------------------------------------------------------------------
+        //
+        // The rule, stated once: a pointer that goes DOWN on a handle belongs to
+        // the gizmo for the whole of its life; a pointer that goes down anywhere
+        // else navigates and picks exactly as it always has. Orbit, pan, pinch
+        // and tap are untouched everywhere except on the handles themselves,
+        // which is what keeps a new tool from taking the camera away.
+        //
+        // Whether the touch landed on a handle is decided ONCE, on Down, against
+        // the same projected geometry the renderer drew — so a drag cannot turn
+        // into an orbit half way through as the finger leaves the shaft.
+        //
+        // The gizmo follows ONE pointer, by stable id and never by index. A
+        // second finger does not get to steer it and does not get to orbit
+        // around it either: it CANCELS the drag, which puts the placement back
+        // exactly where the first finger found it and records nothing. Trying to
+        // do both at once is how a transform ends up half applied.
+        forgeshape::GizmoSession& gizmo = forgeshape::gizmoSession();
+        if (gizmo.capturing() && !gizmo.active()) {
+            // Defensive: setActive already cancels, so this cannot normally
+            // happen. If it ever does, a captured handle with no gizmo behind it
+            // is an open transaction the user cannot close.
+            gizmo.cancelDrag();
+            gizmoCancelled = true;
+        }
+        if (gizmo.capturing()) {
+            const int32_t captured = gizmo.capturedPointerId();
+            int capturedIndex = -1;
+            for (int i = 0; i < count; ++i) {
+                if (pointers[i].id == captured) {
+                    capturedIndex = i;
+                    break;
+                }
+            }
+            switch (translated) {
+                case forgeshape::TouchAction::Move:
+                    if (count == 1 && capturedIndex >= 0) {
+                        if (gizmo.updateDrag(captured, g_camera.snapshot(),
+                                             pointers[capturedIndex].x,
+                                             pointers[capturedIndex].y, viewWidth, viewHeight)) {
+                            gizmoMoved = true;
+                        }
+                        gizmoHandled = true;
+                    } else {
+                        // More than one pointer is down. Cancel and hand the
+                        // gesture on; the camera re-anchors on any pointer-set
+                        // change, so there is no jump.
+                        gizmo.cancelDrag();
+                        gizmoCancelled = true;
+                    }
+                    break;
+                case forgeshape::TouchAction::Up:
+                    gizmoRecorded = gizmo.commitDrag();
+                    gizmoCommitted = true;
+                    gizmoHandled = true;
+                    break;
+                case forgeshape::TouchAction::Cancel:
+                    gizmo.cancelDrag();
+                    gizmoCancelled = true;
+                    gizmoHandled = true;
+                    break;
+                case forgeshape::TouchAction::PointerUp:
+                    if (capturedIndex >= 0 && actionPointerId == captured) {
+                        // The captured finger is the one leaving while others
+                        // remain. That is still the end of ITS drag.
+                        gizmoRecorded = gizmo.commitDrag();
+                        gizmoCommitted = true;
+                        gizmoHandled = true;
+                    } else {
+                        gizmo.cancelDrag();
+                        gizmoCancelled = true;
+                    }
+                    break;
+                default:
+                    // PointerDown: a second finger arrived. Cancel, restore, and
+                    // let the event go on to the camera.
+                    gizmo.cancelDrag();
+                    gizmoCancelled = true;
+                    break;
+            }
+            if (!gizmoHandled) {
+                // Whatever ended the drag is navigation from here on, and it
+                // must not be able to resolve a tap either.
+                g_selection.resetGesture();
+            }
+        } else if (gizmo.active() && translated == forgeshape::TouchAction::Down && count == 1 &&
+                   viewWidth > 0 && viewHeight > 0) {
+            if (gizmo.beginDrag(pointers[0].id, g_camera.snapshot(), pointers[0].x, pointers[0].y,
+                                viewWidth, viewHeight)) {
+                gizmoBegan = true;
+                gizmoAxis = forgeshape::gizmoAxisName(gizmo.capturedAxis());
+                gizmoObjectId = gizmo.capturedObjectId();
+                gizmoHandled = true;
+                // Swallowed: neither the camera nor the selection sees a Down
+                // that belongs to a handle, so this gesture can neither orbit
+                // nor re-select while it drags.
+                g_camera.resetGesture();
+                g_selection.resetGesture();
+            }
+            // A miss captures nothing, opens no transaction and is deliberately
+            // NOT swallowed: the gesture falls through and navigates.
+        }
 
         // -------------------------------------------------------------------
         // Sculpt-mode gesture rule
@@ -2377,7 +2865,11 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
             g_strokePending = false;
         }
 
-        if (!grabHandled) {
+        // A gesture the gizmo owns never reaches the camera or the selection.
+        // The two conditions are separate because they are separate rules: one
+        // is Sculpt's brush arbitration, the other is Construction's handle
+        // arbitration, and they are mutually exclusive by product mode.
+        if (!grabHandled && !gizmoHandled) {
             g_camera.onTouch(translated, static_cast<int32_t>(actionPointerId),
                              count > 0 ? pointers : nullptr, count);
 
@@ -2432,6 +2924,32 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
     // logs PENDING then ABANDONED never became a stroke at all, which is exactly
     // what makes "multi-touch navigation cannot mutate the sculpt mesh" a thing
     // that can be checked from a log rather than asserted.
+    // Gizmo tokens. Begin, commit and cancel are one line each; a Move logs
+    // nothing at all, because a drag produces hundreds of them and the count is
+    // read back from gizmoState instead.
+    //
+    // COMMIT carries how many updates the drag applied AND whether a step was
+    // recorded, which is exactly what makes "a drag of any length is one history
+    // step, and a tap is none" a thing a captured run states rather than a claim.
+    if (gizmoBegan) {
+        FS_LOGI("FORGESHAPE_GIZMO_DRAG_BEGIN:%s axis=%s objectId=%llu",
+                forgeshape::gizmoModeName(forgeshape::gizmoSession().mode()), gizmoAxis,
+                (unsigned long long)gizmoObjectId);
+    }
+    if (gizmoCommitted) {
+        FS_LOGI("FORGESHAPE_GIZMO_DRAG_COMMIT:%s updates=%llu solve=%s undo=%d",
+                gizmoRecorded ? "recorded" : "no_change",
+                (unsigned long long)forgeshape::gizmoSession().dragUpdateCount(),
+                forgeshape::axisSolveStatusName(forgeshape::gizmoSession().lastSolveStatus()),
+                (int)forgeshape::constructionHistory().undoDepth());
+    }
+    if (gizmoCancelled) {
+        FS_LOGI("FORGESHAPE_GIZMO_DRAG_CANCEL updates=%llu undo=%d",
+                (unsigned long long)forgeshape::gizmoSession().dragUpdateCount(),
+                (int)forgeshape::constructionHistory().undoDepth());
+    }
+    (void)gizmoMoved;
+
     if (grabPending) {
         FS_LOGI("FORGESHAPE_SCULPT_STROKE_PENDING sculptRev=%llu",
                 (unsigned long long)forgeshape::sculptSession().mesh().revision());

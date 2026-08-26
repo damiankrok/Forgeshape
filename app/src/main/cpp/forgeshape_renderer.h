@@ -21,6 +21,7 @@
 
 #include "forgeshape_camera.h"
 #include "forgeshape_display.h"
+#include "forgeshape_gizmo.h"
 #include "forgeshape_grid.h"
 #include "forgeshape_mesh.h"
 #include "forgeshape_object_id.h"
@@ -107,6 +108,16 @@ public:
     // Only the Smooth/Faceted choice can cause any work beyond a uniform
     // change, and even that is confined to the render-only derived mesh.
     void setDisplaySettings(const ViewportDisplaySettings& settings) { display_ = settings; }
+
+    // Installs the Construction gizmo state the next frame draws, consumed
+    // verbatim exactly like the camera and the display settings.
+    //
+    // A GizmoSnapshot carries a pivot, a scale, a mode and which handle is
+    // held — and deliberately no ObjectId, no dimension and no primitive
+    // parameter. The renderer cannot learn WHICH body it is drawing a handle
+    // for, which is what keeps a tool overlay from becoming a second route by
+    // which the render layer knows about identity.
+    void setGizmo(const GizmoSnapshot& gizmo) { gizmo_ = gizmo; }
 
     // Device-independent setup: Vulkan instance only.
     bool createInstance();
@@ -195,6 +206,26 @@ private:
     // is depth-tested, depth-biased away and does not write depth — can never
     // punch through it.
     void recordGridDraw(VkCommandBuffer cmd);
+
+    // --- Construction Move / Rotate gizmo (renderer-owned, render thread) ----
+    //
+    // Same shape as the grid, and for the same reasons: the gizmo geometry is a
+    // compile-time constant of forgeshape_gizmo.h authored in a canonical
+    // reference-unit space, so it is generated and uploaded EXACTLY ONCE with
+    // the device. Where the gizmo IS and how large it is on screen are a matrix
+    // this frame, never a buffer rewrite — so a drag, an orbit and a dolly all
+    // re-upload nothing at all.
+    //
+    // It has no ObjectId and never goes through BodyRenderResources: a handle is
+    // a tool, not a Construction Body, and it must never become one.
+    bool createGizmoResources();
+    void destroyGizmoResources();
+    bool createGizmoPipeline();
+    // Records the gizmo last of all, on its own pipeline, with depth testing
+    // OFF so a handle is reachable even where it lies inside the body it moves.
+    // It writes no depth either, so it leaves the buffer exactly as the bodies
+    // and the grid left it and nothing drawn after it could be occluded by it.
+    void recordGizmoDraw(VkCommandBuffer cmd);
     // Waits on the renderer's own frame fences (never vkDeviceWaitIdle /
     // vkQueueWaitIdle) so no in-flight frame can still reference the mesh
     // buffers that are about to be overwritten or destroyed.
@@ -297,6 +328,17 @@ private:
     VkDeviceMemory gridVertexMemory_ = VK_NULL_HANDLE;
     uint32_t gridVertexCount_ = 0;
 
+    // The gizmo's own shaders, layout and buffer. A separate layout with no
+    // descriptor set, exactly like the grid's: a handle consults no sampler,
+    // takes no light and ignores the shading model, and saying so in the layout
+    // is what keeps a future reader from believing otherwise.
+    VkShaderModule gizmoVertShader_ = VK_NULL_HANDLE;
+    VkShaderModule gizmoFragShader_ = VK_NULL_HANDLE;
+    VkPipelineLayout gizmoPipelineLayout_ = VK_NULL_HANDLE;
+    VkBuffer gizmoVertexBuffer_ = VK_NULL_HANDLE;
+    VkDeviceMemory gizmoVertexMemory_ = VK_NULL_HANDLE;
+    uint32_t gizmoVertexCount_ = 0;
+
     // Surface-dependent
     ANativeWindow* window_ = nullptr;
     VkSurfaceKHR surface_ = VK_NULL_HANDLE;
@@ -320,6 +362,8 @@ private:
     // Swapchain-dependent exactly like pipeline_, because it bakes the viewport
     // and the render pass in the same way.
     VkPipeline gridPipeline_ = VK_NULL_HANDLE;
+    // Swapchain-dependent for the same reason gridPipeline_ is.
+    VkPipeline gizmoPipeline_ = VK_NULL_HANDLE;
 
     // Frames in flight
     static constexpr uint32_t kMaxFramesInFlight = 2;
@@ -341,6 +385,11 @@ private:
     // and pushed in per frame; the defaults here only cover the frames before
     // the first snapshot arrives.
     ViewportDisplaySettings display_{};
+
+    // Where the Construction gizmo is, how big it is on screen and which handle
+    // is held. Invisible by default, so a frame recorded before anything pushes
+    // one draws no handles rather than handles at the origin.
+    GizmoSnapshot gizmo_{};
 
     // True when this swapchain deliberately declared a pre-transform the surface
     // does not currently use (the identity-pre-transform orientation

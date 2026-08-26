@@ -87,6 +87,10 @@ forgeshape_jni.cpp            render thread, ANativeWindow, MotionEvent ->
 | Which parameters belong to which primitive | `PrimitiveSpec`'s payload variant | no caller reads a primitive's numbers as another's; the kind is derived from the payload, not stored beside it |
 | Authoritative primitive update **and** its mesh publication | `applyPrimitive` (`forgeshape_construction.{h,cpp}`) | JNI and Java restate none of this rule |
 | The Construction transaction boundary and the whole Undo/Redo history | `ConstructionHistory` (`forgeshape_history.{h,cpp}`) | Java holds no history, no depth counter and no mirror scene; it holds no sculpt vertex, no `SculptRevision` and no mesh data of any kind |
+| Which handle a touch landed on, the drag solver, and the transaction around one drag | `GizmoSession` (`forgeshape_gizmo.{h,cpp}`) | it owns NO transform of its own — the authoritative `ConstructionTransform` moves throughout the drag; Java owns no pivot, no solver and no captured pointer |
+| Whether there IS a gizmo at all (product mode, rail context, a body to act on) | `EditorWorkspaceView` | it decides nothing about where the handles are, how large they are or what a drag means; it pushes one boolean, one mode index and the display's pixel scale |
+| The gizmo's canonical geometry, axis colours and reference-unit sizes | `forgeshape_gizmo.{h,cpp}` | it is not a `SceneObject`, has no `ObjectId` or revision, is never published, is not pickable by `pickScene`, and is not exported |
+| The raw-delta → applied-delta quantization seam | `quantizeGizmoTranslation` / `quantizeGizmoRotation` | the identity today; there is no Grid Snap contract, no setting and no hidden snapping |
 | Authoritative placement (double-meter position, double-degree rotation) and the derived model/inverse matrices | `ConstructionTransform` (`forgeshape_transform.{h,cpp}`) | no JNI/Android/Vulkan/renderer/UI types; it cannot publish a mesh because it cannot reach `MeshStore` |
 | The axis and Euler convention | `forgeshape_transform.h` | the renderer and the picker define none of their own |
 | World ray → local object ray | `transformRayToLocal` (`forgeshape_picking.{h,cpp}`) | no Vulkan state is consulted |
@@ -1431,14 +1435,131 @@ Both acts are refused below JNI while sculpting, and the workspace withdraws the
 controls there. The guard stays regardless: removing a control is not removing a
 guard.
 
-### The Stage 020 coalescing boundary
+### The drag coalescing boundary
 
-Everything the direct Move/Rotate gizmo needs already exists and is verified
-without it: a drag calls `beginConstructionEdit()` on down, drives
-`applyBoxTransform` on every move exactly as the numeric field does,
-`commitConstructionEdit()` on up — one step, however many frames — and
-`cancelConstructionEdit()` if the gesture is abandoned. No history code belongs
-in the gizmo, and the gizmo adds no new transform convention.
+A gizmo drag uses the boundary exactly as designed and adds no history code of
+its own. `GizmoSession::beginDrag` opens ONE edit on the pointer down; every
+`updateDrag` is an ordinary `applyTransformValues` inside it, precisely as a
+typed field is; `commitDrag` closes it once and records at most one step;
+`cancelDrag` puts the captured state back and records nothing. A drag of one
+sample and a drag of a thousand cost the history the same, and a tap costs it
+nothing — because the commit compares Construction state rather than trusting
+that a gesture happened.
+
+## The Construction Move / Rotate gizmo
+
+`forgeshape_gizmo.{h,cpp}` owns direct manipulation of a body's placement:
+which handle a pointer landed on, which pointer is captured, the drag solver,
+and the transaction around one drag. It is platform-neutral C++17 — a
+`CameraSnapshot`, a viewport size in pixels and a platform-neutral pointer
+position cross in; a snapshot the renderer can draw crosses out.
+
+**It owns no transform.** The authoritative `ConstructionTransform` of the
+captured body moves throughout the drag, so the renderer, the picker and the
+exact-value editors read the same numbers mid-drag that they read at rest.
+There is no second solver, no parallel pivot and no Java-side placement.
+
+### World axes, and the pivot
+
+The three Move handles and the three Rotate rings are world X, Y and Z. They do
+not rotate with the body; there is no Local/World toggle, no custom pivot, no
+plane or free-move handle and no Scale. The pivot is the body's authoritative
+Construction placement origin — never a mesh AABB centre, a screen-space
+centroid or a camera-facing proxy, all of which are derived products of the
+truth this gizmo writes.
+
+Rotation goes through the **existing** exact-transform convention and invents no
+second one: a ring accumulates a signed angle and adds it to that axis's Euler
+component, which is what the Property Inspector reads and writes. Since
+`Model = T * Rz * Ry * Rx`, the Z ring is a true world-Z rotation always, and
+the X and Y rings are world-true whenever the components outside them are zero.
+That is the MVP's stated limit — and it is why there is no local-axis mode: one
+would have to invent a second Euler order to deliver it.
+
+### One scale for drawing and for grabbing
+
+The gizmo is anchored in 3D and **sized in screen units**, so it stays reachable
+at any zoom. `gizmoWorldScale` derives one uniform world length per reference
+unit from the camera's own projection matrix and the pivot's depth — reading
+`proj.m[5]` rather than a remembered field of view, so it cannot drift from what
+is drawn. Both the renderer's model matrix and the hit test use that same scale,
+which is what keeps what the user sees and what the finger can grab from ever
+disagreeing.
+
+Hit-testing is done in **pixels**, against the projected geometry, rather than
+as three ray/cylinder and three ray/torus tests: measuring in pixels is what
+lets the 48-unit hit corridor (`2 * kGizmoHitSlopUnits`) be a number the domain
+states rather than an aspiration. The inner quarter of each shaft is excluded,
+because all three converge at the pivot and a touch there names no axis. The
+three rings genuinely intersect — the X and Z rings both pass through +Y, and so
+on — so a touch at a crossing is resolved deterministically (X, then Y, then Z,
+on an exact tie), and `gizmoRingGrabOffset` is the one definition of a point
+that names a single ring.
+
+### The Move solver, and its degeneracy
+
+Closest approach between the pick ray and the infinite axis line. The
+denominator is `1 - cos²` of the angle between them and vanishes exactly when
+they are parallel; below `kGizmoAxisParallelDenominator` (about 8°) the solver
+falls back to the intersection with the camera-facing plane **through** the
+axis, projected back onto the axis — the constraint is still the axis, only the
+surface read against has changed. When that plane is edge-on too, the result is
+`Unresolvable`: the drag writes nothing and holds its last good value. Guessing
+there is what produces the jump the status exists to prevent. Every sample is
+applied from the START values rather than incrementally, so a long drag cannot
+accumulate the solver's own rounding.
+
+### The Rotate solver, and its degeneracy
+
+The pointer ray meets the ring plane; the signed angle from the drag's first
+spoke is `atan2(axis · (a × b), a · b)`, which keeps its sign and its precision
+near 0 and π where an `acos` has neither. Consecutive samples are far less than
+half a turn apart, so `unwrapAngleDelta` turns each raw difference into the real
+motion: crossing ±180° is not a jump, and because the accumulator is never
+itself reduced, a drag past a full turn keeps going — 350 + 30 reads back as
+380, matching the exact-transform convention that keeps what the user did. An
+edge-on ring is refused by `intersectRayPlane`, and refusing IS the documented
+fallback: the body stops rather than spinning on noise, and resumes the moment
+the plane has something to intersect again.
+
+### Input arbitration
+
+Decided once, on the pointer down, in `forgeshape_jni.cpp` beside the sculpt
+arbitration and mutually exclusive with it by product mode. A pointer that goes
+down **on a handle** belongs to the gizmo for the whole of its life and is
+swallowed — neither the camera nor the selection sees it. A pointer that goes
+down anywhere else navigates and picks exactly as it always has: orbit, pan,
+pinch and tap are untouched away from the handles.
+
+The gizmo follows ONE pointer by stable id, never by index. A second finger does
+not steer it and does not get to orbit around it either: it **cancels** the
+drag, restoring the placement to where the first finger found it and recording
+nothing. `ACTION_CANCEL` does the same. A drag can only move the body it started
+on, whatever the selection does underneath it.
+
+### Cost
+
+A transform-only drag publishes no mesh revision, uploads nothing and
+regenerates no primitive, because `applyTransformValues` cannot reach a
+`MeshStore` — the same structural guarantee a typed Apply already had. The
+renderer's gizmo geometry is a compile-time constant uploaded once with the
+device (`FORGESHAPE_GIZMO_UPLOAD_OK`, logged once per device); where the gizmo
+is and how large it looks are a push-constant matrix per frame. Switching Move
+to Rotate changes two integers on one `vkCmdDraw`.
+
+The gizmo pass is last in the frame, on its own pipeline with no descriptor set,
+with depth test AND depth write off. Off so a handle stays reachable where it
+passes through the body it moves; no write so the depth buffer is left exactly
+as the bodies and the grid left it.
+
+### The quantization seam
+
+`quantizeGizmoTranslation` and `quantizeGizmoRotation` are the one place a raw
+constrained delta becomes the applied one. Both are the identity. Grid Snap has
+no approved contract — no translational increment, no relation to the display
+unit, no rotational increment — so there is no setting, no indicator and no
+hidden snapping; the seam exists so that an approved contract lands in two
+functions instead of in the gesture architecture.
 
 ## Construction transform
 

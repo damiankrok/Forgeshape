@@ -115,6 +115,18 @@ final class WorkspaceTestSupport {
     // control by coordinate.
     // -----------------------------------------------------------------------
 
+    /**
+     * Holds the Construction context named by a Tool Rail entry id.
+     *
+     * <p>Drives the entry a user would press rather than writing the UI state,
+     * so a case that needs Transform is exercising the same path the product
+     * ships — including everything the workspace does as a consequence, which
+     * for Transform is the gizmo appearing.
+     */
+    static void selectConstructionTool(EditorWorkspaceView workspace, int entryId) {
+        workspace.findViewById(entryId).performClick();
+    }
+
     /** Opens the precision surface from the Tool Rail's own toggle. */
     static void openPrecision(EditorWorkspaceView workspace) {
         if (!workspace.propertyInspector().isOpen()) {

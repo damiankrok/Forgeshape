@@ -146,6 +146,10 @@
     <string name="inspector_close">Close exact values</string>
     <string name="inspector_sculpt_title">Sculpt details</string>
     <!-- What the precision toggle opens, named by the held tool. -->
+    <!-- The two kinds of direct manipulation the viewport handles perform. -->
+    <string name="transform_mode_move">Move handles</string>
+    <string name="transform_mode_rotate">Rotate handles</string>
+
     <string name="precision_shape">Exact shape</string>
     <string name="precision_transform">Exact transform</string>
     <string name="precision_sculpt">Details</string>

@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Move: drag the axis handles to change the Body's Position.
+
+  Two arrowed shafts crossing at a marked pivot — the same instrument the
+  viewport draws, reduced to what reads at 20 dp. The pivot dot is not
+  decoration: it is the one part of the gizmo that says the transform is ABOUT
+  a point, which is what distinguishes this from a generic four-way pad.
+
+  Drawn white and tinted at use; see EditorControlStyles.iconButton(). Nothing
+  here encodes a state — active and pressed come from the same tint list every
+  other control reads.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M12,3.5 L12,20.5 M3.5,12 L20.5,12" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M9.2,6.3 L12,3.5 L14.8,6.3 M9.2,17.7 L12,20.5 L14.8,17.7 M6.3,9.2 L3.5,12 L6.3,14.8 M17.7,9.2 L20.5,12 L17.7,14.8" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,10.1 A1.9,1.9 0 1,1 11.99,10.1 Z" />
+</vector>

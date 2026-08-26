@@ -156,6 +156,19 @@
     -->
     <item name="precision_toggle" type="id" />
 
+    <!--
+      The Move / Rotate selector, anchored to the trailing tool cluster and
+      present only while Transform is the held Construction context.
+
+      These name the ACT — which kind of direct manipulation the axis handles
+      perform — and not the label, so copy can never rename one. The group id
+      exists so verification can ask whether the selector is on screen at all
+      without inferring it from one of its buttons.
+    -->
+    <item name="transform_mode_group" type="id" />
+    <item name="transform_mode_move" type="id" />
+    <item name="transform_mode_rotate" type="id" />
+
     <!-- Direct Sculpt brush controls -->
     <item name="brush_edge_controls" type="id" />
     <item name="brush_radius_slider" type="id" />

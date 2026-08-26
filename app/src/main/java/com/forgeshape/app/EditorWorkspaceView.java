@@ -140,6 +140,19 @@ final class EditorWorkspaceView extends FrameLayout
      */
     private final LinearLayout railColumn;
 
+    /**
+     * The Move / Rotate selector, and the two controls in it.
+     *
+     * <p>Present only where Transform is held in Construction and there is a
+     * body to act on — absent, not disabled, everywhere else. Which of the two
+     * is drawn active is <b>read back</b> from the one native gizmo session
+     * after every request, exactly as the Tool Rail reads back the held tool, so
+     * this can never claim a mode the session is not in.
+     */
+    private final LinearLayout transformModeGroup;
+    private final ImageView transformMoveAction;
+    private final ImageView transformRotateAction;
+
     /** The capsule the precision toggle sits in, so it wears the same floating
      *  material as the rail above it rather than standing bare on the model. */
     private final LinearLayout precisionGroup;
@@ -213,6 +226,21 @@ final class EditorWorkspaceView extends FrameLayout
 
     /** Reused across reads; native fills it with the authoritative state. */
     private final double[] nativeSculpt = new double[NativeViewport.SCULPT_STATE_SIZE];
+
+    /** Scratch for the gizmo read-back. Reused rather than allocated per
+     *  refresh: this is read on every sync and on every settled gesture. */
+    private final double[] nativeGizmo = new double[NativeViewport.GIZMO_STATE_SIZE];
+
+    /**
+     * How many gizmo drags had committed a step when a gesture last settled.
+     *
+     * <p>NOT a history depth and not a mirror of one: it is a monotone counter
+     * used for exactly one comparison — did the model move under the finger, or
+     * did the camera merely orbit. Without it every viewport gesture in
+     * Transform would re-read the exact-value editors and discard a half-typed
+     * draft.
+     */
+    private long lastKnownGizmoCommits;
 
     private WorkspaceLayoutMode layoutMode = WorkspaceLayoutMode.COMPACT;
     private WorkspaceLayoutMode.InspectorPlacement inspectorPlacement =
@@ -292,6 +320,21 @@ final class EditorWorkspaceView extends FrameLayout
                             final long active = NativeViewport.sceneActiveBodyId();
                             if (active != lastKnownActiveBodyId) {
                                 lastKnownActiveBodyId = active;
+                                onNativeStateChanged();
+                                return;
+                            }
+                            // A gizmo drag that committed a step moved the
+                            // authoritative placement, so the exact values and
+                            // the history controls both have something new to
+                            // say. An orbit did not, and re-reading for one
+                            // would throw away a half-typed draft — which is
+                            // why this asks whether a drag COMMITTED rather
+                            // than whether a gesture happened.
+                            NativeViewport.gizmoState(nativeGizmo);
+                            final long commits =
+                                    (long) nativeGizmo[NativeViewport.GIZMO_COMMITTED_DRAGS];
+                            if (commits != lastKnownGizmoCommits) {
+                                lastKnownGizmoCommits = commits;
                                 onNativeStateChanged();
                             }
                         }
@@ -410,6 +453,55 @@ final class EditorWorkspaceView extends FrameLayout
         EditorControlStyles.allowChildShadows(railColumn);
         railColumn.addView(toolRailScroll, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        // The Move / Rotate selector: a two-button capsule directly under the
+        // rail, inside the same trailing cluster the Transform entry lives in.
+        //
+        // Not three rail entries. The rail says WHICH Construction context is
+        // held — Shape or Transform — and splitting Transform into Move and
+        // Rotate up there would put two entries on a permanent control for a
+        // choice that only exists inside one of them. This is the contextual
+        // half of that entry, and it is absent everywhere the context is.
+        //
+        // Vertical wherever the window has the height for it, so the cluster
+        // keeps the width the rail already occupies: a horizontal pair would
+        // push the trailing edge inward on every window, for a control that is
+        // on screen only some of the time. A window too short for a third
+        // stacked capsule turns it on its side instead — see
+        // applyTransformModeOrientation.
+        transformModeGroup = EditorControlStyles.controlGroup(context);
+        transformModeGroup.setId(R.id.transform_mode_group);
+        transformModeGroup.setOrientation(LinearLayout.VERTICAL);
+        transformModeGroup.setGravity(Gravity.CENTER_HORIZONTAL);
+        transformMoveAction = EditorControlStyles.iconButton(context, R.id.transform_mode_move,
+                R.drawable.ic_gizmo_move, context.getString(R.string.transform_mode_move));
+        transformMoveAction.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                onTransformModeRequested(NativeViewport.GIZMO_MODE_MOVE);
+            }
+        });
+        transformModeGroup.addView(transformMoveAction,
+                EditorControlStyles.iconButtonParams(context, 0));
+        transformRotateAction = EditorControlStyles.iconButton(context,
+                R.id.transform_mode_rotate, R.drawable.ic_gizmo_rotate,
+                context.getString(R.string.transform_mode_rotate));
+        transformRotateAction.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                onTransformModeRequested(NativeViewport.GIZMO_MODE_ROTATE);
+            }
+        });
+        final LinearLayout.LayoutParams rotateParams =
+                EditorControlStyles.iconButtonParams(context, 0);
+        rotateParams.topMargin = EditorControlStyles.dimen(context, R.dimen.toolbar_gap);
+        transformModeGroup.addView(transformRotateAction, rotateParams);
+        transformModeGroup.setVisibility(GONE);
+        final LinearLayout.LayoutParams transformModeParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        transformModeParams.topMargin =
+                EditorControlStyles.dimen(context, R.dimen.row_gap_small);
+        railColumn.addView(transformModeGroup, transformModeParams);
 
         precisionGroup = EditorControlStyles.controlGroup(context);
         precisionToggle = EditorControlStyles.iconButton(context, R.id.precision_toggle,
@@ -654,7 +746,9 @@ final class EditorWorkspaceView extends FrameLayout
         // context-bearing surfaces that a narrow row squeezes to nothing. See
         // GlobalToolbarView#setContextLabelVisible.
         toolbar.setContextLabelVisible(layoutMode != WorkspaceLayoutMode.COMPACT);
-        toolRail.setCompactEntries(heightDp < WorkspaceLayoutMode.LOW_HEIGHT_MAX_DP);
+        final boolean shortWindow = heightDp < WorkspaceLayoutMode.LOW_HEIGHT_MAX_DP;
+        toolRail.setCompactEntries(shortWindow);
+        applyTransformModeOrientation(shortWindow);
         // Roughly half the window's height for the two brush tracks, bounded by
         // the control's own sensible range, so they shrink with the window
         // instead of being clipped by it.
@@ -664,6 +758,41 @@ final class EditorWorkspaceView extends FrameLayout
         applyObjectsPlacement();
         applyRailDock(layoutMode.railDocked());
         placeInspector(layoutMode.inspectorPlacement(heightDp), widthDp, heightDp);
+    }
+
+    /**
+     * Lays the Move / Rotate pair out along the axis the window has room on.
+     *
+     * <p>A short window is the one that cannot take a third stacked capsule in
+     * the trailing cluster. Left vertical there, the column overflows and the
+     * LAST child — the precision toggle — is the one Android squeezes, which
+     * put a shipped 48 dp control at 14 dp. The pair turns on its side instead:
+     * a landscape window is short and wide, so a row of two costs width it has
+     * and returns the height it does not.
+     *
+     * <p>Nothing else about the control changes — same two ids, same glyphs,
+     * same 48 dp targets, same capsule. It is the same control in a different
+     * window, not a second design for one.
+     */
+    private void applyTransformModeOrientation(boolean shortWindow) {
+        final int orientation = shortWindow ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL;
+        if (transformModeGroup.getOrientation() == orientation) {
+            return;
+        }
+        transformModeGroup.setOrientation(orientation);
+        transformModeGroup.setGravity(shortWindow
+                ? Gravity.CENTER_VERTICAL : Gravity.CENTER_HORIZONTAL);
+        // The gap moves with the axis: whichever margin was separating the two
+        // is cleared and the other takes it, so the pair never carries a stale
+        // offset from the layout it used to be in.
+        final int gap = EditorControlStyles.dimen(getContext(), R.dimen.toolbar_gap);
+        final ViewGroup.LayoutParams params = transformRotateAction.getLayoutParams();
+        if (params instanceof LinearLayout.LayoutParams) {
+            final LinearLayout.LayoutParams rotate = (LinearLayout.LayoutParams) params;
+            rotate.topMargin = shortWindow ? 0 : gap;
+            rotate.leftMargin = shortWindow ? gap : 0;
+            transformRotateAction.setLayoutParams(rotate);
+        }
     }
 
     /**
@@ -1280,6 +1409,14 @@ final class EditorWorkspaceView extends FrameLayout
     public void onConstructionStartChosen() {
         uiState.recordStartChoice();
         showStartChooser(false);
+        // Bracketed even though this branch mutates nothing, and deliberately.
+        // Both answers to the start question are the same moment — the session
+        // being seeded — and the boundary is what states its postcondition: an
+        // empty Construction history before the user's first act. Making only
+        // the branch that happens to mutate carry it would make the invariant
+        // depend on which answer was pressed.
+        NativeViewport.beginSessionInitialization();
+        NativeViewport.endSessionInitialization();
         syncFromNative();
     }
 
@@ -1314,6 +1451,14 @@ final class EditorWorkspaceView extends FrameLayout
         uiState.recordStartChoice();
         showStartChooser(false);
 
+        // Everything this branch does to reach a sculptable mesh is SESSION
+        // SEEDING, not a user edit. Shaping the body into a sphere is a real
+        // Construction change and would otherwise be recorded — and the user's
+        // first Undo would then rewind the answer they gave to the start
+        // question rather than anything they did. The boundary is closed on
+        // every path out of here, refusal included, so a failed start cannot
+        // leave the session inside it.
+        NativeViewport.beginSessionInitialization();
         final double[] primitive = new double[NativeViewport.PRIMITIVE_STATE_SIZE];
         NativeViewport.constructionPrimitive(primitive);
         final int applied = NativeViewport.applyConstructionSphere(
@@ -1323,11 +1468,13 @@ final class EditorWorkspaceView extends FrameLayout
         final boolean shaped = applied == NativeViewport.APPLY_APPLIED
                 || applied == NativeViewport.APPLY_UNCHANGED;
         if (!shaped || NativeViewport.freezeToSculpt() != NativeViewport.SCULPT_OK) {
+            NativeViewport.endSessionInitialization();
             syncFromNative();
             showStatus(getContext().getString(R.string.status_sculpt_start_failed),
                     R.attr.fsTextError);
             return;
         }
+        NativeViewport.endSessionInitialization();
         finishEditing();
         syncFromNative();
         showStatus(getContext().getString(R.string.status_started_sculpt),
@@ -1409,10 +1556,67 @@ final class EditorWorkspaceView extends FrameLayout
             toolRail.showActive(uiState.constructionTool());
         }
         objectsCapsule.refreshFromNative();
+        refreshTransformGizmo(sculpting);
         refreshHistoryControls(sculpting);
         showActiveInspectorBody(sculpting);
         showPrecisionToggle(sculpting);
         showDefaultStatus(sculpting);
+    }
+
+    /**
+     * Tells native code whether there is a gizmo, and draws the selector to
+     * match what it reports back.
+     *
+     * <p><b>This layer owns WHEN, and nothing else.</b> There is a gizmo exactly
+     * when the product is in Construction, the held rail entry is Transform, and
+     * a body exists to act on — three workspace facts, which is why they are
+     * decided here. Where the handles are, how large they are on screen, which
+     * one a touch lands on and what a drag means are all camera and placement
+     * questions with one owner below JNI, and none of them is answered, cached
+     * or second-guessed on this side.
+     *
+     * <p>The selector is <b>absent</b> rather than disabled everywhere there is
+     * no gizmo, for the same reason creation is absent while sculpting: a
+     * control that cannot succeed is not drawn. And which of Move or Rotate is
+     * drawn active is read back from the session after the request, exactly as
+     * the Tool Rail reads back the held brush, so the pair can never claim a
+     * mode the session is not in.
+     */
+    private void refreshTransformGizmo(boolean sculpting) {
+        // The display's own scale, pushed from the one place that knows it.
+        // Native code sizes the handles and their hit corridors in reference
+        // units — what Android calls dp — and this is the only number this side
+        // contributes to that. Pushed on every refresh rather than once, because
+        // a window that moves to another display changes it and an atomic float
+        // store is not worth a lifecycle hook to avoid.
+        NativeViewport.setGizmoPixelScale(getResources().getDisplayMetrics().density);
+        final boolean offered = !sculpting
+                && uiState.constructionTool() == EditorUiState.CONSTRUCTION_TOOL_TRANSFORM
+                && NativeViewport.sceneActiveBodyId() != NativeViewport.NO_OBJECT;
+        NativeViewport.setGizmoActive(offered);
+        transformModeGroup.setVisibility(offered ? VISIBLE : GONE);
+        if (!offered) {
+            return;
+        }
+        NativeViewport.gizmoState(nativeGizmo);
+        final int mode = (int) nativeGizmo[NativeViewport.GIZMO_MODE];
+        EditorControlStyles.setIconButtonActive(transformMoveAction,
+                mode == NativeViewport.GIZMO_MODE_MOVE);
+        EditorControlStyles.setIconButtonActive(transformRotateAction,
+                mode == NativeViewport.GIZMO_MODE_ROTATE);
+    }
+
+    /**
+     * Asks for Move or Rotate, then redraws from what the session reports.
+     *
+     * <p>Costs the model nothing: no mesh revision, no geometry publication and
+     * no history step. It deliberately does not re-read the exact-value editors
+     * either — nothing about the object changed, and a refresh would discard a
+     * half-typed draft for a presentation-only act.
+     */
+    private void onTransformModeRequested(int mode) {
+        NativeViewport.setGizmoMode(mode);
+        refreshTransformGizmo(false);
     }
 
     /**
@@ -1724,6 +1928,11 @@ final class EditorWorkspaceView extends FrameLayout
         uiState.setConstructionTool(key);
         toolRail.showActive(uiState.constructionTool());
         showActiveInspectorBody(false);
+        // Transform is the entry that owns direct manipulation, so the handles
+        // and their Move/Rotate selector arrive with it and leave with it. This
+        // publishes no geometry and records no history: it only tells the one
+        // native session whether there is a gizmo at all.
+        refreshTransformGizmo(false);
         // The toggle belongs to the entry above it, so it re-names itself with
         // the entry. Whether the surface is OPEN is unchanged: switching
         // context while the numbers are on screen swaps the body rather than
@@ -2153,6 +2362,20 @@ final class EditorWorkspaceView extends FrameLayout
         return brushControls;
     }
 
+    /** The Move / Rotate selector, so a test can read whether it is on screen
+     *  and press it the way a user does rather than calling into the workspace. */
+    LinearLayout transformModeGroup() {
+        return transformModeGroup;
+    }
+
+    ImageView transformMoveAction() {
+        return transformMoveAction;
+    }
+
+    ImageView transformRotateAction() {
+        return transformRotateAction;
+    }
+
     /** The rail's precision toggle, so a test can open the exact values the way
      *  a user does rather than by calling into the workspace. */
     ImageView precisionToggle() {
@@ -2248,7 +2471,7 @@ final class EditorWorkspaceView extends FrameLayout
         // capsules inside it are: the row spans the window and paints nothing,
         // and counting it would report the bottom bar the composition
         // deliberately does not have.
-        final View[] surfaces = {brushControls, toolRailScroll, precisionGroup,
+        final View[] surfaces = {brushControls, toolRailScroll, transformModeGroup, precisionGroup,
                 objectsCapsule, historyGroup, inspector, objectsDock};
         final View[] top = toolbar.occludingSurfaces();
         final View[] all = new View[surfaces.length + top.length];

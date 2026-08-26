@@ -68,6 +68,14 @@ bool ConstructionHistory::commitEdit() {
         return false;
     }
     editOpen_ = false;
+    if (sessionInitializing_) {
+        // Seeding a session is not a user act. The edit is CLOSED — so nothing
+        // is left open for the first real edit to collide with — and the live
+        // scene keeps whatever the seed just did to it, because suppressing a
+        // recording is not undoing a mutation.
+        editPreState_ = SceneConstructionState{};
+        return false;
+    }
     SceneConstructionState after = captureSceneConstructionState(scene_);
     if (sameSceneConstructionState(editPreState_, after)) {
         // Nothing happened, so nothing is recorded and — the part that matters —
@@ -97,6 +105,29 @@ void ConstructionHistory::cancelEdit(ConstructionRestoreReport* outReport) {
     }
     editOpen_ = false;
     applyState(editPreState_, outReport);
+}
+
+// ---------------------------------------------------------------------------
+// The session initialization boundary
+// ---------------------------------------------------------------------------
+
+void ConstructionHistory::beginSessionInitialization() {
+    sessionInitializing_ = true;
+}
+
+void ConstructionHistory::endSessionInitialization() {
+    sessionInitializing_ = false;
+    // A seed that left an edit open would hand the first user act a transaction
+    // it did not open. Close it the way a cancelled one closes — recording
+    // nothing — rather than leaving the flag to decide.
+    editOpen_ = false;
+    editPreState_ = SceneConstructionState{};
+    // The postcondition, stated rather than assumed: a session that has just
+    // started has nothing to go back to and nothing to go forward to. The scene
+    // itself is untouched; forgetting how to go back is not going back.
+    undoStack_.clear();
+    redoStack_.clear();
+    detached_.clear();
 }
 
 // ---------------------------------------------------------------------------

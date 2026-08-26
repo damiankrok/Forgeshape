@@ -26,7 +26,7 @@ set(FORGESHAPE_SHADER_OUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated_shaders")
 file(MAKE_DIRECTORY "${FORGESHAPE_SHADER_OUT_DIR}")
 
 set(FORGESHAPE_SHADER_HEADERS "")
-foreach(shader surface.vert surface.frag grid.vert grid.frag)
+foreach(shader surface.vert surface.frag grid.vert grid.frag gizmo.vert gizmo.frag)
     set(_src "${CMAKE_CURRENT_SOURCE_DIR}/shaders/${shader}")
     set(_out "${FORGESHAPE_SHADER_OUT_DIR}/${shader}.spv.inc")
     add_custom_command(
@@ -52,6 +52,8 @@ add_library(forgeshape_native SHARED
     forgeshape_cone_capsule_selftest.cpp
     forgeshape_demo_mesh.cpp
     forgeshape_display.cpp
+    forgeshape_gizmo.cpp
+    forgeshape_gizmo_selftest.cpp
     forgeshape_grid.cpp
     forgeshape_history.cpp
     forgeshape_history_selftest.cpp

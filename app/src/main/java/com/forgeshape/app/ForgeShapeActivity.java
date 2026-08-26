@@ -173,6 +173,10 @@ public final class ForgeShapeActivity extends Activity {
             case KeyEvent.KEYCODE_D: command = 20; break;  // stress mesh tier: ~250k vertices
             case KeyEvent.KEYCODE_E: command = 21; break;  // stress mesh tier: ~500k vertices
             case KeyEvent.KEYCODE_F: command = 22; break;  // freeze last stress tier to Sculpt
+            // Where the gizmo's pivot and handles are on screen right now, so a
+            // walkthrough can drive a real drag against a real handle without
+            // ever writing a coordinate down. Reports only; grabs nothing.
+            case KeyEvent.KEYCODE_G: command = 23; break;  // log gizmo handle pixels
             default: return super.onKeyDown(keyCode, event);
         }
         if (NativeViewport.debugMeshCommand(command)) {

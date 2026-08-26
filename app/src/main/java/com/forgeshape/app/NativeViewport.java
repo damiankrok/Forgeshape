@@ -176,6 +176,10 @@ final class NativeViewport {
     /** The active primitive is a plane. */
     static final int PRIMITIVE_PLANE = 5;
 
+    /** Index of the ACTIVE primitive kind within that array: a {@code
+     *  PRIMITIVE_*} constant carried as a double. */
+    static final int PRIMITIVE_KIND = 0;
+
     /** Length of the array {@link #constructionPrimitive} fills. */
     static final int PRIMITIVE_STATE_SIZE = 13;
 
@@ -422,6 +426,12 @@ final class NativeViewport {
      */
     static native int sceneBodyIds(long[] outIds);
 
+    /**
+     * The ObjectId meaning "no object". Zero, matching kNoObject below JNI, and
+     * declared once here so nothing above it writes a bare literal.
+     */
+    static final long NO_OBJECT = 0L;
+
     /** @return the ObjectId of the body the Construction editors act on */
     static native long sceneActiveBodyId();
 
@@ -478,6 +488,172 @@ final class NativeViewport {
      * state how many publications one product act cost.
      */
     static native long constructionMeshRevision();
+
+    // -----------------------------------------------------------------------
+    // The Construction Move / Rotate gizmo
+    // -----------------------------------------------------------------------
+    //
+    // This side owns WHEN there is a gizmo — which product mode, which Tool Rail
+    // context, whether a body exists. It owns nothing about WHERE the handles
+    // are, how large they are, which one a touch landed on, what a drag means in
+    // world space, or when a transaction opens and closes: every one of those
+    // needs the camera, the projection and the Construction placement, and each
+    // has exactly one owner below JNI.
+    //
+    // There is deliberately no Java transform, no parallel pivot and no second
+    // solver here. A drag writes the authoritative placement directly, so the
+    // exact-value editors read the same numbers mid-drag that they read at rest.
+
+    /** Direct manipulation with the axis handles. */
+    static final int GIZMO_MODE_MOVE = 0;
+    /** Direct manipulation with the axis rings. */
+    static final int GIZMO_MODE_ROTATE = 1;
+
+    /** Size of the array {@link #gizmoState(double[])} fills. */
+    static final int GIZMO_STATE_SIZE = 10;
+    /** 1 when the workspace is offering direct transform at all. */
+    static final int GIZMO_ACTIVE = 0;
+    /** One of the {@code GIZMO_MODE_*} constants. */
+    static final int GIZMO_MODE = 1;
+    /** 1 while a drag holds a pointer. */
+    static final int GIZMO_CAPTURING = 2;
+    /** The captured pointer id, or -1. */
+    static final int GIZMO_POINTER_ID = 3;
+    /** The captured axis: 0 none, 1 X, 2 Y, 3 Z. */
+    static final int GIZMO_AXIS = 4;
+    /** The ObjectId the drag is bound to, or 0. */
+    static final int GIZMO_OBJECT_ID = 5;
+    /** How many updates the current or last drag applied. Diagnostic. */
+    static final int GIZMO_DRAG_UPDATES = 6;
+    /** 1 when handles are actually on screen for the active body. */
+    static final int GIZMO_VISIBLE = 7;
+    /** World length of one reference unit at the pivot, or 0. */
+    static final int GIZMO_WORLD_PER_UNIT = 8;
+    /** How many drags have committed a history step this session. Monotone. */
+    static final int GIZMO_COMMITTED_DRAGS = 9;
+
+    /** No handle is under that pixel. */
+    static final int GIZMO_AXIS_NONE = 0;
+    static final int GIZMO_AXIS_X = 1;
+    static final int GIZMO_AXIS_Y = 2;
+    static final int GIZMO_AXIS_Z = 3;
+
+    /**
+     * Whether the workspace is currently offering direct transform.
+     *
+     * <p>Refused with no effect while sculpting — a guard, not a UI decision.
+     * The workspace also withdraws the controls there, because a Construction
+     * transform is not a sculpt edit and a control that could be read as one
+     * would be a lie; removing a control is not removing a guard.
+     *
+     * <p>Turning it off cancels any drag in progress: a captured handle whose
+     * gizmo has gone cannot be released by the user.
+     */
+    static native void setGizmoActive(boolean active);
+
+    /**
+     * Chooses Move or Rotate.
+     *
+     * <p>Presentation state: no mesh revision, no geometry publication, no
+     * history step. Returns false for an unknown index and while a drag holds a
+     * pointer — a mode must not change under a moving finger.
+     */
+    static native boolean setGizmoMode(int mode);
+
+    /**
+     * How many physical pixels one reference unit is on this display.
+     *
+     * <p>The one number this side owns about gizmo size. The sizes themselves —
+     * how long a shaft is, how wide its hit corridor is — are the domain's, so
+     * the 48 dp interactive floor is a property of the product rather than of a
+     * layout file. Refused, changing nothing, for a non-finite or absurd scale.
+     */
+    static native boolean setGizmoPixelScale(float scale);
+
+    /** Fills {@code out} (length {@link #GIZMO_STATE_SIZE}) with gizmo state. */
+    static native void gizmoState(double[] out);
+
+    /**
+     * Which handle a pixel would grab, without grabbing it.
+     *
+     * <p>Pure: it starts nothing and mutates nothing. Verification uses it to
+     * ask where a handle is rather than encoding a coordinate that would be true
+     * for one window and one camera only.
+     *
+     * @return one of the {@code GIZMO_AXIS_*} constants
+     */
+    static native int gizmoHitTest(float x, float y);
+
+    /**
+     * Where an axis handle can be grabbed, in view-local pixels.
+     *
+     * <p>Derived from the same projection the hit test uses, so a synthetic
+     * pointer sent here reaches the same handle a finger would. Returns false,
+     * writing nothing, when that handle is not on screen.
+     *
+     * @param axis one of the {@code GIZMO_AXIS_*} constants. {@code
+     *             GIZMO_AXIS_NONE} asks for the PIVOT rather than a handle —
+     *             not something that can be grabbed, but the point a caller
+     *             needs in order to know which way along the screen an axis
+     *             actually runs
+     * @param out  two floats: x, y
+     */
+    static native boolean gizmoHandlePoint(int axis, float[] out);
+
+    /** Length of the array {@link #debugCameraPose} fills. */
+    static final int CAMERA_POSE_SIZE = 3;
+    /** Yaw in radians. */
+    static final int CAMERA_POSE_YAW = 0;
+    /** Pitch in radians. */
+    static final int CAMERA_POSE_PITCH = 1;
+    /** Orbit distance in meters. */
+    static final int CAMERA_POSE_DISTANCE = 2;
+
+    /**
+     * DEBUG-ONLY: reads the camera's orbit pose.
+     *
+     * <p>Verification infrastructure, not product functionality — no UI reaches
+     * it and it is a no-op in a release build. It exists so a case can assert
+     * that a captured gizmo handle did <b>not</b> orbit the camera, which is
+     * otherwise unobservable from this side.
+     */
+    static native void debugCameraPose(float[] out);
+
+    /**
+     * DEBUG-ONLY: places the camera's orbit pose, clamped exactly as a gesture
+     * would clamp it.
+     *
+     * <p>So that a case can say "from a viewpoint where this axis is nearly
+     * edge-on to the viewer" without first synthesising an orbit gesture of
+     * exactly the right pixel length — which would make the case a test of
+     * gesture arithmetic rather than of the solver it is about. A no-op
+     * returning false in a release build.
+     */
+    static native boolean debugSetCameraPose(float yaw, float pitch, float distance);
+
+    /**
+     * Opens the production session-initialization boundary.
+     *
+     * <p>Seeding a session is not something the user did. Answering the start
+     * question with Sculpt drives the real Construction entry points to get
+     * there — deliberately, so nothing about Freeze is duplicated — and that
+     * shapes the body into a sphere, which is a genuine Construction change.
+     * Recorded, it would be the user's first Undo, and undoing it would rewind
+     * a decision they never made.
+     *
+     * <p>Between this and {@link #endSessionInitialization()} the mutations
+     * still run and the model on screen still follows them; only the RECORDING
+     * is suppressed. The end establishes the postcondition: no undo step, no
+     * redo step.
+     *
+     * <p>Reachable from exactly one place — the start answer — and from nowhere
+     * else. Back to Construction, a rotation and a resume are outside it, and
+     * none of them may start using it to tidy a history away.
+     */
+    static native void beginSessionInitialization();
+
+    /** Closes the boundary; afterwards the Construction history is empty. */
+    static native void endSessionInitialization();
 
     /**
      * DEBUG-ONLY: forgets the Construction history without moving the scene.

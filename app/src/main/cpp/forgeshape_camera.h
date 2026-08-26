@@ -167,6 +167,32 @@ public:
     // Viewport size in pixels. Drives projection aspect and pan scaling.
     void setViewport(int width, int height);
 
+    // The size the camera is currently projecting for.
+    //
+    // Read-back, not a second truth: the camera already had to keep it for the
+    // aspect, and anything that turns a world point into a pixel — the gizmo's
+    // hit test and its screen-constant scale — needs the SAME number the
+    // projection was built from. A second copy of the viewport size kept
+    // anywhere else is a copy that can be one event out of date.
+    int viewportWidth() const { return viewportWidth_; }
+    int viewportHeight() const { return viewportHeight_; }
+
+    // Places the orbit pose directly, clamped exactly as a gesture would clamp
+    // it, and returns whether the request was usable.
+    //
+    // VERIFICATION ONLY. Nothing in the product calls it and no UI reaches it:
+    // its whole purpose is to let a case say "from THIS viewpoint" — an axis
+    // nearly edge-on to the viewer, a camera very close, a camera very far —
+    // without first having to synthesise an orbit gesture of exactly the right
+    // pixel length, which would make the case a test of gesture arithmetic
+    // rather than of the thing it is about. The JNI entry point that exposes it
+    // is compiled out of a release build.
+    //
+    // The gesture counters are deliberately NOT advanced: placing the camera is
+    // not the user orbiting it, and a case that asserts "this drag did not
+    // orbit" must not be defeated by its own setup.
+    bool setPose(float yaw, float pitch, float distance);
+
     // Feeds one complete touch event. `pointers` must describe every pointer
     // currently present in the event, including the one that is lifting on
     // PointerUp / Up (identified by `actionPointerId`, or -1 when unused).

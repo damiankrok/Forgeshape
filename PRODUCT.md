@@ -513,9 +513,56 @@ number". The object keeps the shape, size and place it already had.
 
 ## Moving and rotating the object
 
-Holding **Transform** in the Tool Rail and opening the exact values gives you the
-object's **placement**: a Position X/Y/Z in the shared display unit, a Rotation
-X/Y/Z in degrees, and a separate **Apply Transform** button.
+Holding **Transform** in the Tool Rail gives you two ways to place the object,
+and they are two front ends to the same thing. **Handles in the viewport** are
+the direct one: grab an axis and drag. **Exact values** are the precise one:
+type a number and Apply. Whichever you use, the object's **placement** is one
+set of numbers — a Position X/Y/Z in the shared display unit and a Rotation
+X/Y/Z in degrees — so a drag shows up in the fields the moment you open them,
+and a typed Apply moves the handles at once.
+
+### Dragging the handles
+
+Holding Transform draws a small instrument on the active body, and a two-button
+control beside the Tool Rail chooses what it does:
+
+- **Move handles** — three arrowed shafts, one per axis, meeting at a marked
+  point. Drag one and the object slides along that axis only.
+- **Rotate handles** — three rings, one per axis. Drag one and the object turns
+  about that axis only.
+
+The axes are the world's, not the object's: they keep pointing the same way
+however the object is turned, and they are coloured to match the world grid's
+own axis lines. The point everything happens about is the object's own position,
+so a rotation turns it in place rather than swinging it around the origin.
+
+The handles stay about the same size on screen however far the camera is, so
+they never shrink to nothing when you pull back or fill the viewport when you
+push in. They are drawn over the model on purpose — a handle you can see the
+effect of but cannot reach would be worse than one that overlaps.
+
+**One drag is one change.** However long you drag, a single **Undo** puts the
+object back where it was before you touched it. Pressing a handle and releasing
+without moving changes nothing at all.
+
+**Only the handles belong to the gizmo.** A drag that starts anywhere else in
+the viewport still orbits, pans and zooms exactly as before, and a tap still
+selects. While a handle is held, the camera does not move — and if a second
+finger lands, the drag is abandoned and the object jumps straight back to where
+it started rather than trying to be moved and orbited at once. A stylus grabs a
+handle exactly as a finger does.
+
+Handles are a Construction tool. There are none while sculpting, and the
+Move/Rotate control is not there either.
+
+Switching between Move and Rotate is not a change to the model: it records
+nothing, and Undo is unaffected by it.
+
+### Exact values
+
+Opening the exact values from the control below the Tool Rail gives the same
+placement as numbers: Position X/Y/Z, Rotation X/Y/Z, and a separate **Apply
+Transform** button.
 
 The object starts at position 0, 0, 0 m with rotation 0, 0, 0°. Placement belongs
 to the object, not to the shape, so it survives any change of shape untouched —
@@ -890,12 +937,19 @@ when the process restarts.
 Standard named views (Front, Top, Right and the rest), a view cube, a
 focus-on-selection command and any camera animation are not implemented — the
 projection can be switched, but the camera is aimed only by hand. Scaling the
-object, transform gizmos, an editable tessellation and booleans are not
-implemented: shape, position and rotation are edited only by typing exact values
-and pressing an Apply button. **There are no handles on the model to drag** —
-nothing in the viewport moves, rotates or scales a body, and the Tool Rail's
-*Transform* entry names what its numbers are about rather than promising a
-manipulator that does not exist yet. Sculpting has exactly the four tools above — other
+object, an editable tessellation and booleans are not implemented, and **shape is
+still edited only by typing exact values and pressing Apply**: there are no
+handles that resize a body.
+
+**The handles that do exist Move and Rotate, and only along world axes.** There
+is no scale handle. There is no way to switch them to the object's own axes and
+no Local/World control, so a handle always points the way the world does. There
+is no centre handle for free movement and no plane handles for moving in two
+axes at once: each drag is one axis. The point they turn and slide about is
+always the object's own position and cannot be moved. Handles are Construction's
+alone — sculpting has none.
+
+Sculpting has exactly the four tools above — other
 brushes (Flatten, Crease, Pinch and the rest), remesh, **sculpt undo**, symmetry,
 masking, layers, brush presets and stylus pressure are not implemented — the Undo
 described above is Construction's alone. There is no undo *history panel*, no
@@ -903,7 +957,8 @@ named steps and no keyboard shortcut for either control.
 
 **There is a grid, but there is no snapping of any kind.** Nothing you drag,
 type or place is quantised to it, no value is ever measured off it, and there is
-no snap setting to turn on. A sketch grid — the one you would draw on, with
+no snap setting to turn on. That includes the handles: dragging one gives the
+exact value the drag lands on, never a rounded one. A sketch grid — the one you would draw on, with
 snapping — is a different thing entirely and does not exist. The grid is a
 reference the viewport draws and nothing more.
 

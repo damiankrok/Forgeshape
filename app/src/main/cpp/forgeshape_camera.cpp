@@ -97,6 +97,20 @@ void CameraController::resetGesture() {
     lastSpan_ = 0.0f;
 }
 
+bool CameraController::setPose(float yaw, float pitch, float distance) {
+    if (!std::isfinite(yaw) || !std::isfinite(pitch) || !std::isfinite(distance)) {
+        return false;
+    }
+    yaw_ = yaw;
+    // The same clamps a gesture is subject to, so a placed pose is always a pose
+    // the user could have reached — a test must never be able to put the camera
+    // somewhere the product cannot.
+    pitch_ = std::fmax(-kPitchLimitRadians, std::fmin(kPitchLimitRadians, pitch));
+    distance_ = std::fmax(kMinDistance, std::fmin(kMaxDistance, distance));
+    resetGesture();
+    return true;
+}
+
 void CameraController::resetCamera() {
     target_ = Vec3{0.0f, 0.0f, 0.0f};
     yaw_ = kInitialYaw;

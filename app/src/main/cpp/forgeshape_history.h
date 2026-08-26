@@ -148,6 +148,41 @@ public:
     void cancelEdit(ConstructionRestoreReport* outReport = nullptr);
 
     // ---------------------------------------------------------------------
+    // The session initialization boundary
+    // ---------------------------------------------------------------------
+    //
+    // What a NEW SESSION does to reach the state the user starts working from
+    // is not something the user did, and it must never be their first Undo.
+    //
+    // The product asks one question at launch, and answering "Sculpt" runs two
+    // real Construction acts to get there — the body is shaped into a sphere and
+    // then frozen. Those go through the ordinary mutation entry points, on
+    // purpose, so that nothing about Freeze is duplicated or re-validated; but
+    // the shape change IS a genuine Construction difference, so an ordinary
+    // commit would record it and the user's very first Undo would rewind a
+    // decision they never made.
+    //
+    // This is the production boundary that says so. Between `begin` and `end`,
+    // commits still CLOSE their edit and the live state still moves — the
+    // renderer and the picker see the seeded model exactly as before — but
+    // nothing is recorded and no redo is thrown away. `end` then states the
+    // postcondition outright: an empty history, both ways.
+    //
+    // It is deliberately NOT a general "clear the history" act. It is scoped to
+    // bootstrap and is driven from the one place a session is seeded; Back to
+    // Construction, a rotation, a resume and every ordinary edit are entirely
+    // outside it and none of them may reach it. The debug-only `clear()` remains
+    // what a TEST uses to fabricate a fresh-session observation inside a process
+    // that has already run other cases.
+    void beginSessionInitialization();
+
+    // Closes the boundary and establishes the postcondition by construction: no
+    // undo step, no redo step, no edit left open.
+    void endSessionInitialization();
+
+    bool sessionInitializing() const { return sessionInitializing_; }
+
+    // ---------------------------------------------------------------------
     // Undo and redo
     // ---------------------------------------------------------------------
 
@@ -196,6 +231,10 @@ private:
 
     bool editOpen_ = false;
     SceneConstructionState editPreState_;
+
+    // True only between beginSessionInitialization and endSessionInitialization.
+    // It suppresses RECORDING, never mutation — see the boundary's comment.
+    bool sessionInitializing_ = false;
 };
 
 // Opens an edit if none is open, and closes only the one it opened.

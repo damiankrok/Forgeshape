@@ -18,8 +18,8 @@ adb -s <serial> logcat -s ForgeShape:V
 
 APK: `app/build/outputs/apk/debug/app-debug.apk`
 
-A clean debug launch emits **twelve** `*_SELFTEST_OK` tokens, then
-`FORGESHAPE_NATIVE_VIEWPORT_OK`. All twelve, in emission order:
+A clean debug launch emits **thirteen** `*_SELFTEST_OK` tokens, then
+`FORGESHAPE_NATIVE_VIEWPORT_OK`. All thirteen, in emission order:
 
 ```
 FORGESHAPE_CAMERA_SELFTEST_OK
@@ -34,6 +34,7 @@ FORGESHAPE_SCULPT_BRUSH_KERNEL_SELFTEST_OK
 FORGESHAPE_RENDER_SHADING_SELFTEST_OK
 FORGESHAPE_SCENE_SELFTEST_OK
 FORGESHAPE_CONSTRUCTION_HISTORY_SELFTEST_OK
+FORGESHAPE_GIZMO_SELFTEST_OK
 ```
 
 Failures: `FORGESHAPE_NATIVE_VIEWPORT_FAIL:*` and the matching `*_SELFTEST_FAIL`.
@@ -44,10 +45,10 @@ Enlarge the log ring buffer (`adb -s <serial> logcat -G 16M`) before capturing
 startup evidence: the default buffer drops part of the self-test output and it
 looks like a suite that stopped partway.
 
-Camera, picking, dynamic-mesh, Construction-box, sculpt, render-shading and
-Construction-history self-tests are debug-only and run once from
+Camera, picking, dynamic-mesh, Construction-box, sculpt, render-shading,
+Construction-history and gizmo self-tests are debug-only and run once from
 `NativeViewport.start()`. They must never run per frame. Each builds the domain
-objects it needs — the scene and history suites build their own
+objects it needs — the scene, history and gizmo suites build their own
 `ConstructionScene` — rather than reading process-scoped state, so a suite's
 result never depends on what a live session left behind.
 
@@ -93,7 +94,24 @@ result never depends on what a live session left behind.
   `ObjectId` allocator is never rolled back: an undone creation's id is restored
   by name, never reused. **Sculpt has no undo**, and Construction undo may never
   move a sculpt vertex — the only sculpt state a restore touches is the existing
-  stale-source flag.
+  stale-source flag. **Seeding a session is not a user act**: what a new session
+  does to reach the state the user starts from runs inside
+  `beginSessionInitialization`/`end`, records nothing, and leaves an empty
+  history both ways. That bracket is reachable only from the start answer —
+  never from Back to Construction, a rotation or a resume — and the debug-only
+  `clear()` stays a test seam, never production behaviour.
+- **A viewport handle has one owner, one scale and no transform of its own.**
+  Direct manipulation writes the active body's authoritative
+  `ConstructionTransform` throughout the drag, so the renderer, the picker and
+  the exact-value editors never disagree; no second solver, pivot or placement
+  may exist above JNI. The pivot is the body's Construction placement origin —
+  never a mesh AABB centre, a screen centroid or a camera-facing proxy. Drawing
+  and hit-testing share ONE camera-derived scale, so what is seen and what can
+  be grabbed cannot differ. One drag is one captured `pointerId` and one
+  transaction: a second pointer or a cancel restores the pre-drag state and
+  records nothing, and a gesture that starts off a handle still navigates
+  exactly as before. A degenerate viewpoint holds the last good value rather
+  than guessing — no NaN, no jump.
 - **Shading is presentation, never truth.** Normals, the derived render mesh and
   every display setting are one-way products of a published `RuntimeMesh`.
   Nothing may read a dimension, a Construction parameter, a sculpt deformation,

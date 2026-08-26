@@ -20,6 +20,12 @@ static const uint32_t kSurfaceFragSpv[] =
 static const uint32_t kGridVertSpv[] =
 #include "grid.vert.spv.inc"
     ;
+static const uint32_t kGizmoVertSpv[] =
+#include "gizmo.vert.spv.inc"
+    ;
+static const uint32_t kGizmoFragSpv[] =
+#include "gizmo.frag.spv.inc"
+    ;
 static const uint32_t kGridFragSpv[] =
 #include "grid.frag.spv.inc"
     ;
@@ -100,6 +106,26 @@ struct GridPush {
 
 static_assert(sizeof(GridPush) == 128,
               "the grid push constant block must stay inside the guaranteed 128-byte budget");
+
+// The gizmo's per-draw uniform block, mirrored by shaders/gizmo.vert.
+//
+// Also exactly 128 bytes and also at the guaranteed minimum. There is ONE
+// matrix and no model/normal split, because a handle has no normal and takes no
+// light; what fills the rest is one colour per world axis plus the four control
+// floats that say which handle is held and how strongly the rest are drawn — so
+// highlighting a grabbed axis is four bytes of push constant and no upload.
+struct GizmoPush {
+    float mvp[16];        // offset 0
+    float axisXColor[4];  // offset 64
+    float axisYColor[4];  // offset 80
+    float axisZColor[4];  // offset 96
+    // x: held axis (0 none, 1 X, 2 Y, 3 Z)   y: alpha scale for the others
+    // z: alpha scale for the held one        w: unused
+    float control[4];     // offset 112
+};
+
+static_assert(sizeof(GizmoPush) == 128,
+              "the gizmo push constant block must stay inside the guaranteed 128-byte budget");
 
 // How far the grid is pushed AWAY from the eye in depth, in NDC, to settle the
 // one case where it is exactly coplanar with real geometry: a Construction
@@ -198,6 +224,7 @@ void Renderer::destroyInstance() {
         destroyMatCapResources();
         destroyMeshResources();
         destroyGridResources();
+        destroyGizmoResources();
         if (vertShader_ != VK_NULL_HANDLE) vkDestroyShaderModule(device_, vertShader_, nullptr);
         if (fragShader_ != VK_NULL_HANDLE) vkDestroyShaderModule(device_, fragShader_, nullptr);
         if (pipelineLayout_ != VK_NULL_HANDLE) vkDestroyPipelineLayout(device_, pipelineLayout_, nullptr);
@@ -205,6 +232,15 @@ void Renderer::destroyInstance() {
         if (gridFragShader_ != VK_NULL_HANDLE) vkDestroyShaderModule(device_, gridFragShader_, nullptr);
         if (gridPipelineLayout_ != VK_NULL_HANDLE) {
             vkDestroyPipelineLayout(device_, gridPipelineLayout_, nullptr);
+        }
+        if (gizmoVertShader_ != VK_NULL_HANDLE) {
+            vkDestroyShaderModule(device_, gizmoVertShader_, nullptr);
+        }
+        if (gizmoFragShader_ != VK_NULL_HANDLE) {
+            vkDestroyShaderModule(device_, gizmoFragShader_, nullptr);
+        }
+        if (gizmoPipelineLayout_ != VK_NULL_HANDLE) {
+            vkDestroyPipelineLayout(device_, gizmoPipelineLayout_, nullptr);
         }
 
         for (uint32_t i = 0; i < kMaxFramesInFlight; ++i) {
@@ -223,6 +259,9 @@ void Renderer::destroyInstance() {
         gridVertShader_ = VK_NULL_HANDLE;
         gridFragShader_ = VK_NULL_HANDLE;
         gridPipelineLayout_ = VK_NULL_HANDLE;
+        gizmoVertShader_ = VK_NULL_HANDLE;
+        gizmoFragShader_ = VK_NULL_HANDLE;
+        gizmoPipelineLayout_ = VK_NULL_HANDLE;
         commandPool_ = VK_NULL_HANDLE;
     }
 
@@ -270,6 +309,10 @@ bool Renderer::attachSurface(ANativeWindow* window) {
         // After the upload objects, because the grid borrows the same staging
         // buffer and upload command buffer for its single, one-time copy.
         if (!createGridResources()) return false;
+        // And the gizmo, on the same borrowed staging path and for the same
+        // one-time copy. It is device-scoped, so a HOME/resume does not
+        // regenerate it.
+        if (!createGizmoResources()) return false;
     } else {
         // Reused device: confirm the new surface is still presentable.
         VkBool32 supported = VK_FALSE;
@@ -950,10 +993,43 @@ bool Renderer::createShaderModules() {
     FS_VK_CHECK(vkCreatePipelineLayout(device_, &gridLayoutInfo, nullptr, &gridPipelineLayout_),
                 "vkCreatePipelineLayout(grid)");
 
+    // --- the gizmo's own shaders and layout --------------------------------
+    VkShaderModuleCreateInfo gizmoVertInfo{};
+    gizmoVertInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    gizmoVertInfo.codeSize = sizeof(kGizmoVertSpv);
+    gizmoVertInfo.pCode = kGizmoVertSpv;
+    FS_VK_CHECK(vkCreateShaderModule(device_, &gizmoVertInfo, nullptr, &gizmoVertShader_),
+                "vkCreateShaderModule(gizmo_vert)");
+
+    VkShaderModuleCreateInfo gizmoFragInfo{};
+    gizmoFragInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    gizmoFragInfo.codeSize = sizeof(kGizmoFragSpv);
+    gizmoFragInfo.pCode = kGizmoFragSpv;
+    FS_VK_CHECK(vkCreateShaderModule(device_, &gizmoFragInfo, nullptr, &gizmoFragShader_),
+                "vkCreateShaderModule(gizmo_frag)");
+
+    VkPushConstantRange gizmoRange{};
+    gizmoRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    gizmoRange.offset = 0;
+    gizmoRange.size = sizeof(GizmoPush);
+
+    // setLayoutCount = 0, exactly as the grid's is and for the same reason: a
+    // handle consults no sampler, so it must not be able to reach the MatCap
+    // even by accident.
+    VkPipelineLayoutCreateInfo gizmoLayoutInfo{};
+    gizmoLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    gizmoLayoutInfo.setLayoutCount = 0;
+    gizmoLayoutInfo.pushConstantRangeCount = 1;
+    gizmoLayoutInfo.pPushConstantRanges = &gizmoRange;
+    FS_VK_CHECK(vkCreatePipelineLayout(device_, &gizmoLayoutInfo, nullptr, &gizmoPipelineLayout_),
+                "vkCreatePipelineLayout(gizmo)");
+
     FS_LOGI("Shader modules created (SPIR-V: vert %zu bytes, frag %zu bytes, push %zu bytes; "
-            "grid vert %zu bytes, grid frag %zu bytes, grid push %zu bytes)",
+            "grid vert %zu bytes, grid frag %zu bytes, grid push %zu bytes; "
+            "gizmo vert %zu bytes, gizmo frag %zu bytes, gizmo push %zu bytes)",
             sizeof(kSurfaceVertSpv), sizeof(kSurfaceFragSpv), sizeof(SurfacePush),
-            sizeof(kGridVertSpv), sizeof(kGridFragSpv), sizeof(GridPush));
+            sizeof(kGridVertSpv), sizeof(kGridFragSpv), sizeof(GridPush),
+            sizeof(kGizmoVertSpv), sizeof(kGizmoFragSpv), sizeof(GizmoPush));
     return true;
 }
 
@@ -1049,6 +1125,100 @@ void Renderer::destroyGridResources() {
         gridVertexMemory_ = VK_NULL_HANDLE;
     }
     gridVertexCount_ = 0;
+}
+
+// ---------------------------------------------------------------------------
+// Construction Move / Rotate gizmo
+// ---------------------------------------------------------------------------
+
+bool Renderer::createGizmoResources() {
+    // Generated on the stack from a compile-time constant count, uploaded, and
+    // then forgotten — exactly like the grid. There is no cache to invalidate
+    // and no revision to follow, because the geometry is authored in a canonical
+    // reference-unit space that nothing can move: where the gizmo IS and how big
+    // it looks are a matrix, computed per frame, per drag, for free.
+    GizmoVertex vertices[kGizmoVertexCount];
+    const int written = generateGizmoVertices(vertices, kGizmoVertexCount);
+    if (written != kGizmoVertexCount) {
+        FS_FAIL("gizmo_generate_incomplete");
+        return false;
+    }
+    const VkDeviceSize bytes = sizeof(GizmoVertex) * static_cast<VkDeviceSize>(written);
+
+    if (!createBuffer(bytes,
+                      VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &gizmoVertexBuffer_,
+                      &gizmoVertexMemory_)) {
+        FS_FAIL("gizmo_vertex_buffer");
+        return false;
+    }
+
+    // Shares the mesh path's staging buffer and upload command buffer, which is
+    // why this runs after createMeshUploadObjects — the same transient scratch
+    // the grid borrows, for the same one-time few-kilobyte copy.
+    if (!ensureStagingCapacity(bytes)) {
+        return false;
+    }
+    void* mapped = nullptr;
+    FS_VK_CHECK(vkMapMemory(device_, stagingMemory_, 0, bytes, 0, &mapped),
+                "vkMapMemory(gizmo_staging)");
+    std::memcpy(mapped, vertices, static_cast<size_t>(bytes));
+    vkUnmapMemory(device_, stagingMemory_);
+
+    FS_VK_CHECK(vkResetCommandBuffer(uploadCommandBuffer_, 0), "vkResetCommandBuffer(gizmo_upload)");
+    VkCommandBufferBeginInfo begin{};
+    begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    FS_VK_CHECK(vkBeginCommandBuffer(uploadCommandBuffer_, &begin),
+                "vkBeginCommandBuffer(gizmo_upload)");
+
+    VkBufferCopy copy{};
+    copy.srcOffset = 0;
+    copy.dstOffset = 0;
+    copy.size = bytes;
+    vkCmdCopyBuffer(uploadCommandBuffer_, stagingBuffer_, gizmoVertexBuffer_, 1, &copy);
+
+    VkMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
+    vkCmdPipelineBarrier(uploadCommandBuffer_, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         VK_PIPELINE_STAGE_VERTEX_INPUT_BIT, 0, 1, &barrier, 0, nullptr, 0,
+                         nullptr);
+    FS_VK_CHECK(vkEndCommandBuffer(uploadCommandBuffer_), "vkEndCommandBuffer(gizmo_upload)");
+
+    VkSubmitInfo submit{};
+    submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submit.commandBufferCount = 1;
+    submit.pCommandBuffers = &uploadCommandBuffer_;
+    FS_VK_CHECK(vkResetFences(device_, 1, &uploadFence_), "vkResetFences(gizmo_upload)");
+    FS_VK_CHECK(vkQueueSubmit(graphicsQueue_, 1, &submit, uploadFence_),
+                "vkQueueSubmit(gizmo_upload)");
+    FS_VK_CHECK(vkWaitForFences(device_, 1, &uploadFence_, VK_TRUE, UINT64_MAX),
+                "vkWaitForFences(gizmo_upload)");
+
+    gizmoVertexCount_ = static_cast<uint32_t>(written);
+    // Logged ONCE per device. A second occurrence of this line in a session log
+    // is direct evidence that a drag, an orbit or a mode switch re-uploaded
+    // geometry it must never touch.
+    FS_LOGI("FORGESHAPE_GIZMO_UPLOAD_OK vertices=%u bytes=%llu move=[%d,%d) rotate=[%d,%d)",
+            gizmoVertexCount_, (unsigned long long)bytes, kGizmoMoveFirstVertex,
+            kGizmoMoveFirstVertex + kGizmoMoveVertexCount, kGizmoRotateFirstVertex,
+            kGizmoRotateFirstVertex + kGizmoRotateVertexCount);
+    return true;
+}
+
+void Renderer::destroyGizmoResources() {
+    if (device_ == VK_NULL_HANDLE) return;
+    if (gizmoVertexBuffer_ != VK_NULL_HANDLE) {
+        vkDestroyBuffer(device_, gizmoVertexBuffer_, nullptr);
+        gizmoVertexBuffer_ = VK_NULL_HANDLE;
+    }
+    if (gizmoVertexMemory_ != VK_NULL_HANDLE) {
+        vkFreeMemory(device_, gizmoVertexMemory_, nullptr);
+        gizmoVertexMemory_ = VK_NULL_HANDLE;
+    }
+    gizmoVertexCount_ = 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -1846,6 +2016,127 @@ bool Renderer::createGridPipeline() {
     return true;
 }
 
+bool Renderer::createGizmoPipeline() {
+    VkPipelineShaderStageCreateInfo stages[2]{};
+    stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+    stages[0].module = gizmoVertShader_;
+    stages[0].pName = "main";
+    stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    stages[1].module = gizmoFragShader_;
+    stages[1].pName = "main";
+
+    // GizmoVertex: a position and an AXIS TAG, and no normal and no colour.
+    VkVertexInputBindingDescription binding{};
+    binding.binding = 0;
+    binding.stride = sizeof(GizmoVertex);
+    binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    VkVertexInputAttributeDescription attributes[2]{};
+    attributes[0].location = 0;
+    attributes[0].binding = 0;
+    attributes[0].format = VK_FORMAT_R32G32B32_SFLOAT;
+    attributes[0].offset = offsetof(GizmoVertex, position);
+    attributes[1].location = 1;
+    attributes[1].binding = 0;
+    attributes[1].format = VK_FORMAT_R32_SFLOAT;
+    attributes[1].offset = offsetof(GizmoVertex, axis);
+
+    VkPipelineVertexInputStateCreateInfo vertexInput{};
+    vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertexInput.vertexBindingDescriptionCount = 1;
+    vertexInput.pVertexBindingDescriptions = &binding;
+    vertexInput.vertexAttributeDescriptionCount = 2;
+    vertexInput.pVertexAttributeDescriptions = attributes;
+
+    VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
+    inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+
+    VkViewport viewport{0.0f, 0.0f, static_cast<float>(swapchainExtent_.width),
+                        static_cast<float>(swapchainExtent_.height), 0.0f, 1.0f};
+    VkRect2D scissor{{0, 0}, swapchainExtent_};
+
+    VkPipelineViewportStateCreateInfo viewportState{};
+    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewportState.viewportCount = 1;
+    viewportState.pViewports = &viewport;
+    viewportState.scissorCount = 1;
+    viewportState.pScissors = &scissor;
+
+    VkPipelineRasterizationStateCreateInfo raster{};
+    raster.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    // FILL and lineWidth 1.0, for exactly the reasons spelled out on the grid
+    // pipeline: polygonMode says nothing about a LINE_LIST, and anything wider
+    // than 1.0 would require the `wideLines` device feature ForgeShape does not
+    // request and must not start requesting to draw a handle.
+    raster.polygonMode = VK_POLYGON_MODE_FILL;
+    raster.cullMode = VK_CULL_MODE_NONE;
+    raster.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    raster.lineWidth = 1.0f;
+
+    VkPipelineMultisampleStateCreateInfo multisample{};
+    multisample.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    multisample.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+    VkPipelineDepthStencilStateCreateInfo depthStencil{};
+    depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    // Depth test OFF, and this is the one place the gizmo differs from the grid
+    // on purpose. A handle is a CONTROL: it has to be visible and grabbable even
+    // where it passes through the body it moves, and a pivot marker buried
+    // inside a solid would be a control the user can see the effect of and never
+    // reach. That is the "always on top" the tool contract permits.
+    depthStencil.depthTestEnable = VK_FALSE;
+    // Depth write OFF as well, so the buffer is left exactly as the bodies and
+    // the grid left it. The gizmo contributes nothing a later draw could be
+    // occluded by, which is what keeps model depth semantics intact — see
+    // recordGizmoDraw for where it sits in the pass.
+    depthStencil.depthWriteEnable = VK_FALSE;
+    depthStencil.depthCompareOp = VK_COMPARE_OP_ALWAYS;
+
+    VkPipelineColorBlendAttachmentState blendAttachment{};
+    blendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                                     VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    // Straight (non-premultiplied) alpha, matching what shaders/gizmo.frag
+    // writes, so a dimmed axis is the same colour drawn more faintly rather than
+    // a different colour.
+    blendAttachment.blendEnable = VK_TRUE;
+    blendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    blendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    blendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+    blendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    blendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+    blendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
+
+    VkPipelineColorBlendStateCreateInfo colorBlend{};
+    colorBlend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    colorBlend.attachmentCount = 1;
+    colorBlend.pAttachments = &blendAttachment;
+
+    VkGraphicsPipelineCreateInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    info.stageCount = 2;
+    info.pStages = stages;
+    info.pVertexInputState = &vertexInput;
+    info.pInputAssemblyState = &inputAssembly;
+    info.pViewportState = &viewportState;
+    info.pRasterizationState = &raster;
+    info.pMultisampleState = &multisample;
+    info.pDepthStencilState = &depthStencil;
+    info.pColorBlendState = &colorBlend;
+    info.layout = gizmoPipelineLayout_;
+    info.renderPass = renderPass_;
+    info.subpass = 0;
+
+    FS_VK_CHECK(
+        vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1, &info, nullptr, &gizmoPipeline_),
+        "vkCreateGraphicsPipelines(gizmo)");
+    FS_LOGI("Gizmo pipeline created (LINE_LIST, cull NONE, depth test OFF, depth write OFF, "
+            "alpha blend, no descriptor set)");
+    return true;
+}
+
 bool Renderer::createCommandBuffers() {
     commandBuffers_.resize(framebuffers_.size());
     VkCommandBufferAllocateInfo info{};
@@ -1872,6 +2163,7 @@ bool Renderer::createSwapchainDependents() {
     if (!createFramebuffers()) return false;
     if (!createPipeline()) return false;
     if (!createGridPipeline()) return false;
+    if (!createGizmoPipeline()) return false;
     if (!createCommandBuffers()) return false;
     needsSwapchainRebuild_ = false;
     return true;
@@ -1890,6 +2182,10 @@ void Renderer::destroySwapchainDependents() {
         vkFreeCommandBuffers(device_, commandPool_, static_cast<uint32_t>(commandBuffers_.size()),
                              commandBuffers_.data());
         commandBuffers_.clear();
+    }
+    if (gizmoPipeline_ != VK_NULL_HANDLE) {
+        vkDestroyPipeline(device_, gizmoPipeline_, nullptr);
+        gizmoPipeline_ = VK_NULL_HANDLE;
     }
     if (gridPipeline_ != VK_NULL_HANDLE) {
         vkDestroyPipeline(device_, gridPipeline_, nullptr);
@@ -1988,6 +2284,11 @@ bool Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex) {
     // Drawing it first would work for opaque bodies and fail for exactly the
     // coplanar case the bias exists to settle.
     recordGridDraw(cmd);
+
+    // And the gizmo after the grid, so a handle is never lost behind a floor
+    // line. It is depth-test-off and depth-write-off, so it reads nothing from
+    // the depth buffer and leaves it exactly as the bodies and the grid did.
+    recordGizmoDraw(cmd);
 
     vkCmdEndRenderPass(cmd);
     FS_VK_CHECK(vkEndCommandBuffer(cmd), "vkEndCommandBuffer");
@@ -2093,6 +2394,81 @@ void Renderer::recordGridDraw(VkCommandBuffer cmd) {
     // The surface pipeline is rebound by the next frame's recording, which
     // always starts from vkCmdBindPipeline(pipeline_). Nothing after this point
     // in the pass draws a body.
+}
+
+void Renderer::recordGizmoDraw(VkCommandBuffer cmd) {
+    // The whole cost of "no gizmo" is this early return: no gizmo state was
+    // pushed, or the shell says there is no active Transform context, or the
+    // camera could not produce a scale. Nothing is rebuilt, nothing is freed and
+    // nothing is re-uploaded when the gizmo is absent — which is why showing and
+    // hiding it can be proven to touch no body's revision or GPU buffer.
+    if (!gizmo_.visible || gizmoPipeline_ == VK_NULL_HANDLE ||
+        gizmoVertexBuffer_ == VK_NULL_HANDLE || gizmoVertexCount_ == 0 ||
+        !(gizmo_.worldPerReferenceUnit > 0.0f)) {
+        return;
+    }
+
+    // Canonical gizmo space -> world -> clip. The canonical vertices are
+    // authored in REFERENCE UNITS, so one uniform scale by the world length of a
+    // reference unit at the pivot's depth is exactly what keeps the handles a
+    // near-constant size on screen at any zoom.
+    //
+    // There is deliberately NO rotation in this matrix. The gizmo is world-axis
+    // aligned and does not turn with the body: that is the stage's one stated
+    // transform convention, and it lives here as an absence rather than as a
+    // choice made somewhere else.
+    Mat4 model = mat4Identity();
+    const float scale = gizmo_.worldPerReferenceUnit;
+    model.m[0] = scale;
+    model.m[5] = scale;
+    model.m[10] = scale;
+    model.m[12] = gizmo_.pivot.x;
+    model.m[13] = gizmo_.pivot.y;
+    model.m[14] = gizmo_.pivot.z;
+
+    const Mat4 viewProj = mat4Multiply(camera_.proj, camera_.view);
+    const Mat4 mvp = mat4Multiply(viewProj, model);
+    if (!mat4Finite(mvp)) {
+        return;
+    }
+
+    GizmoPush push{};
+    std::memcpy(push.mvp, mvp.m, sizeof(push.mvp));
+    gizmoAxisColor(display_.background, GizmoAxis::X, push.axisXColor);
+    gizmoAxisColor(display_.background, GizmoAxis::Y, push.axisYColor);
+    gizmoAxisColor(display_.background, GizmoAxis::Z, push.axisZColor);
+    push.control[0] = static_cast<float>(gizmo_.activeAxis == GizmoAxis::X   ? 1
+                                         : gizmo_.activeAxis == GizmoAxis::Y ? 2
+                                         : gizmo_.activeAxis == GizmoAxis::Z ? 3
+                                                                             : 0);
+    push.control[1] = kGizmoIdleAxisAlphaScale;
+    push.control[2] = kGizmoHeldAxisAlphaScale;
+    push.control[3] = 0.0f;
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, gizmoPipeline_);
+    vkCmdPushConstants(cmd, gizmoPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GizmoPush),
+                       &push);
+
+    VkDeviceSize offset = 0;
+    vkCmdBindVertexBuffers(cmd, 0, 1, &gizmoVertexBuffer_, &offset);
+    // A RANGE of the one buffer, not a second buffer and not a re-upload:
+    // switching Move to Rotate changes two integers on this call and nothing
+    // else in the whole renderer.
+    const uint32_t first = (gizmo_.mode == GizmoMode::Rotate)
+                               ? static_cast<uint32_t>(kGizmoRotateFirstVertex)
+                               : static_cast<uint32_t>(kGizmoMoveFirstVertex);
+    const uint32_t count = (gizmo_.mode == GizmoMode::Rotate)
+                               ? static_cast<uint32_t>(kGizmoRotateVertexCount)
+                               : static_cast<uint32_t>(kGizmoMoveVertexCount);
+    if (first + count > gizmoVertexCount_) {
+        return;
+    }
+    vkCmdDraw(cmd, count, 1, first, 0);
+
+    // Nothing after this point in the pass draws anything, and the next frame's
+    // recording starts from vkCmdBindPipeline(pipeline_) again — so this pass
+    // leaves no pipeline, blend, depth or scissor state behind for a body draw
+    // to inherit.
 }
 
 bool Renderer::drawFrame() {

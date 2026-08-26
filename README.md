@@ -141,7 +141,7 @@ emit several hundred lines in a few milliseconds and the default buffer silently
 drops the tail, which reads exactly like a self-test that stopped partway
 through. That is a logging limit, not an app failure.
 
-A clean debug launch emits **twelve** `*_SELFTEST_OK` tokens, in this order, then
+A clean debug launch emits **thirteen** `*_SELFTEST_OK` tokens, in this order, then
 `FORGESHAPE_NATIVE_VIEWPORT_OK` once the first frame is presented:
 
 ```
@@ -157,6 +157,7 @@ FORGESHAPE_SCULPT_BRUSH_KERNEL_SELFTEST_OK
 FORGESHAPE_RENDER_SHADING_SELFTEST_OK
 FORGESHAPE_SCENE_SELFTEST_OK
 FORGESHAPE_CONSTRUCTION_HISTORY_SELFTEST_OK
+FORGESHAPE_GIZMO_SELFTEST_OK
 ```
 
 Each suite reports `(<n> checks)` and fails as `<SUITE>_CASE_FAIL:<name>` plus
@@ -216,6 +217,12 @@ One finger drags to orbit, two fingers drag to pan, and pinching zooms. A short
 single-finger tap on the object selects it (tinted orange); a tap on empty space
 clears the selection. Dragging and multi-finger gestures never select.
 
+While the Construction **Transform** tool is held, the active body wears Move or
+Rotate handles. A finger or stylus that goes down **on a handle** owns the whole
+gesture and moves the body instead of the camera; a gesture that starts anywhere
+else orbits, pans, zooms and selects exactly as above. A second finger during a
+handle drag cancels it and puts the placement back.
+
 In Sculpt Mode a one-finger gesture that goes down **on the mesh** is a brush
 stroke with the active tool and owns the whole gesture; everything else is
 unchanged. Such a Down is held *pending* rather than starting a stroke: it
@@ -231,6 +238,11 @@ See `PRODUCT.md` for the full gesture contract.
 Add a body from the **Objects capsule** at the bottom leading edge: its `+` opens
 **Add Primitive**, and the shape you pick there is what the new body is. Tapping
 the body name beside it opens the scene list.
+
+Holding **Transform** in the Tool Rail also draws the handles, with a two-button
+control beside the rail choosing **Move handles** or **Rotate handles**. Dragging
+one is the direct way to place a body; the exact values below are the precise
+way, and both write the same placement.
 
 The Construction **Tool Rail** chooses what the **precision surface** edits, and
 the small control attached under the rail is what opens it: *Shape* (Box,
@@ -347,6 +359,31 @@ checked at the pixel. `STROKE_MOVE` carries the displacement of the brush
 **centre** — the highest-weight captured vertex — so summing `|local|` over a
 stroke measures how much the tool did.
 
+Gizmo logs:
+
+```
+FORGESHAPE_SESSION_INIT_BEGIN                                      seeding a session
+FORGESHAPE_SESSION_INIT_END undo=<n> redo=<n>                      both must be 0
+FORGESHAPE_GIZMO_ACTIVE:<0|1>                                      handles offered
+FORGESHAPE_GIZMO_REFUSED:in_sculpt_mode
+FORGESHAPE_GIZMO_MODE:<move|rotate> accepted=<0|1>
+FORGESHAPE_GIZMO_UPLOAD_OK vertices=<n> ... move=[a,b) rotate=[c,d)  once per device
+FORGESHAPE_GIZMO_DRAG_BEGIN:<move|rotate> axis=<x|y|z> objectId=<..>
+FORGESHAPE_GIZMO_DRAG_COMMIT:<recorded|no_change> updates=<n> solve=<..> undo=<n>
+FORGESHAPE_GIZMO_DRAG_CANCEL updates=<n> undo=<n>
+```
+
+A `DRAG_COMMIT` with `updates=` in the hundreds and `undo=` one higher than
+before it is the whole proof that a long drag is one history step; `no_change`
+with `undo=` unmoved is the same proof for a tap. `solve=` names which path the
+Move solver took — `resolved`, `plane_fallback` or `unresolvable` — so a
+degenerate viewpoint is visible rather than inferred. `GIZMO_UPLOAD_OK` appears
+**once per device**: a second occurrence in one session is direct evidence that
+something re-uploaded geometry a drag must never touch.
+
+`SESSION_INIT_END` reporting anything but `undo=0 redo=0` means a session seed
+leaked into the user's history.
+
 Camera, picking and selection log `FORGESHAPE_CAMERA_{ORBIT,PAN,ZOOM}_OK` and
 `FORGESHAPE_CAMERA_STATE` on gesture end, `FORGESHAPE_PICK_HIT:<objectId>:<tri>`
 or `FORGESHAPE_PICK_MISS` on a tap, and
@@ -369,6 +406,7 @@ a no-op in release.
 | 16 | deliberately invalid box update — must be rejected |
 | 29 / 30 / 31 / 32 / 33 | Gate P1 heavy-mesh density fixture: publish a ~10k / 50k / 100k / 250k / 500k-vertex closed "spherified box" through the normal `MeshStore::publish` path |
 | 34 | freeze the most recently published density tier directly into Sculpt (bypasses Construction) |
+| 35 | log where the gizmo's pivot and its three handles are on screen right now. Reports only — it grabs nothing and mutates nothing. It exists because a handle's pixel is a live function of the camera, the window and the body's placement, so a walkthrough that wrote one down would be recording something true for exactly one run |
 
 The box driver goes through the same native `applyPrimitive` entry point the
 inspector uses, so it is a bounded driver rather than a parallel implementation. A
