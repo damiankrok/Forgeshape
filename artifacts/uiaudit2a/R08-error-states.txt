@@ -1,0 +1,6 @@
+# UI-AUDIT2A error / refusal states
+scale x now: text="0"
+status: text="Rejected: every scale must be greater than 0. Transform unchanged."
+bounds="[32,286][1053,351]"
+status_message                  32   286  1053   351  1021x65   px   389.0x24.8   dp
+field_scale_x                   58  1780   365  1906   307x126  px   117.0x48.0   dp

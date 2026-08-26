@@ -1,0 +1,74 @@
+# UI-AUDIT2A misc surfaces
+===== F01 Shape editor (precision surface) =====
+editor_workspace                 0     0  1080  2400  1080x2400 px   411.4x914.3  dp
+viewport_surface                 0     0  1080  2400  1080x2400 px   411.4x914.3  dp
+global_toolbar                   0   128  1080   275  1080x147  px   411.4x56.0   dp
+toolbar_editing_group           21   138   339   264   318x126  px   121.1x48.0   dp
+freeze_to_sculpt                21   138   339   264   318x126  px   121.1x48.0   dp
+toolbar_utility_group          604   128  1059   275   455x147  px   173.3x56.0   dp
+export_action                  615   139   774   264   159x125  px    60.6x47.6   dp
+display_settings_button        785   139   911   265   126x126  px    48.0x48.0   dp
+hide_ui_toggle                 922   139  1048   265   126x126  px    48.0x48.0   dp
+tool_rail                      880   590  1059   963   179x373  px    68.2x142.1  dp
+tool_rail_shape                896   606  1043   774   147x168  px    56.0x64.0   dp
+tool_rail_place                896   779  1043   947   147x168  px    56.0x64.0   dp
+precision_toggle               922   985  1048  1111   126x126  px    48.0x48.0   dp
+objects_capsule                 21  1438   442  1586   421x148  px   160.4x56.4   dp
+objects_capsule_active          32  1449   294  1575   262x126  px    99.8x48.0   dp
+objects_capsule_add            305  1449   431  1575   126x126  px    48.0x48.0   dp
+history_group                  774  1438  1059  1586   285x148  px   108.6x56.4   dp
+undo_action                    785  1449   911  1575   126x126  px    48.0x48.0   dp
+redo_action                    922  1449  1048  1575   126x126  px    48.0x48.0   dp
+property_inspector              21  1607  1059  2316  1038x709  px   395.4x270.1  dp
+inspector_title                 58  1643   896  1696   838x53   px   319.2x20.2   dp
+inspector_toggle               896  1607  1022  1733   126x126  px    48.0x48.0   dp
+inspector_scroll                21  1733  1059  2316  1038x583  px   395.4x222.1  dp
+inspector_body                  58  1733  1022  2316   964x583  px   367.2x222.1  dp
+primitive_chooser               58  1733  1022  1996   964x263  px   367.2x100.2  dp
+primitive_option_box            58  1733   372  1859   314x126  px   119.6x48.0   dp
+primitive_option_cylinder      383  1733   697  1859   314x126  px   119.6x48.0   dp
+primitive_option_sphere        708  1733  1022  1859   314x126  px   119.6x48.0   dp
+primitive_option_cone           58  1870   372  1996   314x126  px   119.6x48.0   dp
+primitive_option_capsule       383  1870   697  1996   314x126  px   119.6x48.0   dp
+primitive_option_plane         708  1870  1022  1996   314x126  px   119.6x48.0   dp
+primitive_row_box               58  2017  1022  2193   964x176  px   367.2x67.0   dp
+field_box_width                 58  2067   365  2193   307x126  px   117.0x48.0   dp
+field_box_height               386  2067   693  2193   307x126  px   117.0x48.0   dp
+field_box_depth                714  2067  1022  2193   308x126  px   117.3x48.0   dp
+
+===== F02 Hide UI =====
+editor_workspace                 0     0  1080  2400  1080x2400 px   411.4x914.3  dp
+viewport_surface                 0     0  1080  2400  1080x2400 px   411.4x914.3  dp
+restore_ui_chip                924   149  1059   284   135x135  px    51.4x51.4   dp
+
+palette open: 155 1412 859 2158
+after BACK: resumed=
+palette after BACK: [] workspace present: 
+topResumed after BACK:       topResumedActivity=ActivityRecord{89068381 u0 com.google.android.apps.nexuslauncher/.NexusLauncherActivity t2}
+forgeshape process: 24305
+== after returning to the app ==
+editor_workspace                 0     0  1080  2400  1080x2400 px   411.4x914.3  dp
+viewport_surface                 0     0  1080  2400  1080x2400 px   411.4x914.3  dp
+global_toolbar                   0   128  1080   275  1080x147  px   411.4x56.0   dp
+toolbar_editing_group           21   138   339   264   318x126  px   121.1x48.0   dp
+freeze_to_sculpt                21   138   339   264   318x126  px   121.1x48.0   dp
+toolbar_utility_group          604   128  1059   275   455x147  px   173.3x56.0   dp
+export_action                  615   139   774   264   159x125  px    60.6x47.6   dp
+display_settings_button        785   139   911   265   126x126  px    48.0x48.0   dp
+hide_ui_toggle                 922   139  1048   265   126x126  px    48.0x48.0   dp
+tool_rail                      880   955  1059  1328   179x373  px    68.2x142.1  dp
+tool_rail_shape                896   971  1043  1139   147x168  px    56.0x64.0   dp
+tool_rail_place                896  1144  1043  1312   147x168  px    56.0x64.0   dp
+precision_toggle               922  1350  1048  1476   126x126  px    48.0x48.0   dp
+objects_capsule                 21  2168   442  2316   421x148  px   160.4x56.4   dp
+objects_capsule_active          32  2179   294  2305   262x126  px    99.8x48.0   dp
+objects_capsule_add            305  2179   431  2305   126x126  px    48.0x48.0   dp
+history_group                  774  2168  1059  2316   285x148  px   108.6x56.4   dp
+undo_action                    785  2179   911  2305   126x126  px    48.0x48.0   dp
+redo_action                    922  2179  1048  2305   126x126  px    48.0x48.0   dp
+popover open: [461 275 1059 1587]
+after picking Faceted, popover: [461 275 1059 1587]
+state: [461 275 1059 1587]
+after appearance change, popover: [461 275 1059 1587]
+swapchain/surface log lines after appearance change: 0
+reopened: []

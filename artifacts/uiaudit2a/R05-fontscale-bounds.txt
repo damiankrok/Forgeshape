@@ -1,0 +1,86 @@
+# UI-AUDIT2A compact portrait @ font_scale 1.3
+===== D01 chooser @1.3 =====
+editor_workspace                 0     0  1080  2400  1080x2400 px   411.4x914.3  dp
+viewport_surface                 0     0  1080  2400  1080x2400 px   411.4x914.3  dp
+start_chooser                    0   128  1080  2337  1080x2209 px   411.4x841.5  dp
+start_chooser_panel             63   584  1017  1880   954x1296 px   363.4x493.7  dp
+start_option_construction      126  1022   954  1409   828x387  px   315.4x147.4  dp
+start_option_sculpt            126  1430   954  1817   828x387  px   315.4x147.4  dp
+global_toolbar                   0   128  1080   275  1080x147  px   411.4x56.0   dp
+toolbar_editing_group           21   138   420   264   399x126  px   152.0x48.0   dp
+freeze_to_sculpt                21   138   420   264   399x126  px   152.0x48.0   dp
+toolbar_utility_group          568   128  1059   275   491x147  px   187.0x56.0   dp
+export_action                  579   139   774   264   195x125  px    74.3x47.6   dp
+display_settings_button        785   139   911   265   126x126  px    48.0x48.0   dp
+hide_ui_toggle                 922   139  1048   265   126x126  px    48.0x48.0   dp
+tool_rail                      880   955  1059  1328   179x373  px    68.2x142.1  dp
+tool_rail_shape                896   971  1043  1139   147x168  px    56.0x64.0   dp
+tool_rail_place                896  1144  1043  1312   147x168  px    56.0x64.0   dp
+precision_toggle               922  1350  1048  1476   126x126  px    48.0x48.0   dp
+objects_capsule                 21  2168   486  2316   465x148  px   177.1x56.4   dp
+objects_capsule_active          32  2179   338  2305   306x126  px   116.6x48.0   dp
+objects_capsule_add            349  2179   475  2305   126x126  px    48.0x48.0   dp
+history_group                  774  2168  1059  2316   285x148  px   108.6x56.4   dp
+undo_action                    785  2179   911  2305   126x126  px    48.0x48.0   dp
+redo_action                    922  2179  1048  2305   126x126  px    48.0x48.0   dp
+
+===== D02 construction @1.3 =====
+editor_workspace                 0     0  1080  2400  1080x2400 px   411.4x914.3  dp
+viewport_surface                 0     0  1080  2400  1080x2400 px   411.4x914.3  dp
+global_toolbar                   0   128  1080   275  1080x147  px   411.4x56.0   dp
+toolbar_editing_group           21   138   420   264   399x126  px   152.0x48.0   dp
+freeze_to_sculpt                21   138   420   264   399x126  px   152.0x48.0   dp
+toolbar_utility_group          568   128  1059   275   491x147  px   187.0x56.0   dp
+export_action                  579   139   774   264   195x125  px    74.3x47.6   dp
+display_settings_button        785   139   911   265   126x126  px    48.0x48.0   dp
+hide_ui_toggle                 922   139  1048   265   126x126  px    48.0x48.0   dp
+tool_rail                      880   955  1059  1328   179x373  px    68.2x142.1  dp
+tool_rail_shape                896   971  1043  1139   147x168  px    56.0x64.0   dp
+tool_rail_place                896  1144  1043  1312   147x168  px    56.0x64.0   dp
+precision_toggle               922  1350  1048  1476   126x126  px    48.0x48.0   dp
+objects_capsule                 21  2168   486  2316   465x148  px   177.1x56.4   dp
+objects_capsule_active          32  2179   338  2305   306x126  px   116.6x48.0   dp
+objects_capsule_add            349  2179   475  2305   126x126  px    48.0x48.0   dp
+history_group                  774  2168  1059  2316   285x148  px   108.6x56.4   dp
+undo_action                    785  2179   911  2305   126x126  px    48.0x48.0   dp
+redo_action                    922  2179  1048  2305   126x126  px    48.0x48.0   dp
+
+===== D03 exact transform @1.3 =====
+editor_workspace                 0     0  1080  2400  1080x2400 px   411.4x914.3  dp
+viewport_surface                 0     0  1080  2400  1080x2400 px   411.4x914.3  dp
+global_toolbar                   0   128  1080   275  1080x147  px   411.4x56.0   dp
+toolbar_editing_group           21   138   420   264   399x126  px   152.0x48.0   dp
+freeze_to_sculpt                21   138   420   264   399x126  px   152.0x48.0   dp
+toolbar_utility_group          568   128  1059   275   491x147  px   187.0x56.0   dp
+export_action                  579   139   774   264   195x125  px    74.3x47.6   dp
+display_settings_button        785   139   911   265   126x126  px    48.0x48.0   dp
+hide_ui_toggle                 922   139  1048   265   126x126  px    48.0x48.0   dp
+tool_rail                      880   275  1059   648   179x373  px    68.2x142.1  dp
+tool_rail_shape                896   291  1043   459   147x168  px    56.0x64.0   dp
+tool_rail_place                896   464  1043   632   147x168  px    56.0x64.0   dp
+transform_mode_group           911   659  1059  1081   148x422  px    56.4x160.8  dp
+transform_mode_move            922   670  1048   796   126x126  px    48.0x48.0   dp
+transform_mode_rotate          922   807  1048   933   126x126  px    48.0x48.0   dp
+transform_mode_scale           922   944  1048  1070   126x126  px    48.0x48.0   dp
+transform_space_group          911  1092  1059  1377   148x285  px    56.4x108.6  dp
+transform_space_world          922  1103  1048  1229   126x126  px    48.0x48.0   dp
+transform_space_local          922  1240  1048  1366   126x126  px    48.0x48.0   dp
+precision_toggle               922  1388  1048  1433   126x45   px    48.0x17.1   dp
+objects_capsule                 21  1433   486  1581   465x148  px   177.1x56.4   dp
+objects_capsule_active          32  1444   338  1570   306x126  px   116.6x48.0   dp
+objects_capsule_add            349  1444   475  1570   126x126  px    48.0x48.0   dp
+history_group                  774  1433  1059  1581   285x148  px   108.6x56.4   dp
+undo_action                    785  1444   911  1570   126x126  px    48.0x48.0   dp
+redo_action                    922  1444  1048  1570   126x126  px    48.0x48.0   dp
+property_inspector              21  1602  1059  2316  1038x714  px   395.4x272.0  dp
+inspector_title                 58  1631   896  1699   838x68   px   319.2x25.9   dp
+inspector_toggle               896  1602  1022  1728   126x126  px    48.0x48.0   dp
+inspector_scroll                21  1728  1059  2316  1038x588  px   395.4x224.0  dp
+inspector_body                  58  1728  1022  2316   964x588  px   367.2x224.0  dp
+field_pos_x                     58  1854   365  1980   307x126  px   117.0x48.0   dp
+field_pos_y                    386  1854   693  1980   307x126  px   117.0x48.0   dp
+field_pos_z                    714  1854  1022  1980   308x126  px   117.3x48.0   dp
+field_rot_x                     58  2153   365  2279   307x126  px   117.0x48.0   dp
+field_rot_y                    386  2153   693  2279   307x126  px   117.0x48.0   dp
+field_rot_z                    714  2153  1022  2279   308x126  px   117.3x48.0   dp
+

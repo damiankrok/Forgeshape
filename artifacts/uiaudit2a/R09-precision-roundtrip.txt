@@ -1,0 +1,4 @@
+# UI-AUDIT2A: display precision vs stored precision round trip
+status after apply: 
+field_pos_x redisplayed: 
+text="1.23456789012345" text="0" text="0"

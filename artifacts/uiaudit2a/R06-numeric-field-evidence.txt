@@ -1,0 +1,39 @@
+# UI-AUDIT2A numeric field behaviour, compact portrait
+field_pos_x before: text="0"
+field_pos_x after typing -98765.4321098 into a field showing 0: text="0-98765.4321098"
+tool_rail                      880   275  1059   648   179x373  px    68.2x142.1  dp
+objects_capsule                 21   665   442   813   421x148  px   160.4x56.4   dp
+property_inspector              21   834  1059  1496  1038x662  px   395.4x252.2  dp
+field_pos_x                     58  1060   365  1186   307x126  px   117.0x48.0   dp
+== full chrome inventory with IME open ==
+editor_workspace                 0     0  1080  2400  1080x2400 px   411.4x914.3  dp
+viewport_surface                 0     0  1080  2400  1080x2400 px   411.4x914.3  dp
+global_toolbar                   0   128  1080   275  1080x147  px   411.4x56.0   dp
+toolbar_editing_group           21   138   339   264   318x126  px   121.1x48.0   dp
+freeze_to_sculpt                21   138   339   264   318x126  px   121.1x48.0   dp
+toolbar_utility_group          604   128  1059   275   455x147  px   173.3x56.0   dp
+export_action                  615   139   774   264   159x125  px    60.6x47.6   dp
+display_settings_button        785   139   911   265   126x126  px    48.0x48.0   dp
+hide_ui_toggle                 922   139  1048   265   126x126  px    48.0x48.0   dp
+tool_rail                      880   275  1059   648   179x373  px    68.2x142.1  dp
+tool_rail_shape                896   291  1043   459   147x168  px    56.0x64.0   dp
+tool_rail_place                896   464  1043   632   147x168  px    56.0x64.0   dp
+transform_mode_group           911   659  1059   665   148x6    px    56.4x2.3    dp
+objects_capsule                 21   665   442   813   421x148  px   160.4x56.4   dp
+objects_capsule_active          32   676   294   802   262x126  px    99.8x48.0   dp
+objects_capsule_add            305   676   431   802   126x126  px    48.0x48.0   dp
+history_group                  774   665  1059   813   285x148  px   108.6x56.4   dp
+undo_action                    785   676   911   802   126x126  px    48.0x48.0   dp
+redo_action                    922   676  1048   802   126x126  px    48.0x48.0   dp
+property_inspector              21   834  1059  1496  1038x662  px   395.4x252.2  dp
+inspector_title                 58   870   896   923   838x53   px   319.2x20.2   dp
+inspector_toggle               896   834  1022   960   126x126  px    48.0x48.0   dp
+inspector_scroll                21   960  1059  1496  1038x536  px   395.4x204.2  dp
+inspector_body                  58   960  1022  1496   964x536  px   367.2x204.2  dp
+field_pos_x                     58  1060   365  1186   307x126  px   117.0x48.0   dp
+field_pos_y                    386  1060   693  1186   307x126  px   117.0x48.0   dp
+field_pos_z                    714  1060  1022  1186   308x126  px   117.3x48.0   dp
+field_rot_x                     58  1333   365  1459   307x126  px   117.0x48.0   dp
+field_rot_y                    386  1333   693  1459   307x126  px   117.0x48.0   dp
+field_rot_z                    714  1333  1022  1459   308x126  px   117.3x48.0   dp
+precision_toggle present? []
