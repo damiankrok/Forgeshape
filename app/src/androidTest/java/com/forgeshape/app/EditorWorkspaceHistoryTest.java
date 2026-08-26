@@ -183,7 +183,7 @@ public final class EditorWorkspaceHistoryTest {
             final long revision = NativeViewport.constructionMeshRevision();
 
             assertEquals(NativeViewport.APPLY_APPLIED,
-                    NativeViewport.applyBoxTransform(1.5, -0.25, 3.0, 15.0, -90.0, 370.0));
+                    NativeViewport.applyBoxTransform(1.5, -0.25, 3.0, 15.0, -90.0, 370.0, 1.0, 1.0, 1.0));
             assertEquals("S019-07: six values, one step",
                     1, NativeViewport.constructionUndoDepth());
             final double[] moved = transformValues();
@@ -322,7 +322,7 @@ public final class EditorWorkspaceHistoryTest {
 
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             assertEquals(NativeViewport.APPLY_APPLIED,
-                    NativeViewport.applyBoxTransform(4.0, 0.0, -2.0, 0.0, 45.0, 0.0));
+                    NativeViewport.applyBoxTransform(4.0, 0.0, -2.0, 0.0, 45.0, 0.0, 1.0, 1.0, 1.0));
             return null;
         });
         final double[] bMoved = onWorkspace(rule.getScenario(),
@@ -519,7 +519,7 @@ public final class EditorWorkspaceHistoryTest {
                     NativeViewport.constructionUndoAvailable());
 
             for (int step = 1; step <= 12; step++) {
-                NativeViewport.applyBoxTransform(0.1 * step, 0.0, 0.0, 0.0, 3.0 * step, 0.0);
+                NativeViewport.applyBoxTransform(0.1 * step, 0.0, 0.0, 0.0, 3.0 * step, 0.0, 1.0, 1.0, 1.0);
                 assertEquals("an update inside a transaction is not a step of its own",
                         0, NativeViewport.constructionUndoDepth());
             }
@@ -552,7 +552,7 @@ public final class EditorWorkspaceHistoryTest {
 
             NativeViewport.beginConstructionEdit();
             for (int step = 1; step <= 5; step++) {
-                NativeViewport.applyBoxTransform(0.0, 0.0, -0.4 * step, 0.0, 0.0, 0.0);
+                NativeViewport.applyBoxTransform(0.0, 0.0, -0.4 * step, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0);
             }
             NativeViewport.cancelConstructionEdit();
 
@@ -612,7 +612,7 @@ public final class EditorWorkspaceHistoryTest {
     public void s01918_aRotationKeepsTheHistoryAndTheControlsAgree() {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             NativeViewport.applyConstructionSphere(1.75);
-            NativeViewport.applyBoxTransform(2.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+            NativeViewport.applyBoxTransform(2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0);
             NativeViewport.constructionUndo();
             workspace.syncFromNative();
             assertTrue(workspace.undoAction().isEnabled());
@@ -890,7 +890,7 @@ public final class EditorWorkspaceHistoryTest {
             final long beforeDrag = NativeViewport.constructionMeshRevision();
             NativeViewport.beginConstructionEdit();
             for (int step = 1; step <= 6; step++) {
-                NativeViewport.applyBoxTransform(0.1 * step, 0.0, 0.0, 0.0, 0.0, 0.0);
+                NativeViewport.applyBoxTransform(0.1 * step, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0);
             }
             final long beforeCommit = NativeViewport.constructionMeshRevision();
             assertEquals("a placement drag publishes no geometry at all",
@@ -1009,7 +1009,7 @@ public final class EditorWorkspaceHistoryTest {
      *  placement, which together are what a history step restores. */
     private static double[] constructionState() {
         final double[] primitive = new double[NativeViewport.PRIMITIVE_STATE_SIZE];
-        final double[] transform = new double[6];
+        final double[] transform = new double[NativeViewport.TRANSFORM_SIZE];
         NativeViewport.constructionPrimitive(primitive);
         NativeViewport.boxTransform(transform);
         final double[] all = new double[primitive.length + transform.length];
@@ -1019,7 +1019,7 @@ public final class EditorWorkspaceHistoryTest {
     }
 
     private static double[] transformValues() {
-        final double[] transform = new double[6];
+        final double[] transform = new double[NativeViewport.TRANSFORM_SIZE];
         NativeViewport.boxTransform(transform);
         return transform;
     }

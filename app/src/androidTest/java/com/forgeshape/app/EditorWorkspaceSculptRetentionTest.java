@@ -266,7 +266,7 @@ public final class EditorWorkspaceSculptRetentionTest {
     /** The Construction Source: the exact primitive and its placement. */
     private static double[] constructionState() {
         final double[] primitive = new double[NativeViewport.PRIMITIVE_STATE_SIZE];
-        final double[] transform = new double[6];
+        final double[] transform = new double[NativeViewport.TRANSFORM_SIZE];
         NativeViewport.constructionPrimitive(primitive);
         NativeViewport.boxTransform(transform);
         final double[] all = new double[primitive.length + transform.length];

@@ -243,7 +243,7 @@ public final class EditorWorkspaceControlsTest {
     @Test
     public void ui07_allSixPrimitivePayloadsSurviveASelectorRoundTrip() {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            NativeViewport.applyBoxTransform(0.4, -0.2, 0.1, 5.0, 10.0, 15.0);
+            NativeViewport.applyBoxTransform(0.4, -0.2, 0.1, 5.0, 10.0, 15.0, 1.0, 1.0, 1.0);
             NativeViewport.applyConstructionBox(1.1, 2.2, 3.3);
             NativeViewport.applyConstructionCylinder(1.5, 2.5);
             NativeViewport.applyConstructionSphere(0.9);
@@ -271,10 +271,10 @@ public final class EditorWorkspaceControlsTest {
             assertEquals(2.0, primitive[NativeViewport.PRIMITIVE_PLANE_WIDTH], 0.0);
             assertEquals(1.25, primitive[NativeViewport.PRIMITIVE_PLANE_WIDTH + 1], 0.0);
 
-            final double[] transform = new double[6];
+            final double[] transform = new double[NativeViewport.TRANSFORM_SIZE];
             NativeViewport.boxTransform(transform);
             assertArrayEquals("placement survives every shape change in the chain",
-                    new double[]{0.4, -0.2, 0.1, 5.0, 10.0, 15.0}, transform, 0.0);
+                    new double[]{0.4, -0.2, 0.1, 5.0, 10.0, 15.0, 1.0, 1.0, 1.0}, transform, 0.0);
             return null;
         });
     }
@@ -409,9 +409,9 @@ public final class EditorWorkspaceControlsTest {
             assertNull("Resume must never ask for confirmation",
                     workspace.sculptContext().visibleConfirmation());
             final double[] sculptNow = nativeSnapshot();
-            final int revisionSlot = NativeViewport.PRIMITIVE_STATE_SIZE + 6
+            final int revisionSlot = NativeViewport.PRIMITIVE_STATE_SIZE + NativeViewport.TRANSFORM_SIZE
                     + NativeViewport.SCULPT_REVISION;
-            final int vertexSlot = NativeViewport.PRIMITIVE_STATE_SIZE + 6
+            final int vertexSlot = NativeViewport.PRIMITIVE_STATE_SIZE + NativeViewport.TRANSFORM_SIZE
                     + NativeViewport.SCULPT_VERTEX_COUNT;
             assertEquals("Resume re-freezes nothing", frozen[revisionSlot],
                     sculptNow[revisionSlot], 0.0);
@@ -499,9 +499,9 @@ public final class EditorWorkspaceControlsTest {
             assertNull("Resume must never ask for confirmation",
                     workspace.sculptContext().visibleConfirmation());
             final double[] sculptNow = nativeSnapshot();
-            final int revisionSlot = NativeViewport.PRIMITIVE_STATE_SIZE + 6
+            final int revisionSlot = NativeViewport.PRIMITIVE_STATE_SIZE + NativeViewport.TRANSFORM_SIZE
                     + NativeViewport.SCULPT_REVISION;
-            final int vertexSlot = NativeViewport.PRIMITIVE_STATE_SIZE + 6
+            final int vertexSlot = NativeViewport.PRIMITIVE_STATE_SIZE + NativeViewport.TRANSFORM_SIZE
                     + NativeViewport.SCULPT_VERTEX_COUNT;
             assertEquals("Resume re-freezes nothing", frozen[revisionSlot],
                     sculptNow[revisionSlot], 0.0);
@@ -686,7 +686,7 @@ public final class EditorWorkspaceControlsTest {
         });
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             final double[] after = nativeSnapshot();
-            final int base = NativeViewport.PRIMITIVE_STATE_SIZE + 6;
+            final int base = NativeViewport.PRIMITIVE_STATE_SIZE + NativeViewport.TRANSFORM_SIZE;
             assertEquals("Radius is shared by every tool",
                     before[base + NativeViewport.SCULPT_RADIUS_PIXELS],
                     after[base + NativeViewport.SCULPT_RADIUS_PIXELS], 0.0);
@@ -744,7 +744,7 @@ public final class EditorWorkspaceControlsTest {
     @Test
     public void ui03_theDisplayUnitGovernsTheEditorThatIsOffScreenToo() {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            NativeViewport.applyBoxTransform(1.5, 0.0, 0.0, 0.0, 0.0, 0.0);
+            NativeViewport.applyBoxTransform(1.5, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0);
             workspace.syncFromNative();
             workspace.findViewById(R.id.unit_chip_mm).performClick();
             workspace.findViewById(R.id.tool_rail_place).performClick();

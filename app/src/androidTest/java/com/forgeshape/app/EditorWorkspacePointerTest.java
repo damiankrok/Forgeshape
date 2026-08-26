@@ -358,9 +358,9 @@ public final class EditorWorkspacePointerTest {
     @Test
     public void inr121_pressureDoesNotChangeWhatAStrokeProduces() {
         final int strokeCountSlot =
-                NativeViewport.PRIMITIVE_STATE_SIZE + 6 + NativeViewport.SCULPT_STROKE_COUNT;
+                NativeViewport.PRIMITIVE_STATE_SIZE + NativeViewport.TRANSFORM_SIZE + NativeViewport.SCULPT_STROKE_COUNT;
         final int hasEditsSlot =
-                NativeViewport.PRIMITIVE_STATE_SIZE + 6 + NativeViewport.SCULPT_HAS_EDITS;
+                NativeViewport.PRIMITIVE_STATE_SIZE + NativeViewport.TRANSFORM_SIZE + NativeViewport.SCULPT_HAS_EDITS;
 
         freezeASculptableMesh();
         final double[] beforeLight = onWorkspace(rule.getScenario(),
@@ -562,7 +562,7 @@ public final class EditorWorkspacePointerTest {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             NativeViewport.enterConstructionMode();
             NativeViewport.applyConstructionSphere(2.0);
-            NativeViewport.applyBoxTransform(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+            NativeViewport.applyBoxTransform(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0);
             NativeViewport.setSculptTool(NativeViewport.TOOL_GRAB);
             NativeViewport.setSculptBrush(300.0, 1.0);
             assertEquals(NativeViewport.SCULPT_OK, NativeViewport.freezeToSculpt());

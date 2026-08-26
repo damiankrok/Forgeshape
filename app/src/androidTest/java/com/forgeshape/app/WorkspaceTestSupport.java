@@ -32,6 +32,14 @@ final class WorkspaceTestSupport {
     static final double BASELINE_HEIGHT_METERS = 1.0;
     static final double BASELINE_DEPTH_METERS = 0.5;
 
+    /** The viewpoint every test starts from — the same one the product opens at
+     *  (kInitialYaw / kInitialPitch / kInitialDistance in forgeshape_camera.h),
+     *  so what a case can see and grab is the same on every run and in every
+     *  order. */
+    static final float BASELINE_CAMERA_YAW = 0.7f;
+    static final float BASELINE_CAMERA_PITCH = 0.5f;
+    static final float BASELINE_CAMERA_DISTANCE = 8.2f;
+
     interface WorkspaceAction<T> {
         T run(ForgeShapeActivity activity, EditorWorkspaceView workspace);
     }
@@ -78,7 +86,14 @@ final class WorkspaceTestSupport {
                 NativeViewport.enterConstructionMode();
                 NativeViewport.applyConstructionBox(BASELINE_WIDTH_METERS,
                         BASELINE_HEIGHT_METERS, BASELINE_DEPTH_METERS);
-                NativeViewport.applyBoxTransform(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+                NativeViewport.applyBoxTransform(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0);
+                // The camera is process-scoped too, and where it stands decides
+                // which handles are reachable and which are edge-on. Without
+                // this, a case that orbited or dollied would silently change
+                // what the NEXT case can grab — an order dependency that reads
+                // as a flaky solver rather than as inherited state.
+                NativeViewport.debugSetCameraPose(BASELINE_CAMERA_YAW, BASELINE_CAMERA_PITCH,
+                        BASELINE_CAMERA_DISTANCE);
                 NativeViewport.setSculptTool(NativeViewport.TOOL_GRAB);
                 workspace.setChromeHidden(false);
                 workspace.uiState().setDisplayUnit(LengthUnit.METERS);
@@ -232,7 +247,7 @@ final class WorkspaceTestSupport {
      */
     static double[] nativeSnapshot() {
         final double[] primitive = new double[NativeViewport.PRIMITIVE_STATE_SIZE];
-        final double[] transform = new double[6];
+        final double[] transform = new double[NativeViewport.TRANSFORM_SIZE];
         final double[] sculpt = new double[NativeViewport.SCULPT_STATE_SIZE];
         NativeViewport.constructionPrimitive(primitive);
         NativeViewport.boxTransform(transform);

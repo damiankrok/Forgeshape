@@ -213,12 +213,12 @@ public final class EditorWorkspaceObjectsTest {
         final long second = ids[1];
 
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            assertTransformLanded(NativeViewport.applyBoxTransform(5.0, 0.0, 0.0, 0.0, 0.0, 0.0));
+            assertTransformLanded(NativeViewport.applyBoxTransform(5.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0));
             return null;
         });
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             assertEquals(NativeViewport.SCULPT_OK, NativeViewport.sceneSelectBody(first));
-            final double[] placement = new double[6];
+            final double[] placement = new double[NativeViewport.TRANSFORM_SIZE];
             NativeViewport.boxTransform(placement);
             assertEquals("the first body was not moved by the second body's transform",
                     0.0, placement[0], 1e-9);
@@ -226,7 +226,7 @@ public final class EditorWorkspaceObjectsTest {
         });
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             assertEquals(NativeViewport.SCULPT_OK, NativeViewport.sceneSelectBody(second));
-            final double[] placement = new double[6];
+            final double[] placement = new double[NativeViewport.TRANSFORM_SIZE];
             NativeViewport.boxTransform(placement);
             assertEquals("the second body kept its own placement", 5.0, placement[0], 1e-9);
             assertEquals("both bodies are still in the scene", 2,
@@ -569,9 +569,9 @@ public final class EditorWorkspaceObjectsTest {
             for (int i = 0; i < written; i++) {
                 assertEquals(NativeViewport.SCULPT_OK, NativeViewport.sceneSelectBody(ids[i]));
                 if (ids[i] == keepId) {
-                    assertTransformLanded(NativeViewport.applyBoxTransform(0.0, 0.0, 0.0, 0.0, 0.0, 0.0));
+                    assertTransformLanded(NativeViewport.applyBoxTransform(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0));
                 } else {
-                    assertTransformLanded(NativeViewport.applyBoxTransform(offset, 0.0, 0.0, 0.0, 0.0, 0.0));
+                    assertTransformLanded(NativeViewport.applyBoxTransform(offset, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0));
                     offset += 40.0;
                 }
             }

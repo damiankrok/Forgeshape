@@ -254,7 +254,7 @@ public final class EditorWorkspaceThemeTest {
         final long[] identity = new long[2];
         final double[] before = onWorkspace(rule.getScenario(), (activity, workspace) -> {
             NativeViewport.applyConstructionCone(1.5, 3.0);
-            NativeViewport.applyBoxTransform(0.75, -0.25, 1.5, 10.0, 20.0, 30.0);
+            NativeViewport.applyBoxTransform(0.75, -0.25, 1.5, 10.0, 20.0, 30.0, 1.0, 1.0, 1.0);
             workspace.syncFromNative();
             identity[0] = NativeViewport.sceneActiveBodyId();
             identity[1] = NativeViewport.sceneBodyCount();
@@ -275,10 +275,10 @@ public final class EditorWorkspaceThemeTest {
             assertEquals(NativeViewport.PRIMITIVE_CONE, (int) primitive[0]);
             assertEquals(1.5, primitive[NativeViewport.PRIMITIVE_CONE_BOTTOM_DIAMETER], 1e-9);
 
-            final double[] transform = new double[6];
+            final double[] transform = new double[NativeViewport.TRANSFORM_SIZE];
             NativeViewport.boxTransform(transform);
             assertArrayEquals("the placement is untouched",
-                    new double[]{0.75, -0.25, 1.5, 10.0, 20.0, 30.0}, transform, 1e-9);
+                    new double[]{0.75, -0.25, 1.5, 10.0, 20.0, 30.0, 1.0, 1.0, 1.0}, transform, 1e-9);
 
             assertArrayEquals(before, nativeSnapshot(), 0.0);
             return null;

@@ -418,7 +418,7 @@ public final class EditorWorkspaceMobileTest {
         });
 
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            final double[] transform = new double[6];
+            final double[] transform = new double[NativeViewport.TRANSFORM_SIZE];
             NativeViewport.boxTransform(transform);
             assertEquals("position is meters, in the same slot order as before",
                     1.5, transform[1], 1.0e-12);

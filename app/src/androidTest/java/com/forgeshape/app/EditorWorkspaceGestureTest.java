@@ -111,7 +111,7 @@ public final class EditorWorkspaceGestureTest {
 
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             final double[] after = nativeSnapshot();
-            final int base = NativeViewport.PRIMITIVE_STATE_SIZE + 6;
+            final int base = NativeViewport.PRIMITIVE_STATE_SIZE + NativeViewport.TRANSFORM_SIZE;
             assertEquals("no vertex may be written by a chrome gesture",
                     before[base + NativeViewport.SCULPT_REVISION],
                     after[base + NativeViewport.SCULPT_REVISION], 0.0);
@@ -139,7 +139,7 @@ public final class EditorWorkspaceGestureTest {
 
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             final double[] after = nativeSnapshot();
-            final int base = NativeViewport.PRIMITIVE_STATE_SIZE + 6;
+            final int base = NativeViewport.PRIMITIVE_STATE_SIZE + NativeViewport.TRANSFORM_SIZE;
             assertEquals("a brush change publishes no sculpt revision",
                     before[base + NativeViewport.SCULPT_REVISION],
                     after[base + NativeViewport.SCULPT_REVISION], 0.0);

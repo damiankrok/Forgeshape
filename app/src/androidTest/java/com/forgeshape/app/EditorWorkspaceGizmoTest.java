@@ -32,14 +32,17 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 
 /**
- * Stage 020: the Construction Move / Rotate gizmo, from the product side of JNI.
+ * Stage 020 and Stage 020R2: the Construction transform gizmo — Move, Rotate and
+ * Scale, in World or Local axes — from the product side of JNI.
  *
  * <p>The solvers themselves — closest approach, the plane fallback, the signed
- * angle, the unwrap, accumulation past a full turn, the screen-constant scale
- * and the transaction boundary — are proved against an isolated scene by the
- * native {@code FORGESHAPE_GIZMO_SELFTEST} suite, which is where they belong: a
- * domain rule that can only be shown through an Android view is a rule nothing
- * else can rely on. What this suite adds is everything that is genuinely about
+ * angle, the unwrap, accumulation past a full turn, the world/local composition,
+ * the branch-continuous Euler decomposition, the screen-space scale mapping, the
+ * screen-constant instrument size and the transaction boundary — are proved
+ * against an isolated scene by the native {@code FORGESHAPE_GIZMO_SELFTEST} and
+ * {@code FORGESHAPE_CONSTRUCTION_TRANSFORM_SELFTEST} suites, which is where they
+ * belong: a domain rule that can only be shown through an Android view is a rule
+ * nothing else can rely on. What this suite adds is everything that is genuinely about
  * the product — that the workspace decides WHEN there is a gizmo and nothing
  * else, that a real {@link MotionEvent} through the real SurfaceView reaches the
  * real handle, that a drag arbitrates correctly against the camera, that one
@@ -174,7 +177,7 @@ public final class EditorWorkspaceGizmoTest {
             NativeViewport.debugResetConstructionHistory();
             workspace.showStartChooserAsFirstLaunch();
             workspace.findViewById(R.id.start_option_construction).performClick();
-            NativeViewport.applyBoxTransform(1.5, 0.0, 0.0, 0.0, 0.0, 0.0);
+            NativeViewport.applyBoxTransform(1.5, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0);
             return null;
         });
         settle();
@@ -260,7 +263,7 @@ public final class EditorWorkspaceGizmoTest {
 
         final long second = onWorkspace(rule.getScenario(), (activity, workspace) -> {
             final long created = NativeViewport.sceneAddBody();
-            NativeViewport.applyBoxTransform(3.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+            NativeViewport.applyBoxTransform(3.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0);
             workspace.syncFromNative();
             return created;
         });
@@ -315,8 +318,8 @@ public final class EditorWorkspaceGizmoTest {
     /** S020-06/07/08/09. Each axis moves its own coordinate and nothing else. */
     @Test
     public void s02006to09_eachMoveAxisChangesOnlyItsOwnCoordinate() {
-        final int[] axes = {NativeViewport.GIZMO_AXIS_X, NativeViewport.GIZMO_AXIS_Y,
-                NativeViewport.GIZMO_AXIS_Z};
+        final int[] axes = {NativeViewport.GIZMO_HANDLE_AXIS_X, NativeViewport.GIZMO_HANDLE_AXIS_Y,
+                NativeViewport.GIZMO_HANDLE_AXIS_Z};
         for (int i = 0; i < axes.length; i++) {
             resetToBaselineConstruction(rule.getScenario());
             enterTransform();
@@ -357,7 +360,7 @@ public final class EditorWorkspaceGizmoTest {
         });
         settle();
         final double[] before = placement();
-        dragHandle(NativeViewport.GIZMO_AXIS_X, 1.0f, 16);
+        dragHandle(NativeViewport.GIZMO_HANDLE_AXIS_X, 1.0f, 16);
         final double[] after = placement();
         for (int slot = 0; slot < 6; slot++) {
             assertTrue("slot " + slot + " must stay finite", isFinite(after[slot]));
@@ -372,7 +375,7 @@ public final class EditorWorkspaceGizmoTest {
         enterTransform();
         final int depthBefore = undoDepth();
         final double[] before = placement();
-        final boolean grabbed = dragHandle(NativeViewport.GIZMO_AXIS_Y, 0.0f, 4);
+        final boolean grabbed = dragHandle(NativeViewport.GIZMO_HANDLE_AXIS_Y, 0.0f, 4);
         assertTrue("the handle was still grabbed", grabbed);
         assertEquals("a tap is not an edit", depthBefore, undoDepth());
         assertArrayExactlyEquals("and moved nothing", before, placement());
@@ -383,7 +386,7 @@ public final class EditorWorkspaceGizmoTest {
     public void s02012_oneDragIsOneStepWhateverTheSampleCount() {
         enterTransform();
         final int depthBefore = undoDepth();
-        final boolean dragged = dragHandle(NativeViewport.GIZMO_AXIS_X, 1.0f, 48);
+        final boolean dragged = dragHandle(NativeViewport.GIZMO_HANDLE_AXIS_X, 1.0f, 48);
         assertTrue("the handle was grabbed", dragged);
         assertEquals("forty-eight samples are one step", depthBefore + 1, undoDepth());
         assertTrue("and they really were many samples",
@@ -399,8 +402,8 @@ public final class EditorWorkspaceGizmoTest {
 
         final double[] midDrag = onWorkspace(rule.getScenario(), (activity, workspace) -> {
             final View viewport = viewportOf(workspace);
-            final float[] start = handlePixel(NativeViewport.GIZMO_AXIS_X);
-            final float[] step = screenStepAlong(NativeViewport.GIZMO_AXIS_X, 1.0f);
+            final float[] start = handlePixel(NativeViewport.GIZMO_HANDLE_AXIS_X);
+            final float[] step = screenStepAlong(NativeViewport.GIZMO_HANDLE_AXIS_X, 1.0f);
             final long when = SystemClock.uptimeMillis();
             sendFinger(viewport, when, when, MotionEvent.ACTION_DOWN, start[0], start[1]);
             for (int i = 1; i <= 6; i++) {
@@ -427,8 +430,8 @@ public final class EditorWorkspaceGizmoTest {
     /** S020-14/15/16/17. Each ring turns its own component and leaves position. */
     @Test
     public void s02014to17_eachRingChangesOnlyItsOwnRotation() {
-        final int[] axes = {NativeViewport.GIZMO_AXIS_X, NativeViewport.GIZMO_AXIS_Y,
-                NativeViewport.GIZMO_AXIS_Z};
+        final int[] axes = {NativeViewport.GIZMO_HANDLE_AXIS_X, NativeViewport.GIZMO_HANDLE_AXIS_Y,
+                NativeViewport.GIZMO_HANDLE_AXIS_Z};
         for (int i = 0; i < axes.length; i++) {
             resetToBaselineConstruction(rule.getScenario());
             enterTransform();
@@ -467,7 +470,7 @@ public final class EditorWorkspaceGizmoTest {
         final double[] extremes = onWorkspace(rule.getScenario(), (activity, workspace) -> {
             final View viewport = viewportOf(workspace);
             final float[] pivot = pivotPixelUnchecked();
-            final float[] handle = handlePixel(NativeViewport.GIZMO_AXIS_Y);
+            final float[] handle = handlePixel(NativeViewport.GIZMO_HANDLE_AXIS_Y);
             final float radiusX = handle[0] - pivot[0];
             final float radiusY = handle[1] - pivot[1];
             final long when = SystemClock.uptimeMillis();
@@ -512,14 +515,14 @@ public final class EditorWorkspaceGizmoTest {
         enterTransform();
         selectRotate();
         final int depthBefore = undoDepth();
-        assertTrue("the ring was grabbed", dragHandle(NativeViewport.GIZMO_AXIS_Y, 1.0f, 24));
+        assertTrue("the ring was grabbed", dragHandle(NativeViewport.GIZMO_HANDLE_AXIS_Y, 1.0f, 24));
         assertEquals("one ring drag is one step", depthBefore + 1, undoDepth());
 
         final double[] before = placement();
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             final View viewport = viewportOf(workspace);
-            final float[] start = handlePixel(NativeViewport.GIZMO_AXIS_Y);
-            final float[] step = screenTangentAt(NativeViewport.GIZMO_AXIS_Y, 1.0f);
+            final float[] start = handlePixel(NativeViewport.GIZMO_HANDLE_AXIS_Y);
+            final float[] step = screenTangentAt(NativeViewport.GIZMO_HANDLE_AXIS_Y, 1.0f);
             final long when = SystemClock.uptimeMillis();
             sendFinger(viewport, when, when, MotionEvent.ACTION_DOWN, start[0], start[1]);
             for (int i = 1; i <= 8; i++) {
@@ -544,11 +547,11 @@ public final class EditorWorkspaceGizmoTest {
     public void s02023and24_undoAndRedoBracketOneDrag() {
         enterTransform();
         final double[] before = placement();
-        assertTrue(dragHandle(NativeViewport.GIZMO_AXIS_X, 1.0f, 10));
+        assertTrue(dragHandle(NativeViewport.GIZMO_HANDLE_AXIS_X, 1.0f, 10));
         final double[] afterMove = placement();
 
         selectRotate();
-        assertTrue(dragHandle(NativeViewport.GIZMO_AXIS_Y, 1.0f, 10));
+        assertTrue(dragHandle(NativeViewport.GIZMO_HANDLE_AXIS_Y, 1.0f, 10));
         final double[] afterRotate = placement();
 
         undo();
@@ -565,7 +568,7 @@ public final class EditorWorkspaceGizmoTest {
     @Test
     public void s02025_exactTransformReadsTheGizmoResult() {
         enterTransform();
-        assertTrue(dragHandle(NativeViewport.GIZMO_AXIS_X, 1.0f, 12));
+        assertTrue(dragHandle(NativeViewport.GIZMO_HANDLE_AXIS_X, 1.0f, 12));
         final double[] native_ = placement();
 
         final double[] shown = onWorkspace(rule.getScenario(), (activity, workspace) -> {
@@ -588,7 +591,7 @@ public final class EditorWorkspaceGizmoTest {
         enterTransform();
         final float[] before = pivotPixel();
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            NativeViewport.applyBoxTransform(2.5, 1.25, -0.75, 0.0, 0.0, 0.0);
+            NativeViewport.applyBoxTransform(2.5, 1.25, -0.75, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0);
             workspace.syncFromNative();
             return null;
         });
@@ -602,10 +605,10 @@ public final class EditorWorkspaceGizmoTest {
     @Test
     public void s02027_aNewDragInvalidatesTheRedo() {
         enterTransform();
-        assertTrue(dragHandle(NativeViewport.GIZMO_AXIS_X, 1.0f, 10));
+        assertTrue(dragHandle(NativeViewport.GIZMO_HANDLE_AXIS_X, 1.0f, 10));
         undo();
         assertTrue("there is something to redo", NativeViewport.constructionRedoAvailable());
-        assertTrue(dragHandle(NativeViewport.GIZMO_AXIS_Y, 1.0f, 10));
+        assertTrue(dragHandle(NativeViewport.GIZMO_HANDLE_AXIS_Y, 1.0f, 10));
         assertFalse("a new edit is a new branch", NativeViewport.constructionRedoAvailable());
     }
 
@@ -614,7 +617,7 @@ public final class EditorWorkspaceGizmoTest {
     public void s02028_twoBodiesUndoChronologicallyAndIndependently() {
         enterTransform();
         final long first = NativeViewport.sceneActiveBodyId();
-        assertTrue(dragHandle(NativeViewport.GIZMO_AXIS_X, 1.0f, 10));
+        assertTrue(dragHandle(NativeViewport.GIZMO_HANDLE_AXIS_X, 1.0f, 10));
         final double firstX = placement()[0];
 
         final long second = onWorkspace(rule.getScenario(), (activity, workspace) -> {
@@ -623,7 +626,7 @@ public final class EditorWorkspaceGizmoTest {
             return created;
         });
         settle();
-        assertTrue(dragHandle(NativeViewport.GIZMO_AXIS_Y, 1.0f, 10));
+        assertTrue(dragHandle(NativeViewport.GIZMO_HANDLE_AXIS_Y, 1.0f, 10));
         final double secondY = placement()[1];
 
         undo();  // the second body's drag
@@ -646,7 +649,7 @@ public final class EditorWorkspaceGizmoTest {
     public void s02029and30_theGizmoTakesOnlyTheGesturesThatStartOnAHandle() {
         enterTransform();
         final float[] cameraBefore = cameraPose();
-        assertTrue(dragHandle(NativeViewport.GIZMO_AXIS_X, 1.0f, 12));
+        assertTrue(dragHandle(NativeViewport.GIZMO_HANDLE_AXIS_X, 1.0f, 12));
         final float[] cameraAfterHandleDrag = cameraPose();
         assertEquals("a captured handle must not orbit", cameraBefore[0],
                 cameraAfterHandleDrag[0], 1e-4f);
@@ -661,7 +664,7 @@ public final class EditorWorkspaceGizmoTest {
             final float x = viewport.getWidth() * 0.12f;
             final float y = viewport.getHeight() * 0.14f;
             assertEquals("precondition: this pixel is not a handle",
-                    NativeViewport.GIZMO_AXIS_NONE, NativeViewport.gizmoHitTest(x, y));
+                    NativeViewport.GIZMO_HANDLE_NONE, NativeViewport.gizmoHitTest(x, y));
             final long when = SystemClock.uptimeMillis();
             sendFinger(viewport, when, when, MotionEvent.ACTION_DOWN, x, y);
             for (int i = 1; i <= 8; i++) {
@@ -686,7 +689,7 @@ public final class EditorWorkspaceGizmoTest {
         enterTransform();
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             final View viewport = viewportOf(workspace);
-            final float[] start = handlePixel(NativeViewport.GIZMO_AXIS_X);
+            final float[] start = handlePixel(NativeViewport.GIZMO_HANDLE_AXIS_X);
             final long when = SystemClock.uptimeMillis();
             sendFinger(viewport, when, when, MotionEvent.ACTION_DOWN, start[0], start[1]);
             sendFinger(viewport, when, when + 16L, MotionEvent.ACTION_MOVE,
@@ -701,7 +704,7 @@ public final class EditorWorkspaceGizmoTest {
         // An edit left open would make the next ordinary Apply record nothing.
         final int depthBefore = undoDepth();
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            NativeViewport.applyBoxTransform(4.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+            NativeViewport.applyBoxTransform(4.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0);
             return null;
         });
         assertEquals("the next ordinary edit still records", depthBefore + 1, undoDepth());
@@ -716,8 +719,8 @@ public final class EditorWorkspaceGizmoTest {
 
         final double[] midDrag = onWorkspace(rule.getScenario(), (activity, workspace) -> {
             final View viewport = viewportOf(workspace);
-            final float[] start = handlePixel(NativeViewport.GIZMO_AXIS_X);
-            final float[] step = screenStepAlong(NativeViewport.GIZMO_AXIS_X, 1.0f);
+            final float[] start = handlePixel(NativeViewport.GIZMO_HANDLE_AXIS_X);
+            final float[] step = screenStepAlong(NativeViewport.GIZMO_HANDLE_AXIS_X, 1.0f);
             final long when = SystemClock.uptimeMillis();
 
             final MotionEvent.PointerProperties[] props = {
@@ -767,8 +770,8 @@ public final class EditorWorkspaceGizmoTest {
         final double capturedPointer = onWorkspace(rule.getScenario(),
                 (activity, workspace) -> {
             final View viewport = viewportOf(workspace);
-            final float[] start = handlePixel(NativeViewport.GIZMO_AXIS_Z);
-            final float[] step = screenStepAlong(NativeViewport.GIZMO_AXIS_Z, 1.0f);
+            final float[] start = handlePixel(NativeViewport.GIZMO_HANDLE_AXIS_Z);
+            final float[] step = screenStepAlong(NativeViewport.GIZMO_HANDLE_AXIS_Z, 1.0f);
             final long when = SystemClock.uptimeMillis();
             final MotionEvent.PointerProperties[] props = {
                     pointerProperties(77, MotionEvent.TOOL_TYPE_STYLUS)};
@@ -829,8 +832,8 @@ public final class EditorWorkspaceGizmoTest {
         enterTransform();
         final boolean[] hits = onWorkspace(rule.getScenario(), (activity, workspace) -> {
             final float density = workspace.getResources().getDisplayMetrics().density;
-            final float[] handle = handlePixel(NativeViewport.GIZMO_AXIS_X);
-            final float[] along = screenStepAlong(NativeViewport.GIZMO_AXIS_X, 1.0f);
+            final float[] handle = handlePixel(NativeViewport.GIZMO_HANDLE_AXIS_X);
+            final float[] along = screenStepAlong(NativeViewport.GIZMO_HANDLE_AXIS_X, 1.0f);
             final float length = (float) Math.hypot(along[0], along[1]);
             // Perpendicular to the shaft on screen, in pixels per dp.
             final float px = -along[1] / length * density;
@@ -839,11 +842,11 @@ public final class EditorWorkspaceGizmoTest {
             final float outside = 40.0f;
             return new boolean[] {
                     NativeViewport.gizmoHitTest(handle[0] + px * inside, handle[1] + py * inside)
-                            == NativeViewport.GIZMO_AXIS_X,
+                            == NativeViewport.GIZMO_HANDLE_AXIS_X,
                     NativeViewport.gizmoHitTest(handle[0] - px * inside, handle[1] - py * inside)
-                            == NativeViewport.GIZMO_AXIS_X,
+                            == NativeViewport.GIZMO_HANDLE_AXIS_X,
                     NativeViewport.gizmoHitTest(handle[0] + px * outside, handle[1] + py * outside)
-                            == NativeViewport.GIZMO_AXIS_NONE};
+                            == NativeViewport.GIZMO_HANDLE_NONE};
         });
         assertTrue("22 dp to one side of the shaft still grabs it", hits[0]);
         assertTrue("and 22 dp to the other side", hits[1]);
@@ -864,7 +867,7 @@ public final class EditorWorkspaceGizmoTest {
             lengths[i] = onWorkspace(rule.getScenario(), (activity, workspace) -> {
                 NativeViewport.debugSetCameraPose(0.9f, 0.6f, distances[index]);
                 final float[] pivot = pivotPixelUnchecked();
-                final float[] handle = handlePixel(NativeViewport.GIZMO_AXIS_Y);
+                final float[] handle = handlePixel(NativeViewport.GIZMO_HANDLE_AXIS_Y);
                 return Math.hypot(handle[0] - pivot[0], handle[1] - pivot[1]);
             });
         }
@@ -945,8 +948,8 @@ public final class EditorWorkspaceGizmoTest {
                 selectRotate();
             }
             final long revisionBefore = NativeViewport.constructionMeshRevision();
-            assertTrue(dragHandle(rotate ? NativeViewport.GIZMO_AXIS_Y
-                    : NativeViewport.GIZMO_AXIS_X, 1.0f, 40));
+            assertTrue(dragHandle(rotate ? NativeViewport.GIZMO_HANDLE_AXIS_Y
+                    : NativeViewport.GIZMO_HANDLE_AXIS_X, 1.0f, 40));
             undo();
             redo();
             assertEquals((rotate ? "a rotate" : "a move")
@@ -996,10 +999,615 @@ public final class EditorWorkspaceGizmoTest {
     }
 
     // -----------------------------------------------------------------------
+    // S020R2 — the full transform: planes, spaces and Scale
+    //
+    // The mathematics of all of it — world versus local composition, the
+    // branch-continuous Euler decomposition, the plane and scale solvers, the
+    // basis freeze — is proved against isolated scenes by the native
+    // FORGESHAPE_GIZMO_SELFTEST and FORGESHAPE_CONSTRUCTION_TRANSFORM_SELFTEST
+    // suites. What these cases add is the product: that the controls exist and
+    // withdraw where they must, that a real MotionEvent through the real
+    // SurfaceView reaches the new handles, that the exact-value surface and the
+    // handles are the same truth, and that a scale still costs the mesh nothing.
+    // -----------------------------------------------------------------------
+
+    /**
+     * S020R2-01. Scale is domain state: it defaults to one, survives an exact
+     * Apply, and undoes and redoes with everything else.
+     */
+    @Test
+    public void s020r201_scaleRoundTripsThroughHistory() {
+        enterTransform();
+        final double[] fresh = placement();
+        assertEquals("a body is born at its true size", 1.0, fresh[SCALE_X], EXACT);
+        assertEquals(1.0, fresh[SCALE_Y], EXACT);
+        assertEquals(1.0, fresh[SCALE_Z], EXACT);
+
+        applyPlacement(0.5, -0.25, 1.0, 10.0, -20.0, 30.0, 3.0, 0.5, 2.25);
+        final double[] applied = placement();
+        assertEquals("the scale landed", 3.0, applied[SCALE_X], EXACT);
+        assertEquals(0.5, applied[SCALE_Y], EXACT);
+        assertEquals(2.25, applied[SCALE_Z], EXACT);
+
+        undo();
+        assertArrayExactlyEquals("undo restores all nine values", fresh, placement());
+        redo();
+        assertArrayExactlyEquals("and redo puts all nine back", applied, placement());
+    }
+
+    /**
+     * S020R2-02. One Apply is ONE atomic transaction over position, rotation
+     * and scale.
+     *
+     * <p>A refused scale must leave the position and the rotation exactly as
+     * they were and record nothing — a half-applied transform is the defect
+     * that fail-closed validation exists to prevent — and an Apply that changes
+     * nothing must record nothing either.
+     */
+    @Test
+    public void s020r202_exactApplyIsAtomicAndRefusesAnImpossibleScale() {
+        enterTransform();
+        applyPlacement(1.0, 2.0, 3.0, 5.0, 10.0, 15.0, 2.0, 2.0, 2.0);
+        final double[] before = placement();
+        final int depthBefore = undoDepth();
+
+        for (final double bad : new double[] {0.0, -1.0}) {
+            final int status = onWorkspace(rule.getScenario(), (activity, workspace) -> {
+                final int result = NativeViewport.applyBoxTransform(
+                        9.0, 9.0, 9.0, 90.0, 90.0, 90.0, bad, 1.0, 1.0);
+                workspace.syncFromNative();
+                return result;
+            });
+            settle();
+            assertEquals("a scale of " + bad + " is refused as not positive",
+                    NativeViewport.APPLY_REJECTED_NOT_POSITIVE, status);
+            assertArrayExactlyEquals("and nothing at all was written (scale " + bad + ")",
+                    before, placement());
+            assertEquals("a refused Apply records no step", depthBefore, undoDepth());
+        }
+
+        final int unchanged = onWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final int result = NativeViewport.applyBoxTransform(before[0], before[1], before[2],
+                    before[3], before[4], before[5], before[6], before[7], before[8]);
+            workspace.syncFromNative();
+            return result;
+        });
+        settle();
+        assertEquals("re-applying the same nine values is Unchanged",
+                NativeViewport.APPLY_UNCHANGED, unchanged);
+        assertEquals("and a no-op records no step", depthBefore, undoDepth());
+    }
+
+    /**
+     * S020R2-03 / S020R2-10. Every plane handle moves the body in its own plane
+     * and never off it, through the real gesture path.
+     *
+     * <p>The third coordinate is asserted EXACTLY equal, not nearly: the solver
+     * projects the pointer displacement onto two directions rather than
+     * computing three and correcting one, so staying in the plane is a property
+     * of the arithmetic and not a rounding accident.
+     */
+    @Test
+    public void s020r203_everyMovePlaneMovesOnlyInItsPlane() {
+        final int[] planes = {NativeViewport.GIZMO_HANDLE_PLANE_XY,
+                NativeViewport.GIZMO_HANDLE_PLANE_XZ, NativeViewport.GIZMO_HANDLE_PLANE_YZ};
+        final int[][] moved = {{0, 1}, {0, 2}, {1, 2}};
+        final int[] held = {2, 1, 0};
+        for (int i = 0; i < planes.length; i++) {
+            resetToBaselineConstruction(rule.getScenario());
+            enterTransform();
+            requireHandleReachable(planes[i]);
+            final double[] before = placement();
+            assertTrue("the plane handle was grabbed", dragHandle(planes[i], 1.0f, 12));
+            final double[] after = placement();
+
+            assertTrue("a plane drag must move the body",
+                    Math.abs(after[moved[i][0]] - before[moved[i][0]]) > MOVED
+                            || Math.abs(after[moved[i][1]] - before[moved[i][1]]) > MOVED);
+            assertEquals("and must never leave its plane",
+                    before[held[i]], after[held[i]], EXACT);
+            assertEquals("a move never turns the body", before[3], after[3], EXACT);
+            assertEquals("nor resizes it", before[SCALE_X], after[SCALE_X], EXACT);
+            assertEquals("one plane drag is one step", 1, undoDepth());
+        }
+    }
+
+    /**
+     * S020R2-04. Local space moves the body along its OWN axis.
+     *
+     * <p>The same handle name, the same gesture, a body turned so that its local
+     * X is nowhere near the world X: in World only the X coordinate moves, and
+     * in Local every world coordinate does. That difference is the whole reason
+     * the space selector exists.
+     */
+    @Test
+    public void s020r204_localSpaceMovesAlongTheBodyOwnAxis() {
+        enterTransform();
+        applyPlacement(0.0, 0.0, 0.0, 37.0, -52.0, 24.0, 1.0, 1.0, 1.0);
+
+        requireHandleReachable(NativeViewport.GIZMO_HANDLE_AXIS_X);
+        assertTrue("the world X handle was grabbed",
+                dragHandle(NativeViewport.GIZMO_HANDLE_AXIS_X, 1.0f, 12));
+        final double[] world = placement();
+        assertTrue("a world X drag moves X", Math.abs(world[0]) > MOVED);
+        assertEquals("and leaves Y exactly alone", 0.0, world[1], EXACT);
+        assertEquals("and Z", 0.0, world[2], EXACT);
+
+        undo();
+        selectSpace(NativeViewport.GIZMO_SPACE_LOCAL);
+        assertEquals("the session is in Local", NativeViewport.GIZMO_SPACE_LOCAL, gizmoSpace());
+        requireHandleReachable(NativeViewport.GIZMO_HANDLE_AXIS_X);
+        assertTrue("the local X handle was grabbed",
+                dragHandle(NativeViewport.GIZMO_HANDLE_AXIS_X, 1.0f, 12));
+        final double[] local = placement();
+        assertTrue("a local X drag on a turned body moves Y as well",
+                Math.abs(local[1]) > MOVED);
+        assertTrue("and Z", Math.abs(local[2]) > MOVED);
+        assertEquals("and it is still a move, not a turn", 37.0, local[3], EXACT);
+    }
+
+    /**
+     * S020R2-05 / -06 / -07. World and Local rotation are different, correct
+     * answers to the same gesture on the same mixed body.
+     *
+     * <p>Which one is right for which space is asserted against matrices by the
+     * native suite. What matters here is that the space selector reaches the
+     * solver at all: the same ring, dragged the same way, must not produce the
+     * same orientation in the two spaces — and on a mixed body a correct
+     * rotation legitimately moves more than one Euler field, which is why this
+     * asserts nothing about which field moved.
+     */
+    @Test
+    public void s020r205to07_worldAndLocalRotationDifferOnAMixedBody() {
+        enterTransform();
+        applyPlacement(0.0, 0.0, 0.0, 37.0, -52.0, 24.0, 1.0, 1.0, 1.0);
+        final double[] start = placement();
+
+        selectRotate();
+        requireHandleReachable(NativeViewport.GIZMO_HANDLE_AXIS_X);
+        assertTrue("the world X ring was grabbed",
+                dragHandle(NativeViewport.GIZMO_HANDLE_AXIS_X, 1.0f, 14));
+        final double[] worldTurned = placement();
+        assertTrue("the world ring turned the body", changed(start, worldTurned, 3, 6));
+
+        undo();
+        selectSpace(NativeViewport.GIZMO_SPACE_LOCAL);
+        requireHandleReachable(NativeViewport.GIZMO_HANDLE_AXIS_X);
+        assertTrue("the local X ring was grabbed",
+                dragHandle(NativeViewport.GIZMO_HANDLE_AXIS_X, 1.0f, 14));
+        final double[] localTurned = placement();
+        assertTrue("the local ring turned the body", changed(start, localTurned, 3, 6));
+
+        assertTrue("world and local are different answers to the same gesture",
+                changed(worldTurned, localTurned, 3, 6));
+        assertEquals("and neither moved the body", 0.0, localTurned[0], EXACT);
+    }
+
+    /**
+     * S020R2-09 / -10 / -11. The three kinds of scale handle: one axis, two
+     * axes together, and all three at once with the ratios preserved.
+     */
+    @Test
+    public void s020r209to11_axisPlaneAndUniformScale() {
+        final int[] axes = {NativeViewport.GIZMO_HANDLE_AXIS_X, NativeViewport.GIZMO_HANDLE_AXIS_Y,
+                NativeViewport.GIZMO_HANDLE_AXIS_Z};
+        for (int i = 0; i < axes.length; i++) {
+            resetToBaselineConstruction(rule.getScenario());
+            enterTransform();
+            selectScale();
+            requireHandleReachable(axes[i]);
+            assertTrue("the scale handle was grabbed", dragHandle(axes[i], 1.0f, 12));
+            final double[] after = placement();
+            assertNotEquals("the grabbed axis changed size", 1.0, after[SCALE_X + i]);
+            for (int other = 0; other < 3; other++) {
+                if (other != i) {
+                    assertEquals("an axis scale touches no other axis",
+                            1.0, after[SCALE_X + other], EXACT);
+                }
+            }
+            assertEquals("a scale never moves the body", 0.0, after[0], EXACT);
+            assertEquals("nor turns it", 0.0, after[3], EXACT);
+            assertTrue("and a scale is always positive", after[SCALE_X + i] > 0.0);
+        }
+
+        final int[] planes = {NativeViewport.GIZMO_HANDLE_PLANE_XY,
+                NativeViewport.GIZMO_HANDLE_PLANE_XZ, NativeViewport.GIZMO_HANDLE_PLANE_YZ};
+        final int[][] pair = {{0, 1}, {0, 2}, {1, 2}};
+        final int[] untouched = {2, 1, 0};
+        for (int i = 0; i < planes.length; i++) {
+            resetToBaselineConstruction(rule.getScenario());
+            enterTransform();
+            selectScale();
+            requireHandleReachable(planes[i]);
+            assertTrue("the plane scale handle was grabbed", dragHandle(planes[i], 1.0f, 12));
+            final double[] after = placement();
+            assertNotEquals("the plane changed size", 1.0, after[SCALE_X + pair[i][0]]);
+            assertEquals("both of its axes by the SAME factor",
+                    after[SCALE_X + pair[i][0]], after[SCALE_X + pair[i][1]], 1e-12);
+            assertEquals("and the third is untouched",
+                    1.0, after[SCALE_X + untouched[i]], EXACT);
+        }
+
+        // Uniform, on a body that is already non-uniform, so "preserves the
+        // ratios" is a claim with something to preserve.
+        resetToBaselineConstruction(rule.getScenario());
+        enterTransform();
+        applyPlacement(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 3.0, 1.5, 0.5);
+        selectScale();
+        assertTrue("the uniform handle was grabbed", dragUniformScale(12));
+        final double[] uniform = placement();
+        final double factor = uniform[SCALE_X] / 3.0;
+        assertTrue("the uniform handle changed the size", Math.abs(factor - 1.0) > 1e-3);
+        assertEquals("Y by the same factor", factor, uniform[SCALE_Y] / 1.5, 1e-9);
+        assertEquals("Z by the same factor", factor, uniform[SCALE_Z] / 0.5, 1e-9);
+        assertTrue("and every component stays positive",
+                uniform[SCALE_X] > 0.0 && uniform[SCALE_Y] > 0.0 && uniform[SCALE_Z] > 0.0);
+    }
+
+    /**
+     * S020R2-12 / S020R2-13. A scale drag of any length is one step, a tap is
+     * none, and a cancelled drag restores all nine values exactly.
+     */
+    @Test
+    public void s020r212and13_oneScaleDragIsOneStepAndCancelRestoresExactly() {
+        enterTransform();
+        applyPlacement(0.5, 0.0, 0.0, 12.0, 0.0, 0.0, 2.0, 1.0, 0.5);
+        final int depthAfterSetup = undoDepth();
+        final double[] before = placement();
+
+        selectScale();
+        requireHandleReachable(NativeViewport.GIZMO_HANDLE_UNIFORM);
+        assertTrue("a tap on the uniform handle is not a drag", dragUniformScale(0));
+        assertEquals("a tap records nothing", depthAfterSetup, undoDepth());
+        assertArrayExactlyEquals("and changes nothing", before, placement());
+
+        assertTrue(dragUniformScale(48));
+        assertEquals("a forty-eight sample drag is one step", depthAfterSetup + 1, undoDepth());
+        final double[] scaled = placement();
+        assertNotEquals(before[SCALE_X], scaled[SCALE_X]);
+
+        undo();
+        assertArrayExactlyEquals("undo restores all nine", before, placement());
+        redo();
+        assertArrayExactlyEquals("redo restores all nine", scaled, placement());
+
+        // A second pointer arriving mid-drag cancels: the placement goes back
+        // exactly and nothing is recorded.
+        final int depthBeforeCancel = undoDepth();
+        final double[] beforeCancel = placement();
+        assertTrue("the cancelled drag was really started", startAndInterruptUniformDrag());
+        assertArrayExactlyEquals("a cancelled scale drag restores all nine",
+                beforeCancel, placement());
+        assertEquals("and records nothing", depthBeforeCancel, undoDepth());
+    }
+
+    /**
+     * S020R2-14. The handles and the exact-value surface are one truth, both
+     * ways, including the scale.
+     */
+    @Test
+    public void s020r214_gizmoAndExactTransformAreOneTruth() {
+        enterTransform();
+        selectScale();
+        requireHandleReachable(NativeViewport.GIZMO_HANDLE_UNIFORM);
+        assertTrue(dragUniformScale(14));
+        final double[] fromDrag = placement();
+
+        final double[] shown = onWorkspace(rule.getScenario(), (activity, workspace) -> {
+            openPrecision(workspace);
+            return readPlacementEditorValues(workspace);
+        });
+        settleLayout();
+        for (int i = 0; i < 3; i++) {
+            assertEquals("the exact Scale " + i + " is the handle result",
+                    fromDrag[SCALE_X + i], shown[SCALE_X + i], 1e-4);
+        }
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            closePrecision(workspace);
+            return null;
+        });
+        settleLayout();
+
+        // And the other direction: a typed scale is what the handles then act
+        // on, so the next drag starts from the typed value rather than from a
+        // remembered one.
+        applyPlacement(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 4.0, 4.0, 4.0);
+        assertTrue(dragUniformScale(10));
+        assertNotEquals("the drag moved the typed scale", 4.0, placement()[SCALE_X]);
+        assertTrue("and started from it rather than from one",
+                placement()[SCALE_X] > 2.0);
+    }
+
+    /**
+     * S020R2-15. A non-uniform scale reaches picking and does NOT reach the
+     * instrument.
+     *
+     * <p>Two separate claims, both of which a wrong matrix would break. The
+     * gizmo is sized from the camera alone, so stretching a body must leave its
+     * handles exactly where they were; and picking consumes the same transform
+     * the renderer does, so a pixel that missed the body before the stretch must
+     * hit it afterwards.
+     */
+    @Test
+    public void s020r215_nonUniformScaleReachesPickingAndNotTheGizmo() {
+        enterTransform();
+        final long body = NativeViewport.sceneActiveBodyId();
+
+        // Pulled back far enough that a body six meters below the origin is
+        // comfortably on screen, and held there for the whole case so the two
+        // instrument measurements below are taken from one viewpoint.
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            NativeViewport.debugSetCameraPose(0.7f, 0.5f, 20.0f);
+            return null;
+        });
+        settle();
+
+        // Parked well clear of the origin, and of the +X and +Y neighbourhoods
+        // other cases leave bodies in. The scene is process-scoped and has no
+        // delete, so a case that probed a pixel near the origin would be
+        // asserting something about whatever the previous case left behind.
+        applyPlacement(0.0, -6.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0);
+        final double[] handleBefore = handleOffsetFromPivot();
+
+        // Three meters out along world X from THIS body: outside the baseline
+        // box, which is two meters wide and therefore reaches one meter.
+        final float[] probe = pixelOfWorldPoint(3.0, -6.0, 0.0);
+
+        // Something else has to be active for a MISS to be observable: a tap
+        // that hits nothing deliberately leaves the edit target alone, so a
+        // miss while this body was already active would prove nothing.
+        final long parked = onWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final long created = NativeViewport.sceneAddBody();
+            NativeViewport.applyBoxTransform(0.0, 9.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0);
+            workspace.syncFromNative();
+            return created;
+        });
+        settle();
+        assertNotEquals("precondition: a second body exists", body, parked);
+        assertEquals("precondition: it is the active one",
+                parked, NativeViewport.sceneActiveBodyId());
+
+        tapViewport(probe[0], probe[1]);
+        assertNotEquals("three meters out misses an unstretched body (probe " + probe[0] + ","
+                        + probe[1] + ")",
+                body, NativeViewport.sceneActiveBodyId());
+
+        // Stretch it six times along X and try the same pixel again.
+        applySelectedPlacement(body, 0.0, -6.0, 0.0, 6.0, 1.0, 1.0);
+        tapViewport(probe[0], probe[1]);
+        assertEquals("and hits it once it reaches six meters each way",
+                body, NativeViewport.sceneActiveBodyId());
+
+        // The instrument is unmoved by all of it.
+        final double[] handleAfter = handleOffsetFromPivot();
+        assertEquals("a stretched body does not stretch its own gizmo",
+                handleBefore[0], handleAfter[0], 1.0);
+        assertEquals(handleBefore[1], handleAfter[1], 1.0);
+    }
+
+    /**
+     * S020R2-16. Every handle a mode offers is classified correctly at its own
+     * pixel, and the captured one is reported while it is held.
+     */
+    @Test
+    public void s020r216_everyHandleIsClassifiedAtItsOwnPixel() {
+        enterTransform();
+        final int[][] perMode = {
+                {NativeViewport.GIZMO_MODE_MOVE, NativeViewport.GIZMO_HANDLE_AXIS_X,
+                        NativeViewport.GIZMO_HANDLE_AXIS_Y, NativeViewport.GIZMO_HANDLE_AXIS_Z,
+                        NativeViewport.GIZMO_HANDLE_PLANE_XY,
+                        NativeViewport.GIZMO_HANDLE_PLANE_XZ,
+                        NativeViewport.GIZMO_HANDLE_PLANE_YZ},
+                {NativeViewport.GIZMO_MODE_ROTATE, NativeViewport.GIZMO_HANDLE_AXIS_X,
+                        NativeViewport.GIZMO_HANDLE_AXIS_Y, NativeViewport.GIZMO_HANDLE_AXIS_Z},
+                {NativeViewport.GIZMO_MODE_SCALE, NativeViewport.GIZMO_HANDLE_AXIS_X,
+                        NativeViewport.GIZMO_HANDLE_AXIS_Y, NativeViewport.GIZMO_HANDLE_AXIS_Z,
+                        NativeViewport.GIZMO_HANDLE_PLANE_XY,
+                        NativeViewport.GIZMO_HANDLE_PLANE_XZ,
+                        NativeViewport.GIZMO_HANDLE_PLANE_YZ,
+                        NativeViewport.GIZMO_HANDLE_UNIFORM},
+        };
+        for (final int[] mode : perMode) {
+            selectMode(mode[0]);
+            for (int i = 1; i < mode.length; i++) {
+                final int handle = mode[i];
+                // Orbited to first, exactly as a user would: an edge-on handle
+                // is deliberately not grabbable, so the claim being made is
+                // "from a viewpoint where this handle can be seen, its own pixel
+                // names it" — not "every handle is grabbable from everywhere".
+                assertTrue("no viewpoint reaches mode " + mode[0] + " handle " + handle,
+                        orientCameraForHandle(handle));
+                final int classified = onWorkspace(rule.getScenario(), (activity, workspace) -> {
+                    final float[] point = new float[2];
+                    if (!NativeViewport.gizmoHandlePoint(handle, point)) {
+                        return -1;
+                    }
+                    return NativeViewport.gizmoHitTest(point[0], point[1]);
+                });
+                assertEquals("mode " + mode[0] + " handle " + handle
+                        + " must be what its own pixel names", handle, classified);
+            }
+        }
+
+        // The pivot is the uniform handle in Scale and NO handle in Move, which
+        // is the tier rule stated where a user can feel it.
+        selectMode(NativeViewport.GIZMO_MODE_SCALE);
+        assertEquals("the pivot is the uniform scale handle",
+                NativeViewport.GIZMO_HANDLE_UNIFORM, hitTestAtPivot());
+        selectMode(NativeViewport.GIZMO_MODE_MOVE);
+        assertEquals("and names nothing in Move, where every shaft meets there",
+                NativeViewport.GIZMO_HANDLE_NONE, hitTestAtPivot());
+
+        // While a handle is held, the session reports which one.
+        selectMode(NativeViewport.GIZMO_MODE_SCALE);
+        final double[] held = onWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final View viewport = viewportOf(workspace);
+            final float[] point = new float[2];
+            NativeViewport.gizmoHandlePoint(NativeViewport.GIZMO_HANDLE_PLANE_XZ, point);
+            final long when = SystemClock.uptimeMillis();
+            sendFinger(viewport, when, when, MotionEvent.ACTION_DOWN, point[0], point[1]);
+            sendFinger(viewport, when, when + 16L, MotionEvent.ACTION_MOVE, point[0] + 20.0f,
+                    point[1] + 20.0f);
+            final double[] state = new double[NativeViewport.GIZMO_STATE_SIZE];
+            NativeViewport.gizmoState(state);
+            sendFinger(viewport, when, when + 32L, MotionEvent.ACTION_CANCEL, point[0] + 20.0f,
+                    point[1] + 20.0f);
+            return state;
+        });
+        settle();
+        assertEquals("the held handle is reported while it is held",
+                NativeViewport.GIZMO_HANDLE_PLANE_XZ, (int) held[NativeViewport.GIZMO_HANDLE]);
+        assertTrue("and the session says it is capturing",
+                held[NativeViewport.GIZMO_CAPTURING] != 0.0);
+    }
+
+    /**
+     * S020R2-18. Scale is Local-only, and the space selector is <b>absent</b>
+     * there rather than shown and refused.
+     *
+     * <p>Leaving Scale puts the remembered space back, so a round trip through
+     * Scale does not quietly change what a Move handle means. None of it is an
+     * edit.
+     */
+    @Test
+    public void s020r218_scaleIsLocalOnlyAndRestoresTheRememberedSpace() {
+        enterTransform();
+        final int depthBefore = undoDepth();
+        final long revisionBefore = NativeViewport.constructionMeshRevision();
+
+        assertEquals("Transform opens in World", NativeViewport.GIZMO_SPACE_WORLD, gizmoSpace());
+        assertEquals("and the choice is offered", View.VISIBLE, spaceSelectorVisibility());
+
+        selectSpace(NativeViewport.GIZMO_SPACE_LOCAL);
+        selectScale();
+        assertEquals("Scale is Local", NativeViewport.GIZMO_SPACE_LOCAL, gizmoSpace());
+        assertEquals("and withdraws the choice", View.GONE, spaceSelectorVisibility());
+
+        final boolean refused = onWorkspace(rule.getScenario(), (activity, workspace) ->
+                !NativeViewport.setGizmoSpace(NativeViewport.GIZMO_SPACE_WORLD));
+        assertTrue("and the guard below JNI refuses World anyway", refused);
+        assertEquals("still Local", NativeViewport.GIZMO_SPACE_LOCAL, gizmoSpace());
+
+        selectMode(NativeViewport.GIZMO_MODE_MOVE);
+        assertEquals("leaving Scale restores the remembered space",
+                NativeViewport.GIZMO_SPACE_LOCAL, gizmoSpace());
+        assertEquals("and offers the choice again", View.VISIBLE, spaceSelectorVisibility());
+
+        selectSpace(NativeViewport.GIZMO_SPACE_WORLD);
+        selectScale();
+        selectMode(NativeViewport.GIZMO_MODE_ROTATE);
+        assertEquals("World is remembered just as well",
+                NativeViewport.GIZMO_SPACE_WORLD, gizmoSpace());
+
+        assertEquals("none of it is an edit", depthBefore, undoDepth());
+        assertEquals("and none of it publishes geometry",
+                revisionBefore, NativeViewport.constructionMeshRevision());
+    }
+
+    /**
+     * S020R2-18 (layout). Both selectors meet the 48 dp floor and collide with
+     * nothing, in every window the workspace adapts to.
+     *
+     * <p>The precision toggle is measured with them on purpose: it is the LAST
+     * child of the trailing cluster, so it is the one Android squeezes when the
+     * column stops fitting — which is exactly what adding capsules to a short
+     * window does if the selectors do not turn on their side.
+     */
+    @Test
+    public void s020r218_bothSelectorsAreReachableAndCollisionFreeInEveryWindow() {
+        final int[] orientations = {ActivityInfo.SCREEN_ORIENTATION_PORTRAIT,
+                ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE};
+        for (int orientation : orientations) {
+            setOrientation(rule.getScenario(), orientation);
+            settleLayout();
+            enterTransform();
+            settleLayout();
+
+            doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+                final int floor = Math.round(TypedValue.applyDimension(
+                        TypedValue.COMPLEX_UNIT_DIP, 48.0f,
+                        workspace.getResources().getDisplayMetrics()));
+                for (View control : new View[] {workspace.transformMoveAction(),
+                        workspace.transformRotateAction(), workspace.transformScaleAction(),
+                        workspace.transformSpaceWorldAction(),
+                        workspace.transformSpaceLocalAction(), workspace.precisionToggle()}) {
+                    assertTrue("a transform control is on screen",
+                            control.getVisibility() == View.VISIBLE && control.getWidth() > 0);
+                    assertTrue("it must meet the 48 dp floor: " + control.getWidth() + "x"
+                                    + control.getHeight(),
+                            control.getWidth() >= floor && control.getHeight() >= floor);
+                    assertTrue("and be fully on screen",
+                            WorkspaceTestSupport.isFullyOnScreen(control, workspace));
+                }
+
+                final Rect mode = rectOf(workspace, workspace.transformModeGroup());
+                final Rect space = rectOf(workspace, workspace.transformSpaceGroup());
+                final String cluster = "rail=" + rectOf(workspace, workspace.toolRailScroll())
+                        + " mode=" + mode + " space=" + space
+                        + " precision=" + rectOf(workspace, workspace.precisionGroup())
+                        + " column=" + rectOf(workspace, workspace.railColumn());
+                assertFalse("the two selectors must not cover each other " + cluster,
+                        Rect.intersects(mode, space));
+                for (View other : new View[] {workspace.precisionToggle(),
+                        workspace.toolRailScroll(), workspace.objectsCapsule()}) {
+                    if (other == null || other.getVisibility() != View.VISIBLE) {
+                        continue;
+                    }
+                    final Rect otherRect = rectOf(workspace, other);
+                    assertFalse("the mode selector must not cover " + other.getId() + " "
+                                    + otherRect + " :: " + cluster,
+                            Rect.intersects(mode, otherRect));
+                    assertFalse("the space selector must not cover " + other.getId() + " "
+                                    + otherRect + " :: " + cluster,
+                            Rect.intersects(space, otherRect));
+                }
+                return null;
+            });
+        }
+    }
+
+    /**
+     * S020R2-20. A long scale drag, and undoing and redoing it, costs the mesh
+     * nothing — and a shape change still costs it something, so the counter is
+     * proved to be able to move at all.
+     */
+    @Test
+    public void s020r220_scaleAndItsHistoryPublishNoMeshRevision() {
+        enterTransform();
+        final long before = NativeViewport.constructionMeshRevision();
+
+        selectScale();
+        assertTrue(dragUniformScale(60));
+        requireHandleReachable(NativeViewport.GIZMO_HANDLE_AXIS_Y);
+        assertTrue(dragHandle(NativeViewport.GIZMO_HANDLE_AXIS_Y, 1.0f, 40));
+        requireHandleReachable(NativeViewport.GIZMO_HANDLE_PLANE_XZ);
+        assertTrue(dragHandle(NativeViewport.GIZMO_HANDLE_PLANE_XZ, 1.0f, 40));
+        undo();
+        undo();
+        redo();
+        assertEquals("no amount of scaling, undoing or redoing publishes geometry",
+                before, NativeViewport.constructionMeshRevision());
+
+        final long after = onWorkspace(rule.getScenario(), (activity, workspace) -> {
+            NativeViewport.applyConstructionBox(3.0, 1.0, 0.5);
+            workspace.syncFromNative();
+            return NativeViewport.constructionMeshRevision();
+        });
+        settle();
+        assertTrue("a real shape change still publishes: " + before + " -> " + after,
+                after > before);
+    }
+
+    // -----------------------------------------------------------------------
     // Helpers
     //
     // Everything below asks native code where a handle is rather than knowing.
     // -----------------------------------------------------------------------
+
+    /** Where the three scale values start in a placement array. */
+    private static final int SCALE_X = NativeViewport.TRANSFORM_SCALE;
+    private static final int SCALE_Y = NativeViewport.TRANSFORM_SCALE + 1;
+    private static final int SCALE_Z = NativeViewport.TRANSFORM_SCALE + 2;
 
     private void enterTransform() {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
@@ -1010,12 +1618,262 @@ public final class EditorWorkspaceGizmoTest {
     }
 
     private void selectRotate() {
+        selectMode(NativeViewport.GIZMO_MODE_ROTATE);
+    }
+
+    private void selectScale() {
+        selectMode(NativeViewport.GIZMO_MODE_SCALE);
+    }
+
+    /** Presses the mode button a user would press, then reads the mode back. */
+    private void selectMode(final int mode) {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            workspace.transformRotateAction().performClick();
+            switch (mode) {
+                case NativeViewport.GIZMO_MODE_ROTATE:
+                    workspace.transformRotateAction().performClick();
+                    break;
+                case NativeViewport.GIZMO_MODE_SCALE:
+                    workspace.transformScaleAction().performClick();
+                    break;
+                default:
+                    workspace.transformMoveAction().performClick();
+                    break;
+            }
             return null;
         });
         settle();
-        assertEquals("Rotate is held", NativeViewport.GIZMO_MODE_ROTATE, gizmoMode());
+        assertEquals("the requested mode is held", mode, gizmoMode());
+    }
+
+    /** Presses the space button a user would press, then reads it back. */
+    private void selectSpace(final int space) {
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            if (space == NativeViewport.GIZMO_SPACE_LOCAL) {
+                workspace.transformSpaceLocalAction().performClick();
+            } else {
+                workspace.transformSpaceWorldAction().performClick();
+            }
+            return null;
+        });
+        settle();
+        assertEquals("the requested space is held", space, gizmoSpace());
+    }
+
+    /** One atomic exact-value Apply of all nine values, through the one entry point. */
+    private void applyPlacement(final double px, final double py, final double pz,
+                                final double rx, final double ry, final double rz,
+                                final double sx, final double sy, final double sz) {
+        final int status = onWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final int result =
+                    NativeViewport.applyBoxTransform(px, py, pz, rx, ry, rz, sx, sy, sz);
+            workspace.syncFromNative();
+            return result;
+        });
+        settle();
+        assertTrue("the placement must land: status " + status,
+                status == NativeViewport.APPLY_APPLIED
+                        || status == NativeViewport.APPLY_UNCHANGED);
+    }
+
+    /**
+     * Drags the UNIFORM scale handle, which sits on the pivot and therefore has
+     * no projected direction of its own.
+     *
+     * <p>The gesture is the screen diagonal — right and up — which is what the
+     * solver reads for this handle and the only direction it has. `steps` of
+     * zero produces a tap.
+     */
+    private boolean dragUniformScale(final int steps) {
+        final Boolean grabbed = onWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final View viewport = viewportOf(workspace);
+            final float[] start = new float[2];
+            if (!NativeViewport.gizmoHandlePoint(NativeViewport.GIZMO_HANDLE_UNIFORM, start)) {
+                return Boolean.FALSE;
+            }
+            if (NativeViewport.gizmoHitTest(start[0], start[1])
+                    != NativeViewport.GIZMO_HANDLE_UNIFORM) {
+                return Boolean.FALSE;
+            }
+            final long when = SystemClock.uptimeMillis();
+            sendFinger(viewport, when, when, MotionEvent.ACTION_DOWN, start[0], start[1]);
+            for (int i = 1; i <= steps; i++) {
+                sendFinger(viewport, when, when + 16L * i, MotionEvent.ACTION_MOVE,
+                        start[0] + 3.0f * i, start[1] - 3.0f * i);
+            }
+            sendFinger(viewport, when, when + 16L * (steps + 1), MotionEvent.ACTION_UP,
+                    start[0] + 3.0f * steps, start[1] - 3.0f * steps);
+            return Boolean.TRUE;
+        });
+        settle();
+        return Boolean.TRUE.equals(grabbed);
+    }
+
+    /**
+     * Starts a uniform scale drag, moves it, then puts a SECOND finger down —
+     * which is the documented cancel — and lifts both.
+     */
+    private boolean startAndInterruptUniformDrag() {
+        final Boolean started = onWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final View viewport = viewportOf(workspace);
+            final float[] start = new float[2];
+            if (!NativeViewport.gizmoHandlePoint(NativeViewport.GIZMO_HANDLE_UNIFORM, start)) {
+                return Boolean.FALSE;
+            }
+            final long when = SystemClock.uptimeMillis();
+            sendFinger(viewport, when, when, MotionEvent.ACTION_DOWN, start[0], start[1]);
+            for (int i = 1; i <= 6; i++) {
+                sendFinger(viewport, when, when + 16L * i, MotionEvent.ACTION_MOVE,
+                        start[0] + 6.0f * i, start[1] - 6.0f * i);
+            }
+            final MotionEvent.PointerProperties[] props = {
+                    pointerProperties(0, MotionEvent.TOOL_TYPE_FINGER),
+                    pointerProperties(1, MotionEvent.TOOL_TYPE_FINGER)};
+            final MotionEvent.PointerCoords[] coords = {
+                    pointerCoords(start[0] + 36.0f, start[1] - 36.0f),
+                    pointerCoords(start[0] + 160.0f, start[1] + 160.0f)};
+            dispatch(viewport, when, when + 128L,
+                    MotionEvent.ACTION_POINTER_DOWN
+                            | (1 << MotionEvent.ACTION_POINTER_INDEX_SHIFT),
+                    props, coords, 2);
+            dispatch(viewport, when, when + 144L,
+                    MotionEvent.ACTION_POINTER_UP
+                            | (1 << MotionEvent.ACTION_POINTER_INDEX_SHIFT),
+                    props, coords, 2);
+            sendFinger(viewport, when, when + 160L, MotionEvent.ACTION_UP,
+                    start[0] + 36.0f, start[1] - 36.0f);
+            return Boolean.TRUE;
+        });
+        settle();
+        return Boolean.TRUE.equals(started);
+    }
+
+    /**
+     * The pixel a given WORLD point lands on, measured rather than computed.
+     *
+     * <p>There is no general project-a-point call across JNI, and inventing one
+     * out of the gizmo scale would mean this suite carrying its own copy of the
+     * projection — a second answer to the one question the whole design keeps in
+     * one place. So the point is measured instead: the active body is placed
+     * exactly there for a moment, its PIVOT pixel is read from the same
+     * projection the hit test uses, and the body is put back. Nothing is
+     * written down and nothing is re-derived.
+     */
+    private float[] pixelOfWorldPoint(final double x, final double y, final double z) {
+        final double[] restore = placement();
+        final float[] pixel = onWorkspace(rule.getScenario(), (activity, workspace) -> {
+            NativeViewport.applyBoxTransform(x, y, z, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0);
+            workspace.syncFromNative();
+            final float[] out = new float[2];
+            assertTrue("the probe point must be on screen",
+                    NativeViewport.gizmoHandlePoint(NativeViewport.GIZMO_HANDLE_NONE, out));
+            return out;
+        });
+        settle();
+        applyPlacement(restore[0], restore[1], restore[2], restore[3], restore[4], restore[5],
+                restore[6], restore[7], restore[8]);
+        return pixel;
+    }
+
+    /**
+     * Orbits to a viewpoint from which `handle` is actually reachable, and says
+     * whether one was found.
+     *
+     * <p>Not every handle is grabbable from every angle, and that is correct
+     * rather than a defect: a shaft pointing at the camera projects to nothing,
+     * and a plane seen edge-on collapses onto the pivot, where the gizmo
+     * deliberately names no handle at all. A user orbits until they can see the
+     * handle they want; a case that refused to do the same would either be
+     * testing one lucky viewpoint or asserting that an edge-on handle is
+     * grabbable, which it must not be.
+     *
+     * <p>The viewpoint is accepted only when the hit test agrees that the
+     * handle own pixel names that handle — the same agreement a finger gets.
+     */
+    private boolean orientCameraForHandle(final int handle) {
+        final float[][] poses = {
+                {0.7f, 0.5f}, {0.7f, -0.5f}, {2.3f, 0.5f}, {2.3f, -0.5f},
+                {3.9f, 0.5f}, {3.9f, -0.5f}, {5.5f, 0.5f}, {5.5f, -0.5f},
+                {1.5f, 1.0f}, {4.7f, 1.0f}, {1.5f, -1.0f}, {4.7f, -1.0f},
+                {0.2f, 0.9f}, {2.9f, 0.2f}, {5.0f, -0.2f}, {3.2f, 1.2f},
+        };
+        for (final float[] pose : poses) {
+            final boolean reachable = onWorkspace(rule.getScenario(), (activity, workspace) -> {
+                NativeViewport.debugSetCameraPose(pose[0], pose[1],
+                        WorkspaceTestSupport.BASELINE_CAMERA_DISTANCE);
+                final float[] point = new float[2];
+                if (!NativeViewport.gizmoHandlePoint(handle, point)) {
+                    return Boolean.FALSE;
+                }
+                return NativeViewport.gizmoHitTest(point[0], point[1]) == handle;
+            });
+            if (reachable) {
+                settle();
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Orients for a handle and fails the case when no viewpoint reaches it. */
+    private void requireHandleReachable(final int handle) {
+        assertTrue("no viewpoint makes handle " + handle + " reachable",
+                orientCameraForHandle(handle));
+    }
+
+    /** The X handle offset from the pivot, in pixels: how large the instrument
+     *  is drawn right now, which the body own scale must not change. */
+    private double[] handleOffsetFromPivot() {
+        return onWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final float[] pivot = pivotPixelUnchecked();
+            final float[] handle = handlePixel(NativeViewport.GIZMO_HANDLE_AXIS_X);
+            return new double[] {handle[0] - pivot[0], handle[1] - pivot[1]};
+        });
+    }
+
+    /** Places and sizes ONE named body, leaving whatever was active active. */
+    private void applySelectedPlacement(final long objectId, final double px, final double py,
+                                        final double pz, final double sx, final double sy,
+                                        final double sz) {
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final long previous = NativeViewport.sceneActiveBodyId();
+            NativeViewport.sceneSelectBody(objectId);
+            NativeViewport.applyBoxTransform(px, py, pz, 0.0, 0.0, 0.0, sx, sy, sz);
+            NativeViewport.sceneSelectBody(previous);
+            workspace.syncFromNative();
+            return null;
+        });
+        settle();
+    }
+
+    /** A tap, through the real viewport, at a pixel. */
+    private void tapViewport(final float x, final float y) {
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final View viewport = viewportOf(workspace);
+            final long when = SystemClock.uptimeMillis();
+            sendFinger(viewport, when, when, MotionEvent.ACTION_DOWN, x, y);
+            sendFinger(viewport, when, when + 24L, MotionEvent.ACTION_UP, x, y);
+            return null;
+        });
+        settle();
+    }
+
+    private int hitTestAtPivot() {
+        return onWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final float[] pivot = new float[2];
+            assertTrue("the pivot must be on screen",
+                    NativeViewport.gizmoHandlePoint(NativeViewport.GIZMO_HANDLE_NONE, pivot));
+            return NativeViewport.gizmoHitTest(pivot[0], pivot[1]);
+        });
+    }
+
+    /** Whether any slot in [from, to) differs by more than a tap. */
+    private static boolean changed(double[] a, double[] b, int from, int to) {
+        for (int i = from; i < to; i++) {
+            if (Math.abs(a[i] - b[i]) > MOVED) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -1081,7 +1939,7 @@ public final class EditorWorkspaceGizmoTest {
 
     private static float[] pivotPixelUnchecked() {
         final float[] out = new float[2];
-        NativeViewport.gizmoHandlePoint(NativeViewport.GIZMO_AXIS_NONE, out);
+        NativeViewport.gizmoHandlePoint(NativeViewport.GIZMO_HANDLE_NONE, out);
         return out;
     }
 
@@ -1089,16 +1947,16 @@ public final class EditorWorkspaceGizmoTest {
         return onWorkspace(rule.getScenario(), (activity, workspace) -> {
             final float[] out = new float[2];
             assertTrue("the pivot must be on screen",
-                    NativeViewport.gizmoHandlePoint(NativeViewport.GIZMO_AXIS_NONE, out));
+                    NativeViewport.gizmoHandlePoint(NativeViewport.GIZMO_HANDLE_NONE, out));
             return out;
         });
     }
 
     private static String axisName(int axis) {
         switch (axis) {
-            case NativeViewport.GIZMO_AXIS_X: return "X";
-            case NativeViewport.GIZMO_AXIS_Y: return "Y";
-            case NativeViewport.GIZMO_AXIS_Z: return "Z";
+            case NativeViewport.GIZMO_HANDLE_AXIS_X: return "X";
+            case NativeViewport.GIZMO_HANDLE_AXIS_Y: return "Y";
+            case NativeViewport.GIZMO_HANDLE_AXIS_Z: return "Z";
             default: return "pivot";
         }
     }
@@ -1116,7 +1974,7 @@ public final class EditorWorkspaceGizmoTest {
      * the whole design exists to prevent.
      */
     private static double[] readPlacement() {
-        final double[] values = new double[6];
+        final double[] values = new double[NativeViewport.TRANSFORM_SIZE];
         NativeViewport.boxTransform(values);
         return values;
     }
@@ -1140,7 +1998,8 @@ public final class EditorWorkspaceGizmoTest {
      */
     private static double[] readPlacementEditorValues(EditorWorkspaceView workspace) {
         final int[] ids = {R.id.field_pos_x, R.id.field_pos_y, R.id.field_pos_z,
-                R.id.field_rot_x, R.id.field_rot_y, R.id.field_rot_z};
+                R.id.field_rot_x, R.id.field_rot_y, R.id.field_rot_z,
+                R.id.field_scale_x, R.id.field_scale_y, R.id.field_scale_z};
         final double[] shown = new double[ids.length];
         for (int i = 0; i < ids.length; i++) {
             final android.widget.EditText field = workspace.findViewById(ids[i]);
@@ -1168,9 +2027,18 @@ public final class EditorWorkspaceGizmoTest {
         return (int) out[NativeViewport.GIZMO_MODE];
     }
 
+    private int gizmoSpace() {
+        return (int) gizmoState()[NativeViewport.GIZMO_SPACE];
+    }
+
     private int transformSelectorVisibility() {
         return onWorkspace(rule.getScenario(), (activity, workspace) ->
                 workspace.transformModeGroup().getVisibility());
+    }
+
+    private int spaceSelectorVisibility() {
+        return onWorkspace(rule.getScenario(), (activity, workspace) ->
+                workspace.transformSpaceGroup().getVisibility());
     }
 
     private int undoDepth() {
