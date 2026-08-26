@@ -1,6 +1,6 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.41.0
+**Status Version:** 0.41.1
 **Updated:** 2026-08-26
 **Result:** TECHNICAL COMPLETE — Stage 020R2 turned the axis-only gizmo into the
 first **complete Construction transform workflow**: Move, Rotate and Scale, in
@@ -39,15 +39,16 @@ inverse-transpose (`R·S⁻¹`) and a local ray parameter is still world distanc
 **Surface Snap and Grid Snap remain absent** — the quantization and placement
 seam exists and is the identity.
 **Visual acceptance remains PENDING OWNER/COORDINATOR SCREENSHOT REVIEW** on the
-UIR4C-S01..S10, S019-S01..S06 and S020-S01..S11 sets, now joined by the
-S020R2-S01..S10 full-transform set; no part of the look is final until those
-reviews return.
+UIR4C-S01..S10, S019-S01..S06 and S020R2-S01..S10 sets; no part of the look is
+final until those reviews return. That is an owner track running beside the
+technical one, not the next technical action — see *Next Stage*.
 **Current Phase:** Phase 1 — Native Viewport
 **Workspace:** `D:\TRAVELAPPS\ForgeShape`
 **Accepted implementation baseline:** Stage 020R2 (full Construction transform
 gizmo — Move/Rotate/Scale, World/Local, plane and uniform handles) on top of
 Stage 020 (Construction Move/Rotate gizmo) and Stage 019 (Construction transaction and
-Undo/Redo), UI-R4C (final visual composition cleanup), UI-R4B (workspace
+Undo/Redo), with DOC-R2 (current-truth documentation reconciliation) on top of
+it, UI-R4C (final visual composition cleanup), UI-R4B (workspace
 visual and motion
 correction), UI-R4A (mobile workspace interaction), UI-R3R2 (approved
 dark palettes + visual composition correction), UI-R3
@@ -60,7 +61,7 @@ Stage 016 (Plane), Stage 015D (camera projection), Stage 015C-R (front-face
 culling), Stage 015C (shading), Platform Fix P2, Stage 015B, Stage 014, the NDK
 r29 migration (Gate P0) and the Owner Decision Baseline. Per-stage narrative
 lives in Git history; only what still constrains the code is kept here.
-**Next Stage:** **Owner/coordinator Stage 020R2 screenshot review.** See
+**Next Stage:** **Stage 020R3 — Scale→Sculpt world-metric brush correction.** See
 *Next Stage*.
 
 ## Current state
@@ -186,12 +187,11 @@ comes out of the mode-transition button's width budget rather than out of an
 icon control — an icon control past the window edge is unreachable, a button has
 width to give.
 
-**The Tool Rail carries only tools that work.** Sketch and Extrude are gone from
-it, along with `ToolRailView`'s whole notion of a reserved entry; Construction's
-two entries are *Shape* and *Transform*. **"Transform" is vocabulary for Stage
-020's direct handles and is not a claim that they exist** — everything behind it
-is exact numeric, and the surface it opens is titled *Exact Transform — Body #N*.
-The one approved-but-unimplemented control left in the product is the global
+**The Tool Rail carries only tools that work.** `ToolRailView` has no notion of a
+reserved entry at all; Construction's two entries are *Shape* and *Transform*.
+Transform holds both front ends to one placement — the direct handles in the
+viewport and the exact numeric surface, titled *Exact Transform — Body #N*. The
+one approved-but-unimplemented control left in the product is the global
 `Export`, drawn recessed.
 
 **A standing fault stays visible without a resident panel.** The stale-source
@@ -292,18 +292,6 @@ It is a direct consequence of both the red and the ground being owner-fixed.
 UI-R4B **carried this debt deliberately and changed no approved value**; it is
 still the one item here the owner may want to overrule.
 
-**Core document sizes** (hard cap 2000 physical lines each, measured at UI-R4C):
-`ARCHITECTURE.md` 2273, `PROJECT_STATUS.md` 1274, `PRODUCT.md` 942,
-`README.md` 436, `CLAUDE.md` 256. **`ARCHITECTURE.md` is OVER the 2000-line hard
-cap** — it was 2084 at UI-R4A, 2226 at UI-R4B, and UI-R4C added the four durable
-invariants its corrections created (a group of one is not drawn as a group, the
-transition fitted to its row, an anchored surface clear of live controls, and
-chrome that reports rather than instructs) while trimming the prose they
-superseded. Those additions were kept to contract rather than narrative and no
-stage diary was appended, but the file is further over than it was. **A
-compaction pass is owed before anything else adds to it**, and `PRODUCT.md` is
-over its 300–450 target as well. Always re-measure before quoting a count.
-
 **Stylus / S Pen on real hardware remains UNVERIFIED.** Tool type, pressure and
 tilt are carried end to end and verified synthetically (`MotionEvent.obtain` with
 a tool type and an `AXIS_TILT` value, the same path an S Pen drives); closing it
@@ -367,17 +355,15 @@ layer settings, never bundled, never committed, and removed afterwards).
 Active owner decisions are identified by `UI-OWNER-*`, `ARCH-OWNER-*`,
 `INPUT-OWNER-*` and `DOC-OWNER-*`. Recorded 2026-08-20.
 
-**Implemented by Stage 015B:** UI-OWNER-01 (the shell), UI-OWNER-02 (compact /
-medium / expanded), UI-OWNER-03 (Export as a global action, drawn and reserved),
+**Implemented:** UI-OWNER-01 (the shell), UI-OWNER-02 (compact / medium /
+expanded), UI-OWNER-03 (Export as a global action, drawn and reserved),
 UI-OWNER-05 (the destructive re-Freeze guard) and UI-OWNER-06 (stylus-friendly,
-no pressure). **Still decisions only, not behaviour:** UI-OWNER-04 — Sketch and
-Extrude have visible, disabled homes in the Tool Rail and no implementation
-whatsoever.
+no pressure). **Still a decision only, with no behaviour and no drawn control:**
+UI-OWNER-04 — Sketch and Extrude have no implementation whatsoever and no entry
+in the Tool Rail.
 
-The historical bare `D1`–`D6` tables from Stage 015A and Stage 015A-R are
-**superseded and non-authoritative**, and the two tables did not even mean the
-same things, which is why bare `D` numbers were retired. No stage gate,
-acceptance table or preflight may cite a bare `D` number again.
+Bare `D1`–`D6` decision numbers are retired and non-authoritative. No stage gate,
+acceptance table or preflight may cite a bare `D` number.
 
 | ID | Decision | Approved value |
 | --- | --- | --- |
@@ -444,9 +430,9 @@ other general-purpose engine that owns the viewport or render loop.
 | Gradle / AGP | 8.14.3 wrapper / 8.13.2 |
 | SDK levels | compileSdk 36, targetSdk 36, minSdk 26 |
 | ABI filter | `x86_64` (emulator) + `arm64-v8a` (physical devices, Gate P1) |
-| C++ / STL | C++17, `c++_static`; one packaged `.so`, `lib/x86_64/libforgeshape_native.so` |
+| C++ / STL | C++17, `c++_static`; one `.so` per filtered ABI — `lib/x86_64/` and `lib/arm64-v8a/libforgeshape_native.so` |
 | Shaders | `glslc` at `<ndk>/shader-tools/windows-x86_64/glslc.exe`, AOT from CMake |
-| System images | only `system-images;android-36.1;google_apis_playstore;x86_64` |
+| System images | only `system-images;android-36.1;google_apis_playstore;x86_64` and the 16 KB `…;google_apis_playstore_ps16k;x86_64` used by `ForgeShape_16K` |
 
 No Godot/GDExtension files remain in the workspace.
 
@@ -927,9 +913,17 @@ Latest acceptance run, on `ForgeShape_Stage006` / `emulator-5580` unless stated:
   `FORGESHAPE_CONSTRUCTION_TRANSFORM_SELFTEST_OK` 94 → **121** and
   `FORGESHAPE_GIZMO_SELFTEST_OK` 80 → **135**.
 - **JVM:** 60/60.
-- **Instrumented: 268/268, zero failures.** Every one of the eighteen suites is
-  green in the default compact phone window, through
-  `scripts\run-instrumented-tests.ps1 -Serial emulator-5580`. The adaptive
+- **Instrumented: 268/268, zero failures — assembled, not from one uninterrupted
+  run.** Every one of the eighteen suites is green in the default compact phone
+  window, through `scripts\run-instrumented-tests.ps1 -Serial emulator-5580`.
+  Read that total with the interruption entry below: the best single run reached
+  227 cases with zero failures before the emulator aborted it, and the four
+  suites it never reached were then run individually and passed. **An
+  interrupted run plus individual reruns is weaker evidence than one
+  uninterrupted full run**, and no uninterrupted full run of all 268 was
+  captured for Stage 020R2. Individual reruns are legitimate for diagnosing and
+  covering a missed suite; they are recorded as such rather than folded silently
+  into a single number. The adaptive
   subset — gizmo, layout, chrome-composition, correction, history, composition,
   foundation, sculpt-retention, **144 cases** — is additionally **144/144 in a
   short landscape window** (2400 × 1080) and **144/144 in an expanded window**
@@ -951,7 +945,10 @@ Latest acceptance run, on `ForgeShape_Stage006` / `emulator-5580` unless stated:
   an aborted run had not reached was then run on its own and passed**:
   `Pointer 13/13`, `SculptRetention 2/2`, `StartFlow 8/8`, `Theme 19/19`. No
   ForgeShape assertion failed at any point in any of the runs, and nothing in
-  ForgeShape's own log was involved on any occasion.
+  ForgeShape's own log was involved on any occasion. The honest reading is that
+  the product is not implicated and the suite total is nonetheless assembled: a
+  single clean full run remains the stronger evidence and is worth capturing
+  when the host is quiet.
 - **Device guards:** `DEV2-01`..`07` and `DEV3-01`..`06` all PASS, with no device
   attached and zero `emulator-5554` interaction.
 - **Physical ARM64 (Gate P1):** closed on a Galaxy S25 Ultra —
@@ -1216,24 +1213,18 @@ is correct that the transform carries a scale; what is missing is a decision
 about what a brush radius *means* on a stretched body, and inventing one without
 an approved contract would be worse than the current honest behaviour. Nothing
 regressed: scale is new, defaults to (1,1,1), and every existing sculpt path is
-bit-identical at that default. `PRODUCT.md` states the limitation plainly.
+bit-identical at that default. `PRODUCT.md` states the limitation plainly. **This
+is what Stage 020R3 is for** — see *Next Stage*.
 
-**Documentation size — `ARCHITECTURE.md` is PAST the 2000-line hard cap, and was
-already past it before this stage.** Measured at the end of Stage 020R2:
-`ARCHITECTURE.md` **2732** (cap 2000, target 700–1000), `PROJECT_STATUS.md`
-**1554** (target 500–800), `PRODUCT.md` **1111** (target 300–450), `README.md`
-481 (target 150–250), `CLAUDE.md` 311. The `1984` this entry used to quote was stale — which is exactly
-the failure mode the last sentence of this paragraph warns about. Stage 020R2
-rewrote the gizmo and transform sections in place and retired the prose it
-superseded rather than appending beside it, and all three still grew, because the
-stage genuinely added three modes, two spaces, a ninth authoritative value and a
-new decomposition contract. **A compaction pass is now overdue rather than due
-and must be taken before the next stage adds a section to any of them.** UI-R3R2 retired superseded prose as it went
-and still finished net-longer, so the next stage that adds architecture must
-budget a compaction pass rather than assume room exists. Both files are dense
-ownership statements rather than narrative, so further reduction means retiring
-facts. **Always re-measure before quoting a count** — recorded numbers have been
-stale in both directions.
+**Documentation currency, not documentation size.** DOC-R2 removed the raw
+line-count cap from `CLAUDE.md`: a document is too long when it is hard to
+navigate or carries text that is no longer true, never merely because of its
+physical line count. DOC-R2 reconciled the live docs against the Stage 020R2
+product, retired the migration rationale whose invariants now stand on their own,
+and deleted `docs/ui/UX_ARCHITECTURE_DECISION_PACK.md` — a Stage 015A-R proposal
+whose own header said nothing in it was implemented. The remaining cost is
+ongoing: each stage must retire what it supersedes in place rather than appending
+beside it, and never quote a document size from memory.
 
 **A verdict colour is below WCAG AA in one palette.** Light Charcoal's error red
 on its own precision surface measures 2.4:1. Both halves are owner-approved and
@@ -1472,12 +1463,12 @@ regenerated per stage.
 | `app/src/main/cpp/forgeshape_math.h` | Minimal self-owned vec3/mat4. No GLM |
 | `app/src/main/cpp/forgeshape_demo_mesh.{h,cpp}` | Baseline cube numbers; source data for the baseline debug fixture only |
 | `app/src/main/cpp/forgeshape_mesh_fixtures.{h,cpp}` | DEBUG test fixtures (baseline / same-topology / larger / stress step) |
-| `app/src/main/cpp/forgeshape_*_selftest.{h,cpp}` | The twelve debug-only deterministic suites: camera, picking, mesh, construction (box), transform, primitive, sphere, cone/capsule, sculpt brush kernel, render shading, scene, Construction history |
+| `app/src/main/cpp/forgeshape_*_selftest.{h,cpp}` | The thirteen debug-only deterministic suites: camera, picking, mesh, construction (box), transform, primitive, sphere, cone/capsule, sculpt brush kernel, render shading, scene, Construction history, gizmo |
 | `app/src/main/cpp/shaders/surface.{vert,frag}` | GLSL source for the surface pipeline: view-space normals, Studio Solid, the MatCap lookup and the debug colour path. AOT compiled to SPIR-V by `glslc` in CMake |
 | `app/src/main/cpp/shaders/grid.{vert,frag}` | GLSL source for the grid pipeline: world→clip with no model matrix, the tier→colour choice, the depth nudge that settles the coplanar Plane, and the PER-FRAGMENT radial fade |
 | `app/src/main/cpp/CMakeLists.txt` | Native build + glslc shader step |
 | `artifacts/` | Runtime evidence screenshots from accepted stages, plus `stage015c_shading_comparison.md`, the Stage 015C comparison sheet |
-| `docs/ui/UX_ARCHITECTURE_DECISION_PACK.md` | Stage 015A-R UI proposal. **Proposal only** — the Owner Decision Baseline above is authoritative, not the pack |
+| `docs/ui/wireframes/*.svg` | Stage 015A-R proposal sketches, kept as reference only. They are **not** the shipped shell and WF-3 draws a Sketch/Extrude flow that does not exist |
 | `README.md`, `ARCHITECTURE.md`, `PRODUCT.md`, `CLAUDE.md` | See the ownership table in `CLAUDE.md` |
 
 ## Shading cost record
@@ -1505,39 +1496,36 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Owner/coordinator Stage 020R2 screenshot review.** Technical COMPLETE does not
-grant visual acceptance: the gizmo is the first thing in ForgeShape a user
-manipulates directly, and whether the full instrument reads as one — the plane
-squares legible without crowding the shafts, World and Local visibly different,
-the Scale cubes obviously not arrowheads, the held handle unmistakable, the two
-selectors not adding up to a desktop toolbar slab, and the model still dominant —
-is a judgement no assertion in the suite can make. The focused set is
-`artifacts/stage020r2/S01..S10`, beside the Stage 020 set it supersedes.
+**Stage 020R3 — Scale→Sculpt world-metric brush correction.** Stage 020R2 made
+Scale a ninth authoritative value, and the one place the product has not yet
+answered for it is the brush: the radius is carried into the body's own space
+through the inverse model, so on a body stretched 4× along X a round brush leaves
+an oval mark. Sculpting in object space is correct and the transform carrying a
+scale is correct; what is missing is a decided contract for what a brush radius
+*means* on a stretched body. Nothing else in the repo is blocked on it, and no
+part of it has been started. See *Technical Debt*.
 
-**If that review passes: Stage 020S — Surface Snap.** The seam it lands in
-already exists and is the identity (`applyGizmoPlacementModifier`); no part of
-Stage 020S has been started, and Grid Snap remains a separate unapproved
-contract.
+**Visual acceptance is a parallel owner track, not the next technical action.**
+It remains PENDING on four sets, and technical COMPLETE does not grant it:
 
-**Visual acceptance remains PENDING**, on three sets. The UI-R4C ten-screenshot set
-`artifacts/uir4c/UIR4C-S01..S10` — the resting Construction workspace, Add
-Primitive clear of the trailing control, Exact Shape with a clean top, Sculpt with
-the whole back navigation readable, Resume Sculpt on the same geometry, short
-landscape, expanded Construction and Sculpt, and Neutral Charcoal and Light
-Charcoal — with `artifacts/uir4a/` and `artifacts/uir4b/` committed unmodified
-beside it so the reviews can be compared. And the focused Stage 019 set
-`artifacts/stage019/S019-S01..S06`, which asks one question only: whether the
-history capsule sits truthfully in the accepted shell, reads clearly in both
-states, and is absent in Sculpt.
+- `artifacts/stage020r2/S020R2-S01..S10` — the full transform instrument. Whether
+  it reads as one: plane squares legible without crowding the shafts, World and
+  Local visibly different, the Scale cubes obviously not arrowheads, the held
+  handle unmistakable, the two selectors not adding up to a desktop toolbar slab,
+  and the model still dominant. Beside the Stage 020 set it supersedes.
+- `artifacts/stage019/S019-S01..S06` — whether the history capsule sits
+  truthfully in the accepted shell, reads clearly in both states, and is absent
+  in Sculpt.
+- `artifacts/uir4c/UIR4C-S01..S10` — the resting Construction workspace, Add
+  Primitive clear of the trailing control, Exact Shape with a clean top, Sculpt
+  with the whole back navigation readable, Resume Sculpt on the same geometry,
+  short landscape, expanded Construction and Sculpt, and Neutral Charcoal and
+  Light Charcoal. `artifacts/uir4a/` and `artifacts/uir4b/` are committed
+  unmodified beside it so the reviews can be compared.
 
-**Also owed, and now overdue:** `ARCHITECTURE.md` is at **2732** lines against a
-2000 hard cap and a 700–1000 target, `PROJECT_STATUS.md` at **1554** against
-500–800, and `PRODUCT.md` at **1111** against 300–450. Stage 020R2 rewrote the
-gizmo and transform sections in place and retired what it superseded, and all
-three still grew, because three modes, two spaces, a ninth authoritative value
-and a decomposition contract are all current truth nothing else records. **A
-compaction pass must be taken before the next stage adds a section to any of
-them.** See *Technical Debt* for the measured numbers.
+**Approved but not next: Stage 020S — Surface Snap.** The seam it lands in
+already exists and is the identity (`applyGizmoPlacementModifier`); no part of it
+has been started, and Grid Snap remains a separate unapproved contract.
 
 The one feature the repo still records as a candidate is **Selection Outline** —
 the expensive half of selection feedback, needing either a second geometry pass

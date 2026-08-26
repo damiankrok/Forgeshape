@@ -1,9 +1,8 @@
 # ForgeShape — Product Behaviour
 
 Only behaviour that has been verified at runtime, through the real Android touch
-path, is documented here. The last section — *Accepted product direction* — is
-explicitly not behaviour: it is direction the owner has approved and nothing in
-it exists.
+path, is documented here. This file describes what ForgeShape does today and
+nothing else — accepted-but-unbuilt direction lives in `PROJECT_STATUS.md`.
 
 ## What the viewport shows
 
@@ -371,8 +370,9 @@ no other. Switching to another body and back brings the first one's exact
 numbers back unchanged.
 
 What the scene deliberately does **not** offer: there is no way to delete,
-duplicate, rename, hide or lock a body, no groups or nesting, no reordering the
-list, and no Undo. Bodies are not saved when the app closes.
+duplicate, rename, hide or lock a body, no groups or nesting and no reordering
+the list. Adding a body *is* undoable — see *Undo and Redo* — but the list
+itself carries no commands. Bodies are not saved when the app closes.
 
 ## Choosing and sizing the shape
 
@@ -679,6 +679,9 @@ there is no message and no animation, because the model changing is the answer.
   the whole body disappear; it never leaves a leftover box behind. Redo brings
   back *the same body*, with the same name, the same shape, the same placement
   and the same position in the Objects list, selected again.
+- **One handle drag** — however long you held it and however many times the
+  object moved while you dragged, Undo puts all nine values back to what they
+  were before you touched the handle. A press that never moved records nothing.
 
 Anything that changed nothing writes no history. A refused Apply, an Apply of
 exactly what is already there, choosing a different body, switching between
@@ -1050,62 +1053,21 @@ preview belongs to later work on materials and export.
 Global Toolbar, recessed, readable and clearly unavailable, and pressing it does
 nothing. Nothing in the workspace exports anything.
 
-Sketch and Extrude used to be drawn beside Shape and Transform in the Tool Rail,
-inert. They are **gone** — not implemented, and no longer taking up half of the
-control you reach for most on the smallest screen. Every entry on the Tool Rail
-now does something, and so does every shape in Add Primitive.
+**Every entry on the Tool Rail does something**, and so does every shape in Add
+Primitive. There is no sketching and no extruding: a body's shape comes from one
+of the six exact primitives and its dimensions, and nothing else makes geometry.
 
 There is no **Add from file** and no import of any kind. Add Primitive offers the
 six shapes ForgeShape builds and nothing else.
 
-## Accepted product direction — decided, not built
+**A stylus is simply another pointer.** Nothing anywhere reads pressure, tilt,
+hover or which kind of pointer is touching the screen, so an S Pen grabs a
+handle and draws a stroke exactly as a fingertip does and changes nothing about
+what the stroke deposits. The interface is *laid out* to stay comfortable with a
+stylus, which is a design constraint rather than a feature.
 
-Everything above this line is behaviour verified at runtime. Everything below it
-is **direction the owner has accepted and nothing else**: none of it exists, none
-of it can be tried, and it is recorded here only so the product's intended shape
-is not carried in someone's head. The decisions themselves are in
-`PROJECT_STATUS.md`.
-
-**A Construction Body will be able to start from a sketch as well as from a
-primitive.** Today the only way to make a shape is to choose one of the five
-exact primitives and type its dimensions. The accepted direction adds a second
-starting point: draw a closed 2D profile on a plane — lines and polylines,
-rectangles, circles, with a grid, snapping and exact typed values — and extrude
-it into a body. Sketching is a way of constructing, not a separate place to be:
-it stays inside Construction, and the same exactness rule applies, so a sketch
-dimension and an extrusion distance are authored values of the same kind as a box
-width and are never inferred back from the geometry they produced. The workflow
-is meant to be **repeatable** rather than a one-shot: several sketches, on
-different planes and eventually on flat faces of an existing body, building a
-shape up in steps that remain editable Construction history.
-
-**The first extrusion will create a new body.** Extruding to *add* material to an
-existing body, or to *cut* material out of it, is accepted as required direction
-but depends on boolean infrastructure that does not exist, so it comes after that
-and not before it.
-
-None of this changes what Start Sculpting means. Construction and sculpting stay
-two separate representations of the one object, and moving from the first to the
-second stays something the user asks for explicitly. A sketch or an extrusion is
-Construction work, and it can no more be altered by sculpting than a box's width
-can.
-
-**The editor will become a viewport-first Editor Workspace on phone and tablet.**
-The accepted shell keeps the model in view and puts tools at the edges rather
-than in a block across the top, and it adapts across compact, medium and expanded
-window sizes rather than assuming a portrait phone. Export is a global action
-rather than an editing mode. A reset that would genuinely discard existing sculpt
-work will ask first; an ordinary Resume Sculpt will not, because it destroys
-nothing. None of this is built.
-
-**Stylus support is a design constraint, not a feature yet.** ForgeShape must
-stay comfortable with a stylus — an S Pen today, an Apple Pencil in whatever
-comes later — and that shapes how the interface is laid out. It is not a feature
-in the product: nothing anywhere reads pressure, tilt, hover or which kind of
-pointer is touching the screen, so a stylus is simply another pointer and changes
-nothing about a brush stroke. Relatedly, **Apple devices are a future direction,
-not current support**: ForgeShape is an Android application and runs nowhere
-else. The owner's decision is that it must stay *portable* to Apple platforms
-later — an internal constraint on how the code is arranged, described in
-`ARCHITECTURE.md` — not a claim that an iPhone, iPad or Apple Pencil is supported
-today. Nothing in the product targets them.
+**ForgeShape is an Android application and runs nowhere else.** There is no
+Apple, Windows or web client, no account, no login and no sync. The code is
+arranged so the domain could be carried to another platform later — described in
+`ARCHITECTURE.md` — which is a constraint on how this codebase is written, not a
+claim that any other platform is supported.

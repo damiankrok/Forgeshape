@@ -112,7 +112,9 @@ forgeshape_jni.cpp            render thread, ANativeWindow, MotionEvent ->
 Android is the **first production platform and the only one that exists**. There
 is no Apple target, no Xcode project, no Metal backend, no MoltenVK and no
 cross-platform UI framework, and none is authorized. What follows is a constraint
-on how this codebase is arranged, not a claim about where it runs.
+on how this codebase is arranged, not a claim about where it runs. There is no
+Apple, Windows, web or cloud client, no account, no login and no sync — none of
+those is implemented, and nothing here should be read as saying otherwise.
 
 **The domain is platform-neutral C++ and the Android layer is an adapter over
 it.**
@@ -124,6 +126,7 @@ it.**
 | The Android UI | is a platform shell/adapter. It owns draft, presentation and layout state and nothing else, and reads authoritative state back from native code rather than assuming it |
 | Input | crosses the boundary as **semantic, platform-neutral** data. `forgeshape_input.h`'s `TouchAction`/`TouchPointer` is that boundary, and it carries tool type, pressure and tilt alongside id and position -- in ForgeShape's own enum and its own units, never Android's. A pointer sample is translated out of Android's vocabulary in the Android layer rather than carried inward. Hover and generic (non-touch) motion are still outside the vocabulary and stay a consumer-driven question |
 | Platform services | future file, storage and system services get narrow boundaries of their own, for the same reason input has one |
+| Serialization | there is none today — nothing is written to disk. When a project format arrives it must be **platform-independent and explicitly versioned**: a byte layout, an endianness and a version field decided by the domain, never a platform serializer, an Android `Parcelable`, a Java object stream or anything whose meaning depends on which OS wrote it. A file written on one platform must be readable on another, and an older file must be readable by a newer build or refused by version, never misread |
 | Renderer coupling | the renderer's dependency on a platform surface stays **explicit and local**: `forgeshape_jni.cpp` owns the `ANativeWindow` and hands it over, and `Renderer` never creates or releases one. That single visible seam is what a second backend would be added beside |
 
 The practical test is one question: *if this file had to compile on a platform
@@ -133,6 +136,18 @@ the answer must stay "nothing". This is deliberately **not** an abstraction laye
 that has no target. The seams stay where they are; nothing new crosses them.
 
 ## Android layer
+
+**The Android UI is structured framework Views, and that is a decision rather
+than an accident.** The product APK has no `dependencies { }` block,
+`android.useAndroidX=false`, and there is no Kotlin source. Compose would require
+AndroidX, the Kotlin Gradle plugin and stdlib, the Compose compiler plugin pinned
+to the Kotlin version and the `activity-compose`/`ui`/`foundation`/`material3`/
+`runtime` graph — dozens of artifacts in a project that ships none — and would
+place Compose's pointer-input pipeline above the raw-`MotionEvent`-to-JNI path
+and the sculpt gesture arbitration, which are the most carefully proven
+behaviours in the product. The two things Compose is genuinely better at here,
+`WindowInsets` and window size classes, are a few dozen lines of Views in one
+class. Migrating is not authorized.
 
 `ForgeShapeSurfaceView` is a plain `android.view.SurfaceView` (no Compose, no
 AndroidX). Its whole contribution to navigation is `onTouchEvent`, which copies
@@ -162,13 +177,12 @@ framework views built in code; no Compose, no AndroidX in the product, no design
 system, no drawer.
 
 **The viewport is the workspace; everything else is an edge.** Nothing spans the
-bottom of the window at rest. The exact-value panel used to, collapsed, and a
-collapsed panel is still a full-width strip anchored to the edge of a
-viewport-first tool — a permanent structural claim made by a surface nobody had
-asked for. It is now either open with its whole body or absent from the window
-entirely, and the model reaches the bottom edge. Exact values are ForgeShape's
-advantage and did not become less reachable: they are one tap from the tool
-context that owns them. What changed is which of the two owns the resting layout.
+bottom of the window at rest, and the model reaches the bottom edge. The
+exact-value panel is either open with its whole body or absent from the window
+entirely — a collapsed panel is still a full-width strip anchored to the edge of
+a viewport-first tool, a permanent structural claim made by a surface nobody
+asked for. Exact values are ForgeShape's advantage and are not less reachable for
+it: they are one tap from the tool context that owns them.
 
 **Every context surface grows out of the control that opened it.** The scene list
 and the Add Primitive palette out of the Objects capsule; the precision surface
@@ -185,12 +199,12 @@ measured, and the overlay container's inset padding is subtracted because the
 chrome container the invoker lives in carries the same padding.
 
 **A context surface may stand on the model; it may not stand on another
-control.** The palette is wider than the distance from the Objects capsule's
-`+` to the trailing window edge, and the clamp used to be "as far right as the
-window allows" — which slid it under the trailing tool cluster and left a
-crescent of the precision toggle showing from behind it. A half-covered control
-still takes a touch, and the panel over it reads as a rendering fault rather than
-as a layer. `trailingLimitFor` bounds the surface at `railColumn`'s own leading
+control.** The palette is wider than the distance from the Objects capsule's `+`
+to the trailing window edge, so an unbounded clamp would slide it under the
+trailing tool cluster and leave a crescent of the precision toggle showing from
+behind it. A half-covered control still takes a touch, and the panel over it
+reads as a rendering fault rather than as a layer. `trailingLimitFor` bounds the
+surface at `railColumn`'s own leading
 edge, less the same `overlay_anchor_gap` every anchored surface stands off its
 invoker, so the *surface* moves and the live control keeps its place. Skipped for
 a surface the cluster itself opened — the precision surface's invoker IS the
@@ -218,8 +232,8 @@ from `sceneActiveBodyId()` on every refresh. The Global Toolbar's Objects icon i
 gone — a toolbar icon can only offer to open a list, it cannot say which body is
 current, and two controls opening the same panel would be two answers to "where
 does the scene live". The capsule is withdrawn exactly when the window gives the
-scene a permanent column, for the reason the icon used to be: a capsule naming
-the active body beside a list that already names it is one fact drawn twice.
+scene a permanent column, for the same reason: a capsule naming the active body
+beside a list that already names it is one fact drawn twice.
 
 **Creation is a choice, not an append.** Both `+` controls — the capsule's and the
 docked column's — are *anchors*: they open `AddPrimitivePaletteView` and create
@@ -236,17 +250,15 @@ refusal would put a destructive path into the shell. There is deliberately no
 creation **category** is structural — the palette owns its own layout and routing
 — rather than drawn.
 
-**Every entry on the Tool Rail does something.** Sketch and Extrude used to be
-drawn there, inert. Half of the one control the user reaches for most, spent on
-features the product does not have, on the smallest window, beside the two that
-work, is a worse trade than a rail that grows an entry later; an entry that looks
-like a tool and is not is a promise the shell cannot keep. Construction's two
-entries are *Shape* and *Transform*. **"Transform" now carries both halves**: the
-direct handles in the viewport and the exact numbers behind the precision
-toggle, which are two front ends to one placement. The surface still names
-itself "Exact Transform — Body #1", because that is what it is — the typed half
-— and not because it is the only half. `ToolRailView` has no notion of a
-reserved entry.
+**Every entry on the Tool Rail does something.** An entry that looks like a tool
+and is not is a promise the shell cannot keep, and half of the one control the
+user reaches for most is the worst place in the workspace to spend on a feature
+that does not exist. `ToolRailView` has no notion of a reserved entry.
+Construction's two entries are *Shape* and *Transform*. **"Transform" carries
+both halves**: the direct handles in the viewport and the exact numbers behind
+the precision toggle, which are two front ends to one placement. The surface
+names itself "Exact Transform — Body #1" because that is what it is — the typed
+half — not because it is the only half.
 
 **The transform selectors are contextual to that one entry, and live in a row of
 their own.** *Transform mode* (Move / Rotate / Scale) and *coordinate space*
@@ -281,22 +293,21 @@ the second early. The **standing** message is set by `showStandingStatus` from t
 one refresh every surface re-reads, so it re-asserts itself after any transient
 that covered it and clears the moment it stops being true. It is empty in the
 ordinary case, and an empty line is **no capsule at all**: a surface with nothing
-in it is the same permanent claim on the workspace UI-R4A removed elsewhere.
+in it is the same permanent claim on the workspace nothing else is allowed to
+make.
 
-**And neither kind is an instruction.** Two were — one written on entering
-Construction, one on every Shape/Transform switch — and both named the workflow
-rather than reporting an event, so a sentence stood across the top of the
-viewport in every resting Construction screenshot. A caption that is always true
-is a permanent surface however short its timeout is, and what these two said is
-already answered by what the user is looking at: the held rail entry, the
-toggle beneath it that names what it opens, the surface's own title — *Exact
-Shape — Body #1* — and the body named on the Objects capsule. There is no
-first-run help mechanism, and UI-R4C deliberately did not build one to have
-somewhere to put them.
+**And neither kind is an instruction.** Entering Construction writes nothing, and
+so does switching between *Shape* and *Transform*. A caption that is always true
+is a permanent surface however short its timeout is, and what such a caption
+would say is already answered by what the user is looking at: the held rail
+entry, the toggle beneath it that names what it opens, the surface's own title —
+*Exact Shape — Body #1* — and the body named on the Objects capsule. There is no
+first-run help mechanism, and none is to be built as somewhere to put an
+instruction.
 
 **A standing fault is visible without opening anything.** The stale-source warning
-still lives in the Sculpt context surface next to the action that resolves it, but
-that surface no longer opens by itself, so it is also the standing message in
+lives in the Sculpt context surface next to the action that resolves it, and
+because that surface never opens by itself it is *also* the standing message in
 Sculpt. It is the only one the product has, and it is a *state* rather than a
 verdict — which is what the two kinds exist to separate.
 
@@ -359,11 +370,11 @@ silently degrades to a grey slab.
 (what a SELECTED control rests in) and `fsPrimaryFill` (a PRIMARY COMMIT, carrying
 `fsTextOnPrimary`) are two roles and deliberately not the same family: a selection
 is a quiet lifted surface carried by its fill and its brightened label; a commit
-is the accent itself. The selected state used to carry an accent hairline as well,
-described as its third signal and read as its first — at a glance a selected chip
-was a blue-outlined box, six of them made a panel look like a form of framed
-cells, and the outline did nothing the fill and the brightened label were not
-already doing. It is gone. `fsAccentBorder` is consequently referenced by no
+is the accent itself. The selected state carries **no** accent hairline: an
+outline reads as the first signal rather than the third, a selected chip becomes
+a blue-outlined box, six of them make a panel look like a form of framed cells,
+and the outline does nothing the fill and the brightened label are not already
+doing. `fsAccentBorder` is consequently referenced by no
 drawable and is deliberately still declared and still answered by all three
 palettes: those values are owner-approved, and dropping one to record a styling
 decision would change an approved palette. The accent is spent on exactly two
@@ -373,7 +384,7 @@ near-black at 5.5:1. Controls otherwise draw no box until pressed — one step o
 tone plus the space around them is the separation — and exactly two resting
 outlines are left, both earned: `bg_field`, because a value you can type into is
 an editing affordance, and `bg_warning`, because a standing fault is under-stated
-by tone alone. A reserved control (`Sketch`, `Extrude`, `Export`) is **recessed**
+by tone alone. A reserved control — `Export`, the only one drawn — is **recessed**
 rather than outlined.
 
 Icons are local vector drawables on one 24 dp grid, drawn white and tinted from
@@ -393,9 +404,9 @@ width it can give. What it gives it up *to* is arithmetic on the row rather than
 a constant: see *the transition is fitted to the row it is in*.
 
 **No type role upper-cases a string the product did not choose character by
-character.** `sectionLabel` dropped `setAllCaps` at UI-R4B, and it is a
-correctness fix rather than a taste one: a section heading can carry a unit —
-"Position (m)" — and the transform rendered that as "POSITION (M)". In SI, `m` is
+character.** `sectionLabel` sets no `setAllCaps`, and that is a correctness rule
+rather than a taste one: a section heading can carry a unit — "Position (m)" —
+and an upper-casing transform renders that as "POSITION (M)". In SI, `m` is
 the metre and `M` is not a unit at all. A transformation that can change what a
 symbol *means* has no business being applied automatically, and the next unit to
 appear in a heading would have inherited the same defect silently. What separates
@@ -411,8 +422,8 @@ Charcoal's error red on its own inspector surface, and a consequence of both the
 red and the ground being fixed. That debt is **carried, not silently repaired**:
 the twelve anchors are owner-approved values and are not the UI layer's to move.
 
-Every surface UI-R4A added — the Objects capsule, the Add Primitive palette, the
-precision toggle — maps through those same roles. The capsule and the toggle are
+Every surface in the workspace — the Objects capsule, the Add Primitive palette,
+the precision toggle — maps through those same roles. The capsule and the toggle are
 Tier 1, the palette is Tier 2, and no colour, tint or state anywhere in them is
 written in Java, so the three appearances still cost one component tree.
 
@@ -534,11 +545,11 @@ panel beside it hangs from the top is one surface stranded halfway down the
 model, not a layout.
 
 **Every chrome surface wears the same material in every window.** The Objects
-column, the docked rail and the docked inspector used to be drawn opaque, flat and
-squared against the window edge, so one session on one device showed the same
-three controls in two visual languages depending on which way the tablet was held.
-All three are inset from the edge, rounded on every corner and raised, exactly as
-on a phone. **Docking decides position, never material:** the rail is top-aligned
+column, the docked rail and the docked inspector are inset from the edge, rounded
+on every corner and raised, exactly as on a phone. Drawing them opaque, flat and
+squared against the window edge would show the same three controls in two visual
+languages on one device depending on which way the tablet was held.
+**Docking decides position, never material:** the rail is top-aligned
 with the panel beside it rather than centred on the thumb, and that is the whole
 remaining content of `railDocked()`.
 `sideDockWidthDp` is 30 % capped at 340 dp rather than 28 % capped at 320,
@@ -562,8 +573,8 @@ decor-fits off the window is **not** resized: the keyboard arrives as an inset t
 chrome absorbs and the surface is untouched.
 
 **Chrome depth.** Every surface that stands over or beside the model carries the
-same small elevation, in every layout mode — see above for why the docked variants
-no longer drop it. Containers set `clipChildren(false)`, since a shadow is drawn
+same small elevation, in every layout mode — a docked variant does not drop it,
+for the reason above. Containers set `clipChildren(false)`, since a shadow is drawn
 outside its child's bounds — drawing only, never hit-testing. The rail's surface
 and elevation live on its `ScrollView`, or the container would clip exactly the
 shadow it wraps.
@@ -1027,8 +1038,8 @@ ordered vector of `SceneObject`, one per Construction Body, plus the id of the
 active one. Platform-neutral C++17 like the rest of the domain: no JNI, no
 Android, no Vulkan, no renderer type.
 
-A `SceneObject` owns exactly three things, and they are precisely the things
-that used to be process-global singletons:
+A `SceneObject` owns exactly three things, and each is **per body** rather than
+process-global — which is what makes several bodies possible at all:
 
 | Owned per body | Why |
 | --- | --- |
@@ -1506,8 +1517,8 @@ of which are derived products of the truth this gizmo writes.
 
 A ring drag does **not** add its angle to one Euler component. That is only
 correct when the other two are zero, and on a mixed orientation it turns the
-body about neither the world axis nor the local one — the Stage 020 defect this
-stage removes. Each sample composes from the **immutable start orientation** and
+body about neither the world axis nor the local one. Each sample composes from
+the **immutable start orientation** and
 the accumulated angle:
 
 ```
@@ -2664,7 +2675,8 @@ vertex survive home/resume and swapchain recreation. There is no rehydration ste
 because nothing was discarded — the GPU mesh buffers, the MatCap and the grid are
 device-scoped and are not destroyed when the Surface goes away, so a resume
 re-presents the same revision without re-uploading it. Nothing survives a process
-restart, because there is no save, no load and no undo.
+restart, because there is no save and no load — and the Construction history dies
+with the process along with everything else.
 
 Gesture tracking is separate: camera anchors and tap candidacy are both reset on
 `ACTION_CANCEL`, on `surfaceDestroyed` and on `surfaceCreated`, and a live brush
@@ -2694,8 +2706,10 @@ own, and naming them is what stops one arriving by accident.
 - **No object commands and no hierarchy.** The scene adds and selects bodies and
   does nothing else: no delete, duplicate, rename, hide, lock, group, nesting,
   reorder, parent field or multi-select — and therefore no ObjectId reuse policy,
-  since nothing can yet stop existing. No command framework and no Undo. Both
-  Objects hosts are **views** of that same flat list and add no verb to it.
+  since nothing can yet stop existing. There is no *command* framework: undo is
+  `ConstructionHistory`'s bounded step state, not a reversible-command object
+  graph, and it covers Construction edits only. Both Objects hosts are **views**
+  of that same flat list and add no verb to it.
 - **No snapping, and no Sketch grid.** The world reference grid is a viewport
   reference only: nothing snaps to it, no cursor is quantised, no dimension is
   derived from it. A Sketch grid — drawn on a sketch plane, with snapping — is a

@@ -237,12 +237,14 @@ One durable fact has exactly one primary owner.
 Never document a feature as implemented unless it is runtime-verified. Unverified
 paths are reported as UNVERIFIED, not as behaviour.
 
-**Size rule.** Core live docs must remain below 2000 physical lines each. Prefer
-the file-specific target budgets — `PROJECT_STATUS.md` 500-800, `ARCHITECTURE.md`
-700-1000, `PRODUCT.md` 300-450, `README.md` 150-250, `CLAUDE.md` 120-180. When
-adding new facts, replace superseded or duplicated prose instead of appending a
-new historical chapter. Use Git history for old stage detail; do not create a
-shadow history Markdown file.
+**Keep documentation navigable and current.** There is no raw line-count cap. A
+document is too long when it is hard to navigate or carries text that is no
+longer true — never merely because of its physical line count. When adding a
+fact, replace the superseded or duplicated prose rather than appending a new
+chapter beside it, and delete migration rationale once the invariant it explains
+stands on its own. Use Git history for old stage detail; do not create a shadow
+history Markdown file. Do not compact by deleting ownership or invariant detail
+the code depends on: that is a regression, not a saving.
 
 ## Android / Vulkan safety
 
