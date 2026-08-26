@@ -179,6 +179,21 @@ from its layout params, since the anchor runs before the surface has ever been
 measured, and the overlay container's inset padding is subtracted because the
 chrome container the invoker lives in carries the same padding.
 
+**A context surface may stand on the model; it may not stand on another
+control.** The palette is wider than the distance from the Objects capsule's
+`+` to the trailing window edge, and the clamp used to be "as far right as the
+window allows" — which slid it under the trailing tool cluster and left a
+crescent of the precision toggle showing from behind it. A half-covered control
+still takes a touch, and the panel over it reads as a rendering fault rather than
+as a layer. `trailingLimitFor` bounds the surface at `railColumn`'s own leading
+edge, less the same `overlay_anchor_gap` every anchored surface stands off its
+invoker, so the *surface* moves and the live control keeps its place. Skipped for
+a surface the cluster itself opened — the precision surface's invoker IS the
+cluster's toggle — and never tighter than the surface's own width, so a window
+too narrow to seat it beside the cluster still lays it out at the leading edge
+rather than at a negative margin. Resolving this by z-order was rejected: the
+control would still be under the panel and still be taking touches.
+
 **Each surface answers one question, and only one.** The Global Toolbar says what
 mode this is and carries the acts true in every mode that the user does not work
 *from*; the Tool Rail says which tool is held and its toggle opens the numbers
@@ -250,6 +265,17 @@ one refresh every surface re-reads, so it re-asserts itself after any transient
 that covered it and clears the moment it stops being true. It is empty in the
 ordinary case, and an empty line is **no capsule at all**: a surface with nothing
 in it is the same permanent claim on the workspace UI-R4A removed elsewhere.
+
+**And neither kind is an instruction.** Two were — one written on entering
+Construction, one on every Shape/Transform switch — and both named the workflow
+rather than reporting an event, so a sentence stood across the top of the
+viewport in every resting Construction screenshot. A caption that is always true
+is a permanent surface however short its timeout is, and what these two said is
+already answered by what the user is looking at: the held rail entry, the
+toggle beneath it that names what it opens, the surface's own title — *Exact
+Shape — Body #1* — and the body named on the Objects capsule. There is no
+first-run help mechanism, and UI-R4C deliberately did not build one to have
+somewhere to put them.
 
 **A standing fault is visible without opening anything.** The stale-source warning
 still lives in the Sculpt context surface next to the action that resolves it, but
@@ -344,9 +370,10 @@ type is five roles rather than five sizes.
 `icon_button_size` and `brush_touch_width` are all at it; the glyphs are still
 20 dp, the rail's compact caption is still 10 sp, and nothing grew a drawn box to
 reach the number. Raising it from 44 dp cost 8 dp of the Global Toolbar's row,
-and the mode-transition button gives that up rather than an icon control — a
-button that ellipsises still reads, an icon control squeezed past the window edge
-does not. `toolbar_transition_max_width` carries the arithmetic.
+and the mode-transition button gives that up rather than an icon control — an
+icon control squeezed past the window edge is unreachable, and a button has
+width it can give. What it gives it up *to* is arithmetic on the row rather than
+a constant: see *the transition is fitted to the row it is in*.
 
 **No type role upper-cases a string the product did not choose character by
 character.** `sectionLabel` dropped `setAllCaps` at UI-R4B, and it is a
@@ -405,13 +432,33 @@ whatever colour it is painted. Grouping also carries the hierarchy without
 colour: the primary commit is the loudest thing in the leading group and the
 trailing group is uniformly tertiary.
 
+**A capsule is a relation between controls, so a group of one is not drawn as a
+group.** The editing group holds the context label and the one transition, and a
+`COMPACT` window withdraws the label — which left a 26 dp dark pill painted
+around a single 22 dp button, a crescent of host showing all the way round it,
+and the transition as the heaviest object in a workspace whose subject is the
+model. `applyEditingComposition` resolves it in the only direction that is
+honest: the lone member *becomes* the capsule, taking `radius_capsule` and the
+floating elevation while the group stops painting and stops padding. It is 8 dp
+of host removed, never 8 dp of control — the hit area is untouched. Where the
+group genuinely holds two members the segmented relation and the concentric
+member corner are exactly as they were.
+
 Three chrome layout contracts are load-bearing. **The flexible child of the row
 is the gap between the two groups**, so a row out of width closes that gap before
 anything gives up a touch target; a `COMPACT` window also withdraws the context
-label, because the status capsule and the inspector's title already name the mode
-and the body. **The mode-transition button is bounded** at a width sized against
-the narrowest supported window (360 dp), because unbounded it pushed the last icon
-control past the window edge in Sculpt Mode. And a **Tool Rail entry holds its
+label, because the inspector's title already names the mode and the body.
+**The transition is fitted to the row it is in**, in `GlobalToolbarView`'s own
+measure pass: the budget is what is left after the utility group has the width it
+asked for, an inline status has `toolbar_status_min_width`, and the context label
+(where it is drawn) has its bounded share. Unbounded, the button pushed the last
+icon control past the window edge in Sculpt Mode; bounded by a single dp constant
+sized against the narrowest supported window, it truncated *Back to Construction*
+in every window including two with 50 dp of unused row beside it. Only that one
+label has a second form, `back_to_construction_short`, taken when the row
+genuinely cannot carry the sentence — it is the one way out of Sculpt Mode, and a
+destination the user has to guess at is not navigation. The content description
+is the full wording in both forms. And a **Tool Rail entry holds its
 gesture against the enclosing `ScrollView`**: it disallows interception on Down
 and allows it again once travel passes twice the platform slop, at which point
 the container takes the next event and `ACTION_CANCEL` prevents the click —

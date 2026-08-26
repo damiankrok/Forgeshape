@@ -163,6 +163,19 @@ at all. The one thing that stays is a standing fault — the warning that the
 constructed shape has changed under a sculpt — which is still true after any
 message that covers it and comes back when it does.
 
+Nothing there ever tells you how to use ForgeShape. That line reports what just
+happened and nothing else: it does not caption the mode you are in, and it does
+not describe the panel you have open, because the rail, the control that opened
+the panel and the panel's own title already say those things. Choosing
+Construction and switching between shape and placement are silent.
+
+The control that crosses between constructing and sculpting is a single control —
+one pill, not a button set into a second one — and it is never abbreviated where
+the window can carry its wording. **Back to Construction** is the way out of
+Sculpt Mode, so on a window too narrow for the sentence it reads
+**← Construction** rather than trailing off mid-word; it is announced as *Back to
+Construction* either way.
+
 Low on the leading edge, where a thumb reaches, is the **Objects capsule**: it
 names the body you are working on and, while you are constructing, carries a
 **+** beside it. It is in the same place whether you are constructing or
@@ -180,7 +193,10 @@ hides all of it at once, leaving the bare model and one chip to bring it back.
 Every panel in the workspace comes out of the control that opened it. The list of
 bodies and the shape palette rise out of the Objects capsule; the exact values
 unfold from the control beside the rail. Nothing arrives from an edge that has
-nothing to do with what you just pressed.
+nothing to do with what you just pressed. A panel stands over the model, which is
+what makes it a panel in a viewport — but never over another control: the shape
+palette is placed clear of the Tool Rail and the control beneath it rather than
+half on top of them.
 
 Touching the model between the two toolbar groups navigates: they are surfaces,
 not a bar, and only the surfaces themselves take a touch.

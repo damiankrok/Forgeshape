@@ -115,33 +115,38 @@
          window, which is why it is a shared contract and not a local number. -->
     <dimen name="toolbar_context_max_width">152dp</dimen>
     <!--
-      How wide a mode-transition button (Start Sculpting / Resume / Back) may
-      grow.
+      The FLOOR a mode-transition button (Start Sculpting / Resume / Back) is
+      given, not a cap.
 
-      The context label absorbs squeeze first, but a COMPACT window withdraws it
-      outright — and with it gone, the row's next-widest child was an unbounded
-      wrap-content button. "Back to Construction" measured wider than the space
-      left, so the LAST child took the squeeze and the Hide UI control was drawn
-      clipped by the window edge, below the touch floor and partly unreachable.
-      Bounded here, the button ellipsises instead and every icon control keeps
-      the size it asked for.
+      How wide it may actually grow is arithmetic on the row it is in — see
+      GlobalToolbarView#fitTransitionToRow — because a single dp constant cannot
+      be right in three windows at once. It was one: sized against the narrowest
+      window the product supports and then applied to every window, so "Back to
+      Construction" read "Back to Constructi…" on a phone, on a short landscape
+      window AND on a tablet, all three with room to spare. Critical navigation
+      may not be guessed at, and the row can carry it.
 
-      Sized against the NARROWEST window the product supports rather than
-      against the one it is usually measured on. On a 360 dp window the toolbar's
-      own padding plus the utility group — Export and two 48 dp icon controls —
-      leave about 150 dp for the editing group's button once that group's own
-      padding is taken, so this is that with two dp of slack.
-
-      It was 164 dp while the touch floor was 44 dp. Raising the floor to 48 dp
-      spends 8 dp of the same row, and the BUTTON gives that up rather than an
-      icon control: a transition button that ellipsises still reads, and an icon
-      control squeezed below the floor is unreachable. "Back to Construction",
-      the longest label in the product, therefore ellipsises on a 360 dp window
-      and keeps its full wording as its content description. `R1B1-10b`,
-      `UIR3-01` and `UIR4B-17` are what hold this honest: all three measure the
-      icon controls' real width AND their right edge.
+      What survives is the priority the cap existed for, and it is unchanged: an
+      icon control never gives up width, because one squeezed below the touch
+      floor is unreachable, while a transition button that gives some up still
+      reads. Below this floor the budget stops shrinking and the button takes
+      its short form instead. `R1B1-10b`, `UIR3-01` and `UIR4B-17` are what hold
+      it honest: all three measure the icon controls' real width AND their right
+      edge.
     -->
-    <dimen name="toolbar_transition_max_width">148dp</dimen>
+    <dimen name="toolbar_transition_min_width">96dp</dimen>
+    <!--
+      What an INLINE status message keeps of the control row.
+
+      On a short window the message shares the row with the two control groups
+      instead of getting a line of its own, so it competes with the transition
+      button for the same width. Reserved rather than left to a weight: the slot
+      is the row's flexible child, and a flexible child of a row that has run out
+      measures to nothing — which would silently drop a rejection on exactly the
+      window with no second line to put it on. Only reserved while the line has
+      something to say; an empty status is no capsule at all.
+    -->
+    <dimen name="toolbar_status_min_width">120dp</dimen>
 
     <!-- Tool Rail. 56 x 64 dp per entry: comfortably past the 48 dp floor with
          room for a label under the icon, because icon-only costs learning. -->

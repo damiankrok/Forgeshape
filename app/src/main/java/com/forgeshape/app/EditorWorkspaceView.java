@@ -7,6 +7,7 @@ import android.os.Build;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewParent;
 import android.view.WindowInsets;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.FrameLayout;
@@ -886,7 +887,7 @@ final class EditorWorkspaceView extends FrameLayout
         final boolean upward = bounds.centerY() > getHeight() / 2;
         params.gravity = (upward ? Gravity.BOTTOM : Gravity.TOP) | Gravity.START;
         params.leftMargin = Math.max(0,
-                Math.min(bounds.left, getWidth() - width - gap)
+                Math.min(bounds.left, trailingLimitFor(invoker, width, gap) - width)
                         - overlayRoot.getPaddingLeft());
         params.rightMargin = 0;
         params.topMargin = upward ? 0
@@ -903,6 +904,58 @@ final class EditorWorkspaceView extends FrameLayout
         } else if (overlay == inspector) {
             inspector.setGrowsUpward(upward);
         }
+    }
+
+    /**
+     * How far right an anchored surface may reach before it starts covering a
+     * control that is still live underneath it.
+     *
+     * <p>A context surface may stand on the model — that is what makes it a
+     * surface over a viewport rather than a second column — but it may not stand
+     * on <b>another control</b>. Add Primitive did: anchored to the Objects
+     * capsule's {@code +} low on the leading edge, it is wider than the distance
+     * from that {@code +} to the window edge, so the old clamp — "as far right
+     * as the window allows" — slid it under the trailing tool cluster and left a
+     * crescent of the precision toggle sticking out from behind it. A control
+     * half-covered by a panel is worse than one that is not drawn: it still
+     * takes a touch, and the panel above it reads as broken rather than as
+     * layered.
+     *
+     * <p>So the limit is the tool cluster's own leading edge, less the same gap
+     * every anchored surface already stands off its invoker. The palette moves
+     * rather than the cluster, and it still grows out of the {@code +} it came
+     * from — nothing about the motion, the pivot or the z-order changes, because
+     * hiding the collision behind a z-order is not resolving it: the control
+     * would still be under the panel and still be taking touches.
+     *
+     * <p>The rule is skipped for a surface the cluster itself opened. The
+     * precision surface's invoker IS the cluster's toggle, and a surface
+     * forbidden to overlap the control it grew out of could not be anchored to
+     * it at all.
+     */
+    private int trailingLimitFor(View invoker, int width, int gap) {
+        final int windowLimit = getWidth() - gap;
+        if (!railColumn.isShown() || isInTrailingCluster(invoker)) {
+            return windowLimit;
+        }
+        final Rect cluster = new Rect(0, 0, railColumn.getWidth(), railColumn.getHeight());
+        offsetDescendantRectToMyCoords(railColumn, cluster);
+        // Never tighter than the surface's own width: a window too narrow to
+        // seat it beside the cluster is still laid out, at the leading edge,
+        // rather than at a negative margin.
+        return Math.max(Math.min(windowLimit, cluster.left - gap), width);
+    }
+
+    /** Whether this control is part of the trailing tool cluster. */
+    private boolean isInTrailingCluster(View control) {
+        for (View view = control; view != null; ) {
+            if (view == railColumn) {
+                return true;
+            }
+            final ViewParent parent = view.getParent();
+            view = parent instanceof View ? (View) parent : null;
+        }
+        return false;
     }
 
     /**
@@ -1136,14 +1189,20 @@ final class EditorWorkspaceView extends FrameLayout
      * the scene at identity, already selected, and already published, so this
      * only records that the question was answered and re-reads native state so
      * the exact-value editors show that body's own numbers.
+     *
+     * <p>And it says nothing. Nothing happened that the user did not just do,
+     * and the workspace behind the question already answers where they are —
+     * the held rail entry, the body named on the Objects capsule, the model
+     * itself. It used to write "Construction — choose a shape, type its exact
+     * values, then Apply.", which is a caption for the product rather than a
+     * verdict about an act, and it opened every resting Construction screenshot
+     * with a sentence across the top of the viewport.
      */
     @Override
     public void onConstructionStartChosen() {
         uiState.recordStartChoice();
         showStartChooser(false);
         syncFromNative();
-        showStatus(getContext().getString(R.string.status_started_construction),
-                R.attr.fsTextSecondary);
     }
 
     /**
@@ -1544,8 +1603,13 @@ final class EditorWorkspaceView extends FrameLayout
         // dismissing the panel, and switching while it is closed leaves it
         // closed.
         showPrecisionToggle(false);
-        showStatus(getContext().getString(R.string.status_construction_hint),
-                R.attr.fsTextSecondary);
+        // Nothing is written for this, and that is the point. Switching rail
+        // entry is not an event to report: the rail draws which entry is held,
+        // the toggle under it names what it will open, and the surface it opens
+        // titles itself "Exact Shape — Body #1". "Shape and placement — edit
+        // exact values, then Apply." was a third copy of the same fact, and
+        // because it was written on every switch it stood over the model
+        // whenever a user was doing exactly what it described.
     }
 
     // The brush controls report nothing upward, deliberately.

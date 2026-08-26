@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Back to Construction on a window whose editing group holds nothing else.
+
+  The tonal form of bg_pill_primary, and the counterpart of bg_capsule_tonal:
+  same quiet control fill, on the capsule's own radius because here the control
+  is the capsule. See GlobalToolbarView#applyEditingComposition.
+-->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_pressed="true">
+        <shape android:shape="rectangle">
+            <solid android:color="?attr/fsControlSurfacePressed" />
+            <corners android:radius="@dimen/radius_capsule" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="?attr/fsControlSurface" />
+            <corners android:radius="@dimen/radius_capsule" />
+        </shape>
+    </item>
+</selector>

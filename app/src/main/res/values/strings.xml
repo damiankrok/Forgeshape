@@ -31,7 +31,6 @@
     <string name="start_construction_description">Begin from an exact primitive and type its dimensions. Shape and placement stay exact, editable values.</string>
     <string name="start_sculpt_title">Sculpt</string>
     <string name="start_sculpt_description">Begin on a sphere already prepared for sculpting. Its exact source is kept, so Back to Construction returns to it.</string>
-    <string name="status_started_construction">Construction — choose a shape, type its exact values, then Apply.</string>
     <string name="status_started_sculpt">Now sculpting a sphere. The Construction sphere is kept.</string>
     <string name="status_sculpt_start_failed">Could not prepare a sculptable mesh. Still in Construction; nothing was changed.</string>
 
@@ -47,6 +46,19 @@
     <string name="start_sculpting">Start Sculpting</string>
     <string name="resume_sculpt">Resume Sculpt</string>
     <string name="back_to_construction">Back to Construction</string>
+    <!--
+      The same act on a row too narrow to carry the full wording, and the ONLY
+      abbreviated label in the product.
+
+      Back to Construction is the one way out of Sculpt Mode, so it may not be
+      truncated to "Back to Constructi…" — a critical destination the user has to
+      guess at is not navigation. Where the row genuinely cannot carry the
+      sentence, it carries the destination plus the direction instead, which is
+      unambiguous on its own. It is never announced: the content description
+      stays the full wording in both forms, so nothing changes for a screen
+      reader with the window size. See GlobalToolbarView#applyTransitionLabel.
+    -->
+    <string name="back_to_construction_short">← Construction</string>
     <string name="export">Export</string>
     <string name="export_reserved_note">Export is not implemented yet.</string>
     <string name="hide_ui">Hide UI</string>
@@ -192,8 +204,17 @@
       any more — a line that always says something says nothing, and it spent a
       capsule at the top of the model saying what the panel title and the unit
       chips already said.
+
+      Nor is any of them INSTRUCTIONAL. Two were: one written on entering
+      Construction and one on every Shape/Transform switch, both naming the
+      workflow rather than reporting an event, and between them they put a
+      sentence across the top of the viewport in every resting Construction
+      screenshot the review saw. What they said is already answered by the
+      surfaces the user is looking at — the held rail entry names the context,
+      the precision surface titles itself "Exact Shape — Body #1", and the
+      Objects capsule names the body. A verdict earns the capsule; a caption
+      does not.
     -->
-    <string name="status_construction_hint">Shape and placement — edit exact values, then Apply.</string>
     <string name="status_unit_display_only">Showing %1$s — display only, nothing applied.</string>
     <string name="status_unit_unparsed">Showing %1$s — a field is not a number and was left as typed.</string>
     <string name="status_draft_kind">%1$s selected — press Apply Shape to change the object.</string>

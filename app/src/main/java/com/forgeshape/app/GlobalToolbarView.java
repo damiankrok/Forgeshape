@@ -80,6 +80,18 @@ final class GlobalToolbarView extends LinearLayout {
 
     private boolean statusInline = true;
 
+    /** The capsule padding the editing group wears while it holds more than one
+     *  control, kept so the group can be un-drawn and drawn again. */
+    private final int editingGroupPadding;
+    /** The depth a floating capsule carries, moved onto the lone control when
+     *  the group stops drawing itself. See {@link #applyEditingComposition}. */
+    private final int floatingElevation;
+
+    /** What the editing group last resolved to, so a measure pass that changes
+     *  nothing does not restyle three controls. */
+    private Boolean editingGroupSolo;
+    private View editingGroupLoneMember;
+
     GlobalToolbarView(Context context, final OnGlobalAction actions) {
         super(context);
         setId(R.id.global_toolbar);
@@ -102,6 +114,12 @@ final class GlobalToolbarView extends LinearLayout {
 
         editingGroup = EditorControlStyles.controlGroup(context);
         editingGroup.setId(R.id.toolbar_editing_group);
+        // The lone control carries the capsule's depth when the group stops
+        // drawing itself, and a shadow is painted outside the child's bounds —
+        // which a group whose bounds are now exactly the child's would clip away.
+        EditorControlStyles.allowChildShadows(editingGroup);
+        editingGroupPadding = editingGroup.getPaddingLeft();
+        floatingElevation = EditorControlStyles.dimen(context, R.dimen.elevation_floating);
         controlsRow.addView(editingGroup, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -280,28 +298,190 @@ final class GlobalToolbarView extends LinearLayout {
     }
 
     /**
-     * Bounds a mode-transition button's width so it can never push an icon
-     * control off the end of the row.
+     * Makes a mode-transition button a single line, and nothing else.
      *
-     * <p>The context label is normally the child that absorbs a squeeze, but a
-     * {@code COMPACT} window withdraws it outright — and with it gone the
-     * row's next-widest child was an unbounded wrap-content button. On a 411 dp
-     * window in Sculpt Mode, "Back to Construction" plus Export plus three icon
-     * controls measured wider than the window, and a {@code LinearLayout} that
-     * has run out squeezes its LAST child: the Hide UI control was drawn clipped
-     * by the window edge, under the touch floor and partly unreachable. That is
-     * the same defect {@code R1B1-10b} guards in Construction, arriving through
-     * the one mode that test never entered.
-     *
-     * <p>Bounded and ellipsised, the button gives up its own width first and
-     * every icon control keeps the size it asked for. The full wording stays as
-     * the content description, so nothing is lost to a screen reader.
+     * <p>How wide it may grow is decided per measure pass by {@link
+     * #fitTransitionToRow}, against the row it is actually in. The ellipsis is
+     * kept as a last resort so a window narrower than anything the product
+     * supports still lays out, but it is no longer the ordinary outcome: it was,
+     * while the cap was a single dp constant sized against the narrowest window
+     * the product supports and then applied to every window — which is how
+     * "Back to Construction" came to read "Back to Constructi…" on a phone, on a
+     * short landscape window AND on a tablet, all three with room to spare.
      */
     private void boundTransitionWidth(TextView button) {
-        button.setMaxWidth(EditorControlStyles.dimen(
-                getContext(), R.dimen.toolbar_transition_max_width));
         button.setSingleLine(true);
         button.setEllipsize(TextUtils.TruncateAt.END);
+    }
+
+    // -----------------------------------------------------------------------
+    // Fitting the row
+    //
+    // Back to Construction is critical navigation: it is the only way out of
+    // Sculpt Mode, and a label the user has to guess at is not navigation. It
+    // may not be abbreviated wherever the row can carry it, which is every
+    // window the product is verified in — the row is short of space only on the
+    // narrowest one, and only then by a few dp.
+    //
+    // So the budget is arithmetic on the row rather than a constant: what is
+    // left after the utility group has the width it asked for, an inline status
+    // has its floor, and the context label (where it is drawn at all) has its
+    // own bounded share. The order is deliberate and is the same priority
+    // R1B1-10b established — an icon control never gives up width, because an
+    // icon control squeezed below the touch floor is unreachable, while a
+    // transition button that gives some up still reads.
+    // -----------------------------------------------------------------------
+
+    /**
+     * Gives the visible mode transition the width the row can actually spare.
+     *
+     * <p>Runs at the top of measure, so whatever it decides is part of the same
+     * traversal. It is idempotent — the same row width resolves to the same
+     * budget — so the second measure pass of a traversal changes nothing.
+     */
+    private void fitTransitionToRow(int rowWidth) {
+        final TextView transition = visibleTransition();
+        if (rowWidth <= 0 || transition == null) {
+            return;
+        }
+        final int unspecified = MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED);
+        utilityGroup.measure(unspecified, unspecified);
+
+        final LinearLayout.LayoutParams slotParams =
+                (LinearLayout.LayoutParams) statusSlot.getLayoutParams();
+        int taken = utilityGroup.getMeasuredWidth()
+                + slotParams.leftMargin + slotParams.rightMargin;
+        // An inline status shares the row rather than sitting under it, so it
+        // has a floor there — otherwise a long transition label would take the
+        // whole row and the one line carrying a rejection would measure to
+        // nothing on exactly the window that has no second line to put it on.
+        if (statusInline && statusMessage.getVisibility() == VISIBLE) {
+            taken += EditorControlStyles.dimen(getContext(),
+                    R.dimen.toolbar_status_min_width);
+        }
+
+        int budget = rowWidth - taken
+                - editingGroup.getPaddingLeft() - editingGroup.getPaddingRight();
+        if (contextLabel.getVisibility() == VISIBLE) {
+            contextLabel.measure(unspecified, unspecified);
+            final LinearLayout.LayoutParams labelParams =
+                    (LinearLayout.LayoutParams) contextLabel.getLayoutParams();
+            budget -= contextLabel.getMeasuredWidth()
+                    + labelParams.leftMargin + labelParams.rightMargin;
+        }
+        budget = Math.max(budget, EditorControlStyles.dimen(getContext(),
+                R.dimen.toolbar_transition_min_width));
+
+        applyTransitionLabel(transition, budget);
+        if (transition.getMaxWidth() != budget) {
+            transition.setMaxWidth(budget);
+        }
+    }
+
+    /**
+     * Writes the wording this budget can carry, full wherever it fits.
+     *
+     * <p>Only <i>Back to Construction</i> has a second form, and it is the one
+     * control that needed one: it is both the longest label in the product and
+     * the one that may not be guessed at. The short form is the same act in the
+     * same words minus the preposition, with the arrow the direction is already
+     * drawn with elsewhere — and the content description stays the full wording
+     * in both, so what a screen reader announces never changes with the window.
+     */
+    private void applyTransitionLabel(TextView transition, int budget) {
+        final Context context = getContext();
+        CharSequence label = context.getString(transition == backButton
+                ? R.string.back_to_construction
+                : transition == resumeButton
+                        ? R.string.resume_sculpt : R.string.start_sculpting);
+        if (transition == backButton && naturalWidth(transition, label) > budget) {
+            label = context.getString(R.string.back_to_construction_short);
+        }
+        if (!TextUtils.equals(transition.getText(), label)) {
+            transition.setText(label);
+        }
+    }
+
+    /** How wide this single-line control would be with nothing bounding it. */
+    private static int naturalWidth(TextView view, CharSequence text) {
+        return Math.round(view.getPaint().measureText(text, 0, text.length()))
+                + view.getPaddingLeft() + view.getPaddingRight();
+    }
+
+    /** The one mode transition currently drawn, or null between modes. */
+    private TextView visibleTransition() {
+        if (backButton.getVisibility() == VISIBLE) {
+            return backButton;
+        }
+        if (resumeButton.getVisibility() == VISIBLE) {
+            return resumeButton;
+        }
+        return freezeButton.getVisibility() == VISIBLE ? freezeButton : null;
+    }
+
+    /**
+     * Draws the editing group as a capsule only while it is holding a group.
+     *
+     * <p>A {@code COMPACT} window withdraws the context label, which leaves the
+     * group with exactly one member — and a 26 dp dark pill drawn around a
+     * single 22 dp blue button is a button inside a button. It read as a halo:
+     * a crescent of host showing all the way round the one control it hosted,
+     * making the transition the heaviest object in a resting workspace whose
+     * subject is the model. A capsule is a relation between controls, and there
+     * is no relation to draw when there is one control.
+     *
+     * <p>So the lone member simply <b>becomes</b> the capsule: the group stops
+     * painting and stops padding, and the control takes the capsule's own corner
+     * and the capsule's own depth. Nothing about the control's size, its touch
+     * target or its role changes — it loses 8 dp of host, not 8 dp of itself.
+     * Where the group genuinely holds two members, the segmented relation is
+     * unchanged and each member stays concentric with the host around it.
+     */
+    private void applyEditingComposition() {
+        int visible = 0;
+        View lone = null;
+        for (int i = 0; i < editingGroup.getChildCount(); i++) {
+            final View child = editingGroup.getChildAt(i);
+            if (child.getVisibility() == VISIBLE) {
+                visible++;
+                lone = child;
+            }
+        }
+        final boolean solo = visible == 1;
+        if (editingGroupSolo != null && editingGroupSolo == solo
+                && editingGroupLoneMember == lone) {
+            return;
+        }
+        editingGroupSolo = solo;
+        editingGroupLoneMember = lone;
+
+        if (solo) {
+            editingGroup.setBackground(null);
+            editingGroup.setElevation(0.0f);
+            editingGroup.setPadding(0, 0, 0, 0);
+        } else {
+            EditorControlStyles.applyFloatingSurface(editingGroup);
+            editingGroup.setPadding(editingGroupPadding, editingGroupPadding,
+                    editingGroupPadding, editingGroupPadding);
+        }
+        applyMemberForm(freezeButton, solo && lone == freezeButton,
+                R.drawable.bg_pill_primary, R.drawable.bg_capsule_primary);
+        applyMemberForm(resumeButton, solo && lone == resumeButton,
+                R.drawable.bg_pill_primary, R.drawable.bg_capsule_primary);
+        applyMemberForm(backButton, solo && lone == backButton,
+                R.drawable.bg_pill_tonal, R.drawable.bg_capsule_tonal);
+    }
+
+    private void applyMemberForm(TextView member, boolean alone, int pill, int capsuleMember) {
+        EditorControlStyles.asCapsuleMember(member, alone ? pill : capsuleMember);
+        member.setElevation(alone ? floatingElevation : 0.0f);
+    }
+
+    @Override
+    protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+        fitTransitionToRow(MeasureSpec.getSize(widthMeasureSpec)
+                - getPaddingLeft() - getPaddingRight());
+        super.onMeasure(widthMeasureSpec, heightMeasureSpec);
     }
 
     /**
@@ -325,13 +505,18 @@ final class GlobalToolbarView extends LinearLayout {
      * load-bearing of the four. Where it cannot fit it is withdrawn outright
      * rather than squeezed to an ellipsis that says nothing.
      *
-     * <p>Nothing is lost by that: the status line directly beneath it always
-     * names the mode, and since UI-R2 the Property Inspector's own title names
-     * the body — "Shape — Body #1". The label is the third and least legible of
-     * the three, and it is the only one competing for a row that has run out.
+     * <p>Nothing is lost by that: the transition beside it names the mode by
+     * naming the way out of it, and since UI-R2 the Property Inspector's own
+     * title names the body — "Exact Shape — Body #1". The label is the least
+     * legible of the three, and it is the only one competing for a row that has
+     * run out. The status line no longer answers this: it reports events and
+     * carries no ambient statement of where the user is.
      */
     void setContextLabelVisible(boolean visible) {
         contextLabel.setVisibility(visible ? VISIBLE : GONE);
+        // Withdrawing the label is what can leave the group holding one control,
+        // and a group of one is not a group. See applyEditingComposition.
+        applyEditingComposition();
     }
 
     /**
@@ -407,6 +592,7 @@ final class GlobalToolbarView extends LinearLayout {
         // non-destructive act is the one that gets the toolbar slot.
         freezeButton.setVisibility(!sculpting && !hasFrozenMesh ? VISIBLE : GONE);
         resumeButton.setVisibility(!sculpting && hasFrozenMesh ? VISIBLE : GONE);
+        applyEditingComposition();
     }
 
     /** Marks the Display button active while its popover is open. */

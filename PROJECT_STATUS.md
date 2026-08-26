@@ -1,21 +1,22 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.37.0
-**Updated:** 2026-08-25
-**Result:** TECHNICAL COMPLETE — UI-R4B corrected what the UI-R4A screenshot
-review found: Sculpt no longer offers a creation path that must fail, the Tool
-Rail keeps saying which tool is held across a rebuild, the status line has a
-lifecycle instead of standing forever, the precision surface ends on a row rather
-than through one, all four anchored surfaces share one growth with a correct
-first-open pivot, the expanded window speaks the phone's visual vocabulary and
-keeps Radius/Strength off the model, selection is fill-led and concentric with its
-host, no user-facing string says *Freeze*, and the interactive floor is 48 dp.
+**Status Version:** 0.38.0
+**Updated:** 2026-08-26
+**Result:** TECHNICAL COMPLETE — UI-R4C closed the four composition defects the
+UI-R4B screenshot review found, and nothing else. *Back to Construction* is drawn
+in full in every verified window because the transition's width is now arithmetic
+on the row rather than one dp constant; Add Primitive is placed clear of the
+trailing tool cluster instead of half over it; a control that is the only member
+of its group is drawn as one control rather than as a button inside a pill; and
+the two instructional status messages are gone, so a resting Construction
+workspace carries no caption. Every UI-R4B contract is intact.
 **Visual acceptance is PENDING OWNER/COORDINATOR SCREENSHOT REVIEW** on the fresh
-UIR4B-S01..S12 set; no part of the look is final until that review returns.
+UIR4C-S01..S10 set; no part of the look is final until that review returns.
 **Current Phase:** Phase 1 — Native Viewport
 **Workspace:** `D:\TRAVELAPPS\ForgeShape`
-**Accepted implementation baseline:** UI-R4B (workspace visual and motion
-correction) on top of UI-R4A (mobile workspace interaction), UI-R3R2 (approved
+**Accepted implementation baseline:** UI-R4C (final visual composition cleanup) on
+top of UI-R4B (workspace visual and motion
+correction), UI-R4A (mobile workspace interaction), UI-R3R2 (approved
 dark palettes + visual composition correction), UI-R3
 (visual quality polish), DOC-R1 (documentation compaction), UI-R2 (workspace
 composition redesign), INPUT-R1 (pointer semantics foundation), UI-R1C2 (world
@@ -48,7 +49,7 @@ re-composes itself per window. `ARCHITECTURE.md` owns the ownership map and ever
 **Blockers: none.** Known costs and accepted debt are in *Technical Debt*;
 environment hazards are in *Known Issues*.
 
-## Current interaction model (UI-R4A, corrected by UI-R4B)
+## Current interaction model (UI-R4A, corrected by UI-R4B and UI-R4C)
 
 Runtime-verified on `ForgeShape_Stage006` / `emulator-5580` in three windows —
 compact portrait, compact landscape (short height) and an overridden
@@ -104,12 +105,41 @@ pass triggers on any window crossing the short-height threshold — used to leav
 no entry drawn active while the tool itself was unchanged below JNI. The rail
 re-applies the last key it was given; it still decides nothing.
 
-**The status line has a lifecycle.** A verdict holds 5 s, a rejection 10 s, a
-newer message cancels the older one's pending clear, and the line then returns to
-what stands — which is nothing, drawn as no capsule at all. The one standing
-message is the stale-source warning, which is a state rather than a verdict. The
-ambient lines UI-R4A wrote on every refresh are gone, and live brush values are
-no longer mirrored there.
+**The status line has a lifecycle, and it never instructs.** A verdict holds 5 s,
+a rejection 10 s, a newer message cancels the older one's pending clear, and the
+line then returns to what stands — which is nothing, drawn as no capsule at all.
+The one standing message is the stale-source warning, which is a state rather
+than a verdict. The ambient lines UI-R4A wrote on every refresh are gone, and
+live brush values are no longer mirrored there. UI-R4C removed the last two
+messages that were not verdicts at all: one written on entering Construction and
+one on every Shape/Transform switch, both captioning the workflow. They put a
+sentence across the top of the viewport in every resting Construction screenshot
+the review saw, and what they said is answered by the held rail entry, the
+toggle that names what it opens, the surface's own title and the Objects capsule.
+There is no first-run help mechanism and UI-R4C deliberately did not build one.
+
+**The mode transition is one control, and it is never abbreviated where the row
+can carry it.** Its width is arithmetic on the row inside `GlobalToolbarView`'s
+own measure pass — what is left after the utility group, an inline status floor
+and the context label — rather than the single dp constant that truncated *Back
+to Construction* on a phone, in short landscape AND on a tablet, two of them with
+50 dp of unused row beside it. Only that label has a second form, `←
+Construction`, taken where the row genuinely cannot carry the sentence; the
+content description is the full wording either way. And where a `COMPACT` window
+withdraws the context label the editing group holds one member, so the group
+stops drawing itself and the member takes the capsule's own corner and depth — a
+26 dp pill painted around a 22 dp button is a halo, and it made the transition
+the heaviest object in a resting workspace whose subject is the model. The hit
+area did not change: 8 dp of host went, not 8 dp of control.
+
+**A context surface stands on the model, never on another control.** Add
+Primitive is wider than the distance from the Objects capsule's `+` to the
+trailing window edge, and the old clamp slid it under the tool cluster, leaving a
+crescent of the precision toggle showing from behind it. The anchor now bounds it
+at the cluster's own leading edge less the standard anchor gap, so the surface
+moves and the live control keeps its place. The motion, the pivot and the z-order
+are unchanged — a z-order fix would have left the control under the panel and
+still taking touches.
 
 **The precision surface ends on a row, not through one.** `PrecisionScrollView`
 rounds the visible body down to the last whole row inside the cap. It caps
@@ -117,8 +147,10 @@ nothing, changes no content and no scroll range, and does nothing when everythin
 fits.
 
 **48 dp is the interactive floor**, raised from 44 dp, and it is the hit area
-rather than the glyph. The 8 dp the toolbar's two icon controls gained comes out
-of the mode-transition button's maximum width, not out of an icon control.
+rather than the glyph. The 8 dp the toolbar's two icon controls gained still
+comes out of the mode-transition button's width budget rather than out of an
+icon control — an icon control past the window edge is unreachable, a button has
+width to give.
 
 **The Tool Rail carries only tools that work.** Sketch and Extrude are gone from
 it, along with `ToolRailView`'s whole notion of a reserved entry; Construction's
@@ -165,7 +197,7 @@ change touched no id, no native call and none of those assertions. The one-way
 project bridge is **not** implemented and this path is still the only thing
 keeping that work.
 
-## Current visual state (UI-R3R2 palettes, UI-R4B composition)
+## Current visual state (UI-R3R2 palettes, UI-R4B/UI-R4C composition)
 
 **The appearance set is three owner-approved DARK palettes**, and there is no
 light one. Warm Graphite (`#302E2B` ground, the default), Neutral Charcoal
@@ -201,10 +233,16 @@ top, and — since UI-R4B — wear the same inset, all-round, raised material th
 wear on a phone. `sideDockWidthDp` is 30 % capped at 340 dp because at 28 %/320
 the docked panel clipped "Cylinder" to "Cyl".
 
-**A control's corner is concentric with its host's.** `radius_control_inset`
-(22 dp) inside a 26 dp capsule with 4 dp of padding, `radius_rail_entry` (20 dp)
-inside the rail's own 26 dp capsule with 6 dp. Two corners that do not share a
-centre leave a crescent of the host showing, which reads as a rendering fault.
+**A control's corner is concentric with its host's — and a group of one has no
+host.** `radius_control_inset` (22 dp) inside a 26 dp capsule with 4 dp of
+padding, `radius_rail_entry` (20 dp) inside the rail's own 26 dp capsule with
+6 dp. Two corners that do not share a centre leave a crescent of the host
+showing, which reads as a rendering fault. UI-R4C added the other half of the
+same rule: a capsule is a relation between controls, so where the editing group
+holds one visible member it stops painting and the member takes
+`radius_capsule` and the floating elevation itself (`bg_pill_primary` /
+`bg_pill_tonal`, the same approved fills as the member forms they replace). No
+palette value moved.
 
 **The short-height rail keeps its icons.** The compact entry shrinks the glyph to
 18 dp instead of dropping it; icon and caption both measure inside the 48 dp
@@ -220,17 +258,17 @@ It is a direct consequence of both the red and the ground being owner-fixed.
 UI-R4B **carried this debt deliberately and changed no approved value**; it is
 still the one item here the owner may want to overrule.
 
-**Core document sizes** (hard cap 2000 physical lines each, measured at UI-R4B):
-`ARCHITECTURE.md` 2226, `PROJECT_STATUS.md` 1199, `PRODUCT.md` 926,
-`README.md` 427, `CLAUDE.md` 245. **`ARCHITECTURE.md` is OVER the 2000-line hard
-cap** — it was 2084 at UI-R4A and UI-R4B added the durable contracts this
-correction created (the shared anchored-surface owner, the status lifecycle, the
-rail's state restoration, the concentric-corner rule, the adaptive composition
-invariant, the 48 dp floor and the two-vocabulary rule). Those additions were
-kept to contract rather than narrative and no stage diary was appended, but the
-file is further over than it was. **A compaction pass is owed before anything
-else adds to it**, and `PRODUCT.md` is now over its 300–450 target as well.
-Always re-measure before quoting a count.
+**Core document sizes** (hard cap 2000 physical lines each, measured at UI-R4C):
+`ARCHITECTURE.md` 2273, `PROJECT_STATUS.md` 1274, `PRODUCT.md` 942,
+`README.md` 436, `CLAUDE.md` 256. **`ARCHITECTURE.md` is OVER the 2000-line hard
+cap** — it was 2084 at UI-R4A, 2226 at UI-R4B, and UI-R4C added the four durable
+invariants its corrections created (a group of one is not drawn as a group, the
+transition fitted to its row, an anchored surface clear of live controls, and
+chrome that reports rather than instructs) while trimming the prose they
+superseded. Those additions were kept to contract rather than narrative and no
+stage diary was appended, but the file is further over than it was. **A
+compaction pass is owed before anything else adds to it**, and `PRODUCT.md` is
+over its 300–450 target as well. Always re-measure before quoting a count.
 
 **Stylus / S Pen on real hardware remains UNVERIFIED.** Tool type, pressure and
 tilt are carried end to end and verified synthetically (`MotionEvent.obtain` with
@@ -644,8 +682,9 @@ device. `README.md` documents how to read them.
 | `EditorWorkspaceMobileTest` | the UI-R4A structural claim: nothing owns the bottom edge in either mode (`UIR4A-01`, `-11`), the Objects capsule (`-02`), Add Primitive anchored to its `+` and offering exactly the six real primitives (`-03`, `-04`), Sphere and Plane routed through native truth (`-05`, `-06`), closing leaves one Objects control (`-07`), exact Shape and Transform one action away (`-08`, `-09`), the rail's icons and touch floor (`-10`), context surfaces rebuild no geometry (`-14`), the new surfaces leak no gesture (`-15`), one vocabulary in every window (`-17`) | 15 |
 | `EditorWorkspaceSculptRetentionTest` | `UIR4A-12` / `UIR4B-20`: Start Sculpting → real stroke → Back → Resume returns the same revision, counts, stroke history and ObjectId, with the Construction Source untouched; and that a stale source is readable from the resting workspace | 2 |
 | `EditorWorkspaceCorrectionTest` | the UI-R4B corrections: no Sculpt creation path and the scene still reachable (`UIR4B-01`), Construction's six-primitive path intact (`-02`), the rail's active state across a rebuild in both modes and cleared on a mode change (`-03`), the status lifecycle, the longer hold for a rejection, the empty resting line and the standing fault (`-04`), brush values beside their sliders and nowhere else and publishing nothing (`-05`), no mid-row cut in Shape or Transform with scrolling and fields intact (`-06`, `-07`), one shared anchored contract (`-08`), a correct first-open pivot for all four surfaces (`-09`), instant reduced motion and interruptibility (`-10`), zero geometry from chrome and motion (`-11`), inset floating surfaces on an expanded window (`-12`), Radius/Strength off the model in expanded Sculpt (`-13`), concentric active geometry and a fill-led selection with no stroke (`-14`), no user-facing *Freeze* over every `R.string` (`-15`), Start Sculpting with Back/Resume/confirmation intact (`-16`), the 48 dp floor in both modes and the toolbar still fitting (`-17`), three appearances and no geometry (`-18`), grid and selection feedback unchanged (`-19`) | 36 |
+| `EditorWorkspaceChromeCompositionTest` | the UI-R4C composition cleanup: back navigation drawn in full with no ellipsis and no clipping in the window under test (`UIR4C-01`, `-03`) and in short landscape (`-02`), Add Primitive intersecting neither the tool cluster nor the precision control in either window (`-04`), the six primitives and their native routing after the reflow (`-05`), a single-member editing group drawn as one control and a two-member one still a capsule (`-06`), Resume Sculpt on the same geometry returning the same revision and mesh (`-07`), the 48 dp floor after the reduction (`-08`), no instructional capsule at rest (`-09`) or with the exact values open, with the transient path intact (`-10`), three appearances and no new colour in the lone-control forms (`-11`), zero native change across the whole sequence (`-12`) | 12 |
 
-**250 tests** (60 JVM, 190 instrumented). No Java test asserts a rendered pixel;
+**262 tests** (60 JVM, 202 instrumented). No Java test asserts a rendered pixel;
 every control is reached by its stable semantic id and no assertion uses a screen
 coordinate. The foundation and theme suites deliberately assert no colour
 literal, radius or shadow — those are judged by eye and by runtime evidence, and
@@ -724,10 +763,11 @@ regression.
 opens with a precondition guard — "the soft keyboard did not appear, so this case
 proves nothing" — and fails on that guard alone, never reaching an assertion about
 product behaviour, whenever the keyboard is slow to appear. It has failed and
-passed across recent stages (proven pre-existing at Stage 015D and UI-R1B1 by
-stashing every change and reproducing the identical message on an untouched tree)
-and the message has been character-identical since. **It passed in both windows
-at UI-R4B**, on a freshly booted emulator, which is consistent with everything
+passed across recent stages (proven pre-existing at Stage 015D, UI-R1B1 and again
+at UI-R4C by stashing every change and reproducing the identical message on an
+untouched tree) and the message has been character-identical since. It **passed
+in both windows at UI-R4B** and **failed on its guard in both at UI-R4C**, on the
+same AVD with a soft keyboard installed — which is consistent with everything
 recorded about it: whether it passes is a function of how loaded the host is, not
 of the product. Treat a future failure as a harness symptom to confirm against
 this baseline before calling it a regression.
@@ -738,41 +778,52 @@ Latest acceptance run, on `ForgeShape_Stage006` / `emulator-5580` unless stated:
 
 - **Native self-tests:** eleven suites, **1695 checks, zero failures** on a clean
   launch, followed by `FORGESHAPE_NATIVE_VIEWPORT_OK`. Nothing below JNI was
-  touched by UI-R4B — the whole stage is Java, resources and documentation — and
-  the total is byte-for-byte the one UI-R4A recorded; the Gate P1 picking
-  assertions are intact inside the 174-check picking suite, and `SIDE`, `REFR`,
-  `NOR`, `CAMPROJ` and `PLN` are all still green.
+  touched by UI-R4C — the whole stage is Java, resources and documentation — and
+  the total is byte-for-byte the one UI-R4B and UI-R4A recorded; the Gate P1
+  picking assertions are intact inside the 174-check picking suite, and `SIDE`,
+  `REFR`, `NOR`, `CAMPROJ` and `PLN` are all still green.
 - **JVM:** 60/60.
-- **Instrumented: 190/190 green in BOTH windows** — the default compact phone
-  window and an overridden 1600 × 2560 @ 240 dpi — through
-  `scripts\run-instrumented-tests.ps1 -Serial emulator-5580`, on a freshly booted
-  emulator. **`ui11` passed in both**, which is the first acceptance run in
-  several stages where it has: it fails only on its own precondition guard when
-  the soft keyboard is slow to appear, and a rested emulator gives it the
-  keyboard.
+- **Instrumented: 201/202 in BOTH windows** — the default compact phone window
+  and an overridden 1600 × 2560 @ 240 dpi — plus **68/68 in a short landscape
+  window** (2400 × 1080, the composition, correction, layout, foundation and
+  sculpt-retention suites), all through
+  `scripts\run-instrumented-tests.ps1 -Serial emulator-5580`. The one failure in
+  each full run is `ui11`, on its own precondition guard — see below.
+- **`ui11` failed on its guard in this run, and it is not a regression.**
+  Re-confirmed the way the record requires rather than assumed: the whole working
+  tree was stashed, the untouched `19d9213` baseline was rebuilt, and
+  `EditorWorkspaceGestureTest` was re-run on the same emulator, producing the
+  identical message from the identical line. The device has a soft keyboard
+  installed (`com.google.android.inputmethod.latin`); whether it appears in time
+  is a function of host load, exactly as recorded below.
 - **Device guards:** `DEV2-01`..`07` and `DEV3-01`..`06` all PASS, with no device
   attached and zero `emulator-5554` interaction.
 - **Physical ARM64 (Gate P1):** closed on a Galaxy S25 Ultra —
   `primaryCpuAbi=arm64-v8a`, `PAGE_SIZE` 4096, the mandatory ~10k/~50k/~100k
   ladder and Sculpt at 100k measured on real hardware. Stylus stays UNVERIFIED.
-- **Runtime walkthrough (UI-R4B):** cold start and start chooser into
-  Construction; the resting workspace with no bottom surface and **no status
-  capsule**; the Objects capsule expanded; Add Primitive; a Cone created and
-  confirmed as its own native primitive; exact Shape and exact Transform opened,
-  inspected for a clipped row and dismissed; **Start Sculpting**, the resting
-  Sculpt workspace with **no `+` in either Objects presentation**, a real
-  Radius and Strength drag, Back to Construction and Resume Sculpt; short
-  landscape with a held brush; the expanded window in both modes; all three
-  appearances. No crash, no gesture leakage and the viewport usable throughout.
-  Earlier walkthroughs are in Git history.
+- **Runtime walkthrough (UI-R4C):** cold start and start chooser into
+  Construction; the resting workspace with **no instructional capsule** and
+  **Start Sculpting drawn as one pill**; Add Primitive opened and confirmed clear
+  of the tool cluster; exact Shape opened and dismissed with **no global
+  instruction added**; Start Sculpting into the Sculpt workspace with **the whole
+  of *Back to Construction* readable**; back, then Resume Sculpt on the same
+  cleaned geometry; short landscape and the expanded window with the same back
+  navigation readable in both; Neutral Charcoal and Light Charcoal. No crash, no
+  new clipping and the viewport usable throughout. Every control was driven by
+  resolving its stable semantic id from a live `uiautomator dump`; no coordinate
+  was reused between steps. Earlier walkthroughs are in Git history.
+- **Zero geometry from pure UI, measured rather than asserted.** With the log
+  cleared, a sequence of Add Primitive open/close, the scene list open/close, both
+  rail contexts, the precision surface open/close, Grid off/on, two appearance
+  switches and a rotation round trip logged **0 `MESH_UPLOAD_OK` and 0
+  `*_PUBLISHED`**. The counter is not blind: the very next act, one driver-applied
+  box change, logged exactly 1 of each.
 - **Screenshot review sets:** `artifacts/uir4a/` (UIR4A-S01..S12 plus three
-  walkthrough frames) and `artifacts/uir4b/` (UIR4B-S01..S12), both **committed**.
-  UI-R4A's were left untracked, which contradicted `.gitignore`'s own note that
-  `/artifacts/` is deliberately not ignored because the cited runtime evidence is
-  versioned repository content. UI-R4B reconciled that rather than working around
-  it: the historical frames are tracked unmodified, and the fresh set sits beside
-  them under its own folder so the two reviews can be compared rather than one
-  overwriting the other.
+  walkthrough frames), `artifacts/uir4b/` (UIR4B-S01..S12) and
+  `artifacts/uir4c/` (UIR4C-S01..S10), all **committed**. `/artifacts/` is
+  deliberately not ignored because the cited runtime evidence is versioned
+  repository content; each review's set sits under its own folder so the reviews
+  can be compared rather than one overwriting the next.
 
 **One caveat about capturing self-test evidence.** On both the emulator and the
 physical phone the logcat ring buffer intermittently drops whole suites from the
@@ -1176,8 +1227,9 @@ was added and no marketing claim is made.
 
 **Stage 019 — Undo/Redo transaction foundation for direct transform work.**
 
-UI-R4A left the shell ready for direct manipulation and UI-R4B corrected what the
-review of it found; neither built any of the manipulation, deliberately. The
+UI-R4A left the shell ready for direct manipulation, UI-R4B corrected what the
+review of it found and UI-R4C closed the four composition defects the review of
+*that* found; none of the three built any of the manipulation, deliberately. The
 thing that has to exist *before* a gizmo, not after it, is a
 transaction boundary: a drag on a handle produces a continuous stream of
 intermediate states, and without a domain-level notion of "one edit began, one
@@ -1192,18 +1244,21 @@ for Construction parameters, for a transform and for a sculpt stroke, and what
 the memory ceiling is. The direct transform gizmo (Stage 020) is built on top of
 it and is not part of Stage 019.
 
-**Visual acceptance remains PENDING**, now on the fresh twelve-screenshot review
-set `artifacts/uir4b/UIR4B-S01..S12` — the resting Construction workspace, the
-Objects capsule expanded, Add Primitive, both precision surfaces, resting Sculpt
-with no `+`, Radius/Strength, short landscape with an active tool, expanded
-Construction and Sculpt, and the Neutral Charcoal and Light Charcoal resting
-workspaces. `artifacts/uir4a/` is committed unmodified beside it, so the two
-reviews can be compared. That review is a judgement about the look and is
-independent of Stage 019, which touches the domain rather than the shell.
+**Visual acceptance remains PENDING**, now on the focused ten-screenshot review
+set `artifacts/uir4c/UIR4C-S01..S10` — the resting Construction workspace, Add
+Primitive clear of the trailing control, Exact Shape with a clean top, Sculpt with
+the whole back navigation readable, Resume Sculpt on the same geometry, short
+landscape, expanded Construction and Sculpt, and Neutral Charcoal and Light
+Charcoal. `artifacts/uir4a/` and `artifacts/uir4b/` are committed unmodified
+beside it, so the three reviews can be compared. That review is a judgement about
+the look and is independent of Stage 019, which touches the domain rather than
+the shell.
 
-**Also owed, before anything else adds to it:** `ARCHITECTURE.md` is 2226 lines,
-over its own 2000-line hard cap and roughly double its 700–1000 target, and
-`PRODUCT.md` at 926 is over its 300–450 target. A compaction pass is due.
+**Also owed, before anything else adds to it:** `ARCHITECTURE.md` is 2273 lines,
+over its own 2000-line hard cap and more than double its 700–1000 target, and
+`PRODUCT.md` at 941 is over its 300–450 target. UI-R4C added the four durable
+invariants its corrections created and trimmed what they superseded, so the file
+grew by 47 lines rather than shrinking. A compaction pass is due.
 
 The one feature the repo still records as a candidate is **Selection Outline** —
 the expensive half of selection feedback, needing either a second geometry pass

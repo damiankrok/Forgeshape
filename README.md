@@ -283,11 +283,20 @@ starts no stroke, so a stroke aimed at the centre of a face of a frozen **box**
 a bug. Start Sculpting on a sphere (482 v) or a capsule (514 v) before driving a
 stroke for evidence, or widen the radius.
 
-**The status capsule is transient.** Since UI-R4B it clears itself — 5 s for an
-acknowledgement, 10 s for a rejection — and is `GONE` when it has nothing to say,
-so a `uiautomator dump` taken a few seconds after an action will not contain
-`status_message`. Read it immediately after the step that wrote it, or read the
-`FORGESHAPE_*` log line, which is the authority either way.
+**The status capsule is transient, and it reports only events.** Since UI-R4B it
+clears itself — 5 s for an acknowledgement, 10 s for a rejection — and is `GONE`
+when it has nothing to say, so a `uiautomator dump` taken a few seconds after an
+action will not contain `status_message`. Read it immediately after the step that
+wrote it, or read the `FORGESHAPE_*` log line, which is the authority either way.
+Since UI-R4C it carries no instruction at all: answering the start question and
+switching between `tool_rail_shape` and `tool_rail_place` write **nothing**, so a
+script must not wait for a message after either.
+
+**`back_to_construction` may read `← Construction` on a very narrow row.** The
+toolbar sizes the mode transition against the row it is in, and only where the
+full wording genuinely does not fit does it take the short form. The id and the
+content description (*Back to Construction*) are unchanged in both, so locate it
+by id — never by its text.
 
 ## Log vocabulary
 

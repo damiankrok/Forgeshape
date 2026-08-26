@@ -93,7 +93,18 @@ never run per frame.
 - **No surface owns the resting workspace.** The viewport is the workspace; the
   exact-value panel and every context surface are opened from a control, grow out
   of it, and are absent otherwise. Nothing may reintroduce a permanently visible
-  panel anchored to a window edge — a collapsed panel is still one.
+  panel anchored to a window edge — a collapsed panel is still one. A surface may
+  stand on the *model*; it may never partially cover another live control, and
+  moving it in front by z-order is not a fix — the control is still under it and
+  still taking touches.
+- **Chrome reports, it does not instruct.** The status line carries verdicts and
+  standing faults only; a message that is always true is a permanent surface
+  whatever its timeout says, and the rail entry, the control that opened a panel
+  and the panel's own title already answer where the user is. And **critical
+  navigation is never abbreviated where the row can carry it**: a transition's
+  width is arithmetic on its row, not a constant, and the only approved second
+  form is `← Construction`, with the full wording kept as the content
+  description.
 - **Nothing unimplemented is drawn as a tool or as a creation action.** The one
   approved exception is the global `Export`, drawn recessed and labelled as not
   implemented. A control that looks like it works and does not is worse than an
