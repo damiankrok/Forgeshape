@@ -115,10 +115,12 @@ constexpr SculptRevision kFrozenSculptRevision = 1;
 // Brush parameters, shared by every tool
 // ---------------------------------------------------------------------------
 //
-// The radius is authored in SCREEN PIXELS and converted to object space at the
+// The radius is authored in SCREEN PIXELS and resolved to WORLD METERS at the
 // depth of the stroke's hit point. That is what makes the brush feel the same
-// size regardless of zoom, and it is why the radius is not a length in meters:
-// it is a property of the gesture, not of the object.
+// size regardless of zoom, and it is why the authored value is not a length in
+// meters: it is a property of the gesture, not of the object. It is never
+// carried into object space — see the brush metric below for why a world radius
+// has no single local length once the body carries a non-uniform Scale.
 
 constexpr float kMinBrushRadiusPixels = 24.0f;
 constexpr float kMaxBrushRadiusPixels = 600.0f;
@@ -151,6 +153,52 @@ float clampBrushStrength(float requested);
 float sculptFalloff(float distance, float radius);
 
 // ---------------------------------------------------------------------------
+// The brush metric — ONE conversion, shared by every brush
+// ---------------------------------------------------------------------------
+//
+// The Frozen Sculpt Mesh is LOCAL geometry; the body carries it into the world
+// through Model = T * R * S. The brush radius is authored in SCREEN PIXELS and
+// resolved into WORLD meters at the hit depth, so the distance a brush measures
+// with has to be the WORLD one. For a local offset d that distance is
+//
+//     |R * S * d|  =  |S * d|
+//
+// because a rotation preserves length. Only for S = (1,1,1) does that reduce to
+// |d|, which is why measuring in local coordinates turned a round 120 px brush
+// into an oval footprint on a body scaled (3,1,1): not a look, the wrong
+// metric. One averaged, largest or smallest scale factor cannot repair it
+// either — an anisotropic stretch is not a scalar, and collapsing it to one
+// would only choose which axis is wrong.
+//
+// The whole model matrix is taken rather than a scale triple so the helper is
+// exact for any placement and has nothing to keep in step with the transform:
+// translation drops out with the implicit w = 0, and R contributes no length.
+// A non-finite offset propagates to a non-finite distance, which every caller
+// already treats as outside the brush.
+float brushWorldDistance(const Mat4& model, const Vec3& localDelta);
+
+// The LOCAL step that displaces a vertex by `worldMeters` along the direction a
+// LOCAL surface normal actually points on screen.
+//
+// Clay and Inflate both deposit along a normal, and under a non-uniform scale a
+// local normal is neither the displayed direction — that is R * S^-1 * n, the
+// inverse transpose, the same matrix the renderer shades with — nor a local
+// length equal to a world one. Both conversions live here so the two brushes
+// cannot drift apart, and the step is built in WORLD space and carried back
+// through the inverse model, which is exactly what Grab already does with its
+// camera-plane delta.
+//
+// The inverse transpose of the model's linear part is the transpose of the
+// INVERSE model's linear part, so this needs no third matrix argument and
+// cannot fall out of step with the inverse the rest of the stroke uses.
+//
+// Returns the zero vector — a step that moves nothing — for a degenerate normal
+// or a non-finite result, and reduces exactly to `n * worldMeters` for an
+// unscaled body with a unit normal, so nothing about an unscaled body changes.
+Vec3 brushLocalStepAlongNormal(const Mat4& inverseModel, const Vec3& localNormal,
+                               float worldMeters);
+
+// ---------------------------------------------------------------------------
 // How much a travel-driven tool does
 // ---------------------------------------------------------------------------
 //
@@ -163,11 +211,13 @@ float sculptFalloff(float distance, float radius);
 //
 //     travelFraction = pointer travel this move (pixels) / brush radius (pixels)
 //
-// Deposition/expansion amount, in object space:
+// Deposition/expansion amount, in WORLD meters — the same metric the affected
+// set was selected with, so a stretched body deposits an even slab rather than
+// one that is deeper along whichever axis happens to be scaled up:
 //
-//     amount = strength * localRadius * kNormalBrushGain * travelFraction
+//     amount = strength * worldRadius * kNormalBrushGain * travelFraction
 //
-// and it is clamped to one local radius per move, so a single enormous jump
+// and it is clamped to one brush radius per move, so a single enormous jump
 // (a teleporting pointer) can never produce an unbounded displacement.
 constexpr float kNormalBrushGain = 0.35f;
 
@@ -421,7 +471,7 @@ public:
     int affectedVertexCount() const { return static_cast<int>(affected_.size()); }
     const SculptStrokeVertex& affectedVertex(int i) const { return affected_[i]; }
     Vec3 localCenter() const { return localCenter_; }
-    float localRadius() const { return localRadius_; }
+    float worldRadius() const { return worldRadius_; }
     float worldPerPixel() const { return worldPerPixel_; }
     float hitDepth() const { return hitDepth_; }
     Vec3 lastLocalDisplacement() const { return lastLocalDisplacement_; }
@@ -448,7 +498,7 @@ private:
     float travelPixels_ = 0.0f;  // total path length, for logging and tests
 
     Vec3 localCenter_{0.0f, 0.0f, 0.0f};  // the hit point, in object space
-    float localRadius_ = 0.0f;            // the brush radius, in object space
+    float worldRadius_ = 0.0f;            // the brush radius, in WORLD meters
     float radiusPixels_ = 0.0f;           // the brush radius as authored
     float worldPerPixel_ = 0.0f;          // world meters per screen pixel at the hit depth
     float hitDepth_ = 0.0f;               // along the camera forward axis

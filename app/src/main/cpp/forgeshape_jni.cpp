@@ -20,6 +20,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <condition_variable>
 #include <mutex>
 #include <thread>
@@ -449,7 +450,7 @@ void runConeCapsuleSelfTestsAndLog() {
 
 void runSculptSelfTestsAndLog() {
 #ifndef NDEBUG
-    constexpr int kMaxSculptChecks = 512;
+    constexpr int kMaxSculptChecks = 768;
     static forgeshape::SculptSelfTestResult results[kMaxSculptChecks];
     const int count = forgeshape::runSculptSelfTests(results, kMaxSculptChecks);
     int failed = 0;
@@ -2605,7 +2606,14 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
     bool grabAbandoned = false;
     const char* grabTool = "";
     int grabVertices = 0;
-    float grabLocalRadius = 0.0f;
+    float grabWorldRadius = 0.0f;
+    // How far the affected set actually reaches, measured both ways. The brush
+    // selects in the WORLD metric, so maxWorld must stay inside the radius
+    // while maxLocal may exceed it by whatever the body's Scale is — which is
+    // the whole difference the world metric makes, readable in one log line
+    // without a brush cursor and without a screenshot.
+    float grabMaxWorld = 0.0f;
+    float grabMaxLocal = 0.0f;
     forgeshape::SculptRevision grabRevision = 0;
     forgeshape::MeshRevision grabMeshRevision = 0;
     forgeshape::Vec3 grabDisplacement{};
@@ -2796,7 +2804,25 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
                             grabBegan = true;
                             grabTool = forgeshape::sculptToolName(sculpt.stroke().tool());
                             grabVertices = sculpt.stroke().affectedVertexCount();
-                            grabLocalRadius = sculpt.stroke().localRadius();
+                            grabWorldRadius = sculpt.stroke().worldRadius();
+                            {
+                                const forgeshape::SculptStroke& s = sculpt.stroke();
+                                const forgeshape::Mat4 model = placement.modelMatrix();
+                                for (int i = 0; i < s.affectedVertexCount(); ++i) {
+                                    const forgeshape::Vec3 d =
+                                        forgeshape::vec3Sub(s.affectedVertex(i).basePosition,
+                                                            s.localCenter());
+                                    const float world = forgeshape::brushWorldDistance(model, d);
+                                    const float local =
+                                        std::sqrt(forgeshape::vec3Dot(d, d));
+                                    if (world > grabMaxWorld) {
+                                        grabMaxWorld = world;
+                                    }
+                                    if (local > grabMaxLocal) {
+                                        grabMaxLocal = local;
+                                    }
+                                }
+                            }
                             // This same event is the stroke's first move, so no
                             // pointer travel is lost to the deferral.
                             if (sculpt.updateStroke(pointers[0].x, pointers[0].y)) {
@@ -2973,8 +2999,9 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
                 (unsigned long long)forgeshape::sculptSession().mesh().revision());
     }
     if (grabBegan) {
-        FS_LOGI("FORGESHAPE_SCULPT_STROKE_BEGIN:%s:%d radiusLocal=%.4f", grabTool, grabVertices,
-                grabLocalRadius);
+        FS_LOGI("FORGESHAPE_SCULPT_STROKE_BEGIN:%s:%d radiusWorld=%.4f maxWorld=%.4f "
+                "maxLocal=%.4f",
+                grabTool, grabVertices, grabWorldRadius, grabMaxWorld, grabMaxLocal);
     }
     if (grabPublished) {
         FS_LOGI("FORGESHAPE_SCULPT_STROKE_MOVE:%s sculptRev=%llu meshRev=%llu "

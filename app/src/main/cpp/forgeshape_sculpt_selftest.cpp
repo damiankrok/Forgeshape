@@ -9,8 +9,10 @@
 #include "forgeshape_input.h"
 #include "forgeshape_math.h"
 #include "forgeshape_mesh.h"
+#include "forgeshape_history.h"
 #include "forgeshape_picking.h"
 #include "forgeshape_render_mesh.h"
+#include "forgeshape_scene.h"
 #include "forgeshape_sculpt.h"
 #include "forgeshape_selection.h"
 #include "forgeshape_transform.h"
@@ -771,10 +773,10 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
         r.check("stroke_captured_vertices", session.stroke().affectedVertexCount() > 0);
         r.check("stroke_hit_depth_is_positive", session.stroke().hitDepth() > 0.0f);
         r.check("stroke_world_per_pixel_is_positive", session.stroke().worldPerPixel() > 0.0f);
-        r.check("stroke_local_radius_is_positive", session.stroke().localRadius() > 0.0f);
+        r.check("stroke_world_radius_is_positive", session.stroke().worldRadius() > 0.0f);
         // Brush radius is authored in pixels and resolved at the hit depth.
         r.check("stroke_local_radius_is_pixels_times_scale",
-                nearly(session.stroke().localRadius(),
+                nearly(session.stroke().worldRadius(),
                        session.radiusPixels() * session.stroke().worldPerPixel()));
         session.endStroke();
         r.check("stroke_inactive_after_end", !session.stroke().active());
@@ -818,7 +820,7 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
         r.check("small_radius_captures_vertices", smallCount > 0);
         r.check("larger_radius_captures_strictly_more", largeCount > smallCount);
         r.check("larger_radius_is_a_larger_local_radius",
-                large.stroke().localRadius() > small.stroke().localRadius());
+                large.stroke().worldRadius() > small.stroke().worldRadius());
 
         // Every captured vertex is genuinely inside the brush, and its weight is
         // exactly the documented falloff of its distance.
@@ -829,7 +831,7 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
         float nearestWeight = 0.0f;
         float farthestWeight = 0.0f;
         const Vec3 centre = large.stroke().localCenter();
-        const float radius = large.stroke().localRadius();
+        const float radius = large.stroke().worldRadius();
         for (int i = 0; i < largeCount; ++i) {
             const SculptStrokeVertex& v = large.stroke().affectedVertex(i);
             const Vec3 d = vec3Sub(v.basePosition, centre);
@@ -1386,7 +1388,7 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
             // Every tool's weights come from the one shared falloff, evaluated
             // at the captured distance from the stroke's own centre.
             const Vec3 centre = session.stroke().localCenter();
-            const float radius = session.stroke().localRadius();
+            const float radius = session.stroke().worldRadius();
             for (int i = 0; i < capturedCount; ++i) {
                 const Vec3 d = vec3Sub(session.stroke().affectedVertex(i).basePosition, centre);
                 if (!nearly(capturedWeights[i], sculptFalloff(lengthOf(d), radius))) {
@@ -1842,7 +1844,7 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
             wide.beginStroke(camera, kCentreX, kCentreY, kViewportWidth, kViewportHeight, identity,
                              identity);
             if (!(wide.stroke().affectedVertexCount() > narrow.stroke().affectedVertexCount()) ||
-                !(wide.stroke().localRadius() > narrow.stroke().localRadius())) {
+                !(wide.stroke().worldRadius() > narrow.stroke().worldRadius())) {
                 radiusWidensEveryTool = false;
             }
 
@@ -1945,10 +1947,10 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
         r.check("camproj11_ortho_world_per_pixel_is_the_span_over_the_viewport",
                 oBegan && std::fabs(orthoStroke.worldPerPixel() - expectedScale) < 1e-6f);
         r.check("camproj11_ortho_radius_follows_that_scale",
-                oBegan && std::fabs(orthoStroke.localRadius() - 120.0f * expectedScale) < 1e-4f);
+                oBegan && std::fabs(orthoStroke.worldRadius() - 120.0f * expectedScale) < 1e-4f);
         r.check("camproj11_ortho_radius_finite_and_positive",
-                oBegan && std::isfinite(orthoStroke.localRadius()) &&
-                    orthoStroke.localRadius() > 0.0f &&
+                oBegan && std::isfinite(orthoStroke.worldRadius()) &&
+                    orthoStroke.worldRadius() > 0.0f &&
                     std::isfinite(orthoStroke.worldPerPixel()));
 
         // Depth independence, measured rather than argued: move the object far
@@ -1976,7 +1978,7 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
                                  kViewportWidth, kViewportHeight, pulledOut, outInverse, 120.0f);
             r.check("camproj11_ortho_brush_radius_is_depth_independent",
                     farOk && nearOk &&
-                        std::fabs(farStroke.localRadius() - nearStroke.localRadius()) < 1e-5f);
+                        std::fabs(farStroke.worldRadius() - nearStroke.worldRadius()) < 1e-5f);
 
             SculptMesh pFar, pNear;
             pFar.freezeFrom(source, object.objectId());
@@ -1992,7 +1994,7 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
             // to a constant would pass the depth-independence check above.
             r.check("camproj11_perspective_brush_radius_does_depend_on_depth",
                     pFarOk && pNearOk &&
-                        pFarStroke.localRadius() > pNearStroke.localRadius() + 1e-3f);
+                        pFarStroke.worldRadius() > pNearStroke.worldRadius() + 1e-3f);
         }
 
         // A real Grab in Orthographic deforms the mesh, keeps the topology
@@ -2171,6 +2173,639 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
                         lightRun.mesh().revision() > kFrozenSculptRevision);
             r.check(kAffectedNames[toolIndex],
                     lightAffected == heavyAffected && lightAffected > 0);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // S020R3-01..12 — the brush measures in the WORLD/display metric
+    // -----------------------------------------------------------------------
+    //
+    // A Construction Scale is a multiplier on a derived matrix, so the Frozen
+    // Sculpt Mesh stays exactly the local geometry it was frozen from. That is
+    // the ownership rule, and it is what made the brush wrong: a brush that
+    // compared LOCAL offsets against a radius resolved in WORLD meters is round
+    // only while S = (1,1,1). On a body scaled (3,1,1) it selected a footprint
+    // three times narrower along the stretched axis — an oval on screen.
+    //
+    // The fix is one shared metric, brushWorldDistance(), and one shared
+    // normal conversion, brushLocalStepAlongNormal(). Nothing is baked into a
+    // vertex and no transform is touched, which is what the lifecycle checks at
+    // the end of this section prove numerically rather than by argument.
+    {
+        const Mat4 identity = mat4Identity();
+        const CameraSnapshot camera = defaultCamera();
+
+        // A matrix for an arbitrary placement, built the one way the product
+        // builds one: through the authoritative nine values.
+        struct Placement {
+            Mat4 model;
+            Mat4 inverseModel;
+        };
+        auto placementOf = [](double sx, double sy, double sz, double rx, double ry,
+                              double rz) -> Placement {
+            ConstructionTransform t;
+            TransformValues v{};
+            v.rotationX = rx;
+            v.rotationY = ry;
+            v.rotationZ = rz;
+            v.scaleX = sx;
+            v.scaleY = sy;
+            v.scaleZ = sz;
+            t.setValues(v);
+            return Placement{t.modelMatrix(), t.inverseModelMatrix()};
+        };
+
+        // --- S020R3-01: the metric helper itself ---------------------------
+        {
+            const Vec3 dx{1.0f, 0.0f, 0.0f};
+            const Vec3 dy{0.0f, 1.0f, 0.0f};
+            const Vec3 dz{0.0f, 0.0f, 1.0f};
+            const Vec3 mixed{0.3f, -0.4f, 0.5f};
+
+            r.check("s020r3_01_identity_metric_is_the_local_length",
+                    nearly(brushWorldDistance(identity, mixed), lengthOf(mixed)));
+
+            const Placement uniform = placementOf(2.0, 2.0, 2.0, 0.0, 0.0, 0.0);
+            r.check("s020r3_01_uniform_scale_multiplies_the_length",
+                    nearly(brushWorldDistance(uniform.model, mixed), 2.0f * lengthOf(mixed)));
+
+            // (3,1,1): three world meters along the body's own X, one along the
+            // other two. This is the exact case the stage names.
+            const Placement stretched = placementOf(3.0, 1.0, 1.0, 0.0, 0.0, 0.0);
+            r.check("s020r3_01_stretched_axis_measures_three",
+                    nearly(brushWorldDistance(stretched.model, dx), 3.0f));
+            r.check("s020r3_01_unstretched_axes_measure_one",
+                    nearly(brushWorldDistance(stretched.model, dy), 1.0f) &&
+                        nearly(brushWorldDistance(stretched.model, dz), 1.0f));
+
+            // |S * d| for a mixed offset, computed independently of the helper.
+            const Placement odd = placementOf(0.5, 2.5, 1.5, 0.0, 0.0, 0.0);
+            const Vec3 scaled{mixed.x * 0.5f, mixed.y * 2.5f, mixed.z * 1.5f};
+            r.check("s020r3_01_nonuniform_metric_is_the_scaled_length",
+                    nearly(brushWorldDistance(odd.model, mixed), lengthOf(scaled)));
+
+            // A translation is not a distance: the offset is a DIRECTION.
+            const Mat4 moved = mat4Translation(Vec3{7.0f, -3.0f, 11.0f});
+            r.check("s020r3_01_translation_does_not_change_the_metric",
+                    nearly(brushWorldDistance(moved, mixed), lengthOf(mixed)));
+
+            // The old, wrong answer, stated so the test cannot pass by
+            // accident: on (3,1,1) the local length and the displayed one
+            // genuinely differ, and by the factor the scale names.
+            r.check("s020r3_01_local_length_is_not_the_displayed_one",
+                    std::fabs(brushWorldDistance(stretched.model, dx) - lengthOf(dx)) > 1.0f);
+        }
+
+        // --- S020R3-02: the influence set is ROUND in world space ----------
+        //
+        // Proved twice. First without any vertex sampling at all: the rim of
+        // the brush is the set of local offsets whose world distance is R, so
+        // every world DIRECTION must reach that rim at the same world distance.
+        // Then on the real affected set of a real stroke.
+        {
+            const double kScales[2][3] = {{3.0, 1.0, 1.0}, {0.5, 2.5, 1.5}};
+            static const char* const kRimNames[2] = {
+                "s020r3_02_rim_is_a_world_sphere_at_3_1_1",
+                "s020r3_02_rim_is_a_world_sphere_at_0.5_2.5_1.5"};
+            static const char* const kSetNames[2] = {
+                "s020r3_02_affected_set_is_the_world_ball_at_3_1_1",
+                "s020r3_02_affected_set_is_the_world_ball_at_0.5_2.5_1.5"};
+            static const char* const kWeightNames[2] = {
+                "s020r3_02_weights_follow_the_world_distance_at_3_1_1",
+                "s020r3_02_weights_follow_the_world_distance_at_0.5_2.5_1.5"};
+            static const char* const kOvalNames[2] = {
+                "s020r3_02_local_metric_would_have_differed_at_3_1_1",
+                "s020r3_02_local_metric_would_have_differed_at_0.5_2.5_1.5"};
+
+            for (int c = 0; c < 2; ++c) {
+                const Placement p =
+                    placementOf(kScales[c][0], kScales[c][1], kScales[c][2], 0.0, 0.0, 0.0);
+                const float kRadius = 0.7f;
+
+                // 128 directions over the sphere. Each is carried into local
+                // space by the inverse model and scaled to sit exactly on the
+                // rim; the metric must report R for every one of them, which is
+                // the definition of a round footprint on screen.
+                bool rimIsRound = true;
+                for (int i = 0; i < 128; ++i) {
+                    const float u = (static_cast<float>(i) + 0.5f) / 128.0f;
+                    const float theta = u * 6.2831853f * 7.0f;  // co-prime turns
+                    const float z = 2.0f * u - 1.0f;
+                    const float rho = std::sqrt(std::max(0.0f, 1.0f - z * z));
+                    const Vec3 worldDir{rho * std::cos(theta), rho * std::sin(theta), z};
+                    const Vec3 localDir = mat4TransformDirection(p.inverseModel, worldDir);
+                    const float unit = brushWorldDistance(p.model, localDir);
+                    if (!std::isfinite(unit) || unit <= 0.0f) {
+                        rimIsRound = false;
+                        break;
+                    }
+                    const Vec3 rim = vec3Scale(localDir, kRadius / unit);
+                    if (std::fabs(brushWorldDistance(p.model, rim) - kRadius) > 1e-4f) {
+                        rimIsRound = false;
+                        break;
+                    }
+                }
+                r.check(kRimNames[c], rimIsRound);
+
+                // And on a real stroke: the affected set is exactly the set of
+                // vertices inside the world ball, and each weight is the
+                // falloff of its WORLD distance.
+                ConstructionObject object = makeSphereObject();
+                SculptMesh mesh;
+                mesh.freezeFrom(object.generateMesh(), object.objectId());
+                SculptStroke stroke;
+                const bool began =
+                    stroke.begin(SculptTool::Clay, mesh, camera, kCentreX, kCentreY,
+                                 kViewportWidth, kViewportHeight, p.model, p.inverseModel, 120.0f);
+
+                bool setMatches = began;
+                bool weightsMatch = began;
+                bool ovalWouldDiffer = false;
+                if (began) {
+                    const float radius = stroke.worldRadius();
+                    for (uint32_t i = 0; i < mesh.vertexCount(); ++i) {
+                        const Vec3 d = vec3Sub(mesh.vertexPosition(i), stroke.localCenter());
+                        const float world = brushWorldDistance(p.model, d);
+                        const float local = lengthOf(d);
+                        const bool inWorldBall = world < radius;
+                        const bool inLocalBall = local < radius;
+                        if (inWorldBall != (stroke.weightOfVertex(i) > 0.0f)) {
+                            setMatches = false;
+                        }
+                        if (inWorldBall &&
+                            !nearly(stroke.weightOfVertex(i), sculptFalloff(world, radius))) {
+                            weightsMatch = false;
+                        }
+                        if (inWorldBall != inLocalBall) {
+                            ovalWouldDiffer = true;  // the old code chose differently
+                        }
+                    }
+                }
+                r.check(kSetNames[c], setMatches && stroke.affectedVertexCount() > 0);
+                r.check(kWeightNames[c], weightsMatch);
+                r.check(kOvalNames[c], ovalWouldDiffer);
+            }
+        }
+
+        // --- S020R3-03: a rotation does not change the metric --------------
+        {
+            const Placement plain = placementOf(0.5, 2.5, 1.5, 0.0, 0.0, 0.0);
+            const Placement turned = placementOf(0.5, 2.5, 1.5, 37.0, -21.0, 64.0);
+
+            bool metricUnchanged = true;
+            for (int i = 0; i < 64; ++i) {
+                const float a = static_cast<float>(i) * 0.37f;
+                const Vec3 d{std::cos(a) * 0.6f, std::sin(a * 1.7f) * 0.4f,
+                             std::sin(a) * 0.5f};
+                if (std::fabs(brushWorldDistance(plain.model, d) -
+                              brushWorldDistance(turned.model, d)) > 1e-5f) {
+                    metricUnchanged = false;
+                }
+            }
+            r.check("s020r3_03_rotation_is_length_preserving_in_the_metric", metricUnchanged);
+
+            // And a stroke on the turned, stretched body still selects the
+            // world ball — the mixed case the stage names.
+            ConstructionObject object = makeSphereObject();
+            SculptMesh mesh;
+            mesh.freezeFrom(object.generateMesh(), object.objectId());
+            SculptStroke stroke;
+            const bool began = stroke.begin(SculptTool::Grab, mesh, camera, kCentreX, kCentreY,
+                                            kViewportWidth, kViewportHeight, turned.model,
+                                            turned.inverseModel, 120.0f);
+            bool roundUnderRotation = began;
+            if (began) {
+                for (uint32_t i = 0; i < mesh.vertexCount(); ++i) {
+                    const float world = brushWorldDistance(
+                        turned.model, vec3Sub(mesh.vertexPosition(i), stroke.localCenter()));
+                    if ((world < stroke.worldRadius()) != (stroke.weightOfVertex(i) > 0.0f)) {
+                        roundUnderRotation = false;
+                    }
+                }
+            }
+            r.check("s020r3_03_mixed_rotation_and_scale_still_selects_the_world_ball",
+                    roundUnderRotation && stroke.affectedVertexCount() > 0);
+        }
+
+        // --- S020R3-04: the screen-pixel radius contract still holds -------
+        //
+        // Orthographic, because there the pixel-to-world scale does not depend
+        // on depth — which is what lets "the same nominal px at the same hit
+        // depth" be stated exactly rather than approximately, even though
+        // scaling a body necessarily moves its silhouette.
+        {
+            CameraController orthoCam;
+            orthoCam.setViewport(kViewportWidth, kViewportHeight);
+            orthoCam.setProjectionMode(ProjectionMode::Orthographic);
+            const CameraSnapshot ortho = orthoCam.snapshot();
+
+            ConstructionObject object = makeSphereObject();
+            const ConstructionMesh source = object.generateMesh();
+
+            const Placement unscaled = placementOf(1.0, 1.0, 1.0, 0.0, 0.0, 0.0);
+            const Placement stretched = placementOf(3.0, 1.0, 1.0, 0.0, 0.0, 0.0);
+
+            SculptMesh a, b;
+            a.freezeFrom(source, object.objectId());
+            b.freezeFrom(source, object.objectId());
+            SculptStroke plainStroke, scaledStroke;
+            const bool aOk = plainStroke.begin(SculptTool::Clay, a, ortho, kCentreX, kCentreY,
+                                               kViewportWidth, kViewportHeight, unscaled.model,
+                                               unscaled.inverseModel, 120.0f);
+            const bool bOk = scaledStroke.begin(SculptTool::Clay, b, ortho, kCentreX, kCentreY,
+                                                kViewportWidth, kViewportHeight, stretched.model,
+                                                stretched.inverseModel, 120.0f);
+
+            r.check("s020r3_04_a_stroke_starts_on_a_scaled_body", aOk && bOk);
+            r.check("s020r3_04_world_per_pixel_is_unchanged_by_body_scale",
+                    aOk && bOk &&
+                        std::fabs(plainStroke.worldPerPixel() - scaledStroke.worldPerPixel()) <
+                            1e-6f);
+            // The displayed radius of the brush is the same length in meters
+            // before and after the body was scaled: Scale sizes the BODY, never
+            // the instrument.
+            r.check("s020r3_04_displayed_brush_radius_is_unchanged_by_body_scale",
+                    aOk && bOk &&
+                        std::fabs(plainStroke.worldRadius() - scaledStroke.worldRadius()) < 1e-5f);
+            r.check("s020r3_04_radius_still_follows_the_authored_pixels",
+                    bOk && std::fabs(scaledStroke.worldRadius() -
+                                     120.0f * scaledStroke.worldPerPixel()) < 1e-4f);
+        }
+
+        // --- S020R3-05..08: every shipped brush uses the shared metric -----
+        //
+        // Parameterized, because the affected set and its weights are captured
+        // by ONE shared path: four independent corrections is exactly what this
+        // stage refused to write, so the test is written the same way.
+        {
+            static const char* const kSetNames[kSculptToolCount] = {
+                "s020r3_05_grab_affected_set_is_scale_correct",
+                "s020r3_06_clay_affected_set_is_scale_correct",
+                "s020r3_07_smooth_affected_set_is_scale_correct",
+                "s020r3_08_inflate_affected_set_is_scale_correct"};
+            static const char* const kWeightNames[kSculptToolCount] = {
+                "s020r3_05_grab_weights_follow_the_world_distance",
+                "s020r3_06_clay_weights_follow_the_world_distance",
+                "s020r3_07_smooth_weights_follow_the_world_distance",
+                "s020r3_08_inflate_weights_follow_the_world_distance"};
+            static const char* const kMoveNames[kSculptToolCount] = {
+                "s020r3_05_grab_still_deforms_a_scaled_body",
+                "s020r3_06_clay_still_deforms_a_scaled_body",
+                "s020r3_07_smooth_still_deforms_a_scaled_body",
+                "s020r3_08_inflate_still_deforms_a_scaled_body"};
+
+            const Placement p = placementOf(3.0, 1.0, 1.0, 18.0, 42.0, -9.0);
+
+            for (int toolIndex = 0; toolIndex < kSculptToolCount; ++toolIndex) {
+                SculptTool tool = SculptTool::Grab;
+                sculptToolFromIndex(toolIndex, &tool);
+
+                ConstructionObject object = makeSphereObject();
+                SculptMesh mesh;
+                mesh.freezeFrom(object.generateMesh(), object.objectId());
+                SculptStroke stroke;
+                const bool began =
+                    stroke.begin(tool, mesh, camera, kCentreX, kCentreY, kViewportWidth,
+                                 kViewportHeight, p.model, p.inverseModel, 160.0f);
+
+                bool setMatches = began;
+                bool weightsMatch = began;
+                if (began) {
+                    const float radius = stroke.worldRadius();
+                    for (uint32_t i = 0; i < mesh.vertexCount(); ++i) {
+                        const float world = brushWorldDistance(
+                            p.model, vec3Sub(mesh.vertexPosition(i), stroke.localCenter()));
+                        const bool inside = world < radius;
+                        if (inside != (stroke.weightOfVertex(i) > 0.0f)) {
+                            setMatches = false;
+                        }
+                        if (inside &&
+                            !nearly(stroke.weightOfVertex(i), sculptFalloff(world, radius))) {
+                            weightsMatch = false;
+                        }
+                    }
+                }
+                r.check(kSetNames[toolIndex], setMatches && stroke.affectedVertexCount() > 0);
+                r.check(kWeightNames[toolIndex], weightsMatch);
+
+                // The brush still does its job, and produces nothing that is
+                // not a number, on a body it has never been scaled onto before.
+                bool moved = false;
+                for (int step = 1; step <= 8; ++step) {
+                    if (stroke.update(mesh, kCentreX + static_cast<float>(step) * 9.0f,
+                                      kCentreY + static_cast<float>(step) * 4.0f, 0.9f)) {
+                        moved = true;
+                    }
+                }
+                r.check(kMoveNames[toolIndex],
+                        moved && allPositionsFinite(mesh) &&
+                            mesh.vertexCount() == object.generateMesh().vertices.size());
+                stroke.end();
+            }
+        }
+
+        // --- S020R3-05/06/08: the DISPLACEMENT is a world length too -------
+        //
+        // Grab already carried its camera-plane delta through the inverse
+        // model, so it was correct before this stage and must stay so; Clay and
+        // Inflate deposit along a normal, and that is the conversion this stage
+        // added. Both are one statement: what the vertex does IN THE WORLD is
+        // what the brush asked for.
+        {
+            const Placement p = placementOf(3.0, 1.0, 1.0, 0.0, 0.0, 0.0);
+
+            // Grab: the world displacement of the centre vertex is exactly the
+            // camera-plane delta the pointer travelled, times its weight.
+            {
+                ConstructionObject object = makeSphereObject();
+                SculptMesh mesh;
+                mesh.freezeFrom(object.generateMesh(), object.objectId());
+                SculptStroke stroke;
+                const bool began =
+                    stroke.begin(SculptTool::Grab, mesh, camera, kCentreX, kCentreY,
+                                 kViewportWidth, kViewportHeight, p.model, p.inverseModel, 120.0f);
+                bool ok = began;
+                if (began) {
+                    const int slot = slotOfHighestWeight(stroke);
+                    const SculptStrokeVertex& v = stroke.affectedVertex(slot);
+                    const Vec3 before = mat4TransformPoint(p.model, v.basePosition);
+                    const float kDx = 40.0f;
+                    const float kDy = -25.0f;
+                    ok = stroke.update(mesh, kCentreX + kDx, kCentreY + kDy, 1.0f);
+                    const Vec3 after = mat4TransformPoint(p.model, mesh.vertexPosition(v.index));
+                    const Vec3 expected = vec3Scale(
+                        expectedWorldDelta(camera, kDx, kDy, stroke.worldPerPixel()), v.weight);
+                    ok = ok && lengthOf(vec3Sub(vec3Sub(after, before), expected)) < 1e-4f;
+                }
+                r.check("s020r3_05_grab_world_displacement_is_the_pointer_delta", ok);
+            }
+
+            // Clay and Inflate: the world displacement of the centre vertex has
+            // the world LENGTH the amount named, and points along the direction
+            // the surface faces ON SCREEN — the inverse-transpose normal, not
+            // the raw local one, which under (3,1,1) is a different direction.
+            static const SculptTool kNormalTools[2] = {SculptTool::Clay, SculptTool::Inflate};
+            static const char* const kLengthNames[2] = {
+                "s020r3_06_clay_world_step_has_the_amount_as_its_length",
+                "s020r3_08_inflate_world_step_has_the_amount_as_its_length"};
+            static const char* const kDirNames[2] = {
+                "s020r3_06_clay_steps_along_the_displayed_normal",
+                "s020r3_08_inflate_steps_along_the_displayed_normal"};
+
+            for (int i = 0; i < 2; ++i) {
+                ConstructionObject object = makeSphereObject();
+                SculptMesh mesh;
+                mesh.freezeFrom(object.generateMesh(), object.objectId());
+                SculptStroke stroke;
+                const bool began =
+                    stroke.begin(kNormalTools[i], mesh, camera, kCentreX, kCentreY,
+                                 kViewportWidth, kViewportHeight, p.model, p.inverseModel, 120.0f);
+                bool lengthOk = began;
+                bool directionOk = began;
+                if (began) {
+                    const int slot = slotOfHighestWeight(stroke);
+                    const SculptStrokeVertex& v = stroke.affectedVertex(slot);
+                    const Vec3 normalBefore = mesh.vertexNormals()[v.index];
+                    const Vec3 before = mat4TransformPoint(p.model, mesh.vertexPosition(v.index));
+                    const bool applied = stroke.update(mesh, kCentreX + 30.0f, kCentreY, 0.8f);
+                    const Vec3 after = mat4TransformPoint(p.model, mesh.vertexPosition(v.index));
+                    const Vec3 worldStep = vec3Sub(after, before);
+
+                    const float expectedLength = stroke.lastAmount() * v.weight;
+                    lengthOk = applied && expectedLength > 0.0f &&
+                               std::fabs(lengthOf(worldStep) - expectedLength) < 1e-4f;
+
+                    // The displayed normal: R * S^-1 * n, normalised.
+                    const Vec3 raw = (kNormalTools[i] == SculptTool::Clay) ? v.baseNormal
+                                                                          : normalBefore;
+                    const Vec3 displayed = vec3Normalize(Vec3{
+                        p.inverseModel.m[0] * raw.x + p.inverseModel.m[1] * raw.y +
+                            p.inverseModel.m[2] * raw.z,
+                        p.inverseModel.m[4] * raw.x + p.inverseModel.m[5] * raw.y +
+                            p.inverseModel.m[6] * raw.z,
+                        p.inverseModel.m[8] * raw.x + p.inverseModel.m[9] * raw.y +
+                            p.inverseModel.m[10] * raw.z});
+                    directionOk = applied && offAxisDistance(worldStep, displayed) < 1e-4f;
+                    // ... and that this is a real statement: on (3,1,1) the raw
+                    // local normal points somewhere else entirely.
+                    directionOk = directionOk &&
+                                  offAxisDistance(vec3Normalize(raw), displayed) > 1e-3f;
+                }
+                r.check(kLengthNames[i], lengthOk);
+                r.check(kDirNames[i], directionOk);
+            }
+        }
+
+        // --- S020R3-09: Start Sculpting bakes nothing ----------------------
+        {
+            ConstructionObject object = makeSphereObject();
+            TransformValues v{};
+            v.positionX = 1.25;
+            v.positionY = -0.5;
+            v.positionZ = 3.0;
+            v.rotationX = 18.0;
+            v.rotationY = 42.0;
+            v.rotationZ = -9.0;
+            v.scaleX = 3.0;
+            v.scaleY = 1.0;
+            v.scaleZ = 1.0;
+            object.transform().setValues(v);
+            const TransformValues before = object.transform().values();
+            const ConstructionMesh source = object.generateMesh();
+
+            SculptSession session;
+            const bool froze = session.freezeToSculpt(source, object.objectId());
+            const TransformValues after = object.transform().values();
+
+            r.check("s020r3_09_freeze_succeeds_on_a_scaled_body", froze);
+            // Bit-exact on all nine: Start Sculpting is not a transform edit.
+            r.check("s020r3_09_placement_is_bit_identical_after_start_sculpting",
+                    before.positionX == after.positionX && before.positionY == after.positionY &&
+                        before.positionZ == after.positionZ &&
+                        before.rotationX == after.rotationX &&
+                        before.rotationY == after.rotationY &&
+                        before.rotationZ == after.rotationZ && before.scaleX == after.scaleX &&
+                        before.scaleY == after.scaleY && before.scaleZ == after.scaleZ);
+            r.check("s020r3_09_scale_is_still_non_uniform",
+                    after.scaleX == 3.0 && after.scaleY == 1.0 && after.scaleZ == 1.0);
+            // The decisive one: the frozen vertices are the LOCAL ones, byte
+            // for byte. A baked scale would have multiplied every x by three.
+            r.check("s020r3_09_no_scale_is_baked_into_the_sculpt_mesh",
+                    froze && sameVertices(session.mesh().vertices(), source.vertices));
+            r.check("s020r3_09_construction_source_is_untouched",
+                    sameVertices(object.generateMesh().vertices, source.vertices));
+        }
+
+        // --- S020R3-10: Back to Construction and Resume Sculpt retain ------
+        {
+            ConstructionObject object = makeSphereObject();
+            TransformValues v{};
+            v.scaleX = 0.5;
+            v.scaleY = 2.5;
+            v.scaleZ = 1.5;
+            object.transform().setValues(v);
+            const Placement p{object.transform().modelMatrix(),
+                              object.transform().inverseModelMatrix()};
+
+            SculptSession session;
+            session.freezeToSculpt(object.generateMesh(), object.objectId());
+            session.setTool(SculptTool::Clay);
+            session.setRadiusPixels(150.0f);
+            session.setStrength(0.9f);
+            const bool began = session.beginStroke(camera, kCentreX, kCentreY, kViewportWidth,
+                                                   kViewportHeight, p.model, p.inverseModel);
+            driveTravel(session, kCentreX, kCentreY, 6, 14.0f);
+            session.endStroke();
+
+            const SculptRevision revision = session.mesh().revision();
+            const ObjectId id = session.mesh().objectId();
+            const std::vector<MeshVertex> sculpted = session.mesh().vertices();
+            const uint64_t freezes = session.freezeCount();
+
+            session.enterConstruction();
+            const bool inConstruction = session.mode() == ProductMode::Construction;
+            const TransformValues mid = object.transform().values();
+            const bool resumed = session.enterSculpt();
+
+            r.check("s020r3_10_a_stroke_ran_on_the_scaled_body",
+                    began && revision > kFrozenSculptRevision);
+            r.check("s020r3_10_back_to_construction_then_resume",
+                    inConstruction && resumed && session.mode() == ProductMode::Sculpt);
+            r.check("s020r3_10_resume_does_not_refreeze",
+                    session.freezeCount() == freezes &&
+                        session.mesh().revision() == revision);
+            r.check("s020r3_10_sculpt_mesh_survives_bit_exactly",
+                    sameVertices(session.mesh().vertices(), sculpted));
+            r.check("s020r3_10_object_id_survives", session.mesh().objectId() == id);
+            r.check("s020r3_10_non_uniform_scale_survives_the_round_trip",
+                    mid.scaleX == 0.5 && mid.scaleY == 2.5 && mid.scaleZ == 1.5 &&
+                        object.transform().scaleXFactor() == 0.5 &&
+                        object.transform().scaleYFactor() == 2.5 &&
+                        object.transform().scaleZFactor() == 1.5);
+        }
+
+        // --- S020R3-11: none of this is a Construction history step --------
+        //
+        // A sculpt stroke is a sculpt mutation. It is not a user act in the
+        // Construction sense, it opens no edit, and neither does entering or
+        // leaving Sculpt — so both stacks must be exactly where they were.
+        {
+            ConstructionScene scene;
+            ConstructionHistory history(scene);
+            SceneObject& body = scene.activeBody();
+            body.construction().setPrimitive(PrimitiveSpec::forSphere(2.0));
+            TransformValues v{};
+            v.scaleX = 3.0;
+            v.scaleY = 1.0;
+            v.scaleZ = 1.0;
+            body.transform().setValues(v);
+
+            // One real Construction act, so the stacks are not trivially empty
+            // and a spurious extra step would be visible as a change.
+            history.beginEdit();
+            TransformValues moved = body.transform().values();
+            moved.positionY = 0.75;
+            body.transform().setValues(moved);
+            history.commitEdit();
+
+            const size_t undoBefore = history.undoDepth();
+            const size_t redoBefore = history.redoDepth();
+
+            SculptSession session;
+            session.bindTarget(&body.frozenSculpt());
+            session.freezeToSculpt(body.construction().generateMesh(), body.objectId());
+            session.setTool(SculptTool::Inflate);
+            const Mat4 model = body.transform().modelMatrix();
+            const Mat4 inverseModel = body.transform().inverseModelMatrix();
+            const bool began = session.beginStroke(camera, kCentreX, kCentreY, kViewportWidth,
+                                                   kViewportHeight, model, inverseModel);
+            const int applied = driveTravel(session, kCentreX, kCentreY, 6, 16.0f);
+            session.endStroke();
+            session.enterConstruction();
+            session.enterSculpt();
+
+            r.check("s020r3_11_the_stroke_actually_ran", began && applied > 0 &&
+                                                            session.mesh().revision() >
+                                                                kFrozenSculptRevision);
+            r.check("s020r3_11_no_edit_is_left_open", !history.editInProgress());
+            r.check("s020r3_11_undo_depth_is_unchanged", history.undoDepth() == undoBefore);
+            r.check("s020r3_11_redo_depth_is_unchanged", history.redoDepth() == redoBefore);
+            r.check("s020r3_11_the_one_construction_act_is_still_there",
+                    undoBefore == 1 && redoBefore == 0);
+        }
+
+        // --- S020R3-12: an unscaled body behaves exactly as it always did --
+        //
+        // The regression guard for the correction itself. On S = (1,1,1) the
+        // world metric IS the local one, and the shared normal conversion
+        // reduces to the captured normal times the amount — so the affected
+        // set, the weights and the deposition direction must reproduce the
+        // pre-correction rule exactly rather than merely closely. Every other
+        // sculpt check in this suite runs unscaled and is the rest of the guard.
+        {
+            static const char* const kSetNames[kSculptToolCount] = {
+                "s020r3_12_grab_unscaled_set_is_the_plain_local_ball",
+                "s020r3_12_clay_unscaled_set_is_the_plain_local_ball",
+                "s020r3_12_smooth_unscaled_set_is_the_plain_local_ball",
+                "s020r3_12_inflate_unscaled_set_is_the_plain_local_ball"};
+            static const char* const kRunNames[kSculptToolCount] = {
+                "s020r3_12_grab_unscaled_stroke_still_deforms",
+                "s020r3_12_clay_unscaled_stroke_still_deforms",
+                "s020r3_12_smooth_unscaled_stroke_still_deforms",
+                "s020r3_12_inflate_unscaled_stroke_still_deforms"};
+
+            for (int toolIndex = 0; toolIndex < kSculptToolCount; ++toolIndex) {
+                SculptTool tool = SculptTool::Grab;
+                sculptToolFromIndex(toolIndex, &tool);
+
+                ConstructionObject object = makeSphereObject();
+                SculptSession session;
+                prepareSession(&session, object, tool, 150.0f, 0.8f);
+                const bool began =
+                    session.beginStroke(camera, kCentreX, kCentreY, kViewportWidth,
+                                        kViewportHeight, identity, identity);
+
+                bool plainRule = began;
+                if (began) {
+                    const SculptStroke& stroke = session.stroke();
+                    const float radius = stroke.worldRadius();
+                    plainRule = plainRule &&
+                                std::fabs(radius - 150.0f * stroke.worldPerPixel()) < 1e-4f;
+                    for (uint32_t i = 0; i < session.mesh().vertexCount(); ++i) {
+                        const float local =
+                            lengthOf(vec3Sub(session.mesh().vertexPosition(i),
+                                             stroke.localCenter()));
+                        const float expected = sculptFalloff(local, radius);
+                        if (!nearly(stroke.weightOfVertex(i), expected)) {
+                            plainRule = false;
+                        }
+                    }
+                }
+                r.check(kSetNames[toolIndex], plainRule);
+
+                // Clay's total displacement stays on the axis of the normal the
+                // vertex started with — the unscaled statement the pre-existing
+                // Clay contract makes, restated through the shared conversion.
+                Vec3 baseNormal{0.0f, 0.0f, 0.0f};
+                Vec3 basePosition{0.0f, 0.0f, 0.0f};
+                uint32_t probe = 0;
+                if (began) {
+                    const int slot = slotOfHighestWeight(session.stroke());
+                    baseNormal = session.stroke().affectedVertex(slot).baseNormal;
+                    basePosition = session.stroke().affectedVertex(slot).basePosition;
+                    probe = session.stroke().affectedVertex(slot).index;
+                }
+                const int applied = driveTravel(session, kCentreX, kCentreY, 5, 18.0f);
+                const Vec3 total = vec3Sub(session.mesh().vertexPosition(probe), basePosition);
+                session.endStroke();
+
+                const bool clayStaysOnAxis = tool != SculptTool::Clay ||
+                                             offAxisDistance(total, baseNormal) < 1e-5f;
+                r.check(kRunNames[toolIndex],
+                        began && applied > 0 && clayStaysOnAxis &&
+                            allPositionsFinite(session.mesh()) &&
+                            session.mesh().revision() > kFrozenSculptRevision);
+            }
         }
     }
 

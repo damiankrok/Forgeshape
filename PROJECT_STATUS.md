@@ -1,10 +1,24 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.41.1
+**Status Version:** 0.42.0
 **Updated:** 2026-08-26
-**Result:** TECHNICAL COMPLETE — Stage 020R2 turned the axis-only gizmo into the
+**Result:** TECHNICAL COMPLETE — Stage 020R3 closed the one user-reachable
+correctness gap Scale left behind: **a sculpt brush now measures in the
+world/display metric**, so a round brush stays round on a body with a
+non-uniform Scale. Stage 020R2 before it turned the axis-only gizmo into the
 first **complete Construction transform workflow**: Move, Rotate and Scale, in
 World or Local axes, with plane handles and a uniform handle.
+
+The brush radius is authored in screen pixels and resolved to world meters, and
+the distance every brush compares against it is now
+`brushWorldDistance(model, d) = |R·S·d| = |S·d|` rather than the local `|d|` —
+which is only the same thing at `S = (1,1,1)`. One shared metric and one shared
+normal conversion (`brushLocalStepAlongNormal`, which carries a world deposition
+through `R·S⁻¹` and back) serve all four brushes; there are not four
+corrections. Nothing is baked: the Frozen Sculpt Mesh stays a byte-exact copy of
+the Construction local mesh, the nine transform values are untouched by Start
+Sculpting, Back to Construction and Resume Sculpt, and no Construction history
+step is recorded by any of it. `ARCHITECTURE.md` owns the invariant.
 
 | mode | handles | World | Local |
 | --- | --- | --- | --- |
@@ -44,8 +58,9 @@ final until those reviews return. That is an owner track running beside the
 technical one, not the next technical action — see *Next Stage*.
 **Current Phase:** Phase 1 — Native Viewport
 **Workspace:** `D:\TRAVELAPPS\ForgeShape`
-**Accepted implementation baseline:** Stage 020R2 (full Construction transform
-gizmo — Move/Rotate/Scale, World/Local, plane and uniform handles) on top of
+**Accepted implementation baseline:** Stage 020R3 (world/display-metric sculpt
+brush under a non-uniform Scale) on top of Stage 020R2 (full Construction
+transform gizmo — Move/Rotate/Scale, World/Local, plane and uniform handles),
 Stage 020 (Construction Move/Rotate gizmo) and Stage 019 (Construction transaction and
 Undo/Redo), with DOC-R2 (current-truth documentation reconciliation) on top of
 it, UI-R4C (final visual composition cleanup), UI-R4B (workspace
@@ -61,8 +76,8 @@ Stage 016 (Plane), Stage 015D (camera projection), Stage 015C-R (front-face
 culling), Stage 015C (shading), Platform Fix P2, Stage 015B, Stage 014, the NDK
 r29 migration (Gate P0) and the Owner Decision Baseline. Per-stage narrative
 lives in Git history; only what still constrains the code is kept here.
-**Next Stage:** **Stage 020R3 — Scale→Sculpt world-metric brush correction.** See
-*Next Stage*.
+**Next Stage:** **UI-AUDIT1 — gizmo / chrome / Exact Transform visual coherence
+audit.** See *Next Stage*.
 
 ## Current state
 
@@ -634,6 +649,12 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 | **Scale is a unitless multiplier on a derived matrix: `Model = T·Rz·Ry·Rx·S`, no primitive parameter touched, no revision published; zero and negative refused, so there is no Mirror** | VERIFIED (Stage 020R2) |
 | **Renderer and picking are non-uniform-scale correct: normals ride `R·S⁻¹`, and a local ray parameter is still world distance because the local direction is never renormalized** | VERIFIED (Stage 020R2) |
 | **The gizmo is sized from the camera alone — a stretched body does not stretch its own instrument, and the drag basis is scale-free** | VERIFIED (Stage 020R2) |
+| **A sculpt brush measures in the world/display metric: the affected set is the world ball `\|S·d\| < R`, so a round px brush stays round on a body with a non-uniform Scale, including one that is also rotated** | VERIFIED (Stage 020R3) |
+| **All four brushes share ONE metric and ONE normal conversion; Clay and Inflate deposit a world amount along the DISPLAYED normal (`R·S⁻¹`), Grab's camera-plane delta was already scale-correct, and Smooth's neighbour-mean interpolation is affine and needs none** | VERIFIED (Stage 020R3) |
+| **The screen-pixel radius contract survives Scale: the same nominal px radius resolves to the same world radius before and after a body is scaled — Scale sizes the BODY, never the instrument** | VERIFIED (Stage 020R3) |
+| **No Scale is baked or reset by sculpting: Start Sculpting freezes the local mesh byte-exactly and leaves all nine transform values bit-identical; Back to Construction and Resume Sculpt preserve the sculpt revision, the mesh, the ObjectId and the non-uniform Scale** | VERIFIED (Stage 020R3) |
+| **Entering, leaving and resuming Sculpt, and a real sculpt stroke on a scaled body, leave both Construction history stacks exactly where they were and no edit open** | VERIFIED (Stage 020R3) |
+| **An unscaled body sculpts exactly as it did: at `S = (1,1,1)` the world metric IS the local one and the shared normal conversion reduces to the captured normal times the amount** | VERIFIED (Stage 020R3) |
 | **The space selector is World/Local for Move and Rotate and ABSENT in Scale; leaving Scale restores the remembered space; mode and space changes cost no step and no revision** | VERIFIED (Stage 020R2) |
 | Handles pivot on the body's Construction placement origin — never a mesh AABB centre, a screen centroid or a camera-facing proxy | VERIFIED (Stage 020) |
 | A touch at the pivot names the uniform handle in Scale and NO handle in Move and Rotate, where every shaft and ring converges there | VERIFIED (Stage 020R2) |
@@ -664,7 +685,7 @@ per frame — and total **1961 checks, zero failures**:
 | `FORGESHAPE_CONSTRUCTION_PRIMITIVE_SELFTEST_OK` | 125 |
 | `FORGESHAPE_CONSTRUCTION_SPHERE_SELFTEST_OK` | 105 |
 | `FORGESHAPE_CONE_CAPSULE_SELFTEST_OK` | 163 |
-| `FORGESHAPE_SCULPT_BRUSH_KERNEL_SELFTEST_OK` | 316 |
+| `FORGESHAPE_SCULPT_BRUSH_KERNEL_SELFTEST_OK` | 378 |
 | `FORGESHAPE_RENDER_SHADING_SELFTEST_OK` | 329 |
 | `FORGESHAPE_SCENE_SELFTEST_OK` | 79 |
 | `FORGESHAPE_CONSTRUCTION_HISTORY_SELFTEST_OK` | 114 |
@@ -772,6 +793,28 @@ the proof that a stylus resolves the same tap and orbits the same distance as a
 finger. The Android half of the tool-type mapping is deliberately not here: it is
 JVM and instrumented, where `MotionEvent` exists. The sculpt suite's 14
 pressure-independence checks are its teeth, four tools → three assertions each.
+
+**The sculpt suite also owns the BRUSH METRIC** (`s020r3_*`, 62 checks). The
+helper alone under identity, uniform and non-uniform Scale and under a
+translation; the brush rim proved to be a world SPHERE without any vertex
+sampling — 128 world directions each reaching the rim at the same world distance
+— at `(3,1,1)` and `(0.5,2.5,1.5)`; the real affected set of a real stroke being
+exactly the world ball with weights equal to `sculptFalloff` of the WORLD
+distance; the same under a mixed rotation, plus the metric's indifference to
+rotation over 64 offsets; the screen-pixel radius resolving to the same world
+radius before and after a body is scaled (Orthographic, where the pixel scale is
+depth-independent, so "the same hit depth" is exact); all four brushes' affected
+sets and weights on one stretched, turned body, parameterized because the path is
+shared; Grab's world displacement being exactly the camera-plane pointer delta
+times the weight; Clay's and Inflate's world step having the amount as its
+LENGTH and lying along the DISPLAYED normal rather than the raw local one; Start
+Sculpting leaving all nine transform values bit-identical and the frozen vertices
+byte-identical to the source; Back to Construction and Resume Sculpt preserving
+the revision, the mesh, the ObjectId and the non-uniform Scale; both history
+stacks and the open-edit flag unmoved by the transitions and by a real stroke;
+and every unscaled result reproducing the plain local rule exactly. Four checks
+are deliberate **negative controls** — they assert that the old local-metric
+answer genuinely differs — so the suite cannot pass by measuring nothing.
 
 Three non-per-frame diagnostics exist. `FORGESHAPE_SURFACE_CONFIG` (one per
 swapchain creation) and `FORGESHAPE_CAMERA_VIEWPORT` (one per `surfaceChanged`)
@@ -1205,17 +1248,6 @@ enhancement (outline or cavity) was **explicitly deferred**: both candidates sta
 the post-processing framework the shading stage was told not to build, and the
 vertex-based alternative would expose triangle structure in Smooth mode.
 
-**A sculpt brush on a non-uniformly scaled body is anisotropic.** The brush
-radius is carried into the body's own space through the inverse model, so on a
-body stretched 4× along X a round brush leaves an oval mark. It is correct that
-sculpting happens in object space — the Frozen Sculpt Mesh lives there — and it
-is correct that the transform carries a scale; what is missing is a decision
-about what a brush radius *means* on a stretched body, and inventing one without
-an approved contract would be worse than the current honest behaviour. Nothing
-regressed: scale is new, defaults to (1,1,1), and every existing sculpt path is
-bit-identical at that default. `PRODUCT.md` states the limitation plainly. **This
-is what Stage 020R3 is for** — see *Next Stage*.
-
 **Documentation currency, not documentation size.** DOC-R2 removed the raw
 line-count cap from `CLAUDE.md`: a document is too long when it is hard to
 navigate or carries text that is no longer true, never merely because of its
@@ -1496,14 +1528,13 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Stage 020R3 — Scale→Sculpt world-metric brush correction.** Stage 020R2 made
-Scale a ninth authoritative value, and the one place the product has not yet
-answered for it is the brush: the radius is carried into the body's own space
-through the inverse model, so on a body stretched 4× along X a round brush leaves
-an oval mark. Sculpting in object space is correct and the transform carrying a
-scale is correct; what is missing is a decided contract for what a brush radius
-*means* on a stretched body. Nothing else in the repo is blocked on it, and no
-part of it has been started. See *Technical Debt*.
+**UI-AUDIT1 — gizmo / chrome / Exact Transform visual coherence audit.** The
+transform workflow, the workspace chrome and the precision surface each arrived
+in a different stage and have never been looked at together as one instrument:
+whether the gizmo, the two selector capsules, the history capsule and the
+Property Inspector read as one designed surface rather than three that happen to
+share a window. It is an audit, not a redesign, and no part of it has been
+started. Nothing in the repo is blocked on it.
 
 **Visual acceptance is a parallel owner track, not the next technical action.**
 It remains PENDING on four sets, and technical COMPLETE does not grant it:

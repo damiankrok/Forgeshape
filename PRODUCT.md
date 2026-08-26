@@ -1005,10 +1005,14 @@ no arcball or free rotation — a rotation is always about one ring. The point t
 handles turn and scale about is always the object's own position and cannot be
 moved. Handles are Construction's alone — sculpting has none.
 
-A body carrying a non-uniform scale can still be sculpted, but the brush is
-shaped in the body's own space, so on a heavily stretched body a round brush
-leaves an oval mark. That is a known limitation of combining the two, not a
-defect in either.
+**A body carrying a non-uniform scale sculpts with the same round brush as any
+other body.** A brush set to a given size on screen covers that much of the
+screen whatever the body's scale is, and leaves a round mark on a body stretched
+along one axis exactly as it does on an unstretched one — the brush is measured
+by what is displayed, not by the object's own stretched coordinates. Turning the
+body as well as stretching it changes nothing about this. Scaling a body never
+alters its sculpt mesh, and starting, leaving or resuming sculpting never alters
+its scale.
 
 Sculpting has exactly the four tools above — other
 brushes (Flatten, Crease, Pinch and the rest), remesh, **sculpt undo**, symmetry,

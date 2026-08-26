@@ -1989,9 +1989,10 @@ DOWN   buildPickRay -> transformRayToLocal -> pickTriangleMesh (front faces only
        miss                  -> no stroke at all, for any tool
        hit                   -> anchor, depth along the camera FORWARD axis,
                                 worldPerPixel at that depth,
-                                localRadius = radiusPixels * worldPerPixel,
-                                capture every vertex inside it with its weight,
-                                its base position and its base normal
+                                worldRadius = radiusPixels * worldPerPixel,
+                                capture every vertex inside it IN THE WORLD
+                                METRIC, with its weight, its base position and
+                                its base normal
 MOVE   accumulate pointer path length, then dispatch on the captured tool
        -> advance SculptRevision, publish through MeshStore
 UP     finalize        CANCEL  drop the stroke
@@ -2004,10 +2005,11 @@ persisted, versioned and validated like real authored state.
 
 Deliberate properties of the kernel, shared by all four tools:
 
-- The **radius is authored in screen pixels** and resolved to object space at the
-  depth of the hit point, so the brush feels the same size at any zoom. It is a
-  property of the gesture, not a length belonging to the object, which is why it
-  is not in meters.
+- The **radius is authored in screen pixels** and resolved to **world meters** at
+  the depth of the hit point, so the brush feels the same size at any zoom. It is
+  a property of the gesture, not a length belonging to the object, which is why
+  the authored value is not in meters. It is never carried into object space —
+  see *The brush metric under a non-uniform Scale* below.
 - Depth is measured along the camera **forward axis**, not along the ray, so the
   scale is the same everywhere on screen. The field of view comes from the
   snapshot's own projection term (`proj.m[5]`, which is `-1/tan(fovY/2)` in
@@ -2019,7 +2021,8 @@ Deliberate properties of the kernel, shared by all four tools:
   is found by a linear scan, like picking; there is no spatial acceleration.
 - The falloff is `w = (1 - (d/r)^2)^2`: 1 at the centre, 0 at and beyond the rim,
   with zero derivative at both ends, so a stroke leaves no crease at the edge.
-  One function, `sculptFalloff`, used by every tool.
+  One function, `sculptFalloff`, used by every tool, and `d` is always the world
+  distance.
 - A brush that would capture **no** vertex starts no stroke, exactly as a miss
   does.
 - **Radius and strength are shared by every tool.** There is no per-tool copy of
@@ -2032,6 +2035,61 @@ Deliberate properties of the kernel, shared by all four tools:
   Positions already written stay written; there is no undo, and a partial one
   invented here would be worse.
 
+### The brush metric under a non-uniform Scale
+
+**Every brush measures in the world/display metric, never in local
+coordinates.** This is one invariant with one implementation, and it is the only
+place a body's Scale reaches the brush.
+
+The Frozen Sculpt Mesh is local geometry; the body carries it into the world
+through `Model = T · R · S`. The radius is resolved in world meters, so the
+distance compared against it has to be the world one. For a local offset `d`:
+
+```
+brushWorldDistance(model, d) = |R · S · d| = |S · d|
+```
+
+because a rotation preserves length — which is why the helper takes the whole
+model matrix rather than a scale triple, and why a mixed rotation changes
+nothing about the answer. Only at `S = (1,1,1)` does that reduce to `|d|`, which
+is exactly why the pre-020R3 kernel — which compared local offsets against a
+world radius — selected a footprint three times narrower along the stretched
+axis of a body scaled `(3,1,1)` and left an oval mark. That was the wrong metric,
+not a look, and no single averaged, largest or smallest scale factor can repair
+it: an anisotropic stretch is not a scalar, and collapsing it to one only
+chooses which axis stays wrong.
+
+Two shared helpers in `forgeshape_sculpt.{h,cpp}` carry the whole correction, so
+there is one conversion rather than one per tool:
+
+| helper | used by | what it converts |
+| --- | --- | --- |
+| `brushWorldDistance(model, localDelta)` | the shared capture, so all four tools | a local offset to its displayed length |
+| `brushLocalStepAlongNormal(inverseModel, localNormal, worldMeters)` | Clay, Inflate | a world deposition to the local step that produces it |
+
+`brushLocalStepAlongNormal` needs the **normal matrix**, and takes no third
+argument for it: the inverse transpose of the model's upper-left 3×3 is exactly
+the transpose of the *inverse* model's upper-left 3×3, which is `R · S⁻¹` — the
+same matrix the renderer shades a scaled body with. It builds the step in world
+space, where the amount is measured, and carries it back through the inverse
+model, which is precisely what Grab already did with its camera-plane delta.
+That is why Grab needed no displacement correction: `M · (base + M⁻¹ · Δ) =
+M · base + Δ` for any invertible `M`, so a grabbed vertex already moved by
+exactly the world delta the finger described. Smooth needed none either —
+interpolating toward a neighbour mean is an affine combination, and an affine
+combination commutes with any linear transform.
+
+What this does **not** do is equally load-bearing:
+
+- No scale is baked into a sculpt vertex, at Start Sculpting or ever. The Frozen
+  Sculpt Mesh is a byte-exact copy of the Construction local mesh, and the nine
+  authoritative transform values are untouched by entering, leaving or resuming
+  Sculpt.
+- The correction publishes no `MeshRevision`, opens no Construction edit and
+  records no history step. A sculpt stroke remains a sculpt mutation.
+- At `S = (1,1,1)` every formula reduces to what it was, so unscaled sculpting is
+  unchanged.
+
 ### The four tools
 
 | | driven by | direction | accumulates |
@@ -2041,20 +2099,28 @@ Deliberate properties of the kernel, shared by all four tools:
 | Smooth | pointer **path length** | toward the 1-ring neighbour mean | yes |
 | Inflate | pointer **path length** | each vertex's normal **right now** | yes |
 
+Clay's and Inflate's direction is that normal **as displayed** — carried through
+`R · S⁻¹` — so on a stretched body they deposit along the surface the user can
+see rather than along a local direction that points somewhere else. On an
+unscaled body the two are the same vector.
+
 **Grab** is position-driven, so its result depends only on where the finger *is*,
 never on how many events it took to get there. The other three are
 **path-driven**. Per move,
 `travelFraction = pointer travel this move / brush radius` (both in pixels), and
 
 ```
-amount = strength * localRadius * kNormalBrushGain * travelFraction   (Clay, Inflate)
+amount = strength * worldRadius * kNormalBrushGain * travelFraction   (Clay, Inflate)
 lambda = strength * weight * kSmoothGain * travelFraction             (Smooth)
 ```
+
+`amount` is **world meters** — the same metric that chose the affected set — so a
+stretched body gets an even slab rather than a deeper one along its long axis.
 
 Measuring path length rather than counting events makes them independent of the
 event rate: the same finger path deposits the same amount whether Android
 delivered it in five events or fifty, a stationary finger does nothing, and there
-is no timer and no per-event dab. `amount` is clamped to one local radius per
+is no timer and no per-event dab. `amount` is clamped to one brush radius per
 move, so a teleporting pointer cannot produce an unbounded displacement.
 `kNormalBrushGain` (0.35), `kSmoothGain` (1.0) and `kMaxSmoothLambda` (0.9) are
 chosen defaults, not derived constants; the low gain is why a short stroke with a

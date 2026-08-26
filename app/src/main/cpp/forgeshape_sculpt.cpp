@@ -143,6 +143,53 @@ float sculptFalloff(float distance, float radius) {
 }
 
 // ---------------------------------------------------------------------------
+// The brush metric — the one conversion every brush measures with
+// ---------------------------------------------------------------------------
+
+float brushWorldDistance(const Mat4& model, const Vec3& localDelta) {
+    // Implicit w = 0, so the placement's translation drops out and only the
+    // linear part R * S contributes. A non-finite offset propagates to a
+    // non-finite length, which every caller already reads as "outside the
+    // brush" — there is deliberately no clamp or substitute value here.
+    const Vec3 worldDelta = mat4TransformDirection(model, localDelta);
+    return std::sqrt(vec3Dot(worldDelta, worldDelta));
+}
+
+Vec3 brushLocalStepAlongNormal(const Mat4& inverseModel, const Vec3& localNormal,
+                               float worldMeters) {
+    const Vec3 kNoStep{0.0f, 0.0f, 0.0f};
+    if (!std::isfinite(worldMeters) || !vec3Finite(localNormal)) {
+        return kNoStep;
+    }
+
+    // The normal matrix, without taking a third argument that could fall out of
+    // step: for M = T * R * S the inverse transpose of the upper-left 3x3 is
+    // exactly the TRANSPOSE of the inverse model's upper-left 3x3, which is
+    // R * S^-1 — the same matrix the renderer shades a scaled body with.
+    // Column-major indexing means the transpose reads along rows.
+    const Vec3 worldNormal{
+        inverseModel.m[0] * localNormal.x + inverseModel.m[1] * localNormal.y +
+            inverseModel.m[2] * localNormal.z,
+        inverseModel.m[4] * localNormal.x + inverseModel.m[5] * localNormal.y +
+            inverseModel.m[6] * localNormal.z,
+        inverseModel.m[8] * localNormal.x + inverseModel.m[9] * localNormal.y +
+            inverseModel.m[10] * localNormal.z,
+    };
+    const float length = std::sqrt(vec3Dot(worldNormal, worldNormal));
+    if (!std::isfinite(length) || length <= 0.0f) {
+        return kNoStep;  // a degenerate normal deposits nothing
+    }
+
+    // Build the step in WORLD space, where the amount is measured, then carry it
+    // back into the local coordinates the mesh actually stores — the same
+    // direction transform Grab uses for its camera-plane delta, so the two
+    // paths cannot disagree about what a world displacement means.
+    const Vec3 worldStep = vec3Scale(worldNormal, worldMeters / length);
+    const Vec3 localStep = mat4TransformDirection(inverseModel, worldStep);
+    return vec3Finite(localStep) ? localStep : kNoStep;
+}
+
+// ---------------------------------------------------------------------------
 // Fixed-topology adjacency
 // ---------------------------------------------------------------------------
 
@@ -534,11 +581,15 @@ bool SculptStroke::begin(SculptTool tool, const SculptMesh& mesh, const CameraSn
         return false;
     }
 
-    // The transform is rigid, so a length in world space is the same length in
-    // object space and the radius needs no conversion.
+    // The radius stays in WORLD meters and is never carried into local space.
+    // Under a non-uniform Scale there is no single local length that a world
+    // radius corresponds to — the body is stretched by a different factor along
+    // each of its own axes — so the conversion the brush does is the other way
+    // round: every candidate vertex's local offset is measured in the world
+    // metric by brushWorldDistance(). See the metric note in the header.
     const float clampedRadiusPixels = clampBrushRadiusPixels(radiusPixels);
-    const float localRadius = clampedRadiusPixels * worldPerPixel;
-    if (!std::isfinite(localRadius) || localRadius <= 0.0f) {
+    const float worldRadius = clampedRadiusPixels * worldPerPixel;
+    if (!std::isfinite(worldRadius) || worldRadius <= 0.0f) {
         return false;
     }
 
@@ -553,12 +604,15 @@ bool SculptStroke::begin(SculptTool tool, const SculptMesh& mesh, const CameraSn
     const uint32_t vertexCount = mesh.vertexCount();
     for (uint32_t i = 0; i < vertexCount; ++i) {
         const Vec3 p = mesh.vertexPosition(i);
-        const Vec3 d = vec3Sub(p, hit.position);
-        const float distanceSquared = vec3Dot(d, d);
-        if (!std::isfinite(distanceSquared) || distanceSquared >= localRadius * localRadius) {
+        // The DISPLAYED distance, not the local one. On a body scaled (3,1,1) a
+        // local sphere is drawn as an ellipsoid, so a brush that compared local
+        // offsets would select an oval footprint and no falloff constant could
+        // make it round again.
+        const float distance = brushWorldDistance(model, vec3Sub(p, hit.position));
+        if (!std::isfinite(distance) || distance >= worldRadius) {
             continue;
         }
-        const float weight = sculptFalloff(std::sqrt(distanceSquared), localRadius);
+        const float weight = sculptFalloff(distance, worldRadius);
         if (!(weight > 0.0f)) {
             continue;
         }
@@ -586,7 +640,7 @@ bool SculptStroke::begin(SculptTool tool, const SculptMesh& mesh, const CameraSn
     lastX_ = screenX;
     lastY_ = screenY;
     localCenter_ = hit.position;
-    localRadius_ = localRadius;
+    worldRadius_ = worldRadius;
     radiusPixels_ = clampedRadiusPixels;
     worldPerPixel_ = worldPerPixel;
     hitDepth_ = depth;
@@ -640,15 +694,18 @@ bool SculptStroke::update(SculptMesh& mesh, float screenX, float screenY, float 
         return applySmooth(mesh, clampedStrength, travelFraction);
     }
 
-    float amount = clampedStrength * localRadius_ * kNormalBrushGain * travelFraction;
+    // WORLD meters, because worldRadius_ is: what Clay and Inflate deposit is
+    // measured in the same metric that chose the affected set, so a stretched
+    // body gets an even slab rather than a deeper one along its long axis.
+    float amount = clampedStrength * worldRadius_ * kNormalBrushGain * travelFraction;
     if (!std::isfinite(amount) || amount <= 0.0f) {
         return false;
     }
     // Bounded by construction: however far a single event claims the pointer
     // jumped, one move can never displace a vertex by more than one brush
     // radius, so no stroke can throw geometry off to infinity.
-    if (amount > localRadius_) {
-        amount = localRadius_;
+    if (amount > worldRadius_) {
+        amount = worldRadius_;
     }
     lastAmount_ = amount;
 
@@ -720,7 +777,12 @@ bool SculptStroke::applyClay(SculptMesh& mesh, float amount) {
     bool changed = false;
     for (size_t i = 0; i < affected_.size(); ++i) {
         const SculptStrokeVertex& v = affected_[i];
-        const Vec3 step = vec3Scale(v.baseNormal, amount * v.weight);
+        // `amount` is world meters along the direction this vertex FACED on
+        // screen when the stroke began, converted back to a local step by the
+        // shared helper. On an unscaled body with a unit normal that is the
+        // captured local normal times the amount, exactly as before.
+        const Vec3 step =
+            brushLocalStepAlongNormal(inverseModel_, v.baseNormal, amount * v.weight);
         if (!vec3Finite(step)) {
             continue;
         }
@@ -771,7 +833,10 @@ bool SculptStroke::applyInflate(SculptMesh& mesh, float amount) {
     bool changed = false;
     for (size_t i = 0; i < affected_.size(); ++i) {
         const SculptStrokeVertex& v = affected_[i];
-        const Vec3 step = vec3Scale(scratchTargets_[i], amount * v.weight);
+        // The same shared conversion Clay uses; only the normal differs, which
+        // is the whole difference between the two brushes.
+        const Vec3 step =
+            brushLocalStepAlongNormal(inverseModel_, scratchTargets_[i], amount * v.weight);
         if (!vec3Finite(step)) {
             continue;
         }
