@@ -499,6 +499,16 @@ private:
 struct FrozenSculpt {
     SculptMesh mesh;
     bool sourceStale = false;
+
+    // THE stale-source rule, and the only implementation of it.
+    //
+    // It lives on the per-body state rather than only on the session because
+    // the Construction history restores bodies the session is not currently
+    // bound to: an undo that changes body #2's shape while body #1 is active
+    // must mark #2 stale, and routing that through the session would mark the
+    // wrong body. Nothing here touches a vertex or a revision — going stale is
+    // a statement about the SOURCE, never an edit to the mesh.
+    void markSourceStale() { sourceStale = mesh.frozen(); }
 };
 
 class SculptSession {
@@ -540,7 +550,7 @@ public:
     // marked as having been frozen from an older source. Adopting the new source
     // is an explicit user act — another Freeze — which is the only thing that
     // clears the flag. There is no automatic sculpt-edit transfer.
-    void markSourceStale() { target().sourceStale = target().mesh.frozen(); }
+    void markSourceStale() { target().markSourceStale(); }
     bool sourceStale() const { return target().sourceStale; }
 
     SculptStroke& stroke() { return stroke_; }

@@ -86,6 +86,7 @@ forgeshape_jni.cpp            render thread, ANativeWindow, MotionEvent ->
 | The capsule's `totalHeight >= diameter` relation | `validateCapsuleMeters` | the UI restates none of it; it is a domain rule, not an input check |
 | Which parameters belong to which primitive | `PrimitiveSpec`'s payload variant | no caller reads a primitive's numbers as another's; the kind is derived from the payload, not stored beside it |
 | Authoritative primitive update **and** its mesh publication | `applyPrimitive` (`forgeshape_construction.{h,cpp}`) | JNI and Java restate none of this rule |
+| The Construction transaction boundary and the whole Undo/Redo history | `ConstructionHistory` (`forgeshape_history.{h,cpp}`) | Java holds no history, no depth counter and no mirror scene; it holds no sculpt vertex, no `SculptRevision` and no mesh data of any kind |
 | Authoritative placement (double-meter position, double-degree rotation) and the derived model/inverse matrices | `ConstructionTransform` (`forgeshape_transform.{h,cpp}`) | no JNI/Android/Vulkan/renderer/UI types; it cannot publish a mesh because it cannot reach `MeshStore` |
 | The axis and Euler convention | `forgeshape_transform.h` | the renderer and the picker define none of their own |
 | World ray → local object ray | `transformRayToLocal` (`forgeshape_picking.{h,cpp}`) | no Vulkan state is consulted |
@@ -1307,6 +1308,137 @@ The `ObjectId` is fixed at construction and is independent of the kind, the
 parameters and the mesh, so no shape change, primitive change, mesh revision or
 buffer reallocation can alter what is selected. Turning the box into a cylinder
 does not create a new object; it changes what this object is.
+
+## Construction history and the transaction boundary
+
+`forgeshape_history.{h,cpp}` owns one thing: what a Construction *edit* is, and
+how to go back to before one. It is platform-neutral C++ over a
+`ConstructionScene` handed in by reference, so a self-test drives a whole history
+against a scene of its own and the process-scoped pair (`constructionHistory()`
+over `constructionScene()`) is just the one the product happens to use.
+
+### What a transaction is
+
+`beginEdit()` captures the scene's Construction-domain state; ordinary domain
+mutations then run; `commitEdit()` compares the state afterwards and records
+**exactly one** step if — and only if — the two differ. `cancelEdit()` puts the
+captured state back and records nothing.
+
+There is deliberately **no separate update call**. An update is an ordinary
+mutation made while an edit is open, so the live state stays authoritative for
+the renderer and the picker throughout, rather than being buffered somewhere the
+rest of the product cannot see. That is the property the direct transform gizmo
+needs: a drag opens one edit, writes the transform on every frame exactly as a
+typed Apply does, and commits once.
+
+Nesting is refused rather than counted. A composite user act opens ONE edit
+around the mutations it is made of, and the mutation entry points each declare a
+`ScopedConstructionEdit`, which opens an edit only if none is open and commits
+only the one it opened. That is what lets a single Apply be its own step *and* be
+absorbed into the creation transaction around it without either caller knowing
+which case it is in.
+
+### What is a transaction, and what is not
+
+A transaction is one **user act on the Construction Source**: an Exact Shape
+Apply, an Exact Position+Rotation Apply, and the creation act that is
+`sceneAddBody()` plus that primitive's own apply. Choosing Sphere is therefore
+one step, and undoing it removes the body outright rather than leaving behind the
+default Box the append produces before the primitive is written.
+
+Not a transaction, and never a step: selection, the Shape/Transform context, any
+surface opening or closing, the display unit, the appearance, the grid, shading,
+projection, chrome-hidden, a rotation or a resume — and **crossing the
+Construction/Sculpt seam**. A commit that finds no difference records nothing and,
+crucially, leaves the redo stack alone, so a refused or identical Apply after an
+undo does not throw the forward branch away. Only a commit that actually records
+clears redo.
+
+### What a step holds
+
+A bounded before/after copy of the **Construction-domain** state: per body, its
+`ObjectId`, which primitive is active, all six primitives' remembered parameters
+and its placement, plus scene order and which body was active. Roughly twenty
+doubles per body.
+
+It holds no vertices and no indices — geometry is derived from the parameters by
+the same generator the product already uses, so copying a published mesh into
+every step would store a product of the truth beside the truth at hundreds of
+kilobytes a step. It holds no sculpt vertex, no `SculptRevision` and no stroke.
+
+`activeBodyId` is carried but **not compared**: a step restores the selection so
+that undoing a creation leaves a valid active body and redoing one re-selects
+what came back, while picking a different body remains no edit at all.
+
+A snapshot rather than a typed inverse per operation, because a per-operation
+inverse would have to be written and kept correct for every mutation *and every
+composition of them*, and because creation's inverse spans the body list, the
+order and the selection. The cost is that a step is proportional to the scene
+rather than to the edit; at this scene size that is kilobytes.
+
+**Bounded**: `kConstructionHistoryCapacity` = 64 undo steps, in memory, for the
+life of the process. Beyond it the oldest step is dropped, one per commit,
+deterministically; the current state and the redo stack are unaffected, because
+dropping a step only shortens how far back the user can go. There is no disk
+history, no autosave and no crash recovery.
+
+### Identity, and the bodies a step holds
+
+The `ObjectId` allocator is **only ever pushed forward**. Undoing a creation does
+not roll it back; a redo restores id 5 by name and the next creation mints 6.
+Reuse is what would let a stale `ObjectId` held anywhere — a selection, a render
+snapshot — silently resolve to a different body.
+
+`ConstructionScene` grew three internal operations for this — `detachBody`,
+`insertBody`, `makeBody` — reachable only from the history. A detached body is
+**held whole** by the history rather than destroyed, Frozen Sculpt Mesh included,
+so a redo restores the same object rather than a fresh one wearing its id. A
+detached body is reachable only through the redo stack, so anything no redo step
+names again is released when redo is cleared. This is deliberately not a
+Delete/Duplicate feature: no UI reaches it.
+
+### Publication discipline
+
+A restore does the least geometry work it can. A body whose **shape** differs is
+restored and republished once; a body whose **placement** differs is restored and
+publishes nothing, exactly as an ordinary transform Apply publishes nothing; a
+body coming back from the history publishes nothing either, because it still
+holds its own published revision — only a body that has never published anything
+is forced to. Commit itself publishes nothing at all: the mutations already
+produced the final state. `ConstructionRestoreReport` reports those counts so
+this is a checkable claim rather than an assertion.
+
+The state mutex is held across a restore, which is the one place in the product a
+lock is held across mesh generation. It has to be: a restore rebuilds the scene's
+body list, and the render thread takes its whole-scene snapshot under the same
+mutex, so a frame that observed the list mid-rebuild would draw a scene that
+never existed. An undo is one discrete user act, not a per-frame path.
+
+### Sculpt is separate, and stays separate
+
+Sculpt has no undo. A stroke writes no Construction history, and Construction
+Undo never moves a sculpt vertex, a `SculptRevision` or a stroke count.
+
+What a Construction restore *does* touch is the same stale-source bookkeeping an
+ordinary Construction edit performs: a body whose shape changed has its Frozen
+Sculpt Mesh marked as frozen from a source that has since moved. That rule now
+has one implementation, `FrozenSculpt::markSourceStale()`, because a restore acts
+on bodies the session is not bound to — an undo that changes body #2 while body
+#1 is active must mark #2, and routing it through the session would mark the
+wrong body. Adopting a changed source stays an explicit user act.
+
+Both acts are refused below JNI while sculpting, and the workspace withdraws the
+controls there. The guard stays regardless: removing a control is not removing a
+guard.
+
+### The Stage 020 coalescing boundary
+
+Everything the direct Move/Rotate gizmo needs already exists and is verified
+without it: a drag calls `beginConstructionEdit()` on down, drives
+`applyBoxTransform` on every move exactly as the numeric field does,
+`commitConstructionEdit()` on up — one step, however many frames — and
+`cancelConstructionEdit()` if the gesture is abandoned. No history code belongs
+in the gizmo, and the gizmo adds no new transform convention.
 
 ## Construction transform
 

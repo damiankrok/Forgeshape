@@ -87,16 +87,41 @@ final class EditorWorkspaceView extends FrameLayout
     private final LinearLayout middleRow;
 
     /**
-     * The workspace's bottom edge: the Objects capsule, and nothing else.
+     * The workspace's bottom edge: the Objects capsule, and — in Construction —
+     * the history capsule opposite it.
      *
-     * <p>It wraps its content and holds one capsule on the leading side, which
-     * is the whole difference between this and what it replaced. A row that
-     * spanned the window would be a bar whatever it held, and the bottom edge
-     * of a viewport-first tool is the last place to put one — it is where the
-     * model is closest to the thumb and where a Sculpt stroke most often
-     * begins.
+     * <p>It wraps its content and holds a capsule at each END with the model
+     * showing between them, which is the whole difference between this and what
+     * it replaced. A row that spanned the window would be a bar whatever it
+     * held, and the bottom edge of a viewport-first tool is the last place to
+     * put one — it is where the model is closest to the thumb and where a Sculpt
+     * stroke most often begins.
      */
     private final LinearLayout bottomRow;
+
+    /**
+     * Undo and Redo, in one capsule at the trailing end of the bottom row.
+     *
+     * <p><b>Why not the Global Toolbar's utility group.</b> That is where
+     * mode-independent global chrome lives and it is the first place these
+     * belong by category — but the toolbar row is already the tightest thing in
+     * the workspace. On the narrowest window the product supports, the utility
+     * group, the status capsule and the editing group divide 395 dp between
+     * them, and two more 48 dp controls would leave the mode transition under
+     * its natural width, which is how "Back to Constructi…" happened before.
+     * Buying a place for Undo by abbreviating the way out of Sculpt Mode is a
+     * bad trade.
+     *
+     * <p>The bottom row had room and, more importantly, is where the hand is:
+     * Undo is the most repeated act in an editor and the top trailing corner is
+     * the hardest point on a phone to reach. It sits opposite the Objects
+     * capsule, so the bottom edge reads as what the project IS on the leading
+     * side and what just happened to it on the trailing one, with the model
+     * between. Neither capsule spans, so this is not a bottom toolbar.
+     */
+    private final LinearLayout historyGroup;
+    private final ImageView undoAction;
+    private final ImageView redoAction;
     private final FrameLayout overlayRoot;
 
     private final GlobalToolbarView toolbar;
@@ -426,6 +451,35 @@ final class EditorWorkspaceView extends FrameLayout
         bottomRow.addView(objectsCapsule, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
+        // The flexible child of the bottom row, and the only one: it is where
+        // the model shows between the two capsules, and it is what absorbs a
+        // squeeze, so neither capsule ever gives up a touch target.
+        bottomRow.addView(EditorControlStyles.spacer(context));
+
+        historyGroup = EditorControlStyles.controlGroup(context);
+        historyGroup.setId(R.id.history_group);
+        undoAction = EditorControlStyles.iconButton(context, R.id.undo_action,
+                R.drawable.ic_undo, context.getString(R.string.undo));
+        undoAction.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                onHistoryStepRequested(false);
+            }
+        });
+        historyGroup.addView(undoAction, EditorControlStyles.iconButtonParams(context, 0));
+        redoAction = EditorControlStyles.iconButton(context, R.id.redo_action,
+                R.drawable.ic_redo, context.getString(R.string.redo));
+        redoAction.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                onHistoryStepRequested(true);
+            }
+        });
+        historyGroup.addView(redoAction, EditorControlStyles.iconButtonParams(context,
+                EditorControlStyles.dimen(context, R.dimen.toolbar_gap)));
+        bottomRow.addView(historyGroup, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
         inspector = new PropertyInspectorView(context, this);
 
         // Child 2: surfaces that must survive the chrome being hidden.
@@ -663,8 +717,11 @@ final class EditorWorkspaceView extends FrameLayout
         // The capsule exists only while the panel is the way to reach the
         // scene. A docked column IS the scene, permanently, and names the
         // active body itself — so a capsule beside it would draw one fact
-        // twice. GONE rather than invisible: the bottom row then wraps to
-        // nothing and the viewport reaches the window edge.
+        // twice. GONE rather than invisible: the capsule then costs the row no
+        // width at all, so the leading end of the bottom edge gives the model
+        // back everything the capsule was standing on. The history capsule at
+        // the trailing end is unaffected and stays: which body is current has a
+        // second home on a docked window, and taking a change back does not.
         objectsCapsule.setVisibility(docked ? GONE : VISIBLE);
 
         if (!docked) {
@@ -789,14 +846,35 @@ final class EditorWorkspaceView extends FrameLayout
     @Override
     public void onAddPrimitiveChosen(int primitiveKind) {
         final Context context = getContext();
-        final long created = NativeViewport.sceneAddBody();
+        final long created;
+        // Only meaningful when a body was actually created; the refusal below
+        // returns before reading it.
+        int applied = NativeViewport.APPLY_APPLIED;
+        // ONE Construction edit around both native calls, so choosing Sphere is
+        // one history step rather than two — and so undoing it removes the body
+        // outright instead of leaving behind the default Box the append produces
+        // before the primitive is applied. The commit compares state, so a
+        // refused add records nothing at all.
+        //
+        // The begin/commit pair is balanced through a finally, because a step
+        // left open would silently absorb the user's next edit into this one.
+        final boolean owned = NativeViewport.beginConstructionEdit();
+        try {
+            created = NativeViewport.sceneAddBody();
+            if (created != 0L) {
+                applied = applyPrimitiveToActiveBody(primitiveKind);
+            }
+        } finally {
+            if (owned) {
+                NativeViewport.commitConstructionEdit();
+            }
+        }
         if (created == 0L) {
             // The only refusal is "not while sculpting".
             showStatus(context.getString(R.string.status_body_add_failed), R.attr.fsTextError);
             setAddPrimitiveOpen(false, null);
             return;
         }
-        final int applied = applyPrimitiveToActiveBody(primitiveKind);
         final boolean shaped = applied == NativeViewport.APPLY_APPLIED
                 || applied == NativeViewport.APPLY_UNCHANGED;
 
@@ -1331,9 +1409,58 @@ final class EditorWorkspaceView extends FrameLayout
             toolRail.showActive(uiState.constructionTool());
         }
         objectsCapsule.refreshFromNative();
+        refreshHistoryControls(sculpting);
         showActiveInspectorBody(sculpting);
         showPrecisionToggle(sculpting);
         showDefaultStatus(sculpting);
+    }
+
+    /**
+     * Makes the two history controls say what native code actually reports.
+     *
+     * <p>Enabled state is read from native {@code canUndo}/{@code canRedo} on
+     * every refresh and is never derived from anything this layer remembers.
+     * There is no Java depth counter to disagree with the model: a control is
+     * live exactly when a step exists, and the model changing is the feedback —
+     * there is deliberately no confirmation message, no animation and nothing
+     * that could stutter under a repeated tap.
+     *
+     * <p>In Sculpt the pair is <b>withdrawn</b>, not disabled. Sculpt has no
+     * undo, and a greyed Undo sitting beside a stroke the user just made would
+     * read as "your stroke can be taken back, just not yet" — which is a
+     * different and worse lie than the control simply not being there. Keeping
+     * them for shell consistency would also mean the one place in the product
+     * where a permanently inert control stands on the model, which is the
+     * pattern the Export chip is allowed as the single approved exception to.
+     */
+    private void refreshHistoryControls(boolean sculpting) {
+        historyGroup.setVisibility(sculpting ? GONE : VISIBLE);
+        if (sculpting) {
+            return;
+        }
+        undoAction.setEnabled(NativeViewport.constructionUndoAvailable());
+        redoAction.setEnabled(NativeViewport.constructionRedoAvailable());
+    }
+
+    /**
+     * Steps the Construction history one entry in the asked-for direction.
+     *
+     * <p>The control's enabled state already answers whether there is a step, so
+     * the ordinary outcome is silent: the model changes, the exact-value editors
+     * re-read, and nothing is written to the status line. Only a refusal —
+     * which the guard below JNI can still produce even though the controls are
+     * withdrawn in Sculpt — says anything, because a control that did nothing
+     * and said nothing would be the defect this reports.
+     */
+    private void onHistoryStepRequested(boolean forward) {
+        final int status = forward ? NativeViewport.constructionRedo()
+                : NativeViewport.constructionUndo();
+        finishEditing();
+        onNativeStateChanged();
+        if (status == NativeViewport.HISTORY_REFUSED_IN_SCULPT) {
+            showStatus(getContext().getString(R.string.status_history_refused_in_sculpt),
+                    R.attr.fsTextError);
+        }
     }
 
     /**
@@ -2048,6 +2175,22 @@ final class EditorWorkspaceView extends FrameLayout
         return bottomRow;
     }
 
+    /** The capsule Undo and Redo sit in, which is what actually stands on the
+     *  model — the controls themselves are inside it. */
+    View historyGroup() {
+        return historyGroup;
+    }
+
+    /** Undo, so a test drives the control a user would press. */
+    ImageView undoAction() {
+        return undoAction;
+    }
+
+    /** Redo, the same way. */
+    ImageView redoAction() {
+        return redoAction;
+    }
+
     /** The Global Toolbar, so a test can reach a global control by id. */
     GlobalToolbarView globalToolbar() {
         return toolbar;
@@ -2101,8 +2244,12 @@ final class EditorWorkspaceView extends FrameLayout
         // report a bar the user cannot see. What actually stands on the model up
         // there is its two control capsules and the status capsule, which is
         // exactly what the toolbar reports.
+        // The bottom ROW is not in this list for the same reason, and the two
+        // capsules inside it are: the row spans the window and paints nothing,
+        // and counting it would report the bottom bar the composition
+        // deliberately does not have.
         final View[] surfaces = {brushControls, toolRailScroll, precisionGroup,
-                objectsCapsule, inspector, objectsDock};
+                objectsCapsule, historyGroup, inspector, objectsDock};
         final View[] top = toolbar.occludingSurfaces();
         final View[] all = new View[surfaces.length + top.length];
         System.arraycopy(surfaces, 0, all, 0, surfaces.length);

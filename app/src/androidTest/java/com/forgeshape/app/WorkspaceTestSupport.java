@@ -92,6 +92,12 @@ final class WorkspaceTestSupport {
                 // openPrecision.
                 workspace.uiState().setPrecisionOpen(false, false);
                 workspace.uiState().setPrecisionOpen(true, false);
+                // The history is process-scoped, exactly like the scene, so
+                // without this a case would inherit whatever steps the previous
+                // one recorded and "exactly one step" would mean nothing. This
+                // is the debug seam, not a product act: there is no New Project
+                // in the shipped UI to clear it with.
+                NativeViewport.debugResetConstructionHistory();
                 closeObjectsPanel(workspace);
                 closeAddPrimitive(workspace);
                 workspace.syncFromNative();

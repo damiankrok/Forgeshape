@@ -1,5 +1,7 @@
 #include "forgeshape_scene.h"
 
+#include <algorithm>
+
 namespace forgeshape {
 
 ConstructionScene::ConstructionScene() {
@@ -57,6 +59,48 @@ SceneObject& ConstructionScene::activeBody() {
 const SceneObject& ConstructionScene::activeBody() const {
     const SceneObject* body = findBody(activeBodyId_);
     return (body != nullptr) ? *body : *bodies_.front();
+}
+
+size_t ConstructionScene::indexOfBody(ObjectId id) const {
+    for (size_t i = 0; i < bodies_.size(); ++i) {
+        if (bodies_[i]->objectId() == id) {
+            return i;
+        }
+    }
+    return bodies_.size();
+}
+
+std::unique_ptr<SceneObject> ConstructionScene::detachBody(ObjectId id) {
+    const size_t index = indexOfBody(id);
+    if (index == bodies_.size()) {
+        return nullptr;
+    }
+    std::unique_ptr<SceneObject> body = std::move(bodies_[index]);
+    bodies_.erase(bodies_.begin() + static_cast<std::ptrdiff_t>(index));
+    if (activeBodyId_ == id) {
+        // Never leave the selection pointing at a body that is gone: every
+        // reference-returning accessor here assumes an active body exists.
+        activeBodyId_ = bodies_.empty() ? kNoObject : bodies_.front()->objectId();
+    }
+    return body;
+}
+
+void ConstructionScene::insertBody(std::unique_ptr<SceneObject> body, size_t index) {
+    if (!body) {
+        return;
+    }
+    const size_t at = std::min(index, bodies_.size());
+    bodies_.insert(bodies_.begin() + static_cast<std::ptrdiff_t>(at), std::move(body));
+    if (activeBodyId_ == kNoObject) {
+        activeBodyId_ = bodies_[at]->objectId();
+    }
+}
+
+std::unique_ptr<SceneObject> ConstructionScene::makeBody(ObjectId id) {
+    if (id >= nextObjectId_) {
+        nextObjectId_ = id + 1;  // monotonic: an id is never handed out twice
+    }
+    return std::make_unique<SceneObject>(id);
 }
 
 SceneSnapshot ConstructionScene::snapshot() const {

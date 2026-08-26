@@ -1188,6 +1188,59 @@ PrimitiveUpdateStatus ConstructionObject::setPrimitive(const PrimitiveSpec& requ
     return PrimitiveUpdateStatus::Applied;
 }
 
+// ---------------------------------------------------------------------------
+// History support
+// ---------------------------------------------------------------------------
+
+ConstructionObjectState ConstructionObject::captureState() const {
+    ConstructionObjectState state;
+    state.kind = kind_;
+    state.box = box_.dimensionsMeters();
+    state.cylinder = cylinder_.dimensionsMeters();
+    state.sphere = sphere_.dimensionsMeters();
+    state.cone = cone_.dimensionsMeters();
+    state.capsule = capsule_.dimensionsMeters();
+    state.plane = plane_.dimensionsMeters();
+    state.transform = transform_.values();
+    return state;
+}
+
+void ConstructionObject::restoreState(const ConstructionObjectState& state) {
+    // Through the same typed writers `setPrimitive` uses, so there is still
+    // exactly one place each primitive's parameters are written. The values
+    // passed validation when they were captured, so none of these can refuse.
+    writeParameters(state.box);
+    writeParameters(state.cylinder);
+    writeParameters(state.sphere);
+    writeParameters(state.cone);
+    writeParameters(state.capsule);
+    writeParameters(state.plane);
+    kind_ = state.kind;
+    transform_.setValues(state.transform);
+}
+
+bool sameConstructionShape(const ConstructionObjectState& a, const ConstructionObjectState& b) {
+    return a.kind == b.kind
+        && a.box.width == b.box.width && a.box.height == b.box.height
+        && a.box.depth == b.box.depth
+        && a.cylinder.diameter == b.cylinder.diameter && a.cylinder.height == b.cylinder.height
+        && a.sphere.diameter == b.sphere.diameter
+        && a.cone.bottomDiameter == b.cone.bottomDiameter && a.cone.height == b.cone.height
+        && a.capsule.diameter == b.capsule.diameter
+        && a.capsule.totalHeight == b.capsule.totalHeight
+        && a.plane.width == b.plane.width && a.plane.depth == b.plane.depth;
+}
+
+bool sameConstructionPlacement(const ConstructionObjectState& a,
+                               const ConstructionObjectState& b) {
+    return a.transform.positionX == b.transform.positionX
+        && a.transform.positionY == b.transform.positionY
+        && a.transform.positionZ == b.transform.positionZ
+        && a.transform.rotationX == b.transform.rotationX
+        && a.transform.rotationY == b.transform.rotationY
+        && a.transform.rotationZ == b.transform.rotationZ;
+}
+
 ConstructionMesh ConstructionObject::generateMesh() const {
     switch (kind_) {
         case PrimitiveKind::Box: return box_.generateMesh();

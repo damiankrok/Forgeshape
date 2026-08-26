@@ -442,6 +442,94 @@ final class NativeViewport {
      */
     static native long sceneAddBody();
 
+    // -----------------------------------------------------------------------
+    // Construction history
+    // -----------------------------------------------------------------------
+    //
+    // This layer holds NO history. It asks whether an undo is available, asks
+    // for one, and re-reads native state afterwards. There is deliberately no
+    // Java-side depth counter and no list of parameter snapshots: a second copy
+    // of the history would be a second answer to "what does undo do next", and
+    // the enabled state of a control would eventually disagree with the model.
+    //
+    // Both acts are refused below JNI while sculpting. The workspace withdraws
+    // the controls there as well, because Construction Undo is not Sculpt Undo
+    // and a control that could be read as one would be a lie; the native guard
+    // stays regardless.
+
+    /** The step was performed. */
+    static final int HISTORY_OK = 0;
+    /** There was nothing to undo or redo; nothing changed. */
+    static final int HISTORY_NOTHING_TO_DO = 1;
+    /** Refused: Construction history is not touched while sculpting. */
+    static final int HISTORY_REFUSED_IN_SCULPT = 2;
+
+    /** @return whether a Construction step can be undone right now */
+    static native boolean constructionUndoAvailable();
+
+    /** @return whether a Construction step can be redone right now */
+    static native boolean constructionRedoAvailable();
+
+    /**
+     * The active body's current mesh revision.
+     *
+     * <p>Read-back only, like {@link #constructionPrimitive}: nothing on this
+     * side keeps it or derives anything from it. It exists so verification can
+     * state how many publications one product act cost.
+     */
+    static native long constructionMeshRevision();
+
+    /**
+     * DEBUG-ONLY: forgets the Construction history without moving the scene.
+     *
+     * <p>Not a product act and reachable from no UI. It is the observation seam
+     * the instrumented suite uses to reach "a session that has done nothing",
+     * which is otherwise unreachable in a process that has already run other
+     * cases. A no-op in a release build.
+     */
+    static native void debugResetConstructionHistory();
+
+    /** @return how many steps the undo stack holds. Diagnostic and test use. */
+    static native int constructionUndoDepth();
+
+    /** @return how many steps the redo stack holds. Diagnostic and test use. */
+    static native int constructionRedoDepth();
+
+    /** @return one of the {@code HISTORY_*} constants */
+    static native int constructionUndo();
+
+    /** @return one of the {@code HISTORY_*} constants */
+    static native int constructionRedo();
+
+    /**
+     * Opens one Construction edit, so that every mutation until the matching
+     * commit becomes a single history step.
+     *
+     * <p>For a user act made of more than one native mutation — choosing a
+     * shape from Add Primitive is the one that exists today, and a dragged
+     * handle is the one that is coming. Between begin and commit the ordinary
+     * entry points still publish, so the model follows the edit live; they
+     * simply stop being steps of their own.
+     *
+     * @return true when this call opened the edit, false when one was already
+     *         open (in which case the caller must NOT commit it)
+     */
+    static native boolean beginConstructionEdit();
+
+    /**
+     * Closes an open edit, recording at most one step.
+     *
+     * @return true when a step was actually recorded — which happens only when
+     *         the Construction state genuinely changed
+     */
+    static native boolean commitConstructionEdit();
+
+    /**
+     * Closes an open edit by restoring the state captured when it opened, and
+     * records nothing.
+     */
+    static native void cancelConstructionEdit();
+
     /** @return {@link #MODE_CONSTRUCTION} or {@link #MODE_SCULPT} */
     static native int productMode();
 

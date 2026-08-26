@@ -183,6 +183,12 @@ sculpting. The **+** is not there while you are sculpting, because ForgeShape
 does not add bodies in Sculpt Mode — a control that could only ever refuse is
 worse than one that is absent.
 
+Opposite it, at the trailing end of the same bottom edge, is a second small
+capsule holding **Undo** and **Redo** — see *Undo and Redo* below. The two
+capsules do not join up: the model shows between them, so the bottom edge carries
+what the project *is* on one side and what just happened to it on the other,
+rather than a bar. That pair is drawn only while you are constructing.
+
 At the trailing edge is the **Tool Rail**, and attached directly under it a single
 small control that opens the **exact values** behind whichever tool the rail is
 holding. That surface is not there until you ask for it. When you do, it grows
@@ -555,6 +561,52 @@ Like the shape, the six values are submitted together and the result is
 they were, and a value that is not a number at all is reported with the field
 named. Editing the text does nothing until Apply Transform is pressed.
 
+## Undo and Redo
+
+Two controls sit in a small capsule at the trailing end of the bottom edge,
+opposite the Objects capsule, and they are drawn only in Construction. **Undo**
+takes back the last change to the model; **Redo** puts it back. Each is live
+exactly when there is something to take back or put back, and greyed otherwise —
+there is no message and no animation, because the model changing is the answer.
+
+**What one press takes back is one thing you did**, not one number that moved:
+
+- **Apply Shape** — however many fields you retyped first, and whether or not you
+  also changed which primitive it is. Undo brings back the previous shape, every
+  one of its exact dimensions and the same object.
+- **Apply Transform** — all six values together. Undo cannot put X back without
+  Y and Z.
+- **Adding a body** — choosing Sphere from *Add Primitive* is one act. Undo makes
+  the whole body disappear; it never leaves a leftover box behind. Redo brings
+  back *the same body*, with the same name, the same shape, the same placement
+  and the same position in the Objects list, selected again.
+
+Anything that changed nothing writes no history. A refused Apply, an Apply of
+exactly what is already there, choosing a different body, switching between
+*Shape* and *Transform*, opening or closing a panel, changing the display unit,
+the appearance, the grid, the shading or the projection, hiding the chrome and
+rotating the device are all invisible to Undo — which also means none of them
+throws away a Redo you still had.
+
+Undo after Undo walks back through the session in the order the changes were
+made, across bodies as well as within one, and each step affects only the body it
+was about. Making a **new** change after undoing ends the branch: the Redo you
+had is gone, as it is in every editor.
+
+The history is the session's. It survives rotating the device and sending
+ForgeShape to the home screen and back, and it is **not saved**: closing the app
+loses it along with everything else, and there is a limit — after about sixty
+changes the oldest ones stop being reachable.
+
+**Sculpting has no undo.** The two controls are not drawn at all while you are
+sculpting, rather than sitting there greyed, because a stroke cannot be taken
+back and a control that looked like it could would be a lie. Coming back to
+Construction and pressing Undo takes back a *Construction* change; it never
+touches a single sculpted vertex. If that Construction change was the shape your
+sculpt mesh was built from, the usual out-of-date warning appears, exactly as it
+does when you retype the shape by hand — the sculpt work itself is untouched, and
+*Resume Sculpt* brings it back as it was.
+
 ## Sculpting
 
 The object can be **sculpted** — pulled around by hand — as well as constructed
@@ -732,8 +784,9 @@ sculpted sphere, a point out on a raised protrusion is part of the model and can
 be touched there, while the same distance from the centre in an untouched
 direction is empty space.
 
-A stroke that is interrupted stops where it is; it is not undone, because there
-is no undo.
+A stroke that is interrupted stops where it is; it is not undone, because
+sculpting has no undo — the Construction Undo described above never touches a
+sculpted vertex.
 
 ## Viewport navigation
 
@@ -826,10 +879,11 @@ refused before leaving is replaced by the truth.
 
 The object's identity is stable across a shape change: turning the box into a
 sphere, then a cylinder, then a box again leaves it the same selectable object
-throughout, still in the same place. All of it lives only for the life of the app
-process — there is nothing to save or load and no undo, and camera, selection,
-shape, placement and sculpting all return to their defaults when the process
-restarts.
+throughout, still in the same place. The Construction Undo history survives the
+home screen and a rotation too, for the session. All of it lives only for the life
+of the app process — there is nothing to save or load, and camera, selection,
+shape, placement, sculpting and the whole Undo history return to their defaults
+when the process restarts.
 
 ## Not yet implemented
 
@@ -842,8 +896,10 @@ and pressing an Apply button. **There are no handles on the model to drag** —
 nothing in the viewport moves, rotates or scales a body, and the Tool Rail's
 *Transform* entry names what its numbers are about rather than promising a
 manipulator that does not exist yet. Sculpting has exactly the four tools above — other
-brushes (Flatten, Crease, Pinch and the rest), remesh, sculpt undo, symmetry,
-masking, layers, brush presets and stylus pressure are not implemented.
+brushes (Flatten, Crease, Pinch and the rest), remesh, **sculpt undo**, symmetry,
+masking, layers, brush presets and stylus pressure are not implemented — the Undo
+described above is Construction's alone. There is no undo *history panel*, no
+named steps and no keyboard shortcut for either control.
 
 **There is a grid, but there is no snapping of any kind.** Nothing you drag,
 type or place is quantised to it, no value is ever measured off it, and there is

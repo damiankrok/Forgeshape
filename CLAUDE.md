@@ -18,8 +18,8 @@ adb -s <serial> logcat -s ForgeShape:V
 
 APK: `app/build/outputs/apk/debug/app-debug.apk`
 
-A clean debug launch emits **eleven** `*_SELFTEST_OK` tokens, then
-`FORGESHAPE_NATIVE_VIEWPORT_OK`. All eleven, in emission order:
+A clean debug launch emits **twelve** `*_SELFTEST_OK` tokens, then
+`FORGESHAPE_NATIVE_VIEWPORT_OK`. All twelve, in emission order:
 
 ```
 FORGESHAPE_CAMERA_SELFTEST_OK
@@ -33,6 +33,7 @@ FORGESHAPE_CONE_CAPSULE_SELFTEST_OK
 FORGESHAPE_SCULPT_BRUSH_KERNEL_SELFTEST_OK
 FORGESHAPE_RENDER_SHADING_SELFTEST_OK
 FORGESHAPE_SCENE_SELFTEST_OK
+FORGESHAPE_CONSTRUCTION_HISTORY_SELFTEST_OK
 ```
 
 Failures: `FORGESHAPE_NATIVE_VIEWPORT_FAIL:*` and the matching `*_SELFTEST_FAIL`.
@@ -43,9 +44,12 @@ Enlarge the log ring buffer (`adb -s <serial> logcat -G 16M`) before capturing
 startup evidence: the default buffer drops part of the self-test output and it
 looks like a suite that stopped partway.
 
-Camera, picking, dynamic-mesh, Construction-box, sculpt and render-shading
-self-tests are debug-only and run once from `NativeViewport.start()`. They must
-never run per frame.
+Camera, picking, dynamic-mesh, Construction-box, sculpt, render-shading and
+Construction-history self-tests are debug-only and run once from
+`NativeViewport.start()`. They must never run per frame. Each builds the domain
+objects it needs — the scene and history suites build their own
+`ConstructionScene` — rather than reading process-scoped state, so a suite's
+result never depends on what a live session left behind.
 
 ## Hard rules
 
@@ -79,6 +83,17 @@ never run per frame.
   a `PrimitiveKind` or a transform, and no Construction parameter may ever be
   reconstructed from sculpt vertices. Adopting a changed Construction shape into
   the sculpt mesh is always an explicit user act, never automatic.
+- **There is one Construction history, it is native, and a user act is one
+  transaction.** `ConstructionHistory` owns undo/redo and the transaction
+  boundary; no Java-side mirror scene, snapshot list or depth counter may become
+  a second answer. A step holds bounded Construction-domain state — never mesh
+  bytes, never a sculpt vertex or `SculptRevision`. A multi-mutation act opens
+  ONE edit around its mutations rather than recording each; a commit that finds
+  nothing different records nothing and must leave the redo stack alone. The
+  `ObjectId` allocator is never rolled back: an undone creation's id is restored
+  by name, never reused. **Sculpt has no undo**, and Construction undo may never
+  move a sculpt vertex — the only sculpt state a restore touches is the existing
+  stale-source flag.
 - **Shading is presentation, never truth.** Normals, the derived render mesh and
   every display setting are one-way products of a published `RuntimeMesh`.
   Nothing may read a dimension, a Construction parameter, a sculpt deformation,
@@ -151,7 +166,8 @@ never run per frame.
   *Property Inspector*), *anchored surface* (any panel that grows out of the
   control that opened it; `AnchoredSurfaceView` owns the growth for all of them),
   *Construction Body* (an editable CAD-like object), *Frozen Sculpt Mesh* (the
-  polygon mesh `SculptMesh::freezeFrom` creates).
+  polygon mesh `SculptMesh::freezeFrom` creates), *history capsule* (the bottom
+  trailing capsule holding Undo and Redo).
 - **The user never reads "Freeze".** *Freeze*, *re-Freeze* and *Frozen Sculpt
   Mesh* stay in the C++, the view ids and the architecture docs, because they name
   what the operation does. Every user-facing string says **Start Sculpting**,

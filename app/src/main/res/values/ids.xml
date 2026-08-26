@@ -108,6 +108,19 @@
     <item name="objects_capsule_add" type="id" />
 
     <!--
+      Construction history. Two icon controls in one capsule at the trailing end
+      of the bottom row, opposite the Objects capsule: what the project IS on the
+      leading side, what just happened to it on the trailing one.
+
+      They are Construction's, not the shell's: they are withdrawn entirely in
+      Sculpt, because a control that reads as Undo while a sculpt stroke is the
+      last thing the user did would be claiming to undo the stroke.
+    -->
+    <item name="history_group" type="id" />
+    <item name="undo_action" type="id" />
+    <item name="redo_action" type="id" />
+
+    <!--
       Add Primitive: the creation surface a `+` opens, in either Objects host.
 
       Exactly six options, one per primitive the product actually builds. There

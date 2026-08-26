@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Undo the last Construction change.
+
+  An arrow curving back on itself to the LEFT: the one symbol for "the step
+  before this one" that does not also mean refresh, replay or reset. It is a
+  single open curve rather than a closed loop for exactly that reason — a closed
+  circular arrow reads as "do it again".
+
+  Drawn white and tinted at use; see EditorControlStyles.icon(). It reads as
+  disabled through the same tint list every other control uses, so nothing here
+  encodes a state.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M5,10 L13.5,10 A5,5 0 0,1 13.5,20 L9,20" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M9.5,5.5 L4.5,10 L9.5,14.5 Z" />
+</vector>

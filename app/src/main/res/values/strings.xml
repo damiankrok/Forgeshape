@@ -61,6 +61,20 @@
     <string name="back_to_construction_short">← Construction</string>
     <string name="export">Export</string>
     <string name="export_reserved_note">Export is not implemented yet.</string>
+    <!--
+      Construction history. These are content descriptions on icon controls,
+      never drawn as text: an undo control needs no caption, and a permanent
+      sentence explaining what it does would be exactly the ambient instruction
+      the status line was cleared of.
+
+      They deliberately say Undo and Redo without qualification, because they
+      are only ever on screen in Construction, where there is nothing else they
+      could mean. In Sculpt they are withdrawn rather than relabelled: a
+      "Construction Undo" sitting beside a sculpt stroke would still read as an
+      offer to take the stroke back.
+    -->
+    <string name="undo">Undo</string>
+    <string name="redo">Redo</string>
     <string name="hide_ui">Hide UI</string>
     <string name="show_ui">Show UI</string>
 
@@ -156,6 +170,13 @@
     <string name="status_body_created">Added %1$s as a %2$s — it is now selected.</string>
     <string name="status_body_created_unshaped">Added %1$s, but ForgeShape refused the %2$s and left it a box.</string>
     <string name="status_body_add_failed">Could not add a body — leave Sculpt first.</string>
+    <!--
+      A refusal, not an instruction: it is written only when the native guard
+      turns a history step down, which the workspace already prevents by
+      withdrawing the controls. It exists so that a control which did nothing
+      never also says nothing.
+    -->
+    <string name="status_history_refused_in_sculpt">Construction Undo does not act on sculpt work — return to Construction first.</string>
     <string name="body_label">Body #%1$d</string>
     <string name="status_body_selected">%1$s selected.</string>
     <string name="apply_shape">Apply Shape</string>

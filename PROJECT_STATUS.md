@@ -1,21 +1,30 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.38.0
+**Status Version:** 0.39.0
 **Updated:** 2026-08-26
-**Result:** TECHNICAL COMPLETE — UI-R4C closed the four composition defects the
-UI-R4B screenshot review found, and nothing else. *Back to Construction* is drawn
-in full in every verified window because the transition's width is now arithmetic
-on the row rather than one dp constant; Add Primitive is placed clear of the
-trailing tool cluster instead of half over it; a control that is the only member
-of its group is drawn as one control rather than as a button inside a pill; and
-the two instructional status messages are gone, so a resting Construction
-workspace carries no caption. Every UI-R4B contract is intact.
-**Visual acceptance is PENDING OWNER/COORDINATOR SCREENSHOT REVIEW** on the fresh
-UIR4C-S01..S10 set; no part of the look is final until that review returns.
+**Result:** TECHNICAL COMPLETE — Stage 019 added the Construction transaction
+boundary and Undo/Redo. One native `ConstructionHistory` owns what an edit *is*
+and how to go back to before one; Java holds no history, no depth counter and no
+mirror scene. The three existing Construction acts are each one atomic step —
+Exact Shape Apply, Exact Position+Rotation Apply, and **Add Primitive as a single
+creation transaction**, so undoing "add a Sphere" removes the body outright
+rather than leaving the default Box the append produces. A step holds bounded
+Construction-domain state, never mesh bytes and never a sculpt vertex; it is
+capped at 64 in memory with deterministic oldest-first eviction, and nothing is
+written to disk. **Sculpt has no undo and did not get one**: a stroke writes no
+Construction history, a Construction undo moves no sculpted vertex, and the two
+controls are withdrawn in Sculpt rather than left standing greyed. The
+begin/update/commit/cancel lifecycle Stage 020's gizmo needs is verified without a
+gizmo: twelve transform updates inside one transaction commit as one step and
+cancel returns to the pre-drag state.
+**Visual acceptance remains PENDING OWNER/COORDINATOR SCREENSHOT REVIEW** on the
+UIR4C-S01..S10 set, now joined by the focused S019-S01..S06 history set; no part
+of the look is final until those reviews return.
 **Current Phase:** Phase 1 — Native Viewport
 **Workspace:** `D:\TRAVELAPPS\ForgeShape`
-**Accepted implementation baseline:** UI-R4C (final visual composition cleanup) on
-top of UI-R4B (workspace visual and motion
+**Accepted implementation baseline:** Stage 019 (Construction transaction and
+Undo/Redo) on top of UI-R4C (final visual composition cleanup), UI-R4B (workspace
+visual and motion
 correction), UI-R4A (mobile workspace interaction), UI-R3R2 (approved
 dark palettes + visual composition correction), UI-R3
 (visual quality polish), DOC-R1 (documentation compaction), UI-R2 (workspace
@@ -27,8 +36,8 @@ Stage 016 (Plane), Stage 015D (camera projection), Stage 015C-R (front-face
 culling), Stage 015C (shading), Platform Fix P2, Stage 015B, Stage 014, the NDK
 r29 migration (Gate P0) and the Owner Decision Baseline. Per-stage narrative
 lives in Git history; only what still constrains the code is kept here.
-**Next Stage:** **Stage 019 — Undo/Redo transaction foundation for direct
-transform work.** See *Next Stage*.
+**Next Stage:** **Stage 020 — the real Construction Move/Rotate gizmo.** See
+*Next Stage*.
 
 ## Current state
 
@@ -592,13 +601,27 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 | Opening the scene panel, selecting a body and collapsing the inspector publish no mesh and mint no revision | VERIFIED (UI-R2) |
 | Tool type, pressure and tilt cross MotionEvent → SurfaceView → JNI → native intact, and stay with the right pointer in a multi-pointer event | VERIFIED (INPUT-R1) |
 | Carrying stylus data changes no brush result: same stroke, opposite pressure and tilt, bit-identical vertices for all four tools | VERIFIED (INPUT-R1) |
+| One native-owned Construction history: Java holds no mirror scene, no snapshot list and no depth counter | VERIFIED (Stage 019) |
+| Exact Shape Apply is one atomic undo step whatever it changed; a rejected or identical Apply is none | VERIFIED (Stage 019) |
+| Exact Position+Rotation Apply is one atomic step; all six values move together and 370° survives un-canonicalized | VERIFIED (Stage 019) |
+| Add Primitive is ONE creation transaction: undo removes the body with no default-Box remnant | VERIFIED (Stage 019) |
+| Redo of a creation restores the same ObjectId, primitive, parameters, placement and scene position, and re-selects it | VERIFIED (Stage 019) |
+| Interleaved edits across bodies undo and redo in chronological order, each touching only its own body; ordered ObjectIds preserved | VERIFIED (Stage 019) |
+| A real new edit clears the redo; a rejection, a no-op and an empty transaction do not | VERIFIED (Stage 019) |
+| begin → many updates → commit is exactly one step; cancel restores the pre-state and records none | VERIFIED (Stage 019) |
+| History is bounded (64 steps) in memory, evicting oldest-first deterministically; no disk history | VERIFIED (Stage 019) |
+| Selection, editing context, surfaces, display unit, appearance, Grid, shading, chrome-hide and rotation write no history | VERIFIED (Stage 019) |
+| History survives rotation and HOME/resume; the rebuilt chrome reads its enabled state from native, never from memory | VERIFIED (Stage 019) |
+| A sculpt stroke writes no Construction history, and a Construction undo leaves the sculpt revision, counts, strokes and identity alone — only the existing stale-source flag moves | VERIFIED (Stage 019) |
+| Construction Undo/Redo are withdrawn in Sculpt, and the native guard refuses them there regardless | VERIFIED (Stage 019) |
+| Transaction wrapping added no geometry work: one Apply is still one publication, a commit is none, a placement drag publishes nothing | VERIFIED (Stage 019) |
 | 16 KB page size *and* ARM64 in one target | **UNVERIFIED** — see Known Issues |
 | Stylus / S Pen tool type and pressure on real hardware | **UNVERIFIED** — verified synthetically end to end in INPUT-R1; closing it needs a person physically moving an S Pen |
 
 ## Self-test suite
 
-Eleven debug-only native suites run once from `NativeViewport.start()` — never
-per frame — and total **1691 checks, zero failures**:
+Twelve debug-only native suites run once from `NativeViewport.start()` — never
+per frame — and total **1809 checks, zero failures**:
 
 | suite token | checks |
 | --- | --- |
@@ -611,11 +634,27 @@ per frame — and total **1691 checks, zero failures**:
 | `FORGESHAPE_CONSTRUCTION_SPHERE_SELFTEST_OK` | 105 |
 | `FORGESHAPE_CONE_CAPSULE_SELFTEST_OK` | 163 |
 | `FORGESHAPE_SCULPT_BRUSH_KERNEL_SELFTEST_OK` | 316 |
-| `FORGESHAPE_RENDER_SHADING_SELFTEST_OK` | 325 |
+| `FORGESHAPE_RENDER_SHADING_SELFTEST_OK` | 329 |
 | `FORGESHAPE_SCENE_SELFTEST_OK` | 79 |
+| `FORGESHAPE_CONSTRUCTION_HISTORY_SELFTEST_OK` | 114 |
 
 followed by `FORGESHAPE_MESH_UPLOAD_OK`, `FORGESHAPE_GRID_UPLOAD_OK` and
 `FORGESHAPE_NATIVE_VIEWPORT_OK`.
+
+**The Construction-history suite owns the transaction boundary and every
+undo/redo invariant**, and — like the scene suite — it builds its own
+`ConstructionScene` and its own `ConstructionHistory` for every case rather than
+touching the process-scoped pair, which is what makes its result independent of
+what a live session left behind. Its 114 checks cover the empty history, one
+Apply as one reversible step, rejection and no-op suppression, the six transform
+values moving atomically and 370° surviving un-canonicalized, many updates in one
+transaction committing as one step, cancel, creation as one atomic transaction
+with no default-Box remnant, redo restoring the same `ObjectId` and scene
+position, the id allocator never rolling back, multi-object interleaving in
+chronological order, redo invalidation and the three things that do *not*
+invalidate it, selection not being an edit, bounded capacity with oldest-first
+eviction, Sculpt separation both ways, a restored body keeping its Frozen Sculpt
+Mesh, and the publication counts a restore actually incurs.
 
 **Suite ownership is by module, and it decides where a check lives.** The
 render-shading suite owns PRESENTATION — selection feedback (`r1c1_*`) and the
@@ -683,8 +722,9 @@ device. `README.md` documents how to read them.
 | `EditorWorkspaceSculptRetentionTest` | `UIR4A-12` / `UIR4B-20`: Start Sculpting → real stroke → Back → Resume returns the same revision, counts, stroke history and ObjectId, with the Construction Source untouched; and that a stale source is readable from the resting workspace | 2 |
 | `EditorWorkspaceCorrectionTest` | the UI-R4B corrections: no Sculpt creation path and the scene still reachable (`UIR4B-01`), Construction's six-primitive path intact (`-02`), the rail's active state across a rebuild in both modes and cleared on a mode change (`-03`), the status lifecycle, the longer hold for a rejection, the empty resting line and the standing fault (`-04`), brush values beside their sliders and nowhere else and publishing nothing (`-05`), no mid-row cut in Shape or Transform with scrolling and fields intact (`-06`, `-07`), one shared anchored contract (`-08`), a correct first-open pivot for all four surfaces (`-09`), instant reduced motion and interruptibility (`-10`), zero geometry from chrome and motion (`-11`), inset floating surfaces on an expanded window (`-12`), Radius/Strength off the model in expanded Sculpt (`-13`), concentric active geometry and a fill-led selection with no stroke (`-14`), no user-facing *Freeze* over every `R.string` (`-15`), Start Sculpting with Back/Resume/confirmation intact (`-16`), the 48 dp floor in both modes and the toolbar still fitting (`-17`), three appearances and no geometry (`-18`), grid and selection feedback unchanged (`-19`) | 36 |
 | `EditorWorkspaceChromeCompositionTest` | the UI-R4C composition cleanup: back navigation drawn in full with no ellipsis and no clipping in the window under test (`UIR4C-01`, `-03`) and in short landscape (`-02`), Add Primitive intersecting neither the tool cluster nor the precision control in either window (`-04`), the six primitives and their native routing after the reflow (`-05`), a single-member editing group drawn as one control and a two-member one still a capsule (`-06`), Resume Sculpt on the same geometry returning the same revision and mesh (`-07`), the 48 dp floor after the reduction (`-08`), no instructional capsule at rest (`-09`) or with the exact values open, with the transient path intact (`-10`), three appearances and no new colour in the lone-control forms (`-11`), zero native change across the whole sequence (`-12`) | 12 |
+| `EditorWorkspaceHistoryTest` | Stage 019, from the product side of JNI: an empty history and both controls disabled (`S019-01`, `-27`), one Apply as one reversible step down to the ObjectId (`-02`..`-04`), rejection and no-op writing nothing and publishing nothing (`-05`, `-06`), six placement values as one atomic step with 370° intact (`-07`, `-08`), Add Primitive as one creation transaction with no default-Box remnant and a redo restoring the same id, order and parameters (`-09`, `-10`), interleaved multi-object undo/redo in chronological order (`-11`), redo invalidation and the three things that do not invalidate it (`-12`, `-13`), no history from selection, context, surfaces, unit, grid, shading or chrome-hide (`-14`), begin/many-updates/commit as one step and cancel as none (`-15`, `-16`), bounded capacity with a clean exhaustion (`-17`), rotation and HOME/resume retention with the rebuilt chrome reading native state (`-18`, `-19`), the Sculpt seam writing nothing and withdrawing the pair while the native guard stands (`-20`, `-24`), a real Grab stroke writing no Construction history and a Construction undo leaving the sculpt mesh's revision, counts, strokes and identity alone except for the existing stale-source flag (`-21`, `-22`), enabled state always native state including across a rotation (`-23`), the 48 dp floor and no intersection with any other chrome surface (`-25`), and one Apply still exactly one publication with a commit adding none (`-26`) | 20 |
 
-**262 tests** (60 JVM, 202 instrumented). No Java test asserts a rendered pixel;
+**282 tests** (60 JVM, 222 instrumented). No Java test asserts a rendered pixel;
 every control is reached by its stable semantic id and no assertion uses a screen
 coordinate. The foundation and theme suites deliberately assert no colour
 literal, radius or shadow — those are judged by eye and by runtime evidence, and
@@ -776,31 +816,64 @@ this baseline before calling it a regression.
 
 Latest acceptance run, on `ForgeShape_Stage006` / `emulator-5580` unless stated:
 
-- **Native self-tests:** eleven suites, **1695 checks, zero failures** on a clean
-  launch, followed by `FORGESHAPE_NATIVE_VIEWPORT_OK`. Nothing below JNI was
-  touched by UI-R4C — the whole stage is Java, resources and documentation — and
-  the total is byte-for-byte the one UI-R4B and UI-R4A recorded; the Gate P1
-  picking assertions are intact inside the 174-check picking suite, and `SIDE`,
-  `REFR`, `NOR`, `CAMPROJ` and `PLN` are all still green.
+- **Native self-tests:** **twelve** suites, **1809 checks, zero failures** on a
+  clean launch, followed by `FORGESHAPE_NATIVE_VIEWPORT_OK`. The eleven that
+  existed are byte-for-byte their previous totals — the Gate P1 picking
+  assertions are intact inside the 174-check picking suite, and `SIDE`, `REFR`,
+  `NOR`, `CAMPROJ` and `PLN` are all still green — plus the new 114-check
+  `FORGESHAPE_CONSTRUCTION_HISTORY_SELFTEST_OK`.
 - **JVM:** 60/60.
-- **Instrumented: 201/202 in BOTH windows** — the default compact phone window
-  and an overridden 1600 × 2560 @ 240 dpi — plus **68/68 in a short landscape
-  window** (2400 × 1080, the composition, correction, layout, foundation and
-  sculpt-retention suites), all through
+- **Instrumented: 221/222 in BOTH windows** — the default compact phone window
+  and an overridden 1600 × 2560 @ 240 dpi — plus **86/86 in a short landscape
+  window** (2400 × 1080, the composition, correction, layout, foundation,
+  sculpt-retention and history suites), all through
   `scripts\run-instrumented-tests.ps1 -Serial emulator-5580`. The one failure in
-  each full run is `ui11`, on its own precondition guard — see below.
-- **`ui11` failed on its guard in this run, and it is not a regression.**
-  Re-confirmed the way the record requires rather than assumed: the whole working
-  tree was stashed, the untouched `19d9213` baseline was rebuilt, and
-  `EditorWorkspaceGestureTest` was re-run on the same emulator, producing the
-  identical message from the identical line. The device has a soft keyboard
-  installed (`com.google.android.inputmethod.latin`); whether it appears in time
-  is a function of host load, exactly as recorded below.
+  each full run is `ui11`, on its own precondition guard — see below. The new
+  `EditorWorkspaceHistoryTest` is **20/20 in all three windows**.
+- **`ui11` failed on its guard in both windows, and it is not a regression.** The
+  message is character-identical to the one this file has recorded since Stage
+  015D — "the soft keyboard did not appear, so this case proves nothing" — from
+  the identical line, and the case never reaches an assertion about product
+  behaviour. Stage 019 touches no field, no IME path and no gesture arbitration.
+  The device has a soft keyboard installed
+  (`com.google.android.inputmethod.latin`); whether it appears in time is a
+  function of host load, exactly as recorded below.
+- **One harness interruption, diagnosed rather than waived.** The first expanded
+  run died at the `adb uninstall` step with `cmd: Can't find service: package`
+  and lost its whole transcript; the device's system server had restarted
+  mid-run. The emulator came back healthy, the run was repeated in full, and the
+  repeat is the 221/222 recorded above. Nothing in ForgeShape's own log was
+  involved.
 - **Device guards:** `DEV2-01`..`07` and `DEV3-01`..`06` all PASS, with no device
   attached and zero `emulator-5554` interaction.
 - **Physical ARM64 (Gate P1):** closed on a Galaxy S25 Ultra —
   `primaryCpuAbi=arm64-v8a`, `PAGE_SIZE` 4096, the mandatory ~10k/~50k/~100k
   ladder and Sculpt at 100k measured on real hardware. Stylus stays UNVERIFIED.
+- **Runtime walkthrough (Stage 019),** on `ForgeShape_Stage006` /
+  `emulator-5580`, every control resolved from a live `uiautomator dump` by its
+  stable semantic id and no coordinate reused between steps. Cold start: twelve
+  `*_SELFTEST_OK`, zero failures, **both controls drawn disabled**. An exact
+  Shape Apply (box width retyped to 3.75 m) logged one
+  `CONSTRUCTION_PRIMITIVE` and one `CONSTRUCTION_PUBLISHED`; Undo then logged
+  `republished=1 placements=0 restored=0 removed=0 undo=0 redo=1 bodies=1` —
+  **exactly one publication** — and Redo the same. Add Primitive → Sphere logged
+  `SCENE_BODY_ADDED:2`, `CONSTRUCTION_PRIMITIVE:ui kind=sphere` and **one**
+  `CONSTRUCTION_HISTORY_COMMIT:recorded undo=2`; its Undo logged
+  `republished=0 removed=1 bodies=1` — the body gone in one step with **zero
+  publications, so no default Box was ever put on screen** — and its Redo
+  `restored=1 bodies=2` with **zero republication**, because a body held by the
+  history keeps its own revision. Undo, then a different real creation, left
+  Redo disabled. Rotation to landscape and HOME/resume both kept the stacks and
+  the drawn state, and Undo still worked afterwards. In Sculpt both controls
+  were **ABSENT**. A real Grab stroke (sculptRev 27→35, then 34 in the
+  stale-source pass) wrote **no** Construction step; a Box→Cylinder Apply on the
+  sculpted body logged `SCULPT_SOURCE_STALE:ui sculptRev=34`, its Undo logged
+  `republished=1`, and Resume Sculpt returned
+  `sculptRev=34 v=482 i=2880 objectId=2 strokes=1 freezes=1 stale=1` — identical
+  revision, counts, stroke history and identity, with only the pre-existing
+  stale flag standing. Measured hit areas: 126 × 126 px at 420 dpi (compact and
+  short landscape) and 72 × 72 px at 240 dpi (expanded) — **48 dp in all three**.
+  No crash and no ObjectId aliasing throughout.
 - **Runtime walkthrough (UI-R4C):** cold start and start chooser into
   Construction; the resting workspace with **no instructional capsule** and
   **Start Sculpting drawn as one pill**; Add Primitive opened and confirmed clear
@@ -819,8 +892,11 @@ Latest acceptance run, on `ForgeShape_Stage006` / `emulator-5580` unless stated:
   `*_PUBLISHED`**. The counter is not blind: the very next act, one driver-applied
   box change, logged exactly 1 of each.
 - **Screenshot review sets:** `artifacts/uir4a/` (UIR4A-S01..S12 plus three
-  walkthrough frames), `artifacts/uir4b/` (UIR4B-S01..S12) and
-  `artifacts/uir4c/` (UIR4C-S01..S10), all **committed**. `/artifacts/` is
+  walkthrough frames), `artifacts/uir4b/` (UIR4B-S01..S12), `artifacts/uir4c/`
+  (UIR4C-S01..S10) and `artifacts/stage019/` (S019-S01..S06 — the resting
+  workspace with both controls disabled, Undo live after an edit, Redo live
+  after an undo, short landscape, expanded, and Sculpt with the pair absent),
+  all **committed**. `/artifacts/` is
   deliberately not ignored because the cited runtime evidence is versioned
   repository content; each review's set sits under its own folder so the reviews
   can be compared rather than one overwriting the next.
@@ -1155,6 +1231,7 @@ regenerated per stage.
 | `app/src/main/java/.../ToolRailView.java` | The edge tool selector for either mode. Every entry works — there is no reserved-entry support left. Selects; decides nothing |
 | `app/src/main/java/.../BrushEdgeControlsView.java`, `VerticalSliderView.java` | Direct Radius and Strength, and the custom vertical control behind them. Own no brush value |
 | `app/src/main/java/.../PropertyInspectorView.java`, `PrecisionScrollView.java` | The on-demand precision surface: open or absent, never collapsed, with a measured height cap — and a scroll container that ends the visible body on a whole row rather than through one. Owns no value |
+| `app/src/main/java/.../EditorWorkspaceView.java` (history capsule) | Undo and Redo: two icon controls in one capsule at the trailing end of the bottom row, opposite the Objects capsule. Withdrawn in Sculpt, enabled straight from native `canUndo`/`canRedo`, and holding no history of its own |
 | `app/src/main/java/.../ObjectsCapsuleView.java` | The resting scene control: the active body's name, and — in Construction only — the `+`. Holds no scene state; both its controls only report which was pressed |
 | `app/src/main/java/.../AddPrimitivePaletteView.java` | The one creation surface: six primitive tiles, shared by both `+` controls. Builds no geometry and defaults no dimension |
 | `app/src/main/java/.../ConstructionShapeEditorView.java` | Primitive chooser, that primitive's exact fields, unit chips, Apply Shape. Owns field text and a DRAFT kind only |
@@ -1177,6 +1254,7 @@ regenerated per stage.
 | `app/src/main/cpp/forgeshape_input.{h,cpp}` | Platform-neutral pointer event data: `TouchAction`, `PointerToolType`, `TouchPointer` (id, position, tool type, pressure, tilt), and THE range/wrap/non-finite sanitizers those fields are defined by |
 | `app/src/main/cpp/forgeshape_camera.{h,cpp}` | Camera pose, the `ProjectionMode` enum and the orthographic world span, both projections, the framing-preserving switch, gesture state machine |
 | `app/src/main/cpp/forgeshape_construction.{h,cpp}` | `ConstructionObject` (identity + active `PrimitiveKind` + all six primitives + transform), the six `Construction*` generators, shared tessellation constants, the typed `PrimitiveSpec` payload variant, dimension validation including `validateCapsuleMeters`, publication into `MeshStore`, and `applyPrimitive` — the one update-and-publish entry point |
+| `app/src/main/cpp/forgeshape_history.{h,cpp}` | `ConstructionHistory`: what a Construction edit IS (begin/commit/cancel over a `ConstructionScene` handed in by reference), the bounded before/after Construction-domain snapshot a step holds, the capacity constant, the restore that does the least geometry work it can, and the parked bodies a redo needs. Owns no mesh byte and no sculpt state |
 | `app/src/main/cpp/forgeshape_transform.{h,cpp}` | `ConstructionTransform`: authoritative double-meter position and double-degree rotation, THE axis/Euler convention, validation, atomic apply, derived model and inverse-model matrices |
 | `app/src/main/cpp/forgeshape_sculpt.{h,cpp}` | `ProductMode`, `SculptTool`, `SculptSession` (mode + tool + brush + live stroke + the `hitsSculptMesh` probe), `SculptMesh`, `SculptTopology`, `computeVertexNormals`, `SculptStroke` (the one kernel plus one `apply*` per tool), sculpt publication |
 | `app/src/main/cpp/forgeshape_picking.{h,cpp}` | Screen→world ray for **both** projections (perspective: one origin, fanning directions; orthographic: one direction, per-pixel origin), `transformRayToLocal`, ray/triangle, nearest hit, winding check |
@@ -1192,7 +1270,7 @@ regenerated per stage.
 | `app/src/main/cpp/forgeshape_math.h` | Minimal self-owned vec3/mat4. No GLM |
 | `app/src/main/cpp/forgeshape_demo_mesh.{h,cpp}` | Baseline cube numbers; source data for the baseline debug fixture only |
 | `app/src/main/cpp/forgeshape_mesh_fixtures.{h,cpp}` | DEBUG test fixtures (baseline / same-topology / larger / stress step) |
-| `app/src/main/cpp/forgeshape_*_selftest.{h,cpp}` | The eleven debug-only deterministic suites: camera, picking, mesh, construction (box), transform, primitive, sphere, cone/capsule, sculpt brush kernel, render shading, scene |
+| `app/src/main/cpp/forgeshape_*_selftest.{h,cpp}` | The twelve debug-only deterministic suites: camera, picking, mesh, construction (box), transform, primitive, sphere, cone/capsule, sculpt brush kernel, render shading, scene, Construction history |
 | `app/src/main/cpp/shaders/surface.{vert,frag}` | GLSL source for the surface pipeline: view-space normals, Studio Solid, the MatCap lookup and the debug colour path. AOT compiled to SPIR-V by `glslc` in CMake |
 | `app/src/main/cpp/shaders/grid.{vert,frag}` | GLSL source for the grid pipeline: world→clip with no model matrix, the tier→colour choice, the depth nudge that settles the coplanar Plane, and the PER-FRAGMENT radial fade |
 | `app/src/main/cpp/CMakeLists.txt` | Native build + glslc shader step |
@@ -1225,40 +1303,43 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Stage 019 — Undo/Redo transaction foundation for direct transform work.**
+**Stage 020 — the real Construction Move/Rotate gizmo.**
 
-UI-R4A left the shell ready for direct manipulation, UI-R4B corrected what the
-review of it found and UI-R4C closed the four composition defects the review of
-*that* found; none of the three built any of the manipulation, deliberately. The
-thing that has to exist *before* a gizmo, not after it, is a
-transaction boundary: a drag on a handle produces a continuous stream of
-intermediate states, and without a domain-level notion of "one edit began, one
-edit ended, this is what it can be undone to", every frame of that drag is either
-a separate revision or nothing at all. Undo is also the guard that makes direct
-manipulation safe to offer — a numeric field can be retyped, a dragged handle
-cannot be un-dragged.
+Everything the gizmo needs below it now exists and is verified without it. A drag
+on a handle opens one Construction edit on down, writes the authoritative
+transform on every move through the same `applyBoxTransform` a typed Apply uses,
+commits once on up — one history step however many frames it took — and cancels
+back to the pre-drag placement if the gesture is abandoned. That contract is
+proved today by a synthetic twelve-update transaction in both the native suite and
+the instrumented one, so Stage 020 writes no history code of its own and adds no
+second transform convention.
 
-So Stage 019 owns the transaction foundation in the platform-neutral domain, not
-a UI feature: what a transaction is, what opens and closes one, what it captures
-for Construction parameters, for a transform and for a sculpt stroke, and what
-the memory ceiling is. The direct transform gizmo (Stage 020) is built on top of
-it and is not part of Stage 019.
+What Stage 020 owns is the manipulation itself: handles drawn in the viewport,
+axis constraint, hit-testing them against the existing picking path, the
+arbitration between a handle drag and camera navigation (the same
+pending-then-promote question sculpting already answered), and what a handle looks
+like at every window size. **Scale is still out.** So is any sculpt gizmo, and so
+is a handle in Sculpt Mode.
 
-**Visual acceptance remains PENDING**, now on the focused ten-screenshot review
-set `artifacts/uir4c/UIR4C-S01..S10` — the resting Construction workspace, Add
+**Visual acceptance remains PENDING**, on two sets. The UI-R4C ten-screenshot set
+`artifacts/uir4c/UIR4C-S01..S10` — the resting Construction workspace, Add
 Primitive clear of the trailing control, Exact Shape with a clean top, Sculpt with
 the whole back navigation readable, Resume Sculpt on the same geometry, short
 landscape, expanded Construction and Sculpt, and Neutral Charcoal and Light
-Charcoal. `artifacts/uir4a/` and `artifacts/uir4b/` are committed unmodified
-beside it, so the three reviews can be compared. That review is a judgement about
-the look and is independent of Stage 019, which touches the domain rather than
-the shell.
+Charcoal — with `artifacts/uir4a/` and `artifacts/uir4b/` committed unmodified
+beside it so the reviews can be compared. And the focused Stage 019 set
+`artifacts/stage019/S019-S01..S06`, which asks one question only: whether the
+history capsule sits truthfully in the accepted shell, reads clearly in both
+states, and is absent in Sculpt.
 
-**Also owed, before anything else adds to it:** `ARCHITECTURE.md` is 2273 lines,
-over its own 2000-line hard cap and more than double its 700–1000 target, and
-`PRODUCT.md` at 941 is over its 300–450 target. UI-R4C added the four durable
-invariants its corrections created and trimmed what they superseded, so the file
-grew by 47 lines rather than shrinking. A compaction pass is due.
+**Also owed, and now more so:** `ARCHITECTURE.md` is 2403 lines, over its own
+2000-line hard cap and more than triple its 700–1000 target; `PRODUCT.md` at 998
+is over its 300–450 target and `PROJECT_STATUS.md` at 1318 is over its 500–800.
+Stage 019 added the history ownership section, the history capability rows and
+the twelfth suite because they are current truth that nothing else records, and
+it removed only what it superseded, so all three grew again. **A compaction pass
+is genuinely due and should be taken before Stage 020 adds a gizmo section to
+each of them.**
 
 The one feature the repo still records as a candidate is **Selection Outline** —
 the expensive half of selection feedback, needing either a second geometry pass

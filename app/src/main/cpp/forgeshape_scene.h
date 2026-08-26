@@ -140,6 +140,39 @@ public:
     // Every body that currently has something published, in scene order.
     SceneSnapshot snapshot() const;
 
+    // -----------------------------------------------------------------------
+    // History support: the smallest scene mutations an undo needs
+    // -----------------------------------------------------------------------
+    //
+    // These three exist so that undoing a creation can put a body back with the
+    // ObjectId it already had, which `addBody()` — which mints — cannot do.
+    // They are deliberately NOT a Delete/Duplicate feature: nothing in the
+    // product's UI reaches them, they are driven only by ConstructionHistory,
+    // and a detached body is HELD by the history rather than destroyed, so a
+    // redo returns the same object with its Frozen Sculpt Mesh intact rather
+    // than a fresh one that merely looks the same.
+
+    // Takes a body out of the scene and hands over ownership. Returns null when
+    // no body carries that id. If the detached body was active, the selection
+    // falls to whichever body is first, so the scene never has an active id
+    // pointing at nothing.
+    std::unique_ptr<SceneObject> detachBody(ObjectId id);
+
+    // Puts a body back at an exact position in scene order. `index` is clamped
+    // to the end. Selection is not changed: the caller decides.
+    void insertBody(std::unique_ptr<SceneObject> body, size_t index);
+
+    // Builds a body with an EXPLICIT id, not appended to anything.
+    //
+    // The id allocator is only ever pushed forward, never rolled back: a redo
+    // restores id 5 by name, and a subsequent creation mints 6 rather than
+    // reusing 5. Reuse is what would let a stale ObjectId held anywhere — a
+    // selection, a render snapshot — silently resolve to a different body.
+    std::unique_ptr<SceneObject> makeBody(ObjectId id);
+
+    // Where a body sits in scene order, or bodyCount() when it is not present.
+    size_t indexOfBody(ObjectId id) const;
+
 private:
     // unique_ptr rather than by value: SceneObject holds a mutex through
     // MeshStore and must not move when the vector grows.

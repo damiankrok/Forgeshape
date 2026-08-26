@@ -640,6 +640,44 @@ private:
     Payload payload_{BoxDimensionsMeters{}};
 };
 
+// A complete, order-free copy of everything a Construction Body's Construction
+// Source owns except its identity: which primitive is active, EVERY primitive's
+// remembered parameters, and the placement.
+//
+// It exists for exactly one caller — the Construction history — and it is
+// deliberately a plain value: no ObjectId, no mesh, no revision, no sculpt
+// vertex. That is what makes an undo step a bounded Construction-domain fact
+// rather than a copy of derived geometry, and it is why restoring one can never
+// migrate identity between bodies.
+//
+// The inactive primitives' remembered parameters are part of it because they
+// are part of what the user sees: a Box -> Sphere -> Box round trip must come
+// back to the box the user typed, and a restore that wrote only the active
+// primitive would silently forget the other five.
+struct ConstructionObjectState {
+    PrimitiveKind kind = PrimitiveKind::Box;
+    BoxDimensionsMeters box{};
+    CylinderDimensionsMeters cylinder{};
+    SphereDimensionsMeters sphere{};
+    ConeDimensionsMeters cone{};
+    CapsuleDimensionsMeters capsule{};
+    PlaneDimensionsMeters plane{};
+    TransformValues transform{};
+};
+
+// True when the two states describe the same SHAPE — the active kind and every
+// remembered parameter — regardless of where the object sits.
+//
+// Kept separate from whole-state equality because the difference decides
+// whether a restore has to publish a mesh revision at all: a placement change
+// costs a derived matrix and nothing else, and republishing for one would be
+// exactly the duplicate geometry work a transaction boundary exists to remove.
+bool sameConstructionShape(const ConstructionObjectState& a, const ConstructionObjectState& b);
+
+// True when the two placements are identical, value for value.
+bool sameConstructionPlacement(const ConstructionObjectState& a,
+                               const ConstructionObjectState& b);
+
 // THE one active Construction object.
 //
 // It owns identity, which primitive is active, both primitives' parameters, and
@@ -705,6 +743,27 @@ public:
 
     // Generates the ACTIVE primitive's local-space mesh.
     ConstructionMesh generateMesh() const;
+
+    // ---------------------------------------------------------------------
+    // History support
+    // ---------------------------------------------------------------------
+    //
+    // The pair the Construction history uses to take a bounded snapshot of this
+    // object and to put it back. Not a product edit path: no UI reaches either,
+    // and `restoreState` deliberately does not go through `setPrimitive`,
+    // because it is not requesting a change — it is returning the object to a
+    // state that was authoritative, and therefore already validated, when it
+    // was captured.
+    ConstructionObjectState captureState() const;
+
+    // Writes a previously captured state back verbatim.
+    //
+    // `updateCount()` is NOT advanced: an undo returns the object to a state it
+    // has already counted, and counting it again would make the diagnostic say
+    // the user made an edit they did not. The transform is restored alongside
+    // the shape, which is the one place in this class where the two move
+    // together — because a history step is a moment in time, not an edit.
+    void restoreState(const ConstructionObjectState& state);
 
 private:
     // Typed dispatch for setPrimitive's update half, one overload per

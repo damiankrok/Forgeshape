@@ -32,6 +32,8 @@
 #include "forgeshape_construction.h"
 #include "forgeshape_construction_selftest.h"
 #include "forgeshape_display.h"
+#include "forgeshape_history.h"
+#include "forgeshape_history_selftest.h"
 #include "forgeshape_input.h"
 #include "forgeshape_mesh.h"
 #include "forgeshape_mesh_fixtures.h"
@@ -284,6 +286,29 @@ void runSceneSelfTestsAndLog() {
         FS_LOGI("FORGESHAPE_SCENE_SELFTEST_OK (%d checks)", count);
     } else {
         FS_LOGE("FORGESHAPE_SCENE_SELFTEST_FAIL (%d of %d checks failed)", failed, count);
+    }
+#endif
+}
+
+void runHistorySelfTestsAndLog() {
+#ifndef NDEBUG
+    constexpr int kMaxHistoryChecks = 256;
+    static forgeshape::HistorySelfTestResult results[kMaxHistoryChecks];
+    const int count = forgeshape::runHistorySelfTests(results, kMaxHistoryChecks);
+    int failed = 0;
+    for (int i = 0; i < count; ++i) {
+        if (!results[i].passed) {
+            ++failed;
+            FS_LOGE("FORGESHAPE_CONSTRUCTION_HISTORY_SELFTEST_CASE_FAIL:%s", results[i].name);
+        } else {
+            FS_LOGI("construction history selftest pass: %s", results[i].name);
+        }
+    }
+    if (failed == 0) {
+        FS_LOGI("FORGESHAPE_CONSTRUCTION_HISTORY_SELFTEST_OK (%d checks)", count);
+    } else {
+        FS_LOGE("FORGESHAPE_CONSTRUCTION_HISTORY_SELFTEST_FAIL (%d of %d checks failed)", failed,
+                count);
     }
 #endif
 }
@@ -564,8 +589,17 @@ forgeshape::MeshRevision publishActiveRepresentation(const char* reason) {
 // revision.
 forgeshape::PrimitiveApplyResult applyPrimitive(const char* label,
                                                 const forgeshape::PrimitiveSpec& requested) {
-    const forgeshape::PrimitiveApplyResult result =
-        forgeshape::applyConstructionPrimitive(requested);
+    forgeshape::PrimitiveApplyResult result;
+    {
+        // One user Apply is ONE history step, whatever it changes underneath —
+        // a kind, several parameters, or both. And it is NO step at all when the
+        // request is refused or identical, because the commit compares the
+        // Construction state on either side rather than trusting that a call was
+        // made. Where a composite act (creation) has already opened an edit,
+        // this scope joins it instead of opening a second one.
+        forgeshape::ScopedConstructionEdit edit(forgeshape::constructionHistory());
+        result = forgeshape::applyConstructionPrimitive(requested);
+    }
     const forgeshape::ConstructionObject& object = forgeshape::constructionObject();
 
     char described[128];
@@ -655,6 +689,12 @@ forgeshape::TransformApplyResult applyBoxTransform(const char* label,
         // derived model matrix under it once per frame, and a tap resolves its
         // pick against it, so neither can observe a torn transform.
         std::lock_guard<std::mutex> lock(g_stateMutex);
+        // One Apply of the six values is one history step, and the six move
+        // together: an undo can never put X back without Y and Z, because the
+        // step is the placement rather than a field. Declared after the lock so
+        // the commit — which reads the scene — happens before the lock is
+        // released.
+        forgeshape::ScopedConstructionEdit edit(forgeshape::constructionHistory());
         result = forgeshape::applyConstructionTransform(requested);
     }
     const forgeshape::TransformValues& v = result.values;
@@ -989,6 +1029,7 @@ Java_com_forgeshape_app_NativeViewport_start(JNIEnv*, jclass) {
     runSculptSelfTestsAndLog();
     runRenderMeshSelfTestsAndLog();
     runSceneSelfTestsAndLog();
+    runHistorySelfTestsAndLog();
     // The mesh and construction self-tests publish revisions of their own into
     // the store, so republish the ACTIVE representation: the app must always
     // come up showing what the current product mode says it is showing. At a
@@ -1532,6 +1573,11 @@ JNIEXPORT jlong JNICALL Java_com_forgeshape_app_NativeViewport_sceneAddBody(JNIE
         if (forgeshape::sculptSession().inSculptMode()) {
             refusedInSculpt = true;
         } else {
+            // A bare append is its own step. The product's creation flow opens
+            // an edit around this call AND the primitive apply that follows it,
+            // so there the two become one step and an undo of "add a Sphere"
+            // cannot leave the default Box the append produced on its own.
+            forgeshape::ScopedConstructionEdit edit(forgeshape::constructionHistory());
             created = forgeshape::constructionScene().addBody().objectId();
         }
     }
@@ -1546,6 +1592,163 @@ JNIEXPORT jlong JNICALL Java_com_forgeshape_app_NativeViewport_sceneAddBody(JNIE
             (unsigned long long)created, (unsigned long long)revision,
             (int)forgeshape::constructionScene().bodyCount());
     return static_cast<jlong>(created);
+}
+
+// ---------------------------------------------------------------------------
+// Construction history
+// ---------------------------------------------------------------------------
+//
+// The Java layer holds NO history. It asks whether an undo is available, asks
+// for one, and re-reads. There is no Java-side depth counter, no mirror scene
+// and no list of parameter snapshots: every answer comes from the one native
+// owner, which is what keeps the enabled state of a control and what the model
+// actually is from ever disagreeing.
+//
+// Undo and Redo are refused while sculpting, and the workspace withdraws the
+// controls there — see the Sculpt separation in ARCHITECTURE.md. The refusal
+// stays regardless: removing a control is not removing a guard.
+
+// History status codes handed back to the Android UI. A JNI transport detail,
+// in step with NativeViewport's HISTORY_* fields.
+constexpr jint kHistoryOk = 0;
+constexpr jint kHistoryNothingToDo = 1;
+constexpr jint kHistoryRefusedInSculpt = 2;
+
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_constructionUndoAvailable(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    return forgeshape::constructionHistory().canUndo() ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_constructionRedoAvailable(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    return forgeshape::constructionHistory().canRedo() ? JNI_TRUE : JNI_FALSE;
+}
+
+// The active body's CURRENT mesh revision.
+//
+// A read-back diagnostic, in the same spirit as `constructionPrimitive`: the
+// Java layer keeps no revision and derives nothing from it. It exists so that
+// verification can state plainly how many publications one product act cost —
+// which is the only way "wrapping an Apply in a transaction did not add a second
+// rebuild" is a checkable claim rather than an assertion.
+JNIEXPORT jlong JNICALL
+Java_com_forgeshape_app_NativeViewport_constructionMeshRevision(JNIEnv*, jclass) {
+    return static_cast<jlong>(forgeshape::meshStore().currentRevision());
+}
+
+// DEBUG-ONLY: forgets the Construction history without moving the scene.
+//
+// Not a product act and not reachable from any UI. It is the observation seam
+// the instrumented suite needs to establish "a session that has done nothing",
+// which is otherwise impossible to reach in a process that has already run
+// other cases — the history is process-scoped exactly like the scene, and there
+// is no New Project act to clear it. Compiled out of a release build.
+JNIEXPORT void JNICALL
+Java_com_forgeshape_app_NativeViewport_debugResetConstructionHistory(JNIEnv*, jclass) {
+#ifndef NDEBUG
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    forgeshape::constructionHistory().clear();
+#endif
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_constructionUndoDepth(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    return static_cast<jint>(forgeshape::constructionHistory().undoDepth());
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_constructionRedoDepth(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    return static_cast<jint>(forgeshape::constructionHistory().redoDepth());
+}
+
+// Runs one history step and reports what it cost.
+//
+// The state mutex is held across the restore, which is the ONE place in the
+// product a lock is held across mesh generation. It has to be: a restore
+// rebuilds the scene's body list, and the render thread takes its whole-scene
+// snapshot under this same mutex — a frame that observed the list mid-rebuild
+// would draw a scene that never existed. An undo is one discrete user act, not
+// a per-frame path, so the cost is one publication of the bodies that actually
+// changed.
+static jint runHistoryStep(const char* label, bool forward) {
+    if (forgeshape::sculptSession().inSculptMode()) {
+        FS_LOGI("FORGESHAPE_CONSTRUCTION_HISTORY_REFUSED:%s:in_sculpt_mode", label);
+        return kHistoryRefusedInSculpt;
+    }
+    forgeshape::ConstructionRestoreReport report;
+    bool moved = false;
+    size_t undoDepth = 0;
+    size_t redoDepth = 0;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        forgeshape::ConstructionHistory& history = forgeshape::constructionHistory();
+        moved = forward ? history.redo(&report) : history.undo(&report);
+        undoDepth = history.undoDepth();
+        redoDepth = history.redoDepth();
+    }
+    if (!moved) {
+        FS_LOGI("FORGESHAPE_CONSTRUCTION_HISTORY_EMPTY:%s", label);
+        return kHistoryNothingToDo;
+    }
+    FS_LOGI("FORGESHAPE_CONSTRUCTION_HISTORY:%s republished=%d placements=%d restored=%d "
+            "removed=%d activeChanged=%d undo=%d redo=%d bodies=%d",
+            label, report.republishedBodies, report.replacedPlacements, report.restoredBodies,
+            report.removedBodies, report.activeBodyChanged ? 1 : 0, (int)undoDepth,
+            (int)redoDepth, (int)forgeshape::constructionScene().bodyCount());
+    return kHistoryOk;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_constructionUndo(JNIEnv*, jclass) {
+    return runHistoryStep("undo", false);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_constructionRedo(JNIEnv*, jclass) {
+    return runHistoryStep("redo", true);
+}
+
+// The transaction boundary, for a user act that is made of more than one
+// mutation — creation today, a dragged handle next.
+//
+// Between begin and commit the ordinary mutation entry points still run and
+// still publish, so the model on screen follows the edit live; what changes is
+// only that they stop being history steps of their own. A commit that finds
+// nothing different records nothing, so a creation that was refused leaves the
+// history exactly as it was.
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_beginConstructionEdit(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    return forgeshape::constructionHistory().beginEdit() ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_commitConstructionEdit(JNIEnv*, jclass) {
+    bool recorded = false;
+    size_t undoDepth = 0;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        recorded = forgeshape::constructionHistory().commitEdit();
+        undoDepth = forgeshape::constructionHistory().undoDepth();
+    }
+    FS_LOGI("FORGESHAPE_CONSTRUCTION_HISTORY_COMMIT:%s undo=%d",
+            recorded ? "recorded" : "no_change", (int)undoDepth);
+    return recorded ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT void JNICALL
+Java_com_forgeshape_app_NativeViewport_cancelConstructionEdit(JNIEnv*, jclass) {
+    forgeshape::ConstructionRestoreReport report;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        forgeshape::constructionHistory().cancelEdit(&report);
+    }
+    FS_LOGI("FORGESHAPE_CONSTRUCTION_HISTORY_CANCEL: republished=%d placements=%d removed=%d",
+            report.republishedBodies, report.replacedPlacements, report.removedBodies);
 }
 
 // Reads the authoritative sculpt state for display. Nothing here is measured

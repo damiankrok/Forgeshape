@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Redo the Construction change that was just undone.
+
+  The mirror of ic_undo about the vertical centre line, and deliberately drawn
+  as its own file rather than produced by scaling the other one at runtime: the
+  two are a PAIR the user reads side by side, and a mirrored drawable would
+  mirror the stroke caps and the arrowhead's optical weight with it.
+
+  Drawn white and tinted at use; see EditorControlStyles.icon().
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M19,10 L10.5,10 A5,5 0 0,0 10.5,20 L15,20" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M14.5,5.5 L19.5,10 L14.5,14.5 Z" />
+</vector>
