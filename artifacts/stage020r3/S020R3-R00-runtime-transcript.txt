@@ -1,0 +1,111 @@
+RESUMED:     topResumedActivity=ActivityRecord{261716341 u0 com.forgeshape.app/.ForgeShapeActivity t21367}
+
+=== 0. Baseline placement ===
+.. tap id/back_to_construction
+.. tap id/tool_rail_place
+.. tap id/precision_toggle
+   pos  = (0, 0, 0)
+   rot  = (0, 0, 0)
+   scale= (1, 1, 1)
+
+=== 1. UNSCALED reference: Scale (1,1,1), no rotation ===
+.. tap id/tool_rail_place
+.. set id/field_scale_x = 1
+.. set id/field_scale_y = 1
+.. set id/field_scale_z = 1
+.. tap id/apply_transform
+.. tap id/tool_rail_place
+!! CANNOT REVEAL id/field_rot_y
+.. tap id/apply_transform
+   pos  = (, , )
+   rot  = (, , )
+   scale= (1, 1, 1)
+.. tap id/precision_toggle
+.. tap id/resume_sculpt
+.. tap id/freeze_again
+.. tap id/precision_toggle
+.. tap id/tool_rail_grab
+--- scale(1,1,1) / grab ---
+08-26 20:11:59.277  2739  2739 I ForgeShape: FORGESHAPE_SCULPT_STROKE_BEGIN:grab:129 radiusWorld=0.4447 maxWorld=0.4052 maxLocal=0.4052
+.. tap id/tool_rail_clay
+--- scale(1,1,1) / clay ---
+08-26 20:12:08.360  2739  2739 I ForgeShape: FORGESHAPE_SCULPT_STROKE_BEGIN:clay:111 radiusWorld=0.4483 maxWorld=0.4472 maxLocal=0.4472
+.. tap id/tool_rail_smooth
+--- scale(1,1,1) / smooth ---
+08-26 20:12:17.461  2739  2739 I ForgeShape: FORGESHAPE_SCULPT_STROKE_BEGIN:smooth:66 radiusWorld=0.4392 maxWorld=0.4390 maxLocal=0.4390
+.. tap id/tool_rail_inflate
+--- scale(1,1,1) / inflate ---
+08-26 20:12:26.611  2739  2739 I ForgeShape: FORGESHAPE_SCULPT_STROKE_BEGIN:inflate:82 radiusWorld=0.4416 maxWorld=0.4411 maxLocal=0.4411
+
+=== 2. NON-UNIFORM: Scale (3,1,1), no rotation ===
+.. tap id/back_to_construction
+.. tap id/tool_rail_place
+.. tap id/precision_toggle
+.. set id/field_scale_x = 3
+.. set id/field_scale_y = 1
+.. set id/field_scale_z = 1
+.. tap id/apply_transform
+   pos  = (, , )
+   rot  = (, , )
+   scale= (3, 1, 1)
+.. tap id/precision_toggle
+.. tap id/resume_sculpt
+.. tap id/precision_toggle
+.. tap id/freeze_again
+.. confirmed Reset Sculpt from Shape
+.. tap id/precision_toggle
+.. tap id/tool_rail_grab
+--- scale(3,1,1) / grab ---
+08-26 20:15:02.210  2739  2739 I ForgeShape: FORGESHAPE_SCULPT_STROKE_BEGIN:grab:65 radiusWorld=0.4446 maxWorld=0.4420 maxLocal=0.3998
+.. tap id/tool_rail_clay
+--- scale(3,1,1) / clay ---
+08-26 20:15:11.277  2739  2739 I ForgeShape: FORGESHAPE_SCULPT_STROKE_BEGIN:clay:54 radiusWorld=0.4473 maxWorld=0.4376 maxLocal=0.4346
+.. tap id/tool_rail_smooth
+--- scale(3,1,1) / smooth ---
+08-26 20:15:20.310  2739  2739 I ForgeShape: FORGESHAPE_SCULPT_STROKE_BEGIN:smooth:40 radiusWorld=0.4384 maxWorld=0.4369 maxLocal=0.4228
+.. tap id/tool_rail_inflate
+--- scale(3,1,1) / inflate ---
+08-26 20:15:29.412  2739  2739 I ForgeShape: FORGESHAPE_SCULPT_STROKE_BEGIN:inflate:47 radiusWorld=0.4418 maxWorld=0.4392 maxLocal=0.4350
+
+=== 3. MIXED: Scale (3,1,1) plus a 35 deg rotation ===
+.. tap id/back_to_construction
+.. tap id/tool_rail_place
+.. tap id/precision_toggle
+.. set id/field_rot_y = 35
+.. tap id/apply_transform
+   pos  = (, , )
+   rot  = (, , )
+   scale= (3, 1, 1)
+.. tap id/precision_toggle
+.. tap id/resume_sculpt
+.. tap id/precision_toggle
+.. tap id/freeze_again
+.. confirmed Reset Sculpt from Shape
+.. tap id/precision_toggle
+.. tap id/tool_rail_grab
+--- scale(3,1,1)+rotY35 / grab ---
+08-26 20:17:55.027  2739  2739 I ForgeShape: FORGESHAPE_SCULPT_STROKE_BEGIN:grab:64 radiusWorld=0.4446 maxWorld=0.4405 maxLocal=0.3882
+.. tap id/tool_rail_clay
+--- scale(3,1,1)+rotY35 / clay ---
+08-26 20:18:04.094  2739  2739 I ForgeShape: FORGESHAPE_SCULPT_STROKE_BEGIN:clay:54 radiusWorld=0.4483 maxWorld=0.4474 maxLocal=0.4393
+.. tap id/tool_rail_smooth
+--- scale(3,1,1)+rotY35 / smooth ---
+08-26 20:18:13.210  2739  2739 I ForgeShape: FORGESHAPE_SCULPT_STROKE_BEGIN:smooth:41 radiusWorld=0.4392 maxWorld=0.4261 maxLocal=0.4066
+.. tap id/tool_rail_inflate
+--- scale(3,1,1)+rotY35 / inflate ---
+08-26 20:18:22.310  2739  2739 I ForgeShape: FORGESHAPE_SCULPT_STROKE_BEGIN:inflate:46 radiusWorld=0.4418 maxWorld=0.4413 maxLocal=0.4408
+
+=== 4. The placement survived all of it ===
+.. tap id/back_to_construction
+.. tap id/tool_rail_place
+.. tap id/precision_toggle
+   pos  = (0, 0, 0)
+   rot  = (0, 35, 0)
+   scale= (3, 1, 1)
+   undo enabled = enabled="true"
+
+=== 5. Resume Sculpt keeps the sculpted mesh ===
+.. tap id/precision_toggle
+.. tap id/resume_sculpt
+.. tap id/precision_toggle
+   Sculpt mesh: 482 vertices · One finger on the model — expand the surface outward as you drag; elsewhere it orbits.
