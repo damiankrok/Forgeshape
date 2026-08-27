@@ -479,6 +479,39 @@ library answers all four.
   here as an observation, not a recommendation.
 - **R22 is rejected** — see §6, item 1.
 
+### 3.13 Contextual Back behaviour
+
+- **Current issue (I-03 / E-12, P1).** With Add Primitive open, one `KEYCODE_BACK`
+  returned the launcher — measured, `topResumedActivity=NexusLauncherActivity`
+  (`F03`). `ForgeShapeActivity` has no Back branch at all. The surface's own 150 ms
+  exit animation exists and is never invoked by the most common dismissal gesture
+  in the platform. The process survives and the workspace is restored on return,
+  which is why both prior audits scored it P1 rather than P0.
+- **What the library can and cannot say.** Mobbin's corpus here is **iOS-only**, and
+  iOS has no system Back button. **No reference in this audit can confirm or refute
+  the Android Back contract**, and this audit does not pretend otherwise.
+- **What the library *does* show, which is adjacent and useful.** Every dismissible
+  surface in the set carries an **explicit, visible dismiss control of its own**:
+  R02 (`×` on the anchored list), R09 (`Done` in the sheet header), R12 (`×` top-left
+  of the numeric sheet), R18 (`Done`), R49 (`×` on the scope sheet), R55/R56/R57/R58
+  (tap-outside plus a destructive-last list), R03/R05 (confirm control top-right).
+  In R21b and R23-R25 the 3D view's *only* persistent chrome includes a close
+  control. Not one inspected surface relies on a system gesture as its sole
+  dismissal.
+- **Common principle.** *A surface owns its own dismissal.* The platform gesture is
+  an additional path, never the only one.
+- **Verdict: ADOPT PRINCIPLE — but note ForgeShape already satisfies the half the
+  library evidences, and fails the half it cannot.** ForgeShape's surfaces do have
+  their own dismiss affordances; what is missing is the platform path, which is an
+  Android contract Mobbin has no view on.
+- **Confidence: N/A for the finding itself; High for the adjacent principle.**
+  I-03's severity is unchanged by this audit and rests entirely on
+  UI-AUDIT2A's runtime measurement and `android.md`'s explicit rule.
+- **Recommendation (principle level only).** Back should reach the same dismissal
+  the surface's own control reaches — which, as UI-AUDIT2B observed, also means the
+  existing exit motion finally runs. No new pattern is required; the behaviour is
+  already written and simply unreachable from the gesture.
+
 ---
 
 ## 4. Cross-reference matrix
@@ -690,14 +723,129 @@ curated captures), I-02's Android IME behaviour.
 
 ---
 
-## 8. Git scope
+## 8. Cross-audit comparison — 2D against 2A, 2B and 2C
+
+Written **after** the Mobbin-native analysis above was complete, so the comparison
+does not contaminate it. Consensus is not forced: this audit records four
+disagreements and eight no-opinions, and a no-opinion is not a weak agreement.
+
+### 8.1 Against UI-AUDIT2A (Impeccable)
+
+| 2A finding | 2D position | basis |
+| --- | --- | --- |
+| I-14 chrome jump | **Agree, strongly** | 0 of 65 references centre-anchor a persistent cluster; R04 is the top-anchored twin |
+| I-10 Apply below fold | **Agree, strongly** | not one inspected reference puts a commit below a fold (R09, R18, R31, R16, R12); R07/R11 show the categorisation alternative |
+| I-09 unit chips under Scale | **Agree, strongly** | R12, R13, R15 — three independent instances of unit-adjacent-to-value |
+| I-08 sign clipped at left | **Agree** | R12, R28 protect the value and its sign as a matter of course |
+| I-11 two vocabularies for six primitives | **Agree** | R54, R57 carry several registers in one vocabulary |
+| I-16 brush Radius `120 px` | **Agree that it is a defect; disagree on the framing** | 2A frames it as a vocabulary/unit problem. R27 suggests the fix is to show the brush at true size and let the number confirm — deciding what it *means*, not renaming `px` to `m` |
+| I-13 `editing_context_label` absent in compact portrait | **Disagree that the library settles it — no-opinion on severity** | R23/R24 show a mode indicator even on bare 3D views, which cuts *against* 2A's implicit "not needed"; but ForgeShape's own rule says the rail entry answers it. Contested, P3 unchanged |
+| I-12 15 simultaneous targets | **No opinion** | Mobbin gives no comparable density measurement |
+| I-01 / I-02 rail-column height distribution | **Agree on the principle; the finding is a layout-contract bug** | R52, R16 show controls travelling with the IME; R02 sizes a control independently of leftover space |
+| I-04 gizmo | **No opinion — cannot adjudicate** | the library contains no 3D transform gizmo at all |
+| I-03 System Back | **No opinion** | iOS-only corpus, no Back |
+| I-05 contrast failures | **No opinion** | not assessable from curated captures |
+| I-18 disabled reports clickable | **Weak agree** | R20 dims an inactive item in place; speaks only to the visual half, not the a11y tree |
+| I-19 undo reports nothing | **Agree, and strengthen** | R32 names the act; R17 names the result |
+| I-21 expanded strands the history capsule | **No opinion** | no reference had the width to show it |
+| "Expanded layout is already right" | **Agree, but cannot corroborate** | the tool exposes no tablet platform; agreement is reasoned from the phone corpus reaching for the same answers under space pressure |
+| Objects/Add Primitive and Start chooser as PASS | **Agree** | R02, R05, R03 confirm anchoring; F02 confirms the chooser shape |
+
+### 8.2 Against UI-AUDIT2B (Emil Kowalski motion)
+
+| 2B finding | 2D position | basis |
+| --- | --- | --- |
+| E-02 eliminate the jump structurally, then animate | **Agree, strongly, and endorse the ordering** | the library's persistent tier holds still; animating a 364 px teleport would be animating a bad anchor |
+| E-03 change the precision sheet's pivot to the invoker's corner | **Partially disagree** | R02/R05 confirm growth-from-the-invoker as a *principle*, but in both the growing surface never crosses a live control. ForgeShape's sheet also lifts the bottom row to avoid covering it. **Principle confirmed, prescription unverified** — re-measure against the non-occlusion rule before implementing |
+| E-10 World↔Local reorients in one frame | **Agree, and strengthen** | R49 highlights the affected region while the scope is chosen; R21b/R63 draw axis meaning on the object. A scope change must be legible |
+| E-12 Back should close the topmost surface | **Agree on the adjacent principle** | every inspected surface owns its dismissal (§3.13); the Android contract itself is outside Mobbin's reach |
+| E-01 Construction↔Sculpt gets the least motion | **Agree in direction** | R50 shows a persistent tier surviving a contextual swap; the library cannot speak to durations |
+| E-04 mode pill should translate between segments | **No opinion** | static captures cannot show a state transition |
+| E-05 motion spent where nothing displaces | **No opinion** | not observable in stills |
+| E-06 press-state exit fade | **No opinion** | not observable in stills |
+| E-07 appearance crossfade | **No opinion** | not observable in stills |
+| E-08 interrupt should scale the exit | **No opinion** | not observable in stills |
+| E-09 reduced motion should keep alpha | **No opinion** | not observable |
+| E-11 undo/redo acknowledgement | **Agree — and 2D supplies the missing half** | 2B correctly calls the missing verdict "a chrome question, not a motion one"; R32/R17 answer that chrome question by naming the act |
+
+### 8.3 Against UI-AUDIT2C (Remotion prototyping)
+
+| 2C position | 2D position | basis |
+| --- | --- | --- |
+| P1 prototype — Exact Transform choreography | **Agree it is the right subject; note the prototype may be aimed one layer too low** | 2D's evidence says the compact sheet's problem is *structural* (commit below a fold, unit misplaced, value unprotected). A motion prototype of the current composition would choreograph a layout the library says should change first |
+| P2 prototype — Construction↔Sculpt continuity | **Agree** | R50 supports the underlying claim that a persistent tier should survive a contextual swap |
+| P3 prototype — World↔Local gizmo reorientation | **Agree, strongly** | independently supported by R49 and by R21b/R63; this is the candidate 2D would rank first, not third |
+| Ten candidates rejected as not needing Remotion | **No opinion** | tooling judgement, outside a pattern library's competence |
+| fps = 100 and the frame tables | **No opinion** | no bearing on pattern comparison |
+| "Remotion cannot tell us…" (§12) | **Agree in spirit** | 2D's parallel admission is §3.12: naming what a method cannot adjudicate is more useful than manufacturing support |
+
+### 8.4 The one place all four audits converge
+
+**The centre-anchored chrome column.** UI-AUDIT1 found it by measuring bounds
+(finding C), UI-AUDIT2A by Impeccable's layout and adaptivity dimensions (I-14),
+UI-AUDIT2B by capturing the frame in which a panel animates while four controls
+teleport (E-02), and UI-AUDIT2D by finding zero counter-examples in 65 external
+references. Four methods, no dissent, and the correct behaviour already exists in
+the repository's own docked branch. If the coordinator takes one thing from the
+four-way synthesis, this is it.
+
+---
+
+## 9. Artifact paths used
+
+| path | contents |
+| --- | --- |
+| `artifacts/uiaudit2d/README.md` | this report — proof summary, surface comparison, matrix, future inspiration, anti-copy, cross-audit comparison |
+| `artifacts/uiaudit2d/MOBBIN-INVOCATION-LOG.md` | hard-gate evidence: exposed tool schemas, all 15 invocations verbatim, every returned reference, inspected vs seen-not-used with reasons |
+| `artifacts/uiaudit2d/REFERENCE-CATALOGUE.md` | all 65 references (R01-R64 plus R21b) in 13 families, with observed pattern, mapped ForgeShape surface and rationale |
+
+Read as evidence, not modified, not treated as binding conclusions:
+
+| path | used for |
+| --- | --- |
+| `artifacts/uiaudit1/README.md` | finding C bounds table, gizmo runtime geometry, Exact Transform verdict, motion table |
+| `artifacts/uiaudit2a/README.md` | findings matrix I-01…I-21, per-surface review, PASS/ISSUE inventory, runtime provenance |
+| `artifacts/uiaudit2b/README.md` | findings matrix E-01…E-12, before/after table, one-paragraph verdict |
+| `artifacts/uiaudit2c/README.md` | accepted prototypes P1/P2/P3 and the rejected-candidate reasoning |
+
+## 10. Final Mobbin verdict
+
+**PASS.**
+
+Reason: the plugin's identity was recorded from its live exposed schemas rather
+than asserted; 15 invocations were made across 13 pattern families covering all
+ten the brief required plus two more; 65 references were inspected from their
+images and each is tied to a named ForgeShape finding or surface; every
+recommendation is stated at principle level with no pixel value copied from any
+reference; current correction implications are kept separate from future product
+inspiration; six patterns are rejected on ForgeShape's hard rules despite being
+well executed; and the audit records plainly where Mobbin **cannot** adjudicate
+(the gizmo, System Back, contrast, all Android-specific and all tablet claims)
+rather than manufacturing support. No product file was changed.
+
+The one qualification that keeps this from being unqualified: the tool exposes no
+Android and no tablet platform, so a meaningful part of the brief — "dense
+professional iPad/tablet productivity UI" — could not be served from references
+and is reasoned instead. That is a limitation of the instrument, disclosed, not a
+gap in the method.
+
+---
+
+## 11. Git scope
 
 - Product HEAD: `bd3f7d5` (Stage 020R3), unchanged.
 - Files added: `artifacts/uiaudit2d/README.md`,
   `artifacts/uiaudit2d/MOBBIN-INVOCATION-LOG.md`,
   `artifacts/uiaudit2d/REFERENCE-CATALOGUE.md`.
 - Files modified outside `artifacts/uiaudit2d/`: **none.**
-- One evidence-only commit. Final tree clean.
+- **Two** evidence-only commits, both confined to `artifacts/uiaudit2d/`:
+  `4434356` recorded the Mobbin evidence and the analysis; a second adds §3.13
+  (contextual Back as its own surface) and §8-§10 (cross-audit comparison,
+  artifact paths, final verdict), which the recovery pass identified as required
+  sections that had not been broken out. The original brief's "at most one
+  evidence-only commit" was written for the original run; this second commit is
+  disclosed rather than folded into the first by rewriting history.
+- Final tree clean.
 
 No screenshots of Mobbin references are stored in this repository. The references
 are cited by their canonical `mobbin.com` URLs and screen ids so any reader can
