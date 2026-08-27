@@ -243,24 +243,9 @@ constexpr float kGizmoShaftGrabEndFraction = 1.12f;
 
 // The pivot marker arm length, and the arrowhead, both as fractions of the
 // shaft. Drawing only; nothing hit-tests against them separately.
-//
-// The marker is drawn ONCE, NEUTRAL, and it is not part of any shaft. It used
-// to be three arms in the three axis hues added inside the shaft builder, which
-// made it read as the roots of the shafts rather than as the point the whole
-// transform is about — the one mark on the instrument that belongs to no axis
-// looked exactly like the three that do. Neutral, it is legible as itself, and
-// it stays inside kGizmoPivotDeadRadiusUnits so what is drawn as "not a handle"
-// is also inside the disc that grabs nothing.
-//
-// In SCALE it is not drawn at all: the uniform cube stands on the same point and
-// IS a handle there, and two marks on one point is what made a control
-// indistinguishable from a reference mark.
-constexpr float kGizmoPivotMarkerFraction = 0.16f;
+constexpr float kGizmoPivotMarkerFraction = 0.10f;
 constexpr float kGizmoArrowLengthFraction = 0.20f;
-// Wider than it was (0.075). An arrowhead 9 units across at a shaft 96 long is
-// a hairline V; this is still well inside the 24-unit corridor around the shaft,
-// so nothing about which handle a touch lands on changes.
-constexpr float kGizmoArrowHalfWidthFraction = 0.10f;
+constexpr float kGizmoArrowHalfWidthFraction = 0.075f;
 
 // The two-axis plane handle: a square in the plane, spanning these distances
 // along each of its two basis directions.
@@ -279,14 +264,7 @@ constexpr float kGizmoPlaneHitRadiusUnits = 24.0f;
 
 // The uniform-scale handle at the pivot, and the cubes at the ends of the three
 // Scale shafts. Half-extents, in reference units.
-//
-// The uniform cube is deliberately the LARGEST mark on the instrument and is
-// drawn as a double outline: it is the one handle that acts on all three axes,
-// it sits where every shaft converges, and at 9 units it was the smallest and
-// faintest thing in the drawing while carrying the widest consequence. Its hit
-// radius is unchanged — see kGizmoUniformHitRadiusUnits — so this is legibility
-// and not reach.
-constexpr float kGizmoUniformCubeHalfUnits = 12.0f;
+constexpr float kGizmoUniformCubeHalfUnits = 9.0f;
 constexpr float kGizmoScaleCubeHalfUnits = 7.0f;
 
 // And the radius around the projected PIVOT inside which a touch grabs the
@@ -558,48 +536,29 @@ struct GizmoVertex {
 constexpr float kGizmoStrokeOffsetUnits = 1.1f;
 constexpr int kGizmoStrokeBundle = 5;  // the centre line plus four offsets
 
-// A plane handle square: drawn twice a stroke offset apart for the same
-// legibility reason the shafts are bundled, PLUS the two diagonals across it.
-//
-// The diagonals are what make a plane handle a different KIND of mark from an
-// axis handle. Every handle used to be a hollow outline in an axis hue, so a
-// square you can drag on a plane and a shaft you can drag along an axis were
-// told apart by position alone — and over a body's own faces both read as stray
-// selection wireframe. A crossed square reads as a surface.
-constexpr int kGizmoPlaneSquareLineCount = 2 * 4 + 2;
-constexpr int kGizmoPlaneLineCount = 3 * kGizmoPlaneSquareLineCount;
+// A plane handle square, drawn twice a stroke offset apart for the same
+// legibility reason the shafts are bundled.
+constexpr int kGizmoPlaneLineCount = 3 * 2 * 4;
 // A cube is twelve edges.
 constexpr int kGizmoCubeLineCount = 12;
 
-// The neutral pivot mark: three arms through the origin, drawn once. See
-// kGizmoPivotMarkerFraction.
-constexpr int kGizmoPivotMarkLineCount = 3;
-
-// An arrowhead: four spokes back from the tip, and two lines across their ends
-// closing it. The cross is what makes the head read as a head rather than as
-// two more hairlines leaving the tip.
-constexpr int kGizmoArrowLineCount = 6;
-
-// Move: the pivot mark, three bundled shafts, three arrowheads, three plane
-// squares.
-constexpr int kGizmoMoveLineCount = kGizmoPivotMarkLineCount + 3 * kGizmoStrokeBundle +
-                                    3 * kGizmoArrowLineCount + kGizmoPlaneLineCount;
+// Move: three pivot-marker arms, three bundled shafts, three four-line
+// arrowheads, and the three plane squares.
+constexpr int kGizmoMoveLineCount = 3 + 3 * kGizmoStrokeBundle + 12 + kGizmoPlaneLineCount;
 constexpr int kGizmoMoveVertexCount = 2 * kGizmoMoveLineCount;
 
 // Rotate: three rings of kGizmoRingSegments segments, each drawn twice — once at
 // the radius and once a stroke offset outside it. A full bundle per ring would
 // be four times the vertices for an arc that is already long and easy to see.
-// Plus the same pivot mark, which Rotate had none of at all: three rings around
-// a point with nothing at the point does not say where the rotation is centred.
-constexpr int kGizmoRotateLineCount = 2 * 3 * kGizmoRingSegments + kGizmoPivotMarkLineCount;
+constexpr int kGizmoRotateLineCount = 2 * 3 * kGizmoRingSegments;
 constexpr int kGizmoRotateVertexCount = 2 * kGizmoRotateLineCount;
 
-// Scale: the same shafts with a cube at the end of each instead of an
-// arrowhead, the three plane squares, and the uniform cube at the pivot drawn
-// as a double outline. NO pivot mark — the uniform cube is what stands there.
+// Scale: the same pivot marker and shafts, a cube at the end of each shaft
+// instead of an arrowhead, the three plane squares, and the uniform cube at the
+// pivot.
 constexpr int kGizmoScaleLineCount =
-    3 * kGizmoStrokeBundle + 3 * kGizmoCubeLineCount + kGizmoPlaneLineCount +
-    2 * kGizmoCubeLineCount;
+    3 + 3 * kGizmoStrokeBundle + 3 * kGizmoCubeLineCount + kGizmoPlaneLineCount +
+    kGizmoCubeLineCount;
 constexpr int kGizmoScaleVertexCount = 2 * kGizmoScaleLineCount;
 
 constexpr int kGizmoVertexCount =

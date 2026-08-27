@@ -55,18 +55,17 @@ import org.junit.runner.RunWith;
  *
  * <h2>What the contrast thresholds mean</h2>
  *
- * <p>Ten of the twelve anchor values of each palette are owner-approved and are
- * not this suite's to move, so their thresholds state what those palettes
- * actually deliver rather than a number they would have to be redesigned to
- * reach. <b>Primary</b> text — every typed dimension, every panel title, every
- * control label — is held to WCAG AA at 4.5:1, because a value you cannot read
- * is a defect whatever it looks like. <b>Secondary</b> text was held to 3.0:1
- * for the same "state what it delivers" reason; UI-R5A lightened that role, and
- * the error role with it, until both clear 4.5:1 on every ground they are drawn
- * on, so secondary is held to the body-text target here and every ground is
- * measured by UIR5A-11. Verdict colours are held to 2.4:1 against the precision
- * surface and must also stay distinguishable from body text; the error verdict
- * clears 4.5:1 now, and the two that did not change keep that older floor.
+ * <p>The twelve anchor values of each palette are owner-approved and are not
+ * this suite's to move, so the thresholds state what those palettes actually
+ * deliver rather than a number they would have to be redesigned to reach.
+ * <b>Primary</b> text — every typed dimension, every panel title, every control
+ * label — is held to WCAG AA at 4.5:1, because a value you cannot read is a
+ * defect whatever it looks like. <b>Secondary</b> text is a caption role that
+ * never carries an exact value, and is held to 3.0:1; across the three palettes
+ * it measures between roughly 3.6 and 4.7. Verdict colours are held to 2.4:1
+ * against the precision surface and must also stay distinguishable from body
+ * text, which is the tightest number in the suite and is documented as such in
+ * `PROJECT_STATUS.md`.
  */
 @RunWith(AndroidJUnit4.class)
 public final class EditorWorkspaceThemeTest {
@@ -74,16 +73,8 @@ public final class EditorWorkspaceThemeTest {
     /** WCAG AA for body text. Primary text and typed values are held to it. */
     private static final double MIN_TEXT_CONTRAST = 4.5;
 
-    /**
-     * A caption role — and it is held to the SAME target as body text now.
-     *
-     * <p>It was 3.0 when the palettes delivered between 3.6 and 4.7, and the
-     * threshold stated what they delivered. They deliver 4.5 or better on every
-     * ground the role is drawn on since UI-R5A, so the number that was a
-     * description is a requirement. UIR5A-11 measures every ground; this holds
-     * the one this suite already owned.
-     */
-    private static final double MIN_CAPTION_CONTRAST = 4.5;
+    /** A caption role that never carries an exact value. See the class comment. */
+    private static final double MIN_CAPTION_CONTRAST = 3.0;
 
     /** A verdict on the precision surface. See the class comment. */
     private static final double MIN_VERDICT_CONTRAST = 2.4;

@@ -188,8 +188,6 @@
     <item name="inspector_toggle" type="id" />
     <item name="inspector_title" type="id" />
     <item name="inspector_scroll" type="id" />
-    <!-- The pinned commit below the scrolling body: Apply never scrolls away. -->
-    <item name="inspector_footer" type="id" />
     <item name="inspector_body" type="id" />
 
     <!-- Construction: shape -->

@@ -7,25 +7,13 @@
   mapping from role to value lives in `themes.xml`. Nothing outside those two
   files may name a colour from here.
 
-  Twelve values per palette are OWNER-APPROVED: the viewport, the base chrome,
-  the floating material, the precision surface, the hairline, the two text
-  weights, the accent, the selected-at-rest surface, and the warning / error /
-  success verdicts. Everything else in a palette is derived from those twelve —
-  a control fill lifted off the surface under it, a recessed field, a pressed
-  state — and is authored as a NEIGHBOUR of an approved value rather than as a
-  new opinion.
-
-  TWO of the twelve were LIGHTENED, on instruction, because they were measured
-  below the accessibility target on the surfaces they are actually drawn on.
-  `*_text_secondary` carries field captions, section headings, slider labels and
-  the active body's name; `*_text_error` carries every refusal the product
-  reports. They measured 3.93 / 3.87 / 3.59 and 3.15 / 3.68 / 2.49 against the
-  precision surface — a refusal a user cannot read is a refusal that did not
-  happen. Every one now clears 4.5:1 against all six grounds either role is ever
-  drawn on: the viewport, the chrome surface, the floating material, the
-  precision surface, a control fill and a field well. The hue of each is kept —
-  warm grey stays warm, the error stays red — so the appearance still reads as
-  the same appearance. UIR5A-11 measures this and will fail if it drifts back.
+  Twelve values per palette are OWNER-APPROVED and are reproduced here exactly:
+  the viewport, the base chrome, the floating material, the precision surface,
+  the hairline, the two text weights, the accent, the selected-at-rest surface,
+  and the warning / error / success verdicts. Everything else in a palette is
+  derived from those twelve — a control fill lifted off the surface under it, a
+  recessed field, a pressed state — and is authored as a NEIGHBOUR of an
+  approved value rather than as a new opinion.
 
   All three are dark. That is the appearance set, not a default with variants:
   the product is a viewport-first modelling tool and every one of its grounds is
@@ -54,11 +42,11 @@
     <color name="p1_surface_precision">#FF403D39</color>
     <color name="p1_chrome_hairline">#FF565149</color>
     <color name="p1_text_primary">#FFF4F1EB</color>
-    <color name="p1_text_secondary">#FFB6B1A9</color>
+    <color name="p1_text_secondary">#FFA29B91</color>
     <color name="p1_accent">#FF4C8FD6</color>
     <color name="p1_selected_rest">#FF52504A</color>
     <color name="p1_text_measure">#FFE0A84B</color>
-    <color name="p1_text_error">#FFE8A093</color>
+    <color name="p1_text_error">#FFD9695C</color>
     <color name="p1_text_success">#FF7FB388</color>
 
     <!-- DERIVED. The floating material at 94 %: "glass" is faked with tone and
@@ -96,11 +84,11 @@
     <color name="p2_surface_precision">#FF33363A</color>
     <color name="p2_chrome_hairline">#FF484D52</color>
     <color name="p2_text_primary">#FFECEEF0</color>
-    <color name="p2_text_secondary">#FFA4AAB1</color>
+    <color name="p2_text_secondary">#FF9AA1A8</color>
     <color name="p2_accent">#FF4C8FD6</color>
     <color name="p2_selected_rest">#FF384653</color>
     <color name="p2_text_measure">#FFDDA94F</color>
-    <color name="p2_text_error">#FFF09A8E</color>
+    <color name="p2_text_error">#FFE2685C</color>
     <color name="p2_text_success">#FF74C58A</color>
 
     <!-- DERIVED -->
@@ -131,11 +119,11 @@
     <color name="p3_surface_precision">#FF4B4E50</color>
     <color name="p3_chrome_hairline">#FF5F6366</color>
     <color name="p3_text_primary">#FFF3F2F0</color>
-    <color name="p3_text_secondary">#FFCDCECC</color>
+    <color name="p3_text_secondary">#FFA9AAA8</color>
     <color name="p3_accent">#FF4C8FD6</color>
     <color name="p3_selected_rest">#FF5A6570</color>
     <color name="p3_text_measure">#FFD7A65A</color>
-    <color name="p3_text_error">#FFFFC0B6</color>
+    <color name="p3_text_error">#FFDB6A5E</color>
     <color name="p3_text_success">#FF7CC08C</color>
 
     <!-- DERIVED -->

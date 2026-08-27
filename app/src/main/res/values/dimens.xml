@@ -201,13 +201,6 @@
       claim the Tool Rail and the toolbar's control groups already make.
     -->
     <dimen name="inspector_sheet_inset">8dp</dimen>
-    <!--
-      The fading bottom edge that says the body continues. Long enough to read
-      as a fade rather than as a smudge, short enough that it never obscures a
-      whole row: the panel already ends on a whole row, and this says there is
-      another one under it.
-    -->
-    <dimen name="precision_scroll_fade">20dp</dimen>
 
     <!-- Controls. -->
     <dimen name="control_height">48dp</dimen>

@@ -2,6 +2,7 @@ package com.forgeshape.app;
 
 import android.content.Context;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -27,8 +28,7 @@ import java.math.BigDecimal;
  * the authoritative position is double meters, the authoritative rotation is
  * double degrees and the authoritative scale is a unitless double, all native.
  */
-final class ConstructionPlacementEditorView extends LinearLayout
-        implements PropertyInspectorView.PinnedCommit {
+final class ConstructionPlacementEditorView extends LinearLayout {
 
     private static final int[] POSITION_IDS = {R.id.field_pos_x, R.id.field_pos_y,
             R.id.field_pos_z};
@@ -49,10 +49,6 @@ final class ConstructionPlacementEditorView extends LinearLayout
     private final NumericPropertyRow[] rotationFields = new NumericPropertyRow[3];
     private final NumericPropertyRow[] scaleFields = new NumericPropertyRow[3];
     private final UnitChipsView unitChips;
-
-    /** Apply. Lives in the panel footer rather than in this stack; see
-     *  {@link #commitControl()}. */
-    private final TextView apply;
 
     /** Reused across reads; native fills this with authoritative values:
      *  position X/Y/Z in meters, rotation X/Y/Z in degrees, scale X/Y/Z. */
@@ -76,48 +72,34 @@ final class ConstructionPlacementEditorView extends LinearLayout
         addView(buildRow(context, positionFields, POSITION_IDS, POSITION_LABELS),
                 EditorControlStyles.rowParams(smallGap));
 
-        // The unit chips belong to POSITION and sit inside its group, under the
-        // fields they convert.
-        //
-        // They used to sit after Scale, under a heading reading "Display unit",
-        // which put a millimetre / centimetre / metre choice directly beneath
-        // the one group in this panel that is unitless by a hard product rule. A
-        // reader has no way to know from the layout that the chips skip the two
-        // groups between them and the fields they govern — and a Scale that
-        // appears to offer units contradicts what a scale IS. Rotation is
-        // untouched by them for the same reason: an angle is not a length.
-        unitChips = new UnitChipsView(context, new UnitChipsView.OnUnitSelected() {
-            @Override
-            public void onUnitSelected(LengthUnit unit) {
-                host.onDisplayUnitRequested(unit);
-            }
-        });
-        addView(EditorControlStyles.sectionLabel(context,
-                        context.getString(R.string.unit_selector_position)),
-                EditorControlStyles.rowParams(smallGap));
-        addView(unitChips, EditorControlStyles.rowParams(smallGap));
-
         addView(EditorControlStyles.sectionLabel(context,
                 context.getString(R.string.section_rotation)),
                 EditorControlStyles.rowParams(sectionGap));
         addView(buildRow(context, rotationFields, ROTATION_IDS, ROTATION_LABELS),
                 EditorControlStyles.rowParams(smallGap));
 
-        // Scale is LAST, in the order the transform composes: place, turn, size.
-        // It deliberately carries NO unit in its heading and nothing below it
-        // offers one either — a multiplier is not a length, and a unit control
-        // seated under this row would say it was.
+        // Scale sits after Rotation and before the unit selector, in the order
+        // the transform composes: place, turn, size. It deliberately carries NO
+        // unit in its heading — a multiplier is not a length, and offering it
+        // millimetres would say it was.
         addView(EditorControlStyles.sectionLabel(context,
                 context.getString(R.string.section_scale)),
                 EditorControlStyles.rowParams(sectionGap));
         addView(buildRow(context, scaleFields, SCALE_IDS, SCALE_LABELS),
                 EditorControlStyles.rowParams(smallGap));
 
-        // Apply is NOT added to this stack. It is handed to the panel, which
-        // pins it below the scrolling body — see commitControl(). In compact
-        // portrait it was three swipes below the fold, and a commit the user
-        // cannot see is a commit they do not know they have to make.
-        apply = EditorControlStyles.primaryButton(context, R.id.apply_transform,
+        addView(EditorControlStyles.sectionLabel(context,
+                        context.getString(R.string.unit_selector)),
+                EditorControlStyles.rowParams(sectionGap));
+        unitChips = new UnitChipsView(context, new UnitChipsView.OnUnitSelected() {
+            @Override
+            public void onUnitSelected(LengthUnit unit) {
+                host.onDisplayUnitRequested(unit);
+            }
+        });
+        addView(unitChips, EditorControlStyles.rowParams(smallGap));
+
+        final TextView apply = EditorControlStyles.primaryButton(context, R.id.apply_transform,
                 context.getString(R.string.apply_transform));
         apply.setOnClickListener(new OnClickListener() {
             @Override
@@ -125,41 +107,12 @@ final class ConstructionPlacementEditorView extends LinearLayout
                 onApplyTransform();
             }
         });
+        final LinearLayout.LayoutParams applyParams =
+                EditorControlStyles.rowParams(sectionGap);
+        applyParams.width = ViewGroup.LayoutParams.MATCH_PARENT;
+        addView(apply, applyParams);
 
         refreshFromNative();
-    }
-
-    /**
-     * The row that owns a field id, or null.
-     *
-     * <p>For verification. The COMPLETE value lives on the row; the
-     * {@code EditText} under it may be drawing a shortened form of it, and a
-     * case about long values has to be able to read both. See
-     * {@link NumericPropertyRow}.
-     */
-    NumericPropertyRow rowFor(int fieldId) {
-        for (NumericPropertyRow[] group :
-                new NumericPropertyRow[][]{positionFields, rotationFields, scaleFields}) {
-            for (NumericPropertyRow row : group) {
-                if (row.field().getId() == fieldId) {
-                    return row;
-                }
-            }
-        }
-        return null;
-    }
-
-    /**
-     * Apply, for the panel to pin below its scrolling body.
-     *
-     * <p>The commit belongs to this editor — it is the act, and the editor owns
-     * what it means — but WHERE it is drawn is the panel's, because only the
-     * panel knows how much of the body it is showing. See
-     * {@link PropertyInspectorView.PinnedCommit}.
-     */
-    @Override
-    public View commitControl() {
-        return apply;
     }
 
     private View buildRow(Context context, NumericPropertyRow[] out, int[] ids, int[] labelRes) {

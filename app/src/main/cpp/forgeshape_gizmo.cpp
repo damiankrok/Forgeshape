@@ -708,41 +708,19 @@ struct GizmoVertexWriter {
                 line(corners[i], corners[(i + 1) % 4], colorAxis, handle);
             }
         }
-        // The two diagonals, on the nominal square. See
-        // kGizmoPlaneSquareLineCount: this is what makes a plane handle read as
-        // a surface rather than as one more hollow outline in an axis hue.
-        const float inner = kGizmoPlaneInnerUnits;
-        const float outer = kGizmoPlaneOuterUnits;
-        const Vec3 lowLow = vec3Add(vec3Scale(u, inner), vec3Scale(v, inner));
-        const Vec3 highHigh = vec3Add(vec3Scale(u, outer), vec3Scale(v, outer));
-        const Vec3 highLow = vec3Add(vec3Scale(u, outer), vec3Scale(v, inner));
-        const Vec3 lowHigh = vec3Add(vec3Scale(u, inner), vec3Scale(v, outer));
-        line(lowLow, highHigh, colorAxis, handle);
-        line(highLow, lowHigh, colorAxis, handle);
     }
 
-    // The pivot mark: three neutral arms through the origin, drawn once.
-    //
-    // Neutral and separate from the shafts, because the point the transform is
-    // about belongs to no axis. See kGizmoPivotMarkerFraction.
-    void pivotMark() {
-        const float arm = kGizmoHandleLengthUnits * kGizmoPivotMarkerFraction;
-        for (int index = 0; index < 3; ++index) {
-            const Vec3 direction = canonicalAxis(index);
-            line(vec3Scale(direction, -arm), vec3Scale(direction, arm), GizmoAxis::None,
-                 GizmoHandle::None);
-        }
-    }
-
-    // The bundled shaft an axis handle shares between Move and Scale.
-    // `shaftEnd` is where the tip decoration begins.
-    //
-    // The pivot arms used to be drawn here, one per axis in that axis's hue. They
-    // are pivotMark()'s now, and neutral: see kGizmoPivotMarkerFraction.
+    // The pivot marker and the bundled shaft an axis handle shares between Move
+    // and Scale. `shaftEnd` is where the tip decoration begins.
     void axisShaft(int index, float shaftEnd) {
         const GizmoAxis colorAxis = axisFromIndex(index);
         const GizmoHandle handle = axisHandleFromIndex(index);
         const Vec3 direction = canonicalAxis(index);
+        // A short arm through the origin on each axis, so the point the
+        // transform is actually about is visible even when a shaft points away
+        // from the viewer and projects to almost nothing.
+        const float marker = kGizmoHandleLengthUnits * kGizmoPivotMarkerFraction;
+        line(vec3Scale(direction, -marker), vec3Scale(direction, marker), colorAxis, handle);
 
         int ui = 0;
         int vi = 0;
@@ -790,19 +768,15 @@ int generateGizmoVertices(GizmoVertex* out, int capacity) {
     }
     GizmoVertexWriter writer{out, capacity, 0};
 
-    // --- Move: pivot mark, shafts, arrowheads, plane squares -------------
+    // --- Move: pivot marker, shafts, arrowheads, plane squares -----------
     const float length = kGizmoHandleLengthUnits;
     const float arrow = length * kGizmoArrowLengthFraction;
     const float arrowHalfWidth = length * kGizmoArrowHalfWidthFraction;
-    writer.pivotMark();
     for (int i = 0; i < 3; ++i) {
         writer.axisShaft(i, length - arrow);
 
-        // A six-line arrowhead rather than a cone: four spokes back from the tip
-        // and two lines closing across their ends. It reads as a direction from
-        // every angle, and the closing cross is what separates a head from two
-        // more hairlines — without it the whole instrument was one weight of
-        // line from the pivot to the tip. Still no second pipeline for solid
+        // A four-line arrowhead rather than a cone: it reads as a direction from
+        // every angle, costs four lines, and needs no second pipeline for solid
         // geometry.
         int ui = 0;
         int vi = 0;
@@ -817,10 +791,6 @@ int generateGizmoVertices(GizmoVertex* out, int capacity) {
         for (int s = 0; s < 4; ++s) {
             writer.line(tip, vec3Add(base, spokes[s]), axisFromIndex(i), axisHandleFromIndex(i));
         }
-        writer.line(vec3Add(base, spokes[0]), vec3Add(base, spokes[1]), axisFromIndex(i),
-                    axisHandleFromIndex(i));
-        writer.line(vec3Add(base, spokes[2]), vec3Add(base, spokes[3]), axisFromIndex(i),
-                    axisHandleFromIndex(i));
     }
     for (int p = 0; p < 3; ++p) {
         writer.planeSquare(kPlaneHandles[p]);
@@ -839,10 +809,6 @@ int generateGizmoVertices(GizmoVertex* out, int capacity) {
     // inside it, so what is drawn and what can be grabbed do not disagree.
     const float radii[2] = {kGizmoRingRadiusUnits,
                             kGizmoRingRadiusUnits + kGizmoStrokeOffsetUnits};
-    // The same neutral pivot mark Move has. Three rings around a point with
-    // nothing at the point does not say where the rotation is centred, and the
-    // centre is the one thing a rotation is entirely about.
-    writer.pivotMark();
     for (int i = 0; i < 3; ++i) {
         int ui = 0;
         int vi = 0;
@@ -880,17 +846,10 @@ int generateGizmoVertices(GizmoVertex* out, int capacity) {
     for (int p = 0; p < 3; ++p) {
         writer.planeSquare(kPlaneHandles[p]);
     }
-    // The uniform handle: a cube at the pivot, drawn NEUTRAL because it belongs
-    // to no axis and lighting it in an axis hue would say it did — and drawn as
-    // a DOUBLE outline, a stroke offset apart, because it is the one handle
-    // acting on all three axes and it stands where every shaft converges. No
-    // pivot mark is drawn in Scale: this cube is what stands on that point, and
-    // a reference mark and a control sharing one point is exactly what made the
-    // control unreadable.
+    // The uniform handle: one cube at the pivot, drawn NEUTRAL because it
+    // belongs to no axis and lighting it in an axis hue would say it did.
     writer.cube(Vec3{0.0f, 0.0f, 0.0f}, kGizmoUniformCubeHalfUnits, GizmoAxis::None,
                 GizmoHandle::Uniform);
-    writer.cube(Vec3{0.0f, 0.0f, 0.0f}, kGizmoUniformCubeHalfUnits + kGizmoStrokeOffsetUnits,
-                GizmoAxis::None, GizmoHandle::Uniform);
 
     return writer.written;
 }

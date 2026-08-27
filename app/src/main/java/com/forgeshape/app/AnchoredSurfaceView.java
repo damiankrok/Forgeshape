@@ -59,23 +59,8 @@ import android.widget.LinearLayout;
  */
 abstract class AnchoredSurfaceView extends LinearLayout {
 
-    /**
-     * Told whenever a surface opens or closes.
-     *
-     * <p>One choke point rather than a notification at each of the workspace's
-     * open/close call sites, because the thing that has to know — whether
-     * System Back has a surface to dismiss before it may leave the app — is
-     * wrong the moment one site forgets to report.
-     */
-    interface OnOpenStateChanged {
-        void onSurfaceOpenStateChanged(AnchoredSurfaceView surface, boolean open);
-    }
-
     /** The state the user asked for; see {@link #isOpen()}. */
     private boolean open;
-
-    /** See {@link OnOpenStateChanged}. Null until the workspace attaches one. */
-    private OnOpenStateChanged openStateListener;
 
     /** Which way the surface unfolds, set by the workspace's anchor from where
      *  the invoking control sits in the window. */
@@ -152,23 +137,12 @@ abstract class AnchoredSurfaceView extends LinearLayout {
         return open;
     }
 
-    final void setOnOpenStateChanged(OnOpenStateChanged listener) {
-        openStateListener = listener;
-    }
-
-    private void reportOpenState() {
-        if (openStateListener != null) {
-            openStateListener.onSurfaceOpenStateChanged(this, open);
-        }
-    }
-
     /** Opens or closes the surface, growing it out of the control that owns it. */
     final void setOpen(boolean open) {
         if (open == this.open) {
             return;
         }
         this.open = open;
-        reportOpenState();
         // Cancel-first, always: a second tap while a transition is running must
         // reverse it rather than queue behind it, and a queued pair settles on
         // whichever animator happened to finish last.
@@ -210,11 +184,7 @@ abstract class AnchoredSurfaceView extends LinearLayout {
      * only draws the eye to it.
      */
     final void closeImmediately() {
-        final boolean wasOpen = open;
         open = false;
-        if (wasOpen) {
-            reportOpenState();
-        }
         growthPending = false;
         ChromeMotion.begin(this);
         settle(false);
