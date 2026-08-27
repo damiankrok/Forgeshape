@@ -4,7 +4,6 @@ import android.content.Context;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
-import android.widget.ScrollView;
 
 /**
  * The precision surface's body, which <b>ends on a row rather than through
@@ -42,7 +41,7 @@ import android.widget.ScrollView;
  * {@code ScrollView}, which is the correct answer for content that has no rows
  * to end on.
  */
-final class PrecisionScrollView extends ScrollView {
+final class PrecisionScrollView extends BoundedScrollView {
 
     /** Set during measure; see {@link #contentOverflows()}. */
     private boolean overflowing;

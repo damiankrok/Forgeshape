@@ -2,7 +2,6 @@ package com.forgeshape.app;
 
 import android.content.Context;
 import android.view.View;
-import android.view.ViewGroup;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -25,7 +24,8 @@ import java.math.BigDecimal;
  * verdict. Moving the primitive chooser changes nothing but which fields are on
  * screen.
  */
-final class ConstructionShapeEditorView extends LinearLayout {
+final class ConstructionShapeEditorView extends LinearLayout
+        implements PropertyInspectorView.PinnedCommit {
 
     /** Two-parameter primitive field order: slot 0 and slot 1 are always the
      *  same two fields in the same order for one primitive, whichever it is —
@@ -61,6 +61,10 @@ final class ConstructionShapeEditorView extends LinearLayout {
     private final NumericPropertyRow[] capsuleFields = new NumericPropertyRow[2];
     private final NumericPropertyRow[] planeFields = new NumericPropertyRow[2];
     private final UnitChipsView unitChips;
+
+    /** Apply. Lives in the panel footer rather than in this stack; see
+     *  {@link #commitControl()}. */
+    private final TextView apply;
 
     /** Reused across reads; native fills this with authoritative values. */
     private final double[] nativePrimitive = new double[NativeViewport.PRIMITIVE_STATE_SIZE];
@@ -125,7 +129,10 @@ final class ConstructionShapeEditorView extends LinearLayout {
         addView(unitChips, EditorControlStyles.rowParams(
                 EditorControlStyles.dimen(context, R.dimen.row_gap_small)));
 
-        final TextView apply = EditorControlStyles.primaryButton(context, R.id.apply_shape,
+        // Apply is NOT added to this stack: it is handed to the panel, which
+        // pins it below the scrolling body. See commitControl(), and the same
+        // decision in ConstructionPlacementEditorView.
+        apply = EditorControlStyles.primaryButton(context, R.id.apply_shape,
                 context.getString(R.string.apply_shape));
         apply.setOnClickListener(new OnClickListener() {
             @Override
@@ -133,12 +140,6 @@ final class ConstructionShapeEditorView extends LinearLayout {
                 onApplyShape();
             }
         });
-        // The commit is separated from the values it commits, so it reads as the
-        // end of the panel rather than as one more row in it.
-        final LinearLayout.LayoutParams applyParams =
-                EditorControlStyles.rowParams(sectionGap);
-        applyParams.width = ViewGroup.LayoutParams.MATCH_PARENT;
-        addView(apply, applyParams);
 
         refreshFromNative();
     }
@@ -180,6 +181,18 @@ final class ConstructionShapeEditorView extends LinearLayout {
             }
         }
         return chooser;
+    }
+
+    /**
+     * Apply, for the panel to pin below its scrolling body.
+     *
+     * <p>The commit belongs to this editor; where it is drawn belongs to the
+     * panel, because only the panel knows how much of the body it is showing.
+     * See {@link PropertyInspectorView.PinnedCommit}.
+     */
+    @Override
+    public View commitControl() {
+        return apply;
     }
 
     private View buildRow(Context context, int rowId, NumericPropertyRow[] out,

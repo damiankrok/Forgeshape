@@ -18,6 +18,9 @@ public final class ForgeShapeActivity extends Activity {
     private ForgeShapeSurfaceView viewport;
     private EditorWorkspaceView workspace;
 
+    /** API 33+ only; null below, where {@link #onBackPressed()} is the route. */
+    private BackDismissal backDismissal;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         // BEFORE super.onCreate and before anything is inflated: a theme applied
@@ -40,9 +43,117 @@ public final class ForgeShapeActivity extends Activity {
         workspace = new EditorWorkspaceView(this, viewport);
         setContentView(workspace);
 
+        // System Back closes an open context surface before it leaves the app.
+        // See installBackDismissal.
+        installBackDismissal();
+
         // Without this a text field would take focus at startup, which would
         // both pop the keyboard and swallow the debug key hook below.
         viewport.requestFocus();
+    }
+
+    /**
+     * Makes System Back dismiss an open context surface before it leaves the
+     * app.
+     *
+     * <p>With the Add Primitive palette open, one Back press used to return the
+     * launcher. The platform rule is not negotiable — Back always works and is
+     * never trapped — but "works" means the innermost thing the user opened
+     * closes first. On a modeling tool the difference between "closed a palette"
+     * and "left the app" is the whole of what an accidental Back costs.
+     *
+     * <p><b>Registered only while there is something to dismiss</b>, which is
+     * what keeps the platform's own exit behaviour — including the predictive
+     * back animation — untouched for the press that really does leave. The
+     * workspace reports the transition; nothing here polls.
+     *
+     * <p>Two paths, because the platform has two. An app targeting SDK 36 gets
+     * predictive back by default, and the system stops calling
+     * {@code onBackPressed} entirely, so the dispatcher is the only route on
+     * API 33 and above. Below that the override is the only route. The DECISION
+     * — what a Back press means — is one method either way; see
+     * {@link EditorWorkspaceView#dismissTopmostSurface()}.
+     */
+    private void installBackDismissal() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            backDismissal = new BackDismissal(this);
+        }
+        workspace.setOnDismissibleSurfaceChanged(new
+                EditorWorkspaceView.OnDismissibleSurfaceChanged() {
+            @Override
+            public void onDismissibleSurfaceChanged(boolean present) {
+                if (backDismissal != null) {
+                    backDismissal.setPresent(present);
+                }
+            }
+        });
+    }
+
+    /**
+     * The pre-API-33 route. Deprecated by the platform, and still the only one
+     * an older release calls.
+     */
+    @Override
+    @SuppressWarnings("deprecation")
+    public void onBackPressed() {
+        if (workspace != null && workspace.dismissTopmostSurface()) {
+            return;
+        }
+        super.onBackPressed();
+    }
+
+    /**
+     * The API 33+ route: one callback, registered exactly while the workspace
+     * has a surface to dismiss.
+     *
+     * <p>A nested class so nothing on an older release ever has to resolve
+     * {@code OnBackInvokedCallback}, which does not exist there.
+     */
+    private static final class BackDismissal {
+
+        private final ForgeShapeActivity activity;
+        private final android.window.OnBackInvokedCallback callback;
+        private boolean registered;
+
+        BackDismissal(final ForgeShapeActivity activity) {
+            this.activity = activity;
+            this.callback = new android.window.OnBackInvokedCallback() {
+                @Override
+                public void onBackInvoked() {
+                    if (activity.workspace == null
+                            || !activity.workspace.dismissTopmostSurface()) {
+                        // Registered only while there was something to dismiss,
+                        // so this is the state having changed under the press.
+                        // The default is still what Back means.
+                        activity.finish();
+                    }
+                }
+            };
+        }
+
+        void setPresent(boolean present) {
+            if (present == registered) {
+                return;
+            }
+            registered = present;
+            if (present) {
+                activity.getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                        android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, callback);
+            } else {
+                activity.getOnBackInvokedDispatcher()
+                        .unregisterOnBackInvokedCallback(callback);
+            }
+        }
+
+        /** Whether the callback is on the dispatcher right now. Verification. */
+        boolean registered() {
+            return registered;
+        }
+    }
+
+    /** For verification: whether Back is currently ours to consume. */
+    boolean backDismissalArmed() {
+        return backDismissal != null && backDismissal.registered();
     }
 
     /**

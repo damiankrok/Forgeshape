@@ -1,8 +1,21 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.42.0
-**Updated:** 2026-08-26
-**Result:** TECHNICAL COMPLETE — Stage 020R3 closed the one user-reachable
+**Status Version:** 0.43.0
+**Updated:** 2026-08-27
+**Result:** TECHNICAL COMPLETE — **UI-R5A** corrected the five defects the
+four-way audit measured, and changed no feature. The trailing tool cluster is
+anchored by its top and hands a squeeze to the one child that can scroll, so a
+control that used to measure 2.3 dp with the keyboard up now measures 48; System
+Back closes an open context surface, playing the exit the surface already had,
+before it will leave the app; the exact-value panel keeps a long signed number
+whole, replaces rather than appends on a tap, seats the unit chips inside the
+group they convert, and pins Apply below the body instead of three swipes under
+an unmarked fold; the two semantic text roles that failed the repository's own
+contrast target now clear 4.5:1 on every ground they are drawn on; and the gizmo
+draws four kinds of handle as four kinds of mark, with its hit geometry,
+solvers and space rules untouched. Evidence: `artifacts/uir5a/`.
+
+Before it, Stage 020R3 closed the one user-reachable
 correctness gap Scale left behind: **a sculpt brush now measures in the
 world/display metric**, so a round brush stays round on a body with a
 non-uniform Scale. Stage 020R2 before it turned the axis-only gizmo into the
@@ -58,8 +71,10 @@ final until those reviews return. That is an owner track running beside the
 technical one, not the next technical action — see *Next Stage*.
 **Current Phase:** Phase 1 — Native Viewport
 **Workspace:** `D:\TRAVELAPPS\ForgeShape`
-**Accepted implementation baseline:** Stage 020R3 (world/display-metric sculpt
-brush under a non-uniform Scale) on top of Stage 020R2 (full Construction
+**Accepted implementation baseline:** UI-R5A (structural shell, precision
+surface, semantic contrast and gizmo legibility correction) on top of
+Stage 020R3 (world/display-metric sculpt
+brush under a non-uniform Scale) and Stage 020R2 (full Construction
 transform gizmo — Move/Rotate/Scale, World/Local, plane and uniform handles),
 Stage 020 (Construction Move/Rotate gizmo) and Stage 019 (Construction transaction and
 Undo/Redo), with DOC-R2 (current-truth documentation reconciliation) on top of
@@ -76,8 +91,7 @@ Stage 016 (Plane), Stage 015D (camera projection), Stage 015C-R (front-face
 culling), Stage 015C (shading), Platform Fix P2, Stage 015B, Stage 014, the NDK
 r29 migration (Gate P0) and the Owner Decision Baseline. Per-stage narrative
 lives in Git history; only what still constrains the code is kept here.
-**Next Stage:** **UI-AUDIT1 — gizmo / chrome / Exact Transform visual coherence
-audit.** See *Next Stage*.
+**Next Stage:** **Owner / coordinator review of UI-R5A.** See *Next Stage*.
 
 ## Current state
 
@@ -99,11 +113,32 @@ re-composes itself per window. `ARCHITECTURE.md` owns the ownership map and ever
 **Blockers: none.** Known costs and accepted debt are in *Technical Debt*;
 environment hazards are in *Known Issues*.
 
-## Current interaction model (UI-R4A, corrected by UI-R4B and UI-R4C)
+## Current interaction model (UI-R4A, corrected by UI-R4B, UI-R4C and UI-R5A)
 
 Runtime-verified on `ForgeShape_Stage006` / `emulator-5580` in three windows —
 compact portrait, compact landscape (short height) and an overridden
 1600 × 2560 @ 240 dpi expanded — in all three appearances.
+
+**The trailing tool cluster does not move, and nothing in it is squeezed.**
+(UI-R5A.) It is anchored by its top edge in every window class; its two
+persistent controls — the Tool Rail and the precision toggle — come before its
+one contextual child, the transform selectors; and when the column is shorter
+than its contents, the deficit goes to the rail, which scrolls, rather than to
+whatever happens to be last. Selecting Transform, changing transform mode,
+entering Scale (which withdraws the space capsule) and opening the precision
+surface therefore move the persistent controls by **zero pixels**, where the
+centre anchor used to move the rail 139 dp, 56 dp and 120 dp. With the keyboard
+up the two selectors lay themselves side by side, exactly as a short window makes
+them, because a precision sheet plus an IME leaves the cluster about 150 dp —
+less than the stacked pair alone wants.
+
+**System Back closes what the user opened, before it leaves.** (UI-R5A.) With
+any of the four dismissible surfaces open — Add Primitive, the Objects popover,
+the exact values, the display settings — Back closes the topmost through the
+workspace's own close path, playing the exit the surface already had, and the app
+stays. The callback is registered only while there is something to dismiss, so
+the platform's own exit behaviour, predictive back included, is untouched for the
+press that really does leave.
 
 **Nothing owns the bottom of the window at rest.** The Property Inspector used to
 sit there permanently, collapsed to a full-width strip, and a collapsed strip is
@@ -119,6 +154,20 @@ pressed, and is drawn active while it is up. What the user last decided is
 remembered per mode and starts closed; no window size can open it by itself,
 which is the rule the previous shell had and which meant a rotation could put a
 surface on screen that had never been asked for.
+
+**And the panel's commit no longer scrolls away.** (UI-R5A.) Apply is pinned
+below the scrolling body rather than being its last row — it was three swipes
+under an unmarked fold in compact portrait — and the body draws a fading bottom
+edge while there is more below it. The unit chips moved inside the group they
+convert, under the Position fields and headed *Position unit*, so nothing about a
+unit is drawn near the Scale row, which is unitless by a hard product rule. A
+long signed value stays whole: the field steps its type down before it drops
+anything, and only if it still does not fit, and only while it is NOT being
+edited, is it shortened from the END with an ellipsis, so the sign and the
+leading digits are what survive. A tap on a populated field selects it, so the
+first keystroke replaces rather than appends — `0` typed into produced
+`0-98765.4321098` before. What is stored and submitted is the complete value in
+every one of those states.
 
 **Objects became a capsule that says which body is current.** It carries the
 active body's name, sits in the same place in both modes, and the Global
@@ -297,15 +346,28 @@ palette value moved.
 18 dp instead of dropping it; icon and caption both measure inside the 48 dp
 entry.
 
-**What the approved palettes cost.** The twelve anchors are not the UI layer's to
-move, so the theme suite asserts what they deliver rather than a number they
-would have to be redesigned to reach: primary text and every typed value at WCAG
-AA (4.5:1), secondary captions at 3.0:1 (measured 3.6–4.7), verdicts at 2.4:1
-against the precision surface. **That 2.4:1 is the tightest number in the product
-— Light Charcoal's error red on its own precision surface — and it is below AA.**
-It is a direct consequence of both the red and the ground being owner-fixed.
-UI-R4B **carried this debt deliberately and changed no approved value**; it is
-still the one item here the owner may want to overrule.
+**What the approved palettes cost — and the two anchors UI-R5A was told to
+move.** The twelve anchors were not the UI layer's to move, so the theme suite
+asserted what they delivered rather than a number they would have to be
+redesigned to reach: primary text and every typed value at WCAG AA (4.5:1),
+secondary captions at 3.0:1 (measured 3.6–4.7), verdicts at 2.4:1 against the
+precision surface. That 2.4:1 was the tightest number in the product — Light
+Charcoal's error red on its own precision surface — and it was below AA, carried
+deliberately as debt.
+
+**UI-R5A was instructed to correct it, and did, for the two roles that carry
+meaning rather than decoration.** `*_text_secondary` (field captions, section
+headings, slider labels, the active body's name) and `*_text_error` (every
+refusal the product reports) were lightened until each clears **4.5:1 on all six
+grounds it is drawn on** — the viewport ground, the chrome surface, the floating
+material, the precision surface, a control fill and a field well. The worst case
+in the product is now 4.60:1, up from 2.17:1. Each hue is kept, so the
+appearances still read as themselves, and the ten other anchors are untouched.
+`UIR5A-11` measures all 36 combinations on the device and
+`EditorWorkspaceThemeTest` holds the caption role to the body-text target it was
+excused from. **The remaining 2.4:1 floor applies only to the two verdict colours
+UI-R5A was not asked to move** — success and measure — and stays recorded here as
+the owner's to overrule.
 
 **Stylus / S Pen on real hardware remains UNVERIFIED.** Tool type, pressure and
 tilt are carried end to end and verified synthetically (`MotionEvent.obtain` with
@@ -599,6 +661,15 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 | Landscape occlusion: 0 % unoccluded viewport → **60.1 %**, status line on screen | VERIFIED |
 | Inspector collapse and chrome hide restore viewport area (57.5 % → 82.6 % → 100 %) | VERIFIED |
 | Edge-to-edge with WindowInsets on chrome only; IME never resizes the Vulkan surface | VERIFIED |
+| The trailing tool cluster is top-anchored, and a contextual control appearing or disappearing moves no persistent one — measured at zero pixels across Transform selection, all three transform modes and the precision surface opening | VERIFIED (UI-R5A) |
+| No trailing control drops below 48 dp, and none leaves the tree, in compact portrait, short landscape, at `font_scale 1.3` or with the keyboard up; the Tool Rail absorbs the deficit and scrolls | VERIFIED (UI-R5A) |
+| System Back dismisses the topmost open context surface — Add Primitive, the Objects popover, the exact values, the display settings — playing that surface's own exit, and leaves the app only when none is open | VERIFIED (UI-R5A) |
+| A long signed exact value keeps its sign and leading digits: the type steps down to fit, and a shortened display is shortened at the END, never the start. The complete value is what is stored, parsed and applied | VERIFIED (UI-R5A) |
+| A tap on a populated numeric field selects it, so the first keystroke replaces; no concatenation of the old value and the new can occur | VERIFIED (UI-R5A) |
+| Apply is pinned below the precision body in every placement and is on screen with no scrolling, keyboard up or down; the body fades its bottom edge while there is more | VERIFIED (UI-R5A) |
+| The mm/cm/m chips sit inside the Position group and are headed *Position unit*; nothing about a unit is drawn near the unitless Scale row | VERIFIED (UI-R5A) |
+| The secondary and error text roles clear 4.5:1 against all six grounds they are drawn on, in all three appearances, with primary above secondary above disabled | VERIFIED (UI-R5A) |
+| The gizmo draws four kinds of handle as four kinds of mark — bundled axis, closed arrowhead or cube, crossed plane square, neutral pivot cross, doubled uniform cube — with hit radii, handle sets, grab points, solvers and space rules unchanged | VERIFIED (UI-R5A) |
 | Every chrome surface consumes its own gesture; viewport pixel-identical across chrome drags | VERIFIED |
 | Freeze / Resume wording follows whether a Frozen Sculpt Mesh exists | VERIFIED |
 | Destructive re-Freeze confirms only when the current mesh's edits would be discarded; Cancel is inert | VERIFIED |
@@ -673,7 +744,7 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 ## Self-test suite
 
 Thirteen debug-only native suites run once from `NativeViewport.start()` — never
-per frame — and total **1961 checks, zero failures**:
+per frame — and total **2043 checks, zero failures**:
 
 | suite token | checks |
 | --- | --- |
@@ -689,14 +760,14 @@ per frame — and total **1961 checks, zero failures**:
 | `FORGESHAPE_RENDER_SHADING_SELFTEST_OK` | 329 |
 | `FORGESHAPE_SCENE_SELFTEST_OK` | 79 |
 | `FORGESHAPE_CONSTRUCTION_HISTORY_SELFTEST_OK` | 114 |
-| `FORGESHAPE_GIZMO_SELFTEST_OK` | 135 |
+| `FORGESHAPE_GIZMO_SELFTEST_OK` | 145 |
 
 followed by `FORGESHAPE_MESH_UPLOAD_OK`, `FORGESHAPE_GRID_UPLOAD_OK`,
 `FORGESHAPE_GIZMO_UPLOAD_OK` and `FORGESHAPE_NATIVE_VIEWPORT_OK`.
 
 **The gizmo suite owns direct manipulation's math and its transaction**, and —
 like the scene and history suites — it builds its own `ConstructionScene`,
-`ConstructionHistory` and `GizmoSession` per case. Its 135 checks cover the three
+`ConstructionHistory` and `GizmoSession` per case. Its 145 checks cover the three
 closed enums and their refusal of an unknown index, the eight handle codes round
 tripping with the three axis codes unchanged from Stage 020, plane handles
 naming their two basis axes and borrowing the perpendicular hue, the
@@ -730,6 +801,16 @@ changes underneath it, mode and space both refused mid-drag, edge-on and
 near-camera-parallel drags staying finite, multi-object chronology, and the
 session-initialization boundary leaving an empty history without undoing the
 seed.
+
+UI-R5A added ten checks there, and they are about what the instrument LOOKS
+like rather than what it does: the buffer holding exactly the vertices it
+declares and each mode drawing exactly its own range, the pivot mark being
+neutral, part of no handle and inside the disc that grabs nothing in Move and in
+Rotate, Scale putting a HANDLE on that point instead of a mark, the uniform cube
+being a double outline and larger than a shaft cube, a plane handle being a
+crossed square rather than a bare outline, the held colour being one no axis
+owns, and the unheld weight being lower than the held one. Every one is
+arithmetic over the generated vertex buffer; none looks at a pixel.
 
 **The Construction-transform suite owns the nine authoritative values and the
 one Euler bridge.** Its 121 checks add, on top of the existing rigid-transform
@@ -854,7 +935,9 @@ device. `README.md` documents how to read them.
 
 | `EditorWorkspaceGizmoTest` | Stage 020 and Stage 020R2, from the product side of JNI: both start answers leaving an empty history and the direct-Sculpt path being source-classified as production (`S020-PRE-01`..`-05`), the Shape context and Sculpt drawing no handles and no mode selector while the native guard still refuses (`S020-01`, `-03`), Transform with a body drawing both and entering on Move (`-02`), body switching retargeting the pivot without a step (`-04`), the mode selector recording nothing and publishing nothing (`-05`), each Move axis changing only its own coordinate through a real `MotionEvent` on the real handle (`-06`..`-09`), a near-camera-parallel axis staying finite (`-10`), a tap costing nothing and a 48-sample drag costing exactly one step (`-11`, `-12`), cancel restoring exactly (`-13`), each ring turning only its own component and leaving Position (`-14`..`-17`), a 300-sample ring drag with no sample jumping a quarter turn and the total passing 360° un-canonicalised (`-18`..`-20`), one ring drag as one step and its cancel (`-21`, `-22`), undo/redo bracketing a Move and a Rotate exactly (`-23`, `-24`), the exact-value FIELDS reading the gizmo's result and a typed Apply moving the pivot (`-25`, `-26`), redo invalidation (`-27`), two bodies undoing chronologically and independently (`-28`), a captured handle not orbiting while a drag off the handles still does (`-29`, `-30`), cancel and a second pointer leaving no open transaction and no partial transform (`-31`, `-32`), a stylus driving the same solver under its own pointer id (`-33`), chrome consuming its own touches (`-34`), the 48 dp hit corridor measured perpendicular to the shaft (`-35`), the drawn size staying in band from 3 m to 30 m (`-36`), the selector and the precision toggle both at 48 dp and collision-free in portrait and landscape (`-37`), a whole drag/commit/undo/redo publishing no revision with a positive control that does (`-38`..`-40`), and the gizmo surviving display switching (`-41`). Stage 020R2 adds: scale round-tripping through the history (`S020R2-01`), one Apply being atomic across all nine with an impossible scale refused and a no-op recording nothing (`-02`), every Move plane moving in its plane and never off it (`-03`), Local space moving along the body own axis where World moves only X (`-04`), World and Local rotation being different answers to the same gesture on a mixed body (`-05`..`-07`), axis, plane and uniform scale with the ratios preserved (`-09`..`-11`), one scale drag as one step with a tap costing nothing and a second pointer restoring all nine (`-12`, `-13`), the handles and the exact-value fields being one truth in both directions including the scale (`-14`), a non-uniform scale reaching PICKING and not the instrument (`-15`), every handle classified at its own pixel with the pivot naming the uniform handle in Scale and none in Move, and the held handle reported while held (`-16`), Scale being Local-only with the space selector absent there and the remembered space restored on the way out (`-18`), both selectors at 48 dp and collision-free in portrait and landscape (`-18` layout), and a long scale drag with its undo and redo publishing no revision against a positive control that does (`-20`) | 46 |
 
-**328 tests** (60 JVM, 268 instrumented). No Java test asserts a rendered pixel;
+| `EditorWorkspaceLegibilityTest` | UI-R5A, from the product side: the trailing cluster keeping its anchor and its 48 dp targets in compact portrait (`UIR5A-01`), short landscape (`-02`), at `font_scale 1.3` (`-03`) and under an IME inset (`-04`), with no unrelated control moving as the contextual ones come and go (`-05`); System Back dismissing each of the four dismissible surfaces — the palette through a real `KEYCODE_BACK` — and only then leaving (`-06`); a long signed value keeping its sign whole and its complete value being what is parsed (`-07`); a populated field selecting rather than appending (`-08`); Scale offering no unit and the chips sitting inside Position (`-09`); Apply pinned and on screen with no scrolling in portrait and landscape (`-10`); the secondary and error roles clearing 4.5:1 on all six grounds in all three appearances, with the hierarchy intact (`-11`); every handle answering a touch across its declared target with the pivot disc's deliberate non-hit stated (`-12`); the held handle reported in all three modes (`-13`); the transform semantics — which handles each mode offers, what the pivot grabs, and Scale being Local-only — unchanged (`-14`); the anchored surfaces still displacing nothing (`-15`); and a Back dismissal playing the surface's own exit, instantly under reduced motion (`-16`) | 16 |
+
+**344 tests** (60 JVM, 284 instrumented). No Java test asserts a rendered pixel;
 every control is reached by its stable semantic id and no assertion uses a screen
 coordinate. The foundation and theme suites deliberately assert no colour
 literal, radius or shadow — those are judged by eye and by runtime evidence, and
@@ -944,38 +1027,68 @@ this baseline before calling it a regression.
 
 ## Current evidence summary
 
-Latest acceptance run, on `ForgeShape_Stage006` / `emulator-5580` unless stated:
+Latest acceptance run (UI-R5A), on `ForgeShape_Stage006` / `emulator-5580`
+unless stated:
 
-- **Native self-tests:** **thirteen** suites, **1961 checks, zero failures** on a
-  clean launch, followed by `FORGESHAPE_GIZMO_UPLOAD_OK vertices=1056
-  move=[0,108) rotate=[108,876) scale=[876,1056)` and
-  `FORGESHAPE_NATIVE_VIEWPORT_OK`. Eleven suites are byte-for-byte their previous
-  totals — the Gate P1 picking assertions are intact inside the 174-check picking
-  suite, `SIDE`, `REFR`, `NOR`, `CAMPROJ` and `PLN` are all still green, and the
-  history suite is still 114 — and the two Stage 020R2 touched grew:
-  `FORGESHAPE_CONSTRUCTION_TRANSFORM_SELFTEST_OK` 94 → **121** and
-  `FORGESHAPE_GIZMO_SELFTEST_OK` 80 → **135**.
+- **Native self-tests:** **thirteen** suites, **2043 checks, zero failures** on a
+  clean launch, followed by `FORGESHAPE_GIZMO_UPLOAD_OK vertices=1116
+  move=[0,132) rotate=[132,906) scale=[906,1116)` and
+  `FORGESHAPE_NATIVE_VIEWPORT_OK` — [`artifacts/uir5a/R00`](artifacts/uir5a/R00-selftest-transcript.txt).
+  Twelve suites are byte-for-byte their previous totals — the Gate P1 picking
+  assertions are intact inside the 174-check picking suite, the transform suite
+  is still 121 and the history suite still 114 — and the one UI-R5A touched grew:
+  `FORGESHAPE_GIZMO_SELFTEST_OK` 135 → **145**, the ten new checks being the
+  instrument's drawing vocabulary stated as arithmetic over the generated buffer.
+  The vertex count grew with the marks and is still ONE upload at start.
 - **JVM:** 60/60.
-- **Instrumented: 268/268, zero failures — assembled, not from one uninterrupted
-  run.** Every one of the eighteen suites is green in the default compact phone
-  window, through `scripts\run-instrumented-tests.ps1 -Serial emulator-5580`.
-  Read that total with the interruption entry below: the best single run reached
-  227 cases with zero failures before the emulator aborted it, and the four
-  suites it never reached were then run individually and passed. **An
-  interrupted run plus individual reruns is weaker evidence than one
-  uninterrupted full run**, and no uninterrupted full run of all 268 was
-  captured for Stage 020R2. Individual reruns are legitimate for diagnosing and
-  covering a missed suite; they are recorded as such rather than folded silently
-  into a single number. The adaptive
+- **Instrumented: 284/284, zero failures, in ONE uninterrupted run** —
+  `Time: 543.761 / OK (284 tests)` through
+  `scripts\run-instrumented-tests.ps1 -Serial emulator-5580`, nineteen suites in
+  the default compact phone window, **on the code as committed**. This is the
+  single clean full run the previous entry said was worth capturing and did not
+  have. Four full runs were started to get two: the first and the third were
+  aborted by the emulator's own system server stalling (`Input dispatching timed
+  out … Waited 5021ms for FocusEvent`, with 12-second binder transactions, a
+  watchdog trace in `system_server`, and the app process left in uninterruptible
+  I/O — the signature already recorded here, and never a ForgeShape assertion).
+  The remedy each time was the prescribed one — stop the Gradle daemon, stop the
+  emulator, restart it through `scripts\start-forgeshape-emulator.ps1`, re-run
+  the whole suite. The second run passed 284/284 on an intermediate state and the
+  fourth passed 284/284 on the final one; the figure above is the fourth. The
+  adaptive
   subset — gizmo, layout, chrome-composition, correction, history, composition,
   foundation, sculpt-retention, **144 cases** — is additionally **144/144 in a
   short landscape window** (2400 × 1080) and **144/144 in an expanded window**
-  (1600 × 2560 @ 240 dpi). The rebuilt `EditorWorkspaceGizmoTest` is **46/46 in
-  all three windows**.
+  (1600 × 2560 @ 240 dpi), from Stage 020R2. The rebuilt
+  `EditorWorkspaceGizmoTest` is **46/46 in all three windows**.
+- **UIR5A-01..16: 16/16**, inside that run. They cover the trailing cluster's
+  anchor and touch floor in compact portrait, short landscape, at `font_scale
+  1.3` and under an IME inset; System Back over all four dismissible surfaces
+  including a real `KEYCODE_BACK`; the long-signed-value and replace-on-tap
+  contracts; the unit chips' group; Apply's reachability; the two corrected text
+  roles against all six grounds in all three appearances; the gizmo's touch
+  contract and held-handle reporting in all three modes; the transform semantics
+  UI-R5A was not allowed to touch; and the anchored surfaces' zero displacement.
 - **`ui11` passed this time**, which is itself informative: the case has failed
   on its own precondition guard ("the soft keyboard did not appear, so this case
   proves nothing") in past runs, and that guard is a function of host load rather
   than of the product. It is recorded here as green rather than waived.
+  `UIR5A-04` deliberately does not depend on that guard: it raises the real IME
+  and uses it when it appears, and otherwise dispatches an IME inset of the same
+  size through the same path the platform uses, asserting the chrome actually
+  took the inset before it measures anything. The REAL keyboard is covered by
+  runtime evidence instead —
+  [`artifacts/uir5a/S06`](artifacts/uir5a/S06-portrait-long-negative-ime.png)
+  and `R01`, where every trailing control measures 48 dp or more with it up.
+- **Runtime evidence (UI-R5A),** `artifacts/uir5a/` — fifteen screenshots and
+  four records covering compact portrait, short landscape, expanded
+  1600 × 2560 @ 240 dpi, `font_scale 1.3`, the keyboard up, all three
+  appearances with a real refusal on screen, Move/Rotate/Scale, and System Back
+  over an open palette. Every control was resolved by semantic id from a live
+  `uiautomator dump`; the appearance behind each contrast shot is confirmed from
+  the renderer's own `FORGESHAPE_VIEWPORT_BACKGROUND` line rather than from the
+  popover's drawing, which is what was under review. Before/after measurements
+  are tabulated in that directory's `README.md`.
 - **Three harness interruptions, diagnosed rather than waived, all the signature
   already recorded here.** Two full runs ended with `INSTRUMENTATION_ABORTED:
   System has crashed.` — once in `EditorWorkspaceStartFlowTest` (an
@@ -1236,6 +1349,32 @@ duration scale skips them outright rather than shortening them.
 Durable constraints and known-but-accepted costs. Narrative for how each was
 found lives in Git history.
 
+**The trailing cluster's flexible child has no floor.** (UI-R5A.) The Tool Rail
+takes whatever height is left after every fixed control in the column has its
+full height, and is capped no lower than zero — a floor there would put the
+remaining deficit back on whatever is last, which is the defect the arrangement
+exists to remove. On any real window the remainder is at least one entry: the
+worst measured case, a precision sheet open with the keyboard up on a 411 × 914
+dp phone, leaves it 48 dp and it scrolls. A window that could not leave it that
+much would have to be shorter than the toolbar and the two capsules together,
+and none exists. Recorded because the bound is arithmetic rather than enforced.
+
+**The keyboard compacts the transform selectors by policy, not by measurement.**
+(UI-R5A.) `compactSelectors()` is `shortWindow || keyboardVisible` — two facts
+about the WINDOW — rather than a measurement of the cluster fed back into its own
+layout, which would be a loop looking for somewhere to settle. The cost is that
+a window with room to spare still turns the pair on its side when the IME is up.
+That is the same arrangement a landscape phone already uses, and it is
+deliberately preferred to the alternative, which is a control at 8 dp.
+
+**`UIR5A-04` does not depend on a real soft keyboard.** It raises the IME and
+uses it when it appears; when it does not — this emulator does not raise one for
+the instrumentation — it dispatches an IME inset of the same size through the
+same path the platform uses and asserts the chrome took it before measuring. The
+real keyboard is covered by runtime evidence instead (`artifacts/uir5a/S06`,
+`R01`). A device that raises one for instrumentation would make the case stronger
+and needs no code change.
+
 **Selection composition.** Selection is composed as a lerp toward a flat colour
 rather than as a per-channel gain on the shaded colour
 (`shaded * mix(vec3(1.0), tint, a)`), which would preserve face-to-face luminance
@@ -1447,21 +1586,21 @@ regenerated per stage.
 | `app/src/main/java/.../ForgeShapeActivity.java` | Android lifecycle, edge-to-edge window, resume refresh, DEBUG key hook |
 | `app/src/main/java/.../ForgeShapeSurfaceView.java` | Viewport surface, forwards lifecycle + raw per-pointer state (id, position, tool type, pressure, tilt), takes focus back from an editor |
 | `app/src/main/java/.../PointerSemantics.java` | The ONE place an Android `MotionEvent.TOOL_TYPE_*` constant becomes a neutral wire code, plus that mapping's Unknown fallback |
-| `app/src/main/java/.../EditorWorkspaceView.java` | The whole editor UI: region composition, adaptive layout, window insets, chrome visibility, mode/tool wiring, and `syncFromNative()`. Owns no product state |
+| `app/src/main/java/.../EditorWorkspaceView.java`, `TrailingClusterColumn.java` | The whole editor UI: region composition, adaptive layout, window insets, chrome visibility, mode/tool wiring, what System Back dismisses, and `syncFromNative()`. The column beside it decides WHICH child of the trailing cluster absorbs a squeeze. Owns no product state |
 | `app/src/main/java/.../WorkspaceLayoutMode.java` | Window-dp breakpoints, where the precision surface appears when open, and chrome sizing, as arithmetic. It has no opinion about whether that surface is open. No Android type |
 | `app/src/main/java/.../EditorUiState.java` | The closed list of UI-owned state: display unit, draft kind, rail selection, whether the precision surface was asked for (per mode, false to begin with), chrome-hidden |
 | `app/src/main/java/.../GlobalToolbarView.java` | Editing context, the three mutually exclusive mode transitions, reserved Export, the Display control, chrome hide, and the one status line — including its lifecycle: transient versus standing, the two holds, and cancel-first. Owns no scene control — that is the Objects capsule's |
 | `app/src/main/java/.../DisplaySettingsPopoverView.java` | The compact display popover: Shading (Studio / MatCap / Debug), Surface (Smooth / Faceted) and Projection (Perspective / Orthographic), with short interruptible open/close motion that honours the system animator scale. Owns no state |
 | `app/src/main/java/.../ToolRailView.java` | The edge tool selector for either mode. Every entry works — there is no reserved-entry support left. Selects; decides nothing |
 | `app/src/main/java/.../BrushEdgeControlsView.java`, `VerticalSliderView.java` | Direct Radius and Strength, and the custom vertical control behind them. Own no brush value |
-| `app/src/main/java/.../PropertyInspectorView.java`, `PrecisionScrollView.java` | The on-demand precision surface: open or absent, never collapsed, with a measured height cap — and a scroll container that ends the visible body on a whole row rather than through one. Owns no value |
+| `app/src/main/java/.../PropertyInspectorView.java`, `PrecisionScrollView.java`, `BoundedScrollView.java` | The on-demand precision surface: open or absent, never collapsed, with a measured height cap — a scroll container that ends the visible body on a whole row rather than through one and fades its bottom edge while there is more, and a PINNED footer holding the body commit so Apply cannot scroll away. Owns no value |
 | `app/src/main/java/.../EditorWorkspaceView.java` (history capsule) | Undo and Redo: two icon controls in one capsule at the trailing end of the bottom row, opposite the Objects capsule. Withdrawn in Sculpt, enabled straight from native `canUndo`/`canRedo`, and holding no history of its own |
 | `app/src/main/java/.../ObjectsCapsuleView.java` | The resting scene control: the active body's name, and — in Construction only — the `+`. Holds no scene state; both its controls only report which was pressed |
 | `app/src/main/java/.../AddPrimitivePaletteView.java` | The one creation surface: six primitive tiles, shared by both `+` controls. Builds no geometry and defaults no dimension |
 | `app/src/main/java/.../ConstructionShapeEditorView.java` | Primitive chooser, that primitive's exact fields, unit chips, Apply Shape. Owns field text and a DRAFT kind only |
 | `app/src/main/java/.../ConstructionPlacementEditorView.java` | Position/rotation fields, unit chips, Apply Transform. Owns field text only |
 | `app/src/main/java/.../SculptContextView.java` | Sculpt-mesh summary, stale-source warning, and the guarded reset (*Reset Sculpt from Shape…*) |
-| `app/src/main/java/.../InspectorHost.java`, `NumericPropertyRow.java`, `UnitChipsView.java`, `EditorControlStyles.java` | The four small shared pieces: what a body may ask of the workspace, one labelled exact field, the mm/cm/m selector, and the one place controls get their look |
+| `app/src/main/java/.../InspectorHost.java`, `NumericPropertyRow.java`, `UnitChipsView.java`, `EditorControlStyles.java` | The four small shared pieces: what a body may ask of the workspace, one labelled exact field (which keeps the COMPLETE value and draws a presentation of it — see UI-R5A), the mm/cm/m selector, and the one place controls get their look |
 | `app/src/main/java/.../LengthUnit.java` | Exact `BigDecimal` mm/cm/m ↔ meter conversion, parsing and formatting |
 | `app/src/main/java/.../StartChooserView.java` | The New Project question: two ways to begin, over the live viewport. Owns no state, makes no native call |
 | `app/src/main/res/values/*` | `ids.xml` (the stable semantic id contract), `dimens.xml` (radius/type/depth scales), `colors.xml` (role names, dark values), `strings.xml`, `themes.xml` (edge-to-edge) |
@@ -1528,13 +1667,34 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**UI-AUDIT1 — gizmo / chrome / Exact Transform visual coherence audit.** The
-transform workflow, the workspace chrome and the precision surface each arrived
-in a different stage and have never been looked at together as one instrument:
-whether the gizmo, the two selector capsules, the history capsule and the
-Property Inspector read as one designed surface rather than three that happen to
-share a window. It is an audit, not a redesign, and no part of it has been
-started. Nothing in the repo is blocked on it.
+**Owner / coordinator review of UI-R5A.** The stage is technically complete and
+verified — 2043 native checks, 60 JVM cases, one uninterrupted 284/284
+instrumented run, `DEV2`/`DEV3` green, and the runtime evidence in
+`artifacts/uir5a/` — and what remains is a judgement no test can make: whether
+the corrected trailing cluster, the pinned Apply, the two lightened text roles
+and the four handle marks read the way the owner wants them to. The evidence set
+is built for exactly that: fifteen screenshots with the before-values tabulated
+beside them.
+
+Two things are worth the reviewer's attention specifically, because they are
+choices rather than repairs:
+
+- **The trailing cluster now starts at the TOP of the window in every window
+  class**, floating or docked. That is what makes a contextual change cost the
+  persistent controls nothing, and it is the docked layout's own behaviour
+  extended to the phone — but it does move the resting rail up the screen and
+  away from the thumb, which the centre anchor was chosen for.
+- **The two selectors turn on their side when the keyboard is up**, not only in
+  a short window. With a precision sheet open and an IME up the cluster is left
+  about 150 dp, which is less than the stacked pair alone wants; turned, the pair
+  costs one capsule of height and everything stays at 48 dp.
+
+The audits that produced this stage (`artifacts/uiaudit2a`, `2b`, `2c`, `2d`)
+carry further findings UI-R5A deliberately did NOT take: the 4 dp capsule rhythm,
+the two vocabularies for the same six primitives, the refusal drawn far from the
+field it refuses, the brush radius in device pixels, `Debug` as a user-facing
+shading mode, and the expanded window's stranded history capsule. None is
+started and none is blocking.
 
 **Visual acceptance is a parallel owner track, not the next technical action.**
 It remains PENDING on four sets, and technical COMPLETE does not grant it:

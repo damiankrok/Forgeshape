@@ -215,6 +215,14 @@
     -->
     <string name="section_scale">Scale (multiplier)</string>
     <string name="unit_selector">Display unit</string>
+    <!--
+      The placement editor's heading for the same chips, named for what they
+      govern there and seated directly under that group. "Display unit" sat
+      under the Scale row and read as Scale's units, which is exactly the claim
+      the comment above says the product must never make: in this editor the
+      chips convert POSITION and nothing else.
+    -->
+    <string name="unit_selector_position">Position unit</string>
 
     <!-- Sculpt context -->
     <!--

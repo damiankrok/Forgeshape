@@ -149,6 +149,23 @@ behaviours in the product. The two things Compose is genuinely better at here,
 `WindowInsets` and window size classes, are a few dozen lines of Views in one
 class. Migrating is not authorized.
 
+**System Back dismisses before it leaves.** With a context surface open, one Back
+press used to return the launcher. The Activity owns the platform registration
+and the workspace owns the decision: `EditorWorkspaceView.dismissTopmostSurface()`
+closes the most recently opened surface through the workspace's own close path —
+the same path the surface's own control takes, so the keyboard is released and
+the invoking control un-lights — and returns whether it consumed the press. The
+callback is registered **only while there is something to dismiss**, which leaves
+the platform's own exit behaviour, predictive back included, untouched for the
+press that really does leave. Every `AnchoredSurfaceView` reports its open state
+to one listener, so that condition cannot go stale when a new call site forgets
+to report. Two routes because the platform has two: `OnBackInvokedDispatcher` on
+API 33+, where an app targeting SDK 36 no longer receives `onBackPressed` at all,
+and the override below that. Dismissal goes through `setOpen(false)`, so the
+surface plays the exit it already had — the motion was written; the most common
+dismissal gesture simply never reached it — and reduced motion still lands
+instantly, because that decision is inside `setOpen`.
+
 `ForgeShapeSurfaceView` is a plain `android.view.SurfaceView` (no Compose, no
 AndroidX). Its whole contribution to navigation is `onTouchEvent`, which copies
 the masked action, the id of any lifting pointer, and each pointer's semantic
@@ -168,9 +185,10 @@ and the start chooser.
 Inside `chromeRoot`: `GlobalToolbarView` at the top; then a weighted horizontal
 row carrying — leading edge first — the Objects column (expanded windows only),
 `BrushEdgeControlsView` (Sculpt only), a weighted gap where the model lives, and
-the trailing **tool cluster** (`railColumn`: the `ToolRailView` in a `ScrollView`,
-with the precision toggle attached under it); then `bottomRow`, which wraps its
-content and holds the Objects capsule on the leading side and nothing else.
+the trailing **tool cluster** (`railColumn`: the `ToolRailView` in a scroll
+container, the precision toggle under it, and the contextual transform selectors
+under that); then `bottomRow`, which wraps its content and holds the Objects
+capsule on the leading side and nothing else.
 `PropertyInspectorView` is added after `bottomRow` (bottom sheet) or inside the
 middle row (side placement) — and **only while it is open**. All are plain
 framework views built in code; no Compose, no AndroidX in the product, no design
@@ -183,6 +201,30 @@ entirely — a collapsed panel is still a full-width strip anchored to the edge 
 a viewport-first tool, a permanent structural claim made by a surface nobody
 asked for. Exact values are ForgeShape's advantage and are not less reachable for
 it: they are one tap from the tool context that owns them.
+
+**The trailing cluster has one anchor and one child that absorbs a squeeze.**
+Both halves are `TrailingClusterColumn`'s, and both replace behaviour that made
+the column's own arithmetic decide which control the user lost.
+
+*The anchor.* The cluster is `Gravity.TOP` in every window, floating or docked,
+and its two **persistent** children — the rail and the precision toggle — come
+before its one **contextual** child, the transform selector row. A centre anchor
+moves every child by half of any height change, so selecting Transform moved the
+rail 139 dp, entering Scale (which withdraws the space capsule) moved it back
+56 dp, and two identical taps in one place landed on two different controls. Top,
+with the contextual row last, is what makes a contextual change cost the
+persistent controls nothing at all.
+
+*The squeeze.* A vertical `LinearLayout` measures children in order against the
+height that is left, so the LAST ones are handed whatever remains — which on a
+short window is nothing. That is one container producing four measured defects: a
+precision toggle at 37 dp, at 29 dp and at 17.1 dp, and a transform-mode capsule
+left 2.3 dp tall with the space capsule and the toggle gone from the tree
+altogether. `TrailingClusterColumn` measures the fixed controls at their natural
+height first and caps the rail's `BoundedScrollView` with what is left, never
+below one whole entry. The rail is the only child that can give height back
+honestly, because what it cannot show it scrolls to — the overflow strategy the
+cluster already had and never reached.
 
 **Every context surface grows out of the control that opened it.** The scene list
 and the Add Primitive palette out of the Objects capsule; the precision surface
@@ -348,8 +390,19 @@ would touch two resource files and nothing else.
 
 **The approved appearance set is three DARK palettes** — Warm Graphite (the
 default), Neutral Charcoal and Light Charcoal. Twelve values of each are
-owner-approved and reproduced exactly in `colors.xml`; everything else in a
-palette is a derived neighbour of one of those twelve. There is no light
+owner-approved and live in `colors.xml`; everything else in a palette is a
+derived neighbour of one of those twelve. **Two of the twelve were lightened on
+instruction in UI-R5A**, because they were measured below the repository's own
+accessibility target on the grounds they are actually drawn on: `*_text_secondary`
+(field captions, section headings, slider labels, the active body's name) at
+3.93 / 3.87 / 3.59:1 against the precision surface, and `*_text_error` (every
+refusal the product reports) at 3.15 / 3.68 / 2.49:1. A refusal a user cannot
+read is a refusal that did not happen. Both roles now clear **4.5:1 on all six
+grounds** either is ever drawn on — the viewport ground, the chrome surface, the
+floating material, the precision surface, a control fill and a field well — with
+each hue kept, so the appearances still read as themselves. `UIR5A-11` measures
+every combination and `EditorWorkspaceThemeTest` holds the caption role to the
+body-text target it used to be excused from. There is no light
 appearance and no `-night` qualifier: ForgeShape is viewport-first, and every
 ground in the set is chosen so a neutral clay render reads as lit.
 
@@ -549,9 +602,12 @@ column, the docked rail and the docked inspector are inset from the edge, rounde
 on every corner and raised, exactly as on a phone. Drawing them opaque, flat and
 squared against the window edge would show the same three controls in two visual
 languages on one device depending on which way the tablet was held.
-**Docking decides position, never material:** the rail is top-aligned
-with the panel beside it rather than centred on the thumb, and that is the whole
-remaining content of `railDocked()`.
+**Docking decides neither material nor anchor any more.** The rail was
+top-aligned when docked and centred on the thumb when floating; the centre anchor
+is what UI-R5A removed, so both paths now use the top and `railDocked()` no
+longer changes anything about the cluster's placement. That is the point: a phone
+and a tablet are one workspace with more room, not two arrangements of the same
+controls.
 `sideDockWidthDp` is 30 % capped at 340 dp rather than 28 % capped at 320,
 because a panel must fit its own content before it may be narrow — at the old
 numbers a docked inspector gave the primitive chooser 85 dp a chip and clipped
@@ -668,6 +724,29 @@ content-sized philosophy is intact. A control sliced across its middle reads as 
 rendering fault rather than as "there is more below", and in a panel whose whole
 claim is exact numbers that is the most expensive thing it can show. The scroll
 container clips to its padding, so nothing draws into the sheet's own inset.
+
+**The commit is pinned; the body scrolls under it.** Apply used to be the last
+row of the body, which in compact portrait put it three swipes below a fold the
+surface did not admit to having. A body that has a commit hands it to the panel
+(`PropertyInspectorView.PinnedCommit`), which draws it in a footer below the
+scroll: the editor still owns the control, its id and what pressing it means, and
+the panel owns only where it is drawn, because only the panel knows how much of
+the body is on screen. The panel reserves the title bar's and the footer's full
+height in `onMeasure` and caps the scroll with the remainder, for exactly the
+reason the trailing cluster does — otherwise a long body would take everything
+and squeeze the commit under it to nothing. A body with nothing to commit (the
+Sculpt context) does not implement the interface, and the footer is absent. The
+scroll draws a fading bottom edge while there is more below it, which is the one
+cue the round-down-to-a-whole-row boundary costs: a clean edge reads as the end
+of the content.
+
+**The unit chips sit inside the group they convert.** In the placement editor
+they are Position's, headed *Position unit*, immediately under the Position
+fields — not after Scale, where a millimetre/centimetre/metre choice sat directly
+beneath the one group that is unitless by a hard product rule and read as Scale's
+units. Rotation is untouched by them because an angle is not a length, and Scale
+because a multiplier is not one either. The shape editor keeps *Display unit*,
+where the chips do govern the fields above them.
 
 Shape and placement live in **separate inspector bodies with separate Apply
 buttons** — *Apply Shape* and *Apply Transform* — because they are separate
@@ -1597,6 +1676,42 @@ and so on — so `gizmoRingGrabOffset` is the one definition of a point that nam
 a single ring. `gizmoHandleGrabPoint` is the one definition of where ANY handle
 is grabbed, and drawing, hit-testing, the scale reference direction, the JNI
 diagnostic and verification all read it.
+
+### Four kinds of handle, four kinds of mark
+
+The instrument is one line list, uploaded once, and the whole of its legibility
+is which lines it holds. Every mark used to be a hollow outline in an axis hue,
+so axis, plane, pivot and uniform-scale were told apart by position alone and the
+whole thing read as stray selection wireframe over the body's own faces. UI-R5A
+changed the marks and **nothing else**: no hit radius, no handle set, no grab
+point, no solver and no space rule moved, and `UIR5A-14` asserts that.
+
+- **Axis** — a bundle of five parallel lines a stroke offset apart. A single
+  hairline is what the `wideLines` device feature would be needed to thicken, and
+  the product does not request it to draw a handle.
+- **Arrowhead** (Move) — four spokes back from the tip plus **two lines closing
+  across them**. The cross is what separates a head from two more hairlines
+  leaving the tip.
+- **Cube** (Scale) — the professional vocabulary for "this stretches", which is
+  what makes Move and Scale readable apart at a glance rather than by remembering
+  which is selected.
+- **Plane** — a doubled square **with its two diagonals**. A crossed square reads
+  as a surface; a bare one read as one more outline in an axis hue.
+- **Pivot** — three NEUTRAL arms through the origin, drawn once rather than as
+  part of each shaft, and inside `kGizmoPivotDeadRadiusUnits`, so the one mark
+  that is not a control is drawn as one and sits inside the disc that grabs
+  nothing. Rotate draws it too now: three rings around a point with nothing at
+  the point does not say where the rotation is centred.
+- **Uniform** (Scale) — the largest mark on the instrument, a doubled cube at the
+  pivot in the neutral level. It acts on all three axes and stands where every
+  shaft converges. Scale draws **no** pivot mark, because this is what stands
+  there: a reference mark and a control sharing one point is what made the
+  control unreadable.
+
+A **held** handle is stated twice over — the highlight hue no axis owns, and
+every other handle dropping to `kGizmoIdleAxisAlphaScale` — so a reader who can
+separate neither hue still has the weight and the shape. The gizmo self-test
+checks all of it as arithmetic over the generated buffer.
 
 ### The Move solvers, and their degeneracy
 

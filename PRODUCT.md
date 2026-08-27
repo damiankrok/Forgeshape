@@ -190,7 +190,13 @@ rather than a bar. That pair is drawn only while you are constructing.
 
 At the trailing edge is the **Tool Rail**, and attached directly under it a single
 small control that opens the **exact values** behind whichever tool the rail is
-holding. That surface is not there until you ask for it. When you do, it grows
+holding. **That pair does not move.** The rail and the control under it sit where
+they sit in every state: choosing Transform, switching between Move, Rotate and
+Scale, opening the exact values or putting the keyboard up adds and removes the
+controls that belong to those things and leaves everything else exactly where it
+was. When a window is too short for all of it — a large system font, a phone on
+its side, the keyboard up — the rail scrolls, and no control is squeezed thin or
+taken away. That surface is not there until you ask for it. When you do, it grows
 out of that control, carries the numbers, and goes away again when you dismiss it
 — and the model has the bottom of the screen back. A control in the utility group
 hides all of it at once, leaving the bare model and one chip to bring it back.
@@ -205,6 +211,13 @@ half on top of them.
 
 Touching the model between the two toolbar groups navigates: they are surfaces,
 not a bar, and only the surfaces themselves take a touch.
+
+**The system Back gesture closes what you opened before it leaves.** With the
+shape palette, the list of bodies, the exact values or the appearance settings
+open, Back closes that panel — with the same short animation its own control
+gives it — and ForgeShape stays where it was. Back leaves the app only when there
+is nothing open to close, which is exactly what it did before you opened
+anything.
 
 The same regions are there in both modes. What changes is what they carry, never
 where they are. Each answers one question and only one: what mode this is, which
@@ -555,6 +568,14 @@ plane square takes the colour of the axis it faces. Whichever handle you are
 holding is drawn in a warm highlight while the others fade back, so there is
 never any doubt about what a drag is about to change.
 
+**Each kind of handle is drawn as its own kind of mark**, so which is which does
+not rest on position or colour alone. An axis is a band ending in a closed
+arrowhead for Move or a cube for Scale; a plane is a square with its diagonals
+crossed through it, which reads as a surface rather than as more wireframe; the
+point everything happens about is a small neutral cross belonging to no axis; and
+in Scale the centre cube — the one handle that acts on all three axes at once —
+is the largest mark on the instrument.
+
 The point everything happens about is the object's own position, so a rotation
 turns it in place rather than swinging it around the origin, and a scale grows it
 about itself rather than sliding it away. A touch right at that point grabs
@@ -592,8 +613,26 @@ model: it records nothing, and Undo is unaffected by it.
 ### Exact values
 
 Opening the exact values from the control below the Tool Rail gives the same
-placement as numbers: Position X/Y/Z, Rotation X/Y/Z, Scale X/Y/Z, and a single
-**Apply Transform** button.
+placement as numbers: Position X/Y/Z with the unit they are written in, Rotation
+X/Y/Z, Scale X/Y/Z, and a single **Apply Transform** button.
+
+**Apply is always on screen.** It sits below the values rather than after them,
+so it does not scroll away and there is never a swipe between deciding and
+committing. The values themselves scroll if the window is too short for all nine,
+and while there is more below them the panel fades at its bottom edge to say so.
+
+**The unit chips belong to Position and sit with it**, directly under the three
+position fields and headed *Position unit*. Rotation is in degrees and Scale is a
+bare multiplier, so neither offers a unit and nothing about a unit is drawn near
+them.
+
+**A long number keeps its sign and its leading digits.** A field you are not
+editing shows as much of its value as fits and shortens it at the END, with an
+ellipsis — so −98765.4321098 reads as a large negative number at a glance rather
+than as a plausible positive one. Touching the field brings the complete value
+back and selects it, so the first key you press replaces it rather than being
+appended to it, and nothing is ever stored or applied except the complete value
+you typed.
 
 The object starts at position 0, 0, 0 m, rotation 0, 0, 0° and scale 1, 1, 1.
 Placement belongs to the object, not to the shape, so it survives any change of
