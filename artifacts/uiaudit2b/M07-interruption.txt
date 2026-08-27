@@ -1,0 +1,7 @@
+# UI-AUDIT2B — interruption / reversal test, animator_duration_scale=20 (enter 3800 ms, exit 3000 ms)
+invoker centre: 368,2242
+frames after the reversing second tap:
+  rev1 cd38ca94618a
+  rev2 196bd0ba7122
+  rev3 c83b6b0a7795
+  rev4 b3d36c2669fb

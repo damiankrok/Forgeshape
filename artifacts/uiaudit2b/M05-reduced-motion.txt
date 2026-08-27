@@ -1,0 +1,20 @@
+# UI-AUDIT2B — reduced-motion verification
+animator_duration_scale = 0
+--- Add Primitive OPEN at scale 0 (expect: identical frames = landed instantly) ---
+rm_open frame1 b814ea514b06
+rm_open frame2 b814ea514b06
+rm_open frame3 b814ea514b06
+--- Add Primitive CLOSE at scale 0 ---
+rm_close frame1 dc1b983203eb
+rm_close frame2 dc1b983203eb
+rm_close frame3 dc1b983203eb
+--- Hide UI at scale 0 ---
+rm_hide frame1 c35f413f9248
+rm_hide frame2 c35f413f9248
+rm_hide frame3 c35f413f9248
+--- Show UI at scale 0 ---
+rm_show frame1 dc1b983203eb
+rm_show frame2 dc1b983203eb
+rm_show frame3 dc1b983203eb
+
+native reduced-motion flag pushed on every refresh (EditorWorkspaceView:2041 -> NativeViewport.setReducedMotion)

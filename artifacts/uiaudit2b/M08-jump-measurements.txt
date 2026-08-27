@@ -1,0 +1,10 @@
+# UI-AUDIT2B — independent jump measurements, compact portrait 1080x2400 @420dpi (2.625 px/dp)
+# bounds are [left top right bottom] in px
+
+construction-resting   | rail=880 955 1059 1328 | modes= | space= | toggle=922 1350 1048 1476 | objects=21 2168 442 2316 | history=774 2168 1059 2316
+transform-move         | rail=880 591 1059 964 | modes=911 975 1059 1397 | space=911 1408 1059 1693 | toggle=922 1715 1048 1841 | objects=21 2168 442 2316 | history=774 2168 1059 2316
+transform-scale        | rail=880 739 1059 1112 | modes=911 1123 1059 1545 | space= | toggle=922 1567 1048 1693 | objects=21 2168 442 2316 | history=774 2168 1059 2316
+precision-open         | rail=880 275 1059 648 | modes=911 659 1059 1081 | space=911 1092 1059 1377 | toggle=922 1388 1048 1485 | objects=21 1485 442 1633 | history=774 1485 1059 1633
+precision-closed       | rail=880 591 1059 964 | modes=911 975 1059 1397 | space=911 1408 1059 1693 | toggle=922 1715 1048 1841 | objects=21 2168 442 2316 | history=774 2168 1059 2316
+sculpt-resting         | rail=880 826 1059 1545 | modes= | space= | toggle=922 1567 1048 1693 | objects=21 2168 305 2316 | history=
+brush column in sculpt: 21 927 326 1602

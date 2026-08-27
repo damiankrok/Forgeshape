@@ -1,0 +1,243 @@
+# UI-AUDIT2B — empirical motion probe
+# animator_duration_scale = 20 (ChromeMotion reads ANIMATOR_DURATION_SCALE and the platform applies it to every ViewPropertyAnimator)
+# ~509 ms between screencaps; a static screen yields byte-identical PNGs (verified), so differing frames == motion in flight
+
+--- Add Primitive OPEN (tap objects_capsule_add) ---
+ap_open frame1 7fe97a92e57f
+ap_open frame2 a39a859c370f
+ap_open frame3 c3102c6765c6
+ap_open frame4 1f4a596bacea
+ap_open frame5 cc7b805dfcec
+ap_open frame6 8d027f5e1e77
+--- Add Primitive CLOSE (tap objects_capsule_add again) ---
+ap_close frame1 a5fe91a13363
+ap_close frame2 c77e9885efea
+ap_close frame3 c34de12db609
+ap_close frame4 22fd14f9439b
+ap_close frame5 8522c10bff07
+ap_close frame6 1717959b136e
+--- Objects popover OPEN (tap objects_capsule_active) ---
+obj_open frame1 7856189b0293
+obj_open frame2 3d6b3bba8a03
+obj_open frame3 e71caa85e98f
+obj_open frame4 7acf717b9266
+obj_open frame5 409add5c3e98
+obj_open frame6 f8f5bfdc4160
+--- Objects popover CLOSE ---
+obj_close frame1 99884a0908e0
+obj_close frame2 79886a68eb34
+obj_close frame3 c477e9a9dbd1
+obj_close frame4 ea8d0f61bef6
+obj_close frame5 1f741b69bacd
+obj_close frame6 3e3f88ed5462
+--- Tool Rail: Shape -> Transform (tap tool_rail_place) ---
+rail_switch frame1 114d62421705
+rail_switch frame2 114d62421705
+rail_switch frame3 114d62421705
+rail_switch frame4 114d62421705
+rail_switch frame5 114d62421705
+rail_switch frame6 114d62421705
+--- Transform mode Move -> Rotate ---
+mode_switch frame1 8e1cc3516124
+mode_switch frame2 8e1cc3516124
+mode_switch frame3 8e1cc3516124
+mode_switch frame4 8e1cc3516124
+mode_switch frame5 8e1cc3516124
+mode_switch frame6 8e1cc3516124
+--- Space World -> Local ---
+space_switch frame1 a33692f59c6a
+space_switch frame2 a33692f59c6a
+space_switch frame3 a33692f59c6a
+space_switch frame4 a33692f59c6a
+space_switch frame5 a33692f59c6a
+space_switch frame6 a33692f59c6a
+--- Exact Transform OPEN (tap precision_toggle) ---
+pt_open frame1 a8562ef38a33
+pt_open frame2 80d362d4d8dd
+pt_open frame3 f9d2ba6d92ce
+pt_open frame4 3e21e1156646
+pt_open frame5 b0d279a5d468
+pt_open frame6 7167b6e156b9
+--- Exact Transform CLOSE ---
+pt_close frame1 63167cbd3970
+pt_close frame2 74b9dcd445c0
+pt_close frame3 60b9f7492e7e
+pt_close frame4 ad6e9ca6edb0
+pt_close frame5 0e160ba8d590
+pt_close frame6 f7852df3d2b0
+--- Tool Rail: Transform -> Shape (Exact Shape context) ---
+shape_switch frame1 7702abdaf04e
+shape_switch frame2 7702abdaf04e
+shape_switch frame3 7702abdaf04e
+shape_switch frame4 7702abdaf04e
+shape_switch frame5 7702abdaf04e
+shape_switch frame6 7702abdaf04e
+--- Exact Shape OPEN ---
+shape_open frame1 b76919a14b2e
+shape_open frame2 ef1938d45926
+shape_open frame3 9d2c98fbc4eb
+shape_open frame4 90369eac930a
+shape_open frame5 314a550992f7
+shape_open frame6 b1d065b6ca21
+--- Exact Shape CLOSE ---
+shape_close frame1 70cdcb9d9282
+shape_close frame2 93048c545559
+shape_close frame3 e261c0dda6c2
+shape_close frame4 bdf9a08aa57d
+shape_close frame5 dcaddcb7c0da
+shape_close frame6 d8409d5f8f0f
+--- Undo/Redo ENABLE (add a sphere: objects_capsule_add then sphere) ---
+undo_step1 frame1 d4a1522bb200
+undo_step1 frame2 bb23dc43ecff
+---   ...tap add_primitive_sphere (creation + Undo becomes enabled) ---
+undo_enable frame1 d0063f349794
+undo_enable frame2 792b8b4774f6
+undo_enable frame3 74909dc7412d
+undo_enable frame4 50070f93bbda
+undo_enable frame5 ab79a7f0204d
+undo_enable frame6 fd2647cea98c
+--- Undo pressed (state change on both history buttons) ---
+undo_press frame1 40d402c0a869
+undo_press frame2 8d9d796455b5
+undo_press frame3 613262b5097b
+undo_press frame4 613262b5097b
+undo_press frame5 613262b5097b
+undo_press frame6 613262b5097b
+--- Redo pressed ---
+redo_press frame1 a629f254e312
+redo_press frame2 a629f254e312
+redo_press frame3 a629f254e312
+redo_press frame4 a629f254e312
+redo_press frame5 a629f254e312
+redo_press frame6 a629f254e312
+--- START SCULPTING (Construction -> Sculpt) ---
+to_sculpt frame1 53666b08a437
+to_sculpt frame2 53666b08a437
+to_sculpt frame3 53666b08a437
+to_sculpt frame4 53666b08a437
+to_sculpt frame5 53666b08a437
+to_sculpt frame6 53666b08a437
+--- Sculpt tool change (Grab -> Clay) ---
+tool_change frame1 2b4565c67af9
+tool_change frame2 2b4565c67af9
+tool_change frame3 2b4565c67af9
+tool_change frame4 41dfcc1403ac
+tool_change frame5 41dfcc1403ac
+tool_change frame6 41dfcc1403ac
+--- Sculpt details OPEN ---
+sculptdet_open frame1 f94834fe7fc4
+sculptdet_open frame2 266926ca1ccd
+sculptdet_open frame3 4b27dec474d4
+sculptdet_open frame4 905334929ed4
+sculptdet_open frame5 5f964056a9fd
+sculptdet_open frame6 8d466952177f
+--- Sculpt details CLOSE ---
+sculptdet_close frame1 82d0b2def904
+sculptdet_close frame2 fa88edc563bc
+sculptdet_close frame3 a6a90059e432
+sculptdet_close frame4 e3b9593ce751
+sculptdet_close frame5 49dca68d12c8
+sculptdet_close frame6 880e74d4bd7a
+--- BACK TO CONSTRUCTION ---
+to_constr frame1 ae1af6592dd6
+to_constr frame2 ae1af6592dd6
+to_constr frame3 ae1af6592dd6
+to_constr frame4 ae1af6592dd6
+to_constr frame5 ae1af6592dd6
+to_constr frame6 ae1af6592dd6
+--- RESUME SCULPT ---
+to_resume frame1 9973cb0cb42d
+to_resume frame2 9973cb0cb42d
+to_resume frame3 9973cb0cb42d
+to_resume frame4 9973cb0cb42d
+to_resume frame5 9973cb0cb42d
+to_resume frame6 9973cb0cb42d
+--- HIDE UI (chromeRoot fade out + restore chip fade in) ---
+hide_ui frame1 d69f3eecac1c
+hide_ui frame2 653e3dd1f61a
+hide_ui frame3 6941608b76d2
+hide_ui frame4 7d6a3dece0ff
+hide_ui frame5 02acc4d8c7e9
+hide_ui frame6 48b7ed5d90d4
+--- SHOW UI (restore chip) ---
+show_ui frame1 3b240148539a
+show_ui frame2 d351ef352e4c
+show_ui frame3 fda68b125ad5
+show_ui frame4 2842dac6053e
+show_ui frame5 15580b1f7478
+show_ui frame6 adc7b8bd6eff
+--- Display popover OPEN ---
+disp_open frame1 32a5239a5158
+disp_open frame2 9b580457393d
+disp_open frame3 79f1864250e4
+disp_open frame4 30cb16aeddad
+disp_open frame5 a7d96c46f9c2
+disp_open frame6 a872aad91882
+--- APPEARANCE SWITCH (light charcoal -> Activity recreate) ---
+appearance frame1 aa2ce3542516
+appearance frame2 aa2ce3542516
+appearance frame3 aa2ce3542516
+appearance frame4 aa2ce3542516
+appearance frame5 aa2ce3542516
+appearance frame6 aa2ce3542516
+appearance frame7 aa2ce3542516
+appearance frame8 aa2ce3542516
+--- ROTATION portrait -> landscape ---
+rot frame1 4e3c34bf843e
+rot frame2 76de798cfe5c
+rot frame3 3e7540cf2e62
+rot frame4 3e7540cf2e62
+rot frame5 3e7540cf2e62
+rot frame6 3e7540cf2e62
+--- ROTATION landscape -> portrait ---
+rot_back frame1 17466351b3fd
+rot_back frame2 2e61002a6a0c
+rot_back frame3 2e61002a6a0c
+rot_back frame4 2e61002a6a0c
+rot_back frame5 2e61002a6a0c
+rot_back frame6 2e61002a6a0c
+
+# platform scales during this probe:
+animator_duration_scale = 20
+window_animation_scale = 1.0
+transition_animation_scale = 1.0
+--- ANDROID BACK with Add Primitive open ---
+palette open: []
+backkey frame1 ec289161443a
+backkey frame2 0c072781df9e
+backkey frame3 0d610c303cca
+backkey frame4 3603107584e3
+backkey frame5 58cfd7b8a47b
+resumed after BACK: com.google.android.apps.nexuslauncher/.NexusLauncherActivity
+
+--- ANDROID BACK with Add Primitive open (retest) ---
+palette bounds before BACK: []
+backkey2 frame1 75dcb416504b
+backkey2 frame2 030032d22443
+backkey2 frame3 45e725a85df9
+backkey2 frame4 cea8ae7fb61c
+resumed after BACK: com.google.android.apps.nexuslauncher/.NexusLauncherActivity
+
+--- ANDROID BACK with Add Primitive open (retest 2) ---
+palette bounds before BACK: [155 1412 859 2158]
+backkey3 frame1 765ce5bc780b
+backkey3 frame2 b09040f61d2f
+backkey3 frame3 8da72f304121
+backkey3 frame4 ff75e9170bb6
+resumed after BACK: com.google.android.apps.nexuslauncher/.NexusLauncherActivity
+
+--- COMPACT -> EXPANDED (window size class change, 1080x2400@420 -> 1600x2560@240) ---
+expand frame1 39088044348d
+expand frame2 44350e7bf233
+expand frame3 43d577790280
+expand frame4 9d84a3f6051c
+expand frame5 ad2fbd153526
+expand frame6 e20f7538b22f
+
+--- EXPANDED -> COMPACT ---
+shrink frame1 20c75a4082e0
+shrink frame2 20c75a4082e0
+shrink frame3 bc7e1e5b25ab
+shrink frame4 bc7e1e5b25ab
+shrink frame5 4d4bc6167811
+shrink frame6 80f24167419c

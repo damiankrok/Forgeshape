@@ -1,0 +1,8 @@
+# UI-AUDIT2B — landscape and expanded motion
+LANDSCAPE before precision open: rail=2200 225 2379 514 toggle=2242 695 2368 821 objects=149 848 570 996
+ls_open frame1 51314d5eea9c
+ls_open frame2 519e136323bb
+ls_open frame3 525d70f2df23
+ls_open frame4 6a39485c72b8
+ls_open frame5 d72a66b9c9fa
+LANDSCAPE after: rail=1380 225 1559 514 inspector=1591 231 2379 706 objects=149 848 570 996
