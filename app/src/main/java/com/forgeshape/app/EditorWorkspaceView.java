@@ -59,7 +59,8 @@ final class EditorWorkspaceView extends FrameLayout
         DisplaySettingsPopoverView.OnDisplaySettingChanged,
         ObjectsCapsuleView.OnObjectsCapsuleAction,
         AddPrimitivePaletteView.OnPrimitiveChosen,
-        StartChooserView.OnStartFlowChosen {
+        StartChooserView.OnStartFlowChosen,
+        AnchoredSurfaceView.OnOpenStateChanged {
 
     private static final int[] SCULPT_TOOL_HINTS = {
             R.string.hint_grab, R.string.hint_clay, R.string.hint_smooth, R.string.hint_inflate
@@ -126,7 +127,7 @@ final class EditorWorkspaceView extends FrameLayout
 
     private final GlobalToolbarView toolbar;
     private final ToolRailView toolRail;
-    private final ScrollView toolRailScroll;
+    private final BoundedScrollView toolRailScroll;
 
     /**
      * The trailing tool cluster: the rail, with the precision toggle attached
@@ -137,8 +138,15 @@ final class EditorWorkspaceView extends FrameLayout
      * toggle's meaning is entirely a function of the entry above it, and the
      * surface it opens grows out of it, so putting it anywhere else would make
      * the relation something to be remembered rather than seen.
+     *
+     * <p>Its two PERSISTENT children come first and the contextual selector row
+     * last, and the column is anchored by its top edge. Both are the same
+     * decision: a control that is on screen in every state must not be moved by
+     * one that is on screen in only some of them. See
+     * {@link TrailingClusterColumn} for the other half of it — which child gives
+     * up height when the window does not have enough.
      */
-    private final LinearLayout railColumn;
+    private final TrailingClusterColumn railColumn;
 
     /**
      * The Move / Rotate selector, and the two controls in it.
@@ -259,6 +267,13 @@ final class EditorWorkspaceView extends FrameLayout
      *  runs once per size rather than once per measure pass. */
     private int appliedWidthPx;
     private int appliedHeightPx;
+
+    /** Whether this window is too short to stack the transform selectors. */
+    private boolean shortWindow;
+
+    /** Whether the soft keyboard is currently taking part of the window. It has
+     *  the same consequence a short window does — see {@link #compactSelectors()}. */
+    private boolean keyboardVisible;
 
     /** False while a viewport gesture is in flight; see the gesture listener.
      *  Chrome transitions are instant during one, because pointer samples
@@ -425,8 +440,12 @@ final class EditorWorkspaceView extends FrameLayout
         brushControls = new BrushEdgeControlsView(context);
         final LinearLayout.LayoutParams brushParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        brushParams.gravity = Gravity.CENTER_VERTICAL;
+        // Sculpt uses the same stable top anchor as the trailing tool cluster.
+        // Changing the brush track height must not re-centre the whole panel or
+        // move an unrelated control under the user's hand.
+        brushParams.gravity = Gravity.TOP;
         brushParams.leftMargin = EditorControlStyles.dimen(context, R.dimen.brush_gap);
+        brushParams.topMargin = EditorControlStyles.dimen(context, R.dimen.row_gap);
         middleRow.addView(brushControls, brushParams);
 
         // The empty middle is where the model lives. It is a weighted gap with
@@ -437,7 +456,7 @@ final class EditorWorkspaceView extends FrameLayout
         // Scrolled rather than clipped: a window too short for every entry must
         // still be able to reach every entry. Dropping a tool in landscape
         // would be the same class of defect this stage exists to fix.
-        toolRailScroll = new ScrollView(context);
+        toolRailScroll = new BoundedScrollView(context);
         // The scroll container carries the rail's floating surface and its
         // depth, because it is the view whose bounds the rail actually
         // occupies. Putting them on the rail itself would have the container
@@ -452,16 +471,54 @@ final class EditorWorkspaceView extends FrameLayout
         // held, and this says "show me the numbers behind it". Making it look
         // like an entry would put a fifth selectable thing in a control whose
         // whole job is that exactly one of its children is active.
-        railColumn = new LinearLayout(context);
-        railColumn.setOrientation(LinearLayout.VERTICAL);
+        railColumn = new TrailingClusterColumn(context);
         railColumn.setGravity(Gravity.END);
         EditorControlStyles.allowChildShadows(railColumn);
         railColumn.addView(toolRailScroll, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        // The rail is the child that absorbs a squeeze, because it is the only
+        // one that can give height back without losing anything: what it cannot
+        // show, it scrolls to. It takes what is left after every fixed control
+        // has its full height, with no floor of its own — a floor would put the
+        // deficit back on whatever is last in the column, which is the defect
+        // this whole arrangement exists to remove. On any real window the
+        // remainder is at least one entry: the worst measured case, a precision
+        // sheet open with the keyboard up, leaves it 48 dp.
+        railColumn.setFlexibleChild(toolRailScroll, 0);
 
-        // The Move / Rotate / Scale selector: a three-button capsule directly
-        // under the rail, inside the same trailing cluster the Transform entry
-        // lives in.
+        // The precision toggle, attached to the rail and BEFORE the contextual
+        // selectors below.
+        //
+        // The two controls in this column that are on screen in every state —
+        // the rail and this toggle — sit above everything that is on screen in
+        // only some of them, and the column is anchored by its top. That is what
+        // makes entering Transform, leaving it, switching to Scale (where the
+        // space capsule is withdrawn) and opening the precision surface cost the
+        // persistent controls no movement at all. The cluster used to be centred
+        // with the selectors in the middle of it, so each of those changes moved
+        // every capsule by half the delta — far enough that two identical taps
+        // landed on two different controls.
+        precisionGroup = EditorControlStyles.controlGroup(context);
+        precisionToggle = EditorControlStyles.iconButton(context, R.id.precision_toggle,
+                R.drawable.ic_precision, context.getString(R.string.precision_shape));
+        precisionToggle.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                onPrecisionToggleRequested();
+            }
+        });
+        precisionGroup.addView(precisionToggle,
+                EditorControlStyles.iconButtonParams(context, 0));
+        final LinearLayout.LayoutParams precisionParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        precisionParams.gravity = Gravity.END;
+        precisionParams.topMargin =
+                EditorControlStyles.dimen(context, R.dimen.row_gap_small);
+        railColumn.addView(precisionGroup, precisionParams);
+
+        // The Move / Rotate / Scale selector: a three-button capsule at the
+        // bottom of the trailing cluster the Transform entry lives in, below the
+        // two controls that are on screen in every state.
         //
         // Not three rail entries. The rail says WHICH Construction context is
         // held — Shape or Transform — and splitting Transform up there would put
@@ -509,15 +566,19 @@ final class EditorWorkspaceView extends FrameLayout
         transformModeGroup.addView(transformScaleAction, selectorFollowerParams(context));
         transformModeGroup.setVisibility(GONE);
 
-        // The two selectors share ONE slot in the trailing cluster.
+        // The two selectors share ONE slot in the trailing cluster, and it is
+        // the LAST slot in the column.
         //
-        // Stacked, they are two more capsules under a rail that already has to
-        // fit above a precision toggle, and on a short window the column then
-        // overflows — where Android squeezes the LAST child, which is a shipped
-        // 48 dp control. Giving them a row of their own is what lets a short
-        // window lay them side by side instead: the cluster then costs the
-        // height of ONE capsule rather than two, and the width a landscape
+        // Last because they are the only contextual controls here: appearing and
+        // disappearing under the persistent pair costs those nothing, where in
+        // the middle of the column it moved both. Stacked, they are also two more
+        // capsules on a column that already carries a rail and a toggle, so a
+        // short window lays them side by side instead — the cluster then costs
+        // the height of ONE capsule rather than two, and the width a landscape
         // window has to spare. See applyTransformSelectorOrientation.
+        //
+        // A column too short for all of it no longer squeezes whatever is last:
+        // the rail absorbs the deficit and scrolls. See TrailingClusterColumn.
         transformSelectorRow = new LinearLayout(context);
         transformSelectorRow.setOrientation(LinearLayout.VERTICAL);
         transformSelectorRow.setGravity(Gravity.END);
@@ -582,26 +643,10 @@ final class EditorWorkspaceView extends FrameLayout
                 EditorControlStyles.dimen(context, R.dimen.row_gap_small);
         transformSelectorRow.addView(transformSpaceGroup, transformSpaceParams);
 
-        precisionGroup = EditorControlStyles.controlGroup(context);
-        precisionToggle = EditorControlStyles.iconButton(context, R.id.precision_toggle,
-                R.drawable.ic_precision, context.getString(R.string.precision_shape));
-        precisionToggle.setOnClickListener(new OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                onPrecisionToggleRequested();
-            }
-        });
-        precisionGroup.addView(precisionToggle,
-                EditorControlStyles.iconButtonParams(context, 0));
-        final LinearLayout.LayoutParams precisionParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        precisionParams.topMargin =
-                EditorControlStyles.dimen(context, R.dimen.row_gap_small);
-        railColumn.addView(precisionGroup, precisionParams);
-
         final LinearLayout.LayoutParams railParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        railParams.gravity = Gravity.CENTER_VERTICAL;
+        railParams.gravity = Gravity.TOP;
+        railParams.topMargin = EditorControlStyles.dimen(context, R.dimen.row_gap);
         railParams.rightMargin = EditorControlStyles.dimen(context, R.dimen.brush_gap);
         middleRow.addView(railColumn, railParams);
 
@@ -715,9 +760,141 @@ final class EditorWorkspaceView extends FrameLayout
         overlayRoot.addView(startChooser, new LayoutParams(
                 LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
 
+        // Every anchored surface reports its own open state to one listener, so
+        // "is there something for System Back to dismiss" is answered by the
+        // surfaces themselves rather than by a list of call sites that has to
+        // stay complete.
+        for (AnchoredSurfaceView surface : anchoredSurfaces()) {
+            surface.setOnOpenStateChanged(this);
+        }
+
         installInsetListener();
         syncFromNative();
         showStartChooser(!uiState.startChoiceMade());
+    }
+
+    // -----------------------------------------------------------------------
+    // Dismissing a context surface — what System Back means here
+    // -----------------------------------------------------------------------
+
+    /** Told when the workspace gains or loses something Back should dismiss. */
+    interface OnDismissibleSurfaceChanged {
+        void onDismissibleSurfaceChanged(boolean present);
+    }
+
+    /** The Activity, which owns the platform's Back registration. */
+    private OnDismissibleSurfaceChanged dismissibleSurfaceListener;
+
+    /**
+     * The surface a Back press would dismiss: the one most recently opened.
+     *
+     * <p>Tracked rather than derived, because "topmost" is an ordering the view
+     * tree does not record — the four surfaces live in one overlay and none of
+     * them is above another in z. Today they are mutually exclusive, so this is
+     * usually the only open one; it is tracked anyway so that stops being an
+     * assumption the dismissal rule silently depends on.
+     */
+    private AnchoredSurfaceView topmostSurface;
+
+    void setOnDismissibleSurfaceChanged(OnDismissibleSurfaceChanged listener) {
+        dismissibleSurfaceListener = listener;
+        if (listener != null) {
+            listener.onDismissibleSurfaceChanged(hasDismissibleSurface());
+        }
+    }
+
+    @Override
+    public void onSurfaceOpenStateChanged(AnchoredSurfaceView surface, boolean open) {
+        if (open) {
+            topmostSurface = surface;
+        } else if (topmostSurface == surface) {
+            topmostSurface = null;
+        }
+        if (dismissibleSurfaceListener != null) {
+            dismissibleSurfaceListener.onDismissibleSurfaceChanged(hasDismissibleSurface());
+        }
+        applyPrimarySurfaceChromePolicy();
+    }
+
+    /**
+     * The immediate static chrome policy owned by the currently open primary
+     * surface.
+     *
+     * <p>A compact precision/details sheet keeps a reserved gap from the lower
+     * Objects/history row. When an IME further constrains that region, the row
+     * withdraws instead of touching the sheet or being squeezed into the
+     * keyboard. A Display surface owns the upper trailing region, so the
+     * transform/tool cluster is temporarily absent instead of remaining live
+     * underneath it. Side inspectors have their own column and therefore leave
+     * the bottom row alone.
+     *
+     * <p>Visibility changes are deliberately not animated in this stage. The
+     * persistent groups keep their top anchors when they return.
+     */
+    private void applyPrimarySurfaceChromePolicy() {
+        if (bottomRow == null || railColumn == null || inspector == null
+                || displayPopover == null) {
+            return;
+        }
+        final boolean lowerRegionOwned = keyboardVisible && inspector.isOpen()
+                && inspectorPlacement == WorkspaceLayoutMode.InspectorPlacement.BOTTOM_SHEET;
+        bottomRow.setVisibility(lowerRegionOwned ? GONE : VISIBLE);
+        railColumn.setVisibility(displayPopover.isOpen() ? GONE : VISIBLE);
+    }
+
+    /** Whether a Back press has a surface to close before it may leave. */
+    boolean hasDismissibleSurface() {
+        return topmostOpenSurface() != null;
+    }
+
+    private AnchoredSurfaceView topmostOpenSurface() {
+        if (topmostSurface != null && topmostSurface.isOpen()) {
+            return topmostSurface;
+        }
+        for (AnchoredSurfaceView surface : anchoredSurfaces()) {
+            if (surface.isOpen()) {
+                return surface;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Closes the topmost dismissible surface, if there is one.
+     *
+     * <p><b>Through the workspace's own close path, never through the surface.</b>
+     * Closing the precision surface also releases the keyboard and un-lights the
+     * toggle; closing the palette un-lights the capsule's plus. A Back press has
+     * to mean exactly what pressing the control again means, or the two ways of
+     * dismissing one surface leave the workspace in two different states.
+     *
+     * <p>It also goes through {@code setOpen} rather than
+     * {@link AnchoredSurfaceView#closeImmediately()}, so the surface plays the
+     * same exit it plays for its own control — which is the whole of the motion
+     * seam this needed: the dismissal animation was already written and the most
+     * common dismissal gesture simply never reached it. Reduced motion still
+     * lands instantly, because that decision is inside {@code setOpen}.
+     *
+     * @return whether a surface was dismissed; false means Back is not ours
+     */
+    boolean dismissTopmostSurface() {
+        final AnchoredSurfaceView surface = topmostOpenSurface();
+        if (surface == null) {
+            return false;
+        }
+        if (surface == inspector) {
+            setPrecisionOpen(false);
+        } else if (surface == addPrimitivePalette) {
+            setAddPrimitiveOpen(false, null);
+        } else if (surface == objectsPopover) {
+            setObjectsPanelOpen(false);
+        } else if (surface == displayPopover) {
+            displayPopover.setOpen(false);
+            toolbar.showDisplaySettingsOpen(false);
+        } else {
+            surface.setOpen(false);
+        }
+        return true;
     }
 
     // -----------------------------------------------------------------------
@@ -740,11 +917,32 @@ final class EditorWorkspaceView extends FrameLayout
                 final Rect padding = chromeInsets(insets);
                 chromeRoot.setPadding(padding.left, padding.top, padding.right, padding.bottom);
                 overlayRoot.setPadding(padding.left, padding.top, padding.right, padding.bottom);
+                // The keyboard is not just padding: it takes enough of the
+                // window that the trailing cluster has to be laid out
+                // differently, exactly as a short window does. See
+                // keyboardVisible and applyTransformSelectorOrientation.
+                final boolean keyboard = imeInsetPx(insets) > 0;
+                if (keyboard != keyboardVisible) {
+                    keyboardVisible = keyboard;
+                    applyTransformSelectorOrientation(compactSelectors());
+                    applyPrimarySurfaceChromePolicy();
+                }
                 // Returned unconsumed: this view has decided what chrome does
                 // about them, and the viewport deliberately ignores them.
                 return insets;
             }
         });
+    }
+
+    /** How much of the window the soft keyboard is taking, in pixels. */
+    private static int imeInsetPx(WindowInsets insets) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            return insets.getInsets(WindowInsets.Type.ime()).bottom;
+        }
+        // Before R there is no way to tell the keyboard apart from the
+        // navigation bar in an inset, so this reports none: the pre-R path keeps
+        // the layout it always had rather than guessing.
+        return 0;
     }
 
     private Rect chromeInsets(WindowInsets insets) {
@@ -825,9 +1023,9 @@ final class EditorWorkspaceView extends FrameLayout
         // context-bearing surfaces that a narrow row squeezes to nothing. See
         // GlobalToolbarView#setContextLabelVisible.
         toolbar.setContextLabelVisible(layoutMode != WorkspaceLayoutMode.COMPACT);
-        final boolean shortWindow = heightDp < WorkspaceLayoutMode.LOW_HEIGHT_MAX_DP;
+        shortWindow = heightDp < WorkspaceLayoutMode.LOW_HEIGHT_MAX_DP;
         toolRail.setCompactEntries(shortWindow);
-        applyTransformSelectorOrientation(shortWindow);
+        applyTransformSelectorOrientation(compactSelectors());
         // Roughly half the window's height for the two brush tracks, bounded by
         // the control's own sensible range, so they shrink with the window
         // instead of being clipped by it.
@@ -869,6 +1067,28 @@ final class EditorWorkspaceView extends FrameLayout
      * 48 dp targets, same capsule. They are the same controls in a different
      * window, not a second design for one.
      */
+    /**
+     * Whether the two selectors are laid out on their side.
+     *
+     * <p>Two conditions, one arrangement. A SHORT WINDOW is the original one: a
+     * landscape phone has width to spare and no height. THE KEYBOARD is the
+     * other, and it is the same problem arriving differently — with a precision
+     * sheet open and the IME up, the trailing cluster is left barely 150 dp,
+     * which is less than the stacked selectors alone want. Measured before this
+     * stage in exactly that state: the mode capsule at 2.3 dp and the space
+     * capsule gone. Turned on their side the pair costs the height of ONE
+     * capsule, which fits with the rail still on screen.
+     *
+     * <p>It is deliberately NOT a measurement of the cluster feeding back into
+     * its own layout: a decision taken from the height a layout produced, which
+     * then changes that height, is a loop looking for somewhere to settle. Both
+     * inputs here are facts about the WINDOW, so the answer is the same however
+     * many times it is asked.
+     */
+    private boolean compactSelectors() {
+        return shortWindow || keyboardVisible;
+    }
+
     private void applyTransformSelectorOrientation(boolean shortWindow) {
         // The buttons inside each capsule, and then the two capsules relative to
         // each other. Both turn together, so the cluster costs one capsule of
@@ -1012,11 +1232,7 @@ final class EditorWorkspaceView extends FrameLayout
             return;
         }
         if (open) {
-            // The capsule's two surfaces are alternatives, not a stack, and the
-            // Display popover is a third: opening any one closes the others.
-            displayPopover.setOpen(false);
-            toolbar.showDisplaySettingsOpen(false);
-            setAddPrimitiveOpen(false, null);
+            dismissPrimarySurfacesExcept(objectsPopover);
             objectsSection.refreshFromNative();
             anchorOverlayTo(objectsPopover, objectsCapsule);
         }
@@ -1053,11 +1269,7 @@ final class EditorWorkspaceView extends FrameLayout
 
     private void setAddPrimitiveOpen(boolean open, View invoker) {
         if (open) {
-            // One surface at a time, exactly as the scene list and the Display
-            // popover are.
-            setObjectsPanelOpen(false);
-            displayPopover.setOpen(false);
-            toolbar.showDisplaySettingsOpen(false);
+            dismissPrimarySurfacesExcept(addPrimitivePalette);
             anchorOverlayTo(addPrimitivePalette,
                     invoker != null ? invoker : objectsCapsule.addControl());
         }
@@ -1284,15 +1496,16 @@ final class EditorWorkspaceView extends FrameLayout
      * the model — the promotion of {@link WorkspaceLayoutMode#railDocked()},
      * which had a tested meaning and had never been asked.
      *
-     * <p><b>What changes is where it sits, and no longer what it is made of.</b>
-     * Docking used to also repaint the rail as an opaque slab flush against the
-     * window edge with no depth. That was the expanded window speaking a
-     * different visual language from the phone about the same control — a
-     * Sculpt user who rotated a tablet watched their brush selector turn from a
-     * floating capsule into part of the wall, and it read as a desktop CAD frame
-     * rather than as a viewport with its tools around it. The rail is a floating
-     * capsule in every window now, and docking means only that it is
-     * top-aligned with the panel beside it instead of centred on the thumb.
+     * <p><b>What docking changes is now nothing at all here, and that is the
+     * point.</b> It used to repaint the rail as an opaque slab flush against the
+     * window edge, which made a tablet speak a different visual language from a
+     * phone about the same control; the rail became a floating capsule in every
+     * window, and docking was left meaning only "top-aligned rather than centred
+     * on the thumb". The centre anchor is what this stage removed — see the
+     * anchor comment below — so the two paths have converged on the placement
+     * the docked one always had. The method stays because this is still the one
+     * place the cluster's placement is decided, and it is still re-run whenever
+     * the window class changes.
      *
      * <p>What does <b>not</b> change is the {@code SurfaceView}, in any mode.
      * It is the whole window in a compact portrait phone and the whole window
@@ -1316,19 +1529,24 @@ final class EditorWorkspaceView extends FrameLayout
             // window read as a frame; the same gap in every window is what makes
             // the same control recognisably the same control.
             rail.rightMargin = EditorControlStyles.dimen(getContext(), R.dimen.brush_gap);
-            // What docking still decides is where the cluster starts.
+            // The cluster starts at the TOP in every window, docked or floating.
             //
-            // This is what makes "part of the layout" a true claim rather than a
-            // style. A docked rail centred on the window height while the panel
-            // beside it hangs from the top is not a layout: it is one surface
-            // stranded halfway down the model, which is exactly how it read once
-            // the side panels stopped spanning the full window. Top-aligned, the
-            // rail and the panel are one trailing cluster. A FLOATING rail stays
-            // centred, because a capsule standing on the picture belongs where
-            // the thumb is, not where the chrome above it ended.
-            rail.gravity = docked ? Gravity.TOP : Gravity.CENTER_VERTICAL;
-            rail.topMargin =
-                    docked ? EditorControlStyles.dimen(getContext(), R.dimen.row_gap) : 0;
+            // A docked rail centred on the window height while the panel beside
+            // it hangs from the top is not a layout: it is one surface stranded
+            // halfway down the model. That was already the reason the docked
+            // path was top-aligned — and the floating path, which stayed centred
+            // so the capsule sat where the thumb is, paid for it with the defect
+            // that centring causes. A centre anchor moves EVERY child by half of
+            // any height change, so selecting Transform moved the rail 139 dp,
+            // switching to Scale moved it back 56 dp, and two identical taps in
+            // the same place hit two different controls. There is no version of
+            // that a thumb position is worth.
+            //
+            // The same anchor in both cases is also the honest one: it makes a
+            // phone and a tablet the same workspace with more room, rather than
+            // two arrangements of the same controls.
+            rail.gravity = Gravity.TOP;
+            rail.topMargin = EditorControlStyles.dimen(getContext(), R.dimen.row_gap);
             railColumn.setLayoutParams(rail);
         }
     }
@@ -1388,8 +1606,13 @@ final class EditorWorkspaceView extends FrameLayout
             final int inset = EditorControlStyles.dimen(context, R.dimen.inspector_sheet_inset);
             sheetParams.leftMargin = inset;
             sheetParams.rightMargin = inset;
+            // The gap remains meaningful during the surface's first measured
+            // frame and when the lower row returns after dismissal. No control
+            // ever sits directly on the sheet boundary.
+            sheetParams.topMargin = inset;
             sheetParams.bottomMargin = inset;
             chromeRoot.addView(inspector, sheetParams);
+            applyPrimarySurfaceChromePolicy();
             return;
         }
         // WRAP_CONTENT and top-aligned, not MATCH_PARENT.
@@ -1419,6 +1642,7 @@ final class EditorWorkspaceView extends FrameLayout
         params.rightMargin = EditorControlStyles.dimen(context, R.dimen.row_gap);
         params.bottomMargin = EditorControlStyles.dimen(context, R.dimen.row_gap);
         middleRow.addView(inspector, params);
+        applyPrimarySurfaceChromePolicy();
     }
 
     private int dpToPx(int dp) {
@@ -1472,6 +1696,7 @@ final class EditorWorkspaceView extends FrameLayout
             objectsCapsule.showObjectsOpen(false);
             addPrimitivePalette.closeImmediately();
             objectsCapsule.showAddOpen(false);
+            setPrecisionOpen(false);
         }
     }
 
@@ -1993,12 +2218,7 @@ final class EditorWorkspaceView extends FrameLayout
         final boolean sculpting = isSculpting();
         uiState.setPrecisionOpen(sculpting, open);
         if (open) {
-            // The precision surface is a context surface like any other, so it
-            // takes the screen from whatever else was standing on the model.
-            setObjectsPanelOpen(false);
-            setAddPrimitiveOpen(false, null);
-            displayPopover.setOpen(false);
-            toolbar.showDisplaySettingsOpen(false);
+            dismissPrimarySurfacesExcept(inspector);
         } else {
             // Typing is over; the keyboard and the focus belong back on the
             // model rather than on a field that has just left the window.
@@ -2152,6 +2372,10 @@ final class EditorWorkspaceView extends FrameLayout
                     R.attr.fsTextError);
             return;
         }
+        // A primary surface belongs to the mode that opened it. In particular,
+        // Display temporarily suspends the rail, so carrying it into Sculpt
+        // would hide the very controls needed to continue the workflow.
+        dismissPrimarySurfacesExcept(null);
         finishEditing();
         syncFromNative();
         showStatus(getContext().getString(R.string.status_now_sculpting,
@@ -2172,6 +2396,7 @@ final class EditorWorkspaceView extends FrameLayout
                     R.attr.fsTextError);
             return;
         }
+        dismissPrimarySurfacesExcept(null);
         finishEditing();
         syncFromNative();
         // Says what the finger will do now, once, rather than standing in the
@@ -2195,6 +2420,7 @@ final class EditorWorkspaceView extends FrameLayout
     @Override
     public void onBackToConstruction() {
         NativeViewport.enterConstructionMode();
+        dismissPrimarySurfacesExcept(null);
         finishEditing();
         syncFromNative();
     }
@@ -2231,10 +2457,7 @@ final class EditorWorkspaceView extends FrameLayout
     public void onDisplaySettingsRequested() {
         final boolean opening = !displayPopover.isOpen();
         if (opening) {
-            // One context surface at a time; opening one closes the others
-            // rather than stacking them.
-            setObjectsPanelOpen(false);
-            setAddPrimitiveOpen(false, null);
+            dismissPrimarySurfacesExcept(displayPopover);
             refreshDisplaySettings();
             // Hang the popover below the toolbar's ACTUAL height, not a nominal
             // one. The toolbar grows a second line when the status message
@@ -2250,6 +2473,32 @@ final class EditorWorkspaceView extends FrameLayout
         }
         displayPopover.setOpen(opening);
         toolbar.showDisplaySettingsOpen(opening);
+    }
+
+    /**
+     * One primary contextual surface at a time.
+     *
+     * <p>This names the four task surfaces explicitly rather than blindly
+     * closing every anchored popover in the workspace. A future lightweight
+     * popover that is proven collision-free is not silently pulled into this
+     * policy just because it shares the anchored-surface motion primitive.
+     * Each close uses the same path as its invoking control so focus, keyboard
+     * ownership and active styling cannot drift.
+     */
+    private void dismissPrimarySurfacesExcept(AnchoredSurfaceView keeper) {
+        if (keeper != inspector && inspector.isOpen()) {
+            setPrecisionOpen(false);
+        }
+        if (keeper != objectsPopover && objectsPopover.isOpen()) {
+            setObjectsPanelOpen(false);
+        }
+        if (keeper != addPrimitivePalette && addPrimitivePalette.isOpen()) {
+            setAddPrimitiveOpen(false, null);
+        }
+        if (keeper != displayPopover && displayPopover.isOpen()) {
+            displayPopover.setOpen(false);
+            toolbar.showDisplaySettingsOpen(false);
+        }
     }
 
     @Override
@@ -2439,6 +2688,18 @@ final class EditorWorkspaceView extends FrameLayout
         return shapeEditor;
     }
 
+    /** The placement editor, so a test can read a field's complete value rather
+     *  than the shortened form the panel may be drawing. */
+    ConstructionPlacementEditorView placementEditor() {
+        return placementEditor;
+    }
+
+    /** The contextual selector row, so a test can measure the one part of the
+     *  trailing cluster that is allowed to come and go. */
+    View transformSelectorRow() {
+        return transformSelectorRow;
+    }
+
     /**
      * The Objects section, so a test can select a body by its ObjectId.
      *
@@ -2610,7 +2871,7 @@ final class EditorWorkspaceView extends FrameLayout
      * dispatched only to the rail would never exercise the interception the
      * rule exists to settle.
      */
-    ScrollView toolRailScroll() {
+    BoundedScrollView toolRailScroll() {
         return toolRailScroll;
     }
 
@@ -2618,6 +2879,18 @@ final class EditorWorkspaceView extends FrameLayout
     void dismissStartChooserForConstruction() {
         uiState.recordStartChoice();
         showStartChooser(false);
+    }
+
+    /**
+     * How much the chrome is currently inset from the bottom of the window.
+     *
+     * <p>For verification. This is where the keyboard arrives: the IME is a
+     * bottom inset the chrome consumes as padding and the {@code SurfaceView}
+     * ignores, so a case about what a squeezed column does needs to be able to
+     * prove the squeeze was actually in force when it measured.
+     */
+    int chromeBottomInsetPx() {
+        return chromeRoot.getPaddingBottom();
     }
 
     /** The chrome rectangles, in this view's coordinates, that stand between
