@@ -1,0 +1,42 @@
+UI-R5A — trailing cluster bounds, by semantic id, compact portrait
+device emulator-5580 (ForgeShape_Stage006), density 420 dpi, Physical size: 1080x2400
+
+state: Construction resting
+  tool_rail: [880,296][1059,669] = 68.2 x 142.1 dp, top 296 px
+  precision_toggle: [922,691][1048,817] = 48.0 x 48.0 dp, top 691 px
+  transform_mode_group: absent
+  transform_space_group: absent
+  objects_capsule_active: [32,2179][294,2305] = 99.8 x 48.0 dp, top 2179 px
+  history_group: [774,2168][1059,2316] = 108.6 x 56.4 dp, top 2168 px
+state: Transform / Move
+  tool_rail: [880,296][1059,669] = 68.2 x 142.1 dp, top 296 px
+  precision_toggle: [922,691][1048,817] = 48.0 x 48.0 dp, top 691 px
+  transform_mode_group: [911,839][1059,1261] = 56.4 x 160.8 dp, top 839 px
+  transform_space_group: [911,1272][1059,1557] = 56.4 x 108.6 dp, top 1272 px
+state: Transform / Rotate
+  tool_rail: [880,296][1059,669] = 68.2 x 142.1 dp, top 296 px
+  precision_toggle: [922,691][1048,817] = 48.0 x 48.0 dp, top 691 px
+  transform_mode_group: [911,839][1059,1261] = 56.4 x 160.8 dp, top 839 px
+  transform_space_group: [911,1272][1059,1557] = 56.4 x 108.6 dp, top 1272 px
+state: Transform / Scale (space capsule withdrawn)
+  tool_rail: [880,296][1059,669] = 68.2 x 142.1 dp, top 296 px
+  precision_toggle: [922,691][1048,817] = 48.0 x 48.0 dp, top 691 px
+  transform_mode_group: [911,839][1059,1261] = 56.4 x 160.8 dp, top 839 px
+  transform_space_group: absent
+state: Exact Transform open
+  tool_rail: [880,296][1059,620] = 68.2 x 123.4 dp, top 296 px
+  precision_toggle: [922,642][1048,768] = 48.0 x 48.0 dp, top 642 px
+  apply_transform: [58,2153][1022,2279] = 367.2 x 48.0 dp, top 2153 px
+  unit_chip_m: absent
+  inspector_scroll: [21,1803][1059,2116] = 395.4 x 119.2 dp, top 1803 px
+state: long negative typed, IME up
+  field_pos_x: [58,1083][365,1209] = 117.0 x 48.0 dp, top 1083 px
+  precision_toggle: [922,392][1048,518] = 48.0 x 48.0 dp, top 392 px
+  transform_mode_group: [341,540][763,688] = 160.8 x 56.4 dp, top 540 px
+  transform_space_group: [774,540][1059,688] = 108.6 x 56.4 dp, top 540 px
+  apply_transform: [58,1333][1022,1459] = 367.2 x 48.0 dp, top 1333 px
+state: applied, not editing (shortened from the END, sign kept)
+  field_pos_x: [58,1903][365,2029] = 117.0 x 48.0 dp, top 1903 px
+  status_message: absent
+
+System Back with Add Primitive open: foreground after =     topResumedActivity=ActivityRecord{3251093 u0 com.forgeshape.app/.ForgeShapeActivity t23384}

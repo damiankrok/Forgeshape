@@ -1,0 +1,27 @@
+UI-R5A — the configurations the trailing cluster used to lose a control in
+
+short landscape (Physical size: 1080x2400, 420 dpi), Transform + Exact Transform
+  tool_rail: [1380,231][1559,520] = 68.2 x 110.1 dp, top 231 px
+  precision_toggle: [1422,542][1548,668] = 48.0 x 48.0 dp, top 542 px
+  transform_mode_group: [841,690][1263,838] = 160.8 x 56.4 dp, top 690 px
+  transform_space_group: [1274,690][1559,838] = 108.6 x 56.4 dp, top 690 px
+  apply_transform: [1628,657][2342,783] = 272.0 x 48.0 dp, top 657 px
+
+font_scale 1.3, Transform held
+  tool_rail: [880,296][1059,669] = 68.2 x 142.1 dp, top 296 px
+  precision_toggle: [922,691][1048,817] = 48.0 x 48.0 dp, top 691 px
+  transform_mode_group: [911,839][1059,1261] = 56.4 x 160.8 dp, top 839 px
+  transform_space_group: [911,1272][1059,1557] = 56.4 x 108.6 dp, top 1272 px
+font_scale 1.3, Exact Transform open
+  precision_toggle: [922,603][1048,729] = 48.0 x 48.0 dp, top 603 px
+  apply_transform: [58,2153][1022,2279] = 367.2 x 48.0 dp, top 2153 px
+
+expanded (Physical size: 1080x2400
+Override size: 1600x2560, 240 dpi), Exact Transform docked
+  tool_rail: [988,233][1090,446] = 68.0 x 142.0 dp, top 233 px
+  precision_toggle: [1012,458][1084,530] = 48.0 x 48.0 dp, top 458 px
+  apply_transform: [1129,898][1567,970] = 292.0 x 48.0 dp, top 898 px
+
+refusal on screen (error role), Warm Graphite: status_message [32,286][971,351] = 357.7 x 24.8 dp, top 286 px
+refusal on screen (error role), Light Charcoal
+Neutral Charcoal, secondary text on screen

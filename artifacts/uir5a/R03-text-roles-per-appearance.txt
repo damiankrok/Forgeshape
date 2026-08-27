@@ -1,0 +1,6 @@
+UI-R5A — the corrected secondary and error text roles, on screen, per appearance
+device emulator-5580 (ForgeShape_Stage006); appearance confirmed from the renderer's own log line
+
+appearance_warm_graphite  (renderer ground: WarmGraphite)
+  refusal on screen: ""
+  artifact: S13-warm-graphite-refusal.png
