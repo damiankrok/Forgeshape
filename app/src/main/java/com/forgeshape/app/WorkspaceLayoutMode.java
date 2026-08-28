@@ -92,26 +92,6 @@ enum WorkspaceLayoutMode {
                 : InspectorPlacement.BOTTOM_SHEET;
     }
 
-    /**
-     * Whether the Tool Rail is laid out beside the viewport rather than over it.
-     *
-     * <p>Only an expanded window can pay for this. On a phone the rail overlays
-     * the edge, which is what keeps the model full-bleed; the rail is narrow and
-     * translucent precisely because it is standing on the picture.
-     *
-     * <p>"Docked" here means exactly what it already means for the Property
-     * Inspector: the surface is drawn as <b>part of the layout</b> — flush,
-     * with no elevation and no floating card — instead of as a raised panel
-     * standing on the model. It is a claim about where the surface sits, and it
-     * has to be true, which is why it is answered by the window and not by
-     * taste. Note what it is <i>not</i>: it changes nothing about the
-     * {@code SurfaceView}, which is full-bleed in every mode. See
-     * {@link EditorWorkspaceView}.
-     */
-    boolean railDocked() {
-        return this == EXPANDED;
-    }
-
     // -----------------------------------------------------------------------
     // The Objects surface
     // -----------------------------------------------------------------------

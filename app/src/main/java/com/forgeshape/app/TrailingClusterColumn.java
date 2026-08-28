@@ -29,7 +29,7 @@ import android.widget.LinearLayout;
  * which is the defect this arrangement exists to remove. What is left over is
  * what the rail gets, and on any real window that is at least one entry.
  */
-final class TrailingClusterColumn extends LinearLayout {
+class TrailingClusterColumn extends LinearLayout {
 
     /** The child that gives up height, or null while none has been nominated. */
     private BoundedScrollView flexible;

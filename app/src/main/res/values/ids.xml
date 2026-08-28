@@ -138,6 +138,16 @@
     <item name="add_primitive_capsule" type="id" />
     <item name="add_primitive_plane" type="id" />
 
+    <!--
+      The presentation-only host for the complete trailing context cluster.
+      Its stable child ids let verification describe the host contract without
+      depending on incidental child order.
+    -->
+    <item name="workspace_trailing_host" type="id" />
+    <item name="tool_rail_scroll" type="id" />
+    <item name="precision_group" type="id" />
+    <item name="transform_selector_row" type="id" />
+
     <!-- Tool Rail. One rail view; its entries differ by mode. -->
     <item name="tool_rail" type="id" />
     <item name="tool_rail_grab" type="id" />

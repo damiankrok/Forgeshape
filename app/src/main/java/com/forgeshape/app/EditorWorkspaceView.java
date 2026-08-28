@@ -55,7 +55,7 @@ import android.widget.ScrollView;
  */
 final class EditorWorkspaceView extends FrameLayout
         implements InspectorHost, GlobalToolbarView.OnGlobalAction,
-        ToolRailView.OnToolSelected, PropertyInspectorView.OnPrecisionSurfaceClosed,
+        WorkspaceTrailingHostView.Callbacks, PropertyInspectorView.OnPrecisionSurfaceClosed,
         DisplaySettingsPopoverView.OnDisplaySettingChanged,
         ObjectsCapsuleView.OnObjectsCapsuleAction,
         AddPrimitivePaletteView.OnPrimitiveChosen,
@@ -126,50 +126,8 @@ final class EditorWorkspaceView extends FrameLayout
     private final FrameLayout overlayRoot;
 
     private final GlobalToolbarView toolbar;
-    private final ToolRailView toolRail;
-    private final BoundedScrollView toolRailScroll;
-
-    /**
-     * The trailing tool cluster: the rail, with the precision toggle attached
-     * directly under it.
-     *
-     * <p>They are one column rather than two surfaces because they are one
-     * thought — the tool that is held, and the exact values behind it. The
-     * toggle's meaning is entirely a function of the entry above it, and the
-     * surface it opens grows out of it, so putting it anywhere else would make
-     * the relation something to be remembered rather than seen.
-     *
-     * <p>Its two PERSISTENT children come first and the contextual selector row
-     * last, and the column is anchored by its top edge. Both are the same
-     * decision: a control that is on screen in every state must not be moved by
-     * one that is on screen in only some of them. See
-     * {@link TrailingClusterColumn} for the other half of it — which child gives
-     * up height when the window does not have enough.
-     */
-    private final TrailingClusterColumn railColumn;
-
-    /**
-     * The Move / Rotate selector, and the two controls in it.
-     *
-     * <p>Present only where Transform is held in Construction and there is a
-     * body to act on — absent, not disabled, everywhere else. Which of the two
-     * is drawn active is <b>read back</b> from the one native gizmo session
-     * after every request, exactly as the Tool Rail reads back the held tool, so
-     * this can never claim a mode the session is not in.
-     */
-    private final LinearLayout transformSelectorRow;
-    private final LinearLayout transformModeGroup;
-    private final ImageView transformMoveAction;
-    private final ImageView transformRotateAction;
-    private final ImageView transformScaleAction;
-    private final LinearLayout transformSpaceGroup;
-    private final ImageView transformSpaceWorldAction;
-    private final ImageView transformSpaceLocalAction;
-
-    /** The capsule the precision toggle sits in, so it wears the same floating
-     *  material as the rail above it rather than standing bare on the model. */
-    private final LinearLayout precisionGroup;
-    private final ImageView precisionToggle;
+    /** Presentation-only owner of the Tool Rail, Exact trigger and selectors. */
+    private final WorkspaceTrailingHostView trailingHost;
 
     private final BrushEdgeControlsView brushControls;
     private final PropertyInspectorView inspector;
@@ -259,10 +217,6 @@ final class EditorWorkspaceView extends FrameLayout
     private WorkspaceLayoutMode.InspectorPlacement inspectorPlacement =
             WorkspaceLayoutMode.InspectorPlacement.BOTTOM_SHEET;
 
-    /** Which entry set the rail is currently built from, so it is rebuilt on a
-     *  mode change and not on every refresh. */
-    private boolean railShowsSculptTools;
-
     /** The window the current arrangement was computed for, so the decision
      *  runs once per size rather than once per measure pass. */
     private int appliedWidthPx;
@@ -301,9 +255,6 @@ final class EditorWorkspaceView extends FrameLayout
      * See {@link #applyObjectsPlacement()}.
      */
     private boolean objectsColumnAffordable;
-
-    /** Whether the Tool Rail is currently drawn flush rather than floating. */
-    private Boolean appliedRailDocked;
 
     EditorWorkspaceView(Context context, View viewport) {
         super(context);
@@ -452,203 +403,9 @@ final class EditorWorkspaceView extends FrameLayout
         // no background and no listener, so it costs the viewport nothing.
         middleRow.addView(EditorControlStyles.spacer(context));
 
-        toolRail = new ToolRailView(context, this);
-        // Scrolled rather than clipped: a window too short for every entry must
-        // still be able to reach every entry. Dropping a tool in landscape
-        // would be the same class of defect this stage exists to fix.
-        toolRailScroll = new BoundedScrollView(context);
-        // The scroll container carries the rail's floating surface and its
-        // depth, because it is the view whose bounds the rail actually
-        // occupies. Putting them on the rail itself would have the container
-        // clip the shadow away. See ToolRailView's constructor.
-        EditorControlStyles.applyFloatingSurface(toolRailScroll);
-        toolRailScroll.addView(toolRail, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        trailingHost = new WorkspaceTrailingHostView(context, this);
 
-        // The rail and its precision toggle are one trailing cluster, so they
-        // are one column. The toggle is a separate capsule rather than a fifth
-        // rail entry because it is not a tool: the rail says WHICH tool is
-        // held, and this says "show me the numbers behind it". Making it look
-        // like an entry would put a fifth selectable thing in a control whose
-        // whole job is that exactly one of its children is active.
-        railColumn = new TrailingClusterColumn(context);
-        railColumn.setGravity(Gravity.END);
-        EditorControlStyles.allowChildShadows(railColumn);
-        railColumn.addView(toolRailScroll, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        // The rail is the child that absorbs a squeeze, because it is the only
-        // one that can give height back without losing anything: what it cannot
-        // show, it scrolls to. It takes what is left after every fixed control
-        // has its full height, with no floor of its own — a floor would put the
-        // deficit back on whatever is last in the column, which is the defect
-        // this whole arrangement exists to remove. On any real window the
-        // remainder is at least one entry: the worst measured case, a precision
-        // sheet open with the keyboard up, leaves it 48 dp.
-        railColumn.setFlexibleChild(toolRailScroll, 0);
-
-        // The precision toggle, attached to the rail and BEFORE the contextual
-        // selectors below.
-        //
-        // The two controls in this column that are on screen in every state —
-        // the rail and this toggle — sit above everything that is on screen in
-        // only some of them, and the column is anchored by its top. That is what
-        // makes entering Transform, leaving it, switching to Scale (where the
-        // space capsule is withdrawn) and opening the precision surface cost the
-        // persistent controls no movement at all. The cluster used to be centred
-        // with the selectors in the middle of it, so each of those changes moved
-        // every capsule by half the delta — far enough that two identical taps
-        // landed on two different controls.
-        precisionGroup = EditorControlStyles.controlGroup(context);
-        precisionToggle = EditorControlStyles.iconButton(context, R.id.precision_toggle,
-                R.drawable.ic_precision, context.getString(R.string.precision_shape));
-        precisionToggle.setOnClickListener(new OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                onPrecisionToggleRequested();
-            }
-        });
-        precisionGroup.addView(precisionToggle,
-                EditorControlStyles.iconButtonParams(context, 0));
-        final LinearLayout.LayoutParams precisionParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        precisionParams.gravity = Gravity.END;
-        precisionParams.topMargin =
-                EditorControlStyles.dimen(context, R.dimen.row_gap_small);
-        railColumn.addView(precisionGroup, precisionParams);
-
-        // The Move / Rotate / Scale selector: a three-button capsule at the
-        // bottom of the trailing cluster the Transform entry lives in, below the
-        // two controls that are on screen in every state.
-        //
-        // Not three rail entries. The rail says WHICH Construction context is
-        // held — Shape or Transform — and splitting Transform up there would put
-        // three entries on a permanent control for a choice that only exists
-        // inside one of them. This is the contextual half of that entry, and it
-        // is absent everywhere the context is.
-        //
-        // Vertical wherever the window has the height for it, so the cluster
-        // keeps the width the rail already occupies: a horizontal row would push
-        // the trailing edge inward on every window, for a control that is on
-        // screen only some of the time. A window too short turns it on its side
-        // instead — see applyTransformSelectorOrientation.
-        transformModeGroup = EditorControlStyles.controlGroup(context);
-        transformModeGroup.setId(R.id.transform_mode_group);
-        transformModeGroup.setOrientation(LinearLayout.VERTICAL);
-        transformModeGroup.setGravity(Gravity.CENTER_HORIZONTAL);
-        transformMoveAction = EditorControlStyles.iconButton(context, R.id.transform_mode_move,
-                R.drawable.ic_gizmo_move, context.getString(R.string.transform_mode_move));
-        transformMoveAction.setOnClickListener(new OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                onTransformModeRequested(NativeViewport.GIZMO_MODE_MOVE);
-            }
-        });
-        transformModeGroup.addView(transformMoveAction,
-                EditorControlStyles.iconButtonParams(context, 0));
-        transformRotateAction = EditorControlStyles.iconButton(context,
-                R.id.transform_mode_rotate, R.drawable.ic_gizmo_rotate,
-                context.getString(R.string.transform_mode_rotate));
-        transformRotateAction.setOnClickListener(new OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                onTransformModeRequested(NativeViewport.GIZMO_MODE_ROTATE);
-            }
-        });
-        transformModeGroup.addView(transformRotateAction, selectorFollowerParams(context));
-        transformScaleAction = EditorControlStyles.iconButton(context, R.id.transform_mode_scale,
-                R.drawable.ic_gizmo_scale, context.getString(R.string.transform_mode_scale));
-        transformScaleAction.setOnClickListener(new OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                onTransformModeRequested(NativeViewport.GIZMO_MODE_SCALE);
-            }
-        });
-        transformModeGroup.addView(transformScaleAction, selectorFollowerParams(context));
-        transformModeGroup.setVisibility(GONE);
-
-        // The two selectors share ONE slot in the trailing cluster, and it is
-        // the LAST slot in the column.
-        //
-        // Last because they are the only contextual controls here: appearing and
-        // disappearing under the persistent pair costs those nothing, where in
-        // the middle of the column it moved both. Stacked, they are also two more
-        // capsules on a column that already carries a rail and a toggle, so a
-        // short window lays them side by side instead — the cluster then costs
-        // the height of ONE capsule rather than two, and the width a landscape
-        // window has to spare. See applyTransformSelectorOrientation.
-        //
-        // A column too short for all of it no longer squeezes whatever is last:
-        // the rail absorbs the deficit and scrolls. See TrailingClusterColumn.
-        transformSelectorRow = new LinearLayout(context);
-        transformSelectorRow.setOrientation(LinearLayout.VERTICAL);
-        transformSelectorRow.setGravity(Gravity.END);
-        EditorControlStyles.allowChildShadows(transformSelectorRow);
-        transformSelectorRow.setVisibility(GONE);
-        transformSelectorRow.addView(transformModeGroup, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        final LinearLayout.LayoutParams transformRowParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        transformRowParams.gravity = Gravity.END;
-        transformRowParams.topMargin =
-                EditorControlStyles.dimen(context, R.dimen.row_gap_small);
-        railColumn.addView(transformSelectorRow, transformRowParams);
-
-        // The World / Local selector: a second capsule beside the mode one in
-        // the selector row, in the same idiom, because it answers a second
-        // question about the same instrument — not which handles, but which axes
-        // they point along.
-        //
-        // BOTH states are drawn rather than one toggle. The space changes what
-        // every handle means, so which alternative exists is worth 48 dp; a
-        // toggle showing only the current value would make the other one
-        // something the user has to remember is there.
-        //
-        // It is ABSENT in Scale rather than disabled. A world-axis scale of a
-        // rotated body is a shear, which the transform cannot hold at all, and a
-        // control that cannot succeed is not drawn. The native guard stays
-        // regardless — removing a control is not removing a guard.
-        transformSpaceGroup = EditorControlStyles.controlGroup(context);
-        transformSpaceGroup.setId(R.id.transform_space_group);
-        transformSpaceGroup.setOrientation(LinearLayout.VERTICAL);
-        transformSpaceGroup.setGravity(Gravity.CENTER_HORIZONTAL);
-        transformSpaceWorldAction = EditorControlStyles.iconButton(context,
-                R.id.transform_space_world, R.drawable.ic_space_world,
-                context.getString(R.string.transform_space_world));
-        transformSpaceWorldAction.setOnClickListener(new OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                onTransformSpaceRequested(NativeViewport.GIZMO_SPACE_WORLD);
-            }
-        });
-        transformSpaceGroup.addView(transformSpaceWorldAction,
-                EditorControlStyles.iconButtonParams(context, 0));
-        transformSpaceLocalAction = EditorControlStyles.iconButton(context,
-                R.id.transform_space_local, R.drawable.ic_space_local,
-                context.getString(R.string.transform_space_local));
-        transformSpaceLocalAction.setOnClickListener(new OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                onTransformSpaceRequested(NativeViewport.GIZMO_SPACE_LOCAL);
-            }
-        });
-        transformSpaceGroup.addView(transformSpaceLocalAction, selectorFollowerParams(context));
-        transformSpaceGroup.setVisibility(GONE);
-        // The gap to the mode selector, on whichever axis the row is laid out
-        // along — moved by applyTransformSelectorOrientation, exactly as the
-        // gap between two buttons inside a group is.
-        final LinearLayout.LayoutParams transformSpaceParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        transformSpaceParams.gravity = Gravity.END;
-        transformSpaceParams.topMargin =
-                EditorControlStyles.dimen(context, R.dimen.row_gap_small);
-        transformSelectorRow.addView(transformSpaceGroup, transformSpaceParams);
-
-        final LinearLayout.LayoutParams railParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        railParams.gravity = Gravity.TOP;
-        railParams.topMargin = EditorControlStyles.dimen(context, R.dimen.row_gap);
-        railParams.rightMargin = EditorControlStyles.dimen(context, R.dimen.brush_gap);
-        middleRow.addView(railColumn, railParams);
+        middleRow.addView(trailingHost, trailingHost.parentLayoutParams());
 
         // The bottom edge: one capsule, wrapping its own content, on the
         // leading side. Added to the chrome root AFTER the weighted middle row
@@ -832,14 +589,14 @@ final class EditorWorkspaceView extends FrameLayout
      * persistent groups keep their top anchors when they return.
      */
     private void applyPrimarySurfaceChromePolicy() {
-        if (bottomRow == null || railColumn == null || inspector == null
+        if (bottomRow == null || trailingHost == null || inspector == null
                 || displayPopover == null) {
             return;
         }
         final boolean lowerRegionOwned = keyboardVisible && inspector.isOpen()
                 && inspectorPlacement == WorkspaceLayoutMode.InspectorPlacement.BOTTOM_SHEET;
         bottomRow.setVisibility(lowerRegionOwned ? GONE : VISIBLE);
-        railColumn.setVisibility(displayPopover.isOpen() ? GONE : VISIBLE);
+        renderTrailingHost(isSculpting());
     }
 
     /** Whether a Back press has a surface to close before it may leave. */
@@ -920,11 +677,11 @@ final class EditorWorkspaceView extends FrameLayout
                 // The keyboard is not just padding: it takes enough of the
                 // window that the trailing cluster has to be laid out
                 // differently, exactly as a short window does. See
-                // keyboardVisible and applyTransformSelectorOrientation.
+                // keyboardVisible and the trailing host's compact input.
                 final boolean keyboard = imeInsetPx(insets) > 0;
                 if (keyboard != keyboardVisible) {
                     keyboardVisible = keyboard;
-                    applyTransformSelectorOrientation(compactSelectors());
+                    renderTrailingHost(isSculpting());
                     applyPrimarySurfaceChromePolicy();
                 }
                 // Returned unconsumed: this view has decided what chrome does
@@ -1024,8 +781,6 @@ final class EditorWorkspaceView extends FrameLayout
         // GlobalToolbarView#setContextLabelVisible.
         toolbar.setContextLabelVisible(layoutMode != WorkspaceLayoutMode.COMPACT);
         shortWindow = heightDp < WorkspaceLayoutMode.LOW_HEIGHT_MAX_DP;
-        toolRail.setCompactEntries(shortWindow);
-        applyTransformSelectorOrientation(compactSelectors());
         // Roughly half the window's height for the two brush tracks, bounded by
         // the control's own sensible range, so they shrink with the window
         // instead of being clipped by it.
@@ -1033,100 +788,14 @@ final class EditorWorkspaceView extends FrameLayout
 
         objectsColumnAffordable = layoutMode.objectsDocked(widthDp);
         applyObjectsPlacement();
-        applyRailDock(layoutMode.railDocked());
+        trailingHost.refreshParentPlacement();
         placeInspector(layoutMode.inspectorPlacement(heightDp), widthDp, heightDp);
+        renderTrailingHost(isSculpting());
     }
 
-    /**
-     * Layout params for every selector button after the first: the gap between
-     * neighbours, on whichever axis the group is currently laid out along.
-     *
-     * <p>Declared once here rather than at each call site so the two selectors
-     * cannot drift apart, and so {@link #applyTransformSelectorOrientation} has
-     * exactly one shape of margin to move.
-     */
-    private static LinearLayout.LayoutParams selectorFollowerParams(Context context) {
-        final LinearLayout.LayoutParams params =
-                EditorControlStyles.iconButtonParams(context, 0);
-        params.topMargin = EditorControlStyles.dimen(context, R.dimen.toolbar_gap);
-        return params;
-    }
-
-    /**
-     * Lays the two transform selectors out along the axis the window has room
-     * on.
-     *
-     * <p>A short window is the one that cannot take the stacked capsules in the
-     * trailing cluster. Left vertical there, the column overflows and the LAST
-     * child — the precision toggle — is the one Android squeezes, which put a
-     * shipped 48 dp control at 14 dp. The selectors turn on their side instead:
-     * a landscape window is short and wide, so a row costs width it has and
-     * returns the height it does not.
-     *
-     * <p>Nothing else about either control changes — same ids, same glyphs, same
-     * 48 dp targets, same capsule. They are the same controls in a different
-     * window, not a second design for one.
-     */
-    /**
-     * Whether the two selectors are laid out on their side.
-     *
-     * <p>Two conditions, one arrangement. A SHORT WINDOW is the original one: a
-     * landscape phone has width to spare and no height. THE KEYBOARD is the
-     * other, and it is the same problem arriving differently — with a precision
-     * sheet open and the IME up, the trailing cluster is left barely 150 dp,
-     * which is less than the stacked selectors alone want. Measured before this
-     * stage in exactly that state: the mode capsule at 2.3 dp and the space
-     * capsule gone. Turned on their side the pair costs the height of ONE
-     * capsule, which fits with the rail still on screen.
-     *
-     * <p>It is deliberately NOT a measurement of the cluster feeding back into
-     * its own layout: a decision taken from the height a layout produced, which
-     * then changes that height, is a loop looking for somewhere to settle. Both
-     * inputs here are facts about the WINDOW, so the answer is the same however
-     * many times it is asked.
-     */
+    /** Derived window input; the trailing host decides how its children render it. */
     private boolean compactSelectors() {
         return shortWindow || keyboardVisible;
-    }
-
-    private void applyTransformSelectorOrientation(boolean shortWindow) {
-        // The buttons inside each capsule, and then the two capsules relative to
-        // each other. Both turn together, so the cluster costs one capsule of
-        // height on a short window instead of two.
-        applyGroupOrientation(transformModeGroup, shortWindow, transformRotateAction,
-                transformScaleAction);
-        applyGroupOrientation(transformSpaceGroup, shortWindow, transformSpaceLocalAction);
-        applyGroupOrientation(transformSelectorRow, shortWindow, transformSpaceGroup);
-    }
-
-    private void applyGroupOrientation(LinearLayout group, boolean shortWindow,
-                                       View... followers) {
-        final int orientation = shortWindow ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL;
-        if (group.getOrientation() == orientation) {
-            return;
-        }
-        group.setOrientation(orientation);
-        // The selector ROW keeps its trailing alignment in both axes: it is part
-        // of a right-aligned cluster, and centring it would leave the two
-        // capsules hanging off the edge the rail is flush with.
-        if (group == transformSelectorRow) {
-            group.setGravity(shortWindow ? Gravity.BOTTOM : Gravity.END);
-        } else {
-            group.setGravity(shortWindow ? Gravity.CENTER_VERTICAL : Gravity.CENTER_HORIZONTAL);
-        }
-        // The gap moves with the axis: whichever margin was separating the
-        // buttons is cleared and the other takes it, so a group never carries a
-        // stale offset from the layout it used to be in.
-        final int gap = EditorControlStyles.dimen(getContext(), R.dimen.toolbar_gap);
-        for (View follower : followers) {
-            final ViewGroup.LayoutParams params = follower.getLayoutParams();
-            if (params instanceof LinearLayout.LayoutParams) {
-                final LinearLayout.LayoutParams typed = (LinearLayout.LayoutParams) params;
-                typed.topMargin = shortWindow ? 0 : gap;
-                typed.leftMargin = shortWindow ? gap : 0;
-                follower.setLayoutParams(typed);
-            }
-        }
     }
 
     /**
@@ -1468,11 +1137,11 @@ final class EditorWorkspaceView extends FrameLayout
      */
     private int trailingLimitFor(View invoker, int width, int gap) {
         final int windowLimit = getWidth() - gap;
-        if (!railColumn.isShown() || isInTrailingCluster(invoker)) {
+        if (!trailingHost.isShown() || isInTrailingCluster(invoker)) {
             return windowLimit;
         }
-        final Rect cluster = new Rect(0, 0, railColumn.getWidth(), railColumn.getHeight());
-        offsetDescendantRectToMyCoords(railColumn, cluster);
+        final Rect cluster = new Rect(0, 0, trailingHost.getWidth(), trailingHost.getHeight());
+        offsetDescendantRectToMyCoords(trailingHost, cluster);
         // Never tighter than the surface's own width: a window too narrow to
         // seat it beside the cluster is still laid out, at the leading edge,
         // rather than at a negative margin.
@@ -1482,73 +1151,13 @@ final class EditorWorkspaceView extends FrameLayout
     /** Whether this control is part of the trailing tool cluster. */
     private boolean isInTrailingCluster(View control) {
         for (View view = control; view != null; ) {
-            if (view == railColumn) {
+            if (view == trailingHost) {
                 return true;
             }
             final ViewParent parent = view.getParent();
             view = parent instanceof View ? (View) parent : null;
         }
         return false;
-    }
-
-    /**
-     * Draws the Tool Rail as part of the layout rather than as a surface over
-     * the model — the promotion of {@link WorkspaceLayoutMode#railDocked()},
-     * which had a tested meaning and had never been asked.
-     *
-     * <p><b>What docking changes is now nothing at all here, and that is the
-     * point.</b> It used to repaint the rail as an opaque slab flush against the
-     * window edge, which made a tablet speak a different visual language from a
-     * phone about the same control; the rail became a floating capsule in every
-     * window, and docking was left meaning only "top-aligned rather than centred
-     * on the thumb". The centre anchor is what this stage removed — see the
-     * anchor comment below — so the two paths have converged on the placement
-     * the docked one always had. The method stays because this is still the one
-     * place the cluster's placement is decided, and it is still re-run whenever
-     * the window class changes.
-     *
-     * <p>What does <b>not</b> change is the {@code SurfaceView}, in any mode.
-     * It is the whole window in a compact portrait phone and the whole window
-     * on a docked tablet; docking rearranges chrome and never the render
-     * target, so nothing here can resize a swapchain.
-     */
-    private void applyRailDock(boolean docked) {
-        if (appliedRailDocked != null && appliedRailDocked == docked) {
-            return;
-        }
-        appliedRailDocked = docked;
-        // The precision toggle keeps its floating capsule in both cases. It is
-        // not part of the docked frame even when the rail above it is: it opens
-        // a surface over the model, and a flush toggle hanging off the bottom of
-        // a docked column would claim to be a fifth rail entry.
-        final ViewGroup.LayoutParams params = railColumn.getLayoutParams();
-        if (params instanceof LinearLayout.LayoutParams) {
-            final LinearLayout.LayoutParams rail = (LinearLayout.LayoutParams) params;
-            // The gap off the trailing edge is kept in BOTH cases now. A rail
-            // flush against the window edge is the shape that made an expanded
-            // window read as a frame; the same gap in every window is what makes
-            // the same control recognisably the same control.
-            rail.rightMargin = EditorControlStyles.dimen(getContext(), R.dimen.brush_gap);
-            // The cluster starts at the TOP in every window, docked or floating.
-            //
-            // A docked rail centred on the window height while the panel beside
-            // it hangs from the top is not a layout: it is one surface stranded
-            // halfway down the model. That was already the reason the docked
-            // path was top-aligned — and the floating path, which stayed centred
-            // so the capsule sat where the thumb is, paid for it with the defect
-            // that centring causes. A centre anchor moves EVERY child by half of
-            // any height change, so selecting Transform moved the rail 139 dp,
-            // switching to Scale moved it back 56 dp, and two identical taps in
-            // the same place hit two different controls. There is no version of
-            // that a thumb position is worth.
-            //
-            // The same anchor in both cases is also the honest one: it makes a
-            // phone and a tablet the same workspace with more room, rather than
-            // two arrangements of the same controls.
-            rail.gravity = Gravity.TOP;
-            rail.topMargin = EditorControlStyles.dimen(getContext(), R.dimen.row_gap);
-            railColumn.setLayoutParams(rail);
-        }
     }
 
     /**
@@ -1846,7 +1455,6 @@ final class EditorWorkspaceView extends FrameLayout
         final boolean hasFrozenMesh = nativeSculpt[NativeViewport.SCULPT_HAS_MESH] != 0.0;
 
         toolbar.showContext(sculpting, hasFrozenMesh);
-        buildRailFor(sculpting);
         // Display settings are native-owned and process-scoped, so on a resume
         // they are already whatever they were; this only makes the popover's
         // chips agree with them.
@@ -1884,7 +1492,6 @@ final class EditorWorkspaceView extends FrameLayout
             brushControls.setVisibility(VISIBLE);
             brushControls.refreshFromNative();
             sculptContext.refreshFromNative();
-            toolRail.showActive((int) nativeSculpt[NativeViewport.SCULPT_TOOL]);
         } else {
             // In Construction the brush controls are not merely disabled but
             // absent: there is no brush to set, and an inert slider standing on
@@ -1892,7 +1499,6 @@ final class EditorWorkspaceView extends FrameLayout
             brushControls.setVisibility(GONE);
             shapeEditor.refreshFromNative();
             placementEditor.refreshFromNative();
-            toolRail.showActive(uiState.constructionTool());
         }
         objectsCapsule.refreshFromNative();
         refreshTransformGizmo(sculpting);
@@ -1933,32 +1539,43 @@ final class EditorWorkspaceView extends FrameLayout
                 && uiState.constructionTool() == EditorUiState.CONSTRUCTION_TOOL_TRANSFORM
                 && NativeViewport.sceneActiveBodyId() != NativeViewport.NO_OBJECT;
         NativeViewport.setGizmoActive(offered);
-        transformSelectorRow.setVisibility(offered ? VISIBLE : GONE);
-        transformModeGroup.setVisibility(offered ? VISIBLE : GONE);
-        if (!offered) {
-            transformSpaceGroup.setVisibility(GONE);
-            return;
+        if (offered) {
+            NativeViewport.gizmoState(nativeGizmo);
         }
-        NativeViewport.gizmoState(nativeGizmo);
-        final int mode = (int) nativeGizmo[NativeViewport.GIZMO_MODE];
-        EditorControlStyles.setIconButtonActive(transformMoveAction,
-                mode == NativeViewport.GIZMO_MODE_MOVE);
-        EditorControlStyles.setIconButtonActive(transformRotateAction,
-                mode == NativeViewport.GIZMO_MODE_ROTATE);
-        EditorControlStyles.setIconButtonActive(transformScaleAction,
-                mode == NativeViewport.GIZMO_MODE_SCALE);
+        renderTrailingHost(sculpting);
+    }
 
-        // WHETHER there is a space to choose is native state too, not a mode
-        // comparison repeated on this side: Scale is Local-only, and a second
-        // copy of that rule here would be a second thing to keep in step.
-        final boolean spaceSelectable =
-                nativeGizmo[NativeViewport.GIZMO_SPACE_SELECTABLE] != 0.0;
-        transformSpaceGroup.setVisibility(spaceSelectable ? VISIBLE : GONE);
-        final int space = (int) nativeGizmo[NativeViewport.GIZMO_SPACE];
-        EditorControlStyles.setIconButtonActive(transformSpaceWorldAction,
-                space == NativeViewport.GIZMO_SPACE_WORLD);
-        EditorControlStyles.setIconButtonActive(transformSpaceLocalAction,
-                space == NativeViewport.GIZMO_SPACE_LOCAL);
+    /** Supplies the host one derived snapshot; native reads and commands stay here. */
+    private void renderTrailingHost(boolean sculpting) {
+        final boolean transformOffered = !sculpting
+                && uiState.constructionTool() == EditorUiState.CONSTRUCTION_TOOL_TRANSFORM
+                && NativeViewport.sceneActiveBodyId() != NativeViewport.NO_OBJECT;
+        if (transformOffered) {
+            NativeViewport.gizmoState(nativeGizmo);
+        }
+        final int activeTool = sculpting
+                ? (int) nativeSculpt[NativeViewport.SCULPT_TOOL]
+                : uiState.constructionTool();
+        final int transformMode = transformOffered
+                ? (int) nativeGizmo[NativeViewport.GIZMO_MODE]
+                : NativeViewport.GIZMO_MODE_MOVE;
+        final boolean transformSpaceOffered = transformOffered
+                && nativeGizmo[NativeViewport.GIZMO_SPACE_SELECTABLE] != 0.0;
+        final int transformSpace = transformSpaceOffered
+                ? (int) nativeGizmo[NativeViewport.GIZMO_SPACE]
+                : NativeViewport.GIZMO_SPACE_LOCAL;
+        trailingHost.render(new WorkspaceTrailingHostView.PresentationState(
+                sculpting,
+                activeTool,
+                transformOffered,
+                transformMode,
+                transformSpaceOffered,
+                transformSpace,
+                uiState.precisionOpen(sculpting),
+                getContext().getString(precisionSurfaceName(sculpting)),
+                shortWindow,
+                compactSelectors(),
+                displayPopover != null && displayPopover.isOpen()));
     }
 
     /**
@@ -1974,7 +1591,8 @@ final class EditorWorkspaceView extends FrameLayout
      * redraw reads both back rather than only the mode: the session owns that
      * coupling and this layer only shows what it decided.
      */
-    private void onTransformModeRequested(int mode) {
+    @Override
+    public void onTransformModeRequested(int mode) {
         NativeViewport.setGizmoMode(mode);
         refreshTransformGizmo(false);
     }
@@ -1985,7 +1603,8 @@ final class EditorWorkspaceView extends FrameLayout
      * <p>Exactly as cheap as the mode: presentation state, no revision, no
      * publication, no history step, and no re-read of the exact-value editors.
      */
-    private void onTransformSpaceRequested(int space) {
+    @Override
+    public void onTransformSpaceRequested(int space) {
         NativeViewport.setGizmoSpace(space);
         refreshTransformGizmo(false);
     }
@@ -2088,54 +1707,6 @@ final class EditorWorkspaceView extends FrameLayout
                 context.getString(SCULPT_TOOL_HINTS[index])), R.attr.fsTextSecondary);
     }
 
-    private void buildRailFor(boolean sculpting) {
-        if (railShowsSculptTools == sculpting && toolRail.getChildCount() > 0) {
-            return;
-        }
-        railShowsSculptTools = sculpting;
-        final Context context = getContext();
-        if (sculpting) {
-            toolRail.setEntries(new ToolRailView.Entry[]{
-                    new ToolRailView.Entry(R.id.tool_rail_grab, R.drawable.ic_tool_grab,
-                            context.getString(R.string.tool_grab),
-                            NativeViewport.TOOL_GRAB),
-                    new ToolRailView.Entry(R.id.tool_rail_clay, R.drawable.ic_tool_clay,
-                            context.getString(R.string.tool_clay),
-                            NativeViewport.TOOL_CLAY),
-                    new ToolRailView.Entry(R.id.tool_rail_smooth, R.drawable.ic_tool_smooth,
-                            context.getString(R.string.tool_smooth),
-                            NativeViewport.TOOL_SMOOTH),
-                    new ToolRailView.Entry(R.id.tool_rail_inflate, R.drawable.ic_tool_inflate,
-                            context.getString(R.string.tool_inflate),
-                            NativeViewport.TOOL_INFLATE),
-            });
-        } else {
-            // Two entries, and both of them work.
-            //
-            // Sketch and Extrude used to be drawn here, inert. The argument was
-            // that the shell's shape should not change when they arrive — but
-            // the cost was half of the one control the user reaches for most
-            // spent on features the product does not have, on the smallest
-            // window, next to the two that do. A rail is a set of tools; an
-            // entry that looks like a tool and does nothing is worse than an
-            // absent one, and nothing about this rail's structure has to change
-            // to take a third working entry later.
-            //
-            // "Transform" rather than "Place" is the vocabulary Stage 020's
-            // direct handles will join. It is not a claim that they exist: what
-            // this entry opens today is exact numeric and its own title says
-            // so — "Exact Transform — Body #1".
-            toolRail.setEntries(new ToolRailView.Entry[]{
-                    new ToolRailView.Entry(R.id.tool_rail_shape, R.drawable.ic_tool_shape,
-                            context.getString(R.string.tool_shape),
-                            EditorUiState.CONSTRUCTION_TOOL_SHAPE),
-                    new ToolRailView.Entry(R.id.tool_rail_place, R.drawable.ic_tool_place,
-                            context.getString(R.string.tool_transform),
-                            EditorUiState.CONSTRUCTION_TOOL_TRANSFORM),
-            });
-        }
-    }
-
     /**
      * Puts the body belonging to the active mode and Tool Rail entry into the
      * inspector.
@@ -2180,12 +1751,8 @@ final class EditorWorkspaceView extends FrameLayout
      * decided for this mode, which starts closed.
      */
     private void showPrecisionToggle(boolean sculpting) {
-        final Context context = getContext();
-        final String opens = context.getString(precisionSurfaceName(sculpting));
         final boolean open = uiState.precisionOpen(sculpting);
-        precisionToggle.setContentDescription(context.getString(
-                open ? R.string.precision_close : R.string.precision_open, opens));
-        EditorControlStyles.setIconButtonActive(precisionToggle, open);
+        renderTrailingHost(sculpting);
         applyPrecisionOpen(open);
     }
 
@@ -2205,7 +1772,8 @@ final class EditorWorkspaceView extends FrameLayout
      * at once. It makes <b>no native call</b>: opening a panel of numbers reads
      * state that is already there, publishes nothing and uploads nothing.
      */
-    private void onPrecisionToggleRequested() {
+    @Override
+    public void onPrecisionRequested() {
         setPrecisionOpen(!inspector.isOpen());
     }
 
@@ -2279,7 +1847,8 @@ final class EditorWorkspaceView extends FrameLayout
             // shared by every tool.
             NativeViewport.setSculptTool(key);
             final int active = NativeViewport.sculptTool();
-            toolRail.showActive(active);
+            nativeSculpt[NativeViewport.SCULPT_TOOL] = active;
+            renderTrailingHost(true);
             final int index = (active >= 0 && active < SCULPT_TOOL_NAMES.length)
                     ? active : NativeViewport.TOOL_GRAB;
             showStatus(getContext().getString(R.string.status_tool_selected,
@@ -2292,7 +1861,6 @@ final class EditorWorkspaceView extends FrameLayout
         // screen. Native code has no such concept, makes no call here, and
         // nothing about the object changes.
         uiState.setConstructionTool(key);
-        toolRail.showActive(uiState.constructionTool());
         showActiveInspectorBody(false);
         // Transform is the entry that owns direct manipulation, so the handles
         // and their Move/Rotate selector arrive with it and leave with it. This
@@ -2694,12 +2262,6 @@ final class EditorWorkspaceView extends FrameLayout
         return placementEditor;
     }
 
-    /** The contextual selector row, so a test can measure the one part of the
-     *  trailing cluster that is allowed to come and go. */
-    View transformSelectorRow() {
-        return transformSelectorRow;
-    }
-
     /**
      * The Objects section, so a test can select a body by its ObjectId.
      *
@@ -2759,64 +2321,9 @@ final class EditorWorkspaceView extends FrameLayout
                 objectsPopover, addPrimitivePalette, inspector, displayPopover};
     }
 
-    /** The Tool Rail, so a test can read which entry it says is held. */
-    ToolRailView toolRail() {
-        return toolRail;
-    }
-
     /** The direct brush controls, so a test can read the values beside them. */
     BrushEdgeControlsView brushControls() {
         return brushControls;
-    }
-
-    /** The Move / Rotate / Scale selector, so a test can read whether it is on
-     *  screen and press it the way a user does rather than calling into the
-     *  workspace. */
-    LinearLayout transformModeGroup() {
-        return transformModeGroup;
-    }
-
-    ImageView transformMoveAction() {
-        return transformMoveAction;
-    }
-
-    ImageView transformRotateAction() {
-        return transformRotateAction;
-    }
-
-    ImageView transformScaleAction() {
-        return transformScaleAction;
-    }
-
-    /** The World / Local selector, which is ABSENT in Scale — so a test can
-     *  assert the absence as well as the choice. */
-    LinearLayout transformSpaceGroup() {
-        return transformSpaceGroup;
-    }
-
-    ImageView transformSpaceWorldAction() {
-        return transformSpaceWorldAction;
-    }
-
-    ImageView transformSpaceLocalAction() {
-        return transformSpaceLocalAction;
-    }
-
-    /** The rail's precision toggle, so a test can open the exact values the way
-     *  a user does rather than by calling into the workspace. */
-    ImageView precisionToggle() {
-        return precisionToggle;
-    }
-
-    /** The capsule the precision toggle sits in, which is what actually stands
-     *  on the model and therefore what a chrome measurement must use. */
-    View precisionGroup() {
-        return precisionGroup;
-    }
-
-    /** The trailing tool cluster: rail plus precision toggle. */
-    View railColumn() {
-        return railColumn;
     }
 
     /** The workspace's bottom edge, so a test can prove what it costs. */
@@ -2845,11 +2352,6 @@ final class EditorWorkspaceView extends FrameLayout
         return toolbar;
     }
 
-    /** Whether the Tool Rail is currently drawn flush rather than floating. */
-    boolean railDocked() {
-        return appliedRailDocked != null && appliedRailDocked;
-    }
-
     /**
      * Puts the start question back and shows it, as a fresh process would.
      *
@@ -2861,18 +2363,6 @@ final class EditorWorkspaceView extends FrameLayout
     void showStartChooserAsFirstLaunch() {
         uiState.clearStartChoice();
         showStartChooser(true);
-    }
-
-    /**
-     * The scroll container the Tool Rail lives in.
-     *
-     * <p>Needed by verification because the rail's tap-versus-scroll rule is a
-     * negotiation BETWEEN the entry and this container, so a test that
-     * dispatched only to the rail would never exercise the interception the
-     * rule exists to settle.
-     */
-    BoundedScrollView toolRailScroll() {
-        return toolRailScroll;
     }
 
     /** Answers the start question the way a test that is not about it needs. */
@@ -2909,9 +2399,14 @@ final class EditorWorkspaceView extends FrameLayout
         // capsules inside it are: the row spans the window and paints nothing,
         // and counting it would report the bottom bar the composition
         // deliberately does not have.
-        final View[] surfaces = {brushControls, toolRailScroll, transformModeGroup,
-                transformSpaceGroup, precisionGroup, objectsCapsule, historyGroup, inspector,
-                objectsDock};
+        final View[] trailing = trailingHost.occludingSurfaces();
+        final View[] surfaces = new View[trailing.length + 5];
+        surfaces[0] = brushControls;
+        System.arraycopy(trailing, 0, surfaces, 1, trailing.length);
+        surfaces[trailing.length + 1] = objectsCapsule;
+        surfaces[trailing.length + 2] = historyGroup;
+        surfaces[trailing.length + 3] = inspector;
+        surfaces[trailing.length + 4] = objectsDock;
 
         final View[] top = toolbar.occludingSurfaces();
         final View[] all = new View[surfaces.length + top.length];
