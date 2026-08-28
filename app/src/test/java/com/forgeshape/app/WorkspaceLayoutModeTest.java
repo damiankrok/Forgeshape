@@ -25,7 +25,6 @@ public final class WorkspaceLayoutModeTest {
         final WorkspaceLayoutMode mode = WorkspaceLayoutMode.forWindow(411, 914);
         assertEquals(WorkspaceLayoutMode.COMPACT, mode);
         assertEquals(InspectorPlacement.BOTTOM_SHEET, mode.inspectorPlacement(914));
-        assertFalse(mode.railDocked());
         assertFalse("a tall window gives the status message its own line",
                 WorkspaceLayoutMode.statusInlineWithControls(914));
     }
@@ -48,7 +47,6 @@ public final class WorkspaceLayoutModeTest {
         assertEquals("914 dp wide but only 411 dp tall is not a tablet",
                 WorkspaceLayoutMode.MEDIUM, mode);
         assertEquals(InspectorPlacement.SIDE_OVERLAY, mode.inspectorPlacement(411));
-        assertFalse(mode.railDocked());
         assertTrue("a short window cannot spare a second full-width line",
                 WorkspaceLayoutMode.statusInlineWithControls(411));
     }
@@ -61,11 +59,10 @@ public final class WorkspaceLayoutModeTest {
     }
 
     @Test
-    public void tabletLandscapeDocksTheInspectorAndTheRail() {
+    public void tabletLandscapeDocksTheInspector() {
         final WorkspaceLayoutMode mode = WorkspaceLayoutMode.forWindow(1280, 800);
         assertEquals(WorkspaceLayoutMode.EXPANDED, mode);
         assertEquals(InspectorPlacement.SIDE_DOCK, mode.inspectorPlacement(800));
-        assertTrue(mode.railDocked());
     }
 
     @Test
@@ -112,12 +109,7 @@ public final class WorkspaceLayoutModeTest {
     }
 
     // -----------------------------------------------------------------------
-    // UI-R1C2: the Objects surface, and the Tool Rail dock actually being asked
-    //
-    // railDocked() had a tested meaning and had never once been called by
-    // production code. These cases are what stop it drifting back into that
-    // state: they assert the decision, and EditorWorkspaceLayoutTest asserts
-    // that the workspace obeys it.
+    // UI-R1C2: the Objects surface.
     // -----------------------------------------------------------------------
 
     /** R1C2-11. A phone keeps Objects where the shape editor already had it. */
@@ -141,14 +133,12 @@ public final class WorkspaceLayoutModeTest {
         assertEquals(WorkspaceLayoutMode.MEDIUM, landscape);
         assertFalse("a short landscape window docks nothing new",
                 landscape.objectsDocked(914));
-        assertFalse(landscape.railDocked());
         assertEquals("and its inspector behaviour is untouched",
                 InspectorPlacement.SIDE_OVERLAY, landscape.inspectorPlacement(411));
 
         final WorkspaceLayoutMode split = WorkspaceLayoutMode.forWindow(600, 800);
         assertEquals(WorkspaceLayoutMode.MEDIUM, split);
         assertFalse(split.objectsDocked(600));
-        assertFalse(split.railDocked());
         assertEquals(InspectorPlacement.BOTTOM_SHEET, split.inspectorPlacement(800));
 
         assertEquals("MEDIUM is still one of exactly three modes",
@@ -207,29 +197,6 @@ public final class WorkspaceLayoutModeTest {
     }
 
     /**
-     * R1C2-14. The Tool Rail dock decision, now that something asks it.
-     *
-     * <p>Teeth against the behaviour it replaced: before UI-R1C2 this method
-     * existed and was never called, so "docked" and "floating" were the same
-     * thing in the running product. A rail that answered the same in every
-     * window — which is what a dead predicate effectively does — fails here.
-     */
-    @Test
-    public void theToolRailDocksOnlyWhereThereIsRoomBesideTheModel() {
-        assertTrue(WorkspaceLayoutMode.forWindow(1280, 800).railDocked());
-        assertTrue(WorkspaceLayoutMode.forWindow(840, 480).railDocked());
-        assertFalse(WorkspaceLayoutMode.forWindow(914, 411).railDocked());
-        assertFalse(WorkspaceLayoutMode.forWindow(411, 914).railDocked());
-        assertFalse(WorkspaceLayoutMode.forWindow(600, 800).railDocked());
-
-        // It is not a constant in either direction.
-        assertTrue("the rail must dock somewhere",
-                WorkspaceLayoutMode.EXPANDED.railDocked());
-        assertFalse("and must float somewhere",
-                WorkspaceLayoutMode.COMPACT.railDocked() || WorkspaceLayoutMode.MEDIUM.railDocked());
-    }
-
-    /**
      * R1C2-15. The boundaries are exact, and every one of the new answers moves
      * at a stated dp rather than somewhere near it.
      */
@@ -261,7 +228,6 @@ public final class WorkspaceLayoutModeTest {
         for (int i = 0; i < 3; i++) {
             assertEquals(WorkspaceLayoutMode.EXPANDED, WorkspaceLayoutMode.forWindow(1280, 800));
             assertTrue(WorkspaceLayoutMode.forWindow(1280, 800).objectsDocked(1280));
-            assertTrue(WorkspaceLayoutMode.forWindow(1280, 800).railDocked());
         }
     }
 
@@ -280,7 +246,6 @@ public final class WorkspaceLayoutModeTest {
         for (WorkspaceLayoutMode mode : WorkspaceLayoutMode.values()) {
             // Called many times with unrelated work in between; the answers are
             // identical because there is no state for anything to have changed.
-            final boolean rail = mode.railDocked();
             final boolean objects = mode.objectsDocked(1280);
             final InspectorPlacement placement = mode.inspectorPlacement(800);
             for (int i = 0; i < 50; i++) {
@@ -288,7 +253,6 @@ public final class WorkspaceLayoutModeTest {
                 WorkspaceLayoutMode.bottomSheetMaxHeightDp(i * 11);
                 WorkspaceLayoutMode.sideOverlayWidthDp(i * 17);
             }
-            assertEquals(rail, mode.railDocked());
             assertEquals(objects, mode.objectsDocked(1280));
             assertEquals(placement, mode.inspectorPlacement(800));
         }

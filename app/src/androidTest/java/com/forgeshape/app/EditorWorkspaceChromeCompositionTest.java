@@ -539,9 +539,9 @@ public final class EditorWorkspaceChromeCompositionTest {
             final View palette = workspace.addPrimitivePalette();
             assertEquals("the palette must be open " + where,
                     View.VISIBLE, palette.getVisibility());
-            assertNoOverlap(workspace, palette, workspace.railColumn(),
+            assertNoOverlap(workspace, palette, WorkspaceTestSupport.trailingHost(workspace),
                     "the trailing tool cluster " + where);
-            assertNoOverlap(workspace, palette, workspace.precisionGroup(),
+            assertNoOverlap(workspace, palette, WorkspaceTestSupport.precisionGroup(workspace),
                     "the precision control " + where);
             assertTrue("and the palette itself stays inside the window " + where,
                     WorkspaceTestSupport.isFullyOnScreen(palette, workspace));

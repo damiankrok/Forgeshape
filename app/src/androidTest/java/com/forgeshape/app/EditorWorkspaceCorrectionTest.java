@@ -259,12 +259,12 @@ public final class EditorWorkspaceCorrectionTest {
                     workspace.findViewById(R.id.tool_rail_smooth).isActivated());
 
             // The rebuild the adaptive layout performs on a window change.
-            workspace.toolRail().setCompactEntries(true);
+            WorkspaceTestSupport.toolRail(workspace).setCompactEntries(true);
             assertTrue("a rebuilt rail still says which tool is held",
                     workspace.findViewById(R.id.tool_rail_smooth).isActivated());
             assertFalse(workspace.findViewById(R.id.tool_rail_grab).isActivated());
 
-            workspace.toolRail().setCompactEntries(false);
+            WorkspaceTestSupport.toolRail(workspace).setCompactEntries(false);
             assertTrue("and back again, with no user action in between",
                     workspace.findViewById(R.id.tool_rail_smooth).isActivated());
             assertEquals("and nothing about the held tool changed",
@@ -284,11 +284,11 @@ public final class EditorWorkspaceCorrectionTest {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             assertTrue("precondition: Transform is the held context",
                     workspace.findViewById(R.id.tool_rail_place).isActivated());
-            workspace.toolRail().setCompactEntries(true);
+            WorkspaceTestSupport.toolRail(workspace).setCompactEntries(true);
             assertTrue("a rebuild does not send the user back to Shape",
                     workspace.findViewById(R.id.tool_rail_place).isActivated());
             assertFalse(workspace.findViewById(R.id.tool_rail_shape).isActivated());
-            workspace.toolRail().setCompactEntries(false);
+            WorkspaceTestSupport.toolRail(workspace).setCompactEntries(false);
             assertTrue(workspace.findViewById(R.id.tool_rail_place).isActivated());
             return null;
         });
@@ -319,7 +319,7 @@ public final class EditorWorkspaceCorrectionTest {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             assertEquals("Construction's own held entry decides, from native truth",
                     Integer.valueOf(workspace.uiState().constructionTool()),
-                    workspace.toolRail().activeKey());
+                    WorkspaceTestSupport.toolRail(workspace).activeKey());
             assertTrue(workspace.findViewById(R.id.tool_rail_shape).isActivated()
                     || workspace.findViewById(R.id.tool_rail_place).isActivated());
             return null;
@@ -679,7 +679,7 @@ public final class EditorWorkspaceCorrectionTest {
                 return null;
             });
             doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-                workspace.precisionToggle().performClick();
+                WorkspaceTestSupport.precisionToggle(workspace).performClick();
                 final PropertyInspectorView inspector = workspace.propertyInspector();
                 assertTrue(inspector.isOpen());
                 assertEquals(1.0f, inspector.getAlpha(), 0.0f);
@@ -763,16 +763,16 @@ public final class EditorWorkspaceCorrectionTest {
         });
         settleLayout();
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            workspace.precisionToggle().performClick();
+            WorkspaceTestSupport.precisionToggle(workspace).performClick();
             return null;
         });
         settleLayout();
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            workspace.precisionToggle().performClick();
+            WorkspaceTestSupport.precisionToggle(workspace).performClick();
             workspace.findViewById(R.id.tool_rail_place).performClick();
             workspace.findViewById(R.id.tool_rail_shape).performClick();
-            workspace.toolRail().setCompactEntries(true);
-            workspace.toolRail().setCompactEntries(false);
+            WorkspaceTestSupport.toolRail(workspace).setCompactEntries(true);
+            WorkspaceTestSupport.toolRail(workspace).setCompactEntries(false);
             workspace.showStatus("a message", R.attr.fsTextSecondary);
             return null;
         });
@@ -888,13 +888,13 @@ public final class EditorWorkspaceCorrectionTest {
     @Test
     public void uir4b14_anActiveCapsuleMemberIsConcentricWithItsCapsule() {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            workspace.precisionToggle().performClick();
+            WorkspaceTestSupport.precisionToggle(workspace).performClick();
             return null;
         });
         settleLayout();
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            final View toggle = workspace.precisionToggle();
-            final View group = workspace.precisionGroup();
+            final View toggle = WorkspaceTestSupport.precisionToggle(workspace);
+            final View group = WorkspaceTestSupport.precisionGroup(workspace);
             assertTrue("precondition: the toggle is drawn active", toggle.isActivated());
             assertConcentric("the precision toggle", group, toggle, paddingOf(group));
 
@@ -910,7 +910,7 @@ public final class EditorWorkspaceCorrectionTest {
             return null;
         });
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            workspace.precisionToggle().performClick();
+            WorkspaceTestSupport.precisionToggle(workspace).performClick();
             return null;
         });
     }
@@ -931,8 +931,9 @@ public final class EditorWorkspaceCorrectionTest {
             assertTrue("precondition: Shape is held", entry.isActivated());
             // The capsule is drawn by the ScrollView (so the container cannot
             // clip its shadow) and the padding around the entries is the rail's.
-            assertConcentric("the held rail entry", workspace.toolRailScroll(), entry,
-                    paddingOf(workspace.toolRail()));
+            assertConcentric("the held rail entry",
+                    WorkspaceTestSupport.toolRailScroll(workspace), entry,
+                    paddingOf(WorkspaceTestSupport.toolRail(workspace)));
             return null;
         });
     }
@@ -1111,7 +1112,8 @@ public final class EditorWorkspaceCorrectionTest {
             }
             assertMeetsTouchFloor(activity, workspace, R.id.tool_rail_shape, "Shape");
             assertMeetsTouchFloor(activity, workspace, R.id.tool_rail_place, "Transform");
-            assertMeetsTouchFloorOf(activity, workspace, workspace.precisionToggle(),
+            assertMeetsTouchFloorOf(activity, workspace,
+                    WorkspaceTestSupport.precisionToggle(workspace),
                     "the precision toggle");
             assertMeetsTouchFloor(activity, workspace, R.id.display_settings_button,
                     "Display");
@@ -1279,7 +1281,7 @@ public final class EditorWorkspaceCorrectionTest {
                     }
                     break;
                 case PRECISION:
-                    workspace.precisionToggle().performClick();
+                    WorkspaceTestSupport.precisionToggle(workspace).performClick();
                     break;
                 default:
                     workspace.globalToolbar().findViewById(R.id.display_settings_button)

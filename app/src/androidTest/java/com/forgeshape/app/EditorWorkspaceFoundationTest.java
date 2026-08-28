@@ -88,7 +88,7 @@ public final class EditorWorkspaceFoundationTest {
             // R1B1-11/12 shrink the rail's scroll container so it can actually
             // scroll. Put it back, or a later case measures a rail that is not
             // the product's.
-            final ScrollView scroll = workspace.toolRailScroll();
+            final ScrollView scroll = WorkspaceTestSupport.toolRailScroll(workspace);
             final ViewGroup.LayoutParams params = scroll.getLayoutParams();
             params.height = ViewGroup.LayoutParams.WRAP_CONTENT;
             scroll.setLayoutParams(params);
@@ -316,7 +316,7 @@ public final class EditorWorkspaceFoundationTest {
                             + " selects it", NativeViewport.TOOL_GRAB,
                     NativeViewport.sculptTool());
             assertEquals("and it must not have scrolled the rail by doing so",
-                    0, workspace.toolRailScroll().getScrollY());
+                    0, WorkspaceTestSupport.toolRailScroll(workspace).getScrollY());
             assertTrue("the selected tool is the one drawn active",
                     workspace.findViewById(R.id.tool_rail_grab).isActivated());
             return null;
@@ -346,7 +346,7 @@ public final class EditorWorkspaceFoundationTest {
                     NativeViewport.sculptTool());
             assertTrue("and the rail must actually have scrolled, or this case"
                             + " proves nothing about interception",
-                    workspace.toolRailScroll().getScrollY() > 0);
+                    WorkspaceTestSupport.toolRailScroll(workspace).getScrollY() > 0);
             return null;
         });
     }
@@ -455,7 +455,7 @@ public final class EditorWorkspaceFoundationTest {
      */
     private void makeTheRailScrollable() {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            final ScrollView scroll = workspace.toolRailScroll();
+            final ScrollView scroll = WorkspaceTestSupport.toolRailScroll(workspace);
             final ViewGroup.LayoutParams params = scroll.getLayoutParams();
             params.height = EditorControlStyles.dimen(activity, R.dimen.rail_item_height) * 3;
             scroll.setLayoutParams(params);
@@ -480,7 +480,7 @@ public final class EditorWorkspaceFoundationTest {
      */
     private static void dragRailEntry(EditorWorkspaceView workspace, int entryId,
                                       float totalDy, int steps) {
-        final ScrollView scroll = workspace.toolRailScroll();
+        final ScrollView scroll = WorkspaceTestSupport.toolRailScroll(workspace);
         final View entry = workspace.findViewById(entryId);
         assertNotNull("the entry being dragged must be on screen", entry);
 

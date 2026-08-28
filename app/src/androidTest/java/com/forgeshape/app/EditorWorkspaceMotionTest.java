@@ -159,7 +159,7 @@ public class EditorWorkspaceMotionTest {
             final boolean open = onWorkspace(rule.getScenario(), (activity, workspace) ->
                     workspace.propertyInspector().isOpen());
             doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-                workspace.precisionToggle().performClick();
+                WorkspaceTestSupport.precisionToggle(workspace).performClick();
                 return null;
             });
             settleLayout();
@@ -182,7 +182,7 @@ public class EditorWorkspaceMotionTest {
         // the middle of the transition before them.
         for (int i = 0; i < 6; i++) {
             doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-                workspace.precisionToggle().performClick();
+                WorkspaceTestSupport.precisionToggle(workspace).performClick();
                 return null;
             });
             SystemClock.sleep(30L);
@@ -211,9 +211,9 @@ public class EditorWorkspaceMotionTest {
             assertEquals(where + ": the toggle agrees with the surface",
                     activity.getString(open ? R.string.precision_close
                             : R.string.precision_open, opens),
-                    workspace.precisionToggle().getContentDescription());
+                    WorkspaceTestSupport.precisionToggle(workspace).getContentDescription());
             assertEquals(where + ": and is drawn active exactly while it is open",
-                    open, workspace.precisionToggle().isActivated());
+                    open, WorkspaceTestSupport.precisionToggle(workspace).isActivated());
             return null;
         });
     }
@@ -308,7 +308,7 @@ public class EditorWorkspaceMotionTest {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             final PropertyInspectorView inspector = workspace.propertyInspector();
             final boolean open = inspector.isOpen();
-            workspace.precisionToggle().performClick();
+            WorkspaceTestSupport.precisionToggle(workspace).performClick();
             // Asserted on the very next line, with no settle at all: reduced
             // motion means the final state is already true.
             assertEquals("the precision surface lands at once", !open,
@@ -397,7 +397,7 @@ public class EditorWorkspaceMotionTest {
 
             final PropertyInspectorView inspector = workspace.propertyInspector();
             final boolean open = inspector.isOpen();
-            workspace.precisionToggle().performClick();
+            WorkspaceTestSupport.precisionToggle(workspace).performClick();
             // No settle: with a pointer on the model the panel must already be
             // at its resting state rather than part-way through a fade.
             assertEquals("the precision surface lands at once during a gesture", !open,

@@ -142,8 +142,8 @@ public final class EditorWorkspaceLayoutTest {
 
             assertEquals("the Objects surface follows the decision, never a guess",
                     mode.objectsDocked(widthDp), workspace.objectsDocked());
-            assertEquals("and so does the Tool Rail dock (R1C2-33)",
-                    mode.railDocked(), workspace.railDocked());
+            assertNotNull("the trailing host is present in every window",
+                    workspace.findViewById(R.id.workspace_trailing_host));
 
             // R1C2-27: Objects is reachable in EVERY window. The section is one
             // instance that moves, so this holds wherever it currently hangs —
@@ -214,7 +214,7 @@ public final class EditorWorkspaceLayoutTest {
      * with the model still the subject.
      *
      * <p>The rotation runs the structural rearrangement — a possible re-parent
-     * of the Objects section and a possible change of rail dock — and the
+     * of the Objects section while the trailing host keeps its fixed anchor — and the
      * assertion is that it converges, not that it animated. A re-parent during
      * a measure pass is never animated, deliberately.
      */
@@ -252,7 +252,8 @@ public final class EditorWorkspaceLayoutTest {
             // It consumes its own gestures whichever window it is in, which is
             // what keeps a reach for a tool from orbiting the camera.
             assertTrue("the rail consumes its own drag",
-                    WorkspaceTestSupport.dragConsumed(workspace.toolRailScroll()));
+                    WorkspaceTestSupport.dragConsumed(
+                            WorkspaceTestSupport.toolRailScroll(workspace)));
             // The rail is a RAISED FLOATING CAPSULE IN EVERY WINDOW since
             // UI-R4B. It used to be repainted flush and level when the window
             // docked it, which meant one control had two visual identities in
@@ -261,8 +262,8 @@ public final class EditorWorkspaceLayoutTest {
             // and never material, so this assertion no longer branches: what it
             // guards is precisely that the branch does not come back.
             assertTrue("the rail is raised in every window, docked or not: "
-                            + workspace.toolRailScroll().getElevation(),
-                    workspace.toolRailScroll().getElevation() > 0.0f);
+                            + WorkspaceTestSupport.toolRailScroll(workspace).getElevation(),
+                    WorkspaceTestSupport.toolRailScroll(workspace).getElevation() > 0.0f);
             return null;
         });
     }
@@ -291,8 +292,8 @@ public final class EditorWorkspaceLayoutTest {
                     WorkspaceLayoutMode.forWindow(widthDp, heightDp);
             assertEquals("the mode is re-derived (" + where + ")",
                     expected, workspace.layoutMode());
-            assertEquals("the rail dock is re-derived (" + where + ")",
-                    expected.railDocked(), workspace.railDocked());
+            assertNotNull("the trailing host remains attached (" + where + ")",
+                    workspace.findViewById(R.id.workspace_trailing_host).getParent());
             assertEquals("the Objects surface is re-derived (" + where + ")",
                     expected.objectsDocked(widthDp), workspace.objectsDocked());
             // Whatever happened, there is exactly ONE Objects section and it has

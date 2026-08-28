@@ -293,14 +293,14 @@ public final class EditorWorkspaceGizmoTest {
         final long revisionBefore = NativeViewport.constructionMeshRevision();
 
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            workspace.transformRotateAction().performClick();
+            WorkspaceTestSupport.transformRotateAction(workspace).performClick();
             return null;
         });
         settle();
         assertEquals("Rotate is held", NativeViewport.GIZMO_MODE_ROTATE, gizmoMode());
 
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            workspace.transformMoveAction().performClick();
+            WorkspaceTestSupport.transformMoveAction(workspace).performClick();
             return null;
         });
         settle();
@@ -810,7 +810,8 @@ public final class EditorWorkspaceGizmoTest {
     public void s02034_chromeOverTheViewportBlocksThroughHitsToTheGizmo() {
         enterTransform();
         final boolean consumed = onWorkspace(rule.getScenario(), (activity, workspace) ->
-                WorkspaceTestSupport.dragConsumed(workspace.transformModeGroup()));
+                WorkspaceTestSupport.dragConsumed(
+                        WorkspaceTestSupport.transformModeGroup(workspace)));
         assertTrue("the mode selector owns the touches that land on it", consumed);
         assertEquals("and nothing reached a handle", 0.0,
                 gizmoState()[NativeViewport.GIZMO_CAPTURING], EXACT);
@@ -906,8 +907,10 @@ public final class EditorWorkspaceGizmoTest {
                 // adding a third capsule to a short window did before the pair
                 // learned to turn on its side. A control that quietly drops to
                 // 14 dp is the regression this case exists to catch.
-                for (View control : new View[] {workspace.transformMoveAction(),
-                        workspace.transformRotateAction(), workspace.precisionToggle()}) {
+                for (View control : new View[] {
+                        WorkspaceTestSupport.transformMoveAction(workspace),
+                        WorkspaceTestSupport.transformRotateAction(workspace),
+                        WorkspaceTestSupport.precisionToggle(workspace)}) {
                     assertTrue("a mode control is on screen", control.getVisibility() == View.VISIBLE
                             && control.getWidth() > 0);
                     assertTrue("a mode control must meet the 48 dp floor: "
@@ -918,9 +921,11 @@ public final class EditorWorkspaceGizmoTest {
                             WorkspaceTestSupport.isFullyOnScreen(control, workspace));
                 }
 
-                final Rect selector = rectOf(workspace, workspace.transformModeGroup());
-                for (View other : new View[] {workspace.precisionToggle(),
-                        workspace.toolRailScroll(), workspace.objectsCapsule()}) {
+                final Rect selector = rectOf(workspace,
+                        WorkspaceTestSupport.transformModeGroup(workspace));
+                for (View other : new View[] {
+                        WorkspaceTestSupport.precisionToggle(workspace),
+                        WorkspaceTestSupport.toolRailScroll(workspace), workspace.objectsCapsule()}) {
                     if (other == null || other.getVisibility() != View.VISIBLE) {
                         continue;
                     }
@@ -1527,10 +1532,13 @@ public final class EditorWorkspaceGizmoTest {
                 final int floor = Math.round(TypedValue.applyDimension(
                         TypedValue.COMPLEX_UNIT_DIP, 48.0f,
                         workspace.getResources().getDisplayMetrics()));
-                for (View control : new View[] {workspace.transformMoveAction(),
-                        workspace.transformRotateAction(), workspace.transformScaleAction(),
-                        workspace.transformSpaceWorldAction(),
-                        workspace.transformSpaceLocalAction(), workspace.precisionToggle()}) {
+                for (View control : new View[] {
+                        WorkspaceTestSupport.transformMoveAction(workspace),
+                        WorkspaceTestSupport.transformRotateAction(workspace),
+                        WorkspaceTestSupport.transformScaleAction(workspace),
+                        WorkspaceTestSupport.transformSpaceWorldAction(workspace),
+                        WorkspaceTestSupport.transformSpaceLocalAction(workspace),
+                        WorkspaceTestSupport.precisionToggle(workspace)}) {
                     assertTrue("a transform control is on screen",
                             control.getVisibility() == View.VISIBLE && control.getWidth() > 0);
                     assertTrue("it must meet the 48 dp floor: " + control.getWidth() + "x"
@@ -1540,16 +1548,22 @@ public final class EditorWorkspaceGizmoTest {
                             WorkspaceTestSupport.isFullyOnScreen(control, workspace));
                 }
 
-                final Rect mode = rectOf(workspace, workspace.transformModeGroup());
-                final Rect space = rectOf(workspace, workspace.transformSpaceGroup());
-                final String cluster = "rail=" + rectOf(workspace, workspace.toolRailScroll())
+                final Rect mode = rectOf(workspace,
+                        WorkspaceTestSupport.transformModeGroup(workspace));
+                final Rect space = rectOf(workspace,
+                        WorkspaceTestSupport.transformSpaceGroup(workspace));
+                final String cluster = "rail=" + rectOf(workspace,
+                        WorkspaceTestSupport.toolRailScroll(workspace))
                         + " mode=" + mode + " space=" + space
-                        + " precision=" + rectOf(workspace, workspace.precisionGroup())
-                        + " column=" + rectOf(workspace, workspace.railColumn());
+                        + " precision=" + rectOf(workspace,
+                        WorkspaceTestSupport.precisionGroup(workspace))
+                        + " host=" + rectOf(workspace,
+                        WorkspaceTestSupport.trailingHost(workspace));
                 assertFalse("the two selectors must not cover each other " + cluster,
                         Rect.intersects(mode, space));
-                for (View other : new View[] {workspace.precisionToggle(),
-                        workspace.toolRailScroll(), workspace.objectsCapsule()}) {
+                for (View other : new View[] {
+                        WorkspaceTestSupport.precisionToggle(workspace),
+                        WorkspaceTestSupport.toolRailScroll(workspace), workspace.objectsCapsule()}) {
                     if (other == null || other.getVisibility() != View.VISIBLE) {
                         continue;
                     }
@@ -1630,13 +1644,13 @@ public final class EditorWorkspaceGizmoTest {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             switch (mode) {
                 case NativeViewport.GIZMO_MODE_ROTATE:
-                    workspace.transformRotateAction().performClick();
+                    WorkspaceTestSupport.transformRotateAction(workspace).performClick();
                     break;
                 case NativeViewport.GIZMO_MODE_SCALE:
-                    workspace.transformScaleAction().performClick();
+                    WorkspaceTestSupport.transformScaleAction(workspace).performClick();
                     break;
                 default:
-                    workspace.transformMoveAction().performClick();
+                    WorkspaceTestSupport.transformMoveAction(workspace).performClick();
                     break;
             }
             return null;
@@ -1649,9 +1663,9 @@ public final class EditorWorkspaceGizmoTest {
     private void selectSpace(final int space) {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             if (space == NativeViewport.GIZMO_SPACE_LOCAL) {
-                workspace.transformSpaceLocalAction().performClick();
+                WorkspaceTestSupport.transformSpaceLocalAction(workspace).performClick();
             } else {
-                workspace.transformSpaceWorldAction().performClick();
+                WorkspaceTestSupport.transformSpaceWorldAction(workspace).performClick();
             }
             return null;
         });
@@ -2033,12 +2047,12 @@ public final class EditorWorkspaceGizmoTest {
 
     private int transformSelectorVisibility() {
         return onWorkspace(rule.getScenario(), (activity, workspace) ->
-                workspace.transformModeGroup().getVisibility());
+                WorkspaceTestSupport.transformModeGroup(workspace).getVisibility());
     }
 
     private int spaceSelectorVisibility() {
         return onWorkspace(rule.getScenario(), (activity, workspace) ->
-                workspace.transformSpaceGroup().getVisibility());
+                WorkspaceTestSupport.transformSpaceGroup(workspace).getVisibility());
     }
 
     private int undoDepth() {

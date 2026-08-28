@@ -6,6 +6,8 @@ import android.graphics.Rect;
 import android.os.SystemClock;
 import android.view.MotionEvent;
 import android.view.View;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
 
 import androidx.test.core.app.ActivityScenario;
 import androidx.test.platform.app.InstrumentationRegistry;
@@ -145,15 +147,78 @@ final class WorkspaceTestSupport {
     /** Opens the precision surface from the Tool Rail's own toggle. */
     static void openPrecision(EditorWorkspaceView workspace) {
         if (!workspace.propertyInspector().isOpen()) {
-            workspace.precisionToggle().performClick();
+            precisionToggle(workspace).performClick();
         }
     }
 
     /** Closes it from the same control. */
     static void closePrecision(EditorWorkspaceView workspace) {
         if (workspace.propertyInspector().isOpen()) {
-            workspace.precisionToggle().performClick();
+            precisionToggle(workspace).performClick();
         }
+    }
+
+    // Right-cluster verification resolves semantic ids, never root-only fields
+    // or child positions. The host may rearrange these controls without
+    // changing how a test names their product meaning.
+
+    static WorkspaceTrailingHostView trailingHost(EditorWorkspaceView workspace) {
+        return requireView(workspace, R.id.workspace_trailing_host);
+    }
+
+    static ToolRailView toolRail(EditorWorkspaceView workspace) {
+        return requireView(workspace, R.id.tool_rail);
+    }
+
+    static BoundedScrollView toolRailScroll(EditorWorkspaceView workspace) {
+        return requireView(workspace, R.id.tool_rail_scroll);
+    }
+
+    static ImageView precisionToggle(EditorWorkspaceView workspace) {
+        return requireView(workspace, R.id.precision_toggle);
+    }
+
+    static View precisionGroup(EditorWorkspaceView workspace) {
+        return requireView(workspace, R.id.precision_group);
+    }
+
+    static LinearLayout transformModeGroup(EditorWorkspaceView workspace) {
+        return requireView(workspace, R.id.transform_mode_group);
+    }
+
+    static LinearLayout transformSpaceGroup(EditorWorkspaceView workspace) {
+        return requireView(workspace, R.id.transform_space_group);
+    }
+
+    static View transformSelectorRow(EditorWorkspaceView workspace) {
+        return requireView(workspace, R.id.transform_selector_row);
+    }
+
+    static ImageView transformMoveAction(EditorWorkspaceView workspace) {
+        return requireView(workspace, R.id.transform_mode_move);
+    }
+
+    static ImageView transformRotateAction(EditorWorkspaceView workspace) {
+        return requireView(workspace, R.id.transform_mode_rotate);
+    }
+
+    static ImageView transformScaleAction(EditorWorkspaceView workspace) {
+        return requireView(workspace, R.id.transform_mode_scale);
+    }
+
+    static ImageView transformSpaceWorldAction(EditorWorkspaceView workspace) {
+        return requireView(workspace, R.id.transform_space_world);
+    }
+
+    static ImageView transformSpaceLocalAction(EditorWorkspaceView workspace) {
+        return requireView(workspace, R.id.transform_space_local);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T extends View> T requireView(EditorWorkspaceView workspace, int id) {
+        final View view = workspace.findViewById(id);
+        assertNotNull("semantic workspace view " + id + " must exist", view);
+        return (T) view;
     }
 
     /**

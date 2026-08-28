@@ -447,8 +447,9 @@ public final class EditorWorkspaceMobileTest {
             final ToolRailView rail = workspace.findViewById(R.id.tool_rail);
             assertTrue("the rail has entries", rail.getChildCount() > 0);
 
-            for (int i = 0; i < rail.getChildCount(); i++) {
-                final ViewGroup entry = (ViewGroup) rail.getChildAt(i);
+            for (int id : new int[]{R.id.tool_rail_shape, R.id.tool_rail_place}) {
+                final ViewGroup entry = workspace.findViewById(id);
+                assertNotNull("each semantic Construction entry exists", entry);
                 final String name = String.valueOf(entry.getContentDescription());
                 assertTrue(name + " must keep a vector icon", hasIconChild(entry));
                 assertTrue(name + " is " + entry.getHeight() + " px tall, under the "
@@ -459,7 +460,7 @@ public final class EditorWorkspaceMobileTest {
 
             // The precision toggle is attached to the rail and is held to the
             // same floor: it is the control that reaches the exact values.
-            final View toggle = workspace.precisionToggle();
+            final View toggle = WorkspaceTestSupport.precisionToggle(workspace);
             final int iconFloor = EditorControlStyles.dimen(activity, R.dimen.icon_button_size);
             assertTrue("the precision toggle keeps the touch floor too",
                     toggle.getWidth() >= iconFloor && toggle.getHeight() >= iconFloor);
@@ -542,7 +543,7 @@ public final class EditorWorkspaceMobileTest {
         final Boolean consumed = onWorkspace(rule.getScenario(), (activity, workspace) -> {
             boolean all = dragConsumed(workspace.objectsCapsule());
             all &= dragConsumed(workspace.addPrimitivePalette());
-            all &= dragConsumed(workspace.precisionGroup());
+            all &= dragConsumed(WorkspaceTestSupport.precisionGroup(workspace));
             all &= dragConsumed(workspace.propertyInspector());
             return all;
         });
@@ -583,10 +584,11 @@ public final class EditorWorkspaceMobileTest {
             assertEquals("no window opens the precision surface by itself",
                     View.GONE, workspace.propertyInspector().getVisibility());
             assertNotNull("and the toggle that opens it is present in every window",
-                    workspace.precisionToggle());
+                    WorkspaceTestSupport.precisionToggle(workspace));
 
             // No chrome surface spans the window's height.
-            for (View surface : new View[]{workspace.objectsDock(), workspace.railColumn(),
+            for (View surface : new View[]{workspace.objectsDock(),
+                    WorkspaceTestSupport.trailingHost(workspace),
                     workspace.propertyInspector()}) {
                 if (surface.getVisibility() != View.VISIBLE) {
                     continue;

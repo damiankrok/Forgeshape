@@ -90,8 +90,9 @@ public final class EditorWorkspaceControlsTest {
             // entries beside two inert ones would otherwise satisfy the loop.
             assertEquals("Construction offers exactly its two working contexts",
                     2, rail.getChildCount());
-            for (int i = 0; i < rail.getChildCount(); i++) {
-                final View entry = rail.getChildAt(i);
+            for (int id : new int[]{R.id.tool_rail_shape, R.id.tool_rail_place}) {
+                final View entry = workspace.findViewById(id);
+                assertNotNull("each semantic Construction entry exists", entry);
                 assertTrue("every rail entry must be operable", entry.isEnabled());
                 assertTrue("and tappable", entry.isClickable());
                 assertFalse("and must not describe itself as unimplemented",

@@ -15,7 +15,10 @@ What each box owns is in the Ownership table below; what the diagram adds is the
 ForgeShapeActivity
         |
         +-- EditorWorkspaceView   (+ EditorUiState, WorkspaceLayoutMode)
-        |        +-- StartChooserView / GlobalToolbarView / ToolRailView
+        |        +-- StartChooserView / GlobalToolbarView
+        |        +-- WorkspaceTrailingHostView
+        |        |        +-- ToolRailView / precision toggle
+        |        |        +-- transform mode + space selectors
         |        +-- BrushEdgeControlsView / ObjectsSectionView / ObjectsCapsuleView
         |        +-- AnchoredSurfaceView   one growth, four surfaces
         |                 +-- ObjectsPopoverView / AddPrimitivePaletteView
@@ -61,6 +64,7 @@ forgeshape_jni.cpp            render thread, ANativeWindow, MotionEvent ->
 | --- | --- | --- |
 | Activity lifecycle, edge-to-edge window | `ForgeShapeActivity` | — |
 | Which surfaces are on screen, adaptive layout, window insets, chrome visibility | `EditorWorkspaceView` | it decides no mode — `syncFromNative()` *reads* `NativeViewport.productMode()` and builds from that |
+| Right-cluster composition, child order, compact selector orientation, Display suppression and the fixed top/right placement contract | `WorkspaceTrailingHostView` | it owns no product, transform, tool or precision-open truth; callbacks report intent and `PresentationState` is a derived snapshot |
 | Display unit, the *draft* primitive kind, the Construction rail selection, whether the precision surface was asked for, chrome-hidden | `EditorUiState` | every field is safe to lose; none of them can change the model |
 | The window-dp breakpoints and chrome sizing rules | `WorkspaceLayoutMode` | it holds no Android type and reads no state; it is arithmetic |
 | Shape/transform field text and input validation messages | `ConstructionShapeEditorView`, `ConstructionPlacementEditorView` | neither owns a parameter, a kind, a transform, a mesh or a publish decision |
@@ -79,7 +83,7 @@ forgeshape_jni.cpp            render thread, ANativeWindow, MotionEvent ->
 | What the viewport is cleared to | `ViewportBackground` in `forgeshape_display.{h,cpp}` | native owns the colours; no Android theme or RGB crosses JNI |
 | The world reference grid's plane, spacing, extent, tiers and palette | `forgeshape_grid.{h,cpp}` | it is not a `SceneObject`, has no `ObjectId` or revision, is not pickable, and is not a snap target |
 | Whether the grid is drawn | `DisplaySettingsStore` | the renderer owns no presentation preference; the grid module owns no visibility |
-| Whether Objects and the Tool Rail are docked for a given window | `WorkspaceLayoutMode.objectsDocked(widthDp)` / `railDocked()` | arithmetic on window dp; neither reads theme, mode or domain state |
+| Whether Objects has a dedicated column for a given window | `WorkspaceLayoutMode.objectsDocked(widthDp)` | arithmetic on window dp; it reads neither theme, mode nor domain state. The trailing host has one fixed top/right placement in every window and therefore has no docked-state flag |
 | Which surface currently hosts the Objects list | `EditorWorkspaceView` | there is exactly ONE `ObjectsSectionView`, re-parented; no second list and no Java-side selection truth |
 | Each primitive's exact parameters and its deterministic **local**-space mesh | `ConstructionBox` (W/H/D), `ConstructionCylinder` and `ConstructionSphere` (diameter…), `ConstructionCone` (bottom diameter, height), `ConstructionCapsule` (diameter, **total** height) | no JNI/Android/Vulkan/renderer/UI types. Tessellation counts are fixed, not parameters. A radius, and the capsule's cylindrical middle, are derived and never stored. The cone's apex radius is zero by definition: no top diameter, no frustum. The mesh, the GPU and the picker own no parameter |
 | The one radial-segment and latitude-stack count every round primitive is drawn with | `kPrimitiveRadialSegments` / `kPrimitiveLatitudeStacks` (`forgeshape_construction.h`) | no generator writes down a segment count of its own |
@@ -185,10 +189,11 @@ and the start chooser.
 Inside `chromeRoot`: `GlobalToolbarView` at the top; then a weighted horizontal
 row carrying — leading edge first — the Objects column (expanded windows only),
 `BrushEdgeControlsView` (Sculpt only), a weighted gap where the model lives, and
-the trailing **tool cluster** (`railColumn`: the `ToolRailView` in a scroll
-container, the precision toggle under it, and the contextual transform selectors
-under that); then `bottomRow`, which wraps its content and holds the Objects
-capsule on the leading side and nothing else.
+one `WorkspaceTrailingHostView`. That host owns the trailing **tool cluster**:
+the `ToolRailView` in a bounded scroll container, the precision toggle under it,
+and the contextual transform selectors under that. The row is followed by
+`bottomRow`, which wraps its content and holds the Objects capsule on the leading
+side and nothing else.
 `PropertyInspectorView` is added after `bottomRow` (bottom sheet) or inside the
 middle row (side placement) — and **only while it is open**. All are plain
 framework views built in code; no Compose, no AndroidX in the product, no design
@@ -202,9 +207,12 @@ a viewport-first tool, a permanent structural claim made by a surface nobody
 asked for. Exact values are ForgeShape's advantage and are not less reachable for
 it: they are one tap from the tool context that owns them.
 
-**The trailing cluster has one anchor and one child that absorbs a squeeze.**
-Both halves are `TrailingClusterColumn`'s, and both replace behaviour that made
-the column's own arithmetic decide which control the user lost.
+**The trailing cluster has one composition owner, one anchor and one child that
+absorbs a squeeze.** `WorkspaceTrailingHostView` owns the composition and
+presentation policy; its `TrailingClusterColumn` measurement base owns the
+squeeze. `EditorWorkspaceView` owns native reads and commands and passes one
+derived `PresentationState` snapshot into the host. The host callbacks report
+semantic intent back to the root and never call JNI.
 
 *The anchor.* The cluster is `Gravity.TOP` in every window, floating or docked,
 and its two **persistent** children — the rail and the precision toggle — come
@@ -621,12 +629,14 @@ column, the docked rail and the docked inspector are inset from the edge, rounde
 on every corner and raised, exactly as on a phone. Drawing them opaque, flat and
 squared against the window edge would show the same three controls in two visual
 languages on one device depending on which way the tablet was held.
-**Docking decides neither material nor anchor any more.** The rail was
-top-aligned when docked and centred on the thumb when floating; the centre anchor
-is what UI-LAYOUT-R1 removed, so both paths now use the top and `railDocked()` no
-longer changes anything about the cluster's placement. That is the point: a phone
-and a tablet are one workspace with more room, not two arrangements of the same
-controls.
+**The trailing host has no docking state.** The rail was top-aligned when docked
+and centred on the thumb when floating; the centre anchor is what UI-LAYOUT-R1
+removed. UI-ARCH-R1 removed the now-semantically-dead `railDocked` flag and left
+one top/right placement contract in `WorkspaceTrailingHostView`. Its explicit
+`refreshParentPlacement()` still re-resolves density-backed margins after a
+configuration change, preserving the old runtime side effect without preserving
+a false state distinction. A phone and a tablet are one workspace with more
+room, not two arrangements of the same controls.
 `sideDockWidthDp` is 30 % capped at 340 dp rather than 28 % capped at 320,
 because a panel must fit its own content before it may be narrow — at the old
 numbers a docked inspector gave the primitive chooser 85 dp a chip and clipped

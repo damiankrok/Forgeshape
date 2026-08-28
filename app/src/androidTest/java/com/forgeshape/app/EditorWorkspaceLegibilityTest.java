@@ -877,7 +877,7 @@ public final class EditorWorkspaceLegibilityTest {
             workspace.findViewById(R.id.display_settings_button).performClick();
             assertTrue(workspace.displayPopover().isOpen());
             assertEquals("the conflicting trailing chrome is deliberately absent",
-                    View.GONE, workspace.railColumn().getVisibility());
+                    View.GONE, WorkspaceTestSupport.trailingHost(workspace).getVisibility());
             return null;
         });
         settleLayout();
@@ -904,7 +904,8 @@ public final class EditorWorkspaceLegibilityTest {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             assertFalse("a mode change dismisses the previous mode's primary surface",
                     workspace.displayPopover().isOpen());
-            assertEquals(View.VISIBLE, workspace.railColumn().getVisibility());
+            assertEquals(View.VISIBLE,
+                    WorkspaceTestSupport.trailingHost(workspace).getVisibility());
             assertTrue("Radius and Strength share the persistent top grammar",
                     Math.abs(brushBefore.top - railBefore.top)
                             <= EditorControlStyles.dimen(activity, R.dimen.row_gap));
@@ -1083,7 +1084,8 @@ public final class EditorWorkspaceLegibilityTest {
             assertTrue(workspace.dismissTopmostSurface());
             assertFalse("and closing it un-lights the toggle that opened it, which"
                             + " is why Back goes through the workspace and not the"
-                            + " surface", workspace.precisionToggle().isActivated());
+                            + " surface",
+                    WorkspaceTestSupport.precisionToggle(workspace).isActivated());
             return null;
         });
         settleLayout();
