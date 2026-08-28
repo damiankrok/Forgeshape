@@ -70,12 +70,29 @@ gradlew.bat :app:testDebugUnitTest         # JVM: layout rules, UI state, units
 **Never run bare `gradlew.bat :app:connectedDebugAndroidTest` when more than one
 Android target could be attached.** That task enumerates every attached device
 with no default and installs/runs the full suite on all of them — this is how
-Stage 016 touched the reserved `emulator-5554`. The one supported path for the
-instrumented suite is:
+Stage 016 touched the reserved `emulator-5554`. The one supported runner for
+instrumented tests is:
 
 ```
 scripts\run-instrumented-tests.ps1 -Serial <serial>
 ```
+
+That no-filter command is the supported monolithic full-suite path. The
+supported authoritative exhaustive-sharded full-suite path is:
+
+```
+scripts\run-instrumented-tests.ps1 -Serial <serial> -FullSharded -ShardCount 5
+```
+
+`-FullSharded` asks AndroidJUnitRunner to discover the complete live test-APK
+inventory, verifies its sequential and advertised totals, assigns every
+discovered class to exactly one deterministic class-atomic shard, and proves
+zero missing, duplicate, or unexpected tests before execution. The configurable
+partition greedily assigns the largest remaining class to the lightest shard
+(stable name/index tie-breaks). Every shard must then return exactly one `OK`
+result with its assigned count. The aggregate prints discovery, per-shard,
+union, missing/duplicate, failure/abort, and PASS/FAIL fields and emits
+`FULL_SHARDED_SUITE_PASS` only after a complete successful union.
 
 It requires an explicit `-Serial`, refuses `emulator-5554` before contacting
 any device, checks readiness with `adb -s <serial> get-state` (never a bare
@@ -104,6 +121,13 @@ To run one class:
 ```
 scripts\run-instrumented-tests.ps1 -Serial <serial> -TestClass com.forgeshape.app.EditorWorkspaceLayoutTest
 ```
+
+`-TestClass` is focused/subset evidence only and can never emit the
+full-sharded PASS marker. If infrastructure crashes or aborts during
+`-FullSharded`, recover the isolated AVD and restart the entire command from
+shard 1. Individual class or shard reruns are supplementary only; they never
+repair or complete a failed aggregate. The runner-level `THR1-01..10` checks
+can be run without a device via `scripts\test-instrumented-sharding.ps1`.
 
 The layout suite logs its measurements as `FORGESHAPE_UI_VIEWPORT` lines, so the
 unoccluded-viewport percentage for the window it ran in is in logcat, not only in

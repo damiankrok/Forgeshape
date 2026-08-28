@@ -280,7 +280,7 @@ the code depends on: that is a regression, not a saving.
   Android target could be attached.** That Gradle task enumerates every
   attached device with no default and installs/runs on all of them — this is
   exactly how Stage 016 touched the reserved `emulator-5554`. The one
-  supported path is `scripts\run-instrumented-tests.ps1 -Serial <serial>`,
+  supported runner is `scripts\run-instrumented-tests.ps1 -Serial <serial>`,
   which requires an explicit serial, refuses `emulator-5554` before any device
   is contacted, checks readiness with `adb -s <serial> get-state` (never a
   bare `adb devices` enumeration), and drives `adb -s <serial>` explicitly for
@@ -288,6 +288,16 @@ the code depends on: that is a regression, not a saving.
   under `scripts\` issues a bare, unscoped `adb` call;
   `scripts\verify-device-guards.ps1` checks this and the port/serial guards
   above mechanically (`DEV2-01`..`07`) and needs no device attached.
+- Instrumented full-suite policy: runner execution with no filter is the
+  supported monolithic full-suite path; `-FullSharded` is the supported
+  authoritative exhaustive-sharded full-suite path. `-FullSharded` must use
+  live AndroidJUnitRunner discovery, prove a deterministic exactly-once union,
+  require a valid successful result from every shard, and emit
+  `FULL_SHARDED_SUITE_PASS` only for the complete aggregate. `-TestClass` is
+  focused/subset evidence and can never emit that marker. After any
+  infrastructure crash/abort during `-FullSharded`, recover the isolated AVD
+  and rerun the whole `-FullSharded` command from shard 1; class or shard-only
+  reruns are supplementary and cannot repair an aggregate.
 - `surfaceDestroyed` must block until native code has released the
   `ANativeWindow`. Never let the render thread touch a destroyed window.
 - **One orientation convention: render in Android window orientation.** The
