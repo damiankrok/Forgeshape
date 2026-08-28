@@ -1,0 +1,34 @@
+UI-LAYOUT-R1 validation summary
+Target: ForgeShape_UILAYOUTR1 / emulator-5580 (explicit serial only)
+
+Build
+- Debug app APK: PASS
+- Debug androidTest APK: PASS
+- Native ABIs built: arm64-v8a, x86_64
+- JVM: 60/60 PASS
+
+Instrumented
+- UILR1-01..20 focused: 20/20 PASS, Time 53.049 s
+- Full suite, uninterrupted after cold AVD restart: 288/288 PASS, Time 602.175 s
+- Expanded 1600x2560 @ 240 dpi:
+  - EditorWorkspaceLayoutTest: 10/10 PASS, Time 42.368 s
+  - EditorWorkspaceCompositionTest + EditorWorkspaceChromeCompositionTest:
+    22/22 PASS, Time 54.953 s
+
+Device isolation
+- AVD identity confirmed as ForgeShape_UILAYOUTR1.
+- DEV2-01..07: PASS
+- DEV3-01..06: PASS
+- Reserved emulator-5554 was not touched.
+
+Environment note
+- One full attempt on an aged boot stalled in Theme while dumpsys activity timed
+  out; the app and test PIDs remained alive. That run was interrupted and not
+  counted. After the prescribed cold restart, the final uninterrupted run passed
+  288/288.
+
+Review-input deviation
+- The named VUI-01..14 owner/coordinator contract and owner video were not present
+  in the supplied attachment or repository. The stage brief and existing accepted
+  audit evidence were used. Visual acceptance remains pending owner/coordinator
+  review of this directory's screenshots and walkthrough.
