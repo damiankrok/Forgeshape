@@ -204,9 +204,13 @@ result never depends on what a live session left behind.
   *Construction Body* (an editable CAD-like object), *Frozen Sculpt Mesh* (the
   polygon mesh `SculptMesh::freezeFrom` creates), *history capsule* (the bottom
   trailing capsule holding Undo and Redo), *transform mode selector* (Move /
-  Rotate / Scale) and *coordinate-space selector* (World / Local) — two capsules
-  in one *selector row* under the Tool Rail, contextual to Transform and absent
-  everywhere else.
+  Rotate / Scale) and *coordinate-space selector* (World / Local, where it
+  applies — Scale omits it, because a world-axis scale of a turned body is a
+  shear). Both are contextual **vertical groups inside the single right
+  contextual surface** (`WorkspaceTrailingHostView`), under the high-level Tool
+  Rail entries, contextual to Transform and absent everywhere else. They are
+  members of that one host: never detached capsules, and never a separate
+  horizontal selector grammar.
 - **The user never reads "Freeze".** *Freeze*, *re-Freeze* and *Frozen Sculpt
   Mesh* stay in the C++, the view ids and the architecture docs, because they name
   what the operation does. Every user-facing string says **Start Sculpting**,

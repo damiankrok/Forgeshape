@@ -1,6 +1,6 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.46.0
+**Status Version:** 0.46.1
 **Updated:** 2026-08-29
 **Result:** TECHNICAL PASS / OWNER VISUAL REVIEW REQUIRED — **UI-LAYOUT-R2**
 implements one unified right contextual surface in Construction and Sculpt.
@@ -11,6 +11,14 @@ not detached capsules. Bottom Exact/Details sheets hide conflicting Objects and
 history chrome for their full entry/open/exit lifetime and restore it at the same
 bounds. IME/insets remain root-owned and never select another right-control
 grammar. Evidence: `artifacts/uilayoutr2/`.
+
+This result covers **technical and runtime truth only.** No final owner/
+coordinator visual closeout of UI-LAYOUT-R2 is possible yet: that closeout must
+compare the shipped layout against an owner-created, explicitly accepted
+`UI-SPEC-R0`, and no such artifact exists in this repository or has been supplied
+to the project. The right-host invariants recorded below are verified *relative*
+to themselves and at runtime; **absolute owner-layout acceptance — the ≤ 4 dp
+anchor overlay against an accepted mock — remains pending on that artifact.**
 
 **UI-LAYOUT-R2 verification range:** baseline
 `54c3dfa09c7b0fd9351f6c8967b199c3380e3c1a`; final implementation/test HEAD
@@ -73,7 +81,7 @@ verification is complete; owner/coordinator visual acceptance is still pending �
 see *Next Stage*.
 **Current Phase:** Phase 1 — Native Viewport
 **Workspace:** `D:\TRAVELAPPS\ForgeShape`
-**Accepted implementation baseline:** UI-LAYOUT-R2 (unified right context and
+**Current technical implementation baseline:** UI-LAYOUT-R2 (unified right context and
 non-moving bottom-surface anchors) on UI-ARCH-R1 (bounded trailing-cluster
 ownership refactor) on UI-LAYOUT-R1 (primary-surface policy,
 static shell, precision surface, semantic contrast and gizmo legibility
@@ -96,7 +104,7 @@ Stage 016 (Plane), Stage 015D (camera projection), Stage 015C-R (front-face
 culling), Stage 015C (shading), Platform Fix P2, Stage 015B, Stage 014, the NDK
 r29 migration (Gate P0) and the Owner Decision Baseline. Per-stage narrative
 lives in Git history; only what still constrains the code is kept here.
-**Next Stage:** **Owner/coordinator visual review of UI-LAYOUT-R2 before any motion/morph stage.** See *Next Stage*.
+**Next Stage:** **The OWNER creates and explicitly accepts `UI-SPEC-R0`; the UI-LAYOUT-R2 evidence closeout is blocked until then.** See *Next Stage*.
 
 ## Current state
 
@@ -115,8 +123,15 @@ models, two projections, a world reference grid, and an Editor Workspace that
 re-composes itself per window. `ARCHITECTURE.md` owns the ownership map and every invariant;
 `PRODUCT.md` owns the user-visible description; `README.md` owns build/run/verify.
 
-**Blockers: none.** Known costs and accepted debt are in *Technical Debt*;
-environment hazards are in *Known Issues*.
+**Blockers:** no newly observed product or runtime blocker — every native, JVM,
+instrumented and guard suite is green. **UI-LAYOUT-R2 final visual acceptance is
+blocked by the missing owner-approved `UI-SPEC-R0`.** Without an independently
+authored, explicitly accepted mock there is no authority for the *expected* side
+of an anchor comparison, and taking that side from `EditorControlStyles`,
+`dimens.xml`, runtime bounds, screenshots or the reference-only
+`docs/ui/wireframes/*.svg` would fabricate the baseline instead of testing
+against it. Known costs and accepted debt are in *Technical Debt*; environment
+hazards are in *Known Issues*.
 
 ## Current interaction model (through UI-LAYOUT-R2)
 
@@ -629,7 +644,6 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 | The grid's vertices are uploaded exactly once per Vulkan device and survive rotation and resume | VERIFIED |
 | Expanded windows give Objects a persistent column beside a docked Property Inspector | VERIFIED |
 | Compact and medium keep the current viewport-first model; Objects stays in the shape editor | VERIFIED |
-| The Tool Rail is drawn flush and level when docked, raised and translucent when floating | VERIFIED |
 | One Objects section, re-parented — no second Java list and no second selection truth | VERIFIED |
 | Row tap, viewport pick and creation stay in sync from whichever surface Objects is on, and the capsule names the same body | VERIFIED |
 | ~20 bodies stay listed, scrollable in the column's own container, and selectable | VERIFIED |
@@ -673,8 +687,8 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 | Scene, active ObjectId, primitive spec, placement, product mode and Frozen Sculpt Mesh survive the switch bit-identically | VERIFIED |
 | The appearance survives rotation and HOME/resume; the start chooser does not reappear because of it | VERIFIED |
 | The UI session — display unit, whether the precision surface was asked for, Tool Rail entry — survives the recreation that applies a theme | VERIFIED |
-| Icons, pressed feedback, active-not-by-colour-alone and 44 dp targets all hold in both appearances | VERIFIED |
-| Property Inspector values, labels and verdicts meet WCAG AA contrast on the light theme; its surfaces stay opaque | VERIFIED |
+| Icons, pressed feedback, active-not-by-colour-alone and 48 dp hit areas all hold in all three dark appearances | VERIFIED |
+| Property Inspector values, labels and verdicts meet WCAG AA contrast in every one of the three appearances; its surfaces stay opaque | VERIFIED |
 | Start chooser: New Project offers exactly Construction/CAD and Sculpt, over the live viewport | VERIFIED |
 | The start question is asked once per process; rotation, HOME/resume and Activity recreation do not re-ask; a process kill does | VERIFIED |
 | Choosing Construction creates no body and changes no active body — the default Body is already there | VERIFIED |
@@ -682,10 +696,10 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 | After a direct Sculpt start, Back shows the exact sphere Source and Resume returns the same frozen mesh without re-freezing | VERIFIED |
 | Every icon is a local vector drawable; no chrome control is a Unicode glyph | VERIFIED |
 | Chips, rail entries, Objects rows and icon buttons show immediate pressed feedback | VERIFIED |
-| Active state is fill + thicker border + brightened label together, never colour alone | VERIFIED |
-| Icon-only controls measure at or above the 44 dp touch floor in a compact window | VERIFIED |
+| Active state is fill-led with a brightened label, never colour alone and never an accent hairline or border as the active signal | VERIFIED |
+| Icon-only controls measure at or above the 48 dp hit-area floor in a compact window | VERIFIED |
 | A small drift on a Tool Rail entry selects that tool; a real scroll selects nothing | VERIFIED |
-| Three-level corner radius and depth on floating surfaces only; the docked inspector is flush | VERIFIED |
+| Three-level corner radius and depth in every window; docking decides position, never material — the Objects column, the Tool Rail and the precision surface are inset, rounded on every corner and raised alike | VERIFIED |
 | Editor Workspace: Global Toolbar, Tool Rail, Property Inspector, direct brush controls | VERIFIED |
 | Adaptive layout: compact portrait, phone landscape, expanded/tablet, decided by window dp | VERIFIED |
 | Landscape occlusion: 0 % unoccluded viewport → **60.1 %**, status line on screen | VERIFIED |
@@ -696,6 +710,7 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 | Construction and Sculpt use one `WorkspaceTrailingHostView` surface with invariant top/right/width; context is vertical inside it and may grow only downward | VERIFIED (UI-LAYOUT-R2) |
 | Exact Shape/Transform and Sculpt Details bottom sheets hide conflicting Objects/history chrome for entry/open/exit and restore its exact resting bounds; they never push it upward | VERIFIED (UI-LAYOUT-R2) |
 | IME keeps the right host vertical and at the same external frame; animated insets are root-owned and no horizontal/detached selector grammar exists | VERIFIED (UI-LAYOUT-R2) |
+| The right host's **absolute** placement matches an owner-accepted layout within ≤ 4 dp | PENDING — needs an owner-approved `UI-SPEC-R0`; the three rows above are runtime-relative invariants and do not answer this |
 | System Back dismisses the topmost open context surface — Add Primitive, the Objects popover, the exact values, the display settings — playing that surface's own exit, and leaves the app only when none is open | VERIFIED (UI-LAYOUT-R1) |
 | A long signed exact value keeps its sign and leading digits: the type steps down to fit, and a shortened display is shortened at the END, never the start. The complete value is what is stored, parsed and applied | VERIFIED (UI-LAYOUT-R1) |
 | A tap on a populated numeric field selects it, so the first keystroke replaces; no concatenation of the old value and the new can occur | VERIFIED (UI-LAYOUT-R1) |
@@ -1628,10 +1643,27 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Exactly one next step: Owner/coordinator visual review of UI-LAYOUT-R2 before
-any motion/morph stage.** UI-LAYOUT-R2 is technically implemented and all
-native/JVM/instrumented/profile guards are green. Automated PASS and recorded
-runtime evidence do not grant final visual acceptance.
+**Exactly one next step: the OWNER creates and explicitly accepts a
+`UI-SPEC-R0` layout specification; only then can the existing same-stage
+UI-LAYOUT-R2 evidence closeout run.** No motion/morph work and no new product
+stage before that.
+
+UI-LAYOUT-R2 is technically implemented and all native/JVM/instrumented/profile
+guards are green, but automated PASS and recorded runtime evidence do not grant
+final visual acceptance. The closeout compares the shipped layout against an
+independent accepted mock, so it needs an artifact this project does not have:
+nothing in the repository is an accepted layout specification, and the four
+`docs/ui/wireframes/*.svg` are recorded here as reference-only Stage 015A-R
+proposal sketches that are explicitly **not** the shipped shell. Claude may not
+author, infer or approve that artifact.
+
+To hand the closeout off, the owner supplies three values: the exact path to the
+accepted `UI-SPEC-R0`, its SHA-256 (or the literal `NOT_RECORDED`), and the
+acceptance reference. The artifact must carry binding geometry for the right
+`WorkspaceTrailingHostView` — absolute top, right and width — plus the resting
+bounds of the persistent elements, across compact portrait, short landscape and
+expanded/tablet at font scale 1.0 and 1.3. The closeout then runs against this
+same build, reusing the technical evidence below rather than repeating it.
 
 The one feature the repo still records as a candidate is **Selection Outline** —
 the expensive half of selection feedback, needing either a second geometry pass
