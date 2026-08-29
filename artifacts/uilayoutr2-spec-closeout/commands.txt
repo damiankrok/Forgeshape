@@ -1,0 +1,584 @@
+adb -s emulator-5580 shell wm size 822x1828
+adb -s emulator-5580 shell wm density 320
+adb -s emulator-5580 shell settings put system font_scale 1
+adb -s emulator-5580 shell wm size
+adb -s emulator-5580 shell wm density
+adb -s emulator-5580 shell am force-stop com.forgeshape.app
+adb -s emulator-5580 shell pm clear com.forgeshape.app
+adb -s emulator-5580 shell am start -n com.forgeshape.app/.ForgeShapeActivity
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 411 926
+adb -s emulator-5580 shell settings get system font_scale
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 738 301
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell screencap -p /sdcard/fs.png
+adb -s emulator-5580 pull /sdcard/fs.png D:\TRAVELAPPS\ForgeShape\artifacts\uilayoutr2-spec-closeout\raw\C10-CONSTRUCTION_SHAPE_REST.png
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 738 433
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 738 553
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 738 857
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell screencap -p /sdcard/fs.png
+adb -s emulator-5580 pull /sdcard/fs.png D:\TRAVELAPPS\ForgeShape\artifacts\uilayoutr2-spec-closeout\raw\C10-TRANSFORM_MOVE_WORLD.png
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 738 653
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 738 753
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell screencap -p /sdcard/fs.png
+adb -s emulator-5580 pull /sdcard/fs.png D:\TRAVELAPPS\ForgeShape\artifacts\uilayoutr2-spec-closeout\raw\C10-TRANSFORM_SCALE.png
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 738 553
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 738 957
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 738 1061
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 161 1498
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell screencap -p /sdcard/fs.png
+adb -s emulator-5580 pull /sdcard/fs.png D:\TRAVELAPPS\ForgeShape\artifacts\uilayoutr2-spec-closeout\raw\C10-EXACT_IME.png
+adb -s emulator-5580 shell input keyevent 4
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 738 1061
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 137 153
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell screencap -p /sdcard/fs.png
+adb -s emulator-5580 pull /sdcard/fs.png D:\TRAVELAPPS\ForgeShape\artifacts\uilayoutr2-spec-closeout\raw\C10-SCULPT_REST.png
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 738 817
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell screencap -p /sdcard/fs.png
+adb -s emulator-5580 pull /sdcard/fs.png D:\TRAVELAPPS\ForgeShape\artifacts\uilayoutr2-spec-closeout\raw\C10-SCULPT_DETAILS.png
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 738 817
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell wm size 822x1828
+adb -s emulator-5580 shell wm density 320
+adb -s emulator-5580 shell settings put system font_scale 1.3
+adb -s emulator-5580 shell wm size
+adb -s emulator-5580 shell wm density
+adb -s emulator-5580 shell am force-stop com.forgeshape.app
+adb -s emulator-5580 shell pm clear com.forgeshape.app
+adb -s emulator-5580 shell am start -n com.forgeshape.app/.ForgeShapeActivity
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 411 925
+adb -s emulator-5580 shell settings get system font_scale
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 738 301
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell screencap -p /sdcard/fs.png
+adb -s emulator-5580 pull /sdcard/fs.png D:\TRAVELAPPS\ForgeShape\artifacts\uilayoutr2-spec-closeout\raw\C13-CONSTRUCTION_SHAPE_REST.png
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 738 433
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 738 553
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 738 857
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell screencap -p /sdcard/fs.png
+adb -s emulator-5580 pull /sdcard/fs.png D:\TRAVELAPPS\ForgeShape\artifacts\uilayoutr2-spec-closeout\raw\C13-TRANSFORM_MOVE_WORLD.png
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 738 653
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 738 753
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell screencap -p /sdcard/fs.png
+adb -s emulator-5580 pull /sdcard/fs.png D:\TRAVELAPPS\ForgeShape\artifacts\uilayoutr2-spec-closeout\raw\C13-TRANSFORM_SCALE.png
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 738 553
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 738 957
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 738 1061
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 161 1489
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell screencap -p /sdcard/fs.png
+adb -s emulator-5580 pull /sdcard/fs.png D:\TRAVELAPPS\ForgeShape\artifacts\uilayoutr2-spec-closeout\raw\C13-EXACT_IME.png
+adb -s emulator-5580 shell input keyevent 4
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 738 1061
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 170 153
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell screencap -p /sdcard/fs.png
+adb -s emulator-5580 pull /sdcard/fs.png D:\TRAVELAPPS\ForgeShape\artifacts\uilayoutr2-spec-closeout\raw\C13-SCULPT_REST.png
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 738 817
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell screencap -p /sdcard/fs.png
+adb -s emulator-5580 pull /sdcard/fs.png D:\TRAVELAPPS\ForgeShape\artifacts\uilayoutr2-spec-closeout\raw\C13-SCULPT_DETAILS.png
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 738 817
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell wm size 1828x822
+adb -s emulator-5580 shell wm density 320
+adb -s emulator-5580 shell settings put system font_scale 1
+adb -s emulator-5580 shell wm size
+adb -s emulator-5580 shell wm density
+adb -s emulator-5580 shell am force-stop com.forgeshape.app
+adb -s emulator-5580 shell pm clear com.forgeshape.app
+adb -s emulator-5580 shell am start -n com.forgeshape.app/.ForgeShapeActivity
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 914 416
+adb -s emulator-5580 shell settings get system font_scale
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 1744 236
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell screencap -p /sdcard/fs.png
+adb -s emulator-5580 pull /sdcard/fs.png D:\TRAVELAPPS\ForgeShape\artifacts\uilayoutr2-spec-closeout\raw\L10-CONSTRUCTION_SHAPE_REST.png
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 1744 336
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 1744 440
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input swipe 1744 528 1744 293 350
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 1744 473
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell screencap -p /sdcard/fs.png
+adb -s emulator-5580 pull /sdcard/fs.png D:\TRAVELAPPS\ForgeShape\artifacts\uilayoutr2-spec-closeout\raw\L10-TRANSFORM_MOVE_WORLD.png
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 1744 269
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 1744 369
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell screencap -p /sdcard/fs.png
+adb -s emulator-5580 pull /sdcard/fs.png D:\TRAVELAPPS\ForgeShape\artifacts\uilayoutr2-spec-closeout\raw\L10-TRANSFORM_SCALE.png
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 1744 282
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 1744 642
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input swipe 1744 528 1744 293 350
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 1744 586
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 1325 396
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell screencap -p /sdcard/fs.png
+adb -s emulator-5580 pull /sdcard/fs.png D:\TRAVELAPPS\ForgeShape\artifacts\uilayoutr2-spec-closeout\raw\L10-EXACT_IME.png
+adb -s emulator-5580 shell input keyevent 4
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 1120 586
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 348 104
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell screencap -p /sdcard/fs.png
+adb -s emulator-5580 pull /sdcard/fs.png D:\TRAVELAPPS\ForgeShape\artifacts\uilayoutr2-spec-closeout\raw\L10-SCULPT_REST.png
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 1744 586
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell screencap -p /sdcard/fs.png
+adb -s emulator-5580 pull /sdcard/fs.png D:\TRAVELAPPS\ForgeShape\artifacts\uilayoutr2-spec-closeout\raw\L10-SCULPT_DETAILS.png
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 1120 586
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell wm size 1828x822
+adb -s emulator-5580 shell wm density 320
+adb -s emulator-5580 shell settings put system font_scale 1.3
+adb -s emulator-5580 shell wm size
+adb -s emulator-5580 shell wm density
+adb -s emulator-5580 shell am force-stop com.forgeshape.app
+adb -s emulator-5580 shell pm clear com.forgeshape.app
+adb -s emulator-5580 shell am start -n com.forgeshape.app/.ForgeShapeActivity
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 914 464
+adb -s emulator-5580 shell settings get system font_scale
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 1744 236
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell screencap -p /sdcard/fs.png
+adb -s emulator-5580 pull /sdcard/fs.png D:\TRAVELAPPS\ForgeShape\artifacts\uilayoutr2-spec-closeout\raw\L13-CONSTRUCTION_SHAPE_REST.png
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 1744 336
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 1744 440
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input swipe 1744 528 1744 293 350
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 1744 473
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell screencap -p /sdcard/fs.png
+adb -s emulator-5580 pull /sdcard/fs.png D:\TRAVELAPPS\ForgeShape\artifacts\uilayoutr2-spec-closeout\raw\L13-TRANSFORM_MOVE_WORLD.png
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 1744 269
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 1744 369
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell screencap -p /sdcard/fs.png
+adb -s emulator-5580 pull /sdcard/fs.png D:\TRAVELAPPS\ForgeShape\artifacts\uilayoutr2-spec-closeout\raw\L13-TRANSFORM_SCALE.png
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 1744 282
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 1744 642
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input swipe 1744 528 1744 293 350
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 1744 586
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input swipe 1512 322 1512 288 350
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input swipe 1512 322 1512 288 350
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input swipe 1512 322 1512 288 350
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input swipe 1512 322 1512 288 350
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 1325 316
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell screencap -p /sdcard/fs.png
+adb -s emulator-5580 pull /sdcard/fs.png D:\TRAVELAPPS\ForgeShape\artifacts\uilayoutr2-spec-closeout\raw\L13-EXACT_IME.png
+adb -s emulator-5580 shell input keyevent 4
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 1120 586
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 431 104
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell screencap -p /sdcard/fs.png
+adb -s emulator-5580 pull /sdcard/fs.png D:\TRAVELAPPS\ForgeShape\artifacts\uilayoutr2-spec-closeout\raw\L13-SCULPT_REST.png
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 1744 586
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell screencap -p /sdcard/fs.png
+adb -s emulator-5580 pull /sdcard/fs.png D:\TRAVELAPPS\ForgeShape\artifacts\uilayoutr2-spec-closeout\raw\L13-SCULPT_DETAILS.png
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 1120 586
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell wm size 1280x800
+adb -s emulator-5580 shell wm density 160
+adb -s emulator-5580 shell settings put system font_scale 1
+adb -s emulator-5580 shell wm size
+adb -s emulator-5580 shell wm density
+adb -s emulator-5580 shell am force-stop com.forgeshape.app
+adb -s emulator-5580 shell pm clear com.forgeshape.app
+adb -s emulator-5580 shell am start -n com.forgeshape.app/.ForgeShapeActivity
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 640 407
+adb -s emulator-5580 shell settings get system font_scale
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 1238 145
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell screencap -p /sdcard/fs.png
+adb -s emulator-5580 pull /sdcard/fs.png D:\TRAVELAPPS\ForgeShape\artifacts\uilayoutr2-spec-closeout\raw\E10-CONSTRUCTION_SHAPE_REST.png
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 1238 211
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 1238 271
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 1238 423
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell screencap -p /sdcard/fs.png
+adb -s emulator-5580 pull /sdcard/fs.png D:\TRAVELAPPS\ForgeShape\artifacts\uilayoutr2-spec-closeout\raw\E10-TRANSFORM_MOVE_WORLD.png
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 1238 321
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 1238 371
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell screencap -p /sdcard/fs.png
+adb -s emulator-5580 pull /sdcard/fs.png D:\TRAVELAPPS\ForgeShape\artifacts\uilayoutr2-spec-closeout\raw\E10-TRANSFORM_SCALE.png
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 1238 271
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 1238 473
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 1238 525
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 995 217
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell screencap -p /sdcard/fs.png
+adb -s emulator-5580 pull /sdcard/fs.png D:\TRAVELAPPS\ForgeShape\artifacts\uilayoutr2-spec-closeout\raw\E10-EXACT_IME.png
+adb -s emulator-5580 shell input keyevent 4
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 886 525
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 174 71
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell screencap -p /sdcard/fs.png
+adb -s emulator-5580 pull /sdcard/fs.png D:\TRAVELAPPS\ForgeShape\artifacts\uilayoutr2-spec-closeout\raw\E10-SCULPT_REST.png
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 1238 403
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell screencap -p /sdcard/fs.png
+adb -s emulator-5580 pull /sdcard/fs.png D:\TRAVELAPPS\ForgeShape\artifacts\uilayoutr2-spec-closeout\raw\E10-SCULPT_DETAILS.png
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 886 403
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell wm size 1280x800
+adb -s emulator-5580 shell wm density 160
+adb -s emulator-5580 shell settings put system font_scale 1.3
+adb -s emulator-5580 shell wm size
+adb -s emulator-5580 shell wm density
+adb -s emulator-5580 shell am force-stop com.forgeshape.app
+adb -s emulator-5580 shell pm clear com.forgeshape.app
+adb -s emulator-5580 shell am start -n com.forgeshape.app/.ForgeShapeActivity
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 640 397
+adb -s emulator-5580 shell settings get system font_scale
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 1238 145
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell screencap -p /sdcard/fs.png
+adb -s emulator-5580 pull /sdcard/fs.png D:\TRAVELAPPS\ForgeShape\artifacts\uilayoutr2-spec-closeout\raw\E13-CONSTRUCTION_SHAPE_REST.png
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 1238 211
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 1238 271
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 1238 423
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell screencap -p /sdcard/fs.png
+adb -s emulator-5580 pull /sdcard/fs.png D:\TRAVELAPPS\ForgeShape\artifacts\uilayoutr2-spec-closeout\raw\E13-TRANSFORM_MOVE_WORLD.png
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 1238 321
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 1238 371
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell screencap -p /sdcard/fs.png
+adb -s emulator-5580 pull /sdcard/fs.png D:\TRAVELAPPS\ForgeShape\artifacts\uilayoutr2-spec-closeout\raw\E13-TRANSFORM_SCALE.png
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 1238 271
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 1238 473
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 1238 525
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 995 225
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell screencap -p /sdcard/fs.png
+adb -s emulator-5580 pull /sdcard/fs.png D:\TRAVELAPPS\ForgeShape\artifacts\uilayoutr2-spec-closeout\raw\E13-EXACT_IME.png
+adb -s emulator-5580 shell input keyevent 4
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 886 525
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 218 71
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell screencap -p /sdcard/fs.png
+adb -s emulator-5580 pull /sdcard/fs.png D:\TRAVELAPPS\ForgeShape\artifacts\uilayoutr2-spec-closeout\raw\E13-SCULPT_REST.png
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 1238 403
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell screencap -p /sdcard/fs.png
+adb -s emulator-5580 pull /sdcard/fs.png D:\TRAVELAPPS\ForgeShape\artifacts\uilayoutr2-spec-closeout\raw\E13-SCULPT_DETAILS.png
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell input tap 886 403
+adb -s emulator-5580 shell uiautomator dump /sdcard/fs.xml
+adb -s emulator-5580 shell cat /sdcard/fs.xml
+adb -s emulator-5580 shell wm size reset
+adb -s emulator-5580 shell wm density reset
+adb -s emulator-5580 shell settings put system font_scale 1.0
+
+# --- operator-level commands for this closeout (outside measure.js) ---
+git rev-parse HEAD
+git status --short
+git diff --name-only 4a93050..HEAD
+sha256sum D:\TRAVELAPPS\FORGESHAPE_UI_SPEC_R0_ACCEPTED.html
+scripts\verify-device-guards.ps1
+scripts\start-forgeshape-emulator.ps1 -Avd ForgeShape_Stage006 -Port 5580   # BLOCKED: port already held by the running isolated AVD
+adb -s emulator-5580 get-state
+adb -s emulator-5580 emu avd name
+gradlew.bat :app:assembleDebug
+adb -s emulator-5580 install -r app\build\outputs\apk\debug\app-debug.apk
+node measure.js            # six cells x eleven states, semantic-id driven
+node analyse.js            # derives verdicts into analysis.txt + INDEX.md
+node overlay.js            # 36 mechanically generated overlays
+scripts\run-instrumented-tests.ps1 -Serial emulator-5580 -TestClass com.forgeshape.app.EditorWorkspaceUnifiedRightHostTest
+# --- restoration (also run from measure.js finally-block on every path) ---
+adb -s emulator-5580 shell wm size reset
+adb -s emulator-5580 shell wm density reset
+adb -s emulator-5580 shell settings put system font_scale 1.0
+adb -s emulator-5580 shell wm size        # verified: Physical size 1080x2400, no override
+adb -s emulator-5580 shell wm density     # verified: Physical density 420, no override
+adb -s emulator-5580 shell settings get system font_scale   # verified: 1.0
