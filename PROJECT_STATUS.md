@@ -1,17 +1,22 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.45.0
-**Updated:** 2026-08-28
-**Result:** TECHNICAL COMPLETE — **UI-ARCH-R1** extracts the bounded trailing
-workspace cluster behind one ownership boundary and changes no product feature,
-layout policy, rendering, transform or sculpt semantics. `WorkspaceTrailingHostView`
-now owns the Tool Rail, its bounded scroll host, precision trigger, transform
-selectors, compact orientation, Display suppression and fixed top/right placement.
-`EditorWorkspaceView` remains the JNI/native-command and workspace-orchestration
-owner and passes only a derived presentation snapshot into the host. The dead
-`railDocked` distinction and fourteen root test accessors are gone. Eleven matched
-before/after states have zero common geometry or visibility differences. Evidence:
-`artifacts/uiarchr1/`.
+**Status Version:** 0.46.0
+**Updated:** 2026-08-29
+**Result:** TECHNICAL PASS / OWNER VISUAL REVIEW REQUIRED — **UI-LAYOUT-R2**
+implements one unified right contextual surface in Construction and Sculpt.
+`WorkspaceTrailingHostView` owns its vertical child composition, fixed
+top/right/width geometry, internal scrolling and downward-only contextual height.
+Transform mode, coordinate space and Exact/Details access are internal members,
+not detached capsules. Bottom Exact/Details sheets hide conflicting Objects and
+history chrome for their full entry/open/exit lifetime and restore it at the same
+bounds. IME/insets remain root-owned and never select another right-control
+grammar. Evidence: `artifacts/uilayoutr2/`.
+
+**UI-LAYOUT-R2 verification range:** baseline
+`54c3dfa09c7b0fd9351f6c8967b199c3380e3c1a`; final implementation/test HEAD
+`8d9ebbf0f73e278ed7383ae89c054afa2bcce9f3` (product layout
+`27dc28d27cd44c75a552a64bf121ad64937c2b08`). The documentation/evidence commit
+contains no product or test behavior change.
 
 Before it, Stage 020R3 closed the one user-reachable
 correctness gap Scale left behind: **a sculpt brush now measures in the
@@ -63,12 +68,13 @@ atomic Apply. Renderer and picking are scale-correct: normals ride a real
 inverse-transpose (`R·S⁻¹`) and a local ray parameter is still world distance.
 **Surface Snap and Grid Snap remain absent** — the quantization and placement
 seam exists and is the identity.
-The accepted UI-LAYOUT-R1 behavior remains unchanged; UI-ARCH-R1 adds no
-UI-LAYOUT-R2 behavior. The refactored boundary is ready for owner/coordinator
-review before UI-LAYOUT-R2 resumes — see *Next Stage*.
+UI-LAYOUT-R2 is technically implemented on the UI-ARCH-R1 boundary. Automated
+verification is complete; owner/coordinator visual acceptance is still pending —
+see *Next Stage*.
 **Current Phase:** Phase 1 — Native Viewport
 **Workspace:** `D:\TRAVELAPPS\ForgeShape`
-**Accepted implementation baseline:** UI-ARCH-R1 (bounded trailing-cluster
+**Accepted implementation baseline:** UI-LAYOUT-R2 (unified right context and
+non-moving bottom-surface anchors) on UI-ARCH-R1 (bounded trailing-cluster
 ownership refactor) on UI-LAYOUT-R1 (primary-surface policy,
 static shell, precision surface, semantic contrast and gizmo legibility
 correction) on top of
@@ -90,7 +96,7 @@ Stage 016 (Plane), Stage 015D (camera projection), Stage 015C-R (front-face
 culling), Stage 015C (shading), Platform Fix P2, Stage 015B, Stage 014, the NDK
 r29 migration (Gate P0) and the Owner Decision Baseline. Per-stage narrative
 lives in Git history; only what still constrains the code is kept here.
-**Next Stage:** **Owner/coordinator review → resume UI-LAYOUT-R2 on the new host boundary.** See *Next Stage*.
+**Next Stage:** **Owner/coordinator visual review of UI-LAYOUT-R2 before any motion/morph stage.** See *Next Stage*.
 
 ## Current state
 
@@ -112,16 +118,16 @@ re-composes itself per window. `ARCHITECTURE.md` owns the ownership map and ever
 **Blockers: none.** Known costs and accepted debt are in *Technical Debt*;
 environment hazards are in *Known Issues*.
 
-## Current interaction model (UI-R4A, corrected by UI-R4B, UI-R4C and UI-LAYOUT-R1; ownership extracted by UI-ARCH-R1)
+## Current interaction model (through UI-LAYOUT-R2)
 
 Runtime-verified on `ForgeShape_Stage006` / `emulator-5580` in compact portrait,
 short landscape and expanded/tablet windows —
 compact portrait, compact landscape (short height) and an overridden
 1600 × 2560 @ 240 dpi expanded — in all three appearances.
 
-**The trailing cluster has one bounded composition owner.** (UI-ARCH-R1.)
-`WorkspaceTrailingHostView` owns the right-cluster children, their order,
-compact selector orientation, Display suppression and stable top/right placement.
+**The right context is one bounded surface with one composition owner.**
+`WorkspaceTrailingHostView` owns the right-cluster children, their vertical order,
+internal spacing/scrolling, Display suppression and fixed top/right/width placement.
 The root owns native reads, commands, mode transitions, primary-surface
 exclusivity and workspace insets. The host receives a derived presentation
 snapshot and reports semantic user intent through callbacks; it holds no second
@@ -135,13 +141,12 @@ The rule is deliberately not implemented as “close every anchored popover,” 
 a future lightweight collision-free popover is not silently promoted into a
 primary editor.
 
-**Bottom and trailing safe zones are deterministic.** A compact precision or
-Sculpt-details sheet follows the reserved Objects/history row with the standard
-8 dp gap. When the IME appears, that sheet owns the constrained lower region and
-the row is intentionally suppressed; it returns to the same bounds when the IME
-closes. Display owns the upper trailing region while open, so the Tool Rail and
-transform selectors temporarily withdraw instead of merging visually with it,
-and return to the same top anchor on dismissal. Neither reflow is animated.
+**Bottom and trailing safe zones are deterministic.** A bottom-sheet precision or
+Sculpt-details surface owns the lower region for its full entry, open and exit
+lifetime. The conflicting Objects/history row is hidden rather than translated,
+then restored at its exact resting bounds after the sheet is absent. Display owns
+the upper trailing region while open, so the unified host withdraws and returns
+to the same external frame. Neither policy animates unrelated chrome.
 
 **Sculpt follows the same static grammar.** Radius/Strength and the Tool Rail
 share stable top anchors and aligned edge margins; changing track height no
@@ -149,18 +154,13 @@ longer recentres the brush panel. The direct sliders retain 48 dp touch widths,
 and Sculpt details versus Objects follows the same primary-surface replacement
 rule as Construction.
 
-**The trailing tool cluster does not move, and nothing in it is squeezed.**
-(UI-LAYOUT-R1.) It is anchored by its top edge in every window class; its two
-persistent controls — the Tool Rail and the precision toggle — come before its
-one contextual child, the transform selectors; and when the column is shorter
-than its contents, the deficit goes to the rail, which scrolls, rather than to
-whatever happens to be last. Selecting Transform, changing transform mode,
-entering Scale (which withdraws the space capsule) and opening the precision
-surface therefore move the persistent controls by **zero pixels**, where the
-centre anchor used to move the rail 139 dp, 56 dp and 120 dp. With the keyboard
-up the two selectors lay themselves side by side, exactly as a short window makes
-them, because a precision sheet plus an IME leaves the cluster about 150 dp —
-less than the stacked pair alone wants.
+**The right host keeps one external frame and expands downward only.** Shape and
+Transform are the high-level entries. Move/Rotate/Scale, World/Local where
+applicable, and the Exact trigger are vertical internal members of that same
+surface. Changing context preserves top/right/width; only height/bottom may
+change. Short windows and IME use the host's single internal vertical scroll —
+there is no horizontal, detached or duplicated selector grammar, and every
+visible interactive target remains at least 48 dp.
 
 **System Back closes what the user opened, before it leaves.** (UI-LAYOUT-R1.) With
 any of the four dismissible surfaces open — Add Primitive, the Objects popover,
@@ -178,9 +178,9 @@ resting workspace is the model, a transparent toolbar at the top, the Objects
 capsule low on the leading edge, and the tool cluster on the trailing edge.
 
 **Exact values did not become less reachable — they stopped owning the layout.**
-A small control attached directly under the Tool Rail opens the precision surface
-for whatever entry the rail is holding, names what it will open before it is
-pressed, and is drawn active while it is up. What the user last decided is
+The final entry inside the unified right host opens the precision surface for
+whatever high-level entry the host is holding, names what it will open before it
+is pressed, and is drawn active while it is up. What the user last decided is
 remembered per mode and starts closed; no window size can open it by itself,
 which is the rule the previous shell had and which meant a rotation could put a
 surface on screen that had never been asked for.
@@ -693,6 +693,9 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 | Edge-to-edge with WindowInsets on chrome only; IME never resizes the Vulkan surface | VERIFIED |
 | The trailing tool cluster is top-anchored, and a contextual control appearing or disappearing moves no persistent one — measured at zero pixels across Transform selection, all three transform modes and the precision surface opening | VERIFIED (UI-LAYOUT-R1) |
 | No trailing control drops below 48 dp, and none leaves the tree, in compact portrait, short landscape, at `font_scale 1.3` or with the keyboard up; the Tool Rail absorbs the deficit and scrolls | VERIFIED (UI-LAYOUT-R1) |
+| Construction and Sculpt use one `WorkspaceTrailingHostView` surface with invariant top/right/width; context is vertical inside it and may grow only downward | VERIFIED (UI-LAYOUT-R2) |
+| Exact Shape/Transform and Sculpt Details bottom sheets hide conflicting Objects/history chrome for entry/open/exit and restore its exact resting bounds; they never push it upward | VERIFIED (UI-LAYOUT-R2) |
+| IME keeps the right host vertical and at the same external frame; animated insets are root-owned and no horizontal/detached selector grammar exists | VERIFIED (UI-LAYOUT-R2) |
 | System Back dismisses the topmost open context surface — Add Primitive, the Objects popover, the exact values, the display settings — playing that surface's own exit, and leaves the app only when none is open | VERIFIED (UI-LAYOUT-R1) |
 | A long signed exact value keeps its sign and leading digits: the type steps down to fit, and a shortened display is shortened at the END, never the start. The complete value is what is stored, parsed and applied | VERIFIED (UI-LAYOUT-R1) |
 | A tap on a populated numeric field selects it, so the first keystroke replaces; no concatenation of the old value and the new can occur | VERIFIED (UI-LAYOUT-R1) |
@@ -966,9 +969,10 @@ device. `README.md` documents how to read them.
 
 | `EditorWorkspaceGizmoTest` | Stage 020 and Stage 020R2, from the product side of JNI: both start answers leaving an empty history and the direct-Sculpt path being source-classified as production (`S020-PRE-01`..`-05`), the Shape context and Sculpt drawing no handles and no mode selector while the native guard still refuses (`S020-01`, `-03`), Transform with a body drawing both and entering on Move (`-02`), body switching retargeting the pivot without a step (`-04`), the mode selector recording nothing and publishing nothing (`-05`), each Move axis changing only its own coordinate through a real `MotionEvent` on the real handle (`-06`..`-09`), a near-camera-parallel axis staying finite (`-10`), a tap costing nothing and a 48-sample drag costing exactly one step (`-11`, `-12`), cancel restoring exactly (`-13`), each ring turning only its own component and leaving Position (`-14`..`-17`), a 300-sample ring drag with no sample jumping a quarter turn and the total passing 360° un-canonicalised (`-18`..`-20`), one ring drag as one step and its cancel (`-21`, `-22`), undo/redo bracketing a Move and a Rotate exactly (`-23`, `-24`), the exact-value FIELDS reading the gizmo's result and a typed Apply moving the pivot (`-25`, `-26`), redo invalidation (`-27`), two bodies undoing chronologically and independently (`-28`), a captured handle not orbiting while a drag off the handles still does (`-29`, `-30`), cancel and a second pointer leaving no open transaction and no partial transform (`-31`, `-32`), a stylus driving the same solver under its own pointer id (`-33`), chrome consuming its own touches (`-34`), the 48 dp hit corridor measured perpendicular to the shaft (`-35`), the drawn size staying in band from 3 m to 30 m (`-36`), the selector and the precision toggle both at 48 dp and collision-free in portrait and landscape (`-37`), a whole drag/commit/undo/redo publishing no revision with a positive control that does (`-38`..`-40`), and the gizmo surviving display switching (`-41`). Stage 020R2 adds: scale round-tripping through the history (`S020R2-01`), one Apply being atomic across all nine with an impossible scale refused and a no-op recording nothing (`-02`), every Move plane moving in its plane and never off it (`-03`), Local space moving along the body own axis where World moves only X (`-04`), World and Local rotation being different answers to the same gesture on a mixed body (`-05`..`-07`), axis, plane and uniform scale with the ratios preserved (`-09`..`-11`), one scale drag as one step with a tap costing nothing and a second pointer restoring all nine (`-12`, `-13`), the handles and the exact-value fields being one truth in both directions including the scale (`-14`), a non-uniform scale reaching PICKING and not the instrument (`-15`), every handle classified at its own pixel with the pivot naming the uniform handle in Scale and none in Move, and the held handle reported while held (`-16`), Scale being Local-only with the space selector absent there and the remembered space restored on the way out (`-18`), both selectors at 48 dp and collision-free in portrait and landscape (`-18` layout), and a long scale drag with its undo and redo publishing no revision against a positive control that does (`-20`) | 46 |
 
-| `EditorWorkspaceLegibilityTest` | UI-LAYOUT-R1, from the product side: the trailing cluster keeping its anchor and its 48 dp targets in compact portrait (`UILR1-01`), short landscape (`-02`), at `font_scale 1.3` (`-03`) and under an IME inset (`-04`), with no unrelated control moving as the contextual ones come and go (`-05`); System Back dismissing each of the four dismissible surfaces — the palette through a real `KEYCODE_BACK` — and only then leaving (`-06`); a long signed value keeping its sign whole and its complete value being what is parsed (`-07`); a populated field selecting rather than appending (`-08`); Scale offering no unit and the chips sitting inside Position (`-09`); Apply pinned and on screen with no scrolling in portrait and landscape (`-10`); the secondary and error roles clearing 4.5:1 on all six grounds in all three appearances, with the hierarchy intact (`-11`); every handle answering a touch across its declared target with the pivot disc's deliberate non-hit stated (`-12`); the held handle reported in all three modes (`-13`); the transform semantics unchanged (`-14`); the anchored surfaces displacing nothing (`-15`); a Back dismissal playing its own exit (`-16`); exclusive Objects/Add/Details/Display ownership (`-17`); the reserved bottom-row/sheet gap (`-18`); Display suspending and restoring the rail at the same anchor (`-19`); and Sculpt sharing the top grammar, dismissing a prior-mode surface and composing Details with Objects (`-20`) | 20 |
+| `EditorWorkspaceLegibilityTest` | UI-LAYOUT-R1 retained, with the old reserved-row assertion strengthened to the R2 bottom-zone rule: a bottom sheet hides conflicting chrome instead of relocating it; Display restoration, touch floors, Exact legibility and Sculpt top grammar remain covered | 20 |
+| `EditorWorkspaceUnifiedRightHostTest` | `UILR2-01..18`: invariant host frame; downward-only Transform expansion; mode/space/Exact/Shape/Sculpt parity; same-host descendants; bottom hide/restore through slowed entry/exit; IME vertical grammar and touch floor; signed numeric and unitless Scale regression; compact portrait, short landscape and expanded/tablet; Stage020R2/R3 semantics | 18 |
 
-**359 tests** (59 JVM, 300 instrumented). No Java test asserts a rendered pixel;
+**377 tests** (59 JVM, 318 instrumented). No Java test asserts a rendered pixel;
 every control is reached by its stable semantic id and no assertion uses a screen
 coordinate. The foundation and theme suites deliberately assert no colour
 literal, radius or shadow — those are judged by eye and by runtime evidence, and
@@ -1053,39 +1057,30 @@ precondition. Runtime evidence separately shows the real keyboard.
 
 ## Current evidence summary
 
-Latest acceptance run (UI-ARCH-R1), on the isolated
+Latest acceptance run (UI-LAYOUT-R2), on the isolated
 `ForgeShape_Stage006` / `emulator-5580` AVD unless stated:
 
 - **Native self-tests:** thirteen suites, **2043 checks, zero failures**, followed
   by `FORGESHAPE_NATIVE_VIEWPORT_OK`.
-- **Build/JVM:** debug app and androidTest APKs built for **arm64-v8a and x86_64**;
+- **Build/JVM:** debug and release APKs built for **arm64-v8a and x86_64**;
   **59/59 JVM** tests passed.
-- **Focused UI-ARCH-R1:** `UIAR1-01..12` passed **12/12**. The full architecture
-  and layout pair passed **22/22** after the final synchronization fix.
-- **Instrumented:** the complete **300/300** suite passed with zero failures in
-  five official-runner shards (**57 + 61 + 72 + 58 + 52**) through
-  `scripts\run-instrumented-tests.ps1 -Serial emulator-5580 -TestClass ...`.
-  Two monolithic attempts were discarded after the AVD system entered kernel
-  wait and emitted watchdog/ANR diagnostics; neither produced an assertion or
-  application exception. Reinstalling between the exhaustive class shards
-  prevented the emulator-state accumulation while exercising every test class.
-- **Window profiles:** the dedicated short-landscape contract passed **4/4** at
-  2400 × 1080 @ 420 dpi; the dedicated expanded/tablet contract passed **4/4**
-  at 1600 × 2560 @ 240 dpi. Compact portrait is covered by the 300/300 suite.
+- **Focused UI-LAYOUT-R2:** `UILR2-01..18` passed **18/18**.
+- **Instrumented:** the official authoritative command
+  `scripts\run-instrumented-tests.ps1 -Serial emulator-5580 -FullSharded`
+  discovered 21 classes / 318 tests, assigned them exhaustively to five shards
+  (**64 + 64 + 66 + 63 + 61**) and passed **318/318**. `missing=0`,
+  `duplicates=0`, `unexpected=0`, `execution_missing=0`; marker
+  `FULL_SHARDED_SUITE_PASS`.
+- **Window profiles:** compact portrait, 2400 × 1080 @ 420 dpi short landscape,
+  and 1600 × 2560 @ 240 dpi expanded/tablet all passed their R2 contracts and
+  are represented in runtime evidence.
 - **Device guards:** `DEV2-01..07` and `DEV3-01..06` all PASS. No command touched
   reserved `emulator-5554`; every runtime command used explicit
   `-s emulator-5580` after confirming the AVD name.
-- **Runtime evidence:** [`artifacts/uiarchr1/`](artifacts/uiarchr1/) contains
-  matched before/after screenshots for eleven required states and two 175-row
-  semantic-bounds captures. The baseline was rebuilt from exact SHA `717cf70`;
-  all 164 comparable non-host rows have identical presence, bounds, enabled,
-  selected and checked values. The new host row is intentionally absent before.
-  Representative Exact+IME and expanded pairs were visually inspected.
-- **Discarded profile misuse:** running the whole 64-test general layout subset
-  under a global landscape override made portrait-contract `UILR1-05` observe
-  the intentional short-window selector reflow. The run was not counted; the
-  four tests explicitly authored for short landscape passed 4/4 on that same
-  physical profile.
+- **Runtime evidence:** [`artifacts/uilayoutr2/`](artifacts/uilayoutr2/) contains
+  16 required screenshots, the semantic-ID capture script, native transcript,
+  validation summary and one continuous portrait walkthrough. The screenshots
+  were visually inspected; owner/coordinator acceptance remains pending.
 - **Physical ARM64 (Gate P1):** closed on a Galaxy S25 Ultra —
   `primaryCpuAbi=arm64-v8a`, `PAGE_SIZE` 4096, the mandatory ~10k/~50k/~100k
   ladder and Sculpt at 100k measured on real hardware. Stylus stays UNVERIFIED.
@@ -1121,10 +1116,9 @@ Latest acceptance run (UI-ARCH-R1), on the isolated
     own result, in the fields.
   * A second body was added and dragged; only it moved, and **only the active
     body carried a gizmo**. In Sculpt both selectors were **ABSENT** and the
-    driver reported `GIZMO_HANDLES:absent`. Short landscape laid the two
-    selectors **side by side** with the precision toggle unsqueezed below them;
-    the expanded window stacked them beside a docked Objects column with no
-    collision.
+    driver reported `GIZMO_HANDLES:absent`. That pre-R2 capture used a horizontal
+    short-window selector reflow; UI-LAYOUT-R2 supersedes it with one vertical,
+    internally scrollable right host in every profile.
   * The two-finger cancel is still the one case `adb shell input` cannot produce
     — it cannot inject a genuine concurrent second pointer — and is covered
     instead by `S020-32` and `S020R2-13`, which dispatch real two-pointer
@@ -1328,31 +1322,18 @@ duration scale skips them outright rather than shortening them.
 Durable constraints and known-but-accepted costs. Narrative for how each was
 found lives in Git history.
 
-**The trailing cluster's flexible child has no floor.** (UI-LAYOUT-R1.) The Tool Rail
-takes whatever height is left after every fixed control in the column has its
-full height, and is capped no lower than zero — a floor there would put the
-remaining deficit back on whatever is last, which is the defect the arrangement
-exists to remove. On any real window the remainder is at least one entry: the
-worst measured case, a precision sheet open with the keyboard up on a 411 × 914
-dp phone, leaves it 48 dp and it scrolls. A window that could not leave it that
-much would have to be shorter than the toolbar and the two capsules together,
-and none exists. Recorded because the bound is arithmetic rather than enforced.
+**Sculpt Radius/Strength remains visually heavy.** (UI-LAYOUT-R2, deferred P2.)
+The direct-access sliders retain their existing geometry and >=48 dp targets.
+A safe local reduction that improved parity with the unified right host without
+starting a second Sculpt layout system was not clear, so this static stage did
+not redesign them.
 
-**The keyboard compacts the transform selectors by policy, not by measurement.**
-(UI-LAYOUT-R1.) `compactSelectors()` is `shortWindow || keyboardVisible` — two facts
-about the WINDOW — rather than a measurement of the cluster fed back into its own
-layout, which would be a loop looking for somewhere to settle. The cost is that
-a window with room to spare still turns the pair on its side when the IME is up.
-That is the same arrangement a landscape phone already uses, and it is
-deliberately preferred to the alternative, which is a control at 8 dp.
-
-**`UILR1-04` does not depend on a real soft keyboard.** It raises the IME and
-uses it when it appears; when it does not — this emulator does not raise one for
-the instrumentation — it dispatches an IME inset of the same size through the
-same path the platform uses and asserts the chrome took it before measuring. The
-real keyboard is covered by runtime evidence instead (`artifacts/uilayoutr1/S06`,
-`R01`). A device that raises one for instrumentation would make the case stronger
-and needs no code change.
+**IME verification accepts both real and deterministic platform input.** The
+gesture suite asks Android for the real keyboard first; if unavailable it
+dispatches a deterministic IME inset through the same listener. When real IME
+animation is present, it waits for chrome to reach the root's target inset rather
+than assuming a fixed animation duration. Runtime evidence separately shows the
+real keyboard (`artifacts/uilayoutr2/10-exact-transform-ime.png`).
 
 **Selection composition.** Selection is composed as a lerp toward a flat colour
 rather than as a per-channel gain on the shaded colour
@@ -1566,7 +1547,7 @@ regenerated per stage.
 | `app/src/main/java/.../ForgeShapeSurfaceView.java` | Viewport surface, forwards lifecycle + raw per-pointer state (id, position, tool type, pressure, tilt), takes focus back from an editor |
 | `app/src/main/java/.../PointerSemantics.java` | The ONE place an Android `MotionEvent.TOOL_TYPE_*` constant becomes a neutral wire code, plus that mapping's Unknown fallback |
 | `app/src/main/java/.../EditorWorkspaceView.java` | Workspace orchestration: native reads and commands, mode transitions, primary-surface exclusivity, inspector/bottom/toolbar/viewport composition, system insets, chrome visibility, System Back and `syncFromNative()`. It owns one trailing-host field, not the host's leaf views |
-| `app/src/main/java/.../WorkspaceTrailingHostView.java`, `TrailingClusterColumn.java` | The bounded right-cluster composition and presentation owner: Tool Rail, bounded scroll, precision trigger, transform selectors, compact orientation, Display suppression, fixed top/right placement and semantic callbacks. `TrailingClusterColumn` makes the rail the only child that absorbs a squeeze. Neither owns product or native state |
+| `app/src/main/java/.../WorkspaceTrailingHostView.java` | The unified right-context composition and presentation owner: one floating surface, one internal vertical `BoundedScrollView`, Tool Rail, vertical transform/space selectors, precision/details trigger, fixed top/right/width placement, downward-only height and Display suppression. It owns no product or native state |
 | `app/src/main/java/.../WorkspaceLayoutMode.java` | Window-dp breakpoints, where the precision surface appears when open, and chrome sizing, as arithmetic. It has no opinion about whether that surface is open. No Android type |
 | `app/src/main/java/.../EditorUiState.java` | The closed list of UI-owned state: display unit, draft kind, rail selection, whether the precision surface was asked for (per mode, false to begin with), chrome-hidden |
 | `app/src/main/java/.../GlobalToolbarView.java` | Editing context, the three mutually exclusive mode transitions, reserved Export, the Display control, chrome hide, and the one status line — including its lifecycle: transient versus standing, the two holds, and cancel-first. Owns no scene control — that is the Objects capsule's |
@@ -1647,14 +1628,10 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Exactly one next step: Owner/coordinator review → resume UI-LAYOUT-R2 on the
-new host boundary.** UI-ARCH-R1 is technically complete and R2-ready: the
-accepted UI-LAYOUT-R1 appearance and behavior are unchanged, the trailing
-cluster has one composition owner, all native/JVM/instrumented/profile guards
-are green, and matched evidence has zero comparable geometry/visibility deltas.
-
-UI-LAYOUT-R2 itself remains unstarted. Surface Snap, Grid Snap, Selection
-Outline and every unrelated motion/morph stage remain outside this refactor.
+**Exactly one next step: Owner/coordinator visual review of UI-LAYOUT-R2 before
+any motion/morph stage.** UI-LAYOUT-R2 is technically implemented and all
+native/JVM/instrumented/profile guards are green. Automated PASS and recorded
+runtime evidence do not grant final visual acceptance.
 
 The one feature the repo still records as a candidate is **Selection Outline** —
 the expensive half of selection feedback, needing either a second geometry pass

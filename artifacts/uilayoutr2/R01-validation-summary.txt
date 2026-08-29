@@ -1,0 +1,31 @@
+UI-LAYOUT-R2 validation summary
+Date: 2026-08-29
+Baseline: 54c3dfa09c7b0fd9351f6c8967b199c3380e3c1a
+Final implementation/test HEAD: 8d9ebbf0f73e278ed7383ae89c054afa2bcce9f3
+Device: ForgeShape_Stage006 / emulator-5580
+
+Build/JVM
+- :app:assembleDebug: PASS (native arm64-v8a + x86_64)
+- :app:assembleRelease: PASS (native arm64-v8a + x86_64)
+- :app:testDebugUnitTest: PASS (59 tests, 0 failures/errors/skips)
+
+Native runtime
+- 13 self-test suites: PASS (2043 checks)
+- FORGESHAPE_NATIVE_VIEWPORT_OK
+- No *_SELFTEST_FAIL or *_FAIL: marker
+
+Android instrumentation
+- Focused EditorWorkspaceUnifiedRightHostTest: PASS (18/18)
+- Authoritative -FullSharded: PASS (318/318)
+- Discovery: 21 classes, 318 tests, 5 shards
+- Assignment/execution: missing=0, duplicates=0, unexpected=0, execution_missing=0
+- Marker: FULL_SHARDED_SUITE_PASS
+
+Layout/runtime
+- Compact portrait: PASS
+- Short landscape: PASS
+- Expanded/tablet: PASS
+- Device guards: DEV2-01..07 + DEV3-01..06 PASS
+- Runtime evidence: 16 PNG screenshots + one continuous portrait MP4 walkthrough
+
+Status: TECHNICAL PASS / OWNER VISUAL REVIEW REQUIRED

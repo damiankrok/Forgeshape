@@ -17,8 +17,8 @@ ForgeShapeActivity
         +-- EditorWorkspaceView   (+ EditorUiState, WorkspaceLayoutMode)
         |        +-- StartChooserView / GlobalToolbarView
         |        +-- WorkspaceTrailingHostView
-        |        |        +-- ToolRailView / precision toggle
-        |        |        +-- transform mode + space selectors
+        |        |        +-- BoundedScrollView -> vertical context column
+        |        |                 +-- ToolRailView / transform + space / precision
         |        +-- BrushEdgeControlsView / ObjectsSectionView / ObjectsCapsuleView
         |        +-- AnchoredSurfaceView   one growth, four surfaces
         |                 +-- ObjectsPopoverView / AddPrimitivePaletteView
@@ -64,7 +64,7 @@ forgeshape_jni.cpp            render thread, ANativeWindow, MotionEvent ->
 | --- | --- | --- |
 | Activity lifecycle, edge-to-edge window | `ForgeShapeActivity` | — |
 | Which surfaces are on screen, adaptive layout, window insets, chrome visibility | `EditorWorkspaceView` | it decides no mode — `syncFromNative()` *reads* `NativeViewport.productMode()` and builds from that |
-| Right-cluster composition, child order, compact selector orientation, Display suppression and the fixed top/right placement contract | `WorkspaceTrailingHostView` | it owns no product, transform, tool or precision-open truth; callbacks report intent and `PresentationState` is a derived snapshot |
+| Right-context composition, vertical child order, internal scrolling, Display suppression and fixed top/right/width with downward-only height | `WorkspaceTrailingHostView` | it owns no product, transform, tool or precision-open truth; callbacks report intent and `PresentationState` is a derived snapshot |
 | Display unit, the *draft* primitive kind, the Construction rail selection, whether the precision surface was asked for, chrome-hidden | `EditorUiState` | every field is safe to lose; none of them can change the model |
 | The window-dp breakpoints and chrome sizing rules | `WorkspaceLayoutMode` | it holds no Android type and reads no state; it is arithmetic |
 | Shape/transform field text and input validation messages | `ConstructionShapeEditorView`, `ConstructionPlacementEditorView` | neither owns a parameter, a kind, a transform, a mesh or a publish decision |
@@ -189,9 +189,9 @@ and the start chooser.
 Inside `chromeRoot`: `GlobalToolbarView` at the top; then a weighted horizontal
 row carrying — leading edge first — the Objects column (expanded windows only),
 `BrushEdgeControlsView` (Sculpt only), a weighted gap where the model lives, and
-one `WorkspaceTrailingHostView`. That host owns the trailing **tool cluster**:
-the `ToolRailView` in a bounded scroll container, the precision toggle under it,
-and the contextual transform selectors under that. The row is followed by
+one `WorkspaceTrailingHostView`. That host is the one trailing context surface:
+one bounded vertical scroll contains the `ToolRailView`, contextual transform
+mode and coordinate-space controls, then the precision/details trigger. The row is followed by
 `bottomRow`, which wraps its content and holds the Objects capsule on the leading
 side and nothing else.
 `PropertyInspectorView` is added after `bottomRow` (bottom sheet) or inside the
@@ -207,32 +207,25 @@ a viewport-first tool, a permanent structural claim made by a surface nobody
 asked for. Exact values are ForgeShape's advantage and are not less reachable for
 it: they are one tap from the tool context that owns them.
 
-**The trailing cluster has one composition owner, one anchor and one child that
-absorbs a squeeze.** `WorkspaceTrailingHostView` owns the composition and
-presentation policy; its `TrailingClusterColumn` measurement base owns the
-squeeze. `EditorWorkspaceView` owns native reads and commands and passes one
-derived `PresentationState` snapshot into the host. The host callbacks report
-semantic intent back to the root and never call JNI.
+**The right context has one composition owner and one external frame.**
+`WorkspaceTrailingHostView` is itself the only floating surface and owns a single
+`BoundedScrollView` with a vertical context column. Shape/Transform or Sculpt
+brush entries come first, transform mode and space appear below them when
+offered, and the precision/details trigger remains the final member of the same
+surface. The host owns padding, spacing, corner/elevation and external width.
 
-*The anchor.* The cluster is `Gravity.TOP` in every window, floating or docked,
-and its two **persistent** children — the rail and the precision toggle — come
-before its one **contextual** child, the transform selector row. A centre anchor
-moves every child by half of any height change, so selecting Transform moved the
-rail 139 dp, entering Scale (which withdraws the space capsule) moved it back
-56 dp, and two identical taps in one place landed on two different controls. Top,
-with the contextual row last, is what makes a contextual change cost the
-persistent controls nothing at all.
+Its top, right and width do not depend on tool, mode, space, precision-open state,
+IME or window class. Context may change only the internal content and total
+height/bottom edge, so expansion is downward. If available height is insufficient,
+the whole internal column scrolls vertically; no child changes orientation,
+detaches or becomes a second surface. The root may compensate for an unrelated
+second toolbar status line during measurement, but the final host margin is part
+of that same traversal rather than a visual translation.
 
-*The squeeze.* A vertical `LinearLayout` measures children in order against the
-height that is left, so the LAST ones are handed whatever remains — which on a
-short window is nothing. That is one container producing four measured defects: a
-precision toggle at 37 dp, at 29 dp and at 17.1 dp, and a transform-mode capsule
-left 2.3 dp tall with the space capsule and the toggle gone from the tree
-altogether. `TrailingClusterColumn` measures the fixed controls at their natural
-height first and caps the rail's `BoundedScrollView` with what is left, never
-below one whole entry. The rail is the only child that can give height back
-honestly, because what it cannot show it scrolls to — the overflow strategy the
-cluster already had and never reached.
+`EditorWorkspaceView` still owns native reads and commands and passes one derived
+`PresentationState` snapshot into the host. Host callbacks report semantic
+intent back to the root and never call JNI; the host is presentation authority,
+not a second product-state authority.
 
 **Every context surface grows out of the control that opened it.** The scene list
 and the Add Primitive palette out of the Objects capsule; the precision surface
@@ -260,12 +253,13 @@ is a motion/placement primitive, not a declaration that every future lightweight
 popover must compete for the primary-task slot.
 
 `applyPrimarySurfaceChromePolicy()` owns the two collision decisions. Display
-temporarily makes `railColumn` `GONE`, then returns it to the same top anchor on
-dismissal. A bottom-sheet inspector keeps the bottom row as a reserved row with
-an 8 dp sheet margin until an IME inset arrives; under the IME that row becomes
-`GONE`, giving the constrained lower region to the editor rather than shrinking
-any control. Both decisions are immediate and unanimated. The Vulkan surface is
-still full-window and receives none of these insets or visibility changes.
+temporarily makes the trailing host `GONE`, then returns it to the same external
+frame on dismissal. A bottom-sheet Exact/Details inspector owns the lower region
+for its full entry, open and exit lifetime: the conflicting Objects/history row
+is `GONE`, never translated above the sheet, and returns at its exact resting
+bounds only after the surface is absent. Both decisions are immediate and
+unanimated. The Vulkan surface is still full-window and receives none of these
+insets or visibility changes.
 
 **A context surface may stand on the model; it may not stand on another
 control.** The palette is wider than the distance from the Objects capsule's `+`
@@ -273,7 +267,7 @@ to the trailing window edge, so an unbounded clamp would slide it under the
 trailing tool cluster and leave a crescent of the precision toggle showing from
 behind it. A half-covered control still takes a touch, and the panel over it
 reads as a rendering fault rather than as a layer. `trailingLimitFor` bounds the
-surface at `railColumn`'s own leading
+surface at the trailing host's own leading
 edge, less the same `overlay_anchor_gap` every anchored surface stands off its
 invoker, so the *surface* moves and the live control keeps its place. Skipped for
 a surface the cluster itself opened — the precision surface's invoker IS the
@@ -329,25 +323,20 @@ the precision toggle, which are two front ends to one placement. The surface
 names itself "Exact Transform — Body #1" because that is what it is — the typed
 half — not because it is the only half.
 
-**The transform selectors are contextual to that one entry, and live in a row of
-their own.** *Transform mode* (Move / Rotate / Scale) and *coordinate space*
-(World / Local) are two capsules inside one `transformSelectorRow` under the
-rail, absent everywhere the gizmo is. They are not rail entries: the rail says
-which Construction context is held, and putting five more selectable things on a
-permanent control for a choice that exists inside one of them would break the
-rail's one invariant. The row exists so a short window can lay the two capsules
-**side by side** instead of stacked — the trailing cluster then costs the height
-of one capsule rather than two, which is the difference between fitting and
-Android squeezing the last child (the precision toggle) down to 14 dp. The one approved-but-unimplemented control
-left in the product is the global `Export`, which is drawn recessed and says why.
+**The transform selectors are contextual members of that one surface.**
+*Transform mode* (Move / Rotate / Scale) and *coordinate space* (World / Local)
+are transparent vertical groups under the high-level Tool Rail entries, absent
+where the gizmo is absent. They use the host's entry material and spacing rather
+than drawing detached capsules. Short windows and IME keep this same vertical
+grammar and rely on the host's internal scroll. The one approved-but-unimplemented
+control left in the product is the global `Export`, which is drawn recessed and
+says why.
 
-**The precision toggle belongs to the rail, not to the toolbar.** What it opens is
-entirely a function of the entry above it — *Exact shape*, *Exact transform*, or
-in Sculpt the mesh *Details* — so it is attached under the rail as its own small
-capsule rather than as a fifth rail entry: the rail's whole job is that exactly
-one of its children is active, and a fifth selectable thing in it would break
-that. It names what it will open, so a user never has to press it to find out,
-and it is drawn active exactly while the surface is up.
+**The precision toggle belongs to the right context, not to the toolbar.** What
+it opens is entirely a function of the high-level entry above it — *Exact Shape*,
+*Exact Transform*, or Sculpt *Details*. It is therefore the final internal entry
+of the same host surface, names what it will open, and is drawn active exactly
+while that surface is up.
 
 **The status line has a lifecycle, and two kinds of message**, both owned by
 `GlobalToolbarView`. A **transient** — every verdict: applied, rejected, selected,
@@ -653,16 +642,19 @@ so it converges within one traversal. `configChanges` is kept and widened with
 The app is edge-to-edge (`Theme.ForgeShape`, `setDecorFitsSystemWindows(false)`).
 `setOnApplyWindowInsetsListener` applies `systemBars | displayCutout` — plus the
 `ime()` inset, which replaces rather than adds to the navigation bar — as padding
-to the chrome containers only. `windowSoftInputMode` is `adjustResize`, but with
-decor-fits off the window is **not** resized: the keyboard arrives as an inset the
-chrome absorbs and the surface is untouched.
+to the chrome containers only. A `WindowInsetsAnimation.Callback` follows every
+IME frame and resolves against the root target inset, so a bottom inspector never
+remains at a partial early inset. `windowSoftInputMode` is `adjustResize`, but
+with decor-fits off the window is **not** resized: the keyboard arrives as a
+root-owned inset, the host keeps its vertical spatial grammar, and the Vulkan
+surface is untouched.
 
 **Chrome depth.** Every surface that stands over or beside the model carries the
 same small elevation, in every layout mode — a docked variant does not drop it,
 for the reason above. Containers set `clipChildren(false)`, since a shadow is drawn
-outside its child's bounds — drawing only, never hit-testing. The rail's surface
-and elevation live on its `ScrollView`, or the container would clip exactly the
-shadow it wraps.
+outside its child's bounds — drawing only, never hit-testing. The unified right
+host owns the one surface and elevation; its internal scroll and groups are
+transparent so they cannot read as nested capsules.
 
 **A control's corner is concentric with its host's.** The rule is
 `inner = outer − gap`: two rounded rectangles that do not share a corner centre

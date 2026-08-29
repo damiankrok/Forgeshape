@@ -188,18 +188,17 @@ capsules do not join up: the model shows between them, so the bottom edge carrie
 what the project *is* on one side and what just happened to it on the other,
 rather than a bar. That pair is drawn only while you are constructing.
 
-At the trailing edge is the **Tool Rail**, and attached directly under it a single
-small control that opens the **exact values** behind whichever tool the rail is
-holding. **That pair does not move.** The rail and the control under it sit where
-they sit in every state: choosing Transform, switching between Move, Rotate and
-Scale, opening the exact values or putting the keyboard up adds and removes the
-controls that belong to those things and leaves everything else exactly where it
-was. When a window is too short for all of it — a large system font, a phone on
-its side, the keyboard up — the rail scrolls, and no control is squeezed thin or
-taken away. That surface is not there until you ask for it. When you do, it grows
-out of that control, carries the numbers, and goes away again when you dismiss it
-— and the model has the bottom of the screen back. A control in the utility group
-hides all of it at once, leaving the bare model and one chip to bring it back.
+At the trailing edge is one **right contextual surface**. Its top, right edge and
+width do not move. In Construction it begins with **Shape** and **Transform**;
+when Transform is held, Move/Rotate/Scale, World/Local where applicable, and the
+exact-values control continue downward inside that same surface. In Sculpt the
+four brushes and Details use the same external surface. Context can make its
+bottom edge extend, but cannot split it into detached capsules or move its top.
+When a window is too short — a large system font, a phone on its side, or the
+keyboard up — the same vertical content scrolls inside the surface and no visible
+target is squeezed below 48 dp. Exact/Details appears only when asked for and
+goes away again when dismissed. A utility control hides the whole right context
+at once, leaving the bare model and one chip to bring it back.
 
 Every panel in the workspace comes out of the control that opened it. The list of
 bodies and the shape palette rise out of the Objects capsule; the exact values
@@ -213,10 +212,11 @@ Those four task panels do not compete. Opening **Objects**, **Add Primitive**,
 the exact values/details, or **Display** closes whichever of those was already
 open. Display temporarily clears the trailing controls from its region; they
 return to the same anchor when it closes. Moving between Construction and Sculpt
-also closes the previous mode's task panel. On a compact window the Objects and
-Undo/Redo row remains in its reserved row above an exact-values sheet with a
-clear gap. If the keyboard appears, the editor owns that constrained lower
-region and the row temporarily withdraws instead of piling up or shrinking.
+also closes the previous mode's task panel. On a compact window an Exact or
+Sculpt Details sheet owns the lower region for as long as it is entering, open
+or exiting. The Objects and Undo/Redo row hides instead of moving upward, then
+returns to exactly the same resting place after the sheet is gone. The keyboard
+uses the same rule and never creates a second horizontal right-control layout.
 
 Touching the model between the two toolbar groups navigates: they are surfaces,
 not a bar, and only the surfaces themselves take a touch.
@@ -402,7 +402,7 @@ The Tool Rail in Construction carries exactly two entries, **Shape** and
 **Transform**, and both of them work. Nothing is drawn there that ForgeShape
 cannot do.
 
-Which one is held decides what the control beneath the rail opens. With Shape
+Which one is held decides what the final control inside the right context opens. With Shape
 held it opens **Exact Shape**: a **primitive chooser** — Box, Cylinder, Sphere,
 Cone, Capsule and Plane — the chosen shape's dimensions, a display unit (**mm**,
 **cm** or **m**) shared by every length, and an **Apply Shape** button. Only the
