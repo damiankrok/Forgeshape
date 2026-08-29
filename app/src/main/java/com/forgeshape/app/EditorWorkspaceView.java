@@ -9,11 +9,14 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewParent;
 import android.view.WindowInsets;
+import android.view.WindowInsetsAnimation;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+
+import java.util.List;
 
 /**
  * The whole ForgeShape editor UI.
@@ -222,11 +225,11 @@ final class EditorWorkspaceView extends FrameLayout
     private int appliedWidthPx;
     private int appliedHeightPx;
 
-    /** Whether this window is too short to stack the transform selectors. */
+    /** Whether this window uses compact-height rail entries. */
     private boolean shortWindow;
 
-    /** Whether the soft keyboard is currently taking part of the window. It has
-     *  the same consequence a short window does — see {@link #compactSelectors()}. */
+    /** Whether the soft keyboard is consuming the lower window. Root-owned
+     *  inset state never changes the right host's vertical layout vocabulary. */
     private boolean keyboardVisible;
 
     /** False while a viewport gesture is in flight; see the gesture listener.
@@ -332,6 +335,10 @@ final class EditorWorkspaceView extends FrameLayout
 
         middleRow = new LinearLayout(context);
         middleRow.setOrientation(LinearLayout.HORIZONTAL);
+        // The row is spatial, not typographic. Baseline alignment makes a tall
+        // right host move when the IME changes the row's available height.
+        middleRow.setBaselineAligned(false);
+        middleRow.setGravity(Gravity.TOP);
         EditorControlStyles.allowChildShadows(middleRow);
         chromeRoot.addView(middleRow, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f));
@@ -573,14 +580,21 @@ final class EditorWorkspaceView extends FrameLayout
         applyPrimarySurfaceChromePolicy();
     }
 
+    @Override
+    public void onSurfacePresentationSettled(AnchoredSurfaceView surface, boolean visible) {
+        // A closing bottom sheet remains layout-present for its whole exit.
+        // Restore the bottom zone only after that surface is actually absent.
+        applyPrimarySurfaceChromePolicy();
+    }
+
     /**
      * The immediate static chrome policy owned by the currently open primary
      * surface.
      *
-     * <p>A compact precision/details sheet keeps a reserved gap from the lower
-     * Objects/history row. When an IME further constrains that region, the row
-     * withdraws instead of touching the sheet or being squeezed into the
-     * keyboard. A Display surface owns the upper trailing region, so the
+     * <p>A compact precision/details sheet owns the lower region for its full
+     * entry and exit. The Objects/history row withdraws instead of being moved
+     * above the sheet, and returns only after the sheet is absent. A Display
+     * surface owns the upper trailing region, so the
      * transform/tool cluster is temporarily absent instead of remaining live
      * underneath it. Side inspectors have their own column and therefore leave
      * the bottom row alone.
@@ -593,7 +607,9 @@ final class EditorWorkspaceView extends FrameLayout
                 || displayPopover == null) {
             return;
         }
-        final boolean lowerRegionOwned = keyboardVisible && inspector.isOpen()
+        final boolean inspectorPresented = inspector.isOpen()
+                || inspector.getVisibility() == VISIBLE;
+        final boolean lowerRegionOwned = inspectorPresented
                 && inspectorPlacement == WorkspaceLayoutMode.InspectorPlacement.BOTTOM_SHEET;
         bottomRow.setVisibility(lowerRegionOwned ? GONE : VISIBLE);
         renderTrailingHost(isSculpting());
@@ -671,24 +687,53 @@ final class EditorWorkspaceView extends FrameLayout
         setOnApplyWindowInsetsListener(new OnApplyWindowInsetsListener() {
             @Override
             public WindowInsets onApplyWindowInsets(View v, WindowInsets insets) {
-                final Rect padding = chromeInsets(insets);
-                chromeRoot.setPadding(padding.left, padding.top, padding.right, padding.bottom);
-                overlayRoot.setPadding(padding.left, padding.top, padding.right, padding.bottom);
-                // The keyboard is not just padding: it takes enough of the
-                // window that the trailing cluster has to be laid out
-                // differently, exactly as a short window does. See
-                // keyboardVisible and the trailing host's compact input.
-                final boolean keyboard = imeInsetPx(insets) > 0;
-                if (keyboard != keyboardVisible) {
-                    keyboardVisible = keyboard;
-                    renderTrailingHost(isSculpting());
-                    applyPrimarySurfaceChromePolicy();
-                }
+                applyChromeInsets(insets);
                 // Returned unconsumed: this view has decided what chrome does
                 // about them, and the viewport deliberately ignores them.
                 return insets;
             }
         });
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            setWindowInsetsAnimationCallback(new WindowInsetsAnimation.Callback(
+                    WindowInsetsAnimation.Callback.DISPATCH_MODE_CONTINUE_ON_SUBTREE) {
+                @Override
+                public WindowInsets onProgress(WindowInsets insets,
+                                               List<WindowInsetsAnimation> runningAnimations) {
+                    // onApplyWindowInsets may run only at the start of an IME
+                    // transition. Follow every animated frame so bottom-sheet
+                    // chrome never remains at that first, partial inset.
+                    applyChromeInsets(insets);
+                    return insets;
+                }
+            });
+        }
+    }
+
+    private void applyChromeInsets(WindowInsets insets) {
+        // During the platform IME animation a callback can carry the current
+        // animated inset while rootWindowInsets already carries the target.
+        // Use the larger one on entry; on exit the animated value remains the
+        // larger one and lets the surface follow the keyboard down.
+        final WindowInsets rootInsets = getRootWindowInsets();
+        final int imeInset = Math.max(imeInsetPx(insets),
+                rootInsets != null ? imeInsetPx(rootInsets) : 0);
+        final Rect padding = chromeInsets(insets, imeInset);
+        if (chromeRoot.getPaddingLeft() != padding.left
+                || chromeRoot.getPaddingTop() != padding.top
+                || chromeRoot.getPaddingRight() != padding.right
+                || chromeRoot.getPaddingBottom() != padding.bottom) {
+            chromeRoot.setPadding(padding.left, padding.top, padding.right, padding.bottom);
+            overlayRoot.setPadding(padding.left, padding.top, padding.right, padding.bottom);
+        }
+        // The keyboard is root-owned padding. The right host keeps the same
+        // vertical grammar and scrolls inside its fixed external geometry when
+        // less height is available.
+        final boolean keyboard = imeInset > 0;
+        if (keyboard != keyboardVisible) {
+            keyboardVisible = keyboard;
+            renderTrailingHost(isSculpting());
+            applyPrimarySurfaceChromePolicy();
+        }
     }
 
     /** How much of the window the soft keyboard is taking, in pixels. */
@@ -702,15 +747,15 @@ final class EditorWorkspaceView extends FrameLayout
         return 0;
     }
 
-    private Rect chromeInsets(WindowInsets insets) {
+    private Rect chromeInsets(WindowInsets insets, int imeInsetPx) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             final android.graphics.Insets bars = insets.getInsets(
                     WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
-            final android.graphics.Insets ime = insets.getInsets(WindowInsets.Type.ime());
             // The keyboard replaces the navigation bar rather than adding to
             // it: they occupy the same edge, and adding both would leave a
             // visible dead band above the keys.
-            return new Rect(bars.left, bars.top, bars.right, Math.max(bars.bottom, ime.bottom));
+            return new Rect(bars.left, bars.top, bars.right,
+                    Math.max(bars.bottom, imeInsetPx));
         }
         // minSdk is 26, so the deprecated accessors are still the only ones
         // available on the oldest supported release. They report exactly the
@@ -738,6 +783,26 @@ final class EditorWorkspaceView extends FrameLayout
         applyLayoutForWindow(MeasureSpec.getSize(widthMeasureSpec),
                 MeasureSpec.getSize(heightMeasureSpec));
         super.onMeasure(widthMeasureSpec, heightMeasureSpec);
+        // A tall window may give the status capsule a second toolbar line. That
+        // line belongs to the leading/global region and must not redefine the
+        // fixed top of the unrelated right context or direct Sculpt controls.
+        // Resolve the margin during measurement, then remeasure once if it
+        // changed so this traversal has the final geometry.
+        final int controlsHeight = EditorControlStyles.dimen(getContext(),
+                R.dimen.toolbar_height);
+        final int expansion = Math.max(0, toolbar.getMeasuredHeight() - controlsHeight);
+        final boolean hostChanged = trailingHost.setUpstreamToolbarExpansionPx(expansion);
+        final LinearLayout.LayoutParams brushParams =
+                (LinearLayout.LayoutParams) brushControls.getLayoutParams();
+        final int brushTop = EditorControlStyles.dimen(getContext(), R.dimen.row_gap)
+                - expansion;
+        final boolean brushChanged = brushParams.topMargin != brushTop;
+        if (brushChanged) {
+            brushParams.topMargin = brushTop;
+        }
+        if (hostChanged || brushChanged) {
+            super.onMeasure(widthMeasureSpec, heightMeasureSpec);
+        }
     }
 
     @Override
@@ -791,11 +856,6 @@ final class EditorWorkspaceView extends FrameLayout
         trailingHost.refreshParentPlacement();
         placeInspector(layoutMode.inspectorPlacement(heightDp), widthDp, heightDp);
         renderTrailingHost(isSculpting());
-    }
-
-    /** Derived window input; the trailing host decides how its children render it. */
-    private boolean compactSelectors() {
-        return shortWindow || keyboardVisible;
     }
 
     /**
@@ -1574,7 +1634,6 @@ final class EditorWorkspaceView extends FrameLayout
                 uiState.precisionOpen(sculpting),
                 getContext().getString(precisionSurfaceName(sculpting)),
                 shortWindow,
-                compactSelectors(),
                 displayPopover != null && displayPopover.isOpen()));
     }
 

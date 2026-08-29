@@ -15,10 +15,10 @@ import android.widget.ScrollView;
  * last in the column.
  *
  * <p>The correction is to decide <i>which</i> child absorbs a deficit rather
- * than letting child order decide it. A scrolling container is the only child in
- * the trailing cluster that can honestly give height back — everything it cannot
- * show is still reachable by scrolling — so {@link TrailingClusterColumn}
- * measures the fixed controls first and caps this one with what is left.
+ * than letting child order decide it. A scrolling container can honestly give
+ * height back because everything it cannot show remains reachable. The unified
+ * right-context host therefore places its whole vertical context inside this
+ * view; a parent that needs a stricter bound may also supply the optional cap.
  *
  * <p><b>The cap is measure-time state, not layout state.</b> It is written by
  * the parent from inside its own {@code onMeasure}, immediately before the

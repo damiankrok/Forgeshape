@@ -171,6 +171,8 @@
     -->
     <dimen name="rail_icon_size_compact">18dp</dimen>
     <dimen name="rail_label_size">10sp</dimen>
+    <!-- One 56 dp entry plus the right host's 6 dp inset on both sides. -->
+    <dimen name="trailing_host_width">68dp</dimen>
 
     <!-- Brush edge controls: the two continuously-varied Sculpt values. The
          track is deliberately wider than it looks so a thumb can find it. -->

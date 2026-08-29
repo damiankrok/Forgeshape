@@ -69,6 +69,9 @@ abstract class AnchoredSurfaceView extends LinearLayout {
      */
     interface OnOpenStateChanged {
         void onSurfaceOpenStateChanged(AnchoredSurfaceView surface, boolean open);
+
+        /** Called after the presentation is fully visible or fully absent. */
+        void onSurfacePresentationSettled(AnchoredSurfaceView surface, boolean visible);
     }
 
     /** The state the user asked for; see {@link #isOpen()}. */
@@ -291,6 +294,9 @@ abstract class AnchoredSurfaceView extends LinearLayout {
      */
     private void settle(boolean visible) {
         ChromeMotion.settle(this, visible);
+        if (openStateListener != null) {
+            openStateListener.onSurfacePresentationSettled(this, visible);
+        }
     }
 
     /**

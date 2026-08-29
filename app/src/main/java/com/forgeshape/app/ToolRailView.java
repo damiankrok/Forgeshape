@@ -97,13 +97,10 @@ final class ToolRailView extends LinearLayout {
         setId(R.id.tool_rail);
         setOrientation(VERTICAL);
         setContentDescription(context.getString(R.string.tool_rail));
-        // The floating surface and its depth belong to the scroll container
-        // that holds this view, not to this view: a shadow is drawn outside the
-        // child's bounds, and the ScrollView wraps this rail exactly, so a
-        // shadow set here would be clipped away by the very container that
-        // makes the rail reachable on a short window.
-        final int padding = EditorControlStyles.dimen(context, R.dimen.rail_padding);
-        setPadding(padding, padding, padding, padding);
+        // WorkspaceTrailingHostView owns the one surrounding surface, padding
+        // and depth. This selector contributes only its entries, so it cannot
+        // become a second capsule inside the right context.
+        setPadding(0, 0, 0, 0);
     }
 
     /**
