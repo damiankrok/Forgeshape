@@ -161,7 +161,7 @@ public final class EditorWorkspaceArchitectureTest {
         assertEquals(before, boundsOfHost());
     }
 
-    /** UIAR1-07. A short window compacts inside the host and keeps all hit targets. */
+    /** UIAR1-07. A short window keeps one vertical host and full hit targets. */
     @Test
     public void uiar107_compactShortParity() {
         setOrientation(rule.getScenario(), ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
@@ -172,7 +172,7 @@ public final class EditorWorkspaceArchitectureTest {
         });
         settleLayout();
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            assertEquals(LinearLayout.HORIZONTAL,
+            assertEquals(LinearLayout.VERTICAL,
                     transformModeGroup(workspace).getOrientation());
             assertTouchFloor(activity, workspace.findViewById(R.id.precision_toggle));
             assertTouchFloor(activity, workspace.findViewById(R.id.transform_mode_move));
@@ -181,7 +181,7 @@ public final class EditorWorkspaceArchitectureTest {
         });
     }
 
-    /** UIAR1-08. IME input changes host composition, never its top/right contract. */
+    /** UIAR1-08. IME input keeps the host vertical and fixed externally. */
     @Test
     public void uiar108_imeParity() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
@@ -192,15 +192,22 @@ public final class EditorWorkspaceArchitectureTest {
             openPrecision(workspace);
             final Rect before = rectInWorkspace(workspace, trailingHost(workspace));
             final int inset = Math.max(1, workspace.getHeight() / 3);
-            workspace.dispatchApplyWindowInsets(new WindowInsets.Builder()
+            final WindowInsets current = workspace.getRootWindowInsets();
+            final WindowInsets.Builder withIme = current == null
+                    ? new WindowInsets.Builder() : new WindowInsets.Builder(current);
+            workspace.dispatchApplyWindowInsets(withIme
                     .setInsets(WindowInsets.Type.ime(), Insets.of(0, 0, 0, inset)).build());
-            assertEquals(LinearLayout.HORIZONTAL,
+            assertEquals(LinearLayout.VERTICAL,
                     transformModeGroup(workspace).getOrientation());
             final Rect after = rectInWorkspace(workspace, trailingHost(workspace));
             assertEquals(before.top, after.top);
             assertEquals(before.right, after.right);
+            assertEquals(before.width(), after.width());
             assertTouchFloor(activity, workspace.findViewById(R.id.precision_toggle));
-            workspace.dispatchApplyWindowInsets(new WindowInsets.Builder()
+            final WindowInsets afterIme = workspace.getRootWindowInsets();
+            final WindowInsets.Builder withoutIme = afterIme == null
+                    ? new WindowInsets.Builder() : new WindowInsets.Builder(afterIme);
+            workspace.dispatchApplyWindowInsets(withoutIme
                     .setInsets(WindowInsets.Type.ime(), Insets.NONE).build());
             return null;
         });
@@ -213,7 +220,7 @@ public final class EditorWorkspaceArchitectureTest {
             assertTopRightContract(activity, workspace);
             if (workspace.layoutMode() == WorkspaceLayoutMode.EXPANDED) {
                 assertEquals(View.VISIBLE, trailingHost(workspace).getVisibility());
-                assertTrue(WorkspaceTestSupport.toolRailScroll(workspace).getElevation() > 0.0f);
+                assertTrue(trailingHost(workspace).getElevation() > 0.0f);
                 assertEquals(View.VISIBLE, workspace.findViewById(R.id.objects_dock).getVisibility());
             }
             assertEquals(WorkspaceLayoutMode.EXPANDED,

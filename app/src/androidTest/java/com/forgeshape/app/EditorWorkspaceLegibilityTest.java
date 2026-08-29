@@ -100,9 +100,8 @@ public final class EditorWorkspaceLegibilityTest {
     // -----------------------------------------------------------------------
 
     /**
-     * UILR1-01. Compact portrait: the persistent trailing controls keep a stable
-     * anchor across the contextual changes, and every one of them keeps a 48 dp
-     * target.
+     * UILR1-01. Compact portrait: the unified host keeps its external frame
+     * across contextual expansion, and every visible action keeps a 48 dp target.
      */
     @Test
     public void uilr101_compactPortraitKeepsItsAnchorAndItsTouchTargets() {
@@ -111,7 +110,7 @@ public final class EditorWorkspaceLegibilityTest {
         settleLayout();
 
         final Rect railAtRest = boundsOf(R.id.tool_rail);
-        final Rect toggleAtRest = boundsOf(R.id.precision_toggle);
+        final Rect hostAtRest = boundsOf(R.id.workspace_trailing_host);
 
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             selectConstructionTool(workspace, R.id.tool_rail_place);
@@ -122,8 +121,8 @@ public final class EditorWorkspaceLegibilityTest {
         assertEquals("selecting Transform must not move the Tool Rail: it is on"
                         + " screen in every state and the selectors are not",
                 railAtRest, boundsOf(R.id.tool_rail));
-        assertEquals("nor the precision toggle", toggleAtRest,
-                boundsOf(R.id.precision_toggle));
+        assertSameTopRightWidth("the right host expands only downward", hostAtRest,
+                boundsOf(R.id.workspace_trailing_host));
         assertTouchFloor("compact portrait, Transform held");
     }
 
@@ -255,10 +254,8 @@ public final class EditorWorkspaceLegibilityTest {
      * UILR1-05. The controls that are not contextual keep their bounds while the
      * contextual ones come and go.
      *
-     * <p>The Tool Rail is anchored and never moves at all. The precision toggle
-     * keeps its exact bounds across every transform-mode change, including the
-     * one that withdraws the space capsule — which is the change that used to
-     * move the mode capsule out from under the finger that had just pressed it.
+     * <p>The Tool Rail and mode actions keep their bounds. Context below them may
+     * change the host's bottom edge, while top/right/width remain invariant.
      */
     @Test
     public void uilr105_contextualChangesDisplaceNothingElseInTheCluster() {
@@ -269,7 +266,7 @@ public final class EditorWorkspaceLegibilityTest {
         settleLayout();
 
         final Rect rail = boundsOf(R.id.tool_rail);
-        final Rect toggle = boundsOf(R.id.precision_toggle);
+        final Rect host = boundsOf(R.id.workspace_trailing_host);
         final Rect mode = boundsOf(R.id.transform_mode_group);
 
         for (final int modeButton : new int[]{R.id.transform_mode_rotate,
@@ -281,7 +278,8 @@ public final class EditorWorkspaceLegibilityTest {
             settleLayout();
             assertEquals("the Tool Rail must not move when the transform mode does",
                     rail, boundsOf(R.id.tool_rail));
-            assertEquals("nor the precision toggle", toggle, boundsOf(R.id.precision_toggle));
+            assertSameTopRightWidth("the unified host's external frame", host,
+                    boundsOf(R.id.workspace_trailing_host));
             assertEquals("nor the mode capsule itself — two identical taps must"
                             + " land on the same control", mode,
                     boundsOf(R.id.transform_mode_group));
@@ -304,8 +302,8 @@ public final class EditorWorkspaceLegibilityTest {
         settleLayout();
         assertEquals("and everything is exactly restored when it closes", rail,
                 boundsOf(R.id.tool_rail));
-        assertEquals("including the toggle that opened it", toggle,
-                boundsOf(R.id.precision_toggle));
+        assertSameTopRightWidth("including the host that owns the trigger", host,
+                boundsOf(R.id.workspace_trailing_host));
     }
 
     // -----------------------------------------------------------------------
@@ -841,7 +839,7 @@ public final class EditorWorkspaceLegibilityTest {
         });
     }
 
-    /** UILR1-18. The reserved bottom row never sits on a precision-sheet edge. */
+    /** UILR1-18. A bottom precision sheet suspends rather than moves bottom chrome. */
     @Test
     public void uilr118_bottomControlsHaveAStableSafeZone() {
         setOrientation(rule.getScenario(), ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
@@ -855,14 +853,9 @@ public final class EditorWorkspaceLegibilityTest {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             final View bottom = workspace.bottomRow();
             final View sheet = workspace.propertyInspector();
-            assertEquals(View.VISIBLE, bottom.getVisibility());
-            assertTrue(isFullyOnScreen(bottom, workspace));
+            assertEquals("the conflicting bottom row is absent instead of translated",
+                    View.GONE, bottom.getVisibility());
             assertTrue(isFullyOnScreen(sheet, workspace));
-            final Rect bottomBounds = boundsRelativeTo(bottom, workspace);
-            final Rect sheetBounds = boundsRelativeTo(sheet, workspace);
-            assertTrue("the reserved row ends before the sheet begins: "
-                            + bottomBounds + " / " + sheetBounds,
-                    bottomBounds.bottom < sheetBounds.top);
             assertVisible(workspace, R.id.apply_transform);
             return null;
         });
@@ -1161,6 +1154,12 @@ public final class EditorWorkspaceLegibilityTest {
             final int top = viewLocation[1] - rootLocation[1];
             return new Rect(left, top, left + view.getWidth(), top + view.getHeight());
         });
+    }
+
+    private static void assertSameTopRightWidth(String message, Rect expected, Rect actual) {
+        assertEquals(message + " top", expected.top, actual.top);
+        assertEquals(message + " right", expected.right, actual.right);
+        assertEquals(message + " width", expected.width(), actual.width());
     }
 
     private static Rect boundsRelativeTo(View view, View root) {

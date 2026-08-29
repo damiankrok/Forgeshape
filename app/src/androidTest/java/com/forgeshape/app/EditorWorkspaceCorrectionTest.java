@@ -807,11 +807,8 @@ public final class EditorWorkspaceCorrectionTest {
     @Test
     public void uir4b12_theExpandedWindowUsesInsetFloatingSurfaces() {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            final View rail = workspace.findViewById(R.id.tool_rail).getParent()
-                    instanceof View ? (View) workspace.findViewById(R.id.tool_rail).getParent()
-                    : null;
-            assertNotNull(rail);
-            assertTrue("the rail is a raised floating surface in EVERY window",
+            final View rail = WorkspaceTestSupport.trailingHost(workspace);
+            assertTrue("the unified right host is a raised floating surface in EVERY window",
                     rail.getElevation() > 0.0f);
             assertTrue("and stands off the trailing window edge in every window",
                     workspace.getWidth() - rectRight(workspace, rail) > 0);

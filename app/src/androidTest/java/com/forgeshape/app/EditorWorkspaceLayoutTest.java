@@ -261,9 +261,9 @@ public final class EditorWorkspaceLayoutTest {
             // selector turn into part of the wall. Docking now decides position
             // and never material, so this assertion no longer branches: what it
             // guards is precisely that the branch does not come back.
-            assertTrue("the rail is raised in every window, docked or not: "
-                            + WorkspaceTestSupport.toolRailScroll(workspace).getElevation(),
-                    WorkspaceTestSupport.toolRailScroll(workspace).getElevation() > 0.0f);
+            assertTrue("the unified right host is raised in every window, docked or not: "
+                            + WorkspaceTestSupport.trailingHost(workspace).getElevation(),
+                    WorkspaceTestSupport.trailingHost(workspace).getElevation() > 0.0f);
             return null;
         });
     }

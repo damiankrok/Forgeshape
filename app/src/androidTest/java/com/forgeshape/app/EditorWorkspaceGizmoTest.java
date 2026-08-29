@@ -883,8 +883,8 @@ public final class EditorWorkspaceGizmoTest {
     }
 
     /**
-     * S020-37. The mode selector meets the 48 dp floor and collides with
-     * nothing, in every window the workspace adapts to.
+     * S020-37. The integrated mode selector meets the 48 dp floor and collides
+     * with no sibling action or external chrome in every adaptive window.
      */
     @Test
     public void s02037_theModeSelectorIsReachableAndCollisionFreeInEveryWindow() {
@@ -901,12 +901,8 @@ public final class EditorWorkspaceGizmoTest {
                 final int floor = Math.round(TypedValue.applyDimension(
                         TypedValue.COMPLEX_UNIT_DIP, 48.0f,
                         workspace.getResources().getDisplayMetrics()));
-                // The precision toggle is in this list on purpose. It is the
-                // LAST child of the trailing cluster, so it is the one Android
-                // squeezes when the column stops fitting — which is exactly what
-                // adding a third capsule to a short window did before the pair
-                // learned to turn on its side. A control that quietly drops to
-                // 14 dp is the regression this case exists to catch.
+                // Exact remains in this list because every visible action inside
+                // the unified surface keeps the hit floor under a height squeeze.
                 for (View control : new View[] {
                         WorkspaceTestSupport.transformMoveAction(workspace),
                         WorkspaceTestSupport.transformRotateAction(workspace),
@@ -917,15 +913,14 @@ public final class EditorWorkspaceGizmoTest {
                                     + control.getWidth() + "x" + control.getHeight()
                                     + " at density " + density,
                             control.getWidth() >= floor && control.getHeight() >= floor);
-                    assertTrue("and be fully on screen",
-                            WorkspaceTestSupport.isFullyOnScreen(control, workspace));
+                    assertReachableInUnifiedHost(workspace, control);
                 }
 
                 final Rect selector = rectOf(workspace,
                         WorkspaceTestSupport.transformModeGroup(workspace));
                 for (View other : new View[] {
                         WorkspaceTestSupport.precisionToggle(workspace),
-                        WorkspaceTestSupport.toolRailScroll(workspace), workspace.objectsCapsule()}) {
+                        workspace.objectsCapsule()}) {
                     if (other == null || other.getVisibility() != View.VISIBLE) {
                         continue;
                     }
@@ -1510,13 +1505,12 @@ public final class EditorWorkspaceGizmoTest {
     }
 
     /**
-     * S020R2-18 (layout). Both selectors meet the 48 dp floor and collide with
-     * nothing, in every window the workspace adapts to.
+     * S020R2-18 (layout). Both integrated selectors meet the 48 dp floor and
+     * collide with no sibling action or external chrome in every adaptive window.
      *
-     * <p>The precision toggle is measured with them on purpose: it is the LAST
-     * child of the trailing cluster, so it is the one Android squeezes when the
-     * column stops fitting — which is exactly what adding capsules to a short
-     * window does if the selectors do not turn on their side.
+     * <p>The precision toggle is measured with them because it is another action
+     * in the same vertical surface. The host may clip/scroll as one unit, but no
+     * visible child is allowed to shrink below the interactive floor.
      */
     @Test
     public void s020r218_bothSelectorsAreReachableAndCollisionFreeInEveryWindow() {
@@ -1544,8 +1538,7 @@ public final class EditorWorkspaceGizmoTest {
                     assertTrue("it must meet the 48 dp floor: " + control.getWidth() + "x"
                                     + control.getHeight(),
                             control.getWidth() >= floor && control.getHeight() >= floor);
-                    assertTrue("and be fully on screen",
-                            WorkspaceTestSupport.isFullyOnScreen(control, workspace));
+                    assertReachableInUnifiedHost(workspace, control);
                 }
 
                 final Rect mode = rectOf(workspace,
@@ -1553,7 +1546,7 @@ public final class EditorWorkspaceGizmoTest {
                 final Rect space = rectOf(workspace,
                         WorkspaceTestSupport.transformSpaceGroup(workspace));
                 final String cluster = "rail=" + rectOf(workspace,
-                        WorkspaceTestSupport.toolRailScroll(workspace))
+                        WorkspaceTestSupport.toolRail(workspace))
                         + " mode=" + mode + " space=" + space
                         + " precision=" + rectOf(workspace,
                         WorkspaceTestSupport.precisionGroup(workspace))
@@ -1563,7 +1556,7 @@ public final class EditorWorkspaceGizmoTest {
                         Rect.intersects(mode, space));
                 for (View other : new View[] {
                         WorkspaceTestSupport.precisionToggle(workspace),
-                        WorkspaceTestSupport.toolRailScroll(workspace), workspace.objectsCapsule()}) {
+                        workspace.objectsCapsule()}) {
                     if (other == null || other.getVisibility() != View.VISIBLE) {
                         continue;
                     }
@@ -2088,6 +2081,17 @@ public final class EditorWorkspaceGizmoTest {
         final Rect rect = new Rect(0, 0, child.getWidth(), child.getHeight());
         ((android.view.ViewGroup) root).offsetDescendantRectToMyCoords(child, rect);
         return rect;
+    }
+
+    /** A short window may scroll the one vertical host; every action stays reachable. */
+    private static void assertReachableInUnifiedHost(EditorWorkspaceView workspace,
+                                                      View control) {
+        if (!WorkspaceTestSupport.isFullyOnScreen(control, workspace)) {
+            control.requestRectangleOnScreen(
+                    new Rect(0, 0, control.getWidth(), control.getHeight()), true);
+        }
+        assertTrue("and be reachable by scrolling the unified right host",
+                WorkspaceTestSupport.isFullyOnScreen(control, workspace));
     }
 
     private static boolean isFinite(double value) {

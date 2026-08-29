@@ -217,7 +217,17 @@ public final class EditorWorkspaceGestureTest {
                     android.graphics.Insets.of(0, 0, 0, synthetic)).build());
             return synthetic;
         });
-        settleLayout();
+        // RootWindowInsets exposes the IME's final target before the animated
+        // chrome inset necessarily reaches it. Wait for that real platform
+        // transition instead of assuming a fixed 250 ms animation duration.
+        for (int attempt = 0; attempt < 12; attempt++) {
+            final boolean insetSettled = onWorkspace(rule.getScenario(),
+                    (activity, workspace) -> workspace.chromeBottomInsetPx() >= imeInset);
+            if (insetSettled) {
+                break;
+            }
+            settleLayout();
+        }
         assertTrue("an IME inset must be applied before constrained-height assertions",
                 imeInset > 0);
 
