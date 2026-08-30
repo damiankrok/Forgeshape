@@ -1,8 +1,41 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.49.0
+**Status Version:** 0.50.0
 **Updated:** 2026-08-30
-**Result:** **E2E-R1A / Stage 021 — COMPLETE.** ForgeShape work survives the
+**Result:** **E2E-R1B / Stage 022 — COMPLETE.** Persistence is now safe for real
+work. Semantic edits are checkpointed automatically to a **separate** recovery
+file — never over the project the user named — and work that was never saved at
+all survives the process dying and is offered back by one bounded question with
+two answers. Nothing replaces the live project before the user chooses, and a
+checkpoint that cannot be decoded is quarantined once rather than asked about
+forever.
+
+A project can be moved on and off the device through Android Scoped Storage:
+**Save Copy…** writes the same canonical `.forge` document wherever the user
+says, and **Open File…** reads one back through the same fail-closed decoder.
+Opening a file makes that project live and deliberately does **not** write the
+internal manual slot. No `Uri`, authority, filename or path reaches the codec or
+the document — a project opened from a distinctively named file re-encodes to
+the original bytes exactly.
+
+GPU resources were never project truth and now say so: a lost device is
+classified, the device and everything on it is rebuilt from CPU state, and the
+viewport comes back. The **rebuild branch is the one implemented**, verified on
+device through a debug injection seam; the bounded fail-closed
+`RestartRequired` branch exists behind it and checkpoints the project before
+reporting that a restart is needed.
+
+Diagnostics are a bounded local ring of tokens — no geometry, no `.forge` bytes,
+no path, no `Uri` — rendered into a report the user may write to a file they
+pick. **ForgeShape holds no network permission at all**, so "nothing is sent
+anywhere" is a structural fact rather than a policy.
+
+The UI delta is three rows on the existing Project surface and one recovery
+question. The accepted UI-LAYOUT-R2 right host does not move.
+
+---
+
+**Previous result — E2E-R1A / Stage 021 — COMPLETE.** ForgeShape work survives the
 process dying for the first time. A project is encoded to ForgeShape's own
 portable, versioned `.forge` v1 document, saved to one app-private slot, and
 reopened after the app process has been killed — with every body's identity,
@@ -183,12 +216,14 @@ deformed with four brush tools. Three approved dark appearances, two shading
 models, two projections, a world reference grid, and an Editor Workspace that
 re-composes itself per window.
 
-A project can now be SAVED and reopened. `.forge` v1 is ForgeShape's own
-portable, versioned semantic document — a feature graph plus placement, never a
-mesh snapshot — written to one app-private slot. Loading is all-or-nothing:
-decode and validate entirely into temporary state, then replace the live project
-in one step, so a refused file costs nothing. `DATA_PACKAGE_SPEC.md` owns the
-format. `ARCHITECTURE.md` owns the ownership map and every invariant;
+A project can be SAVED, reopened, autosaved and transferred. `.forge` v1 is
+ForgeShape's own portable, versioned semantic document — a feature graph plus
+placement, never a mesh snapshot. It is written to one app-private manual slot
+by an explicit Save, to a SEPARATE recovery checkpoint by autosave, and to any
+location the user picks through Scoped Storage; all three are the same canonical
+bytes. Loading is all-or-nothing in every direction: decode and validate
+entirely into temporary state, then replace the live project in one step, so a
+refused file costs nothing. `DATA_PACKAGE_SPEC.md` owns the format. `ARCHITECTURE.md` owns the ownership map and every invariant;
 `PRODUCT.md` owns the user-visible description; `README.md` owns build/run/verify.
 
 **Blockers: none.** Every native, JVM, instrumented and guard suite is green,
@@ -704,6 +739,18 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 | A successful load starts a fresh Construction history; the next edit and undo act on the loaded scene | VERIFIED |
 | The id allocator is pushed forward past a loaded project, so a later creation cannot collide with a loaded body | VERIFIED |
 | The `.forge` encoder is byte-deterministic and matches an independent second implementation of the same specification | VERIFIED |
+| Work is checkpointed automatically to a SEPARATE recovery file, in the same canonical `.forge` document, without touching the manual slot | VERIFIED |
+| Repeated edits coalesce: twenty dirty generations cost one write, and an unchanged, refused or identical edit costs none | VERIFIED |
+| A failed checkpoint leaves the previous valid one byte-identical | VERIFIED |
+| Work never explicitly saved survives process death and is offered back by a recovery question on a cold launch | VERIFIED |
+| Nothing replaces the live project before the user chooses; Discard leaves an explicitly saved project byte-identical | VERIFIED |
+| A corrupt or unsupported-major checkpoint is quarantined once, changes nothing, and is never offered again | VERIFIED |
+| A project can be written to, and read from, any location through Android Scoped Storage, in the same `.forge` format | VERIFIED |
+| Opening a file makes that project live without writing the internal manual slot | VERIFIED |
+| No `Uri`, authority, filename or path reaches the project document — a project re-encodes to the original bytes exactly | VERIFIED |
+| A lost GPU device rebuilds the device from CPU truth, with every project value and the encoded document bit-identical across it | VERIFIED |
+| Diagnostics are a bounded local ring carrying no geometry, no `.forge` bytes and no path, shareable only through a document the user picks | VERIFIED |
+| ForgeShape holds no network permission and cannot make a request | VERIFIED |
 | Editing A rebuilds and uploads nothing for B | VERIFIED |
 | Only the selected body is highlighted | VERIFIED |
 | Becoming selected gives a short acknowledgement pulse that decays to a much lower resting tint | VERIFIED |
@@ -871,8 +918,8 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 
 ## Self-test suite
 
-Fourteen debug-only native suites run once from `NativeViewport.start()` — never
-per frame — and total **2163 checks, zero failures**:
+Fifteen debug-only native suites run once from `NativeViewport.start()` — never
+per frame — and total **2199 checks, zero failures**:
 
 | suite token | checks |
 | --- | --- |
@@ -889,7 +936,8 @@ per frame — and total **2163 checks, zero failures**:
 | `FORGESHAPE_SCENE_SELFTEST_OK` | 79 |
 | `FORGESHAPE_CONSTRUCTION_HISTORY_SELFTEST_OK` | 114 |
 | `FORGESHAPE_GIZMO_SELFTEST_OK` | 145 |
-| `FORGESHAPE_PROJECT_SELFTEST_OK` | 120 |
+| `FORGESHAPE_PROJECT_SELFTEST_OK` | 132 |
+| `FORGESHAPE_RENDER_RECOVERY_SELFTEST_OK` | 24 |
 
 followed by `FORGESHAPE_PROJECT_GOLDEN_SHA256`, `FORGESHAPE_MESH_UPLOAD_OK`,
 `FORGESHAPE_GRID_UPLOAD_OK`, `FORGESHAPE_GIZMO_UPLOAD_OK` and
@@ -897,7 +945,7 @@ followed by `FORGESHAPE_PROJECT_GOLDEN_SHA256`, `FORGESHAPE_MESH_UPLOAD_OK`,
 
 **The project suite owns the `.forge` format** (`FSR1A-01..15`) and, like the
 scene, history and gizmo suites, builds its own `ConstructionScene`,
-`ConstructionHistory` and `SculptSession` per case. Its 120 checks cover the
+`ConstructionHistory` and `SculptSession` per case. Its 132 checks cover the
 28-byte header and 24-byte section header field by field with every multibyte
 value read back little-endian, the CRC-32/ISO-HDLC check value, a deterministic
 writer (`encode` twice and `encode -> decode -> encode` both byte-identical), a
@@ -913,7 +961,23 @@ an unknown optional section skipped, an unknown required section refused, a
 duplicate singleton, reserved bits, and every semantic value the domain's own
 validators refuse — each proved to leave a live fixture project, its mode and its
 history untouched. `FORGESHAPE_PROJECT_GOLDEN_SHA256` prints the digests of the
-two canonical fixtures as this build encodes them.
+two canonical fixtures as this build encodes them. The suite also covers
+E2E-R1B's `FSR1B-01`, `-02` and `-13`: the semantic fingerprint autosave asks
+before it writes anything moves for a shape edit, a placement edit, a creation,
+a selection and a mode change, stays put for a REFUSED edit and for an
+identical re-apply — and, the case that makes counters the wrong answer,
+changes on an UNDO, which `restoreState` deliberately does not count.
+
+**The render-recovery suite owns what a lost GPU device means** (`FSR1B-16`) and
+is free of Vulkan on purpose, so a device-loss contract can be verified without
+destabilising the authoritative emulator's GPU — which the repository forbids.
+Its 24 checks cover the classification of every result the frame loop can see
+(including that an EXPECTED `SUBOPTIMAL` is not a fault, which the
+identity-preTransform convention makes the steady state on a rotated display),
+the bounded rebuild attempts, a failed rebuild spending the remaining attempts
+at once, and the terminal state being genuinely terminal — nothing restarts a
+stopped renderer. What the policy DOES on a real device is proved separately on
+device by the debug injection seam.
 
 **The gizmo suite owns direct manipulation's math and its transaction**, and —
 like the scene and history suites — it builds its own `ConstructionScene`,
@@ -1088,7 +1152,11 @@ device. `README.md` documents how to read them.
 
 | `EditorWorkspaceLegibilityTest` | UI-LAYOUT-R1 retained, with the old reserved-row assertion strengthened to the R2 bottom-zone rule: a bottom sheet hides conflicting chrome instead of relocating it; Display restoration, touch floors, Exact legibility and Sculpt top grammar remain covered | 20 |
 | `EditorWorkspaceProjectActionsTest` | `E2ER1A-01`, `-04`, `-05`, `-06`: a real Save from the product control writing a non-empty, re-loadable `.forge` to the app-private slot without moving the accepted R2 right host; the project control and both rows at the 48 dp hit floor; a damaged, a truncated, an unsupported-major and a not-a-project file each refused with its own message and with EVERY native value, the active body, the scene size and the session history bit-identical afterwards; and a successful Open clearing both history stacks, with the next edit recording exactly one step and its undo returning the LOADED value | 7 |
-| `ProjectProcessDeathTest` | `E2ER1A-02`, `-03`, across a real process death driven by `scripts/run-project-persistence-e2e.ps1`: three bodies of different kinds with non-default placements and a remembered box saved, the app killed, and the project reopened with every ObjectId, scene order, active body, active kind, remembered parameters and exact placement — 370 degrees and a non-uniform scale included — intact, geometry republished, and a post-load creation unable to collide; and a real Grab stroke saved from Sculpt reopening in Sculpt on the same body with the same vertex and index counts, its stale-source and edited state, its Construction Source companion still correct, and Back/Resume still coherent over it | 4 |
+| `ProjectAutosaveRecoveryTest` | `FSR1B-01..09`: autosave writes the canonical `.forge` document to its OWN slot and never the manual one; twenty dirty generations cost exactly one write and the newest state wins; an unchanged project, a refused edit and an identical re-apply each cost none; a failed write leaves the previous valid checkpoint byte-identical with no pending file beside it; a validated candidate is offered on a cold launch, re-offered while unanswered and never again once answered; Recover restores exact Construction values including 370 degrees and a non-uniform scale, and a fresh history; Recover restores the sculpt mesh, its counts, its stale-source state and its `hasEdits` safety state; Discard removes the candidate and leaves an explicitly saved project byte-identical; a corrupt and an unsupported-major candidate are each quarantined, change nothing, and never come back; leaving the foreground checkpoints the latest state and a recreation duplicates no body | 14 |
+| `ProjectTransferTest` | `FSR1B-10..13`, `FSR1B-18`: Save Copy writes canonical bytes the decoder accepts and TRUNCATES a longer existing document rather than overwriting its front; Open File applies a valid document and starts a fresh history; a damaged one, an unreadable one and a cancel each change nothing below JNI; a cancelled copy cannot be written by a later pick; neither direction touches the internal manual slot; a project opened from a distinctively named file re-encodes to the ORIGINAL bytes exactly, and carries no filename, scheme, authority or path; the two native project entry points take bytes and structurally cannot take a `Uri`; and the project surface offers no GLB, glTF, OBJ, FBX or import/export entry | 13 |
+| `DiagnosticsAndRendererLossTest` | `FSR1B-14..17`, `E2ER1B-07/08`: a report is written locally, is bounded, names the build and the device and never a project dimension, `.forge` magic or vertex data, and stays bounded after a flood; ForgeShape requests no INTERNET permission and the platform agrees it holds none, so nothing can be sent anywhere; sharing is a document-creation intent that writes where the user chose; an injected device loss leaves every project value and the encoded document bit-identical and either rebuilds the device or reports restart-required with the work checkpointed; the project stays editable and publishing after a rebuild; and all six project controls plus both recovery answers clear 48 x 48 dp without moving the accepted R2 right host | 9 |
+| `DiagnosticLogTest` (JVM) | `FSR1B-14` core: the ring never grows past its bound, drops the oldest and says how many, caps its rendered output, truncates a detail far below anything worth hiding, and cannot be made to forge a second record from one record's contents | 11 |
+| `ProjectProcessDeathTest` | `E2ER1A-02`, `-03`, `E2ER1B-01`, `-02`, across a real process death driven by `scripts/run-project-persistence-e2e.ps1`: three bodies of different kinds with non-default placements and a remembered box saved, the app killed, and the project reopened with every ObjectId, scene order, active body, active kind, remembered parameters and exact placement — 370 degrees and a non-uniform scale included — intact, geometry republished, and a post-load creation unable to collide; and a real Grab stroke saved from Sculpt reopening in Sculpt on the same body with the same vertex and index counts, its stale-source and edited state, its Construction Source companion still correct, and Back/Resume still coherent over it Stages 5-8 add the harder E2E-R1B claim: nothing was saved at all, autosave alone protected the work, and on a genuinely cold launch — no seam, no cleared flag — the recovery question offers it back, restoring the exact Construction values and the sculpted mesh with its `hasEdits` state. | 8 |
 | `EditorWorkspaceUnifiedRightHostTest` | `UILR2-01..18`: invariant host frame; downward-only Transform expansion; mode/space/Exact/Shape/Sculpt parity; same-host descendants; bottom hide/restore through slowed entry/exit; IME vertical grammar and touch floor; signed numeric and unitless Scale regression; compact portrait, short landscape and expanded/tablet; Stage020R2/R3 semantics | 18 |
 | `EditorWorkspaceRightHostPlacementTest` | `UILR2C-01..12`: the correction round-1 contract that the right host keeps the trailing window edge. Compact and short-landscape hold one external host frame through all eleven R2 states with the trailing inset unchanged (`-01`, `-03`); the compact anchors and the host width take no font scale, so the 1.3 cells resolve to the 1.0 answer (`-02`, `-04`); the expanded window docks the panel inboard of the host and its decision arithmetic carries no text input (`-05`, `-06`); Exact, Exact+IME and Sculpt Details never translate the host (`-07`) because a side-placed panel is always seated BEFORE it in the row they share (`-08`); compact hide/restore and short-window persistent chrome return at Δ = 0 dp (`-09`, `-10`); intrinsic hit boxes clear 48 dp with the clipped visible intersection reported separately (`-11`); and the IME leaves the Vulkan surface full-window while only the host height may move (`-12`) | 12 |
 
@@ -1187,9 +1255,50 @@ precondition. Runtime evidence separately shows the real keyboard.
 
 ## Current evidence summary
 
-Latest acceptance run (E2E-R1A / Stage 021), on the isolated
+Latest acceptance run (E2E-R1B / Stage 022), on the isolated
 `ForgeShape_Stage006` / `emulator-5580` AVD unless stated. Evidence:
-[`artifacts/e2er1a/`](artifacts/e2er1a/).
+[`artifacts/e2er1b/`](artifacts/e2er1b/); the E2E-R1A package stays at
+[`artifacts/e2er1a/`](artifacts/e2er1a/) and is historical.
+
+- **Native self-tests:** fifteen suites, **2199 checks, zero failures**, then
+  `FORGESHAPE_NATIVE_VIEWPORT_OK` (`artifacts/e2er1b/native-launch.txt`). The
+  project suite is **132** and the new render-recovery suite **24**. The golden
+  `.forge` digests are **unchanged** from E2E-R1A, which is the R1A-compatibility
+  gate: the format did not move.
+- **Build/JVM:** debug and release APKs built for both ABIs; **70/70 JVM** tests
+  passed, zero failures, zero errors (11 new, all `DiagnosticLogTest`).
+- **Focused `FSR1B`:** `ProjectAutosaveRecoveryTest` (14),
+  `ProjectTransferTest` (13) and `DiagnosticsAndRendererLossTest` (9) run
+  together, **36/36** (`artifacts/e2er1b/focused-fsr1b.txt`).
+- **Process death:** `scripts/run-project-persistence-e2e.ps1` passed all
+  **eight** stages with a confirmed absent process before each verifying half;
+  `PROJECT_PERSISTENCE_E2E=PASS` (`artifacts/e2er1b/process-death-e2e.txt`).
+  Stages 5-8 are the E2E-R1B claim: nothing was saved.
+- **Regression:** the E2E-R1A project-actions suite and the UI-LAYOUT-R2
+  right-host, placement, correction and legibility suites re-run together,
+  **94/94** (`artifacts/e2er1b/regression-focused.txt`).
+- **Instrumented (authoritative):**
+  `scripts\run-instrumented-tests.ps1 -Serial emulator-5580 -FullSharded
+  -ShardCount 5` discovered 27 classes / **382** tests — the four new classes
+  raise the inventory from 342 — assigned them exhaustively to five shards
+  (**76 + 79 + 78 + 75 + 74**) and passed **382/382**. `missing=0`,
+  `duplicates=0`, `unexpected=0`, `execution_missing=0`, `failed_shards=0`,
+  `aborted_shards=0`; marker `FULL_SHARDED_SUITE_PASS`
+  (`artifacts/e2er1b/full-sharded.txt`). An earlier attempt failed in shard 5 on
+  an order-dependent assertion in the new autosave suite — it compared the scene
+  against a literal body count, which is only true when the twenty-body
+  scalability case has not run first — and the whole command was rerun from
+  shard 1 after the fix, as `CLAUDE.md` requires.
+- **GPU device loss:** the REBUILD branch, verified on device through the debug
+  injection seam — `DEVICE_LOST:acquire` to `DEVICE_REBUILT` to a second
+  `NATIVE_VIEWPORT_OK` in about 130 ms, with every project value and the encoded
+  document bit-identical across it
+  (`artifacts/e2er1b/render-device-loss.txt`).
+- **Device guards:** `DEV2-01..07` and `DEV3-01..06` all PASS
+  (`artifacts/e2er1b/device-guards.txt`).
+
+The E2E-R1A run below is retained for the measurements this stage did not
+repeat.
 
 - **Native self-tests:** fourteen suites, **2163 checks, zero failures**, then
   `FORGESHAPE_NATIVE_VIEWPORT_OK` (`artifacts/e2er1a/native-launch.txt`). The
@@ -1514,14 +1623,14 @@ duration scale skips them outright rather than shortening them.
 Durable constraints and known-but-accepted costs. Narrative for how each was
 found lives in Git history.
 
-**One project slot, and a save the user must remember to make.** (E2E-R1A, by
-design.) There is exactly one app-private `.forge` file and Save replaces it, so
-there is no way to keep two projects, no naming, no recent list, and no way to
-recover a project a later Save overwrote. Nothing is written automatically:
-closing ForgeShape without pressing Save loses the session's work exactly as it
-did before. Autosave, crash recovery, Save As and SAF/Scoped Storage are
-`E2E-R1B`'s, and building half of one here would have been worse than the honest
-single slot.
+**One project slot, and one recovery copy.** (E2E-R1A shape, narrowed by
+E2E-R1B.) There is exactly one app-private manual `.forge` file and Save
+replaces it, so there is still no way to keep two projects, no naming, no recent
+list, and no way back to a project a later Save overwrote. Autosave protects
+UNSAVED work — it keeps one recovery copy and no version history — so the
+remaining exposure is narrower than it was: closing ForgeShape without saving no
+longer loses the session, but overwriting a saved project still cannot be
+undone. Save As, naming and a project library remain `APP-H1`'s.
 
 **A reopened sculpt mesh restarts its `SculptRevision`.** (E2E-R1A, accepted.)
 Revision NUMBERS are derived state and are deliberately not file truth, so a
@@ -1546,6 +1655,51 @@ portability claim evidence rather than assertion — and it is also a second pla
 a format change has to land. `FSR1A-12` fails loudly when the two part company,
 and `FORGESHAPE_PROJECT_GOLDEN_SHA256` prints the new digest beside the failure,
 so the cost is a visible one rather than silent drift.
+
+**Autosave protects the current work, not a history of it.** (E2E-R1B, by
+design.) One recovery copy, replaced as the project changes. There is no version
+history, no snapshot browser, no way back to an earlier point in the session,
+and no protection at all against a deliberate Save over a project the user
+wanted to keep. Undo covers a session; this covers a crash; neither covers "I
+saved over the wrong thing".
+
+**The recovery question is asked once per process, and a real crash is what
+re-asks it.** (E2E-R1B, accepted.) An unanswered question survives an Activity
+recreation and is re-presented, because suppressing it would strand the user
+with a candidate they can never answer; an ANSWERED one is never asked again in
+that process. The flag is deliberately losable and lives nowhere on disk.
+
+**Two device rebuilds, then a restart.** (E2E-R1B, judgement.)
+`kMaxDeviceRebuildAttempts` is 2 and the number is a judgement rather than a
+measurement: one is too few because a device can be lost once for a reason that
+has already passed, and many is worse than two because a device that will not
+come back does not come back on the fifth try either, while each attempt costs a
+full teardown and rebuild of every pipeline and buffer.
+
+**A real GPU device loss has never been observed, only injected.** (E2E-R1B,
+accepted and unavoidable here.) The recovery path is exercised through the debug
+injection seam, which enters it at exactly the point a real `VK_ERROR_DEVICE_LOST`
+would and runs every line after it. What is NOT covered is driver behaviour
+after a genuine loss — whether the same physical device can be re-created, and
+how a particular driver reports the failure. Provoking one would mean
+destabilising the authoritative emulator's GPU, which the repository forbids.
+
+**The crash report's throwable branch has no test of its own.** (E2E-R1B, new
+debt.) The uncaught-exception handler is installed once per process and chains
+to whatever handler was already there, and the previous-process-exit path is
+covered by real evidence — `PREVIOUS_EXIT reason=16` appears in the committed
+diagnostic sample. What is NOT covered by a case is the branch of
+`renderReport` that formats a throwable's class, message and bounded stack
+trace, because forcing a genuine uncaught exception would kill the
+instrumentation process along with the app. The report's no-throwable branch,
+its bounds and its redaction are all covered.
+
+**SAF is proved at the bytes, not through the picker's own UI.** (E2E-R1B,
+accepted.) The production result handlers are driven end to end against a real
+`ContentResolver`, and the Intents that would be sent are asserted field by
+field — but nobody taps through the system document picker, which is another
+app's surface and differs per device. "SAF works" would be a bigger claim than
+the evidence makes.
 
 **Sculpt Radius/Strength remains visually heavy.** (UI-LAYOUT-R2, deferred P2.)
 The direct-access sliders retain their existing geometry and >=48 dp targets.
@@ -1812,7 +1966,13 @@ regenerated per stage.
 | `app/src/main/cpp/forgeshape_project_document.{h,cpp}` | The `.forge` v1 document and codec: the DTOs, the encoder, the bounded decoder, the version dispatch seam, and every validation and compatibility rule. `DATA_PACKAGE_SPEC.md` owns the same layout as documentation |
 | `app/src/main/cpp/forgeshape_project_state.{h,cpp}` | The bridge: running project -> document, and a validated document -> running project in one all-or-nothing commit that stages every body before touching anything live |
 | `app/src/main/java/.../ProjectSlot.java` | The Android storage adapter: one app-private `.forge` slot, written temp-file + fsync + rename so a crash never leaves a partial project, and read with a bound. Owns no byte of meaning |
-| `app/src/main/java/.../ProjectActionsPopoverView.java` | The two project actions — Save Project and Open Saved Project — grown out of the toolbar control that opened them. Owns no state; Open is drawn inert and says so when there is nothing saved |
+| `app/src/main/java/.../ProjectActionsPopoverView.java` | The five project actions in two groups — Save Project and Open Saved Project for the app's own slot, then Save Copy…, Open File… and Share Diagnostics… through the system document UI. Owns no state; Open is drawn inert and says so when there is nothing saved |
+| `app/src/main/java/.../ProjectCheckpoint.java` | The RECOVERY file: a separate app-private slot autosave writes atomically, and the quarantine an undecodable one is moved to. Never the manual slot |
+| `app/src/main/java/.../AutosaveController.java` | WHEN a checkpoint happens: the debounce, the coalescing, the worker thread and the `awaitIdle` barrier tests wait on instead of sleeping. Owns no bytes and no format |
+| `app/src/main/java/.../ProjectTransfer.java` | The Scoped Storage boundary: `Uri` to bytes and back, plus the three Intents. Nothing below it ever sees a `Uri`, a resolver or a path |
+| `app/src/main/java/.../RecoveryPromptView.java` | The one question asked when unsaved work is found: Recover or Discard, over the live viewport, answered once. Owns no state and makes no native call |
+| `app/src/main/java/.../DiagnosticLog.java`, `Diagnostics.java` | The bounded local ring and its redaction (free of Android types, JVM-tested), and the Android half that names the build, chains the uncaught handler and renders a report |
+| `app/src/main/cpp/forgeshape_render_recovery.{h,cpp}` | What a lost GPU device MEANS: the classification, the bounded rebuild policy and the terminal state. Free of Vulkan on purpose, so it is self-testable without a GPU |
 | `testdata/forge/v1/*` | The permanent v1 golden corpus: two canonical fixtures and five deliberately broken ones. Digests are recorded in `DATA_PACKAGE_SPEC.md` |
 | `scripts/build-forge-corpus.ps1` | A SECOND, independent implementation of the v1 encoder, written from the spec. Writes and verifies the corpus, needs no device |
 | `scripts/run-project-persistence-e2e.ps1` | The process-death driver for E2ER1A-02/03: save, `am force-stop`, confirm by PID that no process remains, then open and verify in a fresh one |
@@ -1861,24 +2021,26 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Exactly one next step: return the E2E-R1A report to the coordinator.** No later
-product stage may begin here. In particular `E2E-R1B` / Stage 022 (autosave,
-crash recovery, SAF/Scoped Storage, Save As, sharing), `E2E-R1C` / Stage 023
-(GLB/glTF export), OBJ/FBX or any other interchange work, `APP-H1` (a project
-hub, thumbnails, a multi-project library), `BRIDGE-R1` and `CAD-R0-DATA` are all
-**not started**, and none of them may be begun without the coordinator opening it.
+**Exactly one next step: return the E2E-R1B report to the coordinator.** No later
+product stage may begin here. In particular `E2E-R1C` / Stage 023 (GLB/glTF
+export), OBJ/FBX or any other interchange work, `APP-H1` (a project hub,
+thumbnails, Save As, naming, a multi-project library), `BRIDGE-R1` and
+`CAD-R0-DATA` are all **not started**, and none of them may be begun without the
+coordinator opening it.
 
-E2E-R1A is closed. The `.forge` v1 format ships, one app-private slot ships, and
-work survives process death — proved by saving, killing the app, confirming by
-PID that no ForgeShape process remains, and reopening in a fresh one. The native
-codec suite, the JVM suite, the focused project suites, the R2 right-host suites
-and the authoritative exhaustive-sharded instrumented aggregate are all green,
-and both supported ABIs build debug and release.
+E2E-R1B is closed. Autosave, the recovery question, Scoped Storage transfer,
+GPU device-loss recovery and the local diagnostic channel all ship. Work that
+was never saved now survives process death — proved by editing, killing the app,
+confirming by PID that no ForgeShape process remains, and recovering it in a
+fresh one through the ordinary cold-launch question. The native suites, the JVM
+suite, the focused `FSR1B` suites, the E2E-R1A regression suites, the R2
+right-host suites and the authoritative exhaustive-sharded instrumented
+aggregate are all green, and both supported ABIs build debug and release.
 
 A **UI moratorium remains active.** The corrected edge-host arrangement is the
-accepted baseline; E2E-R1A added one icon control to the existing utility group
-and one small anchored surface, and moved nothing else. The one carried visual
-item is Sculpt Radius/Strength, which stays deferred P2.
+accepted baseline; E2E-R1B added three rows to the existing Project surface and
+one recovery question, and moved nothing else. The one carried visual item is
+Sculpt Radius/Strength, which stays deferred P2.
 
 `CAD-R0-DATA` remains a COORDINATOR-owned decision/research gate that Claude Code
 does not execute.
@@ -1902,7 +2064,8 @@ theme; hierarchy and object commands; Sketch/Extrude; Mirror, Subdivide and
 Remesh; import and *Add from file*; the one-way Construction-to-Sculpt project
 derivation; pressure-driven sculpting; and export.
 
-Persistence is no longer on that list, but only in the shape E2E-R1A shipped:
-ONE app-private slot. A file picker, SAF/Scoped Storage, Save As, project naming,
-a recent list, thumbnails, a project browser, autosave, crash recovery, sharing,
-cloud and accounts are all still out, and so is every interchange format.
+Persistence is no longer on that list, in the shape E2E-R1A and E2E-R1B shipped:
+one app-private manual slot, one recovery checkpoint, and transfer of that same
+document through Scoped Storage. Save As, project naming, a recent list,
+thumbnails, a project browser, a version history, cloud and accounts are all
+still out, and so is every interchange format.

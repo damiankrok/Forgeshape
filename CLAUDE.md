@@ -18,8 +18,8 @@ adb -s <serial> logcat -s ForgeShape:V
 
 APK: `app/build/outputs/apk/debug/app-debug.apk`
 
-A clean debug launch emits **fourteen** `*_SELFTEST_OK` tokens, then
-`FORGESHAPE_NATIVE_VIEWPORT_OK`. All fourteen, in emission order:
+A clean debug launch emits **fifteen** `*_SELFTEST_OK` tokens, then
+`FORGESHAPE_NATIVE_VIEWPORT_OK`. All fifteen, in emission order:
 
 ```
 FORGESHAPE_CAMERA_SELFTEST_OK
@@ -36,6 +36,7 @@ FORGESHAPE_SCENE_SELFTEST_OK
 FORGESHAPE_CONSTRUCTION_HISTORY_SELFTEST_OK
 FORGESHAPE_GIZMO_SELFTEST_OK
 FORGESHAPE_PROJECT_SELFTEST_OK
+FORGESHAPE_RENDER_RECOVERY_SELFTEST_OK
 ```
 
 Failures: `FORGESHAPE_NATIVE_VIEWPORT_FAIL:*` and the matching `*_SELFTEST_FAIL`.
@@ -51,8 +52,8 @@ with no `chatty` marker and no FAIL line to give it away. Confirm the size with
 dropped capture until a larger buffer proves otherwise.
 
 Camera, picking, dynamic-mesh, Construction-box, sculpt, render-shading,
-Construction-history, gizmo and project-format self-tests are debug-only and run
-once from `NativeViewport.start()`. They must never run per frame. Each builds the domain
+Construction-history, gizmo, project-format and render-recovery self-tests are
+debug-only and run once from `NativeViewport.start()`. They must never run per frame. Each builds the domain
 objects it needs — the scene, history and gizmo suites build their own
 `ConstructionScene` — rather than reading process-scoped state, so a suite's
 result never depends on what a live session left behind. The project suite also
@@ -127,6 +128,49 @@ is a value that can be read rather than only an assertion that failed.
   is a second implementation of it whose bytes must stay identical.
   **GLB/glTF, OBJ and FBX are not `.forge`** and are separate later work; no
   inert menu entry for them may be drawn.
+- **Autosave protects work; it never overwrites what the user chose to keep.**
+  The manual slot and the recovery checkpoint are two different files written by
+  two different acts, and only an explicit Save touches the one the user named.
+  A checkpoint is the SAME canonical `.forge` document — no delta, no journal,
+  no second format. It is written only when the project actually changed
+  (`projectSemanticFingerprint` hashes the semantic VALUES, never the domain's
+  update counters, because an undo deliberately does not advance those),
+  coalesced so a gesture costs one write rather than hundreds, taken off the UI
+  thread, and written temp-file + fsync + rename so a failed checkpoint can
+  never destroy the previous valid one. The debounce is an implementation
+  detail: it is not product semantics, and **no test may sleep for it** —
+  `awaitIdle` is the barrier.
+- **Nothing replaces the live project without the user saying so.** A recovery
+  candidate exists only when the checkpoint decodes through the ordinary
+  fail-closed decoder (`validateProject` decodes and throws the result away —
+  it applies nothing), and it is offered as a question with two answers. A
+  candidate that does not decode is **quarantined, not retried**: a corrupt
+  recovery left in place would ask the same broken question on every launch
+  forever. A successful Recover starts a fresh session history exactly as Open
+  does; a failed one changes nothing at all.
+- **A `Uri` never reaches the domain.** Scoped Storage transfer is
+  ForgeShape's own project moving through the system's document UI, and
+  `ProjectTransfer` is the whole boundary: it turns a `Uri` into bytes and
+  bytes into a document. No `Uri`, `ContentResolver`, authority or filesystem
+  path may reach JNI, the codec or the document, and none of them is ever
+  stored as project truth. Opening a file makes that project live; it does
+  **not** write the internal manual slot, which stays what the user saved until
+  they save again.
+- **GPU resources are not project truth, and a lost device says so.** The
+  scene, every published mesh and every Frozen Sculpt Mesh live in CPU domain
+  code a lost device cannot reach, so losing one costs the GPU's copy of
+  derived data and nothing else. The policy lives in
+  `forgeshape_render_recovery.h`, deliberately free of Vulkan so it can be
+  self-tested without a GPU: a bounded number of device rebuilds, then an
+  explicit `RestartRequired` that checkpoints the project and says a restart is
+  needed rather than presenting a black viewport or drawing through a corrupt
+  device. **Never provoke a real device loss on the authoritative emulator** —
+  the debug injection seam is the only supported way to exercise it.
+- **Diagnostics are local, bounded and carry no model.** A capped ring of
+  tokens — never geometry, a vertex, a dimension, `.forge` bytes, a path or a
+  `Uri` — rendered into a bounded report the user may write to a file they
+  pick. ForgeShape holds no network permission and sends nothing anywhere; that
+  is a structural fact, not a policy.
 - **A viewport handle has one owner, one scale and no transform of its own.**
   Direct manipulation writes the active body's authoritative
   `ConstructionTransform` throughout the drag, so the renderer, the picker and

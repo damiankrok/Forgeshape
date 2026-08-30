@@ -102,8 +102,8 @@ scoped, mechanically, not by operator discipline. It uninstalls the test APK
 when it finishes, matching `connectedDebugAndroidTest`'s own cleanup
 behaviour, so reinstall the app before taking further runtime evidence.
 
-To prove that ForgeShape work survives the process dying — E2ER1A-02 and
-E2ER1A-03 — use:
+To prove that ForgeShape work survives the process dying — both work the user
+saved (E2ER1A-02/03) and work they never did (E2ER1B-01/02) — use:
 
 ```
 scripts\run-project-persistence-e2e.ps1 -Serial <serial>
@@ -117,7 +117,11 @@ explicit `-Serial`, refuses `emulator-5554` before contacting any device, and
 confirms the AVD's own name with `adb -s <serial> emu avd name` rather than
 trusting the port. Every stage is driven through the runner above, so no device
 call here is unscoped. It prints `PROJECT_PERSISTENCE_E2E=PASS` only when all
-four stages passed and both process deaths were observed.
+**eight** stages passed and all four process deaths were observed.
+
+Stages 5-8 are the harder claim: nothing was saved. Autosave alone protected the
+work, and the recovery question on a genuinely cold launch is what offers it
+back — no test seam, no cleared flag, exactly what a user meets after a crash.
 
 The permanent `.forge` golden corpus in `testdata/forge/v1/` is written and
 verified with:
@@ -461,6 +465,10 @@ leaked into the user's history.
 Project persistence logs:
 
 ```
+FORGESHAPE_RENDER_DEVICE_LOSS_INJECTED                              DEBUG seam only
+FORGESHAPE_RENDER_DEVICE_LOST:<where> attempt=<n>
+FORGESHAPE_RENDER_DEVICE_REBUILT:attempt=<n> completed=<n>
+FORGESHAPE_RENDER_RESTART_REQUIRED:<where>[:<kind>]
 FORGESHAPE_PROJECT_ENCODED:<bytes> kind=<Construction|Sculpt> bodies=<n>
 FORGESHAPE_PROJECT_ENCODE_FAIL:<why>
 FORGESHAPE_PROJECT_LOADED:<n> bodies sculptMeshes=<n> active=<id> kind=<..> meshRev=<..> undo=0 redo=0
@@ -468,6 +476,18 @@ FORGESHAPE_PROJECT_LOAD_REJECTED:<why> bytes=<n>
 FORGESHAPE_PROJECT_LOAD_FAIL:<no_data|empty>
 FORGESHAPE_PROJECT_GOLDEN_SHA256 construction=<sha> sculpt=<sha>
 ```
+
+A `DEVICE_LOST` followed by a `DEVICE_REBUILT` and a second
+`FORGESHAPE_NATIVE_VIEWPORT_OK` is the whole proof that the viewport came back
+from a lost GPU device; a `RESTART_REQUIRED` instead is the fail-closed branch,
+and the project is checkpointed either way. The first-present token appearing
+more than once in a session is therefore expected after a rebuild and is not a
+duplicate startup.
+
+Autosave, recovery and transfer do **not** log to logcat. They record into the
+bounded local diagnostic ring instead, which is what `Share Diagnostics…`
+writes out — see the sample in `artifacts/e2er1b/`. That is deliberate: those
+events are the user's to read and share, not a stream for a shell to tail.
 
 `<why>` is the codec's own vocabulary — `ChecksumMismatch`, `Truncated`,
 `UnsupportedMajor`, `InvalidSemanticValue` and the rest, listed in

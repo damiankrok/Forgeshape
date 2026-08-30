@@ -121,7 +121,14 @@ forgeshape_jni.cpp            render thread, ANativeWindow, MotionEvent ->
 | Vector/matrix math | `forgeshape_math.h` | no GLM or other third-party math |
 | The `.forge` binary layout, its little-endian primitives, its CRC-32, its bounded section parsing, its compatibility rules and its deterministic writer | `forgeshape_project_bytes.{h,cpp}` + `forgeshape_project_document.{h,cpp}` | no Android, JNI, Vulkan, renderer, filesystem or `ConstructionScene` type; it knows what a project MEANS and nothing about where the bytes live. `DATA_PACKAGE_SPEC.md` owns the layout as documentation |
 | Turning the running project into a document, and a validated document back into a running project in one all-or-nothing commit | `forgeshape_project_state.{h,cpp}` | it publishes no Construction mesh the codec could have carried — every one is regenerated; it restores no revision; a refused load has touched nothing |
-| Where a project file lives, and writing it durably | `ProjectSlot` (Java) | it owns no byte of meaning: one app-private slot, a temp-file + fsync + rename write, and a bounded read. There is no picker, SAF document, Save As, browser or autosave |
+| Where the MANUAL project file lives, and writing it durably | `ProjectSlot` (Java) | it owns no byte of meaning: one app-private slot, a temp-file + fsync + rename write, and a bounded read. It is written by an explicit Save and by nothing else — autosave has its own file |
+| Where the RECOVERY checkpoint lives | `ProjectCheckpoint` (Java) | a separate app-private file, written atomically, quarantined rather than retried when it fails to decode. It is not the manual slot, and that separation is the point: autosave writing the user's named file would make a safety net into a destroyer of it |
+| WHEN the project is checkpointed, and on which thread | `AutosaveController` (Java) | it owns no bytes and no format: it decides, coalesces, and calls the codec. The debounce is an implementation detail and is not product semantics |
+| Whether the project actually changed | `projectSemanticFingerprint` (`forgeshape_project_state.{h,cpp}`) | it hashes semantic VALUES, never the domain's update counters — an undo does not advance those — and it is a change DETECTOR, never an identity |
+| Turning a document `Uri` into bytes and back | `ProjectTransfer` (Java) | THE boundary: no `Uri`, `ContentResolver`, authority or path passes it, and none is ever project truth. It converts; it decides nothing |
+| What a lost GPU device means and how many rebuilds are attempted | `RenderRecoveryPolicy` (`forgeshape_render_recovery.{h,cpp}`) | deliberately free of Vulkan so it can be self-tested without a GPU; it owns no handle, performs no teardown and touches no project state |
+| Tearing the device down and building it again | `Renderer::rebuildDeviceAfterLoss` | it rebuilds the GPU COPY of derived data; the CPU project is not consulted and not touched, and `syncScene` re-uploads from the published revisions |
+| The bounded local diagnostic ring, and its redaction | `DiagnosticLog` (Java, free of Android types) | it carries tokens, never geometry, `.forge` bytes, a path or a `Uri`; `Diagnostics` is the Android half that renders a report |
 | Whether the project surface is open, and what a save or a refused open SAYS | `EditorWorkspaceView` + `ProjectActionsPopoverView` | neither owns the format, the storage or the fail-closed rule; both report an outcome native code decided |
 
 ## Platform boundary
@@ -2956,14 +2963,15 @@ own, and naming them is what stops one arriving by accident.
 - **No design system and no motion framework.** Themes are two styles over one set
   of semantic attributes; the Objects section is a flat list of rows, not an object
   browser. `ChromeMotion` is four shared decisions, not a transition system.
-- **One project slot, and no project library.** Persistence is the `.forge`
-  document and one app-private slot, and nothing more: no file picker, Scoped
-  Storage or SAF document, no Save As, no recent list, no project browser, no
-  thumbnail, no autosave and no crash recovery. Presentation and session state
-  are still written nowhere — not the camera, the start choice, the theme, the
-  grid, the display unit, the held tool or the brush — so a process kill still
-  clears all of those. What survives a process kill is exactly what a Save put
-  in the slot.
+- **One project slot, one recovery checkpoint, and no project library.**
+  Persistence is the `.forge` document, one app-private manual slot, one
+  app-private recovery checkpoint, and transfer of that same document through
+  the system document UI. There is still no Save As, no naming, no recent list,
+  no project browser, no thumbnail, no multi-project library and no cloud.
+  Presentation and session state are written nowhere — not the camera, the
+  start choice, the theme, the grid, the display unit, the held tool or the
+  brush — so a process kill still clears all of those. What survives is exactly
+  what a Save put in the slot, or what autosave put in the checkpoint.
 - **No interchange format.** GLB/glTF, OBJ and FBX are separate, deliberately
   chosen import/export pipelines with their own stages and their own dependency
   decisions. None is implemented, none is started, and no inert menu entry for

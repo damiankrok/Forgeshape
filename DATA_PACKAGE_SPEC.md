@@ -337,6 +337,27 @@ bring a real compatibility/migration test with it.
 
 ---
 
+## 10a. One format, two files
+
+Since E2E-R1B there are two app-private `.forge` files, and they hold **exactly
+the same canonical v1 document** described above:
+
+| File | Written by | Read by |
+| --- | --- | --- |
+| `project.forge` | an explicit Save, and nothing else | Open Saved Project |
+| `recovery.forge` | autosave, and nothing else | the recovery question on a cold launch |
+
+There is deliberately **no second format**: no delta, no journal, no append log
+and no private encoding. A checkpoint is a project file that happens to have
+been written automatically, which is why the ordinary fail-closed decoder reads
+it and the ordinary load path applies it. A checkpoint that fails to decode is
+moved to `recovery.forge.quarantine` and never offered again.
+
+A copy written through the system document UI is the same bytes once more. The
+format carries no trace of where a file came from — no path, no `Uri`, no
+authority — which is what `FSR1B-13` asserts by re-encoding a project opened
+from a distinctively named file and requiring the original bytes back exactly.
+
 ## 11. Golden corpus
 
 `testdata/forge/v1/`, written by `scripts/build-forge-corpus.ps1`.

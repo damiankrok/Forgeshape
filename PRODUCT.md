@@ -1055,6 +1055,71 @@ nothing crashes.
 Until you save one, *Open Saved Project* reads *No saved project yet* and does
 nothing.
 
+## When ForgeShape closes before you saved
+
+**Your work is checkpointed as you go.** ForgeShape keeps a separate recovery
+copy of the project, written automatically shortly after you stop editing and
+again whenever the app leaves the foreground. It is not your saved project and
+never replaces it: **Save Project still writes only when you press it**, and the
+recovery copy exists purely so that work you never got round to saving is not
+lost if the app closes, is killed, or stops unexpectedly.
+
+If ForgeShape finds such work the next time it starts, it asks — once — before
+anything is replaced:
+
+- **Recover** opens the work as it was when ForgeShape closed. Undo history
+  starts fresh, exactly as it does after opening a saved project.
+- **Discard** forgets it and starts normally.
+
+**Whichever you choose, a project you saved yourself is untouched.** The
+recovery copy is the only thing Discard removes.
+
+If that recovery copy turns out to be unreadable — damaged storage, or written
+by a newer ForgeShape — it is set aside once, the status line says so, and you
+are never asked about it again. It cannot loop, and it cannot replace anything.
+
+## Moving a project on and off the device
+
+The project surface carries two more actions, under **Transfer**:
+
+- **Save Copy…** asks where to put a copy and writes the project there, using
+  the system's own file UI. Your saved project is unchanged.
+- **Open File…** asks which project file to read and opens it. The project
+  becomes live; **your saved project stays what you saved** until you press Save
+  again.
+
+A file written this way is a ForgeShape project — the same format the app uses
+internally — and another ForgeShape installation can open it. **It is not GLB,
+glTF, OBJ or FBX**, ForgeShape neither reads nor writes any of those, and
+nothing in the product pretends otherwise.
+
+Anything that goes wrong here costs you nothing: cancelling the file picker does
+nothing at all, a file that cannot be read or written is reported, and a file
+that is not a ForgeShape project — or is damaged, or was written by a newer
+version — is refused with the reason, leaving your work exactly as it was.
+
+## Diagnostics
+
+**Share Diagnostics…** writes a short local report — which build you are
+running, the basic device facts, and a bounded list of recent events such as
+saves, recoveries and viewport problems — to a file you choose.
+
+**It contains none of your model.** No shapes, no dimensions, no sculpted
+vertices, no project file contents and no file paths. And **ForgeShape sends
+nothing anywhere**: it has no network permission at all, so the only way the
+report leaves the device is you putting it somewhere.
+
+## If the viewport stops
+
+Graphics hardware can be reset or taken away by the system. ForgeShape rebuilds
+the viewport when that happens and carries on — **your model is never held on
+the graphics device**, so nothing about it is at risk either way.
+
+If the viewport cannot be rebuilt, ForgeShape says so plainly and tells you a
+restart is needed, after making sure your work is checkpointed first. It does
+not show you a black viewport and pretend, and it does not keep drawing through
+hardware it can no longer trust.
+
 ## What survives
 
 The object's shape, its size, its position, rotation and scale, its identity, the chosen
@@ -1157,18 +1222,24 @@ of the six exact primitives and its dimensions, and nothing else makes geometry.
 There is no **Add from file** and no import of any kind. Add Primitive offers the
 six shapes ForgeShape builds and nothing else.
 
-**There is one saved project and no project library.** There is no file picker,
-no Save As, no naming, no recent list, no thumbnails, no folders, no autosave and
-no crash recovery: a project is saved when you press Save and not before, and
-there is exactly one of them. The saved project lives inside the app's own
-storage, so it is not visible in a file manager and is removed if the app is
-uninstalled, and there is no sharing, cloud or account of any kind.
+**There is one saved project and no project library.** There is no Save As, no
+naming, no recent list, no thumbnails, no folders and no multi-project library:
+a project is saved when you press Save and not before, and there is exactly one
+of them. It lives inside the app's own storage, so it is not visible in a file
+manager and is removed if the app is uninstalled — Save Copy… is how a project
+reaches somewhere you can see it. There is no cloud and no account of any kind.
 
-**A saved ForgeShape project is not an interchange file.** It is ForgeShape's own
+**Autosave protects unsaved work; it does not manage projects.** It keeps one
+recovery copy of the current work and nothing else — no versions, no history of
+previous sessions, no snapshots you can browse, and no way back to a project a
+later Save replaced.
+
+**A ForgeShape project file is not an interchange file.** It is ForgeShape's own
 format, meant to be readable by another ForgeShape installation, and it is not
 GLB, glTF, OBJ or FBX. Nothing in the product imports or exports any of those,
 and nothing pretends to: Export remains the single drawn, recessed, clearly
-unavailable control.
+unavailable control. Open File… reads ForgeShape projects and refuses everything
+else.
 
 **A stylus is simply another pointer.** Nothing anywhere reads pressure, tilt,
 hover or which kind of pointer is touching the screen, so an S Pen grabs a
