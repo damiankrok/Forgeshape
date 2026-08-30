@@ -1,0 +1,11 @@
+Release APK: app/build/outputs/apk/release/app-release-unsigned.apk
+  1290872  1981-01-01 01:01   lib/arm64-v8a/libforgeshape_native.so
+  1432664  1981-01-01 01:01   lib/x86_64/libforgeshape_native.so
+=== debug / arm64-v8a : app/build/intermediates/cmake/debug/obj/arm64-v8a/libforgeshape_native.so
+  LOAD           0x000000 0x0000000000000000 0x0000000000000000 0x1a7ff0 0x1a7ff0 R E 0x4000
+=== release / arm64-v8a : app/build/intermediates/merged_native_libs/release/mergeReleaseNativeLibs/out/lib/arm64-v8a/libforgeshape_native.so
+  LOAD           0x000000 0x0000000000000000 0x0000000000000000 0x1345d0 0x1345d0 R E 0x4000
+=== debug / x86_64 : app/build/intermediates/cmake/debug/obj/x86_64/libforgeshape_native.so
+  LOAD           0x000000 0x0000000000000000 0x0000000000000000 0x1ab260 0x1ab260 R E 0x4000
+=== release / x86_64 : app/build/intermediates/merged_native_libs/release/mergeReleaseNativeLibs/out/lib/x86_64/libforgeshape_native.so
+  LOAD           0x000000 0x0000000000000000 0x0000000000000000 0x157010 0x157010 R E 0x4000

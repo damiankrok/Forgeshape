@@ -1,0 +1,16 @@
+
+Fixture                         Bytes Sha256                                                           OnDisk
+-------                         ----- ------                                                           ------
+construction_multibody_v1.forge  1264 8830e7fbd8dcb803535d5c4f91e410dfca4c7a0cecc1202c9d2b1aa8553b9aaf   True
+sculpt_mixed_v1.forge             629 112b109731a43bf57a0f77b34794e7ce2529e056d9b18f061cd3c891f51a2784   True
+corrupt_crc_v1.forge             1264 df353c419215864d8de3aca6e2d43733c29740e2a1be4daeeb188af7c9728b96   True
+truncated_v1.forge               1224 af80dae6c3bc9f8854a326d46090aa54f93ef59c193a22893c335135e6b04204   True
+unsupported_major_v1.forge       1264 27df45ad6bff0577514df65aa8773024203197c6323cb9c625003a67a7b6d77a   True
+unknown_optional_v1.forge        1296 85286d94592b783644d2dc00744538325f6d91557de32235a6038595d56a57ca   True
+unknown_required_v1.forge        1296 c71553ef0d4f0be28a8972418b981b47ee0c19ae715058719ad7f0a3cd0db5cd   True
+
+
+
+Digests the C++ self-test (FSR1A-12) must assert:
+  construction: 8830e7fbd8dcb803535d5c4f91e410dfca4c7a0cecc1202c9d2b1aa8553b9aaf
+  sculpt:       112b109731a43bf57a0f77b34794e7ce2529e056d9b18f061cd3c891f51a2784
