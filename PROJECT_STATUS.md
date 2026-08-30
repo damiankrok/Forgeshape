@@ -1,13 +1,26 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.47.0
+**Status Version:** 0.48.0
 **Updated:** 2026-08-30
-**Result:** TECHNICAL PASS / OWNER VISUAL REVIEW REQUIRED — **UI-LAYOUT-R2
-correction round 1** closes the one measured defect the R2 closeout found. The
-right context host now keeps the trailing window edge in **every** window and
-every state: its trailing inset is 8 dp at rest and stays 8 dp with Exact, the
-IME and Sculpt Details open, where it previously translated inward by about
-320 dp in a short landscape window and about 360 dp on a tablet.
+**Result:** **UI-LAYOUT-R2 — COMPLETE.** The coordinator reviewed the corrected
+build's representative pairs and gave a **visual PASS on 2026-08-30**, closing
+the stage. The measured half had already passed; this is the judgement half, and
+it is now recorded rather than outstanding.
+
+The findings behind that verdict: the rail reads as a narrow edge-hugging strip;
+Exact/Details sits inboard, left of the fixed rail, in the short-landscape and
+expanded states; and no rail translation, overlap, detached control grammar or
+unnecessary viewport loss was identified.
+
+Correction round 1 closed the one measured defect the R2 closeout found. The
+right context host keeps the trailing window edge in **every** window and every
+state: its trailing inset is 8 dp at rest and stays 8 dp with Exact, the IME and
+Sculpt Details open, where it previously translated inward by about 320 dp in a
+short landscape window and about 360 dp on a tablet. **This corrected edge-host
+arrangement is the accepted current workspace baseline** — a narrow right edge
+rail at a fixed trailing placement through every Exact/Details state, with a
+side-placed Exact/Details seated inboard of it. The obsolete 132-152 dp R0 host
+geometry is superseded and must not be restored.
 
 `WorkspaceTrailingHostView` remains the one external right contextual surface,
 owning its vertical child composition, fixed top/right/width geometry, internal
@@ -27,16 +40,23 @@ hit targets clear 48 × 48 dp and the Vulkan surface stays full-window under the
 IME. Evidence: `artifacts/uilayoutr2-correction/`; the superseded pre-correction
 measurement stays at `artifacts/uilayoutr2-spec-closeout/`.
 
-This result is **technical and runtime truth.** The owner / coordinator *visual*
-verdict on UI-LAYOUT-R2 is a separate act and is not claimed here.
+The verdict is the coordinator's, recorded from the handoff. The evidence
+packages themselves deliberately record no verdict, and no owner statement
+separately approving the final screenshots is claimed.
+
+**Correction round 1 was consumed and round 2 was never used**; with the stage
+closed, it is retired rather than pending. A **UI moratorium is active**: the
+next product work is not another UI pass.
 
 **UI-LAYOUT-R2 verification range:** baseline
 `54c3dfa09c7b0fd9351f6c8967b199c3380e3c1a`; R2 implementation/test HEAD
 `8d9ebbf0f73e278ed7383ae89c054afa2bcce9f3` (product layout
 `27dc28d27cd44c75a552a64bf121ad64937c2b08`); measured closeout
 `40e8b10a0b30da27ba1e60b22ab6f8667135d452`; **correction round 1 product/test
-HEAD `6d05814ddb89ef4e06d2e78d62af78d8b2262af1`**. The documentation/evidence
-commits contain no product or test behavior change.
+HEAD `6d05814ddb89ef4e06d2e78d62af78d8b2262af1`**; correction evidence/docs
+`40d1f4490ef874344f0b101da2e290053028f675`; owner-review bundle
+`71bab57e4e12a91c5f1c7b8cec6a5af9b92569b7`. The documentation/evidence commits
+contain no product or test behavior change.
 
 Before it, Stage 020R3 closed the one user-reachable
 correctness gap Scale left behind: **a sculpt brush now measures in the
@@ -88,9 +108,8 @@ atomic Apply. Renderer and picking are scale-correct: normals ride a real
 inverse-transpose (`R·S⁻¹`) and a local ray parameter is still world distance.
 **Surface Snap and Grid Snap remain absent** — the quantization and placement
 seam exists and is the identity.
-UI-LAYOUT-R2 is technically implemented on the UI-ARCH-R1 boundary. Automated
-verification is complete; owner/coordinator visual acceptance is still pending —
-see *Next Stage*.
+UI-LAYOUT-R2 is complete on the UI-ARCH-R1 boundary: automated verification
+passed and the coordinator gave the visual PASS on 2026-08-30.
 **Current Phase:** Phase 1 — Native Viewport
 **Workspace:** `D:\TRAVELAPPS\ForgeShape`
 **Current technical implementation baseline:** UI-LAYOUT-R2 (unified right context and
@@ -116,7 +135,7 @@ Stage 016 (Plane), Stage 015D (camera projection), Stage 015C-R (front-face
 culling), Stage 015C (shading), Platform Fix P2, Stage 015B, Stage 014, the NDK
 r29 migration (Gate P0) and the Owner Decision Baseline. Per-stage narrative
 lives in Git history; only what still constrains the code is kept here.
-**Next Stage:** **The OWNER / coordinator gives the UI-LAYOUT-R2 visual verdict on the corrected build.** See *Next Stage*.
+**Next Stage:** **`CAD-R0-DATA` — a COORDINATOR-owned decision/research gate. Claude Code does not execute it.** See *Next Stage*.
 
 ## Current state
 
@@ -135,16 +154,17 @@ models, two projections, a world reference grid, and an Editor Workspace that
 re-composes itself per window. `ARCHITECTURE.md` owns the ownership map and every invariant;
 `PRODUCT.md` owns the user-visible description; `README.md` owns build/run/verify.
 
-**Blockers:** no newly observed product or runtime blocker — every native, JVM,
-instrumented and guard suite is green, and the measured anchor comparison against
-the OWNER-accepted `UI-SPEC-R0 Revision 1` now passes 66/66. **UI-LAYOUT-R2
-final visual acceptance is the owner's / coordinator's own act and remains
-outstanding**; an automated PASS and recorded runtime evidence do not grant it.
-The expected side of every anchor comparison came from the accepted revision as
-transmitted in the correction prompt's authority block, never from
-`EditorControlStyles`, `dimens.xml`, runtime bounds, screenshots or the
-reference-only `docs/ui/wireframes/*.svg`. Known costs and accepted debt are in
-*Technical Debt*; environment hazards are in *Known Issues*.
+**Blockers: none.** Every native, JVM, instrumented and guard suite is green, the
+measured anchor comparison against the OWNER-accepted `UI-SPEC-R0 Revision 1`
+passes 66/66, and the coordinator's visual PASS on 2026-08-30 closed the last
+open question on UI-LAYOUT-R2. The expected side of every anchor comparison came
+from the accepted revision as transmitted in the correction prompt's authority
+block, never from `EditorControlStyles`, `dimens.xml`, runtime bounds,
+screenshots or the reference-only `docs/ui/wireframes/*.svg`. A **UI moratorium
+is active**: no further UI pass is queued, and the shipped workspace arrangement
+stands as accepted. Known costs and accepted debt are in *Technical Debt* — the
+one carried visual item is **Sculpt Radius/Strength, deferred P2**, which was not
+an R2 blocker; environment hazards are in *Known Issues*.
 
 ## Current interaction model (through UI-LAYOUT-R2)
 
@@ -1122,7 +1142,10 @@ Latest acceptance run (UI-LAYOUT-R2 correction round 1), on the isolated
   measurement stays at
   [`artifacts/uilayoutr2-spec-closeout/`](artifacts/uilayoutr2-spec-closeout/),
   and [`artifacts/uilayoutr2/`](artifacts/uilayoutr2/) holds the original R2
-  walkthrough. Owner/coordinator visual acceptance remains pending.
+  walkthrough. The six representative pairs the coordinator reviewed are packaged
+  in [`artifacts/uilayoutr2-owner-review/`](artifacts/uilayoutr2-owner-review/);
+  that bundle records no verdict of its own, and the visual PASS of 2026-08-30
+  is the coordinator's, recorded here.
 - **Physical ARM64 (Gate P1):** closed on a Galaxy S25 Ultra —
   `primaryCpuAbi=arm64-v8a`, `PAGE_SIZE` 4096, the mandatory ~10k/~50k/~100k
   ladder and Sculpt at 100k measured on real hardware. Stylus stays UNVERIFIED.
@@ -1670,25 +1693,27 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Exactly one next step: the OWNER / coordinator gives the UI-LAYOUT-R2 visual
-verdict on the corrected build.** No motion/morph work, no CAD-R0-DATA and no new
-product stage before that.
+**Exactly one next step: `CAD-R0-DATA`, a COORDINATOR-owned decision/research
+gate. Claude Code does not execute it** — it is not a Claude implementation
+stage, and no work on it may begin here. No motion/morph work, no E2E-R1
+implementation and no new product stage before the coordinator opens one.
 
-The measured half is finished. Correction round 1 removed the one defect the R2
-closeout found — a side-placed Exact/Details panel translating the right host
-inward — and the re-measured matrix conforms to the OWNER-accepted
-`UI-SPEC-R0 Revision 1` on all 66 cell × state rows with 0 dp intra-cell drift.
-All native, JVM, instrumented and guard suites are green. What remains is
-judgement, not measurement: an automated PASS and recorded runtime evidence do
-not grant visual acceptance, and Claude may not author, infer or approve that
-verdict.
+UI-LAYOUT-R2 is closed. Correction round 1 removed the one defect the R2 closeout
+found — a side-placed Exact/Details panel translating the right host inward — the
+re-measured matrix conforms to the OWNER-accepted `UI-SPEC-R0 Revision 1` on all
+66 cell × state rows with 0 dp intra-cell drift, every native, JVM, instrumented
+and guard suite is green, and the coordinator gave the visual PASS on 2026-08-30.
+Correction round 2 was never used and is retired with the stage rather than left
+pending.
 
-The review material is `artifacts/uilayoutr2-correction/`: `INDEX.md` puts 36 raw
-screenshots beside 36 mechanical overlays for the six visual-critical states in
-each of the six cells, with the accepted frame drawn in green and the measured
-frame in magenta, and `README.md` states the authority, the method and every
-verdict. One correction round of the maximum two remains available if the visual
-verdict asks for changes.
+A **UI moratorium is active.** The corrected edge-host arrangement is the accepted
+baseline and no further UI pass is queued; the one carried visual item is Sculpt
+Radius/Strength, which stays deferred P2 and was not an R2 blocker.
+
+The evidence stands where it was made: `artifacts/uilayoutr2-correction/` holds
+the 66-row matrix, 36 raw screenshots, 36 mechanical overlays and the derived
+analysis, and `artifacts/uilayoutr2-owner-review/` holds the six representative
+pairs the coordinator reviewed. Both are historical and are not to be rewritten.
 
 The one feature the repo still records as a candidate is **Selection Outline** —
 the expensive half of selection feedback, needing either a second geometry pass
