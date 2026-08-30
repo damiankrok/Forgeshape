@@ -1,0 +1,400 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UI-LAYOUT-R2 — owner visual review</title>
+<style>
+  :root {
+    --bg: #101216;
+    --card: #191c22;
+    --card-2: #1f232b;
+    --line: #2b303a;
+    --ink: #e9edf3;
+    --ink-2: #98a2b3;
+    --ink-3: #6b7484;
+    --accepted: #3ceb82;
+    --measured: #ff3ca0;
+    --amber: #ffbe46;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 15px/1.6 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 40px 24px 96px; }
+
+  h1 { font-size: 26px; line-height: 1.25; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .sub { color: var(--ink-2); margin: 0 0 28px; font-size: 15px; }
+  h2 { font-size: 13px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--ink-3); margin: 40px 0 14px; font-weight: 600; }
+
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 20px 22px; }
+  .panel p { margin: 0 0 12px; }
+  .panel p:last-child { margin-bottom: 0; }
+  .panel .quote { color: var(--ink-2); font-style: italic; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 22px; margin: 16px 0 0; padding: 0; list-style: none; }
+  .legend li { display: flex; align-items: center; gap: 9px; color: var(--ink-2); font-size: 14px; }
+  .swatch { width: 26px; height: 3px; border-radius: 2px; flex: none; }
+  .swatch.accepted { background: var(--accepted); }
+  .swatch.measured { background: var(--measured); }
+
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  .summary { margin-top: 4px; }
+  .summary th, .summary td { text-align: right; padding: 9px 12px; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .summary th:first-child, .summary td:first-child,
+  .summary th:nth-child(2), .summary td:nth-child(2) { text-align: left; }
+  .summary thead th { color: var(--ink-3); font-weight: 600; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; }
+  .summary tbody tr:last-child td { border-bottom: none; }
+  .summary a { color: var(--ink); text-decoration: none; border-bottom: 1px solid var(--line); }
+  .summary a:hover { border-bottom-color: var(--ink-2); }
+
+  .zero { color: var(--ink-3); }
+  .nonzero { color: var(--amber); }
+  .v.pass, .verdict.pass { color: var(--accepted); }
+  .v.fail, .verdict.fail { color: var(--measured); }
+
+  .pair { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 22px; margin: 18px 0; scroll-margin-top: 20px; }
+  .pair-head { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+  .ident { display: flex; align-items: baseline; gap: 12px; }
+  .cell { font-size: 19px; font-weight: 650; letter-spacing: 0.02em; }
+  .state { font-size: 15px; color: var(--ink-2); letter-spacing: 0.05em; text-transform: lowercase; }
+  .window { color: var(--ink-3); font-size: 13px; }
+  .verdict { margin-left: auto; font-size: 13px; font-weight: 650; letter-spacing: 0.09em; }
+
+  .numbers { background: var(--card-2); border-radius: 10px; overflow: hidden; margin-bottom: 14px; }
+  .numbers th, .numbers td { padding: 8px 14px; text-align: right; font-size: 14px; border-bottom: 1px solid var(--line); }
+  .numbers thead th { color: var(--ink-3); font-size: 11px; letter-spacing: 0.07em; text-transform: uppercase; font-weight: 600; }
+  .numbers tbody th { text-align: left; color: var(--ink-2); font-weight: 500; }
+  .numbers tbody tr:last-child td, .numbers tbody tr:last-child th { border-bottom: none; }
+  .numbers .ungated td, .numbers .ungated th { color: var(--ink-3); }
+
+  .question { color: var(--ink); background: rgba(255, 190, 70, 0.07); border-left: 2px solid var(--amber); margin: 0 0 16px; padding: 10px 14px; border-radius: 0 8px 8px 0; font-size: 14.5px; }
+
+  .shots { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  figure { margin: 0; }
+  figure a { display: block; background: #0a0b0e; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  figure img { display: block; width: 100%; height: auto; max-height: 60vh; object-fit: contain; }
+  figcaption { color: var(--ink-2); font-size: 13px; margin-top: 7px; }
+  .hint { color: var(--ink-3); }
+
+  @media (max-width: 860px) { .shots { grid-template-columns: 1fr; } }
+
+  footer { color: var(--ink-3); font-size: 13px; margin-top: 44px; border-top: 1px solid var(--line); padding-top: 18px; }
+  code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 0.9em; color: var(--ink-2); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>UI-LAYOUT-R2 &mdash; owner visual review</h1>
+<p class="sub">Six representative cell &times; state pairs from the correction round&nbsp;1 evidence, shipped image beside measured overlay.</p>
+
+<div class="panel">
+  <p>The correction that produced these frames moved the exact-value panel <strong>inboard</strong> of the right rail. Before it, the panel was laid out after the rail in the same row and pushed the rail away from the window edge &mdash; about 320&nbsp;dp in a short landscape window and about 360&nbsp;dp on a tablet &mdash; for as long as Exact or Details was open.</p>
+  <p>The technical result is already reported: all 66 measured rows conform, and the deltas below are the recorded ones. <strong>What is being asked here is the visual judgement, which the measurement cannot give.</strong></p>
+  <ul class="legend">
+    <li><span class="swatch accepted"></span> accepted frame (UI-SPEC-R0 Revision&nbsp;1)</li>
+    <li><span class="swatch measured"></span> measured runtime frame</li>
+  </ul>
+</div>
+
+<h2>The six pairs at a glance</h2>
+<div class="panel">
+  <table class="summary">
+    <thead>
+      <tr><th>cell</th><th>state</th><th>&Delta;top</th><th>&Delta;right</th><th>&Delta;width</th><th>anchor</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><a href="#C10-TRANSFORM_MOVE_WORLD">C10</a></td>
+        <td>TRANSFORM MOVE WORLD</td>
+        <td class="nonzero">+0.5</td>
+        <td class="zero">0</td>
+        <td class="nonzero">-4</td>
+        <td class="v pass">PASS</td>
+      </tr>
+      <tr>
+        <td><a href="#C10-EXACT_IME">C10</a></td>
+        <td>EXACT IME</td>
+        <td class="nonzero">+0.5</td>
+        <td class="zero">0</td>
+        <td class="nonzero">-4</td>
+        <td class="v pass">PASS</td>
+      </tr>
+      <tr>
+        <td><a href="#L10-EXACT_IME">L10</a></td>
+        <td>EXACT IME</td>
+        <td class="zero">0</td>
+        <td class="zero">0</td>
+        <td class="nonzero">-4</td>
+        <td class="v pass">PASS</td>
+      </tr>
+      <tr>
+        <td><a href="#L13-SCULPT_DETAILS">L13</a></td>
+        <td>SCULPT DETAILS</td>
+        <td class="zero">0</td>
+        <td class="zero">0</td>
+        <td class="nonzero">-4</td>
+        <td class="v pass">PASS</td>
+      </tr>
+      <tr>
+        <td><a href="#E10-EXACT_IME">E10</a></td>
+        <td>EXACT IME</td>
+        <td class="nonzero">-1</td>
+        <td class="zero">0</td>
+        <td class="nonzero">-4</td>
+        <td class="v pass">PASS</td>
+      </tr>
+      <tr>
+        <td><a href="#E13-SCULPT_DETAILS">E13</a></td>
+        <td>SCULPT DETAILS</td>
+        <td class="nonzero">-1</td>
+        <td class="zero">0</td>
+        <td class="nonzero">-4</td>
+        <td class="v pass">PASS</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<h2>What to look for</h2>
+<div class="panel">
+  <p>Three things, in every pair:</p>
+  <p>&mdash;&nbsp;Does the rail still read as a <strong>narrow strip hugging the window edge</strong>?</p>
+  <p>&mdash;&nbsp;Does Exact / Details sit <strong>inboard, to the left of the rail</strong>, with the rail unmoved?</p>
+  <p>&mdash;&nbsp;Is there any <strong>visible overlap, jump, detached control grammar, or viewport lost for no reason</strong>?</p>
+</div>
+
+<h2>Pairs</h2>
+
+<section class="pair" id="C10-TRANSFORM_MOVE_WORLD">
+  <header class="pair-head">
+    <div class="ident">
+      <span class="cell">C10</span>
+      <span class="state">TRANSFORM MOVE WORLD</span>
+    </div>
+    <div class="window">411x914 dp &middot; density 320 &middot; font 1</div>
+    <div class="verdict pass">PASS</div>
+  </header>
+
+  <table class="numbers">
+    <thead>
+      <tr><th>anchor</th><th>accepted</th><th>measured</th><th>&Delta;</th></tr>
+    </thead>
+    <tbody>
+      <tr><th>top</th><td>112 dp</td><td>112.5 dp</td><td class="nonzero">+0.5 dp</td></tr>
+      <tr><th>right</th><td>8 dp</td><td>8 dp</td><td class="zero">0 dp</td></tr>
+      <tr><th>width</th><td>72 dp</td><td>68 dp</td><td class="nonzero">-4 dp</td></tr>
+      <tr class="ungated"><th>height</th><td>content-driven</td><td>448 dp</td><td>not an anchor</td></tr>
+    </tbody>
+  </table>
+
+  <p class="question">Does the rail still read as a narrow strip hugging the edge, with Move/Rotate/Scale and World/Local stacked inside it rather than as detached capsules?</p>
+
+  <div class="shots">
+    <figure>
+      <a href="../uilayoutr2-correction/raw/C10-TRANSFORM_MOVE_WORLD.png" target="_blank" rel="noopener"><img src="../uilayoutr2-correction/raw/C10-TRANSFORM_MOVE_WORLD.png" alt="C10 TRANSFORM MOVE WORLD, as shipped"></a>
+      <figcaption>as shipped &mdash; <span class="hint">click to open full size</span></figcaption>
+    </figure>
+    <figure>
+      <a href="../uilayoutr2-correction/overlays/C10-TRANSFORM_MOVE_WORLD.png" target="_blank" rel="noopener"><img src="../uilayoutr2-correction/overlays/C10-TRANSFORM_MOVE_WORLD.png" alt="C10 TRANSFORM MOVE WORLD, with measurement overlay"></a>
+      <figcaption>with the measurement drawn on &mdash; <span class="hint">green accepted, magenta measured</span></figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="pair" id="C10-EXACT_IME">
+  <header class="pair-head">
+    <div class="ident">
+      <span class="cell">C10</span>
+      <span class="state">EXACT IME</span>
+    </div>
+    <div class="window">411x914 dp &middot; density 320 &middot; font 1</div>
+    <div class="verdict pass">PASS</div>
+  </header>
+
+  <table class="numbers">
+    <thead>
+      <tr><th>anchor</th><th>accepted</th><th>measured</th><th>&Delta;</th></tr>
+    </thead>
+    <tbody>
+      <tr><th>top</th><td>112 dp</td><td>112.5 dp</td><td class="nonzero">+0.5 dp</td></tr>
+      <tr><th>right</th><td>8 dp</td><td>8 dp</td><td class="zero">0 dp</td></tr>
+      <tr><th>width</th><td>72 dp</td><td>68 dp</td><td class="nonzero">-4 dp</td></tr>
+      <tr class="ungated"><th>height</th><td>content-driven</td><td>434.5 dp</td><td>not an anchor</td></tr>
+    </tbody>
+  </table>
+
+  <p class="question">With the keyboard up, does the rail stay put and keep its edge, and does the sheet sit below the rail rather than under or over it?</p>
+
+  <div class="shots">
+    <figure>
+      <a href="../uilayoutr2-correction/raw/C10-EXACT_IME.png" target="_blank" rel="noopener"><img src="../uilayoutr2-correction/raw/C10-EXACT_IME.png" alt="C10 EXACT IME, as shipped"></a>
+      <figcaption>as shipped &mdash; <span class="hint">click to open full size</span></figcaption>
+    </figure>
+    <figure>
+      <a href="../uilayoutr2-correction/overlays/C10-EXACT_IME.png" target="_blank" rel="noopener"><img src="../uilayoutr2-correction/overlays/C10-EXACT_IME.png" alt="C10 EXACT IME, with measurement overlay"></a>
+      <figcaption>with the measurement drawn on &mdash; <span class="hint">green accepted, magenta measured</span></figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="pair" id="L10-EXACT_IME">
+  <header class="pair-head">
+    <div class="ident">
+      <span class="cell">L10</span>
+      <span class="state">EXACT IME</span>
+    </div>
+    <div class="window">914x411 dp &middot; density 320 &middot; font 1.0</div>
+    <div class="verdict pass">PASS</div>
+  </header>
+
+  <table class="numbers">
+    <thead>
+      <tr><th>anchor</th><th>accepted</th><th>measured</th><th>&Delta;</th></tr>
+    </thead>
+    <tbody>
+      <tr><th>top</th><td>88 dp</td><td>88 dp</td><td class="zero">0 dp</td></tr>
+      <tr><th>right</th><td>8 dp</td><td>8 dp</td><td class="zero">0 dp</td></tr>
+      <tr><th>width</th><td>72 dp</td><td>68 dp</td><td class="nonzero">-4 dp</td></tr>
+      <tr class="ungated"><th>height</th><td>content-driven</td><td>235 dp</td><td>not an anchor</td></tr>
+    </tbody>
+  </table>
+
+  <p class="question">Does Exact sit inboard — to the LEFT of the fixed rail — with the rail still at the window edge? This is the cell the correction is for.</p>
+
+  <div class="shots">
+    <figure>
+      <a href="../uilayoutr2-correction/raw/L10-EXACT_IME.png" target="_blank" rel="noopener"><img src="../uilayoutr2-correction/raw/L10-EXACT_IME.png" alt="L10 EXACT IME, as shipped"></a>
+      <figcaption>as shipped &mdash; <span class="hint">click to open full size</span></figcaption>
+    </figure>
+    <figure>
+      <a href="../uilayoutr2-correction/overlays/L10-EXACT_IME.png" target="_blank" rel="noopener"><img src="../uilayoutr2-correction/overlays/L10-EXACT_IME.png" alt="L10 EXACT IME, with measurement overlay"></a>
+      <figcaption>with the measurement drawn on &mdash; <span class="hint">green accepted, magenta measured</span></figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="pair" id="L13-SCULPT_DETAILS">
+  <header class="pair-head">
+    <div class="ident">
+      <span class="cell">L13</span>
+      <span class="state">SCULPT DETAILS</span>
+    </div>
+    <div class="window">914x411 dp &middot; density 320 &middot; font 1.3</div>
+    <div class="verdict pass">PASS</div>
+  </header>
+
+  <table class="numbers">
+    <thead>
+      <tr><th>anchor</th><th>accepted</th><th>measured</th><th>&Delta;</th></tr>
+    </thead>
+    <tbody>
+      <tr><th>top</th><td>88 dp</td><td>88 dp</td><td class="zero">0 dp</td></tr>
+      <tr><th>right</th><td>8 dp</td><td>8 dp</td><td class="zero">0 dp</td></tr>
+      <tr><th>width</th><td>72 dp</td><td>68 dp</td><td class="nonzero">-4 dp</td></tr>
+      <tr class="ungated"><th>height</th><td>content-driven</td><td>235 dp</td><td>not an anchor</td></tr>
+    </tbody>
+  </table>
+
+  <p class="question">At the larger font, does Details still sit left of the rail with no overlap, and does the rail hold the same narrow width?</p>
+
+  <div class="shots">
+    <figure>
+      <a href="../uilayoutr2-correction/raw/L13-SCULPT_DETAILS.png" target="_blank" rel="noopener"><img src="../uilayoutr2-correction/raw/L13-SCULPT_DETAILS.png" alt="L13 SCULPT DETAILS, as shipped"></a>
+      <figcaption>as shipped &mdash; <span class="hint">click to open full size</span></figcaption>
+    </figure>
+    <figure>
+      <a href="../uilayoutr2-correction/overlays/L13-SCULPT_DETAILS.png" target="_blank" rel="noopener"><img src="../uilayoutr2-correction/overlays/L13-SCULPT_DETAILS.png" alt="L13 SCULPT DETAILS, with measurement overlay"></a>
+      <figcaption>with the measurement drawn on &mdash; <span class="hint">green accepted, magenta measured</span></figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="pair" id="E10-EXACT_IME">
+  <header class="pair-head">
+    <div class="ident">
+      <span class="cell">E10</span>
+      <span class="state">EXACT IME</span>
+    </div>
+    <div class="window">1280x800 dp &middot; density 160 &middot; font 1.0</div>
+    <div class="verdict pass">PASS</div>
+  </header>
+
+  <table class="numbers">
+    <thead>
+      <tr><th>anchor</th><th>accepted</th><th>measured</th><th>&Delta;</th></tr>
+    </thead>
+    <tbody>
+      <tr><th>top</th><td>108 dp</td><td>107 dp</td><td class="nonzero">-1 dp</td></tr>
+      <tr><th>right</th><td>8 dp</td><td>8 dp</td><td class="zero">0 dp</td></tr>
+      <tr><th>width</th><td>72 dp</td><td>68 dp</td><td class="nonzero">-4 dp</td></tr>
+      <tr class="ungated"><th>height</th><td>content-driven</td><td>448 dp</td><td>not an anchor</td></tr>
+    </tbody>
+  </table>
+
+  <p class="question">On a tablet, is the docked Exact panel clear of the rail, and has the rail kept the trailing edge instead of being pushed inward by it?</p>
+
+  <div class="shots">
+    <figure>
+      <a href="../uilayoutr2-correction/raw/E10-EXACT_IME.png" target="_blank" rel="noopener"><img src="../uilayoutr2-correction/raw/E10-EXACT_IME.png" alt="E10 EXACT IME, as shipped"></a>
+      <figcaption>as shipped &mdash; <span class="hint">click to open full size</span></figcaption>
+    </figure>
+    <figure>
+      <a href="../uilayoutr2-correction/overlays/E10-EXACT_IME.png" target="_blank" rel="noopener"><img src="../uilayoutr2-correction/overlays/E10-EXACT_IME.png" alt="E10 EXACT IME, with measurement overlay"></a>
+      <figcaption>with the measurement drawn on &mdash; <span class="hint">green accepted, magenta measured</span></figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="pair" id="E13-SCULPT_DETAILS">
+  <header class="pair-head">
+    <div class="ident">
+      <span class="cell">E13</span>
+      <span class="state">SCULPT DETAILS</span>
+    </div>
+    <div class="window">1280x800 dp &middot; density 160 &middot; font 1.3</div>
+    <div class="verdict pass">PASS</div>
+  </header>
+
+  <table class="numbers">
+    <thead>
+      <tr><th>anchor</th><th>accepted</th><th>measured</th><th>&Delta;</th></tr>
+    </thead>
+    <tbody>
+      <tr><th>top</th><td>108 dp</td><td>107 dp</td><td class="nonzero">-1 dp</td></tr>
+      <tr><th>right</th><td>8 dp</td><td>8 dp</td><td class="zero">0 dp</td></tr>
+      <tr><th>width</th><td>72 dp</td><td>68 dp</td><td class="nonzero">-4 dp</td></tr>
+      <tr class="ungated"><th>height</th><td>content-driven</td><td>326 dp</td><td>not an anchor</td></tr>
+    </tbody>
+  </table>
+
+  <p class="question">At the larger font on a tablet, is there any visible overlap, jump, detached grammar, or viewport lost for no reason?</p>
+
+  <div class="shots">
+    <figure>
+      <a href="../uilayoutr2-correction/raw/E13-SCULPT_DETAILS.png" target="_blank" rel="noopener"><img src="../uilayoutr2-correction/raw/E13-SCULPT_DETAILS.png" alt="E13 SCULPT DETAILS, as shipped"></a>
+      <figcaption>as shipped &mdash; <span class="hint">click to open full size</span></figcaption>
+    </figure>
+    <figure>
+      <a href="../uilayoutr2-correction/overlays/E13-SCULPT_DETAILS.png" target="_blank" rel="noopener"><img src="../uilayoutr2-correction/overlays/E13-SCULPT_DETAILS.png" alt="E13 SCULPT DETAILS, with measurement overlay"></a>
+      <figcaption>with the measurement drawn on &mdash; <span class="hint">green accepted, magenta measured</span></figcaption>
+    </figure>
+  </div>
+</section>
+
+<footer>
+  Images are referenced in place from <code>artifacts/uilayoutr2-correction/</code> and are unmodified. Every number on this page is read from
+  <code>frame-measurements.csv</code> and <code>configuration-matrix.csv</code> in that package; none is estimated from an image.
+  Height is content-driven under Revision&nbsp;1 and is shown for information only &mdash; it is not an anchor.
+  This page is a review aid: it records no verdict.
+</footer>
+
+</div>
+</body>
+</html>
