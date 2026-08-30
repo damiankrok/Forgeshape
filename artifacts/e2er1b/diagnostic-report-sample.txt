@@ -1,0 +1,18 @@
+ForgeShape diagnostic report
+reason=MANUAL
+generatedAtMillis=1788120674822
+package=com.forgeshape.app
+versionName=0.3.0
+versionCode=1
+debuggable=true
+android=36 device=Google/sdk_gphone64_x86_64 abis=x86_64,arm64-v8a
+rendererLifecycle=0
+--- log (8 records, 0 dropped) ---
+1788120671518 INFO lifecycle PREVIOUS_EXIT reason=16,status=0
+1788120671518 INFO lifecycle ACTIVITY_CREATE fresh
+1788120671848 INFO lifecycle ACTIVITY_RESUME -
+1788120673530 INFO lifecycle ACTIVITY_STOP background
+1788120673548 INFO persistence AUTOSAVE_CHECKPOINT bytes=294,ms=15
+1788120673952 INFO lifecycle ACTIVITY_CREATE fresh
+1788120673987 INFO recovery CANDIDATE_OFFERED bytes=294
+1788120673989 INFO lifecycle ACTIVITY_RESUME -

@@ -1,0 +1,14 @@
+﻿DEV2-01 | PASS | start-forgeshape-emulator.ps1 -Port 5554 exited 1 (nonzero = rejected)
+DEV2-02 | PASS | start-forgeshape-emulator.ps1 -Port 58123 (pre-occupied) exited 1 (nonzero = BLOCKED)
+DEV2-03 | PASS | default $Port = 5580 and launch command line interpolates "-avd $Avd -port $Port"
+DEV2-04 | PASS | -Serial '' exited 1 (engine Mandatory binding); -Serial ' ' exited 1 (script's own IsNullOrWhiteSpace guard); both nonzero = rejected pre-adb
+DEV2-05 | PASS | run-instrumented-tests.ps1 -Serial emulator-5554 exited 1 (nonzero = rejected pre-adb)
+DEV2-06 | PASS | no bare '& adb' invocation across 6 other script(s)
+DEV2-07 | PASS | line 79: $state = & adb -s $Serial get-state 2>$null | line 95: & adb -s $Serial install -r $appApk | line 98: & adb -s $Serial install -r $testApk | line 105: $discoveryOutput = @(& adb -s $Serial shell am instrument -w -r -e listTestsForOrchestrator true $instrumentTarget 2>&1 | ForEach-Object { "$_" }) | line 112: & adb -s $Serial uninstall com.forgeshape.app.test | Out-Null | line 116: & adb -s $Serial uninstall com.forgeshape.app.test | Out-Null | line 134: $shardOutput = @(& adb -s $Serial shell am instrument -w -e class $filter $instrumentTarget 2>&1 | ForEach-Object { "$_" }) | line 168: & adb -s $Serial uninstall com.forgeshape.app.test | Out-Null | line 182: $testOutput = @(& adb @instrumentArgs 2>&1 | ForEach-Object { "$_" }) | line 187: & adb -s $Serial uninstall com.forgeshape.app.test | Out-Null
+DEV3-01 | PASS | bare 'adb shell' -> 1 violation(s) (1 = detected)
+DEV3-02 | PASS | bare '& adb shell' -> 1 violation(s) (1 = detected)
+DEV3-03 | PASS | scoped calls + prose/comments -> 0 violation(s) (0 = correct)
+DEV3-04 | PASS | array proving -s -> 0 violation(s) (0 expected); identically-named array WITHOUT -s -> 1 (1 expected, so the name alone is not trusted)
+DEV3-05 | PASS | executable connectedDebugAndroidTest -> 1 violation(s) (1 = detected)
+DEV3-06 | PASS | scanned 10 executable surface(s) including all 4 required; 0 violations
+All device-guard checks PASS.

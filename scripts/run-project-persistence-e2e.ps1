@@ -1,13 +1,19 @@
 <#
 .SYNOPSIS
-    E2ER1A-02 / E2ER1A-03: proves ForgeShape work survives real process death.
+    E2ER1A-02/03 and E2ER1B-01/02: proves ForgeShape work survives real process
+    death — both work the user saved, and work they never did.
 
 .DESCRIPTION
     Instrumentation runs inside the app process, so a test cannot kill that
     process and keep asserting. This script is what makes the process death
-    real: it runs the "build and save" half of a case, kills the app process,
-    confirms the PID is actually gone, and then runs the "open and verify" half
-    in a process that has never seen the scene the first half built.
+    real: it runs the first half of a case, kills the app process, confirms the
+    PID is actually gone, and then runs the verifying half in a process that has
+    never seen the scene the first half built.
+
+    Stages 1-4 are E2E-R1A: the user pressed Save, and Open brings it back.
+    Stages 5-8 are E2E-R1B and are the harder claim: the user pressed nothing.
+    Autosave alone protected the work, and the recovery question on a genuinely
+    cold launch is what offers it back.
 
     Both halves are ordinary instrumentation methods and are also covered by the
     exhaustive suite; what this script adds, and the only thing it adds, is the
@@ -117,6 +123,16 @@ try {
     Invoke-Stage 'stage3_sculptAndSaveASculptProject'
     Assert-NoLiveProcess 'E2ER1A-03'
     Invoke-Stage 'stage4_openTheSculptProjectAfterProcessDeath'
+
+    # E2ER1B-01 -- Construction that was NEVER saved, recovered after death.
+    Invoke-Stage 'stage5_editWithoutSavingAndLetAutosaveProtectIt'
+    Assert-NoLiveProcess 'E2ER1B-01'
+    Invoke-Stage 'stage6_recoverTheUnsavedConstructionWorkAfterProcessDeath'
+
+    # E2ER1B-02 -- a real sculpt stroke that was never saved.
+    Invoke-Stage 'stage7_sculptWithoutSavingAndLetAutosaveProtectIt'
+    Assert-NoLiveProcess 'E2ER1B-02'
+    Invoke-Stage 'stage8_recoverTheUnsavedSculptWorkAfterProcessDeath'
 } finally {
     Pop-Location
 }
