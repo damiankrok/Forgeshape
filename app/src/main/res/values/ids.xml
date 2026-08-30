@@ -33,6 +33,17 @@
     <item name="resume_sculpt" type="id" />
     <item name="back_to_construction" type="id" />
     <item name="export_action" type="id" />
+    <!--
+      Project actions. There is ONE app-private project slot, so there are
+      exactly two entries: Save Project and Open Saved Project. The button lives
+      in the Global Toolbar's utility group because a project is
+      mode-independent, and the surface it opens grows out of that button like
+      every other context surface.
+    -->
+    <item name="project_actions_button" type="id" />
+    <item name="project_actions_popover" type="id" />
+    <item name="project_save" type="id" />
+    <item name="project_open" type="id" />
     <item name="display_settings_button" type="id" />
     <item name="hide_ui_toggle" type="id" />
     <item name="restore_ui_chip" type="id" />

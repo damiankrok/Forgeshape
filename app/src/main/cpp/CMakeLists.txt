@@ -63,6 +63,10 @@ add_library(forgeshape_native SHARED
     forgeshape_mesh_fixtures.cpp
     forgeshape_mesh_selftest.cpp
     forgeshape_picking.cpp
+    forgeshape_project_bytes.cpp
+    forgeshape_project_document.cpp
+    forgeshape_project_selftest.cpp
+    forgeshape_project_state.cpp
     forgeshape_render_mesh.cpp
     forgeshape_render_mesh_selftest.cpp
     forgeshape_picking_selftest.cpp

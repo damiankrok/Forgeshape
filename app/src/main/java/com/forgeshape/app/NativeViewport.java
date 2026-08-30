@@ -685,6 +685,69 @@ final class NativeViewport {
      */
     static native boolean debugSetCameraPose(float yaw, float pitch, float distance);
 
+    // -----------------------------------------------------------------------
+    // Project persistence
+    // -----------------------------------------------------------------------
+    //
+    // Two calls, and between them everything Java knows about a ForgeShape
+    // project file: bytes out, bytes in. The FORMAT is native and
+    // platform-neutral; the Java layer owns only where those bytes are kept, in
+    // {@link ProjectSlot}. Nothing about presentation crosses — the camera, the
+    // open panels, the display unit, the theme, the held tool and the brush are
+    // session state, not project truth, and `.forge` v1 carries none of them.
+
+    /** The project was saved, or loaded and is now live. */
+    static final int PROJECT_OK = 0;
+
+    /** There was nothing to read: no saved project, or an empty file. */
+    static final int PROJECT_NO_DATA = 1;
+
+    /** The bytes are not a ForgeShape project at all. */
+    static final int PROJECT_NOT_A_PROJECT = 2;
+
+    /** A ForgeShape project written by a newer, incompatible version. */
+    static final int PROJECT_UNSUPPORTED_VERSION = 3;
+
+    /** A ForgeShape project that is damaged: truncated, or it fails its checksum. */
+    static final int PROJECT_DAMAGED = 4;
+
+    /** Structurally readable, but it describes something the model refuses. */
+    static final int PROJECT_INVALID = 5;
+
+    /** Refused because a Construction edit is still open. */
+    static final int PROJECT_BUSY = 6;
+
+    /**
+     * Encodes the running project to portable {@code .forge} v1 bytes.
+     *
+     * <p>Reads only: it publishes no mesh, mints no revision and cannot change
+     * the mode, the scene or the active body. The file's project kind is taken
+     * from the mode the user is in right now, so a project saved while sculpting
+     * reopens showing the sculpt mesh.
+     *
+     * @return the complete file, or null when native code could not encode the
+     *         project — which is reported rather than written out as a file
+     *         nothing could open
+     */
+    static native byte[] encodeProject();
+
+    /**
+     * Replaces the running project with the one these bytes describe, or
+     * changes nothing at all.
+     *
+     * <p>Fail-closed: the bytes are decoded, checksummed and completely
+     * validated into temporary native state before anything live is touched. A
+     * refusal leaves the current scene, every Frozen Sculpt Mesh, the active
+     * mode, the active body and the session history exactly as they were.
+     *
+     * <p>A successful load clears the Construction Undo/Redo history, because
+     * the loaded document starts a fresh session and a step recorded before it
+     * would describe a scene that no longer exists.
+     *
+     * @return one of the {@code PROJECT_*} codes above
+     */
+    static native int loadProject(byte[] bytes);
+
     /**
      * Opens the production session-initialization boundary.
      *

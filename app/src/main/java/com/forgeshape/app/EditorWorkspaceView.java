@@ -60,6 +60,7 @@ final class EditorWorkspaceView extends FrameLayout
         implements InspectorHost, GlobalToolbarView.OnGlobalAction,
         WorkspaceTrailingHostView.Callbacks, PropertyInspectorView.OnPrecisionSurfaceClosed,
         DisplaySettingsPopoverView.OnDisplaySettingChanged,
+        ProjectActionsPopoverView.OnProjectAction,
         ObjectsCapsuleView.OnObjectsCapsuleAction,
         AddPrimitivePaletteView.OnPrimitiveChosen,
         StartChooserView.OnStartFlowChosen,
@@ -136,6 +137,7 @@ final class EditorWorkspaceView extends FrameLayout
     private final PropertyInspectorView inspector;
     private final ImageView restoreChip;
     private final DisplaySettingsPopoverView displayPopover;
+    private final ProjectActionsPopoverView projectPopover;
     private final StartChooserView startChooser;
 
     /**
@@ -495,6 +497,13 @@ final class EditorWorkspaceView extends FrameLayout
         overlayRoot.addView(displayPopover, DisplaySettingsPopoverView.anchoredParams(context,
                 EditorControlStyles.dimen(context, R.dimen.toolbar_height)));
 
+        // The project surface is anchored the same way and for the same reason:
+        // its control is in the toolbar, and the overlay is the only place a
+        // panel can hang under a fixed-height row without resizing it.
+        projectPopover = new ProjectActionsPopoverView(context, this);
+        overlayRoot.addView(projectPopover, ProjectActionsPopoverView.anchoredParams(context,
+                EditorControlStyles.dimen(context, R.dimen.toolbar_height)));
+
         // Built before the editors that used to own it, and parented by the
         // layout decision rather than here: until applyLayoutForWindow runs it
         // belongs to no host, which is exactly what makes "one instance, three
@@ -553,8 +562,8 @@ final class EditorWorkspaceView extends FrameLayout
      * The surface a Back press would dismiss: the one most recently opened.
      *
      * <p>Tracked rather than derived, because "topmost" is an ordering the view
-     * tree does not record — the four surfaces live in one overlay and none of
-     * them is above another in z. Today they are mutually exclusive, so this is
+     * tree does not record — the anchored surfaces all live in one overlay and
+     * none of them is above another in z. Today they are mutually exclusive, so this is
      * usually the only open one; it is tracked anyway so that stops being an
      * assumption the dismissal rule silently depends on.
      */
@@ -664,6 +673,9 @@ final class EditorWorkspaceView extends FrameLayout
         } else if (surface == displayPopover) {
             displayPopover.setOpen(false);
             toolbar.showDisplaySettingsOpen(false);
+        } else if (surface == projectPopover) {
+            projectPopover.setOpen(false);
+            toolbar.showProjectActionsOpen(false);
         } else {
             surface.setOpen(false);
         }
@@ -1395,6 +1407,8 @@ final class EditorWorkspaceView extends FrameLayout
             // panel out would only draw attention to it.
             displayPopover.closeImmediately();
             toolbar.showDisplaySettingsOpen(false);
+            projectPopover.closeImmediately();
+            toolbar.showProjectActionsOpen(false);
             objectsPopover.closeImmediately();
             objectsCapsule.showObjectsOpen(false);
             addPrimitivePalette.closeImmediately();
@@ -2005,6 +2019,7 @@ final class EditorWorkspaceView extends FrameLayout
         objectsPopover.setMotionAllowed(allowed);
         addPrimitivePalette.setMotionAllowed(allowed);
         displayPopover.setMotionAllowed(allowed);
+        projectPopover.setMotionAllowed(allowed);
     }
 
     // -----------------------------------------------------------------------
@@ -2136,10 +2151,137 @@ final class EditorWorkspaceView extends FrameLayout
         toolbar.showDisplaySettingsOpen(opening);
     }
 
+    // -----------------------------------------------------------------------
+    // The project
+    // -----------------------------------------------------------------------
+    //
+    // Three methods, and between them the whole of the product's persistence
+    // UI. The workspace owns none of the format and none of the storage: it
+    // asks native code for bytes, hands them to {@link ProjectSlot}, and writes
+    // one verdict to the one status line. Every branch below says what happened
+    // to the USER'S WORK, because that is the only thing at stake in a save or
+    // an open — which is why every failure message ends by saying the work is
+    // unchanged, and why it can say so truthfully: the native load is
+    // fail-closed.
+
+    @Override
+    public void onProjectActionsRequested() {
+        final boolean opening = !projectPopover.isOpen();
+        if (opening) {
+            dismissPrimarySurfacesExcept(projectPopover);
+            // Read from disk every time it opens rather than from a cached
+            // flag: the slot could have been written a moment ago by this
+            // session, or could have been there since before the process
+            // started, and Open must never offer to do something it cannot.
+            projectPopover.showSlotState(ProjectSlot.exists(getContext()));
+            // Hang the surface below the toolbar's ACTUAL height, for the same
+            // reason the display popover does: the toolbar grows a second line
+            // when the status message cannot share the control row, and a fixed
+            // offset would put the panel on top of the very message a failed
+            // save writes.
+            final ViewGroup.MarginLayoutParams params =
+                    (ViewGroup.MarginLayoutParams) projectPopover.getLayoutParams();
+            final int toolbarHeight = toolbar.getHeight();
+            if (toolbarHeight > 0 && params.topMargin != toolbarHeight) {
+                params.topMargin = toolbarHeight;
+                projectPopover.setLayoutParams(params);
+            }
+        }
+        projectPopover.setOpen(opening);
+        toolbar.showProjectActionsOpen(opening);
+    }
+
+    @Override
+    public void onSaveProjectRequested() {
+        setProjectPanelOpen(false);
+        final byte[] bytes = NativeViewport.encodeProject();
+        if (bytes == null || bytes.length == 0
+                || !ProjectSlot.write(getContext(), bytes)) {
+            showStatus(getContext().getString(R.string.status_project_save_failed),
+                    R.attr.fsTextError);
+            return;
+        }
+        // Saving reads the model and writes a file. It publishes no mesh, mints
+        // no revision, changes no mode and records no history step, so nothing
+        // on screen has to be re-read afterwards.
+        showStatus(getContext().getString(R.string.status_project_saved, projectSummary()),
+                R.attr.fsTextSuccess);
+    }
+
+    @Override
+    public void onOpenProjectRequested() {
+        setProjectPanelOpen(false);
+        final byte[] bytes = ProjectSlot.read(getContext());
+        if (bytes == null) {
+            showStatus(getContext().getString(R.string.status_project_none), R.attr.fsTextError);
+            return;
+        }
+        final int status = NativeViewport.loadProject(bytes);
+        if (status != NativeViewport.PROJECT_OK) {
+            // Nothing to refresh: a refused load changed nothing below JNI, so
+            // re-reading would repaint the same values it already shows.
+            showStatus(getContext().getString(projectFailureMessage(status)),
+                    R.attr.fsTextError);
+            return;
+        }
+        // Everything on screen is now describing a scene that no longer exists:
+        // the active body, its dimensions, its placement, the mode, the scene
+        // list and whether Undo is available have all been replaced at once.
+        // One re-read from native truth answers all of it, which is exactly
+        // what syncFromNative is for.
+        dismissPrimarySurfacesExcept(null);
+        onNativeStateChanged();
+        showStatus(getContext().getString(R.string.status_project_opened, projectSummary()),
+                R.attr.fsTextSuccess);
+    }
+
+    private void setProjectPanelOpen(boolean open) {
+        if (projectPopover.isOpen() == open) {
+            return;
+        }
+        projectPopover.setOpen(open);
+        toolbar.showProjectActionsOpen(open);
+    }
+
+    /** Which failure the user is looking at. One message per honest cause. */
+    private static int projectFailureMessage(int status) {
+        switch (status) {
+            case NativeViewport.PROJECT_NO_DATA:
+                return R.string.status_project_none;
+            case NativeViewport.PROJECT_NOT_A_PROJECT:
+                return R.string.status_project_not_a_project;
+            case NativeViewport.PROJECT_UNSUPPORTED_VERSION:
+                return R.string.status_project_unsupported;
+            case NativeViewport.PROJECT_INVALID:
+                return R.string.status_project_invalid;
+            case NativeViewport.PROJECT_BUSY:
+                return R.string.status_project_busy;
+            case NativeViewport.PROJECT_DAMAGED:
+            default:
+                return R.string.status_project_damaged;
+        }
+    }
+
+    /**
+     * What the project is, in the two facts a user checks after a save or an
+     * open: how many bodies, and which representation they are working in.
+     *
+     * <p>Read from native truth rather than from anything the chrome is
+     * currently showing, so the sentence describes the model and not the panel.
+     */
+    private String projectSummary() {
+        final int bodies = NativeViewport.sceneBodyCount();
+        final String count = getResources().getQuantityString(
+                R.plurals.project_body_count, bodies, bodies);
+        return getContext().getString(isSculpting() ? R.string.project_summary_sculpt
+                                                    : R.string.project_summary_construction,
+                count);
+    }
+
     /**
      * One primary contextual surface at a time.
      *
-     * <p>This names the four task surfaces explicitly rather than blindly
+     * <p>This names the five task surfaces explicitly rather than blindly
      * closing every anchored popover in the workspace. A future lightweight
      * popover that is proven collision-free is not silently pulled into this
      * policy just because it shares the anchored-surface motion primitive.
@@ -2159,6 +2301,10 @@ final class EditorWorkspaceView extends FrameLayout
         if (keeper != displayPopover && displayPopover.isOpen()) {
             displayPopover.setOpen(false);
             toolbar.showDisplaySettingsOpen(false);
+        }
+        if (keeper != projectPopover && projectPopover.isOpen()) {
+            projectPopover.setOpen(false);
+            toolbar.showProjectActionsOpen(false);
         }
     }
 
@@ -2409,22 +2555,29 @@ final class EditorWorkspaceView extends FrameLayout
         return addPrimitivePalette;
     }
 
-    /** The Display popover, so a test can name the fourth anchored surface. */
+    /** The Display popover, so a test can name it by more than its id. */
     DisplaySettingsPopoverView displayPopover() {
         return displayPopover;
+    }
+
+    /** The project surface, for verification that names it by semantic id. */
+    ProjectActionsPopoverView projectPopover() {
+        return projectPopover;
     }
 
     /**
      * Every surface that grows out of a control, in one place.
      *
      * <p>So a case can assert the shared motion contract over the SET rather
-     * than over a list it maintains by hand — which is how the fourth surface
+     * than over a list it maintains by hand — which is how the Display popover
      * came to be the only one with a correct first-open pivot: nothing was
-     * measuring them together.
+     * measuring them together. The set has caught it twice now; the project
+     * surface joined at E2E-R1A growing from the wrong corner, and UIR4B-08's
+     * count is what made that a failure rather than a surprise later.
      */
     AnchoredSurfaceView[] anchoredSurfaces() {
         return new AnchoredSurfaceView[]{
-                objectsPopover, addPrimitivePalette, inspector, displayPopover};
+                objectsPopover, addPrimitivePalette, inspector, displayPopover, projectPopover};
     }
 
     /** The direct brush controls, so a test can read the values beside them. */

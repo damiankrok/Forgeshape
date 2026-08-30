@@ -26,7 +26,9 @@
 #include <thread>
 
 #include <atomic>
+#include <cstdint>
 #include <cstdio>
+#include <vector>
 
 #include "forgeshape_camera.h"
 #include "forgeshape_camera_selftest.h"
@@ -43,6 +45,9 @@
 #include "forgeshape_mesh_selftest.h"
 #include "forgeshape_picking_selftest.h"
 #include "forgeshape_primitive_selftest.h"
+#include "forgeshape_project_document.h"
+#include "forgeshape_project_selftest.h"
+#include "forgeshape_project_state.h"
 #include "forgeshape_render_mesh_selftest.h"
 #include "forgeshape_renderer.h"
 #include "forgeshape_scene.h"
@@ -316,6 +321,35 @@ void runHistorySelfTestsAndLog() {
 #endif
 }
 
+
+void runProjectSelfTestsAndLog() {
+#ifndef NDEBUG
+    constexpr int kMaxProjectChecks = 256;
+    static forgeshape::ProjectSelfTestResult results[kMaxProjectChecks];
+    const int count = forgeshape::runProjectSelfTests(results, kMaxProjectChecks);
+    int failed = 0;
+    for (int i = 0; i < count; ++i) {
+        if (!results[i].passed) {
+            ++failed;
+            FS_LOGE("FORGESHAPE_PROJECT_SELFTEST_CASE_FAIL:%s", results[i].name);
+        } else {
+            FS_LOGI("project selftest pass: %s", results[i].name);
+        }
+    }
+    // The digests the golden-corpus case compared against, printed whether it
+    // passed or failed: a drift between the committed fixtures and the encoder
+    // is then a value a human can read out of logcat and reconcile with
+    // DATA_PACKAGE_SPEC.md, rather than only a failed assertion.
+    FS_LOGI("FORGESHAPE_PROJECT_GOLDEN_SHA256 construction=%s sculpt=%s",
+            forgeshape::canonicalConstructionFixtureSha256(),
+            forgeshape::canonicalSculptFixtureSha256());
+    if (failed == 0) {
+        FS_LOGI("FORGESHAPE_PROJECT_SELFTEST_OK (%d checks)", count);
+    } else {
+        FS_LOGE("FORGESHAPE_PROJECT_SELFTEST_FAIL (%d of %d checks failed)", failed, count);
+    }
+#endif
+}
 
 void runGizmoSelfTestsAndLog() {
 #ifndef NDEBUG
@@ -1077,6 +1111,7 @@ Java_com_forgeshape_app_NativeViewport_start(JNIEnv*, jclass) {
     runSceneSelfTestsAndLog();
     runHistorySelfTestsAndLog();
     runGizmoSelfTestsAndLog();
+    runProjectSelfTestsAndLog();
     // The mesh and construction self-tests publish revisions of their own into
     // the store, so republish the ACTIVE representation: the app must always
     // come up showing what the current product mode says it is showing. At a
@@ -2135,6 +2170,160 @@ Java_com_forgeshape_app_NativeViewport_cancelConstructionEdit(JNIEnv*, jclass) {
     }
     FS_LOGI("FORGESHAPE_CONSTRUCTION_HISTORY_CANCEL: republished=%d placements=%d removed=%d",
             report.republishedBodies, report.replacedPlacements, report.removedBodies);
+}
+
+// ---------------------------------------------------------------------------
+// Project persistence
+// ---------------------------------------------------------------------------
+//
+// Two calls, and between them the whole of what the Android layer knows about a
+// project file: it receives bytes and it hands bytes back. Where those bytes are
+// stored, under what name and with what durability is the adapter's business
+// (see ProjectSlot.java); what they MEAN is the codec's, and the codec has no
+// idea a filesystem exists.
+//
+// Nothing about presentation crosses here. The camera pose, the open panels, the
+// display unit, the theme, the shading model, the held tool and the brush are
+// session or presentation state, not project truth, and `.forge` v1 deliberately
+// carries none of them.
+
+// Project status codes handed back to the Android UI. A JNI transport detail,
+// in step with NativeViewport's PROJECT_* fields. They are deliberately coarser
+// than ProjectCodecStatus: the user needs to know whether the file was damaged,
+// too new or not a project at all, and the exact refusal is in logcat.
+constexpr jint kProjectOk = 0;
+constexpr jint kProjectNoData = 1;
+constexpr jint kProjectNotAProject = 2;
+constexpr jint kProjectUnsupportedVersion = 3;
+constexpr jint kProjectDamaged = 4;
+constexpr jint kProjectInvalid = 5;
+constexpr jint kProjectBusy = 6;
+
+jint projectStatusCode(forgeshape::ProjectCodecStatus status) {
+    switch (status) {
+        case forgeshape::ProjectCodecStatus::Ok:
+            return kProjectOk;
+        case forgeshape::ProjectCodecStatus::NotForgeFile:
+            return kProjectNotAProject;
+        case forgeshape::ProjectCodecStatus::UnsupportedMajor:
+        case forgeshape::ProjectCodecStatus::UnsupportedSectionVersion:
+            return kProjectUnsupportedVersion;
+        case forgeshape::ProjectCodecStatus::BadHeader:
+        case forgeshape::ProjectCodecStatus::Truncated:
+        case forgeshape::ProjectCodecStatus::BadSectionHeader:
+        case forgeshape::ProjectCodecStatus::ChecksumMismatch:
+        case forgeshape::ProjectCodecStatus::UnknownRequiredSection:
+        case forgeshape::ProjectCodecStatus::DuplicateSection:
+        case forgeshape::ProjectCodecStatus::MissingRequiredSection:
+        case forgeshape::ProjectCodecStatus::BadPayload:
+        case forgeshape::ProjectCodecStatus::ImpossibleCount:
+            return kProjectDamaged;
+        case forgeshape::ProjectCodecStatus::InvalidSemanticValue:
+        case forgeshape::ProjectCodecStatus::UnresolvedReference:
+            return kProjectInvalid;
+        case forgeshape::ProjectCodecStatus::RefusedEditInProgress:
+            return kProjectBusy;
+    }
+    return kProjectInvalid;
+}
+
+// Encodes the running project to portable `.forge` v1 bytes.
+//
+// Reads only: it publishes nothing, mints no revision and cannot change the
+// mode, the scene or the active body. Returns null when the document could not
+// be encoded, which for a live project means the scene held a value the codec's
+// own domain contracts refuse — a should-not-happen that is reported rather than
+// written out as a file nothing could open.
+JNIEXPORT jbyteArray JNICALL
+Java_com_forgeshape_app_NativeViewport_encodeProject(JNIEnv* env, jclass) {
+    std::vector<uint8_t> bytes;
+    forgeshape::ProjectCodecStatus why = forgeshape::ProjectCodecStatus::Ok;
+    forgeshape::ProjectKind kind = forgeshape::ProjectKind::Construction;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        // The mode the user is in IS the mode the file reopens in. Taken here,
+        // under the same lock as the capture, so a file cannot say Sculpt and
+        // then carry the scene as it was a moment before the mode changed.
+        kind = forgeshape::sculptSession().inSculptMode() ? forgeshape::ProjectKind::Sculpt
+                                                          : forgeshape::ProjectKind::Construction;
+        const forgeshape::ProjectDocument document =
+            forgeshape::captureProjectDocument(forgeshape::constructionScene(), kind);
+        bytes = forgeshape::encodeProjectV1(document, &why);
+    }
+    if (bytes.empty()) {
+        FS_LOGE("FORGESHAPE_PROJECT_ENCODE_FAIL:%s", forgeshape::projectCodecStatusName(why));
+        return nullptr;
+    }
+    FS_LOGI("FORGESHAPE_PROJECT_ENCODED:%zu kind=%s bodies=%d", bytes.size(),
+            forgeshape::projectKindName(kind), (int)forgeshape::constructionScene().bodyCount());
+    jbyteArray out = env->NewByteArray(static_cast<jsize>(bytes.size()));
+    if (out == nullptr) {
+        return nullptr;
+    }
+    env->SetByteArrayRegion(out, 0, static_cast<jsize>(bytes.size()),
+                            reinterpret_cast<const jbyte*>(bytes.data()));
+    return out;
+}
+
+// Replaces the running project with the one these bytes describe, or changes
+// nothing at all.
+//
+// Fail-closed in three stages, none of which touches the live project until the
+// one before it has completely succeeded: decode and checksum into temporary
+// document state, validate every id, count, reference and semantic value, then
+// commit. Anything short of that returns a refusal and leaves the current scene,
+// every Frozen Sculpt Mesh, the active mode, the active body and the session
+// history exactly as they were.
+//
+// The state mutex is held across the whole load, for the same reason an undo
+// holds it: the render thread takes its whole-scene snapshot under this mutex,
+// and a frame that observed the body list mid-replacement would draw a scene
+// that never existed.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_loadProject(JNIEnv* env, jclass, jbyteArray data) {
+    if (data == nullptr) {
+        FS_LOGE("FORGESHAPE_PROJECT_LOAD_FAIL:no_data");
+        return kProjectNoData;
+    }
+    const jsize size = env->GetArrayLength(data);
+    if (size <= 0) {
+        FS_LOGE("FORGESHAPE_PROJECT_LOAD_FAIL:empty");
+        return kProjectNoData;
+    }
+    std::vector<uint8_t> bytes(static_cast<size_t>(size));
+    env->GetByteArrayRegion(data, 0, size, reinterpret_cast<jbyte*>(bytes.data()));
+
+    forgeshape::ProjectDocument document;
+    forgeshape::ProjectCodecStatus status =
+        forgeshape::decodeProject(bytes.data(), bytes.size(), &document);
+    if (status != forgeshape::ProjectCodecStatus::Ok) {
+        FS_LOGE("FORGESHAPE_PROJECT_LOAD_REJECTED:%s bytes=%d",
+                forgeshape::projectCodecStatusName(status), (int)size);
+        return projectStatusCode(status);
+    }
+
+    forgeshape::ProjectLoadReport report;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        // Any gesture that was mid-flight belongs to a scene that is about to
+        // stop existing. Dropping it here rather than letting it land is the
+        // same rule a surface teardown follows.
+        g_grabbing = false;
+        g_strokePending = false;
+        status = forgeshape::loadProjectDocument(document, forgeshape::constructionScene(),
+                                                 forgeshape::sculptSession(),
+                                                 forgeshape::constructionHistory(), &report);
+    }
+    if (status != forgeshape::ProjectCodecStatus::Ok) {
+        FS_LOGE("FORGESHAPE_PROJECT_LOAD_REJECTED:%s bytes=%d",
+                forgeshape::projectCodecStatusName(status), (int)size);
+        return projectStatusCode(status);
+    }
+    FS_LOGI("FORGESHAPE_PROJECT_LOADED:%d bodies sculptMeshes=%d active=%llu kind=%s meshRev=%llu "
+            "undo=0 redo=0",
+            report.bodies, report.sculptMeshes, (unsigned long long)report.activeBodyId,
+            forgeshape::projectKindName(report.kind), (unsigned long long)report.activeRevision);
+    return kProjectOk;
 }
 
 // Reads the authoritative sculpt state for display. Nothing here is measured

@@ -137,6 +137,20 @@ public:
 
     ObjectId activeBodyId() const { return activeBodyId_; }
 
+    // The id allocator's high-water mark: the id the NEXT mint will hand out.
+    // Read by the project codec, which stores it so that a reopened project can
+    // never mint an id one of its own loaded bodies is already wearing.
+    ObjectId nextObjectId() const { return nextObjectId_; }
+
+    // Pushes the allocator forward so that nothing at or below `highest` can
+    // ever be minted again.
+    //
+    // MONOTONIC by construction: a request that would move it backwards is
+    // ignored, because rolling the allocator back is precisely what would let a
+    // stale ObjectId held in a selection or a render snapshot resolve to a
+    // different body. Publishes nothing, mints nothing and touches no body.
+    void reserveObjectIdsThrough(ObjectId highest);
+
     // Selection only. Publishes nothing, mints no revision, and cannot change
     // any body's ObjectId. Returns false (changing nothing) for an unknown id.
     bool setActiveBody(ObjectId id);

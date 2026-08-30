@@ -96,6 +96,12 @@ void ConstructionScene::insertBody(std::unique_ptr<SceneObject> body, size_t ind
     }
 }
 
+void ConstructionScene::reserveObjectIdsThrough(ObjectId highest) {
+    if (highest >= nextObjectId_) {
+        nextObjectId_ = highest + 1;
+    }
+}
+
 std::unique_ptr<SceneObject> ConstructionScene::makeBody(ObjectId id) {
     if (id >= nextObjectId_) {
         nextObjectId_ = id + 1;  // monotonic: an id is never handed out twice

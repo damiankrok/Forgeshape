@@ -105,8 +105,10 @@ abstract class AnchoredSurfaceView extends LinearLayout {
      * Which corner this surface grows from, in its own coordinates.
      *
      * <p>Answered by the subclass because it is a fact about where the surface
-     * is anchored, not about how it moves: three of the four hang off a leading
-     * edge and the Display popover hangs off the trailing one.
+     * is anchored, not about how it moves: the three grown from a control in
+     * the workspace body hang off a leading edge, and the two opened from the
+     * Global Toolbar's trailing utility group — Display and the project
+     * actions — hang off the trailing one.
      *
      * @return true when the growth origin is the surface's own trailing edge
      */

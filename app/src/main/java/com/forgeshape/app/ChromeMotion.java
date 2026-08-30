@@ -106,7 +106,7 @@ final class ChromeMotion {
      * surface has to leave the control immediately and spend its remaining time
      * arriving. The platform's default is an ease-in-out, which does the
      * opposite — it starts slowly, at exactly the moment the user is waiting —
-     * and it was what ran, because not one of the four surfaces set an
+     * and it was what ran, because not one of the anchored surfaces set an
      * interpolator at all.
      *
      * <p>Named as numbers rather than only as a built object so the SHAPE can be

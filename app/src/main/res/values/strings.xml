@@ -62,6 +62,38 @@
     <string name="export">Export</string>
     <string name="export_reserved_note">Export is not implemented yet.</string>
     <!--
+      Project actions. Both of these WORK, which is why they are ordinary
+      controls rather than reserved ones: there is one app-private project slot
+      and these are the two things that can be done with it. The vocabulary is
+      deliberately "project", not "file" or "document" — the user is not being
+      offered a filesystem.
+    -->
+    <string name="project">Project</string>
+    <string name="project_actions">Project actions</string>
+    <string name="project_save">Save Project</string>
+    <string name="project_open">Open Saved Project</string>
+    <string name="project_open_empty">No saved project yet</string>
+    <string name="status_project_saved">Project saved — %1$s.</string>
+    <string name="status_project_save_failed">Could not save the project. Nothing was written; your work is unchanged.</string>
+    <string name="status_project_opened">Project opened — %1$s. Undo history starts fresh.</string>
+    <string name="status_project_none">There is no saved project yet — save one first.</string>
+    <string name="status_project_not_a_project">That file is not a ForgeShape project. Your work is unchanged.</string>
+    <string name="status_project_unsupported">That project was saved by a newer ForgeShape. Your work is unchanged.</string>
+    <string name="status_project_damaged">The saved project is damaged and was not opened. Your work is unchanged.</string>
+    <string name="status_project_invalid">The saved project describes values ForgeShape refuses. Your work is unchanged.</string>
+    <string name="status_project_busy">Finish the edit in progress before opening a project.</string>
+    <!--
+      What a project summary says. Bodies and mode, because those are the two
+      facts a user checks after a save or an open; a byte count would be about
+      the file rather than about the work.
+    -->
+    <string name="project_summary_construction">%1$s in Construction</string>
+    <string name="project_summary_sculpt">%1$s in Sculpt</string>
+    <plurals name="project_body_count">
+        <item quantity="one">%1$d body</item>
+        <item quantity="other">%1$d bodies</item>
+    </plurals>
+    <!--
       Construction history. These are content descriptions on icon controls,
       never drawn as text: an undo control needs no caption, and a permanent
       sentence explaining what it does would be exactly the ambient instruction

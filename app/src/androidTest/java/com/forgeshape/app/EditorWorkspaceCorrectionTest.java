@@ -591,14 +591,22 @@ public final class EditorWorkspaceCorrectionTest {
      *
      * <p>Asserted over the SET rather than over a list maintained by hand: the
      * reason the Display popover was the only surface with a correct first-open
-     * pivot is that nothing had ever measured the four of them together.
+     * pivot is that nothing had ever measured all of them together.
+     *
+     * <p>The count is part of the assertion on purpose. It is not a tally to be
+     * bumped whenever a surface appears — it is the tripwire that makes adding
+     * one a deliberate act, because a surface that reached the workspace without
+     * anyone measuring it against this contract is exactly the defect UIR4B-08
+     * was written for. It moved from four to five at E2E-R1A, when the project
+     * actions surface joined; that surface takes the shared contract like the
+     * rest and owns no motion of its own.
      */
     @Test
     public void uir4b08_everyAnchoredSurfaceSharesOneMotionContract() {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             final AnchoredSurfaceView[] surfaces = workspace.anchoredSurfaces();
-            assertEquals("the four surfaces that grow out of a control",
-                    4, surfaces.length);
+            assertEquals("the five surfaces that grow out of a control",
+                    5, surfaces.length);
             for (AnchoredSurfaceView surface : surfaces) {
                 assertNotNull(surface);
                 assertTrue("a resting anchored surface is settled: "
@@ -647,6 +655,13 @@ public final class EditorWorkspaceCorrectionTest {
     @Test
     public void uir4b09_theFirstOpenOfTheDisplayPopoverGrowsFromItsControl() {
         assertAnchorPivotIsCorrectAfterFirstOpen(Surface.DISPLAY);
+    }
+
+    /** UIR4B-09. And the project surface, which joined at E2E-R1A and is held to
+     *  the same first-open contract as the four before it. */
+    @Test
+    public void uir4b09_theFirstOpenOfTheProjectSurfaceGrowsFromItsControl() {
+        assertAnchorPivotIsCorrectAfterFirstOpen(Surface.PROJECT);
     }
 
     /**
@@ -1246,7 +1261,7 @@ public final class EditorWorkspaceCorrectionTest {
     // Support
     // -----------------------------------------------------------------------
 
-    private enum Surface { OBJECTS, ADD_PRIMITIVE, PRECISION, DISPLAY }
+    private enum Surface { OBJECTS, ADD_PRIMITIVE, PRECISION, DISPLAY, PROJECT }
 
     /**
      * Opens one surface for the first time in this Activity and checks that it
@@ -1280,6 +1295,10 @@ public final class EditorWorkspaceCorrectionTest {
                 case PRECISION:
                     WorkspaceTestSupport.precisionToggle(workspace).performClick();
                     break;
+                case PROJECT:
+                    workspace.globalToolbar().findViewById(R.id.project_actions_button)
+                            .performClick();
+                    break;
                 default:
                     workspace.globalToolbar().findViewById(R.id.display_settings_button)
                             .performClick();
@@ -1299,7 +1318,10 @@ public final class EditorWorkspaceCorrectionTest {
             assertTrue("a first open must have finished waiting for its size",
                     !surface.growthWaitingForSize());
             assertTrue("and must actually have one", surface.getHeight() > 0);
-            if (which == Surface.DISPLAY) {
+            if (which == Surface.DISPLAY || which == Surface.PROJECT) {
+                // Both hang UNDER a trailing toolbar control, so both grow from
+                // their own trailing top corner. The project surface is held to
+                // the same rule as the surface the pattern was lifted from.
                 assertEquals("the popover grows from its own trailing top corner",
                         (float) surface.getWidth(), surface.anchorPivotX(), 0.5f);
                 assertEquals(0.0f, surface.anchorPivotY(), 0.5f);
@@ -1319,6 +1341,7 @@ public final class EditorWorkspaceCorrectionTest {
             case OBJECTS: return workspace.objectsPopover();
             case ADD_PRIMITIVE: return workspace.addPrimitivePalette();
             case PRECISION: return workspace.propertyInspector();
+            case PROJECT: return workspace.projectPopover();
             default: return workspace.displayPopover();
         }
     }

@@ -60,6 +60,8 @@ final class GlobalToolbarView extends LinearLayout {
         void onChromeHideRequested();
 
         void onDisplaySettingsRequested();
+
+        void onProjectActionsRequested();
     }
 
     private final TextView contextLabel;
@@ -67,6 +69,7 @@ final class GlobalToolbarView extends LinearLayout {
     private final TextView resumeButton;
     private final TextView backButton;
     private final TextView exportAction;
+    private final ImageView projectActionsButton;
     private final ImageView displaySettingsButton;
     private final ImageView hideUiToggle;
     private final TextView statusMessage;
@@ -248,6 +251,29 @@ final class GlobalToolbarView extends LinearLayout {
                 context.getString(R.string.export_reserved_note));
         EditorControlStyles.asCapsuleMember(exportAction, R.drawable.bg_capsule_reserved);
         utilityGroup.addView(exportAction, EditorControlStyles.wrap(0));
+
+        // The project actions sit here for the same reason Display does: a
+        // project is mode-independent — saving it means the same thing in
+        // Construction and in Sculpt — so it belongs to neither the Tool Rail
+        // nor either inspector body. It is placed immediately after Export
+        // because the two are the same family of thought (what happens to this
+        // work outside the viewport), and the ordering says which of them is
+        // real: Export is the recessed, reserved one, and this is not.
+        //
+        // An ICON control, not a chip: the utility group is uniformly tertiary,
+        // and a second labelled chip beside Export would read as a second
+        // reserved action. Its own surface carries the two prose names.
+        projectActionsButton = EditorControlStyles.iconButton(context,
+                R.id.project_actions_button, R.drawable.ic_project,
+                context.getString(R.string.project_actions));
+        projectActionsButton.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                actions.onProjectActionsRequested();
+            }
+        });
+        utilityGroup.addView(projectActionsButton,
+                EditorControlStyles.iconButtonParams(context, gap));
 
         // Objects is deliberately NOT here any more. Which body is being edited
         // is true in every mode, but it is also the fact the user works FROM,
@@ -598,6 +624,11 @@ final class GlobalToolbarView extends LinearLayout {
     /** Marks the Display button active while its popover is open. */
     void showDisplaySettingsOpen(boolean open) {
         EditorControlStyles.setIconButtonActive(displaySettingsButton, open);
+    }
+
+    /** The same, for the surface the project control opens. */
+    void showProjectActionsOpen(boolean open) {
+        EditorControlStyles.setIconButtonActive(projectActionsButton, open);
     }
 
     /**
