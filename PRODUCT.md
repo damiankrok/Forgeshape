@@ -1025,6 +1025,36 @@ What can be tapped is the object's real surface at its real dimensions, and it
 follows an edit immediately: after a 1.5 m sphere is changed to 0.6 m, the place
 that used to be its surface is empty and taps now land 0.3 m from its centre.
 
+## Saving and reopening a project
+
+**Work now survives the app closing.** The Global Toolbar carries a project
+control beside Export; pressing it opens a small surface with the two things
+that work — **Save Project** and **Open Saved Project**.
+
+Save writes the whole project: every body, in scene order, with its identity, the
+shape it is now, **all six** primitive sizes it remembers, and exactly where it
+sits — position, rotation and scale. A body you have sculpted is saved with its
+sculpted mesh, vertex for vertex. Which body was active is saved, and so is the
+representation you were working in: save while sculpting and the project reopens
+sculpting that body, save in Construction and it reopens in Construction. The
+status line reports what was written, for example *Project saved — 3 bodies in
+Construction.*
+
+There is exactly **one** saved project. Saving replaces it. Open reads it back,
+rebuilds every body's geometry and shows it. Undo history starts fresh over the
+reopened project, and the status line says so: history is a record of what you
+did during a session, not part of the project.
+
+**An Open that cannot succeed changes nothing.** If there is no saved project,
+if the file is damaged, if it was written by a newer ForgeShape, or if it is not
+a ForgeShape project at all, the status line says which of those it is and your
+current work — every body, every sculpted vertex, the mode you are in and your
+Undo history — is left exactly as it was. Nothing is partially loaded, and
+nothing crashes.
+
+Until you save one, *Open Saved Project* reads *No saved project yet* and does
+nothing.
+
 ## What survives
 
 The object's shape, its size, its position, rotation and scale, its identity, the chosen
@@ -1039,10 +1069,15 @@ refused before leaving is replaced by the truth.
 The object's identity is stable across a shape change: turning the box into a
 sphere, then a cylinder, then a box again leaves it the same selectable object
 throughout, still in the same place. The Construction Undo history survives the
-home screen and a rotation too, for the session. All of it lives only for the life
-of the app process — there is nothing to save or load, and camera, selection,
-shape, placement, sculpting and the whole Undo history return to their defaults
-when the process restarts.
+home screen and a rotation too, for the session.
+
+All of that lives for the life of the app process. What survives the process
+itself is what a **Save** put in the one saved project: the bodies, their
+shapes, their remembered sizes, their placements, their sculpted meshes, which
+body was active and which representation you were in. Everything else returns to
+its defaults when ForgeShape restarts — the camera, the selection, the display
+unit, the appearance, the held tool, the brush, the Undo history, and the
+question of how the model begins.
 
 ## Not yet implemented
 
@@ -1090,14 +1125,15 @@ rename, hide, lock, group, nesting and reordering — are not implemented. The
 Objects list adds and selects; it does nothing else.
 
 Two-finger twist/roll, inertia, camera presets, focus-on-selection, long-press
-selection, UV, save/load and undo are not implemented.
+selection and UV are not implemented.
 
 **There are three appearances and no fourth, and none of them is light.**
 ForgeShape does not follow the system's own light/dark setting, and there is no
 automatic or scheduled switching: the three palettes are chosen by hand and
-nothing else changes them. Nothing at all is saved between runs — not the
-appearance, not the start choice, not the model and not the camera — so starting
-ForgeShape fresh gives you Warm Graphite and asks again how the model begins.
+nothing else changes them. The appearance is not saved between runs, and neither
+is the start choice or the camera, so starting ForgeShape fresh always gives you
+Warm Graphite and always asks again how the model begins — even when you then
+open a saved project.
 
 **Selection is still a tint over the whole body, not an outline.** It is much
 lighter at rest than it used to be and it announces itself when it changes, but
@@ -1120,6 +1156,19 @@ of the six exact primitives and its dimensions, and nothing else makes geometry.
 
 There is no **Add from file** and no import of any kind. Add Primitive offers the
 six shapes ForgeShape builds and nothing else.
+
+**There is one saved project and no project library.** There is no file picker,
+no Save As, no naming, no recent list, no thumbnails, no folders, no autosave and
+no crash recovery: a project is saved when you press Save and not before, and
+there is exactly one of them. The saved project lives inside the app's own
+storage, so it is not visible in a file manager and is removed if the app is
+uninstalled, and there is no sharing, cloud or account of any kind.
+
+**A saved ForgeShape project is not an interchange file.** It is ForgeShape's own
+format, meant to be readable by another ForgeShape installation, and it is not
+GLB, glTF, OBJ or FBX. Nothing in the product imports or exports any of those,
+and nothing pretends to: Export remains the single drawn, recessed, clearly
+unavailable control.
 
 **A stylus is simply another pointer.** Nothing anywhere reads pressure, tilt,
 hover or which kind of pointer is touching the screen, so an S Pen grabs a

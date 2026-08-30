@@ -18,8 +18,8 @@ adb -s <serial> logcat -s ForgeShape:V
 
 APK: `app/build/outputs/apk/debug/app-debug.apk`
 
-A clean debug launch emits **thirteen** `*_SELFTEST_OK` tokens, then
-`FORGESHAPE_NATIVE_VIEWPORT_OK`. All thirteen, in emission order:
+A clean debug launch emits **fourteen** `*_SELFTEST_OK` tokens, then
+`FORGESHAPE_NATIVE_VIEWPORT_OK`. All fourteen, in emission order:
 
 ```
 FORGESHAPE_CAMERA_SELFTEST_OK
@@ -35,22 +35,30 @@ FORGESHAPE_RENDER_SHADING_SELFTEST_OK
 FORGESHAPE_SCENE_SELFTEST_OK
 FORGESHAPE_CONSTRUCTION_HISTORY_SELFTEST_OK
 FORGESHAPE_GIZMO_SELFTEST_OK
+FORGESHAPE_PROJECT_SELFTEST_OK
 ```
 
 Failures: `FORGESHAPE_NATIVE_VIEWPORT_FAIL:*` and the matching `*_SELFTEST_FAIL`.
 Grep for `FAIL` alone over-matches: some passing check *names* contain "fails"
 (`invalid_revision_fails_closed`). Match `_SELFTEST_FAIL` or `_FAIL:`.
 
-Enlarge the log ring buffer (`adb -s <serial> logcat -G 16M`) before capturing
+Enlarge the log ring buffer (`adb -s <serial> logcat -G 64M`) before capturing
 startup evidence: the default buffer drops part of the self-test output and it
-looks like a suite that stopped partway.
+looks like a suite that stopped partway. 16M was enough through Stage 020 and is
+no longer — at E2E-R1A a 16M capture silently lost two of the fourteen suites,
+with no `chatty` marker and no FAIL line to give it away. Confirm the size with
+`adb -s <serial> logcat -g`, and treat a missing token with zero failures as a
+dropped capture until a larger buffer proves otherwise.
 
 Camera, picking, dynamic-mesh, Construction-box, sculpt, render-shading,
-Construction-history and gizmo self-tests are debug-only and run once from
-`NativeViewport.start()`. They must never run per frame. Each builds the domain
+Construction-history, gizmo and project-format self-tests are debug-only and run
+once from `NativeViewport.start()`. They must never run per frame. Each builds the domain
 objects it needs — the scene, history and gizmo suites build their own
 `ConstructionScene` — rather than reading process-scoped state, so a suite's
-result never depends on what a live session left behind.
+result never depends on what a live session left behind. The project suite also
+prints `FORGESHAPE_PROJECT_GOLDEN_SHA256`, the digests of the two canonical
+`.forge` fixtures as this build encodes them, so drift from the committed corpus
+is a value that can be read rather than only an assertion that failed.
 
 ## Hard rules
 
@@ -100,6 +108,25 @@ result never depends on what a live session left behind.
   history both ways. That bracket is reachable only from the start answer —
   never from Back to Construction, a rotation or a resume — and the debug-only
   `clear()` stays a test seam, never production behaviour.
+- **A `.forge` project file is a semantic document, and loading one is
+  all-or-nothing.** The format is ForgeShape's own, versioned, and portable
+  between compatible installations: every field is a file-owned fixed-width
+  little-endian encoding, and no struct image, enum ABI value, pointer,
+  `size_t`, device path, Android type, window state or GPU handle may ever
+  reach it. What is stored is what cannot be recomputed — identity, scene
+  order, the active body, the id allocator's high-water mark, the active
+  primitive kind, **all six** remembered parameter sets, placement, and each
+  Frozen Sculpt Mesh's local float32 positions and index topology. Construction
+  meshes, normals, adjacency, revisions, GPU state and vertex colours are
+  derived and are regenerated, never written. Session history is not project
+  truth: a successful load starts a fresh one, and a **failed load changes
+  nothing at all** — decode and validate entirely into temporary state, then
+  commit in one step. The codec is platform-neutral and knows no filesystem;
+  where the bytes live is the Android adapter's business alone.
+  `DATA_PACKAGE_SPEC.md` owns the layout, and `scripts/build-forge-corpus.ps1`
+  is a second implementation of it whose bytes must stay identical.
+  **GLB/glTF, OBJ and FBX are not `.forge`** and are separate later work; no
+  inert menu entry for them may be drawn.
 - **A viewport handle has one owner, one scale and no transform of its own.**
   Direct manipulation writes the active body's authoritative
   `ConstructionTransform` throughout the drag, so the renderer, the picker and
@@ -237,6 +264,7 @@ One durable fact has exactly one primary owner.
 | `PRODUCT.md` | runtime-verified user-visible behaviour only |
 | `README.md` | required tooling, build/run/verify instructions |
 | `CLAUDE.md` | these rules |
+| `DATA_PACKAGE_SPEC.md` | the `.forge` binary layout, codes, validation, determinism, fixtures |
 
 Never document a feature as implemented unless it is runtime-verified. Unverified
 paths are reported as UNVERIFIED, not as behaviour.

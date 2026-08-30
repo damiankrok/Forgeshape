@@ -102,6 +102,37 @@ scoped, mechanically, not by operator discipline. It uninstalls the test APK
 when it finishes, matching `connectedDebugAndroidTest`'s own cleanup
 behaviour, so reinstall the app before taking further runtime evidence.
 
+To prove that ForgeShape work survives the process dying — E2ER1A-02 and
+E2ER1A-03 — use:
+
+```
+scripts\run-project-persistence-e2e.ps1 -Serial <serial>
+```
+
+Instrumentation runs inside the app process, so a test cannot kill that process
+and keep asserting. This script runs the "build and save" half of each case,
+kills the app with `am force-stop`, confirms by PID that no ForgeShape process
+remains, and then runs the "open and verify" half in a fresh one. It requires an
+explicit `-Serial`, refuses `emulator-5554` before contacting any device, and
+confirms the AVD's own name with `adb -s <serial> emu avd name` rather than
+trusting the port. Every stage is driven through the runner above, so no device
+call here is unscoped. It prints `PROJECT_PERSISTENCE_E2E=PASS` only when all
+four stages passed and both process deaths were observed.
+
+The permanent `.forge` golden corpus in `testdata/forge/v1/` is written and
+verified with:
+
+```
+powershell -ExecutionPolicy Bypass -File scripts\build-forge-corpus.ps1
+powershell -ExecutionPolicy Bypass -File scripts\build-forge-corpus.ps1 -VerifyOnly
+```
+
+That script is a second, independent implementation of the `.forge` v1 encoder,
+written from `DATA_PACKAGE_SPEC.md`. It needs no device and no Android tooling.
+Its digests must match the ones the native `FSR1A-12` case asserts and the ones
+a debug launch prints as `FORGESHAPE_PROJECT_GOLDEN_SHA256`; a mismatch means
+the encoder and the specification have parted company.
+
 `scripts\verify-device-guards.ps1` runs the DEV2-01..07 and DEV3-01..06
 device-isolation guard checks without needing any device attached and without
 ever contacting `emulator-5554` — safe to run any time as a quick sanity check
@@ -157,7 +188,7 @@ adb -s <serial> shell am start -n com.forgeshape.app/.ForgeShapeActivity
 ## Verify a run
 
 ```
-adb -s <serial> logcat -G 16M          # do this FIRST
+adb -s <serial> logcat -G 64M          # do this FIRST; 16M now drops suites
 adb -s <serial> logcat -s ForgeShape:V
 ```
 
@@ -426,6 +457,24 @@ direct evidence that something re-uploaded geometry a drag must never touch.
 
 `SESSION_INIT_END` reporting anything but `undo=0 redo=0` means a session seed
 leaked into the user's history.
+
+Project persistence logs:
+
+```
+FORGESHAPE_PROJECT_ENCODED:<bytes> kind=<Construction|Sculpt> bodies=<n>
+FORGESHAPE_PROJECT_ENCODE_FAIL:<why>
+FORGESHAPE_PROJECT_LOADED:<n> bodies sculptMeshes=<n> active=<id> kind=<..> meshRev=<..> undo=0 redo=0
+FORGESHAPE_PROJECT_LOAD_REJECTED:<why> bytes=<n>
+FORGESHAPE_PROJECT_LOAD_FAIL:<no_data|empty>
+FORGESHAPE_PROJECT_GOLDEN_SHA256 construction=<sha> sculpt=<sha>
+```
+
+`<why>` is the codec's own vocabulary — `ChecksumMismatch`, `Truncated`,
+`UnsupportedMajor`, `InvalidSemanticValue` and the rest, listed in
+`DATA_PACKAGE_SPEC.md`. A `LOAD_REJECTED` line is the whole proof that a refused
+Open changed nothing: it is emitted before any live state is touched, and no
+`FORGESHAPE_CONSTRUCTION_PUBLISHED` follows it. `LOADED` always reports
+`undo=0 redo=0`, because a loaded document starts a fresh session history.
 
 Camera, picking and selection log `FORGESHAPE_CAMERA_{ORBIT,PAN,ZOOM}_OK` and
 `FORGESHAPE_CAMERA_STATE` on gesture end, `FORGESHAPE_PICK_HIT:<objectId>:<tri>`

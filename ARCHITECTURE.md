@@ -20,13 +20,16 @@ ForgeShapeActivity
         |        |        +-- BoundedScrollView -> vertical context column
         |        |                 +-- ToolRailView / transform + space / precision
         |        +-- BrushEdgeControlsView / ObjectsSectionView / ObjectsCapsuleView
-        |        +-- AnchoredSurfaceView   one growth, four surfaces
+        |        +-- AnchoredSurfaceView   one growth, five surfaces
         |                 +-- ObjectsPopoverView / AddPrimitivePaletteView
-        |                 +-- DisplaySettingsPopoverView
+        |                 +-- DisplaySettingsPopoverView / ProjectActionsPopoverView
         |                 +-- PropertyInspectorView  (+ PrecisionScrollView)
         |                          +-- ConstructionShapeEditorView    what the object IS
         |                          +-- ConstructionPlacementEditorView  where it SITS
         |                          +-- SculptContextView  mesh state + guarded re-Freeze
+        |
+        +-- ProjectSlot           one app-private .forge file; bytes only,
+        |                         no meaning. Save/Open cross JNI as byte[]
         |
 ForgeShapeSurfaceView         Surface lifecycle + raw pointer forwarding
 NativeViewport (JNI decls)
@@ -42,6 +45,12 @@ forgeshape_jni.cpp            render thread, ANativeWindow, MotionEvent ->
         |         v                                        | current snapshot
         |    ObjectId or none -> bool "draw highlight"      |
         |                                                   |
+        +--> ProjectDocument  <-- forgeshape_project_bytes (LE + CRC-32)
+        |         ^   |            forgeshape_project_document (v1 codec)
+        |  capture|   |commit      forgeshape_project_state (the bridge)
+        |         |   v            all-or-nothing; meshes are REGENERATED
+        |    ConstructionScene
+        |
         |    ConstructionObject                 SculptSession
         |        |                                  |
         |        generateMesh() [LOCAL] --Freeze--> SculptMesh [LOCAL copy,
@@ -110,6 +119,10 @@ forgeshape_jni.cpp            render thread, ANativeWindow, MotionEvent ->
 | Baseline cube numbers, and the DEBUG mesh fixtures | `forgeshape_demo_mesh.{h,cpp}`, `forgeshape_mesh_fixtures.{h,cpp}` | test infrastructure, not product geometry, and not on any startup path |
 | Vulkan, presentation, and every mesh buffer, staging and upload | `Renderer` | it owns no CPU mesh and mutates none, interprets no input and owns no identity |
 | Vector/matrix math | `forgeshape_math.h` | no GLM or other third-party math |
+| The `.forge` binary layout, its little-endian primitives, its CRC-32, its bounded section parsing, its compatibility rules and its deterministic writer | `forgeshape_project_bytes.{h,cpp}` + `forgeshape_project_document.{h,cpp}` | no Android, JNI, Vulkan, renderer, filesystem or `ConstructionScene` type; it knows what a project MEANS and nothing about where the bytes live. `DATA_PACKAGE_SPEC.md` owns the layout as documentation |
+| Turning the running project into a document, and a validated document back into a running project in one all-or-nothing commit | `forgeshape_project_state.{h,cpp}` | it publishes no Construction mesh the codec could have carried — every one is regenerated; it restores no revision; a refused load has touched nothing |
+| Where a project file lives, and writing it durably | `ProjectSlot` (Java) | it owns no byte of meaning: one app-private slot, a temp-file + fsync + rename write, and a bounded read. There is no picker, SAF document, Save As, browser or autosave |
+| Whether the project surface is open, and what a save or a refused open SAYS | `EditorWorkspaceView` + `ProjectActionsPopoverView` | neither owns the format, the storage or the fail-closed rule; both report an outcome native code decided |
 
 ## Platform boundary
 
@@ -2943,8 +2956,19 @@ own, and naming them is what stops one arriving by accident.
 - **No design system and no motion framework.** Themes are two styles over one set
   of semantic attributes; the Objects section is a flat list of rows, not an object
   browser. `ChromeMotion` is four shared decisions, not a transition system.
-- **No persistence.** Nothing is written to disk — not the scene, camera, start
-  choice, theme or grid. A process kill is a clean slate.
+- **One project slot, and no project library.** Persistence is the `.forge`
+  document and one app-private slot, and nothing more: no file picker, Scoped
+  Storage or SAF document, no Save As, no recent list, no project browser, no
+  thumbnail, no autosave and no crash recovery. Presentation and session state
+  are still written nowhere — not the camera, the start choice, the theme, the
+  grid, the display unit, the held tool or the brush — so a process kill still
+  clears all of those. What survives a process kill is exactly what a Save put
+  in the slot.
+- **No interchange format.** GLB/glTF, OBJ and FBX are separate, deliberately
+  chosen import/export pipelines with their own stages and their own dependency
+  decisions. None is implemented, none is started, and no inert menu entry for
+  one is drawn: `.forge` is ForgeShape's own project format and is not an
+  interchange format for Blender, CAD or a game engine.
 - **`RuntimeMesh` is not a Construction mesh format**, and the debug paths are
   not product. It carries positions, colours and indices and nothing else: no
   normals, UVs, material, adjacency or history. `forgeshape_demo_mesh` is the

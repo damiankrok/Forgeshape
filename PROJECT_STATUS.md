@@ -1,11 +1,41 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.48.0
+**Status Version:** 0.49.0
 **Updated:** 2026-08-30
-**Result:** **UI-LAYOUT-R2 — COMPLETE.** The coordinator reviewed the corrected
-build's representative pairs and gave a **visual PASS on 2026-08-30**, closing
-the stage. The measured half had already passed; this is the judgement half, and
-it is now recorded rather than outstanding.
+**Result:** **E2E-R1A / Stage 021 — COMPLETE.** ForgeShape work survives the
+process dying for the first time. A project is encoded to ForgeShape's own
+portable, versioned `.forge` v1 document, saved to one app-private slot, and
+reopened after the app process has been killed — with every body's identity,
+scene order, active body, active primitive kind, **all six** remembered
+parameter sets, exact placement and sculpted mesh intact, and every Construction
+mesh regenerated rather than read from the file.
+
+The load is **fail-closed**: a damaged, truncated, unsupported-major or
+non-project file is refused explicitly and leaves the scene, every Frozen Sculpt
+Mesh, the active mode and body, and the session history exactly as they were. A
+successful load starts a fresh Construction history, because a loaded document
+starts a fresh session.
+
+`DATA_PACKAGE_SPEC.md` is new and owns the binary layout, the codes, the
+validation and compatibility rules, the deterministic-write rules and the
+fixture inventory. `scripts/build-forge-corpus.ps1` is a **second, independent
+implementation** of that specification; its bytes and the native encoder's are
+identical, which is the portability claim's evidence rather than its assertion.
+There has never been a production `.forge` format before v1, so no v0 and no
+migration is claimed.
+
+The UI delta is the minimum needed to operate the feature: one icon control in
+the Global Toolbar's existing utility group, opening one small anchored surface
+with **Save Project** and **Open Saved Project**. The accepted UI-LAYOUT-R2 right
+host does not move. No GLB/glTF/OBJ/FBX work was started and no inert menu entry
+for one was drawn.
+
+---
+
+**Previous result — UI-LAYOUT-R2 — COMPLETE.** The coordinator reviewed the
+corrected build's representative pairs and gave a **visual PASS on 2026-08-30**,
+closing the stage. The measured half had already passed; this is the judgement
+half, and it is now recorded rather than outstanding.
 
 The findings behind that verdict: the rail reads as a narrow edge-hugging strip;
 Exact/Details sits inboard, left of the fixed rail, in the short-landscape and
@@ -151,13 +181,20 @@ nine-value placement — double-meter Position, double-degree Rotation and a
 unitless positive Scale; any body can be frozen to a Frozen Sculpt Mesh and
 deformed with four brush tools. Three approved dark appearances, two shading
 models, two projections, a world reference grid, and an Editor Workspace that
-re-composes itself per window. `ARCHITECTURE.md` owns the ownership map and every invariant;
+re-composes itself per window.
+
+A project can now be SAVED and reopened. `.forge` v1 is ForgeShape's own
+portable, versioned semantic document — a feature graph plus placement, never a
+mesh snapshot — written to one app-private slot. Loading is all-or-nothing:
+decode and validate entirely into temporary state, then replace the live project
+in one step, so a refused file costs nothing. `DATA_PACKAGE_SPEC.md` owns the
+format. `ARCHITECTURE.md` owns the ownership map and every invariant;
 `PRODUCT.md` owns the user-visible description; `README.md` owns build/run/verify.
 
-**Blockers: none.** Every native, JVM, instrumented and guard suite is green, the
+**Blockers: none.** Every native, JVM, instrumented and guard suite is green,
+including the authoritative exhaustive-sharded instrumented aggregate. The
 measured anchor comparison against the OWNER-accepted `UI-SPEC-R0 Revision 1`
-passes 66/66, and the coordinator's visual PASS on 2026-08-30 closed the last
-open question on UI-LAYOUT-R2. The expected side of every anchor comparison came
+still passes 66/66 and the accepted right host did not move for E2E-R1A. The expected side of every anchor comparison came
 from the accepted revision as transmitted in the correction prompt's authority
 block, never from `EditorControlStyles`, `dimens.xml`, runtime bounds,
 screenshots or the reference-only `docs/ui/wireframes/*.svg`. A **UI moratorium
@@ -658,6 +695,15 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 | Primitive and transform edits reach only the active body; A↔B round-trips the exact spec and placement | VERIFIED |
 | Per-body mesh publication: each body its own revision chain; A's edit cannot replace B's mesh | VERIFIED |
 | Renderer draws every body with its own transform and its own GPU buffers | VERIFIED |
+| A project is saved to one app-private `.forge` slot and reopened after the process is killed | VERIFIED |
+| A reopened project keeps every body's ObjectId, scene order, active body, active kind, ALL SIX remembered parameter sets, and its exact placement including 370 degrees and a non-uniform scale | VERIFIED |
+| A reopened project regenerates every Construction mesh: no mesh, revision or GPU data is read from the file, and the file is exactly the size the semantic arithmetic predicts | VERIFIED |
+| A sculpted body reopens with its vertices bit-identical, its topology, its `renderBothSides`, its stale-source state and its edited state; normals and adjacency are rebuilt | VERIFIED |
+| A project saved while sculpting reopens sculpting; the Construction Source companion survives, and Back/Resume still work over it | VERIFIED |
+| A damaged, truncated, unsupported-major or non-project file is refused explicitly and leaves the scene, every sculpt mesh, the mode and the session history untouched | VERIFIED |
+| A successful load starts a fresh Construction history; the next edit and undo act on the loaded scene | VERIFIED |
+| The id allocator is pushed forward past a loaded project, so a later creation cannot collide with a loaded body | VERIFIED |
+| The `.forge` encoder is byte-deterministic and matches an independent second implementation of the same specification | VERIFIED |
 | Editing A rebuilds and uploads nothing for B | VERIFIED |
 | Only the selected body is highlighted | VERIFIED |
 | Becoming selected gives a short acknowledgement pulse that decays to a much lower resting tint | VERIFIED |
@@ -825,8 +871,8 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 
 ## Self-test suite
 
-Thirteen debug-only native suites run once from `NativeViewport.start()` — never
-per frame — and total **2043 checks, zero failures**:
+Fourteen debug-only native suites run once from `NativeViewport.start()` — never
+per frame — and total **2163 checks, zero failures**:
 
 | suite token | checks |
 | --- | --- |
@@ -843,9 +889,31 @@ per frame — and total **2043 checks, zero failures**:
 | `FORGESHAPE_SCENE_SELFTEST_OK` | 79 |
 | `FORGESHAPE_CONSTRUCTION_HISTORY_SELFTEST_OK` | 114 |
 | `FORGESHAPE_GIZMO_SELFTEST_OK` | 145 |
+| `FORGESHAPE_PROJECT_SELFTEST_OK` | 120 |
 
-followed by `FORGESHAPE_MESH_UPLOAD_OK`, `FORGESHAPE_GRID_UPLOAD_OK`,
-`FORGESHAPE_GIZMO_UPLOAD_OK` and `FORGESHAPE_NATIVE_VIEWPORT_OK`.
+followed by `FORGESHAPE_PROJECT_GOLDEN_SHA256`, `FORGESHAPE_MESH_UPLOAD_OK`,
+`FORGESHAPE_GRID_UPLOAD_OK`, `FORGESHAPE_GIZMO_UPLOAD_OK` and
+`FORGESHAPE_NATIVE_VIEWPORT_OK`.
+
+**The project suite owns the `.forge` format** (`FSR1A-01..15`) and, like the
+scene, history and gizmo suites, builds its own `ConstructionScene`,
+`ConstructionHistory` and `SculptSession` per case. Its 120 checks cover the
+28-byte header and 24-byte section header field by field with every multibyte
+value read back little-endian, the CRC-32/ISO-HDLC check value, a deterministic
+writer (`encode` twice and `encode -> decode -> encode` both byte-identical), a
+six-body roundtrip carrying all six primitive kinds, all six remembered parameter
+sets per body, 370 degrees uncanonicalized and a non-uniform scale, an id
+allocator that cannot mint a collision after a load, Construction meshes
+regenerated rather than read (the file size is exactly the semantic arithmetic,
+with no room for a vertex), sculpt positions surviving bit for bit with their
+topology, `renderBothSides`, `sourceStale` and `hasEdits`, the legacy mixed state
+keeping both branches, and the whole refusal matrix — bad CRC, truncation, an
+impossible or overflowing count, a newer major, a newer required section version,
+an unknown optional section skipped, an unknown required section refused, a
+duplicate singleton, reserved bits, and every semantic value the domain's own
+validators refuse — each proved to leave a live fixture project, its mode and its
+history untouched. `FORGESHAPE_PROJECT_GOLDEN_SHA256` prints the digests of the
+two canonical fixtures as this build encodes them.
 
 **The gizmo suite owns direct manipulation's math and its transaction**, and —
 like the scene and history suites — it builds its own `ConstructionScene`,
@@ -1019,6 +1087,8 @@ device. `README.md` documents how to read them.
 | `EditorWorkspaceGizmoTest` | Stage 020 and Stage 020R2, from the product side of JNI: both start answers leaving an empty history and the direct-Sculpt path being source-classified as production (`S020-PRE-01`..`-05`), the Shape context and Sculpt drawing no handles and no mode selector while the native guard still refuses (`S020-01`, `-03`), Transform with a body drawing both and entering on Move (`-02`), body switching retargeting the pivot without a step (`-04`), the mode selector recording nothing and publishing nothing (`-05`), each Move axis changing only its own coordinate through a real `MotionEvent` on the real handle (`-06`..`-09`), a near-camera-parallel axis staying finite (`-10`), a tap costing nothing and a 48-sample drag costing exactly one step (`-11`, `-12`), cancel restoring exactly (`-13`), each ring turning only its own component and leaving Position (`-14`..`-17`), a 300-sample ring drag with no sample jumping a quarter turn and the total passing 360° un-canonicalised (`-18`..`-20`), one ring drag as one step and its cancel (`-21`, `-22`), undo/redo bracketing a Move and a Rotate exactly (`-23`, `-24`), the exact-value FIELDS reading the gizmo's result and a typed Apply moving the pivot (`-25`, `-26`), redo invalidation (`-27`), two bodies undoing chronologically and independently (`-28`), a captured handle not orbiting while a drag off the handles still does (`-29`, `-30`), cancel and a second pointer leaving no open transaction and no partial transform (`-31`, `-32`), a stylus driving the same solver under its own pointer id (`-33`), chrome consuming its own touches (`-34`), the 48 dp hit corridor measured perpendicular to the shaft (`-35`), the drawn size staying in band from 3 m to 30 m (`-36`), the selector and the precision toggle both at 48 dp and collision-free in portrait and landscape (`-37`), a whole drag/commit/undo/redo publishing no revision with a positive control that does (`-38`..`-40`), and the gizmo surviving display switching (`-41`). Stage 020R2 adds: scale round-tripping through the history (`S020R2-01`), one Apply being atomic across all nine with an impossible scale refused and a no-op recording nothing (`-02`), every Move plane moving in its plane and never off it (`-03`), Local space moving along the body own axis where World moves only X (`-04`), World and Local rotation being different answers to the same gesture on a mixed body (`-05`..`-07`), axis, plane and uniform scale with the ratios preserved (`-09`..`-11`), one scale drag as one step with a tap costing nothing and a second pointer restoring all nine (`-12`, `-13`), the handles and the exact-value fields being one truth in both directions including the scale (`-14`), a non-uniform scale reaching PICKING and not the instrument (`-15`), every handle classified at its own pixel with the pivot naming the uniform handle in Scale and none in Move, and the held handle reported while held (`-16`), Scale being Local-only with the space selector absent there and the remembered space restored on the way out (`-18`), both selectors at 48 dp and collision-free in portrait and landscape (`-18` layout), and a long scale drag with its undo and redo publishing no revision against a positive control that does (`-20`) | 46 |
 
 | `EditorWorkspaceLegibilityTest` | UI-LAYOUT-R1 retained, with the old reserved-row assertion strengthened to the R2 bottom-zone rule: a bottom sheet hides conflicting chrome instead of relocating it; Display restoration, touch floors, Exact legibility and Sculpt top grammar remain covered | 20 |
+| `EditorWorkspaceProjectActionsTest` | `E2ER1A-01`, `-04`, `-05`, `-06`: a real Save from the product control writing a non-empty, re-loadable `.forge` to the app-private slot without moving the accepted R2 right host; the project control and both rows at the 48 dp hit floor; a damaged, a truncated, an unsupported-major and a not-a-project file each refused with its own message and with EVERY native value, the active body, the scene size and the session history bit-identical afterwards; and a successful Open clearing both history stacks, with the next edit recording exactly one step and its undo returning the LOADED value | 7 |
+| `ProjectProcessDeathTest` | `E2ER1A-02`, `-03`, across a real process death driven by `scripts/run-project-persistence-e2e.ps1`: three bodies of different kinds with non-default placements and a remembered box saved, the app killed, and the project reopened with every ObjectId, scene order, active body, active kind, remembered parameters and exact placement — 370 degrees and a non-uniform scale included — intact, geometry republished, and a post-load creation unable to collide; and a real Grab stroke saved from Sculpt reopening in Sculpt on the same body with the same vertex and index counts, its stale-source and edited state, its Construction Source companion still correct, and Back/Resume still coherent over it | 4 |
 | `EditorWorkspaceUnifiedRightHostTest` | `UILR2-01..18`: invariant host frame; downward-only Transform expansion; mode/space/Exact/Shape/Sculpt parity; same-host descendants; bottom hide/restore through slowed entry/exit; IME vertical grammar and touch floor; signed numeric and unitless Scale regression; compact portrait, short landscape and expanded/tablet; Stage020R2/R3 semantics | 18 |
 | `EditorWorkspaceRightHostPlacementTest` | `UILR2C-01..12`: the correction round-1 contract that the right host keeps the trailing window edge. Compact and short-landscape hold one external host frame through all eleven R2 states with the trailing inset unchanged (`-01`, `-03`); the compact anchors and the host width take no font scale, so the 1.3 cells resolve to the 1.0 answer (`-02`, `-04`); the expanded window docks the panel inboard of the host and its decision arithmetic carries no text input (`-05`, `-06`); Exact, Exact+IME and Sculpt Details never translate the host (`-07`) because a side-placed panel is always seated BEFORE it in the row they share (`-08`); compact hide/restore and short-window persistent chrome return at Δ = 0 dp (`-09`, `-10`); intrinsic hit boxes clear 48 dp with the clipped visible intersection reported separately (`-11`); and the IME leaves the Vulkan surface full-window while only the host height may move (`-12`) | 12 |
 
@@ -1082,6 +1152,16 @@ through the view root, so calling one from the instrumentation thread throws
 `CalledFromWrongThreadException` — a defect in the case that looks exactly like a
 defect in the product. Wrap them in `doOnWorkspace`.
 
+**A `-FullSharded` run interrupted mid-shard can leave the emulator unstable.**
+Seen at E2E-R1A: a run stopped part-way through shard 2 to pick up a code
+change, and the next `-FullSharded` attempt aborted inside shard 1 with
+`INSTRUMENTATION_ABORTED: System has crashed.` — an infrastructure abort, not a
+test failure. `CLAUDE.md` already names the remedy and it is the one that
+worked: shut the AVD down, reboot it with
+`scripts/start-forgeshape-emulator.ps1`, and rerun the WHOLE command from shard
+1. A shard-only rerun cannot repair an aggregate. Prefer letting a run finish
+over killing it.
+
 **An emulator session degrades under hours of instrumentation, and the symptom
 looks exactly like a lifecycle defect.** Seen at UI-R4B after roughly two hours
 of continuous runs on one boot: `EditorWorkspaceStartFlowTest` began failing with
@@ -1107,23 +1187,54 @@ precondition. Runtime evidence separately shows the real keyboard.
 
 ## Current evidence summary
 
-Latest acceptance run (UI-LAYOUT-R2 correction round 1), on the isolated
-`ForgeShape_Stage006` / `emulator-5580` AVD unless stated:
+Latest acceptance run (E2E-R1A / Stage 021), on the isolated
+`ForgeShape_Stage006` / `emulator-5580` AVD unless stated. Evidence:
+[`artifacts/e2er1a/`](artifacts/e2er1a/).
 
-- **Native self-tests:** thirteen suites, **2043 checks, zero failures**, followed
-  by `FORGESHAPE_NATIVE_VIEWPORT_OK`, on the corrected build
-  (`artifacts/uilayoutr2-correction/native-launch.txt`).
-- **Build/JVM:** debug APK built; **59/59 JVM** tests passed.
-- **Focused UI-LAYOUT-R2:** `UILR2-01..18` passed **18/18**; the new correction
-  class `UILR2C-01..12` passed **12/12**.
-- **Instrumented:** the official authoritative command
+- **Native self-tests:** fourteen suites, **2163 checks, zero failures**, then
+  `FORGESHAPE_NATIVE_VIEWPORT_OK` (`artifacts/e2er1a/native-launch.txt`). The
+  new project suite contributes **120** (`FSR1A-01..15`) and prints
+  `FORGESHAPE_PROJECT_GOLDEN_SHA256`, whose two digests equal the committed
+  corpus's exactly.
+- **Golden corpus:** seven v1 fixtures under `testdata/forge/v1/`, written and
+  re-verified by `scripts/build-forge-corpus.ps1` — a **second, independent**
+  implementation of the specification. Digests in
+  `artifacts/e2er1a/corpus-digests.txt` and `DATA_PACKAGE_SPEC.md`.
+- **Build/JVM:** debug APK built; **59/59 JVM** tests passed, zero failures,
+  zero errors.
+- **Both ABIs, debug and release:** `arm64-v8a` and `x86_64` build in both
+  configurations and both ship in the release APK; every `LOAD` segment is
+  16 KB-aligned (`p_align 0x4000`) in all four binaries
+  (`artifacts/e2er1a/abi-and-alignment.txt`).
+- **Focused persistence:** `EditorWorkspaceProjectActionsTest` (`E2ER1A-01`,
+  `-04`, `-05`, `-06`) passed **7/7**
+  (`artifacts/e2er1a/focused-project-actions.txt`).
+- **Process death:** `scripts\run-project-persistence-e2e.ps1 -Serial
+  emulator-5580` passed all four stages with a confirmed absent process before
+  each verifying half; `PROJECT_PERSISTENCE_E2E=PASS`
+  (`artifacts/e2er1a/process-death-e2e.txt`).
+- **Instrumented (authoritative):**
   `scripts\run-instrumented-tests.ps1 -Serial emulator-5580 -FullSharded
-  -ShardCount 5` discovered 22 classes / **330** tests — the twelve new
-  correction cases raise the inventory from 318 — assigned them exhaustively to
-  five shards (**66 + 69 + 64 + 67 + 64**) and passed **330/330**. `missing=0`,
-  `duplicates=0`, `unexpected=0`, `execution_missing=0`, `failed_shards=0`,
-  `aborted_shards=0`; marker `FULL_SHARDED_SUITE_PASS`.
-- **Six-cell anchor matrix:** 66 host rows measured at exact `wm size` /
+  -ShardCount 5` discovered 24 classes / **342** tests — the two new persistence
+  classes and one new `UIR4B-09` case raise the inventory from 330 — assigned
+  them exhaustively to five shards (**69 + 68 + 68 + 69 + 68**) and passed
+  **342/342**. `missing=0`, `duplicates=0`, `unexpected=0`, `execution_missing=0`,
+  `failed_shards=0`, `aborted_shards=0`; marker `FULL_SHARDED_SUITE_PASS`
+  (`artifacts/e2er1a/full-sharded.txt`). An earlier attempt aborted inside shard
+  1 with `INSTRUMENTATION_ABORTED: System has crashed.` after a previous run had
+  been killed mid-shard; the AVD was rebooted with
+  `scripts\start-forgeshape-emulator.ps1` and the whole command rerun from shard
+  1, as `CLAUDE.md` requires.
+- **R2 right-host regression:** `EditorWorkspaceUnifiedRightHostTest`,
+  `EditorWorkspaceRightHostPlacementTest` and `EditorWorkspaceCorrectionTest`
+  re-run together, **67/67**
+  (`artifacts/e2er1a/right-host-regression.txt`). `UIR4B-08`'s surface count
+  moved from four to five and `UIR4B-09` gained the project surface — the
+  tripwire fired on the new surface exactly as intended, and it caught a real
+  defect: the surface grew from its leading edge instead of the trailing corner
+  its control sits at.
+- **Six-cell anchor matrix:** unchanged from UI-LAYOUT-R2 and not re-measured;
+  the accepted right host did not move. 66 host rows measured at exact `wm size` /
   `wm density` / `font_scale` triples across C10/C13/L10/L13/E10/E13. All 66
   conform to `UI-SPEC-R0 Revision 1` inside ≤ 4 dp; intra-cell drift 0 dp;
   resting chrome Δ = 0 dp; 1299 control rows with **zero** intrinsic hit-area
@@ -1134,9 +1245,13 @@ Latest acceptance run (UI-LAYOUT-R2 correction round 1), on the isolated
 - **Device guards:** `DEV2-01..07` and `DEV3-01..06` all PASS. No command touched
   reserved `emulator-5554`; every runtime command used explicit
   `-s emulator-5580` after confirming the AVD name.
-- **Runtime evidence:**
-  [`artifacts/uilayoutr2-correction/`](artifacts/uilayoutr2-correction/) is the
-  current package: 36 raw screenshots beside 36 mechanical overlays for six
+- **Runtime evidence:** [`artifacts/e2er1a/`](artifacts/e2er1a/) is the current
+  package: the native launch log, the corpus digests, the ABI/alignment record,
+  the focused persistence run, the process-death transcript, the right-host
+  regression and the full-sharded aggregate. The UI-LAYOUT-R2 packages remain
+  where they were made and are historical.
+  [`artifacts/uilayoutr2-correction/`](artifacts/uilayoutr2-correction/) holds
+  the R2 measurement: 36 raw screenshots beside 36 mechanical overlays for six
   visual-critical states in six cells, the four CSVs, the harness, the derived
   `analysis.txt` and an owner review `INDEX.md`. The superseded pre-correction
   measurement stays at
@@ -1306,6 +1421,15 @@ duration scale skips them outright rather than shortening them.
 
 ## Known Issues / Blockers
 
+- **An instrumented run leaves a project in the app's slot.** The process-death
+  suite has to: its two halves communicate through the saved file, which is the
+  whole point. `EditorWorkspaceProjectActionsTest` deletes the slot after every
+  case so its injected damage cannot be inherited, but `ProjectProcessDeathTest`
+  deliberately leaves a real project behind. Evidence taken after an instrumented
+  run therefore starts with *Open Saved Project* enabled and a project already
+  saved. Clear it with
+  `adb -s <serial> shell run-as com.forgeshape.app rm -f files/project.forge`,
+  or reinstall the app.
 - **A crashed emulator session can leave the quickboot snapshot corrupt, and
   every later launch then hangs before `adbd` starts.** Seen on
   `ForgeShape_Stage006` after the INPUT-R1 session: QEMU runs and
@@ -1328,8 +1452,8 @@ duration scale skips them outright rather than shortening them.
   computed geometric quantity against an exact bound should be assumed to differ
   between the emulator and a real phone until measured on both.
 - **The physical phone drops self-test lines from the logcat ring buffer, and no
-  capture method fully prevents it.** It caps the buffer at 5 MiB (`logcat -G 16M`
-  is silently reduced) and whole suites vanish from the *middle* of a capture,
+  capture method fully prevents it.** It caps the buffer at 5 MiB (`logcat -G` is
+  silently reduced whatever is asked for) and whole suites vanish from the *middle* of a capture,
   which reads exactly like a suite that never ran. Confirmed across four methods
   during Gate P1, each dropping a *different* subset. Read a partial capture as "no
   failures observed" and re-run until one is complete before quoting a total.
@@ -1361,7 +1485,10 @@ duration scale skips them outright rather than shortening them.
 - **`connectedDebugAndroidTest` uninstalls the app when it finishes**, and it has no
   `-s <serial>` equivalent. Reinstall before taking runtime evidence.
 - **The default logcat ring buffer drops part of the startup self-test output.** Run
-  `adb -s <serial> logcat -G 16M` first.
+  `adb -s <serial> logcat -G 64M` first, and confirm it took with
+  `adb -s <serial> logcat -g`. 16M was enough through Stage 020 and no longer is:
+  at E2E-R1A a 16M capture on the EMULATOR silently lost two of the fourteen
+  suites, with no `chatty` marker and no FAIL line to give it away.
 - **The Android emulator dies if launched as a child of a tool shell**; spawn it
   detached.
 - **PowerShell `>` redirection corrupts binary output.** `adb exec-out screencap -p
@@ -1386,6 +1513,39 @@ duration scale skips them outright rather than shortening them.
 
 Durable constraints and known-but-accepted costs. Narrative for how each was
 found lives in Git history.
+
+**One project slot, and a save the user must remember to make.** (E2E-R1A, by
+design.) There is exactly one app-private `.forge` file and Save replaces it, so
+there is no way to keep two projects, no naming, no recent list, and no way to
+recover a project a later Save overwrote. Nothing is written automatically:
+closing ForgeShape without pressing Save loses the session's work exactly as it
+did before. Autosave, crash recovery, Save As and SAF/Scoped Storage are
+`E2E-R1B`'s, and building half of one here would have been worse than the honest
+single slot.
+
+**A reopened sculpt mesh restarts its `SculptRevision`.** (E2E-R1A, accepted.)
+Revision NUMBERS are derived state and are deliberately not file truth, so a
+loaded mesh begins at the revision a freeze starts at. The one thing that
+depended on the number — `hasEdits()`, which the destructive *Reset Sculpt from
+Shape* guard asks — is carried across as an explicit boolean and restored, so the
+guard still warns. What is genuinely lost is the numeric value itself, which no
+product behaviour reads.
+
+**A reopened sculpt mesh loses its vertex colours.** (E2E-R1A, accepted.)
+`MeshVertex` interleaves a position and a colour, and the colour feeds only the
+debug-only source-colour shading mode — Studio Solid and MatCap both ignore it.
+Storing three floats per vertex for a debug view would grow every sculpt file by
+a third, so a loaded sculpt vertex is given one neutral value. The debug shading
+mode therefore renders a reopened sculpt mesh flat grey; nothing a release user
+can reach is affected.
+
+**The corpus generator is a second implementation and must be kept in step.**
+(E2E-R1A, accepted.) `scripts/build-forge-corpus.ps1` deliberately re-implements
+the `.forge` v1 encoder from `DATA_PACKAGE_SPEC.md`, which is what makes the
+portability claim evidence rather than assertion — and it is also a second place
+a format change has to land. `FSR1A-12` fails loudly when the two part company,
+and `FORGESHAPE_PROJECT_GOLDEN_SHA256` prints the new digest beside the failure,
+so the cost is a visible one rather than silent drift.
 
 **Sculpt Radius/Strength remains visually heavy.** (UI-LAYOUT-R2, deferred P2.)
 The direct-access sliders retain their existing geometry and >=48 dp targets.
@@ -1615,7 +1775,7 @@ regenerated per stage.
 | `app/src/main/java/.../WorkspaceTrailingHostView.java` | The unified right-context composition and presentation owner: one floating surface, one internal vertical `BoundedScrollView`, Tool Rail, vertical transform/space selectors, precision/details trigger, fixed top/right/width placement, downward-only height and Display suppression. It owns no product or native state |
 | `app/src/main/java/.../WorkspaceLayoutMode.java` | Window-dp breakpoints, where the precision surface appears when open, and chrome sizing, as arithmetic. It has no opinion about whether that surface is open. No Android type |
 | `app/src/main/java/.../EditorUiState.java` | The closed list of UI-owned state: display unit, draft kind, rail selection, whether the precision surface was asked for (per mode, false to begin with), chrome-hidden |
-| `app/src/main/java/.../GlobalToolbarView.java` | Editing context, the three mutually exclusive mode transitions, reserved Export, the Display control, chrome hide, and the one status line — including its lifecycle: transient versus standing, the two holds, and cancel-first. Owns no scene control — that is the Objects capsule's |
+| `app/src/main/java/.../GlobalToolbarView.java` | Editing context, the three mutually exclusive mode transitions, reserved Export, the project control, the Display control, chrome hide, and the one status line — including its lifecycle: transient versus standing, the two holds, and cancel-first. Owns no scene control — that is the Objects capsule's |
 | `app/src/main/java/.../DisplaySettingsPopoverView.java` | The compact display popover: Shading (Studio / MatCap / Debug), Surface (Smooth / Faceted) and Projection (Perspective / Orthographic), with short interruptible open/close motion that honours the system animator scale. Owns no state |
 | `app/src/main/java/.../ToolRailView.java` | The edge tool selector for either mode. Every entry works — there is no reserved-entry support left. Selects; decides nothing |
 | `app/src/main/java/.../BrushEdgeControlsView.java`, `VerticalSliderView.java` | Direct Radius and Strength, and the custom vertical control behind them. Own no brush value |
@@ -1648,6 +1808,14 @@ regenerated per stage.
 | `app/src/main/cpp/forgeshape_sculpt.{h,cpp}` | `ProductMode`, `SculptTool`, `SculptSession` (mode + tool + brush + live stroke + the `hitsSculptMesh` probe), `SculptMesh`, `SculptTopology`, `computeVertexNormals`, `SculptStroke` (the one kernel plus one `apply*` per tool), sculpt publication |
 | `app/src/main/cpp/forgeshape_picking.{h,cpp}` | Screen→world ray for **both** projections (perspective: one origin, fanning directions; orthographic: one direction, per-pixel origin), `transformRayToLocal`, ray/triangle, nearest hit, winding check |
 | `app/src/main/cpp/forgeshape_selection.{h,cpp}` | `ObjectId`, `SelectionController`, tap-vs-navigation, `pickScene` |
+| `app/src/main/cpp/forgeshape_project_bytes.{h,cpp}` | Explicit little-endian readers/writers and CRC-32/ISO-HDLC. Knows integers, IEEE-754 scalars, bounds and a checksum, and nothing about what they mean |
+| `app/src/main/cpp/forgeshape_project_document.{h,cpp}` | The `.forge` v1 document and codec: the DTOs, the encoder, the bounded decoder, the version dispatch seam, and every validation and compatibility rule. `DATA_PACKAGE_SPEC.md` owns the same layout as documentation |
+| `app/src/main/cpp/forgeshape_project_state.{h,cpp}` | The bridge: running project -> document, and a validated document -> running project in one all-or-nothing commit that stages every body before touching anything live |
+| `app/src/main/java/.../ProjectSlot.java` | The Android storage adapter: one app-private `.forge` slot, written temp-file + fsync + rename so a crash never leaves a partial project, and read with a bound. Owns no byte of meaning |
+| `app/src/main/java/.../ProjectActionsPopoverView.java` | The two project actions — Save Project and Open Saved Project — grown out of the toolbar control that opened them. Owns no state; Open is drawn inert and says so when there is nothing saved |
+| `testdata/forge/v1/*` | The permanent v1 golden corpus: two canonical fixtures and five deliberately broken ones. Digests are recorded in `DATA_PACKAGE_SPEC.md` |
+| `scripts/build-forge-corpus.ps1` | A SECOND, independent implementation of the v1 encoder, written from the spec. Writes and verifies the corpus, needs no device |
+| `scripts/run-project-persistence-e2e.ps1` | The process-death driver for E2ER1A-02/03: save, `am force-stop`, confirm by PID that no process remains, then open and verify in a fresh one |
 | `app/src/main/cpp/forgeshape_object_id.h` | `ObjectId` type and reserved values, shared by the mesh and selection layers |
 | `app/src/main/cpp/forgeshape_mesh.{h,cpp}` | `RuntimeMesh` (immutable revision), `MeshStore`, validation, capacity policy, upload diagnostics including source-vs-render counts |
 | `app/src/main/cpp/forgeshape_render_mesh.{h,cpp}` | Derived render geometry: `RenderVertex` (position + normal + colour), `SurfaceShading`, THE crease policy (`kCreaseAngleDegrees`), per-vertex crease grouping with render-only duplication, and `RenderMeshCache`'s rebuild gate. Presentation only |
@@ -1693,22 +1861,27 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Exactly one next step: `CAD-R0-DATA`, a COORDINATOR-owned decision/research
-gate. Claude Code does not execute it** — it is not a Claude implementation
-stage, and no work on it may begin here. No motion/morph work, no E2E-R1
-implementation and no new product stage before the coordinator opens one.
+**Exactly one next step: return the E2E-R1A report to the coordinator.** No later
+product stage may begin here. In particular `E2E-R1B` / Stage 022 (autosave,
+crash recovery, SAF/Scoped Storage, Save As, sharing), `E2E-R1C` / Stage 023
+(GLB/glTF export), OBJ/FBX or any other interchange work, `APP-H1` (a project
+hub, thumbnails, a multi-project library), `BRIDGE-R1` and `CAD-R0-DATA` are all
+**not started**, and none of them may be begun without the coordinator opening it.
 
-UI-LAYOUT-R2 is closed. Correction round 1 removed the one defect the R2 closeout
-found — a side-placed Exact/Details panel translating the right host inward — the
-re-measured matrix conforms to the OWNER-accepted `UI-SPEC-R0 Revision 1` on all
-66 cell × state rows with 0 dp intra-cell drift, every native, JVM, instrumented
-and guard suite is green, and the coordinator gave the visual PASS on 2026-08-30.
-Correction round 2 was never used and is retired with the stage rather than left
-pending.
+E2E-R1A is closed. The `.forge` v1 format ships, one app-private slot ships, and
+work survives process death — proved by saving, killing the app, confirming by
+PID that no ForgeShape process remains, and reopening in a fresh one. The native
+codec suite, the JVM suite, the focused project suites, the R2 right-host suites
+and the authoritative exhaustive-sharded instrumented aggregate are all green,
+and both supported ABIs build debug and release.
 
-A **UI moratorium is active.** The corrected edge-host arrangement is the accepted
-baseline and no further UI pass is queued; the one carried visual item is Sculpt
-Radius/Strength, which stays deferred P2 and was not an R2 blocker.
+A **UI moratorium remains active.** The corrected edge-host arrangement is the
+accepted baseline; E2E-R1A added one icon control to the existing utility group
+and one small anchored surface, and moved nothing else. The one carried visual
+item is Sculpt Radius/Strength, which stays deferred P2.
+
+`CAD-R0-DATA` remains a COORDINATOR-owned decision/research gate that Claude Code
+does not execute.
 
 The evidence stands where it was made: `artifacts/uilayoutr2-correction/` holds
 the 66-row matrix, 36 raw screenshots, 36 mechanical overlays and the derived
@@ -1724,7 +1897,12 @@ post-processing framework the shading stage was told not to build.
 
 **Still out** and unchanged: snap-to-grid and the Sketch grid, a different
 contract from the world reference grid; a View Cube, camera focus or named views;
-blur or glass of any kind; a post-processing framework; persistence; an automatic
-system theme; hierarchy and object commands; Sketch/Extrude; Mirror, Subdivide
-and Remesh; import and *Add from file*; the one-way Construction-to-Sculpt
-project derivation; pressure-driven sculpting; and export.
+blur or glass of any kind; a post-processing framework; an automatic system
+theme; hierarchy and object commands; Sketch/Extrude; Mirror, Subdivide and
+Remesh; import and *Add from file*; the one-way Construction-to-Sculpt project
+derivation; pressure-driven sculpting; and export.
+
+Persistence is no longer on that list, but only in the shape E2E-R1A shipped:
+ONE app-private slot. A file picker, SAF/Scoped Storage, Save As, project naming,
+a recent list, thumbnails, a project browser, autosave, crash recovery, sharing,
+cloud and accounts are all still out, and so is every interchange format.
