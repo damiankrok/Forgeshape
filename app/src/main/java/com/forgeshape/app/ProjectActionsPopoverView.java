@@ -7,14 +7,21 @@ import android.view.View;
 import android.widget.TextView;
 
 /**
- * The project actions: save the work, and open it again.
+ * The project actions: keep the work, get it back, and move it off the device.
  *
- * <p><b>Two entries, because two things work.</b> There is one app-private
- * project slot, so there is exactly Save Project and Open Saved Project. No New,
- * no Save As, no recent list, no Import and no Export live here — every one of
- * those is either a later stage's feature or, in Export's case, the one approved
- * reserved action that already has its own recessed home in the Global Toolbar.
- * Nothing unimplemented is drawn as a project action.
+ * <p><b>Every entry works, and there are only as many as there are working
+ * things.</b> Two groups, because there are two questions. The first is the
+ * app's own storage — one project slot, so exactly Save Project and Open Saved
+ * Project. The second is the device's, through the system's own document UI:
+ * Save Copy… writes the same canonical `.forge` bytes wherever the user says,
+ * Open File… reads one back, and Share Diagnostics… writes the local report.
+ *
+ * <p><b>Transfer is not interchange.</b> What Save Copy… writes is a ForgeShape
+ * project, readable by another ForgeShape installation. There is no GLB, glTF,
+ * OBJ or FBX here, no converter and no entry that hints at one; the wording
+ * never says export, because Export is a different, unimplemented thing with its
+ * own reserved home in the Global Toolbar. No New, no Save As and no recent list
+ * either. Nothing unimplemented is drawn as a project action.
  *
  * <p>It is an {@link AnchoredSurfaceView} like every other context surface, and
  * it grows out of the control that opened it rather than sliding in from a
@@ -36,10 +43,19 @@ final class ProjectActionsPopoverView extends AnchoredSurfaceView {
         void onSaveProjectRequested();
 
         void onOpenProjectRequested();
+
+        void onSaveCopyRequested();
+
+        void onOpenFileRequested();
+
+        void onShareDiagnosticsRequested();
     }
 
     private final TextView saveRow;
     private final TextView openRow;
+    private final TextView saveCopyRow;
+    private final TextView openFileRow;
+    private final TextView diagnosticsRow;
 
     ProjectActionsPopoverView(Context context, final OnProjectAction listener) {
         super(context);
@@ -79,11 +95,63 @@ final class ProjectActionsPopoverView extends AnchoredSurfaceView {
         addView(openRow, EditorControlStyles.rowParams(
                 EditorControlStyles.dimen(context, R.dimen.row_gap_small)));
 
-        // Both rows carry the interactive floor as HIT AREA, reached with
+        // The second group: the same project, moved through the device's own
+        // storage rather than the app's. Under its own label because "where
+        // this file lives" is a different question from "save my work", and a
+        // flat list of four would make Save Copy look like a second Save.
+        addView(EditorControlStyles.sectionLabel(context,
+                context.getString(R.string.project_transfer)),
+                EditorControlStyles.rowParams(
+                        EditorControlStyles.dimen(context, R.dimen.row_gap)));
+
+        saveCopyRow = EditorControlStyles.listRow(context, R.id.project_save_copy,
+                context.getString(R.string.project_save_copy));
+        saveCopyRow.setGravity(Gravity.CENTER_VERTICAL);
+        saveCopyRow.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                listener.onSaveCopyRequested();
+            }
+        });
+        addView(saveCopyRow, EditorControlStyles.rowParams(
+                EditorControlStyles.dimen(context, R.dimen.row_gap_small)));
+
+        openFileRow = EditorControlStyles.listRow(context, R.id.project_open_file,
+                context.getString(R.string.project_open_file));
+        openFileRow.setGravity(Gravity.CENTER_VERTICAL);
+        openFileRow.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                listener.onOpenFileRequested();
+            }
+        });
+        addView(openFileRow, EditorControlStyles.rowParams(
+                EditorControlStyles.dimen(context, R.dimen.row_gap_small)));
+
+        // The local diagnostic report. It sits here because it is the third
+        // thing that leaves the app through the system's own document UI, and
+        // giving it a surface of its own would be a settings screen this product
+        // does not have. Nothing is sent anywhere: the user picks a file.
+        diagnosticsRow = EditorControlStyles.listRow(context, R.id.project_share_diagnostics,
+                context.getString(R.string.project_share_diagnostics));
+        diagnosticsRow.setGravity(Gravity.CENTER_VERTICAL);
+        diagnosticsRow.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                listener.onShareDiagnosticsRequested();
+            }
+        });
+        addView(diagnosticsRow, EditorControlStyles.rowParams(
+                EditorControlStyles.dimen(context, R.dimen.row_gap)));
+
+        // Every row carries the interactive floor as HIT AREA, reached with
         // padding rather than by growing the drawn row: the text stays the size
         // it reads at.
         applyTouchFloor(context, saveRow);
         applyTouchFloor(context, openRow);
+        applyTouchFloor(context, saveCopyRow);
+        applyTouchFloor(context, openFileRow);
+        applyTouchFloor(context, diagnosticsRow);
     }
 
     /**
@@ -140,6 +208,18 @@ final class ProjectActionsPopoverView extends AnchoredSurfaceView {
 
     TextView openRow() {
         return openRow;
+    }
+
+    TextView saveCopyRow() {
+        return saveCopyRow;
+    }
+
+    TextView openFileRow() {
+        return openFileRow;
+    }
+
+    TextView diagnosticsRow() {
+        return diagnosticsRow;
     }
 
     static ViewGroup.LayoutParams anchoredParams(Context context, int topOffsetPx) {

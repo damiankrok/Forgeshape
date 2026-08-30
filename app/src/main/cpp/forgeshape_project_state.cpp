@@ -1,5 +1,6 @@
 #include "forgeshape_project_state.h"
 
+#include <cstring>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -246,6 +247,105 @@ ProjectCodecStatus loadProjectDocument(const ProjectDocument& document, Construc
         outReport->activeRevision = active ? active->revision() : kNoMeshRevision;
     }
     return ProjectCodecStatus::Ok;
+}
+
+namespace {
+
+// FNV-1a over 64 bits. Chosen because it is four lines, has no table, and is
+// completely specified by two constants — the fingerprint is an internal change
+// detector, never a file field, so nothing outside this process has to
+// reproduce it.
+constexpr uint64_t kFnvOffsetBasis = 1469598103934665603ull;
+constexpr uint64_t kFnvPrime = 1099511628211ull;
+
+void mixBytes(uint64_t& hash, const void* data, size_t size) {
+    const uint8_t* bytes = static_cast<const uint8_t*>(data);
+    for (size_t i = 0; i < size; ++i) {
+        hash ^= bytes[i];
+        hash *= kFnvPrime;
+    }
+}
+
+void mixU64(uint64_t& hash, uint64_t value) { mixBytes(hash, &value, sizeof(value)); }
+
+// The BIT PATTERN, for the same reason the codec writes bit patterns: two
+// values that differ only in the sign of a zero, or one of which is a NaN, are
+// different documents and must produce different fingerprints.
+void mixDouble(uint64_t& hash, double value) {
+    uint64_t bits = 0;
+    std::memcpy(&bits, &value, sizeof(bits));
+    mixU64(hash, bits);
+}
+
+void mixShape(uint64_t& hash, const ConstructionObjectState& shape) {
+    mixU64(hash, primitiveFileCode(shape.kind));
+    // All six remembered sets, because all six are in the file: a Box -> Sphere
+    // -> Box round trip that came back to a different box must be checkpointed.
+    mixDouble(hash, shape.box.width);
+    mixDouble(hash, shape.box.height);
+    mixDouble(hash, shape.box.depth);
+    mixDouble(hash, shape.cylinder.diameter);
+    mixDouble(hash, shape.cylinder.height);
+    mixDouble(hash, shape.sphere.diameter);
+    mixDouble(hash, shape.cone.bottomDiameter);
+    mixDouble(hash, shape.cone.height);
+    mixDouble(hash, shape.capsule.diameter);
+    mixDouble(hash, shape.capsule.totalHeight);
+    mixDouble(hash, shape.plane.width);
+    mixDouble(hash, shape.plane.depth);
+}
+
+void mixTransform(uint64_t& hash, const TransformValues& values) {
+    mixDouble(hash, values.positionX);
+    mixDouble(hash, values.positionY);
+    mixDouble(hash, values.positionZ);
+    mixDouble(hash, values.rotationX);
+    mixDouble(hash, values.rotationY);
+    mixDouble(hash, values.rotationZ);
+    mixDouble(hash, values.scaleX);
+    mixDouble(hash, values.scaleY);
+    mixDouble(hash, values.scaleZ);
+}
+
+}  // namespace
+
+uint64_t projectSemanticFingerprint(const ConstructionScene& scene, ProjectKind kind) {
+    uint64_t hash = kFnvOffsetBasis;
+    // The header's own fields first: the reopen mode is part of the document,
+    // so leaving Construction for Sculpt is a change worth checkpointing even
+    // when not one number moved.
+    mixU64(hash, static_cast<uint64_t>(kind));
+    mixU64(hash, scene.bodyCount());
+    mixU64(hash, scene.activeBodyId());
+    mixU64(hash, scene.nextObjectId());
+
+    for (size_t i = 0; i < scene.bodyCount(); ++i) {
+        const SceneObject& body = scene.bodyAt(i);
+        // The index as well as the id, so reordering — which the scene cannot
+        // do today — could never be silently invisible to a later stage.
+        mixU64(hash, i);
+        mixU64(hash, body.objectId());
+        mixShape(hash, body.construction().captureState());
+        mixTransform(hash, body.transform().values());
+
+        const FrozenSculpt& frozen = body.frozenSculpt();
+        mixU64(hash, frozen.mesh.frozen() ? 1u : 0u);
+        mixU64(hash, frozen.sourceStale ? 1u : 0u);
+        if (!frozen.mesh.frozen()) {
+            continue;
+        }
+        // The proxy, and the whole of it. A stroke advances the revision; a
+        // re-freeze restarts the revision but advances the freeze count, so the
+        // pair cannot repeat across a re-freeze the way the revision alone
+        // could. The counts catch a freeze from a different-sized source.
+        mixU64(hash, frozen.mesh.revision());
+        mixU64(hash, frozen.mesh.freezeCount());
+        mixU64(hash, frozen.mesh.vertexCount());
+        mixU64(hash, frozen.mesh.indexCount());
+        mixU64(hash, frozen.mesh.renderBothSides() ? 1u : 0u);
+        mixU64(hash, frozen.mesh.hasEdits() ? 1u : 0u);
+    }
+    return hash;
 }
 
 }  // namespace forgeshape

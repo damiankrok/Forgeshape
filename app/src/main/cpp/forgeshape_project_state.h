@@ -93,4 +93,31 @@ ProjectCodecStatus loadProjectDocument(const ProjectDocument& document, Construc
                                        SculptSession& session, ConstructionHistory& history,
                                        ProjectLoadReport* outReport = nullptr);
 
+// A cheap fingerprint of everything a `.forge` document would contain.
+//
+// Autosave needs one question answered often and answered cheaply: "would
+// encoding right now produce a different file than the last checkpoint did?"
+// Encoding to find out would serialize the whole project on every check, and a
+// per-frame or per-stroke write is exactly the storm the checkpoint policy
+// forbids. This is the cheap half of that answer.
+//
+// It hashes the SEMANTIC VALUES rather than the domain's update counters, and
+// that distinction is the whole reason it is correct. `restoreState` — the path
+// an undo takes — deliberately does not advance `updateCount`, because an undo
+// returns the object to a state it has already counted. A counter-based
+// fingerprint would therefore call an undone project unchanged and quietly stop
+// protecting it. Hashing the values cannot make that mistake: if the document
+// would differ, this differs.
+//
+// The one place it is a proxy rather than the values themselves is the sculpt
+// mesh, where hashing every vertex on every check would cost what encoding
+// costs. It takes the `SculptRevision` plus the freeze count and the two
+// counts, which together move on every stroke and on every re-freeze — the only
+// two things that can change a frozen mesh.
+//
+// It is a change DETECTOR, never an identity: equal fingerprints mean "no
+// checkpoint needed", and nothing may treat one as proof that two projects are
+// the same file. Reads only; publishes nothing and mutates nothing.
+uint64_t projectSemanticFingerprint(const ConstructionScene& scene, ProjectKind kind);
+
 }  // namespace forgeshape

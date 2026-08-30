@@ -44,6 +44,25 @@
     <item name="project_actions_popover" type="id" />
     <item name="project_save" type="id" />
     <item name="project_open" type="id" />
+    <!--
+      Project transfer through the system's own document UI, and the local
+      diagnostic report. All three are on the same surface because they are the
+      same kind of decision — what happens to this work outside the viewport —
+      and none of them is a standard-format import or export.
+    -->
+    <item name="project_save_copy" type="id" />
+    <item name="project_open_file" type="id" />
+    <item name="project_share_diagnostics" type="id" />
+
+    <!--
+      The recovery question, asked once on a cold launch when a validated
+      checkpoint exists that the user never explicitly saved. It is not a Home
+      screen: two answers, asked once, straight into the ordinary workspace.
+    -->
+    <item name="recovery_prompt" type="id" />
+    <item name="recovery_prompt_panel" type="id" />
+    <item name="recovery_recover" type="id" />
+    <item name="recovery_discard" type="id" />
     <item name="display_settings_button" type="id" />
     <item name="hide_ui_toggle" type="id" />
     <item name="restore_ui_chip" type="id" />

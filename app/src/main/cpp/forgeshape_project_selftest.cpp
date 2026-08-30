@@ -1148,6 +1148,116 @@ int runProjectSelfTests(ProjectSelfTestResult* out, int maxOut) {
                         && kForgeSectionHeaderBytes == 24);
     }
 
+    // -----------------------------------------------------------------------
+    // FSR1B-01 / FSR1B-02: what autosave asks before it writes anything
+    // -----------------------------------------------------------------------
+    //
+    // The fingerprint is the whole reason a checkpoint per edit is affordable
+    // and a checkpoint per frame never happens. If it were wrong in the
+    // permissive direction the product would write constantly; wrong in the
+    // other direction it would silently stop protecting work. Both are covered.
+    {
+        LiveFixture live;
+        const uint64_t initial = projectSemanticFingerprint(live.scene,
+                                                            ProjectKind::Construction);
+        r.check("FSR1B_01_the_fingerprint_is_stable_when_nothing_changes",
+                projectSemanticFingerprint(live.scene, ProjectKind::Construction) == initial);
+
+        // The reopen mode is part of the document, so it is part of the answer.
+        r.check("FSR1B_01_the_reopen_mode_changes_the_fingerprint",
+                projectSemanticFingerprint(live.scene, ProjectKind::Sculpt) != initial);
+
+        // An ordinary Construction edit.
+        {
+            ScopedConstructionEdit edit(live.history);
+            applyPrimitive(live.scene.activeBody().construction(),
+                           live.scene.activeBody().meshStore(),
+                           PrimitiveSpec::forSphere(2.75));
+        }
+        const uint64_t afterShape =
+                projectSemanticFingerprint(live.scene, ProjectKind::Construction);
+        r.check("FSR1B_01_a_shape_edit_changes_the_fingerprint", afterShape != initial);
+
+        // A REJECTED edit changes nothing, so it must cost no checkpoint. This
+        // is the "no write storm" rule at its source: a fingerprint that moved
+        // on every attempted edit would checkpoint on every refused one too.
+        {
+            ScopedConstructionEdit edit(live.history);
+            applyPrimitive(live.scene.activeBody().construction(),
+                           live.scene.activeBody().meshStore(),
+                           PrimitiveSpec::forSphere(-1.0));
+        }
+        r.check("FSR1B_02_a_refused_edit_leaves_the_fingerprint_alone",
+                projectSemanticFingerprint(live.scene, ProjectKind::Construction) == afterShape);
+
+        // An identical re-apply is Unchanged and must also cost nothing.
+        {
+            ScopedConstructionEdit edit(live.history);
+            applyPrimitive(live.scene.activeBody().construction(),
+                           live.scene.activeBody().meshStore(),
+                           PrimitiveSpec::forSphere(2.75));
+        }
+        r.check("FSR1B_02_an_identical_re_apply_leaves_the_fingerprint_alone",
+                projectSemanticFingerprint(live.scene, ProjectKind::Construction) == afterShape);
+
+        // Placement is document truth too, and publishes no mesh revision — so
+        // anything watching revisions instead of values would miss it entirely.
+        {
+            ScopedConstructionEdit edit(live.history);
+            TransformValues moved = live.scene.activeBody().transform().values();
+            moved.positionX = 3.25;
+            applyTransformValues(live.scene.activeBody().transform(), moved);
+        }
+        const uint64_t afterMove =
+                projectSemanticFingerprint(live.scene, ProjectKind::Construction);
+        r.check("FSR1B_01_a_placement_edit_changes_the_fingerprint", afterMove != afterShape);
+
+        // THE case that makes counters the wrong answer. `restoreState`, which
+        // is the path an undo takes, deliberately does not advance updateCount:
+        // an undo returns the object to a state it has already counted. A
+        // counter-based fingerprint would call the undone project unchanged and
+        // quietly stop protecting it.
+        live.history.undo();
+        r.check("FSR1B_01_an_undo_changes_the_fingerprint_that_counters_would_miss",
+                projectSemanticFingerprint(live.scene, ProjectKind::Construction) != afterMove);
+        r.check("FSR1B_01_an_undo_returns_the_fingerprint_to_the_earlier_state",
+                projectSemanticFingerprint(live.scene, ProjectKind::Construction) == afterShape);
+
+        // Creation, selection and the id allocator are all document facts.
+        const uint64_t beforeAdd =
+                projectSemanticFingerprint(live.scene, ProjectKind::Construction);
+        live.scene.addBody();
+        r.check("FSR1B_01_adding_a_body_changes_the_fingerprint",
+                projectSemanticFingerprint(live.scene, ProjectKind::Construction) != beforeAdd);
+        const uint64_t withTwo =
+                projectSemanticFingerprint(live.scene, ProjectKind::Construction);
+        live.scene.setActiveBody(live.scene.bodyAt(0).objectId());
+        r.check("FSR1B_01_selecting_another_body_changes_the_fingerprint",
+                projectSemanticFingerprint(live.scene, ProjectKind::Construction) != withTwo);
+    }
+
+    // FSR1B-13: nothing device-local can reach the document, by construction.
+    {
+        // The fingerprint reads the SCENE and the mode and nothing else — there
+        // is no Context, no Uri, no path, no window and no GPU handle in the
+        // signature, and the document DTOs carry none either. Asserted here as
+        // the arithmetic it is: a document's encoded size is decided entirely by
+        // its body count and its sculpt data, so no hidden device-local field
+        // can be riding along.
+        LiveFixture live;
+        const ProjectDocument document =
+                captureProjectDocument(live.scene, ProjectKind::Construction);
+        const std::vector<uint8_t> encoded = encodeProjectV1(document);
+        const size_t bodies = document.scene.bodies.size();
+        const size_t predicted = static_cast<size_t>(kForgeHeaderBytes)
+                                 + (kForgeSectionHeaderBytes + 4 + 8 + 8 + bodies * 80)
+                                 + (kForgeSectionHeaderBytes + 4 + bodies * 114);
+        r.check("FSR1B_13_a_captured_document_is_exactly_its_semantic_arithmetic",
+                !encoded.empty() && encoded.size() == predicted);
+        r.check("FSR1B_13_a_captured_document_carries_no_sculpt_branch_without_a_sculpt_mesh",
+                !document.hasSculpt);
+    }
+
     return r.n;
 }
 

@@ -749,6 +749,91 @@ final class NativeViewport {
     static native int loadProject(byte[] bytes);
 
     /**
+     * Decodes and validates bytes as a project <b>without applying them</b>.
+     *
+     * <p>The recovery flow has to know whether a candidate is worth offering
+     * before it may put anything in front of the user, and the only honest way
+     * to know is to run the real decoder. This runs it and throws the result
+     * away: no mesh is published, no scene replaced, no mode changed and no
+     * history cleared. A file that passes here is still not loaded.
+     *
+     * @return one of the {@code PROJECT_*} codes; {@code PROJECT_OK} means
+     *         {@link #loadProject} would accept it
+     */
+    static native int validateProject(byte[] bytes);
+
+    /**
+     * A cheap fingerprint of everything a {@code .forge} document would contain
+     * right now.
+     *
+     * <p>Autosave's whole economy rests on this. It answers "would encoding
+     * produce a different file than the last checkpoint did?" for the cost of a
+     * hash over the semantic values, so the question can be asked after every
+     * edit and after every gesture without serializing the project to find out.
+     *
+     * <p>It hashes the <b>values</b>, not the domain's update counters, and that
+     * is what makes it correct: an undo deliberately does not advance
+     * {@code updateCount}, so a counter-based answer would call an undone
+     * project unchanged and quietly stop protecting it.
+     *
+     * <p>A change <b>detector</b>, never an identity. Equal fingerprints mean
+     * "no checkpoint needed"; nothing may treat one as proof that two projects
+     * are the same file.
+     */
+    static native long projectFingerprint();
+
+    // -----------------------------------------------------------------------
+    // Renderer lifecycle
+    // -----------------------------------------------------------------------
+    //
+    // GPU resources are not project truth. The scene, every published mesh and
+    // every Frozen Sculpt Mesh live in CPU domain code that a lost device
+    // cannot reach, so losing the device costs the GPU's copy of derived data
+    // and nothing else. These constants exist so the product can tell the user
+    // the truth about the viewport while saying, accurately, that the work is
+    // safe.
+
+    /** Presenting, or ready to. */
+    static final int RENDERER_HEALTHY = 0;
+
+    /** The device was lost; a rebuild is under way. The project is intact. */
+    static final int RENDERER_RECOVERING = 1;
+
+    /**
+     * The renderer has stopped and will not start again in this process.
+     *
+     * <p>The project is still intact and has been checkpointed. What the user
+     * needs is a restart, and saying so is better than presenting a black
+     * viewport forever or drawing through a corrupt device.
+     */
+    static final int RENDERER_RESTART_REQUIRED = 2;
+
+    /** One of the {@code RENDERER_*} codes. Never blocks on the render thread. */
+    static native int rendererLifecycle();
+
+    /**
+     * DEBUG-ONLY: makes the next frame behave exactly as though the GPU device
+     * had been lost. Returns false in a release build, where it does nothing.
+     *
+     * <p>Not a product path and unreachable from any UI. Provoking a real
+     * {@code VK_ERROR_DEVICE_LOST} would mean destabilising the GPU of the
+     * authoritative emulator, which the repository forbids, and would make the
+     * test depend on driver behaviour rather than on ForgeShape's. Everything
+     * after the injection point is the real recovery path.
+     */
+    static native boolean debugInjectDeviceLoss();
+
+    /**
+     * How many GPU device rebuilds have completed in this process.
+     *
+     * <p>Introspection, and the difference between a real claim and a weak one:
+     * "the renderer is healthy" is also what a renderer that never noticed the
+     * loss would report, while a rebuild count that went up says the device
+     * really was torn down and built again.
+     */
+    static native int debugRendererDeviceRebuilds();
+
+    /**
      * Opens the production session-initialization boundary.
      *
      * <p>Seeding a session is not something the user did. Answering the start

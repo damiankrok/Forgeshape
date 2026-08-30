@@ -61,6 +61,7 @@ final class EditorWorkspaceView extends FrameLayout
         WorkspaceTrailingHostView.Callbacks, PropertyInspectorView.OnPrecisionSurfaceClosed,
         DisplaySettingsPopoverView.OnDisplaySettingChanged,
         ProjectActionsPopoverView.OnProjectAction,
+        RecoveryPromptView.OnRecoveryChoice,
         ObjectsCapsuleView.OnObjectsCapsuleAction,
         AddPrimitivePaletteView.OnPrimitiveChosen,
         StartChooserView.OnStartFlowChosen,
@@ -139,6 +140,13 @@ final class EditorWorkspaceView extends FrameLayout
     private final DisplaySettingsPopoverView displayPopover;
     private final ProjectActionsPopoverView projectPopover;
     private final StartChooserView startChooser;
+    private final RecoveryPromptView recoveryPrompt;
+
+    /**
+     * Who decides when the project is checkpointed. Owned here because this is
+     * the one view every semantic edit passes through; released with the view.
+     */
+    private final AutosaveController autosave;
 
     /**
      * The leading-edge column an expanded window gives the scene list.
@@ -293,6 +301,16 @@ final class EditorWorkspaceView extends FrameLayout
                         @Override
                         public void onViewportGestureSettled() {
                             setChromeMotionAllowed(true);
+                            // Unconditionally, and before any of the questions
+                            // below. A sculpt stroke never passes through Java
+                            // — it is resolved entirely in native code from the
+                            // touch samples — so this gesture edge is the only
+                            // moment the Android layer ever learns that a stroke
+                            // may have happened. Noting is cheap and the
+                            // controller decides whether anything actually
+                            // changed; not noting would leave a whole stroke
+                            // unprotected until some unrelated edit came along.
+                            noteProjectMaybeDirty();
                             final long active = NativeViewport.sceneActiveBodyId();
                             if (active != lastKnownActiveBodyId) {
                                 lastKnownActiveBodyId = active;
@@ -533,6 +551,14 @@ final class EditorWorkspaceView extends FrameLayout
         overlayRoot.addView(startChooser, new LayoutParams(
                 LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
 
+        // Above the start question, because it is asked FIRST: if there is
+        // unsaved work to recover, how a new model would have begun is not yet
+        // a question worth asking.
+        recoveryPrompt = new RecoveryPromptView(context, this);
+        recoveryPrompt.setVisibility(GONE);
+        overlayRoot.addView(recoveryPrompt, new LayoutParams(
+                LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
+
         // Every anchored surface reports its own open state to one listener, so
         // "is there something for System Back to dismiss" is answered by the
         // surfaces themselves rather than by a list of call sites that has to
@@ -543,7 +569,17 @@ final class EditorWorkspaceView extends FrameLayout
 
         installInsetListener();
         syncFromNative();
-        showStartChooser(!uiState.startChoiceMade());
+
+        autosave = new AutosaveController(context);
+
+        // The recovery question is asked ONCE PER PROCESS and before the start
+        // question, and both of those are the same rule: this is the moment the
+        // session begins, and it begins once. An Activity recreation — a theme
+        // change, a rotation the config did not absorb — rebuilds this view, and
+        // asking again there would present a second decision about a candidate
+        // the user has already answered.
+        final boolean asking = !uiState.recoveryResolved() && offerRecoveryIfPresent();
+        showStartChooser(!asking && !uiState.startChoiceMade());
     }
 
     // -----------------------------------------------------------------------
@@ -2201,6 +2237,13 @@ final class EditorWorkspaceView extends FrameLayout
                     R.attr.fsTextError);
             return;
         }
+        // The work the checkpoint was protecting is now in the slot the user
+        // named, so the checkpoint has nothing left to protect and is retired.
+        // Autosave writes a fresh one the moment the project changes again.
+        ProjectCheckpoint.clear(getContext());
+        autosave.noteProjectPersisted();
+        Diagnostics.info(DiagnosticLog.CAT_PERSISTENCE, "MANUAL_SAVE",
+                "bytes=" + bytes.length);
         // Saving reads the model and writes a file. It publishes no mesh, mints
         // no revision, changes no mode and records no history step, so nothing
         // on screen has to be re-read afterwards.
@@ -2229,10 +2272,400 @@ final class EditorWorkspaceView extends FrameLayout
         // list and whether Undo is available have all been replaced at once.
         // One re-read from native truth answers all of it, which is exactly
         // what syncFromNative is for.
+        // The live project and the internal slot now agree, so the next
+        // checkpoint of unchanged work is free rather than merely fast. The
+        // checkpoint is retired for the same reason a Save retires it.
+        ProjectCheckpoint.clear(getContext());
+        autosave.noteProjectPersisted();
+        Diagnostics.info(DiagnosticLog.CAT_PERSISTENCE, "MANUAL_OPEN",
+                "bytes=" + bytes.length);
         dismissPrimarySurfacesExcept(null);
         onNativeStateChanged();
         showStatus(getContext().getString(R.string.status_project_opened, projectSummary()),
                 R.attr.fsTextSuccess);
+    }
+
+    // -----------------------------------------------------------------------
+    // Autosave
+    // -----------------------------------------------------------------------
+    //
+    // The controller owns WHEN; this owns WHERE FROM. Every place the workspace
+    // asks native code to change the project tells it the project may have
+    // changed, and so does the end of every viewport gesture — a sculpt stroke
+    // never passes through Java at all, so without that edge a whole stroke
+    // could go unnoticed until the next unrelated edit.
+    //
+    // Noting is cheap and idempotent by design: it schedules, and the schedule
+    // coalesces. Over-noting costs one removeCallbacks; under-noting costs the
+    // user their work, so every doubtful case notes.
+
+    /** The autosave controller, so lifecycle and verification can reach it. */
+    AutosaveController autosaveController() {
+        return autosave;
+    }
+
+    /**
+     * Tells autosave the project may have changed.
+     *
+     * <p>Safe to call from anywhere on the UI thread and safe to call too often.
+     */
+    void noteProjectMaybeDirty() {
+        autosave.noteMaybeDirty();
+    }
+
+    /**
+     * Asks for a checkpoint of the latest state now, without waiting.
+     *
+     * <p>For the moments where there may be no later: the Activity is stopping,
+     * or the renderer has just died.
+     */
+    void requestImmediateCheckpoint() {
+        autosave.requestImmediateCheckpoint();
+    }
+
+    /** Lets the worker thread go. Called when the Activity is really finishing. */
+    void releaseAutosave() {
+        autosave.release();
+    }
+
+    // -----------------------------------------------------------------------
+    // Recovery
+    // -----------------------------------------------------------------------
+
+    /**
+     * Offers the recovery question if — and only if — there is something real to
+     * offer.
+     *
+     * <p>A candidate has to survive three tests before the user is troubled with
+     * it. There must be a checkpoint file; it must <b>decode through the real
+     * decoder</b>, which is what {@code validateProject} runs without applying
+     * anything; and the process must not already have settled the question.
+     *
+     * <p>A checkpoint that fails to decode is <b>quarantined, not retried</b>.
+     * That is the whole of the do-not-loop rule: a corrupt candidate left in
+     * place would ask the same broken question on every launch forever, so it is
+     * moved aside once, reported once, and never offered again.
+     *
+     * @return whether the question is now on screen
+     */
+    private boolean offerRecoveryIfPresent() {
+        if (!ProjectCheckpoint.exists(getContext())) {
+            return false;
+        }
+        final byte[] bytes = ProjectCheckpoint.read(getContext());
+        final int status = bytes == null
+                ? NativeViewport.PROJECT_NO_DATA
+                : NativeViewport.validateProject(bytes);
+        if (status != NativeViewport.PROJECT_OK) {
+            // Nothing has been applied and nothing can have been: validate is a
+            // decode into temporary state. The live project is whatever a fresh
+            // launch built, untouched.
+            ProjectCheckpoint.quarantine(getContext());
+            uiState.recordRecoveryResolved();
+            Diagnostics.warn(DiagnosticLog.CAT_RECOVERY, "CANDIDATE_QUARANTINED",
+                    "status=" + status);
+            showStatus(getContext().getString(R.string.status_recovery_failed),
+                    R.attr.fsTextError);
+            return false;
+        }
+        Diagnostics.info(DiagnosticLog.CAT_RECOVERY, "CANDIDATE_OFFERED",
+                "bytes=" + bytes.length);
+        recoveryPrompt.setVisibility(VISIBLE);
+        return true;
+    }
+
+    /** Whether the recovery question is currently on screen. */
+    boolean recoveryPromptVisible() {
+        return recoveryPrompt.getVisibility() == VISIBLE;
+    }
+
+    /**
+     * Re-asks the cold-launch recovery question on THIS workspace.
+     *
+     * <p>Verification only, and it exists because of a real property of the
+     * product rather than to work around one. Leaving the foreground
+     * checkpoints the live project — that is the point of
+     * {@code onStop} — so an Activity recreation writes a checkpoint of its
+     * own. A test that planted a specific candidate and then recreated the
+     * Activity to see it offered would be racing its own fixture against that
+     * write, and would sometimes be asserting about the wrong file.
+     *
+     * <p>This runs the same {@link #offerRecoveryIfPresent} the constructor runs
+     * — the decision under test is identical — without the lifecycle churn
+     * around it. The constructor path itself is still covered separately, by the
+     * case that recreates the Activity for real.
+     *
+     * @return whether the question is now on screen
+     */
+    boolean offerRecoveryForTest() {
+        uiState.clearRecoveryResolved();
+        return offerRecoveryIfPresent();
+    }
+
+    /**
+     * Settles the recovery question the way a case that is not about it needs.
+     *
+     * <p>The same role {@code dismissStartChooserForConstruction} plays, and for
+     * the same reason. Leaving the foreground checkpoints the project, so almost
+     * every instrumented case leaves a candidate behind — and the first Activity
+     * of the next process would then put the recovery question over the chrome
+     * that case is trying to measure.
+     *
+     * <p>The candidate FILE is deliberately left alone: a case that planted one
+     * on purpose still has it, and this only records that the question has been
+     * answered for this process.
+     */
+    void dismissRecoveryPromptForTest() {
+        uiState.recordRecoveryResolved();
+        recoveryPrompt.setVisibility(GONE);
+    }
+
+    @Override
+    public void onRecoverRequested() {
+        uiState.recordRecoveryResolved();
+        recoveryPrompt.setVisibility(GONE);
+
+        final byte[] bytes = ProjectCheckpoint.read(getContext());
+        final int status = bytes == null
+                ? NativeViewport.PROJECT_NO_DATA
+                : NativeViewport.loadProject(bytes);
+        if (status != NativeViewport.PROJECT_OK) {
+            // Between the offer and the press the file became unreadable. The
+            // load is fail-closed, so the live project is exactly what it was;
+            // the candidate is retired so the next launch does not re-offer it.
+            ProjectCheckpoint.quarantine(getContext());
+            Diagnostics.error(DiagnosticLog.CAT_RECOVERY, "RECOVER_FAILED",
+                    "status=" + status);
+            showStatus(getContext().getString(R.string.status_recovery_failed),
+                    R.attr.fsTextError);
+            showStartChooser(!uiState.startChoiceMade());
+            return;
+        }
+        // Recovered work is the live project now, and the checkpoint has done
+        // its job. It is retired rather than kept: leaving it would offer the
+        // same work again on the next launch, as though it had been lost twice.
+        ProjectCheckpoint.clear(getContext());
+        autosave.noteProjectPersisted();
+        // The start question is moot — this project already decided which
+        // representation it is in, and asking would offer to change it.
+        uiState.recordStartChoice();
+        dismissPrimarySurfacesExcept(null);
+        onNativeStateChanged();
+        Diagnostics.info(DiagnosticLog.CAT_RECOVERY, "RECOVERED",
+                "bodies=" + NativeViewport.sceneBodyCount());
+        showStatus(getContext().getString(R.string.status_recovery_recovered, projectSummary()),
+                R.attr.fsTextSuccess);
+    }
+
+    @Override
+    public void onDiscardRecoveryRequested() {
+        uiState.recordRecoveryResolved();
+        recoveryPrompt.setVisibility(GONE);
+        // The only thing discarded is the checkpoint. The manual slot is not
+        // touched, not read and not written by this — which is exactly what the
+        // option's description promises the user.
+        ProjectCheckpoint.clear(getContext());
+        Diagnostics.info(DiagnosticLog.CAT_RECOVERY, "DISCARDED", null);
+        showStatus(getContext().getString(R.string.status_recovery_discarded),
+                R.attr.fsTextPrimary);
+        // Discarding means starting normally, so the question that was deferred
+        // to make room for this one gets asked now.
+        showStartChooser(!uiState.startChoiceMade());
+    }
+
+    // -----------------------------------------------------------------------
+    // Project transfer, through the system's own document UI
+    // -----------------------------------------------------------------------
+
+    @Override
+    public void onSaveCopyRequested() {
+        setProjectPanelOpen(false);
+        // Encoded before the picker is shown, so a project that cannot be
+        // encoded says so immediately instead of after the user has chosen a
+        // destination and watched an empty file appear there.
+        final byte[] bytes = NativeViewport.encodeProject();
+        if (bytes == null || bytes.length == 0) {
+            showStatus(getContext().getString(R.string.status_project_no_encode),
+                    R.attr.fsTextError);
+            return;
+        }
+        pendingCopyBytes = bytes;
+        if (transferHost == null || !transferHost.requestCreateProjectDocument()) {
+            pendingCopyBytes = null;
+            showStatus(getContext().getString(R.string.status_project_copy_failed),
+                    R.attr.fsTextError);
+        }
+    }
+
+    @Override
+    public void onOpenFileRequested() {
+        setProjectPanelOpen(false);
+        if (transferHost == null || !transferHost.requestOpenProjectDocument()) {
+            showStatus(getContext().getString(R.string.status_project_copy_failed),
+                    R.attr.fsTextError);
+        }
+    }
+
+    @Override
+    public void onShareDiagnosticsRequested() {
+        setProjectPanelOpen(false);
+        // Written locally FIRST, so there is something real to hand over and so
+        // the user could read it before deciding. Nothing is sent anywhere by
+        // ForgeShape: the destination is whatever the system picker returns.
+        if (!Diagnostics.writeReport(getContext(), Diagnostics.REASON_MANUAL)) {
+            showStatus(getContext().getString(R.string.status_diagnostics_failed),
+                    R.attr.fsTextError);
+            return;
+        }
+        if (transferHost == null || !transferHost.requestCreateDiagnosticsDocument()) {
+            showStatus(getContext().getString(R.string.status_diagnostics_failed),
+                    R.attr.fsTextError);
+        }
+    }
+
+    /**
+     * The bytes waiting for a destination.
+     *
+     * <p>Held here between the request and the picker's answer because the
+     * picker is a whole activity round trip. Cleared on every outcome — success,
+     * failure and cancel — so a project can never be written to a destination
+     * chosen for a different one.
+     */
+    private byte[] pendingCopyBytes;
+
+    /**
+     * Stages the bytes a Save Copy would write, without opening a picker.
+     *
+     * <p>Verification only. The system's document UI belongs to another app,
+     * differs per device and cannot be driven reliably from instrumentation, so
+     * a test stages what the real request stages and then drives the real
+     * result handler. What is under test — the bytes, the truncation, the
+     * cancel, the untouched internal slot — is identical either way; what is
+     * skipped is only the picker's own screen, and the Intent that asks for it
+     * is asserted separately.
+     */
+    void onSaveCopyRequestedForTest(byte[] bytes) {
+        pendingCopyBytes = bytes;
+    }
+
+    /** What the workspace needs from the Activity to reach the system picker. */
+    interface ProjectTransferHost {
+        boolean requestCreateProjectDocument();
+
+        boolean requestOpenProjectDocument();
+
+        boolean requestCreateDiagnosticsDocument();
+    }
+
+    private ProjectTransferHost transferHost;
+
+    void setProjectTransferHost(ProjectTransferHost host) {
+        this.transferHost = host;
+    }
+
+    /**
+     * The user picked somewhere to put a copy of the project.
+     *
+     * <p>Writes the bytes captured when the action was requested, not a fresh
+     * encode: the project may have changed while the picker was open, and the
+     * copy the user asked for is the one they asked for.
+     */
+    void onCreateProjectDocumentChosen(android.net.Uri destination) {
+        final byte[] bytes = pendingCopyBytes;
+        pendingCopyBytes = null;
+        if (destination == null || bytes == null) {
+            // Cancel. A no-op by construction: nothing was written, the manual
+            // slot was never involved, and the live project was only read.
+            Diagnostics.info(DiagnosticLog.CAT_TRANSFER, "SAVE_COPY_CANCELLED", null);
+            return;
+        }
+        if (!ProjectTransfer.writeTo(getContext(), destination, bytes)) {
+            showStatus(getContext().getString(R.string.status_project_copy_failed),
+                    R.attr.fsTextError);
+            return;
+        }
+        Diagnostics.info(DiagnosticLog.CAT_TRANSFER, "SAVE_COPY_WROTE",
+                "bytes=" + bytes.length);
+        showStatus(getContext().getString(R.string.status_project_copy_saved, projectSummary()),
+                R.attr.fsTextSuccess);
+    }
+
+    /**
+     * The user picked a project file to open.
+     *
+     * <p>Reads bytes and hands them to the same fail-closed native load an
+     * internal Open uses. <b>The internal manual slot is not written by this</b>
+     * — opening a file makes that project live, and what the user has saved
+     * stays what the user saved until they save again. Autosave protects the
+     * newly live project from there, which is the difference between "this is
+     * open" and "this is stored".
+     */
+    void onOpenProjectDocumentChosen(android.net.Uri source) {
+        if (source == null) {
+            Diagnostics.info(DiagnosticLog.CAT_TRANSFER, "OPEN_FILE_CANCELLED", null);
+            return;
+        }
+        final byte[] bytes = ProjectTransfer.readFrom(getContext(), source);
+        if (bytes == null) {
+            showStatus(getContext().getString(R.string.status_project_damaged),
+                    R.attr.fsTextError);
+            return;
+        }
+        final int status = NativeViewport.loadProject(bytes);
+        if (status != NativeViewport.PROJECT_OK) {
+            Diagnostics.warn(DiagnosticLog.CAT_TRANSFER, "OPEN_FILE_REJECTED",
+                    "status=" + status);
+            showStatus(getContext().getString(projectFailureMessage(status)),
+                    R.attr.fsTextError);
+            return;
+        }
+        dismissPrimarySurfacesExcept(null);
+        onNativeStateChanged();
+        // The live project is now something that exists nowhere in this app's
+        // own storage, so it is exactly the case autosave is for.
+        noteProjectMaybeDirty();
+        Diagnostics.info(DiagnosticLog.CAT_TRANSFER, "OPEN_FILE_APPLIED",
+                "bodies=" + NativeViewport.sceneBodyCount());
+        showStatus(getContext().getString(R.string.status_project_file_opened, projectSummary()),
+                R.attr.fsTextSuccess);
+    }
+
+    /** The user picked somewhere to put the diagnostic report. */
+    void onCreateDiagnosticsDocumentChosen(android.net.Uri destination) {
+        if (destination == null) {
+            return;
+        }
+        final byte[] report = Diagnostics.renderReport(getContext(), Diagnostics.REASON_MANUAL,
+                null).getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        if (!ProjectTransfer.writeTo(getContext(), destination, report)) {
+            showStatus(getContext().getString(R.string.status_diagnostics_failed),
+                    R.attr.fsTextError);
+            return;
+        }
+        showStatus(getContext().getString(R.string.status_diagnostics_shared),
+                R.attr.fsTextPrimary);
+    }
+
+    // -----------------------------------------------------------------------
+    // The renderer stopping
+    // -----------------------------------------------------------------------
+
+    /**
+     * Reacts to the viewport having stopped for good.
+     *
+     * <p>GPU resources were never project truth, so the work is intact in CPU
+     * domain state — and the first thing to do about that is get it onto disk,
+     * because a process whose renderer has died is a process that may not last.
+     * Then say so: a black viewport with no explanation is worse than a sentence
+     * that names the one thing that fixes it.
+     */
+    void onRendererRestartRequired() {
+        requestImmediateCheckpoint();
+        Diagnostics.error(DiagnosticLog.CAT_RENDER, "RESTART_REQUIRED",
+                "bodies=" + NativeViewport.sceneBodyCount());
+        Diagnostics.writeReport(getContext(), Diagnostics.REASON_RENDER_RESTART_REQUIRED);
+        showStatus(getContext().getString(R.string.status_renderer_restart_required),
+                R.attr.fsTextError);
     }
 
     private void setProjectPanelOpen(boolean open) {
@@ -2420,6 +2853,12 @@ final class EditorWorkspaceView extends FrameLayout
 
     @Override
     public void onNativeStateChanged() {
+        // THE central re-read, and therefore the central place to notice that
+        // the project may have moved. Every chrome-driven mutation — an Apply,
+        // a creation, an undo, a mode change, a body selection — ends here, so
+        // one note covers all of them rather than each call site remembering.
+        // Selection counts: which body is active is part of the document.
+        noteProjectMaybeDirty();
         // Recorded HERE, in the one place every surface re-reads, rather than
         // in the viewport gesture listener that consults it. Tracking it only
         // there left it stale whenever the active body changed by some other

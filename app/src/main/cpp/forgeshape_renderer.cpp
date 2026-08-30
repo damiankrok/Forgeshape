@@ -219,10 +219,36 @@ bool Renderer::createInstance() {
     return true;
 }
 
+// The Vulkan result codes forgeshape_render_recovery.h names without including
+// Vulkan. Asserted here, where both worlds are visible, so the policy can stay
+// Vulkan-free without the two ever drifting apart.
+static_assert(kVkSuccessCode == static_cast<int>(VK_SUCCESS), "VK_SUCCESS code drift");
+static_assert(kVkSuboptimalCode == static_cast<int>(VK_SUBOPTIMAL_KHR),
+              "VK_SUBOPTIMAL_KHR code drift");
+static_assert(kVkErrorOutOfDateCode == static_cast<int>(VK_ERROR_OUT_OF_DATE_KHR),
+              "VK_ERROR_OUT_OF_DATE_KHR code drift");
+static_assert(kVkErrorSurfaceLostCode == static_cast<int>(VK_ERROR_SURFACE_LOST_KHR),
+              "VK_ERROR_SURFACE_LOST_KHR code drift");
+static_assert(kVkErrorDeviceLostCode == static_cast<int>(VK_ERROR_DEVICE_LOST),
+              "VK_ERROR_DEVICE_LOST code drift");
+
 void Renderer::destroyInstance() {
+    destroyDeviceScopedResources();
+
+    if (instance_ != VK_NULL_HANDLE) {
+        vkDestroyInstance(instance_, nullptr);
+        instance_ = VK_NULL_HANDLE;
+        FS_LOGI("Vulkan instance destroyed");
+    }
+}
+
+void Renderer::destroyDeviceScopedResources() {
     if (device_ != VK_NULL_HANDLE) {
-        // Process teardown is the one place a full device idle is right: every
-        // queue is about to disappear along with the device.
+        // A full device idle is right here for both callers: at process
+        // teardown every queue is about to disappear with the device, and after
+        // a device loss the wait returns immediately with an error rather than
+        // blocking. Destruction is the one thing that stays lawful on a lost
+        // device, which is why this whole block is safe to run on one.
         vkDeviceWaitIdle(device_);
 
         destroyMatCapResources();
@@ -268,12 +294,78 @@ void Renderer::destroyInstance() {
         gizmoPipelineLayout_ = VK_NULL_HANDLE;
         commandPool_ = VK_NULL_HANDLE;
     }
+}
 
-    if (instance_ != VK_NULL_HANDLE) {
-        vkDestroyInstance(instance_, nullptr);
-        instance_ = VK_NULL_HANDLE;
-        FS_LOGI("Vulkan instance destroyed");
+bool Renderer::rebuildDeviceAfterLoss() {
+    // The window reference is the one thing that must outlive the teardown.
+    // detachSurface releases the renderer's own reference, so an extra one is
+    // taken here and handed straight back to attachSurface, which takes
+    // ownership of it. Without this the renderer would have to ask the Android
+    // layer to re-deliver a Surface it never actually lost.
+    ANativeWindow* window = window_;
+    if (window == nullptr) {
+        // No surface to come back to. Not a failure: the next attach builds a
+        // fresh device anyway, because the teardown below clears device_.
+        detachSurface();
+        destroyDeviceScopedResources();
+        FS_LOGI("FORGESHAPE_%s:no_surface_to_restore", kRenderDeviceRebuiltToken);
+        return true;
     }
+    ANativeWindow_acquire(window);
+
+    detachSurface();
+    destroyDeviceScopedResources();
+
+    // attachSurface takes ownership of the reference acquired above and, with
+    // device_ now null, walks the whole first-attach path: physical device,
+    // logical device, command pool, descriptors, shaders, sync objects, upload
+    // objects, MatCap, grid, gizmo, swapchain.
+    const bool attached = attachSurface(window);
+    if (!attached) {
+        FS_LOGE("FORGESHAPE_%s:rebuild_attach_failed", kRenderRestartRequiredToken);
+        return false;
+    }
+    // Nothing re-uploads geometry here on purpose. destroyMeshResources cleared
+    // the per-body upload record, so the next frame's syncScene sees every body
+    // as new and mirrors the CPU truth that was never touched.
+    FS_LOGI("FORGESHAPE_%s:attempt=%d completed=%d", kRenderDeviceRebuiltToken,
+            recovery_.deviceRebuildAttempts(), recovery_.deviceRebuildsCompleted() + 1);
+    return true;
+}
+
+bool Renderer::handleFrameResult(int vkResultCode, const char* where) {
+    const RenderFailureKind kind = classifyRenderResult(vkResultCode, expectSuboptimal_);
+    if (kind == RenderFailureKind::None) {
+        return true;
+    }
+
+    const RenderRecoveryAction action = recovery_.onFailure(kind);
+    switch (action) {
+        case RenderRecoveryAction::Continue:
+            return true;
+
+        case RenderRecoveryAction::RebuildSwapchain:
+            needsSwapchainRebuild_ = true;
+            return true;
+
+        case RenderRecoveryAction::RebuildDevice: {
+            FS_LOGE("FORGESHAPE_%s:%s attempt=%d", kRenderDeviceLostToken, where,
+                    recovery_.deviceRebuildAttempts());
+            const bool rebuilt = rebuildDeviceAfterLoss();
+            recovery_.onDeviceRebuildFinished(rebuilt);
+            if (!rebuilt) {
+                FS_LOGE("FORGESHAPE_%s:%s", kRenderRestartRequiredToken, where);
+                return false;
+            }
+            return true;
+        }
+
+        case RenderRecoveryAction::StopRestartRequired:
+            FS_LOGE("FORGESHAPE_%s:%s:%s", kRenderRestartRequiredToken, where,
+                    renderFailureKindName(kind));
+            return false;
+    }
+    return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -2528,20 +2620,29 @@ bool Renderer::drawFrame() {
     VkResult acquire = vkAcquireNextImageKHR(device_, swapchain_, UINT64_MAX,
                                              imageAvailable_[currentFrame_], VK_NULL_HANDLE,
                                              &imageIndex);
-    if (acquire == VK_ERROR_OUT_OF_DATE_KHR) {
-        needsSwapchainRebuild_ = true;
-        return true;
-    } else if (acquire == VK_SUBOPTIMAL_KHR) {
-        // Suboptimal-but-usable. Rebuild only when it is NOT the expected
+#ifndef NDEBUG
+    if (injectDeviceLossOnce_) {
+        // The seam, and the whole of it: from here down every line is the real
+        // device-loss path. Nothing about the handling is special-cased for the
+        // injection, which is what makes the test a test of the product.
+        injectDeviceLossOnce_ = false;
+        acquire = VK_ERROR_DEVICE_LOST;
+    }
+#endif
+    if (acquire != VK_SUCCESS && acquire != VK_SUBOPTIMAL_KHR) {
+        // OUT_OF_DATE, SURFACE_LOST, DEVICE_LOST and anything else. Every one of
+        // them means this frame has no image to draw into, so the frame is
+        // abandoned and `imageIndex` is never read. What HAPPENS about it — a
+        // swapchain rebuild, a whole device rebuild, or stopping for good — is
+        // the recovery policy's decision, not this function's.
+        return handleFrameResult(static_cast<int>(acquire), "acquire");
+    }
+    if (acquire == VK_SUBOPTIMAL_KHR && !expectSuboptimal_) {
+        // Suboptimal-but-usable: this frame is still drawn, and the swapchain is
+        // rebuilt before the next one. Rebuild only when it is NOT the expected
         // consequence of the identity-pre-transform convention; a real size
         // change arrives as OUT_OF_DATE or as an explicit requestResize().
-        if (!expectSuboptimal_) {
-            needsSwapchainRebuild_ = true;
-        }
-    } else if (acquire != VK_SUCCESS) {
-        FS_LOGE("vkAcquireNextImageKHR -> %d", (int)acquire);
-        FS_FAIL("vkAcquireNextImageKHR");
-        return false;
+        needsSwapchainRebuild_ = true;
     }
 
     if (imagesInFlight_[imageIndex] != VK_NULL_HANDLE) {
@@ -2565,7 +2666,14 @@ bool Renderer::drawFrame() {
     submit.pSignalSemaphores = &renderFinished_[imageIndex];
 
     vkResetFences(device_, 1, &inFlightFences_[currentFrame_]);
-    FS_VK_CHECK(vkQueueSubmit(graphicsQueue_, 1, &submit, inFlightFences_[currentFrame_]), "vkQueueSubmit");
+    // Not FS_VK_CHECK: a lost device very often surfaces here rather than at
+    // acquire, and treating it as a flat unrecoverable failure would throw away
+    // a device the policy is willing to rebuild.
+    const VkResult submitted = vkQueueSubmit(graphicsQueue_, 1, &submit,
+                                             inFlightFences_[currentFrame_]);
+    if (submitted != VK_SUCCESS) {
+        return handleFrameResult(static_cast<int>(submitted), "submit");
+    }
 
     VkPresentInfoKHR present{};
     present.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
@@ -2576,17 +2684,23 @@ bool Renderer::drawFrame() {
     present.pImageIndices = &imageIndex;
 
     VkResult presented = vkQueuePresentKHR(presentQueue_, &present);
-    if (presented == VK_ERROR_OUT_OF_DATE_KHR ||
-        (presented == VK_SUBOPTIMAL_KHR && !expectSuboptimal_)) {
+    if (presented != VK_SUCCESS && presented != VK_SUBOPTIMAL_KHR) {
+        // Same reasoning as the submit above: OUT_OF_DATE is routine, and
+        // DEVICE_LOST is recoverable rather than fatal. The frame counter and
+        // the first-present token are deliberately not advanced on this path —
+        // nothing was presented.
+        return handleFrameResult(static_cast<int>(presented), "present");
+    }
+    if (presented == VK_SUBOPTIMAL_KHR && !expectSuboptimal_) {
         needsSwapchainRebuild_ = true;
-    } else if (presented != VK_SUCCESS && presented != VK_SUBOPTIMAL_KHR) {
-        FS_LOGE("vkQueuePresentKHR -> %d", (int)presented);
-        FS_FAIL("vkQueuePresentKHR");
-        return false;
     }
 
     ++frameIndex_;
-    if (!presentedThisSession_ && presented != VK_ERROR_OUT_OF_DATE_KHR) {
+    // Reaching here means an image really was presented: every non-success
+    // result returned above. After a device rebuild `attachSurface` clears this
+    // flag, so the token appears a second time — which is the honest report
+    // that the viewport came back, not a duplicate startup.
+    if (!presentedThisSession_) {
         presentedThisSession_ = true;
         FS_LOGI("First frame submitted and presented (frame #%llu, %ux%u)",
                 (unsigned long long)frameIndex_, swapchainExtent_.width, swapchainExtent_.height);

@@ -5,6 +5,7 @@ import static com.forgeshape.app.WorkspaceTestSupport.onWorkspace;
 import static com.forgeshape.app.WorkspaceTestSupport.resetToBaselineConstruction;
 import static com.forgeshape.app.WorkspaceTestSupport.settleLayout;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
@@ -29,15 +30,22 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 
 /**
- * E2ER1A-02 and E2ER1A-03: ForgeShape work survives the process dying.
+ * E2ER1A-02/03 and E2ER1B-01/02: ForgeShape work survives the process dying —
+ * both the work the user saved, and the work they never did.
+ *
+ * <p>Stages 1-4 are the E2E-R1A claim: the user pressed Save, and Open brings
+ * the project back. Stages 5-8 are the harder E2E-R1B one: the user pressed
+ * nothing at all. Autosave alone protected the work, and on a genuinely cold
+ * launch the recovery question is what offers it back — no seam, no cleared
+ * flag, exactly what a user meets after a crash.
  *
  * <p><b>How the process death is real.</b> Instrumentation runs inside the app
  * process, so a test cannot kill that process and then keep asserting. The two
  * halves of each case are therefore separate test METHODS, and
  * {@code scripts\run-project-persistence-e2e.ps1} runs them as separate
  * {@code am instrument} invocations with an {@code am force-stop} in between —
- * so the {@code stage2}/{@code stage4} half genuinely starts in a process that
- * has never seen the scene the {@code stage1}/{@code stage3} half built. The
+ * so each verifying half genuinely starts in a process that has never seen the
+ * scene its partner built. The
  * script confirms, by asking for the PID, that no ForgeShape process exists at
  * the moment the verifying half begins -- so everything that half reads about
  * the project came off the disk and out of the codec, because there is nothing
@@ -260,6 +268,175 @@ public final class ProjectProcessDeathTest {
         assertEquals(NativeViewport.MODE_SCULPT, (int) resumed[NativeViewport.SCULPT_MODE]);
 
         resetToBaselineConstruction(rule.getScenario());
+    }
+
+    // -----------------------------------------------------------------------
+    // E2ER1B-01 / E2ER1B-02: work that was NEVER saved survives process death
+    // -----------------------------------------------------------------------
+    //
+    // The difference from the two cases above is the whole point of E2E-R1B.
+    // There, the user pressed Save. Here they did not press anything: they
+    // edited, the process died, and what has to bring the work back is autosave
+    // and the recovery question.
+    //
+    // These halves are also the only place the cold-launch recovery path runs
+    // for real. A fresh process has never answered the question, so the
+    // workspace's constructor asks it — no seam, no cleared flag, exactly what a
+    // user meets after a crash.
+
+    /** The values stage 5 leaves unsaved, and stage 6 must find again. */
+    private static final double UNSAVED_WIDTH = 6.875;
+    private static final double UNSAVED_HEIGHT = 3.4375;
+    private static final double UNSAVED_DEPTH = 1.71875;
+    private static final double[] UNSAVED_PLACEMENT =
+            {2.5, -1.25, 0.75, 370.0, 45.0, 12.25, 1.5, 2.0, 0.5};
+
+    @Test
+    public void stage5_editWithoutSavingAndLetAutosaveProtectIt() {
+        resetToBaselineConstruction(rule.getScenario());
+        // No manual Save anywhere in this stage. The slot is emptied so that a
+        // recovery in stage 6 cannot possibly be an Open wearing its clothes.
+        context().deleteFile(ProjectSlot.SLOT_FILE_NAME);
+        ProjectCheckpoint.clear(context());
+
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            NativeViewport.applyConstructionBox(UNSAVED_WIDTH, UNSAVED_HEIGHT, UNSAVED_DEPTH);
+            applyPlacement(UNSAVED_PLACEMENT);
+            workspace.noteProjectMaybeDirty();
+            return null;
+        });
+        settleLayout();
+        assertTrue("the autosave worker must drain",
+                onWorkspace(rule.getScenario(),
+                        (activity, workspace) -> workspace.autosaveController()
+                                .awaitIdle(15_000L)));
+
+        assertTrue("unsaved work must be protected by a checkpoint",
+                ProjectCheckpoint.exists(context()));
+        assertFalse("and nothing was explicitly saved", ProjectSlot.exists(context()));
+        writeSidecar(SLOT_KIND_FILE, "unsaved-construction");
+    }
+
+    @Test
+    public void stage6_recoverTheUnsavedConstructionWorkAfterProcessDeath() {
+        ensureUnsavedConstructionCheckpoint();
+
+        // THE cold-launch assertion. In the scripted run this process has never
+        // seen the scene stage 5 built, has answered no question, and is looking
+        // at a checkpoint written by a process that no longer exists.
+        final boolean offered = onWorkspace(rule.getScenario(),
+                (activity, workspace) -> workspace.recoveryPromptVisible()
+                        || workspace.offerRecoveryForTest());
+        assertTrue("unsaved work must be offered for recovery on a cold launch", offered);
+
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            workspace.findViewById(R.id.recovery_recover).performClick();
+            return null;
+        });
+        settleLayout();
+
+        final double[] primitive = primitiveState();
+        assertEquals(NativeViewport.PRIMITIVE_BOX,
+                (int) primitive[NativeViewport.PRIMITIVE_KIND]);
+        assertEquals(UNSAVED_WIDTH, primitive[NativeViewport.PRIMITIVE_BOX_WIDTH], 0.0);
+        assertEquals(UNSAVED_HEIGHT, primitive[NativeViewport.PRIMITIVE_BOX_WIDTH + 1], 0.0);
+        assertEquals(UNSAVED_DEPTH, primitive[NativeViewport.PRIMITIVE_BOX_WIDTH + 2], 0.0);
+        assertPlacement("recovered box", UNSAVED_PLACEMENT);
+        assertRenderableAndPickable("recovered box");
+        assertEquals("a recovered project starts a fresh session history", 0,
+                (int) onWorkspace(rule.getScenario(),
+                        (activity, workspace) -> NativeViewport.constructionUndoDepth()));
+        assertFalse("and the candidate is retired once it is live",
+                ProjectCheckpoint.exists(context()));
+
+        resetToBaselineConstruction(rule.getScenario());
+    }
+
+    @Test
+    public void stage7_sculptWithoutSavingAndLetAutosaveProtectIt() {
+        resetToBaselineConstruction(rule.getScenario());
+        context().deleteFile(ProjectSlot.SLOT_FILE_NAME);
+        ProjectCheckpoint.clear(context());
+
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            NativeViewport.applyConstructionSphere(1.0);
+            NativeViewport.setSculptBrush(300.0, 1.0);
+            NativeViewport.setSculptTool(NativeViewport.TOOL_GRAB);
+            assertEquals("the fixture must be able to start sculpting",
+                    NativeViewport.SCULPT_OK, NativeViewport.freezeToSculpt());
+            return null;
+        });
+        settleLayout();
+
+        final double[] before = sculptState();
+        WorkspaceTestSupport.sculptTheViewport(rule.getScenario());
+        final double[] after = sculptState();
+        assertNotEquals("precondition: the stroke must have moved a vertex",
+                before[NativeViewport.SCULPT_REVISION], after[NativeViewport.SCULPT_REVISION]);
+
+        assertTrue(onWorkspace(rule.getScenario(),
+                (activity, workspace) -> workspace.autosaveController().awaitIdle(15_000L)));
+        assertTrue("a stroke must be protected by a checkpoint",
+                ProjectCheckpoint.exists(context()));
+        assertFalse("and nothing was explicitly saved", ProjectSlot.exists(context()));
+
+        writeSculptExpectation(new double[]{
+                after[NativeViewport.SCULPT_VERTEX_COUNT],
+                after[NativeViewport.SCULPT_INDEX_COUNT],
+                after[NativeViewport.SCULPT_OBJECT_ID],
+                after[NativeViewport.SCULPT_SOURCE_STALE]});
+        writeSidecar(SLOT_KIND_FILE, "unsaved-sculpt");
+    }
+
+    @Test
+    public void stage8_recoverTheUnsavedSculptWorkAfterProcessDeath() {
+        ensureUnsavedSculptCheckpoint();
+        final double[] expected = readSculptExpectation();
+
+        final boolean offered = onWorkspace(rule.getScenario(),
+                (activity, workspace) -> workspace.recoveryPromptVisible()
+                        || workspace.offerRecoveryForTest());
+        assertTrue("unsaved sculpt work must be offered for recovery", offered);
+
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            workspace.findViewById(R.id.recovery_recover).performClick();
+            return null;
+        });
+        settleLayout();
+
+        final double[] sculpt = sculptState();
+        assertEquals("work checkpointed while sculpting comes back sculpting",
+                NativeViewport.MODE_SCULPT, (int) sculpt[NativeViewport.SCULPT_MODE]);
+        assertTrue("with its mesh", sculpt[NativeViewport.SCULPT_HAS_MESH] != 0.0);
+        assertEquals(expected[0], sculpt[NativeViewport.SCULPT_VERTEX_COUNT], 0.0);
+        assertEquals(expected[1], sculpt[NativeViewport.SCULPT_INDEX_COUNT], 0.0);
+        assertEquals(expected[2], sculpt[NativeViewport.SCULPT_OBJECT_ID], 0.0);
+        assertEquals(expected[3], sculpt[NativeViewport.SCULPT_SOURCE_STALE], 0.0);
+        // The destructive Reset-Sculpt-from-Shape guard asks this. A recovered
+        // mesh that reported no edits would let that reset discard every stroke
+        // that was recovered, without a word.
+        assertTrue("and it still reports user edits",
+                sculpt[NativeViewport.SCULPT_HAS_EDITS] != 0.0);
+        assertRenderableAndPickable("recovered sculpt mesh");
+
+        resetToBaselineConstruction(rule.getScenario());
+    }
+
+    private void ensureUnsavedConstructionCheckpoint() {
+        if (ProjectCheckpoint.exists(context())
+                && "unsaved-construction".equals(readSidecar(SLOT_KIND_FILE))) {
+            return;
+        }
+        stage5_editWithoutSavingAndLetAutosaveProtectIt();
+    }
+
+    private void ensureUnsavedSculptCheckpoint() {
+        if (ProjectCheckpoint.exists(context())
+                && "unsaved-sculpt".equals(readSidecar(SLOT_KIND_FILE))
+                && readSculptExpectationOrNull() != null) {
+            return;
+        }
+        stage7_sculptWithoutSavingAndLetAutosaveProtectIt();
     }
 
     // -----------------------------------------------------------------------

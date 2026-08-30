@@ -87,6 +87,42 @@
       facts a user checks after a save or an open; a byte count would be about
       the file rather than about the work.
     -->
+    <!--
+      Project transfer and diagnostics. "Copy" and "File" are the two words that
+      say these leave the app's own storage without implying an interchange
+      format: what is written is a ForgeShape project, and the wording never
+      says export.
+    -->
+    <string name="project_transfer">Transfer</string>
+    <string name="project_save_copy">Save Copy…</string>
+    <string name="project_open_file">Open File…</string>
+    <string name="project_share_diagnostics">Share Diagnostics…</string>
+    <string name="status_project_copy_saved">Copy saved — %1$s. Your saved project is unchanged.</string>
+    <string name="status_project_copy_failed">Could not write the copy. Your work is unchanged.</string>
+    <string name="status_project_file_opened">Project opened from file — %1$s. Your saved project is unchanged until you save.</string>
+    <string name="status_project_no_encode">Could not read the project to copy it. Nothing was written.</string>
+    <string name="status_diagnostics_shared">Diagnostics written. Nothing was sent anywhere.</string>
+    <string name="status_diagnostics_failed">Could not write the diagnostics file.</string>
+    <string name="status_diagnostics_none">There is nothing to report yet.</string>
+    <!--
+      Recovery. The descriptions carry the weight: "Discard" on its own does not
+      say that an explicitly saved project is untouched by it, and that is
+      exactly the fact a user needs before they dare press it.
+    -->
+    <string name="recovery_title">Unsaved work found</string>
+    <string name="recovery_prompt">ForgeShape closed before this work was saved. Choose what to do with it — nothing is replaced until you decide.</string>
+    <string name="recovery_recover_title">Recover</string>
+    <string name="recovery_recover_description">Open the work as it was when ForgeShape closed. Undo history starts fresh.</string>
+    <string name="recovery_discard_title">Discard</string>
+    <string name="recovery_discard_description">Forget it and start normally. Any project you saved yourself is untouched either way.</string>
+    <string name="status_recovery_recovered">Recovered — %1$s. Undo history starts fresh.</string>
+    <string name="status_recovery_failed">That unsaved work could not be read and was set aside. Your saved project is unchanged.</string>
+    <string name="status_recovery_discarded">Unsaved work discarded. Your saved project is unchanged.</string>
+    <!--
+      The renderer stopped. It says the two things that matter in the order they
+      matter: the work is safe, and a restart is what fixes the viewport.
+    -->
+    <string name="status_renderer_restart_required">The viewport stopped and cannot restart. Your work has been saved for recovery — restart ForgeShape.</string>
     <string name="project_summary_construction">%1$s in Construction</string>
     <string name="project_summary_sculpt">%1$s in Sculpt</string>
     <plurals name="project_body_count">

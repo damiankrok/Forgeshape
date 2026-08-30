@@ -1,6 +1,7 @@
 package com.forgeshape.app;
 
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 
 import android.graphics.Rect;
 import android.os.SystemClock;
@@ -85,6 +86,13 @@ final class WorkspaceTestSupport {
                 // it first and then asserts against the ordinary workspace.
                 // Cases that are about it call showStartChooserAsFirstLaunch().
                 workspace.dismissStartChooserForConstruction();
+                // The recovery question stands over everything else in exactly
+                // the same way, and for a sharper reason: leaving the foreground
+                // checkpoints the project, so almost every case leaves a
+                // candidate behind, and the first Activity of the next process
+                // would put that question over the chrome this case is trying to
+                // measure. Cases that are ABOUT recovery ask for it deliberately.
+                workspace.dismissRecoveryPromptForTest();
                 NativeViewport.enterConstructionMode();
                 NativeViewport.applyConstructionBox(BASELINE_WIDTH_METERS,
                         BASELINE_HEIGHT_METERS, BASELINE_DEPTH_METERS);
@@ -262,6 +270,50 @@ final class WorkspaceTestSupport {
             return;
         }
         workspace.objectsCapsule().findViewById(R.id.objects_capsule_add).performClick();
+    }
+
+    /**
+     * Drives a real Grab stroke across the viewport through the native touch
+     * path.
+     *
+     * <p>Shared because more than one suite now needs a sculpt mesh that has
+     * genuinely been edited, and a second copy of the gesture would be a second
+     * definition of what "a stroke" means. The caller is responsible for being
+     * in Sculpt with a frozen mesh and a brush large enough to capture vertices.
+     *
+     * <p>The coordinates are the one place the rules allow one: this is the
+     * repository's existing touch harness injecting viewport input, and nothing
+     * is inferred FROM the coordinate — what is asserted afterwards is the
+     * revision and the vertex data native code reports.
+     */
+    static void sculptTheViewport(ActivityScenario<ForgeShapeActivity> scenario) {
+        doOnWorkspace(scenario, new WorkspaceAction<Void>() {
+            @Override
+            public Void run(ForgeShapeActivity activity, EditorWorkspaceView workspace) {
+                final View viewport = workspace.findViewById(R.id.viewport_surface);
+                final int w = viewport.getWidth();
+                final int h = viewport.getHeight();
+                assertTrue("precondition: the viewport must be laid out", w > 0 && h > 0);
+                final float cx = w / 2f;
+                final float cy = h / 2f;
+                sendViewportTouch(MotionEvent.ACTION_DOWN, cx, cy, w, h);
+                for (int step = 1; step <= 8; ++step) {
+                    sendViewportTouch(MotionEvent.ACTION_MOVE, cx + step * 6f, cy + step * 4f,
+                            w, h);
+                }
+                sendViewportTouch(MotionEvent.ACTION_UP, cx + 48f, cy + 32f, w, h);
+                return null;
+            }
+        });
+        settleLayout();
+    }
+
+    private static void sendViewportTouch(int action, float x, float y, int width, int height) {
+        // Null stylus arrays on purpose: this is a plain finger, and native code
+        // fills in the documented defaults exactly as it does for hardware that
+        // reports nothing.
+        NativeViewport.touchEvent(action, -1, 1, new int[]{0}, new float[]{x},
+                new float[]{y}, null, null, null, null, width, height);
     }
 
     static void settle() {

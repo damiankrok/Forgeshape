@@ -26,6 +26,7 @@
 #include "forgeshape_mesh.h"
 #include "forgeshape_object_id.h"
 #include "forgeshape_render_mesh.h"
+#include "forgeshape_render_recovery.h"
 #include "forgeshape_scene.h"
 #include "forgeshape_selection_pulse.h"
 
@@ -135,8 +136,33 @@ public:
 
     void requestResize() { needsSwapchainRebuild_ = true; }
 
-    // Renders and presents one frame. Returns false on unrecoverable failure.
+    // Renders and presents one frame.
+    //
+    // Returns false only when the renderer has STOPPED for good — see
+    // `lifecycle()`. A lost device does not return false: it is recovered from
+    // in place, and the frame loop keeps its ownership of the surface
+    // throughout.
     bool drawFrame();
+
+    // Where the renderer stands. Read by JNI so the product can tell the user
+    // the truth about the viewport, and so a lost device can force an immediate
+    // project checkpoint rather than hoping one is due.
+    RendererLifecycle lifecycle() const { return recovery_.state(); }
+    int deviceRebuildAttempts() const { return recovery_.deviceRebuildAttempts(); }
+    int deviceRebuildsCompleted() const { return recovery_.deviceRebuildsCompleted(); }
+
+#ifndef NDEBUG
+    // DEBUG-ONLY: makes the NEXT frame behave exactly as though the device had
+    // been lost, without asking the driver to lose one.
+    //
+    // Deliberately an injection rather than a real fault. Provoking a genuine
+    // `VK_ERROR_DEVICE_LOST` means destabilising the GPU of the authoritative
+    // emulator, which the repository forbids and which would make the test
+    // depend on driver behaviour rather than on ForgeShape's. What is under
+    // test is what ForgeShape DOES about a lost device, and this reaches every
+    // line of that.
+    void injectDeviceLossForTest() { injectDeviceLossOnce_ = true; }
+#endif
 
 private:
     bool pickPhysicalDeviceAndQueues();
@@ -147,6 +173,33 @@ private:
 
     bool createSwapchainDependents();
     void destroySwapchainDependents();
+
+    // Destroys every DEVICE-scoped object and the device itself, leaving the
+    // instance alone.
+    //
+    // Extracted from destroyInstance, which is still its main caller: process
+    // teardown destroys the device and then the instance, and device-loss
+    // recovery destroys the device and then builds a new one under the same
+    // instance. Having one implementation of "everything that hangs off the
+    // device" is what makes the second path safe to add — a recovery that
+    // forgot one pipeline would leak it on every rebuild.
+    void destroyDeviceScopedResources();
+
+    // Rebuilds the device and everything on it, then re-attaches the surface.
+    //
+    // The CPU project is not consulted and not touched: what is rebuilt is the
+    // GPU's copy of derived data, and `syncScene` re-uploads it from the
+    // published `RuntimeMesh` revisions on the next frame because
+    // destroyMeshResources cleared the per-body upload record.
+    //
+    // The ANativeWindow reference is acquired before the teardown and handed to
+    // attachSurface afterwards, so the renderer never has to ask the Android
+    // layer for a surface it already owns.
+    bool rebuildDeviceAfterLoss();
+
+    // Classifies one Vulkan result and acts on it. Returns false only when the
+    // renderer has entered its terminal state.
+    bool handleFrameResult(int vkResultCode, const char* where);
 
     bool createSwapchain();
     bool createDepthResources();
@@ -398,6 +451,12 @@ private:
     bool expectSuboptimal_ = false;
 
     bool needsSwapchainRebuild_ = false;
+
+    // The device-loss state machine. Render thread only, like every member here.
+    RenderRecoveryPolicy recovery_;
+#ifndef NDEBUG
+    bool injectDeviceLossOnce_ = false;
+#endif
     bool presentedThisSession_ = false;
     uint64_t frameIndex_ = 0;
 

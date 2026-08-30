@@ -141,6 +141,23 @@ final class EditorUiState {
     private static boolean startChoiceMade;
 
     /**
+     * Whether this process has already settled what to do about unsaved work.
+     *
+     * <p>Process-scoped for exactly the same reason the start choice is, and the
+     * reason is sharper here: an Activity recreation must not put a decision
+     * about the user's work back in front of them. Rotating the device after
+     * pressing Discard and being asked to Discard again would read as the app
+     * not having believed them — and pressing Recover twice would try to replace
+     * a project with a candidate that has already been consumed.
+     *
+     * <p>Still losable, still writes nothing to disk, and still cannot change
+     * the model: a genuine process kill correctly asks again, because after a
+     * process kill the question is genuinely unanswered. Whether there is a
+     * candidate at all is decided by what is on disk, never by this.
+     */
+    private static boolean recoveryResolved;
+
+    /**
      * Which appearance this PROCESS is wearing.
      *
      * <p>Static for the same reason the start flag is, and more sharply: a theme
@@ -271,6 +288,28 @@ final class EditorUiState {
      * see an answered chooser. It destroys nothing: the model, the mode and the
      * scene are native state and this does not touch any of them.
      */
+    /** Whether the recovery question has been settled in this process. */
+    boolean recoveryResolved() {
+        return recoveryResolved;
+    }
+
+    /**
+     * Records that the recovery question is settled, however it was settled.
+     *
+     * <p>Recover, Discard and "the candidate turned out to be unreadable" all
+     * land here. What the user chose is deliberately not remembered: afterwards
+     * the answer is visible in the live project and on disk, which are the
+     * authorities, and a copy here would be a second one.
+     */
+    void recordRecoveryResolved() {
+        recoveryResolved = true;
+    }
+
+    /** Puts the recovery question back, as a fresh process would. Verification. */
+    void clearRecoveryResolved() {
+        recoveryResolved = false;
+    }
+
     void clearStartChoice() {
         startChoiceMade = false;
     }

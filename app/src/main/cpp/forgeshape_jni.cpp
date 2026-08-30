@@ -49,6 +49,8 @@
 #include "forgeshape_project_selftest.h"
 #include "forgeshape_project_state.h"
 #include "forgeshape_render_mesh_selftest.h"
+#include "forgeshape_render_recovery.h"
+#include "forgeshape_render_recovery_selftest.h"
 #include "forgeshape_renderer.h"
 #include "forgeshape_scene.h"
 #include "forgeshape_scene_selftest.h"
@@ -86,9 +88,28 @@ struct ViewportThread {
     int pendingHeight = 0;
 
     bool rendererFailed = false;
+
+    // DEBUG-only device-loss injection, carried across the thread boundary like
+    // every other request: the UI thread raises it, the render thread consumes
+    // it on its next pass. See debugInjectDeviceLoss.
+    bool injectDeviceLossRequested = false;
 };
 
 ViewportThread g_viewport;
+
+// Where the renderer stands, mirrored out of the render thread so the UI thread
+// can read it without waiting on a thread that may be mid-rebuild.
+//
+// 0 Healthy, 1 Recovering, 2 RestartRequired -- the wire form of
+// forgeshape::RendererLifecycle, kept as an integer because that is what
+// crosses JNI. Written only by the render thread, read by anyone.
+std::atomic<int> g_rendererLifecycle{0};
+
+// How many device rebuilds have COMPLETED, mirrored out of the render thread
+// beside the lifecycle. Debug introspection: it is what lets a test say "the
+// device was rebuilt" rather than only "the renderer is healthy again", which a
+// renderer that never noticed the loss would also report.
+std::atomic<int> g_rendererDeviceRebuilds{0};
 
 // ---------------------------------------------------------------------------
 // Camera and selection ownership.
@@ -321,6 +342,29 @@ void runHistorySelfTestsAndLog() {
 #endif
 }
 
+
+void runRenderRecoverySelfTestsAndLog() {
+#ifndef NDEBUG
+    constexpr int kMaxRecoveryChecks = 128;
+    static forgeshape::RenderRecoverySelfTestResult results[kMaxRecoveryChecks];
+    const int count = forgeshape::runRenderRecoverySelfTests(results, kMaxRecoveryChecks);
+    int failed = 0;
+    for (int i = 0; i < count; ++i) {
+        if (!results[i].passed) {
+            ++failed;
+            FS_LOGE("FORGESHAPE_RENDER_RECOVERY_SELFTEST_CASE_FAIL:%s", results[i].name);
+        } else {
+            FS_LOGI("render recovery selftest pass: %s", results[i].name);
+        }
+    }
+    if (failed == 0) {
+        FS_LOGI("FORGESHAPE_RENDER_RECOVERY_SELFTEST_OK (%d checks)", count);
+    } else {
+        FS_LOGE("FORGESHAPE_RENDER_RECOVERY_SELFTEST_FAIL (%d of %d checks failed)", failed,
+                count);
+    }
+#endif
+}
 
 void runProjectSelfTestsAndLog() {
 #ifndef NDEBUG
@@ -1059,9 +1103,40 @@ void renderThreadMain() {
             // depends on, so a frame must never wait on the geometry lock to
             // find out which shading model to draw with.
             renderer.setDisplaySettings(forgeshape::displaySettings().snapshot());
-            if (!renderer.drawFrame()) {
-                FS_LOGE("Render loop stopping after frame failure");
+#ifndef NDEBUG
+            {
+                bool inject = false;
+                {
+                    std::lock_guard<std::mutex> lock(g_viewport.mutex);
+                    inject = g_viewport.injectDeviceLossRequested;
+                    g_viewport.injectDeviceLossRequested = false;
+                }
+                if (inject) {
+                    renderer.injectDeviceLossForTest();
+                }
+            }
+#endif
+            const bool drew = renderer.drawFrame();
+            // Mirrored every frame rather than only on a change: it is one
+            // relaxed store, and it means the UI thread's answer is never stale
+            // for longer than a frame no matter which path the renderer took.
+            g_rendererLifecycle.store(static_cast<int>(renderer.lifecycle()),
+                                      std::memory_order_relaxed);
+            g_rendererDeviceRebuilds.store(renderer.deviceRebuildsCompleted(),
+                                           std::memory_order_relaxed);
+            if (!drew) {
+                // The renderer has stopped for good. CPU project truth is
+                // untouched by any of this — the scene, every published mesh and
+                // every Frozen Sculpt Mesh live here, not on the device — so the
+                // right thing to do is say so loudly and let the Android layer
+                // checkpoint the project and tell the user a restart is needed.
+                FS_LOGE("FORGESHAPE_%s:render_loop_stopped bodies=%d",
+                        forgeshape::kRenderRestartRequiredToken,
+                        (int)forgeshape::constructionScene().bodyCount());
                 renderer.detachSurface();
+                g_rendererLifecycle.store(
+                    static_cast<int>(forgeshape::RendererLifecycle::RestartRequired),
+                    std::memory_order_relaxed);
                 std::lock_guard<std::mutex> lock(g_viewport.mutex);
                 g_viewport.running = false;
                 g_viewport.rendererFailed = true;
@@ -1112,6 +1187,7 @@ Java_com_forgeshape_app_NativeViewport_start(JNIEnv*, jclass) {
     runHistorySelfTestsAndLog();
     runGizmoSelfTestsAndLog();
     runProjectSelfTestsAndLog();
+    runRenderRecoverySelfTestsAndLog();
     // The mesh and construction self-tests publish revisions of their own into
     // the store, so republish the ACTIVE representation: the app must always
     // come up showing what the current product mode says it is showing. At a
@@ -2325,6 +2401,109 @@ Java_com_forgeshape_app_NativeViewport_loadProject(JNIEnv* env, jclass, jbyteArr
             forgeshape::projectKindName(report.kind), (unsigned long long)report.activeRevision);
     return kProjectOk;
 }
+
+// Validates bytes as a project WITHOUT applying them.
+//
+// The recovery flow has to answer "is there a candidate worth offering?" before
+// it may touch anything the user can see, and the only honest way to answer it
+// is to run the real decoder. This is that, and nothing else: it decodes and
+// validates into temporary document state and throws it away. It publishes no
+// mesh, replaces no scene, changes no mode and clears no history — a file that
+// passes here is still not loaded, and a file that fails here has cost the live
+// project nothing.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_validateProject(JNIEnv* env, jclass, jbyteArray data) {
+    if (data == nullptr) {
+        return kProjectNoData;
+    }
+    const jsize size = env->GetArrayLength(data);
+    if (size <= 0) {
+        return kProjectNoData;
+    }
+    std::vector<uint8_t> bytes(static_cast<size_t>(size));
+    env->GetByteArrayRegion(data, 0, size, reinterpret_cast<jbyte*>(bytes.data()));
+
+    forgeshape::ProjectDocument document;
+    const forgeshape::ProjectCodecStatus status =
+        forgeshape::decodeProject(bytes.data(), bytes.size(), &document);
+    if (status != forgeshape::ProjectCodecStatus::Ok) {
+        FS_LOGI("FORGESHAPE_PROJECT_VALIDATE_REJECTED:%s bytes=%d",
+                forgeshape::projectCodecStatusName(status), (int)size);
+        return projectStatusCode(status);
+    }
+    // The one rule the codec cannot express, checked here so a candidate this
+    // build could never load is never offered as one: see loadProjectDocument.
+    if (!document.hasConstruction
+        || document.construction.bodies.size() != document.scene.bodies.size()) {
+        FS_LOGI("FORGESHAPE_PROJECT_VALIDATE_REJECTED:MissingRequiredSection bytes=%d", (int)size);
+        return kProjectDamaged;
+    }
+    return kProjectOk;
+}
+
+// A cheap fingerprint of what a `.forge` document would contain right now.
+//
+// Autosave's whole economy rests on this: it is asked often, it costs a hash of
+// the semantic values rather than a serialization, and it changes if and only if
+// the file would. See projectSemanticFingerprint — in particular why it hashes
+// VALUES and not the domain's update counters, which an undo deliberately does
+// not advance.
+JNIEXPORT jlong JNICALL
+Java_com_forgeshape_app_NativeViewport_projectFingerprint(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    const forgeshape::ProjectKind kind = forgeshape::sculptSession().inSculptMode()
+                                             ? forgeshape::ProjectKind::Sculpt
+                                             : forgeshape::ProjectKind::Construction;
+    return static_cast<jlong>(
+        forgeshape::projectSemanticFingerprint(forgeshape::constructionScene(), kind));
+}
+
+// Where the renderer stands, in step with NativeViewport's RENDERER_* fields.
+constexpr jint kRendererHealthy = 0;
+constexpr jint kRendererRecovering = 1;
+constexpr jint kRendererRestartRequired = 2;
+
+JNIEXPORT jint JNICALL Java_com_forgeshape_app_NativeViewport_rendererLifecycle(JNIEnv*, jclass) {
+    // Read without the render thread's cooperation on purpose: this is a
+    // diagnostic the UI thread asks for, and blocking the UI on a render thread
+    // that may be mid-rebuild is exactly what a status read must not do. The
+    // value is a plain enum written by one thread and read by another; a
+    // momentarily stale answer is corrected on the next read.
+    switch (g_rendererLifecycle.load(std::memory_order_relaxed)) {
+        case 1: return kRendererRecovering;
+        case 2: return kRendererRestartRequired;
+        default: return kRendererHealthy;
+    }
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_debugRendererDeviceRebuilds(JNIEnv*, jclass) {
+    return g_rendererDeviceRebuilds.load(std::memory_order_relaxed);
+}
+
+#ifndef NDEBUG
+// DEBUG-ONLY: makes the next frame behave exactly as though the GPU device had
+// been lost.
+//
+// Not a product path and unreachable from any UI. It exists because the
+// alternative — provoking a real `VK_ERROR_DEVICE_LOST` — means destabilising
+// the GPU of the authoritative emulator, which the repository forbids, and
+// would make the test depend on driver behaviour rather than on ForgeShape's.
+// Everything after the injection point is the real recovery path.
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_debugInjectDeviceLoss(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_viewport.mutex);
+    g_viewport.injectDeviceLossRequested = true;
+    g_viewport.toRender.notify_all();
+    FS_LOGI("FORGESHAPE_RENDER_DEVICE_LOSS_INJECTED");
+    return JNI_TRUE;
+}
+#else
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_debugInjectDeviceLoss(JNIEnv*, jclass) {
+    return JNI_FALSE;
+}
+#endif
 
 // Reads the authoritative sculpt state for display. Nothing here is measured
 // from the mesh: every value is state the session owns.

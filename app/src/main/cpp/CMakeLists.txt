@@ -68,6 +68,8 @@ add_library(forgeshape_native SHARED
     forgeshape_project_selftest.cpp
     forgeshape_project_state.cpp
     forgeshape_render_mesh.cpp
+    forgeshape_render_recovery.cpp
+    forgeshape_render_recovery_selftest.cpp
     forgeshape_render_mesh_selftest.cpp
     forgeshape_picking_selftest.cpp
     forgeshape_primitive_selftest.cpp

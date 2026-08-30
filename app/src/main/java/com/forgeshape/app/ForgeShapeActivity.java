@@ -38,9 +38,18 @@ public final class ForgeShapeActivity extends Activity {
 
         goEdgeToEdge();
 
+        // Installed before the workspace is built, so a failure while building
+        // it is still reported. Chains to whatever handler was already there:
+        // Android's own crash reporting and the process kill both still happen.
+        Diagnostics.installUncaughtHandler(this);
+        Diagnostics.notePreviousExit(this);
+        Diagnostics.info(DiagnosticLog.CAT_LIFECYCLE, "ACTIVITY_CREATE",
+                savedInstanceState == null ? "fresh" : "restored");
+
         viewport = new ForgeShapeSurfaceView(this);
         viewport.setId(R.id.viewport_surface);
         workspace = new EditorWorkspaceView(this, viewport);
+        workspace.setProjectTransferHost(transferHost);
         setContentView(workspace);
 
         // System Back closes an open context surface before it leaves the app.
@@ -245,10 +254,60 @@ public final class ForgeShapeActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        Diagnostics.info(DiagnosticLog.CAT_LIFECYCLE, "ACTIVITY_RESUME", null);
         if (workspace != null) {
             workspace.syncFromNative();
+            // Coming back is also the moment to notice that the renderer did
+            // not. See checkRendererLifecycle.
+            checkRendererLifecycle();
         }
     }
+
+    /**
+     * Checkpoints the project on the way out of the foreground.
+     *
+     * <p>{@code onStop} rather than {@code onPause}: pause fires for a dialog
+     * over the app, and checkpointing for one would be a write on every
+     * incidental interruption. Stop is the edge that actually means "this
+     * process may not be here when you look again", and it is the last
+     * guaranteed callback before Android may kill it.
+     *
+     * <p>The request is immediate rather than debounced, because a debounce
+     * assumes a later moment that may not come.
+     */
+    @Override
+    protected void onStop() {
+        super.onStop();
+        Diagnostics.info(DiagnosticLog.CAT_LIFECYCLE, "ACTIVITY_STOP",
+                isChangingConfigurations() ? "config" : "background");
+        if (workspace != null) {
+            workspace.requestImmediateCheckpoint();
+        }
+    }
+
+    /**
+     * Notices that the viewport has stopped for good, and tells the workspace.
+     *
+     * <p>Polled at the two moments it can matter — a resume, and a debug
+     * injection's follow-up — rather than watched continuously. A renderer that
+     * has died stays dead, so there is nothing to miss by asking twice instead
+     * of subscribing, and a callback from the render thread into Java would be a
+     * new cross-thread path for a state that changes at most once per process.
+     */
+    void checkRendererLifecycle() {
+        if (workspace == null || rendererRestartReported) {
+            return;
+        }
+        if (NativeViewport.rendererLifecycle() != NativeViewport.RENDERER_RESTART_REQUIRED) {
+            return;
+        }
+        // Reported once. The message stands until the user acts on it, and
+        // repeating it on every resume would bury whatever they did next.
+        rendererRestartReported = true;
+        workspace.onRendererRestartRequired();
+    }
+
+    private boolean rendererRestartReported;
 
     /**
      * DEBUG-ONLY test hook. The number keys 1-5 publish a native debug mesh
@@ -296,6 +355,95 @@ public final class ForgeShapeActivity extends Activity {
         return super.onKeyDown(keyCode, event);
     }
 
+    // -----------------------------------------------------------------------
+    // Project transfer through the Storage Access Framework
+    // -----------------------------------------------------------------------
+    //
+    // The Activity owns this half because only an Activity can start a picker
+    // and receive its answer. It owns nothing else about it: it does not know
+    // what a project is, does not read or write a byte, and hands the workspace
+    // a {@code Uri} and nothing more. The Uri itself stops at
+    // {@link ProjectTransfer}; no layer below that ever sees one, and none of it
+    // is ever stored as project truth.
+    //
+    // startActivityForResult rather than the AndroidX Activity Result APIs
+    // because this module has no AndroidX runtime dependency and is not about to
+    // acquire one for three intents.
+
+    private static final int REQUEST_CREATE_PROJECT_DOCUMENT = 4101;
+    private static final int REQUEST_OPEN_PROJECT_DOCUMENT = 4102;
+    private static final int REQUEST_CREATE_DIAGNOSTICS_DOCUMENT = 4103;
+
+    private final EditorWorkspaceView.ProjectTransferHost transferHost =
+            new EditorWorkspaceView.ProjectTransferHost() {
+                @Override
+                public boolean requestCreateProjectDocument() {
+                    return launch(ProjectTransfer.createDocumentIntent(),
+                            REQUEST_CREATE_PROJECT_DOCUMENT);
+                }
+
+                @Override
+                public boolean requestOpenProjectDocument() {
+                    return launch(ProjectTransfer.openDocumentIntent(),
+                            REQUEST_OPEN_PROJECT_DOCUMENT);
+                }
+
+                @Override
+                public boolean requestCreateDiagnosticsDocument() {
+                    return launch(ProjectTransfer.createDiagnosticsIntent(),
+                            REQUEST_CREATE_DIAGNOSTICS_DOCUMENT);
+                }
+            };
+
+    /**
+     * Starts a system picker, or reports that there is none.
+     *
+     * <p>A device with no documents UI is unusual but not impossible, and an
+     * {@code ActivityNotFoundException} escaping here would crash the app for
+     * pressing a menu item. Returning false lets the workspace say so instead.
+     */
+    private boolean launch(android.content.Intent intent, int requestCode) {
+        try {
+            startActivityForResult(intent, requestCode);
+            return true;
+        } catch (android.content.ActivityNotFoundException error) {
+            Diagnostics.warn(DiagnosticLog.CAT_TRANSFER, "NO_DOCUMENT_PICKER",
+                    String.valueOf(requestCode));
+            return false;
+        }
+    }
+
+    /**
+     * The picker's answer.
+     *
+     * <p>A cancel — {@code RESULT_CANCELED}, or a result with no data — is
+     * routed through the same handlers with a null {@code Uri}, so "the user
+     * backed out" is one honest no-op rather than a silently different path.
+     */
+    @Override
+    @SuppressWarnings("deprecation")
+    protected void onActivityResult(int requestCode, int resultCode, android.content.Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (workspace == null) {
+            return;
+        }
+        final android.net.Uri uri =
+                (resultCode == RESULT_OK && data != null) ? data.getData() : null;
+        switch (requestCode) {
+            case REQUEST_CREATE_PROJECT_DOCUMENT:
+                workspace.onCreateProjectDocumentChosen(uri);
+                break;
+            case REQUEST_OPEN_PROJECT_DOCUMENT:
+                workspace.onOpenProjectDocumentChosen(uri);
+                break;
+            case REQUEST_CREATE_DIAGNOSTICS_DOCUMENT:
+                workspace.onCreateDiagnosticsDocumentChosen(uri);
+                break;
+            default:
+                break;
+        }
+    }
+
     /** The editor UI, for instrumentation that names a control by its id. */
     EditorWorkspaceView editorWorkspace() {
         return workspace;
@@ -318,6 +466,16 @@ public final class ForgeShapeActivity extends Activity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        // ALWAYS, configuration change included, and that is the difference
+        // between this and native code. The render thread and every GPU buffer
+        // are expensive and are deliberately kept alive across a recreation; the
+        // autosave worker is one thread that the rebuilt workspace immediately
+        // replaces with its own, so keeping the old one would leak a thread per
+        // theme change. Releasing does not cancel the checkpoint `onStop` just
+        // asked for — see AutosaveController#release.
+        if (workspace != null) {
+            workspace.releaseAutosave();
+        }
         if (!isChangingConfigurations()) {
             NativeViewport.stop();
         }
