@@ -1194,18 +1194,40 @@ final class EditorWorkspaceView extends FrameLayout
      * precision surface's invoker IS the cluster's toggle, and a surface
      * forbidden to overlap the control it grew out of could not be anchored to
      * it at all.
+     *
+     * <p>An open side-placed precision surface belongs to the same trailing
+     * region and is measured with the host. It used to sit outboard of the
+     * cluster, so clamping to the cluster cleared it for free; now that the
+     * host keeps the trailing edge and the panel is seated inboard of it, the
+     * limit is the leading edge of whichever of the two comes first — otherwise
+     * the crescent this rule exists to prevent simply reappears under an open
+     * panel instead of under the rail.
      */
     private int trailingLimitFor(View invoker, int width, int gap) {
         final int windowLimit = getWidth() - gap;
         if (!trailingHost.isShown() || isInTrailingCluster(invoker)) {
             return windowLimit;
         }
-        final Rect cluster = new Rect(0, 0, trailingHost.getWidth(), trailingHost.getHeight());
-        offsetDescendantRectToMyCoords(trailingHost, cluster);
+        int limit = windowLimit;
+        for (View surface : new View[]{trailingHost, sideInspector()}) {
+            if (surface == null) {
+                continue;
+            }
+            final Rect bounds = new Rect(0, 0, surface.getWidth(), surface.getHeight());
+            offsetDescendantRectToMyCoords(surface, bounds);
+            limit = Math.min(limit, bounds.left - gap);
+        }
         // Never tighter than the surface's own width: a window too narrow to
         // seat it beside the cluster is still laid out, at the leading edge,
         // rather than at a negative margin.
-        return Math.max(Math.min(windowLimit, cluster.left - gap), width);
+        return Math.max(limit, width);
+    }
+
+    /** The precision surface while it is laid out beside the model, else null. */
+    private View sideInspector() {
+        return inspectorPlacement != WorkspaceLayoutMode.InspectorPlacement.BOTTOM_SHEET
+                && inspector.getParent() == middleRow && inspector.isShown()
+                ? inspector : null;
     }
 
     /** Whether this control is part of the trailing tool cluster. */
@@ -1304,13 +1326,25 @@ final class EditorWorkspaceView extends FrameLayout
         // Clear of the toolbar's utility capsule, for the same reason the
         // Objects column is: nothing above this is an opaque strip any more.
         params.topMargin = EditorControlStyles.dimen(context, R.dimen.row_gap);
-        // INSET from the trailing window edge and off the bottom, the same way
-        // the Objects column stands off the leading one and the bottom sheet
-        // stands off three. A panel flush against a window edge is part of the
-        // frame; a panel standing off it is a surface in a workspace.
-        params.rightMargin = EditorControlStyles.dimen(context, R.dimen.row_gap);
+        // The gap to the right host, not an inset from the trailing window edge.
+        //
+        // The trailing window edge belongs to the right host and to nothing
+        // else. Appending this panel to the row put it AFTER the host, and a
+        // laid-out sibling in a horizontal row costs width: the host was pushed
+        // inward by the panel's own width plus these margins, so its 8 dp
+        // resting inset became about 320 dp in a short landscape window and
+        // about 360 dp on a tablet for the whole time Exact or Details was
+        // open. The host is the one fixed external surface of the workspace and
+        // a panel opening beside it may not translate it.
+        //
+        // So the panel is seated BEFORE the host, taking width the weighted
+        // spacer was holding, and this margin is the standoff between the two
+        // surfaces — the same gap every anchored surface keeps off the cluster
+        // (see trailingLimitFor). The host's own right margin is then the only
+        // thing deciding where the trailing edge is, in every state.
+        params.rightMargin = EditorControlStyles.dimen(context, R.dimen.overlay_anchor_gap);
         params.bottomMargin = EditorControlStyles.dimen(context, R.dimen.row_gap);
-        middleRow.addView(inspector, params);
+        middleRow.addView(inspector, middleRow.indexOfChild(trailingHost), params);
         applyPrimarySurfaceChromePolicy();
     }
 
@@ -2305,6 +2339,19 @@ final class EditorWorkspaceView extends FrameLayout
 
     PropertyInspectorView propertyInspector() {
         return inspector;
+    }
+
+    /**
+     * The row the trailing host and a side-placed precision surface share.
+     *
+     * <p>Exposed so a case can assert their ORDER rather than their pixels: the
+     * host keeps the trailing edge because it is the last child of this row, and
+     * a panel that is appended after it instead of seated before it translates
+     * the host by its own width. That is a composition fact, not a measurement,
+     * and it is the one that holds in windows the harness cannot materialise.
+     */
+    LinearLayout workspaceMiddleRow() {
+        return middleRow;
     }
 
     SculptContextView sculptContext() {
