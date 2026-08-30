@@ -1,0 +1,123 @@
+== A. RIGHT-HOST FRAME vs OWNER AUTHORITY BLOCK (tolerance 4 dp) ==
+rows: 66  anchor PASS: 66  anchor FAIL: 0
+C10 drift top=112.5 right=8 width=68  -> DRIFT 0 dp PASS
+   deltas vs authority: dTop=0.5 dRight=0 dWidth=-4  anchor=PASS
+   host height across states: 194 | 448 | 346 | 434.5 | 326 dp (content-driven)
+C13 drift top=112.5 right=8 width=68  -> DRIFT 0 dp PASS
+   deltas vs authority: dTop=0.5 dRight=0 dWidth=-4  anchor=PASS
+   host height across states: 194 | 448 | 346 | 421 | 326 dp (content-driven)
+L10 drift top=88 right=8 width=68  -> DRIFT 0 dp PASS
+   deltas vs authority: dTop=0 dRight=0 dWidth=-4  anchor=PASS
+   host height across states: 162 | 235 dp (content-driven)
+L13 drift top=88 right=8 width=68  -> DRIFT 0 dp PASS
+   deltas vs authority: dTop=0 dRight=0 dWidth=-4  anchor=PASS
+   host height across states: 162 | 235 dp (content-driven)
+E10 drift top=107 right=8 width=68  -> DRIFT 0 dp PASS
+   deltas vs authority: dTop=-1 dRight=0 dWidth=-4  anchor=PASS
+   host height across states: 194 | 448 | 346 | 326 dp (content-driven)
+E13 drift top=107 right=8 width=68  -> DRIFT 0 dp PASS
+   deltas vs authority: dTop=-1 dRight=0 dWidth=-4  anchor=PASS
+   host height across states: 194 | 448 | 346 | 326 dp (content-driven)
+intra-cell drift failures: NONE
+
+== A2. EXACT / DETAILS NO LONGER TRANSLATE THE HOST ==
+C10 resting right=8 dp; with Exact/Details open: EXACT_OPEN=8 EXACT_IME=8 SCULPT_DETAILS=8  -> PASS
+C13 resting right=8 dp; with Exact/Details open: EXACT_OPEN=8 EXACT_IME=8 SCULPT_DETAILS=8  -> PASS
+L10 resting right=8 dp; with Exact/Details open: EXACT_OPEN=8 EXACT_IME=8 SCULPT_DETAILS=8  -> PASS
+L13 resting right=8 dp; with Exact/Details open: EXACT_OPEN=8 EXACT_IME=8 SCULPT_DETAILS=8  -> PASS
+E10 resting right=8 dp; with Exact/Details open: EXACT_OPEN=8 EXACT_IME=8 SCULPT_DETAILS=8  -> PASS
+E13 resting right=8 dp; with Exact/Details open: EXACT_OPEN=8 EXACT_IME=8 SCULPT_DETAILS=8  -> PASS
+
+== B. RESTING RESTORATION (delta after-close vs before-open) ==
+C10 CONSTRUCTION (Exact) global_toolbar       before=0/48.5/411/56 during=0/48.5/411/56 after=0/48.5/411/56 D=0/0/0/0 PASS
+C10 CONSTRUCTION (Exact) objects_capsule      before=8/826/159/56 during=ABSENT after=8/826/159/56 D=0/0/0/0 PASS
+C10 CONSTRUCTION (Exact) history_group        before=295/826/108/56 during=ABSENT after=295/826/108/56 D=0/0/0/0 PASS
+C10 CONSTRUCTION (Exact) viewport_surface     before=0/0/411/914 during=0/0/411/914 after=0/0/411/914 D=0/0/0/0 PASS
+C10 SCULPT (Details) global_toolbar       before=0/48.5/411/56 during=0/48.5/411/56 after=0/48.5/411/56 D=0/0/0/0 PASS
+C10 SCULPT (Details) objects_capsule      before=8/826/107/56 during=ABSENT after=8/826/107/56 D=0/0/0/0 PASS
+C10 SCULPT (Details) brush_edge_controls  before=8/112.5/116/257 during=8/112.5/116/257 after=8/112.5/116/257 D=0/0/0/0 PASS
+C10 SCULPT (Details) viewport_surface     before=0/0/411/914 during=0/0/411/914 after=0/0/411/914 D=0/0/0/0 PASS
+C13 CONSTRUCTION (Exact) global_toolbar       before=0/48.5/411/56 during=0/48.5/411/56 after=0/48.5/411/56 D=0/0/0/0 PASS
+C13 CONSTRUCTION (Exact) objects_capsule      before=8/826/177/56 during=ABSENT after=8/826/177/56 D=0/0/0/0 PASS
+C13 CONSTRUCTION (Exact) history_group        before=295/826/108/56 during=ABSENT after=295/826/108/56 D=0/0/0/0 PASS
+C13 CONSTRUCTION (Exact) viewport_surface     before=0/0/411/914 during=0/0/411/914 after=0/0/411/914 D=0/0/0/0 PASS
+C13 SCULPT (Details) global_toolbar       before=0/48.5/411/56 during=0/48.5/411/56 after=0/48.5/411/56 D=0/0/0/0 PASS
+C13 SCULPT (Details) objects_capsule      before=8/826/125/56 during=ABSENT after=8/826/125/56 D=0/0/0/0 PASS
+C13 SCULPT (Details) brush_edge_controls  before=8/112.5/127/268 during=8/112.5/127/268 after=8/112.5/127/268 D=0/0/0/0 PASS
+C13 SCULPT (Details) viewport_surface     before=0/0/411/914 during=0/0/411/914 after=0/0/411/914 D=0/0/0/0 PASS
+L10 CONSTRUCTION (Exact) global_toolbar       before=0/24/914/56 during=0/24/914/56 after=0/24/914/56 D=0/0/0/0 PASS
+L10 CONSTRUCTION (Exact) objects_capsule      before=8/323/159/56 during=8/323/159/56 after=8/323/159/56 D=0/0/0/0 PASS
+L10 CONSTRUCTION (Exact) history_group        before=798/323/108/56 during=798/323/108/56 after=798/323/108/56 D=0/0/0/0 PASS
+L10 CONSTRUCTION (Exact) viewport_surface     before=0/0/914/411 during=0/0/914/411 after=0/0/914/411 D=0/0/0/0 PASS
+L10 SCULPT (Details) global_toolbar       before=0/24/914/56 during=0/24/914/56 after=0/24/914/56 D=0/0/0/0 PASS
+L10 SCULPT (Details) objects_capsule      before=8/323/107/56 during=8/323/107/56 after=8/323/107/56 D=0/0/0/0 PASS
+L10 SCULPT (Details) brush_edge_controls  before=8/88/116/235 during=8/88/116/235 after=8/88/116/235 D=0/0/0/0 PASS
+L10 SCULPT (Details) viewport_surface     before=0/0/914/411 during=0/0/914/411 after=0/0/914/411 D=0/0/0/0 PASS
+L13 CONSTRUCTION (Exact) global_toolbar       before=0/24/914/56 during=0/24/914/56 after=0/24/914/56 D=0/0/0/0 PASS
+L13 CONSTRUCTION (Exact) objects_capsule      before=8/323/177/56 during=8/323/177/56 after=8/323/177/56 D=0/0/0/0 PASS
+L13 CONSTRUCTION (Exact) history_group        before=798/323/108/56 during=798/323/108/56 after=798/323/108/56 D=0/0/0/0 PASS
+L13 CONSTRUCTION (Exact) viewport_surface     before=0/0/914/411 during=0/0/914/411 after=0/0/914/411 D=0/0/0/0 PASS
+L13 SCULPT (Details) global_toolbar       before=0/24/914/56 during=0/24/914/56 after=0/24/914/56 D=0/0/0/0 PASS
+L13 SCULPT (Details) objects_capsule      before=8/323/125/56 during=8/323/125/56 after=8/323/125/56 D=0/0/0/0 PASS
+L13 SCULPT (Details) brush_edge_controls  before=8/88/127/235 during=8/88/127/235 after=8/88/127/235 D=0/0/0/0 PASS
+L13 SCULPT (Details) viewport_surface     before=0/0/914/411 during=0/0/914/411 after=0/0/914/411 D=0/0/0/0 PASS
+E10 CONSTRUCTION (Exact) global_toolbar       before=0/43/1280/56 during=0/43/1280/56 after=0/43/1280/56 D=0/0/0/0 PASS
+E10 CONSTRUCTION (Exact) history_group        before=1164/704/108/56 during=1164/704/108/56 after=1164/704/108/56 D=0/0/0/0 PASS
+E10 CONSTRUCTION (Exact) objects_section      before=22/121/152/119 during=22/121/152/119 after=22/121/152/119 D=0/0/0/0 PASS
+E10 CONSTRUCTION (Exact) viewport_surface     before=0/0/1280/800 during=0/0/1280/800 after=0/0/1280/800 D=0/0/0/0 PASS
+E10 SCULPT (Details) global_toolbar       before=0/43/1280/56 during=0/43/1280/56 after=0/43/1280/56 D=0/0/0/0 PASS
+E10 SCULPT (Details) objects_capsule      before=8/704/108/56 during=8/704/108/56 after=8/704/108/56 D=0/0/0/0 PASS
+E10 SCULPT (Details) brush_edge_controls  before=8/107/116/257 during=8/107/116/257 after=8/107/116/257 D=0/0/0/0 PASS
+E10 SCULPT (Details) viewport_surface     before=0/0/1280/800 during=0/0/1280/800 after=0/0/1280/800 D=0/0/0/0 PASS
+E13 CONSTRUCTION (Exact) global_toolbar       before=0/43/1280/56 during=0/43/1280/56 after=0/43/1280/56 D=0/0/0/0 PASS
+E13 CONSTRUCTION (Exact) history_group        before=1164/704/108/56 during=1164/704/108/56 after=1164/704/108/56 D=0/0/0/0 PASS
+E13 CONSTRUCTION (Exact) objects_section      before=22/121/152/123 during=22/121/152/123 after=22/121/152/123 D=0/0/0/0 PASS
+E13 CONSTRUCTION (Exact) viewport_surface     before=0/0/1280/800 during=0/0/1280/800 after=0/0/1280/800 D=0/0/0/0 PASS
+E13 SCULPT (Details) global_toolbar       before=0/43/1280/56 during=0/43/1280/56 after=0/43/1280/56 D=0/0/0/0 PASS
+E13 SCULPT (Details) objects_capsule      before=8/704/127/56 during=8/704/127/56 after=8/704/127/56 D=0/0/0/0 PASS
+E13 SCULPT (Details) brush_edge_controls  before=8/107/127/269 during=8/107/127/269 after=8/107/127/269 D=0/0/0/0 PASS
+E13 SCULPT (Details) viewport_surface     before=0/0/1280/800 during=0/0/1280/800 after=0/0/1280/800 D=0/0/0/0 PASS
+resting restoration failures: NONE
+Sculpt Construction-history presence: ABSENT IN EVERY SCULPT STATE/CELL - PASS
+
+== C. HIT AREA (48 dp floor, judged on INTRINSIC geometry) ==
+control rows measured: 1299
+intrinsic violations (< 48x48 dp at their full box): NONE
+rows whose VISIBLE intersection was short because a ScrollView clipped them: 93
+  CLIPPED field_pos_x intrinsic 117x48 (from RUN) dp in 1 row(s) (L13)
+  CLIPPED field_pos_y intrinsic 117x48 (from RUN) dp in 1 row(s) (L13)
+  CLIPPED field_pos_z intrinsic 117x48 (from RUN) dp in 1 row(s) (L13)
+  CLIPPED objects_capsule intrinsic 159x56 (from CELL) dp in 5 row(s) (C10,L10)
+  CLIPPED objects_capsule intrinsic 177x56 (from CELL) dp in 5 row(s) (C13,L13)
+  CLIPPED precision_toggle intrinsic 56x48 (from CELL) dp in 6 row(s) (C10,C13,L10,L13)
+  CLIPPED tool_rail_grab intrinsic 56x64 (from RUN) dp in 6 row(s) (L10,L13)
+  CLIPPED tool_rail_place intrinsic 56x48 (from CELL) dp in 4 row(s) (L10,L13)
+  CLIPPED toolbar_editing_group intrinsic 149x48 (from CELL) dp in 8 row(s) (C10)
+  CLIPPED toolbar_editing_group intrinsic 197x48 (from CELL) dp in 8 row(s) (C13)
+  CLIPPED toolbar_editing_group intrinsic 231x56 (from CELL) dp in 3 row(s) (L10)
+  CLIPPED toolbar_editing_group intrinsic 232x56 (from CELL) dp in 3 row(s) (E10)
+  CLIPPED toolbar_editing_group intrinsic 289x56 (from CELL) dp in 3 row(s) (L13)
+  CLIPPED toolbar_editing_group intrinsic 293x56 (from CELL) dp in 3 row(s) (E13)
+  CLIPPED transform_mode_move intrinsic 56x48 (from CELL) dp in 4 row(s) (L10,L13)
+  CLIPPED transform_mode_rotate intrinsic 56x48 (from CELL) dp in 6 row(s) (L10,L13)
+  CLIPPED transform_space_local intrinsic 56x48 (from CELL) dp in 2 row(s) (L10,L13)
+  CLIPPED workspace_trailing_host intrinsic 68x235 (from CELL) dp in 2 row(s) (L10,L13)
+  CLIPPED workspace_trailing_host intrinsic 68x448 (from CELL) dp in 22 row(s) (C10,C13,E10,E13)
+controls the harness never caught unclipped in their own cell (floor argued from
+the same control elsewhere in the run; UILR2C-11 is the unclipped in-process authority): L10/tool_rail_grab 56x64, L13/field_pos_x 117x48, L13/field_pos_y 117x48, L13/field_pos_z 117x48, L13/tool_rail_grab 56x64
+
+== D. IME CONTRACT ==
+C10 host top/right/width identical pre-IME: PASS | host height 448 -> 434.5 | viewport 0/0/411/914 -> 0/0/411/914 full-window unchanged: PASS
+C13 host top/right/width identical pre-IME: PASS | host height 448 -> 421 | viewport 0/0/411/914 -> 0/0/411/914 full-window unchanged: PASS
+L10 host top/right/width identical pre-IME: PASS | host height 235 -> 235 | viewport 0/0/914/411 -> 0/0/914/411 full-window unchanged: PASS
+L13 host top/right/width identical pre-IME: PASS | host height 235 -> 235 | viewport 0/0/914/411 -> 0/0/914/411 full-window unchanged: PASS
+E10 host top/right/width identical pre-IME: PASS | host height 448 -> 448 | viewport 0/0/1280/800 -> 0/0/1280/800 full-window unchanged: PASS
+E13 host top/right/width identical pre-IME: PASS | host height 448 -> 448 | viewport 0/0/1280/800 -> 0/0/1280/800 full-window unchanged: PASS
+
+== E. EXTERNAL GRAMMAR / SCULPT PARITY ==
+C10 construction host 112.5/8/68  sculpt host 112.5/8/68  -> SAME SINGLE EXTERNAL HOST - PASS
+C13 construction host 112.5/8/68  sculpt host 112.5/8/68  -> SAME SINGLE EXTERNAL HOST - PASS
+L10 construction host 88/8/68  sculpt host 88/8/68  -> SAME SINGLE EXTERNAL HOST - PASS
+L13 construction host 88/8/68  sculpt host 88/8/68  -> SAME SINGLE EXTERNAL HOST - PASS
+E10 construction host 107/8/68  sculpt host 107/8/68  -> SAME SINGLE EXTERNAL HOST - PASS
+E13 construction host 107/8/68  sculpt host 107/8/68  -> SAME SINGLE EXTERNAL HOST - PASS

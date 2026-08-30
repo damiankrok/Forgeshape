@@ -1,30 +1,42 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.46.1
-**Updated:** 2026-08-29
-**Result:** TECHNICAL PASS / OWNER VISUAL REVIEW REQUIRED — **UI-LAYOUT-R2**
-implements one unified right contextual surface in Construction and Sculpt.
-`WorkspaceTrailingHostView` owns its vertical child composition, fixed
-top/right/width geometry, internal scrolling and downward-only contextual height.
-Transform mode, coordinate space and Exact/Details access are internal members,
-not detached capsules. Bottom Exact/Details sheets hide conflicting Objects and
-history chrome for their full entry/open/exit lifetime and restore it at the same
-bounds. IME/insets remain root-owned and never select another right-control
-grammar. Evidence: `artifacts/uilayoutr2/`.
+**Status Version:** 0.47.0
+**Updated:** 2026-08-30
+**Result:** TECHNICAL PASS / OWNER VISUAL REVIEW REQUIRED — **UI-LAYOUT-R2
+correction round 1** closes the one measured defect the R2 closeout found. The
+right context host now keeps the trailing window edge in **every** window and
+every state: its trailing inset is 8 dp at rest and stays 8 dp with Exact, the
+IME and Sculpt Details open, where it previously translated inward by about
+320 dp in a short landscape window and about 360 dp on a tablet.
 
-This result covers **technical and runtime truth only.** No final owner/
-coordinator visual closeout of UI-LAYOUT-R2 is possible yet: that closeout must
-compare the shipped layout against an owner-created, explicitly accepted
-`UI-SPEC-R0`, and no such artifact exists in this repository or has been supplied
-to the project. The right-host invariants recorded below are verified *relative*
-to themselves and at runtime; **absolute owner-layout acceptance — the ≤ 4 dp
-anchor overlay against an accepted mock — remains pending on that artifact.**
+`WorkspaceTrailingHostView` remains the one external right contextual surface,
+owning its vertical child composition, fixed top/right/width geometry, internal
+scrolling and downward-only contextual height. Transform mode, coordinate space
+and Exact/Details access are internal members, not detached capsules. Bottom
+Exact/Details sheets hide conflicting Objects and history chrome for their full
+entry/open/exit lifetime and restore it at the same bounds. IME/insets remain
+root-owned and never select another right-control grammar.
+
+**Measured against the OWNER-accepted `UI-SPEC-R0 Revision 1`**, transmitted to
+this run through the coordinator's immutable OWNER AUTHORITY BLOCK (owner
+acceptance 2026-08-29; coordinator-side provenance SHA-256
+`9d032cadc35497a1fb73b185e8889be6031d00b5b0c95fadbcd2642f2a063151`). All **66**
+cell × state host rows conform inside the ≤ 4 dp tolerance, intra-cell drift is
+0 dp in all six cells, persistent resting chrome returns at Δ = 0 dp, intrinsic
+hit targets clear 48 × 48 dp and the Vulkan surface stays full-window under the
+IME. Evidence: `artifacts/uilayoutr2-correction/`; the superseded pre-correction
+measurement stays at `artifacts/uilayoutr2-spec-closeout/`.
+
+This result is **technical and runtime truth.** The owner / coordinator *visual*
+verdict on UI-LAYOUT-R2 is a separate act and is not claimed here.
 
 **UI-LAYOUT-R2 verification range:** baseline
-`54c3dfa09c7b0fd9351f6c8967b199c3380e3c1a`; final implementation/test HEAD
+`54c3dfa09c7b0fd9351f6c8967b199c3380e3c1a`; R2 implementation/test HEAD
 `8d9ebbf0f73e278ed7383ae89c054afa2bcce9f3` (product layout
-`27dc28d27cd44c75a552a64bf121ad64937c2b08`). The documentation/evidence commit
-contains no product or test behavior change.
+`27dc28d27cd44c75a552a64bf121ad64937c2b08`); measured closeout
+`40e8b10a0b30da27ba1e60b22ab6f8667135d452`; **correction round 1 product/test
+HEAD `6d05814ddb89ef4e06d2e78d62af78d8b2262af1`**. The documentation/evidence
+commits contain no product or test behavior change.
 
 Before it, Stage 020R3 closed the one user-reachable
 correctness gap Scale left behind: **a sculpt brush now measures in the
@@ -104,7 +116,7 @@ Stage 016 (Plane), Stage 015D (camera projection), Stage 015C-R (front-face
 culling), Stage 015C (shading), Platform Fix P2, Stage 015B, Stage 014, the NDK
 r29 migration (Gate P0) and the Owner Decision Baseline. Per-stage narrative
 lives in Git history; only what still constrains the code is kept here.
-**Next Stage:** **The OWNER creates and explicitly accepts `UI-SPEC-R0`; the UI-LAYOUT-R2 evidence closeout is blocked until then.** See *Next Stage*.
+**Next Stage:** **The OWNER / coordinator gives the UI-LAYOUT-R2 visual verdict on the corrected build.** See *Next Stage*.
 
 ## Current state
 
@@ -124,14 +136,15 @@ re-composes itself per window. `ARCHITECTURE.md` owns the ownership map and ever
 `PRODUCT.md` owns the user-visible description; `README.md` owns build/run/verify.
 
 **Blockers:** no newly observed product or runtime blocker — every native, JVM,
-instrumented and guard suite is green. **UI-LAYOUT-R2 final visual acceptance is
-blocked by the missing owner-approved `UI-SPEC-R0`.** Without an independently
-authored, explicitly accepted mock there is no authority for the *expected* side
-of an anchor comparison, and taking that side from `EditorControlStyles`,
-`dimens.xml`, runtime bounds, screenshots or the reference-only
-`docs/ui/wireframes/*.svg` would fabricate the baseline instead of testing
-against it. Known costs and accepted debt are in *Technical Debt*; environment
-hazards are in *Known Issues*.
+instrumented and guard suite is green, and the measured anchor comparison against
+the OWNER-accepted `UI-SPEC-R0 Revision 1` now passes 66/66. **UI-LAYOUT-R2
+final visual acceptance is the owner's / coordinator's own act and remains
+outstanding**; an automated PASS and recorded runtime evidence do not grant it.
+The expected side of every anchor comparison came from the accepted revision as
+transmitted in the correction prompt's authority block, never from
+`EditorControlStyles`, `dimens.xml`, runtime bounds, screenshots or the
+reference-only `docs/ui/wireframes/*.svg`. Known costs and accepted debt are in
+*Technical Debt*; environment hazards are in *Known Issues*.
 
 ## Current interaction model (through UI-LAYOUT-R2)
 
@@ -710,7 +723,8 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 | Construction and Sculpt use one `WorkspaceTrailingHostView` surface with invariant top/right/width; context is vertical inside it and may grow only downward | VERIFIED (UI-LAYOUT-R2) |
 | Exact Shape/Transform and Sculpt Details bottom sheets hide conflicting Objects/history chrome for entry/open/exit and restore its exact resting bounds; they never push it upward | VERIFIED (UI-LAYOUT-R2) |
 | IME keeps the right host vertical and at the same external frame; animated insets are root-owned and no horizontal/detached selector grammar exists | VERIFIED (UI-LAYOUT-R2) |
-| The right host's **absolute** placement matches an owner-accepted layout within ≤ 4 dp | PENDING — needs an owner-approved `UI-SPEC-R0`; the three rows above are runtime-relative invariants and do not answer this |
+| The right host's **absolute** placement matches the owner-accepted layout within ≤ 4 dp | VERIFIED (UI-LAYOUT-R2 correction 1) — 66/66 cell × state rows against `UI-SPEC-R0 Revision 1`, 0 dp intra-cell drift |
+| A side-placed Exact/Details panel never translates the right host: the host is the trailing child of the row they share, so its own margin is the only term in its trailing inset | VERIFIED (UI-LAYOUT-R2 correction 1) |
 | System Back dismisses the topmost open context surface — Add Primitive, the Objects popover, the exact values, the display settings — playing that surface's own exit, and leaves the app only when none is open | VERIFIED (UI-LAYOUT-R1) |
 | A long signed exact value keeps its sign and leading digits: the type steps down to fit, and a shortened display is shortened at the END, never the start. The complete value is what is stored, parsed and applied | VERIFIED (UI-LAYOUT-R1) |
 | A tap on a populated numeric field selects it, so the first keystroke replaces; no concatenation of the old value and the new can occur | VERIFIED (UI-LAYOUT-R1) |
@@ -986,8 +1000,9 @@ device. `README.md` documents how to read them.
 
 | `EditorWorkspaceLegibilityTest` | UI-LAYOUT-R1 retained, with the old reserved-row assertion strengthened to the R2 bottom-zone rule: a bottom sheet hides conflicting chrome instead of relocating it; Display restoration, touch floors, Exact legibility and Sculpt top grammar remain covered | 20 |
 | `EditorWorkspaceUnifiedRightHostTest` | `UILR2-01..18`: invariant host frame; downward-only Transform expansion; mode/space/Exact/Shape/Sculpt parity; same-host descendants; bottom hide/restore through slowed entry/exit; IME vertical grammar and touch floor; signed numeric and unitless Scale regression; compact portrait, short landscape and expanded/tablet; Stage020R2/R3 semantics | 18 |
+| `EditorWorkspaceRightHostPlacementTest` | `UILR2C-01..12`: the correction round-1 contract that the right host keeps the trailing window edge. Compact and short-landscape hold one external host frame through all eleven R2 states with the trailing inset unchanged (`-01`, `-03`); the compact anchors and the host width take no font scale, so the 1.3 cells resolve to the 1.0 answer (`-02`, `-04`); the expanded window docks the panel inboard of the host and its decision arithmetic carries no text input (`-05`, `-06`); Exact, Exact+IME and Sculpt Details never translate the host (`-07`) because a side-placed panel is always seated BEFORE it in the row they share (`-08`); compact hide/restore and short-window persistent chrome return at Δ = 0 dp (`-09`, `-10`); intrinsic hit boxes clear 48 dp with the clipped visible intersection reported separately (`-11`); and the IME leaves the Vulkan surface full-window while only the host height may move (`-12`) | 12 |
 
-**377 tests** (59 JVM, 318 instrumented). No Java test asserts a rendered pixel;
+**389 tests** (59 JVM, 330 instrumented). No Java test asserts a rendered pixel;
 every control is reached by its stable semantic id and no assertion uses a screen
 coordinate. The foundation and theme suites deliberately assert no colour
 literal, radius or shadow — those are judged by eye and by runtime evidence, and
@@ -1072,30 +1087,42 @@ precondition. Runtime evidence separately shows the real keyboard.
 
 ## Current evidence summary
 
-Latest acceptance run (UI-LAYOUT-R2), on the isolated
+Latest acceptance run (UI-LAYOUT-R2 correction round 1), on the isolated
 `ForgeShape_Stage006` / `emulator-5580` AVD unless stated:
 
 - **Native self-tests:** thirteen suites, **2043 checks, zero failures**, followed
-  by `FORGESHAPE_NATIVE_VIEWPORT_OK`.
-- **Build/JVM:** debug and release APKs built for **arm64-v8a and x86_64**;
-  **59/59 JVM** tests passed.
-- **Focused UI-LAYOUT-R2:** `UILR2-01..18` passed **18/18**.
+  by `FORGESHAPE_NATIVE_VIEWPORT_OK`, on the corrected build
+  (`artifacts/uilayoutr2-correction/native-launch.txt`).
+- **Build/JVM:** debug APK built; **59/59 JVM** tests passed.
+- **Focused UI-LAYOUT-R2:** `UILR2-01..18` passed **18/18**; the new correction
+  class `UILR2C-01..12` passed **12/12**.
 - **Instrumented:** the official authoritative command
-  `scripts\run-instrumented-tests.ps1 -Serial emulator-5580 -FullSharded`
-  discovered 21 classes / 318 tests, assigned them exhaustively to five shards
-  (**64 + 64 + 66 + 63 + 61**) and passed **318/318**. `missing=0`,
-  `duplicates=0`, `unexpected=0`, `execution_missing=0`; marker
-  `FULL_SHARDED_SUITE_PASS`.
+  `scripts\run-instrumented-tests.ps1 -Serial emulator-5580 -FullSharded
+  -ShardCount 5` discovered 22 classes / **330** tests — the twelve new
+  correction cases raise the inventory from 318 — assigned them exhaustively to
+  five shards (**66 + 69 + 64 + 67 + 64**) and passed **330/330**. `missing=0`,
+  `duplicates=0`, `unexpected=0`, `execution_missing=0`, `failed_shards=0`,
+  `aborted_shards=0`; marker `FULL_SHARDED_SUITE_PASS`.
+- **Six-cell anchor matrix:** 66 host rows measured at exact `wm size` /
+  `wm density` / `font_scale` triples across C10/C13/L10/L13/E10/E13. All 66
+  conform to `UI-SPEC-R0 Revision 1` inside ≤ 4 dp; intra-cell drift 0 dp;
+  resting chrome Δ = 0 dp; 1299 control rows with **zero** intrinsic hit-area
+  violations; the Vulkan surface full-window under the IME in all six.
 - **Window profiles:** compact portrait, 2400 × 1080 @ 420 dpi short landscape,
   and 1600 × 2560 @ 240 dpi expanded/tablet all passed their R2 contracts and
   are represented in runtime evidence.
 - **Device guards:** `DEV2-01..07` and `DEV3-01..06` all PASS. No command touched
   reserved `emulator-5554`; every runtime command used explicit
   `-s emulator-5580` after confirming the AVD name.
-- **Runtime evidence:** [`artifacts/uilayoutr2/`](artifacts/uilayoutr2/) contains
-  16 required screenshots, the semantic-ID capture script, native transcript,
-  validation summary and one continuous portrait walkthrough. The screenshots
-  were visually inspected; owner/coordinator acceptance remains pending.
+- **Runtime evidence:**
+  [`artifacts/uilayoutr2-correction/`](artifacts/uilayoutr2-correction/) is the
+  current package: 36 raw screenshots beside 36 mechanical overlays for six
+  visual-critical states in six cells, the four CSVs, the harness, the derived
+  `analysis.txt` and an owner review `INDEX.md`. The superseded pre-correction
+  measurement stays at
+  [`artifacts/uilayoutr2-spec-closeout/`](artifacts/uilayoutr2-spec-closeout/),
+  and [`artifacts/uilayoutr2/`](artifacts/uilayoutr2/) holds the original R2
+  walkthrough. Owner/coordinator visual acceptance remains pending.
 - **Physical ARM64 (Gate P1):** closed on a Galaxy S25 Ultra —
   `primaryCpuAbi=arm64-v8a`, `PAGE_SIZE` 4096, the mandatory ~10k/~50k/~100k
   ladder and Sculpt at 100k measured on real hardware. Stylus stays UNVERIFIED.
@@ -1643,27 +1670,25 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Exactly one next step: the OWNER creates and explicitly accepts a
-`UI-SPEC-R0` layout specification; only then can the existing same-stage
-UI-LAYOUT-R2 evidence closeout run.** No motion/morph work and no new product
-stage before that.
+**Exactly one next step: the OWNER / coordinator gives the UI-LAYOUT-R2 visual
+verdict on the corrected build.** No motion/morph work, no CAD-R0-DATA and no new
+product stage before that.
 
-UI-LAYOUT-R2 is technically implemented and all native/JVM/instrumented/profile
-guards are green, but automated PASS and recorded runtime evidence do not grant
-final visual acceptance. The closeout compares the shipped layout against an
-independent accepted mock, so it needs an artifact this project does not have:
-nothing in the repository is an accepted layout specification, and the four
-`docs/ui/wireframes/*.svg` are recorded here as reference-only Stage 015A-R
-proposal sketches that are explicitly **not** the shipped shell. Claude may not
-author, infer or approve that artifact.
+The measured half is finished. Correction round 1 removed the one defect the R2
+closeout found — a side-placed Exact/Details panel translating the right host
+inward — and the re-measured matrix conforms to the OWNER-accepted
+`UI-SPEC-R0 Revision 1` on all 66 cell × state rows with 0 dp intra-cell drift.
+All native, JVM, instrumented and guard suites are green. What remains is
+judgement, not measurement: an automated PASS and recorded runtime evidence do
+not grant visual acceptance, and Claude may not author, infer or approve that
+verdict.
 
-To hand the closeout off, the owner supplies three values: the exact path to the
-accepted `UI-SPEC-R0`, its SHA-256 (or the literal `NOT_RECORDED`), and the
-acceptance reference. The artifact must carry binding geometry for the right
-`WorkspaceTrailingHostView` — absolute top, right and width — plus the resting
-bounds of the persistent elements, across compact portrait, short landscape and
-expanded/tablet at font scale 1.0 and 1.3. The closeout then runs against this
-same build, reusing the technical evidence below rather than repeating it.
+The review material is `artifacts/uilayoutr2-correction/`: `INDEX.md` puts 36 raw
+screenshots beside 36 mechanical overlays for the six visual-critical states in
+each of the six cells, with the accepted frame drawn in green and the measured
+frame in magenta, and `README.md` states the authority, the method and every
+verdict. One correction round of the maximum two remains available if the visual
+verdict asks for changes.
 
 The one feature the repo still records as a candidate is **Selection Outline** —
 the expensive half of selection feedback, needing either a second geometry pass

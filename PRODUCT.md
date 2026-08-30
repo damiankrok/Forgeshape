@@ -197,8 +197,12 @@ bottom edge extend, but cannot split it into detached capsules or move its top.
 When a window is too short — a large system font, a phone on its side, or the
 keyboard up — the same vertical content scrolls inside the surface and no visible
 target is squeezed below 48 dp. Exact/Details appears only when asked for and
-goes away again when dismissed. A utility control hides the whole right context
-at once, leaving the bare model and one chip to bring it back.
+goes away again when dismissed. Where the window opens it beside the model rather
+than along the bottom — a phone on its side, a tablet — it takes the room between
+the model and the right surface, and the right surface does not move over for it:
+what you were reaching for is still under your finger when the panel arrives. A
+utility control hides the whole right context at once, leaving the bare model and
+one chip to bring it back.
 
 Every panel in the workspace comes out of the control that opened it. The list of
 bodies and the shape palette rise out of the Objects capsule; the exact values

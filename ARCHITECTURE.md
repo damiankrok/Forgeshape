@@ -195,7 +195,11 @@ mode and coordinate-space controls, then the precision/details trigger. The row 
 `bottomRow`, which wraps its content and holds the Objects capsule on the leading
 side and nothing else.
 `PropertyInspectorView` is added after `bottomRow` (bottom sheet) or inside the
-middle row (side placement) — and **only while it is open**. All are plain
+middle row **immediately before the trailing host** (side placement) — and **only
+while it is open**. That ORDER is the invariant: a laid-out sibling in a
+horizontal row costs width, so a panel appended after the host translates it by
+the panel's own width, and the host would lose the trailing edge for as long as
+Exact or Details was open. All are plain
 framework views built in code; no Compose, no AndroidX in the product, no design
 system, no drawer.
 
@@ -267,9 +271,12 @@ to the trailing window edge, so an unbounded clamp would slide it under the
 trailing tool cluster and leave a crescent of the precision toggle showing from
 behind it. A half-covered control still takes a touch, and the panel over it
 reads as a rendering fault rather than as a layer. `trailingLimitFor` bounds the
-surface at the trailing host's own leading
-edge, less the same `overlay_anchor_gap` every anchored surface stands off its
-invoker, so the *surface* moves and the live control keeps its place. Skipped for
+surface at the leading edge of whichever of the trailing host and an open
+side-placed precision surface comes first, less the same `overlay_anchor_gap`
+every anchored surface stands off its
+invoker, so the *surface* moves and the live control keeps its place. The panel
+is part of that trailing region because it is seated inboard of the host; when it
+sat outboard, clamping to the host cleared it for free. Skipped for
 a surface the cluster itself opened — the precision surface's invoker IS the
 cluster's toggle — and never tighter than the surface's own width, so a window
 too narrow to seat it beside the cluster still lays it out at the leading edge
