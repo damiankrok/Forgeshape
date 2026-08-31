@@ -1951,8 +1951,13 @@ surface it belongs to.
 
 There is exactly one convention in ForgeShape. The renderer consumes
 `modelMatrix()` and `normalMatrix()`, the picker consumes
-`inverseModelMatrix()`, and the gizmo's Local basis consumes `rotationMatrix()`;
-none of them builds a rotation itself, so they cannot drift apart. The inverse is
+`inverseModelMatrix()`, the gizmo's Local basis consumes `rotationMatrix()`, and
+the GLB exporter consumes `localMatrix()` — `R · S`, the model matrix with `T`
+factored off, which exists so a static export can bake the linear half and leave
+the pivot on the node. All five are composed here, from the same authoritative
+values in the same order, so `modelMatrix() == T(position) · localMatrix()`
+holds by construction rather than by coincidence and none of them builds a
+rotation itself, so they cannot drift apart. The inverse is
 composed from the authoritative values — each factor inverted, the order
 reversed, the scale by reciprocal — rather than inverted numerically, so it
 cannot disagree with the model it undoes. The self-tests assert the convention
@@ -2930,22 +2935,65 @@ convert. ForgeShape's world convention and glTF 2.0's are the same convention:
 | Matrix storage | column-major, `m[column * 4 + row]` | column-major |
 | Front face | counter-clockwise from outside | counter-clockwise from outside |
 
-So `1.0` ForgeShape metre is `1.0` glTF metre, the node matrix is a verbatim
-copy of `ConstructionTransform::modelMatrix()` (`T · Rz · Ry · Rx · S`), and a
-conversion node, a transposed matrix, a global scale factor or a reversed index
-triple in an export would each be a **defect**. Because the identity is easy to
-break silently, each is asserted against by name — see the table at the end of
+So `1.0` ForgeShape metre is `1.0` glTF metre, and a conversion node, a
+transposed matrix, a global scale factor or a reversed index triple in an export
+would each be a **defect**. Because the identity is easy to break silently, each
+is asserted against by name — see the table at the end of
 `artifacts/e2er1c/COORDINATE_AUTHORITY.md`.
 
-Two more things the file does not carry. A body's **placement stays in the node
-and never in its vertices**, so what the file says about geometry is what the
-Construction Source says; and scale stays in the matrix rather than baked into
-the positions, for the same reason. What the file *does* carry, and cannot avoid
-carrying, is the crease-policy normals and the render-only vertex duplication
-that produces them, because those are the surfaces — see *Derived render
-geometry and shading*. Two-sidedness travels as `material.doubleSided` rather
-than as duplicated geometry: a Vulkan pipeline has one cull mode for the frame
-and a file has one flag per material, and the flag is the honest form.
+What the file *does* carry, and cannot avoid carrying, is the crease-policy
+normals and the render-only vertex duplication that produces them, because those
+are the surfaces — see *Derived render geometry and shading*. Two-sidedness
+travels as `material.doubleSided` rather than as duplicated geometry: a Vulkan
+pipeline has one cull mode for the frame and a file has one flag per material,
+and the flag is the honest form.
+
+### The baked static transform (ARCH-OWNER-07)
+
+The placement is **split**, not copied whole:
+
+```
+Model = T · L        where   L = Rz · Ry · Rx · S
+```
+
+`L` is baked into the geometry — every exported position is `L · p`, every
+exported normal is `normalize(transpose(inverse(L)) · n)`. `T` stays on the
+node, written as a glTF `translation`; the node carries **no rotation, no scale
+and no matrix**, so every consumer reads identity for both.
+
+The normal matrix is the product's existing `ConstructionTransform::normalMatrix()`
+(`R · S⁻¹`), which for `L = R · S` with orthonormal `R` and diagonal positive `S`
+**is** `transpose(inverse(L))` — proved numerically in the self-test against
+`inverseModelMatrix()` rather than assumed, so there is still one normal
+authority and not two. Carrying a normal by `L` instead is the classic error and
+is invisible to a length check or an outward-facing check: what it destroys is
+perpendicularity to the surface, which is what the tests assert.
+
+Why this shape rather than the node matrix it replaces (both are valid glTF, and
+both place the object identically): a static asset arriving with a live rotation
+and a non-uniform node scale is an object whose every downstream operation — a
+modifier, a boolean, a physics shape, a normal recalculation, a second export —
+has to keep re-deriving the shape the user actually made. Baked, the shape
+simply *is* the mesh. The owner reviewed the pre-bake files in Blender and chose
+this.
+
+Four things the split deliberately does not do:
+
+- **It does not recentre.** `L` is applied about the body's LOCAL ORIGIN, and
+  `T` then positions that same origin, so the pivot a body is drawn and rotated
+  about is the pivot it exports with. A cone is what the tests use to prove it:
+  a box, plane or sphere is centrally symmetric, and rotating a centrally
+  symmetric point set leaves its bounding box symmetric too — so a
+  recentre-on-bounds would be invisible in any of them.
+- **It does not merge.** Each body bakes its own `L` into its own mesh and keeps
+  its own node, in scene order.
+- **It does not mirror.** `det(L) = sx·sy·sz > 0` for the strictly positive
+  scale domain, so winding survives the bake unchanged. A zero or negative
+  determinant is refused — `SingularTransform`, `MirroredTransform` — never
+  compensated by reversing every triangle, which would be implementing a Mirror
+  the domain says cannot exist.
+- **It does not reach `.forge`.** A project still stores the nine authored
+  values. Baking is an interchange decision and lives only in the exporter.
 
 ### Representation, and why the exporter never guesses
 

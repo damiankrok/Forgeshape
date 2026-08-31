@@ -1108,7 +1108,11 @@ where it goes, using the system's own file UI, and the suggested name ends
 What lands in the file:
 
 - **Every body in the scene**, each in the place, at the angle and at the size
-  you put it.
+  you put it. The **shape you see is the shape in the file**: the turning and
+  the sizing you did are part of the mesh itself, not instructions attached to
+  it, so the object opens the right way round and the right size with nothing
+  left to apply. Where it stands is still recorded as a position, so it lands
+  where you put it and its pivot is the one you have been rotating about.
 - **The real surfaces.** Hard edges stay hard and round shapes stay smooth, the
   way they look in ForgeShape.
 - **Metres.** One metre in ForgeShape is one metre in the file, and up is up.

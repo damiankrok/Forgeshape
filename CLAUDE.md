@@ -244,6 +244,20 @@ is a value that can be read rather than only an assertion that failed.
   sculpt vertex and neither `.forge` slot may move because of it. And there is
   no conversion: ForgeShape and glTF are both right-handed, +Y-up and metric,
   so a conversion node or a global scale factor in an export is a defect.
+- **A static export bakes `R` and `S` into the geometry and leaves `T` on the
+  node** (`ARCH-OWNER-07`). The placement is SPLIT — `Model = T · L` with
+  `L = Rz·Ry·Rx·S` — every position exported as `L·p` and every normal as
+  `normalize(transpose(inverse(L))·n)`, never `L·n`, which is only the same
+  answer while the scale is uniform. The node writes a `translation` and
+  nothing else: no `rotation`, no `scale`, no `matrix`. The bake is about the
+  body's LOCAL ORIGIN and never a bounds centre, because that origin is the
+  pivot every downstream tool then inherits; each body bakes its own `L`, and
+  nothing is merged. `det(L) = sx·sy·sz > 0` in this product's domain, so
+  winding survives untouched — a zero or negative determinant is REFUSED
+  (`SingularTransform` / `MirroredTransform`), never compensated by reversing
+  triangles, which would be implementing the Mirror the domain says cannot
+  exist. `.forge` still stores the nine authored values: baking is an
+  interchange decision and lives only in `forgeshape_gltf_export.cpp`.
 - **Every UI control has a stable semantic id, and verification uses it.** Ids
   live in `res/values/ids.xml` and name what a control *does*. No test and no
   evidence script may locate a control by screen coordinate: the workspace

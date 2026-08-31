@@ -1,21 +1,50 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.51.0
+**Status Version:** 0.51.1
 **Updated:** 2026-08-31
-**Result:** **E2E-R1C / Stage 023 — COMPLETE.** A model made in ForgeShape can
+**Result:** **E2E-R1C-C1 — COMPLETE.** The static interchange contract changed
+after the owner reviewed the first exported files in Blender. `ARCH-OWNER-07`
+supersedes Stage 023's node-transform policy: a static `.glb` now **bakes each
+body's rotation and scale into its vertices** and leaves only the translation on
+the node, so the object arrives in another tool already the shape the user made
+rather than a shape plus instructions for producing it. Node rotation is
+identity and node scale is 1/1/1 for every exported body — in fact both are
+absent, along with any node matrix.
+
+The placement is split as `Model = T · L` with `L = Rz·Ry·Rx·S`. Positions are
+`L · p`; normals are `normalize(transpose(inverse(L)) · n)`, which is the
+existing `normalMatrix()` and is checked numerically against the inverse
+transpose rather than assumed. Nothing is recentred — `L` is applied about the
+body's local origin, which is the pivot `T` then positions — nothing is merged,
+each body bakes its own `L`, and no axis conversion appears: metres, +Y up and
+right-handedness are exactly as they were. `det(L) = sx·sy·sz > 0` in this
+product's domain, so winding survives untouched; a zero or negative determinant
+is refused as `SingularTransform` or `MirroredTransform` rather than
+compensated by reversing triangles, which would be implementing the Mirror the
+domain says cannot exist.
+
+Construction and Sculpt representation selection is unchanged, `.forge` still
+stores the nine authored values, and the Export control did not move. The
+sentinels were regenerated: their **pre-bake digests are recorded as history and
+are not presented as current** — see *Current evidence summary*.
+
+---
+
+**Previous result — E2E-R1C / Stage 023 — COMPLETE.** A model made in ForgeShape can
 now leave it. **Export** — the last reserved control in the product, and now an
 ordinary working one — writes the whole scene as a single glTF 2.0 binary
 (`.glb`) wherever the user picks through Scoped Storage: every body's triangles,
-its crease-policy normals and its placement matrix, in metres, +Y up.
+its crease-policy normals and its placement, in metres, +Y up.
 
 **There is no coordinate conversion, and that is a finding rather than a
 convenience.** Before any exporter code was written, the up axis, handedness,
 axis ownership, body-local convention, transform composition order and winding
 were each established from named repository truth; ForgeShape's world convention
 and glTF 2.0's turned out to be the same convention, so 1.0 ForgeShape metre is
-1.0 glTF metre, the node matrix is `ConstructionTransform::modelMatrix()`
-element-for-element, and a conversion node, a transposed matrix or a global scale
-factor in an export would each be a defect. `artifacts/e2er1c/COORDINATE_AUTHORITY.md`
+1.0 glTF metre and a conversion node, a transposed matrix or a global scale
+factor in an export would each be a defect. (The node-transform half of this
+result was superseded by ARCH-OWNER-07 above; the coordinate conventions it
+established were not, and are unchanged.) `artifacts/e2er1c/COORDINATE_AUTHORITY.md`
 records the proof and the case that would catch each of those.
 
 Representation is honoured per body and never guessed: in a Sculpt project a
@@ -256,9 +285,12 @@ refused file costs nothing. `DATA_PACKAGE_SPEC.md` owns the format.
 
 The model can also be EXPORTED, one way, as a single glTF 2.0 binary (`.glb`)
 written wherever the user picks through Scoped Storage. It carries every body's
-triangles, crease-policy normals and placement matrix, in metres, +Y up, with no
-coordinate conversion of any kind — ForgeShape's world convention and glTF's are
-the same convention. A body with a Frozen Sculpt Mesh exports that mesh; every
+triangles, crease-policy normals and placement, in metres, +Y up, with no
+coordinate conversion of any kind: ForgeShape's world convention and glTF's are
+the same convention. Each body's rotation and scale are BAKED into its vertices
+and only its translation stays on the node (`ARCH-OWNER-07`), so the object
+arrives already the shape it was made as, standing where it stood, on the pivot
+it was rotated about. A body with a Frozen Sculpt Mesh exports that mesh; every
 other body exports re-evaluated Construction geometry. The exporter is
 platform-neutral, uses no third-party interchange library, and is a READ: it
 mints no revision, opens no transaction and touches neither `.forge` slot. There
@@ -624,6 +656,7 @@ Active owner decisions are identified by `UI-OWNER-*`, `ARCH-OWNER-*`,
 **Implemented:** UI-OWNER-01 (the shell), UI-OWNER-02 (compact / medium /
 expanded), UI-OWNER-03 (Export as a global action — drawn reserved when the
 decision was recorded, and working since Stage 023 in the same place),
+ARCH-OWNER-07 (the baked static interchange transform, E2E-R1C-C1),
 UI-OWNER-05 (the destructive re-Freeze guard) and UI-OWNER-06 (stylus-friendly,
 no pressure). **Still a decision only, with no behaviour and no drawn control:**
 UI-OWNER-04 — Sketch and Extrude have no implementation whatsoever and no entry
@@ -641,6 +674,7 @@ acceptance table or preflight may cite a bare `D` number.
 | UI-OWNER-05 | Confirmation before a destructive re-Freeze | **yes**, and **only** when existing Frozen Sculpt Mesh edits would actually be replaced. A normal Resume Sculpt has no confirmation — it destroys nothing, and guarding it would train the user to dismiss the guard that matters. |
 | UI-OWNER-06 | Stylus pressure in Stage 015B | **no** — deferred to a dedicated Sculpt stage. 015B must still be stylus-friendly and preserve a clean path for pressure, tilt and hover. |
 | ARCH-OWNER-01 | Future Apple portability | **required architectural constraint**. See below. |
+| ARCH-OWNER-07 | Static interchange transform | **bake rotation and scale into the exported geometry; keep translation and pivot at the node.** Approved 2026-08-31, after the owner reviewed the first exported files in Blender. Exported node rotation is identity/omitted and node scale is 1/1/1 omitted; geometry is not recentred; metres 1:1, +Y-up, right-handed and zero axis conversion are unchanged; Construction/Sculpt representation selection is unchanged; `.forge` authored transforms are unchanged. Supersedes the Stage 023 node-matrix policy for static GLB. Implemented in E2E-R1C-C1. |
 | INPUT-OWNER-01 | Stylus-first interaction | **required product/architecture constraint**. See below. |
 | DOC-OWNER-01 | Clear naming and code comments | **required documentation/maintainability rule**, recorded durably in `CLAUDE.md`. |
 
@@ -956,7 +990,14 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 | **The model exports as one glTF 2.0 binary (`.glb`) to a destination the user picks through SAF, with the ordinary Export control** | VERIFIED (Stage 023) |
 | **The exported bytes are a conformant single-file GLB — 12-byte header, 4-byte-aligned JSON and BIN chunks, in-range accessors, correct POSITION `min`/`max`, unit normals, no external `uri`, no second file** — read back by `GlbDocument`, an independent in-repo glTF 2.0 reader that shares no code with the writer | VERIFIED (Stage 023) |
 | **Zero coordinate conversion: 1.0 ForgeShape metre is 1.0 glTF metre, +Y is up, and a 1×2×4 m box exports with exactly those extents on X/Y/Z — no conversion node, no global scale factor** | VERIFIED (Stage 023) |
-| **A body's placement lives in the node matrix, never in its vertices: the exported matrix is `ConstructionTransform::modelMatrix()` element-for-element, translation in elements 12–14, and moving or scaling a body moves no vertex** | VERIFIED (Stage 023) |
+| **A static export bakes each body's rotation and scale into its vertices and leaves only the translation on the node: node rotation and node scale are identity — in fact absent — and no node matrix is written at all** | VERIFIED (E2E-R1C-C1) |
+| **Every baked position is `L · p` for that body's own `L = Rz·Ry·Rx·S`, compared vertex by vertex against the value recomputed outside the exporter** | VERIFIED (E2E-R1C-C1) |
+| **Baking is about the body's LOCAL ORIGIN: nothing is recentred on a bounds centre, and the pivot the node positions is the pivot the body is rotated about — proved on a cone, because a box, plane or sphere is centrally symmetric and would hide a recentre** | VERIFIED (E2E-R1C-C1) |
+| **Baked normals ride `transpose(inverse(L))`, never `L`: unit length, still perpendicular to their own faces under a non-uniform scale, and demonstrably different from what `L` would have produced** | VERIFIED (E2E-R1C-C1) |
+| **POSITION `min`/`max` are recomputed from the baked vertices**, and an independent reader re-derives them from the data rather than trusting the accessor | VERIFIED (E2E-R1C-C1) |
+| **`det(L) > 0` preserves winding through the bake; a singular or mirrored linear transform is REFUSED (`SingularTransform` / `MirroredTransform`) rather than compensated, and the transform domain still refuses a zero or negative scale at the source** | VERIFIED (E2E-R1C-C1) |
+| **Each body bakes its own `L` independently and nothing is merged**: two identical 1 m cubes with different placements export as two nodes with two different geometries | VERIFIED (E2E-R1C-C1) |
+| **The bake changes no other export property**: metres, +Y up, right-handedness, per-body representation, determinism and one-file-no-sidecar are all unchanged | VERIFIED (E2E-R1C-C1) |
 | **Every scene body is exported exactly once, in scene order, named `Body_<ObjectId>`, with triangles wound counter-clockwise from outside** | VERIFIED (Stage 023) |
 | **Per-body representation is honoured and never guessed: in a Sculpt project a body with a Frozen Sculpt Mesh exports that mesh and its never-sculpted companion exports its Construction shape — there is no fallback from Sculpt to the Construction Source** | VERIFIED (Stage 023) |
 | **Export is a READ**: no revision minted, no history step, no `ObjectId` moved, no sculpt vertex touched, no observable native state changed, and neither the manual `.forge` slot nor the recovery checkpoint written | VERIFIED (Stage 023) |
@@ -969,7 +1010,7 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 ## Self-test suite
 
 Sixteen debug-only native suites run once from `NativeViewport.start()` — never
-per frame — and total **2259 checks, zero failures**:
+per frame — and total **2292 checks, zero failures**:
 
 | suite token | checks |
 | --- | --- |
@@ -988,7 +1029,7 @@ per frame — and total **2259 checks, zero failures**:
 | `FORGESHAPE_GIZMO_SELFTEST_OK` | 145 |
 | `FORGESHAPE_PROJECT_SELFTEST_OK` | 132 |
 | `FORGESHAPE_RENDER_RECOVERY_SELFTEST_OK` | 24 |
-| `FORGESHAPE_GLTF_EXPORT_SELFTEST_OK` | 60 |
+| `FORGESHAPE_GLTF_EXPORT_SELFTEST_OK` | 93 |
 
 followed by `FORGESHAPE_PROJECT_GOLDEN_SHA256`, `FORGESHAPE_MESH_UPLOAD_OK`,
 `FORGESHAPE_GRID_UPLOAD_OK`, `FORGESHAPE_GIZMO_UPLOAD_OK` and
@@ -1211,10 +1252,10 @@ device. `README.md` documents how to read them.
 | `EditorWorkspaceUnifiedRightHostTest` | `UILR2-01..18`: invariant host frame; downward-only Transform expansion; mode/space/Exact/Shape/Sculpt parity; same-host descendants; bottom hide/restore through slowed entry/exit; IME vertical grammar and touch floor; signed numeric and unitless Scale regression; compact portrait, short landscape and expanded/tablet; Stage020R2/R3 semantics | 18 |
 | `EditorWorkspaceRightHostPlacementTest` | `UILR2C-01..12`: the correction round-1 contract that the right host keeps the trailing window edge. Compact and short-landscape hold one external host frame through all eleven R2 states with the trailing inset unchanged (`-01`, `-03`); the compact anchors and the host width take no font scale, so the 1.3 cells resolve to the 1.0 answer (`-02`, `-04`); the expanded window docks the panel inboard of the host and its decision arithmetic carries no text input (`-05`, `-06`); Exact, Exact+IME and Sculpt Details never translate the host (`-07`) because a side-placed panel is always seated BEFORE it in the row they share (`-08`); compact hide/restore and short-window persistent chrome return at Δ = 0 dp (`-09`, `-10`); intrinsic hit boxes clear 48 dp with the clipped visible intersection reported separately (`-11`); and the IME leaves the Vulkan surface full-window while only the host height may move (`-12`) | 12 |
 
-| `GlbExportTest` | `FSR1C-13..16`, `E2ER1C-01..06`: every assertion made through `GlbDocument`, a test-only glTF 2.0 reader written from the specification that shares no code with the exporter. A well-formed single-file GLB with no external `uri` and a generator string, and a truncated one rejected — so the reader can fail (`FSR1C-13`); metres unscaled with the extent of a 1×2×4 m box exactly 1/2/4 on X/**Y**/Z and no conversion node, proved as one matrix per body and never one more (`-14`); placement and scale in the node matrix with translation in elements 12–14, a 0,0,0,1 bottom row and not one vertex moved (`-15`); every body exported once in scene order as `Body_<ObjectId>`, unit normals and outward winding (`-16`). On device: the six-body corpus fixture exporting as six valid distinct nodes (`E2ER1C-01`) carrying the fixture's own translations, non-uniform scales and asymmetric rotations (`-02`); the Sculpt fixture exporting the sculpted body's tetrahedron and its never-sculpted companion's Construction box (`-03`); the production SAF handler writing the exact bytes to the chosen destination and the create Intent asking for `model/gltf-binary` and a `.glb` name (`-04`); a cancel writing nothing, changing nothing and leaving no staged bytes (`-05`); and an export changing no observable native state, no revision, no history depth, no `ObjectId` and neither `.forge` slot (`-06`). Two further cases leave the sentinel `.glb` files `scripts/run-glb-export-evidence.ps1` pulls | 17 |
+| `GlbExportTest` | `FSR1C-13..16`, `FSR1C-C1-01..14`, `E2ER1C-01..06`, `E2ER1C-C1-01..06`: every assertion made through `GlbDocument`, a test-only glTF 2.0 reader written from the specification that shares no code with the exporter. A well-formed single-file GLB with no external `uri` and a generator string, and a truncated one rejected — so the reader can fail (`FSR1C-13`); metres unscaled with the extent of a 1×2×4 m box exactly 1/2/4 on X/**Y**/Z, no node matrix anywhere and exactly one translation per body (`-14`); every body exported once in scene order as `Body_<ObjectId>`, unit normals and outward winding (`-16`). The baked contract: the node carrying translation only with rotation, scale and matrix all absent, asserted on the parsed node and again on the raw JSON (`C1-01..03`); a 1×2×4 m box arriving 2×6×2 m under a 2/3/0.5 scale and its extents swapping axes under a quarter turn (`C1-04`); no recentre, proved on a CONE because a symmetric primitive would hide one (`C1-05`); normals compared against `transpose(inverse(L))` and against `L`, computed in the test from two exports of the same sphere, plus per-face perpendicularity on a box (`C1-06`); `min`/`max` recomputed from the baked vertices (`C1-07`); two bodies baking independently (`C1-09`); byte-identical repeats (`C1-11`); and metres and +Y unchanged by the bake (`C1-12`). On device: the six-body corpus fixture exporting as six valid distinct nodes (`E2ER1C-01`) keeping its authored translations on the nodes while its scales reach the geometry (`-02`); the Sculpt fixture exporting the sculpted body's tetrahedron — identified by rotation-invariant properties, since the bake turns it — and its never-sculpted companion's Construction box (`-03`); the production SAF handler writing the exact bytes to the chosen destination and the create Intent asking for `model/gltf-binary` and a `.glb` name (`-04`); a cancel writing nothing, changing nothing and leaving no staged bytes (`-05`); and an export changing no observable native state, no revision, no history depth, no `ObjectId` and neither `.forge` slot (`-06`). Two further cases leave the sentinel `.glb` files `scripts/run-glb-export-evidence.ps1` pulls | 24 |
 
-**469 tests** — 70 JVM, counted from `:app:testDebugUnitTest`'s own result XML,
-and 399 instrumented, counted from the sharded runner's live AndroidJUnitRunner
+**476 tests** — 70 JVM, counted from `:app:testDebugUnitTest`'s own result XML,
+and 406 instrumented, counted from the sharded runner's live AndroidJUnitRunner
 discovery over 28 classes rather than from this table. Both numbers come from a
 run, because a hand-maintained total drifts and this one had. No Java test
 asserts a rendered pixel;
@@ -1312,10 +1353,33 @@ precondition. Runtime evidence separately shows the real keyboard.
 
 ## Current evidence summary
 
-Latest acceptance run (E2E-R1B / Stage 022), on the isolated
-`ForgeShape_Stage006` / `emulator-5580` AVD unless stated. Evidence:
-[`artifacts/e2er1b/`](artifacts/e2er1b/); the E2E-R1A package stays at
-[`artifacts/e2er1a/`](artifacts/e2er1a/) and is historical.
+Latest acceptance run (**E2E-R1C-C1**), on the isolated `ForgeShape_Stage006` /
+`emulator-5580` AVD unless stated. Evidence:
+[`artifacts/e2er1c/`](artifacts/e2er1c/) — `INDEX.md`, the coordinate-authority
+proof, `BAKED_TRANSFORM_C1.md`, the device case table, the full-suite aggregate,
+the startup capture, both sentinel `.glb` files and the prepared owner check.
+The E2E-R1B package stays at [`artifacts/e2er1b/`](artifacts/e2er1b/) and the
+E2E-R1A package at [`artifacts/e2er1a/`](artifacts/e2er1a/); both are historical.
+
+- **Native self-tests:** sixteen suites, **2292 checks, zero failures**, then
+  `FORGESHAPE_NATIVE_VIEWPORT_OK` (`artifacts/e2er1c/selftest_startup.txt`).
+- **Instrumented:** `FULL_SHARDED_SUITE_PASS` — 28 classes, 406 tests
+  discovered live, executed exactly once, `missing=0 duplicates=0 unexpected=0
+  execution_missing=0 failed_shards=0 aborted_shards=0`
+  (`artifacts/e2er1c/FULL_SHARDED.txt`).
+- **Exported sentinels, CURRENT (baked, `ARCH-OWNER-07`):**
+  `construction_sentinel.glb` 59884 bytes
+  `8ac4fb6abb509361b911c9b4bbc2dd8385910668808b40fbd9faeab244f2c3ff`;
+  `sculpt_sentinel.glb` 2588 bytes
+  `ae82a0720d9f503f77d0237edf40ab5c1152bae6938df08166e1ea9b31014f2c`.
+- **Superseded, PRE_ARCH_OWNER_07 — history, not current:** the pre-bake pair
+  was 60312 bytes `266355a5…` and 2684 bytes `16805a05…`, in Git at
+  `cdc184b999bae716809f632c11fe771ebbb98c2b`. **The files in the bundle no
+  longer have those digests.**
+
+### Previous acceptance run (E2E-R1B / Stage 022)
+
+Evidence: [`artifacts/e2er1b/`](artifacts/e2er1b/).
 
 - **Native self-tests:** fifteen suites, **2199 checks, zero failures**, then
   `FORGESHAPE_NATIVE_VIEWPORT_OK` (`artifacts/e2er1b/native-launch.txt`). The
@@ -2049,7 +2113,7 @@ regenerated per stage.
 | `app/src/main/java/.../ProjectCheckpoint.java` | The RECOVERY file: a separate app-private slot autosave writes atomically, and the quarantine an undecodable one is moved to. Never the manual slot |
 | `app/src/main/java/.../AutosaveController.java` | WHEN a checkpoint happens: the debounce, the coalescing, the worker thread and the `awaitIdle` barrier tests wait on instead of sleeping. Owns no bytes and no format |
 | `app/src/main/java/.../ProjectTransfer.java` | The Scoped Storage boundary: `Uri` to bytes and back, plus the four Intents — three for `.forge` and diagnostics, one for the `.glb` export. Nothing below it ever sees a `Uri`, a resolver or a path |
-| `app/src/main/cpp/forgeshape_gltf_export.{h,cpp}` | The glTF 2.0 / GLB export: the capture that picks each body's representation, the container framing, the JSON, the accessor layout and the refusal of anything non-finite or out of range. Platform-neutral, no third-party interchange library, and it writes nothing back into the domain |
+| `app/src/main/cpp/forgeshape_gltf_export.{h,cpp}` | The glTF 2.0 / GLB export: the capture that picks each body's representation, the `Model = T · L` split and the bake of `L` into vertices and normals, the determinant guard, the container framing, the JSON, the accessor layout and the refusal of anything non-finite or out of range. Platform-neutral, no third-party interchange library, and it writes nothing back into the domain |
 | `app/src/androidTest/java/.../GlbDocument.java` | TEST ONLY: a second, independent glTF 2.0 reader written from the specification, sharing no code with the exporter. It is what makes the export evidence evidence |
 | `app/src/main/java/.../RecoveryPromptView.java` | The one question asked when unsaved work is found: Recover or Discard, over the live viewport, answered once. Owns no state and makes no native call |
 | `app/src/main/java/.../DiagnosticLog.java`, `Diagnostics.java` | The bounded local ring and its redaction (free of Android types, JVM-tested), and the Android half that names the build, chains the uncaught handler and renders a report |
@@ -2102,25 +2166,31 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Exactly one next step: return the E2E-R1C report to the coordinator, and then
-the OWNER checkpoint GATE-E2E.** GATE-E2E is the owner's, is not started here,
+**Exactly one next step: return the E2E-R1C-C1 report to the coordinator for the
+OWNER's external-engine re-test.** GATE-E2E is the owner's, is not started here,
 and Claude Code does not open it. No later product stage may begin either: Stage
 033's full exporter (UVs, materials, hierarchy, merge and unit options), OBJ,
 FBX, any importer, `APP-H1` (a project hub, thumbnails, Save As, naming, a
 multi-project library), `BRIDGE-R1` and `CAD-R0-DATA` are all **not started**,
 and none may be begun without the coordinator opening it.
 
-E2E-R1C is closed. Export ships as an early vertical slice: one `.glb`, whole
-scene, metres, +Y up, zero conversion, per-body representation honoured, and a
-read that changes nothing. The native suites (16, 2259 checks), the JVM suite,
-the new `GlbExportTest`, the touched UI suites, the E2E-R1A/R1B regression
-suites and the authoritative exhaustive-sharded instrumented aggregate are all
-green, and both supported ABIs build debug and release.
+E2E-R1C is closed, with `ARCH-OWNER-07` applied. Export ships as an early
+vertical slice: one `.glb`, whole scene, metres, +Y up, zero conversion, each
+body's rotation and scale baked into its geometry with only its translation on
+the node, per-body representation honoured, and a read that changes nothing. The
+native suites (16, 2292 checks), the JVM suite, `GlbExportTest`, the E2E-R1A/R1B
+regression suites and the authoritative exhaustive-sharded instrumented
+aggregate (406 tests, exactly once) are all green, and both supported ABIs build
+debug and release.
 
 **The one thing GATE-E2E still needs is the external-importer check**, which was
 deliberately not performed: no Godot, Blender or `gltf-validator` run is claimed
-anywhere. `artifacts/e2er1c/GATE_E2E_GODOT_CHECK.md` holds the two sentinel
-`.glb` files, what to look for in each, and an empty verdict for the owner.
+anywhere. `artifacts/e2er1c/GATE_E2E_GODOT_CHECK.md` holds the two **corrected**
+sentinel `.glb` files, the new "rotation 0,0,0 and scale 1,1,1 on every object"
+check that `ARCH-OWNER-07` adds, what to look for in each file, and an empty
+verdict for the owner. The pre-bake files it first offered are recorded there as
+superseded history with their own digests, so neither pair can be mistaken for
+the other.
 
 A **UI moratorium remains active.** The corrected edge-host arrangement is the
 accepted baseline; E2E-R1C changed one existing control from reserved to working
