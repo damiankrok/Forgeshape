@@ -126,6 +126,9 @@ forgeshape_jni.cpp            render thread, ANativeWindow, MotionEvent ->
 | WHEN the project is checkpointed, and on which thread | `AutosaveController` (Java) | it owns no bytes and no format: it decides, coalesces, and calls the codec. The debounce is an implementation detail and is not product semantics |
 | Whether the project actually changed | `projectSemanticFingerprint` (`forgeshape_project_state.{h,cpp}`) | it hashes semantic VALUES, never the domain's update counters — an undo does not advance those — and it is a change DETECTOR, never an identity |
 | Turning a document `Uri` into bytes and back | `ProjectTransfer` (Java) | THE boundary: no `Uri`, `ContentResolver`, authority or path passes it, and none is ever project truth. It converts; it decides nothing |
+| Reading a `.glb` back for the DIAGNOSTIC preview | `forgeshape_gltf_import.{h,cpp}` + `forgeshape_json.{h,cpp}` | platform-neutral, and deliberately shares NO code with the writer: it re-derives every offset, length, stride and bound from the file. Supports exactly the subset the exporter emits and fails closed by name on everything else. It produces geometry, never a body |
+| What an imported preview IS, and every boundary it may not cross | `forgeshape_import_preview.{h,cpp}` | session-only: no scene `ObjectId`, no Construction Source, no sculpt representation, no `MeshStore`, no history, no `.forge`, no checkpoint, not selectable, not re-exportable, gone with the process. Its renderer keys are resource keys and never identities |
+| Whether the file agrees with the scene | `forgeshape_glb_roundtrip.{h,cpp}` | compares the independently parsed file against DOMAIN truth re-derived from the generator and `modelMatrix()`, never against the exporter's captured arrays. Reads only, and reports a number rather than a boolean |
 | The glTF 2.0 / GLB export: what the file contains and every byte of it | `forgeshape_gltf_export.{h,cpp}` | platform-neutral C++ with no Android, JNI, `Uri`, `ContentResolver`, path or Vulkan type. It READS the scene and writes bytes: it mints no revision, opens no transaction, allocates no `ObjectId` and moves no sculpt vertex. It re-evaluates the Construction Source rather than reading a GPU buffer or decoding a `.forge`, and applies NO coordinate conversion — see *Export coordinates* |
 | What a lost GPU device means and how many rebuilds are attempted | `RenderRecoveryPolicy` (`forgeshape_render_recovery.{h,cpp}`) | deliberately free of Vulkan so it can be self-tested without a GPU; it owns no handle, performs no teardown and touches no project state |
 | Tearing the device down and building it again | `Renderer::rebuildDeviceAfterLoss` | it rebuilds the GPU COPY of derived data; the CPU project is not consulted and not touched, and `syncScene` re-uploads from the published revisions |
@@ -3011,6 +3014,73 @@ because a JSON document containing `nan` parses, passes a length check and is
 still not a glTF file. Refusing is the only correct answer and it is the
 writer's job, not the caller's.
 
+## The diagnostic imported mesh preview
+
+`GLB-IMPORT-R0`, under `ARCH-OWNER-08`. **This is a diagnostic, not import.**
+
+The owner saw a discrepancy between the ForgeShape scene and an external tool
+that the corrected node scale of 1/1/1 did not explain. Three things could
+produce that — a wrong exporter, a wrong reader, or a tool presenting the same
+geometry differently — and only the first is ForgeShape's defect. So the product
+gained the one thing that can separate them: a reader that shares nothing with
+the writer, and a way to put what it read on the screen beside the thing it was
+read from.
+
+### Parser ownership
+
+`forgeshape_gltf_import.{h,cpp}` calls nothing in `forgeshape_gltf_export.*`. It
+shares `forgeshape_json.{h,cpp}` — which knows only what JSON is — and
+`forgeshape_math.h`, and it re-derives every offset, length, stride and bound
+from the file rather than from what a writer intended. `forgeshape_json` does
+its own number grammar rather than handing text to `strtod`, because `strtod`
+accepts `nan` and `inf` and a non-finite value that reaches geometry is the
+exact failure the reader exists to prevent.
+
+The supported subset is exactly what the exporter emits; everything else fails
+closed with its **own named status** — `NodeMatrix`, `NodeRotation`,
+`SparseAccessor`, `InterleavedAccessor`, `ExternalBuffer`, `HasAnimation` and
+the rest. Nothing is silently ignored, because a diagnostic that skipped a
+transform would answer the question wrongly, which is worse than refusing to
+answer it. `artifacts/glb-import-r0/SUBSET.md` is the full table.
+
+### The preview is not a body
+
+`ImportedMeshPreview` is session-only diagnostic renderer state. It has no
+`ObjectId` from the scene's allocator, no entry in `ConstructionScene`, no
+Construction Source, no Frozen Sculpt Mesh, no `MeshStore` publish; it never
+enters `ConstructionHistory`, `.forge`, the checkpoint or
+`projectSemanticFingerprint`; it cannot be selected, picked, edited or
+re-exported; and it is gone with the process.
+
+It **replaces** what the renderer is handed for a frame rather than merging with
+the project snapshot, because a mixed list is a list somebody would eventually
+pick, save or export from. While it is shown, the gizmo is withdrawn, a tap
+selects nothing, and every editing control is absent — over an imported mesh
+each of them would point at a body the user cannot see.
+
+The renderer caches GPU buffers per `SceneDrawItem::objectId`, so preview meshes
+need distinct keys. They come from `kFirstPreviewRenderKey` (2^60), which the
+body allocator cannot reach, and they are **renderer resource keys, not
+identities**: minted by the preview, never by the scene, never persisted, never
+shown, never picked against, and restarting from the same base each session.
+`previewRenderKeyIsReserved` exists so a test can assert the two ranges cannot
+meet.
+
+### The roundtrip diagnostic
+
+`forgeshape_glb_roundtrip.{h,cpp}` exports through the real writer, reimports
+with the independent reader and compares both against **domain truth** — the
+primitive generator or the Frozen Sculpt Mesh, through `buildRenderMesh`, placed
+by `modelMatrix()`. Not the exporter's captured arrays: if the exporter captured
+the wrong geometry, the expected side still holds the right geometry and the
+comparison fails, which is the point.
+
+The identity under test is `modelMatrix() · p_local == nodeTranslation · p_baked`
+— `T·L·p == T·(L·p)` — which holds only if the bake, the node transform and the
+file all agree. Tolerance is float32 quantization and nothing else: relative to
+the coordinate's magnitude, with an absolute floor, because absolute error in a
+float grows with the value.
+
 ## Current boundaries
 
 What the architecture deliberately does **not** contain. Each is a stage of its
@@ -3072,8 +3142,11 @@ own, and naming them is what stops one arriving by accident.
   in one `.glb`. It has no UVs, no textures, no materials of the user's
   choosing, no hierarchy, no merge or unit options, no draco or other
   compression, and it writes no second file — no `.bin`, no `.gltf`, no image,
-  no sidecar. There is **no importer**: glTF/GLB, OBJ and FBX cannot be read,
-  and OBJ and FBX cannot be written either. `.forge` remains ForgeShape's own
+  no sidecar. There is **no production importer**: OBJ and FBX cannot be read or
+  written, and the only thing that reads a `.glb` is the session-only diagnostic
+  preview above — which produces no body, no project content and nothing that
+  survives the process. Durable import is `IMPORT-01` and is post-MVP.
+  `.forge` remains ForgeShape's own
   project format and is not an interchange format for Blender, CAD or a game
   engine; the `.glb` is the reverse — an interchange view that ForgeShape itself
   cannot open. No third-party interchange library is used or authorized:

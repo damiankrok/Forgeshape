@@ -157,6 +157,29 @@ from the specification that shares no code with the exporter. What this script
 adds is the artefact, so the files can be opened in another program without
 reproducing a test run.
 
+To run the GLB import/roundtrip diagnostic and pull its reports off the device,
+use:
+
+```
+scripts\run-glb-import-evidence.ps1 -Serial <serial>
+```
+
+It runs `GlbImportPreviewTest` through the runner above and pulls the
+world-geometry comparison reports and the Source/Imported screenshot pair into
+`artifacts\glb-import-r0\`, printing each report's verdict. It deletes anything
+from a previous run first and produces nothing at all from a failing one. It
+prints `GLB_IMPORT_EVIDENCE=PASS` only when every file is present and carries a
+verdict.
+
+The comparison exports the live scene through the real writer, reads the bytes
+back with `forgeshape_gltf_import` — a parser that shares no line with the
+exporter — and compares both against DOMAIN truth re-derived from the primitive
+generator or the Frozen Sculpt Mesh. It reports the maximum world-space position
+delta, which body and vertex produced it, and the maximum normal disagreement in
+degrees. **`GLB-IMPORT-R0` is a diagnostic and is session-only**: the preview it
+draws is never a body, never saved and never autosaved, and production import is
+post-MVP.
+
 `scripts\verify-device-guards.ps1` runs the DEV2-01..07 and DEV3-01..06
 device-isolation guard checks without needing any device attached and without
 ever contacting `emulator-5554` — safe to run any time as a quick sanity check
@@ -221,7 +244,7 @@ emit several hundred lines in a few milliseconds and the default buffer silently
 drops the tail, which reads exactly like a self-test that stopped partway
 through. That is a logging limit, not an app failure.
 
-A clean debug launch emits **sixteen** `*_SELFTEST_OK` tokens, in this order, then
+A clean debug launch emits **seventeen** `*_SELFTEST_OK` tokens, in this order, then
 `FORGESHAPE_NATIVE_VIEWPORT_OK` once the first frame is presented:
 
 ```
@@ -241,6 +264,7 @@ FORGESHAPE_GIZMO_SELFTEST_OK
 FORGESHAPE_PROJECT_SELFTEST_OK
 FORGESHAPE_RENDER_RECOVERY_SELFTEST_OK
 FORGESHAPE_GLTF_EXPORT_SELFTEST_OK
+FORGESHAPE_GLTF_IMPORT_SELFTEST_OK
 ```
 
 Each suite reports `(<n> checks)` and fails as `<SUITE>_CASE_FAIL:<name>` plus
@@ -500,6 +524,10 @@ FORGESHAPE_PROJECT_LOAD_FAIL:<no_data|empty>
 FORGESHAPE_PROJECT_GOLDEN_SHA256 construction=<sha> sculpt=<sha>
 FORGESHAPE_GLB_EXPORTED:<bytes> kind=<Construction|Sculpt> bodies=<n>
 FORGESHAPE_GLB_EXPORT_FAIL:<why>
+FORGESHAPE_GLB_IMPORTED:<bytes> meshes=<n> vertices=<n> triangles=<n>    diagnostic preview
+FORGESHAPE_GLB_IMPORT_FAIL:<why> bytes=<n>
+FORGESHAPE_GLB_PREVIEW_VISIBLE:<0|1>
+FORGESHAPE_GLB_PREVIEW_CLEARED
 ```
 
 A `DEVICE_LOST` followed by a `DEVICE_REBUILT` and a second

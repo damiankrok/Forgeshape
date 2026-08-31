@@ -1131,8 +1131,27 @@ a file cannot be written, ForgeShape says so and your work is untouched.
 
 Not there yet: materials, colours and textures of your choosing, UVs, object
 grouping and export options are not implemented — every body is exported with
-one plain default surface. Nothing else can be exported: there is no OBJ, no
-FBX, and no import of any format.
+one plain default surface. Nothing else can be exported: there is no OBJ and no
+FBX.
+
+## Checking an exported file
+
+The project surface has a third group: **Check an exported file**. It opens a
+`.glb` you pick, reads it back, and draws what it found **in place of your
+model**, so you can see whether the file really carries what you made. Two more
+controls appear once it has read one: one swaps between your model and the
+imported file, the other closes the check.
+
+This is a **check, not an import.** What it shows cannot be selected, moved,
+resized, sculpted, saved or exported — it is a picture of a file, not an object
+in your project — and while it is on screen the editing controls step aside
+because none of them could act on it. It is forgotten when ForgeShape closes,
+and it never touches your model, your saved project or your Undo history: those
+are exactly as you left them, and switching back proves it.
+
+If the file cannot be read, ForgeShape says so and shows you your model
+unchanged. Bringing a model *in* from another program — as something you can
+then edit — is not implemented, and neither is reading OBJ or FBX.
 
 ## Diagnostics
 
@@ -1254,8 +1273,10 @@ now writes a real `.glb`; everything drawn in the workspace does what it says.
 Primitive. There is no sketching and no extruding: a body's shape comes from one
 of the six exact primitives and its dimensions, and nothing else makes geometry.
 
-There is no **Add from file** and no import of any kind. Add Primitive offers the
-six shapes ForgeShape builds and nothing else.
+There is no **Add from file**. Nothing you open can become a body you can edit:
+Add Primitive offers the six shapes ForgeShape builds and nothing else. The
+*Check an exported file* control reads a `.glb` back to look at it, and what it
+shows is never an object in your project.
 
 **There is one saved project and no project library.** There is no Save As, no
 naming, no recent list, no thumbnails, no folders and no multi-project library:
@@ -1274,9 +1295,10 @@ format, meant to be readable by another ForgeShape installation, and it is not
 GLB, glTF, OBJ or FBX. Open File… reads ForgeShape projects and refuses
 everything else.
 
-**Export goes one way, in one format.** ForgeShape writes `.glb` and reads none
-of it back. There is no OBJ, no FBX, no import of any model format, and no way
-to bring a mesh in from another program.
+**Export goes one way, in one format.** ForgeShape writes `.glb`, and the only
+thing that reads one back is the diagnostic check described above, which
+produces nothing you can keep or edit. There is no OBJ, no FBX, and no way to
+bring a mesh in from another program as something you can work on.
 
 **A stylus is simply another pointer.** Nothing anywhere reads pressure, tilt,
 hover or which kind of pointer is touching the screen, so an S Pen grabs a

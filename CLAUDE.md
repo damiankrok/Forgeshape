@@ -18,8 +18,8 @@ adb -s <serial> logcat -s ForgeShape:V
 
 APK: `app/build/outputs/apk/debug/app-debug.apk`
 
-A clean debug launch emits **sixteen** `*_SELFTEST_OK` tokens, then
-`FORGESHAPE_NATIVE_VIEWPORT_OK`. All sixteen, in emission order:
+A clean debug launch emits **seventeen** `*_SELFTEST_OK` tokens, then
+`FORGESHAPE_NATIVE_VIEWPORT_OK`. All seventeen, in emission order:
 
 ```
 FORGESHAPE_CAMERA_SELFTEST_OK
@@ -38,6 +38,7 @@ FORGESHAPE_GIZMO_SELFTEST_OK
 FORGESHAPE_PROJECT_SELFTEST_OK
 FORGESHAPE_RENDER_RECOVERY_SELFTEST_OK
 FORGESHAPE_GLTF_EXPORT_SELFTEST_OK
+FORGESHAPE_GLTF_IMPORT_SELFTEST_OK
 ```
 
 Failures: `FORGESHAPE_NATIVE_VIEWPORT_FAIL:*` and the matching `*_SELFTEST_FAIL`.
@@ -127,8 +128,9 @@ is a value that can be read rather than only an assertion that failed.
   where the bytes live is the Android adapter's business alone.
   `DATA_PACKAGE_SPEC.md` owns the layout, and `scripts/build-forge-corpus.ps1`
   is a second implementation of it whose bytes must stay identical.
-  **GLB/glTF, OBJ and FBX are not `.forge`** and are separate later work; no
-  inert menu entry for them may be drawn.
+  **GLB/glTF, OBJ and FBX are not `.forge`.** A `.glb` is written by Export and
+  read back only by the session-only diagnostic preview below; OBJ and FBX are
+  absent in both directions, and no inert menu entry for one may be drawn.
 - **Autosave protects work; it never overwrites what the user chose to keep.**
   The manual slot and the recovery checkpoint are two different files written by
   two different acts, and only an explicit Save touches the one the user named.
@@ -149,6 +151,23 @@ is a value that can be read rather than only an assertion that failed.
   recovery left in place would ask the same broken question on every launch
   forever. A successful Recover starts a fresh session history exactly as Open
   does; a failed one changes nothing at all.
+- **The Imported Mesh Preview is a diagnostic, and diagnostics do not become
+  features.** `GLB-IMPORT-R0` (`ARCH-OWNER-08`) reads a `.glb` — in practice one
+  ForgeShape wrote — with a parser that shares nothing with the writer, and
+  draws it in the viewport so the geometry in the FILE can be compared with the
+  geometry in the SCENE. What it produces is **session-only**: no `ObjectId`
+  from the scene's allocator, no entry in `ConstructionScene`, no Construction
+  Source, no Frozen Sculpt Mesh, no `MeshStore` publish, never a history step,
+  never a `.forge` byte, never a checkpoint, never re-exported, never
+  selectable or editable, and gone with the process. It REPLACES what the
+  renderer is handed for a frame and never merges with the project snapshot,
+  because a mixed list is a list somebody would eventually pick, save or export
+  from. `previewRenderKeyIsReserved` marks the renderer keys, which are
+  resource keys and never identities. The parser supports exactly the subset
+  the exporter emits and **fails closed by name** on everything else —
+  including a node rotation, scale or matrix it will not silently ignore.
+  Production import is `IMPORT-01` and stays post-MVP; OBJ and FBX stay absent
+  in both directions.
 - **A `Uri` never reaches the domain.** Scoped Storage transfer is
   ForgeShape's own project moving through the system's document UI, and
   `ProjectTransfer` is the whole boundary: it turns a `Uri` into bytes and

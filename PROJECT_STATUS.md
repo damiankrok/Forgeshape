@@ -1,8 +1,55 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.51.1
+**Status Version:** 0.52.0
 **Updated:** 2026-08-31
-**Result:** **E2E-R1C-C1 — COMPLETE.** The static interchange contract changed
+**Result:** **GLB-IMPORT-R0 — COMPLETE, and it answers the owner's question.**
+
+The owner saw a discrepancy between the ForgeShape scene and Blender that the
+corrected node scale of 1/1/1 did not explain. Three things could produce it —
+a wrong exporter, a wrong reader, or an external tool presenting the same
+geometry differently — and only the first would be ForgeShape's defect. So under
+`ARCH-OWNER-08` the product gained the one thing that separates them: a GLB
+reader that shares no line with the writer, a session-only preview that draws
+what it read in the same viewport, and a machine comparison against domain
+truth.
+
+> ### `ROUNDTRIP_EQUIVALENT`, with a maximum world-position delta of **exactly 0.0 metres**.
+>
+> Every vertex of every body, in world space, is **bit-identical** between the
+> ForgeShape scene and the same scene decoded out of the `.glb`. Vertex counts,
+> triangle counts, index order and per-body world bounds all match exactly; the
+> largest world-space normal disagreement is `1.2e-06` degrees, which is float32
+> noise. It holds for the six-body Construction project, for the Sculpt project
+> — where the sculpted body is compared as `source=sculpt` — and for the
+> **committed sentinel bytes** in `artifacts/e2er1c/` against the projects they
+> were exported from.
+>
+> **So the remaining discrepancy is not a ForgeShape exporter or parser defect.**
+> This stage cannot say what it is instead, and it makes no claim about Blender:
+> no external tool was run.
+
+The preview is a diagnostic and is session-only: no `ObjectId` from the scene's
+allocator, no Construction Source, no sculpt representation, no history step, no
+`.forge` byte, no checkpoint, not selectable, not editable, not re-exportable,
+and gone with the process. It replaces what the renderer draws for a frame and
+never merges with the project snapshot. While it is shown the gizmo is
+withdrawn, a tap selects nothing and every editing control is absent, because
+over an imported mesh each of them would point at a body the user cannot see.
+
+The parser supports exactly the subset the exporter emits and **fails closed by
+name** on everything else — a node matrix, a non-identity rotation or scale, a
+sparse accessor, an interleaved buffer view, an external buffer, a required
+extension, animation, skinning, morph targets, a non-triangle mode. Nothing is
+silently ignored. `artifacts/glb-import-r0/SUBSET.md` is the full table.
+
+**This is not production import.** It reads a file ForgeShape wrote, to answer
+one question. Durable import — arbitrary files, materials, hierarchy, and what
+an imported object even *is* in a Construction/Sculpt product — is `IMPORT-01`
+and stays post-MVP. OBJ and FBX remain absent in both directions.
+
+---
+
+**Previous result — E2E-R1C-C1 — COMPLETE.** The static interchange contract changed
 after the owner reviewed the first exported files in Blender. `ARCH-OWNER-07`
 supersedes Stage 023's node-transform policy: a static `.glb` now **bakes each
 body's rotation and scale into its vertices** and leaves only the translation on
@@ -657,6 +704,7 @@ Active owner decisions are identified by `UI-OWNER-*`, `ARCH-OWNER-*`,
 expanded), UI-OWNER-03 (Export as a global action — drawn reserved when the
 decision was recorded, and working since Stage 023 in the same place),
 ARCH-OWNER-07 (the baked static interchange transform, E2E-R1C-C1),
+ARCH-OWNER-08 (the diagnostic imported mesh preview, GLB-IMPORT-R0),
 UI-OWNER-05 (the destructive re-Freeze guard) and UI-OWNER-06 (stylus-friendly,
 no pressure). **Still a decision only, with no behaviour and no drawn control:**
 UI-OWNER-04 — Sketch and Extrude have no implementation whatsoever and no entry
@@ -674,6 +722,7 @@ acceptance table or preflight may cite a bare `D` number.
 | UI-OWNER-05 | Confirmation before a destructive re-Freeze | **yes**, and **only** when existing Frozen Sculpt Mesh edits would actually be replaced. A normal Resume Sculpt has no confirmation — it destroys nothing, and guarding it would train the user to dismiss the guard that matters. |
 | UI-OWNER-06 | Stylus pressure in Stage 015B | **no** — deferred to a dedicated Sculpt stage. 015B must still be stylus-friendly and preserve a clean path for pressure, tilt and hover. |
 | ARCH-OWNER-01 | Future Apple portability | **required architectural constraint**. See below. |
+| ARCH-OWNER-08 | Diagnostic imported mesh preview | **implement a session-only Imported Mesh Preview**, approved 2026-08-31, to separate an exporter defect from an external-tool presentation difference. Parse actual GLB bytes independently of the writer; the preview is not `.forge` project truth; no ObjectId / Construction Source / Sculpt / history semantics; no manual-save, autosave or recovery inclusion; no imported-mesh editing; no Blender-specific axis conversion. Broad/durable import remains post-MVP (`IMPORT-01`). Implemented in GLB-IMPORT-R0. |
 | ARCH-OWNER-07 | Static interchange transform | **bake rotation and scale into the exported geometry; keep translation and pivot at the node.** Approved 2026-08-31, after the owner reviewed the first exported files in Blender. Exported node rotation is identity/omitted and node scale is 1/1/1 omitted; geometry is not recentred; metres 1:1, +Y-up, right-handed and zero axis conversion are unchanged; Construction/Sculpt representation selection is unchanged; `.forge` authored transforms are unchanged. Supersedes the Stage 023 node-matrix policy for static GLB. Implemented in E2E-R1C-C1. |
 | INPUT-OWNER-01 | Stylus-first interaction | **required product/architecture constraint**. See below. |
 | DOC-OWNER-01 | Clear naming and code comments | **required documentation/maintainability rule**, recorded durably in `CLAUDE.md`. |
@@ -1003,14 +1052,21 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 | **Export is a READ**: no revision minted, no history step, no `ObjectId` moved, no sculpt vertex touched, no observable native state changed, and neither the manual `.forge` slot nor the recovery checkpoint written | VERIFIED (Stage 023) |
 | **The whole six-body and Sculpt golden-corpus fixtures export correctly on device**, and the same project exports byte-identically across runs | VERIFIED (Stage 023) |
 | **A cancelled export writes nothing, changes nothing, and does not leave staged bytes behind for the next answer** | VERIFIED (Stage 023) |
-| **The exported `.glb` opens in a third-party program (Godot, Blender or another importer)** | **UNVERIFIED** — no external importer was run; not installed and not authorized here. `artifacts/e2er1c/GATE_E2E_GODOT_CHECK.md` prepares the owner-run check |
+| **A `.glb` can be read back and drawn in the viewport as a session-only diagnostic preview**, picked through SAF, by a parser that shares no line with the exporter | VERIFIED (GLB-IMPORT-R0) |
+| **The exported file and the ForgeShape scene describe the SAME world geometry**: maximum world-position delta **exactly 0.0 m**, maximum world-normal delta `1.2e-06°`, identical vertex counts, triangle counts, index order and per-body world bounds — for the six-body Construction project, the Sculpt project, and the committed sentinel bytes against the projects they came from | VERIFIED (GLB-IMPORT-R0) |
+| **The comparison can fail**: moving a body after export, or comparing a project against another project's file, is reported as `ROUNDTRIP_MISMATCH` naming the body, the vertex and the distance | VERIFIED (GLB-IMPORT-R0) |
+| **The expected side comes from DOMAIN truth** — the primitive generator or the Frozen Sculpt Mesh, through the product's render-mesh derivation, placed by `modelMatrix()` — never from the exporter's captured arrays | VERIFIED (GLB-IMPORT-R0) |
+| **Unsupported GLB features fail closed by name**: node matrix, non-identity node rotation or scale, node children, external buffer `uri`, required extension, animation, skinning, sparse accessor, morph targets, non-triangle mode, interleaved buffer view, missing POSITION/NORMAL, wrong asset version, truncation, a file that lies about its own length, and a `.forge` file offered as a GLB | VERIFIED (GLB-IMPORT-R0) |
+| **The preview is not project truth**: no scene `ObjectId`, no body added, no active body changed, no revision published, no history step, no `.forge` byte, no autosave fingerprint move, no checkpoint written; a refused load leaves an existing preview whole; Clear releases everything and restores the workspace | VERIFIED (GLB-IMPORT-R0) |
+| **Preview mode draws no control that cannot succeed**: the trailing host, Undo/Redo, the Objects capsule, the Property Inspector and the mode transitions are all withdrawn, a tap selects nothing and the gizmo is absent — and switching back restores the accepted workspace exactly | VERIFIED (GLB-IMPORT-R0) |
+| **The exported `.glb` opens in a third-party program (Godot, Blender or another importer)** | **UNVERIFIED** — no external importer was run here; not installed and not authorized. GLB-IMPORT-R0 rules out a ForgeShape exporter/parser defect but makes no claim about any external tool |
 | 16 KB page size *and* ARM64 in one target | **UNVERIFIED** — see Known Issues |
 | Stylus / S Pen tool type and pressure on real hardware | **UNVERIFIED** — verified synthetically end to end in INPUT-R1; closing it needs a person physically moving an S Pen |
 
 ## Self-test suite
 
-Sixteen debug-only native suites run once from `NativeViewport.start()` — never
-per frame — and total **2292 checks, zero failures**:
+Seventeen debug-only native suites run once from `NativeViewport.start()` —
+never per frame — and total **2379 checks, zero failures**:
 
 | suite token | checks |
 | --- | --- |
@@ -1030,6 +1086,7 @@ per frame — and total **2292 checks, zero failures**:
 | `FORGESHAPE_PROJECT_SELFTEST_OK` | 132 |
 | `FORGESHAPE_RENDER_RECOVERY_SELFTEST_OK` | 24 |
 | `FORGESHAPE_GLTF_EXPORT_SELFTEST_OK` | 93 |
+| `FORGESHAPE_GLTF_IMPORT_SELFTEST_OK` | 87 |
 
 followed by `FORGESHAPE_PROJECT_GOLDEN_SHA256`, `FORGESHAPE_MESH_UPLOAD_OK`,
 `FORGESHAPE_GRID_UPLOAD_OK`, `FORGESHAPE_GIZMO_UPLOAD_OK` and
@@ -1254,9 +1311,11 @@ device. `README.md` documents how to read them.
 
 | `GlbExportTest` | `FSR1C-13..16`, `FSR1C-C1-01..14`, `E2ER1C-01..06`, `E2ER1C-C1-01..06`: every assertion made through `GlbDocument`, a test-only glTF 2.0 reader written from the specification that shares no code with the exporter. A well-formed single-file GLB with no external `uri` and a generator string, and a truncated one rejected — so the reader can fail (`FSR1C-13`); metres unscaled with the extent of a 1×2×4 m box exactly 1/2/4 on X/**Y**/Z, no node matrix anywhere and exactly one translation per body (`-14`); every body exported once in scene order as `Body_<ObjectId>`, unit normals and outward winding (`-16`). The baked contract: the node carrying translation only with rotation, scale and matrix all absent, asserted on the parsed node and again on the raw JSON (`C1-01..03`); a 1×2×4 m box arriving 2×6×2 m under a 2/3/0.5 scale and its extents swapping axes under a quarter turn (`C1-04`); no recentre, proved on a CONE because a symmetric primitive would hide one (`C1-05`); normals compared against `transpose(inverse(L))` and against `L`, computed in the test from two exports of the same sphere, plus per-face perpendicularity on a box (`C1-06`); `min`/`max` recomputed from the baked vertices (`C1-07`); two bodies baking independently (`C1-09`); byte-identical repeats (`C1-11`); and metres and +Y unchanged by the bake (`C1-12`). On device: the six-body corpus fixture exporting as six valid distinct nodes (`E2ER1C-01`) keeping its authored translations on the nodes while its scales reach the geometry (`-02`); the Sculpt fixture exporting the sculpted body's tetrahedron — identified by rotation-invariant properties, since the bake turns it — and its never-sculpted companion's Construction box (`-03`); the production SAF handler writing the exact bytes to the chosen destination and the create Intent asking for `model/gltf-binary` and a `.glb` name (`-04`); a cancel writing nothing, changing nothing and leaving no staged bytes (`-05`); and an export changing no observable native state, no revision, no history depth, no `ObjectId` and neither `.forge` slot (`-06`). Two further cases leave the sentinel `.glb` files `scripts/run-glb-export-evidence.ps1` pulls | 24 |
 
-**476 tests** — 70 JVM, counted from `:app:testDebugUnitTest`'s own result XML,
-and 406 instrumented, counted from the sharded runner's live AndroidJUnitRunner
-discovery over 28 classes rather than from this table. Both numbers come from a
+| `GlbImportPreviewTest` | `GLBIR0-01..20`, `E2E-GLBIR0-01..08`: the diagnostic imported mesh preview and the roundtrip it exists to measure. Both committed sentinels parse (`-01`, `-02`); the container fails closed on empty bytes, a wrong magic, truncation and a `.forge` file offered as a GLB, leaving no preview behind (`-03`); a refusal never replaces an existing preview (`-06`, `-07`); the preview adds no body, changes no active body, publishes no revision and records no history step (`-08`); Source↔Imported↔Source moves no observable native state and re-encodes the project to identical bytes (`-11`); a manual Save writes exactly the bytes it would have without the preview, and the autosave fingerprint does not move for load, show or clear, with no checkpoint written (`-09`, `-10`); Clear releases everything and the workspace comes back (`-12`); the six-body Construction project and the Sculpt project both roundtrip `ROUNDTRIP_EQUIVALENT` with the deltas reported, the sculpted body compared as `source=sculpt` and its companion as `source=construction` (`-13`, `-14`, `-15`, `-16`); a project compared against another project's file does NOT read as equivalent, so the diagnostic can fail (`-13`); the committed sentinel still matches its own source project (`-13`); the open Intent asks for a file and a cancel or an unreadable selection is a bounded no-op (`-17`); the three controls have semantic ids, meet the 48 dp floor, and Show/Clear are ABSENT until something is loaded (`-18`); preview mode leaves no editing control on screen and switching back restores the workspace (`-19`); and the project surface still offers no OBJ, FBX, material, texture or animation and frames the GLB row as a check (`-20`). Four further cases leave the three comparison reports and the Source/Imported screenshot pair that `scripts/run-glb-import-evidence.ps1` pulls | 22 |
+
+**499 tests** — 70 JVM, counted from `:app:testDebugUnitTest`'s own result XML,
+and 429 instrumented, counted from the sharded runner's live AndroidJUnitRunner
+discovery over 29 classes rather than from this table. Both numbers come from a
 run, because a hand-maintained total drifts and this one had. No Java test
 asserts a rendered pixel;
 every control is reached by its stable semantic id and no assertion uses a screen
@@ -1353,8 +1412,21 @@ precondition. Runtime evidence separately shows the real keyboard.
 
 ## Current evidence summary
 
-Latest acceptance run (**E2E-R1C-C1**), on the isolated `ForgeShape_Stage006` /
-`emulator-5580` AVD unless stated. Evidence:
+Latest acceptance run (**GLB-IMPORT-R0**), on the isolated `ForgeShape_Stage006`
+/ `emulator-5580` AVD. Evidence:
+[`artifacts/glb-import-r0/`](artifacts/glb-import-r0/) — `INDEX.md`, the
+supported-subset and refusal tables, the three world-geometry comparison
+reports, the Source/Imported screenshot pair from one pinned camera, the
+full-suite aggregate and the startup capture.
+
+- **Native self-tests:** seventeen suites, **2379 checks, zero failures**.
+- **The roundtrip:** `ROUNDTRIP_EQUIVALENT` for the Construction project, the
+  Sculpt project and the committed sentinels, with `max_position_delta_m=0` and
+  `max_normal_delta_deg=1.20741827e-06`.
+
+### Previous acceptance run (E2E-R1C-C1)
+
+Evidence:
 [`artifacts/e2er1c/`](artifacts/e2er1c/) — `INDEX.md`, the coordinate-authority
 proof, `BAKED_TRANSFORM_C1.md`, the device case table, the full-suite aggregate,
 the startup capture, both sentinel `.glb` files and the prepared owner check.
@@ -1744,6 +1816,26 @@ duration scale skips them outright rather than shortening them.
 Durable constraints and known-but-accepted costs. Narrative for how each was
 found lives in Git history.
 
+**The preview's renderer keys occupy the `ObjectId` type.** (GLB-IMPORT-R0.)
+`ARCH-OWNER-08` says the preview has no ForgeShape `ObjectId`, and it has none
+in every sense that matters: nothing is minted by the scene's allocator, the
+preview is in no body list, is not selectable, is not persisted and is not an
+identity anywhere. But the renderer caches GPU buffers keyed by
+`SceneDrawItem::objectId`, so preview meshes need *some* distinct key, and they
+take one from a reserved range at 2^60 that the allocator cannot reach —
+`previewRenderKeyIsReserved` names the boundary and a self-test asserts the two
+ranges cannot meet. A cleaner shape would give the renderer its own key type, or
+its own small preview collection, and both are real Vulkan work this diagnostic
+did not need. Recorded rather than hidden: the values are `ObjectId`-typed, and
+that is the one place the letter of the rule and its spirit differ.
+
+**The preview's normals are parsed but not shaded with.** (GLB-IMPORT-R0.) The
+importer decodes NORMAL and the roundtrip compares it, but the drawn preview
+uses one flat neutral colour and the renderer's own derived normals, because
+`MeshVertex` carries position and colour and adding a normal to it would change
+the upload path for every body to serve a diagnostic. The comparison is
+unaffected — it reads the parsed normals directly, not the drawn ones.
+
 **The reserved-control styling is now dead code.** (E2E-R1C.)
 `EditorControlStyles.setChipReserved` and `res/drawable/bg_capsule_reserved.xml`
 had exactly one caller, the reserved Export chip, and it is gone. Both were left
@@ -2114,6 +2206,10 @@ regenerated per stage.
 | `app/src/main/java/.../AutosaveController.java` | WHEN a checkpoint happens: the debounce, the coalescing, the worker thread and the `awaitIdle` barrier tests wait on instead of sleeping. Owns no bytes and no format |
 | `app/src/main/java/.../ProjectTransfer.java` | The Scoped Storage boundary: `Uri` to bytes and back, plus the four Intents — three for `.forge` and diagnostics, one for the `.glb` export. Nothing below it ever sees a `Uri`, a resolver or a path |
 | `app/src/main/cpp/forgeshape_gltf_export.{h,cpp}` | The glTF 2.0 / GLB export: the capture that picks each body's representation, the `Model = T · L` split and the bake of `L` into vertices and normals, the determinant guard, the container framing, the JSON, the accessor layout and the refusal of anything non-finite or out of range. Platform-neutral, no third-party interchange library, and it writes nothing back into the domain |
+| `app/src/main/cpp/forgeshape_gltf_import.{h,cpp}` | GLB-IMPORT-R0: reading a `.glb` back for the DIAGNOSTIC preview. Shares no code with the writer and re-derives every offset, length, stride and bound from the file; supports exactly the subset the exporter emits and fails closed BY NAME on everything else |
+| `app/src/main/cpp/forgeshape_json.{h,cpp}` | A bounded read-only JSON parser that knows nothing about glTF. Its own number grammar, because `strtod` accepts `nan` and `inf` and a non-finite value reaching geometry is what the reader exists to prevent |
+| `app/src/main/cpp/forgeshape_import_preview.{h,cpp}` | What an imported preview IS and every boundary it may not cross: session-only, no scene `ObjectId`, no Construction Source, no sculpt representation, no `MeshStore`, no history, no `.forge`, no checkpoint, not selectable, not re-exportable, gone with the process |
+| `app/src/main/cpp/forgeshape_glb_roundtrip.{h,cpp}` | Whether the file agrees with the scene. Compares the independently parsed file against DOMAIN truth re-derived from the generator and `modelMatrix()`, never against the exporter's captured arrays. Reads only, and reports a number rather than a boolean |
 | `app/src/androidTest/java/.../GlbDocument.java` | TEST ONLY: a second, independent glTF 2.0 reader written from the specification, sharing no code with the exporter. It is what makes the export evidence evidence |
 | `app/src/main/java/.../RecoveryPromptView.java` | The one question asked when unsaved work is found: Recover or Discard, over the live viewport, answered once. Owns no state and makes no native call |
 | `app/src/main/java/.../DiagnosticLog.java`, `Diagnostics.java` | The bounded local ring and its redaction (free of Android types, JVM-tested), and the Android half that names the build, chains the uncaught handler and renders a report |
@@ -2166,22 +2262,27 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Exactly one next step: return the E2E-R1C-C1 report to the coordinator for the
-OWNER's external-engine re-test.** GATE-E2E is the owner's, is not started here,
-and Claude Code does not open it. No later product stage may begin either: Stage
-033's full exporter (UVs, materials, hierarchy, merge and unit options), OBJ,
-FBX, any importer, `APP-H1` (a project hub, thumbnails, Save As, naming, a
-multi-project library), `BRIDGE-R1` and `CAD-R0-DATA` are all **not started**,
-and none may be begun without the coordinator opening it.
+**Exactly one next step: return the GLB-IMPORT-R0 report to the coordinator.**
+No product stage may begin here: production import (`IMPORT-01`), Stage 033's
+full exporter (UVs, materials, hierarchy, merge and unit options), OBJ, FBX,
+`APP-H1` (a project hub, thumbnails, Save As, naming, a multi-project library),
+`BRIDGE-R1` and `CAD-R0-DATA` are all **not started**, and none may be begun
+without the coordinator opening it. GATE-E2E remains the owner's and is not
+opened here.
+
+GLB-IMPORT-R0 is closed. Its finding is the useful one: the file and the scene
+describe the same world geometry to **exactly 0.0 m**, so the discrepancy the
+owner is chasing is not a ForgeShape exporter or parser defect. What it cannot
+say is what the discrepancy IS instead, because no external tool was run.
 
 E2E-R1C is closed, with `ARCH-OWNER-07` applied. Export ships as an early
 vertical slice: one `.glb`, whole scene, metres, +Y up, zero conversion, each
 body's rotation and scale baked into its geometry with only its translation on
 the node, per-body representation honoured, and a read that changes nothing. The
-native suites (16, 2292 checks), the JVM suite, `GlbExportTest`, the E2E-R1A/R1B
-regression suites and the authoritative exhaustive-sharded instrumented
-aggregate (406 tests, exactly once) are all green, and both supported ABIs build
-debug and release.
+native suites (17, 2379 checks), the JVM suite, `GlbExportTest`,
+`GlbImportPreviewTest`, the E2E-R1A/R1B regression suites and the authoritative
+exhaustive-sharded instrumented aggregate are all green, and both supported ABIs
+build debug and release.
 
 **The one thing GATE-E2E still needs is the external-importer check**, which was
 deliberately not performed: no Godot, Blender or `gltf-validator` run is claimed
@@ -2193,9 +2294,10 @@ superseded history with their own digests, so neither pair can be mistaken for
 the other.
 
 A **UI moratorium remains active.** The corrected edge-host arrangement is the
-accepted baseline; E2E-R1C changed one existing control from reserved to working
-and moved nothing else. The one carried visual item is Sculpt Radius/Strength,
-which stays deferred P2.
+accepted baseline; E2E-R1C changed one existing control from reserved to working,
+and GLB-IMPORT-R0 added one group of three rows to the existing Project surface
+and moved nothing else. The accepted R2 right host does not move in either. The
+one carried visual item is Sculpt Radius/Strength, which stays deferred P2.
 
 `CAD-R0-DATA` remains a COORDINATOR-owned decision/research gate that Claude Code
 does not execute.
