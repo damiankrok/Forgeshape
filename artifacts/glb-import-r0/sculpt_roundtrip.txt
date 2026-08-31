@@ -1,0 +1,20 @@
+verdict=ROUNDTRIP_EQUIVALENT
+export_status=Ok
+import_status=Ok
+source_bodies=2
+imported_meshes=2
+max_position_delta_m=0
+max_position_delta_body=0
+max_position_delta_vertex=0
+max_normal_delta_deg=0
+max_normal_delta_body=0
+position_tolerance=max(1e-05 m, 1e-06 x magnitude)
+normal_tolerance_deg=0.25
+body=1 name=Body_1 source=construction verts=24/24 tris=12/12 counts=match topology=match within=yes
+  source_aabb=[-1 -0.5 -0.25]..[1 0.5 0.25]
+  import_aabb=[-1 -0.5 -0.25]..[1 0.5 0.25]
+  max_position_delta_m=0 at_vertex=0 tolerance=0 max_normal_deg=0 at_vertex=0
+body=2 name=Body_2 source=sculpt verts=12/12 tris=4/4 counts=match topology=match within=yes
+  source_aabb=[0.268990278 0.5 -2]..[1.5 2 -0.189762473]
+  import_aabb=[0.268990278 0.5 -2]..[1.5 2 -0.189762473]
+  max_position_delta_m=0 at_vertex=0 tolerance=0 max_normal_deg=0 at_vertex=0

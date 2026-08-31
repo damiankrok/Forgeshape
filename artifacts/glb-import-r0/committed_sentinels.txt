@@ -1,0 +1,63 @@
+# The COMMITTED sentinel bytes, compared with the project they
+# were exported from. Not a fresh export: these are the files in
+# artifacts/e2er1c/, read back by the independent parser.
+
+## construction_sentinel.glb
+verdict=ROUNDTRIP_EQUIVALENT
+export_status=Ok
+import_status=Ok
+source_bodies=6
+imported_meshes=6
+max_position_delta_m=0
+max_position_delta_body=0
+max_position_delta_vertex=0
+max_normal_delta_deg=1.20741827e-06
+max_normal_delta_body=2
+position_tolerance=max(1e-05 m, 1e-06 x magnitude)
+normal_tolerance_deg=0.25
+body=1 name=Body_1 source=construction verts=24/24 tris=12/12 counts=match topology=match within=yes
+  source_aabb=[-1.08421743 -1.70230436 -0.12444663]..[2.08421755 1.20230436 2.62444663]
+  import_aabb=[-1.08421743 -1.70230436 -0.12444663]..[2.08421755 1.20230436 2.62444663]
+  max_position_delta_m=0 at_vertex=0 tolerance=0 max_normal_deg=8.53773646e-07 at_vertex=1
+body=2 name=Body_2 source=construction verts=130/130 tris=128/128 counts=match topology=match within=yes
+  source_aabb=[-2.07802534 -4.36787605 0.892641664]..[4.07802534 3.36787581 4.10735846]
+  import_aabb=[-2.07802534 -4.36787605 0.892641664]..[4.07802534 3.36787581 4.10735846]
+  max_position_delta_m=0 at_vertex=0 tolerance=0 max_normal_deg=1.20741827e-06 at_vertex=2
+body=3 name=Body_3 source=construction verts=482/482 tris=960/960 counts=match topology=match within=yes
+  source_aabb=[-1.05793333 -3.1876862 1.77868629]..[4.05793333 1.6876862 5.72131348]
+  import_aabb=[-1.05793333 -3.1876862 1.77868629]..[4.05793333 1.6876862 5.72131348]
+  max_position_delta_m=0 at_vertex=0 tolerance=0 max_normal_deg=1.20741827e-06 at_vertex=2
+body=4 name=Body_4 source=construction verts=66/66 tris=64/64 counts=match topology=match within=yes
+  source_aabb=[-1.71024942 -5.00019407 2.43596625]..[6.99473572 1.48677969 6.46862888]
+  import_aabb=[-1.71024942 -5.00019407 2.43596625]..[6.99473572 1.48677969 6.46862888]
+  max_position_delta_m=0 at_vertex=0 tolerance=0 max_normal_deg=1.20741827e-06 at_vertex=0
+body=5 name=Body_5 source=construction verts=514/514 tris=1024/1024 counts=match topology=match within=yes
+  source_aabb=[-2.46842718 -3.86965227 4.46227074]..[7.46842718 1.36965227 8.03772926]
+  import_aabb=[-2.46842718 -3.86965227 4.46227074]..[7.46842718 1.36965227 8.03772926]
+  max_position_delta_m=0 at_vertex=0 tolerance=0 max_normal_deg=1.20741827e-06 at_vertex=5
+body=6 name=Body_6 source=construction verts=4/4 tris=2/2 counts=match topology=match within=yes
+  source_aabb=[1.48223317 -7.08244801 1.63292599]..[4.51776695 4.08244801 13.367074]
+  import_aabb=[1.48223317 -7.08244801 1.63292599]..[4.51776695 4.08244801 13.367074]
+  max_position_delta_m=0 at_vertex=0 tolerance=0 max_normal_deg=0 at_vertex=0
+
+## sculpt_sentinel.glb
+verdict=ROUNDTRIP_EQUIVALENT
+export_status=Ok
+import_status=Ok
+source_bodies=2
+imported_meshes=2
+max_position_delta_m=0
+max_position_delta_body=0
+max_position_delta_vertex=0
+max_normal_delta_deg=0
+max_normal_delta_body=0
+position_tolerance=max(1e-05 m, 1e-06 x magnitude)
+normal_tolerance_deg=0.25
+body=1 name=Body_1 source=construction verts=24/24 tris=12/12 counts=match topology=match within=yes
+  source_aabb=[-1 -0.5 -0.25]..[1 0.5 0.25]
+  import_aabb=[-1 -0.5 -0.25]..[1 0.5 0.25]
+  max_position_delta_m=0 at_vertex=0 tolerance=0 max_normal_deg=0 at_vertex=0
+body=2 name=Body_2 source=sculpt verts=12/12 tris=4/4 counts=match topology=match within=yes
+  source_aabb=[0.268990278 0.5 -2]..[1.5 2 -0.189762473]
+  import_aabb=[0.268990278 0.5 -2]..[1.5 2 -0.189762473]
+  max_position_delta_m=0 at_vertex=0 tolerance=0 max_normal_deg=0 at_vertex=0
