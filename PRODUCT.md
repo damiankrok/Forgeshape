@@ -1089,14 +1089,46 @@ The project surface carries two more actions, under **Transfer**:
   again.
 
 A file written this way is a ForgeShape project — the same format the app uses
-internally — and another ForgeShape installation can open it. **It is not GLB,
-glTF, OBJ or FBX**, ForgeShape neither reads nor writes any of those, and
-nothing in the product pretends otherwise.
+internally — and another ForgeShape installation can open it. It is not a model
+file for another program; **Export**, below, is the one that produces one.
 
 Anything that goes wrong here costs you nothing: cancelling the file picker does
 nothing at all, a file that cannot be read or written is reported, and a file
 that is not a ForgeShape project — or is damaged, or was written by a newer
 version — is refused with the reason, leaving your work exactly as it was.
+
+## Sending the model to another program
+
+**Export**, in the top bar, writes what you have made as a **`.glb` model file**
+— the standard binary form of glTF, which Blender, Godot, Unreal, Windows 3D
+Viewer, macOS Quick Look and most other 3D programs open directly. You choose
+where it goes, using the system's own file UI, and the suggested name ends
+`.glb`.
+
+What lands in the file:
+
+- **Every body in the scene**, each in the place, at the angle and at the size
+  you put it.
+- **The real surfaces.** Hard edges stay hard and round shapes stay smooth, the
+  way they look in ForgeShape.
+- **Metres.** One metre in ForgeShape is one metre in the file, and up is up.
+  Nothing needs rotating or rescaling after it opens.
+- **Sculpted shapes as you sculpted them.** A body you have been sculpting
+  exports its sculpted surface, not the shape it started as. A body you have
+  not sculpted exports its Construction shape.
+- **One file.** No folder of extra pieces beside it, and nothing is sent
+  anywhere: ForgeShape has no network permission at all.
+
+**Export is one-way and it does not change anything.** ForgeShape cannot read a
+`.glb` back — a `.glb` is a picture of the geometry, not your project, so keep
+saving `.forge` files for the work itself. Exporting does not alter your model,
+your Undo history or your saved project; cancelling does nothing at all; and if
+a file cannot be written, ForgeShape says so and your work is untouched.
+
+Not there yet: materials, colours and textures of your choosing, UVs, object
+grouping and export options are not implemented — every body is exported with
+one plain default surface. Nothing else can be exported: there is no OBJ, no
+FBX, and no import of any format.
 
 ## Diagnostics
 
@@ -1211,9 +1243,8 @@ HDRI, no movable or additional lights, no shadows, no ambient occlusion, and no
 outline around the selected object — selection is a tint. A photoreal (PBR)
 preview belongs to later work on materials and export.
 
-**Only one unimplemented control is drawn anywhere: Export.** It sits in the
-Global Toolbar, recessed, readable and clearly unavailable, and pressing it does
-nothing. Nothing in the workspace exports anything.
+**No unimplemented control is drawn anywhere.** Export was the last one, and it
+now writes a real `.glb`; everything drawn in the workspace does what it says.
 
 **Every entry on the Tool Rail does something**, and so does every shape in Add
 Primitive. There is no sketching and no extruding: a body's shape comes from one
@@ -1236,10 +1267,12 @@ later Save replaced.
 
 **A ForgeShape project file is not an interchange file.** It is ForgeShape's own
 format, meant to be readable by another ForgeShape installation, and it is not
-GLB, glTF, OBJ or FBX. Nothing in the product imports or exports any of those,
-and nothing pretends to: Export remains the single drawn, recessed, clearly
-unavailable control. Open File… reads ForgeShape projects and refuses everything
-else.
+GLB, glTF, OBJ or FBX. Open File… reads ForgeShape projects and refuses
+everything else.
+
+**Export goes one way, in one format.** ForgeShape writes `.glb` and reads none
+of it back. There is no OBJ, no FBX, no import of any model format, and no way
+to bring a mesh in from another program.
 
 **A stylus is simply another pointer.** Nothing anywhere reads pressure, tilt,
 hover or which kind of pointer is touching the screen, so an S Pen grabs a

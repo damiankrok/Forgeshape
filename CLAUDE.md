@@ -18,8 +18,8 @@ adb -s <serial> logcat -s ForgeShape:V
 
 APK: `app/build/outputs/apk/debug/app-debug.apk`
 
-A clean debug launch emits **fifteen** `*_SELFTEST_OK` tokens, then
-`FORGESHAPE_NATIVE_VIEWPORT_OK`. All fifteen, in emission order:
+A clean debug launch emits **sixteen** `*_SELFTEST_OK` tokens, then
+`FORGESHAPE_NATIVE_VIEWPORT_OK`. All sixteen, in emission order:
 
 ```
 FORGESHAPE_CAMERA_SELFTEST_OK
@@ -37,6 +37,7 @@ FORGESHAPE_CONSTRUCTION_HISTORY_SELFTEST_OK
 FORGESHAPE_GIZMO_SELFTEST_OK
 FORGESHAPE_PROJECT_SELFTEST_OK
 FORGESHAPE_RENDER_RECOVERY_SELFTEST_OK
+FORGESHAPE_GLTF_EXPORT_SELFTEST_OK
 ```
 
 Failures: `FORGESHAPE_NATIVE_VIEWPORT_FAIL:*` and the matching `*_SELFTEST_FAIL`.
@@ -227,10 +228,22 @@ is a value that can be read rather than only an assertion that failed.
   width is arithmetic on its row, not a constant, and the only approved second
   form is `← Construction`, with the full wording kept as the content
   description.
-- **Nothing unimplemented is drawn as a tool or as a creation action.** The one
-  approved exception is the global `Export`, drawn recessed and labelled as not
-  implemented. A control that looks like it works and does not is worse than an
-  absent one.
+- **Nothing unimplemented is drawn as a tool or as a creation action.** There
+  is no longer an exception: `Export` was the last reserved control and it now
+  writes a real GLB. A control that looks like it works and does not is worse
+  than an absent one, so a future reserved control needs its own approval.
+- **Export is one-way, one file, and a different act from Save.** A `.forge`
+  document is the project and ForgeShape reads it back; a `.glb` is a view of
+  the geometry for another tool and ForgeShape does not. GLB/glTF IMPORT, OBJ,
+  FBX and every other interchange format stay absent, and no exporter may
+  write a second file beside the `.glb` — no `.bin`, no `.gltf`, no texture, no
+  sidecar. The exporter is platform-neutral (`forgeshape_gltf_export.h`): it
+  never sees a `Uri`, a `ContentResolver` or a path, it re-evaluates the
+  Construction Source rather than reading GPU buffers or decoding a `.forge`,
+  and exporting is a READ — no revision, no history step, no `ObjectId`, no
+  sculpt vertex and neither `.forge` slot may move because of it. And there is
+  no conversion: ForgeShape and glTF are both right-handed, +Y-up and metric,
+  so a conversion node or a global scale factor in an export is a defect.
 - **Every UI control has a stable semantic id, and verification uses it.** Ids
   live in `res/values/ids.xml` and name what a control *does*. No test and no
   evidence script may locate a control by screen coordinate: the workspace

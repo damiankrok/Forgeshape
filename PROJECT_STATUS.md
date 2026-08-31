@@ -1,8 +1,57 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.50.0
-**Updated:** 2026-08-30
-**Result:** **E2E-R1B / Stage 022 — COMPLETE.** Persistence is now safe for real
+**Status Version:** 0.51.0
+**Updated:** 2026-08-31
+**Result:** **E2E-R1C / Stage 023 — COMPLETE.** A model made in ForgeShape can
+now leave it. **Export** — the last reserved control in the product, and now an
+ordinary working one — writes the whole scene as a single glTF 2.0 binary
+(`.glb`) wherever the user picks through Scoped Storage: every body's triangles,
+its crease-policy normals and its placement matrix, in metres, +Y up.
+
+**There is no coordinate conversion, and that is a finding rather than a
+convenience.** Before any exporter code was written, the up axis, handedness,
+axis ownership, body-local convention, transform composition order and winding
+were each established from named repository truth; ForgeShape's world convention
+and glTF 2.0's turned out to be the same convention, so 1.0 ForgeShape metre is
+1.0 glTF metre, the node matrix is `ConstructionTransform::modelMatrix()`
+element-for-element, and a conversion node, a transposed matrix or a global scale
+factor in an export would each be a defect. `artifacts/e2er1c/COORDINATE_AUTHORITY.md`
+records the proof and the case that would catch each of those.
+
+Representation is honoured per body and never guessed: in a Sculpt project a
+body with a Frozen Sculpt Mesh exports that mesh, and a body without one exports
+re-evaluated Construction geometry. There is no fallback from Sculpt to the
+Construction Source, because that would silently ship the shape the user
+abandoned. Exporting is a **read** — no revision, no history step, no `ObjectId`,
+no sculpt vertex, and neither `.forge` slot is written.
+
+The evidence is pinned at both ends. The `.forge` documents the device cases
+load are the permanent golden-corpus fixtures, digest-matched to the second,
+independent PowerShell encoder; every exported file is read back by
+`GlbDocument`, a test-only glTF 2.0 reader written from the specification that
+shares no line with the exporter and re-derives every chunk boundary, accessor
+offset and declared bound rather than trusting the writer. The same project
+exports byte-identically across runs.
+
+**No external program opened these files.** Godot, Blender and `gltf-validator`
+were not run — none is installed here and installing one is not authorized — and
+no such result is claimed anywhere. `artifacts/e2er1c/GATE_E2E_GODOT_CHECK.md`
+prepares that check for the owner and records no verdict.
+
+This is the early vertical slice, not the Stage 033 exporter: no UVs, no
+textures, no chosen materials, no hierarchy, no merge or unit options, no
+compression, no second file beside the `.glb`, and **no importer** in any
+format. No third-party interchange library is used.
+
+The UI delta is one control that already existed becoming real. Its label stayed
+"Export": "Export GLB…" was tried, and `UIR4B-16` caught that the extra width
+pushed **Back to Construction** into its abbreviated form, so the format moved to
+the content description and the `.glb` filename instead. The accepted
+UI-LAYOUT-R2 right host does not move.
+
+---
+
+**Previous result — E2E-R1B / Stage 022 — COMPLETE.** Persistence is now safe for real
 work. Semantic edits are checkpointed automatically to a **separate** recovery
 file — never over the project the user named — and work that was never saved at
 all survives the process dying and is offered back by one bounded question with
@@ -35,33 +84,13 @@ question. The accepted UI-LAYOUT-R2 right host does not move.
 
 ---
 
-**Previous result — E2E-R1A / Stage 021 — COMPLETE.** ForgeShape work survives the
-process dying for the first time. A project is encoded to ForgeShape's own
-portable, versioned `.forge` v1 document, saved to one app-private slot, and
-reopened after the app process has been killed — with every body's identity,
-scene order, active body, active primitive kind, **all six** remembered
-parameter sets, exact placement and sculpted mesh intact, and every Construction
-mesh regenerated rather than read from the file.
-
-The load is **fail-closed**: a damaged, truncated, unsupported-major or
-non-project file is refused explicitly and leaves the scene, every Frozen Sculpt
-Mesh, the active mode and body, and the session history exactly as they were. A
-successful load starts a fresh Construction history, because a loaded document
-starts a fresh session.
-
-`DATA_PACKAGE_SPEC.md` is new and owns the binary layout, the codes, the
-validation and compatibility rules, the deterministic-write rules and the
-fixture inventory. `scripts/build-forge-corpus.ps1` is a **second, independent
-implementation** of that specification; its bytes and the native encoder's are
-identical, which is the portability claim's evidence rather than its assertion.
-There has never been a production `.forge` format before v1, so no v0 and no
-migration is claimed.
-
-The UI delta is the minimum needed to operate the feature: one icon control in
-the Global Toolbar's existing utility group, opening one small anchored surface
-with **Save Project** and **Open Saved Project**. The accepted UI-LAYOUT-R2 right
-host does not move. No GLB/glTF/OBJ/FBX work was started and no inert menu entry
-for one was drawn.
+**Previous result — E2E-R1A / Stage 021 — COMPLETE.** ForgeShape work survived
+the process dying for the first time: the portable, versioned `.forge` v1
+document, one app-private slot, and a fail-closed load that costs a refused file
+nothing. `DATA_PACKAGE_SPEC.md` owns the format and
+`scripts/build-forge-corpus.ps1` is the second, independent implementation of it
+whose bytes match the native encoder's. Both facts still stand and are described
+where they are owned; the stage narrative is in Git history.
 
 ---
 
@@ -223,7 +252,17 @@ by an explicit Save, to a SEPARATE recovery checkpoint by autosave, and to any
 location the user picks through Scoped Storage; all three are the same canonical
 bytes. Loading is all-or-nothing in every direction: decode and validate
 entirely into temporary state, then replace the live project in one step, so a
-refused file costs nothing. `DATA_PACKAGE_SPEC.md` owns the format. `ARCHITECTURE.md` owns the ownership map and every invariant;
+refused file costs nothing. `DATA_PACKAGE_SPEC.md` owns the format.
+
+The model can also be EXPORTED, one way, as a single glTF 2.0 binary (`.glb`)
+written wherever the user picks through Scoped Storage. It carries every body's
+triangles, crease-policy normals and placement matrix, in metres, +Y up, with no
+coordinate conversion of any kind — ForgeShape's world convention and glTF's are
+the same convention. A body with a Frozen Sculpt Mesh exports that mesh; every
+other body exports re-evaluated Construction geometry. The exporter is
+platform-neutral, uses no third-party interchange library, and is a READ: it
+mints no revision, opens no transaction and touches neither `.forge` slot. There
+is no importer, and no OBJ or FBX. `ARCHITECTURE.md` owns the ownership map and every invariant;
 `PRODUCT.md` owns the user-visible description; `README.md` owns build/run/verify.
 
 **Blockers: none.** Every native, JVM, instrumented and guard suite is green,
@@ -583,7 +622,8 @@ Active owner decisions are identified by `UI-OWNER-*`, `ARCH-OWNER-*`,
 `INPUT-OWNER-*` and `DOC-OWNER-*`. Recorded 2026-08-20.
 
 **Implemented:** UI-OWNER-01 (the shell), UI-OWNER-02 (compact / medium /
-expanded), UI-OWNER-03 (Export as a global action, drawn and reserved),
+expanded), UI-OWNER-03 (Export as a global action — drawn reserved when the
+decision was recorded, and working since Stage 023 in the same place),
 UI-OWNER-05 (the destructive re-Freeze guard) and UI-OWNER-06 (stylus-friendly,
 no pressure). **Still a decision only, with no behaviour and no drawn control:**
 UI-OWNER-04 — Sketch and Extrude have no implementation whatsoever and no entry
@@ -913,13 +953,23 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 | A transform-only drag — Move, Rotate OR Scale — its commit, its undo and its redo publish no mesh revision, upload nothing and regenerate no primitive; a shape change still does | VERIFIED (Stage 020, extended Stage 020R2) |
 | No custom pivot, no centre free move, no arcball, no Mirror, no parent/explicit coordinate space, and no snapping of any kind — the quantization and placement seam is the identity | VERIFIED (Stage 020R2) |
 | Sculpt draws no handles and neither selector, and the native guard refuses a gizmo there regardless | VERIFIED (Stage 020) |
+| **The model exports as one glTF 2.0 binary (`.glb`) to a destination the user picks through SAF, with the ordinary Export control** | VERIFIED (Stage 023) |
+| **The exported bytes are a conformant single-file GLB — 12-byte header, 4-byte-aligned JSON and BIN chunks, in-range accessors, correct POSITION `min`/`max`, unit normals, no external `uri`, no second file** — read back by `GlbDocument`, an independent in-repo glTF 2.0 reader that shares no code with the writer | VERIFIED (Stage 023) |
+| **Zero coordinate conversion: 1.0 ForgeShape metre is 1.0 glTF metre, +Y is up, and a 1×2×4 m box exports with exactly those extents on X/Y/Z — no conversion node, no global scale factor** | VERIFIED (Stage 023) |
+| **A body's placement lives in the node matrix, never in its vertices: the exported matrix is `ConstructionTransform::modelMatrix()` element-for-element, translation in elements 12–14, and moving or scaling a body moves no vertex** | VERIFIED (Stage 023) |
+| **Every scene body is exported exactly once, in scene order, named `Body_<ObjectId>`, with triangles wound counter-clockwise from outside** | VERIFIED (Stage 023) |
+| **Per-body representation is honoured and never guessed: in a Sculpt project a body with a Frozen Sculpt Mesh exports that mesh and its never-sculpted companion exports its Construction shape — there is no fallback from Sculpt to the Construction Source** | VERIFIED (Stage 023) |
+| **Export is a READ**: no revision minted, no history step, no `ObjectId` moved, no sculpt vertex touched, no observable native state changed, and neither the manual `.forge` slot nor the recovery checkpoint written | VERIFIED (Stage 023) |
+| **The whole six-body and Sculpt golden-corpus fixtures export correctly on device**, and the same project exports byte-identically across runs | VERIFIED (Stage 023) |
+| **A cancelled export writes nothing, changes nothing, and does not leave staged bytes behind for the next answer** | VERIFIED (Stage 023) |
+| **The exported `.glb` opens in a third-party program (Godot, Blender or another importer)** | **UNVERIFIED** — no external importer was run; not installed and not authorized here. `artifacts/e2er1c/GATE_E2E_GODOT_CHECK.md` prepares the owner-run check |
 | 16 KB page size *and* ARM64 in one target | **UNVERIFIED** — see Known Issues |
 | Stylus / S Pen tool type and pressure on real hardware | **UNVERIFIED** — verified synthetically end to end in INPUT-R1; closing it needs a person physically moving an S Pen |
 
 ## Self-test suite
 
-Fifteen debug-only native suites run once from `NativeViewport.start()` — never
-per frame — and total **2199 checks, zero failures**:
+Sixteen debug-only native suites run once from `NativeViewport.start()` — never
+per frame — and total **2259 checks, zero failures**:
 
 | suite token | checks |
 | --- | --- |
@@ -938,6 +988,7 @@ per frame — and total **2199 checks, zero failures**:
 | `FORGESHAPE_GIZMO_SELFTEST_OK` | 145 |
 | `FORGESHAPE_PROJECT_SELFTEST_OK` | 132 |
 | `FORGESHAPE_RENDER_RECOVERY_SELFTEST_OK` | 24 |
+| `FORGESHAPE_GLTF_EXPORT_SELFTEST_OK` | 60 |
 
 followed by `FORGESHAPE_PROJECT_GOLDEN_SHA256`, `FORGESHAPE_MESH_UPLOAD_OK`,
 `FORGESHAPE_GRID_UPLOAD_OK`, `FORGESHAPE_GIZMO_UPLOAD_OK` and
@@ -1160,7 +1211,13 @@ device. `README.md` documents how to read them.
 | `EditorWorkspaceUnifiedRightHostTest` | `UILR2-01..18`: invariant host frame; downward-only Transform expansion; mode/space/Exact/Shape/Sculpt parity; same-host descendants; bottom hide/restore through slowed entry/exit; IME vertical grammar and touch floor; signed numeric and unitless Scale regression; compact portrait, short landscape and expanded/tablet; Stage020R2/R3 semantics | 18 |
 | `EditorWorkspaceRightHostPlacementTest` | `UILR2C-01..12`: the correction round-1 contract that the right host keeps the trailing window edge. Compact and short-landscape hold one external host frame through all eleven R2 states with the trailing inset unchanged (`-01`, `-03`); the compact anchors and the host width take no font scale, so the 1.3 cells resolve to the 1.0 answer (`-02`, `-04`); the expanded window docks the panel inboard of the host and its decision arithmetic carries no text input (`-05`, `-06`); Exact, Exact+IME and Sculpt Details never translate the host (`-07`) because a side-placed panel is always seated BEFORE it in the row they share (`-08`); compact hide/restore and short-window persistent chrome return at Δ = 0 dp (`-09`, `-10`); intrinsic hit boxes clear 48 dp with the clipped visible intersection reported separately (`-11`); and the IME leaves the Vulkan surface full-window while only the host height may move (`-12`) | 12 |
 
-**389 tests** (59 JVM, 330 instrumented). No Java test asserts a rendered pixel;
+| `GlbExportTest` | `FSR1C-13..16`, `E2ER1C-01..06`: every assertion made through `GlbDocument`, a test-only glTF 2.0 reader written from the specification that shares no code with the exporter. A well-formed single-file GLB with no external `uri` and a generator string, and a truncated one rejected — so the reader can fail (`FSR1C-13`); metres unscaled with the extent of a 1×2×4 m box exactly 1/2/4 on X/**Y**/Z and no conversion node, proved as one matrix per body and never one more (`-14`); placement and scale in the node matrix with translation in elements 12–14, a 0,0,0,1 bottom row and not one vertex moved (`-15`); every body exported once in scene order as `Body_<ObjectId>`, unit normals and outward winding (`-16`). On device: the six-body corpus fixture exporting as six valid distinct nodes (`E2ER1C-01`) carrying the fixture's own translations, non-uniform scales and asymmetric rotations (`-02`); the Sculpt fixture exporting the sculpted body's tetrahedron and its never-sculpted companion's Construction box (`-03`); the production SAF handler writing the exact bytes to the chosen destination and the create Intent asking for `model/gltf-binary` and a `.glb` name (`-04`); a cancel writing nothing, changing nothing and leaving no staged bytes (`-05`); and an export changing no observable native state, no revision, no history depth, no `ObjectId` and neither `.forge` slot (`-06`). Two further cases leave the sentinel `.glb` files `scripts/run-glb-export-evidence.ps1` pulls | 17 |
+
+**469 tests** — 70 JVM, counted from `:app:testDebugUnitTest`'s own result XML,
+and 399 instrumented, counted from the sharded runner's live AndroidJUnitRunner
+discovery over 28 classes rather than from this table. Both numbers come from a
+run, because a hand-maintained total drifts and this one had. No Java test
+asserts a rendered pixel;
 every control is reached by its stable semantic id and no assertion uses a screen
 coordinate. The foundation and theme suites deliberately assert no colour
 literal, radius or shadow — those are judged by eye and by runtime evidence, and
@@ -1623,6 +1680,28 @@ duration scale skips them outright rather than shortening them.
 Durable constraints and known-but-accepted costs. Narrative for how each was
 found lives in Git history.
 
+**The reserved-control styling is now dead code.** (E2E-R1C.)
+`EditorControlStyles.setChipReserved` and `res/drawable/bg_capsule_reserved.xml`
+had exactly one caller, the reserved Export chip, and it is gone. Both were left
+in place rather than deleted, because deleting them would have changed the
+product tree after the authoritative sharded aggregate was taken and bought a
+second full run for two unreferenced declarations. They are unreferenced,
+compile to nothing that runs, and are the first thing to remove in the next
+stage that touches `EditorControlStyles` — or the thing to reuse, if a control
+is ever approved as reserved again. The `fsTextDisabled` palette role is NOT
+part of this: it is still read by `res/color/control_content_tint.xml` and is
+still asserted by the theme suite.
+
+**Export cannot say WHY it refused.** (E2E-R1C.) `NativeViewport.exportGlb()`
+returns null for every refusal — an empty scene, a mesh the writer will not
+vouch for, a model past the 512 MB ceiling — so the status line says the one
+thing true of all of them and the specific reason goes to the log as
+`FORGESHAPE_GLB_EXPORT_FAIL:<why>`. `GlbExportStatus` already carries the
+distinction natively; surfacing it needs a second JNI out-parameter and three
+more strings, which is a cost this slice did not pay for. Every one of those
+causes is currently unreachable from the product's own state except the size
+ceiling.
+
 **One project slot, and one recovery copy.** (E2E-R1A shape, narrowed by
 E2E-R1B.) There is exactly one app-private manual `.forge` file and Save
 replaces it, so there is still no way to keep two projects, no naming, no recent
@@ -1929,7 +2008,7 @@ regenerated per stage.
 | `app/src/main/java/.../WorkspaceTrailingHostView.java` | The unified right-context composition and presentation owner: one floating surface, one internal vertical `BoundedScrollView`, Tool Rail, vertical transform/space selectors, precision/details trigger, fixed top/right/width placement, downward-only height and Display suppression. It owns no product or native state |
 | `app/src/main/java/.../WorkspaceLayoutMode.java` | Window-dp breakpoints, where the precision surface appears when open, and chrome sizing, as arithmetic. It has no opinion about whether that surface is open. No Android type |
 | `app/src/main/java/.../EditorUiState.java` | The closed list of UI-owned state: display unit, draft kind, rail selection, whether the precision surface was asked for (per mode, false to begin with), chrome-hidden |
-| `app/src/main/java/.../GlobalToolbarView.java` | Editing context, the three mutually exclusive mode transitions, reserved Export, the project control, the Display control, chrome hide, and the one status line — including its lifecycle: transient versus standing, the two holds, and cancel-first. Owns no scene control — that is the Objects capsule's |
+| `app/src/main/java/.../GlobalToolbarView.java` | Editing context, the three mutually exclusive mode transitions, Export (a working control since Stage 023, no longer reserved), the project control, the Display control, chrome hide, and the one status line — including its lifecycle: transient versus standing, the two holds, and cancel-first. Owns no scene control — that is the Objects capsule's |
 | `app/src/main/java/.../DisplaySettingsPopoverView.java` | The compact display popover: Shading (Studio / MatCap / Debug), Surface (Smooth / Faceted) and Projection (Perspective / Orthographic), with short interruptible open/close motion that honours the system animator scale. Owns no state |
 | `app/src/main/java/.../ToolRailView.java` | The edge tool selector for either mode. Every entry works — there is no reserved-entry support left. Selects; decides nothing |
 | `app/src/main/java/.../BrushEdgeControlsView.java`, `VerticalSliderView.java` | Direct Radius and Strength, and the custom vertical control behind them. Own no brush value |
@@ -1969,7 +2048,9 @@ regenerated per stage.
 | `app/src/main/java/.../ProjectActionsPopoverView.java` | The five project actions in two groups — Save Project and Open Saved Project for the app's own slot, then Save Copy…, Open File… and Share Diagnostics… through the system document UI. Owns no state; Open is drawn inert and says so when there is nothing saved |
 | `app/src/main/java/.../ProjectCheckpoint.java` | The RECOVERY file: a separate app-private slot autosave writes atomically, and the quarantine an undecodable one is moved to. Never the manual slot |
 | `app/src/main/java/.../AutosaveController.java` | WHEN a checkpoint happens: the debounce, the coalescing, the worker thread and the `awaitIdle` barrier tests wait on instead of sleeping. Owns no bytes and no format |
-| `app/src/main/java/.../ProjectTransfer.java` | The Scoped Storage boundary: `Uri` to bytes and back, plus the three Intents. Nothing below it ever sees a `Uri`, a resolver or a path |
+| `app/src/main/java/.../ProjectTransfer.java` | The Scoped Storage boundary: `Uri` to bytes and back, plus the four Intents — three for `.forge` and diagnostics, one for the `.glb` export. Nothing below it ever sees a `Uri`, a resolver or a path |
+| `app/src/main/cpp/forgeshape_gltf_export.{h,cpp}` | The glTF 2.0 / GLB export: the capture that picks each body's representation, the container framing, the JSON, the accessor layout and the refusal of anything non-finite or out of range. Platform-neutral, no third-party interchange library, and it writes nothing back into the domain |
+| `app/src/androidTest/java/.../GlbDocument.java` | TEST ONLY: a second, independent glTF 2.0 reader written from the specification, sharing no code with the exporter. It is what makes the export evidence evidence |
 | `app/src/main/java/.../RecoveryPromptView.java` | The one question asked when unsaved work is found: Recover or Discard, over the live viewport, answered once. Owns no state and makes no native call |
 | `app/src/main/java/.../DiagnosticLog.java`, `Diagnostics.java` | The bounded local ring and its redaction (free of Android types, JVM-tested), and the Android half that names the build, chains the uncaught handler and renders a report |
 | `app/src/main/cpp/forgeshape_render_recovery.{h,cpp}` | What a lost GPU device MEANS: the classification, the bounded rebuild policy and the terminal state. Free of Vulkan on purpose, so it is self-testable without a GPU |
@@ -2021,26 +2102,30 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Exactly one next step: return the E2E-R1B report to the coordinator.** No later
-product stage may begin here. In particular `E2E-R1C` / Stage 023 (GLB/glTF
-export), OBJ/FBX or any other interchange work, `APP-H1` (a project hub,
-thumbnails, Save As, naming, a multi-project library), `BRIDGE-R1` and
-`CAD-R0-DATA` are all **not started**, and none of them may be begun without the
-coordinator opening it.
+**Exactly one next step: return the E2E-R1C report to the coordinator, and then
+the OWNER checkpoint GATE-E2E.** GATE-E2E is the owner's, is not started here,
+and Claude Code does not open it. No later product stage may begin either: Stage
+033's full exporter (UVs, materials, hierarchy, merge and unit options), OBJ,
+FBX, any importer, `APP-H1` (a project hub, thumbnails, Save As, naming, a
+multi-project library), `BRIDGE-R1` and `CAD-R0-DATA` are all **not started**,
+and none may be begun without the coordinator opening it.
 
-E2E-R1B is closed. Autosave, the recovery question, Scoped Storage transfer,
-GPU device-loss recovery and the local diagnostic channel all ship. Work that
-was never saved now survives process death — proved by editing, killing the app,
-confirming by PID that no ForgeShape process remains, and recovering it in a
-fresh one through the ordinary cold-launch question. The native suites, the JVM
-suite, the focused `FSR1B` suites, the E2E-R1A regression suites, the R2
-right-host suites and the authoritative exhaustive-sharded instrumented
-aggregate are all green, and both supported ABIs build debug and release.
+E2E-R1C is closed. Export ships as an early vertical slice: one `.glb`, whole
+scene, metres, +Y up, zero conversion, per-body representation honoured, and a
+read that changes nothing. The native suites (16, 2259 checks), the JVM suite,
+the new `GlbExportTest`, the touched UI suites, the E2E-R1A/R1B regression
+suites and the authoritative exhaustive-sharded instrumented aggregate are all
+green, and both supported ABIs build debug and release.
+
+**The one thing GATE-E2E still needs is the external-importer check**, which was
+deliberately not performed: no Godot, Blender or `gltf-validator` run is claimed
+anywhere. `artifacts/e2er1c/GATE_E2E_GODOT_CHECK.md` holds the two sentinel
+`.glb` files, what to look for in each, and an empty verdict for the owner.
 
 A **UI moratorium remains active.** The corrected edge-host arrangement is the
-accepted baseline; E2E-R1B added three rows to the existing Project surface and
-one recovery question, and moved nothing else. The one carried visual item is
-Sculpt Radius/Strength, which stays deferred P2.
+accepted baseline; E2E-R1C changed one existing control from reserved to working
+and moved nothing else. The one carried visual item is Sculpt Radius/Strength,
+which stays deferred P2.
 
 `CAD-R0-DATA` remains a COORDINATOR-owned decision/research gate that Claude Code
 does not execute.
@@ -2062,10 +2147,15 @@ contract from the world reference grid; a View Cube, camera focus or named views
 blur or glass of any kind; a post-processing framework; an automatic system
 theme; hierarchy and object commands; Sketch/Extrude; Mirror, Subdivide and
 Remesh; import and *Add from file*; the one-way Construction-to-Sculpt project
-derivation; pressure-driven sculpting; and export.
+derivation; and pressure-driven sculpting.
 
 Persistence is no longer on that list, in the shape E2E-R1A and E2E-R1B shipped:
 one app-private manual slot, one recovery checkpoint, and transfer of that same
 document through Scoped Storage. Save As, project naming, a recent list,
 thumbnails, a project browser, a version history, cloud and accounts are all
-still out, and so is every interchange format.
+still out.
+
+Export is no longer on it either, in the shape E2E-R1C shipped: one `.glb`, one
+direction, one default material. UVs, textures, chosen materials, hierarchy,
+merge and unit options, compression, OBJ, FBX and **every importer** are all
+still out.
