@@ -71,10 +71,18 @@ world-axis scale of a turned body is a shear no diagonal `S` can express).
 Storage is `m[column * 4 + row]`, so the translation lives in elements 12, 13,
 14.
 
-**glTF 2.0:** a node's `matrix` is "a floating-point 4×4 transformation matrix
-stored in column-major order". → identical, element for element, which is why
-`captureGlbExportScene` copies `transform().modelMatrix()` verbatim and
-`FSR1C-15` asserts exact float equality between the two.
+**glTF 2.0:** a node's transform may be one column-major `matrix`, or any of
+`translation` / `rotation` / `scale`. → the composition order and the storage
+order agree exactly, so no re-ordering or transposition is needed in either
+form.
+
+> **Superseded by `ARCH-OWNER-07` (2026-08-31).** This file originally recorded
+> that the exporter copies `modelMatrix()` into the node verbatim. It no longer
+> does: the placement is now SPLIT as `Model = T · L`, `L` is baked into the
+> vertices and the node carries `translation` alone. What that decision rests
+> on is the agreement recorded above — the split is possible precisely BECAUSE
+> the two conventions match, and it changes no axis, no unit and no
+> handedness. Sections 1, 2, 3, 4 and 6 stand exactly as written.
 
 ## 6. Winding and normals — **counter-clockwise seen from outside**
 
@@ -101,9 +109,13 @@ correction, and each is asserted against:
 
 | Would-be conversion | The case that would catch it |
 | --- | --- |
-| Y-up → Z-up node | `fsr1c14_noConversionNodeIsInsertedAboveTheBody` (one matrix per body, never one more) |
-| any global scale | `fsr1c14_metresSurviveUnscaledAndTheUpAxisIsY` |
-| transposed matrix | `fsr1c15_placementLivesInTheNodeMatrixAndNotInTheVertices` (translation in 12–14, bottom row 0,0,0,1) |
-| placement baked into vertices | the same case (moving a body moves no vertex) |
-| scale baked into geometry | `fsr1c15_scaleIsInTheMatrixAndNotBakedIntoTheGeometry` |
+| Y-up → Z-up node | `fsr1c14_noConversionNodeIsInsertedAboveTheBody` (no node matrix at all; one translation per body, never one more) |
+| any global scale | `fsr1cC1_12_metresAndTheUpAxisAreUnchangedByTheBake` |
+| translation scaled, or moved into the vertices | `fsr1cC1_01to03_theNodeCarriesTranslationOnlyWithIdentityRotationAndScale` |
+| rotation or scale left on the node | the same case (both absent, checked on the node and on the raw JSON) |
+| rotation or scale NOT baked | `fsr1cC1_04_rotationAndScaleAreBakedIntoTheGeometry` |
+| geometry recentred by the bake | `fsr1cC1_05_bakingHappensAboutTheLocalOriginAndNothingIsRecentred` (on a cone; a symmetric primitive would hide it) |
+| normals carried by `L` instead of `transpose(inverse(L))` | `fsr1cC1_06_normalsRideTheInverseTransposeUnderNonUniformScale` and `..._bakedNormalsStayPerpendicularToTheirFaces` |
+| stale accessor bounds | `fsr1cC1_07_positionBoundsAreRecomputedFromTheBakedVertices` |
+| a silent mirror | `FSR1C_C1_08_a_mirrored_bake_is_refused_and_never_compensated` (native) |
 | reversed winding | `fsr1c16_normalsAreUnitLengthAndTrianglesWindOutward` |
