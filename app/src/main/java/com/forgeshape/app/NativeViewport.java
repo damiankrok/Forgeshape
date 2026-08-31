@@ -732,6 +732,24 @@ final class NativeViewport {
     static native byte[] encodeProject();
 
     /**
+     * Exports the running project as GLB 2.0 bytes.
+     *
+     * <p>Reads only: it publishes no mesh, mints no revision, changes no mode
+     * and cannot touch the scene, the history or either { .forge} slot.
+     * Geometry is evaluated fresh from the Construction sources — or taken from
+     * the Frozen Sculpt Meshes while sculpting — so what is exported is what the
+     * project currently IS, never a decoded file and never a GPU buffer.
+     *
+     * <p>ForgeShape and glTF already agree on metres, on +Y up, on right-handed
+     * space, on column-major matrices and on counter-clockwise winding, so the
+     * export applies no conversion of any kind. See
+     * { forgeshape_gltf_export.h} for where each of those facts is defined.
+     *
+     * @return the complete { .glb}, or null when nothing could be exported
+     */
+    static native byte[] exportGlb();
+
+    /**
      * Replaces the running project with the one these bytes describe, or
      * changes nothing at all.
      *

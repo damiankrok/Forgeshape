@@ -15,11 +15,16 @@ import android.net.Uri;
  * Moving a ForgeShape project in and out of the device's own storage, through
  * the Storage Access Framework.
  *
- * <p><b>This is project transfer, not interchange.</b> What travels is exactly
- * the canonical `.forge` v1 document the codec produces — the same bytes an
- * explicit Save writes, readable by any compatible ForgeShape installation.
- * There is no GLB, glTF, OBJ or FBX here, no converter, and no menu entry that
- * hints at one. Those are separate pipelines with their own stages.
+ * <p><b>Two kinds of traffic, and the difference matters.</b> A `.forge`
+ * document is project TRANSFER: the canonical bytes an explicit Save writes,
+ * readable by any compatible ForgeShape installation, and readable back by
+ * ForgeShape. A `.glb` is an EXPORT: a one-way, lossy-by-design view of the
+ * current geometry for another tool to look at, which ForgeShape cannot read
+ * back and does not pretend to.
+ *
+ * <p>What is still absent, deliberately: glTF/GLB <b>import</b>, OBJ, FBX, any
+ * other interchange format, and any converter or menu entry that hints at one.
+ * Those are separate pipelines with their own stages.
  *
  * <p><b>The Uri stops here.</b> This class is the entire boundary: it turns a
  * {@code Uri} into a {@code byte[]} and a {@code byte[]} into a document the user
@@ -65,6 +70,12 @@ final class ProjectTransfer {
     /** The name offered for a new document. The extension is the product's own. */
     static final String SUGGESTED_FILE_NAME = "project.forge";
 
+    /** The registered media type for a binary glTF. */
+    static final String GLB_MIME_TYPE = "model/gltf-binary";
+
+    /** The name offered for an exported model. */
+    static final String SUGGESTED_GLB_FILE_NAME = "model.glb";
+
     /** A ceiling on what is read into memory, applied before the first byte. */
     private static final int MAX_READABLE_BYTES = 256 * 1024 * 1024;
 
@@ -85,6 +96,25 @@ final class ProjectTransfer {
         final Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType(OPEN_MIME_TYPE);
+        return intent;
+    }
+
+    /**
+     * The intent that asks where to put an exported GLB.
+     *
+     * <p>{@code model/gltf-binary} is the registered type for a binary glTF and
+     * is what a capable provider should be told. Several stock document
+     * providers on Android refuse or rewrite an unfamiliar type, so the
+     * user-visible fact — the {@code .glb} name — is carried in EXTRA_TITLE
+     * where no provider can lose it, and the bytes are the GLB contract either
+     * way. See ProjectTransfer#CREATE_MIME_TYPE for the same reasoning applied
+     * to `.forge`.
+     */
+    static Intent createGlbDocumentIntent() {
+        final Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType(GLB_MIME_TYPE);
+        intent.putExtra(Intent.EXTRA_TITLE, SUGGESTED_GLB_FILE_NAME);
         return intent;
     }
 

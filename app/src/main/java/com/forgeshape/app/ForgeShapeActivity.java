@@ -368,11 +368,12 @@ public final class ForgeShapeActivity extends Activity {
     //
     // startActivityForResult rather than the AndroidX Activity Result APIs
     // because this module has no AndroidX runtime dependency and is not about to
-    // acquire one for three intents.
+    // acquire one for four intents.
 
     private static final int REQUEST_CREATE_PROJECT_DOCUMENT = 4101;
     private static final int REQUEST_OPEN_PROJECT_DOCUMENT = 4102;
     private static final int REQUEST_CREATE_DIAGNOSTICS_DOCUMENT = 4103;
+    private static final int REQUEST_CREATE_GLB_DOCUMENT = 4104;
 
     private final EditorWorkspaceView.ProjectTransferHost transferHost =
             new EditorWorkspaceView.ProjectTransferHost() {
@@ -392,6 +393,12 @@ public final class ForgeShapeActivity extends Activity {
                 public boolean requestCreateDiagnosticsDocument() {
                     return launch(ProjectTransfer.createDiagnosticsIntent(),
                             REQUEST_CREATE_DIAGNOSTICS_DOCUMENT);
+                }
+
+                @Override
+                public boolean requestCreateGlbDocument() {
+                    return launch(ProjectTransfer.createGlbDocumentIntent(),
+                            REQUEST_CREATE_GLB_DOCUMENT);
                 }
             };
 
@@ -438,6 +445,9 @@ public final class ForgeShapeActivity extends Activity {
                 break;
             case REQUEST_CREATE_DIAGNOSTICS_DOCUMENT:
                 workspace.onCreateDiagnosticsDocumentChosen(uri);
+                break;
+            case REQUEST_CREATE_GLB_DOCUMENT:
+                workspace.onCreateGlbDocumentChosen(uri);
                 break;
             default:
                 break;

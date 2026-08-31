@@ -1131,6 +1131,7 @@ public final class EditorWorkspaceCorrectionTest {
                     "Display");
             assertMeetsTouchFloor(activity, workspace, R.id.hide_ui_toggle, "Hide UI");
             assertMeetsTouchFloor(activity, workspace, R.id.apply_shape, "Apply Shape");
+            assertMeetsTouchFloor(activity, workspace, R.id.export_action, "Export");
             assertMeetsTouchFloor(activity, workspace, R.id.unit_chip_m, "the metre chip");
             return null;
         });
@@ -1170,9 +1171,10 @@ public final class EditorWorkspaceCorrectionTest {
     public void uir4b17_theToolbarIconControlsAreStillFullyOnScreenInSculpt() {
         enterSculpt();
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            for (int id : new int[]{R.id.display_settings_button, R.id.hide_ui_toggle}) {
+            for (int id : new int[]{R.id.export_action, R.id.display_settings_button,
+                    R.id.hide_ui_toggle}) {
                 final View control = workspace.findViewById(id);
-                assertTrue("an icon control must be fully inside the window",
+                assertTrue("a utility control must be fully inside the window",
                         WorkspaceTestSupport.isFullyOnScreen(control, workspace));
             }
             return null;

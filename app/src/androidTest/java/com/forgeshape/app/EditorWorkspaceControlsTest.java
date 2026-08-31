@@ -102,7 +102,13 @@ public final class EditorWorkspaceControlsTest {
 
             final View export = workspace.findViewById(R.id.export_action);
             assertEquals(View.VISIBLE, export.getVisibility());
-            assertFalse("Export is approved but not implemented", export.isEnabled());
+            // Export writes a real GLB now, so the rule that used to exempt it
+            // no longer applies to it: nothing drawn as an action is inert.
+            assertTrue("Export is implemented and must be operable", export.isEnabled());
+            assertTrue("and tappable", export.isClickable());
+            assertFalse("and must not describe itself as unimplemented",
+                    String.valueOf(export.getContentDescription())
+                            .contains("not implemented"));
             return null;
         });
     }

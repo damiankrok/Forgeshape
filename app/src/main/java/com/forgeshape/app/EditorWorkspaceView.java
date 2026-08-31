@@ -2506,6 +2506,76 @@ final class EditorWorkspaceView extends FrameLayout
         }
     }
 
+    /**
+     * Exports the current model as one GLB file.
+     *
+     * <p>The bytes are built BEFORE the picker opens, for the same reason Save
+     * Copy does it: a model that cannot be exported should say so immediately
+     * rather than after the user has chosen a destination and watched an empty
+     * file appear there.
+     *
+     * <p>This reads the project and writes somewhere the user picked. It cannot
+     * touch either {@code .forge} slot — neither the manual one nor the recovery
+     * checkpoint — because it never calls anything that writes them.
+     */
+    @Override
+    public void onExportGlbRequested() {
+        final byte[] bytes = NativeViewport.exportGlb();
+        if (bytes == null || bytes.length == 0) {
+            // Null is every refusal at once — an empty scene, a mesh the writer
+            // would not vouch for, a model past the size ceiling — and this
+            // layer cannot tell them apart. So it says the one thing true of
+            // all of them, rather than guessing "there is nothing to export"
+            // over a model that is merely too large. The specific reason is in
+            // the log, as FORGESHAPE_GLB_EXPORT_FAIL.
+            Diagnostics.warn(DiagnosticLog.CAT_TRANSFER, "EXPORT_GLB_ENCODE_FAILED", null);
+            showStatus(getContext().getString(R.string.status_export_glb_failed),
+                    R.attr.fsTextError);
+            return;
+        }
+        pendingGlbBytes = bytes;
+        if (transferHost == null || !transferHost.requestCreateGlbDocument()) {
+            pendingGlbBytes = null;
+            showStatus(getContext().getString(R.string.status_export_glb_failed),
+                    R.attr.fsTextError);
+        }
+    }
+
+    /**
+     * The bytes waiting for a destination.
+     *
+     * <p>Held between the request and the picker's answer, and cleared on every
+     * outcome, so a model can never be written to a destination chosen for a
+     * different action.
+     */
+    private byte[] pendingGlbBytes;
+
+    /** Stages the bytes an export would write, without opening a picker. */
+    void onExportGlbRequestedForTest(byte[] bytes) {
+        pendingGlbBytes = bytes;
+    }
+
+    /** The user picked somewhere to put the exported model. */
+    void onCreateGlbDocumentChosen(android.net.Uri destination) {
+        final byte[] bytes = pendingGlbBytes;
+        pendingGlbBytes = null;
+        if (destination == null || bytes == null) {
+            // Cancel. A no-op by construction: nothing was written, and the
+            // export direction only ever read the project.
+            Diagnostics.info(DiagnosticLog.CAT_TRANSFER, "EXPORT_GLB_CANCELLED", null);
+            return;
+        }
+        if (!ProjectTransfer.writeTo(getContext(), destination, bytes)) {
+            showStatus(getContext().getString(R.string.status_export_glb_failed),
+                    R.attr.fsTextError);
+            return;
+        }
+        Diagnostics.info(DiagnosticLog.CAT_TRANSFER, "EXPORT_GLB_WROTE",
+                "bytes=" + bytes.length);
+        showStatus(getContext().getString(R.string.status_export_glb_written, projectSummary()),
+                R.attr.fsTextSuccess);
+    }
+
     @Override
     public void onShareDiagnosticsRequested() {
         setProjectPanelOpen(false);
@@ -2555,6 +2625,8 @@ final class EditorWorkspaceView extends FrameLayout
         boolean requestOpenProjectDocument();
 
         boolean requestCreateDiagnosticsDocument();
+
+        boolean requestCreateGlbDocument();
     }
 
     private ProjectTransferHost transferHost;

@@ -466,17 +466,19 @@ public final class EditorWorkspaceThemeTest {
                                     + " must still answer a press",
                             hasPressedFeedback(workspace.findViewById(id)));
                 }
-                // A reserved control must still read as reserved rather than
-                // merely quiet. The Tool Rail no longer has one — every entry on
-                // it works — so the rule is asserted where it is still true, on
-                // the one approved-but-unimplemented GLOBAL action.
+                // The product now has NO reserved control: Export was the last
+                // one and it writes a real GLB. So the rule is asserted where it
+                // still lives — in the palette, which must keep a visibly dimmer
+                // disabled tone for whatever next needs one — and Export itself
+                // is asserted to be an ordinary working control in every theme.
                 final View export = workspace.findViewById(R.id.export_action);
-                assertFalse(theme + ": Export stays inert", export.isEnabled());
+                assertTrue(theme + ": Export works and must answer a press",
+                        export.isEnabled() && hasPressedFeedback(export));
                 final int disabled = EditorControlStyles.themeColor(activity, R.attr.fsTextDisabled);
                 final int secondary = EditorControlStyles.themeColor(activity,
                         R.attr.fsTextSecondary);
-                assertTrue(theme + ": a reserved label is visibly dimmer than an"
-                                + " available one — on a dark ground that means DARKER",
+                assertTrue(theme + ": a disabled tone must stay visibly dimmer than"
+                                + " an available one — on a dark ground that means DARKER",
                         luminance(disabled) < luminance(secondary));
                 return null;
             });

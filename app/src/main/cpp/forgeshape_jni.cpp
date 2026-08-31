@@ -37,6 +37,8 @@
 #include "forgeshape_display.h"
 #include "forgeshape_gizmo.h"
 #include "forgeshape_gizmo_selftest.h"
+#include "forgeshape_gltf_export.h"
+#include "forgeshape_gltf_export_selftest.h"
 #include "forgeshape_history.h"
 #include "forgeshape_history_selftest.h"
 #include "forgeshape_input.h"
@@ -342,6 +344,28 @@ void runHistorySelfTestsAndLog() {
 #endif
 }
 
+
+void runGltfExportSelfTestsAndLog() {
+#ifndef NDEBUG
+    constexpr int kMaxGltfChecks = 128;
+    static forgeshape::GltfExportSelfTestResult results[kMaxGltfChecks];
+    const int count = forgeshape::runGltfExportSelfTests(results, kMaxGltfChecks);
+    int failed = 0;
+    for (int i = 0; i < count; ++i) {
+        if (!results[i].passed) {
+            ++failed;
+            FS_LOGE("FORGESHAPE_GLTF_EXPORT_SELFTEST_CASE_FAIL:%s", results[i].name);
+        } else {
+            FS_LOGI("gltf export selftest pass: %s", results[i].name);
+        }
+    }
+    if (failed == 0) {
+        FS_LOGI("FORGESHAPE_GLTF_EXPORT_SELFTEST_OK (%d checks)", count);
+    } else {
+        FS_LOGE("FORGESHAPE_GLTF_EXPORT_SELFTEST_FAIL (%d of %d checks failed)", failed, count);
+    }
+#endif
+}
 
 void runRenderRecoverySelfTestsAndLog() {
 #ifndef NDEBUG
@@ -1188,6 +1212,7 @@ Java_com_forgeshape_app_NativeViewport_start(JNIEnv*, jclass) {
     runGizmoSelfTestsAndLog();
     runProjectSelfTestsAndLog();
     runRenderRecoverySelfTestsAndLog();
+    runGltfExportSelfTestsAndLog();
     // The mesh and construction self-tests publish revisions of their own into
     // the store, so republish the ACTIVE representation: the app must always
     // come up showing what the current product mode says it is showing. At a
@@ -2400,6 +2425,48 @@ Java_com_forgeshape_app_NativeViewport_loadProject(JNIEnv* env, jclass, jbyteArr
             report.bodies, report.sculptMeshes, (unsigned long long)report.activeBodyId,
             forgeshape::projectKindName(report.kind), (unsigned long long)report.activeRevision);
     return kProjectOk;
+}
+
+// Exports the running project as GLB 2.0 bytes.
+//
+// Reads only: it publishes nothing, mints no revision, changes no mode and
+// cannot touch the scene, the history or any `.forge` slot. Geometry is
+// evaluated fresh from the Construction sources — or taken from the Frozen
+// Sculpt Meshes when the session is sculpting — so what is exported is what the
+// project currently IS, never a decoded file and never a GPU buffer.
+//
+// Returns null when nothing could be exported; the reason is logged. There is
+// deliberately no status code across JNI: the product has exactly one thing to
+// say to the user about a failed export, and the codec's own vocabulary belongs
+// in the log rather than in five status strings nobody can act on differently.
+JNIEXPORT jbyteArray JNICALL
+Java_com_forgeshape_app_NativeViewport_exportGlb(JNIEnv* env, jclass) {
+    std::vector<uint8_t> bytes;
+    forgeshape::GlbExportStatus why = forgeshape::GlbExportStatus::Ok;
+    forgeshape::ProjectKind kind = forgeshape::ProjectKind::Construction;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        // The mode the user is in decides which representation each body
+        // exports, under the same lock as the capture, so a file cannot show a
+        // sculpt mesh for a session that had already left Sculpt.
+        kind = forgeshape::sculptSession().inSculptMode() ? forgeshape::ProjectKind::Sculpt
+                                                          : forgeshape::ProjectKind::Construction;
+        bytes = forgeshape::exportSceneAsGlb(forgeshape::constructionScene(), kind, &why);
+    }
+    if (bytes.empty()) {
+        FS_LOGE("FORGESHAPE_GLB_EXPORT_FAIL:%s", forgeshape::glbExportStatusName(why));
+        return nullptr;
+    }
+    FS_LOGI("FORGESHAPE_GLB_EXPORTED:%zu kind=%s bodies=%d", bytes.size(),
+            forgeshape::projectKindName(kind),
+            (int)forgeshape::constructionScene().bodyCount());
+    jbyteArray out = env->NewByteArray(static_cast<jsize>(bytes.size()));
+    if (out == nullptr) {
+        return nullptr;
+    }
+    env->SetByteArrayRegion(out, 0, static_cast<jsize>(bytes.size()),
+                            reinterpret_cast<const jbyte*>(bytes.data()));
+    return out;
 }
 
 // Validates bytes as a project WITHOUT applying them.

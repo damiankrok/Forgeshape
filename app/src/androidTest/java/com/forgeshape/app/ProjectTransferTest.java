@@ -396,9 +396,10 @@ public final class ProjectTransferTest {
             assertFalse("the project surface must not offer '" + word + "': " + text,
                     text.contains(word));
         }
-        // Export still exists, unimplemented and recessed, in its own approved
-        // home — this stage neither implemented it nor moved it.
-        assertNotNull("Export keeps its reserved home in the toolbar",
+        // Export exists and now works, but it lives in the Global Toolbar, not
+        // here: the project surface is `.forge` transfer only, and an export is
+        // a different act with a different destination.
+        assertNotNull("Export keeps its own home in the toolbar",
                 onWorkspace(rule.getScenario(),
                         (activity, workspace) -> workspace.findViewById(R.id.export_action)));
     }

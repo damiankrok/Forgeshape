@@ -59,8 +59,23 @@
       reader with the window size. See GlobalToolbarView#applyTransitionLabel.
     -->
     <string name="back_to_construction_short">← Construction</string>
+    <!--
+      Export. `export` is the DRAWN label, unchanged from when the control was
+      reserved, because the toolbar row has exactly that much width: "Export
+      GLB…" was tried and UIR4B-16 caught it abbreviating Back to Construction
+      to "← Construction". Critical navigation outranks naming the format in a
+      label.
+
+      So the format is carried where it costs the row nothing — the content
+      description, and the `.glb` filename the system picker opens with. The
+      user still learns which format before a file lands on their device, and
+      the picker is itself the "a chooser follows" signal an ellipsis would
+      have given.
+    -->
     <string name="export">Export</string>
-    <string name="export_reserved_note">Export is not implemented yet.</string>
+    <string name="export_glb_description">Export GLB — save the model as a .glb file</string>
+    <string name="status_export_glb_written">Exported — %1$s as GLB.</string>
+    <string name="status_export_glb_failed">Could not export the model. Nothing was written; your work is unchanged.</string>
     <!--
       Project actions. Both of these WORK, which is why they are ordinary
       controls rather than reserved ones: there is one app-private project slot

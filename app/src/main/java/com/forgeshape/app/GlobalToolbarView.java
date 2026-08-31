@@ -62,6 +62,9 @@ final class GlobalToolbarView extends LinearLayout {
         void onDisplaySettingsRequested();
 
         void onProjectActionsRequested();
+
+        /** Export the current model as one GLB file. */
+        void onExportGlbRequested();
     }
 
     private final TextView contextLabel;
@@ -231,25 +234,34 @@ final class GlobalToolbarView extends LinearLayout {
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        // Export is an approved global action with no implementation behind it.
-        // It is drawn, named, readable and inert: a reserved home the user can
-        // see, and nothing that could be mistaken for a working export. Inside
-        // the utility group it RECEDES — a recessed tonal well below the capsule
-        // around it — instead of standing beside the working controls as an
-        // outlined box of the same size.
+        // Export WORKS now, for exactly one format.
         //
-        // The SEAM, and why it needed fixing without touching Export's scope.
-        // The recessed well was drawn at the 10 dp control corner and sits flush
-        // against the leading end of a 26 dp capsule, so a lit crescent of
-        // capsule showed beside it — which read as a rendering fault rather than
-        // as a reserved control, and made the one honest "not implemented" in
-        // the product look broken. It is the same recessed well on the capsule's
-        // own corner now. Export remains unavailable and remains inert.
+        // It kept this placement through three stages as a drawn, recessed,
+        // honestly-unavailable control, which is why it is here and not
+        // somewhere new: the reserved home was the promise, and this is the
+        // promise being kept rather than a control being added. What changed is
+        // that it is an ordinary capsule member instead of a recessed well, and
+        // that pressing it does something.
+        //
+        // The label stays the single word the row was measured for. "Export
+        // GLB…" was tried and REJECTED by UIR4B-16: the extra width comes out
+        // of the same toolbar row as the transition button, which then
+        // abbreviates to "← Construction". Critical navigation outranks naming
+        // the format in the label, so the format is carried where it costs the
+        // row nothing — the content description, and the .glb filename the
+        // system picker opens with.
         exportAction = EditorControlStyles.chip(context, R.id.export_action,
                 context.getString(R.string.export));
-        EditorControlStyles.setChipReserved(exportAction,
-                context.getString(R.string.export_reserved_note));
-        EditorControlStyles.asCapsuleMember(exportAction, R.drawable.bg_capsule_reserved);
+        EditorControlStyles.asCapsuleMember(exportAction, R.drawable.bg_capsule_tonal);
+        exportAction.setTextColor(
+                EditorControlStyles.themeColor(context, R.attr.fsTextPrimary));
+        exportAction.setContentDescription(context.getString(R.string.export_glb_description));
+        exportAction.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                actions.onExportGlbRequested();
+            }
+        });
         utilityGroup.addView(exportAction, EditorControlStyles.wrap(0));
 
         // The project actions sit here for the same reason Display does: a
