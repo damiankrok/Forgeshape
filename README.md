@@ -176,9 +176,27 @@ back with `forgeshape_gltf_import` — a parser that shares no line with the
 exporter — and compares both against DOMAIN truth re-derived from the primitive
 generator or the Frozen Sculpt Mesh. It reports the maximum world-space position
 delta, which body and vertex produced it, and the maximum normal disagreement in
-degrees. **`GLB-IMPORT-R0` is a diagnostic and is session-only**: the preview it
-draws is never a body, never saved and never autosaved, and production import is
-post-MVP.
+degrees. **The imported mesh preview is a diagnostic and is session-only**: what
+it draws is never a body, never saved and never autosaved, and production import
+is post-MVP.
+
+For the widened external-GLB subset (`GLB-IMPORT-R1`) use:
+
+```
+scripts\run-glb-import-r1-evidence.ps1 -Serial <serial>
+```
+
+It runs `GlbImportExternalR1Test` through the same runner and pulls the
+Nomad-like compatibility fixture's fingerprint and a screenshot of it into
+`artifacts\glb-import-r1\`, printing the fixture's SHA-256. The fixture is a
+**synthetic** file built by `forgeshape_glb_import_fixture.cpp` that reproduces
+the structural feature set of an external low-poly export — a node matrix, seven
+TRIANGLES primitives over one shared POSITION accessor, no NORMAL, ignored
+colour and UV attributes, a double-sided material. It is not, and is never
+described as, any owner asset. Every coordinate in it is an integer over a power
+of two, so the same build produces the same bytes anywhere and the hash means
+something. It prints `GLB_IMPORT_R1_EVIDENCE=PASS` only when every file is
+present and the fingerprint carries a digest.
 
 `scripts\verify-device-guards.ps1` runs the DEV2-01..07 and DEV3-01..06
 device-isolation guard checks without needing any device attached and without

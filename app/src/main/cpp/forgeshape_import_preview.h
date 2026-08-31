@@ -4,7 +4,9 @@
 // ---------------------
 // A preview is **not a Construction Body**, and nothing here may make it look
 // like one. `ARCH-OWNER-08` names the boundary and this file is where it is
-// enforced:
+// enforced. `ARCH-OWNER-09` widened what the PARSER will read — external static
+// files, not only ForgeShape's own — and widened nothing below; every line of
+// this list is unchanged by it:
 //
 //   * no `ObjectId` from the scene's allocator, and no entry in
 //     `ConstructionScene` — the preview is not in the body list, is not
@@ -87,17 +89,34 @@ public:
     bool visible() const { return visible_ && loaded(); }
     void setVisible(bool visible) { visible_ = visible && loaded(); }
 
-    uint32_t meshCount() const { return static_cast<uint32_t>(items_.size()); }
+    // The FILE's counts, not the renderer's. One mesh may become several draw
+    // items — one per primitive, so per-primitive `doubleSided` survives — and
+    // several primitives may share one POSITION accessor, so neither the draw
+    // item count nor a sum over draw items would be what the file describes.
+    uint32_t meshCount() const { return meshCount_; }
     uint32_t vertexCount() const { return vertexCount_; }
     uint32_t triangleCount() const { return triangleCount_; }
+    // How many draw batches the meshes became. A renderer fact, reported so a
+    // diagnostic can say a multi-primitive file did not lose a primitive.
+    uint32_t batchCount() const { return static_cast<uint32_t>(items_.size()); }
     const std::string& sourceSummary() const { return summary_; }
 
+    // The world axis-aligned bounds of everything loaded, as min xyz then max
+    // xyz. False with nothing loaded, and `out` is then untouched.
+    //
+    // World, not local, because the node transform is already baked into the
+    // vertices — which is exactly what makes this the number a test can use to
+    // say a node matrix was applied, and applied the right way round.
+    bool worldBounds(float* out) const;
+
     // What the renderer draws. Every item carries a reserved renderer key, its
-    // own immutable mesh and the node translation as its model matrix.
+    // own immutable mesh and an identity model matrix, because the importer
+    // has already baked the node transform into the positions.
     const SceneSnapshot& snapshot() const { return items_; }
 
 private:
     SceneSnapshot items_;
+    uint32_t meshCount_ = 0;
     uint32_t vertexCount_ = 0;
     uint32_t triangleCount_ = 0;
     bool visible_ = false;

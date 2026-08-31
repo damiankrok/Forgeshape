@@ -1,0 +1,40 @@
+﻿DISCOVERY_PASS | classes=30 | tests=443 | shards=5 | missing=0 | duplicates=0 | unexpected=0
+SHARD_START | shard=1/5 | classes=6 | tests=90 | filter=com.forgeshape.app.EditorWorkspaceChromeCompositionTest,com.forgeshape.app.EditorWorkspaceGestureTest,com.forgeshape.app.EditorWorkspaceGizmoTest,com.forgeshape.app.EditorWorkspaceObjectsTest,com.forgeshape.app.EditorWorkspaceSculptRetentionTest,com.forgeshape.app.ProjectAutosaveRecoveryTest
+OK (90 tests)
+SHARD_RESULT | shard=1 | expected=90 | actual=90 | status=PASS | reason=valid runner result and exact expected count
+SHARD_START | shard=2/5 | classes=6 | tests=89 | filter=com.forgeshape.app.EditorWorkspaceCompositionTest,com.forgeshape.app.EditorWorkspaceCorrectionTest,com.forgeshape.app.EditorWorkspaceFoundationTest,com.forgeshape.app.EditorWorkspaceLifecycleTest,com.forgeshape.app.EditorWorkspacePointerTest,com.forgeshape.app.EditorWorkspaceUnifiedRightHostTest
+OK (89 tests)
+SHARD_RESULT | shard=2 | expected=89 | actual=89 | status=PASS | reason=valid runner result and exact expected count
+SHARD_START | shard=3/5 | classes=6 | tests=88 | filter=com.forgeshape.app.DiagnosticsAndRendererLossTest,com.forgeshape.app.EditorWorkspaceDisplayTest,com.forgeshape.app.EditorWorkspaceProjectActionsTest,com.forgeshape.app.EditorWorkspaceRightHostPlacementTest,com.forgeshape.app.EditorWorkspaceThemeTest,com.forgeshape.app.GlbExportTest
+OK (88 tests)
+SHARD_RESULT | shard=3 | expected=88 | actual=88 | status=PASS | reason=valid runner result and exact expected count
+SHARD_START | shard=4/5 | classes=6 | tests=88 | filter=com.forgeshape.app.EditorWorkspaceArchitectureTest,com.forgeshape.app.EditorWorkspaceControlsTest,com.forgeshape.app.EditorWorkspaceHistoryTest,com.forgeshape.app.EditorWorkspaceLayoutTest,com.forgeshape.app.EditorWorkspaceMobileTest,com.forgeshape.app.EditorWorkspaceStartFlowTest
+OK (88 tests)
+SHARD_RESULT | shard=4 | expected=88 | actual=88 | status=PASS | reason=valid runner result and exact expected count
+SHARD_START | shard=5/5 | classes=6 | tests=88 | filter=com.forgeshape.app.EditorWorkspaceLegibilityTest,com.forgeshape.app.EditorWorkspaceMotionTest,com.forgeshape.app.GlbImportExternalR1Test,com.forgeshape.app.GlbImportPreviewTest,com.forgeshape.app.ProjectProcessDeathTest,com.forgeshape.app.ProjectTransferTest
+OK (88 tests)
+SHARD_RESULT | shard=5 | expected=88 | actual=88 | status=PASS | reason=valid runner result and exact expected count
+FULL_SHARDED_SUMMARY_BEGIN
+shard_count=5
+shard_1_classes=6
+shard_1_tests=90
+shard_1_filter=com.forgeshape.app.EditorWorkspaceChromeCompositionTest,com.forgeshape.app.EditorWorkspaceGestureTest,com.forgeshape.app.EditorWorkspaceGizmoTest,com.forgeshape.app.EditorWorkspaceObjectsTest,com.forgeshape.app.EditorWorkspaceSculptRetentionTest,com.forgeshape.app.ProjectAutosaveRecoveryTest
+shard_1_status=PASS
+shard_2_classes=6
+shard_2_tests=89
+shard_2_filter=com.forgeshape.app.EditorWorkspaceCompositionTest,com.forgeshape.app.EditorWorkspaceCorrectionTest,com.forgeshape.app.EditorWorkspaceFoundationTest,com.forgeshape.app.EditorWorkspaceLifecycleTest,com.forgeshape.app.EditorWorkspacePointerTest,com.forgeshape.app.EditorWorkspaceUnifiedRightHostTest
+shard_2_status=PASS
+shard_3_classes=6
+shard_3_tests=88
+shard_3_filter=com.forgeshape.app.DiagnosticsAndRendererLossTest,com.forgeshape.app.EditorWorkspaceDisplayTest,com.forgeshape.app.EditorWorkspaceProjectActionsTest,com.forgeshape.app.EditorWorkspaceRightHostPlacementTest,com.forgeshape.app.EditorWorkspaceThemeTest,com.forgeshape.app.GlbExportTest
+shard_3_status=PASS
+shard_4_classes=6
+shard_4_tests=88
+shard_4_filter=com.forgeshape.app.EditorWorkspaceArchitectureTest,com.forgeshape.app.EditorWorkspaceControlsTest,com.forgeshape.app.EditorWorkspaceHistoryTest,com.forgeshape.app.EditorWorkspaceLayoutTest,com.forgeshape.app.EditorWorkspaceMobileTest,com.forgeshape.app.EditorWorkspaceStartFlowTest
+shard_4_status=PASS
+shard_5_classes=6
+shard_5_tests=88
+shard_5_filter=com.forgeshape.app.EditorWorkspaceLegibilityTest,com.forgeshape.app.EditorWorkspaceMotionTest,com.forgeshape.app.GlbImportExternalR1Test,com.forgeshape.app.GlbImportPreviewTest,com.forgeshape.app.ProjectProcessDeathTest,com.forgeshape.app.ProjectTransferTest
+shard_5_status=PASS
+FULL_SHARDED_SUITE_PASS
+FULL_SHARDED_SUMMARY_END

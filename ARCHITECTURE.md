@@ -126,7 +126,8 @@ forgeshape_jni.cpp            render thread, ANativeWindow, MotionEvent ->
 | WHEN the project is checkpointed, and on which thread | `AutosaveController` (Java) | it owns no bytes and no format: it decides, coalesces, and calls the codec. The debounce is an implementation detail and is not product semantics |
 | Whether the project actually changed | `projectSemanticFingerprint` (`forgeshape_project_state.{h,cpp}`) | it hashes semantic VALUES, never the domain's update counters — an undo does not advance those — and it is a change DETECTOR, never an identity |
 | Turning a document `Uri` into bytes and back | `ProjectTransfer` (Java) | THE boundary: no `Uri`, `ContentResolver`, authority or path passes it, and none is ever project truth. It converts; it decides nothing |
-| Reading a `.glb` back for the DIAGNOSTIC preview | `forgeshape_gltf_import.{h,cpp}` + `forgeshape_json.{h,cpp}` | platform-neutral, and deliberately shares NO code with the writer: it re-derives every offset, length, stride and bound from the file. Supports exactly the subset the exporter emits and fails closed by name on everything else. It produces geometry, never a body |
+| Reading a `.glb` back for the DIAGNOSTIC preview | `forgeshape_gltf_import.{h,cpp}` + `forgeshape_json.{h,cpp}` | platform-neutral, and deliberately shares NO code with the writer: it re-derives every offset, length, stride and bound from the file. Supports a bounded STATIC subset — a node matrix or TRS, several TRIANGLES primitives, a generated NORMAL, ignored colour/UV, `doubleSided` — and fails closed by name on everything else. It bakes the node transform and produces geometry, never a body |
+| The deterministic external-GLB compatibility fixture | `forgeshape_glb_import_fixture.{h,cpp}` | a synthetic file with the structural feature set of an external low-poly export; every coordinate an integer over a power of two, so its bytes are the same everywhere. A debug test seam, reachable from no product path |
 | What an imported preview IS, and every boundary it may not cross | `forgeshape_import_preview.{h,cpp}` | session-only: no scene `ObjectId`, no Construction Source, no sculpt representation, no `MeshStore`, no history, no `.forge`, no checkpoint, not selectable, not re-exportable, gone with the process. Its renderer keys are resource keys and never identities |
 | Whether the file agrees with the scene | `forgeshape_glb_roundtrip.{h,cpp}` | compares the independently parsed file against DOMAIN truth re-derived from the generator and `modelMatrix()`, never against the exporter's captured arrays. Reads only, and reports a number rather than a boolean |
 | The glTF 2.0 / GLB export: what the file contains and every byte of it | `forgeshape_gltf_export.{h,cpp}` | platform-neutral C++ with no Android, JNI, `Uri`, `ContentResolver`, path or Vulkan type. It READS the scene and writes bytes: it mints no revision, opens no transaction, allocates no `ObjectId` and moves no sculpt vertex. It re-evaluates the Construction Source rather than reading a GPU buffer or decoding a `.forge`, and applies NO coordinate conversion — see *Export coordinates* |
@@ -3016,7 +3017,8 @@ writer's job, not the caller's.
 
 ## The diagnostic imported mesh preview
 
-`GLB-IMPORT-R0`, under `ARCH-OWNER-08`. **This is a diagnostic, not import.**
+`GLB-IMPORT-R0` under `ARCH-OWNER-08`, widened by `GLB-IMPORT-R1` under
+`ARCH-OWNER-09`. **This is a diagnostic, not production import.**
 
 The owner saw a discrepancy between the ForgeShape scene and an external tool
 that the corrected node scale of 1/1/1 did not explain. Three things could
@@ -3025,6 +3027,12 @@ geometry differently — and only the first is ForgeShape's defect. So the produ
 gained the one thing that can separate them: a reader that shares nothing with
 the writer, and a way to put what it read on the screen beside the thing it was
 read from.
+
+R1 widened the readable subset to the class of **static** file another sculpting
+tool writes, so an external low-poly mesh can be looked at in the viewport. What
+it did not widen is anything about what the preview IS — the section below is
+unchanged, and most of the R1 test suite exists to hold that line while the
+parser gets more permissive.
 
 ### Parser ownership
 
@@ -3036,12 +3044,55 @@ its own number grammar rather than handing text to `strtod`, because `strtod`
 accepts `nan` and `inf` and a non-finite value that reaches geometry is the
 exact failure the reader exists to prevent.
 
-The supported subset is exactly what the exporter emits; everything else fails
-closed with its **own named status** — `NodeMatrix`, `NodeRotation`,
-`SparseAccessor`, `InterleavedAccessor`, `ExternalBuffer`, `HasAnimation` and
+Everything outside the supported subset fails closed with its **own named
+status** — `SparseAccessor`, `InterleavedAccessor`, `ExternalBuffer`,
+`HasAnimation`, `NodeHierarchy`, `NodeTransformConflict`, `UnknownAttribute` and
 the rest. Nothing is silently ignored, because a diagnostic that skipped a
 transform would answer the question wrongly, which is worse than refusing to
-answer it. `artifacts/glb-import-r0/SUBSET.md` is the full table.
+answer it. `artifacts/glb-import-r1/SUPPORTED_SUBSET.md` is the full table
+(`artifacts/glb-import-r0/SUBSET.md` records the narrower R0 boundary).
+
+### What R1 reads, and what it does with it
+
+- **The node transform** is a `matrix` (column-major, affine) or a TRS composed
+  `T·R·S`; stating both is `NodeTransformConflict`, because which one wins is
+  not a guess a diagnostic may make. A node with children is `NodeHierarchy`,
+  refused rather than flattened: a flattened hierarchy is a different scene from
+  the one the file describes.
+- **The transform is BAKED** into the preview positions, so every draw item
+  carries an identity model matrix and the placement exists in exactly one
+  place. Normals ride `transpose(inverse(L))` and are normalized — not `L·n`,
+  which is only the same answer while the scale is uniform. A negative
+  determinant corrects triangle winding **for the preview only**; the product
+  still has no Mirror and the exporter still refuses to write one. A zero
+  determinant or a non-affine bottom row is `SingularNodeTransform`.
+- **Several TRIANGLES primitives per mesh** become separate `ImportedPrimitiveBatch`
+  ranges over one shared vertex array, because `doubleSided` is a per-primitive
+  fact the preview must honour per primitive. Primitives naming the same
+  POSITION/NORMAL accessors share one decoded block, so a seven-material
+  character stays the vertex count the file states rather than seven copies.
+- **A missing NORMAL is generated**: unnormalized face normals from the baked
+  positions, accumulated per vertex and normalized, so the weighting is area.
+  A referenced vertex with no finite non-zero accumulation is
+  `CannotGenerateNormals` — never a NaN, never an invented default. This is a
+  preview policy and not the production import shading contract.
+- **COLOR_0/COLOR_1/TEXCOORD_0/TEXCOORD_1** are structurally validated — the
+  accessor resolves, its range is inside the buffer, its count agrees with
+  POSITION — and then **not decoded**. Any other attribute is
+  `UnknownAttribute`. The preview draws one flat neutral and never claims to
+  show a colour it did not read.
+- **`materials[].doubleSided`** is the only material member read at all, and it
+  reaches preview culling and nothing else. `extras`, `asset.generator` and
+  `extensionsUsed` are read by nothing.
+- **No coordinate conversion of any kind.** glTF is right-handed, +Y-up and
+  metric, and so is ForgeShape — the same fact that makes the exporter's lack of
+  a conversion node correct.
+
+`glbImportStatusCategory` maps every status to one of three bounded categories —
+unreadable, unsupported, inconsistent — which is what the user is shown. The
+status token itself goes to the log and the diagnostics ring, where somebody
+chasing a particular file can act on it. The mapping lives beside the enum so
+the Android layer never has to know which refusal means what.
 
 ### The preview is not a body
 
@@ -3058,9 +3109,9 @@ pick, save or export from. While it is shown, the gizmo is withdrawn, a tap
 selects nothing, and every editing control is absent — over an imported mesh
 each of them would point at a body the user cannot see.
 
-The renderer caches GPU buffers per `SceneDrawItem::objectId`, so preview meshes
-need distinct keys. They come from `kFirstPreviewRenderKey` (2^60), which the
-body allocator cannot reach, and they are **renderer resource keys, not
+The renderer caches GPU buffers per `SceneDrawItem::objectId`, so every preview
+BATCH needs a distinct key. They come from `kFirstPreviewRenderKey` (2^60), which
+the body allocator cannot reach, and they are **renderer resource keys, not
 identities**: minted by the preview, never by the scene, never persisted, never
 shown, never picked against, and restarting from the same base each session.
 `previewRenderKeyIsReserved` exists so a test can assert the two ranges cannot
@@ -3075,11 +3126,18 @@ by `modelMatrix()`. Not the exporter's captured arrays: if the exporter captured
 the wrong geometry, the expected side still holds the right geometry and the
 comparison fails, which is the point.
 
-The identity under test is `modelMatrix() · p_local == nodeTranslation · p_baked`
-— `T·L·p == T·(L·p)` — which holds only if the bake, the node transform and the
-file all agree. Tolerance is float32 quantization and nothing else: relative to
-the coordinate's magnitude, with an absolute floor, because absolute error in a
-float grows with the value.
+The identity under test is `modelMatrix() · p_local == M_node · p_file`, which
+holds only if the bake, the node transform and the file all agree. Since R1 the
+importer applies `M_node` itself, so the actual side is read straight out of
+`ImportedMesh::positions`. Tolerance is float32 quantization and nothing else:
+relative to the coordinate's magnitude, with an absolute floor, because absolute
+error in a float grows with the value.
+
+`forgeshape_glb_import_fixture.{h,cpp}` builds the deterministic Nomad-like
+compatibility fixture — a synthetic GLB with the structural feature set of an
+external low-poly export. Every coordinate is an integer over a power of two, so
+its bytes are identical on every platform and a hash of it can be evidence. It
+is reachable only from a debug JNI test seam and no product path calls it.
 
 ## Current boundaries
 

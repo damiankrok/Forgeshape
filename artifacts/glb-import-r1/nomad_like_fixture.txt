@@ -1,0 +1,16 @@
+# GLB-IMPORT-R1 Nomad-like compatibility fixture
+# Synthetic. NOT the owner's `1 lowpoly.glb`; it reproduces the
+# structural feature set of that file, not its geometry.
+
+bytes=111628
+sha256=b2dcd36d6b2e33cebe78b1b730f0c26cf7baf39ee12e4e4a2cd8cdc454891f51
+meshes=1
+vertices=1978
+triangles=3780
+primitives=7
+world_min=-1.210938,-0.913574,-2.655762
+world_max=2.210938,4.925293,1.346436
+node_transform=matrix (column-major, non-orthogonal, non-uniform)
+normals=generated (the file states none)
+ignored_attributes=COLOR_0,COLOR_1,TEXCOORD_0
+double_sided=true

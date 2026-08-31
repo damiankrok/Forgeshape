@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "forgeshape_construction.h"
+#include "forgeshape_glb_import_fixture.h"
 #include "forgeshape_glb_roundtrip.h"
 #include "forgeshape_gltf_export.h"
 #include "forgeshape_gltf_import.h"
@@ -155,6 +156,169 @@ GlbImportStatus importOf(const std::vector<uint8_t>& glb) {
     return importGlb(glb.data(), glb.size(), &scene);
 }
 
+// A hand-built GLB, for the R1 cases a ForgeShape export cannot produce.
+//
+// The exporter writes one primitive, always with NORMAL, always with uint32
+// indices and never with a node matrix, so editing its output cannot reach a
+// shared POSITION accessor, a uint16 index buffer, a double-sided material or a
+// mesh with no normals at all. This builder can, and it deliberately shares
+// nothing with either the exporter or the fixture builder: it exists to state
+// one awkward file per case.
+struct MiniGlbSpec {
+    std::vector<float> positions;               // xyz triples
+    std::vector<float> normals;                 // empty means "no NORMAL"
+    std::vector<std::vector<uint32_t>> primitives;  // one index list per primitive
+    std::vector<bool> doubleSided;              // parallel to `primitives`
+    bool uint16Indices = false;
+    // Extra members for the node object, e.g. `,"matrix":[...]`. Empty means a
+    // node with no transform at all, which glTF says is the identity.
+    std::string nodeMembers;
+};
+
+std::vector<uint8_t> buildMiniGlb(const MiniGlbSpec& spec) {
+    std::vector<uint8_t> bin;
+    const auto appendU32 = [&bin](uint32_t value) {
+        for (int shift = 0; shift < 32; shift += 8) {
+            bin.push_back(static_cast<uint8_t>((value >> shift) & 0xFFu));
+        }
+    };
+    const auto appendF32 = [&appendU32](float value) {
+        uint32_t bits = 0;
+        std::memcpy(&bits, &value, sizeof(bits));
+        appendU32(bits);
+    };
+    const auto pad = [&bin]() {
+        while ((bin.size() % 4u) != 0u) {
+            bin.push_back(0u);
+        }
+    };
+
+    const uint32_t positionOffset = 0;
+    for (float value : spec.positions) {
+        appendF32(value);
+    }
+    const uint32_t positionLength = static_cast<uint32_t>(bin.size());
+    const uint32_t normalOffset = static_cast<uint32_t>(bin.size());
+    for (float value : spec.normals) {
+        appendF32(value);
+    }
+    const uint32_t normalLength = static_cast<uint32_t>(bin.size()) - normalOffset;
+
+    std::vector<uint32_t> indexOffset;
+    std::vector<uint32_t> indexLength;
+    for (const std::vector<uint32_t>& indices : spec.primitives) {
+        pad();
+        indexOffset.push_back(static_cast<uint32_t>(bin.size()));
+        for (uint32_t index : indices) {
+            if (spec.uint16Indices) {
+                bin.push_back(static_cast<uint8_t>(index & 0xFFu));
+                bin.push_back(static_cast<uint8_t>((index >> 8) & 0xFFu));
+            } else {
+                appendU32(index);
+            }
+        }
+        indexLength.push_back(static_cast<uint32_t>(bin.size()) - indexOffset.back());
+    }
+    pad();
+
+    const uint32_t vertexCount = static_cast<uint32_t>(spec.positions.size() / 3u);
+    const bool hasNormals = !spec.normals.empty();
+    const uint32_t firstIndexAccessor = hasNormals ? 2u : 1u;
+
+    std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,"
+                       "\"scenes\":[{\"nodes\":[0]}],\"nodes\":[{\"mesh\":0";
+    json += spec.nodeMembers;
+    json += "}],\"materials\":[{\"doubleSided\":false},{\"doubleSided\":true}],"
+            "\"meshes\":[{\"primitives\":[";
+    char text[256];
+    for (size_t p = 0; p < spec.primitives.size(); ++p) {
+        if (p != 0) {
+            json += ",";
+        }
+        json += "{\"attributes\":{\"POSITION\":0";
+        if (hasNormals) {
+            json += ",\"NORMAL\":1";
+        }
+        std::snprintf(text, sizeof(text), "},\"indices\":%u,\"material\":%d,\"mode\":4}",
+                      firstIndexAccessor + static_cast<uint32_t>(p),
+                      (p < spec.doubleSided.size() && spec.doubleSided[p]) ? 1 : 0);
+        json += text;
+    }
+    json += "]}],\"accessors\":[";
+    std::snprintf(text, sizeof(text),
+                  "{\"bufferView\":0,\"componentType\":5126,\"count\":%u,\"type\":\"VEC3\"}",
+                  vertexCount);
+    json += text;
+    if (hasNormals) {
+        std::snprintf(text, sizeof(text),
+                      ",{\"bufferView\":1,\"componentType\":5126,\"count\":%u,\"type\":\"VEC3\"}",
+                      vertexCount);
+        json += text;
+    }
+    for (size_t p = 0; p < spec.primitives.size(); ++p) {
+        std::snprintf(text, sizeof(text),
+                      ",{\"bufferView\":%u,\"componentType\":%d,\"count\":%u,\"type\":\"SCALAR\"}",
+                      firstIndexAccessor + static_cast<uint32_t>(p),
+                      spec.uint16Indices ? 5123 : 5125,
+                      static_cast<uint32_t>(spec.primitives[p].size()));
+        json += text;
+    }
+    json += "],\"bufferViews\":[";
+    std::snprintf(text, sizeof(text), "{\"buffer\":0,\"byteOffset\":%u,\"byteLength\":%u}",
+                  positionOffset, positionLength);
+    json += text;
+    if (hasNormals) {
+        std::snprintf(text, sizeof(text), ",{\"buffer\":0,\"byteOffset\":%u,\"byteLength\":%u}",
+                      normalOffset, normalLength);
+        json += text;
+    }
+    for (size_t p = 0; p < spec.primitives.size(); ++p) {
+        std::snprintf(text, sizeof(text), ",{\"buffer\":0,\"byteOffset\":%u,\"byteLength\":%u}",
+                      indexOffset[p], indexLength[p]);
+        json += text;
+    }
+    std::snprintf(text, sizeof(text), "],\"buffers\":[{\"byteLength\":%u}]}",
+                  static_cast<uint32_t>(bin.size()));
+    json += text;
+
+    std::vector<uint8_t> jsonChunk(json.begin(), json.end());
+    while ((jsonChunk.size() % 4u) != 0u) {
+        jsonChunk.push_back(static_cast<uint8_t>(' '));
+    }
+
+    std::vector<uint8_t> glb;
+    const auto appendHeader = [&glb](uint32_t value) {
+        for (int shift = 0; shift < 32; shift += 8) {
+            glb.push_back(static_cast<uint8_t>((value >> shift) & 0xFFu));
+        }
+    };
+    appendHeader(0x46546C67u);
+    appendHeader(2u);
+    appendHeader(static_cast<uint32_t>(12 + 8 + jsonChunk.size() + 8 + bin.size()));
+    appendHeader(static_cast<uint32_t>(jsonChunk.size()));
+    appendHeader(0x4E4F534Au);
+    glb.insert(glb.end(), jsonChunk.begin(), jsonChunk.end());
+    appendHeader(static_cast<uint32_t>(bin.size()));
+    appendHeader(0x004E4942u);
+    glb.insert(glb.end(), bin.begin(), bin.end());
+    return glb;
+}
+
+// A small asymmetric quad grid: four vertices, two triangles, no symmetry that
+// could let a wrong axis pass for a right one.
+MiniGlbSpec twoTriangleSheet() {
+    MiniGlbSpec spec;
+    spec.positions = {
+        0.0f, 0.0f, 0.0f,
+        2.0f, 0.0f, 0.0f,
+        2.0f, 0.0f, 1.0f,
+        0.0f, 0.0f, 1.0f,
+    };
+    spec.primitives = {{0u, 1u, 2u}, {0u, 2u, 3u}};
+    spec.doubleSided = {false, false};
+    return spec;
+}
+
 }  // namespace
 
 int runGltfImportSelfTests(GltfImportSelfTestResult* out, int maxOut) {
@@ -293,13 +457,19 @@ int runGltfImportSelfTests(GltfImportSelfTestResult* out, int maxOut) {
             }
             r.check("GLBIR0_04_every_decoded_index_is_in_range", indicesInRange);
 
-            // World = translation * local, which is the whole transform R0
-            // supports and the identity the roundtrip rests on.
+            // R1 BAKES the node transform, so the positions are already world
+            // space and the box's centre sits at the node's translation. The
+            // extents checked above are unaffected by a translation, which is
+            // what makes them a decode check rather than a placement one.
+            float centre[3] = {(min[0] + max[0]) * 0.5f, (min[1] + max[1]) * 0.5f,
+                               (min[2] + max[2]) * 0.5f};
+            r.check("GLBIR0_05_the_node_translation_is_baked_into_the_positions",
+                    std::fabs(centre[0] - 1.5f) < 1e-5f && std::fabs(centre[1] + 0.5f) < 1e-5f
+                            && std::fabs(centre[2] - 2.25f) < 1e-5f);
             const Vec3 world = mesh.worldPosition(0);
-            r.check("GLBIR0_05_world_position_is_local_plus_translation",
-                    std::fabs(world.x - (mesh.positions[0] + 1.5f)) < 1e-5f
-                            && std::fabs(world.y - (mesh.positions[1] - 0.5f)) < 1e-5f
-                            && std::fabs(world.z - (mesh.positions[2] + 2.25f)) < 1e-5f);
+            r.check("GLBIR0_05_world_position_reads_the_baked_position",
+                    world.x == mesh.positions[0] && world.y == mesh.positions[1]
+                            && world.z == mesh.positions[2]);
         }
 
         // GLBIR0-03: the container is validated independently and fails closed.
@@ -335,13 +505,22 @@ int runGltfImportSelfTests(GltfImportSelfTestResult* out, int maxOut) {
             GlbImportStatus expected;
         };
         const Case cases[] = {
-            {"GLBIR0_06_a_node_matrix_is_refused", "\"translation\":",
-             "\"matrix\":[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1],\"unused\":",
-             GlbImportStatus::NodeMatrix},
-            {"GLBIR0_06_a_non_identity_node_rotation_is_refused", "\"translation\":",
-             "\"rotation\":[0,0.7,0,0.7],\"translation\":", GlbImportStatus::NodeRotation},
-            {"GLBIR0_06_a_non_identity_node_scale_is_refused", "\"translation\":",
-             "\"scale\":[2,2,2],\"translation\":", GlbImportStatus::NodeScale},
+            // R1 accepts a node matrix and a node TRS, so what stays refused is
+            // stating BOTH: glTF forbids it, and which one wins is not a guess
+            // a diagnostic may make for the user.
+            {"GLBIR1_02_a_node_stating_both_a_matrix_and_a_trs_is_refused", "\"translation\":",
+             "\"matrix\":[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1],\"translation\":",
+             GlbImportStatus::NodeTransformConflict},
+            {"GLBIR1_04_a_non_finite_node_scale_is_refused", "\"translation\":",
+             "\"scale\":[2,1e400,2],\"translation\":", GlbImportStatus::MalformedJson},
+            {"GLBIR1_04_a_zero_node_scale_is_refused", "\"translation\":",
+             "\"scale\":[2,0,2],\"translation\":", GlbImportStatus::SingularNodeTransform},
+            {"GLBIR1_04_a_flattened_node_matrix_is_refused", "\"translation\":",
+             "\"matrix\":[1,0,0,0,0,0,0,0,0,0,1,0,0,0,0,1],\"unused\":",
+             GlbImportStatus::SingularNodeTransform},
+            {"GLBIR1_04_a_non_affine_node_matrix_is_refused", "\"translation\":",
+             "\"matrix\":[1,0,0,0.5,0,1,0,0,0,0,1,0,0,0,0,1],\"unused\":",
+             GlbImportStatus::SingularNodeTransform},
             {"GLBIR0_06_a_node_with_children_is_refused", "\"translation\":",
              "\"children\":[0],\"translation\":", GlbImportStatus::NodeHierarchy},
             {"GLBIR0_07_an_external_buffer_uri_is_refused", "\"buffers\":[{",
@@ -363,8 +542,13 @@ int runGltfImportSelfTests(GltfImportSelfTestResult* out, int maxOut) {
              "\"images\":[{\"uri\":\"t.png\"}],\"asset\":", GlbImportStatus::ExternalBuffer},
             {"GLBIR0_07_a_missing_POSITION_is_refused", "\"POSITION\"", "\"POSITION_X\"",
              GlbImportStatus::MissingAttribute},
-            {"GLBIR0_07_a_missing_NORMAL_is_refused", "\"NORMAL\"", "\"NORMAL_X\"",
-             GlbImportStatus::MissingAttribute},
+            // R1 generates a missing NORMAL; what stays refused is an
+            // attribute this reader has never heard of, because silently
+            // dropping one would be reporting on a file it had not understood.
+            {"GLBIR1_12_an_unknown_custom_attribute_is_refused", "\"NORMAL\"", "\"_NOMAD_TAG\"",
+             GlbImportStatus::UnknownAttribute},
+            {"GLBIR1_08_a_non_indexed_primitive_is_refused", "\"indices\"", "\"indices_x\"",
+             GlbImportStatus::NonIndexedPrimitive},
             {"GLBIR0_07_an_unsupported_asset_version_is_refused", "\"version\":\"2.0\"",
              "\"version\":\"1.0\"", GlbImportStatus::UnsupportedAssetVersion},
             {"GLBIR0_07_an_interleaved_buffer_view_is_refused", "\"byteLength\":",
@@ -542,13 +726,23 @@ int runGltfImportSelfTests(GltfImportSelfTestResult* out, int maxOut) {
         r.check("GLBIR0_08_the_preview_has_no_construction_or_sculpt_representation",
                 !f.first().frozenSculpt().mesh.frozen());
 
-        // The node transform is the file's translation and nothing else.
+        // The node transform is BAKED, so the draw item's model is identity and
+        // the file's translation is in the vertices. One placement, in one
+        // place: nothing downstream can apply it twice or forget it.
         const SceneDrawItem& item = preview.snapshot()[0];
-        r.check("GLBIR0_08_the_draw_item_carries_the_files_translation",
-                item.model.m[12] == 1.0f && item.model.m[13] == 2.0f && item.model.m[14] == 3.0f);
-        r.check("GLBIR0_08_and_an_identity_normal_matrix_because_a_translation_turns_nothing",
+        r.check("GLBIR0_08_the_draw_item_model_is_identity_because_the_transform_is_baked",
+                item.model.m[12] == 0.0f && item.model.m[13] == 0.0f && item.model.m[14] == 0.0f
+                        && item.model.m[0] == 1.0f && item.model.m[5] == 1.0f
+                        && item.model.m[10] == 1.0f);
+        r.check("GLBIR0_08_and_an_identity_normal_matrix_for_the_same_reason",
                 item.normalModel.m[0] == 1.0f && item.normalModel.m[5] == 1.0f
                         && item.normalModel.m[10] == 1.0f && item.normalModel.m[1] == 0.0f);
+        bool bakedIntoVertices = false;
+        for (uint32_t v = 0; v < imported.meshes[0].vertexCount(); ++v) {
+            const Vec3 world = imported.meshes[0].worldPosition(v);
+            bakedIntoVertices = bakedIntoVertices || (world.y > 2.0f && world.z > 2.0f);
+        }
+        r.check("GLBIR0_08_and_the_files_translation_is_in_the_vertices", bakedIntoVertices);
 
         // GLBIR0-12: Clear releases everything and cannot leave a visible
         // preview behind.
@@ -569,6 +763,334 @@ int runGltfImportSelfTests(GltfImportSelfTestResult* out, int maxOut) {
     }
 
     // -----------------------------------------------------------------------
+    // GLBIR1-01/03/06/07/12/14/19: the Nomad-like external fixture
+    //
+    // Structurally the owner's low-poly character: a node matrix, seven
+    // TRIANGLES primitives over ONE shared POSITION accessor, no NORMAL,
+    // COLOR_0/COLOR_1/TEXCOORD_0 present, one double-sided material, `extras`
+    // at three levels. It is not the owner's file and claims to be nothing but
+    // the same shape of problem.
+    // -----------------------------------------------------------------------
+    {
+        const std::vector<uint8_t> fixture = buildNomadLikeGlbFixture();
+        ImportedScene imported;
+        const GlbImportStatus why = importGlb(fixture.data(), fixture.size(), &imported);
+        r.check("GLBIR1_19_the_nomad_like_fixture_imports", why == GlbImportStatus::Ok);
+        r.check("GLBIR1_19_it_is_one_node_and_one_mesh", imported.meshes.size() == 1);
+
+        if (imported.meshes.size() == 1) {
+            const ImportedMesh& mesh = imported.meshes[0];
+            // GLBIR1-06/07: every primitive survived, and a shared POSITION
+            // accessor was decoded ONCE. Decoding it per primitive would
+            // report seven times the vertices the file contains.
+            r.check("GLBIR1_06_all_seven_primitives_survive",
+                    mesh.batches.size() == kNomadLikeFixturePrimitives);
+            r.check("GLBIR1_07_a_shared_POSITION_accessor_is_decoded_once",
+                    mesh.vertexCount() == kNomadLikeFixtureVertices);
+            r.check("GLBIR1_06_every_triangle_survives",
+                    mesh.triangleCount() == kNomadLikeFixtureTriangles);
+            uint32_t batched = 0;
+            bool contiguous = true;
+            for (size_t b = 0; b < mesh.batches.size(); ++b) {
+                contiguous = contiguous && mesh.batches[b].firstIndex == batched;
+                batched += mesh.batches[b].indexCount;
+            }
+            r.check("GLBIR1_06_the_batches_tile_the_index_array_exactly",
+                    contiguous && batched == mesh.indices.size());
+            r.check("GLBIR1_13_the_fixtures_material_is_double_sided",
+                    !mesh.batches.empty() && mesh.batches[0].doubleSided);
+
+            // GLBIR1-03: glTF states a node matrix COLUMN-MAJOR, and Mat4 is
+            // laid out the same way, so this is a copy. A transposed read
+            // would put zero in the translation column and move every vertex.
+            r.check("GLBIR1_03_the_matrix_translation_column_is_read_as_a_column",
+                    mesh.nodeTransform.m[12] == 0.5f && mesh.nodeTransform.m[13] == 1.25f
+                            && mesh.nodeTransform.m[14] == -0.75f);
+            // Vertex 0 is local (-1.40625, 0, -1.3125). Through the fixture's
+            // matrix that is exactly (-1.2109375, 1.2265625, -1.6875); through
+            // its transpose it is somewhere else entirely.
+            const Vec3 first = mesh.worldPosition(0);
+            r.check("GLBIR1_01_the_node_matrix_is_baked_into_the_positions",
+                    std::fabs(first.x + 1.2109375f) < 1e-5f
+                            && std::fabs(first.y - 1.2265625f) < 1e-5f
+                            && std::fabs(first.z + 1.6875f) < 1e-5f);
+            r.check("GLBIR1_05_a_positive_determinant_needs_no_winding_correction",
+                    !mesh.windingCorrected);
+            // GLBIR1-09: no NORMAL in the file, so every normal was generated.
+            r.check("GLBIR1_09_the_fixture_carries_no_NORMAL_so_normals_were_generated",
+                    mesh.normalsGenerated
+                            && mesh.normals.size() == mesh.positions.size());
+            bool generatedAreUnit = mesh.vertexCount() > 0;
+            for (uint32_t v = 0; v < mesh.vertexCount() && generatedAreUnit; ++v) {
+                const Vec3 normal = mesh.worldNormal(v);
+                const float length = std::sqrt(vec3Dot(normal, normal));
+                generatedAreUnit = std::isfinite(length) && std::fabs(length - 1.0f) < 1e-3f;
+            }
+            r.check("GLBIR1_09_every_generated_normal_is_finite_and_unit_length",
+                    generatedAreUnit);
+            // GLBIR1-14: the file's `extras` reached nothing. There is no field
+            // on ImportedMesh that could hold it, and the only string it takes
+            // from the node is the name.
+            r.check("GLBIR1_14_extras_are_ignored_and_only_the_node_name_is_kept",
+                    mesh.name == "NomadLikeFixture");
+        }
+
+        // Deterministic: the same build always writes the same bytes, which is
+        // what lets a hash of this fixture be evidence.
+        r.check("GLBIR1_19_the_fixture_is_byte_deterministic",
+                buildNomadLikeGlbFixture() == fixture);
+
+        // GLBIR1-19: it draws, as seven batches over one vertex array.
+        ImportedMeshPreview preview;
+        r.check("GLBIR1_19_the_fixture_loads_as_a_preview", preview.load(imported));
+        r.check("GLBIR1_19_one_draw_batch_per_primitive",
+                preview.batchCount() == kNomadLikeFixturePrimitives
+                        && preview.meshCount() == 1);
+        r.check("GLBIR1_19_the_reported_counts_are_the_files_own",
+                preview.vertexCount() == kNomadLikeFixtureVertices
+                        && preview.triangleCount() == kNomadLikeFixtureTriangles);
+        bool everyBatchIsDoubleSided = preview.batchCount() > 0;
+        bool reservedKeys = !preview.snapshot().empty();
+        for (const SceneDrawItem& item : preview.snapshot()) {
+            everyBatchIsDoubleSided =
+                    everyBatchIsDoubleSided && item.mesh != nullptr
+                    && item.mesh->renderBothSides();
+            reservedKeys = reservedKeys && previewRenderKeyIsReserved(item.objectId)
+                    && item.model.m[12] == 0.0f && !item.selected;
+        }
+        r.check("GLBIR1_13_a_double_sided_material_reaches_preview_culling",
+                everyBatchIsDoubleSided);
+        r.check("GLBIR1_19_every_batch_key_is_reserved_and_carries_an_identity_model",
+                reservedKeys);
+
+        // GLBIR1-12/15: what the fixture proves about refusals.
+        const std::string json = jsonOf(fixture);
+        r.check("GLBIR1_12_the_fixture_json_was_recovered", !json.empty());
+        struct FixtureCase {
+            const char* name;
+            std::string find;
+            std::string replace;
+            GlbImportStatus expected;
+        };
+        const FixtureCase fixtureCases[] = {
+            {"GLBIR1_12_a_colour_accessor_that_does_not_exist_is_refused", "\"COLOR_0\":1",
+             "\"COLOR_0\":99", GlbImportStatus::AccessorOutOfRange},
+            {"GLBIR1_12_a_colour_accessor_that_disagrees_on_count_is_refused",
+             "\"componentType\":5123,\"normalized\":true,\"count\":1978",
+             "\"componentType\":5123,\"normalized\":true,\"count\":1977",
+             GlbImportStatus::CountMismatch},
+            {"GLBIR1_15_a_required_compression_extension_is_still_refused", "\"asset\":",
+             "\"extensionsRequired\":[\"KHR_draco_mesh_compression\"],\"asset\":",
+             GlbImportStatus::UnsupportedExtension},
+            {"GLBIR1_15_meshopt_compression_is_still_refused", "\"asset\":",
+             "\"extensionsRequired\":[\"EXT_meshopt_compression\"],\"asset\":",
+             GlbImportStatus::UnsupportedExtension},
+            {"GLBIR1_15_animation_is_still_refused", "\"asset\":",
+             "\"animations\":[{}],\"asset\":", GlbImportStatus::HasAnimation},
+            {"GLBIR1_15_skinning_is_still_refused", "\"asset\":", "\"skins\":[{}],\"asset\":",
+             GlbImportStatus::HasSkin},
+            {"GLBIR1_15_morph_targets_are_still_refused", "\"attributes\":",
+             "\"targets\":[{}],\"attributes\":", GlbImportStatus::MorphTargets},
+            {"GLBIR1_15_an_external_buffer_is_still_refused", "\"buffers\":[{",
+             "\"buffers\":[{\"uri\":\"data.bin\",", GlbImportStatus::ExternalBuffer},
+            {"GLBIR1_15_an_image_is_still_refused", "\"asset\":",
+             "\"images\":[{\"uri\":\"t.png\"}],\"asset\":", GlbImportStatus::ExternalBuffer},
+            {"GLBIR1_15_child_nodes_are_refused_by_name_not_flattened", "\"mesh\":0",
+             "\"children\":[0],\"mesh\":0", GlbImportStatus::NodeHierarchy},
+        };
+        for (const FixtureCase& c : fixtureCases) {
+            const std::string edited = replaceFirst(json, c.find, c.replace);
+            const std::vector<uint8_t> rebuilt = withJson(fixture, edited);
+            r.check(c.name,
+                    edited != json && !rebuilt.empty() && importOf(rebuilt) == c.expected);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // GLBIR1-02/05/08/09/10/11/13: the awkward files an export cannot produce
+    // -----------------------------------------------------------------------
+    {
+        // GLBIR1-02: TRS composes as T * R * S, not in any other order. A
+        // 90-degree turn about Y with a 2x stretch on local X sends local
+        // (2,0,0) to (1,2,-1) and local (0,0,1) to (2,2,3); every other
+        // composition order sends them somewhere else.
+        MiniGlbSpec trs = twoTriangleSheet();
+        trs.nodeMembers =
+                ",\"translation\":[1,2,3],\"rotation\":[0,0.7071067811865476,0,"
+                "0.7071067811865476],\"scale\":[2,1,1]";
+        ImportedScene composed;
+        const std::vector<uint8_t> trsGlb = buildMiniGlb(trs);
+        const GlbImportStatus trsWhy =
+                importGlb(trsGlb.data(), trsGlb.size(), &composed);
+        r.check("GLBIR1_02_a_trs_node_imports", trsWhy == GlbImportStatus::Ok
+                        && composed.meshes.size() == 1);
+        if (composed.meshes.size() == 1) {
+            const Vec3 stretched = composed.meshes[0].worldPosition(1);
+            const Vec3 turned = composed.meshes[0].worldPosition(3);
+            r.check("GLBIR1_02_trs_composes_as_translation_rotation_scale",
+                    std::fabs(stretched.x - 1.0f) < 1e-5f
+                            && std::fabs(stretched.y - 2.0f) < 1e-5f
+                            && std::fabs(stretched.z + 1.0f) < 1e-5f
+                            && std::fabs(turned.x - 2.0f) < 1e-5f
+                            && std::fabs(turned.y - 2.0f) < 1e-5f
+                            && std::fabs(turned.z - 3.0f) < 1e-5f);
+        }
+
+        // A node with no transform members at all is the identity, and the
+        // positions come through untouched.
+        MiniGlbSpec plain = twoTriangleSheet();
+        ImportedScene untransformed;
+        {
+            const std::vector<uint8_t> glb = buildMiniGlb(plain);
+            r.check("GLBIR1_02_a_node_with_no_transform_is_the_identity",
+                    importGlb(glb.data(), glb.size(), &untransformed) == GlbImportStatus::Ok
+                            && untransformed.meshes.size() == 1
+                            && untransformed.meshes[0].worldPosition(1).x == 2.0f
+                            && untransformed.meshes[0].worldPosition(1).z == 0.0f);
+        }
+
+        // GLBIR1-05: a negative determinant mirrors the geometry, so the bake
+        // corrects the winding rather than leaving every face pointing inward.
+        MiniGlbSpec mirrored = twoTriangleSheet();
+        mirrored.nodeMembers = ",\"scale\":[-1,1,1]";
+        ImportedScene flipped;
+        {
+            const std::vector<uint8_t> glb = buildMiniGlb(mirrored);
+            const bool ok =
+                    importGlb(glb.data(), glb.size(), &flipped) == GlbImportStatus::Ok
+                    && flipped.meshes.size() == 1;
+            bool swapped = ok && untransformed.meshes.size() == 1
+                    && flipped.meshes[0].indices.size()
+                            == untransformed.meshes[0].indices.size();
+            for (size_t t = 0; swapped && t + 2 < flipped.meshes[0].indices.size(); t += 3) {
+                const std::vector<uint32_t>& was = untransformed.meshes[0].indices;
+                const std::vector<uint32_t>& now = flipped.meshes[0].indices;
+                swapped = now[t] == was[t] && now[t + 1] == was[t + 2]
+                        && now[t + 2] == was[t + 1];
+            }
+            r.check("GLBIR1_05_a_negative_determinant_corrects_the_winding",
+                    ok && flipped.meshes[0].windingCorrected && swapped);
+            r.check("GLBIR1_05_and_mirrors_the_positions_it_was_told_to",
+                    ok && std::fabs(flipped.meshes[0].worldPosition(1).x + 2.0f) < 1e-5f);
+        }
+
+        // GLBIR1-08: uint16 indices decode, and an index naming a vertex that
+        // does not exist is caught by the reader rather than by the renderer.
+        MiniGlbSpec small = twoTriangleSheet();
+        small.uint16Indices = true;
+        {
+            const std::vector<uint8_t> glb = buildMiniGlb(small);
+            ImportedScene scene;
+            r.check("GLBIR1_08_uint16_indices_decode",
+                    importGlb(glb.data(), glb.size(), &scene) == GlbImportStatus::Ok
+                            && scene.meshes.size() == 1
+                            && scene.meshes[0].triangleCount() == 2);
+        }
+        {
+            MiniGlbSpec outOfRange = twoTriangleSheet();
+            outOfRange.primitives[1] = {0u, 2u, 9u};
+            const std::vector<uint8_t> glb = buildMiniGlb(outOfRange);
+            r.check("GLBIR1_08_an_index_past_the_last_vertex_is_refused",
+                    importOf(glb) == GlbImportStatus::IndexOutOfRange);
+        }
+        {
+            MiniGlbSpec notTriangles = twoTriangleSheet();
+            notTriangles.primitives[1] = {0u, 2u};
+            const std::vector<uint8_t> glb = buildMiniGlb(notTriangles);
+            r.check("GLBIR1_08_an_index_count_that_is_not_triangles_is_refused",
+                    importOf(glb) == GlbImportStatus::IndexCountNotTriangles);
+        }
+
+        // GLBIR1-09: generation is deterministic and area-weighted. The sheet
+        // lies in the XZ plane, so every generated normal is exactly -Y.
+        {
+            const std::vector<uint8_t> glb = buildMiniGlb(plain);
+            ImportedScene once;
+            ImportedScene twice;
+            const bool ok = importGlb(glb.data(), glb.size(), &once) == GlbImportStatus::Ok
+                    && importGlb(glb.data(), glb.size(), &twice) == GlbImportStatus::Ok;
+            r.check("GLBIR1_09_generated_normals_are_deterministic",
+                    ok && once.meshes[0].normals == twice.meshes[0].normals);
+            bool flat = ok && once.meshes[0].normalsGenerated;
+            for (uint32_t v = 0; flat && v < once.meshes[0].vertexCount(); ++v) {
+                const Vec3 normal = once.meshes[0].worldNormal(v);
+                flat = std::fabs(normal.x) < 1e-6f && std::fabs(normal.y + 1.0f) < 1e-6f
+                        && std::fabs(normal.z) < 1e-6f;
+            }
+            r.check("GLBIR1_09_a_flat_sheet_generates_one_flat_normal", flat);
+        }
+
+        // GLBIR1-10: a SUPPLIED normal rides the inverse transpose, not the
+        // transform. Under a 4x stretch on Y, a normal at 45 degrees leans
+        // towards X; multiplying by the transform would lean it towards Y
+        // instead, which is the classic non-uniform-scale shading defect.
+        {
+            MiniGlbSpec supplied = twoTriangleSheet();
+            const float diagonal = 0.70710678f;
+            supplied.normals.clear();
+            for (int v = 0; v < 4; ++v) {
+                supplied.normals.push_back(diagonal);
+                supplied.normals.push_back(diagonal);
+                supplied.normals.push_back(0.0f);
+            }
+            supplied.nodeMembers = ",\"scale\":[1,4,1]";
+            const std::vector<uint8_t> glb = buildMiniGlb(supplied);
+            ImportedScene scene;
+            const bool ok = importGlb(glb.data(), glb.size(), &scene) == GlbImportStatus::Ok
+                    && scene.meshes.size() == 1;
+            const Vec3 normal = ok ? scene.meshes[0].worldNormal(0) : Vec3{0.0f, 0.0f, 0.0f};
+            r.check("GLBIR1_10_a_supplied_normal_rides_the_inverse_transpose",
+                    ok && !scene.meshes[0].normalsGenerated && normal.x > 0.9f
+                            && normal.y > 0.0f && normal.y < 0.3f);
+            r.check("GLBIR1_10_and_is_normalized_after_it",
+                    ok && std::fabs(std::sqrt(vec3Dot(normal, normal)) - 1.0f) < 1e-5f);
+        }
+
+        // GLBIR1-11: a vertex whose triangles are all degenerate has no
+        // direction to be normal to. Fail closed by name rather than write a
+        // NaN or an invented default into the geometry.
+        {
+            MiniGlbSpec degenerate;
+            degenerate.positions = {1.0f, 2.0f, 3.0f, 1.0f, 2.0f, 3.0f, 1.0f, 2.0f, 3.0f};
+            degenerate.primitives = {{0u, 1u, 2u}};
+            degenerate.doubleSided = {false};
+            const std::vector<uint8_t> glb = buildMiniGlb(degenerate);
+            r.check("GLBIR1_11_a_wholly_degenerate_triangle_cannot_generate_a_normal",
+                    importOf(glb) == GlbImportStatus::CannotGenerateNormals);
+        }
+        {
+            MiniGlbSpec zeroNormals = twoTriangleSheet();
+            zeroNormals.normals.assign(12, 0.0f);
+            const std::vector<uint8_t> glb = buildMiniGlb(zeroNormals);
+            r.check("GLBIR1_11_a_supplied_zero_normal_is_refused_by_the_same_name",
+                    importOf(glb) == GlbImportStatus::CannotGenerateNormals);
+        }
+
+        // GLBIR1-13: doubleSided is per PRIMITIVE, and one mesh must be able to
+        // hold both answers at once.
+        {
+            MiniGlbSpec mixed = twoTriangleSheet();
+            mixed.doubleSided = {true, false};
+            const std::vector<uint8_t> glb = buildMiniGlb(mixed);
+            ImportedScene scene;
+            const bool ok = importGlb(glb.data(), glb.size(), &scene) == GlbImportStatus::Ok
+                    && scene.meshes.size() == 1 && scene.meshes[0].batches.size() == 2;
+            r.check("GLBIR1_13_double_sidedness_is_read_per_primitive",
+                    ok && scene.meshes[0].batches[0].doubleSided
+                            && !scene.meshes[0].batches[1].doubleSided);
+            ImportedMeshPreview preview;
+            const bool loaded = ok && preview.load(scene);
+            r.check("GLBIR1_13_and_each_batch_culls_its_own_way",
+                    loaded && preview.batchCount() == 2
+                            && preview.snapshot()[0].mesh->renderBothSides()
+                            && !preview.snapshot()[1].mesh->renderBothSides());
+            r.check("GLBIR1_13_while_the_reported_vertex_count_stays_the_files_own",
+                    loaded && preview.vertexCount() == 4 && preview.triangleCount() == 2
+                            && preview.meshCount() == 1);
+        }
+    }
+
+    // -----------------------------------------------------------------------
     // GLBIR0-20: the scope boundary, stated as a check
     // -----------------------------------------------------------------------
     {
@@ -579,8 +1101,18 @@ int runGltfImportSelfTests(GltfImportSelfTestResult* out, int maxOut) {
                                 == "ExternalBuffer"
                         && std::string(glbImportStatusName(GlbImportStatus::HasAnimation))
                                 == "HasAnimation"
-                        && std::string(glbImportStatusName(GlbImportStatus::NodeMatrix))
-                                == "NodeMatrix"
+                        && std::string(glbImportStatusName(GlbImportStatus::NodeTransformConflict))
+                                == "NodeTransformConflict"
+                        && std::string(glbImportStatusName(
+                                   GlbImportStatus::SingularNodeTransform))
+                                == "SingularNodeTransform"
+                        && std::string(glbImportStatusName(
+                                   GlbImportStatus::CannotGenerateNormals))
+                                == "CannotGenerateNormals"
+                        && std::string(glbImportStatusName(GlbImportStatus::UnknownAttribute))
+                                == "UnknownAttribute"
+                        && std::string(glbImportStatusName(GlbImportStatus::NonIndexedPrimitive))
+                                == "NonIndexedPrimitive"
                         && std::string(glbImportStatusName(GlbImportStatus::SparseAccessor))
                                 == "SparseAccessor");
         r.check("GLBIR0_20_every_verdict_has_a_name",

@@ -750,12 +750,12 @@ final class NativeViewport {
     static native byte[] exportGlb();
 
     // ---------------------------------------------------------------------
-    // GLB-IMPORT-R0 — the diagnostic imported mesh preview
+    // GLB-IMPORT-R0/R1 — the diagnostic imported mesh preview
     //
-    // A DIAGNOSTIC, not import. It reads a `.glb` — in practice one ForgeShape
-    // itself wrote — with a parser that shares nothing with the writer, and
-    // shows the result in the viewport so the geometry in the FILE can be
-    // compared with the geometry in the SCENE.
+    // A DIAGNOSTIC, not production import. It reads a `.glb` — one ForgeShape
+    // wrote, or an ordinary static mesh another tool wrote — with a parser that
+    // shares nothing with the writer, and shows the result in the viewport so
+    // the geometry in the FILE can be compared with the geometry in the SCENE.
     //
     // Nothing here is project truth. The preview has no ObjectId, no
     // Construction Source, no sculpt representation and no history; it is never
@@ -778,6 +778,20 @@ final class NativeViewport {
      */
     static native int importGlbPreview(byte[] bytes);
 
+    /**
+     * The bounded category of a refusal, for the one sentence the user is
+     * shown. The detailed reason stays a token in the log.
+     */
+    static final int IMPORT_CATEGORY_UNREADABLE = 0;
+    static final int IMPORT_CATEGORY_UNSUPPORTED = 1;
+    static final int IMPORT_CATEGORY_INCONSISTENT = 2;
+
+    /** @return the stable refusal token for a status ordinal, e.g. {@code HasSkin} */
+    static native String glbImportStatusToken(int status);
+
+    /** @return one of the {@code IMPORT_CATEGORY_*} values for a status ordinal */
+    static native int glbImportStatusCategory(int status);
+
     /** Forgets the preview and releases its meshes. Safe with none loaded. */
     static native void clearGlbPreview();
 
@@ -797,8 +811,50 @@ final class NativeViewport {
     /** @return whether the viewport is currently drawing the preview */
     static native boolean glbPreviewVisible();
 
-    /** Fills {@code out} with mesh, vertex and triangle counts. Zeros when empty. */
+    /**
+     * Fills {@code out} with the file's mesh, vertex and triangle counts and,
+     * when {@code out} is at least four long, the draw-batch count. Zeros when
+     * empty.
+     *
+     * <p>A batch is one TRIANGLES primitive. One mesh becomes several batches
+     * when the file states several primitives, and several primitives may share
+     * one POSITION accessor, so the batch count is a renderer fact and the
+     * other three are the file's.
+     */
     static native void glbPreviewCounts(int[] out);
+
+    /**
+     * Fills {@code out} with the preview's world bounds, min xyz then max xyz.
+     *
+     * <p>World, because the node transform is baked into the vertices — so
+     * these are the numbers that say a node matrix reached the geometry, and
+     * reached it the right way round.
+     *
+     * @return false when nothing is loaded, leaving {@code out} untouched
+     */
+    static native boolean glbPreviewBounds(float[] out);
+
+    /**
+     * DEBUG/TEST ONLY: whether every loaded preview batch renders both sides.
+     *
+     * <p>Verification infrastructure. The seam that decides culling is the
+     * published mesh's own two-sided flag, and a case has to be able to read
+     * it — a screenshot of a flat grey surface cannot tell a culled back face
+     * from a drawn one. Reads only; false with nothing loaded.
+     */
+    static native boolean debugPreviewRendersBothSides();
+
+    /**
+     * The deterministic Nomad-like compatibility fixture, as GLB bytes.
+     *
+     * <p>A TEST SEAM, not a product path — nothing in the app calls it. The
+     * owner's own low-poly character is external to this repository, so
+     * GLB-IMPORT-R1 is proven against a synthetic file carrying the same
+     * structural features: a node matrix, seven TRIANGLES primitives over one
+     * shared POSITION accessor, no NORMAL, ignored colour and UV attributes,
+     * and a double-sided material.
+     */
+    static native byte[] nomadLikeGlbFixture();
 
     /**
      * The roundtrip diagnostic: export the live scene, read the bytes back with

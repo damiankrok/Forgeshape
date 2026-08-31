@@ -113,22 +113,35 @@
     <string name="project_open_file">Open File…</string>
     <string name="project_share_diagnostics">Share Diagnostics…</string>
     <!--
-      GLB-IMPORT-R0. A DIAGNOSTIC, and the wording says so in every string: it
-      reads a `.glb` back to check what is in it, and what it shows is a preview
-      rather than anything the user can keep or change. "Import" alone would
-      promise a feature this is not — production import is post-MVP — so the
-      word never appears without "Preview" beside it.
+      GLB-IMPORT-R1 (`ARCH-OWNER-09`). The action reads an external `.glb` and
+      draws it, so it is named for what the user does — Import GLB — while
+      every other string in the group says PREVIEW, because that is what they
+      get: nothing here is kept, edited, saved or exported, and production
+      import stays post-MVP. The earlier "check an exported file" wording
+      described only the R0 case and read as a self-test rather than an action.
+
+      "Open File…" above and "Import GLB…" here are two different acts on two
+      different formats, and the wording has to keep them apart: Open File
+      opens a ForgeShape project, Import GLB previews somebody else's mesh.
     -->
-    <string name="preview_section">Check an exported file</string>
-    <string name="import_glb_preview">Open GLB to check…</string>
+    <string name="preview_section">Preview a GLB file</string>
+    <string name="import_glb_preview">Import GLB…</string>
     <string name="show_imported_preview">Show imported file</string>
     <string name="show_source_instead">Show my model</string>
-    <string name="clear_imported_preview">Close the check</string>
-    <string name="status_glb_preview_loaded">Read the file: %1$s. Showing it in place of your model; nothing was changed.</string>
-    <string name="status_glb_preview_failed">That file could not be read as a GLB (%1$s). Your model is unchanged.</string>
+    <string name="clear_imported_preview">Close preview</string>
+    <string name="status_glb_preview_loaded">Imported preview — %1$s. Showing it instead of your model; nothing was changed.</string>
+    <string name="status_glb_preview_failed">Could not preview that file — %1$s. Your model is unchanged.</string>
     <string name="status_glb_preview_showing">Showing the imported file. Your model is untouched.</string>
     <string name="status_glb_preview_source">Showing your model again.</string>
-    <string name="status_glb_preview_cleared">Closed the check. Your model is unchanged.</string>
+    <string name="status_glb_preview_cleared">Closed the preview. Your model is unchanged.</string>
+    <!--
+      The three bounded refusal categories. The precise reason is a stable
+      token in the log; these are the three things a person can actually do
+      something about.
+    -->
+    <string name="glb_refusal_unreadable">it is not a GLB this preview can open</string>
+    <string name="glb_refusal_unsupported">it uses glTF features this preview does not read</string>
+    <string name="glb_refusal_inconsistent">its geometry does not add up</string>
     <string name="status_project_copy_saved">Copy saved — %1$s. Your saved project is unchanged.</string>
     <string name="status_project_copy_failed">Could not write the copy. Your work is unchanged.</string>
     <string name="status_project_file_opened">Project opened from file — %1$s. Your saved project is unchanged until you save.</string>

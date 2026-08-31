@@ -22,9 +22,16 @@ import android.net.Uri;
  * current geometry for another tool to look at, which ForgeShape cannot read
  * back and does not pretend to.
  *
- * <p>What is still absent, deliberately: glTF/GLB <b>import</b>, OBJ, FBX, any
- * other interchange format, and any converter or menu entry that hints at one.
- * Those are separate pipelines with their own stages.
+ * <p>A `.glb` can also be read BACK, by the session-only Imported Mesh Preview
+ * (GLB-IMPORT-R1). That is a diagnostic and not the reverse of Export: what it
+ * produces has no identity, cannot be edited or saved, and is gone with the
+ * process. The two acts stay separate all the way down — a `.forge` never
+ * reaches the GLB parser and a `.glb` never reaches the `.forge` decoder.
+ *
+ * <p>What is still absent, deliberately: production glTF/GLB <b>import</b>
+ * (`IMPORT-01`), OBJ, FBX, any other interchange format, and any converter or
+ * menu entry that hints at one. Those are separate pipelines with their own
+ * stages.
  *
  * <p><b>The Uri stops here.</b> This class is the entire boundary: it turns a
  * {@code Uri} into a {@code byte[]} and a {@code byte[]} into a document the user
@@ -120,7 +127,12 @@ final class ProjectTransfer {
 
     /**
      * The intent that asks which `.glb` to read back for the diagnostic
-     * preview (GLB-IMPORT-R0).
+     * preview (GLB-IMPORT-R1).
+     *
+     * <p>A DIFFERENT act from {@link #openDocumentIntent()}: that one
+     * opens a ForgeShape project and makes it live, this one previews somebody
+     * else's mesh and changes nothing. Neither file ever reaches the other's
+     * decoder.
      *
      * <p>Permissive for the same reason the project open picker is: a provider
      * reports whatever type it likes for a `.glb`, frequently

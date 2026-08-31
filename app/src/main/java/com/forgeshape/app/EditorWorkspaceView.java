@@ -2651,10 +2651,12 @@ final class EditorWorkspaceView extends FrameLayout
     }
 
     // -----------------------------------------------------------------------
-    // GLB-IMPORT-R0 — the diagnostic imported mesh preview
+    // GLB-IMPORT-R0/R1 — the diagnostic imported mesh preview
     // -----------------------------------------------------------------------
     //
     // A diagnostic, and nothing below it creates, changes or saves anything.
+    // R1 widened what the PARSER reads — external static meshes, not only
+    // ForgeShape's own exports — and widened nothing here.
     // The preview lives in native session state, has no ObjectId, is never
     // encoded into `.forge` and is gone when the process is. Switching to it
     // and back is a change of what the viewport DRAWS and nothing else.
@@ -2699,10 +2701,16 @@ final class EditorWorkspaceView extends FrameLayout
             // Fail closed and say so. The project is untouched by construction:
             // a refused parse never reaches the preview, and the preview never
             // reaches the project.
+            //
+            // The user is shown one of three bounded categories, because those
+            // are the three things a person can act on. The precise reason is a
+            // stable token and goes to the diagnostics ring and the log, where
+            // somebody chasing a particular file can read it.
             Diagnostics.warn(DiagnosticLog.CAT_TRANSFER, "GLB_PREVIEW_REFUSED",
-                    "status=" + status);
+                    NativeViewport.glbImportStatusToken(status));
             showStatus(getContext().getString(R.string.status_glb_preview_failed,
-                    "code " + status), R.attr.fsTextError);
+                    getContext().getString(importRefusalCategory(status))),
+                    R.attr.fsTextError);
             refreshImportedPreviewControls();
             return;
         }
@@ -2735,6 +2743,26 @@ final class EditorWorkspaceView extends FrameLayout
                 R.attr.fsTextSecondary);
         refreshImportedPreviewControls();
         syncFromNative();
+    }
+
+    /**
+     * The bounded reason string for a refusal.
+     *
+     * <p>Three answers and no more: the file is not one this reader can open,
+     * it uses features the preview does not read, or its own geometry does not
+     * add up. Which one is the domain's decision — the mapping lives beside the
+     * status enum in C++, so the Android layer never has to know which refusal
+     * means what.
+     */
+    private static int importRefusalCategory(int status) {
+        switch (NativeViewport.glbImportStatusCategory(status)) {
+            case NativeViewport.IMPORT_CATEGORY_UNSUPPORTED:
+                return R.string.glb_refusal_unsupported;
+            case NativeViewport.IMPORT_CATEGORY_INCONSISTENT:
+                return R.string.glb_refusal_inconsistent;
+            default:
+                return R.string.glb_refusal_unreadable;
+        }
     }
 
     /** A short human summary of what was read, for the status line. */

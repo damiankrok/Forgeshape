@@ -21,15 +21,15 @@ import android.widget.TextView;
  * export, because Export is a different act with its own home in the Global
  * Toolbar. No New, no Save As and no recent list either.
  *
- * <p><b>The third group is a DIAGNOSTIC, not import.</b> It opens a `.glb` —
- * in practice one ForgeShape just wrote — reads it with a parser that shares
- * nothing with the writer, and shows the result in place of the model so the
- * two can be compared. What it produces is not an object: it cannot be
- * selected, edited, sculpted, saved, autosaved or exported, and it is gone when
- * the app restarts. Production import is post-MVP, and no row here suggests
- * otherwise — which is why every one of them says <i>check</i> or
- * <i>preview</i> and none says "import" on its own. OBJ and FBX remain absent
- * in both directions.
+ * <p><b>The third group is a DIAGNOSTIC, not production import.</b> It opens a
+ * `.glb` — one ForgeShape wrote, or an ordinary static mesh another tool wrote
+ * — reads it with a parser that shares nothing with the writer, and shows the
+ * result in place of the model so the two can be compared. What it produces is
+ * not an object: it cannot be selected, edited, sculpted, saved, autosaved or
+ * exported, and it is gone when the app restarts. The action is named for what
+ * the user does — <i>Import GLB…</i> — and every word around it says
+ * <i>preview</i>, because that is what they get. Production import
+ * (`IMPORT-01`) is post-MVP, and OBJ and FBX remain absent in both directions.
  *
  * <p>It is an {@link AnchoredSurfaceView} like every other context surface, and
  * it grows out of the control that opened it rather than sliding in from a

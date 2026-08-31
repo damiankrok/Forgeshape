@@ -152,10 +152,16 @@ is a value that can be read rather than only an assertion that failed.
   forever. A successful Recover starts a fresh session history exactly as Open
   does; a failed one changes nothing at all.
 - **The Imported Mesh Preview is a diagnostic, and diagnostics do not become
-  features.** `GLB-IMPORT-R0` (`ARCH-OWNER-08`) reads a `.glb` — in practice one
-  ForgeShape wrote — with a parser that shares nothing with the writer, and
-  draws it in the viewport so the geometry in the FILE can be compared with the
-  geometry in the SCENE. What it produces is **session-only**: no `ObjectId`
+  features.** `GLB-IMPORT-R0` (`ARCH-OWNER-08`) reads a `.glb` with a parser
+  that shares nothing with the writer and draws it in the viewport, so the
+  geometry in the FILE can be compared with the geometry in the SCENE.
+  `GLB-IMPORT-R1` (`ARCH-OWNER-09`) widens the readable subset to ordinary
+  STATIC external meshes — a node `matrix` or TRS, several TRIANGLES primitives
+  per mesh including ones sharing a POSITION accessor, a missing NORMAL that is
+  generated, colour and UV attributes that are validated and then ignored, and a
+  material's `doubleSided`, which reaches preview culling and nothing else. It
+  is still a diagnostic and it is still not production import. What it produces
+  is **session-only**: no `ObjectId`
   from the scene's allocator, no entry in `ConstructionScene`, no Construction
   Source, no Frozen Sculpt Mesh, no `MeshStore` publish, never a history step,
   never a `.forge` byte, never a checkpoint, never re-exported, never
@@ -163,11 +169,16 @@ is a value that can be read rather than only an assertion that failed.
   renderer is handed for a frame and never merges with the project snapshot,
   because a mixed list is a list somebody would eventually pick, save or export
   from. `previewRenderKeyIsReserved` marks the renderer keys, which are
-  resource keys and never identities. The parser supports exactly the subset
-  the exporter emits and **fails closed by name** on everything else —
-  including a node rotation, scale or matrix it will not silently ignore.
-  Production import is `IMPORT-01` and stays post-MVP; OBJ and FBX stay absent
-  in both directions.
+  resource keys and never identities. The node transform is BAKED into the
+  preview positions, so a draw item's model matrix is the identity and the
+  placement lives in one place; normals ride the inverse transpose, a negative
+  determinant corrects winding for the preview only, and no coordinate
+  conversion of any kind exists. Everything outside the subset **fails closed
+  by name** — a required extension, a sparse accessor, an interleaved view, an
+  external buffer, animation, skinning, morph targets, a non-triangle mode, a
+  node with children, a node stating both a `matrix` and a TRS, and any
+  attribute this reader has not been told it may ignore. Production import is
+  `IMPORT-01` and stays post-MVP; OBJ and FBX stay absent in both directions.
 - **A `Uri` never reaches the domain.** Scoped Storage transfer is
   ForgeShape's own project moving through the system's document UI, and
   `ProjectTransfer` is the whole boundary: it turns a `Uri` into bytes and

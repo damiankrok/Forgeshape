@@ -418,10 +418,14 @@ public final class ProjectTransferTest {
                     + transferWording, transferWording.contains(word));
         }
 
-        // And the diagnostic names itself as one. "Import" alone would promise
-        // the production feature this is not; every row is framed as a check.
-        assertTrue("the GLB row must be framed as a check, not as import: " + text,
-                text.contains("check"));
+        // And the GLB group names the act — Import GLB — while every word
+        // around it says PREVIEW, which is what the user gets (GLB-IMPORT-R1,
+        // `ARCH-OWNER-09`). The `.forge` rows above still say neither, which
+        // is what keeps the two acts apart: Open File opens a project, Import
+        // GLB previews somebody else's mesh.
+        assertTrue("the GLB row must name the act: " + text, text.contains("import glb"));
+        assertTrue("and it must be framed as a preview, not as production import: " + text,
+                text.contains("preview"));
 
         // Export exists and works, but it lives in the Global Toolbar, not
         // here: writing a `.glb` is a different act with a different

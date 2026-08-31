@@ -478,9 +478,11 @@ public final class GlbImportPreviewTest {
             assertFalse("the project surface must not offer '" + forbidden + "': " + text,
                     text.contains(forbidden));
         }
-        // The diagnostic is named as one. "Import" alone would promise the
-        // production feature this is not.
-        assertTrue("the check is offered: " + text, text.contains("check"));
+        // GLBIR1-21. The action is named for what the user does — Import GLB —
+        // and every surrounding word says PREVIEW, which is what they get.
+        // Neither production import nor a second interchange format appears.
+        assertTrue("Import GLB is offered: " + text, text.contains("import glb"));
+        assertTrue("and it is named as a preview: " + text, text.contains("preview"));
     }
 
     // -----------------------------------------------------------------------

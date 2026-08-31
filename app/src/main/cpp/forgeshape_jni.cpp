@@ -37,6 +37,7 @@
 #include "forgeshape_display.h"
 #include "forgeshape_gizmo.h"
 #include "forgeshape_gizmo_selftest.h"
+#include "forgeshape_glb_import_fixture.h"
 #include "forgeshape_glb_roundtrip.h"
 #include "forgeshape_gltf_export.h"
 #include "forgeshape_gltf_import.h"
@@ -373,7 +374,10 @@ void runGltfExportSelfTestsAndLog() {
 
 void runGltfImportSelfTestsAndLog() {
 #ifndef NDEBUG
-    constexpr int kMaxImportChecks = 128;
+    // R1 added the external-GLB subset, so the suite outgrew 128. The recorder
+    // silently drops checks past its ceiling, which would look like a smaller
+    // passing suite rather than a failure, so this stays well ahead of it.
+    constexpr int kMaxImportChecks = 256;
     static forgeshape::GltfImportSelfTestResult results[kMaxImportChecks];
     const int count = forgeshape::runGltfImportSelfTests(results, kMaxImportChecks);
     int failed = 0;
@@ -2563,6 +2567,33 @@ Java_com_forgeshape_app_NativeViewport_importGlbPreview(JNIEnv* env, jclass, jby
     return 0;
 }
 
+// An ordinal that came back over JNI, turned back into a status it is safe to
+// switch on. Anything out of range is reported as NoData rather than cast into
+// an enum value the domain does not have.
+static forgeshape::GlbImportStatus importStatusFromOrdinal(jint ordinal) {
+    if (ordinal < 0
+        || ordinal > static_cast<jint>(forgeshape::GlbImportStatus::TooLarge)) {
+        return forgeshape::GlbImportStatus::NoData;
+    }
+    return static_cast<forgeshape::GlbImportStatus>(ordinal);
+}
+
+// The stable refusal token, for the diagnostics ring and the log. A bounded
+// name and never a path, a `Uri` or a byte of the file.
+JNIEXPORT jstring JNICALL
+Java_com_forgeshape_app_NativeViewport_glbImportStatusToken(JNIEnv* env, jclass, jint status) {
+    return env->NewStringUTF(
+            forgeshape::glbImportStatusName(importStatusFromOrdinal(status)));
+}
+
+// The bounded category the user is shown. Three answers, chosen in the domain
+// so the Android layer never has to know which statuses mean what.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_glbImportStatusCategory(JNIEnv*, jclass, jint status) {
+    return static_cast<jint>(
+            forgeshape::glbImportStatusCategory(importStatusFromOrdinal(status)));
+}
+
 JNIEXPORT void JNICALL
 Java_com_forgeshape_app_NativeViewport_clearGlbPreview(JNIEnv*, jclass) {
     std::lock_guard<std::mutex> lock(g_stateMutex);
@@ -2590,21 +2621,96 @@ Java_com_forgeshape_app_NativeViewport_glbPreviewVisible(JNIEnv*, jclass) {
     return forgeshape::importedMeshPreview().visible() ? JNI_TRUE : JNI_FALSE;
 }
 
-// Fills {meshes, vertices, triangles}. Zeros when nothing is loaded.
+// Fills {meshes, vertices, triangles} and, when the array is long enough, the
+// draw-batch count as a fourth entry. Zeros when nothing is loaded.
+//
+// The first three are the FILE's counts. A batch is one TRIANGLES primitive and
+// is a renderer fact, reported separately so a diagnostic can say a
+// multi-primitive file did not quietly lose a primitive.
 JNIEXPORT void JNICALL
 Java_com_forgeshape_app_NativeViewport_glbPreviewCounts(JNIEnv* env, jclass, jintArray out) {
-    if (out == nullptr || env->GetArrayLength(out) < 3) {
+    if (out == nullptr) {
         return;
     }
-    jint counts[3] = {0, 0, 0};
+    const jsize length = env->GetArrayLength(out);
+    if (length < 3) {
+        return;
+    }
+    jint counts[4] = {0, 0, 0, 0};
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
         const forgeshape::ImportedMeshPreview& preview = forgeshape::importedMeshPreview();
         counts[0] = static_cast<jint>(preview.meshCount());
         counts[1] = static_cast<jint>(preview.vertexCount());
         counts[2] = static_cast<jint>(preview.triangleCount());
+        counts[3] = static_cast<jint>(preview.batchCount());
     }
-    env->SetIntArrayRegion(out, 0, 3, counts);
+    env->SetIntArrayRegion(out, 0, length >= 4 ? 4 : 3, counts);
+}
+
+// Fills {minX, minY, minZ, maxX, maxY, maxZ} with the preview's WORLD bounds.
+//
+// World, because the importer bakes the node transform into the vertices —
+// which is what makes this the number that says a node matrix was applied, and
+// applied the right way round. Leaves `out` untouched with nothing loaded.
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_glbPreviewBounds(JNIEnv* env, jclass, jfloatArray out) {
+    if (out == nullptr || env->GetArrayLength(out) < 6) {
+        return JNI_FALSE;
+    }
+    float bounds[6] = {0, 0, 0, 0, 0, 0};
+    bool any = false;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        any = forgeshape::importedMeshPreview().worldBounds(bounds);
+    }
+    if (!any) {
+        return JNI_FALSE;
+    }
+    env->SetFloatArrayRegion(out, 0, 6, bounds);
+    return JNI_TRUE;
+}
+
+// DEBUG/TEST ONLY: whether every loaded preview batch renders both sides.
+//
+// The seam that actually decides culling is the published mesh's own two-sided
+// flag, and a test has to be able to read it: a screenshot of a flat grey
+// surface cannot tell a culled back face from a drawn one reliably. Reads only,
+// and false with nothing loaded.
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_debugPreviewRendersBothSides(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    const forgeshape::SceneSnapshot& snapshot = forgeshape::importedMeshPreview().snapshot();
+    if (snapshot.empty()) {
+        return JNI_FALSE;
+    }
+    for (const forgeshape::SceneDrawItem& item : snapshot) {
+        if (item.mesh == nullptr || !item.mesh->renderBothSides()) {
+            return JNI_FALSE;
+        }
+    }
+    return JNI_TRUE;
+}
+
+// The deterministic Nomad-like compatibility fixture, as GLB bytes.
+//
+// A TEST SEAM, not a product path. The owner's own low-poly character is not in
+// this repository, so GLB-IMPORT-R1 is proven against a synthetic file that
+// carries the same structural features — a node matrix, seven TRIANGLES
+// primitives over one shared POSITION accessor, no NORMAL, ignored colour and
+// UV attributes, a double-sided material. Nothing in the product calls this:
+// it exists so an instrumented test can drive the REAL parse and the REAL
+// preview switch with bytes it did not have to ship as an asset.
+JNIEXPORT jbyteArray JNICALL
+Java_com_forgeshape_app_NativeViewport_nomadLikeGlbFixture(JNIEnv* env, jclass) {
+    const std::vector<uint8_t> bytes = forgeshape::buildNomadLikeGlbFixture();
+    jbyteArray out = env->NewByteArray(static_cast<jsize>(bytes.size()));
+    if (out == nullptr) {
+        return nullptr;
+    }
+    env->SetByteArrayRegion(out, 0, static_cast<jsize>(bytes.size()),
+                            reinterpret_cast<const jbyte*>(bytes.data()));
+    return out;
 }
 
 // The roundtrip diagnostic, as a report a person and a test can both read.
