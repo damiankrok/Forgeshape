@@ -618,6 +618,20 @@ final class GlobalToolbarView extends LinearLayout {
      *                         makes the difference between offering Freeze and
      *                         offering Resume
      */
+    /**
+     * Withdraws the mode transitions while a diagnostic imported preview is on
+     * the screen (GLB-IMPORT-R0).
+     *
+     * <p>Start Sculpting, Resume Sculpt and Back to Construction all act on the
+     * ACTIVE BODY, and over an imported preview that body is not the thing the
+     * user is looking at. The utility group stays: Display still applies to the
+     * viewport, Hide UI still works, and the project control is how the user
+     * gets back — withdrawing that would leave a dead end.
+     */
+    void showEditingTransitions(boolean shown) {
+        editingGroup.setVisibility(shown ? VISIBLE : GONE);
+    }
+
     void showContext(boolean sculpting, boolean hasFrozenMesh) {
         final Context context = getContext();
         contextLabel.setText(context.getString(

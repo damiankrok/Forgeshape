@@ -384,8 +384,13 @@ public final class ProjectTransferTest {
     @Test
     public void fsr1b18_noInterchangeFormatIsOfferedAnywhereInTheProjectSurface() {
         openProjectSurface();
-        final String[] forbidden = {"glb", "gltf", "obj", "fbx", "stl", "collada", "dae",
-                "usdz", "import", "export"};
+        // OBJ, FBX and the rest are absent in both directions and always were.
+        // GLB is deliberately NOT on this list any more: GLB-IMPORT-R0 added a
+        // named DIAGNOSTIC that reads a `.glb` back to check it, under
+        // ARCH-OWNER-08. What that changed is what the surface offers, not what
+        // the product supports, so the rest of this case tightened rather than
+        // relaxed — see below.
+        final String[] forbidden = {"gltf", "obj", "fbx", "stl", "collada", "dae", "usdz"};
         final StringBuilder visible = new StringBuilder();
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             collectText(workspace.projectPopover(), visible);
@@ -396,9 +401,31 @@ public final class ProjectTransferTest {
             assertFalse("the project surface must not offer '" + word + "': " + text,
                     text.contains(word));
         }
-        // Export exists and now works, but it lives in the Global Toolbar, not
-        // here: the project surface is `.forge` transfer only, and an export is
-        // a different act with a different destination.
+
+        // The `.forge` transfer group still says nothing about a format or an
+        // export: Save Copy… and Open File… move ForgeShape projects, and
+        // wording that blurred that is exactly what this case was written for.
+        final String transferWording = onWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final StringBuilder rows = new StringBuilder();
+            collectText(workspace.findViewById(R.id.project_save_copy), rows);
+            collectText(workspace.findViewById(R.id.project_open_file), rows);
+            collectText(workspace.findViewById(R.id.project_save), rows);
+            collectText(workspace.findViewById(R.id.project_open), rows);
+            return rows.toString().toLowerCase(java.util.Locale.US);
+        });
+        for (String word : new String[]{"glb", "gltf", "export", "import"}) {
+            assertFalse("a `.forge` transfer row must not mention '" + word + "': "
+                    + transferWording, transferWording.contains(word));
+        }
+
+        // And the diagnostic names itself as one. "Import" alone would promise
+        // the production feature this is not; every row is framed as a check.
+        assertTrue("the GLB row must be framed as a check, not as import: " + text,
+                text.contains("check"));
+
+        // Export exists and works, but it lives in the Global Toolbar, not
+        // here: writing a `.glb` is a different act with a different
+        // destination from moving a project.
         assertNotNull("Export keeps its own home in the toolbar",
                 onWorkspace(rule.getScenario(),
                         (activity, workspace) -> workspace.findViewById(R.id.export_action)));

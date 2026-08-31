@@ -37,8 +37,12 @@
 #include "forgeshape_display.h"
 #include "forgeshape_gizmo.h"
 #include "forgeshape_gizmo_selftest.h"
+#include "forgeshape_glb_roundtrip.h"
 #include "forgeshape_gltf_export.h"
+#include "forgeshape_gltf_import.h"
+#include "forgeshape_import_preview.h"
 #include "forgeshape_gltf_export_selftest.h"
+#include "forgeshape_gltf_import_selftest.h"
 #include "forgeshape_history.h"
 #include "forgeshape_history_selftest.h"
 #include "forgeshape_input.h"
@@ -363,6 +367,28 @@ void runGltfExportSelfTestsAndLog() {
         FS_LOGI("FORGESHAPE_GLTF_EXPORT_SELFTEST_OK (%d checks)", count);
     } else {
         FS_LOGE("FORGESHAPE_GLTF_EXPORT_SELFTEST_FAIL (%d of %d checks failed)", failed, count);
+    }
+#endif
+}
+
+void runGltfImportSelfTestsAndLog() {
+#ifndef NDEBUG
+    constexpr int kMaxImportChecks = 128;
+    static forgeshape::GltfImportSelfTestResult results[kMaxImportChecks];
+    const int count = forgeshape::runGltfImportSelfTests(results, kMaxImportChecks);
+    int failed = 0;
+    for (int i = 0; i < count; ++i) {
+        if (!results[i].passed) {
+            ++failed;
+            FS_LOGE("FORGESHAPE_GLTF_IMPORT_SELFTEST_CASE_FAIL:%s", results[i].name);
+        } else {
+            FS_LOGI("gltf import selftest pass: %s", results[i].name);
+        }
+    }
+    if (failed == 0) {
+        FS_LOGI("FORGESHAPE_GLTF_IMPORT_SELFTEST_OK (%d checks)", count);
+    } else {
+        FS_LOGE("FORGESHAPE_GLTF_IMPORT_SELFTEST_FAIL (%d of %d checks failed)", failed, count);
     }
 #endif
 }
@@ -1112,15 +1138,36 @@ void renderThreadMain() {
                 // work the renderer then does with it happens after the mutex
                 // is released, because the snapshot holds shared_ptrs rather
                 // than borrowing anything the scene could change underneath.
-                renderer.setScene(forgeshape::constructionScene().snapshot());
+                // WHICH scene is drawn. The imported preview is a diagnostic
+                // VIEW, so it replaces what the renderer is handed for the
+                // frame and changes nothing about the project: the scene it is
+                // standing in front of is untouched, still selected, still
+                // editable, and one call to setPreviewVisible(false) brings it
+                // straight back. The preview never merges with the project
+                // snapshot, because a mixed list is a list somebody would
+                // eventually pick, save or export from.
+                if (forgeshape::importedMeshPreview().visible()) {
+                    renderer.setScene(forgeshape::importedMeshPreview().snapshot());
+                } else {
+                    renderer.setScene(forgeshape::constructionScene().snapshot());
+                }
                 // Taken under the SAME mutex and from the same instant as the
                 // camera and the scene, so the pivot the handles are drawn
                 // around is the placement this frame's body is drawn at. Taking
                 // it separately is exactly how a handle would lag a drag by a
                 // frame.
-                renderer.setGizmo(forgeshape::gizmoSession().snapshot(
-                    g_camera.snapshot(), g_camera.viewportWidth(),
-                    g_camera.viewportHeight()));
+                //
+                // Handles are withdrawn while the preview is shown, for the
+                // same reason the editing controls are: a gizmo drawn over an
+                // imported mesh would be pointing at a body that is not on the
+                // screen, and dragging it would move something invisible.
+                if (forgeshape::importedMeshPreview().visible()) {
+                    renderer.setGizmo(forgeshape::GizmoSnapshot{});
+                } else {
+                    renderer.setGizmo(forgeshape::gizmoSession().snapshot(
+                        g_camera.snapshot(), g_camera.viewportWidth(),
+                        g_camera.viewportHeight()));
+                }
             }
             // Presentation only, and deliberately OUTSIDE the state mutex: the
             // display settings are plain atomics that no domain invariant
@@ -1213,6 +1260,7 @@ Java_com_forgeshape_app_NativeViewport_start(JNIEnv*, jclass) {
     runProjectSelfTestsAndLog();
     runRenderRecoverySelfTestsAndLog();
     runGltfExportSelfTestsAndLog();
+    runGltfImportSelfTestsAndLog();
     // The mesh and construction self-tests publish revisions of their own into
     // the store, so republish the ACTIVE representation: the app must always
     // come up showing what the current product mode says it is showing. At a
@@ -2469,6 +2517,138 @@ Java_com_forgeshape_app_NativeViewport_exportGlb(JNIEnv* env, jclass) {
     return out;
 }
 
+// ---------------------------------------------------------------------------
+// GLB-IMPORT-R0 — the diagnostic imported mesh preview
+// ---------------------------------------------------------------------------
+//
+// Every entry below is a DIAGNOSTIC. None of them creates a body, mints an
+// ObjectId, publishes a revision, records a history step or touches either
+// `.forge` slot, and the preview they operate on disappears with the process.
+
+// Parses GLB bytes and loads them as the session's imported preview.
+//
+// @return 0 on success, or the GlbImportStatus ordinal. A refusal leaves any
+//         existing preview and the whole project exactly as they were.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_importGlbPreview(JNIEnv* env, jclass, jbyteArray data) {
+    if (data == nullptr) {
+        return static_cast<jint>(forgeshape::GlbImportStatus::NoData);
+    }
+    const jsize length = env->GetArrayLength(data);
+    if (length <= 0) {
+        return static_cast<jint>(forgeshape::GlbImportStatus::NoData);
+    }
+    std::vector<uint8_t> bytes(static_cast<size_t>(length));
+    env->GetByteArrayRegion(data, 0, length, reinterpret_cast<jbyte*>(bytes.data()));
+
+    forgeshape::ImportedScene scene;
+    const forgeshape::GlbImportStatus why =
+            forgeshape::importGlb(bytes.data(), bytes.size(), &scene);
+    if (why != forgeshape::GlbImportStatus::Ok) {
+        FS_LOGE("FORGESHAPE_GLB_IMPORT_FAIL:%s bytes=%d", forgeshape::glbImportStatusName(why),
+                (int)length);
+        return static_cast<jint>(why);
+    }
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        if (!forgeshape::importedMeshPreview().load(scene)) {
+            FS_LOGE("FORGESHAPE_GLB_IMPORT_FAIL:PreviewRejected bytes=%d", (int)length);
+            return static_cast<jint>(forgeshape::GlbImportStatus::NothingToImport);
+        }
+    }
+    FS_LOGI("FORGESHAPE_GLB_IMPORTED:%d meshes=%u vertices=%u triangles=%u", (int)length,
+            forgeshape::importedMeshPreview().meshCount(),
+            forgeshape::importedMeshPreview().vertexCount(),
+            forgeshape::importedMeshPreview().triangleCount());
+    return 0;
+}
+
+JNIEXPORT void JNICALL
+Java_com_forgeshape_app_NativeViewport_clearGlbPreview(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    forgeshape::importedMeshPreview().clear();
+    FS_LOGI("FORGESHAPE_GLB_PREVIEW_CLEARED");
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_glbPreviewLoaded(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    return forgeshape::importedMeshPreview().loaded() ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT void JNICALL
+Java_com_forgeshape_app_NativeViewport_setGlbPreviewVisible(JNIEnv*, jclass, jboolean visible) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    forgeshape::importedMeshPreview().setVisible(visible == JNI_TRUE);
+    FS_LOGI("FORGESHAPE_GLB_PREVIEW_VISIBLE:%d",
+            forgeshape::importedMeshPreview().visible() ? 1 : 0);
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_glbPreviewVisible(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    return forgeshape::importedMeshPreview().visible() ? JNI_TRUE : JNI_FALSE;
+}
+
+// Fills {meshes, vertices, triangles}. Zeros when nothing is loaded.
+JNIEXPORT void JNICALL
+Java_com_forgeshape_app_NativeViewport_glbPreviewCounts(JNIEnv* env, jclass, jintArray out) {
+    if (out == nullptr || env->GetArrayLength(out) < 3) {
+        return;
+    }
+    jint counts[3] = {0, 0, 0};
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const forgeshape::ImportedMeshPreview& preview = forgeshape::importedMeshPreview();
+        counts[0] = static_cast<jint>(preview.meshCount());
+        counts[1] = static_cast<jint>(preview.vertexCount());
+        counts[2] = static_cast<jint>(preview.triangleCount());
+    }
+    env->SetIntArrayRegion(out, 0, 3, counts);
+}
+
+// The roundtrip diagnostic, as a report a person and a test can both read.
+//
+// Exports the live scene through the real writer, reads the bytes back with the
+// independent parser and compares both against DOMAIN truth. Reads only.
+JNIEXPORT jstring JNICALL
+Java_com_forgeshape_app_NativeViewport_glbRoundtripReport(JNIEnv* env, jclass) {
+    std::string report;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const forgeshape::ProjectKind kind = forgeshape::sculptSession().inSculptMode()
+                ? forgeshape::ProjectKind::Sculpt
+                : forgeshape::ProjectKind::Construction;
+        report = forgeshape::formatRoundtripReport(
+                forgeshape::runGlbRoundtripDiagnostic(forgeshape::constructionScene(), kind));
+    }
+    return env->NewStringUTF(report.c_str());
+}
+
+// The same comparison against bytes the caller supplies, so a file from the
+// evidence bundle can be checked against the project it was written from.
+JNIEXPORT jstring JNICALL
+Java_com_forgeshape_app_NativeViewport_glbCompareReport(JNIEnv* env, jclass, jbyteArray data) {
+    if (data == nullptr) {
+        return env->NewStringUTF("verdict=ROUNDTRIP_NOT_COMPARABLE\nreason=no bytes\n");
+    }
+    const jsize length = env->GetArrayLength(data);
+    std::vector<uint8_t> bytes(static_cast<size_t>(length > 0 ? length : 0));
+    if (length > 0) {
+        env->GetByteArrayRegion(data, 0, length, reinterpret_cast<jbyte*>(bytes.data()));
+    }
+    std::string report;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const forgeshape::ProjectKind kind = forgeshape::sculptSession().inSculptMode()
+                ? forgeshape::ProjectKind::Sculpt
+                : forgeshape::ProjectKind::Construction;
+        report = forgeshape::formatRoundtripReport(forgeshape::compareSceneToGlb(
+                forgeshape::constructionScene(), kind, bytes.data(), bytes.size()));
+    }
+    return env->NewStringUTF(report.c_str());
+}
+
 // Validates bytes as a project WITHOUT applying them.
 //
 // The recovery flow has to answer "is there a candidate worth offering?" before
@@ -3355,6 +3535,15 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
             float tapY = 0.0f;
             tapResolved = g_selection.onTouch(translated, static_cast<int32_t>(actionPointerId),
                                               count > 0 ? pointers : nullptr, count, &tapX, &tapY);
+            // A tap while the imported preview is on the screen selects
+            // nothing. The preview is not in the scene and is not pickable, and
+            // picking the project underneath it would change the selection over
+            // a body the user cannot currently see. Navigation is unaffected:
+            // orbit, pan and zoom all still work, which is the point of looking
+            // at the preview at all.
+            if (forgeshape::importedMeshPreview().visible()) {
+                tapResolved = false;
+            }
             if (tapResolved && viewWidth > 0 && viewHeight > 0) {
                 // Picking uses the camera snapshot as it stands at release, so a
                 // tap after any amount of navigation resolves against what is on

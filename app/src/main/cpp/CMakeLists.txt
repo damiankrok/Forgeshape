@@ -53,8 +53,13 @@ add_library(forgeshape_native SHARED
     forgeshape_demo_mesh.cpp
     forgeshape_display.cpp
     forgeshape_gizmo.cpp
+    forgeshape_glb_roundtrip.cpp
     forgeshape_gltf_export.cpp
+    forgeshape_gltf_import.cpp
+    forgeshape_import_preview.cpp
+    forgeshape_json.cpp
     forgeshape_gltf_export_selftest.cpp
+    forgeshape_gltf_import_selftest.cpp
     forgeshape_gizmo_selftest.cpp
     forgeshape_grid.cpp
     forgeshape_history.cpp

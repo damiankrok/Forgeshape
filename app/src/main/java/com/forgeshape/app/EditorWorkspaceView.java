@@ -1599,6 +1599,7 @@ final class EditorWorkspaceView extends FrameLayout
         final boolean hasFrozenMesh = nativeSculpt[NativeViewport.SCULPT_HAS_MESH] != 0.0;
 
         toolbar.showContext(sculpting, hasFrozenMesh);
+        toolbar.showEditingTransitions(true);
         // Display settings are native-owned and process-scoped, so on a resume
         // they are already whatever they were; this only makes the popover's
         // chips agree with them.
@@ -1650,6 +1651,60 @@ final class EditorWorkspaceView extends FrameLayout
         showActiveInspectorBody(sculpting);
         showPrecisionToggle(sculpting);
         showDefaultStatus(sculpting);
+        applyImportedPreviewChrome();
+    }
+
+    /**
+     * Withdraws every editing control while an imported file is on the screen.
+     *
+     * <p>GLB-IMPORT-R0. The preview is not editable — it has no body, no
+     * primitive, no sculpt mesh and no history — so Shape, Transform, Start
+     * Sculpting, the exact values, creation, the handles and Undo/Redo would
+     * every one of them be a control that cannot succeed, pointed at a model
+     * the user cannot currently see. They are ABSENT rather than disabled, and
+     * they come back untouched when the model does: nothing about the workspace
+     * state is recomputed here, only its visibility.
+     *
+     * <p>The viewport, the camera and Display stay live, because looking at the
+     * imported mesh from another angle is the entire point of showing it.
+     */
+    private void applyImportedPreviewChrome() {
+        if (!NativeViewport.glbPreviewVisible()) {
+            // Nothing to do. syncFromNative has already put every control back
+            // exactly where the mode, the window and the scene say it belongs,
+            // so leaving the preview restores the accepted workspace rather
+            // than a remembered copy of it.
+            return;
+        }
+        // Closing comes FIRST. Each of these re-renders the trailing host as a
+        // side effect of putting a surface away, so withdrawing the host before
+        // them would simply be undone — which is exactly what the first run of
+        // `GLBIR0-19` caught.
+        setPrecisionOpen(false);
+        setAddPrimitiveOpen(false, null);
+        setObjectsPanelOpen(false);
+
+        // The Tool Rail is a member of the trailing host, so withdrawing the
+        // host withdraws the rail, the transform selectors and the precision
+        // trigger together — one surface, one decision.
+        trailingHost.setVisibility(GONE);
+        objectsCapsule.setVisibility(GONE);
+        objectsSection.setVisibility(GONE);
+        historyGroup.setVisibility(GONE);
+        // The Property Inspector is CLOSED above rather than hidden here, and
+        // the difference matters: it is an AnchoredSurfaceView that owns its
+        // own visibility as its open/closed state, and nothing else in the
+        // workspace ever writes that field. Setting it GONE from here is an
+        // override with no owner to undo it — which is exactly what the first
+        // full-suite run caught, as an inspector that stayed gone for the rest
+        // of the process and a later IME case finding it in the wrong place.
+        // Every other view above has its normal value rewritten by
+        // syncFromNative on the way past, so hiding those is safe.
+        // Start Sculpting, Resume Sculpt and Back to Construction all act on
+        // the active body, which is not the thing on the screen. The utility
+        // group stays — Display still applies to the viewport, and the project
+        // control is how the user gets back.
+        toolbar.showEditingTransitions(false);
     }
 
     /**
@@ -2210,6 +2265,8 @@ final class EditorWorkspaceView extends FrameLayout
             // session, or could have been there since before the process
             // started, and Open must never offer to do something it cannot.
             projectPopover.showSlotState(ProjectSlot.exists(getContext()));
+            projectPopover.showPreviewState(NativeViewport.glbPreviewLoaded(),
+                    NativeViewport.glbPreviewVisible());
             // Hang the surface below the toolbar's ACTUAL height, for the same
             // reason the display popover does: the toolbar grows a second line
             // when the status message cannot share the control row, and a fixed
@@ -2593,6 +2650,113 @@ final class EditorWorkspaceView extends FrameLayout
         }
     }
 
+    // -----------------------------------------------------------------------
+    // GLB-IMPORT-R0 — the diagnostic imported mesh preview
+    // -----------------------------------------------------------------------
+    //
+    // A diagnostic, and nothing below it creates, changes or saves anything.
+    // The preview lives in native session state, has no ObjectId, is never
+    // encoded into `.forge` and is gone when the process is. Switching to it
+    // and back is a change of what the viewport DRAWS and nothing else.
+
+    @Override
+    public void onImportGlbPreviewRequested() {
+        setProjectPanelOpen(false);
+        if (transferHost == null || !transferHost.requestOpenGlbDocument()) {
+            showStatus(getContext().getString(R.string.status_glb_preview_failed, "no picker"),
+                    R.attr.fsTextError);
+        }
+    }
+
+    /** The user picked a `.glb` to read back — or cancelled. */
+    void onOpenGlbDocumentChosen(android.net.Uri source) {
+        if (source == null) {
+            // Cancel. Nothing was read, nothing was shown, nothing changed.
+            Diagnostics.info(DiagnosticLog.CAT_TRANSFER, "GLB_PREVIEW_CANCELLED", null);
+            return;
+        }
+        final byte[] bytes = ProjectTransfer.readFrom(getContext(), source);
+        if (bytes == null) {
+            showStatus(getContext().getString(R.string.status_glb_preview_failed, "unreadable"),
+                    R.attr.fsTextError);
+            return;
+        }
+        applyImportedGlbBytes(bytes);
+    }
+
+    /**
+     * Parses bytes into the preview and shows it.
+     *
+     * <p>Separate from the picker half so a test can drive the real parse and
+     * the real switch without the system's document UI, which is another app's
+     * surface and cannot be driven reliably from instrumentation. What is under
+     * test — the parse, the refusal, the switch, the untouched project — is
+     * identical either way.
+     */
+    void applyImportedGlbBytes(byte[] bytes) {
+        final int status = NativeViewport.importGlbPreview(bytes);
+        if (status != NativeViewport.IMPORT_OK) {
+            // Fail closed and say so. The project is untouched by construction:
+            // a refused parse never reaches the preview, and the preview never
+            // reaches the project.
+            Diagnostics.warn(DiagnosticLog.CAT_TRANSFER, "GLB_PREVIEW_REFUSED",
+                    "status=" + status);
+            showStatus(getContext().getString(R.string.status_glb_preview_failed,
+                    "code " + status), R.attr.fsTextError);
+            refreshImportedPreviewControls();
+            return;
+        }
+        NativeViewport.setGlbPreviewVisible(true);
+        Diagnostics.info(DiagnosticLog.CAT_TRANSFER, "GLB_PREVIEW_LOADED",
+                "bytes=" + bytes.length);
+        showStatus(getContext().getString(R.string.status_glb_preview_loaded,
+                importedPreviewSummary()), R.attr.fsTextSuccess);
+        refreshImportedPreviewControls();
+        syncFromNative();
+    }
+
+    @Override
+    public void onToggleImportedPreviewRequested() {
+        setProjectPanelOpen(false);
+        final boolean showPreview = !NativeViewport.glbPreviewVisible();
+        NativeViewport.setGlbPreviewVisible(showPreview);
+        showStatus(getContext().getString(showPreview ? R.string.status_glb_preview_showing
+                        : R.string.status_glb_preview_source),
+                R.attr.fsTextSecondary);
+        refreshImportedPreviewControls();
+        syncFromNative();
+    }
+
+    @Override
+    public void onClearImportedPreviewRequested() {
+        setProjectPanelOpen(false);
+        NativeViewport.clearGlbPreview();
+        showStatus(getContext().getString(R.string.status_glb_preview_cleared),
+                R.attr.fsTextSecondary);
+        refreshImportedPreviewControls();
+        syncFromNative();
+    }
+
+    /** A short human summary of what was read, for the status line. */
+    private String importedPreviewSummary() {
+        final int[] counts = new int[3];
+        NativeViewport.glbPreviewCounts(counts);
+        return counts[0] + " mesh" + (counts[0] == 1 ? "" : "es") + ", " + counts[1]
+                + " vertices, " + counts[2] + " triangles";
+    }
+
+    private void refreshImportedPreviewControls() {
+        if (projectPopover != null) {
+            projectPopover.showPreviewState(NativeViewport.glbPreviewLoaded(),
+                    NativeViewport.glbPreviewVisible());
+        }
+    }
+
+    /** True while the viewport is showing an imported file instead of the model. */
+    boolean showingImportedPreview() {
+        return NativeViewport.glbPreviewVisible();
+    }
+
     /**
      * The bytes waiting for a destination.
      *
@@ -2627,6 +2791,8 @@ final class EditorWorkspaceView extends FrameLayout
         boolean requestCreateDiagnosticsDocument();
 
         boolean requestCreateGlbDocument();
+
+        boolean requestOpenGlbDocument();
     }
 
     private ProjectTransferHost transferHost;

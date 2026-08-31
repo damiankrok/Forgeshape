@@ -118,6 +118,26 @@ final class ProjectTransfer {
         return intent;
     }
 
+    /**
+     * The intent that asks which `.glb` to read back for the diagnostic
+     * preview (GLB-IMPORT-R0).
+     *
+     * <p>Permissive for the same reason the project open picker is: a provider
+     * reports whatever type it likes for a `.glb`, frequently
+     * {@code application/octet-stream} and sometimes nothing at all, and
+     * filtering narrowly would hide the file the user just exported. The real
+     * guard is the fail-closed parser every selection then goes through, which
+     * refuses anything that is not the supported GLB subset by name.
+     */
+    static Intent openGlbDocumentIntent() {
+        final Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType(OPEN_MIME_TYPE);
+        intent.putExtra(Intent.EXTRA_MIME_TYPES,
+                new String[]{GLB_MIME_TYPE, CREATE_MIME_TYPE, OPEN_MIME_TYPE});
+        return intent;
+    }
+
     /** The intent that asks where to put a diagnostic report. */
     static Intent createDiagnosticsIntent() {
         final Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);

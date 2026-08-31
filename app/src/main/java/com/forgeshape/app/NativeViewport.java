@@ -749,6 +749,69 @@ final class NativeViewport {
      */
     static native byte[] exportGlb();
 
+    // ---------------------------------------------------------------------
+    // GLB-IMPORT-R0 — the diagnostic imported mesh preview
+    //
+    // A DIAGNOSTIC, not import. It reads a `.glb` — in practice one ForgeShape
+    // itself wrote — with a parser that shares nothing with the writer, and
+    // shows the result in the viewport so the geometry in the FILE can be
+    // compared with the geometry in the SCENE.
+    //
+    // Nothing here is project truth. The preview has no ObjectId, no
+    // Construction Source, no sculpt representation and no history; it is never
+    // saved, autosaved, checkpointed or re-exported; and it is gone when the
+    // process is. Production import is `IMPORT-01` and is post-MVP.
+    // ---------------------------------------------------------------------
+
+    /** Import succeeded. Any other value is a {@code GlbImportStatus} ordinal. */
+    static final int IMPORT_OK = 0;
+
+    /**
+     * Parses GLB bytes and loads them as the session's imported preview.
+     *
+     * <p>Fails closed: on anything but {@link #IMPORT_OK} no preview is
+     * created, an existing preview is untouched, and the project is untouched.
+     * Loading does not show the preview — {@link #setGlbPreviewVisible} does,
+     * so a successful import cannot yank the viewport out from under the user.
+     *
+     * @return {@link #IMPORT_OK}, or the ordinal of the refusal reason
+     */
+    static native int importGlbPreview(byte[] bytes);
+
+    /** Forgets the preview and releases its meshes. Safe with none loaded. */
+    static native void clearGlbPreview();
+
+    /** @return whether a preview is currently held */
+    static native boolean glbPreviewLoaded();
+
+    /**
+     * Shows the preview INSTEAD of the project, or stops. Ignored when nothing
+     * is loaded, so "visible" can never be true with nothing to show.
+     *
+     * <p>The project is not affected in either direction: it is still there,
+     * still selected and still editable, and switching back restores exactly
+     * what was on the screen.
+     */
+    static native void setGlbPreviewVisible(boolean visible);
+
+    /** @return whether the viewport is currently drawing the preview */
+    static native boolean glbPreviewVisible();
+
+    /** Fills {@code out} with mesh, vertex and triangle counts. Zeros when empty. */
+    static native void glbPreviewCounts(int[] out);
+
+    /**
+     * The roundtrip diagnostic: export the live scene, read the bytes back with
+     * the independent parser, compare both against domain truth.
+     *
+     * <p>Reads only. The report is {@code key=value} lines and begins with
+     * {@code verdict=ROUNDTRIP_EQUIVALENT} or {@code ROUNDTRIP_MISMATCH}.
+     */
+    static native String glbRoundtripReport();
+
+    /** The same comparison against bytes the caller already has. Reads only. */
+    static native String glbCompareReport(byte[] bytes);
+
     /**
      * Replaces the running project with the one these bytes describe, or
      * changes nothing at all.

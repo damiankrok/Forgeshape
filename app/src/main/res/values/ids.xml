@@ -53,6 +53,10 @@
     <item name="project_save_copy" type="id" />
     <item name="project_open_file" type="id" />
     <item name="project_share_diagnostics" type="id" />
+    <!-- GLB-IMPORT-R0: the session-only imported mesh preview (diagnostic). -->
+    <item name="import_glb_preview" type="id" />
+    <item name="toggle_imported_preview" type="id" />
+    <item name="clear_imported_preview" type="id" />
 
     <!--
       The recovery question, asked once on a cold launch when a validated
