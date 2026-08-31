@@ -347,6 +347,14 @@ Mat4 ConstructionTransform::rotationMatrix() const {
     return rotationMatrixFromEuler(eulerOf(values_));
 }
 
+// R * S, built from the same two factors modelMatrix() multiplies T onto, in
+// the same order. Written as one expression sharing modelMatrix()'s helpers so
+// the two cannot drift: if the composition order ever changes, it changes for
+// both here, in this file, and nowhere else.
+Mat4 ConstructionTransform::localMatrix() const {
+    return mat4Multiply(rotationMatrixFromEuler(eulerOf(values_)), scaleMatrix(values_));
+}
+
 // R * S^-1. For M = T * R * S with a diagonal, strictly positive S this IS the
 // inverse transpose of the upper-left 3x3: (R S)^-T = R^-T S^-T = R S^-1,
 // because R is orthonormal and S is its own transpose. It reduces to R exactly

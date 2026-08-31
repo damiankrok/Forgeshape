@@ -67,6 +67,54 @@ std::string bodyName(ObjectId objectId) {
 
 bool matrixFinite(const Mat4& m) { return mat4Finite(m); }
 
+// The determinant of a matrix's upper-left 3x3.
+//
+// Computed from the sixteen floats rather than as sx*sy*sz, deliberately. The
+// shortcut is only true while `L` really is R*S with R orthonormal; this is a
+// check on the matrix that will actually be baked, so it must not assume the
+// thing it is checking for.
+float linearDeterminant(const Mat4& m) {
+    const float a = m.m[0], b = m.m[4], c = m.m[8];
+    const float d = m.m[1], e = m.m[5], f = m.m[9];
+    const float g = m.m[2], h = m.m[6], i = m.m[10];
+    return a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
+}
+
+// Applies the baked linear transform to one body's surfaces, in place.
+//
+// Positions ride `local` directly. Normals ride `normalMatrix`, which is
+// `transpose(inverse(local))` — NOT `local` — because under a non-uniform scale
+// those differ and using the wrong one tilts every normal off its surface. It
+// is normalised here because a file states unit normals, where the renderer
+// could leave that to the fragment stage.
+//
+// Degenerate normals stay zero rather than becoming a made-up direction: a zero
+// normal is a defect a validator names, and a plausible-looking wrong one is a
+// defect nothing names.
+void bakeLinearTransform(RenderMeshData& mesh, const Mat4& local, const Mat4& normalMatrix) {
+    for (RenderVertex& vertex : mesh.vertices) {
+        const Vec3 position{vertex.position[0], vertex.position[1], vertex.position[2]};
+        const Vec3 baked = mat4TransformPoint(local, position);
+        vertex.position[0] = baked.x;
+        vertex.position[1] = baked.y;
+        vertex.position[2] = baked.z;
+
+        const Vec3 normal{vertex.normal[0], vertex.normal[1], vertex.normal[2]};
+        const Vec3 carried = mat4TransformDirection(normalMatrix, normal);
+        const float length =
+                std::sqrt(carried.x * carried.x + carried.y * carried.y + carried.z * carried.z);
+        if (length > 0.0f) {
+            vertex.normal[0] = carried.x / length;
+            vertex.normal[1] = carried.y / length;
+            vertex.normal[2] = carried.z / length;
+        } else {
+            vertex.normal[0] = 0.0f;
+            vertex.normal[1] = 0.0f;
+            vertex.normal[2] = 0.0f;
+        }
+    }
+}
+
 // Rounds a byte count up to the next multiple of four.
 //
 // glTF requires every chunk to be 4-byte aligned, and requires an accessor's
@@ -96,6 +144,8 @@ const char* glbExportStatusName(GlbExportStatus status) {
         case GlbExportStatus::InvalidMesh: return "InvalidMesh";
         case GlbExportStatus::NonFiniteValue: return "NonFiniteValue";
         case GlbExportStatus::TooLarge: return "TooLarge";
+        case GlbExportStatus::SingularTransform: return "SingularTransform";
+        case GlbExportStatus::MirroredTransform: return "MirroredTransform";
     }
     return "unknown";
 }
@@ -116,9 +166,33 @@ GlbExportStatus captureGlbExportScene(const ConstructionScene& scene, ProjectKin
         const SceneObject& body = scene.bodyAt(i);
         GlbExportBody exported;
         exported.objectId = body.objectId();
-        exported.model = body.transform().modelMatrix();
-        if (!matrixFinite(exported.model)) {
+
+        // Split the placement: Model = T * L. Both halves come from the ONE
+        // composition order in ConstructionTransform, and the translation is
+        // read out of the model matrix rather than re-narrowed from the
+        // authored doubles, so the exported position is bit-for-bit the
+        // position the renderer draws at.
+        const Mat4 model = body.transform().modelMatrix();
+        exported.local = body.transform().localMatrix();
+        const Mat4 normalMatrix = body.transform().normalMatrix();
+        if (!matrixFinite(model) || !matrixFinite(exported.local) ||
+            !matrixFinite(normalMatrix)) {
             return GlbExportStatus::NonFiniteValue;
+        }
+        exported.translation[0] = model.m[12];
+        exported.translation[1] = model.m[13];
+        exported.translation[2] = model.m[14];
+
+        // Winding survives baking only while the linear part preserves
+        // orientation. The domain guarantees it — scale is strictly positive —
+        // so this is a guard against something being wrong upstream, not a case
+        // the product can produce.
+        const float determinant = linearDeterminant(exported.local);
+        if (!std::isfinite(determinant) || determinant == 0.0f) {
+            return GlbExportStatus::SingularTransform;
+        }
+        if (determinant < 0.0f) {
+            return GlbExportStatus::MirroredTransform;
         }
 
         // WHICH representation. A Sculpt project exports the sculpted body's own
@@ -154,11 +228,15 @@ GlbExportStatus captureGlbExportScene(const ConstructionScene& scene, ProjectKin
             // worse than no file, because the user would not notice.
             return GlbExportStatus::InvalidMesh;
         }
-        if (!renderMeshIsFinite(exported.render)) {
-            return GlbExportStatus::NonFiniteValue;
-        }
         if (exported.render.vertices.empty() || exported.render.indices.empty()) {
             return GlbExportStatus::InvalidMesh;
+        }
+
+        // Bake LAST, after the surfaces exist and before anything is checked
+        // for finiteness, so what is validated is what will be written.
+        bakeLinearTransform(exported.render, exported.local, normalMatrix);
+        if (!renderMeshIsFinite(exported.render)) {
+            return GlbExportStatus::NonFiniteValue;
         }
         captured.bodies.push_back(std::move(exported));
     }
@@ -189,8 +267,24 @@ std::vector<uint8_t> encodeGlb(const GlbExportScene& scene, GlbExportStatus* out
     // JSON, passes a length check, and puts a NaN into a user's model. A refused
     // export is a bad afternoon; a corrupt file that looks valid is a bad week.
     for (const GlbExportBody& body : scene.bodies) {
-        if (!mat4Finite(body.model)) {
+        if (!mat4Finite(body.local)) {
             return fail(GlbExportStatus::NonFiniteValue);
+        }
+        for (float component : body.translation) {
+            if (!std::isfinite(component)) {
+                return fail(GlbExportStatus::NonFiniteValue);
+            }
+        }
+        // The determinant is re-checked here for the same reason everything
+        // else is: this is a public entry point, and a hand-built snapshot
+        // reaches the bytes through it. A mirrored bake would produce a file
+        // whose every triangle faces inward.
+        const float determinant = linearDeterminant(body.local);
+        if (!std::isfinite(determinant) || determinant == 0.0f) {
+            return fail(GlbExportStatus::SingularTransform);
+        }
+        if (determinant < 0.0f) {
+            return fail(GlbExportStatus::MirroredTransform);
         }
         if (body.render.vertices.empty() || body.render.indices.empty()) {
             return fail(GlbExportStatus::InvalidMesh);
@@ -303,12 +397,15 @@ std::vector<uint8_t> encodeGlb(const GlbExportScene& scene, GlbExportStatus* out
         json += bodyName(scene.bodies[i].objectId);
         json += "\",\"mesh\":";
         appendJsonInt(json, static_cast<long long>(i));
-        // Column-major, sixteen numbers, straight out of Mat4::m. glTF's
-        // required order IS this order — see the header.
-        json += ",\"matrix\":[";
-        for (int m = 0; m < 16; ++m) {
-            if (m > 0) json += ',';
-            appendJsonFloat(json, scene.bodies[i].model.m[m]);
+        // TRANSLATION ONLY. No "rotation", no "scale" and no "matrix": both are
+        // baked into the mesh, so a consumer reads identity for each, which is
+        // the whole point of ARCH-OWNER-07. Writing an identity quaternion and
+        // a [1,1,1] scale would say the same thing in more bytes; omitting them
+        // is what glTF means by a default.
+        json += ",\"translation\":[";
+        for (int c = 0; c < 3; ++c) {
+            if (c > 0) json += ',';
+            appendJsonFloat(json, scene.bodies[i].translation[c]);
         }
         json += "]}";
     }

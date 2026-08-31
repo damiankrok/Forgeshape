@@ -47,11 +47,30 @@ final class GlbDocument {
     private static final int UNSIGNED_BYTE = 5121;
     private static final int MODE_TRIANGLES = 4;
 
-    /** One body as the file presents it: a node, its matrix and its geometry. */
+    /** One body as the file presents it: a node, its transform and its geometry. */
     static final class Body {
         String name;
-        /** The node's matrix exactly as written: 16 floats, COLUMN-major. */
+        /**
+         * The node's transform as a 4x4, COLUMN-major.
+         *
+         * <p>Derived, not read: glTF lets a node state its transform either as
+         * one {@code matrix} or as any of {@code translation}/{@code rotation}/
+         * {@code scale}, and a reader written from the specification has to
+         * accept both. The flags below say which form the file actually used,
+         * so a test can assert a POLICY — "this exporter writes translation
+         * only" — separately from the geometry the transform produces.
+         */
         float[] matrix;
+        /** True when the node stated a {@code matrix}. */
+        boolean hasMatrix;
+        /** True when the node stated a {@code translation}. */
+        boolean hasTranslation;
+        /** True when the node stated a {@code rotation}. */
+        boolean hasRotation;
+        /** True when the node stated a {@code scale}. */
+        boolean hasScale;
+        /** The node's translation, zero when it stated none. */
+        float[] translation = {0f, 0f, 0f};
         /** Body-local positions, xyz triples, in metres. */
         float[] positions;
         /** Body-local normals, xyz triples. */
@@ -342,15 +361,47 @@ final class GlbDocument {
                 problems.add("this exporter emits a flat scene; node " + nodeIndex
                         + " has children");
             }
-            if (node.has("translation") || node.has("rotation") || node.has("scale")) {
-                problems.add("node " + nodeIndex + " mixes a matrix with TRS properties");
-            }
             final Body body = new Body();
             body.name = node.optString("name", "");
-            body.matrix = readFloats(node.optJSONArray("matrix"), 16);
-            if (body.matrix == null) {
-                problems.add("node " + nodeIndex + " has no 16-element matrix");
-                body.matrix = identity();
+            body.hasMatrix = node.has("matrix");
+            body.hasTranslation = node.has("translation");
+            body.hasRotation = node.has("rotation");
+            body.hasScale = node.has("scale");
+            // glTF forbids mixing the two forms; either is legal alone.
+            if (body.hasMatrix
+                    && (body.hasTranslation || body.hasRotation || body.hasScale)) {
+                problems.add("node " + nodeIndex + " mixes a matrix with TRS properties");
+            }
+            if (body.hasMatrix) {
+                body.matrix = readFloats(node.optJSONArray("matrix"), 16);
+                if (body.matrix == null) {
+                    problems.add("node " + nodeIndex + " has a matrix that is not 16 elements");
+                    body.matrix = identity();
+                }
+                body.translation = new float[]{body.matrix[12], body.matrix[13], body.matrix[14]};
+            } else {
+                final float[] translation = body.hasTranslation
+                        ? readFloats(node.optJSONArray("translation"), 3) : new float[]{0f, 0f, 0f};
+                if (translation == null) {
+                    problems.add("node " + nodeIndex + " has a translation that is not 3 elements");
+                    body.translation = new float[]{0f, 0f, 0f};
+                } else {
+                    body.translation = translation;
+                }
+                // Rotation and scale are read only so the derived matrix is
+                // right for a file that uses them; this exporter writes
+                // neither, and the test asserts that separately.
+                final float[] rotation = body.hasRotation
+                        ? readFloats(node.optJSONArray("rotation"), 4) : null;
+                final float[] scale = body.hasScale
+                        ? readFloats(node.optJSONArray("scale"), 3) : null;
+                if (body.hasRotation && rotation == null) {
+                    problems.add("node " + nodeIndex + " has a rotation that is not a quaternion");
+                }
+                if (body.hasScale && scale == null) {
+                    problems.add("node " + nodeIndex + " has a scale that is not 3 elements");
+                }
+                body.matrix = composeTrs(body.translation, rotation, scale);
             }
             final int meshIndex = node.optInt("mesh", -1);
             if (meshIndex < 0 || meshIndex >= meshes.length()) {
@@ -566,5 +617,38 @@ final class GlbDocument {
 
     private static float[] identity() {
         return new float[]{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    }
+
+    /**
+     * T * R * S as one column-major 4x4, the order glTF specifies for a node's
+     * TRS properties. A missing rotation or scale is the identity.
+     *
+     * <p>The quaternion is {@code (x, y, z, w)} — glTF's order, with w LAST —
+     * expanded here by hand rather than through any library, so this reader
+     * stays free of anything the writer could also be using.
+     */
+    private static float[] composeTrs(float[] translation, float[] rotation, float[] scale) {
+        final float x = rotation == null ? 0f : rotation[0];
+        final float y = rotation == null ? 0f : rotation[1];
+        final float z = rotation == null ? 0f : rotation[2];
+        final float w = rotation == null ? 1f : rotation[3];
+        final float sx = scale == null ? 1f : scale[0];
+        final float sy = scale == null ? 1f : scale[1];
+        final float sz = scale == null ? 1f : scale[2];
+        final float[] m = new float[16];
+        m[0] = (1 - 2 * (y * y + z * z)) * sx;
+        m[1] = (2 * (x * y + z * w)) * sx;
+        m[2] = (2 * (x * z - y * w)) * sx;
+        m[4] = (2 * (x * y - z * w)) * sy;
+        m[5] = (1 - 2 * (x * x + z * z)) * sy;
+        m[6] = (2 * (y * z + x * w)) * sy;
+        m[8] = (2 * (x * z + y * w)) * sz;
+        m[9] = (2 * (y * z - x * w)) * sz;
+        m[10] = (1 - 2 * (x * x + y * y)) * sz;
+        m[12] = translation[0];
+        m[13] = translation[1];
+        m[14] = translation[2];
+        m[15] = 1f;
+        return m;
     }
 }

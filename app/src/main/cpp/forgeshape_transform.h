@@ -267,6 +267,18 @@ public:
     // direction depend on how large the body happens to be.
     Mat4 rotationMatrix() const;
 
+    // The LINEAR part of the placement: L = Rz * Ry * Rx * S, with no
+    // translation. Exactly the model matrix with T factored off, so
+    // `modelMatrix() == T(position) * localMatrix()` holds by construction
+    // rather than by coincidence.
+    //
+    // It exists because a static interchange export bakes orientation and size
+    // into vertices while leaving the pivot at the node (ARCH-OWNER-07), and
+    // that split needs a name. Nothing in the renderer or the picker uses it:
+    // they still consume `modelMatrix()` and `inverseModelMatrix()`, so this
+    // adds a VIEW of the one composition order and never a second one.
+    Mat4 localMatrix() const;
+
     // The matrix a NORMAL is carried by: R * S^-1, which is the inverse
     // transpose of the model's upper-left 3x3 for a diagonal positive scale.
     // Equal to `rotationMatrix()` whenever the scale is (1,1,1).

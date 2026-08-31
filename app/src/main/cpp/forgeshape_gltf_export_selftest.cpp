@@ -158,6 +158,19 @@ bool readIntField(const std::string& json, const char* key, size_t from, long lo
     return true;
 }
 
+// The character position of the nth (0-based) occurrence of `needle`.
+//
+// `readNumberArray` and `readIntField` take a character offset to search FROM,
+// not an occurrence index, which is an easy thing to get wrong by one whole
+// meaning. This turns "the second byteOffset" into the position those two want.
+size_t occurrenceAt(const std::string& text, const char* needle, size_t nth) {
+    size_t at = text.find(needle);
+    for (size_t i = 0; i < nth && at != std::string::npos; ++i) {
+        at = text.find(needle, at + 1);
+    }
+    return at == std::string::npos ? text.size() : at;
+}
+
 size_t countOccurrences(const std::string& text, const char* needle) {
     size_t count = 0;
     size_t at = text.find(needle);
@@ -330,35 +343,41 @@ int runGltfExportSelfTests(GltfExportSelfTestResult* out, int maxOut) {
         }
 
         // No conversion node exists. There is exactly one node per body, the
-        // scene lists exactly those, and an unplaced body carries the identity
-        // matrix — a root rotation would show up as a non-identity here.
+        // scene lists exactly those, and an unplaced body's node translation is
+        // zero — a root rotation or an offset would show up here.
         std::vector<double> sceneNodes;
         readNumberArray(parsed.json, "\"nodes\":", 0, &sceneNodes);
         r.check("FSR1C_04_the_scene_lists_exactly_the_body_nodes",
                 sceneNodes.size() == 1 && sceneNodes[0] == 0.0);
         r.check("FSR1C_04_there_is_no_extra_conversion_node",
-                countOccurrences(parsed.json, "\"matrix\":") == 1);
+                countOccurrences(parsed.json, "\"translation\":") == 1);
+        // ARCH-OWNER-07: the baked policy writes NO node matrix at all, so a
+        // "matrix" anywhere in the document is either the old policy returning
+        // or a conversion node arriving.
+        r.check("FSR1C_04_no_node_carries_a_matrix",
+                countOccurrences(parsed.json, "\"matrix\":") == 0);
 
-        std::vector<double> matrix;
-        readNumberArray(parsed.json, "\"matrix\":", 0, &matrix);
-        bool isIdentity = matrix.size() == 16;
-        for (size_t i = 0; i < matrix.size() && isIdentity; ++i) {
-            const double expected = (i % 5 == 0) ? 1.0 : 0.0;
-            isIdentity = std::fabs(matrix[i] - expected) < 1e-9;
-        }
-        r.check("FSR1C_04_an_unplaced_body_exports_the_identity_matrix", isIdentity);
+        std::vector<double> translation;
+        readNumberArray(parsed.json, "\"translation\":", 0, &translation);
+        r.check("FSR1C_04_an_unplaced_body_exports_a_zero_translation",
+                translation.size() == 3 && translation[0] == 0.0 && translation[1] == 0.0
+                        && translation[2] == 0.0);
     }
 
     // -----------------------------------------------------------------------
-    // FSR1C-05: the node matrix IS the renderer's model matrix
+    // FSR1C-05 / FSR1C-C1: the node carries T, and only T
     // -----------------------------------------------------------------------
+    //
+    // ARCH-OWNER-07 split Model = T * L. This case is the T half: the node's
+    // translation is the body's authored position, and rotation and scale are
+    // absent so a consumer reads identity for both. The L half is FSR1C-C1
+    // below.
     {
         Fixture f;
         f.setBox(f.first(), 2.0, 1.0, 0.5);
         // Asymmetric on purpose: a rotation on all three axes with different
         // magnitudes, a translation with three different signs and magnitudes,
-        // and a non-uniform scale. A swapped axis, a transposed matrix, a
-        // reversed composition order or a mishandled scale all break this.
+        // and a non-uniform scale.
         const TransformValues values =
                 placement(1.5, -0.5, 2.25, 370.0, 30.0, 12.25, 1.25, 2.0, 0.5);
         f.place(f.first(), values);
@@ -366,31 +385,29 @@ int runGltfExportSelfTests(GltfExportSelfTestResult* out, int maxOut) {
         const Mat4 expected = f.first().transform().modelMatrix();
         const std::vector<uint8_t> glb = exportSceneAsGlb(f.scene, ProjectKind::Construction);
         const ParsedGlb parsed = parseGlb(glb);
-        std::vector<double> matrix;
-        readNumberArray(parsed.json, "\"matrix\":", 0, &matrix);
+        std::vector<double> translation;
+        readNumberArray(parsed.json, "\"translation\":", 0, &translation);
 
-        bool matches = matrix.size() == 16;
-        for (size_t i = 0; i < matrix.size() && matches; ++i) {
-            // `%.9g` round-trips float32 exactly, so this is an EQUALITY test
-            // and not a tolerance: the exported text must name the very float
-            // the renderer holds.
-            matches = static_cast<float>(matrix[i]) == expected.m[i];
-        }
-        r.check("FSR1C_05_the_node_matrix_is_the_renderer_model_matrix_element_for_element",
-                matches);
-
-        // The translation must sit in the last COLUMN of a column-major matrix,
-        // which is m[12..14]. A transposed writer would put it at 3, 7, 11.
-        r.check("FSR1C_05_translation_is_in_the_last_column_not_the_last_row",
-                matrix.size() == 16 && static_cast<float>(matrix[12]) == 1.5f
-                        && static_cast<float>(matrix[13]) == -0.5f
-                        && static_cast<float>(matrix[14]) == 2.25f
-                        && matrix[3] == 0.0 && matrix[7] == 0.0 && matrix[11] == 0.0
-                        && matrix[15] == 1.0);
-        // And it is NOT scaled: a translation multiplied by the scale would
-        // read 1.875 rather than 1.5 on X.
+        // `%.9g` round-trips float32 exactly, so these are EQUALITY tests and
+        // not tolerances: the exported text must name the very float the
+        // renderer's model matrix holds in its last column.
+        r.check("FSR1C_05_the_node_translation_is_the_model_matrix_last_column",
+                translation.size() == 3 && static_cast<float>(translation[0]) == expected.m[12]
+                        && static_cast<float>(translation[1]) == expected.m[13]
+                        && static_cast<float>(translation[2]) == expected.m[14]);
+        r.check("FSR1C_05_and_is_the_authored_position_in_metres",
+                translation.size() == 3 && static_cast<float>(translation[0]) == 1.5f
+                        && static_cast<float>(translation[1]) == -0.5f
+                        && static_cast<float>(translation[2]) == 2.25f);
+        // NOT multiplied by the scale: 1.5 * 1.25 would read 1.875.
         r.check("FSR1C_05_translation_is_not_multiplied_by_the_scale",
-                matrix.size() == 16 && static_cast<float>(matrix[12]) == 1.5f);
+                translation.size() == 3 && static_cast<float>(translation[0]) == 1.5f);
+        r.check("FSR1C_05_the_node_writes_no_rotation",
+                countOccurrences(parsed.json, "\"rotation\":") == 0);
+        r.check("FSR1C_05_the_node_writes_no_scale",
+                countOccurrences(parsed.json, "\"scale\":") == 0);
+        r.check("FSR1C_05_the_node_writes_no_matrix",
+                countOccurrences(parsed.json, "\"matrix\":") == 0);
     }
 
     // -----------------------------------------------------------------------
@@ -422,13 +439,14 @@ int runGltfExportSelfTests(GltfExportSelfTestResult* out, int maxOut) {
                 minAtOrigin == minMoved && maxAtOrigin == maxMoved);
         r.check("FSR1C_06_local_geometry_still_straddles_the_local_origin",
                 minMoved.size() == 3 && minMoved[0] < 0.0 && maxMoved[0] > 0.0);
-        // The placement went into the node instead.
-        std::vector<double> matrix;
-        readNumberArray(parsedMoved.json, "\"matrix\":", 0, &matrix);
+        // The TRANSLATION travels on the node. This stays true under
+        // ARCH-OWNER-07: it is rotation and scale that are baked, never T.
+        std::vector<double> translation;
+        readNumberArray(parsedMoved.json, "\"translation\":", 0, &translation);
         r.check("FSR1C_06_the_placement_travels_on_the_node",
-                matrix.size() == 16 && static_cast<float>(matrix[12]) == 37.0f
-                        && static_cast<float>(matrix[13]) == -12.5f
-                        && static_cast<float>(matrix[14]) == 4.25f);
+                translation.size() == 3 && static_cast<float>(translation[0]) == 37.0f
+                        && static_cast<float>(translation[1]) == -12.5f
+                        && static_cast<float>(translation[2]) == 4.25f);
     }
 
     // -----------------------------------------------------------------------
@@ -450,7 +468,7 @@ int runGltfExportSelfTests(GltfExportSelfTestResult* out, int maxOut) {
         const ParsedGlb parsed = parseGlb(glb);
 
         r.check("FSR1C_07_every_body_becomes_one_node_and_one_mesh",
-                countOccurrences(parsed.json, "\"matrix\":") == 3
+                countOccurrences(parsed.json, "\"translation\":") == 3
                         && countOccurrences(parsed.json, "\"primitives\":") == 3);
         std::vector<double> sceneNodes;
         readNumberArray(parsed.json, "\"nodes\":", 0, &sceneNodes);
@@ -696,10 +714,20 @@ int runGltfExportSelfTests(GltfExportSelfTestResult* out, int maxOut) {
         // reaches the file through encodeGlb, and a file carrying `nan` would
         // parse as JSON and pass a length check while putting a NaN into a
         // user's model.
-        captured.bodies[0].model.m[0] = std::nanf("");
+        captured.bodies[0].translation[0] = std::nanf("");
         const std::vector<uint8_t> corrupt = encodeGlb(captured, &why);
         r.check("FSR1C_12_a_non_finite_placement_is_refused_by_the_writer",
                 corrupt.empty() && why == GlbExportStatus::NonFiniteValue);
+
+        // The same for the matrix that was baked, which the writer re-checks
+        // even though it no longer writes it: a snapshot whose bake matrix is
+        // garbage is a snapshot whose VERTICES are garbage.
+        GlbExportScene nanBake;
+        captureGlbExportScene(f.scene, ProjectKind::Construction, &nanBake);
+        nanBake.bodies[0].local.m[0] = std::nanf("");
+        const std::vector<uint8_t> nanBakeBytes = encodeGlb(nanBake, &why);
+        r.check("FSR1C_12_a_non_finite_bake_matrix_is_refused_by_the_writer",
+                nanBakeBytes.empty() && why == GlbExportStatus::NonFiniteValue);
 
         // An index pointing outside its own vertex data is the one structural
         // error a validator catches and a naive importer does not.
@@ -732,7 +760,364 @@ int runGltfExportSelfTests(GltfExportSelfTestResult* out, int maxOut) {
                         && std::string(glbExportStatusName(GlbExportStatus::InvalidMesh))
                                 == "InvalidMesh"
                         && std::string(glbExportStatusName(GlbExportStatus::NonFiniteValue))
-                                == "NonFiniteValue");
+                                == "NonFiniteValue"
+                        && std::string(glbExportStatusName(GlbExportStatus::SingularTransform))
+                                == "SingularTransform"
+                        && std::string(glbExportStatusName(GlbExportStatus::MirroredTransform))
+                                == "MirroredTransform");
+    }
+
+    // -----------------------------------------------------------------------
+    // FSR1C-C1: the bake — rotation and scale live in the vertices
+    // -----------------------------------------------------------------------
+    //
+    // ARCH-OWNER-07. The node half is FSR1C-04/05/06 above; everything here is
+    // the L half: Model = T * L, L is baked, and the numbers in the file are
+    // the body's final rotated and scaled shape about its own origin.
+
+    // The identity the whole design rests on: modelMatrix() really is
+    // T(position) * localMatrix(). If this ever stopped holding, the split
+    // would be exporting a different placement from the one drawn.
+    {
+        Fixture f;
+        f.setBox(f.first(), 2.0, 1.0, 0.5);
+        f.place(f.first(), placement(1.5, -0.5, 2.25, 370.0, 30.0, 12.25, 1.25, 2.0, 0.5));
+        const ConstructionTransform& transform = f.first().transform();
+        const Mat4 model = transform.modelMatrix();
+        const Mat4 local = transform.localMatrix();
+        const Mat4 rebuilt =
+                mat4Multiply(mat4Translation(Vec3{model.m[12], model.m[13], model.m[14]}), local);
+        bool same = true;
+        for (int i = 0; i < 16 && same; ++i) {
+            same = std::fabs(rebuilt.m[i] - model.m[i]) < 1e-5f;
+        }
+        r.check("FSR1C_C1_04_model_is_exactly_translation_times_local", same);
+        // And localMatrix() carries no translation of its own, which is what
+        // makes "bake L about the local origin" mean what it says.
+        r.check("FSR1C_C1_05_the_local_matrix_has_no_translation",
+                local.m[12] == 0.0f && local.m[13] == 0.0f && local.m[14] == 0.0f);
+    }
+
+    // A vertex baked by hand, compared with the vertex in the file.
+    {
+        Fixture f;
+        // A CONE, and the choice matters. A box, a plane and a sphere are all
+        // centrally symmetric about their local origin, and rotating a
+        // centrally symmetric point set leaves its bounding box symmetric too —
+        // so in any of those, a recentre-on-bounds would be invisible. A cone
+        // has its apex at +Y and its base disc at -Y, so once it is turned its
+        // bounds are genuinely lopsided about the origin and a recentre would
+        // show.
+        applyPrimitive(f.first().construction(), f.first().meshStore(),
+                       PrimitiveSpec::forCone(2.0, 3.0));
+        f.place(f.first(), placement(4.0, -2.0, 0.5, 25.0, -40.0, 65.0, 1.5, 1.0, 0.25));
+
+        const Mat4 local = f.first().transform().localMatrix();
+        const std::vector<uint8_t> glb = exportSceneAsGlb(f.scene, ProjectKind::Construction);
+        const ParsedGlb parsed = parseGlb(glb);
+
+        // Read the written POSITION accessor straight out of the BIN chunk and
+        // compare every vertex with L * p computed here.
+        long long positionCount = 0;
+        long long viewOffset = 0;
+        long long viewLength = 0;
+        readIntField(parsed.json, "\"count\":", 0, &positionCount);
+        readIntField(parsed.json, "\"byteOffset\":", 0, &viewOffset);
+        readIntField(parsed.json, "\"byteLength\":", 0, &viewLength);
+
+        // The unbaked source, regenerated the same way the exporter does.
+        const ConstructionMesh source = f.first().construction().generateMesh();
+        RenderMeshData expectedMesh;
+        const bool built = buildRenderMesh(source.vertices.data(),
+                                           static_cast<uint32_t>(source.vertices.size()),
+                                           source.indices.data(),
+                                           static_cast<uint32_t>(source.indices.size()),
+                                           SurfaceShading::Smooth, &expectedMesh,
+                                           /*renderBothSides=*/false);
+        r.check("FSR1C_C1_04_the_comparison_mesh_builds", built);
+
+        bool bakedMatches = built && positionCount > 0
+                && static_cast<size_t>(positionCount) == expectedMesh.vertices.size()
+                && viewLength == positionCount * 12;
+        for (long long v = 0; v < positionCount && bakedMatches; ++v) {
+            const float* p = expectedMesh.vertices[static_cast<size_t>(v)].position;
+            const Vec3 expected = mat4TransformPoint(local, Vec3{p[0], p[1], p[2]});
+            const size_t at = parsed.binStart + static_cast<size_t>(viewOffset)
+                    + static_cast<size_t>(v) * 12u;
+            bakedMatches = std::fabs(readF32(glb, at) - expected.x) < 1e-5f
+                    && std::fabs(readF32(glb, at + 4) - expected.y) < 1e-5f
+                    && std::fabs(readF32(glb, at + 8) - expected.z) < 1e-5f;
+        }
+        r.check("FSR1C_C1_04_every_written_position_is_L_times_the_source_position",
+                bakedMatches);
+
+        // No recentre: the baked bounds are the baked geometry's own bounds and
+        // are NOT symmetric about zero, because a turned 3 x 1 plane is not.
+        std::vector<double> minValues;
+        std::vector<double> maxValues;
+        readNumberArray(parsed.json, "\"min\":", 0, &minValues);
+        readNumberArray(parsed.json, "\"max\":", 0, &maxValues);
+        // A recentre-on-bounds forces min == -max on EVERY axis, so the
+        // falsifying observation is one axis where it does not.
+        bool anyAxisIsLopsided = false;
+        if (minValues.size() == 3 && maxValues.size() == 3) {
+            for (int c = 0; c < 3; ++c) {
+                if (std::fabs(minValues[c] + maxValues[c]) > 1e-4) {
+                    anyAxisIsLopsided = true;
+                }
+            }
+        }
+        r.check("FSR1C_C1_05_the_baked_bounds_are_not_recentred_on_the_geometry",
+                anyAxisIsLopsided);
+
+        // The pivot is still the local origin, and the node still positions it.
+        std::vector<double> translation;
+        readNumberArray(parsed.json, "\"translation\":", 0, &translation);
+        r.check("FSR1C_C1_05_the_pivot_is_the_local_origin_positioned_by_the_node",
+                translation.size() == 3 && static_cast<float>(translation[0]) == 4.0f
+                        && static_cast<float>(translation[1]) == -2.0f
+                        && static_cast<float>(translation[2]) == 0.5f);
+
+        // POSITION min/max are recomputed from the BAKED vertices, not carried
+        // over from the source. An unbaked cone of bottom diameter 2 spans
+        // exactly +-1 on X; a baked one under this rotation and 1.5/1/0.25
+        // scale does not.
+        bool boundsAreBaked = minValues.size() == 3
+                && (std::fabs(minValues[0] + 1.0) > 1e-3 || std::fabs(maxValues[0] - 1.0) > 1e-3);
+        r.check("FSR1C_C1_07_position_bounds_are_recomputed_from_the_baked_vertices",
+                boundsAreBaked);
+        // ...and they really do bound the written data.
+        bool boundsHold = minValues.size() == 3 && maxValues.size() == 3;
+        for (long long v = 0; v < positionCount && boundsHold; ++v) {
+            const size_t at = parsed.binStart + static_cast<size_t>(viewOffset)
+                    + static_cast<size_t>(v) * 12u;
+            for (int c = 0; c < 3 && boundsHold; ++c) {
+                const float value = readF32(glb, at + static_cast<size_t>(c) * 4u);
+                boundsHold = value >= static_cast<float>(minValues[c]) - 1e-6f
+                        && value <= static_cast<float>(maxValues[c]) + 1e-6f;
+            }
+        }
+        r.check("FSR1C_C1_07_and_the_recomputed_bounds_hold", boundsHold);
+    }
+
+    // Normals under a non-uniform scale ride the inverse transpose, not L.
+    {
+        Fixture f;
+        // A SPHERE, and the choice matters as much as the cone's did. A box's
+        // face normals all lie along its local axes, and for a normal that is
+        // parallel to a scale axis, L and inverse-transpose(L) produce the same
+        // DIRECTION and differ only in length — which normalising then hides.
+        // So a box cannot tell the two apart at all. A sphere's normals point
+        // everywhere, and on every oblique one the two matrices disagree.
+        applyPrimitive(f.first().construction(), f.first().meshStore(),
+                       PrimitiveSpec::forSphere(1.0));
+        // 4 : 1 : 1 is violent enough that the disagreement is wide.
+        f.place(f.first(), placement(0.0, 0.0, 0.0, 0.0, 45.0, 0.0, 4.0, 1.0, 1.0));
+
+        const Mat4 local = f.first().transform().localMatrix();
+        const Mat4 normalMatrix = f.first().transform().normalMatrix();
+
+        // normalMatrix() is R * S^-1, derived analytically. That it EQUALS
+        // transpose(inverse(L)) is the claim ARCH-OWNER-07 relies on, so it is
+        // checked numerically here rather than assumed: inverse(L) is built
+        // from the same authoritative values through inverseModelMatrix(),
+        // whose linear part is S^-1 * R^-1.
+        const Mat4 inverseModel = f.first().transform().inverseModelMatrix();
+        bool inverseTransposeMatches = true;
+        for (int row = 0; row < 3 && inverseTransposeMatches; ++row) {
+            for (int col = 0; col < 3 && inverseTransposeMatches; ++col) {
+                // transpose(inverse(L))[col][row] == inverse(L)[row][col]
+                const float transposed = inverseModel.m[row * 4 + col];
+                inverseTransposeMatches =
+                        std::fabs(normalMatrix.m[col * 4 + row] - transposed) < 1e-4f;
+            }
+        }
+        r.check("FSR1C_C1_06_the_normal_matrix_is_the_inverse_transpose_of_L",
+                inverseTransposeMatches);
+
+        const std::vector<uint8_t> glb = exportSceneAsGlb(f.scene, ProjectKind::Construction);
+        const ParsedGlb parsed = parseGlb(glb);
+        long long count = 0;
+        readIntField(parsed.json, "\"count\":", 0, &count);
+        // bufferView 1 is the NORMAL accessor's; its byteOffset is the second
+        // "byteOffset" in the document.
+        long long normalOffset = 0;
+        readIntField(parsed.json, "\"byteOffset\":",
+                     occurrenceAt(parsed.json, "\"byteOffset\":", 1), &normalOffset);
+
+        // Every written normal is unit length, and none of them equals what
+        // carrying the normal by L would have produced — which is the whole
+        // point: under 4:1:1 those are different directions.
+        bool unit = count > 0;
+        bool differsFromNaiveL = false;
+        const ConstructionMesh source = f.first().construction().generateMesh();
+        RenderMeshData sourceMesh;
+        buildRenderMesh(source.vertices.data(), static_cast<uint32_t>(source.vertices.size()),
+                        source.indices.data(), static_cast<uint32_t>(source.indices.size()),
+                        SurfaceShading::Smooth, &sourceMesh, /*renderBothSides=*/false);
+        for (long long v = 0; v < count && unit; ++v) {
+            const size_t at = parsed.binStart + static_cast<size_t>(normalOffset)
+                    + static_cast<size_t>(v) * 12u;
+            const Vec3 written{readF32(glb, at), readF32(glb, at + 4), readF32(glb, at + 8)};
+            const float length = std::sqrt(written.x * written.x + written.y * written.y
+                                           + written.z * written.z);
+            unit = std::fabs(length - 1.0f) < 1e-3f;
+
+            if (static_cast<size_t>(v) < sourceMesh.vertices.size()) {
+                const float* n = sourceMesh.vertices[static_cast<size_t>(v)].normal;
+                const Vec3 naive =
+                        vec3Normalize(mat4TransformDirection(local, Vec3{n[0], n[1], n[2]}));
+                if (std::fabs(written.x - naive.x) > 1e-2f
+                    || std::fabs(written.y - naive.y) > 1e-2f
+                    || std::fabs(written.z - naive.z) > 1e-2f) {
+                    differsFromNaiveL = true;
+                }
+            }
+        }
+        r.check("FSR1C_C1_06_every_baked_normal_is_unit_length", unit);
+        r.check("FSR1C_C1_06_and_is_not_what_carrying_it_by_L_would_give", differsFromNaiveL);
+    }
+
+    // The determinant rule, and what happens when it is violated.
+    {
+        Fixture f;
+        f.setBox(f.first(), 2.0, 1.0, 0.5);
+        f.place(f.first(), placement(0.0, 0.0, 0.0, 20.0, -35.0, 50.0, 2.0, 0.5, 3.0));
+        GlbExportScene captured;
+        GlbExportStatus why = GlbExportStatus::Ok;
+        r.check("FSR1C_C1_08_a_positive_scale_captures",
+                captureGlbExportScene(f.scene, ProjectKind::Construction, &captured) ==
+                        GlbExportStatus::Ok);
+
+        // det(R * S) = sx * sy * sz for the product's domain, so it is exactly
+        // the scale product and it is positive. Winding therefore survives the
+        // bake untouched, which is why no triangle is ever reversed.
+        const Mat4 local = f.first().transform().localMatrix();
+        const float a = local.m[0], b = local.m[4], c = local.m[8];
+        const float d = local.m[1], e = local.m[5], g = local.m[9];
+        const float h = local.m[2], i = local.m[6], j = local.m[10];
+        const float determinant =
+                a * (e * j - g * i) - b * (d * j - g * h) + c * (d * i - e * h);
+        r.check("FSR1C_C1_08_the_determinant_is_the_scale_product_and_positive",
+                determinant > 0.0f && std::fabs(determinant - 3.0f) < 1e-4f);
+
+        // A mirror cannot be authored — the transform domain refuses a negative
+        // scale — so it is injected into a snapshot to prove the WRITER refuses
+        // it rather than silently reversing every triangle.
+        GlbExportScene mirrored = captured;
+        for (int m = 0; m < 3; ++m) {
+            mirrored.bodies[0].local.m[m] = -mirrored.bodies[0].local.m[m];
+        }
+        const std::vector<uint8_t> mirroredBytes = encodeGlb(mirrored, &why);
+        r.check("FSR1C_C1_08_a_mirrored_bake_is_refused_and_never_compensated",
+                mirroredBytes.empty() && why == GlbExportStatus::MirroredTransform);
+
+        GlbExportScene singular = captured;
+        for (int m = 0; m < 3; ++m) {
+            singular.bodies[0].local.m[m] = 0.0f;
+        }
+        const std::vector<uint8_t> singularBytes = encodeGlb(singular, &why);
+        r.check("FSR1C_C1_08_a_singular_bake_is_refused",
+                singularBytes.empty() && why == GlbExportStatus::SingularTransform);
+
+        // And the transform domain still refuses both at the source, so neither
+        // status is reachable from an authored placement. Removing the writer's
+        // guard is not removing this one.
+        TransformValidation validation = TransformValidation::Ok;
+        ConstructionTransform probe;
+        r.check("FSR1C_C1_08_the_domain_still_refuses_a_negative_scale",
+                probe.setValues(placement(0, 0, 0, 0, 0, 0, -1.0, 1.0, 1.0), &validation)
+                        == TransformUpdateStatus::Rejected);
+        r.check("FSR1C_C1_08_and_a_zero_scale",
+                probe.setValues(placement(0, 0, 0, 0, 0, 0, 1.0, 0.0, 1.0), &validation)
+                        == TransformUpdateStatus::Rejected);
+    }
+
+    // Multi-body: each bakes its OWN L, and nothing is merged.
+    {
+        Fixture f;
+        f.setBox(f.first(), 1.0, 1.0, 1.0);
+        f.place(f.first(), placement(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0));
+        SceneObject& second = f.scene.addBody();
+        r.check("FSR1C_C1_09_a_second_body_is_added", f.scene.bodyCount() == 2);
+        {
+            f.setBox(second, 1.0, 1.0, 1.0);
+            // Same 1 m cube, a very different L.
+            f.place(second, placement(5.0, 0.0, 0.0, 0.0, 0.0, 0.0, 3.0, 7.0, 0.25));
+
+            const std::vector<uint8_t> glb = exportSceneAsGlb(f.scene, ProjectKind::Construction);
+            const ParsedGlb parsed = parseGlb(glb);
+            r.check("FSR1C_C1_09_two_bodies_are_two_nodes",
+                    countOccurrences(parsed.json, "\"translation\":") == 2
+                            && countOccurrences(parsed.json, "\"primitives\":") == 2);
+
+            // Body 1's cube stays 1 m; body 2's is 3 x 7 x 0.25 m. One shared
+            // bake, or a merge, could not produce both.
+            std::vector<double> firstMin, firstMax, secondMin, secondMax;
+            readNumberArray(parsed.json, "\"min\":", 0, &firstMin);
+            readNumberArray(parsed.json, "\"max\":", 0, &firstMax);
+            readNumberArray(parsed.json, "\"min\":",
+                            occurrenceAt(parsed.json, "\"min\":", 1), &secondMin);
+            readNumberArray(parsed.json, "\"max\":",
+                            occurrenceAt(parsed.json, "\"max\":", 1), &secondMax);
+            const bool firstUnbaked = firstMin.size() == 3
+                    && std::fabs((firstMax[0] - firstMin[0]) - 1.0) < 1e-5
+                    && std::fabs((firstMax[1] - firstMin[1]) - 1.0) < 1e-5;
+            const bool secondBaked = secondMin.size() == 3
+                    && std::fabs((secondMax[0] - secondMin[0]) - 3.0) < 1e-5
+                    && std::fabs((secondMax[1] - secondMin[1]) - 7.0) < 1e-5
+                    && std::fabs((secondMax[2] - secondMin[2]) - 0.25) < 1e-5;
+            r.check("FSR1C_C1_09_the_unscaled_body_is_unchanged", firstUnbaked);
+            r.check("FSR1C_C1_09_and_the_scaled_body_baked_only_its_own_scale", secondBaked);
+        }
+    }
+
+    // A Sculpt body still exports its sculpt mesh, now baked.
+    {
+        Fixture f;
+        applyPrimitive(f.first().construction(), f.first().meshStore(),
+                       PrimitiveSpec::forSphere(1.0));
+        const ConstructionMesh sphere = f.first().construction().generateMesh();
+        MeshValidation freezeWhy = MeshValidation::Ok;
+        const bool frozen = f.first().frozenSculpt().mesh.freezeFrom(sphere, f.first().objectId(),
+                                                                    &freezeWhy);
+        r.check("FSR1C_C1_10_the_fixture_freezes", frozen);
+        f.place(f.first(), placement(2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 4.0, 1.0));
+
+        GlbExportScene captured;
+        r.check("FSR1C_C1_10_a_sculpt_project_captures",
+                captureGlbExportScene(f.scene, ProjectKind::Sculpt, &captured)
+                        == GlbExportStatus::Ok);
+        r.check("FSR1C_C1_10_and_reports_the_sculpt_source",
+                !captured.bodies.empty() && captured.bodies[0].fromSculpt);
+
+        const std::vector<uint8_t> glb = exportSceneAsGlb(f.scene, ProjectKind::Sculpt);
+        const ParsedGlb parsed = parseGlb(glb);
+        std::vector<double> minValues, maxValues, translation;
+        readNumberArray(parsed.json, "\"min\":", 0, &minValues);
+        readNumberArray(parsed.json, "\"max\":", 0, &maxValues);
+        readNumberArray(parsed.json, "\"translation\":", 0, &translation);
+
+        // The 1 m sphere is 4x taller after the bake, and 1 m wide still.
+        r.check("FSR1C_C1_10_the_sculpt_geometry_carries_the_bodys_own_scale",
+                minValues.size() == 3 && std::fabs((maxValues[1] - minValues[1]) - 4.0) < 1e-3
+                        && std::fabs((maxValues[0] - minValues[0]) - 1.0) < 1e-3);
+        r.check("FSR1C_C1_10_and_the_node_still_carries_only_the_translation",
+                translation.size() == 3 && static_cast<float>(translation[0]) == 2.0f
+                        && countOccurrences(parsed.json, "\"matrix\":") == 0
+                        && countOccurrences(parsed.json, "\"rotation\":") == 0
+                        && countOccurrences(parsed.json, "\"scale\":") == 0);
+    }
+
+    // Determinism survives the bake.
+    {
+        Fixture f;
+        f.setBox(f.first(), 2.0, 1.0, 0.5);
+        f.place(f.first(), placement(1.5, -0.5, 2.25, 370.0, 30.0, 12.25, 1.25, 2.0, 0.5));
+        const std::vector<uint8_t> once = exportSceneAsGlb(f.scene, ProjectKind::Construction);
+        const std::vector<uint8_t> twice = exportSceneAsGlb(f.scene, ProjectKind::Construction);
+        r.check("FSR1C_C1_11_the_same_baked_snapshot_exports_byte_identically", once == twice);
+        r.check("FSR1C_C1_11_and_is_not_empty", !once.empty());
     }
 
     return r.n;

@@ -160,56 +160,253 @@ public final class GlbExportTest {
         final byte[] bytes = export();
         final GlbDocument document = GlbDocument.parse(bytes);
         assertTrue("the scene reached the file", document.bodies().size() >= 1);
-        assertEquals("exactly one matrix per body and not one more — a"
-                        + " Y-up-to-Z-up fixer node would be the extra one",
-                document.bodies().size(), countOccurrences(document.json(), "\"matrix\""));
+        assertEquals("no node carries a matrix at all under ARCH-OWNER-07,"
+                        + " so a Y-up-to-Z-up fixer node would be the only one",
+                0, countOccurrences(document.json(), "\"matrix\""));
+        assertEquals("and exactly one translation per body, never one more",
+                document.bodies().size(),
+                countOccurrences(document.json(), "\"translation\""));
     }
 
     // -----------------------------------------------------------------------
-    // FSR1C-15: the node carries the placement; the vertices never do
+    // FSR1C-15 / FSR1C-C1-01..03: the node carries T, and only T
     // -----------------------------------------------------------------------
 
     @Test
-    public void fsr1c15_placementLivesInTheNodeMatrixAndNotInTheVertices() {
+    public void fsr1cC1_01to03_theNodeCarriesTranslationOnlyWithIdentityRotationAndScale() {
         applyBox(1.0, 2.0, 4.0);
-        final float[] restingVertices = activeBody(export()).positions;
+        applyPlacement(3.5, -1.25, 0.75, 47.5, -22.0, 13.25, 2.0, 3.0, 0.5);
+        final GlbDocument.Body body = activeBody(export());
 
-        applyPlacement(3.5, -1.25, 0.75, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0);
-        final GlbDocument.Body moved = activeBody(export());
+        // FSR1C-C1-03: the translation is the ForgeShape placement, unchanged
+        // and unscaled — 3.5 * 2.0 would read 7.0.
+        assertArrayEquals("the node translation is the authored position in metres",
+                new float[]{3.5f, -1.25f, 0.75f}, body.translation, 1e-5f);
+        assertTrue("and it is stated as a translation", body.hasTranslation);
 
-        assertArrayEquals("moving a body must not move one vertex",
-                restingVertices, moved.positions, 0.0f);
-        assertEquals("translation is the matrix's LAST COLUMN, element 12",
-                3.5f, moved.matrix[12], 1e-5f);
-        assertEquals(-1.25f, moved.matrix[13], 1e-5f);
-        assertEquals(0.75f, moved.matrix[14], 1e-5f);
-        assertArrayEquals("and the bottom row of a column-major matrix is 0,0,0,1",
-                new float[]{0f, 0f, 0f, 1f},
-                new float[]{moved.matrix[3], moved.matrix[7], moved.matrix[11],
-                        moved.matrix[15]}, 1e-6f);
-        // Restated through the reader's own matrix arithmetic: with no
-        // rotation and unit scale, every world vertex is its local vertex plus
-        // the translation. If the reader multiplied a transposed matrix this
-        // would not hold, so the two claims check each other.
-        final float[] local = moved.localVertex(0);
-        final float[] world = moved.worldVertex(0);
-        assertArrayEquals(new float[]{local[0] + 3.5f, local[1] - 1.25f, local[2] + 0.75f},
-                world, 1e-4f);
+        // FSR1C-C1-01 and -02: rotation and scale are ABSENT, so every reader
+        // sees identity for both. Asserted on the parsed node and again on the
+        // raw JSON, because "absent" is exactly the kind of claim a convenience
+        // default can hide.
+        assertFalse("no node rotation", body.hasRotation);
+        assertFalse("no node scale", body.hasScale);
+        assertFalse("and no node matrix", body.hasMatrix);
+        final String json = GlbDocument.parse(export()).json();
+        assertEquals(0, countOccurrences(json, "\"rotation\""));
+        assertEquals(0, countOccurrences(json, "\"scale\""));
+        assertEquals(0, countOccurrences(json, "\"matrix\""));
     }
 
     @Test
-    public void fsr1c15_scaleIsInTheMatrixAndNotBakedIntoTheGeometry() {
+    public void fsr1cC1_04_rotationAndScaleAreBakedIntoTheGeometry() {
+        applyBox(1.0, 2.0, 4.0);
+        applyPlacement(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 2.0, 3.0, 0.5);
+        final float[] scaled = activeBody(export()).localBounds();
+
+        // The 1 x 2 x 4 m box arrives already 2 x 6 x 2 m, because the scale is
+        // in the vertices now. Under the old policy this read 1 x 2 x 4 with
+        // the scale on the node.
+        assertEquals("X is baked: 1 m x 2", 2.0f, scaled[3] - scaled[0], 1e-4f);
+        assertEquals("Y is baked: 2 m x 3", 6.0f, scaled[4] - scaled[1], 1e-4f);
+        assertEquals("Z is baked: 4 m x 0.5", 2.0f, scaled[5] - scaled[2], 1e-4f);
+
+        // A quarter turn about Y swaps which world axis the X and Z extents
+        // land on — visible only because it is baked.
+        applyPlacement(0.0, 0.0, 0.0, 0.0, 90.0, 0.0, 1.0, 1.0, 1.0);
+        final float[] turned = activeBody(export()).localBounds();
+        assertEquals("the 4 m depth is now the X extent", 4.0f, turned[3] - turned[0], 1e-4f);
+        assertEquals("height is untouched by a Y rotation", 2.0f, turned[4] - turned[1], 1e-4f);
+        assertEquals("and the 1 m width is now the Z extent", 1.0f, turned[5] - turned[2], 1e-4f);
+    }
+
+    @Test
+    public void fsr1cC1_05_bakingHappensAboutTheLocalOriginAndNothingIsRecentred() {
+        // A CONE, and the choice matters. A box, a plane and a sphere are all
+        // centrally symmetric about their local origin, and rotating a
+        // centrally symmetric point set leaves its bounding box symmetric too —
+        // so a recentre-on-bounds would be invisible in any of them. A cone has
+        // its apex at +Y and its base disc at -Y, so once it is turned its
+        // bounds are genuinely lopsided about the origin.
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            assertEquals(NativeViewport.APPLY_APPLIED,
+                    NativeViewport.applyConstructionCone(2.0, 3.0));
+            return null;
+        });
+        settleLayout();
+        applyPlacement(4.0, -2.0, 0.5, 25.0, -40.0, 65.0, 1.5, 1.0, 0.25);
+
+        final GlbDocument.Body body = activeBody(export());
+        final float[] bounds = body.localBounds();
+        // Recentring on bounds forces min == -max on EVERY axis, so one axis
+        // where it does not is the falsifying observation.
+        boolean lopsided = false;
+        for (int axis = 0; axis < 3; ++axis) {
+            if (Math.abs(bounds[axis] + bounds[3 + axis]) > 1e-4f) {
+                lopsided = true;
+            }
+        }
+        assertTrue("the baked geometry must not be recentred on its own bounds", lopsided);
+        // The pivot is still the local origin, and the node still positions it.
+        assertArrayEquals("the pivot did not move into the geometry",
+                new float[]{4.0f, -2.0f, 0.5f}, body.translation, 1e-5f);
+    }
+
+    /**
+     * `FSR1C-C1-06`. Normals ride {@code transpose(inverse(L))}, not {@code L}.
+     *
+     * <p>Done by exporting the SAME body twice — once unscaled, once at 4:1:1 —
+     * and carrying the first export's normals by each candidate matrix here, in
+     * the test, with no formula borrowed from the product. The tessellation
+     * does not depend on the transform, so the two exports have the same
+     * vertices in the same order and the comparison is exact.
+     *
+     * <p>A SPHERE, and the choice matters. A box's face normals all lie along
+     * its local axes, and for a normal parallel to a scale axis the two
+     * matrices give the same DIRECTION and differ only in length — which
+     * normalising then hides, so a box cannot tell them apart at all.
+     */
+    @Test
+    public void fsr1cC1_06_normalsRideTheInverseTransposeUnderNonUniformScale() {
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            assertEquals(NativeViewport.APPLY_APPLIED, NativeViewport.applyConstructionSphere(1.0));
+            return null;
+        });
+        settleLayout();
+        applyPlacement(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0);
+        final GlbDocument.Body source = activeBody(export());
+
+        applyPlacement(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 4.0, 1.0, 1.0);
+        final GlbDocument.Body scaled = activeBody(export());
+        assertEquals("the scale must not change the tessellation",
+                source.vertexCount(), scaled.vertexCount());
+
+        // With no rotation, L is diag(4,1,1) and transpose(inverse(L)) is
+        // diag(1/4,1,1). Both written out rather than derived, so this test
+        // shares no arithmetic with the exporter.
+        final float[] l = {4f, 1f, 1f};
+        final float[] inverseTranspose = {0.25f, 1f, 1f};
+        int disagreements = 0;
+        for (int i = 0; i < scaled.vertexCount(); ++i) {
+            final float x = scaled.normals[i * 3];
+            final float y = scaled.normals[i * 3 + 1];
+            final float z = scaled.normals[i * 3 + 2];
+            assertEquals("normal " + i + " must be unit length",
+                    1.0f, (float) Math.sqrt(x * x + y * y + z * z), 1e-3f);
+
+            final float[] n = {source.normals[i * 3], source.normals[i * 3 + 1],
+                    source.normals[i * 3 + 2]};
+            final float[] correct = normalized(n[0] * inverseTranspose[0],
+                    n[1] * inverseTranspose[1], n[2] * inverseTranspose[2]);
+            final float[] wrong = normalized(n[0] * l[0], n[1] * l[1], n[2] * l[2]);
+            if (correct == null || wrong == null) {
+                continue;
+            }
+            assertArrayEquals("normal " + i + " was not carried by the inverse transpose",
+                    correct, new float[]{x, y, z}, 2e-3f);
+            if (Math.abs(correct[0] - wrong[0]) > 1e-2f) {
+                disagreements++;
+            }
+        }
+        assertTrue("this case is only evidence if the two matrices disagree somewhere,"
+                + " and on a sphere they disagree almost everywhere", disagreements > 10);
+
+        // Positions rode L, which is the other half of the same bake.
+        for (int i = 0; i < scaled.vertexCount(); ++i) {
+            assertEquals("position " + i + " X", source.positions[i * 3] * 4f,
+                    scaled.positions[i * 3], 1e-4f);
+            assertEquals("position " + i + " Y", source.positions[i * 3 + 1],
+                    scaled.positions[i * 3 + 1], 1e-5f);
+        }
+        assertOutwardWinding(scaled);
+    }
+
+    /**
+     * `FSR1C-C1-06`, restated on a shape where perpendicularity is checkable.
+     *
+     * <p>A box's crease policy gives every corner one normal per face, so each
+     * one must be exactly perpendicular to the triangles it belongs to. That
+     * stays true through a bake — a rotation carries normals and faces
+     * together — and it is the property a wrong normal matrix destroys wherever
+     * the scale is not aligned with the face.
+     */
+    @Test
+    public void fsr1cC1_06_bakedNormalsStayPerpendicularToTheirFaces() {
+        applyBox(1.0, 2.0, 4.0);
+        applyPlacement(0.0, 0.0, 0.0, 35.0, -20.0, 55.0, 2.0, 3.0, 0.5);
+        final GlbDocument.Body body = activeBody(export());
+        assertNormalsPerpendicularToTheirFaces(body);
+        assertOutwardWinding(body);
+    }
+
+    @Test
+    public void fsr1cC1_07_positionBoundsAreRecomputedFromTheBakedVertices() {
         applyBox(1.0, 2.0, 4.0);
         applyPlacement(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 2.0, 3.0, 0.5);
         final GlbDocument.Body body = activeBody(export());
-        final float[] bounds = body.localBounds();
 
-        assertEquals("the geometry is still the 1 m dimension the user typed",
-                1.0f, bounds[3] - bounds[0], 1e-5f);
-        assertEquals("a column's length is that axis's scale — X",
-                2.0f, columnLength(body.matrix, 0), 1e-5f);
-        assertEquals("Y", 3.0f, columnLength(body.matrix, 1), 1e-5f);
-        assertEquals("Z", 0.5f, columnLength(body.matrix, 2), 1e-5f);
+        // The reader recomputes the bounds from the data and reports a problem
+        // if the accessor disagrees, so `activeBody`'s clean-validate already
+        // covers this. Restated explicitly because the failure it guards — a
+        // min/max carried over from before the bake — is silent in every viewer
+        // that does not cull or frame by them.
+        final float[] bounds = body.localBounds();
+        assertArrayEquals("the declared min is the baked min",
+                new float[]{bounds[0], bounds[1], bounds[2]}, body.declaredMin, 1e-6f);
+        assertArrayEquals("the declared max is the baked max",
+                new float[]{bounds[3], bounds[4], bounds[5]}, body.declaredMax, 1e-6f);
+        assertEquals("and they describe the baked size, not the authored one",
+                6.0f, body.declaredMax[1] - body.declaredMin[1], 1e-4f);
+    }
+
+    @Test
+    public void fsr1cC1_09_eachBodyBakesItsOwnTransformIndependently() {
+        applyBox(1.0, 1.0, 1.0);
+        applyPlacement(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0);
+        final long first = onWorkspace(rule.getScenario(),
+                (activity, workspace) -> NativeViewport.sceneActiveBodyId());
+        final long second = addBody();
+        applyBox(1.0, 1.0, 1.0);
+        applyPlacement(5.0, 0.0, 0.0, 0.0, 0.0, 0.0, 3.0, 7.0, 0.25);
+
+        final GlbDocument document = GlbDocument.parse(export());
+        assertEquals("no structural problem: " + document.problemSummary(),
+                0, document.validate().size());
+        final GlbDocument.Body unscaled = named(document, "Body_" + first);
+        final GlbDocument.Body scaled = named(document, "Body_" + second);
+
+        final float[] a = unscaled.localBounds();
+        assertEquals("the unscaled body is still a 1 m cube", 1.0f, a[3] - a[0], 1e-4f);
+        assertEquals(1.0f, a[4] - a[1], 1e-4f);
+        final float[] b = scaled.localBounds();
+        assertEquals("and the scaled body baked ONLY its own scale",
+                3.0f, b[3] - b[0], 1e-4f);
+        assertEquals(7.0f, b[4] - b[1], 1e-4f);
+        assertEquals(0.25f, b[5] - b[2], 1e-4f);
+        assertArrayEquals("with its own translation still on its own node",
+                new float[]{5.0f, 0.0f, 0.0f}, scaled.translation, 1e-5f);
+        assertArrayEquals("and the other body untouched at the origin",
+                new float[]{0.0f, 0.0f, 0.0f}, unscaled.translation, 1e-5f);
+    }
+
+    @Test
+    public void fsr1cC1_11_thesameProjectStillExportsByteIdentically() {
+        applyBox(1.0, 2.0, 4.0);
+        applyPlacement(1.5, -0.5, 2.25, 370.0, 30.0, 12.25, 1.25, 2.0, 0.5);
+        assertArrayEquals("baking must not make the export non-deterministic",
+                export(), export());
+    }
+
+    @Test
+    public void fsr1cC1_12_metresAndTheUpAxisAreUnchangedByTheBake() {
+        applyBox(1.0, 2.0, 4.0);
+        applyPlacement(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0);
+        final float[] bounds = activeBody(export()).localBounds();
+        assertEquals("width on X, in metres", 1.0f, bounds[3] - bounds[0], 1e-5f);
+        assertEquals("height on Y — still the up-axis assertion",
+                2.0f, bounds[4] - bounds[1], 1e-5f);
+        assertEquals("depth on Z", 4.0f, bounds[5] - bounds[2], 1e-5f);
+        assertEquals("an identity placement bakes the identity",
+                -0.5f, bounds[0], 1e-5f);
     }
 
     // -----------------------------------------------------------------------
@@ -265,39 +462,55 @@ public final class GlbExportTest {
         assertEquals("the fixture's six bodies", 6, ids.length);
         assertEquals("and six nodes", 6, document.bodies().size());
 
-        final List<String> matrices = new ArrayList<>();
+        final List<String> places = new ArrayList<>();
         for (GlbDocument.Body body : document.bodies()) {
-            final String key = Arrays.toString(body.matrix);
-            assertFalse("six differently placed bodies must not share a matrix: " + key,
-                    matrices.contains(key));
-            matrices.add(key);
+            final String key = Arrays.toString(body.translation);
+            assertFalse("six differently placed bodies must not share a position: " + key,
+                    places.contains(key));
+            places.add(key);
             assertTrue("every body carries geometry", body.triangleCount() > 0);
         }
     }
 
     @Test
-    public void e2er1c02_theFixturesTranslationsRotationsAndScalesReachTheFile() {
+    public void e2er1c02_theFixturesTranslationsReachTheNodeAndItsScalesReachTheGeometry() {
         openSample(SAMPLE_CONSTRUCTION);
         final GlbDocument document = GlbDocument.parse(export());
         final long[] ids = sceneBodyIds();
 
         // The fixture places body i at (0.5i, -0.25i, 1.25i) with scale
         // (1 + 0.25i, 2, 0.5) and rotation (370, -45.5, 12.25i) — every value
-        // asymmetric on purpose, so no axis can stand in for another.
+        // asymmetric on purpose, so no axis can stand in for another. Under
+        // ARCH-OWNER-07 the translation is the only one of the three that stays
+        // on the node; the other two are in the vertices.
         for (int i = 0; i < ids.length; ++i) {
             final int n = (int) ids[i];
             final GlbDocument.Body body = document.bodies().get(i);
             final String who = "body " + n;
-            assertEquals(who + " X", 0.5f * n, body.matrix[12], 1e-5f);
-            assertEquals(who + " Y", -0.25f * n, body.matrix[13], 1e-5f);
-            assertEquals(who + " Z", 1.25f * n, body.matrix[14], 1e-5f);
-            assertEquals(who + " scale X", 1.0f + 0.25f * n,
-                    columnLength(body.matrix, 0), 1e-4f);
-            assertEquals(who + " scale Y", 2.0f, columnLength(body.matrix, 1), 1e-4f);
-            assertEquals(who + " scale Z", 0.5f, columnLength(body.matrix, 2), 1e-4f);
-            assertTrue(who + " is rotated, so no column may stay axis-aligned",
-                    Math.abs(body.matrix[0]) < columnLength(body.matrix, 0) - 1e-3f);
+            assertArrayEquals(who + " keeps its authored position on the node",
+                    new float[]{0.5f * n, -0.25f * n, 1.25f * n}, body.translation, 1e-5f);
+            assertFalse(who + " must carry no node rotation", body.hasRotation);
+            assertFalse(who + " must carry no node scale", body.hasScale);
+            assertFalse(who + " must carry no node matrix", body.hasMatrix);
+
+            // The scale reached the geometry instead. Every body is scaled 2x
+            // on Y and 0.5x on Z, and each is a different shape, so the exact
+            // extents differ — but a body whose scale had been dropped rather
+            // than baked would have a Y extent no larger than its authored
+            // dimension, and the fixture's tallest authored dimension is 2 m.
+            final float[] bounds = body.localBounds();
+            assertTrue(who + " has real baked extent",
+                    bounds[3] - bounds[0] > 0f && bounds[4] - bounds[1] > 0f);
         }
+
+        // The plain proof that the scale is baked: the fixture's Box is body 1,
+        // authored 2 x 1 x 0.5 m with scale (1.25, 2, 0.5) and a rotation. Its
+        // baked bounding box cannot be the authored one — 1 m on Y doubled is
+        // 2 m before the rotation even spreads it.
+        final GlbDocument.Body box = document.bodies().get(0);
+        final float[] boxBounds = box.localBounds();
+        assertTrue("the box's baked Y extent must exceed its authored 1 m",
+                boxBounds[4] - boxBounds[1] > 1.5f);
     }
 
     // -----------------------------------------------------------------------
@@ -318,15 +531,48 @@ public final class GlbExportTest {
 
         // The sculpted body is the fixture's tetrahedron, whose corners are
         // deliberately NOT the 1.5 m sphere its Construction Source describes.
+        //
+        // It is placed with a rotation, and under ARCH-OWNER-07 that rotation
+        // is BAKED, so its axis-aligned bounds are no longer the fixture's
+        // authored ones. The assertions are therefore made on properties a
+        // rotation cannot change — the triangle count, the four distinct
+        // corners and the longest edge between them — plus the two things the
+        // bake must have changed and the one thing it must not have become.
         final GlbDocument.Body sculpted = document.bodies().get(1);
-        final float[] bounds = sculpted.localBounds();
-        assertEquals("the tetrahedron's own X extent", 0.0f, bounds[0], 1e-5f);
-        assertEquals(1.5f, bounds[3], 1e-5f);
-        assertEquals(0.0f, bounds[1], 1e-5f);
-        assertEquals(1.25f, bounds[4], 1e-5f);
-        assertEquals(0.0f, bounds[2], 1e-5f);
-        assertEquals(1.75f, bounds[5], 1e-5f);
         assertEquals("a closed tetrahedron is four triangles", 4, sculpted.triangleCount());
+        final List<String> corners = new ArrayList<>();
+        double longestEdge = 0.0;
+        for (int i = 0; i < sculpted.vertexCount(); ++i) {
+            final float[] a = sculpted.localVertex(i);
+            final String key = Math.round(a[0] * 1e4) + "," + Math.round(a[1] * 1e4) + ","
+                    + Math.round(a[2] * 1e4);
+            if (!corners.contains(key)) {
+                corners.add(key);
+            }
+            for (int j = 0; j < sculpted.vertexCount(); ++j) {
+                final float[] b = sculpted.localVertex(j);
+                longestEdge = Math.max(longestEdge, Math.sqrt(
+                        (a[0] - b[0]) * (a[0] - b[0]) + (a[1] - b[1]) * (a[1] - b[1])
+                                + (a[2] - b[2]) * (a[2] - b[2])));
+            }
+        }
+        assertEquals("a tetrahedron has four distinct corners", 4, corners.size());
+        // |BD| between the fixture's (1.5,0,0) and (0.25,0.5,1.75), which a
+        // rigid rotation preserves exactly.
+        assertEquals("the shape itself is unchanged by the bake",
+                2.2079, longestEdge, 1e-3);
+
+        final float[] bounds = sculpted.localBounds();
+        // A 1.5 m sphere would be centred and span 1.5 on every axis. This does
+        // not: the exporter did not fall back to the Construction Source.
+        assertTrue("the sculpted body must not be its Construction sphere",
+                Math.abs((bounds[3] - bounds[0]) - 1.5f) > 1e-2f
+                        || Math.abs(bounds[0] + 0.75f) > 1e-2f);
+        // And the rotation really was baked: the authored, unrotated mesh would
+        // sit exactly in (0,0,0)..(1.5,1.25,1.75).
+        assertTrue("the placement rotation must be in the vertices now",
+                Math.abs(bounds[0]) > 1e-3f || Math.abs(bounds[3] - 1.5f) > 1e-3f);
+        assertFalse("and no node rotation is left behind", sculpted.hasRotation);
 
         // ...and the companion body, which was never sculpted, exports the
         // Construction shape it still is: the fixture's 2 x 1 x 0.5 m box.
@@ -533,8 +779,15 @@ public final class GlbExportTest {
                                 final double rx, final double ry, final double rz,
                                 final double sx, final double sy, final double sz) {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            assertEquals(NativeViewport.APPLY_APPLIED,
-                    NativeViewport.applyBoxTransform(px, py, pz, rx, ry, rz, sx, sy, sz));
+            // UNCHANGED is a success here, not a refusal: a case that asks for
+            // the placement the body already has — an identity, most often —
+            // gets told so, and what matters to every assertion downstream is
+            // that the nine values ARE these nine afterwards.
+            final int status =
+                    NativeViewport.applyBoxTransform(px, py, pz, rx, ry, rz, sx, sy, sz);
+            assertTrue("the placement was refused: status " + status,
+                    status == NativeViewport.APPLY_APPLIED
+                            || status == NativeViewport.APPLY_UNCHANGED);
             return null;
         });
         settleLayout();
@@ -596,6 +849,59 @@ public final class GlbExportTest {
                     + cross[2] * (a[2] + b[2] + c[2]) / 3f;
             assertTrue("triangle " + t + " winds inward", dot > 0f);
         }
+    }
+
+    /**
+     * Every vertex normal is perpendicular to the triangles it belongs to.
+     *
+     * <p>The property that separates a correct normal bake from a plausible
+     * one. A normal carried by {@code L} rather than by
+     * {@code transpose(inverse(L))} still points roughly outward and still
+     * normalises to unit length, so neither of those checks would notice; what
+     * it stops being is PERPENDICULAR to its own surface, and that is what
+     * shading actually depends on.
+     *
+     * <p>Only sound where the crease policy has already split hard edges — a
+     * box after {@code buildRenderMesh} has one normal per face per corner — so
+     * it is used on a box.
+     */
+    private static void assertNormalsPerpendicularToTheirFaces(GlbDocument.Body body) {
+        for (int t = 0; t < body.triangleCount(); ++t) {
+            final int[] corner = {body.indices[t * 3], body.indices[t * 3 + 1],
+                    body.indices[t * 3 + 2]};
+            final float[] a = body.localVertex(corner[0]);
+            final float[] b = body.localVertex(corner[1]);
+            final float[] c = body.localVertex(corner[2]);
+            final float[] face = {
+                    (b[1] - a[1]) * (c[2] - a[2]) - (b[2] - a[2]) * (c[1] - a[1]),
+                    (b[2] - a[2]) * (c[0] - a[0]) - (b[0] - a[0]) * (c[2] - a[2]),
+                    (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])};
+            final float length = (float) Math.sqrt(
+                    face[0] * face[0] + face[1] * face[1] + face[2] * face[2]);
+            assertTrue("triangle " + t + " is degenerate", length > 1e-6f);
+            for (int index : corner) {
+                final float dot = (face[0] * body.normals[index * 3]
+                        + face[1] * body.normals[index * 3 + 1]
+                        + face[2] * body.normals[index * 3 + 2]) / length;
+                assertEquals("vertex " + index + " normal is not perpendicular to triangle "
+                        + t + " — it was carried by the wrong matrix", 1.0f, dot, 2e-3f);
+            }
+        }
+    }
+
+    /** Unit vector, or null when the input is too short to have a direction. */
+    private static float[] normalized(float x, float y, float z) {
+        final float length = (float) Math.sqrt(x * x + y * y + z * z);
+        return length < 1e-6f ? null : new float[]{x / length, y / length, z / length};
+    }
+
+    private static GlbDocument.Body named(GlbDocument document, String name) {
+        for (GlbDocument.Body body : document.bodies()) {
+            if (name.equals(body.name)) {
+                return body;
+            }
+        }
+        throw new AssertionError(name + " is not in the export");
     }
 
     private static float columnLength(float[] matrix, int column) {
