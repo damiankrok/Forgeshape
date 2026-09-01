@@ -126,11 +126,14 @@ forgeshape_jni.cpp            render thread, ANativeWindow, MotionEvent ->
 | WHEN the project is checkpointed, and on which thread | `AutosaveController` (Java) | it owns no bytes and no format: it decides, coalesces, and calls the codec. The debounce is an implementation detail and is not product semantics |
 | Whether the project actually changed | `projectSemanticFingerprint` (`forgeshape_project_state.{h,cpp}`) | it hashes semantic VALUES, never the domain's update counters — an undo does not advance those — and it is a change DETECTOR, never an identity |
 | Turning a document `Uri` into bytes and back | `ProjectTransfer` (Java) | THE boundary: no `Uri`, `ContentResolver`, authority or path passes it, and none is ever project truth. It converts; it decides nothing |
-| Reading a `.glb` back for the DIAGNOSTIC preview | `forgeshape_gltf_import.{h,cpp}` + `forgeshape_json.{h,cpp}` | platform-neutral, and deliberately shares NO code with the writer: it re-derives every offset, length, stride and bound from the file. Supports a bounded STATIC subset — a node matrix or TRS, several TRIANGLES primitives, a generated NORMAL, ignored colour/UV, `doubleSided` — and fails closed by name on everything else. It bakes the node transform and produces geometry, never a body |
+| Reading a `.glb` | `forgeshape_gltf_import.{h,cpp}` + `forgeshape_json.{h,cpp}` | platform-neutral, and deliberately shares NO code with the writer: it re-derives every offset, length, stride and bound from the file. Supports a bounded STATIC subset — a node matrix or TRS, several TRIANGLES primitives, a generated NORMAL, ignored colour/UV, `doubleSided` — and fails closed by name on everything else. It bakes the node transform and produces GEOMETRY: it decides nothing about the project and creates no body, which is what lets one parse serve both the durable import and the diagnostic preview |
+| What an Imported Mesh may be, and what a `.forge` file may carry for one | `forgeshape_imported_mesh.{h,cpp}` | ONE validator (`validateImportedMeshData`) and ONE name rule (`sanitizeImportedMeshName`), called by the importer and by the codec alike, so a file can never carry geometry or a name the importer would have refused. It resolves per-submesh `doubleSided` into draw geometry; it holds no material, no `SculptRevision` and no source path |
+| Turning a parsed file into durable project objects | `forgeshape_import_commit.{h,cpp}` | it decides how many objects a file becomes, what they are called and where the node transform ends up. Atomic: everything is built and validated off the scene, and the whole commit is ONE `ScopedConstructionEdit`, so an import is one Undo and a refusal costs no `ObjectId` |
 | The deterministic external-GLB compatibility fixture | `forgeshape_glb_import_fixture.{h,cpp}` | a synthetic file with the structural feature set of an external low-poly export; every coordinate an integer over a power of two, so its bytes are the same everywhere. A debug test seam, reachable from no product path |
-| What an imported preview IS, and every boundary it may not cross | `forgeshape_import_preview.{h,cpp}` | session-only: no scene `ObjectId`, no Construction Source, no sculpt representation, no `MeshStore`, no history, no `.forge`, no checkpoint, not selectable, not re-exportable, gone with the process. Its renderer keys are resource keys and never identities |
+| What an imported preview IS, and every boundary it may not cross | `forgeshape_import_preview.{h,cpp}` | session-only: no scene `ObjectId`, no Construction Source, no sculpt representation, no `MeshStore`, no history, no `.forge`, no checkpoint, not selectable, not re-exportable, gone with the process. Its renderer keys are resource keys and never identities. Since `IMPORT-01A` it is reachable only from the verification suites |
+| What a body is CALLED wherever the user reads it | `BodyLabels` (Java) | one answer for the Objects list, the Objects capsule, the precision surface's title and the status line: an Imported Mesh uses the name its file gave it, a Construction Body is `Body #id`, and the empty string native code returns for the latter is the SIGNAL for that fallback, not a name |
 | Whether the file agrees with the scene | `forgeshape_glb_roundtrip.{h,cpp}` | compares the independently parsed file against DOMAIN truth re-derived from the generator and `modelMatrix()`, never against the exporter's captured arrays. Reads only, and reports a number rather than a boolean |
-| The glTF 2.0 / GLB export: what the file contains and every byte of it | `forgeshape_gltf_export.{h,cpp}` | platform-neutral C++ with no Android, JNI, `Uri`, `ContentResolver`, path or Vulkan type. It READS the scene and writes bytes: it mints no revision, opens no transaction, allocates no `ObjectId` and moves no sculpt vertex. It re-evaluates the Construction Source rather than reading a GPU buffer or decoding a `.forge`, and applies NO coordinate conversion — see *Export coordinates* |
+| The glTF 2.0 / GLB export: what the file contains and every byte of it | `forgeshape_gltf_export.{h,cpp}` | platform-neutral C++ with no Android, JNI, `Uri`, `ContentResolver`, path or Vulkan type. It READS the scene and writes bytes: it mints no revision, opens no transaction, allocates no `ObjectId` and moves no sculpt vertex. It re-evaluates a Construction Source, reads a Frozen Sculpt Mesh or reads an Imported Mesh's own arrays — never a GPU buffer and never a decoded `.forge` — and applies NO coordinate conversion — see *Export coordinates* |
 | What a lost GPU device means and how many rebuilds are attempted | `RenderRecoveryPolicy` (`forgeshape_render_recovery.{h,cpp}`) | deliberately free of Vulkan so it can be self-tested without a GPU; it owns no handle, performs no teardown and touches no project state |
 | Tearing the device down and building it again | `Renderer::rebuildDeviceAfterLoss` | it rebuilds the GPU COPY of derived data; the CPU project is not consulted and not touched, and `syncScene` re-uploads from the published revisions |
 | The bounded local diagnostic ring, and its redaction | `DiagnosticLog` (Java, free of Android types) | it carries tokens, never geometry, `.forge` bytes, a path or a `Uri`; `Diagnostics` is the Android half that renders a report |
@@ -3015,10 +3018,134 @@ because a JSON document containing `nan` parses, passes a length check and is
 still not a glTF file. Refusing is the only correct answer and it is the
 writer's job, not the caller's.
 
+## Reading a `.glb`
+
+One parser, two destinations. `GLB-IMPORT-R0` (`ARCH-OWNER-08`) and
+`GLB-IMPORT-R1` (`ARCH-OWNER-09`) built the reader and a session-only preview to
+answer a diagnostic question. `IMPORT-01A` (`ARCH-OWNER-10`) sends the SAME parse
+somewhere else as well: into durable project objects the user keeps.
+
+The parser is unchanged by that and knows nothing about it. What decides what a
+file becomes is which of the two commit paths the bytes are handed to, and only
+one of them — durable import — is reachable from the product.
+
+## Durable import
+
+`IMPORT-01A` under `ARCH-OWNER-10`. The user's *Import GLB…* reads a file and
+creates real bodies: an `ObjectId` from the scene's own allocator, a row in the
+Objects list, the ordinary Move/Rotate/Scale gizmo, one Undo step for the whole
+import, and geometry the `.forge` document carries so the project reopens without
+the source file ever being consulted again.
+
+### A body has two possible representations
+
+`SceneObject` owns exactly one of them for its whole life, named by
+`BodyRepresentation`:
+
+- a **Construction Source** is a primitive plus its parameters, and its geometry
+  is DERIVED — `generateMesh()` regenerates it on every load, so a `.forge` file
+  stores parameters and no vertices;
+- an **Imported Mesh** IS the geometry. No rule could recreate it and the `.glb`
+  is not part of the project, so it is project truth and it is serialized.
+
+There is no conversion between them in `IMPORT-01A` and no fabrication in either
+direction: nothing invents a primitive an imported object was never made from,
+and no Construction Body becomes one. `constructionOrNull()` is a POINTER
+precisely so the compiler asks every call site what it does about a body with
+none, and the process-scoped accessor is `activeConstructionOrNull()` for the
+same reason.
+
+The **placement is the BODY's**, hoisted out of `ConstructionObject` by
+`IMPORT-01A`: a body has one because it is a body, not because it is a primitive.
+That is what lets the gizmo, the picker, the exact-value editors, the history and
+`SCNE` all treat an imported object exactly as they treat every other one, with
+no second transform path.
+
+`publishSceneObject` is the ONE dispatch point: a Construction Body regenerates
+from its parameters, an Imported Mesh republishes the geometry it owns. Neither
+path reads the other's truth.
+
+### The commit is atomic, and it is one transaction
+
+`forgeshape_import_commit.{h,cpp}` turns a `ParsedGlbScene` into bodies. Every
+object is built and validated OFF the scene first; only when all of them exist
+does anything reach `ConstructionScene`. A file describing four good meshes and
+one broken one is not four fifths of a project, so a refusal costs nothing at
+all: no `ObjectId` minted, no body appended, no history step, no fingerprint
+movement. The whole commit runs inside ONE `ScopedConstructionEdit`, so an import
+of forty objects is exactly one Undo — the rule Add Primitive already follows for
+the two mutations it is made of.
+
+Undo and redo of an import work through the machinery creation already had: the
+history detaches the bodies and HOLDS them, so a redo returns the same objects
+with their geometry intact rather than fresh ones wearing their ids. A history
+step carries a body's identity, representation and placement and never its
+vertices — an imported mesh could not be copied into a step cheaply and must not
+try.
+
+### The transform split
+
+`Model = T · L`. glTF states a node transform this product cannot store: its
+linear part may carry rotation, non-uniform scale and shear, and ForgeShape's
+placement is nine authored values with a strictly positive diagonal scale. Rather
+than decompose it — which for a sheared node has no correct answer — the linear
+part is BAKED into the object's local geometry and the translation becomes the
+body's placement. An imported body therefore arrives at `rotation = 0,0,0` and
+`scale = 1,1,1`, and every later Move/Rotate/Scale is an ordinary ForgeShape
+transform over that.
+
+Nothing is recentred: the object's origin is the node's own origin, which is the
+pivot every downstream tool inherits. The parser already bakes the whole node
+transform into world positions, so the split is `local = world − translation` —
+the translation is applied last in the same composition, so taking it back off is
+exact rather than a re-derivation.
+
+### Naming
+
+Node `name`, then mesh `name`, then the deterministic `Imported <n>` fallback,
+where `n` is 1-based within that import and never an `ObjectId` — an id is minted
+and would make the same file produce different names in different sessions.
+
+A name from another tool is arbitrary bytes, so it goes through
+`sanitizeImportedMeshName` before it can become project truth: control characters
+replaced, malformed UTF-8 dropped, trimmed, cut on a character boundary at 96
+bytes. The function is idempotent, which is what lets the `.forge` decoder state
+its rule as "the stored name is what this would produce" rather than as a second
+list. `BodyLabels` is the one place the UI asks what a body is called: an
+Imported Mesh uses its stored name, a Construction Body is still `Body #id`, and
+the empty string native code returns for the latter is the signal for that
+fallback rather than a name.
+
+### What an imported body is NOT
+
+- **Not parametric.** No `PrimitiveKind`, no dimensions, no remembered parameter
+  sets, and nothing may reconstruct one. `Shape` has no answer for it, so the
+  rail entry is absent for one and `applyConstructionPrimitive` refuses it below
+  JNI as well — withdrawing a control is not removing a guard.
+- **Not sculptable in `IMPORT-01A`.** No Frozen Sculpt Mesh, no `SculptRevision`;
+  Start Sculpting is withdrawn and `freezeToSculpt` refuses. That is
+  `IMPORT-01B`.
+- **Not appearance.** The parser validated COLOR/TEXCOORD and the material's
+  colour, roughness, metallic and textures, and decoded none of them. They were
+  never read, so nothing preserves them. `doubleSided` is the single exception,
+  and it is carried per SUBMESH because it changes which triangles are VISIBLE.
+  `buildDrawData` resolves it into geometry by emitting a reversed copy of a
+  two-sided submesh's triangles, which is what keeps the answer per submesh
+  through a published mesh whose own flag is one answer for the whole thing.
+
+An imported body **is** exported: `captureGlbExportScene` reads its CPU arrays
+through the same `buildDrawData` and bakes `L` exactly as it does for every other
+body. A `.glb` quietly missing an object the user can see, select and move is the
+one thing that exporter refuses to do anywhere else.
+
 ## The diagnostic imported mesh preview
 
 `GLB-IMPORT-R0` under `ARCH-OWNER-08`, widened by `GLB-IMPORT-R1` under
-`ARCH-OWNER-09`. **This is a diagnostic, not production import.**
+`ARCH-OWNER-09`. **This is a diagnostic, and it is no longer reachable from the
+product.** Since `IMPORT-01A` there is exactly one user-facing GLB route and it
+is the durable import above; the preview's seams remain below JNI, driven only by
+the verification suites, because the question they answer — does the geometry in
+the FILE match the geometry in the SCENE — is still worth asking.
 
 The owner saw a discrepancy between the ForgeShape scene and an external tool
 that the corrected node scale of 1/1/1 did not explain. Three things could
@@ -3032,7 +3159,8 @@ R1 widened the readable subset to the class of **static** file another sculpting
 tool writes, so an external low-poly mesh can be looked at in the viewport. What
 it did not widen is anything about what the preview IS — the section below is
 unchanged, and most of the R1 test suite exists to hold that line while the
-parser gets more permissive.
+parser gets more permissive. `IMPORT-01A` did not widen it either: it gave the
+same parse a SECOND destination, and left this one exactly as it was.
 
 ### Parser ownership
 
@@ -3066,7 +3194,7 @@ answer it. `artifacts/glb-import-r1/SUPPORTED_SUBSET.md` is the full table
   determinant corrects triangle winding **for the preview only**; the product
   still has no Mirror and the exporter still refuses to write one. A zero
   determinant or a non-affine bottom row is `SingularNodeTransform`.
-- **Several TRIANGLES primitives per mesh** become separate `ImportedPrimitiveBatch`
+- **Several TRIANGLES primitives per mesh** become separate `ParsedGlbBatch`
   ranges over one shared vertex array, because `doubleSided` is a per-primitive
   fact the preview must honour per primitive. Primitives naming the same
   POSITION/NORMAL accessors share one decoded block, so a seven-material
@@ -3074,8 +3202,10 @@ answer it. `artifacts/glb-import-r1/SUPPORTED_SUBSET.md` is the full table
 - **A missing NORMAL is generated**: unnormalized face normals from the baked
   positions, accumulated per vertex and normalized, so the weighting is area.
   A referenced vertex with no finite non-zero accumulation is
-  `CannotGenerateNormals` — never a NaN, never an invented default. This is a
-  preview policy and not the production import shading contract.
+  `CannotGenerateNormals` — never a NaN, never an invented default. A durable
+  import STORES whatever normals it ends up with, generated or stated, rather
+  than re-deriving them on every load: re-deriving would silently replace an
+  artist's hard edges with this rule's guess.
 - **COLOR_0/COLOR_1/TEXCOORD_0/TEXCOORD_1** are structurally validated — the
   accessor resolves, its range is inside the buffer, its count agrees with
   POSITION — and then **not decoded**. Any other attribute is
@@ -3129,7 +3259,7 @@ comparison fails, which is the point.
 The identity under test is `modelMatrix() · p_local == M_node · p_file`, which
 holds only if the bake, the node transform and the file all agree. Since R1 the
 importer applies `M_node` itself, so the actual side is read straight out of
-`ImportedMesh::positions`. Tolerance is float32 quantization and nothing else:
+`ParsedGlbMesh::positions`. Tolerance is float32 quantization and nothing else:
 relative to the coordinate's magnitude, with an absolute floor, because absolute
 error in a float grows with the value.
 
@@ -3195,20 +3325,21 @@ own, and naming them is what stops one arriving by accident.
   start choice, the theme, the grid, the display unit, the held tool or the
   brush — so a process kill still clears all of those. What survives is exactly
   what a Save put in the slot, or what autosave put in the checkpoint.
-- **One export, one direction, no importer.** The GLB export is an early
+- **One interchange format, two one-way pipelines.** The GLB export is an early
   vertical slice: geometry, normals, per-body placement and one default material
   in one `.glb`. It has no UVs, no textures, no materials of the user's
   choosing, no hierarchy, no merge or unit options, no draco or other
   compression, and it writes no second file — no `.bin`, no `.gltf`, no image,
-  no sidecar. There is **no production importer**: OBJ and FBX cannot be read or
-  written, and the only thing that reads a `.glb` is the session-only diagnostic
-  preview above — which produces no body, no project content and nothing that
-  survives the process. Durable import is `IMPORT-01` and is post-MVP.
-  `.forge` remains ForgeShape's own
+  no sidecar. GLB import (`IMPORT-01A`) reads the bounded STATIC subset above
+  into durable objects and reads nothing else: no animation, no skinning, no
+  morph targets, no hierarchy, no materials, no textures, no UVs, no colours.
+  OBJ and FBX cannot be read or written. `.forge` remains ForgeShape's own
   project format and is not an interchange format for Blender, CAD or a game
-  engine; the `.glb` is the reverse — an interchange view that ForgeShape itself
-  cannot open. No third-party interchange library is used or authorized:
-  `forgeshape_gltf_export.cpp` writes the container and the JSON itself.
+  engine; a `.glb` is never a project and is never referenced by one — once an
+  import has happened, the file it came from is not consulted again. No
+  third-party interchange library is used or authorized:
+  `forgeshape_gltf_export.cpp` writes the container and the JSON itself, and
+  `forgeshape_gltf_import.cpp` reads them without sharing a line with it.
 - **`RuntimeMesh` is not a Construction mesh format**, and the debug paths are
   not product. It carries positions, colours and indices and nothing else: no
   normals, UVs, material, adjacency or history. `forgeshape_demo_mesh` is the

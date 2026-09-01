@@ -133,9 +133,13 @@ powershell -ExecutionPolicy Bypass -File scripts\build-forge-corpus.ps1 -VerifyO
 
 That script is a second, independent implementation of the `.forge` v1 encoder,
 written from `DATA_PACKAGE_SPEC.md`. It needs no device and no Android tooling.
-Its digests must match the ones the native `FSR1A-12` case asserts and the ones
-a debug launch prints as `FORGESHAPE_PROJECT_GOLDEN_SHA256`; a mismatch means
-the encoder and the specification have parted company.
+Its digests must match the ones the native `FSR1A-12` and `IMP01A-19` cases
+assert and the ones a debug launch prints as `FORGESHAPE_PROJECT_GOLDEN_SHA256`
+and `FORGESHAPE_PROJECT_GOLDEN_SHA256_IMPORTED`; a mismatch means the encoder
+and the specification have parted company. Five of the ten fixtures are packaged
+into the test APK's assets as well, so `ImportedMeshDurableTest` can prove the
+independent encoder's bytes actually LOAD on a device rather than only hashing
+the same.
 
 To run the GLB export suite and pull the two exported sample models off the
 device, use:
@@ -177,8 +181,10 @@ exporter — and compares both against DOMAIN truth re-derived from the primitiv
 generator or the Frozen Sculpt Mesh. It reports the maximum world-space position
 delta, which body and vertex produced it, and the maximum normal disagreement in
 degrees. **The imported mesh preview is a diagnostic and is session-only**: what
-it draws is never a body, never saved and never autosaved, and production import
-is post-MVP.
+it draws is never a body, never saved and never autosaved, and since
+`IMPORT-01A` it has no user-facing control at all — the suites reach it through
+JNI. The product's *Import GLB…* is durable import, which creates real objects;
+`ImportedMeshDurableTest` covers it.
 
 For the widened external-GLB subset (`GLB-IMPORT-R1`) use:
 
@@ -540,10 +546,13 @@ FORGESHAPE_PROJECT_LOADED:<n> bodies sculptMeshes=<n> active=<id> kind=<..> mesh
 FORGESHAPE_PROJECT_LOAD_REJECTED:<why> bytes=<n>
 FORGESHAPE_PROJECT_LOAD_FAIL:<no_data|empty>
 FORGESHAPE_PROJECT_GOLDEN_SHA256 construction=<sha> sculpt=<sha>
+FORGESHAPE_PROJECT_GOLDEN_SHA256_IMPORTED imported_only=<sha> construction_imported=<sha> mixed_imported=<sha>
 FORGESHAPE_GLB_EXPORTED:<bytes> kind=<Construction|Sculpt> bodies=<n>
 FORGESHAPE_GLB_EXPORT_FAIL:<why>
+FORGESHAPE_IMPORTED:<bytes> objects=<n> vertices=<n> triangles=<n> batches=<n> firstObjectId=<id> activeObjectId=<id>
+FORGESHAPE_IMPORT_FAIL:<why> bytes=<n>
 FORGESHAPE_GLB_IMPORTED:<bytes> meshes=<n> vertices=<n> triangles=<n>    diagnostic preview
-FORGESHAPE_GLB_IMPORT_FAIL:<why> bytes=<n>
+FORGESHAPE_GLB_IMPORT_FAIL:<why> bytes=<n>    diagnostic preview
 FORGESHAPE_GLB_PREVIEW_VISIBLE:<0|1>
 FORGESHAPE_GLB_PREVIEW_CLEARED
 ```

@@ -126,11 +126,20 @@ is a value that can be read rather than only an assertion that failed.
   nothing at all** — decode and validate entirely into temporary state, then
   commit in one step. The codec is platform-neutral and knows no filesystem;
   where the bytes live is the Android adapter's business alone.
+  An **Imported Mesh is the exception that proves the rule**: its name, local
+  positions, effective normals, index topology and submesh ranges with their
+  `doubleSided` ARE stored, because no rule could recreate them and the `.glb`
+  is not part of the project. Its section is `IMPT`, always required so a reader
+  that cannot rebuild one refuses the file instead of opening it with objects
+  missing; `CONS` carries only the bodies that HAVE a Construction Source; and
+  a body named by both branches, or by neither, is refused. No source path,
+  `Uri` or byte of the `.glb` may ever reach the document.
   `DATA_PACKAGE_SPEC.md` owns the layout, and `scripts/build-forge-corpus.ps1`
   is a second implementation of it whose bytes must stay identical.
   **GLB/glTF, OBJ and FBX are not `.forge`.** A `.glb` is written by Export and
-  read back only by the session-only diagnostic preview below; OBJ and FBX are
-  absent in both directions, and no inert menu entry for one may be drawn.
+  read by Import into objects that then live in `.forge` like anything else; it
+  is never a project and is never referenced by one. OBJ and FBX are absent in
+  both directions, and no inert menu entry for one may be drawn.
 - **Autosave protects work; it never overwrites what the user chose to keep.**
   The manual slot and the recovery checkpoint are two different files written by
   two different acts, and only an explicit Save touches the one the user named.
@@ -151,34 +160,53 @@ is a value that can be read rather than only an assertion that failed.
   recovery left in place would ask the same broken question on every launch
   forever. A successful Recover starts a fresh session history exactly as Open
   does; a failed one changes nothing at all.
+- **One GLB parser, two destinations, and only one of them is a feature.** The
+  reader (`GLB-IMPORT-R0`/`R1`, `ARCH-OWNER-08`/`09`) shares nothing with the
+  writer, accepts a bounded STATIC subset — a node `matrix` or TRS, several
+  TRIANGLES primitives per mesh including ones sharing a POSITION accessor, a
+  missing NORMAL that is generated, colour and UV attributes that are validated
+  and then ignored, and a material's `doubleSided` — and **fails closed by
+  name** on everything else: a required extension, a sparse accessor, an
+  interleaved view, an external buffer, animation, skinning, morph targets, a
+  non-triangle mode, a node with children, a node stating both a `matrix` and a
+  TRS, and any attribute it has not been told it may ignore. It bakes the node
+  transform and produces GEOMETRY; it decides nothing about the project, and no
+  coordinate conversion of any kind exists. OBJ and FBX stay absent in both
+  directions.
+- **`IMPORT-01A` (`ARCH-OWNER-10`) is durable import, and an Imported Mesh is a
+  body's second representation.** A `SceneObject` owns a Construction Source or
+  an Imported Mesh, never both and never neither, for its whole life. A
+  Construction Source's geometry is DERIVED and regenerated on load; an Imported
+  Mesh IS the geometry, so it is project truth and it is serialized. Nothing
+  invents a primitive an imported object was never made from, and no
+  Construction Body becomes one — `constructionOrNull()` and
+  `activeConstructionOrNull()` are pointers so every call site has to say what
+  it does about a body with none. One supported top-level mesh node is ONE
+  object; a mesh's several primitives stay INSIDE it as submesh batches and
+  never become rows. The node transform is SPLIT — its linear part baked into
+  local geometry, its translation becoming the body's placement — so an imported
+  body starts at rotation `0,0,0` and scale `1,1,1` with nothing recentred. The
+  commit is ATOMIC and is ONE transaction: every object is built and validated
+  off the scene, a refusal mints no `ObjectId` and records nothing, and an
+  import of forty objects is one Undo. `Shape` and `Start Sculpting` are
+  withdrawn for an imported body AND refused below JNI; Imported Mesh sculpt is
+  `IMPORT-01B`. Materials, textures, colours and UVs were never decoded, so
+  nothing preserves them and no document may claim otherwise; `doubleSided` is
+  the one exception and is carried per submesh.
 - **The Imported Mesh Preview is a diagnostic, and diagnostics do not become
-  features.** `GLB-IMPORT-R0` (`ARCH-OWNER-08`) reads a `.glb` with a parser
-  that shares nothing with the writer and draws it in the viewport, so the
-  geometry in the FILE can be compared with the geometry in the SCENE.
-  `GLB-IMPORT-R1` (`ARCH-OWNER-09`) widens the readable subset to ordinary
-  STATIC external meshes — a node `matrix` or TRS, several TRIANGLES primitives
-  per mesh including ones sharing a POSITION accessor, a missing NORMAL that is
-  generated, colour and UV attributes that are validated and then ignored, and a
-  material's `doubleSided`, which reaches preview culling and nothing else. It
-  is still a diagnostic and it is still not production import. What it produces
-  is **session-only**: no `ObjectId`
-  from the scene's allocator, no entry in `ConstructionScene`, no Construction
+  features.** It still exists and is still **session-only**: no `ObjectId` from
+  the scene's allocator, no entry in `ConstructionScene`, no Construction
   Source, no Frozen Sculpt Mesh, no `MeshStore` publish, never a history step,
-  never a `.forge` byte, never a checkpoint, never re-exported, never
-  selectable or editable, and gone with the process. It REPLACES what the
-  renderer is handed for a frame and never merges with the project snapshot,
-  because a mixed list is a list somebody would eventually pick, save or export
-  from. `previewRenderKeyIsReserved` marks the renderer keys, which are
-  resource keys and never identities. The node transform is BAKED into the
-  preview positions, so a draw item's model matrix is the identity and the
-  placement lives in one place; normals ride the inverse transpose, a negative
-  determinant corrects winding for the preview only, and no coordinate
-  conversion of any kind exists. Everything outside the subset **fails closed
-  by name** — a required extension, a sparse accessor, an interleaved view, an
-  external buffer, animation, skinning, morph targets, a non-triangle mode, a
-  node with children, a node stating both a `matrix` and a TRS, and any
-  attribute this reader has not been told it may ignore. Production import is
-  `IMPORT-01` and stays post-MVP; OBJ and FBX stay absent in both directions.
+  never a `.forge` byte, never a checkpoint, never re-exported, never selectable
+  or editable, and gone with the process. It REPLACES what the renderer is
+  handed for a frame and never merges with the project snapshot, because a mixed
+  list is a list somebody would eventually pick, save or export from.
+  `previewRenderKeyIsReserved` marks the renderer keys, which are resource keys
+  and never identities. Since `IMPORT-01A` it has **no user-facing control at
+  all** — the one visible GLB route is the durable import — and it is reached
+  only from the verification suites. Two visible ways to open a `.glb` that did
+  different things to the project is exactly the confusion that removal
+  prevents.
 - **A `Uri` never reaches the domain.** Scoped Storage transfer is
   ForgeShape's own project moving through the system's document UI, and
   `ProjectTransfer` is the whole boundary: it turns a `Uri` into bytes and
@@ -263,14 +291,16 @@ is a value that can be read rather than only an assertion that failed.
   writes a real GLB. A control that looks like it works and does not is worse
   than an absent one, so a future reserved control needs its own approval.
 - **Export is one-way, one file, and a different act from Save.** A `.forge`
-  document is the project and ForgeShape reads it back; a `.glb` is a view of
-  the geometry for another tool and ForgeShape does not. GLB/glTF IMPORT, OBJ,
-  FBX and every other interchange format stay absent, and no exporter may
-  write a second file beside the `.glb` — no `.bin`, no `.gltf`, no texture, no
-  sidecar. The exporter is platform-neutral (`forgeshape_gltf_export.h`): it
-  never sees a `Uri`, a `ContentResolver` or a path, it re-evaluates the
-  Construction Source rather than reading GPU buffers or decoding a `.forge`,
-  and exporting is a READ — no revision, no history step, no `ObjectId`, no
+  document is the project and ForgeShape reads it back as one; a `.glb` is a
+  view of the geometry for another tool and is never a project. OBJ, FBX and
+  every other interchange format stay absent, and no exporter may write a second
+  file beside the `.glb` — no `.bin`, no `.gltf`, no texture, no sidecar. The
+  exporter is platform-neutral (`forgeshape_gltf_export.h`): it never sees a
+  `Uri`, a `ContentResolver` or a path; it re-evaluates a Construction Source,
+  reads a Frozen Sculpt Mesh or reads an Imported Mesh's own CPU arrays, never a
+  GPU buffer and never a decoded `.forge`; and it exports EVERY body, because a
+  file quietly missing an object the user can see and move is worse than no
+  file. Exporting is a READ — no revision, no history step, no `ObjectId`, no
   sculpt vertex and neither `.forge` slot may move because of it. And there is
   no conversion: ForgeShape and glTF are both right-handed, +Y-up and metric,
   so a conversion node or a global scale factor in an export is a defect.
@@ -297,9 +327,9 @@ is a value that can be read rather than only an assertion that failed.
   AREA.** Glyphs stay the size they read at; the floor is reached with padding,
   never by growing a drawn box.
 - **A control that cannot succeed is not drawn.** Where the domain refuses an act
-  in some state — creation while sculpting — the control is absent there rather
-  than shown and then refused. The domain guard stays: removing a control is not
-  removing a guard.
+  in some state — creation while sculpting, `Shape` or `Start Sculpting` on an
+  Imported Mesh — the control is absent there rather than shown and then refused.
+  The domain guard stays: removing a control is not removing a guard.
 - **A control's corner is concentric with its host's** (`inner = outer − gap`),
   or a crescent of the host shows at each end and reads as a rendering fault.
 - **The domain is platform-neutral; the Android layer is an adapter.** Android is
@@ -329,7 +359,9 @@ is a value that can be read rather than only an assertion that failed.
   *precision surface* (the on-demand exact-value panel, implemented by
   *Property Inspector*), *anchored surface* (any panel that grows out of the
   control that opened it; `AnchoredSurfaceView` owns the growth for all of them),
-  *Construction Body* (an editable CAD-like object), *Frozen Sculpt Mesh* (the
+  *Construction Body* (an editable CAD-like object), *Imported Mesh* (a body
+  whose geometry came from a file and has no parameters behind it),
+  *Frozen Sculpt Mesh* (the
   polygon mesh `SculptMesh::freezeFrom` creates), *history capsule* (the bottom
   trailing capsule holding Undo and Redo), *transform mode selector* (Move /
   Rotate / Scale) and *coordinate-space selector* (World / Local, where it

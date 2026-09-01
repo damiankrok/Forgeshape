@@ -8,6 +8,8 @@ inventory. Nothing else owns any of those.
 Implementation: `app/src/main/cpp/forgeshape_project_bytes.{h,cpp}` (little-endian
 primitives and CRC-32), `forgeshape_project_document.{h,cpp}` (the document and
 the codec), `forgeshape_project_state.{h,cpp}` (live scene ↔ document).
+`forgeshape_imported_mesh.{h,cpp}` owns what an Imported Mesh may be, and the
+codec calls its validator rather than restating it.
 Independent second implementation: `scripts/build-forge-corpus.ps1`.
 
 ---
@@ -28,9 +30,11 @@ feature list so that they can arrive without the file changing shape.
 | Truth | Why it cannot be recomputed |
 | --- | --- |
 | Body identity (`ObjectId`), scene order, active body | Identity is minted, not derived |
+| Which representation a body's geometry comes from | A body owns a Construction Source or an Imported Mesh, never both |
 | The id allocator's high-water mark | Stops a reopened project minting a collision |
 | Active primitive kind | The user chose it |
 | **All six** remembered primitive parameter sets, per body | A Box → Sphere → Box round trip must return the box the user typed |
+| Each Imported Mesh's display name, local float32 positions, effective normals, index topology and submesh ranges with their `doubleSided` | An imported object IS its geometry: no rule could recreate it, and the `.glb` it came from is not part of the project |
 | Placement: position (metres), rotation (degrees), scale (unitless) | The user placed it |
 | Each Frozen Sculpt Mesh's local float32 vertex **positions** | After a stroke they cannot be recreated from the Construction Source |
 | Each Frozen Sculpt Mesh's index topology | Same |
@@ -45,6 +49,10 @@ feature list so that they can arrive without the file changing shape.
   duplication for hard edges.
 * `SculptRevision`, `MeshRevision`, update counters, rejection counters.
 * GPU buffers, upload diagnostics, renderer caches.
+* The source `.glb` an Imported Mesh came from: its path, its `Uri`, its bytes,
+  its node index, and every material, colour and UV attribute the reader
+  validated and then never decoded. Where geometry came from is not project
+  truth, and an appearance that was never read cannot be preserved.
 * Vertex **colours**. They feed only the debug-only source-colour shading mode —
   Studio Solid and MatCap both ignore them — so they are presentation, not
   truth. A loaded sculpt vertex is given one neutral value
@@ -68,7 +76,7 @@ All multibyte fields are explicit little-endian. Offsets are from byte 0.
 | 10 | minor | `u16` | `0` |
 | 12 | headerBytes | `u16` | `28` |
 | 14 | projectKind | `u8` | `1` = Construction, `2` = Sculpt |
-| 15 | headerFlags | `u8` | bit0 `hasCONS`, bit1 `hasSCUL`; all other bits zero |
+| 15 | headerFlags | `u8` | bit0 `hasCONS`, bit1 `hasSCUL`, bit2 `hasIMPT`; all other bits zero |
 | 16 | sectionCount | `u32` | exact number of sections that follow |
 | 20 | fileBytes | `u64` | exact total file size |
 
@@ -78,6 +86,15 @@ version is the `major`/`minor` pair.
 `headerFlags` must agree with the sections actually present, or the file is
 refused: a reader that trusted the flags without parsing would otherwise be told
 something false.
+
+`hasIMPT` is also the **compatibility gate**. Every reader before `IMPORT-01A`
+refuses an unknown header-flag bit outright (`BadHeader`), so a build that could
+not reconstruct an Imported Mesh cannot open a file carrying one at all — rather
+than opening it with those objects silently missing. The `IMPT` section's
+required bit says the same thing a second time, for a reader that got past the
+header. The `major`/`minor` pair is unchanged at `1`/`0`: §12 already allows a
+new required section within a major, and bumping the minor would have rewritten
+every legacy fixture's bytes for no added protection.
 
 ---
 
@@ -99,7 +116,7 @@ alone**, which is what lets a reader validate a section it does not understand
 and then skip it safely.
 
 **Canonical writer order:** `SCNE`, then `CONS` when present, then `SCUL` when
-present.
+present, then `IMPT` when present.
 
 ---
 
@@ -158,8 +175,16 @@ does not have; both are refused, never clamped.
 ## 6. `CONS` v1 — the Construction feature graph
 
 Required when `projectKind = Construction`; the optional retained companion when
-`projectKind = Sculpt`. Section version 1. Keyed by `ObjectId`, and it must carry
-**one entry per SCNE body, in scene order**.
+`projectKind = Sculpt`. Section version 1. Keyed by `ObjectId`, and it carries
+**one entry per SCNE body that has a Construction Source**, as a subsequence of
+`SCNE` in strictly ascending scene order.
+
+That rule read as "one entry per SCNE body" until `IMPORT-01A`, and it looked the
+same because every body had one. An Imported Mesh has none, and no entry may be
+fabricated for it: a default Box standing in for geometry the file actually
+carried would be inventing project data, and a later edit would reshape a body
+from parameters nobody authored. A file whose bodies are all Construction Bodies
+is byte-identical to what v1 always wrote.
 
 ```
 u32  bodyCount
@@ -233,6 +258,76 @@ the reversible Construction↔Sculpt runtime exists, such a file also carries th
 
 ---
 
+## 7a. `IMPT` v1 — the Imported Meshes
+
+Present when any body is an Imported Mesh, and then **required in both project
+kinds** — unlike `CONS` and `SCUL`, whose required bit follows `projectKind`.
+Those two are branches of data a reader can legitimately skip because the other
+branch still describes the same bodies. An Imported Mesh has no other branch: it
+is the only copy of its own geometry, and a reader that skipped it would open the
+project with objects missing.
+
+Section version 1. One entry per body whose representation is an Imported Mesh,
+as a subsequence of `SCNE` in strictly ascending scene order.
+
+```
+u32  entryCount                1 .. 4096
+repeat entryCount times, in ascending SCENE ORDER:
+  u64  objectId                must be a SCNE body; entries strictly ascending
+  u16  nameBytes               1 .. 96
+  u8   name[nameBytes]         UTF-8, no terminator, no padding
+  u32  vertexCount             1 .. 4,000,000
+  u32  indexCount              1 .. 24,000,000, a multiple of 3
+  u32  batchCount              1 .. 4096
+  f32  positions[vertexCount * 3]    LOCAL space, IEEE-754 bit patterns
+  f32  normals[vertexCount * 3]      unit directions, IEEE-754 bit patterns
+  u32  indices[indexCount]           every index < vertexCount
+  repeat batchCount times, in order:
+    u32  firstIndex
+    u32  indexCount            a multiple of 3, non-zero
+    u8   flags                 bit0 doubleSided; all other bits must be zero
+```
+
+Per entry: 8 + 2 + `nameBytes` + 12 + 24 × vertexCount + 4 × indexCount + 9 ×
+batchCount bytes. The name is variable-length in the middle of the record on
+purpose: every field is read byte-wise little-endian, so alignment costs nothing,
+and a fixed-width padded name would make one name several byte sequences.
+
+**Positions are LOCAL.** The source node's transform is SPLIT at import: its
+linear part — rotation, non-uniform scale, shear, none of which ForgeShape's
+nine authored placement values can express — is baked into these positions, and
+its translation becomes the body's `SCNE` placement. So an imported body's stored
+rotation is `0,0,0` and its stored scale is `1,1,1` until the user moves it.
+Nothing is recentred: the origin is the source node's own, which is the pivot
+every downstream tool inherits.
+
+**Normals are stored, not regenerated.** The file may have STATED them, and
+re-deriving smooth normals from the triangles on load would silently replace an
+artist's hard edges with this build's guess.
+
+**Batches must tile the index array exactly, in order** — no gap, no overlap. A
+gap would be triangles nothing draws and an overlap triangles drawn twice; either
+means the record does not describe the geometry beside it. `doubleSided` is the
+one material fact carried, because it decides which triangles are VISIBLE rather
+than how they look; base colour, roughness, metallic, textures, COLOR_0 and
+TEXCOORD were validated by the reader and never decoded, so there is nothing here
+to preserve and no document may claim otherwise.
+
+The name is held to the DOMAIN's own rule (`sanitizeImportedMeshName`): non-empty,
+at most 96 bytes, well-formed UTF-8, no control characters, no leading or
+trailing space, and exactly what that function would produce for itself. A file
+cannot carry a name the importer could not have made.
+
+Nothing about the source `.glb` appears — no path, no `Uri`, no bytes, no node
+index. Where the geometry came from is not project truth.
+
+A body must be named by **exactly one** of `CONS` and `IMPT`; a body in both is
+two answers to what the object IS and is refused. A `SCUL` entry for an `IMPT`
+body is refused too: `IMPORT-01A` gives an imported object no Frozen Sculpt Mesh,
+and Start Sculpting on one is `IMPORT-01B`.
+
+---
+
 ## 8. Validation and compatibility
 
 Decoding happens entirely into temporary document structures. **No live project
@@ -252,12 +347,12 @@ active mode or body, not the session history.
 | Reserved section-flag bit set, non-zero section `reserved` word | `BadSectionHeader` |
 | Payload CRC mismatch | `ChecksumMismatch` |
 | Unknown section with the required bit set | `UnknownRequiredSection` |
-| A second `SCNE`, `CONS` or `SCUL` — judged on the **tag**, before the version is, so a duplicate at a version the reader cannot read is still a duplicate | `DuplicateSection` |
-| `SCNE` absent; `CONS` absent for a Construction project; `SCUL` absent for a Sculpt project | `MissingRequiredSection` |
-| A payload's own structure does not add up; a sculpt flags byte with a reserved bit | `BadPayload` |
+| A second `SCNE`, `CONS`, `SCUL` or `IMPT` — judged on the **tag**, before the version is, so a duplicate at a version the reader cannot read is still a duplicate | `DuplicateSection` |
+| `SCNE` absent; `SCUL` absent for a Sculpt project | `MissingRequiredSection` |
+| A payload's own structure does not add up; a sculpt or batch flags byte with a reserved bit; an imported record whose normals do not match its positions one for one, or whose batches do not tile its indices | `BadPayload` |
 | A count no project can have, or one whose byte size would overflow — refused **before any allocation** | `ImpossibleCount` |
-| A value the live model refuses: a non-positive or non-finite dimension, a broken capsule relation, a non-finite position or rotation, a zero or negative scale, a duplicate or reserved `ObjectId`, an allocator that could mint a collision, an index out of range, an unknown primitive or feature code | `InvalidSemanticValue` |
-| An active body no section carries, a `CONS`/`SCUL` body `SCNE` does not carry, a Sculpt project whose active body has no sculpt mesh | `UnresolvedReference` |
+| A value the live model refuses: a non-positive or non-finite dimension, a broken capsule relation, a non-finite position or rotation, a zero or negative scale, a duplicate or reserved `ObjectId`, an allocator that could mint a collision, an index out of range, an unknown primitive or feature code, an imported normal that is not a unit direction, an imported name the domain's own sanitizer would not have produced | `InvalidSemanticValue` |
+| An active body no section carries, a `CONS`/`SCUL`/`IMPT` body `SCNE` does not carry, a Sculpt project whose active body has no sculpt mesh, a body claimed by both `CONS` and `IMPT`, a `SCUL` entry for an `IMPT` body | `UnresolvedReference` |
 | A load attempted while a Construction edit is open (not a property of the file) | `RefusedEditInProgress` |
 
 Semantic values are checked by calling the **domain's own** validators —
@@ -277,27 +372,33 @@ value the editor would have refused.
 * A newer `minor` of the same `major` is accepted, provided every required
   section version is understood.
 
-The header's `hasCONS` / `hasSCUL` flags are checked against the section **tags
-the file carried**, not against the sections this reader managed to decode.
-Otherwise skipping an optional section it could not read would make the header
-look like a lie.
+The header's `hasCONS` / `hasSCUL` / `hasIMPT` flags are checked against the
+section **tags the file carried**, not against the sections this reader managed
+to decode. Otherwise skipping an optional section it could not read would make
+the header look like a lie.
 
 ### One thing the FORMAT allows and this RUNTIME does not
 
-A document with no Construction branch is a legal `.forge` file: a Sculpt
-project's `CONS` is optional. This build still refuses to LOAD one
-(`MissingRequiredSection`), because every `SceneObject` has a Construction
-Source and inventing a default Box for a body whose real shape the file
-described would be fabricating project data. The refusal happens in
+A document that leaves a body with **no geometry branch at all** is a legal
+`.forge` file: a Sculpt project's `CONS` is optional, and a reader that could not
+understand its version is right to skip it after its validated length. This build
+still refuses to LOAD one (`MissingRequiredSection`), because it cannot build a
+body it has no geometry for and inventing a default Box for one whose real shape
+the file described would be fabricating project data. The refusal happens in
 `forgeshape_project_state.cpp`, where the reason is "this build cannot evaluate
 that project", rather than in the codec, where the file itself is not at fault.
+
+The rule is stated **once**, as `runtimeCanEvaluateProject`, because two callers
+ask it: the load path, and the recovery-candidate check — which must never offer
+a candidate this build could not load. A second copy of it is precisely what went
+stale when a body gained a second way to have geometry.
 
 ### Deterministic writer
 
 The same semantic document always produces byte-identical output: canonical
-section order, bodies in scene order, features by ascending `LocalFeatureId`, and
-every field a fixed-width little-endian encoding. `encode → decode → encode` is
-byte-identical.
+section order, bodies in scene order, features by ascending `LocalFeatureId`,
+imported records in scene order, and every field a fixed-width little-endian
+encoding. `encode → decode → encode` is byte-identical.
 
 No compression and no encryption in v1.
 
@@ -320,9 +421,12 @@ readable by another. What makes that true:
 * Both supported ABIs (`arm64-v8a`, `x86_64`) build the same codec and produce
   the same bytes for the same document.
 
-`.forge` is **not** an interchange format. GLB/glTF, OBJ and FBX are separate,
-deliberately chosen import/export pipelines with their own stages; none of them
-is implemented, and nothing in the product offers one.
+`.forge` is **not** an interchange format. It is ForgeShape's own project
+document, and it is the only one ForgeShape reads back as a project. GLB is a
+separate, one-way pipeline in each direction: Export writes a `.glb` view of the
+geometry, and Import reads one into durable objects that then live in `.forge`
+like everything else — the `.glb` itself is never a project and is never
+referenced by one. OBJ and FBX are absent in both directions.
 
 ---
 
@@ -334,6 +438,15 @@ is implemented, and nothing in the product offers one.
 is deliberately **no v0**, and no v0→v1 migration is claimed or tested. The first
 real schema bump must add a branch there, **keep the v1 fixtures below**, and
 bring a real compatibility/migration test with it.
+
+`IMPORT-01A` was not such a bump. It added a required section and a header-flag
+bit within v1, and the direction of compatibility it establishes is one-way and
+explicit: **a build from before it refuses a file carrying `IMPT`**, on the
+header flag first and the section's required bit second, rather than opening the
+project with the imported objects silently missing. In the other direction
+nothing changed at all — every file written before it still decodes exactly as
+it did, and the seven pre-`IMPORT-01A` fixtures' digests are unchanged, which is
+what `IMP01A-19` asserts.
 
 ---
 
@@ -358,6 +471,11 @@ format carries no trace of where a file came from — no path, no `Uri`, no
 authority — which is what `FSR1B-13` asserts by re-encoding a project opened
 from a distinctively named file and requiring the original bytes back exactly.
 
+That applies to an imported body's SOURCE too, and it is the stronger case:
+after an import, the `.glb` is not referenced by the document, not needed to open
+it, and not recorded anywhere. `IMP01A-22` asserts it by carrying an imported
+body through Save Copy and Open File and requiring the original bytes back.
+
 ## 11. Golden corpus
 
 `testdata/forge/v1/`, written by `scripts/build-forge-corpus.ps1`.
@@ -378,6 +496,17 @@ debug launch as `FORGESHAPE_PROJECT_GOLDEN_SHA256`.
 | `unsupported_major_v1.forge` | 1264 | `27df45ad6bff0577514df65aa8773024203197c6323cb9c625003a67a7b6d77a` | `major = 2` |
 | `unknown_optional_v1.forge` | 1296 | `85286d94592b783644d2dc00744538325f6d91557de32235a6038595d56a57ca` | An `XTRA` section with a valid length and CRC, required bit **clear** — must be skipped |
 | `unknown_required_v1.forge` | 1296 | `c71553ef0d4f0be28a8972418b981b47ee0c19ae715058719ad7f0a3cd0db5cd` | The same section with the required bit **set** — must be refused |
+| `imported_only_v1.forge` | 348 | `0f42be318da9faf4aa780e152b8550171085a267882d5e6e69cc9ef29a1539a8` | One Imported Mesh and **no `CONS` at all**: the fixture that proves an imported object needs no Construction Source standing in for it |
+| `construction_imported_v1.forge` | 570 | `539e10e7a9e388ab1ca72867b78c1e461d3bbe0ef5876d87fa54bc6bd6ae7a51` | A Construction Body beside an imported one — a **sparse** `CONS` next to an `IMPT` |
+| `mixed_imported_v1.forge` | 905 | `3fdc82a099da69b93552d7c84c56002ed8ae24ba7086ddbc6a69a9bbf671f1fb` | All three branches at once, representations interleaved rather than grouped, reopening in Sculpt on the sculpted body |
+
+The three imported fixtures share one Imported Mesh: four vertices, two submeshes
+with **different** `doubleSided` answers, named `head_low`, placed at
+`(1.5, -0.25, 4.0)` with the identity rotation and scale. Every number is an
+exact binary fraction, so the two implementations agree byte for byte or not at
+all. The seven fixtures above them are **unchanged** — the imported branch costs
+a project that has none exactly nothing: no section, no header flag, and
+therefore not one byte.
 
 Regenerate and re-verify with:
 
@@ -396,7 +525,15 @@ Sample projects are **not** packaged into the APK. That is later roadmap work.
   Older readers skip it after its validated length.
 * A new **required** section, or a bump of an existing required section's
   version, is readable only by a reader that understands it; older readers refuse
-  the file explicitly rather than loading part of it.
+  the file explicitly rather than loading part of it. `IMPT` is the worked
+  example: it is required, it is announced by a new header-flag bit an older
+  reader refuses outright, and it appears only in files that need it — so every
+  file that existed before it is still byte-for-byte what it was.
+* A new **representation** — a third way for a body to have geometry — takes its
+  own section on `IMPT`'s terms and joins the exactly-one-of rule, rather than
+  widening an existing section with a discriminator. Every body must be named by
+  exactly one geometry section, and a reader that does not understand one of them
+  must refuse the file rather than open it with objects missing.
 * A new primitive takes the next unused **file** code and one more parameter
   block appended to the `CONS` body record, behind a `CONS` section-version bump.
 * A new feature kind takes the next unused feature-kind code and appears in a
