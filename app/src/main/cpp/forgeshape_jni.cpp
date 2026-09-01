@@ -706,7 +706,6 @@ forgeshape::MeshRevision publishConstructionObject(const char* reason) {
         return revision;
     }
     forgeshape::ConstructionObject& object = *source;
-    const forgeshape::ConstructionMesh mesh = object.generateMesh();
     forgeshape::MeshValidation why = forgeshape::MeshValidation::Ok;
     const forgeshape::MeshRevision revision =
         forgeshape::publishConstructionObject(object, forgeshape::meshStore(), &why);
@@ -715,11 +714,16 @@ forgeshape::MeshRevision publishConstructionObject(const char* reason) {
                 forgeshape::meshValidationName(why));
         return revision;
     }
+    // The counts come from what was just published rather than from a second
+    // generateMesh() run for the log line: the store holds exactly the vertices
+    // and indices the generator produced, one tessellation ago.
+    const forgeshape::RuntimeMeshPtr published = forgeshape::meshStore().current();
+    const uint32_t vertexCount = published ? published->vertexCount() : 0u;
+    const uint32_t indexCount = published ? published->indexCount() : 0u;
     char described[128];
     describeSpec(object.spec(), described, sizeof(described));
     FS_LOGI("FORGESHAPE_CONSTRUCTION_PUBLISHED:%llu:%u:%u kind=%s %s objectId=%llu reason=%s",
-            (unsigned long long)revision, static_cast<uint32_t>(mesh.vertices.size()),
-            static_cast<uint32_t>(mesh.indices.size()),
+            (unsigned long long)revision, vertexCount, indexCount,
             forgeshape::primitiveKindName(object.kind()), described,
             (unsigned long long)object.objectId(), reason);
     return revision;
@@ -768,6 +772,15 @@ forgeshape::MeshRevision publishActiveRepresentation(const char* reason) {
 forgeshape::PrimitiveApplyResult applyPrimitive(const char* label,
                                                 const forgeshape::PrimitiveSpec& requested) {
     forgeshape::PrimitiveApplyResult result;
+    // Same lock as applyBoxTransform, and for the same reason it has a second
+    // reader: the Construction parameters, the remembered sets and the
+    // stale-source flag written below are what the autosave worker reads —
+    // under this lock — for `projectFingerprint()` and `encodeProject()`. A
+    // shape Apply that wrote them unlocked could hand a checkpoint half of one
+    // primitive and half of another. Held across the mesh generation exactly as
+    // runHistoryStep and loadProject already hold it across theirs; the domain
+    // never takes this mutex, so nothing below can re-enter it.
+    std::lock_guard<std::mutex> lock(g_stateMutex);
     {
         // One user Apply is ONE history step, whatever it changes underneath —
         // a kind, several parameters, or both. And it is NO step at all when the
@@ -1987,8 +2000,13 @@ JNIEXPORT jlong JNICALL Java_com_forgeshape_app_NativeViewport_sceneAddBody(JNIE
         FS_LOGI("FORGESHAPE_SCENE_ADD_REFUSED:in_sculpt_mode");
         return static_cast<jlong>(forgeshape::kNoObject);
     }
-    // Outside the lock: publication generates a mesh, and no lock is held
-    // across geometry generation anywhere else either.
+    // Outside the lock: the new body is already in the scene and selected, its
+    // parameters are the untouched defaults, and the only thing publication
+    // changes is its own MeshStore, which has a mutex of its own. That is a
+    // fact about THIS call, not a rule about generation: applyPrimitive,
+    // runHistoryStep and loadProject all generate under g_stateMutex, because
+    // there the parameters being generated FROM are what another thread could
+    // otherwise read half-written.
     const forgeshape::MeshRevision revision = publishConstructionObject("body_added");
     FS_LOGI("FORGESHAPE_SCENE_BODY_ADDED:%llu meshRev=%llu bodies=%d",
             (unsigned long long)created, (unsigned long long)revision,

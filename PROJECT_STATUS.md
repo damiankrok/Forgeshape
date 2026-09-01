@@ -1,8 +1,48 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.54.0
+**Status Version:** 0.55.0
 **Updated:** 2026-09-01
-**Result:** **IMPORT-01A — COMPLETE. A `.glb` now becomes objects the user
+**Result:** **ARCH-HEALTH-01 — PASS-ARCH-HEALTH-REVIEW-WITH-DEBT. The architecture
+is sound; one data race and one double tessellation were corrected, and the
+remaining debt is named with a timing.**
+
+An evidence-only review of the whole tree at `4c296f5` (the IMPORT-01A
+commit), with corrections limited to what a test or a log line can prove. No
+MVP expansion, no new stage, no `.forge` change, no UI change. What it found
+and what it did, precisely:
+
+- **`applyPrimitive` wrote Construction state with no lock** while the autosave
+  worker reads exactly that state under `g_stateMutex` for the fingerprint and
+  the checkpoint, so a checkpoint could encode half of one primitive and half
+  of another. It now takes the lock before the edit scope, as
+  `applyBoxTransform`, `runHistoryStep` and `loadProject` already did. The
+  domain never takes that mutex, so nothing below can re-enter it.
+- **Every Construction publish tessellated twice**: once for the log line's
+  vertex and index counts, once for the real publish. The counts now come from
+  the store; `FORGESHAPE_CONSTRUCTION_PUBLISHED:1:8:36` is unchanged.
+- **Six stale comments and five stale `ARCHITECTURE.md` statements** — a
+  removed accessor, a pre-persistence Serialization row, a history header that
+  claimed the active body is compared, a false "no lock across generation
+  anywhere" claim — were corrected to what the code does.
+- **No null dereference, no unconditional Construction access, no JNI status
+  mismatch, no test that sleeps or taps a coordinate, no representation that
+  persistence skips** — each hotspot the review named was checked and has a
+  verdict in `artifacts/architecture-health-review/HOTSPOTS.md`.
+- **Debt that was NOT changed**, because changing it crosses the review's
+  line, is recorded below under Technical Debt: renderer GPU resources are
+  never pruned for a body Undo removed; export and the roundtrip diagnostic
+  duplicate the per-representation geometry extraction; the `.forge` decoder
+  does not bound `nextObjectId` below the preview key range.
+
+Verified on the corrected tree: build, JVM 70/70, 17/17 self-tests with zero
+failures, and five focused instrumented classes (autosave/recovery 14, history
+20, imported-mesh durability 12, controls 23, sculpt retention 2), all on
+`emulator-5580` confirmed as `ForgeShape_Stage006`. The scorecard is 4.3/5
+with no area below 3; none of the three 3s blocks `IMPORT-01B`.
+
+---
+
+**Previous result — IMPORT-01A — COMPLETE. A `.glb` now becomes objects the user
 keeps.**
 
 Under `ARCH-OWNER-10` the reader `GLB-IMPORT-R0`/`R1` built gained a second
@@ -1543,6 +1583,15 @@ precondition. Runtime evidence separately shows the real keyboard.
 
 ## Current evidence summary
 
+Latest run (**ARCH-HEALTH-01**), on the isolated `ForgeShape_Stage006` /
+`emulator-5580` AVD, on the corrected tree:
+[`artifacts/architecture-health-review/`](artifacts/architecture-health-review/)
+— `INDEX.md`, the module map, the comment audit, the 15-area scorecard, the
+hotspot verdicts, the safe-fix list, the four change-surface probes, the raw
+startup log (17/17 `_SELFTEST_OK`, zero failures) and the raw output of five
+focused instrumented classes. Focused classes are subset evidence; no
+`FULL_SHARDED_SUITE_PASS` is claimed for this run.
+
 Latest acceptance run (**GLB-IMPORT-R1**), on the isolated `ForgeShape_Stage006`
 / `emulator-5580` AVD. Evidence:
 [`artifacts/glb-import-r1/`](artifacts/glb-import-r1/) — `INDEX.md`, the widened
@@ -1955,6 +2004,33 @@ duration scale skips them outright rather than shortening them.
 
 Durable constraints and known-but-accepted costs. Narrative for how each was
 found lives in Git history.
+
+**The renderer never prunes a body that left the snapshot.** (ARCH-HEALTH-01.)
+`Renderer::bodies_` caches GPU buffers per `ObjectId` and is cleared only by
+`destroyMeshResources` — device loss or teardown. A body an Undo detaches keeps
+its buffers resident for the life of the process; nothing wrong is drawn,
+because a frame iterates the snapshot and not the map, and the retention is
+bounded by the history capacity. Pruning is a renderer change with its own
+verification cost and was deliberately not made during a review. Timing: LATER.
+
+**Export and the roundtrip diagnostic extract a body's geometry twice.**
+(ARCH-HEALTH-01.) `forgeshape_gltf_export.cpp` and `forgeshape_glb_roundtrip.cpp`
+each re-evaluate a Construction Source or read an Imported Mesh's arrays with
+their own `if/else` over the representation. Two sites is bounded; a third body
+representation would be the moment to give them one shared "interchange
+geometry of a body" function, and turning the Java `sceneActiveBodyIsImported()`
+boolean into a representation query would come with it. Timing:
+BEFORE_NEXT_MAJOR_FEATURE.
+
+**The `.forge` decoder does not bound `nextObjectId` below the preview key
+range.** (ARCH-HEALTH-01.) `validateProjectDocument` requires
+`nextObjectId > highest` and refuses duplicates, but a hand-crafted file can
+state a value at or above `kFirstPreviewRenderKey` (2^60), after which the
+diagnostic preview and a real body could share a renderer key. Reachable only
+from a crafted file with the preview driven from a test; no user path exists.
+It is a `.forge` validation rule, so it is reported for the coordinator rather
+than changed. Timing: LATER.
+
 
 **The preview's renderer keys occupy the `ObjectId` type.** (GLB-IMPORT-R0.)
 `ARCH-OWNER-08` says the preview has no ForgeShape `ObjectId`, and it has none
@@ -2418,9 +2494,11 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Exactly one next step: return the IMPORT-01A report to the coordinator, for
-the owner to import the real `1 lowpoly.glb` by hand and confirm it becomes
-objects they can keep.** No product stage may begin here: `IMPORT-01B` (Start
+**Exactly one next step: return the ARCH-HEALTH-01 report to the ForgeShape
+coordinator.** No feature stage starts from a review. The IMPORT-01A owner
+check — importing the real `1 lowpoly.glb` by hand and confirming it becomes
+objects they can keep — still stands as `OWNER_REAL_FILE_01A_RETEST_PENDING`
+and is the coordinator's to schedule. No product stage may begin here: `IMPORT-01B` (Start
 Sculpting on an Imported Mesh), Stage 033's full exporter (UVs, materials,
 hierarchy, merge and unit options), OBJ, FBX, `APP-H1` (a project hub,
 thumbnails, Save As, naming, a multi-project library), `BRIDGE-R1` and

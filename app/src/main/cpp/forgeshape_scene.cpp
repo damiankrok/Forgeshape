@@ -156,15 +156,17 @@ ConstructionScene& constructionScene() {
 // These three are DECLARED by forgeshape_construction.h, forgeshape_mesh.h and
 // forgeshape_sculpt.h respectively, and were previously defined next to their
 // own types as plain function-local statics. They are defined HERE instead
-// because their answer is now a scene question -- "the active body's" -- and
+// because their answer is a scene question -- "the active body's" -- and
 // defining them in their own translation units would make those units depend on
 // the scene, which depends on them: a cycle.
 //
-// Keeping the same three names is what makes this migration small. Every
-// existing caller that means "the object the user is editing" keeps working
-// unchanged and correctly; only code that means "every body in the scene" (the
-// renderer and scene picking) had to change, and that is exactly the code
-// Stage 017 rewrote.
+// Every caller that means "the object the user is editing" goes through them;
+// only code that means "every body in the scene" (the renderer and scene
+// picking) reads the scene itself. The Construction accessor is the one that
+// returns a POINTER: since `IMPORT-01A` the active body may be an Imported
+// Mesh, and `activeConstructionOrNull()` makes every call site say what it does
+// about a body with no Construction Source, where a reference would have let it
+// assume one.
 const char* bodyRepresentationName(BodyRepresentation representation) {
     switch (representation) {
         case BodyRepresentation::Construction: return "Construction";

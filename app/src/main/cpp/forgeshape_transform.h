@@ -321,12 +321,14 @@ struct TransformApplyResult {
 TransformApplyResult applyTransformValues(ConstructionTransform& transform,
                                           const TransformValues& requested);
 
-// The placement of the one active Construction object.
+// The placement of the ACTIVE body, whichever representation it has.
 //
-// Since Stage 010 this is not a singleton of its own: it returns
-// `constructionObject().transform()`, so identity, primitive and placement are
-// one object's state. Placement therefore survives a Box <-> Cylinder change as
-// well as home/resume and swapchain recreation.
+// Not a singleton of its own: it returns the active `SceneObject`'s own
+// `transform()` (defined in forgeshape_transform.cpp over the scene), so
+// identity and placement are one body's state and an Imported Mesh — which has
+// no Construction Source at all — is moved through exactly this entry point.
+// Placement therefore survives a Box <-> Cylinder change as well as home/resume
+// and swapchain recreation.
 ConstructionTransform& constructionTransform();
 
 TransformApplyResult applyConstructionTransform(const TransformValues& requested);

@@ -89,8 +89,11 @@ struct SceneConstructionState {
 };
 
 // True when the two states are identical in every respect a history step cares
-// about: the same bodies, in the same order, in the same shape and placement,
-// with the same one active.
+// about: the same bodies, in the same order, of the same representation, in the
+// same shape and placement. `activeBodyId` is deliberately NOT compared —
+// selection is carried by a step so a restore can land the user somewhere, but
+// it is not itself an edit, so changing it alone must record nothing (see the
+// definition for why).
 bool sameSceneConstructionState(const SceneConstructionState& a,
                                 const SceneConstructionState& b);
 

@@ -157,8 +157,8 @@ it.**
 | Android types | `View`, `Activity`, `MotionEvent`, `Surface`, `jobject` and every other Android or JNI type may never become domain truth. They reach exactly as far as `forgeshape_jni.cpp` and stop |
 | The Android UI | is a platform shell/adapter. It owns draft, presentation and layout state and nothing else, and reads authoritative state back from native code rather than assuming it |
 | Input | crosses the boundary as **semantic, platform-neutral** data. `forgeshape_input.h`'s `TouchAction`/`TouchPointer` is that boundary, and it carries tool type, pressure and tilt alongside id and position -- in ForgeShape's own enum and its own units, never Android's. A pointer sample is translated out of Android's vocabulary in the Android layer rather than carried inward. Hover and generic (non-touch) motion are still outside the vocabulary and stay a consumer-driven question |
-| Platform services | future file, storage and system services get narrow boundaries of their own, for the same reason input has one |
-| Serialization | there is none today — nothing is written to disk. When a project format arrives it must be **platform-independent and explicitly versioned**: a byte layout, an endianness and a version field decided by the domain, never a platform serializer, an Android `Parcelable`, a Java object stream or anything whose meaning depends on which OS wrote it. A file written on one platform must be readable on another, and an older file must be readable by a newer build or refused by version, never misread |
+| Platform services | file, storage and system services have narrow boundaries of their own, for the same reason input has one: `ProjectSlot`, `ProjectCheckpoint` and `ProjectTransfer` (Java) turn a path or a `Uri` into bytes and bytes into a document, and none of them reaches JNI or the codec |
+| Serialization | the `.forge` document (`forgeshape_project_document.{h,cpp}` + `forgeshape_project_bytes.{h,cpp}`) is **platform-independent and explicitly versioned**: a byte layout, an endianness and a version field decided by the domain, never a platform serializer, an Android `Parcelable`, a Java object stream or anything whose meaning depends on which OS wrote it. A file written on one platform is readable on another, and an older file is readable by a newer build or refused by version, never misread. `DATA_PACKAGE_SPEC.md` owns the layout |
 | Renderer coupling | the renderer's dependency on a platform surface stays **explicit and local**: `forgeshape_jni.cpp` owns the `ANativeWindow` and hands it over, and `Renderer` never creates or releases one. That single visible seam is what a second backend would be added beside |
 
 The practical test is one question: *if this file had to compile on a platform
@@ -1542,7 +1542,9 @@ rather than to the edit; at this scene size that is kilobytes.
 life of the process. Beyond it the oldest step is dropped, one per commit,
 deterministically; the current state and the redo stack are unaffected, because
 dropping a step only shortens how far back the user can go. There is no disk
-history, no autosave and no crash recovery.
+history: the recovery checkpoint and the manual slot carry the PROJECT and never
+a step, so a load — Open, Recover or a restart — always begins a fresh, empty
+history.
 
 ### Identity, and the bodies a step holds
 
@@ -2883,11 +2885,20 @@ resting tint and runs no pulse.
 
 - Android UI thread: surface callbacks, `onTouchEvent` → JNI, both panels and
   both Applies, Construction publication, every brush stroke and its per-move
-  sculpt publication, and DEBUG mesh fixture publication. `ConstructionObject` and
-  `SculptSession` are mutated from this thread only, which is why neither carries
-  a mutex of its own; `MeshStore` has one and is what the render thread reads.
+  sculpt publication, and DEBUG mesh fixture publication. `ConstructionObject`,
+  the scene, the history and `SculptSession` are mutated from this thread only,
+  which is why none of them carries a mutex of its own; `MeshStore` has one and
+  is what the render thread reads.
 - Render thread (owned by `forgeshape_jni.cpp`): Vulkan work, presentation and
   every mesh buffer create/copy/destroy.
+- Autosave worker (`AutosaveController`'s `forgeshape-autosave` `HandlerThread`):
+  the one thread other than the UI thread that READS Construction, scene and
+  sculpt state — `projectFingerprint()` and `encodeProject()` both run there,
+  under `g_stateMutex`. That reader is why every JNI entry point that writes
+  Construction state (a shape Apply, a placement Apply, a history step, a load,
+  an import, a mode change) takes `g_stateMutex` across the write, mesh
+  generation included: a parameter written unlocked is a parameter a checkpoint
+  could read half-written.
 - One short-lived thread per DEBUG stress run, which publishes CPU revisions and
   exits. There is no general task or job system.
 
@@ -2897,7 +2908,8 @@ selection mutex in a way that could invert. A publisher never blocks a frame, an
 the render thread's mesh upload happens outside `g_stateMutex` entirely.
 
 `g_stateMutex` guards the single `CameraController`, `SelectionController` and
-`ConstructionTransform` together, plus the gesture-routing flags. A tap resolves
+the scene — every body's Construction Source, placement and sculpt safety state,
+and the history — together, plus the gesture-routing flags. A tap resolves
 its pick against the camera snapshot *and* the transform and updates the selection
 under **one** lock hold, so they can never be seen out of step; the render thread
 takes the camera snapshot, the derived model matrix and the selection flag under
@@ -2916,9 +2928,10 @@ the active product mode, the active tool, the display settings and every sculpte
 vertex survive home/resume and swapchain recreation. There is no rehydration step,
 because nothing was discarded — the GPU mesh buffers, the MatCap and the grid are
 device-scoped and are not destroyed when the Surface goes away, so a resume
-re-presents the same revision without re-uploading it. Nothing survives a process
-restart, because there is no save and no load — and the Construction history dies
-with the process along with everything else.
+re-presents the same revision without re-uploading it. Across a process restart
+only what a Save put in the manual slot or autosave put in the recovery
+checkpoint survives — the `.forge` document, never presentation or session state
+— and the Construction history dies with the process along with everything else.
 
 Gesture tracking is separate: camera anchors and tap candidacy are both reset on
 `ACTION_CANCEL`, on `surfaceDestroyed` and on `surfaceCreated`, and a live brush

@@ -1,11 +1,15 @@
-// The editable scene: an ordered collection of Construction Bodies.
+// The editable scene: an ordered collection of bodies, each a Construction
+// Body or an Imported Mesh.
 //
 // Before Stage 017 the product was one object expressed as three process-global
-// singletons -- `constructionObject()`, `meshStore()` and `sculptSession()` --
+// singletons -- the Construction object, `meshStore()` and `sculptSession()` --
 // and "the object" was simply whichever thing each of them held. That is the
-// assumption this file removes. A Construction Body is now a `SceneObject` that
-// owns all three, the scene owns an ordered list of them, and the three global
-// accessors are redefined (in forgeshape_scene.cpp) as "the ACTIVE body's".
+// assumption this file removes. A body is now a `SceneObject` that owns its
+// representation, its MeshStore, its Frozen Sculpt Mesh and its placement; the
+// scene owns an ordered list of them; and the global accessors are redefined
+// (in forgeshape_scene.cpp) as "the ACTIVE body's" -- with the Construction one
+// now `activeConstructionOrNull()`, because since `IMPORT-01A` the active body
+// may have no Construction Source at all.
 //
 // Platform-neutral C++17: no JNI, no Android, no Vulkan, no renderer type.
 #pragma once
@@ -317,8 +321,9 @@ private:
 // not pass RuntimeMesh validation.
 MeshRevision publishSceneObject(SceneObject& body, MeshValidation* outWhy = nullptr);
 
-// The one process-scoped scene. `constructionObject()`, `meshStore()` and
-// `sculptSession()` are defined in terms of this scene's ACTIVE body.
+// The one process-scoped scene. `activeConstructionOrNull()`, `meshStore()`,
+// `sculptSession()` and `constructionTransform()` are all defined in terms of
+// this scene's ACTIVE body.
 ConstructionScene& constructionScene();
 
 }  // namespace forgeshape
