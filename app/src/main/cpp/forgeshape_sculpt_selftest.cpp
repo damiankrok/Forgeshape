@@ -110,6 +110,10 @@ constexpr float kCentreY = kViewportHeight * 0.5f;
 // falloff.
 ConstructionObject makeSphereObject() {
     ConstructionObject object(kConstructionBoxObjectId);
+    // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+    // Source. This suite drives a standalone source, so it pairs one here. The
+    // invariant under test is unchanged: a primitive change must not disturb it.
+    ConstructionTransform placement_;
     object.setPrimitive(PrimitiveSpec::forSphere(2.0));
     return object;
 }
@@ -119,6 +123,10 @@ ConstructionObject makeSphereObject() {
 // exist to prove the generic Freeze pipeline handles without any special case.
 ConstructionObject makePlaneObject() {
     ConstructionObject object(kConstructionBoxObjectId);
+    // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+    // Source. This suite drives a standalone source, so it pairs one here. The
+    // invariant under test is unchanged: a primitive change must not disturb it.
+    ConstructionTransform placement_;
     object.setPrimitive(PrimitiveSpec::forPlane(2.0, 1.5));
     return object;
 }
@@ -260,6 +268,10 @@ void runSidednessSelfTests(Recorder& r) {
     const Mat4 identity = mat4Identity();
 
     ConstructionObject planeObject;
+    // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+    // Source. This suite drives a standalone source, so it pairs one here. The
+    // invariant under test is unchanged: a primitive change must not disturb it.
+    ConstructionTransform placement_;
     planeObject.setPrimitive(PrimitiveSpec::forPlane(2.0, 1.25));
     const ConstructionMesh planeSource = planeObject.generateMesh();
 
@@ -515,9 +527,12 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
     // -----------------------------------------------------------------------
     {
         ConstructionObject object = makeSphereObject();
+        // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+        // Source. This suite drives a standalone source, so it pairs one here.
+        ConstructionTransform placement_;
         const ConstructionMesh source = object.generateMesh();
         const PrimitiveSpec specBefore = object.spec();
-        const TransformValues transformBefore = object.transform().values();
+        const TransformValues transformBefore = placement_.values();
 
         SculptSession session;
         r.check("mode_starts_as_construction", session.mode() == ProductMode::Construction);
@@ -547,8 +562,8 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
                 object.spec().sphere() != nullptr && specBefore.sphere() != nullptr &&
                     object.spec().sphere()->diameter == specBefore.sphere()->diameter);
         r.check("freeze_leaves_transform",
-                object.transform().values().positionX == transformBefore.positionX &&
-                    object.transform().values().rotationZ == transformBefore.rotationZ);
+                placement_.values().positionX == transformBefore.positionX &&
+                    placement_.values().rotationZ == transformBefore.rotationZ);
         r.check("freeze_leaves_construction_mesh_regenerable",
                 sameVertices(object.generateMesh().vertices, source.vertices));
 
@@ -598,6 +613,9 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
     // -----------------------------------------------------------------------
     {
         ConstructionObject object = makeSphereObject();
+        // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+        // Source. This suite drives a standalone source, so it pairs one here.
+        ConstructionTransform placement_;
         const ConstructionMesh source = object.generateMesh();
         SculptSession session;
         session.freezeToSculpt(source, object.objectId());
@@ -643,6 +661,9 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
     // -----------------------------------------------------------------------
     {
         ConstructionObject object = makePlaneObject();
+        // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+        // Source. This suite drives a standalone source, so it pairs one here.
+        ConstructionTransform placement_;
         const ConstructionMesh source = object.generateMesh();
         r.check("pln17_plane_source_is_open_4_6",
                 source.vertices.size() == 4 && source.indices.size() == 6);
@@ -726,6 +747,9 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
     // -----------------------------------------------------------------------
     {
         ConstructionObject object = makeSphereObject();
+        // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+        // Source. This suite drives a standalone source, so it pairs one here.
+        ConstructionTransform placement_;
         MeshStore store(object.objectId());
         SculptSession session;
         session.freezeToSculpt(object.generateMesh(), object.objectId());
@@ -762,6 +786,9 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
     // -----------------------------------------------------------------------
     {
         ConstructionObject object = makeSphereObject();
+        // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+        // Source. This suite drives a standalone source, so it pairs one here.
+        ConstructionTransform placement_;
         SculptSession session;
         session.freezeToSculpt(object.generateMesh(), object.objectId());
 
@@ -801,6 +828,9 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
     // -----------------------------------------------------------------------
     {
         ConstructionObject object = makeSphereObject();
+        // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+        // Source. This suite drives a standalone source, so it pairs one here.
+        ConstructionTransform placement_;
         const ConstructionMesh source = object.generateMesh();
 
         SculptSession small;
@@ -897,6 +927,9 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
     // -----------------------------------------------------------------------
     {
         ConstructionObject object = makeSphereObject();
+        // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+        // Source. This suite drives a standalone source, so it pairs one here.
+        ConstructionTransform placement_;
         const ConstructionMesh source = object.generateMesh();
 
         SculptSession session;
@@ -962,6 +995,9 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
     // -----------------------------------------------------------------------
     {
         ConstructionObject object = makeSphereObject();
+        // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+        // Source. This suite drives a standalone source, so it pairs one here.
+        ConstructionTransform placement_;
         const ConstructionMesh source = object.generateMesh();
 
         SculptSession full;
@@ -992,13 +1028,16 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
     // -----------------------------------------------------------------------
     {
         ConstructionObject object = makeSphereObject();
+        // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+        // Source. This suite drives a standalone source, so it pairs one here.
+        ConstructionTransform placement_;
         TransformValues placement;
         placement.positionX = 0.5;
         placement.positionY = -0.25;
         placement.rotationZ = 90.0;
-        object.transform().setValues(placement);
-        const Mat4 model = object.transform().modelMatrix();
-        const Mat4 inverseModel = object.transform().inverseModelMatrix();
+        placement_.setValues(placement);
+        const Mat4 model = placement_.modelMatrix();
+        const Mat4 inverseModel = placement_.inverseModelMatrix();
         const ConstructionMesh source = object.generateMesh();
 
         SculptSession session;
@@ -1028,8 +1067,8 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
         r.check("transformed_stroke_left_construction_source_unchanged",
                 sameVertices(object.generateMesh().vertices, source.vertices));
         r.check("transformed_stroke_left_transform_unchanged",
-                object.transform().values().positionX == 0.5 &&
-                    object.transform().values().rotationZ == 90.0);
+                placement_.values().positionX == 0.5 &&
+                    placement_.values().rotationZ == 90.0);
     }
 
     // -----------------------------------------------------------------------
@@ -1037,6 +1076,9 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
     // -----------------------------------------------------------------------
     {
         ConstructionObject object = makeSphereObject();
+        // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+        // Source. This suite drives a standalone source, so it pairs one here.
+        ConstructionTransform placement_;
         const ConstructionMesh source = object.generateMesh();
         SculptSession session;
         session.freezeToSculpt(source, object.objectId());
@@ -1126,6 +1168,9 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
     // =======================================================================
     {
         ConstructionObject object = makeSphereObject();
+        // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+        // Source. This suite drives a standalone source, so it pairs one here.
+        ConstructionTransform placement_;
         SculptSession session;
         session.freezeToSculpt(object.generateMesh(), object.objectId());
         const SculptMesh& mesh = session.mesh();
@@ -1249,6 +1294,9 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
     // =======================================================================
     {
         ConstructionObject object = makeSphereObject();
+        // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+        // Source. This suite drives a standalone source, so it pairs one here.
+        ConstructionTransform placement_;
         SculptSession session;
         session.freezeToSculpt(object.generateMesh(), object.objectId());
         const SculptMesh& mesh = session.mesh();
@@ -1333,6 +1381,9 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
     // =======================================================================
     {
         ConstructionObject object = makeSphereObject();
+        // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+        // Source. This suite drives a standalone source, so it pairs one here.
+        ConstructionTransform placement_;
         const ConstructionMesh source = object.generateMesh();
         const SculptTool tools[kSculptToolCount] = {SculptTool::Grab, SculptTool::Clay,
                                                     SculptTool::Smooth, SculptTool::Inflate};
@@ -1451,6 +1502,9 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
     // -----------------------------------------------------------------------
     {
         ConstructionObject object = makeSphereObject();
+        // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+        // Source. This suite drives a standalone source, so it pairs one here.
+        ConstructionTransform placement_;
         SculptSession session;
         prepareSession(&session, object, SculptTool::Clay, 150.0f, 0.8f);
         session.beginStroke(camera, kCentreX, kCentreY, kViewportWidth, kViewportHeight, identity,
@@ -1472,6 +1526,9 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
     // -----------------------------------------------------------------------
     {
         ConstructionObject object = makeSphereObject();
+        // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+        // Source. This suite drives a standalone source, so it pairs one here.
+        ConstructionTransform placement_;
         SculptSession session;
         prepareSession(&session, object, SculptTool::Inflate, 150.0f, 1.0f);
         const std::vector<MeshVertex> before = session.mesh().vertices();
@@ -1512,6 +1569,9 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
     // =======================================================================
     {
         ConstructionObject object = makeSphereObject();
+        // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+        // Source. This suite drives a standalone source, so it pairs one here.
+        ConstructionTransform placement_;
         const ConstructionMesh source = object.generateMesh();
         SculptSession session;
         prepareSession(&session, object, SculptTool::Clay, 150.0f, 0.8f);
@@ -1625,6 +1685,9 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
     // =======================================================================
     {
         ConstructionObject object = makeSphereObject();
+        // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+        // Source. This suite drives a standalone source, so it pairs one here.
+        ConstructionTransform placement_;
         const ConstructionMesh source = object.generateMesh();
         SculptSession session;
         prepareSession(&session, object, SculptTool::Smooth, 150.0f, 0.9f);
@@ -1719,6 +1782,9 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
     // =======================================================================
     {
         ConstructionObject object = makeSphereObject();
+        // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+        // Source. This suite drives a standalone source, so it pairs one here.
+        ConstructionTransform placement_;
         const ConstructionMesh source = object.generateMesh();
         SculptSession session;
         prepareSession(&session, object, SculptTool::Inflate, 150.0f, 0.8f);
@@ -1768,6 +1834,9 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
     // -----------------------------------------------------------------------
     {
         ConstructionObject object = makeSphereObject();
+        // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+        // Source. This suite drives a standalone source, so it pairs one here.
+        ConstructionTransform placement_;
         SculptSession clay;
         SculptSession inflate;
         prepareSession(&clay, object, SculptTool::Clay, 150.0f, 1.0f);
@@ -1830,6 +1899,9 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
     // -----------------------------------------------------------------------
     {
         ConstructionObject object = makeSphereObject();
+        // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+        // Source. This suite drives a standalone source, so it pairs one here.
+        ConstructionTransform placement_;
         const SculptTool tools[3] = {SculptTool::Clay, SculptTool::Smooth, SculptTool::Inflate};
         bool radiusWidensEveryTool = true;
         bool strengthScalesEveryTool = true;
@@ -1907,6 +1979,9 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
         const CameraSnapshot ortho = orthoCam.snapshot();
 
         ConstructionObject object = makeSphereObject();
+        // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+        // Source. This suite drives a standalone source, so it pairs one here.
+        ConstructionTransform placement_;
         const ConstructionMesh source = object.generateMesh();
 
         // A stroke must start in Orthographic at all, on the same pixel and the
@@ -2090,6 +2165,9 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
     // tools, because one kernel does not mean one code path through it.
     {
         ConstructionObject object = makeSphereObject();
+        // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+        // Source. This suite drives a standalone source, so it pairs one here.
+        ConstructionTransform placement_;
         const ConstructionMesh source = object.generateMesh();
 
         // The geometric path, authored once so the two runs cannot drift apart.
@@ -2311,6 +2389,9 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
                 // vertices inside the world ball, and each weight is the
                 // falloff of its WORLD distance.
                 ConstructionObject object = makeSphereObject();
+                // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+                // Source. This suite drives a standalone source, so it pairs one here.
+                ConstructionTransform placement_;
                 SculptMesh mesh;
                 mesh.freezeFrom(object.generateMesh(), object.objectId());
                 SculptStroke stroke;
@@ -2367,6 +2448,9 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
             // And a stroke on the turned, stretched body still selects the
             // world ball — the mixed case the stage names.
             ConstructionObject object = makeSphereObject();
+            // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+            // Source. This suite drives a standalone source, so it pairs one here.
+            ConstructionTransform placement_;
             SculptMesh mesh;
             mesh.freezeFrom(object.generateMesh(), object.objectId());
             SculptStroke stroke;
@@ -2400,6 +2484,9 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
             const CameraSnapshot ortho = orthoCam.snapshot();
 
             ConstructionObject object = makeSphereObject();
+            // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+            // Source. This suite drives a standalone source, so it pairs one here.
+            ConstructionTransform placement_;
             const ConstructionMesh source = object.generateMesh();
 
             const Placement unscaled = placementOf(1.0, 1.0, 1.0, 0.0, 0.0, 0.0);
@@ -2461,6 +2548,9 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
                 sculptToolFromIndex(toolIndex, &tool);
 
                 ConstructionObject object = makeSphereObject();
+                // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+                // Source. This suite drives a standalone source, so it pairs one here.
+                ConstructionTransform placement_;
                 SculptMesh mesh;
                 mesh.freezeFrom(object.generateMesh(), object.objectId());
                 SculptStroke stroke;
@@ -2518,6 +2608,9 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
             // camera-plane delta the pointer travelled, times its weight.
             {
                 ConstructionObject object = makeSphereObject();
+                // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+                // Source. This suite drives a standalone source, so it pairs one here.
+                ConstructionTransform placement_;
                 SculptMesh mesh;
                 mesh.freezeFrom(object.generateMesh(), object.objectId());
                 SculptStroke stroke;
@@ -2554,6 +2647,9 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
 
             for (int i = 0; i < 2; ++i) {
                 ConstructionObject object = makeSphereObject();
+                // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+                // Source. This suite drives a standalone source, so it pairs one here.
+                ConstructionTransform placement_;
                 SculptMesh mesh;
                 mesh.freezeFrom(object.generateMesh(), object.objectId());
                 SculptStroke stroke;
@@ -2599,6 +2695,9 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
         // --- S020R3-09: Start Sculpting bakes nothing ----------------------
         {
             ConstructionObject object = makeSphereObject();
+            // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+            // Source. This suite drives a standalone source, so it pairs one here.
+            ConstructionTransform placement_;
             TransformValues v{};
             v.positionX = 1.25;
             v.positionY = -0.5;
@@ -2609,13 +2708,13 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
             v.scaleX = 3.0;
             v.scaleY = 1.0;
             v.scaleZ = 1.0;
-            object.transform().setValues(v);
-            const TransformValues before = object.transform().values();
+            placement_.setValues(v);
+            const TransformValues before = placement_.values();
             const ConstructionMesh source = object.generateMesh();
 
             SculptSession session;
             const bool froze = session.freezeToSculpt(source, object.objectId());
-            const TransformValues after = object.transform().values();
+            const TransformValues after = placement_.values();
 
             r.check("s020r3_09_freeze_succeeds_on_a_scaled_body", froze);
             // Bit-exact on all nine: Start Sculpting is not a transform edit.
@@ -2639,13 +2738,16 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
         // --- S020R3-10: Back to Construction and Resume Sculpt retain ------
         {
             ConstructionObject object = makeSphereObject();
+            // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+            // Source. This suite drives a standalone source, so it pairs one here.
+            ConstructionTransform placement_;
             TransformValues v{};
             v.scaleX = 0.5;
             v.scaleY = 2.5;
             v.scaleZ = 1.5;
-            object.transform().setValues(v);
-            const Placement p{object.transform().modelMatrix(),
-                              object.transform().inverseModelMatrix()};
+            placement_.setValues(v);
+            const Placement p{placement_.modelMatrix(),
+                              placement_.inverseModelMatrix()};
 
             SculptSession session;
             session.freezeToSculpt(object.generateMesh(), object.objectId());
@@ -2664,7 +2766,7 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
 
             session.enterConstruction();
             const bool inConstruction = session.mode() == ProductMode::Construction;
-            const TransformValues mid = object.transform().values();
+            const TransformValues mid = placement_.values();
             const bool resumed = session.enterSculpt();
 
             r.check("s020r3_10_a_stroke_ran_on_the_scaled_body",
@@ -2679,9 +2781,9 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
             r.check("s020r3_10_object_id_survives", session.mesh().objectId() == id);
             r.check("s020r3_10_non_uniform_scale_survives_the_round_trip",
                     mid.scaleX == 0.5 && mid.scaleY == 2.5 && mid.scaleZ == 1.5 &&
-                        object.transform().scaleXFactor() == 0.5 &&
-                        object.transform().scaleYFactor() == 2.5 &&
-                        object.transform().scaleZFactor() == 1.5);
+                        placement_.scaleXFactor() == 0.5 &&
+                        placement_.scaleYFactor() == 2.5 &&
+                        placement_.scaleZFactor() == 1.5);
         }
 
         // --- S020R3-11: none of this is a Construction history step --------
@@ -2759,6 +2861,9 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
                 sculptToolFromIndex(toolIndex, &tool);
 
                 ConstructionObject object = makeSphereObject();
+                // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+                // Source. This suite drives a standalone source, so it pairs one here.
+                ConstructionTransform placement_;
                 SculptSession session;
                 prepareSession(&session, object, tool, 150.0f, 0.8f);
                 const bool began =

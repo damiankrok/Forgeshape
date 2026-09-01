@@ -138,6 +138,10 @@ void testTypedSpecCarriesOnlyItsOwnParameters(Recorder& r) {
 
 void testTypedRequestsCannotCrossPrimitives(Recorder& r) {
     ConstructionObject object;
+    // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+    // Source. This suite drives a standalone source, so it pairs one here. The
+    // invariant under test is unchanged: a primitive change must not disturb it.
+    ConstructionTransform placement_;
     MeshStore store(kConstructionBoxObjectId);
     publishConstructionObject(object, store);
 
@@ -208,12 +212,16 @@ void testInvalidTypedRequestFailsClosed(Recorder& r) {
         // Start from a known non-default sphere under a non-default placement,
         // so a rejection has something real to preserve.
         ConstructionObject object;
+        // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+        // Source. This suite drives a standalone source, so it pairs one here. The
+        // invariant under test is unchanged: a primitive change must not disturb it.
+        ConstructionTransform placement_;
         MeshStore store(kConstructionBoxObjectId);
         applyPrimitive(object, store, PrimitiveSpec::forSphere(1.5));
         TransformValues placement;
         placement.positionY = -1.25;
         placement.rotationZ = 90.0;
-        object.transform().setValues(placement);
+        placement_.setValues(placement);
 
         const MeshRevision before = store.currentRevision();
         const uint64_t publishedBefore = store.publishedCount();
@@ -225,13 +233,17 @@ void testInvalidTypedRequestFailsClosed(Recorder& r) {
         const bool parametersHeld = object.sphere().diameterMeters() == 1.5;
         const bool revisionHeld = store.currentRevision() == before &&
                                   store.publishedCount() == publishedBefore && !rejected.published;
-        const TransformValues t = object.transform().values();
+        const TransformValues t = placement_.values();
         const bool transformHeld = t.positionY == -1.25 && t.rotationZ == 90.0;
         r.check(c.name, refused && kindHeld && parametersHeld && revisionHeld && transformHeld);
     }
 
     // A rejected SPHERE request must not switch the kind away from the cylinder.
     ConstructionObject object;
+    // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+    // Source. This suite drives a standalone source, so it pairs one here. The
+    // invariant under test is unchanged: a primitive change must not disturb it.
+    ConstructionTransform placement_;
     MeshStore store(kConstructionBoxObjectId);
     applyPrimitive(object, store, PrimitiveSpec::forCylinder(1.2, 2.4));
     DimensionValidation why = DimensionValidation::Ok;
@@ -246,6 +258,10 @@ void testInvalidTypedRequestFailsClosed(Recorder& r) {
 
 void testSphereApplySemantics(Recorder& r) {
     ConstructionObject object;
+    // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+    // Source. This suite drives a standalone source, so it pairs one here. The
+    // invariant under test is unchanged: a primitive change must not disturb it.
+    ConstructionTransform placement_;
     MeshStore store(kConstructionBoxObjectId);
     const MeshRevision rev0 = publishConstructionObject(object, store);
     const uint64_t publishedBefore = store.publishedCount();
@@ -301,6 +317,10 @@ void testSphereApplySemantics(Recorder& r) {
 
 void testIdentityAndTransformSurviveSphereSwitches(Recorder& r) {
     ConstructionObject object;
+    // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+    // Source. This suite drives a standalone source, so it pairs one here. The
+    // invariant under test is unchanged: a primitive change must not disturb it.
+    ConstructionTransform placement_;
     MeshStore store(kConstructionBoxObjectId);
     publishConstructionObject(object, store);
     const ObjectId idBefore = object.objectId();
@@ -312,22 +332,22 @@ void testIdentityAndTransformSurviveSphereSwitches(Recorder& r) {
     placement.rotationX = 15.0;
     placement.rotationY = 30.0;
     placement.rotationZ = 90.0;
-    object.transform().setValues(placement);
-    const uint64_t transformUpdatesBefore = object.transform().updateCount();
+    placement_.setValues(placement);
+    const uint64_t transformUpdatesBefore = placement_.updateCount();
 
     applyPrimitive(object, store, PrimitiveSpec::forSphere(1.5));
-    const TransformValues afterSphere = object.transform().values();
+    const TransformValues afterSphere = placement_.values();
     r.check("object_id_stable_box_to_sphere", object.objectId() == idBefore);
     r.check("transform_survives_box_to_sphere",
             afterSphere.positionX == 0.75 && afterSphere.positionY == -1.25 &&
                 afterSphere.positionZ == 0.5 && afterSphere.rotationX == 15.0 &&
                 afterSphere.rotationY == 30.0 && afterSphere.rotationZ == 90.0);
     r.check("sphere_switch_does_not_count_as_a_transform_update",
-            object.transform().updateCount() == transformUpdatesBefore);
+            placement_.updateCount() == transformUpdatesBefore);
 
     applyPrimitive(object, store, PrimitiveSpec::forCylinder(1.2, 2.4));
     applyPrimitive(object, store, PrimitiveSpec::forBox(1.5, 0.8, 0.4));
-    const TransformValues afterRoundTrip = object.transform().values();
+    const TransformValues afterRoundTrip = placement_.values();
     r.check("object_id_stable_across_all_three_kinds", object.objectId() == idBefore);
     r.check("transform_survives_sphere_cylinder_box",
             afterRoundTrip.positionX == 0.75 && afterRoundTrip.rotationZ == 90.0);
@@ -337,11 +357,11 @@ void testIdentityAndTransformSurviveSphereSwitches(Recorder& r) {
             store.current() != nullptr && store.current()->objectId() == kConstructionBoxObjectId);
 
     // A sphere diameter change must publish a mesh but no transform update.
-    const uint64_t transformUpdates = object.transform().updateCount();
+    const uint64_t transformUpdates = placement_.updateCount();
     applyPrimitive(object, store, PrimitiveSpec::forSphere(2.0));
     r.check("sphere_parameter_edit_leaves_the_transform_alone",
-            object.transform().updateCount() == transformUpdates &&
-                object.transform().values().positionX == 0.75);
+            placement_.updateCount() == transformUpdates &&
+                placement_.values().positionX == 0.75);
 }
 
 // ---------------------------------------------------------------------------
@@ -711,6 +731,10 @@ void testTransformedSpherePicking(Recorder& r) {
 
 void testBoxAndCylinderStillBehave(Recorder& r) {
     ConstructionObject object;
+    // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+    // Source. This suite drives a standalone source, so it pairs one here. The
+    // invariant under test is unchanged: a primitive change must not disturb it.
+    ConstructionTransform placement_;
     MeshStore store(kConstructionBoxObjectId);
     const MeshRevision rev0 = publishConstructionObject(object, store);
     r.check("object_still_publishes_box_topology_at_startup",

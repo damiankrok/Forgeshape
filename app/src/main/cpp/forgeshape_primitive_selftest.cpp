@@ -8,6 +8,7 @@
 #include "forgeshape_math.h"
 #include "forgeshape_mesh.h"
 #include "forgeshape_picking.h"
+#include "forgeshape_scene.h"
 #include "forgeshape_transform.h"
 
 namespace forgeshape {
@@ -84,6 +85,10 @@ bool boundsOf(const ConstructionMesh& mesh, Bounds* out) {
 
 void testActiveObjectDefaults(Recorder& r) {
     ConstructionObject object;
+    // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+    // Source. This suite drives a standalone source, so it pairs one here. The
+    // invariant under test is unchanged: a primitive change must not disturb it.
+    ConstructionTransform placement_;
     r.check("active_object_defaults_to_box", object.kind() == PrimitiveKind::Box);
     r.check("active_object_keeps_box_defaults",
             object.box().widthMeters() == kDefaultBoxWidthMeters &&
@@ -96,18 +101,24 @@ void testActiveObjectDefaults(Recorder& r) {
             object.objectId() == kConstructionBoxObjectId && object.objectId() != kNoObject);
     r.check("active_object_counts_start_at_zero",
             object.updateCount() == 0 && object.rejectedUpdateCount() == 0);
-    r.check("active_object_transform_starts_identity", object.transform().isIdentity());
+    r.check("active_object_transform_starts_identity", placement_.isIdentity());
     r.check("active_object_default_mesh_is_the_box",
             object.generateMesh().vertices.size() == kBoxVertexCount);
 
-    // The process-scoped transform IS this object's transform, not a second
-    // singleton. That is what makes placement survive a primitive change.
-    r.check("process_transform_belongs_to_the_object",
-            &constructionTransform() == &constructionObject().transform());
+    // The process-scoped transform IS the active BODY's transform, not a second
+    // singleton. Since IMPORT-01A it belongs to the body rather than to its
+    // Construction Source, which is what lets an Imported Mesh have one too --
+    // and it is still exactly one placement per body.
+    r.check("process_transform_belongs_to_the_active_body",
+            &constructionTransform() == &constructionScene().activeBody().transform());
 }
 
 void testIdentityAndTransformSurviveKindChanges(Recorder& r) {
     ConstructionObject object;
+    // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+    // Source. This suite drives a standalone source, so it pairs one here. The
+    // invariant under test is unchanged: a primitive change must not disturb it.
+    ConstructionTransform placement_;
     MeshStore store(kConstructionBoxObjectId);
     publishConstructionObject(object, store);
 
@@ -119,8 +130,8 @@ void testIdentityAndTransformSurviveKindChanges(Recorder& r) {
     placement.rotationX = 15.0;
     placement.rotationY = 30.0;
     placement.rotationZ = 90.0;
-    object.transform().setValues(placement);
-    const uint64_t transformUpdatesBefore = object.transform().updateCount();
+    placement_.setValues(placement);
+    const uint64_t transformUpdatesBefore = placement_.updateCount();
 
     const PrimitiveApplyResult toCylinder =
         applyPrimitive(object, store, PrimitiveSpec::forCylinder(1.2, 2.4));
@@ -128,19 +139,19 @@ void testIdentityAndTransformSurviveKindChanges(Recorder& r) {
     r.check("kind_is_cylinder_after_switch", object.kind() == PrimitiveKind::Cylinder);
     r.check("object_id_stable_box_to_cylinder", object.objectId() == idBefore);
 
-    const TransformValues after = object.transform().values();
+    const TransformValues after = placement_.values();
     r.check("transform_survives_box_to_cylinder",
             after.positionX == 0.75 && after.positionY == -1.25 && after.positionZ == 0.5 &&
                 after.rotationX == 15.0 && after.rotationY == 30.0 && after.rotationZ == 90.0);
     r.check("kind_change_does_not_count_as_a_transform_update",
-            object.transform().updateCount() == transformUpdatesBefore);
+            placement_.updateCount() == transformUpdatesBefore);
 
     const PrimitiveApplyResult backToBox =
         applyPrimitive(object, store, PrimitiveSpec::forBox(1.5, 3.0, 0.4));
     r.check("cylinder_to_box_is_applied", backToBox.status == PrimitiveUpdateStatus::Applied);
     r.check("kind_is_box_after_switch_back", object.kind() == PrimitiveKind::Box);
     r.check("object_id_stable_cylinder_to_box", object.objectId() == idBefore);
-    const TransformValues afterBack = object.transform().values();
+    const TransformValues afterBack = placement_.values();
     r.check("transform_survives_cylinder_to_box",
             afterBack.positionX == 0.75 && afterBack.rotationZ == 90.0);
 
@@ -156,6 +167,10 @@ void testIdentityAndTransformSurviveKindChanges(Recorder& r) {
 
 void testApplySemantics(Recorder& r) {
     ConstructionObject object;
+    // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+    // Source. This suite drives a standalone source, so it pairs one here. The
+    // invariant under test is unchanged: a primitive change must not disturb it.
+    ConstructionTransform placement_;
     MeshStore store(kConstructionBoxObjectId);
     const MeshRevision rev0 = publishConstructionObject(object, store);
 
@@ -238,6 +253,10 @@ void testRejection(Recorder& r) {
 
     for (const Case& c : cases) {
         ConstructionObject object;
+        // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+        // Source. This suite drives a standalone source, so it pairs one here. The
+        // invariant under test is unchanged: a primitive change must not disturb it.
+        ConstructionTransform placement_;
         MeshStore store(kConstructionBoxObjectId);
         // Start from a known non-default cylinder so a rejection has something
         // real to preserve.
@@ -245,7 +264,7 @@ void testRejection(Recorder& r) {
         TransformValues placement;
         placement.positionY = -1.25;
         placement.rotationZ = 90.0;
-        object.transform().setValues(placement);
+        placement_.setValues(placement);
 
         const MeshRevision before = store.currentRevision();
         const uint64_t publishedBefore = store.publishedCount();
@@ -258,13 +277,17 @@ void testRejection(Recorder& r) {
                                     object.cylinder().heightMeters() == 2.4;
         const bool revisionHeld = store.currentRevision() == before &&
                                   store.publishedCount() == publishedBefore && !rejected.published;
-        const TransformValues t = object.transform().values();
+        const TransformValues t = placement_.values();
         const bool transformHeld = t.positionY == -1.25 && t.rotationZ == 90.0;
         r.check(c.name, refused && kindHeld && parametersHeld && revisionHeld && transformHeld);
     }
 
     // A rejected BOX request must not switch the kind either.
     ConstructionObject object;
+    // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+    // Source. This suite drives a standalone source, so it pairs one here. The
+    // invariant under test is unchanged: a primitive change must not disturb it.
+    ConstructionTransform placement_;
     MeshStore store(kConstructionBoxObjectId);
     applyPrimitive(object, store, PrimitiveSpec::forCylinder(1.2, 2.4));
     DimensionValidation why = DimensionValidation::Ok;
@@ -650,12 +673,16 @@ void testPlaneRejection(Recorder& r) {
 
     for (const Case& c : cases) {
         ConstructionObject object;
+        // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+        // Source. This suite drives a standalone source, so it pairs one here. The
+        // invariant under test is unchanged: a primitive change must not disturb it.
+        ConstructionTransform placement_;
         MeshStore store(kConstructionBoxObjectId);
         applyPrimitive(object, store, PrimitiveSpec::forPlane(2.5, 1.5));
         TransformValues placement;
         placement.positionY = 0.75;
         placement.rotationX = 90.0;
-        object.transform().setValues(placement);
+        placement_.setValues(placement);
 
         const MeshRevision before = store.currentRevision();
         const uint64_t publishedBefore = store.publishedCount();
@@ -668,7 +695,7 @@ void testPlaneRejection(Recorder& r) {
             object.plane().widthMeters() == 2.5 && object.plane().depthMeters() == 1.5;
         const bool revisionHeld = store.currentRevision() == before &&
                                   store.publishedCount() == publishedBefore && !rejected.published;
-        const TransformValues t = object.transform().values();
+        const TransformValues t = placement_.values();
         const bool transformHeld = t.positionY == 0.75 && t.rotationX == 90.0;
         r.check(c.name, refused && kindHeld && parametersHeld && revisionHeld && transformHeld);
     }
@@ -678,6 +705,10 @@ void testPlaneRejection(Recorder& r) {
 // exactly one revision and preserves ObjectId and transform.
 void testPlaneApplySemantics(Recorder& r) {
     ConstructionObject object;
+    // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+    // Source. This suite drives a standalone source, so it pairs one here. The
+    // invariant under test is unchanged: a primitive change must not disturb it.
+    ConstructionTransform placement_;
     MeshStore store(kConstructionBoxObjectId);
     const MeshRevision rev0 = publishConstructionObject(object, store);
     const ObjectId idBefore = object.objectId();
@@ -685,7 +716,7 @@ void testPlaneApplySemantics(Recorder& r) {
     TransformValues placement;
     placement.positionX = 1.5;
     placement.rotationY = 45.0;
-    object.transform().setValues(placement);
+    placement_.setValues(placement);
 
     const uint64_t publishedBefore = store.publishedCount();
     const PrimitiveApplyResult toPlane =
@@ -696,7 +727,7 @@ void testPlaneApplySemantics(Recorder& r) {
     r.check("box_to_plane_reports_plane_topology",
             toPlane.vertexCount == kPlaneVertexCount && toPlane.indexCount == kPlaneIndexCount);
     r.check("box_to_plane_preserves_object_id", object.objectId() == idBefore);
-    const TransformValues afterToPlane = object.transform().values();
+    const TransformValues afterToPlane = placement_.values();
     r.check("box_to_plane_preserves_transform",
             afterToPlane.positionX == 1.5 && afterToPlane.rotationY == 45.0);
 
@@ -720,7 +751,7 @@ void testPlaneApplySemantics(Recorder& r) {
     r.check("plane_parameter_change_keeps_topology",
             resized.vertexCount == kPlaneVertexCount && resized.indexCount == kPlaneIndexCount);
     r.check("plane_parameter_change_preserves_object_id", object.objectId() == idBefore);
-    const TransformValues afterResize = object.transform().values();
+    const TransformValues afterResize = placement_.values();
     r.check("plane_parameter_change_preserves_transform",
             afterResize.positionX == 1.5 && afterResize.rotationY == 45.0);
 }
@@ -729,6 +760,10 @@ void testPlaneApplySemantics(Recorder& r) {
 // switches, each remembering its own last-applied values independently.
 void testAllSixPrimitivesRoundTrip(Recorder& r) {
     ConstructionObject object;
+    // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+    // Source. This suite drives a standalone source, so it pairs one here. The
+    // invariant under test is unchanged: a primitive change must not disturb it.
+    ConstructionTransform placement_;
     MeshStore store(kConstructionBoxObjectId);
     const ObjectId idBefore = object.objectId();
 
@@ -771,6 +806,10 @@ void testAllSixPrimitivesRoundTrip(Recorder& r) {
 
 void testBoxStillWorksThroughTheObject(Recorder& r) {
     ConstructionObject object;
+    // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+    // Source. This suite drives a standalone source, so it pairs one here. The
+    // invariant under test is unchanged: a primitive change must not disturb it.
+    ConstructionTransform placement_;
     MeshStore store(kConstructionBoxObjectId);
     const MeshRevision rev0 = publishConstructionObject(object, store);
     r.check("object_publishes_box_topology",

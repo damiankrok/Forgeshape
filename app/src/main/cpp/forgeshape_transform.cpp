@@ -2,11 +2,13 @@
 
 #include <cmath>
 
-// Only for constructionObject(): since Stage 010 the process-scoped transform is
-// not a separate singleton, it is the active Construction object's own placement.
+// Only for constructionTransform(): since Stage 010 the process-scoped transform
+// is not a separate singleton, it is the ACTIVE BODY's own placement — which
+// since IMPORT-01A lives on the body rather than inside its Construction Source.
 // The header stays free of this dependency, so the transform type itself remains
 // usable on its own (and is, in the self-tests).
 #include "forgeshape_construction.h"
+#include "forgeshape_scene.h"
 
 namespace forgeshape {
 namespace {
@@ -383,11 +385,15 @@ TransformApplyResult applyTransformValues(ConstructionTransform& transform,
     return result;
 }
 
-// The placement of the one active Construction object. It is deliberately NOT a
-// second singleton: identity, primitive and placement are one object's state, so
-// a primitive change cannot lose the placement and nothing can drift.
+// The placement of the ACTIVE body. It is deliberately NOT a second singleton:
+// there is exactly one `ConstructionTransform` per body and this names that one,
+// so a primitive change cannot lose the placement and nothing can drift.
+//
+// It reads the BODY rather than the body's Construction Source, because since
+// `IMPORT-01A` a body's placement is the body's own — an Imported Mesh has one
+// and has no Construction Source at all.
 ConstructionTransform& constructionTransform() {
-    return constructionObject().transform();
+    return constructionScene().activeBody().transform();
 }
 
 TransformApplyResult applyConstructionTransform(const TransformValues& requested) {

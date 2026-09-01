@@ -4,7 +4,7 @@
 
 namespace forgeshape {
 
-bool ImportedMeshPreview::load(const ImportedScene& scene) {
+bool ImportedMeshPreview::load(const ParsedGlbScene& scene) {
     if (scene.meshes.empty()) {
         return false;
     }
@@ -19,7 +19,7 @@ bool ImportedMeshPreview::load(const ImportedScene& scene) {
     ObjectId nextKey = kFirstPreviewRenderKey;
 
     for (size_t i = 0; i < scene.meshes.size(); ++i) {
-        const ImportedMesh& mesh = scene.meshes[i];
+        const ParsedGlbMesh& mesh = scene.meshes[i];
         if (mesh.positions.empty() || mesh.indices.empty() || mesh.batches.empty()) {
             return false;
         }
@@ -49,7 +49,7 @@ bool ImportedMeshPreview::load(const ImportedScene& scene) {
         // array, so a seven-primitive character over one POSITION accessor
         // stays the vertex count the file states.
         for (size_t b = 0; b < mesh.batches.size(); ++b) {
-            const ImportedPrimitiveBatch& batch = mesh.batches[b];
+            const ParsedGlbBatch& batch = mesh.batches[b];
             if (batch.indexCount == 0
                 || static_cast<uint64_t>(batch.firstIndex) + batch.indexCount
                         > mesh.indices.size()) {

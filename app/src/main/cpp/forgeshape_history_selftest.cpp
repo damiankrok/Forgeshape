@@ -121,6 +121,9 @@ int runHistorySelfTests(HistorySelfTestResult* out, int maxOut) {
     {
         Fixture f;
         const ConstructionObjectState before = f.scene.activeBody().construction().captureState();
+        // Placement is the BODY's since IMPORT-01A, so it is captured beside the
+        // shape rather than inside it. The invariant under test is unchanged.
+        const TransformValues beforePlacement = f.scene.activeBody().transform().values();
         const MeshRevision beforeRevision = f.scene.activeBody().meshStore().currentRevision();
 
         const PrimitiveUpdateStatus status =
@@ -137,7 +140,7 @@ int runHistorySelfTests(HistorySelfTestResult* out, int maxOut) {
         const ConstructionObjectState undone = f.scene.activeBody().construction().captureState();
         r.check("shape_undo_restores_kind", undone.kind == before.kind);
         r.check("shape_undo_restores_every_parameter", sameConstructionShape(undone, before));
-        r.check("shape_undo_restores_placement", sameConstructionPlacement(undone, before));
+        r.check("shape_undo_restores_placement", sameConstructionPlacement(f.scene.activeBody().transform().values(), beforePlacement));
         r.check("shape_undo_keeps_object_id", f.scene.activeBody().objectId() == id);
         r.check("shape_undo_republishes",
                 f.scene.activeBody().meshStore().currentRevision() > beforeRevision);
@@ -288,6 +291,7 @@ int runHistorySelfTests(HistorySelfTestResult* out, int maxOut) {
 
         const ConstructionObjectState createdState =
             f.scene.activeBody().construction().captureState();
+        const TransformValues createdPlacement = f.scene.activeBody().transform().values();
 
         r.check("creation_undo_reports_success", f.history.undo());
         r.check("creation_undo_removes_the_body", f.scene.bodyCount() == 1);
@@ -306,8 +310,8 @@ int runHistorySelfTests(HistorySelfTestResult* out, int maxOut) {
                 sameConstructionShape(f.scene.findBody(created)->construction().captureState(),
                                       createdState));
         r.check("creation_redo_restores_the_placement",
-                sameConstructionPlacement(f.scene.findBody(created)->construction().captureState(),
-                                          createdState));
+                sameConstructionPlacement(f.scene.findBody(created)->transform().values(),
+                                          createdPlacement));
         r.check("creation_redo_reselects_the_restored_body",
                 f.scene.activeBodyId() == created);
         r.check("creation_redo_republishes_the_body",

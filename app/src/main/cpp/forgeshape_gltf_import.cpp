@@ -311,7 +311,7 @@ GlbImportCategory glbImportStatusCategory(GlbImportStatus status) {
     return GlbImportCategory::Unreadable;
 }
 
-Vec3 ImportedMesh::worldPosition(uint32_t vertex) const {
+Vec3 ParsedGlbMesh::worldPosition(uint32_t vertex) const {
     const size_t at = static_cast<size_t>(vertex) * 3u;
     if (at + 3 > positions.size()) {
         return Vec3{0.0f, 0.0f, 0.0f};
@@ -319,7 +319,7 @@ Vec3 ImportedMesh::worldPosition(uint32_t vertex) const {
     return Vec3{positions[at], positions[at + 1], positions[at + 2]};
 }
 
-Vec3 ImportedMesh::worldNormal(uint32_t vertex) const {
+Vec3 ParsedGlbMesh::worldNormal(uint32_t vertex) const {
     const size_t at = static_cast<size_t>(vertex) * 3u;
     if (at + 3 > normals.size()) {
         return Vec3{0.0f, 0.0f, 0.0f};
@@ -327,31 +327,31 @@ Vec3 ImportedMesh::worldNormal(uint32_t vertex) const {
     return Vec3{normals[at], normals[at + 1], normals[at + 2]};
 }
 
-uint32_t ImportedScene::totalVertices() const {
+uint32_t ParsedGlbScene::totalVertices() const {
     uint32_t total = 0;
-    for (const ImportedMesh& mesh : meshes) {
+    for (const ParsedGlbMesh& mesh : meshes) {
         total += mesh.vertexCount();
     }
     return total;
 }
 
-uint32_t ImportedScene::totalTriangles() const {
+uint32_t ParsedGlbScene::totalTriangles() const {
     uint32_t total = 0;
-    for (const ImportedMesh& mesh : meshes) {
+    for (const ParsedGlbMesh& mesh : meshes) {
         total += mesh.triangleCount();
     }
     return total;
 }
 
-uint32_t ImportedScene::totalBatches() const {
+uint32_t ParsedGlbScene::totalBatches() const {
     uint32_t total = 0;
-    for (const ImportedMesh& mesh : meshes) {
+    for (const ParsedGlbMesh& mesh : meshes) {
         total += static_cast<uint32_t>(mesh.batches.size());
     }
     return total;
 }
 
-GlbImportStatus importGlb(const uint8_t* bytes, size_t length, ImportedScene* out) {
+GlbImportStatus importGlb(const uint8_t* bytes, size_t length, ParsedGlbScene* out) {
     if (out == nullptr || bytes == nullptr || length == 0) {
         return GlbImportStatus::NoData;
     }
@@ -726,7 +726,7 @@ GlbImportStatus importGlb(const uint8_t* bytes, size_t length, ImportedScene* ou
     // -----------------------------------------------------------------------
     // The scene, node by node
     // -----------------------------------------------------------------------
-    ImportedScene imported;
+    ParsedGlbScene imported;
     imported.meshes.reserve(sceneNodes->children.size());
 
     for (size_t i = 0; i < sceneNodes->children.size(); ++i) {
@@ -751,7 +751,7 @@ GlbImportStatus importGlb(const uint8_t* bytes, size_t length, ImportedScene* ou
             return GlbImportStatus::NodeHierarchy;
         }
 
-        ImportedMesh mesh;
+        ParsedGlbMesh mesh;
         doc.stringMember(*node, "name", &mesh.name);
 
         // -------------------------------------------------------------------
@@ -1038,7 +1038,7 @@ GlbImportStatus importGlb(const uint8_t* bytes, size_t length, ImportedScene* ou
                 }
             }
 
-            ImportedPrimitiveBatch batch;
+            ParsedGlbBatch batch;
             batch.firstIndex = static_cast<uint32_t>(mesh.indices.size());
             batch.indexCount = indexView.count;
             if (!materialIsDoubleSided(*primitive, &batch.doubleSided, &why)) {
@@ -1118,7 +1118,7 @@ GlbImportStatus importGlb(const uint8_t* bytes, size_t length, ImportedScene* ou
                 if (batchBlock[batchIndex] != b) {
                     continue;
                 }
-                const ImportedPrimitiveBatch& batch = mesh.batches[batchIndex];
+                const ParsedGlbBatch& batch = mesh.batches[batchIndex];
                 for (uint32_t t = 0; t + 2 < batch.indexCount; t += 3) {
                     const uint32_t i0 = mesh.indices[batch.firstIndex + t] - block.base;
                     const uint32_t i1 = mesh.indices[batch.firstIndex + t + 1] - block.base;

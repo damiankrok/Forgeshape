@@ -28,8 +28,18 @@ bool sameSceneConstructionState(const SceneConstructionState& a,
         if (a.bodies[i].objectId != b.bodies[i].objectId) {
             return false;
         }
-        if (!sameConstructionShape(a.bodies[i].construction, b.bodies[i].construction)
-            || !sameConstructionPlacement(a.bodies[i].construction, b.bodies[i].construction)) {
+        if (a.bodies[i].representation != b.bodies[i].representation) {
+            return false;
+        }
+        if (!sameConstructionPlacement(a.bodies[i].transform, b.bodies[i].transform)) {
+            return false;
+        }
+        // Shape is compared only where there is one. An Imported Mesh's
+        // geometry cannot change without a new import, and an import creates a
+        // body rather than reshaping one, so identity plus placement is the
+        // whole of what a step can say about it.
+        if (a.bodies[i].representation == BodyRepresentation::Construction
+            && !sameConstructionShape(a.bodies[i].construction, b.bodies[i].construction)) {
             return false;
         }
     }
@@ -43,7 +53,11 @@ SceneConstructionState captureSceneConstructionState(const ConstructionScene& sc
         const SceneObject& body = scene.bodyAt(i);
         BodyConstructionState captured;
         captured.objectId = body.objectId();
-        captured.construction = body.construction().captureState();
+        captured.representation = body.representation();
+        captured.transform = body.transform().values();
+        if (const ConstructionObject* source = body.constructionOrNull()) {
+            captured.construction = source->captureState();
+        }
         state.bodies.push_back(captured);
     }
     state.activeBodyId = scene.activeBodyId();
@@ -213,12 +227,27 @@ void ConstructionHistory::applyState(const SceneConstructionState& target,
             }
         }
         if (!body) {
+            if (wanted.representation != BodyRepresentation::Construction) {
+                // An Imported Mesh cannot be fabricated from a step: its
+                // geometry is not derived from anything a step holds. It can
+                // only come back as the object that was taken out, and
+                // `pruneDetachedBodies` keeps exactly the ones a redo still
+                // names — so reaching here would mean the step and the detached
+                // pool disagreed. Skip rather than invent an empty body wearing
+                // an imported object's identity.
+                continue;
+            }
             body = scene_.makeBody(wanted.objectId);
         }
 
-        const ConstructionObjectState current = body->construction().captureState();
-        const bool shapeDiffers = !sameConstructionShape(current, wanted.construction);
-        const bool placementDiffers = !sameConstructionPlacement(current, wanted.construction);
+        const bool isConstruction = body->hasConstructionSource()
+            && wanted.representation == BodyRepresentation::Construction;
+        const ConstructionObjectState current =
+            isConstruction ? body->construction().captureState() : ConstructionObjectState{};
+        const bool shapeDiffers =
+            isConstruction && !sameConstructionShape(current, wanted.construction);
+        const bool placementDiffers =
+            !sameConstructionPlacement(body->transform().values(), wanted.transform);
         // A body that has never published anything must, whatever its
         // parameters are — but a body coming BACK from the history still holds
         // its own published revision, and republishing identical geometry to
@@ -227,8 +256,14 @@ void ConstructionHistory::applyState(const SceneConstructionState& target,
         const bool mustPublish =
             shapeDiffers || body->meshStore().currentRevision() == kNoMeshRevision;
 
-        if (shapeDiffers || placementDiffers) {
+        if (shapeDiffers) {
             body->construction().restoreState(wanted.construction);
+        }
+        if (placementDiffers) {
+            // The placement is the BODY's, so it is restored for an Imported
+            // Mesh exactly as for a Construction Body — which is the whole
+            // point of hoisting it out of the Construction Source.
+            body->transform().setValues(wanted.transform);
         }
         if (shapeDiffers) {
             // The same stale-source bookkeeping an ordinary Construction edit
@@ -246,10 +281,14 @@ void ConstructionHistory::applyState(const SceneConstructionState& target,
         }
         if (mustPublish) {
             // Publication is the ONLY geometry work a restore does, and only
-            // for a body whose shape actually differs. A placement-only change
-            // publishes nothing, exactly as an ordinary transform Apply
-            // publishes nothing.
-            publishConstructionObject(body->construction(), body->meshStore());
+            // for a body whose shape actually differs or that has never
+            // published. A placement-only change publishes nothing, exactly as
+            // an ordinary transform Apply publishes nothing.
+            //
+            // Dispatched per representation: a Construction Body regenerates
+            // from its parameters, an Imported Mesh republishes the geometry it
+            // already owns. Neither reads the other's truth.
+            publishSceneObject(*body);
         }
 
         scene_.insertBody(std::move(body), i);

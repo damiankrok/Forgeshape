@@ -12,9 +12,11 @@
 
 #include <cstddef>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "forgeshape_construction.h"
+#include "forgeshape_imported_mesh.h"
 #include "forgeshape_math.h"
 #include "forgeshape_mesh.h"
 #include "forgeshape_object_id.h"
@@ -36,25 +38,102 @@ constexpr ObjectId kFirstBodyObjectId = kConstructionBoxObjectId;
 // would duplicate identity, which is the one thing an ObjectId exists to
 // prevent.
 //
-// Note there is no separate transform member: `ConstructionObject` has always
-// owned its own `ConstructionTransform`, precisely so a primitive change cannot
-// lose the placement. That stays true per body.
+// The transform is the BODY's, not the Construction Source's. It lived inside
+// `ConstructionObject` while every body was a Construction Body, so that a
+// primitive change could not lose the placement; `IMPORT-01A` moved it up here
+// because a body now has a choice of representation and an Imported Mesh has a
+// placement with no primitive to hang it on. Still exactly one per body, and
+// still never touched by a primitive change.
+
+// ---------------------------------------------------------------------------
+// Which representation a body's geometry comes from
+// ---------------------------------------------------------------------------
+//
+// A body owns exactly ONE of these, for its whole life. There is no conversion
+// between them in `IMPORT-01A`: an Imported Mesh never grows a Construction
+// Source (nothing could invent the primitive it was never made from), and a
+// Construction Body never becomes one.
+enum class BodyRepresentation : uint8_t {
+    // The exact primitive plus its parameters. Geometry is DERIVED and is
+    // regenerated on every load.
+    Construction = 1,
+    // Polygon geometry read from a file. Geometry IS the truth: no rule could
+    // recreate it, so it is serialized.
+    Imported = 2,
+};
+
+const char* bodyRepresentationName(BodyRepresentation representation);
+
 class SceneObject {
 public:
-    explicit SceneObject(ObjectId id) : construction_(id), meshStore_(id) {}
+    // A Construction Body: the only kind that existed before `IMPORT-01A`, and
+    // still what every creation path in the product makes.
+    explicit SceneObject(ObjectId id)
+        : objectId_(id),
+          representation_(BodyRepresentation::Construction),
+          construction_(new ConstructionObject(id)),
+          meshStore_(id) {}
+
+    // An Imported Mesh body. Takes the geometry by value because the body OWNS
+    // it: there is no source file to go back to and nothing else holds a copy.
+    SceneObject(ObjectId id, ImportedMesh mesh, std::string name)
+        : objectId_(id),
+          representation_(BodyRepresentation::Imported),
+          meshStore_(id),
+          imported_(std::move(mesh)),
+          name_(std::move(name)) {}
 
     SceneObject(const SceneObject&) = delete;
     SceneObject& operator=(const SceneObject&) = delete;
 
     // Stable for the life of the body: unaffected by primitive edits, transform
     // edits, mesh revisions, Freeze/Resume/re-Freeze and GPU reallocation.
-    ObjectId objectId() const { return construction_.objectId(); }
+    ObjectId objectId() const { return objectId_; }
 
-    ConstructionObject& construction() { return construction_; }
-    const ConstructionObject& construction() const { return construction_; }
+    BodyRepresentation representation() const { return representation_; }
+    bool hasConstructionSource() const {
+        return representation_ == BodyRepresentation::Construction;
+    }
+    bool isImported() const { return representation_ == BodyRepresentation::Imported; }
 
-    ConstructionTransform& transform() { return construction_.transform(); }
-    const ConstructionTransform& transform() const { return construction_.transform(); }
+    // The Construction Source, or nullptr for an Imported Mesh.
+    //
+    // Deliberately a POINTER rather than a reference: before `IMPORT-01A` every
+    // body had one and no caller could be wrong, and the whole point of the
+    // change is that a caller now has to say what it does about a body that has
+    // none. A nullable return makes the compiler ask that question at every one
+    // of the call sites rather than leaving a silent assumption behind.
+    ConstructionObject* constructionOrNull() { return construction_.get(); }
+    const ConstructionObject* constructionOrNull() const { return construction_.get(); }
+
+    // For the many callers that have already established this is a Construction
+    // Body. Undefined for an Imported Mesh, exactly like dereferencing the
+    // pointer above would be — this only spells the intent.
+    ConstructionObject& construction() { return *construction_; }
+    const ConstructionObject& construction() const { return *construction_; }
+
+    // The imported geometry, or nullptr for a Construction Body.
+    const ImportedMesh* importedOrNull() const {
+        return representation_ == BodyRepresentation::Imported ? &imported_ : nullptr;
+    }
+
+    // The body's stored name, empty for a Construction Body.
+    //
+    // Only an Imported Mesh carries one: it arrives named by the file it came
+    // from, and losing that would leave the user with a list of anonymous rows
+    // they could not tell apart. A Construction Body is still labelled from its
+    // ObjectId by the UI, exactly as before, and this product still has no
+    // Rename.
+    const std::string& name() const { return name_; }
+
+    // THE body's placement, whichever representation it has.
+    //
+    // Hoisted here from `ConstructionObject` by `IMPORT-01A`: a body has a
+    // placement because it is a body, not because it is a primitive. Still
+    // exactly one per body, still the authoritative value the renderer, the
+    // picker and the exact-value editors all read.
+    ConstructionTransform& transform() { return transform_; }
+    const ConstructionTransform& transform() const { return transform_; }
 
     MeshStore& meshStore() { return meshStore_; }
     const MeshStore& meshStore() const { return meshStore_; }
@@ -67,9 +146,20 @@ public:
     const FrozenSculpt& frozenSculpt() const { return frozen_; }
 
 private:
-    ConstructionObject construction_;
+    const ObjectId objectId_;
+    const BodyRepresentation representation_;
+    // Null for an Imported Mesh. Held by pointer rather than by optional so
+    // that "this body has no Construction Source" is one null check and not a
+    // second kind of emptiness beside the representation enum.
+    std::unique_ptr<ConstructionObject> construction_;
+    ConstructionTransform transform_;
     MeshStore meshStore_;
     FrozenSculpt frozen_;
+    // Empty for a Construction Body. `IMPORT-01A` deliberately does not give an
+    // Imported Mesh a Frozen Sculpt Mesh either: Start Sculpting on one is
+    // `IMPORT-01B`.
+    ImportedMesh imported_;
+    std::string name_;
 };
 
 // ---------------------------------------------------------------------------
@@ -183,6 +273,14 @@ public:
     // to the end. Selection is not changed: the caller decides.
     void insertBody(std::unique_ptr<SceneObject> body, size_t index);
 
+    // Appends an already-built Imported Mesh body, minting it a normal
+    // ObjectId, and makes it active. Returns it, or nullptr when the geometry
+    // is not valid — in which case the scene is untouched.
+    //
+    // The SAME allocator every Construction Body uses: an imported object's
+    // identity is an ordinary ForgeShape identity, not a second kind of key.
+    SceneObject* addImportedBody(ImportedMesh mesh, const std::string& name);
+
     // Builds a body with an EXPLICIT id, not appended to anything.
     //
     // The id allocator is only ever pushed forward, never rolled back: a redo
@@ -206,6 +304,18 @@ private:
 
     ObjectId activeBodyId_ = kNoObject;
 };
+
+// Publishes whichever representation this body owns.
+//
+// ONE dispatch point, so no caller has to ask what a body is before it can put
+// its geometry on screen: a Construction Body regenerates from its parameters
+// through `publishConstructionObject`, an Imported Mesh republishes the geometry
+// it already owns. Neither path reads the other's truth, and neither invents a
+// representation the body does not have.
+//
+// Returns kNoMeshRevision, leaving the store untouched, when the geometry does
+// not pass RuntimeMesh validation.
+MeshRevision publishSceneObject(SceneObject& body, MeshValidation* outWhy = nullptr);
 
 // The one process-scoped scene. `constructionObject()`, `meshStore()` and
 // `sculptSession()` are defined in terms of this scene's ACTIVE body.

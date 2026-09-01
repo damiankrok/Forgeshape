@@ -152,7 +152,7 @@ std::string replaceFirst(const std::string& text, const std::string& find,
 }
 
 GlbImportStatus importOf(const std::vector<uint8_t>& glb) {
-    ImportedScene scene;
+    ParsedGlbScene scene;
     return importGlb(glb.data(), glb.size(), &scene);
 }
 
@@ -401,13 +401,13 @@ int runGltfImportSelfTests(GltfImportSelfTestResult* out, int maxOut) {
         const std::vector<uint8_t> glb = exportSceneAsGlb(f.scene, ProjectKind::Construction);
         r.check("GLBIR0_01_the_export_produced_bytes", !glb.empty());
 
-        ImportedScene imported;
+        ParsedGlbScene imported;
         const GlbImportStatus why = importGlb(glb.data(), glb.size(), &imported);
         r.check("GLBIR0_01_a_real_forgeshape_export_parses", why == GlbImportStatus::Ok);
         r.check("GLBIR0_01_one_body_is_one_imported_mesh", imported.meshes.size() == 1);
 
         if (imported.meshes.size() == 1) {
-            const ImportedMesh& mesh = imported.meshes[0];
+            const ParsedGlbMesh& mesh = imported.meshes[0];
             // GLBIR0-05: the node translation is applied exactly, and no axis
             // conversion of any kind is introduced. A Blender-style Z-up fix
             // would put 2.25 on Y and -0.5 on Z.
@@ -693,7 +693,7 @@ int runGltfImportSelfTests(GltfImportSelfTestResult* out, int maxOut) {
         f.setBox(f.first(), 2.0, 1.0, 0.5);
         f.place(f.first(), placement(1.0, 2.0, 3.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0));
         const std::vector<uint8_t> glb = exportSceneAsGlb(f.scene, ProjectKind::Construction);
-        ImportedScene imported;
+        ParsedGlbScene imported;
         r.check("GLBIR0_08_the_fixture_imports",
                 importGlb(glb.data(), glb.size(), &imported) == GlbImportStatus::Ok);
 
@@ -756,7 +756,7 @@ int runGltfImportSelfTests(GltfImportSelfTestResult* out, int maxOut) {
         // A refused load leaves an existing preview whole rather than half
         // replaced.
         r.check("GLBIR0_12_a_reload_works", preview.load(imported));
-        ImportedScene empty;
+        ParsedGlbScene empty;
         r.check("GLBIR0_12_an_empty_scene_is_refused", !preview.load(empty));
         r.check("GLBIR0_12_and_the_previous_preview_survives_the_refusal",
                 preview.loaded() && preview.meshCount() == 1);
@@ -773,13 +773,13 @@ int runGltfImportSelfTests(GltfImportSelfTestResult* out, int maxOut) {
     // -----------------------------------------------------------------------
     {
         const std::vector<uint8_t> fixture = buildNomadLikeGlbFixture();
-        ImportedScene imported;
+        ParsedGlbScene imported;
         const GlbImportStatus why = importGlb(fixture.data(), fixture.size(), &imported);
         r.check("GLBIR1_19_the_nomad_like_fixture_imports", why == GlbImportStatus::Ok);
         r.check("GLBIR1_19_it_is_one_node_and_one_mesh", imported.meshes.size() == 1);
 
         if (imported.meshes.size() == 1) {
-            const ImportedMesh& mesh = imported.meshes[0];
+            const ParsedGlbMesh& mesh = imported.meshes[0];
             // GLBIR1-06/07: every primitive survived, and a shared POSITION
             // accessor was decoded ONCE. Decoding it per primitive would
             // report seven times the vertices the file contains.
@@ -829,7 +829,7 @@ int runGltfImportSelfTests(GltfImportSelfTestResult* out, int maxOut) {
             r.check("GLBIR1_09_every_generated_normal_is_finite_and_unit_length",
                     generatedAreUnit);
             // GLBIR1-14: the file's `extras` reached nothing. There is no field
-            // on ImportedMesh that could hold it, and the only string it takes
+            // on ParsedGlbMesh that could hold it, and the only string it takes
             // from the node is the name.
             r.check("GLBIR1_14_extras_are_ignored_and_only_the_node_name_is_kept",
                     mesh.name == "NomadLikeFixture");
@@ -918,7 +918,7 @@ int runGltfImportSelfTests(GltfImportSelfTestResult* out, int maxOut) {
         trs.nodeMembers =
                 ",\"translation\":[1,2,3],\"rotation\":[0,0.7071067811865476,0,"
                 "0.7071067811865476],\"scale\":[2,1,1]";
-        ImportedScene composed;
+        ParsedGlbScene composed;
         const std::vector<uint8_t> trsGlb = buildMiniGlb(trs);
         const GlbImportStatus trsWhy =
                 importGlb(trsGlb.data(), trsGlb.size(), &composed);
@@ -939,7 +939,7 @@ int runGltfImportSelfTests(GltfImportSelfTestResult* out, int maxOut) {
         // A node with no transform members at all is the identity, and the
         // positions come through untouched.
         MiniGlbSpec plain = twoTriangleSheet();
-        ImportedScene untransformed;
+        ParsedGlbScene untransformed;
         {
             const std::vector<uint8_t> glb = buildMiniGlb(plain);
             r.check("GLBIR1_02_a_node_with_no_transform_is_the_identity",
@@ -953,7 +953,7 @@ int runGltfImportSelfTests(GltfImportSelfTestResult* out, int maxOut) {
         // corrects the winding rather than leaving every face pointing inward.
         MiniGlbSpec mirrored = twoTriangleSheet();
         mirrored.nodeMembers = ",\"scale\":[-1,1,1]";
-        ImportedScene flipped;
+        ParsedGlbScene flipped;
         {
             const std::vector<uint8_t> glb = buildMiniGlb(mirrored);
             const bool ok =
@@ -980,7 +980,7 @@ int runGltfImportSelfTests(GltfImportSelfTestResult* out, int maxOut) {
         small.uint16Indices = true;
         {
             const std::vector<uint8_t> glb = buildMiniGlb(small);
-            ImportedScene scene;
+            ParsedGlbScene scene;
             r.check("GLBIR1_08_uint16_indices_decode",
                     importGlb(glb.data(), glb.size(), &scene) == GlbImportStatus::Ok
                             && scene.meshes.size() == 1
@@ -1005,8 +1005,8 @@ int runGltfImportSelfTests(GltfImportSelfTestResult* out, int maxOut) {
         // lies in the XZ plane, so every generated normal is exactly -Y.
         {
             const std::vector<uint8_t> glb = buildMiniGlb(plain);
-            ImportedScene once;
-            ImportedScene twice;
+            ParsedGlbScene once;
+            ParsedGlbScene twice;
             const bool ok = importGlb(glb.data(), glb.size(), &once) == GlbImportStatus::Ok
                     && importGlb(glb.data(), glb.size(), &twice) == GlbImportStatus::Ok;
             r.check("GLBIR1_09_generated_normals_are_deterministic",
@@ -1035,7 +1035,7 @@ int runGltfImportSelfTests(GltfImportSelfTestResult* out, int maxOut) {
             }
             supplied.nodeMembers = ",\"scale\":[1,4,1]";
             const std::vector<uint8_t> glb = buildMiniGlb(supplied);
-            ImportedScene scene;
+            ParsedGlbScene scene;
             const bool ok = importGlb(glb.data(), glb.size(), &scene) == GlbImportStatus::Ok
                     && scene.meshes.size() == 1;
             const Vec3 normal = ok ? scene.meshes[0].worldNormal(0) : Vec3{0.0f, 0.0f, 0.0f};
@@ -1072,7 +1072,7 @@ int runGltfImportSelfTests(GltfImportSelfTestResult* out, int maxOut) {
             MiniGlbSpec mixed = twoTriangleSheet();
             mixed.doubleSided = {true, false};
             const std::vector<uint8_t> glb = buildMiniGlb(mixed);
-            ImportedScene scene;
+            ParsedGlbScene scene;
             const bool ok = importGlb(glb.data(), glb.size(), &scene) == GlbImportStatus::Ok
                     && scene.meshes.size() == 1 && scene.meshes[0].batches.size() == 2;
             r.check("GLBIR1_13_double_sidedness_is_read_per_primitive",

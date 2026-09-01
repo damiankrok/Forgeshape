@@ -78,11 +78,10 @@ ProjectDocument captureProjectDocument(const ConstructionScene& scene, ProjectKi
 
         ProjectConstructionBody construction;
         construction.objectId = body.objectId();
+        // Placement is SCNE's and is not here: since IMPORT-01A the shape state
+        // does not carry one at all, so the document has exactly one answer to
+        // where a body sits by construction rather than by clearing a field.
         construction.shape = body.construction().captureState();
-        // Placement is SCNE's, and carrying a second copy here would be two
-        // answers to where the body sits. Cleared rather than left populated so
-        // the document has exactly one of every fact.
-        construction.shape.transform = TransformValues{};
         construction.features.push_back(ProjectFeatureRecord{});
         document.construction.bodies.push_back(std::move(construction));
 
@@ -154,8 +153,7 @@ ProjectCodecStatus loadProjectDocument(const ProjectDocument& document, Construc
         // a mutation of the project we may still be about to refuse.
         std::unique_ptr<SceneObject> body = std::make_unique<SceneObject>(placement.objectId);
 
-        ConstructionObjectState state = document.construction.bodies[i].shape;
-        state.transform = placement.transform;
+        const ConstructionObjectState state = document.construction.bodies[i].shape;
         // restoreState rather than setPrimitive/applyTransformValues: these
         // values were authoritative, and therefore already validated, when they
         // were captured, and validateProjectDocument has just re-checked them
@@ -163,6 +161,8 @@ ProjectCodecStatus loadProjectDocument(const ProjectDocument& document, Construc
         // would count them as user updates and would rebuild the six remembered
         // parameter sets one primitive at a time.
         body->construction().restoreState(state);
+        // The placement is the BODY's, and SCNE is where it came from.
+        body->transform().setValues(placement.transform);
 
         MeshValidation meshWhy = MeshValidation::Ok;
         if (publishConstructionObject(body->construction(), body->meshStore(), &meshWhy)

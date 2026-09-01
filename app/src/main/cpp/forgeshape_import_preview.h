@@ -76,7 +76,7 @@ public:
     // Replaces whatever was loaded. Returns false and changes NOTHING when the
     // parsed scene cannot be turned into drawable meshes, so a refused import
     // leaves an existing preview exactly as it was.
-    bool load(const ImportedScene& scene);
+    bool load(const ParsedGlbScene& scene);
 
     // Forgets everything. The draw meshes are released here; the renderer drops
     // its GPU copies when it next sees a scene that does not name them.

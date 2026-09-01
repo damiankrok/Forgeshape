@@ -2545,7 +2545,7 @@ Java_com_forgeshape_app_NativeViewport_importGlbPreview(JNIEnv* env, jclass, jby
     std::vector<uint8_t> bytes(static_cast<size_t>(length));
     env->GetByteArrayRegion(data, 0, length, reinterpret_cast<jbyte*>(bytes.data()));
 
-    forgeshape::ImportedScene scene;
+    forgeshape::ParsedGlbScene scene;
     const forgeshape::GlbImportStatus why =
             forgeshape::importGlb(bytes.data(), bytes.size(), &scene);
     if (why != forgeshape::GlbImportStatus::Ok) {

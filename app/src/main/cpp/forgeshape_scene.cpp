@@ -21,6 +21,19 @@ SceneObject& ConstructionScene::addBody() {
     return *bodies_.back();
 }
 
+SceneObject* ConstructionScene::addImportedBody(ImportedMesh mesh, const std::string& name) {
+    if (!mesh.valid()) {
+        // Refused before an id is minted. A consumed ObjectId for a body that
+        // was never added is a gap the allocator can never explain, and the
+        // import contract is that a failure costs nothing at all.
+        return nullptr;
+    }
+    const ObjectId id = nextObjectId_++;
+    bodies_.push_back(std::unique_ptr<SceneObject>(new SceneObject(id, std::move(mesh), name)));
+    activeBodyId_ = id;
+    return bodies_.back().get();
+}
+
 SceneObject* ConstructionScene::findBody(ObjectId id) {
     for (auto& body : bodies_) {
         if (body->objectId() == id) {
@@ -152,6 +165,42 @@ ConstructionScene& constructionScene() {
 // unchanged and correctly; only code that means "every body in the scene" (the
 // renderer and scene picking) had to change, and that is exactly the code
 // Stage 017 rewrote.
+const char* bodyRepresentationName(BodyRepresentation representation) {
+    switch (representation) {
+        case BodyRepresentation::Construction: return "Construction";
+        case BodyRepresentation::Imported: return "Imported";
+    }
+    return "unknown";
+}
+
+MeshRevision publishSceneObject(SceneObject& body, MeshValidation* outWhy) {
+    if (const ConstructionObject* source = body.constructionOrNull()) {
+        return publishConstructionObject(*source, body.meshStore(), outWhy);
+    }
+    const ImportedMesh* imported = body.importedOrNull();
+    if (imported == nullptr) {
+        if (outWhy != nullptr) {
+            *outWhy = MeshValidation::EmptyVertices;
+        }
+        return kNoMeshRevision;
+    }
+    std::vector<MeshVertex> vertices;
+    std::vector<uint32_t> indices;
+    if (!imported->buildDrawData(&vertices, &indices)) {
+        if (outWhy != nullptr) {
+            *outWhy = MeshValidation::EmptyVertices;
+        }
+        return kNoMeshRevision;
+    }
+    // `renderBothSides` is deliberately false: an imported object's
+    // double-sided submeshes already carry their reversed triangles, emitted
+    // per batch by buildDrawData, because that flag is one answer for a whole
+    // mesh and an imported object may need a different one per submesh.
+    return body.meshStore().publish(vertices.data(), static_cast<uint32_t>(vertices.size()),
+                                    indices.data(), static_cast<uint32_t>(indices.size()),
+                                    outWhy, /*renderBothSides=*/false);
+}
+
 ConstructionObject& constructionObject() { return constructionScene().activeBody().construction(); }
 
 MeshStore& meshStore() { return constructionScene().activeBody().meshStore(); }

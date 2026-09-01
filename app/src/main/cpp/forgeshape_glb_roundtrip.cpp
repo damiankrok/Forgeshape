@@ -144,7 +144,7 @@ const char* roundtripVerdictName(RoundtripVerdict verdict) {
 
 RoundtripResult compareSceneToGlb(const ConstructionScene& scene, ProjectKind kind,
                                   const uint8_t* bytes, size_t length) {
-    ImportedScene imported;
+    ParsedGlbScene imported;
     const GlbImportStatus importStatus = importGlb(bytes, length, &imported);
     if (importStatus != GlbImportStatus::Ok) {
         return notComparable("the file could not be imported", "Ok",
@@ -166,7 +166,7 @@ RoundtripResult compareSceneToGlb(const ConstructionScene& scene, ProjectKind ki
     bool allEquivalent = true;
     for (size_t i = 0; i < scene.bodyCount(); ++i) {
         const SceneObject& body = scene.bodyAt(i);
-        const ImportedMesh& mesh = imported.meshes[i];
+        const ParsedGlbMesh& mesh = imported.meshes[i];
 
         RoundtripBodyResult row;
         row.objectId = body.objectId();

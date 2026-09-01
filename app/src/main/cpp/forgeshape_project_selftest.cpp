@@ -694,6 +694,9 @@ int runProjectSelfTests(ProjectSelfTestResult* out, int maxOut) {
         const size_t bodiesBefore = live.scene.bodyCount();
         const ConstructionObjectState shapeBefore =
                 live.scene.activeBody().construction().captureState();
+        // Placement is the BODY's since IMPORT-01A, so it is captured beside the
+        // shape rather than inside it.
+        const TransformValues placementBefore = live.scene.activeBody().transform().values();
         const size_t undoBefore = live.history.undoDepth();
         const bool sculptBefore = live.session.inSculptMode();
         ProjectLoadReport report;
@@ -707,8 +710,8 @@ int runProjectSelfTests(ProjectSelfTestResult* out, int maxOut) {
                 sameConstructionShape(live.scene.activeBody().construction().captureState(),
                                       shapeBefore)
                         && sameConstructionPlacement(
-                                   live.scene.activeBody().construction().captureState(),
-                                   shapeBefore));
+                                   live.scene.activeBody().transform().values(),
+                                   placementBefore));
         r.check("FSR1A_07_a_failed_load_leaves_the_mode_untouched",
                 live.session.inSculptMode() == sculptBefore);
         r.check("FSR1A_13_a_failed_load_preserves_session_history",

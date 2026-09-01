@@ -654,6 +654,15 @@ private:
 // are part of what the user sees: a Box -> Sphere -> Box round trip must come
 // back to the box the user typed, and a restore that wrote only the active
 // primitive would silently forget the other five.
+// The SHAPE half of a body's Construction state, and only that half.
+//
+// Placement is deliberately NOT here. It was, while every body was a
+// Construction Body and the two could not exist apart; `IMPORT-01A` makes a
+// body's representation a choice, and an Imported Mesh has a placement with no
+// Construction Source to hang it on. So the transform moved up to
+// `SceneObject`, which every body has, and this struct describes the primitive
+// and nothing else — the same split the `.forge` document already made, where
+// `SCNE` carries placement for both project kinds and `CONS` carries shape.
 struct ConstructionObjectState {
     PrimitiveKind kind = PrimitiveKind::Box;
     BoxDimensionsMeters box{};
@@ -662,7 +671,6 @@ struct ConstructionObjectState {
     ConeDimensionsMeters cone{};
     CapsuleDimensionsMeters capsule{};
     PlaneDimensionsMeters plane{};
-    TransformValues transform{};
 };
 
 // True when the two states describe the same SHAPE — the active kind and every
@@ -675,8 +683,11 @@ struct ConstructionObjectState {
 bool sameConstructionShape(const ConstructionObjectState& a, const ConstructionObjectState& b);
 
 // True when the two placements are identical, value for value.
-bool sameConstructionPlacement(const ConstructionObjectState& a,
-                               const ConstructionObjectState& b);
+//
+// Takes the placement itself rather than a Construction state, because a body's
+// placement is no longer part of one: an Imported Mesh has a placement and no
+// Construction Source.
+bool sameConstructionPlacement(const TransformValues& a, const TransformValues& b);
 
 // THE one active Construction object.
 //
@@ -712,9 +723,12 @@ public:
     const ConstructionCapsule& capsule() const { return capsule_; }
     const ConstructionPlane& plane() const { return plane_; }
 
-    // Placement is a separate truth and is NOT touched by a primitive change.
-    ConstructionTransform& transform() { return transform_; }
-    const ConstructionTransform& transform() const { return transform_; }
+    // Placement is NOT here. A body's `ConstructionTransform` lives on
+    // `SceneObject`, because `IMPORT-01A` gave a body a choice of
+    // representation and an Imported Mesh has a placement with no Construction
+    // Source to hang it on. There is still exactly ONE transform per body and
+    // it is still never touched by a primitive change; it simply belongs to the
+    // body rather than to one of the things a body can be.
 
     // The ACTIVE primitive's parameters, as a complete typed spec. The inactive
     // primitives' remembered parameters are deliberately NOT part of it: they
@@ -794,7 +808,7 @@ private:
     ConstructionCone cone_;
     ConstructionCapsule capsule_;
     ConstructionPlane plane_;
-    ConstructionTransform transform_;
+
     uint64_t updateCount_ = 0;
     uint64_t rejectedUpdates_ = 0;
 };

@@ -152,7 +152,7 @@ GlbImportCategory glbImportStatusCategory(GlbImportStatus status);
 // mesh with two culling answers. The ranges are in file order and together
 // cover the mesh's indices exactly, so a consumer that ignores batching still
 // draws every triangle exactly once.
-struct ImportedPrimitiveBatch {
+struct ParsedGlbBatch {
     uint32_t firstIndex = 0;
     uint32_t indexCount = 0;
     // From the primitive's material. It reaches preview culling and nothing
@@ -169,7 +169,7 @@ struct ImportedPrimitiveBatch {
 // positions, so a non-uniform node scale is already in them. `nodeTransform`
 // and `normalTransform` are kept so a diagnostic can say what the FILE stated,
 // not only what the geometry became.
-struct ImportedMesh {
+struct ParsedGlbMesh {
     std::string name;
     // The node's complete transform, as glTF semantics give it: the `matrix`
     // when it states one, otherwise T * R * S.
@@ -192,7 +192,7 @@ struct ImportedMesh {
     std::vector<float> positions;   // xyz triples, WORLD space (baked)
     std::vector<float> normals;     // xyz triples, WORLD space, unit length
     std::vector<uint32_t> indices;  // every batch, concatenated in file order
-    std::vector<ImportedPrimitiveBatch> batches;
+    std::vector<ParsedGlbBatch> batches;
 
     uint32_t vertexCount() const { return static_cast<uint32_t>(positions.size() / 3); }
     uint32_t triangleCount() const { return static_cast<uint32_t>(indices.size() / 3); }
@@ -204,20 +204,20 @@ struct ImportedMesh {
     Vec3 worldNormal(uint32_t vertex) const;
 };
 
-struct ImportedScene {
-    std::vector<ImportedMesh> meshes;
+struct ParsedGlbScene {
+    std::vector<ParsedGlbMesh> meshes;
 
     uint32_t totalVertices() const;
     uint32_t totalTriangles() const;
     uint32_t totalBatches() const;
 };
 
-// Reads GLB bytes into an ImportedScene, or reports why it would not.
+// Reads GLB bytes into an ParsedGlbScene, or reports why it would not.
 //
 // Nothing partial is ever produced: `out` is written only on Ok. Every offset,
 // length and index is re-derived and bounds-checked against the bytes actually
 // supplied, so a file that lies about its own sizes is refused rather than read
 // past.
-GlbImportStatus importGlb(const uint8_t* bytes, size_t length, ImportedScene* out);
+GlbImportStatus importGlb(const uint8_t* bytes, size_t length, ParsedGlbScene* out);
 
 }  // namespace forgeshape

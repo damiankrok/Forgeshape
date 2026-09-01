@@ -58,6 +58,7 @@ add_library(forgeshape_native SHARED
     forgeshape_gltf_export.cpp
     forgeshape_gltf_import.cpp
     forgeshape_import_preview.cpp
+    forgeshape_imported_mesh.cpp
     forgeshape_json.cpp
     forgeshape_gltf_export_selftest.cpp
     forgeshape_gltf_import_selftest.cpp

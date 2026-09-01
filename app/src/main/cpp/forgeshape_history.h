@@ -64,10 +64,21 @@ namespace forgeshape {
 // only removes how far BACK the user can go.
 constexpr size_t kConstructionHistoryCapacity = 64;
 
-// One body's Construction-domain state, with the identity it belongs to.
+// One body's history-domain state, with the identity it belongs to.
+//
+// Placement is here for EVERY body, because every body has one. The
+// Construction shape is here only for a body that has a Construction Source; an
+// Imported Mesh's geometry is never copied into a step — it is not derived from
+// anything, so a step could not hold it cheaply and must not try. An undone
+// import's geometry survives inside the detached body the history keeps, the
+// same way a Frozen Sculpt Mesh already does.
 struct BodyConstructionState {
     ObjectId objectId = kNoObject;
+    BodyRepresentation representation = BodyRepresentation::Construction;
+    // Meaningful only when `representation` is Construction. Left at its
+    // default for an Imported Mesh and never compared for one.
     ConstructionObjectState construction{};
+    TransformValues transform{};
 };
 
 // The whole scene's Construction-domain state: which bodies exist, in what

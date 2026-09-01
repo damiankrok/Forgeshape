@@ -200,6 +200,10 @@ void testTypedConeAndCapsulePayloads(Recorder& r) {
 
 void testTypedRequestsStillCannotCrossPrimitives(Recorder& r) {
     ConstructionObject object;
+    // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+    // Source. This suite drives a standalone source, so it pairs one here. The
+    // invariant under test is unchanged: a primitive change must not disturb it.
+    ConstructionTransform placement_;
     MeshStore store(kConstructionBoxObjectId);
     publishConstructionObject(object, store);
 
@@ -239,6 +243,10 @@ void testTypedRequestsStillCannotCrossPrimitives(Recorder& r) {
 
 void testConeApplySemantics(Recorder& r) {
     ConstructionObject object;
+    // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+    // Source. This suite drives a standalone source, so it pairs one here. The
+    // invariant under test is unchanged: a primitive change must not disturb it.
+    ConstructionTransform placement_;
     MeshStore store(kConstructionBoxObjectId);
     const MeshRevision rev0 = publishConstructionObject(object, store);
     const uint64_t publishedBefore = store.publishedCount();
@@ -284,6 +292,10 @@ void testConeApplySemantics(Recorder& r) {
 
 void testCapsuleApplySemantics(Recorder& r) {
     ConstructionObject object;
+    // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+    // Source. This suite drives a standalone source, so it pairs one here. The
+    // invariant under test is unchanged: a primitive change must not disturb it.
+    ConstructionTransform placement_;
     MeshStore store(kConstructionBoxObjectId);
     const MeshRevision rev0 = publishConstructionObject(object, store);
 
@@ -367,13 +379,17 @@ void testInvalidConeAndCapsuleFailClosed(Recorder& r) {
         // a rejection has an active kind, remembered payloads, an ObjectId, a
         // transform and a mesh revision to preserve.
         ConstructionObject object;
+        // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+        // Source. This suite drives a standalone source, so it pairs one here. The
+        // invariant under test is unchanged: a primitive change must not disturb it.
+        ConstructionTransform placement_;
         MeshStore store(kConstructionBoxObjectId);
         applyPrimitive(object, store, PrimitiveSpec::forCapsule(1.0, 3.0));
         applyPrimitive(object, store, PrimitiveSpec::forCone(2.0, 3.0));
         TransformValues placement;
         placement.positionY = -1.25;
         placement.rotationZ = 90.0;
-        object.transform().setValues(placement);
+        placement_.setValues(placement);
 
         const ObjectId idBefore = object.objectId();
         const MeshRevision before = store.currentRevision();
@@ -393,7 +409,7 @@ void testInvalidConeAndCapsuleFailClosed(Recorder& r) {
                                         kDefaultSphereDiameterMeters;
         const bool revisionHeld = store.currentRevision() == before &&
                                   store.publishedCount() == publishedBefore && !rejected.published;
-        const TransformValues t = object.transform().values();
+        const TransformValues t = placement_.values();
         const bool transformHeld = t.positionY == -1.25 && t.rotationZ == 90.0;
         const bool identityHeld = object.objectId() == idBefore;
         r.check(c.name, refused && kindHeld && activeHeld && rememberedHeld && revisionHeld &&
@@ -403,6 +419,10 @@ void testInvalidConeAndCapsuleFailClosed(Recorder& r) {
     // A refused request must not switch the kind, which is what "fails closed"
     // means for a primitive rather than for a single dimension.
     ConstructionObject object;
+    // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+    // Source. This suite drives a standalone source, so it pairs one here. The
+    // invariant under test is unchanged: a primitive change must not disturb it.
+    ConstructionTransform placement_;
     MeshStore store(kConstructionBoxObjectId);
     applyPrimitive(object, store, PrimitiveSpec::forCylinder(1.2, 2.4));
     DimensionValidation why = DimensionValidation::Ok;
@@ -980,6 +1000,10 @@ void testTransformedCapsulePicking(Recorder& r) {
 
 void testIdentityTransformAndRememberedValuesSurvive(Recorder& r) {
     ConstructionObject object;
+    // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+    // Source. This suite drives a standalone source, so it pairs one here. The
+    // invariant under test is unchanged: a primitive change must not disturb it.
+    ConstructionTransform placement_;
     MeshStore store(kConstructionBoxObjectId);
     publishConstructionObject(object, store);
     const ObjectId idBefore = object.objectId();
@@ -991,8 +1015,8 @@ void testIdentityTransformAndRememberedValuesSurvive(Recorder& r) {
     placement.rotationX = 15.0;
     placement.rotationY = 30.0;
     placement.rotationZ = 90.0;
-    object.transform().setValues(placement);
-    const uint64_t transformUpdatesBefore = object.transform().updateCount();
+    placement_.setValues(placement);
+    const uint64_t transformUpdatesBefore = placement_.updateCount();
 
     // Give every primitive a non-default remembered value, then walk the whole
     // cycle back to the start.
@@ -1004,12 +1028,12 @@ void testIdentityTransformAndRememberedValuesSurvive(Recorder& r) {
     applyPrimitive(object, store, PrimitiveSpec::forBox(1.25, 2.5, 0.75));
 
     r.check("object_id_is_stable_across_all_five_kinds", object.objectId() == idBefore);
-    const TransformValues after = object.transform().values();
+    const TransformValues after = placement_.values();
     r.check("transform_survives_the_whole_five_kind_round_trip",
             after.positionX == 0.75 && after.positionY == -1.25 && after.positionZ == 0.5 &&
                 after.rotationX == 15.0 && after.rotationY == 30.0 && after.rotationZ == 90.0);
     r.check("no_shape_change_counted_as_a_transform_update",
-            object.transform().updateCount() == transformUpdatesBefore);
+            placement_.updateCount() == transformUpdatesBefore);
     r.check("every_primitives_typed_values_are_remembered",
             object.box().widthMeters() == 1.25 && object.box().heightMeters() == 2.5 &&
                 object.box().depthMeters() == 0.75 && object.cylinder().diameterMeters() == 1.2 &&
@@ -1029,10 +1053,10 @@ void testIdentityTransformAndRememberedValuesSurvive(Recorder& r) {
                               : PrimitiveSpec::forCapsule(1.0, 3.0));
         const MeshRevision before = store.currentRevision();
         const uint64_t publishedBefore = store.publishedCount();
-        TransformValues moved = object.transform().values();
+        TransformValues moved = placement_.values();
         moved.positionX += 1.0;
         moved.rotationY += 10.0;
-        object.transform().setValues(moved);
+        placement_.setValues(moved);
         r.check(i == 0 ? "cone_transform_edit_publishes_no_revision"
                        : "capsule_transform_edit_publishes_no_revision",
                 store.currentRevision() == before && store.publishedCount() == publishedBefore);
@@ -1045,6 +1069,10 @@ void testIdentityTransformAndRememberedValuesSurvive(Recorder& r) {
 
 void testOlderPrimitivesStillBehave(Recorder& r) {
     ConstructionObject object;
+    // Since IMPORT-01A a placement belongs to the BODY, not to the Construction
+    // Source. This suite drives a standalone source, so it pairs one here. The
+    // invariant under test is unchanged: a primitive change must not disturb it.
+    ConstructionTransform placement_;
     MeshStore store(kConstructionBoxObjectId);
     publishConstructionObject(object, store);
     r.check("object_still_publishes_box_topology_at_startup",

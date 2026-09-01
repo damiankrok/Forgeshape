@@ -1201,7 +1201,6 @@ ConstructionObjectState ConstructionObject::captureState() const {
     state.cone = cone_.dimensionsMeters();
     state.capsule = capsule_.dimensionsMeters();
     state.plane = plane_.dimensionsMeters();
-    state.transform = transform_.values();
     return state;
 }
 
@@ -1216,7 +1215,6 @@ void ConstructionObject::restoreState(const ConstructionObjectState& state) {
     writeParameters(state.capsule);
     writeParameters(state.plane);
     kind_ = state.kind;
-    transform_.setValues(state.transform);
 }
 
 bool sameConstructionShape(const ConstructionObjectState& a, const ConstructionObjectState& b) {
@@ -1231,20 +1229,15 @@ bool sameConstructionShape(const ConstructionObjectState& a, const ConstructionO
         && a.plane.width == b.plane.width && a.plane.depth == b.plane.depth;
 }
 
-bool sameConstructionPlacement(const ConstructionObjectState& a,
-                               const ConstructionObjectState& b) {
-    return a.transform.positionX == b.transform.positionX
-        && a.transform.positionY == b.transform.positionY
-        && a.transform.positionZ == b.transform.positionZ
-        && a.transform.rotationX == b.transform.rotationX
-        && a.transform.rotationY == b.transform.rotationY
-        && a.transform.rotationZ == b.transform.rotationZ
+bool sameConstructionPlacement(const TransformValues& a, const TransformValues& b) {
+    return a.positionX == b.positionX && a.positionY == b.positionY
+        && a.positionZ == b.positionZ
+        && a.rotationX == b.rotationX && a.rotationY == b.rotationY
+        && a.rotationZ == b.rotationZ
         // Scale is part of the PLACEMENT and not of the shape: it changes a
         // derived matrix and no primitive parameter, so a restore that differs
         // only here republishes nothing, exactly as a move does.
-        && a.transform.scaleX == b.transform.scaleX
-        && a.transform.scaleY == b.transform.scaleY
-        && a.transform.scaleZ == b.transform.scaleZ;
+        && a.scaleX == b.scaleX && a.scaleY == b.scaleY && a.scaleZ == b.scaleZ;
 }
 
 ConstructionMesh ConstructionObject::generateMesh() const {
