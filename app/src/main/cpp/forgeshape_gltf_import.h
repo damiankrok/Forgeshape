@@ -27,17 +27,23 @@
 //
 // WHAT THIS IS NOT
 // ----------------
-// **This is not production import.** It is a diagnostic. What it builds is a
-// session-only preview, never a Construction Body, never `.forge` content and
-// never anything the user can edit. Durable import — materials, hierarchy, the
-// whole question of what an imported object even IS in a Construction/Sculpt
-// product — is `IMPORT-01` and stays post-MVP. OBJ and FBX are absent in both
-// directions.
+// **This decides nothing about the project.** It produces GEOMETRY — a
+// `ParsedGlbScene` — and never a body, an `ObjectId`, a history step or a
+// `.forge` byte. That is what lets one parse serve two destinations:
+// `IMPORT-01A`'s durable import (`forgeshape_import_commit.h`), which turns it
+// into real objects, and the session-only diagnostic preview
+// (`forgeshape_import_preview.h`), which draws it beside the scene. Which of
+// those a file becomes is the caller's decision and is not made here.
+//
+// What stays out of the subset stays out of both: materials, textures, UVs,
+// colours, hierarchy, animation and skinning are unread in either direction,
+// and OBJ and FBX are absent in both.
 //
 // Everything outside the supported subset FAILS CLOSED with a named reason. A
-// diagnostic that silently ignored a transform, a sparse accessor or a
-// compression extension would answer the owner's question wrongly, which is
-// worse than refusing to answer it.
+// reader that silently ignored a transform, a sparse accessor or a compression
+// extension would answer the owner's question wrongly — and would put geometry
+// the file does not describe into a project that then keeps it — which is worse
+// than refusing to answer it.
 //
 // COORDINATES
 // -----------
@@ -170,7 +176,14 @@ struct ParsedGlbBatch {
 // and `normalTransform` are kept so a diagnostic can say what the FILE stated,
 // not only what the geometry became.
 struct ParsedGlbMesh {
+    // The NODE's `name`, exactly as the file states it and never sanitized
+    // here: this reader reports what the file says, and what a ForgeShape
+    // object may be called is the importer's rule, not the parser's.
     std::string name;
+    // The glTF MESH's own `name`. Kept beside the node's because a durable
+    // import prefers the node's and falls back to this one, and neither is
+    // guaranteed to be present.
+    std::string meshName;
     // The node's complete transform, as glTF semantics give it: the `matrix`
     // when it states one, otherwise T * R * S.
     Mat4 nodeTransform{};
@@ -199,6 +212,16 @@ struct ParsedGlbMesh {
 
     // The world position of one vertex. Already baked, so this is a read.
     Vec3 worldPosition(uint32_t vertex) const;
+    // The same vertex in the NODE's local space: the baked world position with
+    // the node's translation taken back off.
+    //
+    // `Model = T · L`, and the bake applied the whole of it, so subtracting the
+    // translation leaves exactly `L·p` — the linear part baked in, the
+    // placement taken out. That split is what a durable import needs: the
+    // rotation, scale and shear of another tool's node have no ForgeShape
+    // transform to live in, but its translation is precisely a placement.
+    // Nothing is recentred: the origin stays the node's own.
+    Vec3 localPosition(uint32_t vertex) const;
     // The world direction of one normal. Already carried through the inverse
     // transpose and normalized, so this is a read.
     Vec3 worldNormal(uint32_t vertex) const;

@@ -53,10 +53,16 @@
     <item name="project_save_copy" type="id" />
     <item name="project_open_file" type="id" />
     <item name="project_share_diagnostics" type="id" />
-    <!-- GLB-IMPORT-R0: the session-only imported mesh preview (diagnostic). -->
-    <item name="import_glb_preview" type="id" />
-    <item name="toggle_imported_preview" type="id" />
-    <item name="clear_imported_preview" type="id" />
+    <!--
+      IMPORT-01A: read a `.glb` and turn what it describes into durable
+      objects. The id names the ACT, and the act changed when the preview
+      became an import, so the id changed with it — a control called
+      `import_glb_preview` that creates saved bodies would be a name nobody
+      could trust. The session-only diagnostic preview it replaced has no
+      control of its own any more: it is reached from the verification suites
+      through JNI and draws nothing the user can open.
+    -->
+    <item name="import_glb" type="id" />
 
     <!--
       The recovery question, asked once on a cold launch when a validated

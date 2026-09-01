@@ -224,9 +224,81 @@ function New-SculptPayload {
     return $p.ToArray()
 }
 
+# IMPT v1: entryCount, then per entry an ObjectId, the name's length and bytes,
+# the three counts, the local float32 positions, the float32 normals, the index
+# buffer, and the submesh ranges with their flags byte.
+#
+# This is the first section that carries GEOMETRY as project truth. A
+# Construction Body's mesh is regenerated from its parameters on load; an
+# imported object has no parameters and no source file to go back to, so losing
+# these arrays would lose the object.
+function New-ImportedPayload {
+    param($Entries)
+    $p = New-ByteBuffer
+    Add-U32 $p ([uint32] $Entries.Count)
+    foreach ($entry in $Entries) {
+        Add-U64 $p ([uint64] $entry.ObjectId)
+        # UTF-8, no terminator and no fixed-width padding, so the same name is
+        # always the same bytes. The corpus names are ASCII, which UTF-8 encodes
+        # identically -- but the encoding is stated rather than assumed.
+        $nameBytes = [System.Text.Encoding]::UTF8.GetBytes($entry.Name)
+        Add-U16 $p $nameBytes.Length
+        Add-Bytes $p $nameBytes
+        Add-U32 $p ([uint32] ($entry.Positions.Count / 3))
+        Add-U32 $p ([uint32] $entry.Indices.Count)
+        Add-U32 $p ([uint32] $entry.Batches.Count)
+        foreach ($value in $entry.Positions) { Add-F32 $p $value }
+        foreach ($value in $entry.Normals) { Add-F32 $p $value }
+        foreach ($index in $entry.Indices) { Add-U32 $p ([uint32] $index) }
+        foreach ($batch in $entry.Batches) {
+            Add-U32 $p ([uint32] $batch.FirstIndex)
+            Add-U32 $p ([uint32] $batch.IndexCount)
+            Add-U8  $p $(if ($batch.DoubleSided) { 1 } else { 0 })
+        }
+    }
+    return $p.ToArray()
+}
+
 function New-PrimitiveSourceFeature {
     return @([pscustomobject]@{ LocalFeatureId = 1; KindCode = 1 })
 }
+
+# The one Imported Mesh every imported fixture carries.
+#
+# Four vertices, two submeshes with DIFFERENT doubleSided answers, and every
+# number an exact binary fraction, so neither implementation has a rounding
+# argument to make.
+function New-CanonicalImportedEntry {
+    param([int] $ObjectId)
+    return [pscustomobject]@{
+        ObjectId  = $ObjectId
+        Name      = 'head_low'
+        Positions = @(0.0, 0.0, 0.0,
+                      1.5, 0.0, 0.0,
+                      0.0, 2.25, 0.0,
+                      0.0, 0.0, 3.5)
+        Normals   = @(0.0, 0.0, 1.0,
+                      0.0, 1.0, 0.0,
+                      1.0, 0.0, 0.0,
+                      0.0, 0.0, -1.0)
+        Indices   = @(0, 1, 2, 0, 2, 3)
+        Batches   = @(
+            [pscustomobject]@{ FirstIndex = 0; IndexCount = 3; DoubleSided = $false },
+            [pscustomobject]@{ FirstIndex = 3; IndexCount = 3; DoubleSided = $true })
+    }
+}
+
+# Where an imported fixture's object sits: the translation its source node
+# stated, and nothing else. Rotation and scale are the identity because an
+# import BAKES the node's linear part into the geometry.
+function New-CanonicalImportedPlacement {
+    return @(1.5, -0.25, 4.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0)
+}
+
+# The six remembered parameter sets both mixed fixtures give every Construction
+# Body, so the fixtures differ in which BRANCHES are present rather than in
+# incidental numbers.
+$script:CanonicalSharedParameters = @(2.0, 1.0, 0.5, 1.0, 2.0, 1.5, 1.0, 2.0, 1.0, 2.0, 2.0, 2.0)
 
 # Six bodies, one per primitive kind, each with a non-default placement that
 # includes an uncanonicalized 370 degrees and a non-uniform scale, and all six
@@ -296,6 +368,86 @@ function New-CanonicalSculptFile {
     $cons = New-Section 'CONS' 1 $false (New-ConstructionPayload $sourceBodies)
     $scul = New-Section 'SCUL' 1 $true (New-SculptPayload $sculptEntries)
     return New-ForgeFile 2 @($scne, $cons, $scul) 3
+}
+
+# ---------------------------------------------------------------------------
+# The IMPORT-01A fixtures
+# ---------------------------------------------------------------------------
+
+# IMPORTED-ONLY: one body, no Construction branch at all.
+#
+# The fixture that proves an imported object needs no Construction Source
+# standing in for it: the file carries SCNE and IMPT and nothing else, and its
+# header flags say so.
+function New-ImportedOnlyFile {
+    $sceneBodies = @(
+        [pscustomobject]@{ ObjectId = 1; Transform = (New-CanonicalImportedPlacement) }
+    )
+    $scne = New-Section 'SCNE' 1 $true (New-ScenePayload $sceneBodies 2 1)
+    # ALWAYS required, in either project kind, unlike CONS and SCUL whose
+    # required bit follows the header's ProjectKind. Those two are branches of
+    # data a reader can skip because the other still describes the same bodies;
+    # an Imported Mesh is the only copy of its own geometry.
+    $impt = New-Section 'IMPT' 1 $true (New-ImportedPayload @((New-CanonicalImportedEntry 1)))
+    return New-ForgeFile 1 @($scne, $impt) 4
+}
+
+# CONSTRUCTION + IMPORTED: a SPARSE CONS beside an IMPT.
+#
+# This is the fixture that pins the generalized CONS rule -- one entry per body
+# that HAS a Construction Source, in scene order, rather than one per body.
+function New-ConstructionImportedFile {
+    $sceneBodies = @(
+        [pscustomobject]@{ ObjectId = 1; Transform = @(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0) },
+        [pscustomobject]@{ ObjectId = 2; Transform = (New-CanonicalImportedPlacement) }
+    )
+    $sourceBodies = @(
+        [pscustomobject]@{ ObjectId = 1; PrimitiveCode = 1
+                           Parameters = $script:CanonicalSharedParameters
+                           Features = New-PrimitiveSourceFeature }
+    )
+    $scne = New-Section 'SCNE' 1 $true (New-ScenePayload $sceneBodies 3 2)
+    $cons = New-Section 'CONS' 1 $true (New-ConstructionPayload $sourceBodies)
+    $impt = New-Section 'IMPT' 1 $true (New-ImportedPayload @((New-CanonicalImportedEntry 2)))
+    return New-ForgeFile 1 @($scne, $cons, $impt) 5
+}
+
+# ALL THREE BRANCHES at once, reopening in Sculpt on the sculpted body.
+#
+# The representations are INTERLEAVED rather than grouped, so a reader that
+# assumed a contiguous block of either would fail here.
+function New-MixedImportedFile {
+    $sceneBodies = @(
+        [pscustomobject]@{ ObjectId = 1; Transform = @(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0) },
+        [pscustomobject]@{ ObjectId = 2; Transform = @(1.5, 0.5, -2.0, 370.0, 0.0, 90.0, 1.0, 1.0, 1.0) },
+        [pscustomobject]@{ ObjectId = 3; Transform = (New-CanonicalImportedPlacement) }
+    )
+    $sourceBodies = @(
+        [pscustomobject]@{ ObjectId = 1; PrimitiveCode = 1
+                           Parameters = $script:CanonicalSharedParameters
+                           Features = New-PrimitiveSourceFeature },
+        [pscustomobject]@{ ObjectId = 2; PrimitiveCode = 3
+                           Parameters = $script:CanonicalSharedParameters
+                           Features = New-PrimitiveSourceFeature }
+    )
+    $sculptEntries = @(
+        [pscustomobject]@{
+            ObjectId        = 2
+            RenderBothSides = $false
+            SourceStale     = $true
+            HasEdits        = $true
+            Positions       = @(0.0, 0.0, 0.0,
+                                1.5, 0.0, 0.0,
+                                0.0, 1.25, 0.0,
+                                0.25, 0.5, 1.75)
+            Indices         = @(0, 1, 2, 0, 1, 3, 0, 2, 3, 1, 2, 3)
+        }
+    )
+    $scne = New-Section 'SCNE' 1 $true (New-ScenePayload $sceneBodies 4 2)
+    $cons = New-Section 'CONS' 1 $false (New-ConstructionPayload $sourceBodies)
+    $scul = New-Section 'SCUL' 1 $true (New-SculptPayload $sculptEntries)
+    $impt = New-Section 'IMPT' 1 $true (New-ImportedPayload @((New-CanonicalImportedEntry 3)))
+    return New-ForgeFile 2 @($scne, $cons, $scul, $impt) 7
 }
 
 # ---------------------------------------------------------------------------
@@ -379,6 +531,9 @@ $fixtures = [ordered]@{
     'unsupported_major_v1.forge'      = (New-UnsupportedMajorFixture $construction)
     'unknown_optional_v1.forge'       = (New-ExtraSectionFixture $construction $false)
     'unknown_required_v1.forge'       = (New-ExtraSectionFixture $construction $true)
+    'imported_only_v1.forge'          = (New-ImportedOnlyFile)
+    'construction_imported_v1.forge'  = (New-ConstructionImportedFile)
+    'mixed_imported_v1.forge'         = (New-MixedImportedFile)
 }
 
 $rows = New-Object System.Collections.Generic.List[object]
@@ -399,6 +554,9 @@ foreach ($name in $fixtures.Keys) {
 
 $rows | Format-Table -AutoSize
 Write-Host ''
-Write-Host 'Digests the C++ self-test (FSR1A-12) must assert:'
-Write-Host ("  construction: {0}" -f ($rows | Where-Object Fixture -eq 'construction_multibody_v1.forge').Sha256)
-Write-Host ("  sculpt:       {0}" -f ($rows | Where-Object Fixture -eq 'sculpt_mixed_v1.forge').Sha256)
+Write-Host 'Digests the C++ self-test (FSR1A-12, IMP01A-19) must assert:'
+Write-Host ("  construction:          {0}" -f ($rows | Where-Object Fixture -eq 'construction_multibody_v1.forge').Sha256)
+Write-Host ("  sculpt:                {0}" -f ($rows | Where-Object Fixture -eq 'sculpt_mixed_v1.forge').Sha256)
+Write-Host ("  imported_only:         {0}" -f ($rows | Where-Object Fixture -eq 'imported_only_v1.forge').Sha256)
+Write-Host ("  construction_imported: {0}" -f ($rows | Where-Object Fixture -eq 'construction_imported_v1.forge').Sha256)
+Write-Host ("  mixed_imported:        {0}" -f ($rows | Where-Object Fixture -eq 'mixed_imported_v1.forge').Sha256)

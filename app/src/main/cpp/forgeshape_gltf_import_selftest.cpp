@@ -11,6 +11,7 @@
 #include "forgeshape_gltf_export.h"
 #include "forgeshape_gltf_import.h"
 #include "forgeshape_history.h"
+#include "forgeshape_import_commit.h"
 #include "forgeshape_import_preview.h"
 #include "forgeshape_json.h"
 #include "forgeshape_math.h"
@@ -173,6 +174,16 @@ struct MiniGlbSpec {
     // Extra members for the node object, e.g. `,"matrix":[...]`. Empty means a
     // node with no transform at all, which glTF says is the identity.
     std::string nodeMembers;
+    // The node's and the mesh's `name`, if the file states one. Both are
+    // omitted when empty, because "absent" and "empty string" are different
+    // files and the naming rule has to be tested against both.
+    std::string nodeName;
+    std::string meshName;
+    // Further top-level nodes, all instancing the SAME mesh 0. Each entry is
+    // that node's extra members, so a multi-node file can place its instances
+    // apart. Present so the "one node, one object" rule can be tested with more
+    // than one node.
+    std::vector<std::string> extraNodeMembers;
 };
 
 std::vector<uint8_t> buildMiniGlb(const MiniGlbSpec& spec) {
@@ -225,12 +236,28 @@ std::vector<uint8_t> buildMiniGlb(const MiniGlbSpec& spec) {
     const bool hasNormals = !spec.normals.empty();
     const uint32_t firstIndexAccessor = hasNormals ? 2u : 1u;
 
-    std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,"
-                       "\"scenes\":[{\"nodes\":[0]}],\"nodes\":[{\"mesh\":0";
-    json += spec.nodeMembers;
-    json += "}],\"materials\":[{\"doubleSided\":false},{\"doubleSided\":true}],"
-            "\"meshes\":[{\"primitives\":[";
     char text[256];
+    std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0";
+    for (size_t n = 0; n < spec.extraNodeMembers.size(); ++n) {
+        std::snprintf(text, sizeof(text), ",%u", static_cast<uint32_t>(n + 1));
+        json += text;
+    }
+    json += "]}],\"nodes\":[{\"mesh\":0";
+    json += spec.nodeMembers;
+    if (!spec.nodeName.empty()) {
+        json += ",\"name\":\"" + spec.nodeName + "\"";
+    }
+    json += "}";
+    for (const std::string& members : spec.extraNodeMembers) {
+        json += ",{\"mesh\":0";
+        json += members;
+        json += "}";
+    }
+    json += "],\"materials\":[{\"doubleSided\":false},{\"doubleSided\":true}],\"meshes\":[{";
+    if (!spec.meshName.empty()) {
+        json += "\"name\":\"" + spec.meshName + "\",";
+    }
+    json += "\"primitives\":[";
     for (size_t p = 0; p < spec.primitives.size(); ++p) {
         if (p != 0) {
             json += ",";
@@ -1088,6 +1115,359 @@ int runGltfImportSelfTests(GltfImportSelfTestResult* out, int maxOut) {
                     loaded && preview.vertexCount() == 4 && preview.triangleCount() == 2
                             && preview.meshCount() == 1);
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // IMP01A-01..15: durable import
+    // -----------------------------------------------------------------------
+    //
+    // The same parser, a different destination. These cases are about what the
+    // PROJECT does with a parsed file: how many objects it becomes, what they
+    // are called, where the node transform ends up, and the rule that an import
+    // either happens completely or not at all.
+
+    // IMP01A-01/05/06: one mesh node becomes one durable body, with the node's
+    // linear part baked and its translation kept as the placement.
+    {
+        MiniGlbSpec spec = twoTriangleSheet();
+        // A node with a non-uniform scale AND a translation: the linear part is
+        // something this product's placement cannot store and must therefore be
+        // baked, and the translation is something it can and must not be.
+        spec.nodeMembers = ",\"translation\":[1.5,-0.25,4.0],\"scale\":[2.0,1.0,3.0]";
+        const std::vector<uint8_t> glb = buildMiniGlb(spec);
+
+        ParsedGlbScene parsed;
+        const bool parsedOk = importGlb(glb.data(), glb.size(), &parsed) == GlbImportStatus::Ok;
+
+        Fixture fixture;
+        const size_t bodiesBefore = fixture.scene.bodyCount();
+        ImportCommitReport report;
+        const ImportCommitStatus status = commitImportedGlbScene(
+                parsed, fixture.scene, fixture.history, &report);
+        r.check("IMP01A_01_a_supported_mesh_node_becomes_a_durable_body",
+                parsedOk && status == ImportCommitStatus::Ok && report.objects == 1
+                        && fixture.scene.bodyCount() == bodiesBefore + 1);
+
+        const SceneObject* body = fixture.scene.findBody(report.firstObjectId);
+        r.check("IMP01A_01_it_is_an_imported_body_with_no_construction_source",
+                body != nullptr && body->isImported()
+                        && body->constructionOrNull() == nullptr);
+        r.check("IMP01A_04_it_carries_an_ordinary_object_id_from_the_scenes_allocator",
+                body != nullptr && body->objectId() != kNoObject
+                        && !previewRenderKeyIsReserved(body->objectId())
+                        && body->objectId() < fixture.scene.nextObjectId());
+        r.check("IMP01A_01_and_it_is_drawable",
+                body != nullptr && body->meshStore().currentRevision() != kNoMeshRevision);
+
+        // IMP01A-05: the split. Translation on the body, linear part in the
+        // geometry, and nothing recentred.
+        const TransformValues placement =
+                body != nullptr ? body->transform().values() : TransformValues{};
+        r.check("IMP01A_05_the_node_translation_became_the_bodys_placement",
+                std::fabs(placement.positionX - 1.5) < 1e-6
+                        && std::fabs(placement.positionY + 0.25) < 1e-6
+                        && std::fabs(placement.positionZ - 4.0) < 1e-6);
+        // IMP01A-06: rotation and scale start at the identity, because whatever
+        // the node's linear part did is already in the vertices.
+        r.check("IMP01A_06_the_imported_body_starts_unrotated_and_unscaled",
+                placement.rotationX == 0.0 && placement.rotationY == 0.0
+                        && placement.rotationZ == 0.0 && placement.scaleX == 1.0
+                        && placement.scaleY == 1.0 && placement.scaleZ == 1.0);
+        const ImportedMesh* mesh = body != nullptr ? body->importedOrNull() : nullptr;
+        // The sheet is 2 x 1 in the file and the node scales it by (2,1,3), so
+        // baked local geometry spans 4 in x and 3 in z. Its ORIGIN stays the
+        // node's own: the minimum corner is still zero, not a centred bound.
+        float bounds[6] = {0, 0, 0, 0, 0, 0};
+        const bool haveBounds = mesh != nullptr && mesh->localBounds(bounds);
+        r.check("IMP01A_05_the_node_linear_part_is_baked_into_the_local_geometry",
+                haveBounds && std::fabs(bounds[3] - 4.0f) < 1e-5f
+                        && std::fabs(bounds[5] - 3.0f) < 1e-5f);
+        r.check("IMP01A_05_and_nothing_is_recentred",
+                haveBounds && std::fabs(bounds[0]) < 1e-6f && std::fabs(bounds[2]) < 1e-6f);
+
+        // IMP01A-03: one mesh's several primitives stay INSIDE the object.
+        r.check("IMP01A_03_several_primitives_stay_one_object_with_exact_batches",
+                mesh != nullptr && mesh->batchCount() == 2 && mesh->triangleCount() == 2
+                        && mesh->vertexCount() == 4);
+
+        // IMP01A-09: the whole import is exactly one Undo, and undoing it puts
+        // the scene back with no imported body left behind.
+        r.check("IMP01A_09_an_import_records_exactly_one_history_step",
+                fixture.history.undoDepth() == 1);
+        r.check("IMP01A_09_an_undo_removes_every_body_the_import_created",
+                fixture.history.undo() && fixture.scene.bodyCount() == bodiesBefore
+                        && fixture.scene.findBody(report.firstObjectId) == nullptr);
+        // IMP01A-10: and a redo brings back the SAME object — its geometry, its
+        // batches, its name and its placement — not a fresh one wearing its id.
+        r.check("IMP01A_10_a_redo_restores_the_body", fixture.history.redo()
+                && fixture.scene.findBody(report.firstObjectId) != nullptr);
+        const SceneObject* again = fixture.scene.findBody(report.firstObjectId);
+        const ImportedMesh* againMesh = again != nullptr ? again->importedOrNull() : nullptr;
+        r.check("IMP01A_10_with_identical_geometry_batches_and_name",
+                againMesh != nullptr && mesh != nullptr
+                        && againMesh->positions() == mesh->positions()
+                        && againMesh->normals() == mesh->normals()
+                        && againMesh->indices() == mesh->indices()
+                        && againMesh->batchCount() == mesh->batchCount()
+                        && again->name() == body->name());
+        r.check("IMP01A_10_and_identical_placement",
+                again != nullptr
+                        && sameConstructionPlacement(again->transform().values(), placement));
+    }
+
+    // IMP01A-02/23: several top-level mesh nodes become several objects, and
+    // the first one this import created is the one left selected.
+    {
+        MiniGlbSpec spec = twoTriangleSheet();
+        spec.nodeName = "alpha";
+        spec.extraNodeMembers = {",\"translation\":[5.0,0.0,0.0],\"name\":\"beta\"",
+                                 ",\"translation\":[0.0,5.0,0.0],\"name\":\"gamma\""};
+        const std::vector<uint8_t> glb = buildMiniGlb(spec);
+
+        ParsedGlbScene parsed;
+        const bool parsedOk = importGlb(glb.data(), glb.size(), &parsed) == GlbImportStatus::Ok
+                && parsed.meshes.size() == 3;
+
+        Fixture fixture;
+        const size_t bodiesBefore = fixture.scene.bodyCount();
+        ImportCommitReport report;
+        const ImportCommitStatus status = commitImportedGlbScene(
+                parsed, fixture.scene, fixture.history, &report);
+        r.check("IMP01A_02_three_mesh_nodes_become_three_objects",
+                parsedOk && status == ImportCommitStatus::Ok && report.objects == 3
+                        && fixture.scene.bodyCount() == bodiesBefore + 3);
+        r.check("IMP01A_04_their_ids_are_distinct_and_collision_free",
+                report.firstObjectId != report.lastObjectId
+                        && fixture.scene.findBody(report.firstObjectId) != nullptr
+                        && fixture.scene.findBody(report.lastObjectId) != nullptr
+                        && report.lastObjectId < fixture.scene.nextObjectId());
+        r.check("IMP01A_23_the_first_object_the_import_created_is_selected",
+                report.activeBodyId == report.firstObjectId
+                        && fixture.scene.activeBodyId() == report.firstObjectId);
+        r.check("IMP01A_23_they_are_appended_after_the_bodies_that_were_there",
+                fixture.scene.indexOfBody(report.firstObjectId) == bodiesBefore);
+        // Still ONE transaction, however many objects it made.
+        r.check("IMP01A_09_a_multi_object_import_is_still_one_undo_step",
+                fixture.history.undoDepth() == 1);
+        r.check("IMP01A_09_and_one_undo_removes_all_three",
+                fixture.history.undo() && fixture.scene.bodyCount() == bodiesBefore);
+        r.check("IMP01A_10_and_one_redo_brings_all_three_back",
+                fixture.history.redo() && fixture.scene.bodyCount() == bodiesBefore + 3);
+    }
+
+    // IMP01A-07: the naming rule, all three branches.
+    {
+        Fixture fixture;
+        MiniGlbSpec named = twoTriangleSheet();
+        named.nodeName = "head_low";
+        named.meshName = "mesh_that_loses";
+        ParsedGlbScene parsed;
+        const std::vector<uint8_t> glb = buildMiniGlb(named);
+        ImportCommitReport report;
+        const bool ok = importGlb(glb.data(), glb.size(), &parsed) == GlbImportStatus::Ok
+                && commitImportedGlbScene(parsed, fixture.scene, fixture.history, &report)
+                        == ImportCommitStatus::Ok;
+        const SceneObject* body = fixture.scene.findBody(report.firstObjectId);
+        r.check("IMP01A_07_the_node_name_wins",
+                ok && body != nullptr && body->name() == "head_low");
+    }
+    {
+        Fixture fixture;
+        MiniGlbSpec meshOnly = twoTriangleSheet();
+        meshOnly.meshName = "body_mesh";
+        ParsedGlbScene parsed;
+        const std::vector<uint8_t> glb = buildMiniGlb(meshOnly);
+        ImportCommitReport report;
+        const bool ok = importGlb(glb.data(), glb.size(), &parsed) == GlbImportStatus::Ok
+                && commitImportedGlbScene(parsed, fixture.scene, fixture.history, &report)
+                        == ImportCommitStatus::Ok;
+        const SceneObject* body = fixture.scene.findBody(report.firstObjectId);
+        r.check("IMP01A_07_the_mesh_name_is_the_second_choice",
+                ok && body != nullptr && body->name() == "body_mesh");
+    }
+    {
+        Fixture fixture;
+        ParsedGlbScene parsed;
+        const std::vector<uint8_t> glb = buildMiniGlb(twoTriangleSheet());
+        ImportCommitReport report;
+        const bool ok = importGlb(glb.data(), glb.size(), &parsed) == GlbImportStatus::Ok
+                && commitImportedGlbScene(parsed, fixture.scene, fixture.history, &report)
+                        == ImportCommitStatus::Ok;
+        const SceneObject* body = fixture.scene.findBody(report.firstObjectId);
+        r.check("IMP01A_07_an_unnamed_file_gets_the_deterministic_fallback",
+                ok && body != nullptr && body->name() == "Imported 1");
+    }
+    {
+        // A name from another tool is sanitized by the DOMAIN's rule before it
+        // can become project truth, and the fallback catches whatever is left.
+        r.check("IMP01A_07_a_name_is_trimmed_and_bounded",
+                sanitizeImportedMeshName("  spaced  ") == "spaced"
+                        && sanitizeImportedMeshName(std::string(200, 'x')).size()
+                                == kMaxImportedMeshNameBytes);
+        r.check("IMP01A_07_control_characters_and_broken_utf8_do_not_survive",
+                sanitizeImportedMeshName(std::string("a\tb")) == "a b"
+                        && sanitizeImportedMeshName(std::string("\xC3")) .empty()
+                        && sanitizeImportedMeshName(std::string("\x80z")) == "z");
+        r.check("IMP01A_07_sanitizing_is_idempotent",
+                sanitizeImportedMeshName(sanitizeImportedMeshName("  a\tb  "))
+                        == sanitizeImportedMeshName("  a\tb  ")
+                        && importedMeshNameIsStorable("head_low")
+                        && !importedMeshNameIsStorable(" head_low")
+                        && !importedMeshNameIsStorable(""));
+        r.check("IMP01A_07_a_multibyte_name_is_cut_on_a_character_boundary",
+                sanitizeImportedMeshName(std::string(95, 'x') + "\xC3\xA9")
+                        == std::string(95, 'x'));
+    }
+
+    // IMP01A-08: atomicity. A file whose SECOND node cannot be turned into an
+    // object leaves the project exactly as it was — no body, no ObjectId, no
+    // history step.
+    {
+        Fixture fixture;
+        const size_t bodiesBefore = fixture.scene.bodyCount();
+        const ObjectId nextBefore = fixture.scene.nextObjectId();
+        const size_t undoBefore = fixture.history.undoDepth();
+
+        MiniGlbSpec spec = twoTriangleSheet();
+        spec.extraNodeMembers = {""};
+        ParsedGlbScene parsed;
+        const bool parsedOk = importGlb(buildMiniGlb(spec).data(), buildMiniGlb(spec).size(),
+                                        &parsed) == GlbImportStatus::Ok
+                && parsed.meshes.size() == 2;
+        // Broken AFTER the parse, on purpose: the parser is not what is under
+        // test here, the commit's all-or-nothing rule is. A normal that is not
+        // a direction is a value the domain refuses.
+        if (parsedOk) {
+            parsed.meshes[1].normals.assign(parsed.meshes[1].normals.size(), 0.0f);
+        }
+        ImportCommitReport report;
+        const ImportCommitStatus status = commitImportedGlbScene(
+                parsed, fixture.scene, fixture.history, &report);
+        r.check("IMP01A_08_one_bad_object_refuses_the_whole_import",
+                parsedOk && status == ImportCommitStatus::RejectedGeometry
+                        && report.geometryWhy != ImportedMeshValidation::Ok);
+        r.check("IMP01A_08_and_the_project_is_untouched",
+                fixture.scene.bodyCount() == bodiesBefore
+                        && fixture.history.undoDepth() == undoBefore);
+        r.check("IMP01A_08_no_object_id_was_consumed_for_a_body_that_never_existed",
+                fixture.scene.nextObjectId() == nextBefore);
+    }
+
+    // IMP01A-08: an empty parsed scene and an open edit are both refused, and
+    // both by name.
+    {
+        Fixture fixture;
+        ParsedGlbScene empty;
+        ImportCommitReport report;
+        r.check("IMP01A_08_an_empty_parsed_scene_is_refused",
+                commitImportedGlbScene(empty, fixture.scene, fixture.history, &report)
+                        == ImportCommitStatus::NothingToImport);
+
+        ParsedGlbScene parsed;
+        const std::vector<uint8_t> glb = buildMiniGlb(twoTriangleSheet());
+        const bool parsedOk = importGlb(glb.data(), glb.size(), &parsed) == GlbImportStatus::Ok;
+        fixture.history.beginEdit();
+        const size_t bodiesBefore = fixture.scene.bodyCount();
+        r.check("IMP01A_08_an_import_during_an_open_edit_is_refused",
+                parsedOk
+                        && commitImportedGlbScene(parsed, fixture.scene, fixture.history, &report)
+                                == ImportCommitStatus::RefusedEditInProgress
+                        && fixture.scene.bodyCount() == bodiesBefore);
+        fixture.history.cancelEdit();
+        r.check("IMP01A_08_every_commit_status_has_a_name",
+                std::string(importCommitStatusName(ImportCommitStatus::TooManyObjects))
+                                == "TooManyObjects"
+                        && std::string(importCommitStatusName(
+                                   ImportCommitStatus::RejectedGeometry))
+                                == "RejectedGeometry"
+                        && std::string(importCommitStatusName(
+                                   ImportCommitStatus::RefusedEditInProgress))
+                                == "RefusedEditInProgress");
+    }
+
+    // IMP01A-11/12/13: an imported body takes the ORDINARY transform path, and
+    // no transform edit ever touches its topology.
+    {
+        Fixture fixture;
+        ParsedGlbScene parsed;
+        const std::vector<uint8_t> glb = buildMiniGlb(twoTriangleSheet());
+        ImportCommitReport report;
+        const bool ok = importGlb(glb.data(), glb.size(), &parsed) == GlbImportStatus::Ok
+                && commitImportedGlbScene(parsed, fixture.scene, fixture.history, &report)
+                        == ImportCommitStatus::Ok;
+        SceneObject* body = fixture.scene.findBody(report.firstObjectId);
+        const std::vector<float> positionsBefore =
+                body != nullptr ? body->importedOrNull()->positions() : std::vector<float>();
+        const MeshRevision revisionBefore =
+                body != nullptr ? body->meshStore().currentRevision() : kNoMeshRevision;
+
+        TransformValues moved;
+        moved.positionX = 2.0;
+        moved.rotationY = 37.0;
+        moved.scaleX = 1.5;
+        moved.scaleY = 0.5;
+        moved.scaleZ = 2.0;
+        {
+            ScopedConstructionEdit edit(fixture.history);
+            applyTransformValues(body->transform(), moved);
+        }
+        r.check("IMP01A_11_a_transform_edit_on_an_imported_body_is_one_history_step",
+                ok && fixture.history.undoDepth() == 2);
+        r.check("IMP01A_12_move_rotate_and_scale_all_reach_the_bodys_own_transform",
+                sameConstructionPlacement(body->transform().values(), moved));
+        r.check("IMP01A_13_and_none_of_it_republishes_or_moves_a_vertex",
+                body->meshStore().currentRevision() == revisionBefore
+                        && body->importedOrNull()->positions() == positionsBefore);
+        r.check("IMP01A_11_an_undo_returns_the_placement_the_file_gave_it",
+                fixture.history.undo()
+                        && fixture.scene.findBody(report.firstObjectId)
+                                ->transform().values().positionX == 0.0);
+        r.check("IMP01A_11_and_a_redo_returns_the_edited_one",
+                fixture.history.redo()
+                        && sameConstructionPlacement(
+                                fixture.scene.findBody(report.firstObjectId)->transform().values(),
+                                moved));
+        r.check("IMP01A_13_the_geometry_survived_both",
+                fixture.scene.findBody(report.firstObjectId)->importedOrNull()->positions()
+                        == positionsBefore);
+    }
+
+    // IMP01A-14/15: the domain refuses what the UI withdraws.
+    {
+        Fixture fixture;
+        ParsedGlbScene parsed;
+        const std::vector<uint8_t> glb = buildMiniGlb(twoTriangleSheet());
+        ImportCommitReport report;
+        const bool ok = importGlb(glb.data(), glb.size(), &parsed) == GlbImportStatus::Ok
+                && commitImportedGlbScene(parsed, fixture.scene, fixture.history, &report)
+                        == ImportCommitStatus::Ok;
+        // The import selected the imported body, so the process-scoped active
+        // accessors now answer for one.
+        r.check("IMP01A_14_an_imported_body_has_no_construction_source_to_edit",
+                ok && fixture.scene.activeBody().constructionOrNull() == nullptr);
+        const ImportedMesh* mesh = fixture.scene.activeBody().importedOrNull();
+        const std::vector<float> positionsBefore =
+                mesh != nullptr ? mesh->positions() : std::vector<float>();
+        // IMP01A-15: and no freeze is possible, because there is no source mesh
+        // to freeze FROM. Start Sculpting on an imported body is `IMPORT-01B`.
+        r.check("IMP01A_15_there_is_nothing_to_freeze_an_imported_body_from",
+                !fixture.scene.activeBody().frozenSculpt().mesh.frozen());
+        r.check("IMP01A_14_and_the_geometry_is_untouched_by_asking",
+                mesh != nullptr && mesh->positions() == positionsBefore);
+    }
+
+    // IMP01A-25: the scope boundary, stated as a check.
+    {
+        // An imported body is not a preview: it holds an ordinary ObjectId from
+        // the scene's own allocator, never a reserved renderer key.
+        r.check("IMP01A_25_a_body_id_is_never_a_reserved_preview_render_key",
+                !previewRenderKeyIsReserved(kFirstBodyObjectId)
+                        && previewRenderKeyIsReserved(kFirstPreviewRenderKey));
+        r.check("IMP01A_25_the_two_representations_are_named",
+                std::string(bodyRepresentationName(BodyRepresentation::Construction))
+                                == "Construction"
+                        && std::string(bodyRepresentationName(BodyRepresentation::Imported))
+                                == "Imported");
     }
 
     // -----------------------------------------------------------------------

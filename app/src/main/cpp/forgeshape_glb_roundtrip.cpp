@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <vector>
 
 #include "forgeshape_construction.h"
 #include "forgeshape_gltf_export.h"
@@ -41,12 +42,25 @@ SourceGeometry evaluateSourceGeometry(const SceneObject& body, ProjectKind kind)
         built = buildRenderMesh(frozen.mesh.vertices().data(), frozen.mesh.vertexCount(),
                                 frozen.mesh.indices().data(), frozen.mesh.indexCount(),
                                 SurfaceShading::Smooth, &surfaces, /*renderBothSides=*/false);
-    } else {
-        const ConstructionMesh source = body.construction().generateMesh();
-        built = buildRenderMesh(source.vertices.data(),
-                                static_cast<uint32_t>(source.vertices.size()),
-                                source.indices.data(),
-                                static_cast<uint32_t>(source.indices.size()),
+    } else if (const ImportedMesh* imported = body.importedOrNull()) {
+        // The same arrays the exporter reads, through the same one call that
+        // resolves per-submesh `doubleSided` into geometry — so this diagnostic
+        // compares the file against what the SCENE holds rather than against a
+        // second idea of what an imported body is.
+        std::vector<MeshVertex> vertices;
+        std::vector<uint32_t> indices;
+        if (imported->buildDrawData(&vertices, &indices)) {
+            built = buildRenderMesh(vertices.data(), static_cast<uint32_t>(vertices.size()),
+                                    indices.data(), static_cast<uint32_t>(indices.size()),
+                                    SurfaceShading::Smooth, &surfaces,
+                                    /*renderBothSides=*/false);
+        }
+    } else if (const ConstructionObject* source = body.constructionOrNull()) {
+        const ConstructionMesh mesh = source->generateMesh();
+        built = buildRenderMesh(mesh.vertices.data(),
+                                static_cast<uint32_t>(mesh.vertices.size()),
+                                mesh.indices.data(),
+                                static_cast<uint32_t>(mesh.indices.size()),
                                 SurfaceShading::Smooth, &surfaces, /*renderBothSides=*/false);
     }
     if (!built || surfaces.vertices.empty() || surfaces.indices.empty()) {

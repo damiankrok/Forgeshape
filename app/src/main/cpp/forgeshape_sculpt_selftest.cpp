@@ -421,7 +421,10 @@ void runSidednessSelfTests(Recorder& r) {
         // Save and restore the process-global state this exercises, so the test
         // is input-independent and leaves nothing behind for later suites.
         const TransformValues savedTransform = constructionTransform().values();
-        const PrimitiveSpec savedPrimitive = constructionObject().spec();
+        // The active body here is the default Construction Body: this suite builds
+        // no imported object, so the source is present by construction.
+        ConstructionObject& activeSource = *activeConstructionOrNull();
+        const PrimitiveSpec savedPrimitive = activeSource.spec();
         TransformValues atOrigin{};
         constructionTransform().setValues(atOrigin);
 
@@ -429,7 +432,7 @@ void runSidednessSelfTests(Recorder& r) {
         buildPickRay(back, kCentreX, kCentreY, kViewportWidth, kViewportHeight, &backRay);
 
         // Case A: active = frozen SOLID, Construction Source = PLANE.
-        constructionObject().setPrimitive(PrimitiveSpec::forPlane(2.0, 1.25));
+        activeSource.setPrimitive(PrimitiveSpec::forPlane(2.0, 1.25));
         publishSculptMesh(frozenSolid, meshStore(), &why);
         const SceneHit staleSolidFromBehind =
             pickScene(front, kCentreX, kCentreY, kViewportWidth, kViewportHeight);
@@ -447,7 +450,7 @@ void runSidednessSelfTests(Recorder& r) {
 
         // Case B: active = frozen PLANE, Construction Source = SOLID. The
         // mirror image, so the rule cannot be satisfied by ignoring sidedness.
-        constructionObject().setPrimitive(
+        activeSource.setPrimitive(
             PrimitiveSpec::forSphere(kDefaultSphereDiameterMeters));
         publishSculptMesh(frozenPlane, meshStore(), &why);
         const SceneHit planeFromBack =
@@ -458,7 +461,7 @@ void runSidednessSelfTests(Recorder& r) {
             pickScene(front, kCentreX, kCentreY, kViewportWidth, kViewportHeight);
         r.check("side08_frozen_plane_still_picks_from_the_front", planeFromFront.hit);
 
-        constructionObject().setPrimitive(savedPrimitive);
+        activeSource.setPrimitive(savedPrimitive);
         constructionTransform().setValues(savedTransform);
     }
 

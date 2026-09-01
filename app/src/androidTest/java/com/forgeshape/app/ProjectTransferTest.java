@@ -418,13 +418,14 @@ public final class ProjectTransferTest {
                     + transferWording, transferWording.contains(word));
         }
 
-        // And the GLB group names the act — Import GLB — while every word
-        // around it says PREVIEW, which is what the user gets (GLB-IMPORT-R1,
-        // `ARCH-OWNER-09`). The `.forge` rows above still say neither, which
-        // is what keeps the two acts apart: Open File opens a project, Import
-        // GLB previews somebody else's mesh.
+        // And the GLB group names the act — Import GLB — which since
+        // `IMPORT-01A` (`ARCH-OWNER-10`) creates objects the user keeps, so
+        // nothing around it says preview any more. The `.forge` rows above
+        // still say neither "import" nor "GLB", which is what keeps the two
+        // acts apart: Open File REPLACES the project with another one, Import
+        // GLB ADDS somebody else's mesh to the project already open.
         assertTrue("the GLB row must name the act: " + text, text.contains("import glb"));
-        assertTrue("and it must be framed as a preview, not as production import: " + text,
+        assertFalse("and nothing in the group still calls it a preview: " + text,
                 text.contains("preview"));
 
         // Export exists and works, but it lives in the Global Toolbar, not

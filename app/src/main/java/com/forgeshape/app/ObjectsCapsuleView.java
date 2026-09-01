@@ -119,8 +119,7 @@ final class ObjectsCapsuleView extends LinearLayout {
      * the same fact.
      */
     void refreshFromNative() {
-        final String body = getContext().getString(R.string.body_label,
-                NativeViewport.sceneActiveBodyId());
+        final String body = BodyLabels.ofActive(getContext());
         activeBody.setText(body);
         activeBody.setContentDescription(
                 getContext().getString(R.string.objects_capsule_active, body));

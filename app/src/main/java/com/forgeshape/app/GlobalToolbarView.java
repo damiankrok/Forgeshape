@@ -632,7 +632,13 @@ final class GlobalToolbarView extends LinearLayout {
         editingGroup.setVisibility(shown ? VISIBLE : GONE);
     }
 
-    void showContext(boolean sculpting, boolean hasFrozenMesh) {
+    /**
+     * @param sculptable whether the active body can be sculpted at all. False
+     *        for an Imported Mesh: `IMPORT-01A` gives one no Frozen Sculpt Mesh
+     *        and the domain refuses the freeze, so offering Start Sculpting for
+     *        it could only lead the user to a refusal.
+     */
+    void showContext(boolean sculpting, boolean hasFrozenMesh, boolean sculptable) {
         final Context context = getContext();
         contextLabel.setText(context.getString(
                 sculpting ? R.string.context_sculpt : R.string.context_construction));
@@ -642,7 +648,8 @@ final class GlobalToolbarView extends LinearLayout {
         // Freeze and Resume are mutually exclusive by meaning: there is nothing
         // to resume until something has been frozen, and once there is, the
         // non-destructive act is the one that gets the toolbar slot.
-        freezeButton.setVisibility(!sculpting && !hasFrozenMesh ? VISIBLE : GONE);
+        freezeButton.setVisibility(
+                !sculpting && !hasFrozenMesh && sculptable ? VISIBLE : GONE);
         resumeButton.setVisibility(!sculpting && hasFrozenMesh ? VISIBLE : GONE);
         applyEditingComposition();
     }

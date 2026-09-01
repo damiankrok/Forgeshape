@@ -55,7 +55,10 @@
 #include <cstdint>
 #include <vector>
 
+#include <string>
+
 #include "forgeshape_construction.h"
+#include "forgeshape_imported_mesh.h"
 #include "forgeshape_object_id.h"
 #include "forgeshape_transform.h"
 
@@ -82,6 +85,13 @@ constexpr uint16_t kSectionFlagRequired = 0x0001u;
 // reader knows what it is holding before it has parsed a single section.
 constexpr uint8_t kHeaderFlagHasConstruction = 0x01u;
 constexpr uint8_t kHeaderFlagHasSculpt = 0x02u;
+// Set when the file carries Imported Mesh geometry. It is also the COMPATIBILITY
+// GATE: every reader before `IMPORT-01A` refuses an unknown header-flag bit
+// outright (`BadHeader`), so a build that could not reconstruct an imported body
+// cannot open the file at all rather than opening it with the imported objects
+// silently missing. The IMPT section's required bit says the same thing a second
+// time, for a reader that got past the header.
+constexpr uint8_t kHeaderFlagHasImported = 0x04u;
 
 // FourCCs as four ASCII bytes in file order. Compared byte by byte rather than
 // packed into an integer, so nothing about the comparison depends on the host's
@@ -89,10 +99,12 @@ constexpr uint8_t kHeaderFlagHasSculpt = 0x02u;
 constexpr char kSectionTagScene[4] = {'S', 'C', 'N', 'E'};
 constexpr char kSectionTagConstruction[4] = {'C', 'O', 'N', 'S'};
 constexpr char kSectionTagSculpt[4] = {'S', 'C', 'U', 'L'};
+constexpr char kSectionTagImported[4] = {'I', 'M', 'P', 'T'};
 
 constexpr uint16_t kSceneSectionVersion = 1;
 constexpr uint16_t kConstructionSectionVersion = 1;
 constexpr uint16_t kSculptSectionVersion = 1;
+constexpr uint16_t kImportedSectionVersion = 1;
 
 // v1 feature-graph codes. FILE-owned and independent of any C++ enum's ABI.
 constexpr uint8_t kFeatureKindPrimitiveSource = 1;
@@ -198,7 +210,14 @@ struct ProjectConstructionBody {
 };
 
 struct ProjectConstructionRecord {
-    std::vector<ProjectConstructionBody> bodies;  // one per scene body, in scene order
+    // One entry per scene body that HAS a Construction Source, in scene order.
+    //
+    // That was "one per scene body" until `IMPORT-01A`, and it read the same
+    // way because every body had one. An Imported Mesh has none, and no entry
+    // may be fabricated for it: a default Box standing in for geometry the file
+    // actually carried would be inventing project data, and a later edit would
+    // then reshape a body from parameters nobody authored.
+    std::vector<ProjectConstructionBody> bodies;
 };
 
 // SCUL, per body that HAS a Frozen Sculpt Mesh. Positions are local-space
@@ -228,6 +247,47 @@ struct ProjectSculptRecord {
     std::vector<ProjectSculptBody> bodies;  // scene order; only bodies that have one
 };
 
+// IMPT, per body whose representation is an Imported Mesh.
+//
+// This is the first section that stores GEOMETRY as project truth rather than
+// as something the load regenerates, and the reason is the whole point of the
+// representation: a Construction Body's mesh is a product of its parameters and
+// `generateMesh()` will make it again, while an imported object IS its
+// geometry — no rule exists that could recreate it, and the file it came from
+// is not part of the project. Losing these arrays would lose the object.
+//
+// What is deliberately absent: the source `.glb`'s path, `Uri` or bytes; the
+// node transform (its linear part is baked into `positions` and its translation
+// is the body's SCNE placement); every material, colour and UV the parser
+// validated and then ignored; and the preview that read the file first.
+struct ProjectImportedBody {
+    ObjectId objectId = kNoObject;
+    // The object's display name, already sanitized by the domain's own rule.
+    // Stored because it came from the FILE and the file is gone after an
+    // import: a project that reopened with anonymous rows would have lost
+    // something the user could see.
+    std::string name;
+    std::vector<float> positions;  // 3 per vertex, LOCAL space, IEEE-754 bits
+    // One unit direction per position. Stored rather than regenerated because
+    // the file may have STATED them, and re-deriving smooth normals from the
+    // triangles would silently replace an artist's hard edges with this
+    // build's own guess.
+    std::vector<float> normals;
+    std::vector<uint32_t> indices;
+    // The submesh ranges, in order, tiling `indices` exactly. Each carries the
+    // one material fact this product keeps, `doubleSided`, because it decides
+    // which triangles are visible rather than how they look.
+    std::vector<ImportedMeshBatch> batches;
+
+    uint32_t vertexCount() const { return static_cast<uint32_t>(positions.size() / 3); }
+    uint32_t indexCount() const { return static_cast<uint32_t>(indices.size()); }
+    uint32_t batchCount() const { return static_cast<uint32_t>(batches.size()); }
+};
+
+struct ProjectImportedRecord {
+    std::vector<ProjectImportedBody> bodies;  // scene order; only imported bodies
+};
+
 // A complete project, decoded or about to be encoded. Plain data with no
 // identity of its own: two documents that compare equal produce byte-identical
 // files, which is the deterministic-writer rule stated as a property.
@@ -238,6 +298,8 @@ struct ProjectDocument {
     ProjectConstructionRecord construction;
     bool hasSculpt = false;
     ProjectSculptRecord sculpt;
+    bool hasImported = false;
+    ProjectImportedRecord imported;
 };
 
 // True when the two documents carry the same project semantics, field for

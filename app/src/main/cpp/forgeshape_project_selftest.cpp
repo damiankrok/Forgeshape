@@ -204,6 +204,161 @@ ProjectDocument canonicalConstructionDocument() {
     return document;
 }
 
+// The one Imported Mesh every imported golden fixture carries.
+//
+// Four vertices, two submeshes with DIFFERENT `doubleSided` answers, and every
+// number an exact binary fraction — so the independent PowerShell encoder has
+// no rounding argument to make and the two implementations agree byte for byte
+// or not at all.
+ProjectImportedBody canonicalImportedBody(ObjectId objectId) {
+    ProjectImportedBody body;
+    body.objectId = objectId;
+    body.name = "head_low";
+    body.positions = {0.0f, 0.0f,  0.0f,
+                      1.5f, 0.0f,  0.0f,
+                      0.0f, 2.25f, 0.0f,
+                      0.0f, 0.0f,  3.5f};
+    body.normals = {0.0f, 0.0f, 1.0f,
+                    0.0f, 1.0f, 0.0f,
+                    1.0f, 0.0f, 0.0f,
+                    0.0f, 0.0f, -1.0f};
+    body.indices = {0, 1, 2, 0, 2, 3};
+    body.batches = {ImportedMeshBatch{0, 3, false}, ImportedMeshBatch{3, 3, true}};
+    return body;
+}
+
+// The placement an imported golden fixture's object sits at: the translation
+// its source node stated, and nothing else. Rotation and scale are the identity
+// because an import bakes the node's linear part into the geometry.
+TransformValues canonicalImportedPlacement() {
+    return placement(1.5, -0.25, 4.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0);
+}
+
+// The six remembered parameter sets both mixed fixtures give every Construction
+// Body. Shared so the fixtures differ in the thing under test — which branches
+// are present — rather than in incidental numbers.
+ConstructionObjectState canonicalSharedShape(PrimitiveKind kind) {
+    ConstructionObjectState shape;
+    shape.kind = kind;
+    shape.box = BoxDimensionsMeters{2.0, 1.0, 0.5};
+    shape.cylinder = CylinderDimensionsMeters{1.0, 2.0};
+    shape.sphere = SphereDimensionsMeters{1.5};
+    shape.cone = ConeDimensionsMeters{1.0, 2.0};
+    shape.capsule = CapsuleDimensionsMeters{1.0, 2.0};
+    shape.plane = PlaneDimensionsMeters{2.0, 2.0};
+    return shape;
+}
+
+// IMPORTED-ONLY: one body, no Construction branch at all.
+//
+// The fixture that proves an imported object needs no Construction Source
+// standing in for it — the file carries SCNE and IMPT and nothing else.
+ProjectDocument canonicalImportedOnlyDocument() {
+    ProjectDocument document;
+    document.kind = ProjectKind::Construction;
+    document.scene.nextObjectId = 2;
+    document.scene.activeObjectId = 1;
+
+    ProjectBodyPlacement body;
+    body.objectId = 1;
+    body.transform = canonicalImportedPlacement();
+    document.scene.bodies.push_back(body);
+
+    document.hasImported = true;
+    document.imported.bodies.push_back(canonicalImportedBody(1));
+    return document;
+}
+
+// CONSTRUCTION + IMPORTED: a sparse CONS beside an IMPT.
+//
+// This is the fixture that pins the generalized CONS rule — one entry per body
+// that HAS a Construction Source, in scene order, rather than one per body.
+ProjectDocument canonicalConstructionImportedDocument() {
+    ProjectDocument document;
+    document.kind = ProjectKind::Construction;
+    document.scene.nextObjectId = 3;
+    document.scene.activeObjectId = 2;
+
+    ProjectBodyPlacement first;
+    first.objectId = 1;
+    first.transform = placement(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0);
+    document.scene.bodies.push_back(first);
+
+    ProjectBodyPlacement second;
+    second.objectId = 2;
+    second.transform = canonicalImportedPlacement();
+    document.scene.bodies.push_back(second);
+
+    document.hasConstruction = true;
+    ProjectConstructionBody source;
+    source.objectId = 1;
+    source.shape = canonicalSharedShape(PrimitiveKind::Box);
+    source.features.push_back(ProjectFeatureRecord{});
+    document.construction.bodies.push_back(source);
+
+    document.hasImported = true;
+    document.imported.bodies.push_back(canonicalImportedBody(2));
+    return document;
+}
+
+// ALL THREE BRANCHES: Construction, Sculpt and Imported in one document.
+//
+// Three bodies — a plain Construction Body, a Construction Body carrying an
+// edited Frozen Sculpt Mesh, and an Imported Mesh — reopening in Sculpt on the
+// sculpted one. The scene interleaves the representations rather than grouping
+// them, so a reader that assumed a contiguous block of either would fail here.
+ProjectDocument canonicalMixedImportedDocument() {
+    ProjectDocument document;
+    document.kind = ProjectKind::Sculpt;
+    document.scene.nextObjectId = 4;
+    document.scene.activeObjectId = 2;
+
+    ProjectBodyPlacement first;
+    first.objectId = 1;
+    first.transform = placement(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0);
+    document.scene.bodies.push_back(first);
+
+    ProjectBodyPlacement second;
+    second.objectId = 2;
+    second.transform = placement(1.5, 0.5, -2.0, 370.0, 0.0, 90.0, 1.0, 1.0, 1.0);
+    document.scene.bodies.push_back(second);
+
+    ProjectBodyPlacement third;
+    third.objectId = 3;
+    third.transform = canonicalImportedPlacement();
+    document.scene.bodies.push_back(third);
+
+    document.hasConstruction = true;
+    ProjectConstructionBody firstSource;
+    firstSource.objectId = 1;
+    firstSource.shape = canonicalSharedShape(PrimitiveKind::Box);
+    firstSource.features.push_back(ProjectFeatureRecord{});
+    document.construction.bodies.push_back(firstSource);
+
+    ProjectConstructionBody secondSource;
+    secondSource.objectId = 2;
+    secondSource.shape = canonicalSharedShape(PrimitiveKind::Sphere);
+    secondSource.features.push_back(ProjectFeatureRecord{});
+    document.construction.bodies.push_back(secondSource);
+
+    document.hasSculpt = true;
+    ProjectSculptBody sculpt;
+    sculpt.objectId = 2;
+    sculpt.renderBothSides = false;
+    sculpt.sourceStale = true;
+    sculpt.hasEdits = true;
+    sculpt.positions = {0.0f,  0.0f,  0.0f,
+                        1.5f,  0.0f,  0.0f,
+                        0.0f,  1.25f, 0.0f,
+                        0.25f, 0.5f,  1.75f};
+    sculpt.indices = {0, 1, 2, 0, 1, 3, 0, 2, 3, 1, 2, 3};
+    document.sculpt.bodies.push_back(sculpt);
+
+    document.hasImported = true;
+    document.imported.bodies.push_back(canonicalImportedBody(3));
+    return document;
+}
+
 // The legacy mixed state: two bodies, both with a Construction Source, the
 // second also carrying an edited Frozen Sculpt Mesh, reopening in Sculpt.
 ProjectDocument canonicalSculptDocument() {
@@ -362,6 +517,79 @@ void restampSectionCrc(std::vector<uint8_t>& file, size_t headerStart, size_t pa
 // A live project to load INTO, built the way the product builds one, so that
 // "the pre-load project is unchanged" is a claim about a real scene rather than
 // about an empty one.
+// ---------------------------------------------------------------------------
+// The Imported Mesh fixture
+// ---------------------------------------------------------------------------
+//
+// Deliberately tiny and deliberately ASYMMETRIC in every dimension the format
+// carries: four vertices, two submeshes with DIFFERENT `doubleSided` answers,
+// and a placement no default could produce. A fixture whose two batches agreed,
+// or whose geometry was symmetric, would pass a roundtrip that had lost the very
+// thing being asserted.
+constexpr const char* kImportedFixtureName = "head_low";
+
+TransformValues importedFixturePlacement() {
+    TransformValues values;
+    values.positionX = 1.5;
+    values.positionY = -0.25;
+    values.positionZ = 4.0;
+    return values;
+}
+
+struct ImportedFixture {
+    // Four vertices, no two alike, so a dropped or reordered one shows.
+    std::vector<float> positions{0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+                                 0.0f, 2.0f, 0.0f, 0.0f, 0.0f, 3.0f};
+    // Unit directions, which is what the domain requires of a stored normal.
+    std::vector<float> normals{0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f,
+                               1.0f, 0.0f, 0.0f, 0.0f, 0.0f, -1.0f};
+    std::vector<uint32_t> indices{0, 1, 2, 0, 2, 3};
+    // Two submeshes, and only the second is double-sided: one answer for the
+    // whole mesh could not tell them apart.
+    std::vector<ImportedMeshBatch> batches{ImportedMeshBatch{0, 3, false},
+                                           ImportedMeshBatch{3, 3, true}};
+
+    ConstructionScene scene;
+
+    ImportedFixture() {
+        // The scene's first Body is a Construction Box, which this fixture is
+        // not about. It is detached rather than left in place so the document
+        // under test is genuinely imported-ONLY — the case that proves an
+        // imported body needs no Construction Source beside it.
+        SceneObject* added = scene.addImportedBody(mesh(), kImportedFixtureName);
+        added->transform().setValues(importedFixturePlacement());
+        publishSceneObject(*added);
+        scene.detachBody(scene.bodyAt(0).objectId());
+        scene.setActiveBody(scene.bodyAt(0).objectId());
+    }
+
+    ImportedMesh mesh() const {
+        return ImportedMesh::build(positions, normals, indices, batches);
+    }
+};
+
+// Recomputes the CRC of the LAST section in a file, after its payload was
+// edited by hand.
+//
+// A test that flipped a payload byte without this would only ever prove the
+// checksum works. Recomputing it is what lets the case underneath assert the
+// rule it is actually about.
+void rewriteLastSectionCrc(std::vector<uint8_t>* file) {
+    size_t at = kForgeHeaderBytes;
+    size_t lastHeader = 0;
+    size_t lastPayload = 0;
+    while (at + kForgeSectionHeaderBytes <= file->size()) {
+        uint64_t payloadBytes = 0;
+        std::memcpy(&payloadBytes, &(*file)[at + 8], sizeof(payloadBytes));
+        lastHeader = at;
+        lastPayload = static_cast<size_t>(payloadBytes);
+        at += kForgeSectionHeaderBytes + lastPayload;
+    }
+    const uint32_t crc =
+            crc32IsoHdlc(&(*file)[lastHeader + kForgeSectionHeaderBytes], lastPayload);
+    std::memcpy(&(*file)[lastHeader + 16], &crc, sizeof(crc));
+}
+
 struct LiveFixture {
     ConstructionScene scene;
     ConstructionHistory history{scene};
@@ -397,11 +625,19 @@ struct LiveFixture {
 
 std::string g_constructionSha;
 std::string g_sculptSha;
+std::string g_importedOnlySha;
+std::string g_constructionImportedSha;
+std::string g_mixedImportedSha;
 
 }  // namespace
 
 const char* canonicalConstructionFixtureSha256() { return g_constructionSha.c_str(); }
 const char* canonicalSculptFixtureSha256() { return g_sculptSha.c_str(); }
+const char* canonicalImportedOnlyFixtureSha256() { return g_importedOnlySha.c_str(); }
+const char* canonicalConstructionImportedFixtureSha256() {
+    return g_constructionImportedSha.c_str();
+}
+const char* canonicalMixedImportedFixtureSha256() { return g_mixedImportedSha.c_str(); }
 
 int runProjectSelfTests(ProjectSelfTestResult* out, int maxOut) {
     Recorder r{out, maxOut};
@@ -422,6 +658,46 @@ int runProjectSelfTests(ProjectSelfTestResult* out, int maxOut) {
 
     g_constructionSha = sha256Hex(constructionBytes);
     g_sculptSha = sha256Hex(sculptBytes);
+
+    // The three `IMPORT-01A` fixtures, encoded here so their digests are
+    // reported beside the other two whether their case passes or fails.
+    const std::vector<uint8_t> importedOnlyBytes =
+            encodeProjectV1(canonicalImportedOnlyDocument(), &why);
+    r.check("IMP01A_19_canonical_imported_only_document_encodes",
+            why == ProjectCodecStatus::Ok && !importedOnlyBytes.empty());
+    const std::vector<uint8_t> constructionImportedBytes =
+            encodeProjectV1(canonicalConstructionImportedDocument(), &why);
+    r.check("IMP01A_19_canonical_construction_imported_document_encodes",
+            why == ProjectCodecStatus::Ok && !constructionImportedBytes.empty());
+    const std::vector<uint8_t> mixedImportedBytes =
+            encodeProjectV1(canonicalMixedImportedDocument(), &why);
+    r.check("IMP01A_19_canonical_mixed_imported_document_encodes",
+            why == ProjectCodecStatus::Ok && !mixedImportedBytes.empty());
+    g_importedOnlySha = sha256Hex(importedOnlyBytes);
+    g_constructionImportedSha = sha256Hex(constructionImportedBytes);
+    g_mixedImportedSha = sha256Hex(mixedImportedBytes);
+    {
+        // Every one of them decodes back to the document it came from, and
+        // re-encodes to the same bytes: the deterministic-writer rule, applied
+        // to the branch that carries geometry.
+        ProjectDocument back;
+        r.check("IMP01A_19_the_imported_fixtures_roundtrip_bit_for_bit",
+                decodeProject(importedOnlyBytes.data(), importedOnlyBytes.size(), &back)
+                                == ProjectCodecStatus::Ok
+                        && sameProjectDocument(canonicalImportedOnlyDocument(), back)
+                        && encodeProjectV1(back) == importedOnlyBytes);
+        r.check("IMP01A_19_the_construction_imported_fixture_roundtrips_bit_for_bit",
+                decodeProject(constructionImportedBytes.data(),
+                              constructionImportedBytes.size(), &back)
+                                == ProjectCodecStatus::Ok
+                        && sameProjectDocument(canonicalConstructionImportedDocument(), back)
+                        && encodeProjectV1(back) == constructionImportedBytes);
+        r.check("IMP01A_19_the_mixed_imported_fixture_roundtrips_bit_for_bit",
+                decodeProject(mixedImportedBytes.data(), mixedImportedBytes.size(), &back)
+                                == ProjectCodecStatus::Ok
+                        && sameProjectDocument(canonicalMixedImportedDocument(), back)
+                        && encodeProjectV1(back) == mixedImportedBytes);
+    }
     {
         // A known-answer test for the digest itself, so a golden-corpus failure
         // can only mean the ENCODER moved. Without it, a bug in this file's
@@ -1042,6 +1318,19 @@ int runProjectSelfTests(ProjectSelfTestResult* out, int maxOut) {
         r.check("FSR1A_12_canonical_sculpt_fixture_matches_the_committed_digest",
                 g_sculptSha
                         == "112b109731a43bf57a0f77b34794e7ce2529e056d9b18f061cd3c891f51a2784");
+        // The three `IMPORT-01A` fixtures, on exactly the same terms. They are
+        // what proves the imported branch is a SPECIFICATION and not merely
+        // whatever this encoder happens to emit: the PowerShell builder writes
+        // them from DATA_PACKAGE_SPEC.md and shares no line with the codec.
+        r.check("IMP01A_19_imported_only_fixture_matches_the_committed_digest",
+                g_importedOnlySha
+                        == "0f42be318da9faf4aa780e152b8550171085a267882d5e6e69cc9ef29a1539a8");
+        r.check("IMP01A_19_construction_imported_fixture_matches_the_committed_digest",
+                g_constructionImportedSha
+                        == "539e10e7a9e388ab1ca72867b78c1e461d3bbe0ef5876d87fa54bc6bd6ae7a51");
+        r.check("IMP01A_19_mixed_imported_fixture_matches_the_committed_digest",
+                g_mixedImportedSha
+                        == "3fdc82a099da69b93552d7c84c56002ed8ae24ba7086ddbc6a69a9bbf671f1fb");
         // The dispatch seam exists and answers for exactly one version. There
         // has never been a production format before v1, so there is nothing to
         // migrate FROM and no v0 branch is claimed.
@@ -1259,6 +1548,293 @@ int runProjectSelfTests(ProjectSelfTestResult* out, int maxOut) {
                 !encoded.empty() && encoded.size() == predicted);
         r.check("FSR1B_13_a_captured_document_carries_no_sculpt_branch_without_a_sculpt_mesh",
                 !document.hasSculpt);
+    }
+
+    // -----------------------------------------------------------------------
+    // IMP01A-16..20: the Imported Mesh branch of the `.forge` contract
+    // -----------------------------------------------------------------------
+    //
+    // An Imported Mesh is the first representation whose GEOMETRY is project
+    // truth: a Construction Body's mesh is regenerated from its parameters on
+    // every load, and an imported object has no parameters and no source file
+    // to go back to. These cases hold the three properties that follow from
+    // that — the arrays come back bit for bit, a body is described by exactly
+    // one branch, and a reader that could not rebuild one refuses the file
+    // rather than opening it with objects missing.
+
+    // IMP01A-16: an imported-only project is self-contained.
+    {
+        ImportedFixture fixture;
+        const ProjectDocument document =
+                captureProjectDocument(fixture.scene, ProjectKind::Construction);
+        r.check("IMP01A_16_an_imported_body_writes_the_imported_branch", document.hasImported);
+        r.check("IMP01A_16_and_no_construction_branch_is_invented_for_it",
+                !document.hasConstruction && document.imported.bodies.size() == 1);
+
+        ProjectCodecStatus why = ProjectCodecStatus::Ok;
+        const std::vector<uint8_t> encoded = encodeProjectV1(document, &why);
+        r.check("IMP01A_16_an_imported_only_project_encodes", !encoded.empty()
+                && why == ProjectCodecStatus::Ok);
+
+        ProjectDocument decoded;
+        const ProjectCodecStatus status =
+                decodeProject(encoded.data(), encoded.size(), &decoded);
+        r.check("IMP01A_16_and_decodes", status == ProjectCodecStatus::Ok);
+        r.check("IMP01A_16_bit_for_bit_including_normals_and_batches",
+                sameProjectDocument(document, decoded));
+        r.check("IMP01A_16_the_encoder_is_deterministic",
+                encodeProjectV1(decoded) == encoded);
+        r.check("IMP01A_16_the_name_survives_the_file",
+                decoded.hasImported && decoded.imported.bodies.size() == 1
+                        && decoded.imported.bodies[0].name == kImportedFixtureName);
+
+        // And the LOAD rebuilds a real imported body, geometry and all.
+        LiveFixture live;
+        ProjectLoadReport report;
+        r.check("IMP01A_16_an_imported_only_project_loads",
+                live.load(encoded, &report) == ProjectCodecStatus::Ok);
+        r.check("IMP01A_16_it_comes_back_as_one_imported_body",
+                report.bodies == 1 && report.importedBodies == 1);
+        const SceneObject& reloaded = live.scene.bodyAt(0);
+        const ImportedMesh* mesh = reloaded.importedOrNull();
+        r.check("IMP01A_16_with_no_construction_source",
+                reloaded.isImported() && reloaded.constructionOrNull() == nullptr);
+        r.check("IMP01A_16_and_the_same_geometry",
+                mesh != nullptr && mesh->positions() == fixture.positions
+                        && mesh->normals() == fixture.normals
+                        && mesh->indices() == fixture.indices);
+        r.check("IMP01A_16_the_per_submesh_double_sided_answer_survives",
+                mesh != nullptr && mesh->batchCount() == 2 && !mesh->batches()[0].doubleSided
+                        && mesh->batches()[1].doubleSided);
+        r.check("IMP01A_16_and_the_placement_survives",
+                sameConstructionPlacement(reloaded.transform().values(),
+                                          importedFixturePlacement()));
+        r.check("IMP01A_16_a_reloaded_body_is_drawable",
+                reloaded.meshStore().currentRevision() != kNoMeshRevision);
+        // Re-captured from the LIVE scene, so this proves the whole round trip
+        // rather than only that the decoder inverts the encoder.
+        r.check("IMP01A_16_re_encoding_the_loaded_project_is_byte_identical",
+                encodeProjectV1(captureProjectDocument(live.scene, ProjectKind::Construction))
+                        == encoded);
+    }
+
+    // IMP01A-17/18: mixed scenes. Construction + Imported, then all three.
+    {
+        LiveFixture live;  // two Construction Bodies
+        ImportedFixture imported;
+        SceneObject* added = live.scene.addImportedBody(imported.mesh(), kImportedFixtureName);
+        publishSceneObject(*added);
+        const ObjectId importedId = added->objectId();
+
+        const ProjectDocument mixed =
+                captureProjectDocument(live.scene, ProjectKind::Construction);
+        r.check("IMP01A_17_a_mixed_project_writes_both_branches",
+                mixed.hasConstruction && mixed.hasImported);
+        r.check("IMP01A_17_construction_carries_only_the_bodies_that_have_a_source",
+                mixed.construction.bodies.size() == 2 && mixed.imported.bodies.size() == 1
+                        && mixed.scene.bodies.size() == 3);
+        const std::vector<uint8_t> mixedBytes = encodeProjectV1(mixed);
+        ProjectDocument mixedBack;
+        r.check("IMP01A_17_a_mixed_project_roundtrips",
+                !mixedBytes.empty()
+                        && decodeProject(mixedBytes.data(), mixedBytes.size(), &mixedBack)
+                                == ProjectCodecStatus::Ok
+                        && sameProjectDocument(mixed, mixedBack));
+
+        LiveFixture target;
+        ProjectLoadReport report;
+        r.check("IMP01A_17_a_mixed_project_loads_atomically",
+                target.load(mixedBytes, &report) == ProjectCodecStatus::Ok);
+        r.check("IMP01A_17_with_both_representations_rebuilt",
+                report.bodies == 3 && report.importedBodies == 1);
+        const SceneObject* back = target.scene.findBody(importedId);
+        r.check("IMP01A_17_the_imported_body_keeps_its_identity_and_order",
+                back != nullptr && back->isImported()
+                        && target.scene.indexOfBody(importedId) == 2);
+        r.check("IMP01A_17_and_the_construction_bodies_keep_theirs",
+                target.scene.bodyAt(0).hasConstructionSource()
+                        && target.scene.bodyAt(1).hasConstructionSource());
+
+        // IMP01A-18: add a Frozen Sculpt Mesh to one Construction Body and the
+        // file carries all three branches at once.
+        SceneObject& sculpted = live.scene.bodyAt(1);
+        MeshValidation meshWhy = MeshValidation::Ok;
+        const bool froze = sculpted.frozenSculpt().mesh.freezeFrom(
+                sculpted.construction().generateMesh(), sculpted.objectId(), &meshWhy);
+        r.check("IMP01A_18_the_fixture_freezes_a_sculpt_mesh", froze);
+        const ProjectDocument all =
+                captureProjectDocument(live.scene, ProjectKind::Construction);
+        r.check("IMP01A_18_all_three_branches_are_written",
+                all.hasConstruction && all.hasSculpt && all.hasImported);
+        const std::vector<uint8_t> allBytes = encodeProjectV1(all);
+        ProjectDocument allBack;
+        r.check("IMP01A_18_all_three_roundtrip",
+                !allBytes.empty()
+                        && decodeProject(allBytes.data(), allBytes.size(), &allBack)
+                                == ProjectCodecStatus::Ok
+                        && sameProjectDocument(all, allBack));
+        LiveFixture allTarget;
+        ProjectLoadReport allReport;
+        r.check("IMP01A_18_and_load_together",
+                allTarget.load(allBytes, &allReport) == ProjectCodecStatus::Ok
+                        && allReport.bodies == 3 && allReport.sculptMeshes == 1
+                        && allReport.importedBodies == 1);
+    }
+
+    // IMP01A-19: a project with no imported body is byte-for-byte what it was.
+    {
+        // The legacy digests in DATA_PACKAGE_SPEC.md are checked above; this
+        // states the rule that makes them still true. The imported branch costs
+        // a project that has none exactly nothing: no section, no header flag,
+        // and therefore not one byte.
+        LiveFixture live;
+        const ProjectDocument document =
+                captureProjectDocument(live.scene, ProjectKind::Construction);
+        const std::vector<uint8_t> encoded = encodeProjectV1(document);
+        const size_t bodies = document.scene.bodies.size();
+        const size_t predicted = static_cast<size_t>(kForgeHeaderBytes)
+                                 + (kForgeSectionHeaderBytes + 4 + 8 + 8 + bodies * 80)
+                                 + (kForgeSectionHeaderBytes + 4 + bodies * 114);
+        r.check("IMP01A_19_a_project_with_no_imported_body_is_the_same_arithmetic",
+                !document.hasImported && encoded.size() == predicted);
+        r.check("IMP01A_19_and_its_header_flags_carry_no_imported_bit",
+                encoded.size() > 15 && (encoded[15] & kHeaderFlagHasImported) == 0u);
+    }
+
+    // IMP01A-20: required Imported truth is never silently dropped, and every
+    // way of describing it wrongly is refused.
+    {
+        ImportedFixture fixture;
+        const ProjectDocument document =
+                captureProjectDocument(fixture.scene, ProjectKind::Construction);
+        const std::vector<uint8_t> encoded = encodeProjectV1(document);
+
+        // The compatibility gate, stated as bytes: the header says the file
+        // carries an imported branch, and the section is REQUIRED. A reader
+        // from before `IMPORT-01A` refuses the first on its reserved-bit check
+        // and the second on its unknown-required-section rule, so it cannot
+        // open the project with the imported objects quietly missing.
+        r.check("IMP01A_20_the_header_states_the_imported_branch",
+                encoded.size() > 15 && (encoded[15] & kHeaderFlagHasImported) != 0u);
+        bool importedSectionIsRequired = false;
+        for (size_t at = kForgeHeaderBytes; at + kForgeSectionHeaderBytes <= encoded.size();) {
+            const bool isImported = std::memcmp(&encoded[at], kSectionTagImported, 4) == 0;
+            uint64_t payloadBytes = 0;
+            std::memcpy(&payloadBytes, &encoded[at + 8], sizeof(payloadBytes));
+            if (isImported) {
+                importedSectionIsRequired = (encoded[at + 6] & kSectionFlagRequired) != 0u;
+                break;
+            }
+            at += kForgeSectionHeaderBytes + static_cast<size_t>(payloadBytes);
+        }
+        r.check("IMP01A_20_the_imported_section_carries_the_required_bit",
+                importedSectionIsRequired);
+
+        // A name the importer could not have produced.
+        {
+            ProjectDocument bad = document;
+            bad.imported.bodies[0].name = " untrimmed";
+            r.check("IMP01A_20_an_uncanonical_name_is_refused",
+                    validateProjectDocument(bad) == ProjectCodecStatus::InvalidSemanticValue);
+            bad.imported.bodies[0].name.clear();
+            r.check("IMP01A_20_an_empty_name_is_refused",
+                    validateProjectDocument(bad) == ProjectCodecStatus::InvalidSemanticValue);
+            bad.imported.bodies[0].name = std::string("head\x01low");
+            r.check("IMP01A_20_a_control_character_in_a_name_is_refused",
+                    validateProjectDocument(bad) == ProjectCodecStatus::InvalidSemanticValue);
+        }
+        // Geometry the live model refuses, through the DOMAIN's own validator.
+        {
+            ProjectDocument bad = document;
+            bad.imported.bodies[0].indices[0] = bad.imported.bodies[0].vertexCount();
+            r.check("IMP01A_20_an_index_outside_the_vertex_array_is_refused",
+                    validateProjectDocument(bad) == ProjectCodecStatus::InvalidSemanticValue);
+        }
+        {
+            ProjectDocument bad = document;
+            bad.imported.bodies[0].normals[0] = 4.0f;  // no longer a direction
+            r.check("IMP01A_20_a_normal_that_is_not_a_unit_direction_is_refused",
+                    validateProjectDocument(bad) == ProjectCodecStatus::InvalidSemanticValue);
+        }
+        {
+            ProjectDocument bad = document;
+            bad.imported.bodies[0].batches[0].indexCount += 3;  // a gap, then an overrun
+            r.check("IMP01A_20_batches_that_do_not_tile_the_indices_are_refused",
+                    validateProjectDocument(bad) == ProjectCodecStatus::BadPayload);
+        }
+        {
+            ProjectDocument bad = document;
+            bad.imported.bodies[0].normals.pop_back();
+            r.check("IMP01A_20_one_normal_short_is_refused",
+                    validateProjectDocument(bad) == ProjectCodecStatus::BadPayload);
+        }
+        // A body claimed by both branches: two answers to what the object IS.
+        {
+            ProjectDocument bad = document;
+            ProjectConstructionBody stowaway;
+            stowaway.objectId = bad.scene.bodies[0].objectId;
+            stowaway.shape = ConstructionObjectState{};
+            stowaway.features.push_back(ProjectFeatureRecord{});
+            bad.construction.bodies.push_back(stowaway);
+            bad.hasConstruction = true;
+            r.check("IMP01A_20_a_body_in_both_branches_is_refused",
+                    validateProjectDocument(bad) == ProjectCodecStatus::UnresolvedReference);
+        }
+        // A Frozen Sculpt Mesh for an imported body: `IMPORT-01B`, not this.
+        {
+            ProjectDocument bad = document;
+            ProjectSculptBody sculpt;
+            sculpt.objectId = bad.scene.bodies[0].objectId;
+            sculpt.positions = {0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f};
+            sculpt.indices = {0, 1, 2};
+            bad.sculpt.bodies.push_back(sculpt);
+            bad.hasSculpt = true;
+            r.check("IMP01A_20_a_sculpt_mesh_for_an_imported_body_is_refused",
+                    validateProjectDocument(bad) == ProjectCodecStatus::UnresolvedReference);
+        }
+        // A truncated file fails closed and applies nothing, exactly as every
+        // other corrupt document does.
+        {
+            std::vector<uint8_t> truncated(encoded.begin(), encoded.end() - 24);
+            ProjectDocument out;
+            r.check("IMP01A_20_a_truncated_imported_file_is_refused",
+                    decodeProject(truncated.data(), truncated.size(), &out)
+                            != ProjectCodecStatus::Ok);
+        }
+        // One flipped byte inside the imported payload is caught by the CRC.
+        {
+            std::vector<uint8_t> corrupt = encoded;
+            corrupt[corrupt.size() - 8] ^= 0x01u;
+            ProjectDocument out;
+            r.check("IMP01A_20_a_flipped_bit_in_the_imported_payload_is_caught",
+                    decodeProject(corrupt.data(), corrupt.size(), &out)
+                            == ProjectCodecStatus::ChecksumMismatch);
+        }
+        // A reserved batch-flag bit is refused rather than ignored.
+        {
+            std::vector<uint8_t> tweaked = encoded;
+            // The final byte of an IMPT entry is its last batch's flags byte.
+            tweaked[tweaked.size() - 1] = 0x02u;
+            // The CRC has to agree, or this would only prove the checksum works.
+            rewriteLastSectionCrc(&tweaked);
+            ProjectDocument out;
+            r.check("IMP01A_20_a_reserved_batch_flag_bit_is_refused",
+                    decodeProject(tweaked.data(), tweaked.size(), &out)
+                            == ProjectCodecStatus::BadPayload);
+        }
+        // And a refused load leaves the live project untouched, which is the
+        // whole reason the decode happens into temporary state.
+        {
+            LiveFixture live;
+            const std::vector<uint8_t> before =
+                    encodeProjectV1(captureProjectDocument(live.scene, ProjectKind::Construction));
+            std::vector<uint8_t> truncated(encoded.begin(), encoded.end() - 24);
+            r.check("IMP01A_20_a_refused_imported_load_changes_nothing",
+                    live.load(truncated, nullptr) != ProjectCodecStatus::Ok
+                            && encodeProjectV1(captureProjectDocument(
+                                       live.scene, ProjectKind::Construction))
+                                    == before);
+        }
     }
 
     return r.n;

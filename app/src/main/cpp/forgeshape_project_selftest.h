@@ -26,4 +26,10 @@ int runProjectSelfTests(ProjectSelfTestResult* out, int maxOut);
 const char* canonicalConstructionFixtureSha256();
 const char* canonicalSculptFixtureSha256();
 
+// The same, for the three `IMPORT-01A` fixtures: an imported-only project, a
+// Construction body beside an imported one, and all three branches at once.
+const char* canonicalImportedOnlyFixtureSha256();
+const char* canonicalConstructionImportedFixtureSha256();
+const char* canonicalMixedImportedFixtureSha256();
+
 }  // namespace forgeshape

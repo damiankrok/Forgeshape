@@ -1308,7 +1308,22 @@ PrimitiveApplyResult applyPrimitive(ConstructionObject& object, MeshStore& store
 }
 
 PrimitiveApplyResult applyConstructionPrimitive(const PrimitiveSpec& requested) {
-    return applyPrimitive(constructionObject(), meshStore(), requested);
+    ConstructionObject* object = activeConstructionOrNull();
+    if (object == nullptr) {
+        // The active body is an Imported Mesh. A shape edit has nothing to act
+        // on: an imported object is not derived from parameters and nothing may
+        // invent a primitive for it. Refused the same way an invalid dimension
+        // is — nothing written, nothing published, no history step — so the one
+        // Construction shape entry point stays the only rule and the UI's
+        // absent control is a second line of defence rather than the only one.
+        //
+        // `spec` is left default rather than echoing the request: on Rejected
+        // it means "the previous valid state", and this body has none.
+        PrimitiveApplyResult result;
+        result.status = PrimitiveUpdateStatus::Rejected;
+        return result;
+    }
+    return applyPrimitive(*object, meshStore(), requested);
 }
 
 PrimitiveApplyResult applyConstructionBox(Meters width, Meters height, Meters depth) {

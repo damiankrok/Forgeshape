@@ -223,7 +223,7 @@ bool primitiveKindFromFileCode(uint8_t code, PrimitiveKind* out) {
 
 bool sameProjectDocument(const ProjectDocument& a, const ProjectDocument& b) {
     if (a.kind != b.kind || a.hasConstruction != b.hasConstruction
-        || a.hasSculpt != b.hasSculpt) {
+        || a.hasSculpt != b.hasSculpt || a.hasImported != b.hasImported) {
         return false;
     }
     if (a.scene.nextObjectId != b.scene.nextObjectId
@@ -271,6 +271,43 @@ bool sameProjectDocument(const ProjectDocument& a, const ProjectDocument& b) {
             }
             for (size_t v = 0; v < left.positions.size(); ++v) {
                 if (!sameBits(left.positions[v], right.positions[v])) {
+                    return false;
+                }
+            }
+        }
+    }
+    if (a.hasImported) {
+        if (a.imported.bodies.size() != b.imported.bodies.size()) {
+            return false;
+        }
+        for (size_t i = 0; i < a.imported.bodies.size(); ++i) {
+            const ProjectImportedBody& left = a.imported.bodies[i];
+            const ProjectImportedBody& right = b.imported.bodies[i];
+            if (left.objectId != right.objectId || left.name != right.name
+                || left.positions.size() != right.positions.size()
+                || left.normals.size() != right.normals.size()
+                || left.indices != right.indices
+                || left.batches.size() != right.batches.size()) {
+                return false;
+            }
+            // Positions AND normals bit for bit, for the same reason the sculpt
+            // branch compares positions that way: an imported mesh is the only
+            // copy of itself, and a value that came back one ULP away is a
+            // roundtrip that lost something.
+            for (size_t v = 0; v < left.positions.size(); ++v) {
+                if (!sameBits(left.positions[v], right.positions[v])) {
+                    return false;
+                }
+            }
+            for (size_t v = 0; v < left.normals.size(); ++v) {
+                if (!sameBits(left.normals[v], right.normals[v])) {
+                    return false;
+                }
+            }
+            for (size_t bIndex = 0; bIndex < left.batches.size(); ++bIndex) {
+                if (left.batches[bIndex].firstIndex != right.batches[bIndex].firstIndex
+                    || left.batches[bIndex].indexCount != right.batches[bIndex].indexCount
+                    || left.batches[bIndex].doubleSided != right.batches[bIndex].doubleSided) {
                     return false;
                 }
             }
@@ -325,25 +362,41 @@ ProjectCodecStatus validateProjectDocument(const ProjectDocument& document) {
         return ProjectCodecStatus::UnresolvedReference;
     }
 
-    if (document.kind == ProjectKind::Construction && !document.hasConstruction) {
-        return ProjectCodecStatus::MissingRequiredSection;
-    }
     if (document.kind == ProjectKind::Sculpt && !document.hasSculpt) {
         return ProjectCodecStatus::MissingRequiredSection;
     }
 
+    // Which representation each SCNE body's geometry comes from, filled in by
+    // the two branches below. A body must be named by EXACTLY ONE of them:
+    // neither leaves a body with no geometry at all, and both would be two
+    // answers to what the object is.
+    std::vector<uint8_t> covered(bodies.size(), 0);
+
     if (document.hasConstruction) {
-        // One Construction Source per body, in scene order. Every body in the
-        // running product has one, so a file that does not is either truncated
-        // semantics or a different project than its own SCNE describes.
-        if (document.construction.bodies.size() != bodies.size()) {
-            return ProjectCodecStatus::UnresolvedReference;
+        // A SUBSEQUENCE of the scene, in ascending scene order — every body
+        // that has a Construction Source and no other. It read as "one per
+        // body" until `IMPORT-01A` only because every body had one.
+        if (document.construction.bodies.empty()
+            || document.construction.bodies.size() > bodies.size()) {
+            return ProjectCodecStatus::ImpossibleCount;
         }
-        for (size_t i = 0; i < bodies.size(); ++i) {
+        size_t sceneCursor = 0;
+        for (size_t i = 0; i < document.construction.bodies.size(); ++i) {
             const ProjectConstructionBody& body = document.construction.bodies[i];
-            if (body.objectId != bodies[i].objectId) {
+            size_t found = bodies.size();
+            for (size_t s = sceneCursor; s < bodies.size(); ++s) {
+                if (bodies[s].objectId == body.objectId) {
+                    found = s;
+                    break;
+                }
+            }
+            if (found == bodies.size()) {
                 return ProjectCodecStatus::UnresolvedReference;
             }
+            // Strictly ascending, which makes a duplicate impossible without a
+            // second pass and keeps the writer's output canonical.
+            sceneCursor = found + 1;
+            covered[found] = 1;
             if (primitiveFileCode(body.shape.kind) == 0) {
                 return ProjectCodecStatus::InvalidSemanticValue;
             }
@@ -362,6 +415,80 @@ ProjectCodecStatus validateProjectDocument(const ProjectDocument& document) {
             }
         }
     }
+
+    if (document.hasImported) {
+        // Same subsequence rule as CONS, and for the same reason: the file's
+        // order is the scene's order, and a reader must be able to say which
+        // body an entry belongs to without searching backwards.
+        if (document.imported.bodies.empty()
+            || document.imported.bodies.size() > bodies.size()) {
+            return ProjectCodecStatus::ImpossibleCount;
+        }
+        size_t sceneCursor = 0;
+        for (const ProjectImportedBody& body : document.imported.bodies) {
+            size_t found = bodies.size();
+            for (size_t s = sceneCursor; s < bodies.size(); ++s) {
+                if (bodies[s].objectId == body.objectId) {
+                    found = s;
+                    break;
+                }
+            }
+            if (found == bodies.size()) {
+                return ProjectCodecStatus::UnresolvedReference;
+            }
+            sceneCursor = found + 1;
+            if (covered[found] != 0) {
+                // Already claimed by CONS. A body cannot be both a primitive
+                // and a mesh read from a file: that is two answers to what the
+                // object IS, and every later edit would have to pick one.
+                return ProjectCodecStatus::UnresolvedReference;
+            }
+            covered[found] = 2;
+
+            // The name is checked against the DOMAIN's own rule rather than a
+            // restatement of it, so a file cannot carry a name the importer
+            // could not have produced — a control character, malformed UTF-8,
+            // untrimmed padding or more than the stored maximum.
+            if (!importedMeshNameIsStorable(body.name)) {
+                return ProjectCodecStatus::InvalidSemanticValue;
+            }
+            if (body.positions.size() != static_cast<size_t>(body.vertexCount()) * 3u) {
+                return ProjectCodecStatus::BadPayload;
+            }
+            // And the geometry against the domain's own validator, which is the
+            // same function `ImportedMesh::build` runs. There is one rule for
+            // what an imported object may be, and the file is held to it.
+            const ImportedMeshValidation why = validateImportedMeshData(
+                    body.positions, body.normals, body.indices, body.batches);
+            switch (why) {
+                case ImportedMeshValidation::Ok:
+                    break;
+                case ImportedMeshValidation::EmptyVertices:
+                case ImportedMeshValidation::EmptyIndices:
+                case ImportedMeshValidation::TooLarge:
+                case ImportedMeshValidation::IndexCountNotTriangles:
+                case ImportedMeshValidation::NoBatches:
+                    return ProjectCodecStatus::ImpossibleCount;
+                case ImportedMeshValidation::CountMismatch:
+                case ImportedMeshValidation::BatchesDoNotTile:
+                    return ProjectCodecStatus::BadPayload;
+                default:
+                    // An index outside the vertex array, a non-finite position
+                    // or a normal that is not a direction: values the live
+                    // model refuses.
+                    return ProjectCodecStatus::InvalidSemanticValue;
+            }
+        }
+    }
+
+    // A body named by NEITHER branch is deliberately not refused here.
+    //
+    // It is a legal document: an optional section at a version this reader
+    // cannot read is skipped by contract, and a Sculpt project's retained CONS
+    // companion is exactly such a section. What that leaves is a document this
+    // BUILD cannot evaluate, which is a different sentence and is said in
+    // forgeshape_project_state.cpp, where the reason is about the runtime
+    // rather than about the file.
 
     if (document.hasSculpt) {
         // "Carries a sculpt branch" and "carries an EMPTY sculpt branch" are
@@ -403,6 +530,14 @@ ProjectCodecStatus validateProjectDocument(const ProjectDocument& document) {
                 return ProjectCodecStatus::UnresolvedReference;
             }
             sceneCursor = found + 1;
+            if (covered[found] == 2) {
+                // A Frozen Sculpt Mesh for an Imported Mesh body. `IMPORT-01A`
+                // deliberately has no Start Sculpting on an imported object —
+                // that is `IMPORT-01B` — so a file claiming one describes a
+                // project this version cannot evaluate, and a load that
+                // silently dropped it would lose whichever half it dropped.
+                return ProjectCodecStatus::UnresolvedReference;
+            }
 
             const uint32_t vertexCount = body.vertexCount();
             const uint32_t indexCount = body.indexCount();
@@ -489,9 +624,44 @@ std::vector<uint8_t> encodeProjectV1(const ProjectDocument& document,
         }
     }
 
+    std::vector<uint8_t> importedPayload;
+    if (document.hasImported) {
+        ByteWriter out(importedPayload);
+        out.u32(static_cast<uint32_t>(document.imported.bodies.size()));
+        for (const ProjectImportedBody& body : document.imported.bodies) {
+            out.u64(body.objectId);
+            // The name's length as a u16 before its bytes: no terminator, and
+            // no fixed-width padding, so the same name is always the same
+            // bytes. Every field after it is read byte-wise little-endian, so
+            // a variable-length field in the middle costs nothing in alignment.
+            out.u16(static_cast<uint16_t>(body.name.size()));
+            if (!body.name.empty()) {
+                out.bytes(body.name.data(), body.name.size());
+            }
+            out.u32(body.vertexCount());
+            out.u32(body.indexCount());
+            out.u32(body.batchCount());
+            for (float value : body.positions) {
+                out.f32(value);
+            }
+            for (float value : body.normals) {
+                out.f32(value);
+            }
+            for (uint32_t index : body.indices) {
+                out.u32(index);
+            }
+            for (const ImportedMeshBatch& batch : body.batches) {
+                out.u32(batch.firstIndex);
+                out.u32(batch.indexCount);
+                out.u8(batch.doubleSided ? 0x01u : 0x00u);
+            }
+        }
+    }
+
     uint32_t sectionCount = 1;
     if (document.hasConstruction) ++sectionCount;
     if (document.hasSculpt) ++sectionCount;
+    if (document.hasImported) ++sectionCount;
 
     uint64_t fileBytes = kForgeHeaderBytes;
     fileBytes += kForgeSectionHeaderBytes + scenePayload.size();
@@ -500,6 +670,9 @@ std::vector<uint8_t> encodeProjectV1(const ProjectDocument& document,
     }
     if (document.hasSculpt) {
         fileBytes += kForgeSectionHeaderBytes + sculptPayload.size();
+    }
+    if (document.hasImported) {
+        fileBytes += kForgeSectionHeaderBytes + importedPayload.size();
     }
 
     std::vector<uint8_t> file;
@@ -512,7 +685,8 @@ std::vector<uint8_t> encodeProjectV1(const ProjectDocument& document,
         out.u16(kForgeHeaderBytes);
         out.u8(static_cast<uint8_t>(document.kind));
         out.u8(static_cast<uint8_t>((document.hasConstruction ? kHeaderFlagHasConstruction : 0u)
-                                    | (document.hasSculpt ? kHeaderFlagHasSculpt : 0u)));
+                                    | (document.hasSculpt ? kHeaderFlagHasSculpt : 0u)
+                                    | (document.hasImported ? kHeaderFlagHasImported : 0u)));
         out.u32(sectionCount);
         out.u64(fileBytes);
     }
@@ -528,6 +702,16 @@ std::vector<uint8_t> encodeProjectV1(const ProjectDocument& document,
     if (document.hasSculpt) {
         appendSection(file, kSectionTagSculpt, kSculptSectionVersion,
                       /*required=*/document.kind == ProjectKind::Sculpt, sculptPayload);
+    }
+    if (document.hasImported) {
+        // ALWAYS required, in either project kind, unlike CONS and SCUL whose
+        // required bit follows the header's ProjectKind. Those two are branches
+        // of data a reader can legitimately skip because the other branch still
+        // describes the same bodies. An Imported Mesh has no other branch: it
+        // is the only copy of its own geometry, and a reader that skipped it
+        // would open the project with objects silently missing.
+        appendSection(file, kSectionTagImported, kImportedSectionVersion, /*required=*/true,
+                      importedPayload);
     }
     return file;
 }
@@ -673,6 +857,99 @@ ProjectCodecStatus decodeSculptPayload(ByteReader& in, ProjectSculptRecord* reco
     return ProjectCodecStatus::Ok;
 }
 
+ProjectCodecStatus decodeImportedPayload(ByteReader& in, ProjectImportedRecord* record) {
+    uint32_t bodyCount = 0;
+    if (!in.u32(&bodyCount)) {
+        return ProjectCodecStatus::Truncated;
+    }
+    if (bodyCount == 0 || bodyCount > kMaxProjectBodies) {
+        return ProjectCodecStatus::ImpossibleCount;
+    }
+    // Smallest possible IMPT entry: identity, an empty name's length, and the
+    // three counts. Checked against what is actually left before the resize,
+    // for the same reason every other section checks it there.
+    if (static_cast<uint64_t>(bodyCount) * (8ull + 2ull + 4ull + 4ull + 4ull) > in.remaining()) {
+        return ProjectCodecStatus::Truncated;
+    }
+    record->bodies.resize(bodyCount);
+    for (uint32_t i = 0; i < bodyCount; ++i) {
+        ProjectImportedBody& body = record->bodies[i];
+        uint16_t nameBytes = 0;
+        if (!in.u64(&body.objectId) || !in.u16(&nameBytes)) {
+            return ProjectCodecStatus::Truncated;
+        }
+        // Bounded before it is read, so a fabricated length cannot make this
+        // allocate. The ceiling is the domain's own, not a second number.
+        if (nameBytes > kMaxImportedMeshNameBytes) {
+            return ProjectCodecStatus::ImpossibleCount;
+        }
+        if (static_cast<uint64_t>(nameBytes) > in.remaining()) {
+            return ProjectCodecStatus::Truncated;
+        }
+        body.name.resize(nameBytes);
+        if (nameBytes > 0 && !in.raw(&body.name[0], nameBytes)) {
+            return ProjectCodecStatus::Truncated;
+        }
+
+        uint32_t vertexCount = 0;
+        uint32_t indexCount = 0;
+        uint32_t batchCount = 0;
+        if (!in.u32(&vertexCount) || !in.u32(&indexCount) || !in.u32(&batchCount)) {
+            return ProjectCodecStatus::Truncated;
+        }
+        if (vertexCount == 0 || vertexCount > kMaxImportedMeshVertices || indexCount == 0
+            || indexCount > kMaxImportedMeshIndices || (indexCount % 3u) != 0u || batchCount == 0
+            || batchCount > kMaxImportedMeshBatches) {
+            return ProjectCodecStatus::ImpossibleCount;
+        }
+        // Widened to 64 bits before multiplying and compared against the
+        // section window: this is what stops a fabricated count from reserving
+        // gigabytes, and it happens before the resize rather than after it.
+        // Positions and normals are three float32 each, indices one u32, and a
+        // batch is two u32 and a flags byte.
+        const uint64_t needed = static_cast<uint64_t>(vertexCount) * 24ull
+                                + static_cast<uint64_t>(indexCount) * 4ull
+                                + static_cast<uint64_t>(batchCount) * 9ull;
+        if (needed > in.remaining()) {
+            return ProjectCodecStatus::Truncated;
+        }
+
+        body.positions.resize(static_cast<size_t>(vertexCount) * 3u);
+        for (float& value : body.positions) {
+            if (!in.f32(&value)) {
+                return ProjectCodecStatus::Truncated;
+            }
+        }
+        body.normals.resize(static_cast<size_t>(vertexCount) * 3u);
+        for (float& value : body.normals) {
+            if (!in.f32(&value)) {
+                return ProjectCodecStatus::Truncated;
+            }
+        }
+        body.indices.resize(indexCount);
+        for (uint32_t& index : body.indices) {
+            if (!in.u32(&index)) {
+                return ProjectCodecStatus::Truncated;
+            }
+        }
+        body.batches.resize(batchCount);
+        for (ImportedMeshBatch& batch : body.batches) {
+            uint8_t flags = 0;
+            if (!in.u32(&batch.firstIndex) || !in.u32(&batch.indexCount) || !in.u8(&flags)) {
+                return ProjectCodecStatus::Truncated;
+            }
+            if ((flags & ~0x01u) != 0u) {
+                return ProjectCodecStatus::BadPayload;  // a reserved batch-flag bit
+            }
+            batch.doubleSided = (flags & 0x01u) != 0u;
+        }
+    }
+    if (!in.atEnd()) {
+        return ProjectCodecStatus::BadPayload;
+    }
+    return ProjectCodecStatus::Ok;
+}
+
 ProjectCodecStatus decodeProjectV1(ByteReader& file, ProjectKind kind, uint8_t headerFlags,
                                    uint32_t sectionCount, ProjectDocument* out,
                                    uint32_t* outSkipped) {
@@ -684,6 +961,7 @@ ProjectCodecStatus decodeProjectV1(ByteReader& file, ProjectKind kind, uint8_t h
     bool sawSceneTag = false;
     bool sawConstructionTag = false;
     bool sawSculptTag = false;
+    bool sawImportedTag = false;
 
     for (uint32_t i = 0; i < sectionCount; ++i) {
         char tag[4] = {0, 0, 0, 0};
@@ -719,8 +997,9 @@ ProjectCodecStatus decodeProjectV1(ByteReader& file, ProjectKind kind, uint8_t h
         const bool isScene = tagIs(tag, kSectionTagScene);
         const bool isConstruction = tagIs(tag, kSectionTagConstruction);
         const bool isSculpt = tagIs(tag, kSectionTagSculpt);
+        const bool isImported = tagIs(tag, kSectionTagImported);
 
-        if (!isScene && !isConstruction && !isSculpt) {
+        if (!isScene && !isConstruction && !isSculpt && !isImported) {
             if (required) {
                 return ProjectCodecStatus::UnknownRequiredSection;
             }
@@ -735,16 +1014,19 @@ ProjectCodecStatus decodeProjectV1(ByteReader& file, ProjectKind kind, uint8_t h
         // and letting the second one through because the reader happened not to
         // understand the first would be a hole in the singleton rule.
         if ((isScene && sawSceneTag) || (isConstruction && sawConstructionTag)
-            || (isSculpt && sawSculptTag)) {
+            || (isSculpt && sawSculptTag) || (isImported && sawImportedTag)) {
             return ProjectCodecStatus::DuplicateSection;
         }
         sawSceneTag = sawSceneTag || isScene;
         sawConstructionTag = sawConstructionTag || isConstruction;
         sawSculptTag = sawSculptTag || isSculpt;
+        sawImportedTag = sawImportedTag || isImported;
 
-        const uint16_t known = isScene ? kSceneSectionVersion
-                                       : (isConstruction ? kConstructionSectionVersion
-                                                         : kSculptSectionVersion);
+        const uint16_t known =
+                isScene ? kSceneSectionVersion
+                        : (isConstruction ? kConstructionSectionVersion
+                                          : (isSculpt ? kSculptSectionVersion
+                                                      : kImportedSectionVersion));
         if (sectionVersion != known) {
             if (required) {
                 return ProjectCodecStatus::UnsupportedSectionVersion;
@@ -766,9 +1048,12 @@ ProjectCodecStatus decodeProjectV1(ByteReader& file, ProjectKind kind, uint8_t h
         } else if (isConstruction) {
             status = decodeConstructionPayload(payload, &document.construction);
             document.hasConstruction = (status == ProjectCodecStatus::Ok);
-        } else {
+        } else if (isSculpt) {
             status = decodeSculptPayload(payload, &document.sculpt);
             document.hasSculpt = (status == ProjectCodecStatus::Ok);
+        } else {
+            status = decodeImportedPayload(payload, &document.imported);
+            document.hasImported = (status == ProjectCodecStatus::Ok);
         }
         if (status != ProjectCodecStatus::Ok) {
             return status;
@@ -785,7 +1070,8 @@ ProjectCodecStatus decodeProjectV1(ByteReader& file, ProjectKind kind, uint8_t h
     // that trusted the flags without parsing would be told something false.
     const uint8_t expectedFlags =
             static_cast<uint8_t>((sawConstructionTag ? kHeaderFlagHasConstruction : 0u)
-                                 | (sawSculptTag ? kHeaderFlagHasSculpt : 0u));
+                                 | (sawSculptTag ? kHeaderFlagHasSculpt : 0u)
+                                 | (sawImportedTag ? kHeaderFlagHasImported : 0u));
     if (headerFlags != expectedFlags) {
         return ProjectCodecStatus::BadHeader;
     }
@@ -845,7 +1131,9 @@ ProjectCodecStatus decodeProject(const uint8_t* data, size_t size, ProjectDocume
         && kindCode != static_cast<uint8_t>(ProjectKind::Sculpt)) {
         return ProjectCodecStatus::BadHeader;
     }
-    if ((headerFlags & ~(kHeaderFlagHasConstruction | kHeaderFlagHasSculpt)) != 0u) {
+    if ((headerFlags
+         & ~(kHeaderFlagHasConstruction | kHeaderFlagHasSculpt | kHeaderFlagHasImported))
+        != 0u) {
         return ProjectCodecStatus::BadHeader;
     }
     if (fileBytes != static_cast<uint64_t>(size)) {

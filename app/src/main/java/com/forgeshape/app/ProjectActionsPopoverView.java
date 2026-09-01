@@ -10,26 +10,34 @@ import android.widget.TextView;
  * The project actions: keep the work, get it back, and move it off the device.
  *
  * <p><b>Every entry works, and there are only as many as there are working
- * things.</b> Two groups, because there are two questions. The first is the
+ * things.</b> Three groups, because there are three questions. The first is the
  * app's own storage — one project slot, so exactly Save Project and Open Saved
  * Project. The second is the device's, through the system's own document UI:
  * Save Copy… writes the same canonical `.forge` bytes wherever the user says,
  * Open File… reads one back, and Share Diagnostics… writes the local report.
+ * The third is somebody else's mesh — Import GLB…, and nothing beside it.
  *
  * <p><b>Transfer is not interchange.</b> What Save Copy… writes is a ForgeShape
  * project, readable by another ForgeShape installation. The wording never says
  * export, because Export is a different act with its own home in the Global
  * Toolbar. No New, no Save As and no recent list either.
  *
- * <p><b>The third group is a DIAGNOSTIC, not production import.</b> It opens a
- * `.glb` — one ForgeShape wrote, or an ordinary static mesh another tool wrote
- * — reads it with a parser that shares nothing with the writer, and shows the
- * result in place of the model so the two can be compared. What it produces is
- * not an object: it cannot be selected, edited, sculpted, saved, autosaved or
- * exported, and it is gone when the app restarts. The action is named for what
- * the user does — <i>Import GLB…</i> — and every word around it says
- * <i>preview</i>, because that is what they get. Production import
- * (`IMPORT-01`) is post-MVP, and OBJ and FBX remain absent in both directions.
+ * <p><b>The third group brings somebody else's mesh in.</b> It opens a `.glb` —
+ * one ForgeShape wrote, or an ordinary static mesh another tool wrote — reads
+ * it with a parser that shares nothing with the writer, and turns each
+ * supported mesh node into a real object: a row in the Objects list, an
+ * ordinary gizmo, one Undo step for the whole import, and geometry that is
+ * saved into `.forge` and comes back without the source file. An imported
+ * object is non-parametric, so <i>Shape</i> has no answer for it, and
+ * <i>Start Sculpting</i> on one is `IMPORT-01B`; both are withdrawn while it is
+ * selected. OBJ and FBX remain absent in both directions.
+ *
+ * <p>There is exactly ONE user-facing GLB route in here. The session-only
+ * diagnostic preview that `GLB-IMPORT-R0/R1` built still exists below JNI and
+ * still draws a file beside the scene, but it is reached only from the
+ * verification suites: two visible ways to open a `.glb` that did different
+ * things to the project is precisely the confusion this surface must not
+ * create.
  *
  * <p>It is an {@link AnchoredSurfaceView} like every other context surface, and
  * it grows out of the control that opened it rather than sliding in from a
@@ -58,14 +66,8 @@ final class ProjectActionsPopoverView extends AnchoredSurfaceView {
 
         void onShareDiagnosticsRequested();
 
-        /** GLB-IMPORT-R0: pick a `.glb` and read it back as a preview. */
-        void onImportGlbPreviewRequested();
-
-        /** Swap the viewport between the model and the imported preview. */
-        void onToggleImportedPreviewRequested();
-
-        /** Forget the preview and go back to the model. */
-        void onClearImportedPreviewRequested();
+        /** `IMPORT-01A`: pick a `.glb` and turn what it describes into objects. */
+        void onImportGlbRequested();
     }
 
     private final TextView saveRow;
@@ -73,10 +75,8 @@ final class ProjectActionsPopoverView extends AnchoredSurfaceView {
     private final TextView saveCopyRow;
     private final TextView openFileRow;
     private final TextView diagnosticsRow;
-    private final TextView previewSectionLabel;
-    private final TextView importPreviewRow;
-    private final TextView togglePreviewRow;
-    private final TextView clearPreviewRow;
+    private final TextView importSectionLabel;
+    private final TextView importRow;
 
     ProjectActionsPopoverView(Context context, final OnProjectAction listener) {
         super(context);
@@ -165,52 +165,26 @@ final class ProjectActionsPopoverView extends AnchoredSurfaceView {
         addView(diagnosticsRow, EditorControlStyles.rowParams(
                 EditorControlStyles.dimen(context, R.dimen.row_gap)));
 
-        // GLB-IMPORT-R0. A third group, because it answers a third question:
-        // not "keep my work" and not "move my work", but "is the file I just
-        // exported right?". It is a DIAGNOSTIC and is worded as one — nothing
-        // here creates an object, and nothing it shows can be edited or saved.
-        previewSectionLabel = EditorControlStyles.sectionLabel(context,
-                context.getString(R.string.preview_section));
-        addView(previewSectionLabel, EditorControlStyles.rowParams(
+        // A third group, because it answers a third question: not "keep my
+        // work" and not "move my work", but "bring somebody else's mesh in".
+        // Since `IMPORT-01A` that is a real act — it creates objects the user
+        // can select, move, undo and save — so the group is named for the
+        // objects it makes and nothing here says preview any more.
+        importSectionLabel = EditorControlStyles.sectionLabel(context,
+                context.getString(R.string.import_section));
+        addView(importSectionLabel, EditorControlStyles.rowParams(
                 EditorControlStyles.dimen(context, R.dimen.row_gap)));
 
-        importPreviewRow = EditorControlStyles.listRow(context, R.id.import_glb_preview,
-                context.getString(R.string.import_glb_preview));
-        importPreviewRow.setGravity(Gravity.CENTER_VERTICAL);
-        importPreviewRow.setOnClickListener(new OnClickListener() {
+        importRow = EditorControlStyles.listRow(context, R.id.import_glb,
+                context.getString(R.string.import_glb));
+        importRow.setGravity(Gravity.CENTER_VERTICAL);
+        importRow.setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View v) {
-                listener.onImportGlbPreviewRequested();
+                listener.onImportGlbRequested();
             }
         });
-        addView(importPreviewRow, EditorControlStyles.rowParams(
-                EditorControlStyles.dimen(context, R.dimen.row_gap_small)));
-
-        // The next two are ABSENT until there is a preview, rather than drawn
-        // and disabled: neither can succeed with nothing loaded, and a control
-        // that cannot succeed is not drawn.
-        togglePreviewRow = EditorControlStyles.listRow(context, R.id.toggle_imported_preview,
-                context.getString(R.string.show_imported_preview));
-        togglePreviewRow.setGravity(Gravity.CENTER_VERTICAL);
-        togglePreviewRow.setOnClickListener(new OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                listener.onToggleImportedPreviewRequested();
-            }
-        });
-        addView(togglePreviewRow, EditorControlStyles.rowParams(
-                EditorControlStyles.dimen(context, R.dimen.row_gap_small)));
-
-        clearPreviewRow = EditorControlStyles.listRow(context, R.id.clear_imported_preview,
-                context.getString(R.string.clear_imported_preview));
-        clearPreviewRow.setGravity(Gravity.CENTER_VERTICAL);
-        clearPreviewRow.setOnClickListener(new OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                listener.onClearImportedPreviewRequested();
-            }
-        });
-        addView(clearPreviewRow, EditorControlStyles.rowParams(
+        addView(importRow, EditorControlStyles.rowParams(
                 EditorControlStyles.dimen(context, R.dimen.row_gap_small)));
 
         // Every row carries the interactive floor as HIT AREA, reached with
@@ -221,33 +195,12 @@ final class ProjectActionsPopoverView extends AnchoredSurfaceView {
         applyTouchFloor(context, saveCopyRow);
         applyTouchFloor(context, openFileRow);
         applyTouchFloor(context, diagnosticsRow);
-        applyTouchFloor(context, importPreviewRow);
-        applyTouchFloor(context, togglePreviewRow);
-        applyTouchFloor(context, clearPreviewRow);
-
-        showPreviewState(false, false);
+        applyTouchFloor(context, importRow);
     }
 
-    /**
-     * Draws only the preview controls that can currently do something.
-     *
-     * <p>With nothing loaded there is nothing to show and nothing to clear, so
-     * both rows are GONE rather than disabled — they take no space and offer no
-     * target. The toggle names what pressing it will DO, not what is currently
-     * on screen, because a row that reads "Showing my model" would be a status
-     * line pretending to be a control.
-     */
-    void showPreviewState(boolean loaded, boolean previewVisible) {
-        final int visibility = loaded ? View.VISIBLE : View.GONE;
-        togglePreviewRow.setVisibility(visibility);
-        clearPreviewRow.setVisibility(visibility);
-        if (!loaded) {
-            return;
-        }
-        final int label = previewVisible ? R.string.show_source_instead
-                : R.string.show_imported_preview;
-        togglePreviewRow.setText(getContext().getString(label));
-        togglePreviewRow.setContentDescription(getContext().getString(label));
+    /** The import section label, so a layout test can find it by reference. */
+    View importSectionLabel() {
+        return importSectionLabel;
     }
 
     /**

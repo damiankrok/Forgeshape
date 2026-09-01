@@ -201,7 +201,9 @@ MeshRevision publishSceneObject(SceneObject& body, MeshValidation* outWhy) {
                                     outWhy, /*renderBothSides=*/false);
 }
 
-ConstructionObject& constructionObject() { return constructionScene().activeBody().construction(); }
+ConstructionObject* activeConstructionOrNull() {
+    return constructionScene().activeBody().constructionOrNull();
+}
 
 MeshStore& meshStore() { return constructionScene().activeBody().meshStore(); }
 

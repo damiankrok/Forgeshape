@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <vector>
 
 #include "forgeshape_construction.h"
 #include "forgeshape_sculpt.h"
@@ -209,6 +210,33 @@ GlbExportStatus captureGlbExportScene(const ConstructionScene& scene, ProjectKin
                                     frozen.mesh.indices().data(), frozen.mesh.indexCount(),
                                     SurfaceShading::Smooth, &exported.render,
                                     /*renderBothSides=*/false);
+        } else if (const ImportedMesh* imported = body.importedOrNull()) {
+            // An Imported Mesh has no parameters to re-evaluate: the geometry
+            // IS the truth, and it is exported from the same CPU arrays the
+            // body owns — never from a GPU buffer and never from a `.forge`
+            // file. Skipping it instead would write a file quietly missing an
+            // object the user can see, select and move, which is the one thing
+            // this exporter refuses to do anywhere else.
+            //
+            // `buildDrawData` is what already resolves per-submesh
+            // `doubleSided` into geometry, by emitting a reversed copy of a
+            // two-sided submesh's triangles. glTF states `doubleSided` per
+            // material, and this product exports one material for a whole
+            // body, so carrying it in the geometry is the only encoding that
+            // keeps a mixed mesh's answer per submesh.
+            std::vector<MeshVertex> vertices;
+            std::vector<uint32_t> indices;
+            exported.doubleSided = false;
+            if (imported->buildDrawData(&vertices, &indices)) {
+                built = buildRenderMesh(vertices.data(), static_cast<uint32_t>(vertices.size()),
+                                        indices.data(), static_cast<uint32_t>(indices.size()),
+                                        SurfaceShading::Smooth, &exported.render,
+                                        /*renderBothSides=*/false);
+            }
+        } else if (body.constructionOrNull() == nullptr) {
+            // A representation this exporter does not know. Refused rather
+            // than skipped, for the reason stated below.
+            return GlbExportStatus::InvalidMesh;
         } else {
             // Generated NOW from the canonical parameters, through the same
             // generator the product publishes from. Nothing is read out of the

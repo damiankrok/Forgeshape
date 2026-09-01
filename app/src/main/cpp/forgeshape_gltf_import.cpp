@@ -319,6 +319,11 @@ Vec3 ParsedGlbMesh::worldPosition(uint32_t vertex) const {
     return Vec3{positions[at], positions[at + 1], positions[at + 2]};
 }
 
+Vec3 ParsedGlbMesh::localPosition(uint32_t vertex) const {
+    const Vec3 world = worldPosition(vertex);
+    return Vec3{world.x - translation[0], world.y - translation[1], world.z - translation[2]};
+}
+
 Vec3 ParsedGlbMesh::worldNormal(uint32_t vertex) const {
     const size_t at = static_cast<size_t>(vertex) * 3u;
     if (at + 3 > normals.size()) {
@@ -747,7 +752,8 @@ GlbImportStatus importGlb(const uint8_t* bytes, size_t length, ParsedGlbScene* o
             // Child nodes are refused by name rather than flattened. A
             // flattened hierarchy is a different scene from the one the file
             // describes, and this reader never silently changes the answer.
-            // Editable hierarchy belongs to production import (`IMPORT-01`).
+            // Editable hierarchy is out of scope in both directions: the
+            // exporter writes a flat scene and `IMPORT-01A` reads one.
             return GlbImportStatus::NodeHierarchy;
         }
 
@@ -879,6 +885,13 @@ GlbImportStatus importGlb(const uint8_t* bytes, size_t length, ParsedGlbScene* o
             return GlbImportStatus::NothingToImport;
         }
         const JsonValue* meshObject = doc.element(*meshes, meshIndex);
+        if (meshObject != nullptr) {
+            // The MESH's own name, kept beside the node's. glTF lets either or
+            // both be absent, and a durable import needs both before it decides
+            // what to call the object — which is a decision this reader does
+            // not make. It reports what the file says.
+            doc.stringMember(*meshObject, "name", &mesh.meshName);
+        }
         const JsonValue* primitives =
                 meshObject == nullptr ? nullptr : doc.member(*meshObject, "primitives");
         if (primitives == nullptr || primitives->type != JsonType::Array
@@ -1104,13 +1117,17 @@ GlbImportStatus importGlb(const uint8_t* bytes, size_t length, ParsedGlbScene* o
                 continue;
             }
 
-            // A deterministic area-weighted smooth vertex normal, for the
-            // preview only. Each triangle contributes its UNNORMALIZED face
-            // normal, whose magnitude is twice its area, so a large face
-            // counts for more than a sliver; a degenerate triangle contributes
-            // the zero vector and so contributes nothing. This is not the
-            // future production import shading contract, which is
-            // `IMPORT-01`'s to decide.
+            // A deterministic area-weighted smooth vertex normal. Each triangle
+            // contributes its UNNORMALIZED face normal, whose magnitude is
+            // twice its area, so a large face counts for more than a sliver; a
+            // degenerate triangle contributes the zero vector and so
+            // contributes nothing.
+            //
+            // A durable import STORES whatever this produces rather than
+            // re-deriving it on every load, so the rule is applied once, here,
+            // to a mesh that stated no normals — and a mesh that DID state them
+            // never reaches this branch at all, which is what keeps an artist's
+            // hard edges from being replaced by this guess.
             mesh.normalsGenerated = true;
             std::vector<Vec3> accumulated(block.count, Vec3{0.0f, 0.0f, 0.0f});
             std::vector<uint8_t> referenced(block.count, 0);

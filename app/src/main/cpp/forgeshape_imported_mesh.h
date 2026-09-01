@@ -82,6 +82,13 @@ enum class ImportedMeshValidation {
     CountMismatch,        // one normal per position, or none at all
     NoBatches,
     BatchesDoNotTile,     // the ranges must cover the index array exactly, in order
+    // The geometry is a valid Imported Mesh, but the DRAW data it produces is
+    // not a valid `RuntimeMesh` — a two-sided submesh's reversed copy pushing
+    // the index count past the ceiling, or a vertex count above what a
+    // published mesh may hold. A separate name because it is a separate
+    // question: `validateImportedMeshData` never reports it, and only a caller
+    // that has asked for the draw data can.
+    NotDrawable,
 };
 
 const char* importedMeshValidationName(ImportedMeshValidation why);
@@ -158,6 +165,18 @@ private:
     std::vector<ImportedMeshBatch> batches_;
 };
 
+// THE rule for whether these four arrays describe an imported object.
+//
+// Separate from `build` so the `.forge` codec can ask the question without
+// copying a multi-megabyte mesh into a temporary object just to be told the
+// answer. One implementation, two callers: the importer builds through `build`,
+// which calls this, and `validateProjectDocument` calls this directly on the
+// decoded arrays. Neither restates a rule the other applies.
+ImportedMeshValidation validateImportedMeshData(const std::vector<float>& positions,
+                                                const std::vector<float>& normals,
+                                                const std::vector<uint32_t>& indices,
+                                                const std::vector<ImportedMeshBatch>& batches);
+
 // The colour every imported vertex is given.
 //
 // One flat neutral, exactly as the R1 preview used. Vertex colour feeds only
@@ -168,10 +187,31 @@ constexpr float kImportedMeshVertexColor[3] = {0.62f, 0.66f, 0.72f};
 
 // Truncates a name from another tool to something this product can store.
 //
-// Trims surrounding whitespace, drops control characters, cuts on a UTF-8
-// boundary at `kMaxImportedMeshNameBytes`, and returns empty when nothing
-// usable survives — which is the caller's signal to fall back to the
-// deterministic `Imported <n>` form.
+// Trims surrounding whitespace, replaces control characters, DROPS bytes that
+// are not part of a well-formed UTF-8 sequence, cuts on a UTF-8 boundary at
+// `kMaxImportedMeshNameBytes`, and returns empty when nothing usable survives —
+// which is the caller's signal to fall back to the deterministic `Imported <n>`
+// form.
+//
+// Malformed UTF-8 is dropped rather than tolerated because this string is
+// stored in a `.forge` file, handed across JNI to a Java `String` and drawn in
+// a row: a half-encoded character from another tool's exporter would be a
+// defect in all three places. The function is IDEMPOTENT — sanitizing an
+// already-sanitized name returns it unchanged — which is what lets the codec
+// state its rule as "the stored name is what this would produce".
 std::string sanitizeImportedMeshName(const std::string& raw);
+
+// Whether a name is one this product would have stored: non-empty, and exactly
+// what `sanitizeImportedMeshName` produces for itself. This is the check the
+// `.forge` decoder applies, so a file cannot carry a name the importer could
+// not have made.
+bool importedMeshNameIsStorable(const std::string& name);
+
+// The deterministic fallback for an object whose file named it nothing usable.
+//
+// `ordinal` is 1-based and is the object's position among the objects THIS
+// import created, never an ObjectId: an id is minted and would make the same
+// file produce different names in different sessions.
+std::string fallbackImportedMeshName(uint32_t ordinal);
 
 }  // namespace forgeshape

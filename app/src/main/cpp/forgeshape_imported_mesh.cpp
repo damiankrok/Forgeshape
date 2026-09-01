@@ -31,29 +31,23 @@ const char* importedMeshValidationName(ImportedMeshValidation why) {
         case ImportedMeshValidation::CountMismatch: return "CountMismatch";
         case ImportedMeshValidation::NoBatches: return "NoBatches";
         case ImportedMeshValidation::BatchesDoNotTile: return "BatchesDoNotTile";
+        case ImportedMeshValidation::NotDrawable: return "NotDrawable";
     }
     return "unknown";
 }
 
-ImportedMesh ImportedMesh::build(std::vector<float> positions, std::vector<float> normals,
-                                 std::vector<uint32_t> indices,
-                                 std::vector<ImportedMeshBatch> batches,
-                                 ImportedMeshValidation* outWhy) {
-    const auto refuse = [&](ImportedMeshValidation why) {
-        if (outWhy != nullptr) {
-            *outWhy = why;
-        }
-        return ImportedMesh{};
-    };
-
+ImportedMeshValidation validateImportedMeshData(const std::vector<float>& positions,
+                                                const std::vector<float>& normals,
+                                                const std::vector<uint32_t>& indices,
+                                                const std::vector<ImportedMeshBatch>& batches) {
     if (positions.empty() || (positions.size() % 3u) != 0u) {
-        return refuse(ImportedMeshValidation::EmptyVertices);
+        return ImportedMeshValidation::EmptyVertices;
     }
     if (indices.empty()) {
-        return refuse(ImportedMeshValidation::EmptyIndices);
+        return ImportedMeshValidation::EmptyIndices;
     }
     if ((indices.size() % 3u) != 0u) {
-        return refuse(ImportedMeshValidation::IndexCountNotTriangles);
+        return ImportedMeshValidation::IndexCountNotTriangles;
     }
 
     const uint64_t vertexCount = positions.size() / 3u;
@@ -61,36 +55,36 @@ ImportedMesh ImportedMesh::build(std::vector<float> positions, std::vector<float
     // file cannot make this loop run for a very long time.
     if (vertexCount > kMaxImportedMeshVertices || indices.size() > kMaxImportedMeshIndices
         || batches.size() > kMaxImportedMeshBatches) {
-        return refuse(ImportedMeshValidation::TooLarge);
+        return ImportedMeshValidation::TooLarge;
     }
     if (normals.size() != positions.size()) {
         // One normal per position, or the representation cannot be shaded or
         // re-exported coherently. The importer generates them when a file
         // states none, so "none at all" never reaches here legitimately.
-        return refuse(ImportedMeshValidation::CountMismatch);
+        return ImportedMeshValidation::CountMismatch;
     }
     if (batches.empty()) {
-        return refuse(ImportedMeshValidation::NoBatches);
+        return ImportedMeshValidation::NoBatches;
     }
 
     for (size_t i = 0; i < positions.size(); i += 3) {
         if (!isFinite3(&positions[i])) {
-            return refuse(ImportedMeshValidation::NonFinitePosition);
+            return ImportedMeshValidation::NonFinitePosition;
         }
     }
     for (size_t i = 0; i < normals.size(); i += 3) {
         if (!isFinite3(&normals[i])) {
-            return refuse(ImportedMeshValidation::NonFiniteNormal);
+            return ImportedMeshValidation::NonFiniteNormal;
         }
         const float length = std::sqrt(normals[i] * normals[i] + normals[i + 1] * normals[i + 1]
                                        + normals[i + 2] * normals[i + 2]);
         if (std::fabs(length - 1.0f) > kNormalLengthTolerance) {
-            return refuse(ImportedMeshValidation::NonFiniteNormal);
+            return ImportedMeshValidation::NonFiniteNormal;
         }
     }
     for (uint32_t index : indices) {
         if (index >= vertexCount) {
-            return refuse(ImportedMeshValidation::IndexOutOfRange);
+            return ImportedMeshValidation::IndexOutOfRange;
         }
     }
 
@@ -101,15 +95,30 @@ ImportedMesh ImportedMesh::build(std::vector<float> positions, std::vector<float
     for (const ImportedMeshBatch& batch : batches) {
         if (batch.firstIndex != covered || batch.indexCount == 0
             || (batch.indexCount % 3u) != 0u) {
-            return refuse(ImportedMeshValidation::BatchesDoNotTile);
+            return ImportedMeshValidation::BatchesDoNotTile;
         }
         covered += batch.indexCount;
         if (covered > indices.size()) {
-            return refuse(ImportedMeshValidation::BatchesDoNotTile);
+            return ImportedMeshValidation::BatchesDoNotTile;
         }
     }
     if (covered != indices.size()) {
-        return refuse(ImportedMeshValidation::BatchesDoNotTile);
+        return ImportedMeshValidation::BatchesDoNotTile;
+    }
+    return ImportedMeshValidation::Ok;
+}
+
+ImportedMesh ImportedMesh::build(std::vector<float> positions, std::vector<float> normals,
+                                 std::vector<uint32_t> indices,
+                                 std::vector<ImportedMeshBatch> batches,
+                                 ImportedMeshValidation* outWhy) {
+    const ImportedMeshValidation why =
+            validateImportedMeshData(positions, normals, indices, batches);
+    if (outWhy != nullptr) {
+        *outWhy = why;
+    }
+    if (why != ImportedMeshValidation::Ok) {
+        return ImportedMesh{};
     }
 
     ImportedMesh mesh;
@@ -117,9 +126,6 @@ ImportedMesh ImportedMesh::build(std::vector<float> positions, std::vector<float
     mesh.normals_ = std::move(normals);
     mesh.indices_ = std::move(indices);
     mesh.batches_ = std::move(batches);
-    if (outWhy != nullptr) {
-        *outWhy = ImportedMeshValidation::Ok;
-    }
     return mesh;
 }
 
@@ -203,17 +209,63 @@ bool ImportedMesh::buildDrawData(std::vector<MeshVertex>* outVertices,
 }
 
 std::string sanitizeImportedMeshName(const std::string& raw) {
-    // Control characters out first: a name from another tool is arbitrary text
-    // and reaches a label, a status line and a file.
+    // Control characters out first, and any byte that is not part of a
+    // well-formed UTF-8 sequence dropped entirely: a name from another tool is
+    // arbitrary bytes, and it reaches a label, a status line, a Java `String`
+    // and a `.forge` file. Half a character is a defect in all four.
     std::string cleaned;
     cleaned.reserve(raw.size());
-    for (char c : raw) {
-        const unsigned char byte = static_cast<unsigned char>(c);
-        if (byte < 0x20 || byte == 0x7F) {
-            cleaned.push_back(' ');
-        } else {
-            cleaned.push_back(c);
+    for (size_t i = 0; i < raw.size();) {
+        const unsigned char lead = static_cast<unsigned char>(raw[i]);
+        if (lead < 0x20u || lead == 0x7Fu) {
+            cleaned.push_back(' ');  // a control character is a separator, not text
+            ++i;
+            continue;
         }
+        if (lead < 0x80u) {
+            cleaned.push_back(raw[i]);
+            ++i;
+            continue;
+        }
+        // A multi-byte sequence: its length, its shortest-form floor and its
+        // upper bound all come from the lead byte, and every continuation must
+        // actually be one. Surrogates and anything past U+10FFFF are not
+        // characters and are dropped with the rest.
+        size_t extra = 0;
+        uint32_t code = 0;
+        if ((lead & 0xE0u) == 0xC0u) {
+            extra = 1;
+            code = lead & 0x1Fu;
+        } else if ((lead & 0xF0u) == 0xE0u) {
+            extra = 2;
+            code = lead & 0x0Fu;
+        } else if ((lead & 0xF8u) == 0xF0u) {
+            extra = 3;
+            code = lead & 0x07u;
+        } else {
+            ++i;  // a continuation byte or an invalid lead: not text
+            continue;
+        }
+        if (i + extra >= raw.size()) {
+            break;  // the sequence runs past the end of the string
+        }
+        bool wellFormed = true;
+        for (size_t c = 1; c <= extra; ++c) {
+            const unsigned char cont = static_cast<unsigned char>(raw[i + c]);
+            if ((cont & 0xC0u) != 0x80u) {
+                wellFormed = false;
+                break;
+            }
+            code = (code << 6) | (cont & 0x3Fu);
+        }
+        const uint32_t floors[4] = {0u, 0x80u, 0x800u, 0x10000u};
+        if (!wellFormed || code < floors[extra] || code > 0x10FFFFu
+            || (code >= 0xD800u && code <= 0xDFFFu)) {
+            ++i;  // drop only the lead byte; the rest is re-judged on its own
+            continue;
+        }
+        cleaned.append(raw, i, extra + 1);
+        i += extra + 1;
     }
 
     size_t begin = cleaned.find_first_not_of(' ');
@@ -239,6 +291,29 @@ std::string sanitizeImportedMeshName(const std::string& raw) {
         trimmed.resize(last + 1);
     }
     return trimmed;
+}
+
+bool importedMeshNameIsStorable(const std::string& name) {
+    // Stated as "this is what the sanitizer would produce for it" rather than
+    // as a second list of rules, so the `.forge` decoder and the importer can
+    // never disagree about what a name may be.
+    return !name.empty() && sanitizeImportedMeshName(name) == name;
+}
+
+std::string fallbackImportedMeshName(uint32_t ordinal) {
+    // Built by hand rather than with snprintf so the result is exactly the
+    // same bytes on every platform and has no locale in it.
+    std::string digits;
+    uint32_t value = ordinal;
+    if (value == 0) {
+        digits = "0";
+    } else {
+        while (value > 0) {
+            digits.insert(digits.begin(), static_cast<char>('0' + (value % 10u)));
+            value /= 10u;
+        }
+    }
+    return "Imported " + digits;
 }
 
 }  // namespace forgeshape

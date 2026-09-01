@@ -265,8 +265,13 @@ public final class GlbImportPreviewTest {
         setPreviewVisible(true);
         settleLayout();
 
+        // Driven through the native seam rather than a control: since
+        // `IMPORT-01A` the preview has no user-facing route at all — Import GLB
+        // creates real objects — and the workspace's own refresh is what puts
+        // the chrome back, exactly as it does for the production path.
+        clearPreview();
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            workspace.onClearImportedPreviewRequested();
+            workspace.syncFromNative();
             return null;
         });
         settleLayout();
@@ -384,34 +389,25 @@ public final class GlbImportPreviewTest {
     @Test
     public void glbir0_18_theControlsHaveSemanticIdsAndMeetTheTouchFloor() {
         openProjectSurface();
-        // With nothing loaded, only the one control that can succeed is drawn.
+        // There is exactly ONE user-facing GLB route, and it is the durable
+        // import. The session-only preview has no control of its own since
+        // `IMPORT-01A`: two visible ways to open a `.glb` that did different
+        // things to the project is the confusion the surface must not create.
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            final View open = workspace.findViewById(R.id.import_glb_preview);
-            assertNotNull("the check control exists by id", open);
+            final View open = workspace.findViewById(R.id.import_glb);
+            assertNotNull("the import control exists by id", open);
             assertEquals(View.VISIBLE, open.getVisibility());
-            assertEquals("Show is absent with nothing loaded", View.GONE,
-                    workspace.findViewById(R.id.toggle_imported_preview).getVisibility());
-            assertEquals("and so is Clear", View.GONE,
-                    workspace.findViewById(R.id.clear_imported_preview).getVisibility());
             return null;
         });
 
-        assertEquals(NativeViewport.IMPORT_OK, importPreview(readAsset(SENTINEL_CONSTRUCTION)));
-        closeProjectSurface();
-        openProjectSurface();
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             final float density = activity.getResources().getDisplayMetrics().density;
             final int floor = Math.round(48f * density);
-            for (int id : new int[]{R.id.import_glb_preview, R.id.toggle_imported_preview,
-                    R.id.clear_imported_preview}) {
-                final View control = workspace.findViewById(id);
-                assertEquals(activity.getResources().getResourceEntryName(id) + " is drawn",
-                        View.VISIBLE, control.getVisibility());
-                assertTrue(activity.getResources().getResourceEntryName(id)
-                                + " must meet the 48 dp floor, was " + control.getHeight(),
-                        control.getHeight() >= floor - 1);
-                assertTrue("and must be at least 48 dp wide", control.getWidth() >= floor - 1);
-            }
+            final View control = workspace.findViewById(R.id.import_glb);
+            assertEquals("import_glb is drawn", View.VISIBLE, control.getVisibility());
+            assertTrue("import_glb must meet the 48 dp floor, was " + control.getHeight(),
+                    control.getHeight() >= floor - 1);
+            assertTrue("and must be at least 48 dp wide", control.getWidth() >= floor - 1);
             return null;
         });
     }
@@ -419,11 +415,7 @@ public final class GlbImportPreviewTest {
     @Test
     public void glbir0_19_previewModeDrawsNoControlThatCannotSucceed() {
         assertEquals(NativeViewport.IMPORT_OK, importPreview(readAsset(SENTINEL_CONSTRUCTION)));
-        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            workspace.onToggleImportedPreviewRequested();
-            return null;
-        });
-        settleLayout();
+        setPreviewVisible(true);
         assertTrue(previewVisible());
 
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
@@ -451,11 +443,7 @@ public final class GlbImportPreviewTest {
         });
 
         // And switching back restores the accepted workspace.
-        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            workspace.onToggleImportedPreviewRequested();
-            return null;
-        });
-        settleLayout();
+        setPreviewVisible(false);
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             assertEquals(View.VISIBLE,
                     WorkspaceTestSupport.trailingHost(workspace).getVisibility());
@@ -478,11 +466,14 @@ public final class GlbImportPreviewTest {
             assertFalse("the project surface must not offer '" + forbidden + "': " + text,
                     text.contains(forbidden));
         }
-        // GLBIR1-21. The action is named for what the user does — Import GLB —
-        // and every surrounding word says PREVIEW, which is what they get.
-        // Neither production import nor a second interchange format appears.
+        // GLBIR1-21, as `IMPORT-01A` leaves it. The action is still named for
+        // what the user does — Import GLB — and it is no longer worded as a
+        // preview, because it no longer produces one: it creates objects the
+        // user keeps. What must still be true is that GLB is the ONLY
+        // interchange route on the surface, which the loop above asserts.
         assertTrue("Import GLB is offered: " + text, text.contains("import glb"));
-        assertTrue("and it is named as a preview: " + text, text.contains("preview"));
+        assertFalse("and nothing here still calls it a preview: " + text,
+                text.contains("preview"));
     }
 
     // -----------------------------------------------------------------------

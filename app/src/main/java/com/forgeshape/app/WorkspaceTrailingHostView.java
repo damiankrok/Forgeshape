@@ -46,13 +46,16 @@ final class WorkspaceTrailingHostView extends FrameLayout
         final boolean precisionOpen;
         final CharSequence precisionSurfaceName;
         final boolean compactRail;
+        /** Whether the rail offers Shape. False for an Imported Mesh — see ensureEntries. */
+        final boolean shapeOffered;
         final boolean displaySuppressed;
 
         PresentationState(boolean sculpting, int activeTool,
                           boolean transformOffered, int transformMode,
                           boolean transformSpaceOffered, int transformSpace,
                           boolean precisionOpen, CharSequence precisionSurfaceName,
-                          boolean compactRail, boolean displaySuppressed) {
+                          boolean compactRail, boolean displaySuppressed,
+                          boolean shapeOffered) {
             this.sculpting = sculpting;
             this.activeTool = activeTool;
             this.transformOffered = transformOffered;
@@ -63,6 +66,7 @@ final class WorkspaceTrailingHostView extends FrameLayout
             this.precisionSurfaceName = precisionSurfaceName;
             this.compactRail = compactRail;
             this.displaySuppressed = displaySuppressed;
+            this.shapeOffered = shapeOffered;
         }
     }
 
@@ -82,6 +86,8 @@ final class WorkspaceTrailingHostView extends FrameLayout
     private final ImageView transformSpaceLocalAction;
 
     private Boolean showingSculptEntries;
+    /** Whether the rail last drew a Shape entry. Null until the first render. */
+    private Boolean showingShapeEntry;
     private int upstreamToolbarExpansionPx;
 
     WorkspaceTrailingHostView(Context context, Callbacks callbacks) {
@@ -208,7 +214,7 @@ final class WorkspaceTrailingHostView extends FrameLayout
     }
 
     void render(PresentationState state) {
-        ensureEntries(state.sculpting);
+        ensureEntries(state.sculpting, state.shapeOffered);
         toolRail.setCompactEntries(state.compactRail);
         toolRail.showActive(state.activeTool);
 
@@ -287,12 +293,14 @@ final class WorkspaceTrailingHostView extends FrameLayout
         button.setActivated(active);
     }
 
-    private void ensureEntries(boolean sculpting) {
+    private void ensureEntries(boolean sculpting, boolean shapeOffered) {
         if (showingSculptEntries != null && showingSculptEntries == sculpting
+                && showingShapeEntry != null && showingShapeEntry == shapeOffered
                 && toolRail.getChildCount() > 0) {
             return;
         }
         showingSculptEntries = sculpting;
+        showingShapeEntry = shapeOffered;
         final Context context = getContext();
         if (sculpting) {
             toolRail.setEntries(new ToolRailView.Entry[]{
@@ -308,13 +316,23 @@ final class WorkspaceTrailingHostView extends FrameLayout
             });
             return;
         }
+        final ToolRailView.Entry place = new ToolRailView.Entry(R.id.tool_rail_place,
+                R.drawable.ic_tool_place, context.getString(R.string.tool_transform),
+                EditorUiState.CONSTRUCTION_TOOL_TRANSFORM);
+        if (!shapeOffered) {
+            // An Imported Mesh has no primitive and no dimensions, so Shape has
+            // nothing to edit and the domain refuses a shape Apply for one. The
+            // entry is ABSENT rather than drawn and inert: a control that
+            // cannot succeed is not drawn. Transform stays, because an imported
+            // body's placement is an ordinary ForgeShape placement.
+            toolRail.setEntries(new ToolRailView.Entry[]{place});
+            return;
+        }
         toolRail.setEntries(new ToolRailView.Entry[]{
                 new ToolRailView.Entry(R.id.tool_rail_shape, R.drawable.ic_tool_shape,
                         context.getString(R.string.tool_shape),
                         EditorUiState.CONSTRUCTION_TOOL_SHAPE),
-                new ToolRailView.Entry(R.id.tool_rail_place, R.drawable.ic_tool_place,
-                        context.getString(R.string.tool_transform),
-                        EditorUiState.CONSTRUCTION_TOOL_TRANSFORM),
+                place,
         });
     }
 

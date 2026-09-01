@@ -94,6 +94,14 @@ final class WorkspaceTestSupport {
                 // measure. Cases that are ABOUT recovery ask for it deliberately.
                 workspace.dismissRecoveryPromptForTest();
                 NativeViewport.enterConstructionMode();
+                // The baseline is a CONSTRUCTION shape, so the body it is
+                // applied to must have a Construction Source. Since
+                // `IMPORT-01A` a scene can hold Imported Meshes, which refuse a
+                // shape Apply by design — and a reset that silently did nothing
+                // would hand the next case a baseline it never established.
+                // Selecting the first body that has one costs a scan of a
+                // handful of ids and makes the reset mean what it says.
+                selectFirstConstructionBody();
                 NativeViewport.applyConstructionBox(BASELINE_WIDTH_METERS,
                         BASELINE_HEIGHT_METERS, BASELINE_DEPTH_METERS);
                 NativeViewport.applyBoxTransform(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0);
@@ -129,6 +137,23 @@ final class WorkspaceTestSupport {
                 return null;
             }
         });
+    }
+
+    /**
+     * Makes the first body that has a Construction Source the active one.
+     *
+     * <p>Does nothing when there is none, which leaves the caller's Apply to
+     * fail visibly rather than being silently skipped here.
+     */
+    private static void selectFirstConstructionBody() {
+        final long[] ids = new long[NativeViewport.sceneBodyCount()];
+        final int written = NativeViewport.sceneBodyIds(ids);
+        for (int i = 0; i < written; i++) {
+            if (!NativeViewport.sceneBodyIsImported(ids[i])) {
+                NativeViewport.sceneSelectBody(ids[i]);
+                return;
+            }
+        }
     }
 
     // -----------------------------------------------------------------------

@@ -863,10 +863,20 @@ struct PrimitiveApplyResult {
 PrimitiveApplyResult applyPrimitive(ConstructionObject& object, MeshStore& store,
                                     const PrimitiveSpec& requested);
 
-// Process-scoped active object. Like the camera, the selection and the mesh
-// store, it outlives every Surface, so its primitive, its parameters and its
-// placement all survive home/resume and swapchain recreation.
-ConstructionObject& constructionObject();
+// The ACTIVE body's Construction Source, or nullptr when the active body is an
+// Imported Mesh.
+//
+// Process-scoped, like the camera and the mesh store: it outlives every Surface,
+// so the active body's primitive and parameters survive home/resume and
+// swapchain recreation.
+//
+// Deliberately a POINTER, and deliberately renamed by `IMPORT-01A` from
+// `constructionObject()`. Until then every body had a Construction Source and no
+// caller could be wrong; now one representation has none, and a nullable return
+// with a name that says so makes the compiler ask every call site what it does
+// about that instead of leaving a silent assumption behind. Placement is NOT
+// here — see `constructionTransform()`, which is the body's and is total.
+ConstructionObject* activeConstructionOrNull();
 
 // The same entry point against the process-scoped object and mesh store.
 PrimitiveApplyResult applyConstructionPrimitive(const PrimitiveSpec& requested);

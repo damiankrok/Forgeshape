@@ -106,7 +106,7 @@ public final class GlbImportExternalR1Test {
     // -----------------------------------------------------------------------
 
     @Test
-    public void glbir1_19_theNomadLikeFixtureImportsThroughTheRealResultSeam() {
+    public void glbir1_19_theNomadLikeFixtureParsesIntoTheDiagnosticPreview() {
         final byte[] fixture = fixtureBytes();
         openAsGlbDocument(fixture);
 
@@ -407,7 +407,7 @@ public final class GlbImportExternalR1Test {
     public void glbir1_20_theImportControlsKeepTheirIdsAndTheTouchFloor() {
         openProjectSurface();
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            final View importRow = workspace.findViewById(R.id.import_glb_preview);
+            final View importRow = workspace.findViewById(R.id.import_glb);
             assertNotNull("the import control exists by id", importRow);
             assertEquals("Import GLB…",
                     ((android.widget.TextView) importRow).getText().toString());
@@ -419,14 +419,13 @@ public final class GlbImportExternalR1Test {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             final float density = activity.getResources().getDisplayMetrics().density;
             final int floor = Math.round(48f * density);
-            for (int id : new int[]{R.id.import_glb_preview, R.id.toggle_imported_preview,
-                    R.id.clear_imported_preview}) {
-                final View control = workspace.findViewById(id);
-                final String name = activity.getResources().getResourceEntryName(id);
-                assertEquals(name + " is drawn", View.VISIBLE, control.getVisibility());
-                assertTrue(name + " must meet the 48 dp floor, was " + control.getHeight(),
-                        control.getHeight() >= floor - 1);
-            }
+            // One control, because there is one user-facing GLB route since
+            // `IMPORT-01A`. The preview's Show and Clear rows are gone: the
+            // preview is reached only through the native seams this suite uses.
+            final View control = workspace.findViewById(R.id.import_glb);
+            assertEquals("import_glb is drawn", View.VISIBLE, control.getVisibility());
+            assertTrue("import_glb must meet the 48 dp floor, was " + control.getHeight(),
+                    control.getHeight() >= floor - 1);
             return null;
         });
         closeProjectSurface();
@@ -596,19 +595,20 @@ public final class GlbImportExternalR1Test {
     }
 
     /**
-     * Drives the REAL picker-result seam: bytes on the device, a {@code Uri}
-     * the system would have handed back, and the production handler that turns
-     * one into the other. Only the system's own document UI is skipped, because
-     * it is another app's surface and cannot be driven reliably.
+     * Loads the file into the DIAGNOSTIC preview and shows it.
+     *
+     * <p>This suite is about the preview, which since `IMPORT-01A` has no
+     * user-facing route: the product's <i>Import GLB…</i> creates durable
+     * objects, and two visible ways to open a `.glb` that did different things
+     * to the project is the confusion that change removed. The preview seams
+     * survive because the question they answer — does the geometry in the FILE
+     * match the geometry in the SCENE — is still worth asking, and the parse
+     * they exercise is the very same one durable import runs.
      */
     private void openAsGlbDocument(byte[] bytes) {
-        final File file = new File(scratch, "external-" + bytes.length + ".glb");
-        writeFile(file, bytes);
-        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            workspace.onOpenGlbDocumentChosen(Uri.fromFile(file));
-            return null;
-        });
-        settleLayout();
+        assertEquals("the fixture must load into the preview",
+                NativeViewport.IMPORT_OK, importPreview(bytes));
+        setPreviewVisible(true);
     }
 
     private int importPreview(final byte[] bytes) {

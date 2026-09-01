@@ -41,6 +41,7 @@
 #include "forgeshape_glb_roundtrip.h"
 #include "forgeshape_gltf_export.h"
 #include "forgeshape_gltf_import.h"
+#include "forgeshape_import_commit.h"
 #include "forgeshape_import_preview.h"
 #include "forgeshape_gltf_export_selftest.h"
 #include "forgeshape_gltf_import_selftest.h"
@@ -441,6 +442,11 @@ void runProjectSelfTestsAndLog() {
     FS_LOGI("FORGESHAPE_PROJECT_GOLDEN_SHA256 construction=%s sculpt=%s",
             forgeshape::canonicalConstructionFixtureSha256(),
             forgeshape::canonicalSculptFixtureSha256());
+    FS_LOGI("FORGESHAPE_PROJECT_GOLDEN_SHA256_IMPORTED imported_only=%s construction_imported=%s "
+            "mixed_imported=%s",
+            forgeshape::canonicalImportedOnlyFixtureSha256(),
+            forgeshape::canonicalConstructionImportedFixtureSha256(),
+            forgeshape::canonicalMixedImportedFixtureSha256());
     if (failed == 0) {
         FS_LOGI("FORGESHAPE_PROJECT_SELFTEST_OK (%d checks)", count);
     } else {
@@ -684,7 +690,22 @@ void describeSpec(const forgeshape::PrimitiveSpec& spec, char* out, size_t size)
 // through the same MeshStore path everything else uses. Parameters are never
 // read back out of the mesh, so this direction is the only one that exists.
 forgeshape::MeshRevision publishConstructionObject(const char* reason) {
-    forgeshape::ConstructionObject& object = forgeshape::constructionObject();
+    forgeshape::ConstructionObject* source = forgeshape::activeConstructionOrNull();
+    if (source == nullptr) {
+        // The active body is an Imported Mesh: it has no parameters to
+        // regenerate from, and its geometry is already published. Dispatched
+        // through the one representation-aware entry point rather than given a
+        // second publish path here.
+        forgeshape::MeshValidation why = forgeshape::MeshValidation::Ok;
+        const forgeshape::MeshRevision revision = forgeshape::publishSceneObject(
+            forgeshape::constructionScene().activeBody(), &why);
+        if (revision == forgeshape::kNoMeshRevision) {
+            FS_LOGE("FORGESHAPE_CONSTRUCTION_PUBLISH_FAIL:%s:%s", reason,
+                    forgeshape::meshValidationName(why));
+        }
+        return revision;
+    }
+    forgeshape::ConstructionObject& object = *source;
     const forgeshape::ConstructionMesh mesh = object.generateMesh();
     forgeshape::MeshValidation why = forgeshape::MeshValidation::Ok;
     const forgeshape::MeshRevision revision =
@@ -757,7 +778,20 @@ forgeshape::PrimitiveApplyResult applyPrimitive(const char* label,
         forgeshape::ScopedConstructionEdit edit(forgeshape::constructionHistory());
         result = forgeshape::applyConstructionPrimitive(requested);
     }
-    const forgeshape::ConstructionObject& object = forgeshape::constructionObject();
+    const forgeshape::ConstructionObject* source = forgeshape::activeConstructionOrNull();
+    if (source == nullptr) {
+        // The active body is an Imported Mesh, so the entry point above refused
+        // and there is no Construction Source to report counts from. Logged by
+        // name rather than left silent: a refusal nobody can see is how a
+        // missing UI guard stays invisible.
+        FS_LOGE("FORGESHAPE_CONSTRUCTION_PRIMITIVE_REJECTED:%s:NoConstructionSource "
+                "representation=%s",
+                label,
+                forgeshape::bodyRepresentationName(
+                    forgeshape::constructionScene().activeBody().representation()));
+        return result;
+    }
+    const forgeshape::ConstructionObject& object = *source;
 
     char described[128];
     describeSpec(result.spec, described, sizeof(described));
@@ -907,6 +941,13 @@ jint applyResultToJni(const forgeshape::PrimitiveApplyResult& result) {
         case forgeshape::DimensionValidation::RelationInvalid: return kApplyRejectedRelation;
         case forgeshape::DimensionValidation::Ok: break;
     }
+    // Rejected with no dimension to blame. Since `IMPORT-01A` there is one way
+    // to reach this: a shape Apply against a body that has no Construction
+    // Source. The Android layer cannot get here — the control is withdrawn for
+    // an imported body — and the honest reason is already in the log as
+    // `FORGESHAPE_CONSTRUCTION_PRIMITIVE_REJECTED:...:NoConstructionSource`, so
+    // this stays the generic refusal rather than growing a transport code for a
+    // case no user-facing path can produce.
     return kApplyRejectedNotFinite;
 }
 
@@ -986,14 +1027,25 @@ void logMeshDiagnostics(const char* reason) {
             (unsigned long long)store.objectId());
     // The authoritative Construction parameters are logged next to the derived
     // mesh/GPU numbers, so evidence can be read from one place without ever
-    // inferring dimensions from vertices.
-    const forgeshape::ConstructionObject& object = forgeshape::constructionObject();
-    char described[128];
-    describeSpec(object.spec(), described, sizeof(described));
-    FS_LOGI("FORGESHAPE_CONSTRUCTION_STATE:%s kind=%s %s objectId=%llu updates=%llu rejects=%llu",
-            reason, forgeshape::primitiveKindName(object.kind()), described,
-            (unsigned long long)object.objectId(), (unsigned long long)object.updateCount(),
-            (unsigned long long)object.rejectedUpdateCount());
+    // inferring dimensions from vertices. An Imported Mesh has none, and the
+    // line says WHICH representation rather than going quiet.
+    if (const forgeshape::ConstructionObject* object = forgeshape::activeConstructionOrNull()) {
+        char described[128];
+        describeSpec(object->spec(), described, sizeof(described));
+        FS_LOGI("FORGESHAPE_CONSTRUCTION_STATE:%s kind=%s %s objectId=%llu updates=%llu "
+                "rejects=%llu",
+                reason, forgeshape::primitiveKindName(object->kind()), described,
+                (unsigned long long)object->objectId(), (unsigned long long)object->updateCount(),
+                (unsigned long long)object->rejectedUpdateCount());
+    } else {
+        const forgeshape::SceneObject& body = forgeshape::constructionScene().activeBody();
+        const forgeshape::ImportedMesh* imported = body.importedOrNull();
+        FS_LOGI("FORGESHAPE_IMPORTED_STATE:%s objectId=%llu vertices=%u triangles=%u batches=%u",
+                reason, (unsigned long long)body.objectId(),
+                imported != nullptr ? imported->vertexCount() : 0u,
+                imported != nullptr ? imported->triangleCount() : 0u,
+                imported != nullptr ? imported->batchCount() : 0u);
+    }
     // Placement is reported next to the dimensions and the mesh numbers, so one
     // line pair shows both truths and it is obvious that the transform's update
     // count is independent of the mesh revision.
@@ -1558,7 +1610,18 @@ Java_com_forgeshape_app_NativeViewport_constructionPrimitive(JNIEnv* env, jclass
     if (outState == nullptr || env->GetArrayLength(outState) < kSlots) {
         return;
     }
-    const forgeshape::ConstructionObject& object = forgeshape::constructionObject();
+    const forgeshape::ConstructionObject* source = forgeshape::activeConstructionOrNull();
+    if (source == nullptr) {
+        // An Imported Mesh has no primitive and no dimensions, and there is no
+        // honest value to write here. The array is left EXACTLY as the caller
+        // supplied it rather than filled with zeroes or a default Box: a zero
+        // width is a length the editor refuses, and a default Box is project
+        // data this body does not have. The Android layer asks
+        // `sceneActiveBodyIsImported()` before it offers Shape at all, so this
+        // is the second line of defence and not the first.
+        return;
+    }
+    const forgeshape::ConstructionObject& object = *source;
     const forgeshape::BoxDimensionsMeters box = object.box().dimensionsMeters();
     const forgeshape::CylinderDimensionsMeters cylinder = object.cylinder().dimensionsMeters();
     const forgeshape::SphereDimensionsMeters sphere = object.sphere().dimensionsMeters();
@@ -1708,7 +1771,15 @@ Java_com_forgeshape_app_NativeViewport_productMode(JNIEnv*, jclass) {
 // representation. The Construction Source is only read, never written.
 JNIEXPORT jint JNICALL
 Java_com_forgeshape_app_NativeViewport_freezeToSculpt(JNIEnv*, jclass) {
-    const forgeshape::ConstructionObject& object = forgeshape::constructionObject();
+    const forgeshape::ConstructionObject* active = forgeshape::activeConstructionOrNull();
+    if (active == nullptr) {
+        // Start Sculpting on an Imported Mesh is `IMPORT-01B`, not this stage.
+        // Refused in the domain as well as withdrawn from the UI: removing a
+        // control is not removing a guard.
+        FS_LOGE("FORGESHAPE_SCULPT_FREEZE_FAIL:NoConstructionSource");
+        return kSculptFailedFreeze;
+    }
+    const forgeshape::ConstructionObject& object = *active;
     const forgeshape::ConstructionMesh source = object.generateMesh();
     forgeshape::MeshValidation why = forgeshape::MeshValidation::Ok;
 
@@ -1812,6 +1883,49 @@ Java_com_forgeshape_app_NativeViewport_sceneBodyIds(JNIEnv* env, jclass, jlongAr
 JNIEXPORT jlong JNICALL Java_com_forgeshape_app_NativeViewport_sceneActiveBodyId(JNIEnv*, jclass) {
     std::lock_guard<std::mutex> lock(g_stateMutex);
     return static_cast<jlong>(forgeshape::constructionScene().activeBodyId());
+}
+
+// The body's stored name, or the empty string when it has none.
+//
+// Only an Imported Mesh carries one: it arrives named by the file it came from,
+// and a list of anonymous rows would have lost something the user could see. A
+// Construction Body is still labelled from its ObjectId by the UI, exactly as
+// before, and this product still has no Rename. The empty string is the Android
+// layer's signal to use that label — not a name of its own.
+JNIEXPORT jstring JNICALL
+Java_com_forgeshape_app_NativeViewport_sceneBodyName(JNIEnv* env, jclass, jlong objectId) {
+    std::string name;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const forgeshape::SceneObject* body = forgeshape::constructionScene().findBody(
+            static_cast<forgeshape::ObjectId>(objectId));
+        if (body != nullptr) {
+            name = body->name();
+        }
+    }
+    // Already sanitized by the domain — well-formed UTF-8, bounded, no control
+    // characters — which is what makes handing it to NewStringUTF safe.
+    return env->NewStringUTF(name.c_str());
+}
+
+// Whether a body's geometry came from a file rather than from parameters.
+//
+// The Android layer asks so it can withdraw the controls an imported body has
+// no answer for — Shape, and Start Sculpting in `IMPORT-01A`. It is asked, not
+// inferred from an empty name or a missing dimension: the representation is a
+// domain fact and the UI reads it rather than guessing at it.
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_sceneBodyIsImported(JNIEnv*, jclass, jlong objectId) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    const forgeshape::SceneObject* body =
+        forgeshape::constructionScene().findBody(static_cast<forgeshape::ObjectId>(objectId));
+    return (body != nullptr && body->isImported()) ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_sceneActiveBodyIsImported(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    return forgeshape::constructionScene().activeBody().isImported() ? JNI_TRUE : JNI_FALSE;
 }
 
 // Makes an existing body the edit target. Selection ONLY: it publishes nothing,
@@ -2522,6 +2636,112 @@ Java_com_forgeshape_app_NativeViewport_exportGlb(JNIEnv* env, jclass) {
 }
 
 // ---------------------------------------------------------------------------
+// IMPORT-01A — durable import
+// ---------------------------------------------------------------------------
+//
+// This is the product path: it creates real bodies with real identities that
+// are selectable, movable, undoable, saved into `.forge` and reopened. The
+// preview below it is still a diagnostic and still creates nothing.
+
+// How a commit refusal is distinguished from a parse refusal over one int.
+//
+// The two are different vocabularies — `GlbImportStatus` is about the FILE,
+// `ImportCommitStatus` is about the PROJECT — and collapsing them into one
+// enum would put "this file uses a sparse accessor" beside "this project
+// already holds four thousand bodies". Offsetting the second keeps both stable
+// tokens intact and keeps the Java side's mapping a single comparison. It must
+// stay in step with NativeViewport.IMPORT_COMMIT_BASE.
+constexpr jint kImportCommitStatusBase = 1000;
+
+// Reads a `.glb` and creates durable Imported Mesh bodies from it.
+//
+// @return 0 on success; a GlbImportStatus ordinal when the FILE was refused;
+//         kImportCommitStatusBase + an ImportCommitStatus ordinal when the
+//         PROJECT refused it. Every non-zero answer leaves the scene, the
+//         history and the project fingerprint exactly as they were.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_importGlbDurable(JNIEnv* env, jclass, jbyteArray data) {
+    if (data == nullptr) {
+        return static_cast<jint>(forgeshape::GlbImportStatus::NoData);
+    }
+    const jsize length = env->GetArrayLength(data);
+    if (length <= 0) {
+        return static_cast<jint>(forgeshape::GlbImportStatus::NoData);
+    }
+    std::vector<uint8_t> bytes(static_cast<size_t>(length));
+    env->GetByteArrayRegion(data, 0, length, reinterpret_cast<jbyte*>(bytes.data()));
+
+    // Parsed OUTSIDE the lock: it is pure computation over a private buffer and
+    // touches nothing shared, and holding the state mutex across a
+    // multi-megabyte decode would stall the render thread for it.
+    forgeshape::ParsedGlbScene parsed;
+    const forgeshape::GlbImportStatus why =
+            forgeshape::importGlb(bytes.data(), bytes.size(), &parsed);
+    if (why != forgeshape::GlbImportStatus::Ok) {
+        FS_LOGE("FORGESHAPE_IMPORT_FAIL:%s bytes=%d", forgeshape::glbImportStatusName(why),
+                (int)length);
+        return static_cast<jint>(why);
+    }
+
+    forgeshape::ImportCommitReport report;
+    forgeshape::ImportCommitStatus committed = forgeshape::ImportCommitStatus::Ok;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        committed = forgeshape::commitImportedGlbScene(parsed, forgeshape::constructionScene(),
+                                                       forgeshape::constructionHistory(), &report);
+    }
+    if (committed != forgeshape::ImportCommitStatus::Ok) {
+        FS_LOGE("FORGESHAPE_IMPORT_FAIL:%s geometry=%s bytes=%d",
+                forgeshape::importCommitStatusName(committed),
+                forgeshape::importedMeshValidationName(report.geometryWhy), (int)length);
+        return kImportCommitStatusBase + static_cast<jint>(committed);
+    }
+    FS_LOGI("FORGESHAPE_IMPORTED:%d objects=%d vertices=%u triangles=%u batches=%u "
+            "firstObjectId=%llu activeObjectId=%llu",
+            (int)length, report.objects, report.vertices, report.triangles, report.batches,
+            (unsigned long long)report.firstObjectId,
+            (unsigned long long)report.activeBodyId);
+    return 0;
+}
+
+// The stable refusal token for a commit refusal, for the diagnostics ring and
+// the log. Bounded, and never a path, a `Uri` or a byte of the file.
+JNIEXPORT jstring JNICALL
+Java_com_forgeshape_app_NativeViewport_glbCommitStatusToken(JNIEnv* env, jclass, jint status) {
+    const jint ordinal = status - kImportCommitStatusBase;
+    if (ordinal < 0
+        || ordinal > static_cast<jint>(forgeshape::ImportCommitStatus::RefusedEditInProgress)) {
+        return env->NewStringUTF("unknown");
+    }
+    return env->NewStringUTF(forgeshape::importCommitStatusName(
+            static_cast<forgeshape::ImportCommitStatus>(ordinal)));
+}
+
+// The bounded category a commit refusal is shown as.
+//
+// The same three answers a parse refusal uses, because they are the three
+// things a person can act on, and the domain decides which is which so the
+// Android layer never has to know.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_glbCommitStatusCategory(JNIEnv*, jclass, jint status) {
+    const jint ordinal = status - kImportCommitStatusBase;
+    switch (static_cast<forgeshape::ImportCommitStatus>(ordinal)) {
+        case forgeshape::ImportCommitStatus::TooManyObjects:
+            // A valid file this project cannot hold: the same shape of answer
+            // as a valid glTF feature this reader does not implement.
+            return static_cast<jint>(forgeshape::GlbImportCategory::Unsupported);
+        case forgeshape::ImportCommitStatus::RejectedGeometry:
+            return static_cast<jint>(forgeshape::GlbImportCategory::Inconsistent);
+        default:
+            // NothingToImport, RefusedEditInProgress and anything out of range.
+            // The last is unreachable from the product — a menu cannot be
+            // opened mid-drag — and is categorised rather than given a fourth
+            // user-facing sentence nobody would ever read.
+            return static_cast<jint>(forgeshape::GlbImportCategory::Unreadable);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // GLB-IMPORT-R0 — the diagnostic imported mesh preview
 // ---------------------------------------------------------------------------
 //
@@ -2785,9 +3005,10 @@ Java_com_forgeshape_app_NativeViewport_validateProject(JNIEnv* env, jclass, jbyt
         return projectStatusCode(status);
     }
     // The one rule the codec cannot express, checked here so a candidate this
-    // build could never load is never offered as one: see loadProjectDocument.
-    if (!document.hasConstruction
-        || document.construction.bodies.size() != document.scene.bodies.size()) {
+    // build could never load is never offered as one. Asked through the SHARED
+    // predicate rather than restated: a second copy of it here is exactly what
+    // went stale when `IMPORT-01A` gave a body a second way to have geometry.
+    if (!forgeshape::runtimeCanEvaluateProject(document)) {
         FS_LOGI("FORGESHAPE_PROJECT_VALIDATE_REJECTED:MissingRequiredSection bytes=%d", (int)size);
         return kProjectDamaged;
     }

@@ -45,6 +45,21 @@ namespace forgeshape {
 // and says plainly that the colour was never truth.
 constexpr float kLoadedSculptVertexColor = 0.5f;
 
+// Whether THIS BUILD can evaluate a decoded document.
+//
+// A document may legally leave a body with no geometry branch at all — a Sculpt
+// project's CONS companion is optional, and a reader that could not understand
+// its version is right to skip it after its validated length. That file is not
+// at fault, so the CODEC accepts it; this runtime still cannot build a body it
+// has no geometry for, and inventing a default Box for one whose real shape the
+// file described would be fabricating project data.
+//
+// Stated ONCE, here, because two callers ask it: `loadProjectDocument` below,
+// and the recovery candidate check, which must never offer a candidate this
+// build could not load. Restating the rule in either place is how the two
+// silently drifted apart when a second representation arrived.
+bool runtimeCanEvaluateProject(const ProjectDocument& document);
+
 // Reads the whole running project into a portable document.
 //
 // `kind` is the mode the file should reopen in, which the caller takes from the
@@ -59,6 +74,10 @@ ProjectDocument captureProjectDocument(const ConstructionScene& scene, ProjectKi
 struct ProjectLoadReport {
     int bodies = 0;
     int sculptMeshes = 0;
+    // How many bodies came back as an Imported Mesh rather than a Construction
+    // Source. Reported separately because the two are rebuilt by different
+    // paths and a mixed project must be able to say it got both.
+    int importedBodies = 0;
     ObjectId activeBodyId = kNoObject;
     ProjectKind kind = ProjectKind::Construction;
     // The mesh revision published for the active body's active representation.

@@ -452,6 +452,27 @@ final class NativeViewport {
     static native long sceneActiveBodyId();
 
     /**
+     * The body's stored name, or {@code ""} when it has none.
+     *
+     * <p>Only an Imported Mesh carries one — it arrives named by the file it
+     * came from. A Construction Body returns the empty string, which is the
+     * signal to label it {@code Body #id} exactly as before, not a name.
+     */
+    static native String sceneBodyName(long objectId);
+
+    /**
+     * Whether a body's geometry came from a file rather than from parameters.
+     *
+     * <p>Asked rather than inferred from an empty name or an absent dimension:
+     * the representation is a domain fact, and the controls an imported body
+     * has no answer for are withdrawn on this and nothing else.
+     */
+    static native boolean sceneBodyIsImported(long objectId);
+
+    /** @return whether the body the editors act on is an Imported Mesh */
+    static native boolean sceneActiveBodyIsImported();
+
+    /**
      * Makes an existing body the edit target. Selection only: publishes
      * nothing, mints no revision and changes no ObjectId.
      *
@@ -750,6 +771,54 @@ final class NativeViewport {
     static native byte[] exportGlb();
 
     // ---------------------------------------------------------------------
+    // IMPORT-01A — durable import
+    //
+    // The product path. It reads a `.glb` with the same parser the diagnostic
+    // preview uses and turns what it describes into REAL bodies: one per
+    // supported top-level mesh node, each with an ObjectId from the scene's own
+    // allocator, a row in the Objects list, the ordinary Move/Rotate/Scale
+    // gizmo, one Undo step for the whole import, and a place in every `.forge`
+    // file the project is saved into afterwards.
+    //
+    // An imported body is NON-PARAMETRIC. It has no Construction Source and
+    // nothing may invent one for it, so `Shape` has no answer for it; and
+    // `IMPORT-01A` gives it no Frozen Sculpt Mesh either, so Start Sculpting is
+    // `IMPORT-01B`'s. Both controls are withdrawn for one, and both are also
+    // refused below JNI.
+    // ---------------------------------------------------------------------
+
+    /**
+     * Where commit refusals begin, so the two vocabularies stay apart.
+     *
+     * <p>A status below this is a {@code GlbImportStatus} — something about the
+     * FILE. A status at or above it is {@code IMPORT_COMMIT_BASE} plus an
+     * {@code ImportCommitStatus} — something about the PROJECT. Must stay in
+     * step with {@code kImportCommitStatusBase} in forgeshape_jni.cpp.
+     */
+    static final int IMPORT_COMMIT_BASE = 1000;
+
+    /**
+     * Reads GLB bytes and creates durable Imported Mesh bodies from them.
+     *
+     * <p>Atomic: every object is built and validated before any of them reaches
+     * the scene, so a refusal creates no body, mints no ObjectId, records no
+     * history step and does not move the project fingerprint. On success the
+     * whole import is exactly one Undo, and the first object it created is
+     * selected.
+     *
+     * @return {@link #IMPORT_OK}, a {@code GlbImportStatus} ordinal when the
+     *         file was refused, or {@link #IMPORT_COMMIT_BASE} plus an
+     *         {@code ImportCommitStatus} ordinal when the project refused it
+     */
+    static native int importGlbDurable(byte[] bytes);
+
+    /** @return the stable refusal token for a commit status, e.g. {@code TooManyObjects} */
+    static native String glbCommitStatusToken(int status);
+
+    /** @return one of the {@code IMPORT_CATEGORY_*} values for a commit status */
+    static native int glbCommitStatusCategory(int status);
+
+    // ---------------------------------------------------------------------
     // GLB-IMPORT-R0/R1 — the diagnostic imported mesh preview
     //
     // A DIAGNOSTIC, not production import. It reads a `.glb` — one ForgeShape
@@ -760,7 +829,9 @@ final class NativeViewport {
     // Nothing here is project truth. The preview has no ObjectId, no
     // Construction Source, no sculpt representation and no history; it is never
     // saved, autosaved, checkpointed or re-exported; and it is gone when the
-    // process is. Production import is `IMPORT-01` and is post-MVP.
+    // process is. Since `IMPORT-01A` it has no user-facing control either: the
+    // product's Import GLB… is the durable path above, and these entries are
+    // reached only by the verification suites.
     // ---------------------------------------------------------------------
 
     /** Import succeeded. Any other value is a {@code GlbImportStatus} ordinal. */

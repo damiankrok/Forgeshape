@@ -39,6 +39,30 @@ ConstructionMesh sculptSourceFrom(const ProjectSculptBody& stored) {
     return source;
 }
 
+const ProjectConstructionBody* findConstructionBody(const ProjectDocument& document, ObjectId id) {
+    if (!document.hasConstruction) {
+        return nullptr;
+    }
+    for (const ProjectConstructionBody& body : document.construction.bodies) {
+        if (body.objectId == id) {
+            return &body;
+        }
+    }
+    return nullptr;
+}
+
+const ProjectImportedBody* findImportedBody(const ProjectDocument& document, ObjectId id) {
+    if (!document.hasImported) {
+        return nullptr;
+    }
+    for (const ProjectImportedBody& body : document.imported.bodies) {
+        if (body.objectId == id) {
+            return &body;
+        }
+    }
+    return nullptr;
+}
+
 const ProjectSculptBody* findSculptBody(const ProjectDocument& document, ObjectId id) {
     if (!document.hasSculpt) {
         return nullptr;
@@ -53,6 +77,16 @@ const ProjectSculptBody* findSculptBody(const ProjectDocument& document, ObjectI
 
 }  // namespace
 
+bool runtimeCanEvaluateProject(const ProjectDocument& document) {
+    for (const ProjectBodyPlacement& placement : document.scene.bodies) {
+        if (findConstructionBody(document, placement.objectId) == nullptr
+            && findImportedBody(document, placement.objectId) == nullptr) {
+            return false;
+        }
+    }
+    return true;
+}
+
 ProjectDocument captureProjectDocument(const ConstructionScene& scene, ProjectKind kind) {
     ProjectDocument document;
     document.kind = kind;
@@ -62,11 +96,6 @@ ProjectDocument captureProjectDocument(const ConstructionScene& scene, ProjectKi
     const size_t bodyCount = scene.bodyCount();
     document.scene.bodies.reserve(bodyCount);
     document.construction.bodies.reserve(bodyCount);
-    // Every current body has a Construction Source, so CONS is always written.
-    // It is the REQUIRED section of a Construction project and the retained
-    // companion of a Sculpt one; which of those it is comes from the header's
-    // ProjectKind, not from whether the data exists.
-    document.hasConstruction = bodyCount > 0;
 
     for (size_t i = 0; i < bodyCount; ++i) {
         const SceneObject& body = scene.bodyAt(i);
@@ -76,14 +105,35 @@ ProjectDocument captureProjectDocument(const ConstructionScene& scene, ProjectKi
         placement.transform = body.transform().values();
         document.scene.bodies.push_back(placement);
 
-        ProjectConstructionBody construction;
-        construction.objectId = body.objectId();
-        // Placement is SCNE's and is not here: since IMPORT-01A the shape state
-        // does not carry one at all, so the document has exactly one answer to
-        // where a body sits by construction rather than by clearing a field.
-        construction.shape = body.construction().captureState();
-        construction.features.push_back(ProjectFeatureRecord{});
-        document.construction.bodies.push_back(std::move(construction));
+        // WHICH branch a body is written to is its representation, and each
+        // body goes to exactly one. CONS is the REQUIRED section of a
+        // Construction project and the retained companion of a Sculpt one;
+        // which of those it is comes from the header's ProjectKind, not from
+        // whether the data exists.
+        if (const ConstructionObject* source = body.constructionOrNull()) {
+            ProjectConstructionBody construction;
+            construction.objectId = body.objectId();
+            // Placement is SCNE's and is not here: since IMPORT-01A the shape
+            // state does not carry one at all, so the document has exactly one
+            // answer to where a body sits by construction rather than by
+            // clearing a field.
+            construction.shape = source->captureState();
+            construction.features.push_back(ProjectFeatureRecord{});
+            document.construction.bodies.push_back(std::move(construction));
+            document.hasConstruction = true;
+        } else if (const ImportedMesh* imported = body.importedOrNull()) {
+            // The geometry itself, because nothing could recreate it. This is
+            // the one representation whose vertices ARE project truth.
+            ProjectImportedBody record;
+            record.objectId = body.objectId();
+            record.name = body.name();
+            record.positions = imported->positions();
+            record.normals = imported->normals();
+            record.indices = imported->indices();
+            record.batches = imported->batches();
+            document.imported.bodies.push_back(std::move(record));
+            document.hasImported = true;
+        }
 
         const FrozenSculpt& frozen = body.frozenSculpt();
         if (!frozen.mesh.frozen()) {
@@ -125,16 +175,10 @@ ProjectCodecStatus loadProjectDocument(const ProjectDocument& document, Construc
     if (why != ProjectCodecStatus::Ok) {
         return why;
     }
-    // A DOCUMENT may legally have no Construction branch — a Sculpt project's
-    // CONS companion is optional, and a reader that could not understand its
-    // version is right to skip it. This RUNTIME cannot build a body without a
-    // Construction Source, though: every `SceneObject` has one, and inventing a
-    // default Box for a body whose real shape the file described would be
-    // fabricating project data. So it is refused here, where the reason is
-    // "this build cannot evaluate that project", rather than in the codec,
-    // where the file itself is not at fault.
-    if (!document.hasConstruction
-        || document.construction.bodies.size() != document.scene.bodies.size()) {
+    // A DOCUMENT may legally leave a body with no geometry branch at all, and
+    // this build cannot evaluate one that does. Asked before anything is
+    // staged, through the same predicate the recovery-candidate check uses.
+    if (!runtimeCanEvaluateProject(document)) {
         return ProjectCodecStatus::MissingRequiredSection;
     }
 
@@ -145,28 +189,55 @@ ProjectCodecStatus loadProjectDocument(const ProjectDocument& document, Construc
     std::vector<std::unique_ptr<SceneObject>> staged;
     staged.reserve(bodyCount);
     int sculptMeshes = 0;
+    int importedBodies = 0;
 
     for (size_t i = 0; i < bodyCount; ++i) {
         const ProjectBodyPlacement& placement = document.scene.bodies[i];
-        // Built directly rather than through ConstructionScene::makeBody,
-        // precisely because makeBody would push the LIVE allocator forward --
-        // a mutation of the project we may still be about to refuse.
-        std::unique_ptr<SceneObject> body = std::make_unique<SceneObject>(placement.objectId);
+        const ProjectConstructionBody* shape =
+                findConstructionBody(document, placement.objectId);
+        const ProjectImportedBody* imported = findImportedBody(document, placement.objectId);
 
-        const ConstructionObjectState state = document.construction.bodies[i].shape;
-        // restoreState rather than setPrimitive/applyTransformValues: these
-        // values were authoritative, and therefore already validated, when they
-        // were captured, and validateProjectDocument has just re-checked them
-        // against the same domain contracts. Going through the edit entry points
-        // would count them as user updates and would rebuild the six remembered
-        // parameter sets one primitive at a time.
-        body->construction().restoreState(state);
-        // The placement is the BODY's, and SCNE is where it came from.
+        // Proven above by runtimeCanEvaluateProject; re-checked here because
+        // both pointers are about to be dereferenced.
+        if (shape == nullptr && imported == nullptr) {
+            return ProjectCodecStatus::MissingRequiredSection;
+        }
+
+        std::unique_ptr<SceneObject> body;
+        MeshValidation meshWhy = MeshValidation::Ok;
+        if (imported != nullptr) {
+            // Rebuilt through the same `ImportedMesh::build` an import goes
+            // through, so a loaded object is exactly as validated as a freshly
+            // imported one and no second construction path exists.
+            ImportedMeshValidation importedWhy = ImportedMeshValidation::Ok;
+            ImportedMesh mesh =
+                    ImportedMesh::build(imported->positions, imported->normals,
+                                        imported->indices, imported->batches, &importedWhy);
+            if (importedWhy != ImportedMeshValidation::Ok || !mesh.valid()) {
+                return ProjectCodecStatus::InvalidSemanticValue;
+            }
+            // Built directly rather than through the scene, precisely because
+            // the scene would push the LIVE allocator forward -- a mutation of
+            // the project we may still be about to refuse.
+            body.reset(new SceneObject(placement.objectId, std::move(mesh), imported->name));
+            ++importedBodies;
+        } else {
+            body = std::make_unique<SceneObject>(placement.objectId);
+            // restoreState rather than setPrimitive/applyTransformValues: these
+            // values were authoritative, and therefore already validated, when
+            // they were captured, and validateProjectDocument has just
+            // re-checked them against the same domain contracts. Going through
+            // the edit entry points would count them as user updates and would
+            // rebuild the six remembered parameter sets one primitive at a time.
+            body->construction().restoreState(shape->shape);
+        }
+        // The placement is the BODY's, whichever representation it has, and
+        // SCNE is where it came from.
         body->transform().setValues(placement.transform);
 
-        MeshValidation meshWhy = MeshValidation::Ok;
-        if (publishConstructionObject(body->construction(), body->meshStore(), &meshWhy)
-            == kNoMeshRevision) {
+        // ONE dispatch point: a Construction Body regenerates from its
+        // parameters, an Imported Mesh republishes the geometry it owns.
+        if (publishSceneObject(*body, &meshWhy) == kNoMeshRevision) {
             return ProjectCodecStatus::InvalidSemanticValue;
         }
 
@@ -241,6 +312,7 @@ ProjectCodecStatus loadProjectDocument(const ProjectDocument& document, Construc
     if (outReport != nullptr) {
         outReport->bodies = static_cast<int>(bodyCount);
         outReport->sculptMeshes = sculptMeshes;
+        outReport->importedBodies = importedBodies;
         outReport->activeBodyId = scene.activeBodyId();
         outReport->kind = document.kind;
         const RuntimeMeshPtr active = scene.activeBody().meshStore().current();
@@ -325,7 +397,28 @@ uint64_t projectSemanticFingerprint(const ConstructionScene& scene, ProjectKind 
         // do today — could never be silently invisible to a later stage.
         mixU64(hash, i);
         mixU64(hash, body.objectId());
-        mixShape(hash, body.construction().captureState());
+        // The representation itself, so the two branches below can never
+        // collide by producing the same bytes for different kinds of object.
+        mixU64(hash, static_cast<uint64_t>(body.representation()));
+        if (const ConstructionObject* source = body.constructionOrNull()) {
+            mixShape(hash, source->captureState());
+        } else if (const ImportedMesh* imported = body.importedOrNull()) {
+            // Identity, name and topology counts — and that is COMPLETE, not a
+            // proxy like the sculpt mesh's below. An ImportedMesh is immutable
+            // for the life of its body: there is no edit path that can change a
+            // vertex of one, so nothing the file would store can differ while
+            // these agree. Hashing four million positions on every autosave
+            // check to learn that would be the storm the checkpoint policy
+            // exists to prevent.
+            mixBytes(hash, body.name().data(), body.name().size());
+            mixU64(hash, imported->vertexCount());
+            mixU64(hash, imported->triangleCount());
+            for (const ImportedMeshBatch& batch : imported->batches()) {
+                mixU64(hash, batch.firstIndex);
+                mixU64(hash, batch.indexCount);
+                mixU64(hash, batch.doubleSided ? 1u : 0u);
+            }
+        }
         mixTransform(hash, body.transform().values());
 
         const FrozenSculpt& frozen = body.frozenSculpt();

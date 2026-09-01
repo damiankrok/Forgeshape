@@ -18,20 +18,22 @@ import android.net.Uri;
  * <p><b>Two kinds of traffic, and the difference matters.</b> A `.forge`
  * document is project TRANSFER: the canonical bytes an explicit Save writes,
  * readable by any compatible ForgeShape installation, and readable back by
- * ForgeShape. A `.glb` is an EXPORT: a one-way, lossy-by-design view of the
- * current geometry for another tool to look at, which ForgeShape cannot read
- * back and does not pretend to.
+ * ForgeShape. A `.glb` is INTERCHANGE: a lossy-by-design view of geometry, one
+ * way at a time — written by Export for another tool to look at, and read by
+ * Import into objects that then live in `.forge` like anything else. It is
+ * never a project, and opening one as a project is refused.
  *
- * <p>A `.glb` can also be read BACK, by the session-only Imported Mesh Preview
- * (GLB-IMPORT-R1). That is a diagnostic and not the reverse of Export: what it
- * produces has no identity, cannot be edited or saved, and is gone with the
- * process. The two acts stay separate all the way down — a `.forge` never
- * reaches the GLB parser and a `.glb` never reaches the `.forge` decoder.
+ * <p>A `.glb` can also be read BACK, by `IMPORT-01A`'s durable import, which is
+ * still not the reverse of Export: it does not restore a project, it ADDS the
+ * objects a file describes to the project already open, and the file is never
+ * consulted again afterwards. The two acts stay separate all the way down — a
+ * `.forge` never reaches the GLB parser and a `.glb` never reaches the `.forge`
+ * decoder.
  *
- * <p>What is still absent, deliberately: production glTF/GLB <b>import</b>
- * (`IMPORT-01`), OBJ, FBX, any other interchange format, and any converter or
- * menu entry that hints at one. Those are separate pipelines with their own
- * stages.
+ * <p>What is still absent, deliberately: OBJ, FBX, any other interchange
+ * format, any material, texture, UV, animation or rig in either direction, and
+ * any converter or menu entry that hints at one. Those are separate pipelines
+ * with their own stages.
  *
  * <p><b>The Uri stops here.</b> This class is the entire boundary: it turns a
  * {@code Uri} into a {@code byte[]} and a {@code byte[]} into a document the user
@@ -126,13 +128,11 @@ final class ProjectTransfer {
     }
 
     /**
-     * The intent that asks which `.glb` to read back for the diagnostic
-     * preview (GLB-IMPORT-R1).
+     * The intent that asks which `.glb` to import (`IMPORT-01A`).
      *
-     * <p>A DIFFERENT act from {@link #openDocumentIntent()}: that one
-     * opens a ForgeShape project and makes it live, this one previews somebody
-     * else's mesh and changes nothing. Neither file ever reaches the other's
-     * decoder.
+     * <p>A DIFFERENT act from {@link #openDocumentIntent()}: that one REPLACES
+     * the live project with another one, this one ADDS somebody else's mesh to
+     * the project already open. Neither file ever reaches the other's decoder.
      *
      * <p>Permissive for the same reason the project open picker is: a provider
      * reports whatever type it likes for a `.glb`, frequently

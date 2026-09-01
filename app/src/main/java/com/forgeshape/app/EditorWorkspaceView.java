@@ -1116,7 +1116,7 @@ final class EditorWorkspaceView extends FrameLayout
         finishEditing();
         onNativeStateChanged();
 
-        final String body = context.getString(R.string.body_label, created);
+        final String body = BodyLabels.of(context, created);
         final String kind = context.getString(PRIMITIVE_NAMES[primitiveKind]);
         showStatus(context.getString(shaped ? R.string.status_body_created
                         : R.string.status_body_created_unshaped, body, kind),
@@ -1597,8 +1597,23 @@ final class EditorWorkspaceView extends FrameLayout
         final boolean sculpting =
                 NativeViewport.productMode() == NativeViewport.MODE_SCULPT;
         final boolean hasFrozenMesh = nativeSculpt[NativeViewport.SCULPT_HAS_MESH] != 0.0;
+        // An Imported Mesh is not derived from parameters and nothing may
+        // invent a primitive for it, so Shape has no answer for one; and
+        // `IMPORT-01A` gives it no Frozen Sculpt Mesh either, so Start
+        // Sculpting is `IMPORT-01B`'s. Both are refused below JNI, and both are
+        // therefore ABSENT here rather than drawn and then refused. Withdrawing
+        // a control is not removing its guard: the guard is still in the
+        // domain.
+        final boolean imported = NativeViewport.sceneActiveBodyIsImported();
+        if (imported && uiState.constructionTool() == EditorUiState.CONSTRUCTION_TOOL_SHAPE) {
+            // The rail entry the user was holding is about to be withdrawn.
+            // Moving them to Transform — which an imported body fully supports
+            // — rather than leaving a held tool with no entry, so the precision
+            // surface and the gizmo agree with the rail.
+            uiState.setConstructionTool(EditorUiState.CONSTRUCTION_TOOL_TRANSFORM);
+        }
 
-        toolbar.showContext(sculpting, hasFrozenMesh);
+        toolbar.showContext(sculpting, hasFrozenMesh, !imported);
         toolbar.showEditingTransitions(true);
         // Display settings are native-owned and process-scoped, so on a resume
         // they are already whatever they were; this only makes the popover's
@@ -1657,8 +1672,10 @@ final class EditorWorkspaceView extends FrameLayout
     /**
      * Withdraws every editing control while an imported file is on the screen.
      *
-     * <p>GLB-IMPORT-R0. The preview is not editable — it has no body, no
-     * primitive, no sculpt mesh and no history — so Shape, Transform, Start
+     * <p>GLB-IMPORT-R0, and it is about the DIAGNOSTIC preview — not an
+     * imported body, which is an ordinary object with ordinary chrome. The
+     * preview is not editable — it has no body, no primitive, no sculpt mesh
+     * and no history — so Shape, Transform, Start
      * Sculpting, the exact values, creation, the handles and Undo/Redo would
      * every one of them be a control that cannot succeed, pointed at a model
      * the user cannot currently see. They are ABSENT rather than disabled, and
@@ -1773,7 +1790,12 @@ final class EditorWorkspaceView extends FrameLayout
                 uiState.precisionOpen(sculpting),
                 getContext().getString(precisionSurfaceName(sculpting)),
                 shortWindow,
-                displayPopover != null && displayPopover.isOpen()));
+                displayPopover != null && displayPopover.isOpen(),
+                // Shape has no answer for an Imported Mesh, so the rail does
+                // not offer it for one. Asked from native truth rather than
+                // remembered, exactly like every other fact this snapshot
+                // carries.
+                !NativeViewport.sceneActiveBodyIsImported()));
     }
 
     /**
@@ -1930,8 +1952,7 @@ final class EditorWorkspaceView extends FrameLayout
             inspector.setBody(sculptContext, context.getString(R.string.inspector_sculpt_title));
             return;
         }
-        final String body = context.getString(R.string.body_label,
-                NativeViewport.sceneActiveBodyId());
+        final String body = BodyLabels.ofActive(context);
         if (uiState.constructionTool() == EditorUiState.CONSTRUCTION_TOOL_TRANSFORM) {
             inspector.setBody(placementEditor,
                     context.getString(R.string.inspector_place_title_for_body, body));
@@ -2265,8 +2286,6 @@ final class EditorWorkspaceView extends FrameLayout
             // session, or could have been there since before the process
             // started, and Open must never offer to do something it cannot.
             projectPopover.showSlotState(ProjectSlot.exists(getContext()));
-            projectPopover.showPreviewState(NativeViewport.glbPreviewLoaded(),
-                    NativeViewport.glbPreviewVisible());
             // Hang the surface below the toolbar's ACTUAL height, for the same
             // reason the display popover does: the toolbar grows a second line
             // when the status message cannot share the control row, and a fixed
@@ -2651,35 +2670,35 @@ final class EditorWorkspaceView extends FrameLayout
     }
 
     // -----------------------------------------------------------------------
-    // GLB-IMPORT-R0/R1 — the diagnostic imported mesh preview
+    // IMPORT-01A — durable import
     // -----------------------------------------------------------------------
     //
-    // A diagnostic, and nothing below it creates, changes or saves anything.
-    // R1 widened what the PARSER reads — external static meshes, not only
-    // ForgeShape's own exports — and widened nothing here.
-    // The preview lives in native session state, has no ObjectId, is never
-    // encoded into `.forge` and is gone when the process is. Switching to it
-    // and back is a change of what the viewport DRAWS and nothing else.
+    // The product path, and the only user-facing GLB route. It creates real
+    // bodies: rows in the Objects list, ordinary gizmo targets, one Undo step
+    // for the whole import, and geometry the project carries afterwards without
+    // the source file. A refusal changes nothing at all — the domain builds and
+    // validates every object before any of them reaches the scene — so there is
+    // nothing to undo after one and no half-imported state to describe.
 
     @Override
-    public void onImportGlbPreviewRequested() {
+    public void onImportGlbRequested() {
         setProjectPanelOpen(false);
         if (transferHost == null || !transferHost.requestOpenGlbDocument()) {
-            showStatus(getContext().getString(R.string.status_glb_preview_failed, "no picker"),
+            showStatus(getContext().getString(R.string.status_glb_import_failed, "no picker"),
                     R.attr.fsTextError);
         }
     }
 
-    /** The user picked a `.glb` to read back — or cancelled. */
+    /** The user picked a `.glb` to import — or cancelled. */
     void onOpenGlbDocumentChosen(android.net.Uri source) {
         if (source == null) {
-            // Cancel. Nothing was read, nothing was shown, nothing changed.
-            Diagnostics.info(DiagnosticLog.CAT_TRANSFER, "GLB_PREVIEW_CANCELLED", null);
+            // Cancel. Nothing was read, nothing was created, nothing changed.
+            Diagnostics.info(DiagnosticLog.CAT_TRANSFER, "GLB_IMPORT_CANCELLED", null);
             return;
         }
         final byte[] bytes = ProjectTransfer.readFrom(getContext(), source);
         if (bytes == null) {
-            showStatus(getContext().getString(R.string.status_glb_preview_failed, "unreadable"),
+            showStatus(getContext().getString(R.string.status_glb_import_failed, "unreadable"),
                     R.attr.fsTextError);
             return;
         }
@@ -2687,75 +2706,73 @@ final class EditorWorkspaceView extends FrameLayout
     }
 
     /**
-     * Parses bytes into the preview and shows it.
+     * Imports bytes as durable objects.
      *
      * <p>Separate from the picker half so a test can drive the real parse and
-     * the real switch without the system's document UI, which is another app's
+     * the real commit without the system's document UI, which is another app's
      * surface and cannot be driven reliably from instrumentation. What is under
-     * test — the parse, the refusal, the switch, the untouched project — is
-     * identical either way.
+     * test — the parse, the refusal, the objects, the untouched project on a
+     * refusal — is identical either way.
      */
     void applyImportedGlbBytes(byte[] bytes) {
-        final int status = NativeViewport.importGlbPreview(bytes);
+        // Counted on this side because the count the user cares about is how
+        // many objects APPEARED, which is a fact about the scene either side of
+        // the call rather than about the file.
+        final int before = NativeViewport.sceneBodyCount();
+        final int status = NativeViewport.importGlbDurable(bytes);
         if (status != NativeViewport.IMPORT_OK) {
             // Fail closed and say so. The project is untouched by construction:
-            // a refused parse never reaches the preview, and the preview never
-            // reaches the project.
+            // a refused file never reaches the scene, and a refused commit
+            // never created an ObjectId.
             //
             // The user is shown one of three bounded categories, because those
             // are the three things a person can act on. The precise reason is a
             // stable token and goes to the diagnostics ring and the log, where
             // somebody chasing a particular file can read it.
-            Diagnostics.warn(DiagnosticLog.CAT_TRANSFER, "GLB_PREVIEW_REFUSED",
-                    NativeViewport.glbImportStatusToken(status));
-            showStatus(getContext().getString(R.string.status_glb_preview_failed,
+            Diagnostics.warn(DiagnosticLog.CAT_TRANSFER, "GLB_IMPORT_REFUSED",
+                    importRefusalToken(status));
+            showStatus(getContext().getString(R.string.status_glb_import_failed,
                     getContext().getString(importRefusalCategory(status))),
                     R.attr.fsTextError);
-            refreshImportedPreviewControls();
             return;
         }
-        NativeViewport.setGlbPreviewVisible(true);
-        Diagnostics.info(DiagnosticLog.CAT_TRANSFER, "GLB_PREVIEW_LOADED",
-                "bytes=" + bytes.length);
-        showStatus(getContext().getString(R.string.status_glb_preview_loaded,
-                importedPreviewSummary()), R.attr.fsTextSuccess);
-        refreshImportedPreviewControls();
-        syncFromNative();
+        Diagnostics.info(DiagnosticLog.CAT_TRANSFER, "GLB_IMPORTED", "bytes=" + bytes.length);
+        showStatus(getContext().getString(R.string.status_glb_imported,
+                importedSummary(NativeViewport.sceneBodyCount() - before)),
+                R.attr.fsTextSuccess);
+        // A real project change: the Objects list, the inspector and the
+        // autosave fingerprint all have to see the new bodies.
+        onNativeStateChanged();
     }
 
-    @Override
-    public void onToggleImportedPreviewRequested() {
-        setProjectPanelOpen(false);
-        final boolean showPreview = !NativeViewport.glbPreviewVisible();
-        NativeViewport.setGlbPreviewVisible(showPreview);
-        showStatus(getContext().getString(showPreview ? R.string.status_glb_preview_showing
-                        : R.string.status_glb_preview_source),
-                R.attr.fsTextSecondary);
-        refreshImportedPreviewControls();
-        syncFromNative();
-    }
-
-    @Override
-    public void onClearImportedPreviewRequested() {
-        setProjectPanelOpen(false);
-        NativeViewport.clearGlbPreview();
-        showStatus(getContext().getString(R.string.status_glb_preview_cleared),
-                R.attr.fsTextSecondary);
-        refreshImportedPreviewControls();
-        syncFromNative();
+    /**
+     * The stable refusal token, from whichever vocabulary the status belongs to.
+     *
+     * <p>Below {@link NativeViewport#IMPORT_COMMIT_BASE} the refusal is about
+     * the FILE; at or above it, about the PROJECT. Keeping them apart is what
+     * lets "this file uses a sparse accessor" and "this project cannot hold
+     * that many bodies" stay two different, actionable sentences in the log.
+     */
+    private static String importRefusalToken(int status) {
+        return status >= NativeViewport.IMPORT_COMMIT_BASE
+                ? NativeViewport.glbCommitStatusToken(status)
+                : NativeViewport.glbImportStatusToken(status);
     }
 
     /**
      * The bounded reason string for a refusal.
      *
      * <p>Three answers and no more: the file is not one this reader can open,
-     * it uses features the preview does not read, or its own geometry does not
+     * it uses features this import does not read, or its own geometry does not
      * add up. Which one is the domain's decision — the mapping lives beside the
-     * status enum in C++, so the Android layer never has to know which refusal
+     * status enums in C++, so the Android layer never has to know which refusal
      * means what.
      */
     private static int importRefusalCategory(int status) {
-        switch (NativeViewport.glbImportStatusCategory(status)) {
+        final int category = status >= NativeViewport.IMPORT_COMMIT_BASE
+                ? NativeViewport.glbCommitStatusCategory(status)
+                : NativeViewport.glbImportStatusCategory(status);
+        switch (category) {
             case NativeViewport.IMPORT_CATEGORY_UNSUPPORTED:
                 return R.string.glb_refusal_unsupported;
             case NativeViewport.IMPORT_CATEGORY_INCONSISTENT:
@@ -2765,19 +2782,18 @@ final class EditorWorkspaceView extends FrameLayout
         }
     }
 
-    /** A short human summary of what was read, for the status line. */
-    private String importedPreviewSummary() {
-        final int[] counts = new int[3];
-        NativeViewport.glbPreviewCounts(counts);
-        return counts[0] + " mesh" + (counts[0] == 1 ? "" : "es") + ", " + counts[1]
-                + " vertices, " + counts[2] + " triangles";
-    }
-
-    private void refreshImportedPreviewControls() {
-        if (projectPopover != null) {
-            projectPopover.showPreviewState(NativeViewport.glbPreviewLoaded(),
-                    NativeViewport.glbPreviewVisible());
+    /**
+     * A short human summary of what arrived, for the status line.
+     *
+     * <p>One object names itself, because that is what the user is now looking
+     * at and the name is the thing they will find in the list. Several are
+     * counted, because reading out forty names is not a status line.
+     */
+    private String importedSummary(int created) {
+        if (created == 1) {
+            return NativeViewport.sceneBodyName(NativeViewport.sceneActiveBodyId());
         }
+        return created + " objects";
     }
 
     /** True while the viewport is showing an imported file instead of the model. */

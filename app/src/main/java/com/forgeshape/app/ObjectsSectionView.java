@@ -119,7 +119,7 @@ final class ObjectsSectionView extends LinearLayout {
         for (int i = 0; i < written; i++) {
             final long objectId = idBuffer[i];
             final TextView row = EditorControlStyles.listRow(getContext(), R.id.object_row,
-                    getContext().getString(R.string.body_label, objectId));
+                    BodyLabels.of(getContext(), objectId));
             // The row's identity, and what a test selects it by. Never its
             // index and never where it happens to sit on screen.
             row.setTag(Long.valueOf(objectId));
@@ -178,6 +178,6 @@ final class ObjectsSectionView extends LinearLayout {
         // every surface must now read the newly active body.
         host.onNativeStateChanged();
         host.showStatus(getContext().getString(R.string.status_body_selected,
-                getContext().getString(R.string.body_label, objectId)), R.attr.fsTextSecondary);
+                BodyLabels.of(getContext(), objectId)), R.attr.fsTextSecondary);
     }
 }
