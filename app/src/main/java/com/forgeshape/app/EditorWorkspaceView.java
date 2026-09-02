@@ -1598,12 +1598,15 @@ final class EditorWorkspaceView extends FrameLayout
                 NativeViewport.productMode() == NativeViewport.MODE_SCULPT;
         final boolean hasFrozenMesh = nativeSculpt[NativeViewport.SCULPT_HAS_MESH] != 0.0;
         // An Imported Mesh is not derived from parameters and nothing may
-        // invent a primitive for it, so Shape has no answer for one; and
-        // `IMPORT-01A` gives it no Frozen Sculpt Mesh either, so Start
-        // Sculpting is `IMPORT-01B`'s. Both are refused below JNI, and both are
-        // therefore ABSENT here rather than drawn and then refused. Withdrawing
-        // a control is not removing its guard: the guard is still in the
-        // domain.
+        // invent a primitive for it, so Shape has no answer for one: that entry
+        // is ABSENT for one rather than drawn and then refused, and the guard
+        // stays in the domain because withdrawing a control is not removing it.
+        //
+        // Start Sculpting is a different matter since `IMPORT-01B`. An imported
+        // body can be sculpted -- the seed is its own geometry -- so the
+        // transition is OFFERED for one, and what the representation still
+        // decides is only the WORDING: which context this is, and where the way
+        // back out of Sculpt says it goes.
         final boolean imported = NativeViewport.sceneActiveBodyIsImported();
         if (imported && uiState.constructionTool() == EditorUiState.CONSTRUCTION_TOOL_SHAPE) {
             // The rail entry the user was holding is about to be withdrawn.
@@ -1613,7 +1616,7 @@ final class EditorWorkspaceView extends FrameLayout
             uiState.setConstructionTool(EditorUiState.CONSTRUCTION_TOOL_TRANSFORM);
         }
 
-        toolbar.showContext(sculpting, hasFrozenMesh, !imported);
+        toolbar.showContext(sculpting, hasFrozenMesh, imported);
         toolbar.showEditingTransitions(true);
         // Display settings are native-owned and process-scoped, so on a resume
         // they are already whatever they were; this only makes the popover's
@@ -1641,6 +1644,13 @@ final class EditorWorkspaceView extends FrameLayout
         // disagree about whether a body can be created.
         objectsCapsule.showCreationAvailable(!sculpting);
         objectsSection.showCreationAvailable(!sculpting);
+        // And deletion on the same terms, for the same reason: `sceneDeleteBody`
+        // refuses while sculpting, because the Sculpt target is fixed for the
+        // duration of the mode and Undo is refused there too -- a delete made
+        // there could not be taken back until the user left. The other half of
+        // the answer, that the last body cannot go, is the list's own and comes
+        // from the scene's size.
+        objectsSection.showDeletionAvailable(!sculpting);
         if (sculpting) {
             // The palette is anchored to a control that has just gone. Left open
             // it would stand on the model attached to nothing, and choosing a
@@ -2139,8 +2149,13 @@ final class EditorWorkspaceView extends FrameLayout
     // -----------------------------------------------------------------------
 
     /**
-     * <b>Start Sculpting.</b> Copies the object's current Construction mesh into
+     * <b>Start Sculpting.</b> Copies the active body's current SOURCE mesh into
      * a sculpt mesh and enters Sculpt Mode.
+     *
+     * <p>Which source that is, is the body's representation and is decided below
+     * JNI: a Construction Body regenerates its primitive, an Imported Mesh hands
+     * over the geometry it owns (`IMPORT-01B`). Neither is written by the copy,
+     * and neither is written by any stroke afterwards.
      *
      * <p>Unguarded on purpose. This control is on screen only while <b>no</b>
      * sculpt mesh exists, so it can discard nothing: there is no sculpt work to
@@ -2166,8 +2181,14 @@ final class EditorWorkspaceView extends FrameLayout
         dismissPrimarySurfacesExcept(null);
         finishEditing();
         syncFromNative();
-        showStatus(getContext().getString(R.string.status_now_sculpting,
-                shapeEditor.describeNativeKind()), R.attr.fsTextSuccess);
+        // The verdict names what was KEPT. A Construction Body's primitive is
+        // still there to name; an imported body has none, and saying so in
+        // Construction vocabulary would claim a shape the user never made.
+        showStatus(NativeViewport.sceneActiveBodyIsImported()
+                        ? getContext().getString(R.string.status_now_sculpting_imported)
+                        : getContext().getString(R.string.status_now_sculpting,
+                                shapeEditor.describeNativeKind()),
+                R.attr.fsTextSuccess);
     }
 
     /**
@@ -2197,13 +2218,16 @@ final class EditorWorkspaceView extends FrameLayout
     }
 
     /**
-     * Back to the Construction Source, which sculpting never wrote.
+     * Back to the body's SOURCE representation, which sculpting never wrote.
      *
-     * <p>The wording elsewhere changed at UI-R4B and what this does did not. The
-     * exact primitive, its parameters and its placement are exactly what they
-     * were before Start Sculpting — no sculpt edit has ever been allowed to
-     * reach them — and Resume Sculpt returns to the same mesh with the same
-     * revision, the same counts and the same stroke history.
+     * <p>The wording elsewhere changed at UI-R4B and again at `IMPORT-01B`, and
+     * what this does did not. A Construction Body's exact primitive, its
+     * parameters and its placement, or an Imported Mesh's positions, normals,
+     * topology and submesh batches, are exactly what they were before Start
+     * Sculpting — no sculpt edit has ever been allowed to reach either — and
+     * Resume Sculpt returns to the same mesh with the same revision, the same
+     * counts and the same stroke history. The user reads the control as Back to
+     * Construction or Back to Imported Mesh; the one native act is the same.
      */
     @Override
     public void onBackToConstruction() {

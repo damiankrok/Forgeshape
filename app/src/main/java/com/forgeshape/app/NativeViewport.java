@@ -490,6 +490,52 @@ final class NativeViewport {
     static native long sceneAddBody();
 
     // -----------------------------------------------------------------------
+    // Delete (UI-OWNER-45)
+    // -----------------------------------------------------------------------
+    //
+    // Status codes in step with the native kDelete* constants. They are a JNI
+    // transport detail; the domain's own vocabulary is DeleteBodyStatus.
+
+    /** The body was removed, as exactly one history transaction. */
+    static final int DELETE_OK = 0;
+    /** No body in the scene carries that id. */
+    static final int DELETE_UNKNOWN_BODY = 1;
+    /**
+     * The scene holds exactly one body.
+     *
+     * <p>This product has no empty project: the scene creates a body eagerly,
+     * every active-body accessor assumes one exists, and a {@code .forge} file
+     * with zero bodies is refused. So the last body is refused by name rather
+     * than removed and replaced with a primitive nobody asked for.
+     */
+    static final int DELETE_REFUSED_LAST_BODY = 2;
+    /** A Construction edit is open; its captured pre-state names this body. */
+    static final int DELETE_REFUSED_EDIT_IN_PROGRESS = 3;
+    /**
+     * The product is in Sculpt mode.
+     *
+     * <p>The same rule body switching and Undo/Redo already follow: the Sculpt
+     * target is fixed for the duration of the mode, and a delete there could
+     * not be undone until the user left it.
+     */
+    static final int DELETE_REFUSED_IN_SCULPT = 4;
+
+    /**
+     * Removes one body from the project, as exactly one history transaction.
+     *
+     * <p>Representation-neutral: a Construction Body, an Imported Mesh and
+     * either of them carrying a retained sculpt mesh all leave the same way and
+     * come back the same way. Undo restores the SAME object — its identity, its
+     * geometry and its sculpt state — because the history holds it rather than
+     * destroying it.
+     *
+     * <p>A refusal changes nothing at all.
+     *
+     * @return one of the {@code DELETE_*} constants
+     */
+    static native int sceneDeleteBody(long objectId);
+
+    // -----------------------------------------------------------------------
     // Construction history
     // -----------------------------------------------------------------------
     //

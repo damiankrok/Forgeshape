@@ -216,9 +216,10 @@ void ConstructionHistory::applyState(const SceneConstructionState& target,
             }
         }
         if (!body) {
-            // Held for a redo since the undo that took it out of the scene, so
-            // it comes back with its own Frozen Sculpt Mesh rather than as a
-            // new object wearing the same id.
+            // Held since whatever took it out of the scene -- an undone
+            // creation, or a Delete -- so it comes back with its own Frozen
+            // Sculpt Mesh and its own Imported Mesh intact rather than as a new
+            // object wearing the same id.
             for (auto& candidate : detached_) {
                 if (candidate && candidate->objectId() == wanted.objectId) {
                     body = std::move(candidate);
@@ -231,10 +232,10 @@ void ConstructionHistory::applyState(const SceneConstructionState& target,
                 // An Imported Mesh cannot be fabricated from a step: its
                 // geometry is not derived from anything a step holds. It can
                 // only come back as the object that was taken out, and
-                // `pruneDetachedBodies` keeps exactly the ones a redo still
-                // names — so reaching here would mean the step and the detached
-                // pool disagreed. Skip rather than invent an empty body wearing
-                // an imported object's identity.
+                // `pruneDetachedBodies` keeps exactly the ones some step still
+                // names -- so reaching here would mean the step and the
+                // detached pool disagreed. Skip rather than invent an empty
+                // body wearing an imported object's identity.
                 continue;
             }
             body = scene_.makeBody(wanted.objectId);
@@ -312,21 +313,43 @@ void ConstructionHistory::applyState(const SceneConstructionState& target,
     }
 }
 
+void ConstructionHistory::holdDetachedBody(std::unique_ptr<SceneObject> body) {
+    if (!body) {
+        return;
+    }
+    detached_.push_back(std::move(body));
+}
+
 void ConstructionHistory::pruneDetachedBodies() {
+    // Whether any step in a stack names this body, on EITHER side.
+    //
+    // Both sides matter, and each for its own act: a redo restores an undone
+    // creation from a step's AFTER state, and an undo restores a deleted body
+    // from a step's BEFORE state. Asking only the forward side was correct
+    // while an undone creation was the only way a body could leave the scene.
+    const auto namedBy = [](const std::deque<HistoryEntry>& stack, ObjectId id) {
+        for (const HistoryEntry& entry : stack) {
+            for (const BodyConstructionState& state : entry.before.bodies) {
+                if (state.objectId == id) {
+                    return true;
+                }
+            }
+            for (const BodyConstructionState& state : entry.after.bodies) {
+                if (state.objectId == id) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
     detached_.erase(
         std::remove_if(detached_.begin(), detached_.end(),
-                       [this](const std::unique_ptr<SceneObject>& body) {
+                       [this, &namedBy](const std::unique_ptr<SceneObject>& body) {
                            if (!body) {
                                return true;
                            }
-                           for (const HistoryEntry& entry : redoStack_) {
-                               for (const BodyConstructionState& state : entry.after.bodies) {
-                                   if (state.objectId == body->objectId()) {
-                                       return false;
-                                   }
-                               }
-                           }
-                           return true;
+                           return !namedBy(undoStack_, body->objectId())
+                                  && !namedBy(redoStack_, body->objectId());
                        }),
         detached_.end());
 }

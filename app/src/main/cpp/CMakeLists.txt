@@ -47,6 +47,7 @@ add_library(forgeshape_native SHARED
     forgeshape_jni.cpp
     forgeshape_camera.cpp
     forgeshape_camera_selftest.cpp
+    forgeshape_body_delete.cpp
     forgeshape_construction.cpp
     forgeshape_construction_selftest.cpp
     forgeshape_cone_capsule_selftest.cpp

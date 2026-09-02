@@ -22,11 +22,16 @@ import android.widget.TextView;
  * native state on refresh.
  *
  * <p><b>Vocabulary.</b> What the user reads here is "Sculpt mesh" and "Reset
- * Sculpt from Shape"; what the code below calls it is a freeze, because that is
- * what {@link NativeViewport#freezeToSculpt()} actually does — it copies the
- * Construction mesh into an editable one. The two names are for two different
- * readers and both are accurate. Nothing about the operation changed at UI-R4B;
- * only what it is called on screen did.
+ * Sculpt from Shape" — or "Reset Sculpt from Imported Mesh", over a body whose
+ * geometry came from a file; what the code below calls all of it is a freeze,
+ * because that is what {@link NativeViewport#freezeToSculpt()} actually does. It
+ * copies the body's SOURCE mesh into an editable one, and since `IMPORT-01B`
+ * that source may be either representation. The two names are for two different
+ * readers and both are accurate.
+ *
+ * <p>The stale-source warning is Construction-only in practice and not by a
+ * branch here: an Imported Mesh is immutable for the life of its body, so
+ * nothing can make one stale and the flag is never set for one.
  */
 final class SculptContextView extends LinearLayout {
 
@@ -107,8 +112,33 @@ final class SculptContextView extends LinearLayout {
                 context.getString(R.string.sculpt_gesture_rule,
                         context.getString(TOOL_HINTS[tool]))));
         meshSummary.setContentDescription(meshSummary.getText());
+        // The stale-source warning is about a CONSTRUCTION Source that moved on
+        // after the freeze. An Imported Mesh cannot: it is immutable for the
+        // life of its body, there is no edit path to one, so the flag is never
+        // set for one and the block simply never appears. Read from native
+        // state either way rather than special-cased here.
         staleWarning.setVisibility(
                 nativeState[NativeViewport.SCULPT_SOURCE_STALE] != 0.0 ? VISIBLE : GONE);
+        // The destructive act is the same act for both representations -- it
+        // re-freezes from whatever the body's source IS -- but its NAME may not
+        // be. "from Shape" names a Construction shape, and an imported body has
+        // none; a label that pointed at something the user cannot see would be
+        // worse than no label. See the string's own comment.
+        resetSculpt.setText(context.getString(sourceIsImported()
+                ? R.string.reset_sculpt_from_imported_mesh : R.string.reset_sculpt_from_shape));
+        resetSculpt.setContentDescription(resetSculpt.getText());
+    }
+
+    /**
+     * Whether the sculpt mesh's body was frozen from an imported source.
+     *
+     * <p>Asked of native code, never inferred from an empty primitive or a
+     * name: the representation is a domain fact and this reads it. Body
+     * switching is refused while sculpting, so the active body is the sculpt
+     * target and the two questions cannot come apart.
+     */
+    private boolean sourceIsImported() {
+        return NativeViewport.sceneActiveBodyIsImported();
     }
 
     private int activeTool() {
@@ -146,7 +176,12 @@ final class SculptContextView extends LinearLayout {
         final Context context = getContext();
         confirmation = new AlertDialog.Builder(context)
                 .setTitle(R.string.reset_sculpt_confirm_title)
-                .setMessage(context.getString(R.string.reset_sculpt_confirm_message))
+                // The same question, naming the source it will rebuild FROM. Both
+                // forms say the sculpting is discarded and that it cannot be
+                // undone, because that is what the guard is about.
+                .setMessage(context.getString(sourceIsImported()
+                        ? R.string.reset_sculpt_confirm_message_imported
+                        : R.string.reset_sculpt_confirm_message))
                 // The button carries the verb, not "OK": the user should be
                 // able to read what pressing it does without re-reading the
                 // message above it.
@@ -169,7 +204,12 @@ final class SculptContextView extends LinearLayout {
             return;
         }
         host.onNativeStateChanged();
-        host.showStatus(getContext().getString(R.string.status_now_sculpting, describeNativeKind()),
+        // The verdict names what was KEPT, which is the reassurance the act
+        // needs, and an imported body has no primitive to name there.
+        host.showStatus(sourceIsImported()
+                        ? getContext().getString(R.string.status_now_sculpting_imported)
+                        : getContext().getString(R.string.status_now_sculpting,
+                                describeNativeKind()),
                 R.attr.fsTextSuccess);
     }
 

@@ -30,6 +30,7 @@
 #include <cstdio>
 #include <vector>
 
+#include "forgeshape_body_delete.h"
 #include "forgeshape_camera.h"
 #include "forgeshape_camera_selftest.h"
 #include "forgeshape_construction.h"
@@ -447,6 +448,10 @@ void runProjectSelfTestsAndLog() {
             forgeshape::canonicalImportedOnlyFixtureSha256(),
             forgeshape::canonicalConstructionImportedFixtureSha256(),
             forgeshape::canonicalMixedImportedFixtureSha256());
+    FS_LOGI("FORGESHAPE_PROJECT_GOLDEN_SHA256_IMPORTED_SCULPT imported_sculpt=%s "
+            "mixed_imported_sculpt=%s",
+            forgeshape::canonicalImportedSculptFixtureSha256(),
+            forgeshape::canonicalMixedImportedSculptFixtureSha256());
     if (failed == 0) {
         FS_LOGI("FORGESHAPE_PROJECT_SELFTEST_OK (%d checks)", count);
     } else {
@@ -1776,32 +1781,46 @@ Java_com_forgeshape_app_NativeViewport_productMode(JNIEnv*, jclass) {
     return forgeshape::sculptSession().inSculptMode() ? 1 : 0;
 }
 
-// Freeze to Sculpt.
+// Start Sculpting.
 //
 // One explicit user act performs the whole thing: take a coherent snapshot of
-// the Construction object's CURRENT local mesh, make it the Frozen Sculpt Mesh
-// with the same ObjectId, enter Sculpt mode, and publish it as the active
-// representation. The Construction Source is only read, never written.
+// the ACTIVE BODY's current local mesh, make it the Frozen Sculpt Mesh with the
+// same ObjectId, enter Sculpt mode, and publish it as the active
+// representation.
+//
+// Representation-neutral since `IMPORT-01B`, and it is `buildSculptSourceMesh`
+// that makes it so: a Construction Body regenerates from its parameters, an
+// Imported Mesh hands over the arrays it owns, and this function does not ask
+// which. Either source is only READ -- no primitive parameter, no placement and
+// no imported vertex is written by a freeze, then or ever.
+//
+// The source is built under the state mutex, exactly as applyPrimitive,
+// runHistoryStep and loadProject already generate under it: what is being
+// generated FROM is what another thread could otherwise read half-written.
 JNIEXPORT jint JNICALL
 Java_com_forgeshape_app_NativeViewport_freezeToSculpt(JNIEnv*, jclass) {
-    const forgeshape::ConstructionObject* active = forgeshape::activeConstructionOrNull();
-    if (active == nullptr) {
-        // Start Sculpting on an Imported Mesh is `IMPORT-01B`, not this stage.
-        // Refused in the domain as well as withdrawn from the UI: removing a
-        // control is not removing a guard.
-        FS_LOGE("FORGESHAPE_SCULPT_FREEZE_FAIL:NoConstructionSource");
-        return kSculptFailedFreeze;
-    }
-    const forgeshape::ConstructionObject& object = *active;
-    const forgeshape::ConstructionMesh source = object.generateMesh();
     forgeshape::MeshValidation why = forgeshape::MeshValidation::Ok;
-
+    forgeshape::ObjectId objectId = forgeshape::kNoObject;
+    bool haveSource = false;
     bool froze = false;
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
-        g_grabbing = false;
-        g_strokePending = false;
-        froze = forgeshape::sculptSession().freezeToSculpt(source, object.objectId(), &why);
+        forgeshape::SceneObject& body = forgeshape::constructionScene().activeBody();
+        objectId = body.objectId();
+        forgeshape::ConstructionMesh source;
+        haveSource = forgeshape::buildSculptSourceMesh(body, &source);
+        if (haveSource) {
+            g_grabbing = false;
+            g_strokePending = false;
+            froze = forgeshape::sculptSession().freezeToSculpt(source, objectId, &why);
+        }
+    }
+    if (!haveSource) {
+        // A body with no geometry at all. Not reachable from the product -- both
+        // representations always have some -- and refused by name rather than
+        // left to fail as an empty mesh.
+        FS_LOGE("FORGESHAPE_SCULPT_FREEZE_FAIL:NoGeometrySource");
+        return kSculptFailedFreeze;
     }
     if (!froze) {
         FS_LOGE("FORGESHAPE_SCULPT_FREEZE_FAIL:%s", forgeshape::meshValidationName(why));
@@ -1809,21 +1828,40 @@ Java_com_forgeshape_app_NativeViewport_freezeToSculpt(JNIEnv*, jclass) {
     }
 
     const forgeshape::SculptMesh& mesh = forgeshape::sculptSession().mesh();
+    // The log names WHAT was frozen from, which is the one thing that differs
+    // between the two representations and the one thing evidence needs.
     char described[128];
-    describeSpec(object.spec(), described, sizeof(described));
-    FS_LOGI("FORGESHAPE_SCULPT_FROZEN:%u:%u sculptRev=%llu objectId=%llu from kind=%s %s",
-            mesh.vertexCount(), mesh.indexCount(), (unsigned long long)mesh.revision(),
-            (unsigned long long)mesh.objectId(), forgeshape::primitiveKindName(object.kind()),
-            described);
+    const forgeshape::SceneObject& body = forgeshape::constructionScene().activeBody();
+    if (const forgeshape::ConstructionObject* source = body.constructionOrNull()) {
+        describeSpec(source->spec(), described, sizeof(described));
+        FS_LOGI("FORGESHAPE_SCULPT_FROZEN:%u:%u sculptRev=%llu objectId=%llu from kind=%s %s",
+                mesh.vertexCount(), mesh.indexCount(), (unsigned long long)mesh.revision(),
+                (unsigned long long)mesh.objectId(),
+                forgeshape::primitiveKindName(source->kind()), described);
+    } else {
+        const forgeshape::ImportedMesh* imported = body.importedOrNull();
+        FS_LOGI("FORGESHAPE_SCULPT_FROZEN:%u:%u sculptRev=%llu objectId=%llu from "
+                "representation=Imported sourceVertices=%u sourceTriangles=%u batches=%u",
+                mesh.vertexCount(), mesh.indexCount(), (unsigned long long)mesh.revision(),
+                (unsigned long long)mesh.objectId(),
+                imported != nullptr ? imported->vertexCount() : 0u,
+                imported != nullptr ? imported->triangleCount() : 0u,
+                imported != nullptr ? imported->batchCount() : 0u);
+    }
     const forgeshape::MeshRevision revision = publishSculptRepresentation("freeze");
     FS_LOGI("FORGESHAPE_SCULPT_MODE:sculpt meshRev=%llu", (unsigned long long)revision);
     logSculptState("freeze");
     return kSculptOk;
 }
-
-// Returns to Construction mode and republishes the Construction Source's own
-// generated mesh, so what is on screen is the original object, unsculpted. The
-// Frozen Sculpt Mesh is kept, untouched.
+// Leaves Sculpt mode and republishes the active body's SOURCE representation,
+// so what is on screen is the original object, unsculpted. The Frozen Sculpt
+// Mesh is kept, untouched.
+//
+// Which source that is comes from `publishConstructionObject`, which has
+// dispatched per representation since `IMPORT-01A`: a Construction Body
+// regenerates its primitive, an Imported Mesh republishes the geometry it owns.
+// The user reads this as Back to Construction or Back to Imported Mesh; the act
+// below is the same one either way.
 JNIEXPORT jint JNICALL
 Java_com_forgeshape_app_NativeViewport_enterConstructionMode(JNIEnv*, jclass) {
     {
@@ -2012,6 +2050,73 @@ JNIEXPORT jlong JNICALL Java_com_forgeshape_app_NativeViewport_sceneAddBody(JNIE
             (unsigned long long)created, (unsigned long long)revision,
             (int)forgeshape::constructionScene().bodyCount());
     return static_cast<jlong>(created);
+}
+
+// ---------------------------------------------------------------------------
+
+// Delete status codes handed back to the Android UI. A JNI transport detail, in
+// step with NativeViewport's DELETE_* fields; the domain's own vocabulary is
+// DeleteBodyStatus.
+constexpr jint kDeleteOk = 0;
+constexpr jint kDeleteUnknownBody = 1;
+constexpr jint kDeleteRefusedLastBody = 2;
+constexpr jint kDeleteRefusedEditInProgress = 3;
+constexpr jint kDeleteRefusedInSculpt = 4;
+
+// Removes one body from the project (`UI-OWNER-45`).
+//
+// The whole decision -- the transaction, holding the removed body so an undo
+// can put THAT object back, the replacement selection and the last-body refusal
+// -- is `deleteSceneBody`'s, in platform-neutral code. What is here is the lock,
+// the mode guard and the log line.
+//
+// REFUSED WHILE SCULPTING, on the same terms as body switching and Undo/Redo:
+// the Sculpt target is fixed for the duration of Sculpt mode, and a delete
+// there would remove the very mesh a stroke may be running on AND could not be
+// undone until the user left the mode, because Undo is refused there too. The
+// control is withdrawn in Sculpt as well; removing a control is not removing a
+// guard.
+//
+// A refusal changes nothing at all: no body leaves the scene, no step is
+// recorded, no ObjectId moves and the project fingerprint does not shift.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sceneDeleteBody(JNIEnv*, jclass, jlong objectId) {
+    forgeshape::DeleteBodyStatus status = forgeshape::DeleteBodyStatus::Ok;
+    forgeshape::DeleteBodyReport report;
+    bool refusedInSculpt = false;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        if (forgeshape::sculptSession().inSculptMode()) {
+            refusedInSculpt = true;
+        } else {
+            status = forgeshape::deleteSceneBody(static_cast<forgeshape::ObjectId>(objectId),
+                                                 forgeshape::constructionScene(),
+                                                 forgeshape::constructionHistory(), &report);
+        }
+    }
+    if (refusedInSculpt) {
+        FS_LOGI("FORGESHAPE_SCENE_DELETE_REFUSED:in_sculpt_mode:%lld", (long long)objectId);
+        return kDeleteRefusedInSculpt;
+    }
+    if (status != forgeshape::DeleteBodyStatus::Ok) {
+        FS_LOGI("FORGESHAPE_SCENE_DELETE_REFUSED:%s:%lld",
+                forgeshape::deleteBodyStatusName(status), (long long)objectId);
+        switch (status) {
+            case forgeshape::DeleteBodyStatus::UnknownBody: return kDeleteUnknownBody;
+            case forgeshape::DeleteBodyStatus::RefusedLastBody: return kDeleteRefusedLastBody;
+            case forgeshape::DeleteBodyStatus::RefusedEditInProgress:
+                return kDeleteRefusedEditInProgress;
+            case forgeshape::DeleteBodyStatus::Ok: break;
+        }
+        return kDeleteUnknownBody;
+    }
+    // Nothing is published: the bodies that remain already hold their own
+    // current revisions in their own stores, and the one that left is simply
+    // absent from the next snapshot. A delete costs no geometry work at all.
+    FS_LOGI("FORGESHAPE_SCENE_BODY_DELETED:%llu index=%d bodies=%d active=%lld",
+            (unsigned long long)report.removedBodyId, (int)report.removedIndex,
+            (int)report.bodyCount, (long long)report.activeBodyId);
+    return kDeleteOk;
 }
 
 // ---------------------------------------------------------------------------

@@ -299,6 +299,11 @@
     <item name="objects_section" type="id" />
     <item name="objects_list" type="id" />
     <item name="object_row" type="id" />
+    <!-- The row's Delete affordance (UI-OWNER-45). A sibling of the row's
+         label, not the row itself, so selecting a body and removing it are two
+         separate targets and neither can be reached by mistake. It carries the
+         same ObjectId tag the label does. -->
+    <item name="object_row_delete" type="id" />
     <!-- The column host's own creation affordance. The same act as the
          capsule's `+`: it opens Add Primitive, and never creates a body by
          itself. -->

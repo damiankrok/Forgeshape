@@ -10,6 +10,7 @@
 #include "forgeshape_math.h"
 #include "forgeshape_mesh.h"
 #include "forgeshape_history.h"
+#include "forgeshape_imported_mesh.h"
 #include "forgeshape_picking.h"
 #include "forgeshape_render_mesh.h"
 #include "forgeshape_scene.h"
@@ -129,6 +130,51 @@ ConstructionObject makePlaneObject() {
     ConstructionTransform placement_;
     object.setPrimitive(PrimitiveSpec::forPlane(2.0, 1.5));
     return object;
+}
+
+// The Imported Mesh fixture for the `IMPORT-01B` seed cases.
+//
+// A closed-ish shell of six vertices around the origin, big enough that the
+// suite's straight-on camera lands a brush on it, plus TWO submeshes whose
+// `doubleSided` answers differ — which is the whole point: one answer for a
+// whole frozen mesh has to be the permissive collapse of the two, and a seed
+// built from the DRAW indices would double the topology and cancel its own
+// normals. Local space, exactly as an import leaves it.
+const std::vector<float>& importedSculptFixturePositions() {
+    static const std::vector<float> positions{
+            0.0f,  2.0f,  0.0f,   // apex
+            -2.0f, 0.0f,  2.0f,
+            2.0f,  0.0f,  2.0f,
+            2.0f,  0.0f,  -2.0f,
+            -2.0f, 0.0f,  -2.0f,
+            0.0f,  -2.0f, 0.0f};  // base point
+    return positions;
+}
+
+const std::vector<uint32_t>& importedSculptFixtureIndices() {
+    static const std::vector<uint32_t> indices{
+            0, 1, 2, 0, 2, 3, 0, 3, 4, 0, 4, 1,   // the closed upper pyramid
+            5, 2, 1, 5, 3, 2, 5, 4, 3, 5, 1, 4};  // the lower half, two-sided
+    return indices;
+}
+
+ImportedMesh importedSculptFixtureMesh() {
+    // Unit directions, which is what the domain requires of a stored normal.
+    // They are the file's own answer and are deliberately NOT what the frozen
+    // mesh will use: a Frozen Sculpt Mesh derives its normals from its current
+    // positions, because a stroke moves them.
+    const std::vector<float>& positions = importedSculptFixturePositions();
+    std::vector<float> normals(positions.size());
+    for (size_t v = 0; v < positions.size(); v += 3) {
+        const Vec3 p{positions[v], positions[v + 1], positions[v + 2]};
+        const float length = std::sqrt(vec3Dot(p, p));
+        normals[v] = p.x / length;
+        normals[v + 1] = p.y / length;
+        normals[v + 2] = p.z / length;
+    }
+    const std::vector<ImportedMeshBatch> batches{ImportedMeshBatch{0, 12, false},
+                                                 ImportedMeshBatch{12, 12, true}};
+    return ImportedMesh::build(positions, normals, importedSculptFixtureIndices(), batches);
 }
 
 // The world-space displacement the brush should produce for a pointer travel of
@@ -2915,6 +2961,211 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
                             session.mesh().revision() > kFrozenSculptRevision);
             }
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // IMP01B-01/02/03/04/05/07/08/09/10: sculpting an Imported Mesh
+    // -----------------------------------------------------------------------
+    //
+    // The whole of `IMPORT-01B`'s seed contract, driven through the ONE
+    // production entry point `buildSculptSourceMesh` and the ordinary
+    // `SculptSession`. Nothing here builds a sculpt mesh a second way, and
+    // nothing here reads a Construction Source: that is the point of the case.
+    {
+        ConstructionScene scene;
+        SceneObject* imported =
+                scene.addImportedBody(importedSculptFixtureMesh(), "head_low");
+        r.check("IMP01B_01_an_imported_body_exists_for_the_seed_case",
+                imported != nullptr && imported->isImported());
+        if (imported == nullptr) {
+            return r.n;
+        }
+        const std::vector<float> localPositions = importedSculptFixturePositions();
+        const std::vector<uint32_t> localIndices = importedSculptFixtureIndices();
+
+        // An authored placement, so "not baked twice" is a question with an
+        // answer. An import leaves rotation and scale at the identity; the user
+        // is free to change them afterwards, and this stands in for that.
+        TransformValues placed;
+        placed.positionX = 1.5;
+        placed.positionY = -0.25;
+        placed.positionZ = 4.0;
+        placed.rotationY = 90.0;
+        placed.scaleX = 2.0;
+        imported->transform().setValues(placed);
+        publishSceneObject(*imported);
+
+        // IMP01B-10: nothing invents a Construction Source, before or after.
+        r.check("IMP01B_10_an_imported_body_has_no_construction_source",
+                imported->constructionOrNull() == nullptr);
+
+        ConstructionMesh source;
+        r.check("IMP01B_02_a_sculpt_source_is_built_from_an_imported_body",
+                buildSculptSourceMesh(*imported, &source));
+
+        // IMP01B-02: the seed IS the imported local geometry, vertex for vertex
+        // and index for index. Bit-exact: this is a copy, not a conversion.
+        bool positionsMatch = source.vertices.size() * 3u == localPositions.size();
+        for (size_t v = 0; positionsMatch && v < source.vertices.size(); ++v) {
+            for (int axis = 0; axis < 3; ++axis) {
+                if (source.vertices[v].position[axis] != localPositions[v * 3u + axis]) {
+                    positionsMatch = false;
+                }
+            }
+        }
+        r.check("IMP01B_02_the_seed_carries_the_imported_positions_bit_for_bit",
+                positionsMatch);
+        r.check("IMP01B_02_and_the_imported_topology_exactly", source.indices == localIndices);
+
+        // The RAW indices, never the drawable ones: `buildDrawData` emits a
+        // two-sided submesh a second time reversed, and those duplicates would
+        // cancel every area-weighted normal they touch.
+        std::vector<MeshVertex> drawVertices;
+        std::vector<uint32_t> drawIndices;
+        imported->importedOrNull()->buildDrawData(&drawVertices, &drawIndices);
+        r.check("IMP01B_02_the_seed_is_not_the_doubled_draw_index_buffer",
+                drawIndices.size() > localIndices.size()
+                    && source.indices.size() == localIndices.size());
+        // The per-submesh answers collapse to the permissive one, so an
+        // imported sheet stays visible and reachable from behind while it is
+        // being sculpted.
+        r.check("IMP01B_02_any_double_sided_submesh_makes_the_seed_two_sided",
+                source.renderBothSides);
+
+        SculptSession session;
+        session.bindTarget(&imported->frozenSculpt());
+        r.check("IMP01B_01_an_imported_body_can_be_frozen",
+                session.freezeToSculpt(source, imported->objectId()));
+        r.check("IMP01B_02_the_frozen_mesh_keeps_the_imported_counts",
+                session.mesh().vertexCount() * 3u == localPositions.size()
+                    && session.mesh().indexCount() == localIndices.size());
+        r.check("IMP01B_02_and_the_body_identity",
+                session.mesh().objectId() == imported->objectId());
+        // Every normal is derived from the CURRENT positions, so a two-sided
+        // submesh must not have cancelled its own out. A zero normal is exactly
+        // what a reversed duplicate would have produced.
+        bool normalsUsable = true;
+        for (uint32_t v = 0; v < session.mesh().vertexCount(); ++v) {
+            if (lengthOf(session.mesh().vertexNormal(v)) < 0.5f) {
+                normalsUsable = false;
+            }
+        }
+        r.check("IMP01B_02_the_frozen_normals_are_real_directions", normalsUsable);
+
+        // IMP01B-03: the authored placement is the BODY's and is not baked into
+        // the seed. Both representations are LOCAL under the one transform, so
+        // the same model matrix carries each to the same world point.
+        r.check("IMP01B_03_freezing_does_not_touch_the_authored_transform",
+                sameConstructionPlacement(imported->transform().values(), placed));
+        bool sameWorld = true;
+        const Mat4 placedModel = imported->transform().modelMatrix();
+        for (uint32_t v = 0; v < session.mesh().vertexCount(); ++v) {
+            const Vec3 fromImported = mat4TransformPoint(
+                    placedModel, Vec3{localPositions[v * 3u], localPositions[v * 3u + 1u],
+                                      localPositions[v * 3u + 2u]});
+            const Vec3 fromSculpt =
+                    mat4TransformPoint(placedModel, session.mesh().vertexPosition(v));
+            if (!nearlyVec(fromImported, fromSculpt)) {
+                sameWorld = false;
+            }
+        }
+        r.check("IMP01B_03_the_first_sculpt_frame_is_the_same_world_geometry", sameWorld);
+
+        // IMP01B-04/05: a REAL stroke, and the imported source afterwards.
+        //
+        // The body is moved back to the identity first, through the ordinary
+        // transform, so the suite's own camera helper can aim at it. That is a
+        // legitimate user act and is itself part of what must not disturb the
+        // imported arrays.
+        imported->transform().setValues(TransformValues{});
+        // Straight down the Y axis, which is the ONE pose `cameraAt` is valid
+        // for: its up vector is +Z precisely so that it is not parallel to that
+        // view direction. The fixture reaches from y=+2 to y=-2 across the
+        // origin, so the screen centre lands on it.
+        const CameraSnapshot straightOn =
+                cameraAt(Vec3{0.0f, 8.0f, 0.0f}, ProjectionMode::Perspective);
+        const std::vector<float> positionsBefore = imported->importedOrNull()->positions();
+        const std::vector<float> normalsBefore = imported->importedOrNull()->normals();
+        const std::vector<uint32_t> indicesBefore = imported->importedOrNull()->indices();
+        const size_t batchesBefore = imported->importedOrNull()->batches().size();
+
+        session.setTool(SculptTool::Grab);
+        session.setRadiusPixels(400.0f);
+        const SculptRevision beforeStroke = session.mesh().revision();
+        const Vec3 centreBefore = session.mesh().vertexPosition(0);
+        const Mat4 identityModel = imported->transform().modelMatrix();
+        const bool began = session.beginStroke(straightOn, kCentreX, kCentreY, kViewportWidth,
+                                               kViewportHeight, identityModel, identityModel);
+        r.check("IMP01B_04_a_stroke_starts_on_the_imported_derived_sculpt_mesh", began);
+        const int applied = began ? driveTravel(session, kCentreX, kCentreY, 5, 24.0f) : 0;
+        session.endStroke();
+        r.check("IMP01B_04_a_real_stroke_moves_sculpt_truth",
+                applied > 0 && session.mesh().revision() > beforeStroke
+                    && !nearlyVec(session.mesh().vertexPosition(0), centreBefore));
+
+        r.check("IMP01B_05_the_imported_positions_are_unchanged",
+                imported->importedOrNull()->positions() == positionsBefore);
+        r.check("IMP01B_05_the_imported_normals_are_unchanged",
+                imported->importedOrNull()->normals() == normalsBefore);
+        r.check("IMP01B_05_the_imported_topology_is_unchanged",
+                imported->importedOrNull()->indices() == indicesBefore);
+        r.check("IMP01B_05_the_imported_submesh_batches_are_unchanged",
+                imported->importedOrNull()->batches().size() == batchesBefore);
+        r.check("IMP01B_05_and_the_authored_transform_is_unchanged",
+                sameConstructionPlacement(imported->transform().values(), TransformValues{}));
+        r.check("IMP01B_10_and_no_construction_source_was_invented",
+                imported->constructionOrNull() == nullptr);
+
+        // IMP01B-07/08: Back to Imported Mesh, then Resume Sculpt. The source
+        // representation is republished and the sculpt mesh is kept exactly.
+        const SculptRevision sculpted = session.mesh().revision();
+        const Vec3 sculptedVertex = session.mesh().vertexPosition(0);
+        session.enterConstruction();
+        r.check("IMP01B_07_leaving_sculpt_keeps_the_frozen_mesh",
+                imported->frozenSculpt().mesh.frozen());
+        r.check("IMP01B_07_and_the_imported_source_republishes",
+                publishSceneObject(*imported) != kNoMeshRevision);
+        r.check("IMP01B_07_showing_the_imported_geometry_again",
+                imported->meshStore().current() != nullptr
+                    && imported->meshStore().current()->vertexCount()
+                            == imported->importedOrNull()->vertexCount());
+        r.check("IMP01B_08_resume_returns_to_the_retained_mesh", session.enterSculpt());
+        r.check("IMP01B_08_with_the_same_revision_and_the_same_vertex",
+                session.mesh().revision() == sculpted
+                    && nearlyVec(session.mesh().vertexPosition(0), sculptedVertex));
+
+        // IMP01B-09: the destructive-reset guard sees the edits, and a reset
+        // from the imported source is what discards them.
+        r.check("IMP01B_09_the_retained_mesh_reports_edits_to_the_reset_guard",
+                session.mesh().hasEdits());
+        ConstructionMesh again;
+        buildSculptSourceMesh(*imported, &again);
+        r.check("IMP01B_09_a_reset_from_the_imported_source_succeeds",
+                session.freezeToSculpt(again, imported->objectId()));
+        r.check("IMP01B_09_and_the_rebuilt_mesh_reports_no_edits_and_the_source_positions",
+                !session.mesh().hasEdits()
+                    && nearlyVec(session.mesh().vertexPosition(0),
+                                 Vec3{localPositions[0], localPositions[1], localPositions[2]}));
+
+        // An Imported Mesh cannot go stale: it is immutable for the life of its
+        // body, so there is no source change for the flag to record.
+        r.check("IMP01B_09_an_imported_source_is_never_stale",
+                !imported->frozenSculpt().sourceStale);
+    }
+
+    // The same dispatch point still answers for a Construction Body, and still
+    // answers with the generator's own mesh.
+    {
+        ConstructionScene scene;
+        SceneObject& body = scene.activeBody();
+        ConstructionMesh source;
+        r.check("IMP01B_02_a_sculpt_source_is_built_from_a_construction_body",
+                buildSculptSourceMesh(body, &source));
+        const ConstructionMesh generated = body.construction().generateMesh();
+        r.check("IMP01B_02_and_it_is_exactly_what_the_generator_produces",
+                sameVertices(source.vertices, generated.vertices)
+                    && source.indices == generated.indices
+                    && source.renderBothSides == generated.renderBothSides);
     }
 
     return r.n;

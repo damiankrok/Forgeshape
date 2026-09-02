@@ -59,6 +59,33 @@
       reader with the window size. See GlobalToolbarView#applyTransitionLabel.
     -->
     <string name="back_to_construction_short">← Construction</string>
+
+    <!--
+      The same act for a body whose geometry came from a file (IMPORT-01B).
+
+      A different word because it is a different destination and the user can
+      see which: an Imported Mesh has no Construction shape behind it, and
+      "Back to Construction" over one would name a place that does not exist.
+      What the code does is identical — it leaves Sculpt mode and republishes
+      the body's SOURCE representation — and the source is just as untouched.
+    -->
+    <string name="back_to_imported_mesh">Back to Imported Mesh</string>
+    <!--
+      Its abbreviated form, on the same terms as back_to_construction_short and
+      for the same reason: this is the one way out of Sculpt Mode and may not be
+      truncated to a guess. The content description stays the full wording.
+    -->
+    <string name="back_to_imported_mesh_short">← Imported Mesh</string>
+    <!--
+      The editing context an Imported Mesh is in when it is not being sculpted.
+
+      "Construction" was drawn there until IMPORT-01B, which was already a
+      little wrong — an imported body has no Construction Source — and became
+      plainly wrong once the way back out of Sculpt started naming the Imported
+      Mesh. The label says which representation the user is looking at; the
+      mode-independent behaviour around it is unchanged.
+    -->
+    <string name="context_imported_mesh">Imported Mesh</string>
     <!--
       Export. `export` is the DRAWN label, unchanged from when the control was
       reserved, because the toolbar row has exactly that much width: "Export
@@ -299,6 +326,30 @@
     <string name="status_history_refused_in_sculpt">Construction Undo does not act on sculpt work — return to Construction first.</string>
     <string name="body_label">Body #%1$d</string>
     <string name="status_body_selected">%1$s selected.</string>
+
+    <!--
+      Delete (UI-OWNER-45). One row, one body, gone from the project.
+
+      DELIBERATELY UNCONFIRMED. The product confirms exactly one act — Reset
+      Sculpt from Shape — and confirms it because it cannot be undone. A Delete
+      is one Undo away, the history capsule is on the same screen, and the
+      verdict below says so in the same breath. A dialog in front of a
+      reversible act is what teaches a user to dismiss the dialog in front of
+      the irreversible one.
+
+      The description names the body, because every row's control carries the
+      same id and only the body it means tells them apart.
+    -->
+    <string name="delete_body">Delete %1$s</string>
+    <string name="status_body_deleted">Deleted %1$s — Undo restores it.</string>
+    <!--
+      The one refusal the domain can still give a user who reached the control
+      anyway: the project always has at least one body, so the last one cannot
+      be removed. The row simply does not draw the control in that state; this
+      exists because removing a control is not removing its guard.
+    -->
+    <string name="status_body_delete_refused_last">This is the only object — a project always has one. Nothing was deleted.</string>
+    <string name="status_body_delete_failed">Could not delete that object. Nothing was changed.</string>
     <string name="apply_shape">Apply Shape</string>
     <string name="apply_transform">Apply Transform</string>
     <string name="label_width">Width</string>
@@ -340,6 +391,16 @@
       promise that it will ask first, and it does.
     -->
     <string name="reset_sculpt_from_shape">Reset Sculpt from Shape…</string>
+    <!--
+      The same destructive act for an Imported Mesh (IMPORT-01B).
+
+      "from Shape" would be Construction-only wording over a body that has no
+      shape behind it. The SOURCE it rebuilds from is the imported geometry,
+      which the import kept and sculpting never wrote, so the name says that
+      instead. The guard, the ellipsis and the confirmation are unchanged.
+    -->
+    <string name="reset_sculpt_from_imported_mesh">Reset Sculpt from Imported Mesh…</string>
+    <string name="reset_sculpt_confirm_message_imported">Resetting rebuilds the sculpt mesh from the imported mesh. The sculpting already made on this mesh will be discarded. This cannot be undone.</string>
     <string name="sculpt_mesh_summary">Sculpt mesh: %1$d vertices · %2$s</string>
     <string name="sculpt_gesture_rule">One finger on the model — %1$s; elsewhere it orbits.</string>
     <string name="stale_source_warning">The Construction shape changed after you started sculpting. Your sculpt is kept as it is — Reset Sculpt from Shape to start again from the new shape.</string>
@@ -391,6 +452,7 @@
     <string name="field_not_a_number">%1$s is not a number: \"%2$s\".</string>
     <string name="field_not_positive">%1$s must be greater than 0 %2$s.</string>
     <string name="status_now_sculpting">Now sculpting — the Construction %1$s is kept.</string>
+    <string name="status_now_sculpting_imported">Now sculpting — the imported mesh is kept.</string>
     <string name="status_sculpt_prepare_failed">Could not prepare a sculpt mesh from this shape. Object unchanged.</string>
     <string name="status_no_sculpt_mesh">There is no sculpt mesh yet — press Start Sculpting first.</string>
     <string name="status_tool_selected">%1$s: %2$s.</string>

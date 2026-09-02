@@ -359,6 +359,121 @@ ProjectDocument canonicalMixedImportedDocument() {
     return document;
 }
 
+// The Frozen Sculpt Mesh both `IMPORT-01B` fixtures put on an IMPORTED body.
+//
+// A tetrahedron, edited, with every number an exact binary fraction — so the
+// independent PowerShell encoder has no rounding argument to make. It is
+// deliberately NOT the imported geometry it was frozen from: a sculpt mesh is
+// its own positions and its own topology, and a fixture where the two matched
+// could not tell a decoder that confused them apart.
+ProjectSculptBody canonicalImportedSculptBody(ObjectId objectId) {
+    ProjectSculptBody sculpt;
+    sculpt.objectId = objectId;
+    sculpt.renderBothSides = true;  // the imported source had a two-sided submesh
+    // An Imported Mesh is immutable for the life of its body, so nothing can
+    // make one stale. The fixture states the false a capture would write.
+    sculpt.sourceStale = false;
+    sculpt.hasEdits = true;
+    sculpt.positions = {0.25f, 0.0f,  0.0f,
+                        1.75f, 0.0f,  0.0f,
+                        0.0f,  2.5f,  0.0f,
+                        0.5f,  0.75f, 3.25f};
+    sculpt.indices = {0, 1, 2, 0, 1, 3, 0, 2, 3, 1, 2, 3};
+    return sculpt;
+}
+
+// IMPORTED + SCULPT: one body, geometry from a file, sculpted, reopening in
+// Sculpt.
+//
+// The `IMPORT-01B` fixture, and the one that proves the generalized SCUL rule:
+// a sculpt entry's body may have `CONS` or `IMPT` as its source. There is no
+// `CONS` section here at all, so a reader that still required one — every build
+// before `IMPORT-01B` did — refuses this file rather than opening half of it.
+ProjectDocument canonicalImportedSculptDocument() {
+    ProjectDocument document;
+    document.kind = ProjectKind::Sculpt;
+    document.scene.nextObjectId = 2;
+    document.scene.activeObjectId = 1;
+
+    ProjectBodyPlacement body;
+    body.objectId = 1;
+    body.transform = canonicalImportedPlacement();
+    document.scene.bodies.push_back(body);
+
+    document.hasSculpt = true;
+    document.sculpt.bodies.push_back(canonicalImportedSculptBody(1));
+
+    document.hasImported = true;
+    document.imported.bodies.push_back(canonicalImportedBody(1));
+    return document;
+}
+
+// ALL FOUR COMBINATIONS in one document, which is the whole of the B1 matrix:
+// a plain Construction Body, a Construction Body with a sculpt mesh, a plain
+// Imported Mesh, and an Imported Mesh with a sculpt mesh.
+//
+// The representations interleave and the SCUL entries sit over bodies of BOTH
+// source kinds, so a reader that assumed a contiguous block of either, or that
+// keyed a sculpt entry to a Construction body, fails here.
+ProjectDocument canonicalMixedImportedSculptDocument() {
+    ProjectDocument document;
+    document.kind = ProjectKind::Sculpt;
+    document.scene.nextObjectId = 5;
+    document.scene.activeObjectId = 4;
+
+    ProjectBodyPlacement first;
+    first.objectId = 1;
+    first.transform = placement(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0);
+    document.scene.bodies.push_back(first);
+
+    ProjectBodyPlacement second;
+    second.objectId = 2;
+    second.transform = placement(1.5, 0.5, -2.0, 370.0, 0.0, 90.0, 1.0, 1.0, 1.0);
+    document.scene.bodies.push_back(second);
+
+    ProjectBodyPlacement third;
+    third.objectId = 3;
+    third.transform = canonicalImportedPlacement();
+    document.scene.bodies.push_back(third);
+
+    ProjectBodyPlacement fourth;
+    fourth.objectId = 4;
+    fourth.transform = placement(-2.5, 1.25, 0.5, 0.0, 45.0, 0.0, 1.0, 2.0, 1.0);
+    document.scene.bodies.push_back(fourth);
+
+    document.hasConstruction = true;
+    ProjectConstructionBody firstSource;
+    firstSource.objectId = 1;
+    firstSource.shape = canonicalSharedShape(PrimitiveKind::Box);
+    firstSource.features.push_back(ProjectFeatureRecord{});
+    document.construction.bodies.push_back(firstSource);
+
+    ProjectConstructionBody secondSource;
+    secondSource.objectId = 2;
+    secondSource.shape = canonicalSharedShape(PrimitiveKind::Sphere);
+    secondSource.features.push_back(ProjectFeatureRecord{});
+    document.construction.bodies.push_back(secondSource);
+
+    document.hasSculpt = true;
+    ProjectSculptBody constructionSculpt;
+    constructionSculpt.objectId = 2;
+    constructionSculpt.renderBothSides = false;
+    constructionSculpt.sourceStale = true;
+    constructionSculpt.hasEdits = true;
+    constructionSculpt.positions = {0.0f,  0.0f,  0.0f,
+                                    1.5f,  0.0f,  0.0f,
+                                    0.0f,  1.25f, 0.0f,
+                                    0.25f, 0.5f,  1.75f};
+    constructionSculpt.indices = {0, 1, 2, 0, 1, 3, 0, 2, 3, 1, 2, 3};
+    document.sculpt.bodies.push_back(constructionSculpt);
+    document.sculpt.bodies.push_back(canonicalImportedSculptBody(4));
+
+    document.hasImported = true;
+    document.imported.bodies.push_back(canonicalImportedBody(3));
+    document.imported.bodies.push_back(canonicalImportedBody(4));
+    return document;
+}
+
 // The legacy mixed state: two bodies, both with a Construction Source, the
 // second also carrying an edited Frozen Sculpt Mesh, reopening in Sculpt.
 ProjectDocument canonicalSculptDocument() {
@@ -628,6 +743,8 @@ std::string g_sculptSha;
 std::string g_importedOnlySha;
 std::string g_constructionImportedSha;
 std::string g_mixedImportedSha;
+std::string g_importedSculptSha;
+std::string g_mixedImportedSculptSha;
 
 }  // namespace
 
@@ -638,6 +755,10 @@ const char* canonicalConstructionImportedFixtureSha256() {
     return g_constructionImportedSha.c_str();
 }
 const char* canonicalMixedImportedFixtureSha256() { return g_mixedImportedSha.c_str(); }
+const char* canonicalImportedSculptFixtureSha256() { return g_importedSculptSha.c_str(); }
+const char* canonicalMixedImportedSculptFixtureSha256() {
+    return g_mixedImportedSculptSha.c_str();
+}
 
 int runProjectSelfTests(ProjectSelfTestResult* out, int maxOut) {
     Recorder r{out, maxOut};
@@ -697,6 +818,32 @@ int runProjectSelfTests(ProjectSelfTestResult* out, int maxOut) {
                                 == ProjectCodecStatus::Ok
                         && sameProjectDocument(canonicalMixedImportedDocument(), back)
                         && encodeProjectV1(back) == mixedImportedBytes);
+    }
+    // The two `IMPORT-01B` fixtures, on exactly the same terms: encoded here so
+    // their digests are reported whether their case passes or fails.
+    const std::vector<uint8_t> importedSculptBytes =
+            encodeProjectV1(canonicalImportedSculptDocument(), &why);
+    r.check("IMP01B_11_canonical_imported_sculpt_document_encodes",
+            why == ProjectCodecStatus::Ok && !importedSculptBytes.empty());
+    const std::vector<uint8_t> mixedImportedSculptBytes =
+            encodeProjectV1(canonicalMixedImportedSculptDocument(), &why);
+    r.check("IMP01B_12_canonical_mixed_imported_sculpt_document_encodes",
+            why == ProjectCodecStatus::Ok && !mixedImportedSculptBytes.empty());
+    g_importedSculptSha = sha256Hex(importedSculptBytes);
+    g_mixedImportedSculptSha = sha256Hex(mixedImportedSculptBytes);
+    {
+        ProjectDocument back;
+        r.check("IMP01B_11_the_imported_sculpt_fixture_roundtrips_bit_for_bit",
+                decodeProject(importedSculptBytes.data(), importedSculptBytes.size(), &back)
+                                == ProjectCodecStatus::Ok
+                        && sameProjectDocument(canonicalImportedSculptDocument(), back)
+                        && encodeProjectV1(back) == importedSculptBytes);
+        r.check("IMP01B_12_the_mixed_imported_sculpt_fixture_roundtrips_bit_for_bit",
+                decodeProject(mixedImportedSculptBytes.data(), mixedImportedSculptBytes.size(),
+                              &back)
+                                == ProjectCodecStatus::Ok
+                        && sameProjectDocument(canonicalMixedImportedSculptDocument(), back)
+                        && encodeProjectV1(back) == mixedImportedSculptBytes);
     }
     {
         // A known-answer test for the digest itself, so a golden-corpus failure
@@ -1305,6 +1452,173 @@ int runProjectSelfTests(ProjectSelfTestResult* out, int maxOut) {
     }
 
     // -----------------------------------------------------------------------
+    // IMP01B-11/12: the four valid source/sculpt combinations, and the invalid
+    // -----------------------------------------------------------------------
+    //
+    // `SCNE+CONS`, `SCNE+CONS+SCUL`, `SCNE+IMPT` and `SCNE+IMPT+SCUL` are the
+    // whole matrix. What stays refused is a body claimed by BOTH source
+    // branches, which is two answers to what the object IS.
+    {
+        r.check("IMP01B_11_an_imported_body_may_carry_a_sculpt_mesh",
+                validateProjectDocument(canonicalImportedSculptDocument())
+                        == ProjectCodecStatus::Ok);
+        r.check("IMP01B_12_one_document_may_hold_all_four_combinations",
+                validateProjectDocument(canonicalMixedImportedSculptDocument())
+                        == ProjectCodecStatus::Ok);
+        r.check("IMP01B_11_the_three_pre_existing_combinations_are_still_valid",
+                validateProjectDocument(canonicalConstructionDocument())
+                                == ProjectCodecStatus::Ok
+                        && validateProjectDocument(canonicalSculptDocument())
+                                == ProjectCodecStatus::Ok
+                        && validateProjectDocument(canonicalImportedOnlyDocument())
+                                == ProjectCodecStatus::Ok);
+
+        // The exactly-one-of rule is untouched: it is about CONS and IMPT, and
+        // allowing SCUL over IMPT did not weaken it.
+        ProjectDocument both = canonicalImportedSculptDocument();
+        both.hasConstruction = true;
+        ProjectConstructionBody claim;
+        claim.objectId = 1;
+        claim.shape = canonicalSharedShape(PrimitiveKind::Box);
+        claim.features.push_back(ProjectFeatureRecord{});
+        both.construction.bodies.push_back(claim);
+        r.check("IMP01B_11_a_body_claimed_by_both_cons_and_impt_is_still_refused",
+                validateProjectDocument(both) == ProjectCodecStatus::UnresolvedReference);
+
+        // And a SCUL entry for a body SCNE does not carry is still refused,
+        // whichever branch the rest of the document uses.
+        ProjectDocument dangling = canonicalImportedSculptDocument();
+        dangling.sculpt.bodies[0].objectId = 7;
+        r.check("IMP01B_11_a_scul_body_scne_does_not_carry_is_still_refused",
+                validateProjectDocument(dangling) == ProjectCodecStatus::UnresolvedReference);
+
+        // A Sculpt project's active body must still have a sculpt mesh, and
+        // that rule never cared which source the body has.
+        ProjectDocument wrongActive = canonicalMixedImportedSculptDocument();
+        wrongActive.scene.activeObjectId = 3;  // the imported body with no sculpt mesh
+        r.check("IMP01B_11_a_sculpt_project_whose_active_body_has_no_mesh_is_still_refused",
+                validateProjectDocument(wrongActive) == ProjectCodecStatus::UnresolvedReference);
+    }
+
+    // IMP01B-11/12: and the same documents survive the LIVE round trip —
+    // captured from a scene, encoded, decoded and loaded back into one.
+    {
+        ProjectDocument decoded;
+        r.check("IMP01B_11_the_imported_sculpt_document_decodes",
+                decodeProject(importedSculptBytes.data(), importedSculptBytes.size(), &decoded)
+                        == ProjectCodecStatus::Ok);
+        r.check("IMP01B_11_and_this_build_can_evaluate_it",
+                runtimeCanEvaluateProject(decoded));
+
+        ConstructionScene scene;
+        SculptSession session;
+        ConstructionHistory history(scene);
+        ProjectLoadReport report;
+        r.check("IMP01B_11_an_imported_sculpt_project_loads",
+                loadProjectDocument(decoded, scene, session, history, &report)
+                        == ProjectCodecStatus::Ok);
+        r.check("IMP01B_11_as_one_imported_body_with_one_sculpt_mesh",
+                report.bodies == 1 && report.importedBodies == 1 && report.sculptMeshes == 1);
+        const SceneObject& body = scene.activeBody();
+        r.check("IMP01B_11_the_body_is_still_an_imported_mesh",
+                body.isImported() && body.constructionOrNull() == nullptr);
+        r.check("IMP01B_11_and_its_imported_geometry_came_back",
+                body.importedOrNull() != nullptr
+                    && body.importedOrNull()->positions()
+                            == canonicalImportedBody(1).positions
+                    && body.importedOrNull()->normals() == canonicalImportedBody(1).normals
+                    && body.importedOrNull()->indices() == canonicalImportedBody(1).indices);
+        r.check("IMP01B_11_and_its_name", body.name() == "head_low");
+        const ProjectSculptBody expectedSculpt = canonicalImportedSculptBody(1);
+        bool sculptPositionsMatch =
+                body.frozenSculpt().mesh.vertexCount() * 3u == expectedSculpt.positions.size();
+        for (uint32_t v = 0; sculptPositionsMatch && v < body.frozenSculpt().mesh.vertexCount();
+             ++v) {
+            const Vec3 p = body.frozenSculpt().mesh.vertexPosition(v);
+            if (p.x != expectedSculpt.positions[v * 3u]
+                || p.y != expectedSculpt.positions[v * 3u + 1u]
+                || p.z != expectedSculpt.positions[v * 3u + 2u]) {
+                sculptPositionsMatch = false;
+            }
+        }
+        r.check("IMP01B_11_and_its_sculpt_mesh_came_back_bit_for_bit",
+                body.frozenSculpt().mesh.frozen() && sculptPositionsMatch
+                    && body.frozenSculpt().mesh.indices() == expectedSculpt.indices);
+        r.check("IMP01B_11_the_restored_sculpt_mesh_keeps_its_sidedness",
+                body.frozenSculpt().mesh.renderBothSides() == expectedSculpt.renderBothSides);
+        r.check("IMP01B_09_and_the_reset_guard_still_knows_there_are_edits",
+                body.frozenSculpt().mesh.hasEdits());
+        r.check("IMP01B_08_so_resume_sculpt_is_available", session.hasSculptMesh());
+        // A Sculpt project reopens showing the sculpt mesh, not the source.
+        r.check("IMP01B_11_and_the_sculpt_mesh_is_the_published_representation",
+                body.meshStore().current() != nullptr
+                    && body.meshStore().current()->vertexCount()
+                            == body.frozenSculpt().mesh.vertexCount());
+
+        // IMP01B-11: capturing the live project back produces the same document.
+        const ProjectDocument recaptured = captureProjectDocument(scene, ProjectKind::Sculpt);
+        r.check("IMP01B_11_capturing_it_again_produces_the_same_document",
+                sameProjectDocument(recaptured, canonicalImportedSculptDocument()));
+        r.check("IMP01B_11_and_the_same_bytes",
+                encodeProjectV1(recaptured) == importedSculptBytes);
+    }
+
+    {
+        // IMP01B-12: the four-combination document, loaded whole.
+        ProjectDocument decoded;
+        r.check("IMP01B_12_the_mixed_document_decodes",
+                decodeProject(mixedImportedSculptBytes.data(), mixedImportedSculptBytes.size(),
+                              &decoded)
+                        == ProjectCodecStatus::Ok);
+        ConstructionScene scene;
+        SculptSession session;
+        ConstructionHistory history(scene);
+        ProjectLoadReport report;
+        r.check("IMP01B_12_a_mixed_source_and_sculpt_project_loads",
+                loadProjectDocument(decoded, scene, session, history, &report)
+                        == ProjectCodecStatus::Ok);
+        r.check("IMP01B_12_with_every_body_and_every_sculpt_mesh",
+                report.bodies == 4 && report.importedBodies == 2 && report.sculptMeshes == 2);
+        r.check("IMP01B_12_a_plain_construction_body_has_no_sculpt_mesh",
+                scene.bodyAt(0).hasConstructionSource()
+                    && !scene.bodyAt(0).frozenSculpt().mesh.frozen());
+        r.check("IMP01B_12_a_construction_body_with_one_has_it",
+                scene.bodyAt(1).hasConstructionSource()
+                    && scene.bodyAt(1).frozenSculpt().mesh.frozen());
+        r.check("IMP01B_12_a_plain_imported_body_has_none",
+                scene.bodyAt(2).isImported()
+                    && !scene.bodyAt(2).frozenSculpt().mesh.frozen());
+        r.check("IMP01B_12_and_an_imported_body_with_one_has_it",
+                scene.bodyAt(3).isImported()
+                    && scene.bodyAt(3).frozenSculpt().mesh.frozen()
+                    && scene.bodyAt(3).importedOrNull() != nullptr);
+        r.check("IMP01B_12_recapturing_the_mixed_project_produces_the_same_bytes",
+                encodeProjectV1(captureProjectDocument(scene, ProjectKind::Sculpt))
+                        == mixedImportedSculptBytes);
+    }
+
+    // IMP01B-11: the fingerprint tells an imported body's sculpt work apart.
+    //
+    // A checkpoint that could not see a stroke on an imported body would stop
+    // protecting exactly the work this stage adds.
+    {
+        ProjectDocument decoded;
+        decodeProject(importedSculptBytes.data(), importedSculptBytes.size(), &decoded);
+        ConstructionScene scene;
+        SculptSession session;
+        ConstructionHistory history(scene);
+        loadProjectDocument(decoded, scene, session, history);
+        const uint64_t before = projectSemanticFingerprint(scene, ProjectKind::Sculpt);
+        SceneObject& body = scene.activeBody();
+        const Vec3 moved = vec3Add(body.frozenSculpt().mesh.vertexPosition(0),
+                                   Vec3{0.5f, 0.0f, 0.0f});
+        body.frozenSculpt().mesh.setVertexPosition(0, moved);
+        body.frozenSculpt().mesh.advanceRevision();
+        r.check("IMP01B_11_the_fingerprint_sees_a_stroke_on_an_imported_body",
+                projectSemanticFingerprint(scene, ProjectKind::Sculpt) != before);
+    }
+
+    // -----------------------------------------------------------------------
     // FSR1A-12: the golden corpus, and the absence of a fabricated predecessor
     // -----------------------------------------------------------------------
     {
@@ -1331,6 +1645,15 @@ int runProjectSelfTests(ProjectSelfTestResult* out, int maxOut) {
         r.check("IMP01A_19_mixed_imported_fixture_matches_the_committed_digest",
                 g_mixedImportedSha
                         == "3fdc82a099da69b93552d7c84c56002ed8ae24ba7086ddbc6a69a9bbf671f1fb");
+        // The two `IMPORT-01B` fixtures, which pin the generalized SCUL rule:
+        // an imported body carrying a Frozen Sculpt Mesh, and one document
+        // holding all four valid source/sculpt combinations.
+        r.check("IMP01B_11_imported_sculpt_fixture_matches_the_committed_digest",
+                g_importedSculptSha
+                        == "b82430cf6dbb82fddf075722d7ae335460f687d2a06cde09db43817323729f76");
+        r.check("IMP01B_12_mixed_imported_sculpt_fixture_matches_the_committed_digest",
+                g_mixedImportedSculptSha
+                        == "ab709ecea27ec29f21b6fbef126e8cdc15dc5c733d9b751bd1c8832907f27a2b");
         // The dispatch seam exists and answers for exactly one version. There
         // has never been a production format before v1, so there is nothing to
         // migrate FROM and no v0 branch is claimed.
@@ -1780,17 +2103,22 @@ int runProjectSelfTests(ProjectSelfTestResult* out, int maxOut) {
             r.check("IMP01A_20_a_body_in_both_branches_is_refused",
                     validateProjectDocument(bad) == ProjectCodecStatus::UnresolvedReference);
         }
-        // A Frozen Sculpt Mesh for an imported body: `IMPORT-01B`, not this.
+        // A Frozen Sculpt Mesh for an imported body was refused until
+        // `IMPORT-01B` and is VALID now: an imported object can be sculpted,
+        // and its sculpt mesh is a second representation of the same body, not
+        // a second answer to what the body IS. The case is kept, inverted, so
+        // the rule change is visible in the suite that used to state the old
+        // one rather than merely absent from it.
         {
-            ProjectDocument bad = document;
+            ProjectDocument nowValid = document;
             ProjectSculptBody sculpt;
-            sculpt.objectId = bad.scene.bodies[0].objectId;
+            sculpt.objectId = nowValid.scene.bodies[0].objectId;
             sculpt.positions = {0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f};
             sculpt.indices = {0, 1, 2};
-            bad.sculpt.bodies.push_back(sculpt);
-            bad.hasSculpt = true;
-            r.check("IMP01A_20_a_sculpt_mesh_for_an_imported_body_is_refused",
-                    validateProjectDocument(bad) == ProjectCodecStatus::UnresolvedReference);
+            nowValid.sculpt.bodies.push_back(sculpt);
+            nowValid.hasSculpt = true;
+            r.check("IMP01B_11_a_sculpt_mesh_for_an_imported_body_is_accepted",
+                    validateProjectDocument(nowValid) == ProjectCodecStatus::Ok);
         }
         // A truncated file fails closed and applies nothing, exactly as every
         // other corrupt document does.

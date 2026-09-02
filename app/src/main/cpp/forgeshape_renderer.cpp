@@ -654,8 +654,10 @@ void Renderer::destroyBodyResources(BodyRenderResources& body) {
 }
 
 BodyRenderResources& Renderer::resourcesFor(ObjectId objectId) {
-    // Keyed by stable ObjectId, so a body keeps its own buffers for its whole
-    // life no matter how many other bodies are added around it.
+    // Keyed by stable ObjectId, so a body keeps its own buffers for as long as
+    // the scene names it, no matter how many other bodies are added around it.
+    // A body the scene stops naming is released by releaseBodiesAbsentFromScene
+    // and simply re-uploads here if it ever comes back.
     return bodies_[objectId];
 }
 
@@ -682,7 +684,7 @@ void Renderer::destroyMeshResources() {
     meshUploadDiagnostics().setLiveBufferObjects(0);
 }
 
-bool Renderer::waitForMeshBuffersIdle() {
+bool Renderer::waitForMeshBuffersIdle(uint64_t timeoutNanoseconds) {
     // Every frame that could reference the mesh buffers was submitted with one
     // of these fences, so waiting for all of them is exactly "no in-flight
     // frame still uses the mesh". Renderer-owned fences only.
@@ -696,13 +698,19 @@ bool Renderer::waitForMeshBuffersIdle() {
     if (count == 0) {
         return true;
     }
-    const VkResult r = vkWaitForFences(device_, count, fences, VK_TRUE, UINT64_MAX);
-    if (r != VK_SUCCESS) {
-        FS_LOGE("vkWaitForFences(mesh idle) -> %d", (int)r);
-        FS_FAIL("mesh_wait_frames_idle");
+    const VkResult r = vkWaitForFences(device_, count, fences, VK_TRUE, timeoutNanoseconds);
+    if (r == VK_SUCCESS) {
+        return true;
+    }
+    if (r == VK_TIMEOUT) {
+        // Only reachable for a caller that supplied a deadline, and for that
+        // caller this is "not yet" rather than a failure -- it asks again on
+        // the next frame. With the default there is no deadline to expire.
         return false;
     }
-    return true;
+    FS_LOGE("vkWaitForFences(mesh idle) -> %d", (int)r);
+    FS_FAIL("mesh_wait_frames_idle");
+    return false;
 }
 
 bool Renderer::ensureStagingCapacity(VkDeviceSize bytes) {
@@ -915,7 +923,77 @@ bool Renderer::uploadRenderMesh(BodyRenderResources& body, ObjectId objectId,
     return true;
 }
 
+// How long the opportunistic mesh-resource release may wait for the in-flight
+// frames, in nanoseconds. 100 ms: far above a frame, so the release lands on the
+// frame the body left; far below anything a user would call a freeze, and
+// bounded so a fence that will never signal cannot hang the render thread.
+constexpr uint64_t kMeshReleaseWaitNanoseconds = 100ull * 1000ull * 1000ull;
+
+void Renderer::releaseBodiesAbsentFromScene() {
+    if (bodies_.empty() || device_ == VK_NULL_HANDLE) {
+        return;
+    }
+    bool waited = false;
+    for (auto it = bodies_.begin(); it != bodies_.end();) {
+        bool present = false;
+        for (const SceneDrawItem& item : scene_) {
+            if (item.objectId == it->first) {
+                present = true;
+                break;
+            }
+        }
+        if (present) {
+            ++it;
+            continue;
+        }
+        // Once, and only when something is actually going to be destroyed: a
+        // buffer a submitted frame still references may not be freed, and the
+        // renderer's own in-flight fences are exactly that question.
+        //
+        // BOUNDED, unlike the wait a capacity grow performs. This runs whenever
+        // a body leaves the snapshot -- a delete, an undo, and every project
+        // load that changes ObjectIds -- and it is opportunistic: there is
+        // always a next frame to try again on. An unbounded wait here would
+        // stake the render thread on a fence that may never signal, because a
+        // failed `vkQueueSubmit` leaves that frame's fence reset with nothing
+        // left to signal it; `surfaceDestroyed` then blocks on the render
+        // thread and the Activity never tears down.
+        //
+        // The deadline is generous against a ~16 ms frame, so in the steady
+        // state it is never approached and the release happens on the frame the
+        // body left. It is a ceiling, not a budget.
+        if (!waited) {
+            if (!waitForMeshBuffersIdle(kMeshReleaseWaitNanoseconds)) {
+                // Not idle yet, or not idle at all. Leave every entry resident
+                // and ask again next frame rather than free something a frame
+                // in flight may still be reading.
+                return;
+            }
+            waited = true;
+        }
+        FS_LOGI("FORGESHAPE_MESH_RESOURCES_RELEASED:%llu", (unsigned long long)it->first);
+        destroyBodyResources(it->second);
+        it = bodies_.erase(it);
+    }
+    if (!waited) {
+        return;
+    }
+    uint32_t liveBuffers = 0;
+    for (const auto& entry : bodies_) {
+        if (entry.second.vertexBuffer != VK_NULL_HANDLE) ++liveBuffers;
+        if (entry.second.indexBuffer != VK_NULL_HANDLE) ++liveBuffers;
+    }
+    meshUploadDiagnostics().setLiveBufferObjects(liveBuffers);
+}
+
 void Renderer::syncScene() {
+    // Bodies the scene no longer names first, so nothing below is uploading
+    // beside resources for objects that are gone. The diagnostic imported
+    // preview REPLACES the scene rather than joining it, so while one is on
+    // screen the project's own bodies are released here and re-uploaded when it
+    // is cleared -- correct by the same route an Undo takes, and a debug-only
+    // path nothing in the product reaches.
+    releaseBodiesAbsentFromScene();
     // One independent pass per body. Nothing here is shared between bodies
     // except the transient staging buffer, so whether body B does any work is
     // decided entirely by B's own revision and the surface shading.

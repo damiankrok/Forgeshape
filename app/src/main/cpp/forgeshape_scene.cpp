@@ -62,10 +62,10 @@ bool ConstructionScene::setActiveBody(ObjectId id) {
 
 SceneObject& ConstructionScene::activeBody() {
     SceneObject* body = findBody(activeBodyId_);
-    // The constructor creates and selects a Body and nothing can delete one, so
-    // an active body always exists. The fallback is a belt-and-braces guard
-    // that keeps this reference-returning accessor total rather than UB if that
-    // ever stops being true.
+    // The constructor creates and selects a Body, and Delete refuses to remove
+    // the last one, so an active body always exists. The fallback is a
+    // belt-and-braces guard that keeps this reference-returning accessor total
+    // rather than UB if that ever stops being true.
     return (body != nullptr) ? *body : *bodies_.front();
 }
 
@@ -201,6 +201,62 @@ MeshRevision publishSceneObject(SceneObject& body, MeshValidation* outWhy) {
     return body.meshStore().publish(vertices.data(), static_cast<uint32_t>(vertices.size()),
                                     indices.data(), static_cast<uint32_t>(indices.size()),
                                     outWhy, /*renderBothSides=*/false);
+}
+
+
+bool buildSculptSourceMesh(const SceneObject& body, ConstructionMesh* out) {
+    if (out == nullptr) {
+        return false;
+    }
+    if (const ConstructionObject* source = body.constructionOrNull()) {
+        // The same generator the product publishes from, so what is frozen is
+        // exactly what was on screen. Read only: generateMesh() is const.
+        *out = source->generateMesh();
+        return true;
+    }
+    const ImportedMesh* imported = body.importedOrNull();
+    if (imported == nullptr || !imported->valid()) {
+        return false;
+    }
+
+    ConstructionMesh mesh;
+    const uint32_t vertexCount = imported->vertexCount();
+    const std::vector<float>& positions = imported->positions();
+    mesh.vertices.resize(vertexCount);
+    for (uint32_t v = 0; v < vertexCount; ++v) {
+        MeshVertex& vertex = mesh.vertices[v];
+        const size_t at = static_cast<size_t>(v) * 3u;
+        vertex.position[0] = positions[at];
+        vertex.position[1] = positions[at + 1];
+        vertex.position[2] = positions[at + 2];
+        // Presentation, and only ever presentation: vertex colour feeds the
+        // debug-only source-colour shading mode and nothing else. The imported
+        // body's own flat neutral is used so Start Sculpting does not change
+        // what that one debug view shows.
+        vertex.color[0] = kImportedMeshVertexColor[0];
+        vertex.color[1] = kImportedMeshVertexColor[1];
+        vertex.color[2] = kImportedMeshVertexColor[2];
+    }
+    // The RAW indices. See the header: `buildDrawData`'s reversed duplicates
+    // would cancel every area-weighted vertex normal they touch.
+    mesh.indices = imported->indices();
+    // One sidedness answer for one frozen mesh, and the permissive collapse of
+    // the per-submesh answers. See the header for why this is the safe one.
+    mesh.renderBothSides = false;
+    for (const ImportedMeshBatch& batch : imported->batches()) {
+        if (batch.doubleSided) {
+            mesh.renderBothSides = true;
+            break;
+        }
+    }
+    // The file's own stated normals are deliberately NOT carried across. A
+    // Frozen Sculpt Mesh derives its normals from its CURRENT positions,
+    // because a stroke moves them and a stored normal would immediately be a
+    // lie; that is already true of every Construction freeze. The Imported
+    // Mesh keeps its own normals untouched, and Back to Imported Mesh shows
+    // them again exactly as the file stated them.
+    *out = std::move(mesh);
+    return true;
 }
 
 ConstructionObject* activeConstructionOrNull() {

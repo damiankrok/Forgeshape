@@ -282,7 +282,19 @@ private:
     // Waits on the renderer's own frame fences (never vkDeviceWaitIdle /
     // vkQueueWaitIdle) so no in-flight frame can still reference the mesh
     // buffers that are about to be overwritten or destroyed.
-    bool waitForMeshBuffersIdle();
+    // Waits until no in-flight frame still references the mesh buffers.
+    //
+    // `timeoutNanoseconds` exists for the ONE caller that can afford to be told
+    // "not yet": `releaseBodiesAbsentFromScene` is opportunistic and retried on
+    // every frame, so it must never stake the render thread on a fence that may
+    // never signal. A failed `vkQueueSubmit` leaves that frame's fence reset and
+    // nothing signals it afterwards, and an unbounded wait there would hang the
+    // render thread -- which `surfaceDestroyed` then blocks on, so the Activity
+    // never tears down.
+    //
+    // A grow, which MUST complete before it reallocates, keeps the default and
+    // is bit-for-bit unaffected: with no deadline `VK_TIMEOUT` cannot occur.
+    bool waitForMeshBuffersIdle(uint64_t timeoutNanoseconds = UINT64_MAX);
     bool ensureStagingCapacity(VkDeviceSize bytes);
     // Reuses the existing device-local allocation when it is already big
     // enough; grows (and retires the old one) only when it is not.
@@ -302,6 +314,28 @@ private:
     // Per-body state is what makes "editing A does not rebuild or re-upload B"
     // structural rather than a promise: B's cached revision still matches its
     // own published revision, so B's branch returns before touching anything.
+    // Frees the GPU copy held for any body the current scene no longer names.
+    //
+    // Called at the top of syncScene. Until `UI-OWNER-45` this was not needed:
+    // a body could only leave the scene by having its creation undone, the
+    // history holds at most `kConstructionHistoryCapacity` of those, and each
+    // was a handful of kilobytes. Delete removes that bound -- add and delete
+    // in a loop and every cycle mints a FRESH ObjectId, because the allocator
+    // is deliberately monotonic, so the map would grow one entry per cycle
+    // forever. Entries are small, but each holds two VkDeviceMemory
+    // allocations, and `maxMemoryAllocationCount` is a hard device limit
+    // commonly around 4096.
+    //
+    // Undoing the delete costs one re-upload and nothing else: the body comes
+    // back with the same ObjectId and the same published revision, and a fresh
+    // resource record starts at kNoMeshRevision, so syncBody's gate misses and
+    // uploads it again. That is exactly the path a body already takes the first
+    // time it is drawn.
+    //
+    // Waits for every in-flight frame before destroying anything, and only when
+    // there is something to destroy, so a steady frame pays one map walk.
+    void releaseBodiesAbsentFromScene();
+
     void syncScene();
     // One body's half of syncScene: the per-body gate, then rebuild + upload.
     void syncBody(const SceneDrawItem& item);

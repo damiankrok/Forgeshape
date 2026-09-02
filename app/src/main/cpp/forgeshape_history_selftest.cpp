@@ -2,8 +2,10 @@
 
 #include <vector>
 
+#include "forgeshape_body_delete.h"
 #include "forgeshape_construction.h"
 #include "forgeshape_history.h"
+#include "forgeshape_imported_mesh.h"
 #include "forgeshape_mesh.h"
 #include "forgeshape_scene.h"
 #include "forgeshape_sculpt.h"
@@ -25,6 +27,38 @@ struct Recorder {
         }
     }
 };
+
+// Two strings compared without pulling <string> into a suite that needs
+// nothing else from it. Used only to prove a status NAME is stable, which is
+// what a log line and a piece of evidence depend on.
+bool sameText(const char* a, const char* b) {
+    if (a == nullptr || b == nullptr) {
+        return a == b;
+    }
+    for (; *a != '\0' && *b != '\0'; ++a, ++b) {
+        if (*a != *b) {
+            return false;
+        }
+    }
+    return *a == *b;
+}
+
+// The smallest valid Imported Mesh, for the Delete cases.
+//
+// Four vertices and two submeshes with different `doubleSided` answers, so a
+// restored body that lost its batching would show. It is built here rather
+// than shared with another suite on purpose: every suite in this product builds
+// the domain objects it needs, so a result never depends on another suite.
+ImportedMesh historyImportedMesh() {
+    const std::vector<float> positions{0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+                                       0.0f, 2.0f, 0.0f, 0.0f, 0.0f, 3.0f};
+    const std::vector<float> normals{0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f,
+                                     1.0f, 0.0f, 0.0f, 0.0f, 0.0f, -1.0f};
+    const std::vector<uint32_t> indices{0, 1, 2, 0, 2, 3};
+    const std::vector<ImportedMeshBatch> batches{ImportedMeshBatch{0, 3, false},
+                                                 ImportedMeshBatch{3, 3, true}};
+    return ImportedMesh::build(positions, normals, indices, batches);
+}
 
 // Every case below builds its OWN ConstructionScene and its OWN
 // ConstructionHistory, for the same reason the scene suite does: a self-test
@@ -537,6 +571,183 @@ int runHistorySelfTests(HistorySelfTestResult* out, int maxOut) {
         r.check("a_shape_undo_republishes_exactly_the_body_that_changed",
                 shapeReport.republishedBodies == 1 && shapeReport.restoredBodies == 0
                     && shapeReport.removedBodies == 0);
+    }
+
+    // -----------------------------------------------------------------------
+    // IMP01B-15/16/17/18/19/20/21: Delete is one real mutation, and one Undo
+    // -----------------------------------------------------------------------
+    //
+    // Every case here drives `deleteSceneBody` -- the one production entry
+    // point -- against a scene of its own, so nothing depends on what a live
+    // session left behind and nothing restates a rule the operation owns.
+    {
+        Fixture f;
+        const ObjectId first = f.scene.activeBody().objectId();
+        const ObjectId second = f.addBody(PrimitiveSpec::forSphere(1.0));
+        const ObjectId third = f.addBody(PrimitiveSpec::forCylinder(1.0, 2.0));
+        const size_t depthBefore = f.history.undoDepth();
+
+        // IMP01B-15: deleting a body that is NOT active leaves the selection
+        // exactly where it was.
+        f.scene.setActiveBody(third);
+        DeleteBodyReport report;
+        r.check("IMP01B_15_deleting_an_inactive_body_succeeds",
+                deleteSceneBody(second, f.scene, f.history, &report) == DeleteBodyStatus::Ok);
+        r.check("IMP01B_15_the_body_is_gone_from_the_scene",
+                f.scene.findBody(second) == nullptr && f.scene.bodyCount() == 2);
+        r.check("IMP01B_15_the_bodies_that_remain_keep_their_order",
+                f.scene.bodyAt(0).objectId() == first && f.scene.bodyAt(1).objectId() == third);
+        r.check("IMP01B_20_deleting_an_inactive_body_does_not_move_the_selection",
+                f.scene.activeBodyId() == third);
+        r.check("IMP01B_15_a_delete_is_exactly_one_history_step",
+                f.history.undoDepth() == depthBefore + 1);
+        r.check("IMP01B_15_the_report_names_what_left",
+                report.removedBodyId == second && report.removedIndex == 1
+                    && report.bodyCount == 2);
+
+        // IMP01B-18: Undo restores the SAME object, in its own place.
+        r.check("IMP01B_18_delete_undo_succeeds", f.history.undo());
+        r.check("IMP01B_18_the_body_comes_back_where_it_was",
+                f.scene.bodyCount() == 3 && f.scene.bodyAt(1).objectId() == second);
+        r.check("IMP01B_18_and_the_selection_it_had", f.scene.activeBodyId() == third);
+
+        // IMP01B-19: Redo removes the same body again.
+        r.check("IMP01B_19_delete_redo_succeeds", f.history.redo());
+        r.check("IMP01B_19_the_same_body_leaves_again",
+                f.scene.findBody(second) == nullptr && f.scene.bodyCount() == 2);
+    }
+
+    // The deleted body is HELD, not rebuilt: an Imported Mesh and a Frozen
+    // Sculpt Mesh are the two things a history step cannot recreate, so an undo
+    // that came back with a fabricated body would come back empty.
+    {
+        Fixture f;
+        const ObjectId first = f.scene.activeBody().objectId();
+        const ObjectId sculpted = f.addBody(PrimitiveSpec::forSphere(1.0));
+        SceneObject* body = f.scene.findBody(sculpted);
+        SculptSession session;
+        session.bindTarget(&body->frozenSculpt());
+        session.freezeToSculpt(body->construction().generateMesh(), body->objectId());
+        session.enterConstruction();
+        const SculptRevision revision = body->frozenSculpt().mesh.revision();
+        const uint32_t vertices = body->frozenSculpt().mesh.vertexCount();
+        const uint32_t indices = body->frozenSculpt().mesh.indexCount();
+        const MeshRevision published = body->meshStore().currentRevision();
+
+        r.check("IMP01B_17_deleting_a_body_with_a_sculpt_mesh_succeeds",
+                deleteSceneBody(sculpted, f.scene, f.history) == DeleteBodyStatus::Ok);
+        r.check("IMP01B_17_and_takes_its_sculpt_state_out_of_the_scene_with_it",
+                f.scene.findBody(sculpted) == nullptr);
+        r.check("IMP01B_20_the_selection_falls_to_a_body_that_still_exists",
+                f.scene.findBody(f.scene.activeBodyId()) != nullptr);
+
+        f.history.undo();
+        SceneObject* restored = f.scene.findBody(sculpted);
+        r.check("IMP01B_18_the_deleted_body_returns", restored != nullptr);
+        r.check("IMP01B_18_with_the_same_frozen_sculpt_mesh",
+                restored != nullptr && restored->frozenSculpt().mesh.frozen()
+                    && restored->frozenSculpt().mesh.revision() == revision
+                    && restored->frozenSculpt().mesh.vertexCount() == vertices
+                    && restored->frozenSculpt().mesh.indexCount() == indices);
+        r.check("IMP01B_18_and_the_same_published_revision_it_already_had",
+                restored != nullptr && restored->meshStore().currentRevision() == published);
+        r.check("IMP01B_18_and_the_body_it_sat_beside_is_untouched",
+                f.scene.findBody(first) != nullptr);
+    }
+
+    // An Imported Mesh deletes and comes back exactly as a Construction Body
+    // does. This is the case a per-representation delete path would have
+    // broken: its geometry is not derived from anything a step holds.
+    {
+        Fixture f;
+        SceneObject* imported = f.scene.addImportedBody(historyImportedMesh(), "head_low");
+        r.check("IMP01B_16_an_imported_body_can_be_added_for_the_case",
+                imported != nullptr && imported->isImported());
+        const ObjectId importedId = (imported != nullptr) ? imported->objectId() : kNoObject;
+        const uint32_t importedVertices =
+                (imported != nullptr) ? imported->importedOrNull()->vertexCount() : 0u;
+        if (imported != nullptr) {
+            publishSceneObject(*imported);
+        }
+
+        r.check("IMP01B_16_deleting_an_imported_body_succeeds",
+                deleteSceneBody(importedId, f.scene, f.history) == DeleteBodyStatus::Ok);
+        r.check("IMP01B_16_it_is_gone", f.scene.findBody(importedId) == nullptr);
+
+        f.history.undo();
+        SceneObject* restored = f.scene.findBody(importedId);
+        r.check("IMP01B_18_the_imported_body_returns_with_its_geometry",
+                restored != nullptr && restored->isImported()
+                    && restored->importedOrNull() != nullptr
+                    && restored->importedOrNull()->vertexCount() == importedVertices);
+        r.check("IMP01B_18_and_still_carries_its_name",
+                restored != nullptr && restored->name() == "head_low");
+
+        f.history.redo();
+        r.check("IMP01B_19_and_a_redo_removes_the_same_imported_body",
+                f.scene.findBody(importedId) == nullptr);
+    }
+
+    // IMP01B-20: the replacement selection, both halves of the rule.
+    {
+        Fixture f;
+        const ObjectId first = f.scene.activeBody().objectId();
+        const ObjectId second = f.addBody(PrimitiveSpec::forSphere(1.0));
+        const ObjectId third = f.addBody(PrimitiveSpec::forCylinder(1.0, 2.0));
+
+        f.scene.setActiveBody(second);
+        deleteSceneBody(second, f.scene, f.history);
+        r.check("IMP01B_20_deleting_the_active_body_selects_the_next_one",
+                f.scene.activeBodyId() == third);
+
+        f.scene.setActiveBody(third);
+        deleteSceneBody(third, f.scene, f.history);
+        r.check("IMP01B_20_and_the_previous_one_when_it_was_last",
+                f.scene.activeBodyId() == first);
+    }
+
+    // IMP01B-21: the last body is refused BY NAME, and the refusal costs
+    // nothing at all.
+    {
+        Fixture f;
+        const ObjectId only = f.scene.activeBody().objectId();
+        const size_t depthBefore = f.history.undoDepth();
+        const ObjectId nextIdBefore = f.scene.nextObjectId();
+        DeleteBodyReport report;
+        r.check("IMP01B_21_the_last_body_is_refused_by_name",
+                deleteSceneBody(only, f.scene, f.history, &report)
+                        == DeleteBodyStatus::RefusedLastBody);
+        r.check("IMP01B_21_and_the_refusal_changes_nothing",
+                f.scene.bodyCount() == 1 && f.scene.activeBodyId() == only
+                    && f.history.undoDepth() == depthBefore
+                    && f.scene.nextObjectId() == nextIdBefore);
+        r.check("IMP01B_21_the_status_has_a_stable_name",
+                sameText(deleteBodyStatusName(DeleteBodyStatus::RefusedLastBody),
+                         "RefusedLastBody"));
+
+        // And the other two refusals, on the same terms.
+        r.check("IMP01B_21_an_unknown_id_is_refused",
+                deleteSceneBody(9999, f.scene, f.history) == DeleteBodyStatus::UnknownBody);
+        f.history.beginEdit();
+        r.check("IMP01B_21_a_delete_under_an_open_edit_is_refused",
+                deleteSceneBody(only, f.scene, f.history)
+                        == DeleteBodyStatus::RefusedEditInProgress);
+        f.history.commitEdit();
+    }
+
+    // The ObjectId allocator is never rolled back by a delete: a deleted id
+    // comes back BY NAME through the undo, and the next creation mints a fresh
+    // one rather than reusing it.
+    {
+        Fixture f;
+        const ObjectId second = f.addBody(PrimitiveSpec::forSphere(1.0));
+        const ObjectId nextBefore = f.scene.nextObjectId();
+        deleteSceneBody(second, f.scene, f.history);
+        r.check("IMP01B_15_a_delete_does_not_roll_the_allocator_back",
+                f.scene.nextObjectId() == nextBefore);
+        const ObjectId created = f.addBody(PrimitiveSpec::forCylinder(1.0, 2.0));
+        r.check("IMP01B_15_and_the_next_creation_does_not_reuse_the_deleted_id",
+                created != second && created >= nextBefore);
     }
 
     // -----------------------------------------------------------------------

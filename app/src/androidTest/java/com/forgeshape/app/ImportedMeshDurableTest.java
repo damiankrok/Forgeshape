@@ -54,11 +54,15 @@ import java.io.InputStream;
  * <h2>What must still be absent</h2>
  *
  * <p>An imported object is NON-PARAMETRIC. It has no Construction Source and
- * nothing may invent one, so <i>Shape</i> has no answer for it; and
- * `IMPORT-01A` gives it no Frozen Sculpt Mesh, so <i>Start Sculpting</i> on one
- * is `IMPORT-01B`. Both controls are withdrawn while one is selected, and both
- * are refused below JNI as well — withdrawing a control is not removing its
- * guard.
+ * nothing may invent one, so <i>Shape</i> has no answer for it: that control is
+ * withdrawn while one is selected AND the act is refused below JNI, because
+ * withdrawing a control is not removing its guard.
+ *
+ * <p><i>Start Sculpting</i> was withdrawn for the same reason until
+ * `IMPORT-01B`, and no longer is: an imported body can be sculpted, seeded from
+ * its own geometry. The imported source stays immutable throughout, which is
+ * what `ImportedMeshSculptTest` proves on a device and the sculpt self-test
+ * proves in the domain.
  */
 @RunWith(AndroidJUnit4.class)
 public final class ImportedMeshDurableTest {
@@ -209,20 +213,35 @@ public final class ImportedMeshDurableTest {
     }
 
     // -----------------------------------------------------------------------
-    // IMP01A-14/15 / E2E-IMP01A-10: Shape and Start Sculpting are withdrawn
+    // IMP01A-14 / E2E-IMP01A-10: Shape is withdrawn; Start Sculpting is not
     // -----------------------------------------------------------------------
 
+    /**
+     * <b>Shape</b> has no answer for an imported body and is withdrawn.
+     *
+     * <p><b>Start Sculpting is a different matter since `IMPORT-01B`.</b> This
+     * case asserted that both were absent, because `IMPORT-01A` gave an imported
+     * body no Frozen Sculpt Mesh. It now asserts the pair separately, because
+     * they diverged for a reason: nothing can invent the primitive an imported
+     * object was never made from, so <i>Shape</i> is still absent — but its own
+     * geometry is a perfectly good thing to sculpt, so the sculpt transition is
+     * offered on exactly the same terms a Construction Body gets it.
+     *
+     * <p>The domain guard is asserted for the half that still has one: a shape
+     * Apply on an imported body is still refused below JNI, because withdrawing
+     * a control is not removing its guard.
+     */
     @Test
-    public void imp01a14and15_shapeAndStartSculptingAreAbsentForAnImportedBody() {
+    public void imp01a14_shapeIsAbsentForAnImportedBodyAndSculptingIsOffered() {
         // First, with a Construction Body selected, both are offered — so the
         // assertions below cannot pass by the controls never being there.
         //
         // The sculpt transition is asserted as "one of the two is drawn"
         // deliberately. Start Sculpting and Resume Sculpt are mutually
         // exclusive by meaning — there is nothing to resume until something has
-        // been frozen — so which of them a Construction Body offers depends on
-        // whether it already has a Frozen Sculpt Mesh, which is a fact about
-        // the body rather than about this case.
+        // been frozen — so which of them a body offers depends on whether it
+        // already has a Frozen Sculpt Mesh, which is a fact about the body
+        // rather than about this case.
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             assertNotNull("Shape is offered for a Construction Body",
                     workspace.findViewById(R.id.tool_rail_shape));
@@ -238,28 +257,25 @@ public final class ImportedMeshDurableTest {
                     workspace.findViewById(R.id.tool_rail_shape));
             assertNotNull("Transform stays, because a placement is a placement",
                     workspace.findViewById(R.id.tool_rail_place));
-            // NEITHER transition is drawn: Start Sculpting is `IMPORT-01B`'s,
-            // and an imported body has no Frozen Sculpt Mesh to resume into.
-            assertFalse("no sculpt transition is drawn for an imported body",
+            // IMP01B-01: and the way INTO Sculpt is offered, because an
+            // imported body's own geometry is what a freeze seeds from.
+            assertTrue("IMP01B-01: an imported body offers a sculpt transition",
                     sculptTransitionOffered(workspace));
             return null;
         });
 
-        // The guard is still in the DOMAIN: removing a control is not removing
-        // a guard, so both acts are refused below JNI as well.
+        // The Shape guard is still in the DOMAIN: removing a control is not
+        // removing a guard.
         final byte[] before = encodeProject();
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             assertNotEquals("a shape Apply on an imported body is refused",
                     NativeViewport.APPLY_APPLIED,
                     NativeViewport.applyConstructionBox(3.0, 2.0, 1.0));
-            assertNotEquals("and so is a freeze", NativeViewport.SCULPT_OK,
-                    NativeViewport.freezeToSculpt());
             return null;
         });
-        assertArrayEquals("and neither changed one byte of the project",
-                before, encodeProject());
+        assertArrayEquals("and it changed no byte of the project", before, encodeProject());
 
-        // Selecting a Construction Body again brings both back untouched.
+        // Selecting a Construction Body again brings Shape back untouched.
         final long constructionBody = sceneBodyIds()[0];
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             NativeViewport.sceneSelectBody(constructionBody);
@@ -281,8 +297,8 @@ public final class ImportedMeshDurableTest {
      *
      * <p>Start Sculpting and Resume Sculpt are mutually exclusive by meaning, so
      * which one is drawn depends on whether the body already has a Frozen Sculpt
-     * Mesh. What `IMPORT-01A` asserts is that an Imported Mesh offers NEITHER,
-     * and a Construction Body still offers one — not which one.
+     * Mesh. Since `IMPORT-01B` BOTH representations offer one, so what this
+     * answers is whether a way in exists -- not which one it is.
      */
     private static boolean sculptTransitionOffered(EditorWorkspaceView workspace) {
         final View freeze = workspace.findViewById(R.id.freeze_to_sculpt);
@@ -507,6 +523,12 @@ public final class ImportedMeshDurableTest {
                 new boolean[]{false, true});
         loadFixtureAndAssert("forge/mixed_imported_v1.forge", 3,
                 new boolean[]{false, false, true});
+        // IMP01B-11/12: the two fixtures the generalized SCUL rule added -- an
+        // imported body carrying a sculpt mesh with no CONS branch at all, and
+        // one document holding all four valid source/sculpt combinations.
+        loadFixtureAndAssert("forge/imported_sculpt_v1.forge", 1, new boolean[]{true});
+        loadFixtureAndAssert("forge/mixed_imported_sculpt_v1.forge", 4,
+                new boolean[]{false, false, true, true});
 
         // And the legacy fixtures still decode exactly as they did, which is
         // what "the imported branch costs a project that has none nothing"

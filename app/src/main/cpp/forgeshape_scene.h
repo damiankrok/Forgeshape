@@ -54,9 +54,11 @@ constexpr ObjectId kFirstBodyObjectId = kConstructionBoxObjectId;
 // ---------------------------------------------------------------------------
 //
 // A body owns exactly ONE of these, for its whole life. There is no conversion
-// between them in `IMPORT-01A`: an Imported Mesh never grows a Construction
-// Source (nothing could invent the primitive it was never made from), and a
-// Construction Body never becomes one.
+// between them: an Imported Mesh never grows a Construction Source (nothing
+// could invent the primitive it was never made from), and a Construction Body
+// never becomes one. `IMPORT-01B` does not weaken that -- it lets EITHER of
+// them be sculpted, and a Frozen Sculpt Mesh is a body's second
+// representation rather than a change of its first.
 enum class BodyRepresentation : uint8_t {
     // The exact primitive plus its parameters. Geometry is DERIVED and is
     // regenerated on every load.
@@ -159,9 +161,9 @@ private:
     ConstructionTransform transform_;
     MeshStore meshStore_;
     FrozenSculpt frozen_;
-    // Empty for a Construction Body. `IMPORT-01A` deliberately does not give an
-    // Imported Mesh a Frozen Sculpt Mesh either: Start Sculpting on one is
-    // `IMPORT-01B`.
+    // Empty for a Construction Body. Since `IMPORT-01B` an Imported Mesh may
+    // also own a Frozen Sculpt Mesh above -- the two live side by side, and
+    // this one stays immutable source truth whatever is sculpted from it.
     ImportedMesh imported_;
     std::string name_;
 };
@@ -259,13 +261,13 @@ public:
     // History support: the smallest scene mutations an undo needs
     // -----------------------------------------------------------------------
     //
-    // These three exist so that undoing a creation can put a body back with the
-    // ObjectId it already had, which `addBody()` — which mints — cannot do.
-    // They are deliberately NOT a Delete/Duplicate feature: nothing in the
-    // product's UI reaches them, they are driven only by ConstructionHistory,
-    // and a detached body is HELD by the history rather than destroyed, so a
-    // redo returns the same object with its Frozen Sculpt Mesh intact rather
-    // than a fresh one that merely looks the same.
+    // These exist so that undoing a creation can put a body back with the
+    // ObjectId it already had, which `addBody()` -- which mints -- cannot do.
+    // They are still not a feature on their own: they are driven by
+    // ConstructionHistory and by `deleteSceneBody`, both of which HOLD a
+    // detached body rather than destroying it, so an undo or a redo returns the
+    // same object with its Frozen Sculpt Mesh intact rather than a fresh one
+    // that merely looks the same. There is deliberately still no Duplicate.
 
     // Takes a body out of the scene and hands over ownership. Returns null when
     // no body carries that id. If the detached body was active, the selection
@@ -302,8 +304,11 @@ private:
     std::vector<std::unique_ptr<SceneObject>> bodies_;
 
     // Monotonic. Never reused, never derived from a collection index, never
-    // derived from a revision. Stage 017 has no delete, so there is deliberately
-    // no reuse policy to design.
+    // derived from a revision -- and `IMPORT-01B`'s Delete does NOT roll it
+    // back. A deleted body's id is restored by name when its Undo puts the same
+    // object back, and the next creation mints a fresh one; reuse is what would
+    // let a stale ObjectId held in a selection or a render snapshot silently
+    // resolve to a different body.
     ObjectId nextObjectId_ = kFirstBodyObjectId;
 
     ObjectId activeBodyId_ = kNoObject;
@@ -320,6 +325,40 @@ private:
 // Returns kNoMeshRevision, leaving the store untouched, when the geometry does
 // not pass RuntimeMesh validation.
 MeshRevision publishSceneObject(SceneObject& body, MeshValidation* outWhy = nullptr);
+
+// Builds the LOCAL triangle mesh a Frozen Sculpt Mesh would be frozen FROM.
+//
+// The second ONE dispatch point, beside `publishSceneObject`, and it exists for
+// the same reason: `IMPORT-01B` lets either representation be sculpted, so no
+// caller has to ask what a body is before it can ask for something to sculpt. A
+// Construction Body regenerates from its parameters through the generator the
+// product already publishes from; an Imported Mesh hands over the arrays it
+// already owns. Neither reads the other's truth, and the source is only READ --
+// this cannot change a primitive parameter, a placement or one imported vertex.
+//
+// `ConstructionMesh` is the type only because it is already this codebase's
+// plain carrier for "vertices, indices and a sidedness answer": the `.forge`
+// sculpt restore has built one out of stored bytes since E2E-R1A. It carries no
+// Construction meaning here, and nothing about the returned mesh claims the body
+// has a Construction Source.
+//
+// For an Imported Mesh two things are deliberately NOT done:
+//
+//   * the RAW index array is copied, never `buildDrawData`'s. That one emits a
+//     double-sided submesh's triangles a SECOND time with reversed winding,
+//     which is right for drawing and ruinous for sculpting: the reversed copy
+//     contributes the exact negation of its twin to every area-weighted vertex
+//     normal, so a two-sided submesh would freeze with zero normals and no
+//     normal-based brush could move it at all;
+//   * so per-submesh `doubleSided` collapses into the mesh's ONE
+//     `renderBothSides`, true when ANY submesh is two-sided. A frozen mesh has a
+//     single sidedness answer by construction, and the safe collapse is the
+//     permissive one: it keeps an imported sheet both visible and reachable by a
+//     brush from behind, where the strict one would leave the user unable to
+//     touch half of what they imported.
+//
+// Returns false, writing nothing, for a body with no geometry to freeze.
+bool buildSculptSourceMesh(const SceneObject& body, ConstructionMesh* out);
 
 // The one process-scoped scene. `activeConstructionOrNull()`, `meshStore()`,
 // `sculptSession()` and `constructionTransform()` are all defined in terms of

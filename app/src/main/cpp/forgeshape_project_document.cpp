@@ -530,15 +530,21 @@ ProjectCodecStatus validateProjectDocument(const ProjectDocument& document) {
                 return ProjectCodecStatus::UnresolvedReference;
             }
             sceneCursor = found + 1;
-            if (covered[found] == 2) {
-                // A Frozen Sculpt Mesh for an Imported Mesh body. `IMPORT-01A`
-                // deliberately has no Start Sculpting on an imported object —
-                // that is `IMPORT-01B` — so a file claiming one describes a
-                // project this version cannot evaluate, and a load that
-                // silently dropped it would lose whichever half it dropped.
-                return ProjectCodecStatus::UnresolvedReference;
-            }
-
+            // A `SCUL` entry over an `IMPT` body is VALID since `IMPORT-01B`.
+            //
+            // It was refused while an imported object could not be sculpted at
+            // all, and that refusal was right then: a file claiming a sculpt
+            // mesh for one described something the build could not evaluate,
+            // and dropping either half would have lost it. What the entry means
+            // now is exactly what it means over a `CONS` body -- a second
+            // representation of the same body, frozen from whatever its source
+            // is -- so there is nothing left for the pair to disagree about.
+            //
+            // The exactly-one-of rule is untouched: it is about `CONS` and
+            // `IMPT`, the two things a body's geometry can COME from, and
+            // `SCUL` is not one of them. Which source it was frozen from is not
+            // stored, because nothing reads it back: a Frozen Sculpt Mesh is
+            // its own positions and its own topology whatever produced it.
             const uint32_t vertexCount = body.vertexCount();
             const uint32_t indexCount = body.indexCount();
             if (body.positions.size() != static_cast<size_t>(vertexCount) * 3u) {

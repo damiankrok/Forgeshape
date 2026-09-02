@@ -247,6 +247,18 @@ struct ProjectSculptRecord {
     std::vector<ProjectSculptBody> bodies;  // scene order; only bodies that have one
 };
 
+// Which SOURCE a sculpt entry's body has is deliberately not stored, and since
+// `IMPORT-01B` a `SCUL` entry may sit over a `CONS` body or over an `IMPT` one.
+// A Frozen Sculpt Mesh is its own positions and its own topology whatever it
+// was frozen from, and nothing reads the origin back; the exactly-one-of rule
+// stays where it belongs, on `CONS` versus `IMPT`.
+//
+// A build from before `IMPORT-01B` REFUSES an `IMPT`+`SCUL` file
+// (`UnresolvedReference`) rather than opening it with half of a body. That is
+// the same fail-closed shape `kHeaderFlagHasImported` gives an older reader,
+// and it is why this needed no version bump: an older build cannot
+// misunderstand the file, only decline it.
+
 // IMPT, per body whose representation is an Imported Mesh.
 //
 // This is the first section that stores GEOMETRY as project truth rather than

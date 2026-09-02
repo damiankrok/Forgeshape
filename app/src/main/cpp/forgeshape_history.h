@@ -194,6 +194,25 @@ public:
     // undo step, no redo step, no edit left open.
     void endSessionInitialization();
 
+    // ---------------------------------------------------------------------
+    // Holding a body the scene no longer contains
+    // ---------------------------------------------------------------------
+
+    // Takes ownership of a body an act removed from the scene, so a step that
+    // names it can put THAT object back rather than a fresh one wearing its id.
+    //
+    // Undo already produced detached bodies -- undoing a creation takes one out
+    // -- and kept them alive inside `applyState`. `IMPORT-01B`'s Delete is the
+    // first act that removes a body while it is still named by an undo step's
+    // BEFORE state, and it has nowhere else to put it: an Imported Mesh's
+    // geometry and any body's Frozen Sculpt Mesh are not derived from anything
+    // a step holds, so a step could not rebuild them.
+    //
+    // Ignores a null. Records nothing and touches neither stack: holding a body
+    // is not a transaction, and the caller's own edit scope is what makes the
+    // removal one.
+    void holdDetachedBody(std::unique_ptr<SceneObject> body);
+
     bool sessionInitializing() const { return sessionInitializing_; }
 
     // ---------------------------------------------------------------------
@@ -227,8 +246,11 @@ private:
     // Makes the scene match `target`, doing the least work that can.
     void applyState(const SceneConstructionState& target, ConstructionRestoreReport* outReport);
 
-    // Detached bodies are reachable only through the redo stack, so anything
-    // no redo step names again can never come back and is released here.
+    // A detached body can only ever come back through a step that NAMES it, so
+    // anything no step in either stack names is unreachable and is released
+    // here. Both stacks and both sides of every step are asked: a redo restores
+    // an undone creation from its AFTER state, and an undo restores a deleted
+    // body from its BEFORE state.
     void pruneDetachedBodies();
 
     ConstructionScene& scene_;
@@ -238,9 +260,11 @@ private:
     std::deque<HistoryEntry> undoStack_;
     std::deque<HistoryEntry> redoStack_;
 
-    // Bodies an undo took out of the scene, kept whole — Frozen Sculpt Mesh
-    // included — so a redo restores the SAME object rather than a fresh one
-    // wearing its ObjectId.
+    // Bodies an act took out of the scene -- an undone creation, or a Delete --
+    // kept whole, Frozen Sculpt Mesh and Imported Mesh included, so putting one
+    // back restores the SAME object rather than a fresh one wearing its
+    // ObjectId. A body no step in either stack still names can never come back
+    // and is released; see pruneDetachedBodies.
     std::vector<std::unique_ptr<SceneObject>> detached_;
 
     bool editOpen_ = false;

@@ -32,4 +32,10 @@ const char* canonicalImportedOnlyFixtureSha256();
 const char* canonicalConstructionImportedFixtureSha256();
 const char* canonicalMixedImportedFixtureSha256();
 
+// And for the two `IMPORT-01B` fixtures: an imported body carrying a Frozen
+// Sculpt Mesh with no Construction branch at all, and one document holding all
+// four valid source/sculpt combinations at once.
+const char* canonicalImportedSculptFixtureSha256();
+const char* canonicalMixedImportedSculptFixtureSha256();
+
 }  // namespace forgeshape

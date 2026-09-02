@@ -451,6 +451,96 @@ function New-MixedImportedFile {
 }
 
 # ---------------------------------------------------------------------------
+# The IMPORT-01B fixtures
+# ---------------------------------------------------------------------------
+
+# The Frozen Sculpt Mesh both IMPORT-01B fixtures put on an IMPORTED body.
+#
+# Deliberately NOT the imported geometry it was frozen from: a sculpt mesh is
+# its own positions and its own topology, and a fixture where the two matched
+# could not tell a decoder that confused them apart. Every number is an exact
+# binary fraction, so neither implementation has a rounding argument to make.
+#
+# SourceStale is false because an Imported Mesh is immutable for the life of its
+# body: nothing can make one stale, so nothing can write that bit for one.
+function New-CanonicalImportedSculptEntry {
+    param([int] $ObjectId)
+    return [pscustomobject]@{
+        ObjectId        = $ObjectId
+        RenderBothSides = $true
+        SourceStale     = $false
+        HasEdits        = $true
+        Positions       = @(0.25, 0.0,  0.0,
+                            1.75, 0.0,  0.0,
+                            0.0,  2.5,  0.0,
+                            0.5,  0.75, 3.25)
+        Indices         = @(0, 1, 2, 0, 1, 3, 0, 2, 3, 1, 2, 3)
+    }
+}
+
+# IMPORTED + SCULPT: one body, geometry from a file, sculpted, reopening in
+# Sculpt.
+#
+# The fixture that pins the generalized SCUL rule -- a sculpt entry's body may
+# have CONS or IMPT as its source. There is no CONS section here at all, so a
+# reader that still required one refuses the file rather than opening half of a
+# body; every build before IMPORT-01B did exactly that.
+function New-ImportedSculptFile {
+    $sceneBodies = @(
+        [pscustomobject]@{ ObjectId = 1; Transform = (New-CanonicalImportedPlacement) }
+    )
+    $scne = New-Section 'SCNE' 1 $true (New-ScenePayload $sceneBodies 2 1)
+    # SCUL is the required branch of a Sculpt project; IMPT is ALWAYS required.
+    $scul = New-Section 'SCUL' 1 $true (New-SculptPayload @((New-CanonicalImportedSculptEntry 1)))
+    $impt = New-Section 'IMPT' 1 $true (New-ImportedPayload @((New-CanonicalImportedEntry 1)))
+    return New-ForgeFile 2 @($scne, $scul, $impt) 6
+}
+
+# ALL FOUR COMBINATIONS at once: a plain Construction Body, a Construction Body
+# with a sculpt mesh, a plain Imported Mesh, and an Imported Mesh with a sculpt
+# mesh.
+#
+# The representations interleave and the SCUL entries sit over bodies of BOTH
+# source kinds, so a reader that assumed a contiguous block of either, or that
+# keyed a sculpt entry to a Construction body, fails here.
+function New-MixedImportedSculptFile {
+    $sceneBodies = @(
+        [pscustomobject]@{ ObjectId = 1; Transform = @(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0) },
+        [pscustomobject]@{ ObjectId = 2; Transform = @(1.5, 0.5, -2.0, 370.0, 0.0, 90.0, 1.0, 1.0, 1.0) },
+        [pscustomobject]@{ ObjectId = 3; Transform = (New-CanonicalImportedPlacement) },
+        [pscustomobject]@{ ObjectId = 4; Transform = @(-2.5, 1.25, 0.5, 0.0, 45.0, 0.0, 1.0, 2.0, 1.0) }
+    )
+    $sourceBodies = @(
+        [pscustomobject]@{ ObjectId = 1; PrimitiveCode = 1
+                           Parameters = $script:CanonicalSharedParameters
+                           Features = New-PrimitiveSourceFeature },
+        [pscustomobject]@{ ObjectId = 2; PrimitiveCode = 3
+                           Parameters = $script:CanonicalSharedParameters
+                           Features = New-PrimitiveSourceFeature }
+    )
+    $sculptEntries = @(
+        [pscustomobject]@{
+            ObjectId        = 2
+            RenderBothSides = $false
+            SourceStale     = $true
+            HasEdits        = $true
+            Positions       = @(0.0,  0.0,  0.0,
+                                1.5,  0.0,  0.0,
+                                0.0,  1.25, 0.0,
+                                0.25, 0.5,  1.75)
+            Indices         = @(0, 1, 2, 0, 1, 3, 0, 2, 3, 1, 2, 3)
+        },
+        (New-CanonicalImportedSculptEntry 4)
+    )
+    $importedEntries = @((New-CanonicalImportedEntry 3), (New-CanonicalImportedEntry 4))
+    $scne = New-Section 'SCNE' 1 $true (New-ScenePayload $sceneBodies 5 4)
+    $cons = New-Section 'CONS' 1 $false (New-ConstructionPayload $sourceBodies)
+    $scul = New-Section 'SCUL' 1 $true (New-SculptPayload $sculptEntries)
+    $impt = New-Section 'IMPT' 1 $true (New-ImportedPayload $importedEntries)
+    return New-ForgeFile 2 @($scne, $cons, $scul, $impt) 7
+}
+
+# ---------------------------------------------------------------------------
 # The deliberately broken fixtures
 # ---------------------------------------------------------------------------
 #
@@ -534,6 +624,8 @@ $fixtures = [ordered]@{
     'imported_only_v1.forge'          = (New-ImportedOnlyFile)
     'construction_imported_v1.forge'  = (New-ConstructionImportedFile)
     'mixed_imported_v1.forge'         = (New-MixedImportedFile)
+    'imported_sculpt_v1.forge'        = (New-ImportedSculptFile)
+    'mixed_imported_sculpt_v1.forge'  = (New-MixedImportedSculptFile)
 }
 
 $rows = New-Object System.Collections.Generic.List[object]
@@ -554,9 +646,11 @@ foreach ($name in $fixtures.Keys) {
 
 $rows | Format-Table -AutoSize
 Write-Host ''
-Write-Host 'Digests the C++ self-test (FSR1A-12, IMP01A-19) must assert:'
+Write-Host 'Digests the C++ self-test (FSR1A-12, IMP01A-19, IMP01B-11/12) must assert:'
 Write-Host ("  construction:          {0}" -f ($rows | Where-Object Fixture -eq 'construction_multibody_v1.forge').Sha256)
 Write-Host ("  sculpt:                {0}" -f ($rows | Where-Object Fixture -eq 'sculpt_mixed_v1.forge').Sha256)
 Write-Host ("  imported_only:         {0}" -f ($rows | Where-Object Fixture -eq 'imported_only_v1.forge').Sha256)
 Write-Host ("  construction_imported: {0}" -f ($rows | Where-Object Fixture -eq 'construction_imported_v1.forge').Sha256)
 Write-Host ("  mixed_imported:        {0}" -f ($rows | Where-Object Fixture -eq 'mixed_imported_v1.forge').Sha256)
+Write-Host ("  imported_sculpt:       {0}" -f ($rows | Where-Object Fixture -eq 'imported_sculpt_v1.forge').Sha256)
+Write-Host ("  mixed_imported_sculpt: {0}" -f ($rows | Where-Object Fixture -eq 'mixed_imported_sculpt_v1.forge').Sha256)

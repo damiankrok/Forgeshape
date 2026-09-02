@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Delete: remove one body from the project (UI-OWNER-45).
+
+  A lid, a bin and two wear lines, in the same 2 dp round-capped stroke grammar
+  as ic_add — the two controls sit in the same Objects surface and must read as
+  one family, one adding a row and one taking a row away.
+
+  Drawn white and tinted at use; see EditorControlStyles.icon(). The DESTRUCTIVE
+  colour is applied where the control is built, not baked in here, so the glyph
+  stays usable if the role ever changes.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M4,7 L20,7 M10,4 L14,4 M6,7 L7,20 L17,20 L18,7 M10.5,10.5 L10.5,16.5 M13.5,10.5 L13.5,16.5" />
+</vector>

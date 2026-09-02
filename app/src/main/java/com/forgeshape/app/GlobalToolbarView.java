@@ -86,6 +86,17 @@ final class GlobalToolbarView extends LinearLayout {
 
     private boolean statusInline = true;
 
+    /**
+     * Whether the ACTIVE body's geometry came from a file.
+     *
+     * <p>Written by {@link #showContext} and read by {@link #applyTransitionLabel},
+     * which runs from a measure pass and so cannot ask native code. It is a
+     * remembered ANSWER, never a second copy of the model: the workspace reads
+     * the representation from native state on every refresh and tells this
+     * surface, exactly as it does the mode.
+     */
+    private boolean imported;
+
     /** The capsule padding the editing group wears while it holds more than one
      *  control, kept so the group can be un-drawn and drawn again. */
     private final int editingGroupPadding;
@@ -419,21 +430,26 @@ final class GlobalToolbarView extends LinearLayout {
     /**
      * Writes the wording this budget can carry, full wherever it fits.
      *
-     * <p>Only <i>Back to Construction</i> has a second form, and it is the one
-     * control that needed one: it is both the longest label in the product and
-     * the one that may not be guessed at. The short form is the same act in the
-     * same words minus the preposition, with the arrow the direction is already
-     * drawn with elsewhere — and the content description stays the full wording
-     * in both, so what a screen reader announces never changes with the window.
+     * <p>Only the way OUT of Sculpt has a second form, and it is the one control
+     * that needed one: it is both the longest label in the product and the one
+     * that may not be guessed at. The short form is the same destination plus
+     * the direction, with the arrow the direction is already drawn with
+     * elsewhere — and the content description stays the full wording in both, so
+     * what a screen reader announces never changes with the window.
+     *
+     * <p>Which destination it names is the active body's representation, not the
+     * window's: an Imported Mesh has no Construction shape to go back to, so
+     * over one the label says Imported Mesh in both forms.
      */
     private void applyTransitionLabel(TextView transition, int budget) {
         final Context context = getContext();
         CharSequence label = context.getString(transition == backButton
-                ? R.string.back_to_construction
+                ? (imported ? R.string.back_to_imported_mesh : R.string.back_to_construction)
                 : transition == resumeButton
                         ? R.string.resume_sculpt : R.string.start_sculpting);
         if (transition == backButton && naturalWidth(transition, label) > budget) {
-            label = context.getString(R.string.back_to_construction_short);
+            label = context.getString(imported
+                    ? R.string.back_to_imported_mesh_short : R.string.back_to_construction_short);
         }
         if (!TextUtils.equals(transition.getText(), label)) {
             transition.setText(label);
@@ -633,24 +649,42 @@ final class GlobalToolbarView extends LinearLayout {
     }
 
     /**
-     * @param sculptable whether the active body can be sculpted at all. False
-     *        for an Imported Mesh: `IMPORT-01A` gives one no Frozen Sculpt Mesh
-     *        and the domain refuses the freeze, so offering Start Sculpting for
-     *        it could only lead the user to a refusal.
+     * @param imported whether the ACTIVE body's geometry came from a file.
+     *        It decides two words and nothing else: the context this surface
+     *        names, and where the way out of Sculpt says it goes. `IMPORT-01B`
+     *        made every body sculptable, so it no longer decides whether a
+     *        transition is offered at all — an Imported Mesh gets Start
+     *        Sculpting and Resume Sculpt on exactly the same terms as a
+     *        Construction Body.
      */
-    void showContext(boolean sculpting, boolean hasFrozenMesh, boolean sculptable) {
+    void showContext(boolean sculpting, boolean hasFrozenMesh, boolean imported) {
         final Context context = getContext();
         contextLabel.setText(context.getString(
-                sculpting ? R.string.context_sculpt : R.string.context_construction));
+                sculpting ? R.string.context_sculpt
+                          : imported ? R.string.context_imported_mesh
+                                     : R.string.context_construction));
         contextLabel.setContentDescription(contextLabel.getText());
 
         backButton.setVisibility(sculpting ? VISIBLE : GONE);
+        // The full wording, always, whatever the row can DRAW: applyTransitionLabel
+        // may shorten the label, and the description is what a screen reader
+        // announces, so it must not move with the window.
+        backButton.setContentDescription(context.getString(
+                imported ? R.string.back_to_imported_mesh : R.string.back_to_construction));
         // Freeze and Resume are mutually exclusive by meaning: there is nothing
         // to resume until something has been frozen, and once there is, the
         // non-destructive act is the one that gets the toolbar slot.
-        freezeButton.setVisibility(
-                !sculpting && !hasFrozenMesh && sculptable ? VISIBLE : GONE);
+        freezeButton.setVisibility(!sculpting && !hasFrozenMesh ? VISIBLE : GONE);
         resumeButton.setVisibility(!sculpting && hasFrozenMesh ? VISIBLE : GONE);
+        if (this.imported != imported) {
+            // The way out of Sculpt is labelled by the REPRESENTATION as well as
+            // by the width the row can spare, and that label is written from the
+            // measure pass. A visibility change already asks for one; a load
+            // that swaps the active body's representation without leaving Sculpt
+            // does not, so it is asked for here.
+            requestLayout();
+        }
+        this.imported = imported;
         applyEditingComposition();
     }
 
