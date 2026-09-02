@@ -129,6 +129,8 @@ forgeshape_jni.cpp            render thread, ANativeWindow, MotionEvent ->
 | Reading a `.glb` | `forgeshape_gltf_import.{h,cpp}` + `forgeshape_json.{h,cpp}` | platform-neutral, and deliberately shares NO code with the writer: it re-derives every offset, length, stride and bound from the file. Supports a bounded STATIC subset — a node matrix or TRS, several TRIANGLES primitives, a generated NORMAL, ignored colour/UV, `doubleSided` — and fails closed by name on everything else. It bakes the node transform and produces GEOMETRY: it decides nothing about the project and creates no body, which is what lets one parse serve both the durable import and the diagnostic preview |
 | What an Imported Mesh may be, and what a `.forge` file may carry for one | `forgeshape_imported_mesh.{h,cpp}` | ONE validator (`validateImportedMeshData`) and ONE name rule (`sanitizeImportedMeshName`), called by the importer and by the codec alike, so a file can never carry geometry or a name the importer would have refused. It resolves per-submesh `doubleSided` into draw geometry; it holds no material, no `SculptRevision` and no source path |
 | Turning a parsed file into durable project objects | `forgeshape_import_commit.{h,cpp}` | it decides how many objects a file becomes, what they are called and where the node transform ends up. Atomic: everything is built and validated off the scene, and the whole commit is ONE `ScopedConstructionEdit`, so an import is one Undo and a refusal costs no `ObjectId` |
+| Which LOCAL mesh a body is sculpted FROM | `buildSculptSourceMesh` in `forgeshape_scene.{h,cpp}` | the second ONE dispatch point beside `publishSceneObject`: a Construction Body regenerates from its parameters, an Imported Mesh hands over the arrays it owns. Either source is only READ. It copies an imported object's RAW indices, never `buildDrawData`'s reversed duplicates, and collapses per-submesh `doubleSided` into the frozen mesh's one sidedness answer — see *Sculpting an Imported Mesh* |
+| Removing one body from the project | `forgeshape_body_delete.{h,cpp}` | one representation-neutral operation over the scene and the history. One Delete is one transaction; the removed body is HELD by the history rather than destroyed, so an Undo restores that object with its Imported Mesh and its Frozen Sculpt Mesh intact; the replacement selection and the last-body refusal are stated here and nowhere else |
 | The deterministic external-GLB compatibility fixture | `forgeshape_glb_import_fixture.{h,cpp}` | a synthetic file with the structural feature set of an external low-poly export; every coordinate an integer over a power of two, so its bytes are the same everywhere. A debug test seam, reachable from no product path |
 | What an imported preview IS, and every boundary it may not cross | `forgeshape_import_preview.{h,cpp}` | session-only: no scene `ObjectId`, no Construction Source, no sculpt representation, no `MeshStore`, no history, no `.forge`, no checkpoint, not selectable, not re-exportable, gone with the process. Its renderer keys are resource keys and never identities. Since `IMPORT-01A` it is reachable only from the verification suites |
 | What a body is CALLED wherever the user reads it | `BodyLabels` (Java) | one answer for the Objects list, the Objects capsule, the precision surface's title and the status line: an Imported Mesh uses the name its file gave it, a Construction Body is `Body #id`, and the empty string native code returns for the latter is the SIGNAL for that fallback, not a name |
@@ -714,6 +716,29 @@ JNI. Because one view moves, a viewport pick, a row tap and Add Body all end at
 the same native fact and the same `refreshFromNative()`, and no Objects list is
 ever nested inside the inspector's scroll.
 
+**A row is a pair, not a control with two meanings** (`UI-OWNER-45`). The label
+carries `object_row`, the ObjectId tag and the activated state it always had, and
+tapping it selects; the Delete beside it carries `object_row_delete`, the same
+tag, the product's existing error colour and the ordinary 48 dp icon-button hit
+area, and tapping it removes the body. Two targets rather than one gesture with
+two meanings, because a list where the tap that chooses a thing sits anywhere
+near the tap that destroys it is a list people stop trusting. The pair itself is a
+plain container with no id, so every caller that reaches a row still gets the
+label.
+
+**Delete is not confirmed, and that is the same rule the reset dialog follows.**
+The product confirms exactly one act — Reset Sculpt from Shape — and confirms it
+because it genuinely cannot be undone. A Delete is one Undo away, the history
+capsule is on the same screen, and the status line says so in the same breath. A
+dialog in front of a reversible act is what trains a user to dismiss the dialog in
+front of the irreversible one.
+
+It is withdrawn where it cannot succeed, on both halves of the domain rule: the
+last remaining body's row never builds the control, and every row hides it while
+sculpting. `deleteControlFor` reports those two the same way, because they mean
+the same thing to a user. Both guards remain below JNI regardless — removing a
+control is not removing a guard.
+
 The two hosts are mutually exclusive, and enforced rather than assumed: the
 Objects **capsule** is `GONE` exactly when the column is up, opening any context
 surface closes the others, hiding the chrome closes all of them, and a window
@@ -1198,8 +1223,11 @@ enumerates the collection.
 never derived from a collection index, a `MeshRevision` or a GPU resource. It
 survives primitive edits, transform edits, Freeze/Resume/re-Freeze and
 selection. The first body keeps `kConstructionBoxObjectId`, so startup is
-identical to the single-object product's. There is no delete, and therefore
-deliberately no reuse policy.
+identical to the single-object product's. **Delete does not roll it back**: a
+deleted body's id returns by NAME through its Undo and the next creation mints a
+fresh one, so there is deliberately still no reuse policy. Reuse is what would
+let a stale `ObjectId` held in a selection or a render snapshot resolve to a
+different body.
 
 **The collection is flat.** Root-level bodies in insertion order, with stable
 enumeration. There is no parent, no child, no group, no reorder and no
@@ -1554,12 +1582,14 @@ Reuse is what would let a stale `ObjectId` held anywhere — a selection, a rend
 snapshot — silently resolve to a different body.
 
 `ConstructionScene` grew three internal operations for this — `detachBody`,
-`insertBody`, `makeBody` — reachable only from the history. A detached body is
-**held whole** by the history rather than destroyed, Frozen Sculpt Mesh included,
-so a redo restores the same object rather than a fresh one wearing its id. A
-detached body is reachable only through the redo stack, so anything no redo step
-names again is released when redo is cleared. This is deliberately not a
-Delete/Duplicate feature: no UI reaches it.
+`insertBody`, `makeBody` — reachable from the history and, since `UI-OWNER-45`,
+from `deleteSceneBody`. A detached body is **held whole** rather than destroyed,
+Frozen Sculpt Mesh and Imported Mesh included, so putting one back restores the
+same object rather than a fresh one wearing its id. `holdDetachedBody` is how an
+act outside the history hands one over, and `pruneDetachedBodies` releases
+anything no step in EITHER stack still names, on either side — a redo restores an
+undone creation from a step's AFTER state, an undo restores a deleted body from a
+step's BEFORE state. There is deliberately still no Duplicate.
 
 ### Publication discipline
 
@@ -2062,21 +2092,24 @@ which avoids having to decide what a body switch does to a half-finished stroke.
 ### Two representations, one body
 
 ```
-Construction Source                     Frozen Sculpt Mesh
+SOURCE representation                   Frozen Sculpt Mesh
   ObjectId                                the SAME ObjectId
-  PrimitiveKind + that kind's parameters  a COPY of the local vertices/indices
-  ConstructionTransform                   its own SculptRevision
-  -> generateMesh()  [LOCAL space]  --Freeze-->  SculptMesh
+  Construction Source: kind + parameters   a COPY of the local vertices/indices
+  or Imported Mesh:    the geometry        its own SculptRevision
+  -> buildSculptSourceMesh() [LOCAL] --Freeze--> SculptMesh
 ```
 
-These are separate truths and neither writes to the other:
+Since `IMPORT-01B` the source may be either representation; the diagram above is
+the only line that differs between them, and it is one function. These are
+separate truths and neither writes to the other:
 
-- **Freeze copies.** `SculptMesh::freezeFrom` takes the Construction object's
-  currently generated local mesh wholesale. Nothing is shared, so no sculpt edit
-  can reach back into Construction data.
-- **A sculpt edit changes no parameter, no kind and no transform.** It cannot: the
-  sculpt module has no mutable access to `ConstructionObject`, and the only
-  mutation `SculptMesh` offers is a single vertex POSITION — nothing here can add,
+- **Freeze copies.** `SculptMesh::freezeFrom` takes the body's current local
+  source mesh wholesale. Nothing is shared, so no sculpt edit can reach back into
+  the source -- neither a Construction parameter nor an imported vertex.
+- **A sculpt edit changes no parameter, no kind, no imported array and no
+  transform.** It cannot: the sculpt module has no mutable access to
+  `ConstructionObject` or `ImportedMesh`, and the only mutation `SculptMesh`
+  offers is a single vertex POSITION — nothing here can add,
   remove or reorder a vertex or touch an index, so topology is preserved by
   construction rather than by discipline. **Nothing reconstructs a parameter from
   sculpt vertices** either; that direction does not exist.
@@ -2097,12 +2130,14 @@ rather than assuming its request succeeded, so a refused request (entering Sculp
 with nothing frozen) cannot leave surfaces on screen that lie about what is being
 edited. The active tool is read back the same way.
 
-- **Start Sculpting** (`freezeToSculpt`) snapshots the current Construction local
-  mesh, creates the Frozen Sculpt Mesh with the same `ObjectId`, and enters
-  Sculpt mode.
-- **Back to Construction** keeps the sculpt mesh untouched and republishes the
-  Construction Source's own generated mesh, so the original object comes back
-  exactly as it was.
+- **Start Sculpting** (`freezeToSculpt`) snapshots the body's current local
+  source mesh through `buildSculptSourceMesh`, creates the Frozen Sculpt Mesh
+  with the same `ObjectId`, and enters Sculpt mode. It asks nothing about which
+  representation the body has.
+- **Back to Construction**, or **Back to Imported Mesh** over a body whose
+  geometry came from a file, keeps the sculpt mesh untouched and republishes the
+  body's SOURCE representation, so the original object comes back exactly as it
+  was. One native act, two labels: see *Sculpting an Imported Mesh*.
 - **Resume Sculpt** re-enters Sculpt **without** re-freezing, so prior
   deformation returns. Freezing again is a separate button precisely because it
   discards the sculpted vertices; collapsing the two into one control would make
@@ -2115,6 +2150,11 @@ sculpt mesh is **never** silently replaced or re-derived. It is marked
 `sourceStale`, the Sculpt panel says so in as many words, and adopting the new
 source stays an explicit user act — another Freeze, the only thing that clears
 the flag. There is no automatic sculpt-edit transfer.
+
+An **Imported Mesh can never go stale.** It is immutable for the life of its
+body: there is no edit path to one, so nothing can make the flag true and the
+warning simply never appears over one. That is a consequence of the
+representation, not a branch in the UI.
 
 ### Active representation
 
@@ -3061,9 +3101,11 @@ the source file ever being consulted again.
 - an **Imported Mesh** IS the geometry. No rule could recreate it and the `.glb`
   is not part of the project, so it is project truth and it is serialized.
 
-There is no conversion between them in `IMPORT-01A` and no fabrication in either
-direction: nothing invents a primitive an imported object was never made from,
-and no Construction Body becomes one. `constructionOrNull()` is a POINTER
+There is no conversion between them and no fabrication in either direction:
+nothing invents a primitive an imported object was never made from, and no
+Construction Body becomes one. `IMPORT-01B` does not weaken that -- it lets
+EITHER of them be sculpted, and a Frozen Sculpt Mesh is a body's SECOND
+representation rather than a change of its first. `constructionOrNull()` is a POINTER
 precisely so the compiler asks every call site what it does about a body with
 none, and the process-scoped accessor is `activeConstructionOrNull()` for the
 same reason.
@@ -3074,9 +3116,12 @@ That is what lets the gizmo, the picker, the exact-value editors, the history an
 `SCNE` all treat an imported object exactly as they treat every other one, with
 no second transform path.
 
-`publishSceneObject` is the ONE dispatch point: a Construction Body regenerates
-from its parameters, an Imported Mesh republishes the geometry it owns. Neither
-path reads the other's truth.
+`publishSceneObject` is the ONE dispatch point for what a body DRAWS: a
+Construction Body regenerates from its parameters, an Imported Mesh republishes
+the geometry it owns. Neither path reads the other's truth.
+
+`buildSculptSourceMesh` is the second one, added by `IMPORT-01B`, for what a body
+is SCULPTED FROM -- see *Sculpting an Imported Mesh* below.
 
 ### The commit is atomic, and it is one transaction
 
@@ -3135,9 +3180,9 @@ fallback rather than a name.
   sets, and nothing may reconstruct one. `Shape` has no answer for it, so the
   rail entry is absent for one and `applyConstructionPrimitive` refuses it below
   JNI as well — withdrawing a control is not removing a guard.
-- **Not sculptable in `IMPORT-01A`.** No Frozen Sculpt Mesh, no `SculptRevision`;
-  Start Sculpting is withdrawn and `freezeToSculpt` refuses. That is
-  `IMPORT-01B`.
+- **Sculptable since `IMPORT-01B`**, and it was not before. Start Sculpting is
+  offered for one and `freezeToSculpt` accepts it, seeded from its own geometry.
+  What that does NOT do is give it parameters: see below.
 - **Not appearance.** The parser validated COLOR/TEXCOORD and the material's
   colour, roughness, metallic and textures, and decoded none of them. They were
   never read, so nothing preserves them. `doubleSided` is the single exception,
@@ -3150,6 +3195,167 @@ An imported body **is** exported: `captureGlbExportScene` reads its CPU arrays
 through the same `buildDrawData` and bakes `L` exactly as it does for every other
 body. A `.glb` quietly missing an object the user can see, select and move is the
 one thing that exporter refuses to do anywhere else.
+
+## Sculpting an Imported Mesh
+
+`IMPORT-01B` (`ARCH-OWNER-11`) lets either representation be sculpted. It builds
+no second sculpt subsystem: the mode, the four brushes, the stroke kernel, the
+adjacency, the stale-source rule, the destructive-reset guard and the `SCUL`
+branch of the document are all exactly the ones Construction sculpting already
+used. What was added is **source acquisition** and the wording around it.
+
+### One dispatch point for the seed
+
+`buildSculptSourceMesh(body, out)` in `forgeshape_scene.{h,cpp}` is the whole
+addition, and it sits beside `publishSceneObject` for the same reason: a caller
+should not have to ask what a body IS before it can ask for something to sculpt.
+A Construction Body regenerates from its parameters through the same generator
+the product publishes from; an Imported Mesh hands over the arrays it already
+owns. Either way the source is only READ — no primitive parameter, no placement
+and no imported vertex is written by a freeze, then or ever.
+
+It returns a `ConstructionMesh` because that type is already this codebase's
+plain carrier for "vertices, indices and a sidedness answer": `.forge`'s sculpt
+restore has built one out of stored bytes since E2E-R1A. It carries no
+Construction meaning there, and nothing about the returned mesh claims the body
+has a Construction Source.
+
+Two decisions inside it are load-bearing for an imported source:
+
+- **The RAW index array is copied, never `buildDrawData`'s.** That one emits a
+  double-sided submesh's triangles a SECOND time with reversed winding, which is
+  right for drawing and ruinous for sculpting: the reversed copy contributes the
+  exact negation of its twin to every area-weighted vertex normal, so a two-sided
+  submesh would freeze with zero normals and no normal-based brush could move it.
+- **Per-submesh `doubleSided` therefore collapses into the mesh's one
+  `renderBothSides`,** true when ANY submesh is two-sided. A frozen mesh has a
+  single sidedness answer by construction, and the safe collapse is the
+  permissive one: it keeps an imported sheet both visible and reachable by a
+  brush from behind, where the strict one would leave half of what the user
+  imported untouchable.
+
+The file's own stated normals are deliberately not carried across. A Frozen
+Sculpt Mesh derives its normals from its CURRENT positions because a stroke moves
+them — already true of every Construction freeze — and the Imported Mesh keeps
+its own normals untouched, so *Back to Imported Mesh* shows them exactly as the
+file stated them.
+
+### The placement is not baked twice
+
+Both representations are LOCAL geometry under the one authored
+`ConstructionTransform`. The import already split the node transform — linear
+part into the geometry, translation onto the body — and the freeze copies local
+positions unchanged, so the same model matrix carries the imported point and the
+seeded point to the same place. Nothing is recentred and nothing is re-baked.
+
+### The source stays immutable
+
+An `ImportedMesh` has no mutation path at all: it is built once, validated once,
+and read thereafter. So an imported body's `sourceStale` flag is never set —
+there is no source change for it to record — and the stale-source warning simply
+never appears over one. That is a consequence of the representation, not a branch
+in the UI.
+
+### What the user reads
+
+The act is the same act and the code is the same code; the WORDS differ because
+the destination does. Over a body whose geometry came from a file the toolbar's
+context reads *Imported Mesh*, the way out of Sculpt reads *Back to Imported
+Mesh* (short form `← Imported Mesh`, with the full wording always kept as the
+content description), and the destructive reset reads *Reset Sculpt from Imported
+Mesh…*. *Start Sculpting* and *Resume Sculpt* are unchanged, because those name
+what the user does rather than where the geometry came from. The view id of the
+way out is still `back_to_construction`: an id names the ACT the code performs —
+leaving Sculpt and republishing the body's source — and copy never renames one.
+
+### `.forge`
+
+A `SCUL` entry's body may now have either source. Which one it was frozen from is
+not stored, because nothing reads it back. The exactly-one-of rule is untouched:
+it is about `CONS` versus `IMPT`, the two things a body's geometry can come FROM,
+and `SCUL` is not one of them. `DATA_PACKAGE_SPEC.md` owns the layout and the
+compatibility direction, which is fail-closed: an older build refuses an
+`IMPT`+`SCUL` file rather than opening half a body.
+
+## Deleting a body
+
+`UI-OWNER-45`. `forgeshape_body_delete.{h,cpp}` owns the operation, as its own
+small module for the reason `forgeshape_import_commit` is one: deleting a body is
+a decision ABOUT the project that needs both the scene and the history, and
+neither of those owns the other.
+
+**Representation-neutral by construction.** Nothing in it asks what a body is. A
+Construction Body, an Imported Mesh, and either of them carrying a retained
+Frozen Sculpt Mesh are removed by the same three lines, because a body is removed
+as a whole object: its identity, its representation, its placement, its published
+mesh and its sculpt state leave together and come back together. A
+per-representation delete path is exactly how one of them would eventually come
+back missing something.
+
+**The body is not destroyed.** It is detached and handed to
+`ConstructionHistory::holdDetachedBody`, which keeps it for as long as some step
+still names it. That is not an optimization: an Imported Mesh's geometry and any
+Frozen Sculpt Mesh are not derived from anything a step holds, so a step could
+not rebuild them. Undo restores the SAME object; a redo removes that same object
+again.
+
+`pruneDetachedBodies` was widened to match. It asks both stacks and BOTH sides of
+every step, because a redo restores an undone creation from a step's AFTER state
+and an undo restores a deleted body from a step's BEFORE state. Asking only the
+forward side was correct while an undone creation was the only way a body could
+leave the scene.
+
+**One Delete is one transaction**, through the ordinary `ScopedConstructionEdit`
+and always as the scope that OWNS the edit: an edit already in progress is
+refused outright (`RefusedEditInProgress`), the same rule `loadProjectDocument`
+and `commitImportedGlbScene` apply. Nothing in the product wraps a delete in a
+larger act, and refusing rather than joining keeps the boundary unambiguous.
+
+**Selection.** If the deleted body was not active, the active one does not
+change. If it was, the selection falls to the NEXT body in scene order, or — when
+the deleted body was last — to the one before it. Scene order is the Objects
+list's order, so what the user sees selected afterwards is the row that took the
+deleted row's place.
+
+**The last body is refused by name.** This product has no empty project:
+`ConstructionScene` creates a body eagerly, `activeBody()` returns a reference
+and every accessor built on it assumes one exists, and `validateProjectDocument`
+refuses a file with zero bodies. `RefusedLastBody` says so and changes nothing;
+no replacement primitive is ever invented. **Refused while sculpting** too, on
+the same terms body switching and Undo/Redo already follow: the Sculpt target is
+fixed for the duration of the mode, and Undo is refused there, so a delete made
+there could not be taken back until the user left.
+
+The `ObjectId` allocator is never rolled back. A deleted body's id comes back by
+NAME through its undo, and the next creation mints a fresh one.
+
+### Renderer resources
+
+`Renderer::releaseBodiesAbsentFromScene`, called at the top of `syncScene`, frees
+the GPU copy held for any body the current scene no longer names. Until Delete
+existed this was not needed: a body could only leave the scene by having its
+creation undone, the history holds at most `kConstructionHistoryCapacity` of
+those, and each is a handful of kilobytes. Delete removes that bound — add and
+delete in a loop and every cycle mints a fresh `ObjectId`, because the allocator
+is deliberately monotonic, so the map would grow one entry per cycle forever.
+Entries are small, but each holds two `VkDeviceMemory` allocations and
+`maxMemoryAllocationCount` is a hard device limit commonly around 4096.
+
+Undoing costs one re-upload and nothing else: the body comes back with the same
+`ObjectId` and the same published revision, a fresh resource record starts at
+`kNoMeshRevision`, and `syncBody`'s gate misses and uploads it again — the same
+path a body takes the first time it is drawn. A steady frame pays one walk of a
+map with a handful of entries and nothing else.
+
+The in-flight wait before anything is destroyed is **bounded**
+(`kMeshReleaseWaitNanoseconds`, 100 ms), and that is not a detail. This release
+is opportunistic and retried every frame, so it must never stake the render
+thread on a fence that may never signal: a failed `vkQueueSubmit` leaves that
+frame's fence reset with nothing left to signal it, an unbounded wait there hangs
+the render thread, `surfaceDestroyed` blocks on that thread, and the Activity
+never tears down. On anything but success the release leaves every entry resident
+and asks again next frame. A capacity GROW keeps the unbounded wait, because it
+must complete before it reallocates.
 
 ## The diagnostic imported mesh preview
 
@@ -3298,13 +3504,14 @@ own, and naming them is what stops one arriving by accident.
 - **No primitive framework.** No base class, polymorphism, registry, property
   metadata, reflection or plugin surface. A further primitive costs another
   member, `PrimitiveKind` case, variant alternative and per-kind JNI method.
-- **No object commands and no hierarchy.** The scene adds and selects bodies and
-  does nothing else: no delete, duplicate, rename, hide, lock, group, nesting,
-  reorder, parent field or multi-select — and therefore no ObjectId reuse policy,
-  since nothing can yet stop existing. There is no *command* framework: undo is
-  `ConstructionHistory`'s bounded step state, not a reversible-command object
-  graph, and it covers Construction edits only. Both Objects hosts are **views**
-  of that same flat list and add no verb to it.
+- **Almost no object commands, and no hierarchy.** The scene adds, selects and —
+  since `UI-OWNER-45` — deletes bodies, and does nothing else: no duplicate,
+  rename, hide, lock, group, nesting, reorder, parent field or multi-select. Even
+  Delete adds no ObjectId reuse policy, because it does not roll the allocator
+  back. There is no *command* framework: undo is `ConstructionHistory`'s bounded
+  step state, not a reversible-command object graph, and it covers Construction
+  edits only. Both Objects hosts are **views** of that same flat list and carry
+  exactly the two verbs it has.
 - **No snapping, and no Sketch grid.** The world reference grid is a viewport
   reference only: nothing snaps to it, no cursor is quantised, no dimension is
   derived from it. A Sketch grid — drawn on a sketch plane, with snapping — is a

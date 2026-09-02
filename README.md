@@ -133,13 +133,13 @@ powershell -ExecutionPolicy Bypass -File scripts\build-forge-corpus.ps1 -VerifyO
 
 That script is a second, independent implementation of the `.forge` v1 encoder,
 written from `DATA_PACKAGE_SPEC.md`. It needs no device and no Android tooling.
-Its digests must match the ones the native `FSR1A-12` and `IMP01A-19` cases
-assert and the ones a debug launch prints as `FORGESHAPE_PROJECT_GOLDEN_SHA256`
-and `FORGESHAPE_PROJECT_GOLDEN_SHA256_IMPORTED`; a mismatch means the encoder
-and the specification have parted company. Five of the ten fixtures are packaged
-into the test APK's assets as well, so `ImportedMeshDurableTest` can prove the
-independent encoder's bytes actually LOAD on a device rather than only hashing
-the same.
+Its digests must match the ones the native `FSR1A-12`, `IMP01A-19` and
+`IMP01B-11`/`IMP01B-12` cases assert and the ones a debug launch prints as
+`FORGESHAPE_PROJECT_GOLDEN_SHA256`, `..._IMPORTED` and `..._IMPORTED_SCULPT`; a
+mismatch means the encoder and the specification have parted company. Seven of
+the twelve fixtures are packaged into the test APK's assets as well, so
+`ImportedMeshDurableTest` can prove the independent encoder's bytes actually LOAD
+on a device rather than only hashing the same.
 
 To run the GLB export suite and pull the two exported sample models off the
 device, use:
@@ -184,7 +184,9 @@ degrees. **The imported mesh preview is a diagnostic and is session-only**: what
 it draws is never a body, never saved and never autosaved, and since
 `IMPORT-01A` it has no user-facing control at all — the suites reach it through
 JNI. The product's *Import GLB…* is durable import, which creates real objects;
-`ImportedMeshDurableTest` covers it.
+`ImportedMeshDurableTest` covers it, `ImportedMeshSculptTest` covers sculpting
+one (`IMPORT-01B`), and `ObjectsDeleteTest` covers removing one
+(`UI-OWNER-45`).
 
 For the widened external-GLB subset (`GLB-IMPORT-R1`) use:
 

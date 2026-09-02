@@ -175,6 +175,14 @@ Sculpt Mode, so on a window too narrow for the sentence it reads
 **← Construction** rather than trailing off mid-word; it is announced as *Back to
 Construction* either way.
 
+Over an object that came from a `.glb` the same control reads **Back to Imported
+Mesh**, and **← Imported Mesh** where the row is too narrow, because that is
+where it actually goes — an imported object has no constructed shape behind it.
+It is announced as *Back to Imported Mesh* in both forms. The label beside it
+names what you are looking at the same way: *Construction* for a body you built,
+*Imported Mesh* for one that came from a file, *Sculpt* while you are sculpting
+either.
+
 Low on the leading edge, where a thumb reaches, is the **Objects capsule**: it
 names the body you are working on and, while you are constructing, carries a
 **+** beside it. It is in the same place whether you are constructing or
@@ -395,10 +403,40 @@ dimension, applying a placement, Freezing and sculpting all reach that body and
 no other. Switching to another body and back brings the first one's exact
 numbers back unchanged.
 
-What the scene deliberately does **not** offer: there is no way to delete,
-duplicate, rename, hide or lock a body, no groups or nesting and no reordering
-the list. Adding a body *is* undoable — see *Undo and Redo* — but the list
-itself carries no commands. Bodies are not saved when the app closes.
+What the scene deliberately does **not** offer: there is no way to duplicate,
+rename, hide or lock a body, no groups or nesting and no reordering the list.
+Adding and deleting are the two verbs the list has, and both are undoable — see
+*Undo and Redo*.
+
+### Deleting a body
+
+Each row in the Objects list carries a **Delete** beside its name. It removes the
+object from the project — not just its row: the body stops being drawn, stops
+being selectable in the viewport, and is gone from the file the next time you
+save, from the automatic checkpoint, and from anything you export.
+
+**It is one Undo away, and that is why it does not stop and ask.** Undo brings
+the object back exactly as it was — the same shape or the same imported geometry,
+the same position, the same sculpting on it if it had any — in its own place in
+the list. Redo removes it again. The status line says so when you press it.
+ForgeShape asks before exactly one act, *Reset Sculpt from Shape*, because that
+one genuinely cannot be undone; putting a dialog in front of a reversible act is
+how people learn to dismiss the one that matters.
+
+**Selecting a body and deleting it are two different taps.** The name selects,
+the control beside it deletes, and neither is ever reached by the other.
+
+**The last object cannot be deleted.** A project always has at least one, so the
+last row simply does not offer the control, and ForgeShape will not replace a
+deleted object with a new box you did not ask for.
+
+**Delete is not offered while sculpting**, for the same reason the **+** is not:
+the body being sculpted has to stay the one being sculpted, and Undo is not
+available in Sculpt Mode either. Leave Sculpt and the control is there again.
+
+Deleting works the same way on every kind of object — a constructed body, an
+imported mesh, and either of them with sculpting on it. What comes back on Undo
+is the whole object, sculpting included.
 
 ## Choosing and sizing the shape
 
@@ -731,6 +769,10 @@ there is no message and no animation, because the model changing is the answer.
   the whole body disappear; it never leaves a leftover box behind. Redo brings
   back *the same body*, with the same name, the same shape, the same placement
   and the same position in the Objects list, selected again.
+- **Deleting a body** — one press of a row's Delete. Undo brings back *the same
+  object*: the same shape or the same imported geometry, any sculpting that was
+  on it, the same placement, and the same position in the Objects list, with the
+  selection where it was before. Redo removes it again.
 - **One handle drag** — however long you held it and however many times the
   object moved while you dragged, Undo puts all nine values back to what they
   were before you touched the handle. A press that never moved records nothing.
@@ -769,12 +811,16 @@ and ForgeShape keeps both.
 
 ### Start Sculpting, and the Sculpt workspace
 
-**Start Sculpting**, in the Global Toolbar, takes the **selected** body's shape
-as it currently stands and makes a sculptable mesh from it, then switches to
-Sculpt Mode. Nothing about that Construction Body changes: its shape, its
-dimensions and its placement are exactly what they were, and they are still
-there when Sculpt Mode is left. Starting changes nothing visible — the picture
-on screen before and after pressing the button is identical, pixel for pixel.
+**Start Sculpting**, in the Global Toolbar, takes the **selected** body's
+geometry as it currently stands and makes a sculptable mesh from it, then
+switches to Sculpt Mode. Nothing about the body's own description changes: a
+constructed body's shape, dimensions and placement are exactly what they were,
+and they are still there when Sculpt Mode is left. Starting changes nothing
+visible — the picture on screen before and after pressing the button is
+identical, pixel for pixel.
+
+It works on **any** body, including one imported from a `.glb`. See *Sculpting
+an imported object* below for what is different there, which is only the wording.
 
 **Sculpting is per body, and each body keeps its own.** Sculpt one body, go back
 to Construction, select another body and sculpt that one too — then come back to
@@ -784,8 +830,8 @@ never move a vertex of the other. The other bodies stay visible while you sculpt
 so you can see what you are working against.
 
 Which body is being sculpted is fixed for as long as Sculpt Mode lasts: to work
-on a different one, go **Back to Construction**, select it there, and Start
-Sculpting or Resume. What is *not* per body is the brush — the tool you are
+on a different one, go **Back to Construction** — **Back to Imported Mesh** over
+an imported object — select it there, and Start Sculpting or Resume. What is *not* per body is the brush — the tool you are
 holding and its Radius and Strength stay exactly as you set them when you move
 between bodies, for the same reason they stay put when you switch tools.
 
@@ -839,6 +885,44 @@ is silent no matter how much sculpting happened earlier in the session. For the
 same reason the message names no number: what is at stake is this mesh's
 sculpting, and a count carried over from meshes that no longer exist would be a
 false claim about what is being lost.
+
+### Sculpting an imported object
+
+An object that came from a `.glb` can be sculpted too, and it works exactly the
+way sculpting a constructed body works: **Start Sculpting** takes the object's
+geometry as it stands, makes a sculptable mesh from it, and switches to Sculpt
+Mode. The same four tools, the same Radius and Strength, the same one-finger
+rule.
+
+**The imported mesh itself is never changed.** It is what the file gave you, and
+sculpting produces a second version of the object beside it rather than writing
+over it. The way out of Sculpt Mode says so: it reads **Back to Imported Mesh**,
+and pressing it shows the file's own geometry again, exactly as it arrived, no
+matter how much sculpting you have done. **Resume Sculpt** takes you back to your
+sculpting, exactly as you left it. You can go back and forth as often as you
+like.
+
+**Nothing moves when you start.** The object stays where it is, at the size and
+angle you put it. Starting to sculpt changes what you can *do* to the object,
+never where it is or how big it is.
+
+**Reset Sculpt from Imported Mesh…** is the imported object's version of the one
+act that cannot be undone: it throws the sculpting away and starts again from the
+imported geometry. It asks first, in the same words and on the same terms —
+whenever there is sculpting on the current mesh to lose.
+
+There is no *stale source* warning for an imported object, because there is
+nothing that can make one stale: a constructed body's shape can be re-dimensioned
+after you started sculpting it, and an imported mesh cannot be edited at all.
+
+**Your sculpting is saved with the project.** Save, reopen, autosave and recovery
+all keep both halves — the imported mesh the file gave you and the sculpting you
+did on top of it — so a reopened project comes back with Resume Sculpt waiting
+and Back to Imported Mesh still showing the original.
+
+**Sending it to another program** follows the same rule every sculpted body
+already follows: exporting while you are sculpting writes the sculpted shape, and
+exporting from the imported view writes the imported shape.
 
 ### One finger on the model sculpts; anywhere else navigates
 
@@ -1159,10 +1243,13 @@ removes all of them and one Redo brings all of them back exactly as they were.
 
 **An imported object is not a shape you can re-dimension.** It came in as a
 mesh, not as a box or a sphere with numbers behind it, so *Shape* is not offered
-while one is selected — there are no dimensions to type. *Start Sculpting* is not
-offered for one yet either. Move, Rotate and Scale work on it exactly as they
-work on anything else, and selecting one of your own bodies again brings Shape
-and Start Sculpting straight back.
+while one is selected — there are no dimensions to type. Move, Rotate and Scale
+work on it exactly as they work on anything else, and selecting one of your own
+bodies again brings Shape straight back.
+
+**But you can sculpt it.** *Start Sculpting* is offered for an imported object
+just as it is for anything else, and it starts from the object's own geometry.
+See *Sculpting an imported object*.
 
 **Where it lands is where the file put it.** ForgeShape keeps the position the
 file gave the object and bakes any rotation, scaling or skewing the file applied
@@ -1273,9 +1360,9 @@ snapping — is a different thing entirely and does not exist. The grid is a
 reference the viewport draws and nothing more.
 
 Exactly one body is selected at a time. Selecting more than one, lasso and box
-selection, and object commands that act on a selection — delete, duplicate,
-rename, hide, lock, group, nesting and reordering — are not implemented. The
-Objects list adds and selects; it does nothing else.
+selection, and object commands that act on a selection — duplicate, rename, hide,
+lock, group, nesting and reordering — are not implemented. The Objects list adds,
+selects and deletes; it does nothing else.
 
 Two-finger twist/roll, inertia, camera presets, focus-on-selection, long-press
 selection and UV are not implemented.

@@ -1,10 +1,105 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.55.0
-**Updated:** 2026-09-01
-**Result:** **ARCH-HEALTH-01 — PASS-ARCH-HEALTH-REVIEW-WITH-DEBT. The architecture
-is sound; one data race and one double tessellation were corrected, and the
-remaining debt is named with a timing.**
+**Status Version:** 0.56.0
+**Updated:** 2026-09-02
+**Result:** **IMPORT-01B — COMPLETE. An imported mesh can be sculpted, and the
+Objects list can delete a real project object.**
+
+Two bounded capabilities, under `ARCH-OWNER-11` and `UI-OWNER-45`, and nothing
+else.
+
+**Imported Mesh Sculpt.** *Start Sculpting* is offered for a body whose geometry
+came from a `.glb`, and the workflow behind it is the one that already existed —
+the same four brushes, the same stroke kernel, the same adjacency, the same
+`SCUL` branch, the same destructive-reset guard. What was added is one function:
+
+- **`buildSculptSourceMesh`** in `forgeshape_scene.{h,cpp}` — the second ONE
+  dispatch point beside `publishSceneObject`. A Construction Body regenerates
+  from its parameters; an Imported Mesh hands over the arrays it owns. Either
+  source is only READ.
+- **It copies the RAW indices, never `buildDrawData`'s.** A double-sided
+  submesh's reversed duplicate contributes the exact negation of its twin to
+  every area-weighted vertex normal, so seeding from the draw buffer would freeze
+  a two-sided submesh with zero normals and no normal-based brush could move it.
+  Per-submesh `doubleSided` therefore collapses into the frozen mesh's one
+  `renderBothSides`, permissively, so an imported sheet stays reachable from
+  behind.
+- **The imported source is immutable and stays so.** Positions, normals, indices
+  and submesh batches are bit-identical after a real stroke; the placement is not
+  baked a second time; nothing invents a Construction Source; and an Imported
+  Mesh can never go STALE, because nothing can edit one.
+- **`.forge` generalized `SCUL`**, with no version bump and no new section: an
+  entry's body may have `CONS` or `IMPT`. The four valid combinations are
+  `SCNE+CONS`, `SCNE+CONS+SCUL`, `SCNE+IMPT`, `SCNE+IMPT+SCUL`. Compatibility is
+  fail-closed — an older build REFUSES an `IMPT`+`SCUL` file rather than opening
+  half a body — and all ten pre-existing fixtures' digests are unchanged.
+- **The wording is representation-aware and nothing else is.** *Back to Imported
+  Mesh* (`← Imported Mesh` where the row cannot carry it, full wording always the
+  content description), *Reset Sculpt from Imported Mesh…*, and an *Imported
+  Mesh* editing context. The view id stays `back_to_construction`, because an id
+  names the act.
+- **Export needed no change.** It already asks the project's MODE, so a body with
+  a Frozen Sculpt Mesh exports it in Sculpt and its source otherwise — the same
+  effective-state rule existing sculpt bodies follow, now verified for an
+  imported one.
+
+**Delete.** `deleteSceneBody` in `forgeshape_body_delete.{h,cpp}`, its own small
+module for the reason `forgeshape_import_commit` is one.
+
+- **Representation-neutral, and that is the design.** Nothing in it asks what a
+  body is: a Construction Body, an Imported Mesh, and either carrying retained
+  sculpt work are removed by the same three lines, because a body leaves as a
+  whole object.
+- **The body is HELD, not destroyed.** `ConstructionHistory::holdDetachedBody`
+  keeps it while any step still names it, because an imported object's geometry
+  and a Frozen Sculpt Mesh are the two things a step cannot rebuild.
+  `pruneDetachedBodies` now asks both stacks and both sides of every step.
+- **One Delete is one Undo.** Undo restores the SAME object in its own place with
+  its own published revision; Redo removes it again; no orphan `CONS`, `IMPT` or
+  `SCUL` record survives; the deleted body does not render, pick, save,
+  checkpoint or export.
+- **Selection is deterministic**: the next row, or the previous when the deleted
+  one was last, and unchanged when the deleted body was not active.
+- **The last body is refused by name** (`RefusedLastBody`), because this product
+  has no empty project — and no replacement primitive is ever invented. Delete is
+  refused while sculpting too, on the same terms body switching and Undo/Redo
+  already are, and the control is withdrawn in both cases.
+- **The renderer stopped leaking.** `releaseBodiesAbsentFromScene` frees the GPU
+  copy for a body the scene no longer names. Delete made that a real unbounded
+  growth — add/delete in a loop mints a fresh `ObjectId` every cycle, and each
+  resident entry holds two `VkDeviceMemory` allocations against a device limit
+  commonly around 4096. Undo costs one re-upload, through the path a body already
+  takes the first time it is drawn. Its in-flight wait is BOUNDED (100 ms) and
+  the release is retried next frame on a timeout: the first authoritative
+  aggregate caught an unbounded wait here hanging the render thread, and with it
+  `surfaceDestroyed` and the Activity teardown. See
+  `artifacts/import-01b/DELETE_CONTRACT.md`.
+
+**The Objects row is now a pair**: the label selects, the control beside it
+deletes, and neither is reachable by the other. Delete is deliberately
+unconfirmed — it is one Undo away, and the product's one dialog guards the one
+act that genuinely cannot be undone.
+
+Verified: 17/17 native suites, **2628 checks, zero failures**; JVM 70/70; both
+supported ABIs debug and release; device guards `DEV2-01..07` and `DEV3-01..06`;
+the `.forge` corpus verified against the independent PowerShell encoder with the
+two new fixtures and the ten legacy digests unchanged; nine focused instrumented
+classes; and the authoritative exhaustive-sharded aggregate —
+**`FULL_SHARDED_SUITE_PASS`, 33 classes / 472 tests / 5 shards, missing =
+duplicates = unexpected = 0**. All device work on `emulator-5580`, confirmed
+`ForgeShape_Stage006`; `emulator-5554` was never contacted, and `adb kill-server`
+was never used because another program owns a reserved session on the same host
+daemon.
+
+`E2E-IMP01B-12` is **`OWNER_REAL_FILE_01B_RETEST_PENDING`**: the owner's own
+`1 lowpoly.glb` is not in this environment and no user folder was searched for
+it.
+
+---
+
+**Previous result — ARCH-HEALTH-01 — PASS-ARCH-HEALTH-REVIEW-WITH-DEBT. The
+architecture is sound; one data race and one double tessellation were corrected,
+and the remaining debt is named with a timing.**
 
 An evidence-only review of the whole tree at `4c296f5` (the IMPORT-01A
 commit), with corrections limited to what a test or a log line can prove. No
@@ -30,9 +125,10 @@ and what it did, precisely:
   verdict in `artifacts/architecture-health-review/HOTSPOTS.md`.
 - **Debt that was NOT changed**, because changing it crosses the review's
   line, is recorded below under Technical Debt: renderer GPU resources are
-  never pruned for a body Undo removed; export and the roundtrip diagnostic
-  duplicate the per-representation geometry extraction; the `.forge` decoder
-  does not bound `nextObjectId` below the preview key range.
+  never pruned for a body Undo removed (RESOLVED at IMPORT-01B, which made it
+  unbounded); export and the roundtrip diagnostic duplicate the
+  per-representation geometry extraction; the `.forge` decoder does not bound
+  `nextObjectId` below the preview key range.
 
 Verified on the corrected tree: build, JVM 70/70, 17/17 self-tests with zero
 failures, and five focused instrumented classes (autosave/recovery 14, history
@@ -78,7 +174,9 @@ What that cost, precisely:
   Source. A project with no imported body is **byte-identical** to what v1
   always wrote — the seven legacy fixtures' digests are unchanged.
 - **`Shape` and `Start Sculpting` are withdrawn for an imported body** and
-  refused below JNI as well. Imported Mesh sculpt is `IMPORT-01B`.
+  refused below JNI as well. Imported Mesh sculpt is `IMPORT-01B`. (Superseded:
+  `IMPORT-01B` shipped, so `Start Sculpting` is now OFFERED for an imported body.
+  `Shape` is still withdrawn and still refused.)
 - **Export writes imported bodies too**, from their own CPU arrays, baking `L`
   exactly as for every other body: a `.glb` quietly missing an object the user
   can see and move is the one thing that exporter refuses to do anywhere else.
@@ -461,9 +559,12 @@ representations. A **Construction Body** is an exact primitive (Box, Cylinder,
 Sphere, Cone, Capsule, Plane) with authoritative double-meter dimensions, and can
 be frozen to a Frozen Sculpt Mesh and deformed with four brush tools. An
 **Imported Mesh** (`IMPORT-01A`) is polygon geometry read from a `.glb`: it has
-no parameters, so it has no *Shape* and no *Start Sculpting*, and it is moved,
-rotated, scaled, saved, undone and reopened exactly like anything else. A body
-owns one representation for its whole life and nothing converts between them.
+no parameters, so it has no *Shape* — but since `IMPORT-01B` it can be sculpted,
+seeded from its own geometry, and it is moved, rotated, scaled, saved, undone and
+reopened exactly like anything else. A body owns one SOURCE representation for
+its whole life, nothing converts between them, and either kind may additionally
+own a Frozen Sculpt Mesh. Any body but the last can be DELETED from the Objects
+list (`UI-OWNER-45`), as exactly one Undo.
 Three approved dark appearances, two shading models, two projections, a world
 reference grid, and an Editor Workspace that re-composes itself per window.
 
@@ -818,10 +919,12 @@ re-hide the same knife-edge geometry.
 
 **Self-tests and instrumented tests must not depend on live process-scoped
 state.** Every native case publishes its own fixture, and the scene suite builds
-its own `ConstructionScene`. The scene is process-scoped with no delete, so bodies
-accumulate across an instrumented run and the product may be left in Sculpt by an
-earlier case: no instrumented test may assume a body count, which body sits at the
-origin, or which mode is current.
+its own `ConstructionScene`. The scene is process-scoped, so bodies accumulate
+across an instrumented run and the product may be left in Sculpt by an earlier
+case: no instrumented test may assume a body count, which body sits at the
+origin, or which mode is current. `UI-OWNER-45`'s Delete does not change that —
+a suite that uses it to isolate a body still resolves ids from the live scene
+rather than assuming them.
 
 **The device verifier is mechanical and needs no device.**
 `scripts\verify-device-guards.ps1` runs `DEV2-01`..`07` and `DEV3-01`..`06`: it
@@ -1222,9 +1325,21 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 | **The node transform is SPLIT**: the linear part baked into local geometry, the translation kept as the body's placement, rotation `0,0,0` and scale `1,1,1` to begin with, and nothing recentred | VERIFIED (IMPORT-01A) |
 | **An import is atomic**: one object that fails validation refuses the whole file, and a refusal — cancel, unreadable, unsupported or inconsistent — leaves the scene, the history, the project bytes and the autosave fingerprint untouched and writes no checkpoint | VERIFIED (IMPORT-01A) |
 | **An imported body takes the ordinary transform path**: Move, Rotate and Scale reach the body's own `ConstructionTransform`, cost one history step, publish no revision and move no vertex; Undo and Redo return the exact placements | VERIFIED (IMPORT-01A) |
-| **`Shape` and `Start Sculpting` are absent for an imported body** and refused below JNI as well, and both come straight back when a Construction Body is selected again | VERIFIED (IMPORT-01A) |
+| **`Shape` is absent for an imported body** and refused below JNI as well, and comes straight back when a Construction Body is selected again. *Start Sculpting* was withdrawn with it at IMPORT-01A and is OFFERED since IMPORT-01B | VERIFIED (IMPORT-01A, amended IMPORT-01B) |
 | **`.forge` carries an Imported Mesh**: imported-only, Construction + Imported and Construction + Sculpt + Imported all encode, decode bit-for-bit, load and re-encode identically; the geometry survives Save/Open, Save Copy/Open File, autosave and recovery with the source `.glb` gone; and the seven legacy fixtures' digests are unchanged | VERIFIED (IMPORT-01A) |
-| **The independent PowerShell encoder and the C++ codec agree** on all ten corpus fixtures, and the five packaged into the test APK LOAD on device with the representations the specification states | VERIFIED (IMPORT-01A) |
+| **The independent PowerShell encoder and the C++ codec agree** on all twelve corpus fixtures, and the seven packaged into the test APK LOAD on device with the representations the specification states | VERIFIED (IMPORT-01A, extended IMPORT-01B) |
+| **An Imported Mesh can be SCULPTED**: *Start Sculpting* is offered for one, the seed is its own local geometry through `buildSculptSourceMesh`, the first pre-stroke frame is the same world geometry in the same place, and no Construction Source is invented | VERIFIED (IMPORT-01B) |
+| **The imported source is immutable through a real stroke**: positions, normals, indices, submesh batches and the authored transform are bit-identical afterwards, both in the domain and on device through the `.forge` `IMPT` bytes; an Imported Mesh can never go stale | VERIFIED (IMPORT-01B) |
+| **The seed uses the RAW indices and collapses sidedness permissively**: never `buildDrawData`'s reversed duplicates, which would cancel every area-weighted normal, so every frozen vertex normal is a real direction | VERIFIED (IMPORT-01B) |
+| **Back to Imported Mesh and Resume Sculpt are reversible both ways**: leaving republishes the imported geometry and keeps the sculpt mesh; resuming returns the same revision, counts and edits | VERIFIED (IMPORT-01B) |
+| **The destructive reset is representation-aware and still guarded**: *Reset Sculpt from Imported Mesh…*, the same `SCULPT_HAS_EDITS` question, the same confirmation, and cancelling makes no native call | VERIFIED (IMPORT-01B) |
+| **`.forge` carries `IMPT` + `SCUL`**: an imported body with a sculpt mesh and a four-combination mixed project both encode, decode bit-for-bit, load, re-encode identically and survive Save, Save Copy, autosave, recovery and reload; the ten pre-existing fixtures' digests are unchanged and no version was bumped | VERIFIED (IMPORT-01B) |
+| **Export follows the effective current geometry** for an imported body exactly as for a Construction one: the sculpted mesh in Sculpt, the imported source otherwise, and exporting records no history step and moves neither `.forge` slot | VERIFIED (IMPORT-01B) |
+| **Delete removes a real `SceneObject`**: of either representation, with or without retained sculpt work, as exactly one history transaction; Undo restores the SAME object with its geometry, sculpt mesh, placement and published revision, and Redo removes it again | VERIFIED (UI-OWNER-45) |
+| **A deleted body leaves no ghost**: it does not render, cannot be picked, and is absent from `.forge`, the autosave checkpoint and the exported GLB, with no orphan `CONS`, `IMPT` or `SCUL` record; Undo restores it to all of them | VERIFIED (UI-OWNER-45) |
+| **Delete's selection is deterministic**: unchanged when the deleted body was not active, the next row when it was, the previous row when it was last | VERIFIED (UI-OWNER-45) |
+| **The last body is refused by name** (`RefusedLastBody`) and Delete is refused while sculpting; both controls are withdrawn there, both guards stay below JNI, and no replacement primitive is ever invented | VERIFIED (UI-OWNER-45) |
+| **The renderer releases a body that left the snapshot**, so repeated add/delete cannot grow `Renderer::bodies_` without bound; an Undo re-uploads through the path a body already takes when first drawn | VERIFIED (UI-OWNER-45) |
 | **The owner's own `1 lowpoly.glb` opens and imports** | **UNVERIFIED** — `OWNER_SAMPLE_RUNTIME_TEST_PENDING` / `OWNER_REAL_FILE_01A_RETEST_PENDING`. The binary is external to this coding environment; every structural feature the coordinator listed for it is covered by the synthetic fixture, but the file itself was never in reach. The owner's manual step |
 | **The preview is not project truth**: no scene `ObjectId`, no body added, no active body changed, no revision published, no history step, no `.forge` byte, no autosave fingerprint move, no checkpoint written; a refused load leaves an existing preview whole; Clear releases everything and restores the workspace | VERIFIED (GLB-IMPORT-R0) |
 | **Preview mode draws no control that cannot succeed**: the trailing host, Undo/Redo, the Objects capsule, the Property Inspector and the mode transitions are all withdrawn, a tap selects nothing and the gizmo is absent — and switching back restores the accepted workspace exactly | VERIFIED (GLB-IMPORT-R0) |
@@ -1235,7 +1350,7 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 ## Self-test suite
 
 Seventeen debug-only native suites run once from `NativeViewport.start()` —
-never per frame — and total **2528 checks, zero failures**:
+never per frame — and total **2628 checks, zero failures**:
 
 | suite token | checks |
 | --- | --- |
@@ -1247,12 +1362,12 @@ never per frame — and total **2528 checks, zero failures**:
 | `FORGESHAPE_CONSTRUCTION_PRIMITIVE_SELFTEST_OK` | 125 |
 | `FORGESHAPE_CONSTRUCTION_SPHERE_SELFTEST_OK` | 105 |
 | `FORGESHAPE_CONE_CAPSULE_SELFTEST_OK` | 163 |
-| `FORGESHAPE_SCULPT_BRUSH_KERNEL_SELFTEST_OK` | 378 |
+| `FORGESHAPE_SCULPT_BRUSH_KERNEL_SELFTEST_OK` | 410 |
 | `FORGESHAPE_RENDER_SHADING_SELFTEST_OK` | 329 |
 | `FORGESHAPE_SCENE_SELFTEST_OK` | 79 |
-| `FORGESHAPE_CONSTRUCTION_HISTORY_SELFTEST_OK` | 114 |
+| `FORGESHAPE_CONSTRUCTION_HISTORY_SELFTEST_OK` | 147 |
 | `FORGESHAPE_GIZMO_SELFTEST_OK` | 145 |
-| `FORGESHAPE_PROJECT_SELFTEST_OK` | 184 |
+| `FORGESHAPE_PROJECT_SELFTEST_OK` | 219 |
 | `FORGESHAPE_RENDER_RECOVERY_SELFTEST_OK` | 24 |
 | `FORGESHAPE_GLTF_EXPORT_SELFTEST_OK` | 93 |
 | `FORGESHAPE_GLTF_IMPORT_SELFTEST_OK` | 184 |
@@ -1472,7 +1587,9 @@ device. `README.md` documents how to read them.
 | `EditorWorkspaceProjectActionsTest` | `E2ER1A-01`, `-04`, `-05`, `-06`: a real Save from the product control writing a non-empty, re-loadable `.forge` to the app-private slot without moving the accepted R2 right host; the project control and both rows at the 48 dp hit floor; a damaged, a truncated, an unsupported-major and a not-a-project file each refused with its own message and with EVERY native value, the active body, the scene size and the session history bit-identical afterwards; and a successful Open clearing both history stacks, with the next edit recording exactly one step and its undo returning the LOADED value | 7 |
 | `GlbImportExternalR1Test` | `GLBIR1-16..21`, `E2E-GLBIR1-01..09`: the widened external-GLB parse, driven into the DIAGNOSTIC preview through the native seams (it has no user-facing control since `IMPORT-01A`). The deterministic Nomad-like fixture parses as one mesh of 1978 vertices, 3780 triangles and **seven** draw batches — the shared POSITION accessor decoded once rather than seven times (`-19`, `E2E-01`); it carries no NORMAL and still draws finite bounded geometry (`E2E-02`); its baked world bounds match an **independent third reader's** computation from the same bytes, so the node matrix was applied column-major and not transposed, dropped or mirrored (`E2E-03`); every batch of its double-sided material renders both sides (`E2E-04`); a real one-finger orbit through the input seam turns the camera while the preview is shown and the preview survives it (`E2E-05`); the preview adds no body, changes no active body, publishes no revision, records no history step, moves no `.forge` byte and no autosave fingerprint, and Source→Imported→Source→Clear re-encodes the project identically and leaves it editable (`-17`, `E2E-06`, `E2E-09`); exporting while a preview is shown exports the PROJECT (`-17`); a required compression extension and a `.forge` offered as a GLB each refuse with the right stable token and bounded category and leave nothing behind (`E2E-07`); a refusal never replaces an existing preview (`-17`); Import GLB and Open File are different intents, a `.glb` opened as a project changes nothing, and a cancel is a no-op (`-16`, `E2E-08`); and the one import control keeps its wording and the 48 dp floor (`-20`). Two further cases leave the fixture fingerprint and screenshot that `scripts/run-glb-import-r1-evidence.ps1` pulls | 14 |
 | `ProjectAutosaveRecoveryTest` | `FSR1B-01..09`: autosave writes the canonical `.forge` document to its OWN slot and never the manual one; twenty dirty generations cost exactly one write and the newest state wins; an unchanged project, a refused edit and an identical re-apply each cost none; a failed write leaves the previous valid checkpoint byte-identical with no pending file beside it; a validated candidate is offered on a cold launch, re-offered while unanswered and never again once answered; Recover restores exact Construction values including 370 degrees and a non-uniform scale, and a fresh history; Recover restores the sculpt mesh, its counts, its stale-source state and its `hasEdits` safety state; Discard removes the candidate and leaves an explicitly saved project byte-identical; a corrupt and an unsupported-major candidate are each quarantined, change nothing, and never come back; leaving the foreground checkpoints the latest state and a recreation duplicates no body | 14 |
-| `ImportedMeshDurableTest` | `IMP01A-14/15/19/21..25`, `E2E-IMP01A-01..12`: durable GLB import on a device. A `.glb` picked through the real picker-result seam becomes six objects appended after the bodies that were there, all imported, all with rows found by tag, the first one selected, in exactly one Undo step (`E2E-01`, `E2E-05`); a row reads the file's name rather than `Body #id` and selecting it makes that body active (`-23`, `E2E-02`); `Shape` and a sculpt transition are both drawn for a Construction Body, both ABSENT for an imported one, both refused below JNI with no project byte moving, and both back when a Construction Body is reselected (`-14`, `-15`, `E2E-10`); a nine-value transform Apply on an imported body moves it, undoes to the placement the file gave it and redoes exactly, with no vertex touched (`E2E-03`, `E2E-04`); undoing the IMPORT removes every object it created and the project is what it was but for the id allocator, which never rolls back (`E2E-03`); a saved project reopens every body with its representation after the scene has been genuinely replaced, and re-encodes byte-identically without the source `.glb` (`E2E-06`); Save Copy and Open File carry an imported body and keep no trace of the path (`-22`, `E2E-08`); an import is checkpointed and the checkpoint decodes and restores through the ordinary load (`-21`, `E2E-07`); a cancel, a `.forge` offered as a GLB and a missing file each change nothing, move no fingerprint, record no step and write no checkpoint, while a success dirties the project and earns one (`-24`, `E2E-09`); the trailing host, the Tool Rail, the precision trigger, Undo/Redo and the 48 dp floor are unchanged and no OBJ or FBX route appears (`-25`, `E2E-11`); and the five committed corpus fixtures written by the INDEPENDENT PowerShell encoder decode, load with the representations the specification states, and re-encode identically (`-19`) | 12 |
+| `ImportedMeshDurableTest` | `IMP01A-14/15/19/21..25`, `E2E-IMP01A-01..12`: durable GLB import on a device. A `.glb` picked through the real picker-result seam becomes six objects appended after the bodies that were there, all imported, all with rows found by tag, the first one selected, in exactly one Undo step (`E2E-01`, `E2E-05`); a row reads the file's name rather than `Body #id` and selecting it makes that body active (`-23`, `E2E-02`); `Shape` and a sculpt transition are both drawn for a Construction Body; since `IMPORT-01B` an imported body keeps the sculpt transition and loses only `Shape`, which is still refused below JNI with no project byte moving and comes back when a Construction Body is reselected (`-14`, `E2E-10`); a nine-value transform Apply on an imported body moves it, undoes to the placement the file gave it and redoes exactly, with no vertex touched (`E2E-03`, `E2E-04`); undoing the IMPORT removes every object it created and the project is what it was but for the id allocator, which never rolls back (`E2E-03`); a saved project reopens every body with its representation after the scene has been genuinely replaced, and re-encodes byte-identically without the source `.glb` (`E2E-06`); Save Copy and Open File carry an imported body and keep no trace of the path (`-22`, `E2E-08`); an import is checkpointed and the checkpoint decodes and restores through the ordinary load (`-21`, `E2E-07`); a cancel, a `.forge` offered as a GLB and a missing file each change nothing, move no fingerprint, record no step and write no checkpoint, while a success dirties the project and earns one (`-24`, `E2E-09`); the trailing host, the Tool Rail, the precision trigger, Undo/Redo and the 48 dp floor are unchanged and no OBJ or FBX route appears (`-25`, `E2E-11`); and the seven committed corpus fixtures written by the INDEPENDENT PowerShell encoder — the two `IMPORT-01B` ones included — decode, load with the representations the specification states, and re-encode identically (`-19`) | 12 |
+| `ImportedMeshSculptTest` | `IMP01B-01..14`, `E2E-IMP01B-01..07`, `-12`: sculpting an Imported Mesh on a device. *Start Sculpting* is drawn for an imported body with the product's one wording, the toolbar names the *Imported Mesh* context, and the freeze lands on that body's own `ObjectId` (`-01`, `E2E-01`); the first pre-stroke frame carries the imported vertex count, reports no edits, and the authored placement is untouched by the freeze (`-02`, `-03`, `E2E-02`); a real Grab stroke through the whole touch path mints a new `SculptRevision` and turns `SCULPT_HAS_EDITS` on while the `.forge` `IMPT` section stays byte-identical (`-04`, `-05`, `E2E-03`); *Back to Imported Mesh* is drawn, announced by its full wording, republishes the imported vertex count and leaves the source byte-identical, and *Resume Sculpt* returns the same revision, counts and edits (`-07`, `-08`, `E2E-04`, `E2E-05`); Undo/Redo are withdrawn in Sculpt, refused below JNI, and a Construction undo taken after leaving moves no sculpted vertex (`-06`); the destructive reset reads *Reset Sculpt from Imported Mesh…*, carries no Construction wording, shows no stale-source block, still asks first, still names the consequence, and cancelling keeps the work (`-09`); Save, the autosave checkpoint, a saved copy and a fresh load all carry `IMPT`+`SCUL`, the reopened project re-encodes to the same bytes and offers the way back in (`-11`, `-13`, `E2E-06`, `E2E-07`); export follows the sculpted geometry in Sculpt and the imported source outside it, records no history step and moves neither slot (`-14`); and no Construction Source is invented, the brush set is still exactly four by the domain's own answer, and no OBJ, FBX or second import route appeared (`-10`, `-24`). One case records `OWNER_REAL_FILE_01B_RETEST_PENDING` as a checked fact rather than a comment (`E2E-12`) | 9 |
+| `ObjectsDeleteTest` | `IMP01B-15..24`, `E2E-IMP01B-08..11`: Delete on a device. The row's Delete is a SIBLING of the label with its own semantic id, its ObjectId tag, a content description naming the body, and 48 dp in both dimensions with the label still reachable beside it (`-23`); pressing it removes the body, records exactly one history step, leaves the selection on a body that still exists and takes the row with it (`-15`, `E2E-08`); Undo restores the project byte-for-byte and the row with it, Redo removes both again (`-18`, `-19`, `E2E-09`); an imported body carrying retained sculpt work deletes and returns whole, with no orphan `IMPT` and no orphan `SCUL` surviving (`-16`, `-17`); deleting the ACTIVE body selects the next row and the chrome follows, leaving no stale *Resume Sculpt* from the deleted body, and deleting the last row falls back to the one before it while deleting an inactive body moves nothing (`-20`, `E2E-10`); the only body's row draws no Delete and the domain refuses it as `DELETE_REFUSED_LAST_BODY` with no project byte and no history step moving, and no replacement body is invented (`-21`); Delete is withdrawn on every row while sculpting, refused as `DELETE_REFUSED_IN_SCULPT`, and back the moment Sculpt is left (`-21`); a deleted body cannot be picked and is absent from the saved document, the checkpoint and the exported GLB, with Undo restoring it to all of them and Redo omitting it again (`-22`, `E2E-11`); and the list gained Delete and nothing else — no rename, duplicate, hide, lock or group (`-24`) | 8 |
 | `ProjectTransferTest` | `FSR1B-10..13`, `FSR1B-18`: Save Copy writes canonical bytes the decoder accepts and TRUNCATES a longer existing document rather than overwriting its front; Open File applies a valid document and starts a fresh history; a damaged one, an unreadable one and a cancel each change nothing below JNI; a cancelled copy cannot be written by a later pick; neither direction touches the internal manual slot; a project opened from a distinctively named file re-encodes to the ORIGINAL bytes exactly, and carries no filename, scheme, authority or path; the two native project entry points take bytes and structurally cannot take a `Uri`; and the project surface offers no GLB, glTF, OBJ, FBX or import/export entry | 13 |
 | `DiagnosticsAndRendererLossTest` | `FSR1B-14..17`, `E2ER1B-07/08`: a report is written locally, is bounded, names the build and the device and never a project dimension, `.forge` magic or vertex data, and stays bounded after a flood; ForgeShape requests no INTERNET permission and the platform agrees it holds none, so nothing can be sent anywhere; sharing is a document-creation intent that writes where the user chose; an injected device loss leaves every project value and the encoded document bit-identical and either rebuilds the device or reports restart-required with the work checkpointed; the project stays editable and publishing after a rebuild; and all six project controls plus both recovery answers clear 48 x 48 dp without moving the accepted R2 right host | 9 |
 | `DiagnosticLogTest` (JVM) | `FSR1B-14` core: the ring never grows past its bound, drops the oldest and says how many, caps its rendered output, truncates a detail far below anything worth hiding, and cannot be made to forge a second record from one record's contents | 11 |
@@ -1484,9 +1601,9 @@ device. `README.md` documents how to read them.
 
 | `GlbImportPreviewTest` | `GLBIR0-01..20`, `E2E-GLBIR0-01..08`: the diagnostic imported mesh preview and the roundtrip it exists to measure. Both committed sentinels parse (`-01`, `-02`); the container fails closed on empty bytes, a wrong magic, truncation and a `.forge` file offered as a GLB, leaving no preview behind (`-03`); a refusal never replaces an existing preview (`-06`, `-07`); the preview adds no body, changes no active body, publishes no revision and records no history step (`-08`); Source↔Imported↔Source moves no observable native state and re-encodes the project to identical bytes (`-11`); a manual Save writes exactly the bytes it would have without the preview, and the autosave fingerprint does not move for load, show or clear, with no checkpoint written (`-09`, `-10`); Clear releases everything and the workspace comes back (`-12`); the six-body Construction project and the Sculpt project both roundtrip `ROUNDTRIP_EQUIVALENT` with the deltas reported, the sculpted body compared as `source=sculpt` and its companion as `source=construction` (`-13`, `-14`, `-15`, `-16`); a project compared against another project's file does NOT read as equivalent, so the diagnostic can fail (`-13`); the committed sentinel still matches its own source project (`-13`); the open Intent asks for a file and a cancel or an unreadable selection is a bounded no-op (`-17`); the ONE import control has a semantic id and meets the 48 dp floor, and the preview has no control of its own since `IMPORT-01A` (`-18`); preview mode leaves no editing control on screen and switching back restores the workspace (`-19`); and the project surface still offers no OBJ, FBX, material, texture or animation and frames the GLB row as Import GLB, with nothing on the surface still calling it a preview (`-20`). Four further cases leave the three comparison reports and the Source/Imported screenshot pair that `scripts/run-glb-import-evidence.ps1` pulls | 23 |
 
-**525 tests** — 70 JVM, counted from `:app:testDebugUnitTest`'s own result XML,
-and 455 instrumented, counted from the sharded runner's live AndroidJUnitRunner
-discovery over 31 classes rather than from this table. Both numbers come from a
+**542 tests** — 70 JVM, counted from `:app:testDebugUnitTest`'s own result XML,
+and 472 instrumented, counted from the sharded runner's live AndroidJUnitRunner
+discovery over 33 classes rather than from this table. Both numbers come from a
 run, because a hand-maintained total drifts and this one had. No Java test
 asserts a rendered pixel;
 every control is reached by its stable semantic id and no assertion uses a screen
@@ -1582,6 +1699,34 @@ it. The case therefore tests product behaviour instead of failing on an emulator
 precondition. Runtime evidence separately shows the real keyboard.
 
 ## Current evidence summary
+
+Latest run (**IMPORT-01B**), on the isolated `ForgeShape_Stage006` /
+`emulator-5580` AVD, on the final tree:
+[`artifacts/import-01b/`](artifacts/import-01b/) — `INDEX.md`, the sculpt-source
+and delete contracts, the `.forge` data-contract decision, the corpus table, the
+test results, the device E2E table, the raw startup log (17/17 `_SELFTEST_OK`,
+2628 checks, zero failures) and twelve raw instrumented logs.
+
+- **Instrumented (authoritative):** `scripts\run-instrumented-tests.ps1 -Serial
+  emulator-5580 -FullSharded` discovered **33 classes / 472 tests** — the two new
+  `IMPORT-01B` classes raise the inventory from 455 — assigned them exhaustively
+  to five shards (**93 + 96 + 92 + 95 + 96**) and passed **472/472**.
+  `missing=0`, `duplicates=0`, `unexpected=0`, `execution_missing=0`,
+  `failed_shards=0`, `aborted_shards=0`; marker `FULL_SHARDED_SUITE_PASS`
+  (`artifacts/import-01b/FULL_SHARDED.txt`).
+- **The aggregate earned its cost twice.** It caught a real product defect — an
+  unbounded GPU fence wait in the new renderer release path, which hung the
+  render thread and with it `surfaceDestroyed` and the Activity teardown — and a
+  real test defect that assumed process-scoped state. Both were corrected, each
+  proved against the exact condition that exposed it, and the whole command
+  rerun from shard 1 on the corrected tree.
+- **Four device failures, none of them the product.** One `system_server` death
+  (no ForgeShape tombstone, no crash-buffer entry) and three installer wedges.
+  The root cause of the wedge was that the sanctioned launcher passes no
+  `-no-snapshot-load`, so restarting the AVD RESUMED a snapshot carrying the
+  broken system — `system_server` kept the same pid across the restart. A real
+  guest reboot (`adb -s emulator-5580 reboot`) cleared it. `adb kill-server` was
+  never used and `emulator-5554` was never contacted.
 
 Latest run (**ARCH-HEALTH-01**), on the isolated `ForgeShape_Stage006` /
 `emulator-5580` AVD, on the corrected tree:
@@ -2005,13 +2150,15 @@ duration scale skips them outright rather than shortening them.
 Durable constraints and known-but-accepted costs. Narrative for how each was
 found lives in Git history.
 
-**The renderer never prunes a body that left the snapshot.** (ARCH-HEALTH-01.)
-`Renderer::bodies_` caches GPU buffers per `ObjectId` and is cleared only by
-`destroyMeshResources` — device loss or teardown. A body an Undo detaches keeps
-its buffers resident for the life of the process; nothing wrong is drawn,
-because a frame iterates the snapshot and not the map, and the retention is
-bounded by the history capacity. Pruning is a renderer change with its own
-verification cost and was deliberately not made during a review. Timing: LATER.
+**RESOLVED at IMPORT-01B: the renderer now prunes a body that left the
+snapshot.** ARCH-HEALTH-01 recorded this as bounded debt with timing LATER, and
+`UI-OWNER-45` made it unbounded: add and delete in a loop mints a fresh
+`ObjectId` every cycle, so `Renderer::bodies_` would grow one entry per cycle
+forever, each holding two `VkDeviceMemory` allocations against a device limit
+commonly around 4096. `releaseBodiesAbsentFromScene`, at the top of `syncScene`,
+frees the GPU copy for any body the current scene no longer names, after waiting
+on every in-flight frame and only when there is something to free. An Undo costs
+one re-upload, through the path a body already takes the first time it is drawn.
 
 **Export and the roundtrip diagnostic extract a body's geometry twice.**
 (ARCH-HEALTH-01.) `forgeshape_gltf_export.cpp` and `forgeshape_glb_roundtrip.cpp`
@@ -2437,6 +2584,7 @@ regenerated per stage.
 | `app/src/main/cpp/forgeshape_gltf_import.{h,cpp}` | GLB-IMPORT-R0/R1: reading a `.glb`, for the durable import and the diagnostic preview alike. Shares no code with the writer and re-derives every offset, length, stride and bound from the file; supports a bounded STATIC subset — a node matrix or TRS which it BAKES, several TRIANGLES primitives as draw batches, a generated NORMAL, validated-and-ignored colour/UV, `doubleSided` — and fails closed BY NAME on everything else. It produces geometry and decides nothing about the project |
 | `app/src/main/cpp/forgeshape_imported_mesh.{h,cpp}` | IMPORT-01A: what an Imported Mesh may be. ONE validator and ONE name rule, called by the importer and the `.forge` codec alike, so a file cannot carry geometry or a name the importer would have refused. It resolves per-submesh `doubleSided` into draw geometry and holds no material, no revision and no source path |
 | `app/src/main/cpp/forgeshape_import_commit.{h,cpp}` | IMPORT-01A: turning a parsed file into durable project objects — how many objects, what they are called, where the node transform goes. Atomic, and ONE `ScopedConstructionEdit`, so an import is one Undo and a refusal costs no `ObjectId` |
+| `app/src/main/cpp/forgeshape_body_delete.{h,cpp}` | UI-OWNER-45: removing one body from the project. Representation-neutral by construction — it never asks what a body IS — one transaction, the removed body handed to the history rather than destroyed, the deterministic replacement selection, and the named last-body refusal |
 | `app/src/main/cpp/forgeshape_glb_import_fixture.{h,cpp}` | GLB-IMPORT-R1: the deterministic Nomad-like external-GLB compatibility fixture. Every coordinate an integer over a power of two, so its bytes are identical on every platform. A debug test seam; no product path calls it, and it is not any owner asset |
 | `app/src/main/cpp/forgeshape_json.{h,cpp}` | A bounded read-only JSON parser that knows nothing about glTF. Its own number grammar, because `strtod` accepts `nan` and `inf` and a non-finite value reaching geometry is what the reader exists to prevent |
 | `app/src/main/cpp/forgeshape_import_preview.{h,cpp}` | What an imported preview IS and every boundary it may not cross: session-only, no scene `ObjectId`, no Construction Source, no sculpt representation, no `MeshStore`, no history, no `.forge`, no checkpoint, not selectable, not re-exportable, gone with the process. Since IMPORT-01A it has no user-facing control and is reached only by the verification suites |
@@ -2494,24 +2642,30 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Exactly one next step: return the ARCH-HEALTH-01 report to the ForgeShape
-coordinator.** No feature stage starts from a review. The IMPORT-01A owner
-check — importing the real `1 lowpoly.glb` by hand and confirming it becomes
-objects they can keep — still stands as `OWNER_REAL_FILE_01A_RETEST_PENDING`
-and is the coordinator's to schedule. No product stage may begin here: `IMPORT-01B` (Start
-Sculpting on an Imported Mesh), Stage 033's full exporter (UVs, materials,
-hierarchy, merge and unit options), OBJ, FBX, `APP-H1` (a project hub,
-thumbnails, Save As, naming, a multi-project library), `BRIDGE-R1` and
-`CAD-R0-DATA` are all **not started**, and none may be begun without the
-coordinator opening it. GATE-E2E remains the owner's and is not opened here.
+**Exactly one next step: return the IMPORT-01B report to the ForgeShape
+coordinator for the owner's real-file sculpt-and-delete retest.** No product
+stage may begin here. `BRIDGE-R1` (the one-way Construction-to-Sculpt project
+derivation) remains **future** and was deliberately not implemented; Stage 018A
+still owns rename, visibility, lock, duplicate and grouping — Delete arrived
+early under `UI-OWNER-45` and is the ONLY object command that exists; and Stage
+033's full exporter, OBJ, FBX, `APP-H1` and `CAD-R0-DATA` are all **not started**
+and none may be begun without the coordinator opening it. GATE-E2E remains the
+owner's and is not opened here.
 
-IMPORT-01A is closed on the technical side. A supported `.glb` becomes durable
-objects that are selectable, movable, undoable, saved, autosaved, recovered and
-reopened without the source file, proved against a deterministic synthetic
-fixture and against the six-node sentinel export. The one thing it cannot claim
-is the owner's actual binary, which is not in this environment:
-`E2E-IMP01A-12` is `OWNER_REAL_FILE_01A_RETEST_PENDING` and closing it is a tap
-on **Import GLB…**.
+IMPORT-01B is closed on the technical side. An imported body enters the ordinary
+reversible Sculpt workflow, a real stroke moves sculpt truth while the imported
+arrays stay bit-identical, Back to Imported Mesh and Resume Sculpt both work,
+`IMPT`+`SCUL` survives Save, autosave, recovery and reload, and export follows
+the same effective-state rule every sculpted body already followed. The Objects
+list deletes a real `SceneObject` — of either representation, with or without
+retained sculpt work — as exactly one Undo, with a deterministic replacement
+selection and a named refusal for the last body.
+
+The two things it cannot claim are the owner's own binaries. `E2E-IMP01B-12` is
+`OWNER_REAL_FILE_01B_RETEST_PENDING`: the owner's `1 lowpoly.glb` is not in this
+environment, no user folder was searched for it, and closing it is a tap on
+**Import GLB…** followed by **Start Sculpting**. `E2E-IMP01A-12` remains
+`OWNER_REAL_FILE_01A_RETEST_PENDING` on the same terms.
 
 GLB-IMPORT-R1 is closed. The preview reads the class of static external file the
 owner's character belongs to, proved against the same synthetic fixture. It is
@@ -2570,10 +2724,11 @@ post-processing framework the shading stage was told not to build.
 **Still out** and unchanged: snap-to-grid and the Sketch grid, a different
 contract from the world reference grid; a View Cube, camera focus or named views;
 blur or glass of any kind; a post-processing framework; an automatic system
-theme; hierarchy and object commands; Sketch/Extrude; Mirror, Subdivide and
-Remesh; sculpting an imported body (`IMPORT-01B`); materials, textures, UVs,
-animation and rigging in either direction; the one-way Construction-to-Sculpt
-project derivation; and pressure-driven sculpting.
+theme; hierarchy, and every object command but Delete — rename, visibility, lock,
+duplicate, grouping, reorder and multi-select; Sketch/Extrude; Mirror, Subdivide
+and Remesh; materials, textures, UVs, animation and rigging in either direction;
+the one-way Construction-to-Sculpt project derivation (`BRIDGE-R1`); and
+pressure-driven sculpting.
 
 Persistence is no longer on that list, in the shape E2E-R1A and E2E-R1B shipped:
 one app-private manual slot, one recovery checkpoint, and transfer of that same

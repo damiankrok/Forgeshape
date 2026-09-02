@@ -253,8 +253,15 @@ mode and content disagreed would force the load to invent an answer.
 
 A Sculpt file's `SCNE + SCUL` data is self-contained at the document level. While
 the reversible Construction↔Sculpt runtime exists, such a file also carries the
-`CONS` companion; neither branch overwrites the other, and only the header's
+source companion; neither branch overwrites the other, and only the header's
 `projectKind` decides which representation the project reopens in.
+
+**A `SCUL` entry's body may have EITHER source** -- `CONS` or `IMPT` -- since
+`IMPORT-01B`. Which one it was frozen from is deliberately not stored, because
+nothing reads it back: a Frozen Sculpt Mesh is its own positions and its own
+topology whatever produced it. `SCUL` is not a third geometry SOURCE and does
+not join the exactly-one-of rule; it is a second representation OF a body that
+already has one.
 
 ---
 
@@ -323,8 +330,18 @@ index. Where the geometry came from is not project truth.
 
 A body must be named by **exactly one** of `CONS` and `IMPT`; a body in both is
 two answers to what the object IS and is refused. A `SCUL` entry for an `IMPT`
-body is refused too: `IMPORT-01A` gives an imported object no Frozen Sculpt Mesh,
-and Start Sculpting on one is `IMPORT-01B`.
+body was refused too until `IMPORT-01B` and is **valid now**: an imported object
+can be sculpted, seeded from its own geometry, and the sculpt mesh it gains is a
+second representation of the same body rather than a second answer to what the
+body is.
+
+That rule change needed **no version bump**, because it can only ever be
+encountered fail-closed: a build from before `IMPORT-01B` refuses an
+`IMPT`+`SCUL` file outright (`UnresolvedReference`) rather than opening it with
+half a body. An older reader cannot misunderstand such a file, only decline it --
+the same shape `kHeaderFlagHasImported` already gives a pre-`IMPORT-01A` reader.
+The four valid combinations are `SCNE+CONS`, `SCNE+CONS+SCUL`, `SCNE+IMPT` and
+`SCNE+IMPT+SCUL`.
 
 ---
 
@@ -352,7 +369,7 @@ active mode or body, not the session history.
 | A payload's own structure does not add up; a sculpt or batch flags byte with a reserved bit; an imported record whose normals do not match its positions one for one, or whose batches do not tile its indices | `BadPayload` |
 | A count no project can have, or one whose byte size would overflow — refused **before any allocation** | `ImpossibleCount` |
 | A value the live model refuses: a non-positive or non-finite dimension, a broken capsule relation, a non-finite position or rotation, a zero or negative scale, a duplicate or reserved `ObjectId`, an allocator that could mint a collision, an index out of range, an unknown primitive or feature code, an imported normal that is not a unit direction, an imported name the domain's own sanitizer would not have produced | `InvalidSemanticValue` |
-| An active body no section carries, a `CONS`/`SCUL`/`IMPT` body `SCNE` does not carry, a Sculpt project whose active body has no sculpt mesh, a body claimed by both `CONS` and `IMPT`, a `SCUL` entry for an `IMPT` body | `UnresolvedReference` |
+| An active body no section carries, a `CONS`/`SCUL`/`IMPT` body `SCNE` does not carry, a Sculpt project whose active body has no sculpt mesh, a body claimed by both `CONS` and `IMPT` | `UnresolvedReference` |
 | A load attempted while a Construction edit is open (not a property of the file) | `RefusedEditInProgress` |
 
 Semantic values are checked by calling the **domain's own** validators —
@@ -448,6 +465,16 @@ nothing changed at all — every file written before it still decodes exactly as
 it did, and the seven pre-`IMPORT-01A` fixtures' digests are unchanged, which is
 what `IMP01A-19` asserts.
 
+`IMPORT-01B` was not such a bump either, and it added no section and no flag at
+all. It only widened which bodies a `SCUL` entry may sit over, from `CONS`-only
+to either source. The compatibility direction is the same one-way, explicit
+shape: a build from before it **refuses** an `IMPT`+`SCUL` file
+(`UnresolvedReference`) rather than opening half a body, because that pairing was
+previously a stated refusal rather than an unread field. In the other direction
+nothing changed: all ten pre-`IMPORT-01B` fixtures' digests are unchanged, which
+is what `FSR1A-12` and `IMP01A-19` assert against the two new ones `IMP01B-11`
+and `IMP01B-12` add.
+
 ---
 
 ## 10a. One format, two files
@@ -499,14 +526,21 @@ debug launch as `FORGESHAPE_PROJECT_GOLDEN_SHA256`.
 | `imported_only_v1.forge` | 348 | `0f42be318da9faf4aa780e152b8550171085a267882d5e6e69cc9ef29a1539a8` | One Imported Mesh and **no `CONS` at all**: the fixture that proves an imported object needs no Construction Source standing in for it |
 | `construction_imported_v1.forge` | 570 | `539e10e7a9e388ab1ca72867b78c1e461d3bbe0ef5876d87fa54bc6bd6ae7a51` | A Construction Body beside an imported one — a **sparse** `CONS` next to an `IMPT` |
 | `mixed_imported_v1.forge` | 905 | `3fdc82a099da69b93552d7c84c56002ed8ae24ba7086ddbc6a69a9bbf671f1fb` | All three branches at once, representations interleaved rather than grouped, reopening in Sculpt on the sculpted body |
+| `imported_sculpt_v1.forge` | 489 | `b82430cf6dbb82fddf075722d7ae335460f687d2a06cde09db43817323729f76` | An Imported Mesh carrying a Frozen Sculpt Mesh, with **no `CONS` at all** — the `IMPORT-01B` fixture that pins the generalized `SCUL` rule; reopens in Sculpt |
+| `mixed_imported_sculpt_v1.forge` | 1266 | `ab709ecea27ec29f21b6fbef126e8cdc15dc5c733d9b751bd1c8832907f27a2b` | All **four** valid source/sculpt combinations in one document, `SCUL` entries over bodies of both source kinds; reopens in Sculpt on the sculpted imported body |
 
-The three imported fixtures share one Imported Mesh: four vertices, two submeshes
+The five imported fixtures share one Imported Mesh: four vertices, two submeshes
 with **different** `doubleSided` answers, named `head_low`, placed at
-`(1.5, -0.25, 4.0)` with the identity rotation and scale. Every number is an
-exact binary fraction, so the two implementations agree byte for byte or not at
-all. The seven fixtures above them are **unchanged** — the imported branch costs
-a project that has none exactly nothing: no section, no header flag, and
-therefore not one byte.
+`(1.5, -0.25, 4.0)` with the identity rotation and scale. The two `IMPORT-01B`
+fixtures share one sculpt mesh on an imported body: a four-vertex tetrahedron,
+edited, and deliberately NOT the geometry it was frozen from -- a fixture where
+the two matched could not tell a decoder that confused them apart. Every number
+is an exact binary fraction, so the two implementations agree byte for byte or
+not at all.
+
+The seven legacy fixtures are **unchanged**, and so are the three `IMPORT-01A`
+ones: the imported branch costs a project that has none exactly nothing, and
+generalizing `SCUL` changed no byte of any file that already existed.
 
 Regenerate and re-verify with:
 

@@ -59,9 +59,10 @@ debug-only and run once from `NativeViewport.start()`. They must never run per f
 objects it needs — the scene, history and gizmo suites build their own
 `ConstructionScene` — rather than reading process-scoped state, so a suite's
 result never depends on what a live session left behind. The project suite also
-prints `FORGESHAPE_PROJECT_GOLDEN_SHA256`, the digests of the two canonical
-`.forge` fixtures as this build encodes them, so drift from the committed corpus
-is a value that can be read rather than only an assertion that failed.
+prints `FORGESHAPE_PROJECT_GOLDEN_SHA256`, `..._IMPORTED` and
+`..._IMPORTED_SCULPT` — the digests of all seven canonical `.forge` fixtures as
+this build encodes them — so drift from the committed corpus is a value that can
+be read rather than only an assertion that failed.
 
 ## Hard rules
 
@@ -89,12 +90,18 @@ is a value that can be read rather than only an assertion that failed.
   data, until a stage pays for making them data.
 - **A gesture that becomes multi-touch navigation must never mutate the sculpt
   mesh.** No vertex written, no `SculptRevision` minted, no stroke committed.
-- **The Construction Source is never written by sculpting.** The object has two
-  representations — the exact primitive plus its parameters and placement, and
-  the Frozen Sculpt Mesh. A sculpt edit may never change a primitive parameter,
-  a `PrimitiveKind` or a transform, and no Construction parameter may ever be
-  reconstructed from sculpt vertices. Adopting a changed Construction shape into
-  the sculpt mesh is always an explicit user act, never automatic.
+- **A body's SOURCE is never written by sculpting.** A body has a source
+  representation — a Construction Source, or an Imported Mesh — and may also own
+  a Frozen Sculpt Mesh. A sculpt edit may never change a primitive parameter, a
+  `PrimitiveKind`, a transform, or one byte of an imported object's positions,
+  normals, topology or submesh batches; and no Construction parameter may ever be
+  reconstructed from sculpt vertices. Adopting a changed source into the sculpt
+  mesh is always an explicit user act, never automatic. `buildSculptSourceMesh`
+  is the ONE place a seed comes from, beside `publishSceneObject` for what a body
+  draws; it copies an imported object's RAW indices, never `buildDrawData`'s
+  reversed duplicates (they would cancel every area-weighted normal), and
+  collapses per-submesh `doubleSided` into the frozen mesh's one sidedness answer,
+  permissively. An Imported Mesh can never go STALE: nothing can edit one.
 - **There is one Construction history, it is native, and a user act is one
   transaction.** `ConstructionHistory` owns undo/redo and the transaction
   boundary; no Java-side mirror scene, snapshot list or depth counter may become
@@ -102,10 +109,14 @@ is a value that can be read rather than only an assertion that failed.
   bytes, never a sculpt vertex or `SculptRevision`. A multi-mutation act opens
   ONE edit around its mutations rather than recording each; a commit that finds
   nothing different records nothing and must leave the redo stack alone. The
-  `ObjectId` allocator is never rolled back: an undone creation's id is restored
-  by name, never reused. **Sculpt has no undo**, and Construction undo may never
-  move a sculpt vertex — the only sculpt state a restore touches is the existing
-  stale-source flag. **Seeding a session is not a user act**: what a new session
+  `ObjectId` allocator is never rolled back: an undone creation's id, and a
+  deleted body's, are restored by name and never reused. **Sculpt has no undo**,
+  and Construction undo may never move a sculpt vertex — the only sculpt state a
+  restore touches is the existing stale-source flag. A body an act removes from
+  the scene is HELD by the history rather than destroyed (`holdDetachedBody`),
+  because an Imported Mesh's geometry and a Frozen Sculpt Mesh are the two things
+  a step cannot rebuild; one is released only when NO step in either stack names
+  it, on either side. **Seeding a session is not a user act**: what a new session
   does to reach the state the user starts from runs inside
   `beginSessionInitialization`/`end`, records nothing, and leaves an empty
   history both ways. That bracket is reachable only from the start answer —
@@ -132,8 +143,13 @@ is a value that can be read rather than only an assertion that failed.
   is not part of the project. Its section is `IMPT`, always required so a reader
   that cannot rebuild one refuses the file instead of opening it with objects
   missing; `CONS` carries only the bodies that HAVE a Construction Source; and
-  a body named by both branches, or by neither, is refused. No source path,
-  `Uri` or byte of the `.glb` may ever reach the document.
+  a body named by both branches, or by neither, is refused. A `SCUL` entry's body
+  may have EITHER source (`IMPORT-01B`), and which one it was frozen from is not
+  stored because nothing reads it back; the four valid combinations are
+  `SCNE+CONS`, `SCNE+CONS+SCUL`, `SCNE+IMPT` and `SCNE+IMPT+SCUL`. That needed no
+  version bump, because an older build REFUSES an `IMPT`+`SCUL` file rather than
+  opening half a body. No source path, `Uri` or byte of the `.glb` may ever reach
+  the document.
   `DATA_PACKAGE_SPEC.md` owns the layout, and `scripts/build-forge-corpus.ps1`
   is a second implementation of it whose bytes must stay identical.
   **GLB/glTF, OBJ and FBX are not `.forge`.** A `.glb` is written by Export and
@@ -188,11 +204,15 @@ is a value that can be read rather than only an assertion that failed.
   body starts at rotation `0,0,0` and scale `1,1,1` with nothing recentred. The
   commit is ATOMIC and is ONE transaction: every object is built and validated
   off the scene, a refusal mints no `ObjectId` and records nothing, and an
-  import of forty objects is one Undo. `Shape` and `Start Sculpting` are
-  withdrawn for an imported body AND refused below JNI; Imported Mesh sculpt is
-  `IMPORT-01B`. Materials, textures, colours and UVs were never decoded, so
-  nothing preserves them and no document may claim otherwise; `doubleSided` is
-  the one exception and is carried per submesh.
+  import of forty objects is one Undo. `Shape` is withdrawn for an imported body
+  AND refused below JNI, because nothing may invent the primitive it was never
+  made from. `Start Sculpting` is NOT: `IMPORT-01B` (`ARCH-OWNER-11`) gives an
+  imported body the ordinary reversible Sculpt workflow, seeded from its own
+  geometry, with `Back to Imported Mesh` and `Reset Sculpt from Imported Mesh…`
+  as the only differences, and the imported arrays immutable throughout.
+  Materials, textures, colours and UVs were never decoded, so nothing preserves
+  them and no document may claim otherwise; `doubleSided` is the one exception
+  and is carried per submesh.
 - **The Imported Mesh Preview is a diagnostic, and diagnostics do not become
   features.** It still exists and is still **session-only**: no `ObjectId` from
   the scene's allocator, no entry in `ConstructionScene`, no Construction
@@ -284,8 +304,9 @@ is a value that can be read rather than only an assertion that failed.
   and the panel's own title already answer where the user is. And **critical
   navigation is never abbreviated where the row can carry it**: a transition's
   width is arithmetic on its row, not a constant, and the only approved second
-  form is `← Construction`, with the full wording kept as the content
-  description.
+  forms are `← Construction` and `← Imported Mesh` — the way OUT of Sculpt, in
+  its two destinations — with the full wording kept as the content description in
+  both. A third abbreviated label needs its own approval.
 - **Nothing unimplemented is drawn as a tool or as a creation action.** There
   is no longer an exception: `Export` was the last reserved control and it now
   writes a real GLB. A control that looks like it works and does not is worse
@@ -326,10 +347,26 @@ is a value that can be read rather than only an assertion that failed.
 - **48 dp is the interactive floor for user-operated chrome, and it is the HIT
   AREA.** Glyphs stay the size they read at; the floor is reached with padding,
   never by growing a drawn box.
+- **Delete removes a real project object, and it is one transaction**
+  (`UI-OWNER-45`). `deleteSceneBody` in `forgeshape_body_delete.{h,cpp}` is the
+  one implementation, and it is REPRESENTATION-NEUTRAL: it never asks what a body
+  is, because a body leaves as a whole object — identity, representation,
+  placement, published mesh and sculpt state together — and a per-representation
+  delete path is how one of them would come back missing something. One Delete is
+  exactly one Undo; Undo restores the SAME object and Redo removes it again. The
+  deleted body is not RENDERED, PICKED, SAVED, checkpointed or EXPORTED, and no
+  orphan `CONS`, `IMPT` or `SCUL` record may survive for one. Selection falls to
+  the next body in scene order, or the previous when the deleted one was last;
+  deleting an inactive body moves nothing. **This product has no empty project**,
+  so deleting the last body is refused by name (`RefusedLastBody`) and NEVER
+  answered by inventing a replacement primitive; Delete is refused while
+  sculpting too, on the same terms body switching and Undo/Redo already are.
+  Rename, visibility, lock, duplicate and grouping stay out.
 - **A control that cannot succeed is not drawn.** Where the domain refuses an act
-  in some state — creation while sculpting, `Shape` or `Start Sculpting` on an
-  Imported Mesh — the control is absent there rather than shown and then refused.
-  The domain guard stays: removing a control is not removing a guard.
+  in some state — creation or Delete while sculpting, Delete of the last body,
+  `Shape` on an Imported Mesh — the control is absent there rather than shown and
+  then refused. The domain guard stays: removing a control is not removing a
+  guard.
 - **A control's corner is concentric with its host's** (`inner = outer − gap`),
   or a crescent of the host shows at each end and reads as a rendering fault.
 - **The domain is platform-neutral; the Android layer is an adapter.** Android is
@@ -362,8 +399,8 @@ is a value that can be read rather than only an assertion that failed.
   *Construction Body* (an editable CAD-like object), *Imported Mesh* (a body
   whose geometry came from a file and has no parameters behind it),
   *Frozen Sculpt Mesh* (the
-  polygon mesh `SculptMesh::freezeFrom` creates), *history capsule* (the bottom
-  trailing capsule holding Undo and Redo), *transform mode selector* (Move /
+  polygon mesh `SculptMesh::freezeFrom` creates, from EITHER source), *history
+  capsule* (the bottom trailing capsule holding Undo and Redo), *transform mode selector* (Move /
   Rotate / Scale) and *coordinate-space selector* (World / Local, where it
   applies — Scale omits it, because a world-axis scale of a turned body is a
   shear). Both are contextual **vertical groups inside the single right
@@ -377,7 +414,12 @@ is a value that can be read rather than only an assertion that failed.
   **Reset Sculpt from Shape…** and **sculpt mesh** instead; **Back to
   Construction** and **Resume Sculpt** are unchanged. Two readers, two
   vocabularies, and neither may be renamed into the other. `UIR4B-15` enforces
-  the user-facing half over every `R.string`.
+  the user-facing half over every `R.string`. Over an Imported Mesh the same two
+  acts read **Back to Imported Mesh** (short form `← Imported Mesh`, full wording
+  always the content description) and **Reset Sculpt from Imported Mesh…**,
+  because Construction wording over a body with no Construction Source names a
+  place that does not exist. The view id stays `back_to_construction`: an id names
+  the ACT the code performs, and copy never renames one.
 - **Comments explain why**, plus ownership, units, lifecycle and constraints —
   never obvious syntax. Worth a comment: why the Android UI must not become
   geometry truth, why a transform-only edit publishes no `MeshRevision`, why a
