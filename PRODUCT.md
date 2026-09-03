@@ -438,6 +438,70 @@ Deleting works the same way on every kind of object — a constructed body, an
 imported mesh, and either of them with sculpting on it. What comes back on Undo
 is the whole object, sculpting included.
 
+## Sketching a CAD Body
+
+The **+** offers one more thing beside the six shapes: **New Sketch**. Choosing
+it asks which plane to sketch on — **XY** (the front view), **XZ** (the top
+view) or **YZ** (the side view) — and choosing a plane turns the viewport into
+that plane: the camera looks straight at it, the view goes orthographic so equal
+lengths are equal on screen wherever they fall, a grid appears on it, and the
+toolbar reads *Sketch XY*. Your own viewpoint is kept and comes back the moment
+the sketch ends, whether you extrude it or cancel it.
+
+**One finger draws; two fingers pan and zoom.** While a sketch is open a single
+finger never orbits — the plane would slide away under the point you are
+placing — but pinching and two-finger panning work exactly as they always have.
+The Tool Rail carries the five sketch tools:
+
+- **Rectangle** — drag from one corner to the opposite corner.
+- **Circle** — drag from the centre out to the radius.
+- **Line** — drag from one point to another.
+- **Polyline** — tap point by point. Tap the first point again to close the
+  loop; tap the last point again to end it open.
+- **Select** — tap an entity to select it. Its exact values appear in *Sketch
+  values*, and *Delete entity* removes it.
+
+Points **snap**, always: to an existing endpoint, corner or centre first, and
+otherwise to the grid, which is a quarter of a metre with a heavier line every
+metre. A snapped point is exact — the other entity's own value, or an exact
+multiple of the grid — never a rounded pixel. A small cross shows where the
+point will land. What you type is never snapped: select a rectangle, type
+`1.234567` for its width in *Sketch values*, press *Apply*, and that is its
+width.
+
+**Finish Sketch** is the one way forward. ForgeShape checks the sketch and
+finds every closed profile — a rectangle, a circle, a closed polyline, or a
+loop of lines whose ends meet — and refuses, saying why, when there is none: an
+open polyline, a chain with a free end or a fork, a loop that crosses itself, a
+loop with no area. Nothing is repaired for you, and the sketch stays editable.
+A profile that lies inside another is refused too — holes are not supported yet
+— while the inner one can still be extruded on its own.
+
+Once a profile is ready the toolbar reads **Extrude**, *Sketch values* opens on
+the profile and the depth, and *Back to Sketch* under the rail returns to
+drawing. If the sketch closed several profiles, choose the one to extrude; the
+choice is drawn in the viewport, together with a preview of the extrusion. Type
+the **depth**, choose **Along normal** or **Against normal**, and press
+**Extrude** — from the toolbar or from the panel; they are the same act. The
+sketch becomes one new **CAD Body**: an ordinary object in the Objects list,
+selected, with the ordinary Move, Rotate and Scale handles, and one Undo takes
+the whole of it back. **Cancel Sketch**, under the rail, discards the sketch and
+changes nothing at all; nothing you drew is saved or autosaved until you
+extrude it.
+
+**A CAD Body stays editable.** Its *Shape* panel shows the plane it was
+sketched on, the profile's sizes — a rectangle's width and height, or a
+circle's radius — the depth and the direction; *Apply* regenerates the body
+from the new values as one Undo step and leaves its placement exactly where it
+was. A polygon profile shows its point count and is not numerically editable
+yet. Saving, reopening and recovery keep all of this: a reopened CAD Body is
+still its sketch and its extrusion, not a frozen mesh. Exporting a GLB writes
+the body as it currently is.
+
+What a CAD Body does **not** offer yet: *Start Sculpting*. It is absent for one,
+because the way back from Sculpt over a sketch needs its own design; every other
+body sculpts as before.
+
 ## Choosing and sizing the shape
 
 The Tool Rail in Construction carries exactly two entries, **Shape** and
@@ -1343,7 +1407,12 @@ focus-on-selection command and any camera animation are not implemented — the
 projection can be switched, but the camera is aimed only by hand. An editable
 tessellation and booleans are not implemented, and **shape is still edited only
 by typing exact values and pressing Apply**: there are no handles that change a
-body's *dimensions*. The Scale handles change how large it is drawn, which is a
+body's *dimensions*. A sketch is R0: rectangles, circles, lines and polylines
+on the three principal planes, one linear New-Body extrusion, and later edits
+to a rectangle's or a circle's sizes and the depth. There is no hole, boolean,
+fillet, chamfer, shell, revolve, sweep, loft, pattern, mirror, offset, trim,
+constraint, arc, spline or face-based plane, a polygon profile's points are not
+numerically editable, and a CAD Body does not sculpt. The Scale handles change how large it is drawn, which is a
 different thing — see *Scaling is not redimensioning*.
 
 **The handles Move, Rotate and Scale, in World or Local axes, and that is all

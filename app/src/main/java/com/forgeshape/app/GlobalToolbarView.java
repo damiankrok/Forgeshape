@@ -65,12 +65,21 @@ final class GlobalToolbarView extends LinearLayout {
 
         /** Export the current model as one GLB file. */
         void onExportGlbRequested();
+
+        /** Editing -> Ready: validate the sketch and find its profiles. */
+        void onFinishSketchRequested();
+
+        /** Ready -> a new CAD Body, as one history step. */
+        void onExtrudeRequested();
     }
 
     private final TextView contextLabel;
     private final TextView freezeButton;
     private final TextView resumeButton;
     private final TextView backButton;
+    /** The sketch's two forward transitions, one per sketch state. */
+    private final TextView finishSketchButton;
+    private final TextView extrudeButton;
     private final TextView exportAction;
     private final ImageView projectActionsButton;
     private final ImageView displaySettingsButton;
@@ -225,6 +234,39 @@ final class GlobalToolbarView extends LinearLayout {
             }
         });
         editingGroup.addView(backButton, EditorControlStyles.wrap(0));
+
+        // The sketch's transitions (CAD-R0-A1A2). Each is the ONE way forward
+        // from its state and each is a primary commit: Finish Sketch turns the
+        // drawing into profiles, Extrude turns a profile into a body. The way
+        // OUT that keeps nothing -- Cancel Sketch -- and the way back from the
+        // profile choice live under the rail with the sketch's own tools, so
+        // this row never carries two transitions at once and neither of these
+        // ever needs an abbreviated form.
+        finishSketchButton = EditorControlStyles.primaryButton(context, R.id.finish_sketch,
+                context.getString(R.string.finish_sketch));
+        EditorControlStyles.asCapsuleMember(finishSketchButton, R.drawable.bg_capsule_primary);
+        boundTransitionWidth(finishSketchButton);
+        finishSketchButton.setVisibility(GONE);
+        finishSketchButton.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                actions.onFinishSketchRequested();
+            }
+        });
+        editingGroup.addView(finishSketchButton, EditorControlStyles.wrap(0));
+
+        extrudeButton = EditorControlStyles.primaryButton(context, R.id.extrude_sketch,
+                context.getString(R.string.extrude));
+        EditorControlStyles.asCapsuleMember(extrudeButton, R.drawable.bg_capsule_primary);
+        boundTransitionWidth(extrudeButton);
+        extrudeButton.setVisibility(GONE);
+        extrudeButton.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                actions.onExtrudeRequested();
+            }
+        });
+        editingGroup.addView(extrudeButton, EditorControlStyles.wrap(0));
 
         // The flexible child of the row, and the only one. It is where the model
         // shows between the two groups, and it is what absorbs a squeeze — so a
@@ -446,7 +488,11 @@ final class GlobalToolbarView extends LinearLayout {
         CharSequence label = context.getString(transition == backButton
                 ? (imported ? R.string.back_to_imported_mesh : R.string.back_to_construction)
                 : transition == resumeButton
-                        ? R.string.resume_sculpt : R.string.start_sculpting);
+                        ? R.string.resume_sculpt
+                        : transition == finishSketchButton
+                                ? R.string.finish_sketch
+                                : transition == extrudeButton
+                                        ? R.string.extrude : R.string.start_sculpting);
         if (transition == backButton && naturalWidth(transition, label) > budget) {
             label = context.getString(imported
                     ? R.string.back_to_imported_mesh_short : R.string.back_to_construction_short);
@@ -464,6 +510,12 @@ final class GlobalToolbarView extends LinearLayout {
 
     /** The one mode transition currently drawn, or null between modes. */
     private TextView visibleTransition() {
+        if (finishSketchButton.getVisibility() == VISIBLE) {
+            return finishSketchButton;
+        }
+        if (extrudeButton.getVisibility() == VISIBLE) {
+            return extrudeButton;
+        }
         if (backButton.getVisibility() == VISIBLE) {
             return backButton;
         }
@@ -524,6 +576,10 @@ final class GlobalToolbarView extends LinearLayout {
                 R.drawable.bg_pill_primary, R.drawable.bg_capsule_primary);
         applyMemberForm(backButton, solo && lone == backButton,
                 R.drawable.bg_pill_tonal, R.drawable.bg_capsule_tonal);
+        applyMemberForm(finishSketchButton, solo && lone == finishSketchButton,
+                R.drawable.bg_pill_primary, R.drawable.bg_capsule_primary);
+        applyMemberForm(extrudeButton, solo && lone == extrudeButton,
+                R.drawable.bg_pill_primary, R.drawable.bg_capsule_primary);
     }
 
     private void applyMemberForm(TextView member, boolean alone, int pill, int capsuleMember) {
@@ -658,11 +714,31 @@ final class GlobalToolbarView extends LinearLayout {
      *        Construction Body.
      */
     void showContext(boolean sculpting, boolean hasFrozenMesh, boolean imported) {
+        showContext(sculpting, hasFrozenMesh, imported, false, NativeViewport.SKETCH_INACTIVE,
+                NativeViewport.WORKPLANE_XY);
+    }
+
+    /**
+     * @param cad whether the ACTIVE body is a CAD Body. It names the context
+     *        and withdraws Start Sculpting, which CAD-R0-A1A2 does not offer
+     *        for one; the guard behind that is native.
+     * @param sketchState the native sketch session's state. While a sketch is
+     *        open the context is the sketch, the mode transitions are withdrawn
+     *        and the one transition drawn is the sketch's own way forward.
+     * @param workplane which plane the sketch is on, for the context label.
+     */
+    void showContext(boolean sculpting, boolean hasFrozenMesh, boolean imported, boolean cad,
+                     int sketchState, int workplane) {
         final Context context = getContext();
-        contextLabel.setText(context.getString(
-                sculpting ? R.string.context_sculpt
-                          : imported ? R.string.context_imported_mesh
-                                     : R.string.context_construction));
+        final boolean sketching = sketchState != NativeViewport.SKETCH_INACTIVE;
+        contextLabel.setText(sketching
+                ? context.getString(R.string.context_sketch,
+                        context.getString(CadFeatureEditorView.planeName(workplane)))
+                : context.getString(
+                        sculpting ? R.string.context_sculpt
+                                  : imported ? R.string.context_imported_mesh
+                                             : cad ? R.string.context_cad_body
+                                                   : R.string.context_construction));
         contextLabel.setContentDescription(contextLabel.getText());
 
         backButton.setVisibility(sculpting ? VISIBLE : GONE);
@@ -673,9 +749,15 @@ final class GlobalToolbarView extends LinearLayout {
                 imported ? R.string.back_to_imported_mesh : R.string.back_to_construction));
         // Freeze and Resume are mutually exclusive by meaning: there is nothing
         // to resume until something has been frozen, and once there is, the
-        // non-destructive act is the one that gets the toolbar slot.
-        freezeButton.setVisibility(!sculpting && !hasFrozenMesh ? VISIBLE : GONE);
-        resumeButton.setVisibility(!sculpting && hasFrozenMesh ? VISIBLE : GONE);
+        // non-destructive act is the one that gets the toolbar slot. Neither is
+        // drawn over a CAD Body or while sketching: a control that cannot
+        // succeed is not drawn.
+        freezeButton.setVisibility(!sculpting && !hasFrozenMesh && !cad && !sketching
+                ? VISIBLE : GONE);
+        resumeButton.setVisibility(!sculpting && hasFrozenMesh && !sketching ? VISIBLE : GONE);
+        finishSketchButton.setVisibility(
+                sketchState == NativeViewport.SKETCH_EDITING ? VISIBLE : GONE);
+        extrudeButton.setVisibility(sketchState == NativeViewport.SKETCH_READY ? VISIBLE : GONE);
         if (this.imported != imported) {
             // The way out of Sculpt is labelled by the REPRESENTATION as well as
             // by the width the row can spare, and that label is written from the

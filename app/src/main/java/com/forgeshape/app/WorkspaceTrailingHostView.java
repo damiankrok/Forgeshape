@@ -33,6 +33,12 @@ final class WorkspaceTrailingHostView extends FrameLayout
         void onTransformModeRequested(int mode);
 
         void onTransformSpaceRequested(int space);
+
+        /** Drop the sketch in progress. Never a project mutation. */
+        void onCancelSketchRequested();
+
+        /** From the profile choice back to editing the sketch. */
+        void onBackToSketchRequested();
     }
 
     /** One derived presentation snapshot; none of these values is product truth. */
@@ -49,6 +55,9 @@ final class WorkspaceTrailingHostView extends FrameLayout
         /** Whether the rail offers Shape. False for an Imported Mesh — see ensureEntries. */
         final boolean shapeOffered;
         final boolean displaySuppressed;
+        /** The native sketch session's state; the rail carries the sketch tools
+         *  while it is not inactive, and the sketch group under them. */
+        final int sketchState;
 
         PresentationState(boolean sculpting, int activeTool,
                           boolean transformOffered, int transformMode,
@@ -56,6 +65,18 @@ final class WorkspaceTrailingHostView extends FrameLayout
                           boolean precisionOpen, CharSequence precisionSurfaceName,
                           boolean compactRail, boolean displaySuppressed,
                           boolean shapeOffered) {
+            this(sculpting, activeTool, transformOffered, transformMode, transformSpaceOffered,
+                    transformSpace, precisionOpen, precisionSurfaceName, compactRail,
+                    displaySuppressed, shapeOffered, NativeViewport.SKETCH_INACTIVE);
+        }
+
+        PresentationState(boolean sculpting, int activeTool,
+                          boolean transformOffered, int transformMode,
+                          boolean transformSpaceOffered, int transformSpace,
+                          boolean precisionOpen, CharSequence precisionSurfaceName,
+                          boolean compactRail, boolean displaySuppressed,
+                          boolean shapeOffered, int sketchState) {
+            this.sketchState = sketchState;
             this.sculpting = sculpting;
             this.activeTool = activeTool;
             this.transformOffered = transformOffered;
@@ -84,8 +105,14 @@ final class WorkspaceTrailingHostView extends FrameLayout
     private final LinearLayout transformSpaceGroup;
     private final ImageView transformSpaceWorldAction;
     private final ImageView transformSpaceLocalAction;
+    /** The sketch's own group: Cancel Sketch, and Back to Sketch once finished. */
+    private final LinearLayout sketchGroup;
+    private final ImageView cancelSketchAction;
+    private final ImageView backToSketchAction;
 
     private Boolean showingSculptEntries;
+    /** Whether the rail last drew the sketch tools. Null until the first render. */
+    private Boolean showingSketchEntries;
     /** Whether the rail last drew a Shape entry. Null until the first render. */
     private Boolean showingShapeEntry;
     private int upstreamToolbarExpansionPx;
@@ -155,6 +182,26 @@ final class WorkspaceTrailingHostView extends FrameLayout
         contentColumn.addView(transformSelectorRow, sectionParams(context,
                 EditorControlStyles.dimen(context, R.dimen.row_gap_small)));
 
+        // The sketch group, under the sketch tools and above the precision
+        // toggle, on the transform selector's terms: a vertical group inside
+        // the one trailing surface, present only while a sketch is open. Cancel
+        // is the way out that keeps nothing; Back to Sketch returns from the
+        // profile choice to drawing. Both carry their full wording as content
+        // descriptions.
+        sketchGroup = internalGroup(context, R.id.sketch_group);
+        cancelSketchAction = selectorButton(context, R.id.cancel_sketch,
+                R.drawable.ic_sketch_cancel, R.string.cancel_sketch,
+                view -> callbacks.onCancelSketchRequested());
+        sketchGroup.addView(cancelSketchAction, internalButtonParams(context, 0));
+        backToSketchAction = selectorButton(context, R.id.back_to_sketch,
+                R.drawable.ic_sketch_back, R.string.back_to_sketch,
+                view -> callbacks.onBackToSketchRequested());
+        sketchGroup.addView(backToSketchAction, internalButtonParams(context,
+                EditorControlStyles.dimen(context, R.dimen.rail_item_gap)));
+        sketchGroup.setVisibility(GONE);
+        contentColumn.addView(sketchGroup, sectionParams(context,
+                EditorControlStyles.dimen(context, R.dimen.row_gap_small)));
+
         precisionGroup = internalGroup(context, R.id.precision_group);
         precisionToggle = EditorControlStyles.iconButton(context, R.id.precision_toggle,
                 R.drawable.ic_precision, context.getString(R.string.precision_shape));
@@ -214,9 +261,13 @@ final class WorkspaceTrailingHostView extends FrameLayout
     }
 
     void render(PresentationState state) {
-        ensureEntries(state.sculpting, state.shapeOffered);
+        final boolean sketching = state.sketchState != NativeViewport.SKETCH_INACTIVE;
+        ensureEntries(state.sculpting, state.shapeOffered, sketching);
         toolRail.setCompactEntries(state.compactRail);
         toolRail.showActive(state.activeTool);
+        sketchGroup.setVisibility(sketching ? VISIBLE : GONE);
+        backToSketchAction.setVisibility(
+                state.sketchState == NativeViewport.SKETCH_READY ? VISIBLE : GONE);
 
         precisionToggle.setContentDescription(getContext().getString(
                 state.precisionOpen ? R.string.precision_close : R.string.precision_open,
@@ -293,15 +344,39 @@ final class WorkspaceTrailingHostView extends FrameLayout
         button.setActivated(active);
     }
 
-    private void ensureEntries(boolean sculpting, boolean shapeOffered) {
+    private void ensureEntries(boolean sculpting, boolean shapeOffered, boolean sketching) {
         if (showingSculptEntries != null && showingSculptEntries == sculpting
                 && showingShapeEntry != null && showingShapeEntry == shapeOffered
+                && showingSketchEntries != null && showingSketchEntries == sketching
                 && toolRail.getChildCount() > 0) {
             return;
         }
         showingSculptEntries = sculpting;
         showingShapeEntry = shapeOffered;
+        showingSketchEntries = sketching;
         final Context context = getContext();
+        if (sketching) {
+            // The five sketch tools (CAD-R0-A1A2). Select is a tool so that a
+            // tap in the viewport has exactly one meaning at a time.
+            toolRail.setEntries(new ToolRailView.Entry[]{
+                    new ToolRailView.Entry(R.id.tool_rail_select, R.drawable.ic_tool_select,
+                            context.getString(R.string.tool_select),
+                            NativeViewport.SKETCH_TOOL_SELECT),
+                    new ToolRailView.Entry(R.id.tool_rail_line, R.drawable.ic_tool_line,
+                            context.getString(R.string.tool_line), NativeViewport.SKETCH_TOOL_LINE),
+                    new ToolRailView.Entry(R.id.tool_rail_polyline, R.drawable.ic_tool_polyline,
+                            context.getString(R.string.tool_polyline),
+                            NativeViewport.SKETCH_TOOL_POLYLINE),
+                    new ToolRailView.Entry(R.id.tool_rail_rectangle,
+                            R.drawable.ic_tool_rectangle,
+                            context.getString(R.string.tool_rectangle),
+                            NativeViewport.SKETCH_TOOL_RECTANGLE),
+                    new ToolRailView.Entry(R.id.tool_rail_circle, R.drawable.ic_tool_circle,
+                            context.getString(R.string.tool_circle),
+                            NativeViewport.SKETCH_TOOL_CIRCLE),
+            });
+            return;
+        }
         if (sculpting) {
             toolRail.setEntries(new ToolRailView.Entry[]{
                     new ToolRailView.Entry(R.id.tool_rail_grab, R.drawable.ic_tool_grab,

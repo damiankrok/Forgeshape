@@ -18,8 +18,8 @@ adb -s <serial> logcat -s ForgeShape:V
 
 APK: `app/build/outputs/apk/debug/app-debug.apk`
 
-A clean debug launch emits **seventeen** `*_SELFTEST_OK` tokens, then
-`FORGESHAPE_NATIVE_VIEWPORT_OK`. All seventeen, in emission order:
+A clean debug launch emits **eighteen** `*_SELFTEST_OK` tokens, then
+`FORGESHAPE_NATIVE_VIEWPORT_OK`. All eighteen, in emission order:
 
 ```
 FORGESHAPE_CAMERA_SELFTEST_OK
@@ -39,6 +39,7 @@ FORGESHAPE_PROJECT_SELFTEST_OK
 FORGESHAPE_RENDER_RECOVERY_SELFTEST_OK
 FORGESHAPE_GLTF_EXPORT_SELFTEST_OK
 FORGESHAPE_GLTF_IMPORT_SELFTEST_OK
+FORGESHAPE_CAD_SELFTEST_OK
 ```
 
 Failures: `FORGESHAPE_NATIVE_VIEWPORT_FAIL:*` and the matching `*_SELFTEST_FAIL`.
@@ -54,15 +55,18 @@ with no `chatty` marker and no FAIL line to give it away. Confirm the size with
 dropped capture until a larger buffer proves otherwise.
 
 Camera, picking, dynamic-mesh, Construction-box, sculpt, render-shading,
-Construction-history, gizmo, project-format and render-recovery self-tests are
-debug-only and run once from `NativeViewport.start()`. They must never run per frame. Each builds the domain
-objects it needs — the scene, history and gizmo suites build their own
-`ConstructionScene` — rather than reading process-scoped state, so a suite's
-result never depends on what a live session left behind. The project suite also
-prints `FORGESHAPE_PROJECT_GOLDEN_SHA256`, `..._IMPORTED` and
-`..._IMPORTED_SCULPT` — the digests of all seven canonical `.forge` fixtures as
-this build encodes them — so drift from the committed corpus is a value that can
-be read rather than only an assertion that failed.
+Construction-history, gizmo, project-format, render-recovery and CAD self-tests
+are debug-only and run once from `NativeViewport.start()`. They must never run
+per frame. Each builds the domain objects it needs — the scene, history, gizmo
+and CAD suites build their own `ConstructionScene` and their own camera —
+rather than reading process-scoped state, so a suite's result never depends on
+what a live session left behind. The project suite also prints
+`FORGESHAPE_PROJECT_GOLDEN_SHA256`, `..._IMPORTED`, `..._IMPORTED_SCULPT` and
+`..._CAD` — the digests of all eleven canonical `.forge` fixtures as this build
+encodes them — so drift from the committed corpus is a value that can be read
+rather than only an assertion that failed. The CAD suite prints
+`FORGESHAPE_CAD_PERFORMANCE`, the bounded extraction, triangulation and
+regeneration timings for its four sizes.
 
 ## Hard rules
 
@@ -90,9 +94,42 @@ be read rather than only an assertion that failed.
   data, until a stage pays for making them data.
 - **A gesture that becomes multi-touch navigation must never mutate the sculpt
   mesh.** No vertex written, no `SculptRevision` minted, no stroke committed.
+- **A CAD Body's truth is its sketch and its extrusion, never its mesh**
+  (`CAD-R0-A1A2`). A `SceneObject` owns exactly one of THREE representations
+  for its whole life: a Construction Source, an Imported Mesh, or a CAD Body —
+  one sketch on a principal workplane (XY, XZ or YZ; `forgeshape_workplane.h`
+  owns the one right-handed mapping) and one linear **New Body** extrusion of
+  one of its closed profiles. Everything else — the closed profiles, the
+  polygon, the triangles, the extruded mesh — is DERIVED and regenerated
+  through `generateCadMesh`, the ONE path, and no rule anywhere reads a sketch
+  parameter back out of a vertex. `CadBody::applyState` validates and
+  regenerates the WHOLE requested state and writes nothing unless all of it
+  passes, so an edit that would leave no closed profile is refused by name and
+  the last valid state stands: there is no half-regenerated body. The profile
+  engine (`extractClosedProfiles`) **fails closed by name** — open, forked,
+  crossing, zero-area, duplicate-edge and nested loops are refused, never
+  repaired — and a nested profile is refused as a hole this stage does not
+  fill. R0 has no boolean, no fillet, no chamfer, no shell, no revolve, no
+  taper, no constraint solver, no arc, no spline and no face-based plane; a
+  rectangle is parametric (centre, width, height, axis-aligned in sketch
+  space) and a circle is centre and radius, and both are editable later. The
+  **sketch edit session is volatile**: nothing before its one-transaction
+  commit is project truth, `cancel` costs the project nothing, a half-drawn
+  sketch never reaches a `.forge` byte, a checkpoint or the fingerprint, and
+  process death loses the sketch and nothing else. Creating a body from a
+  sketch is ONE `ScopedConstructionEdit` around ONE `addCadBody` (one Undo),
+  every later sketch-size or depth edit is ONE step, and a refused commit mints
+  no `ObjectId`. CAD uses the Construction history, never `SculptHistory`.
+  **CAD → Sculpt is deliberately NOT this stage**: `buildSculptSourceMesh`
+  returns false for a CAD Body, the freeze refuses by name
+  (`CadBodyNotSculptable`), the control is absent for one, and a `SCUL` entry
+  over a `CADB` body is refused by the codec. While a sketch is open the
+  single-finger gesture belongs to the sketch and never orbits, two fingers
+  still pan and pinch, and creation, deletion, body switching, freeze and
+  Construction Undo/Redo are refused below JNI and withdrawn above it.
 - **A body's SOURCE is never written by sculpting.** A body has a source
-  representation — a Construction Source, or an Imported Mesh — and may also own
-  a Frozen Sculpt Mesh. A sculpt edit may never change a primitive parameter, a
+  representation — a Construction Source, an Imported Mesh, or a CAD Body —
+  and may also own a Frozen Sculpt Mesh (not yet for a CAD Body). A sculpt edit may never change a primitive parameter, a
   `PrimitiveKind`, a transform, or one byte of an imported object's positions,
   normals, topology or submesh batches; and no Construction parameter may ever be
   reconstructed from sculpt vertices. Adopting a changed source into the sculpt
@@ -178,7 +215,13 @@ be read rather than only an assertion that failed.
   `SCNE+CONS`, `SCNE+CONS+SCUL`, `SCNE+IMPT` and `SCNE+IMPT+SCUL`. That needed no
   version bump, because an older build REFUSES an `IMPT`+`SCUL` file rather than
   opening half a body. No source path, `Uri` or byte of the `.glb` may ever reach
-  the document.
+  the document. **A CAD Body takes `CADB`** (`CAD-R0-A1A2`), on `IMPT`'s terms:
+  always required, announced by header bit3, exclusive with `CONS` and `IMPT`
+  per body, carrying the authored sketch and extrusion and never a vertex, and
+  held to `validateCadBodyState` — a file whose sketch closes no profile is
+  refused rather than opened. The sixteen-fixture corpus adds `cad_rectangle`,
+  `cad_circle`, `mixed_cad` and `cad_bad_plane`; the twelve older fixtures are
+  byte-for-byte unchanged.
   `DATA_PACKAGE_SPEC.md` owns the layout, and `scripts/build-forge-corpus.ps1`
   is a second implementation of it whose bytes must stay identical.
   **GLB/glTF, OBJ and FBX are not `.forge`.** A `.glb` is written by Export and
@@ -426,8 +469,12 @@ be read rather than only an assertion that failed.
   *Property Inspector*), *anchored surface* (any panel that grows out of the
   control that opened it; `AnchoredSurfaceView` owns the growth for all of them),
   *Construction Body* (an editable CAD-like object), *Imported Mesh* (a body
-  whose geometry came from a file and has no parameters behind it),
-  *Frozen Sculpt Mesh* (the
+  whose geometry came from a file and has no parameters behind it), *CAD Body*
+  (a body made by extruding a sketch; its sketch and depth are editable),
+  *Sketch* (the editing context between New Sketch and Extrude, on a
+  *workplane* XY, XZ or YZ, with the five sketch tools Select, Line, Polyline,
+  Rectangle and Circle on the Tool Rail and *Finish Sketch* / *Extrude* as its
+  two toolbar transitions), *Frozen Sculpt Mesh* (the
   polygon mesh `SculptMesh::freezeFrom` creates, from EITHER source), *history
   capsule* (the bottom trailing capsule holding Undo and Redo), *transform mode selector* (Move /
   Rotate / Scale) and *coordinate-space selector* (World / Local, where it

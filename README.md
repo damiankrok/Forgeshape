@@ -133,11 +133,12 @@ powershell -ExecutionPolicy Bypass -File scripts\build-forge-corpus.ps1 -VerifyO
 
 That script is a second, independent implementation of the `.forge` v1 encoder,
 written from `DATA_PACKAGE_SPEC.md`. It needs no device and no Android tooling.
-Its digests must match the ones the native `FSR1A-12`, `IMP01A-19` and
-`IMP01B-11`/`IMP01B-12` cases assert and the ones a debug launch prints as
-`FORGESHAPE_PROJECT_GOLDEN_SHA256`, `..._IMPORTED` and `..._IMPORTED_SCULPT`; a
-mismatch means the encoder and the specification have parted company. Seven of
-the twelve fixtures are packaged into the test APK's assets as well, so
+Its digests must match the ones the native `FSR1A-12`, `IMP01A-19`,
+`IMP01B-11`/`IMP01B-12` and `CADR0-33`/`34`/`36` cases assert and the ones a
+debug launch prints as `FORGESHAPE_PROJECT_GOLDEN_SHA256`, `..._IMPORTED`,
+`..._IMPORTED_SCULPT` and `..._CAD`; a mismatch means the encoder and the
+specification have parted company. Seven of the sixteen fixtures are packaged
+into the test APK's assets as well, so
 `ImportedMeshDurableTest` can prove the independent encoder's bytes actually LOAD
 on a device rather than only hashing the same.
 
@@ -186,7 +187,10 @@ it draws is never a body, never saved and never autosaved, and since
 JNI. The product's *Import GLB…* is durable import, which creates real objects;
 `ImportedMeshDurableTest` covers it, `ImportedMeshSculptTest` covers sculpting
 one (`IMPORT-01B`), and `ObjectsDeleteTest` covers removing one
-(`UI-OWNER-45`).
+(`UI-OWNER-45`). `SketchExtrudeTest` covers the sketch-to-CAD-Body flow
+(`CAD-R0-A1A2`, `E2E-CADR0-01..16`): New Sketch, a plane, real drags and taps
+on the viewport, Finish Sketch, a typed depth, Extrude, Undo/Redo, later edits,
+save/reopen, the gizmo on a CAD Body, and the sculpt workflow beside it.
 
 For the widened external-GLB subset (`GLB-IMPORT-R1`) use:
 
@@ -270,7 +274,7 @@ emit several hundred lines in a few milliseconds and the default buffer silently
 drops the tail, which reads exactly like a self-test that stopped partway
 through. That is a logging limit, not an app failure.
 
-A clean debug launch emits **seventeen** `*_SELFTEST_OK` tokens, in this order, then
+A clean debug launch emits **eighteen** `*_SELFTEST_OK` tokens, in this order, then
 `FORGESHAPE_NATIVE_VIEWPORT_OK` once the first frame is presented:
 
 ```
@@ -291,6 +295,7 @@ FORGESHAPE_PROJECT_SELFTEST_OK
 FORGESHAPE_RENDER_RECOVERY_SELFTEST_OK
 FORGESHAPE_GLTF_EXPORT_SELFTEST_OK
 FORGESHAPE_GLTF_IMPORT_SELFTEST_OK
+FORGESHAPE_CAD_SELFTEST_OK
 ```
 
 Each suite reports `(<n> checks)` and fails as `<SUITE>_CASE_FAIL:<name>` plus

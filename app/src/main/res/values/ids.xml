@@ -177,6 +177,16 @@
     <item name="add_primitive_cone" type="id" />
     <item name="add_primitive_capsule" type="id" />
     <item name="add_primitive_plane" type="id" />
+    <!-- The second creation category (CAD-R0-A1A2): a sketch on a workplane.
+         The tile opens the plane chooser inside the same palette; a sketch
+         begins only once a plane has been chosen, and a body exists only once
+         the sketch has been extruded. -->
+    <item name="add_sketch" type="id" />
+    <item name="sketch_plane_chooser" type="id" />
+    <item name="sketch_plane_xy" type="id" />
+    <item name="sketch_plane_xz" type="id" />
+    <item name="sketch_plane_yz" type="id" />
+    <item name="sketch_plane_back" type="id" />
 
     <!--
       The presentation-only host for the complete trailing context cluster.
@@ -196,6 +206,19 @@
     <item name="tool_rail_inflate" type="id" />
     <item name="tool_rail_shape" type="id" />
     <item name="tool_rail_place" type="id" />
+    <!-- The five sketch tools (CAD-R0-A1A2). Select is a tool so that a tap in
+         the viewport has exactly one meaning at a time. -->
+    <item name="tool_rail_select" type="id" />
+    <item name="tool_rail_line" type="id" />
+    <item name="tool_rail_polyline" type="id" />
+    <item name="tool_rail_rectangle" type="id" />
+    <item name="tool_rail_circle" type="id" />
+    <!-- The sketch's own group under the rail: the way out of a sketch that
+         keeps nothing, and the way back from the profile choice to editing.
+         Both act on the one native sketch session. -->
+    <item name="sketch_group" type="id" />
+    <item name="cancel_sketch" type="id" />
+    <item name="back_to_sketch" type="id" />
 
     <!--
       The precision toggle: the one contextual action that opens the exact-value
@@ -308,4 +331,56 @@
          capsule's `+`: it opens Add Primitive, and never creates a body by
          itself. -->
     <item name="add_body" type="id" />
+
+    <!--
+      The sketch (CAD-R0-A1A2).
+
+      Two toolbar transitions, one per sketch state, each the ONE way forward
+      from that state: Finish Sketch while editing, Extrude once a profile is
+      ready. Neither has an abbreviated form.
+    -->
+    <item name="finish_sketch" type="id" />
+    <item name="extrude_sketch" type="id" />
+
+    <!-- The sketch's precision surface: the selected entity's exact values
+         while editing, and the profile, depth and direction once finished. -->
+    <item name="sketch_editor" type="id" />
+    <item name="sketch_entity_row_rectangle" type="id" />
+    <item name="sketch_entity_row_circle" type="id" />
+    <item name="sketch_entity_row_line" type="id" />
+    <item name="sketch_entity_summary" type="id" />
+    <item name="field_sketch_rect_width" type="id" />
+    <item name="field_sketch_rect_height" type="id" />
+    <item name="field_sketch_circle_radius" type="id" />
+    <item name="field_sketch_line_x0" type="id" />
+    <item name="field_sketch_line_y0" type="id" />
+    <item name="field_sketch_line_x1" type="id" />
+    <item name="field_sketch_line_y1" type="id" />
+    <item name="apply_sketch_entity" type="id" />
+    <item name="delete_sketch_entity" type="id" />
+    <item name="sketch_profile_chooser" type="id" />
+    <!-- Every profile chip carries this id; which profile it means is its tag,
+         the anchor entity id, exactly as an Objects row carries its ObjectId. -->
+    <item name="sketch_profile_option" type="id" />
+    <item name="field_extrude_depth" type="id" />
+    <item name="extrude_direction_along" type="id" />
+    <item name="extrude_direction_against" type="id" />
+    <!-- The same act as the toolbar's Extrude, pinned under the depth field so
+         the number and the commit are one gesture apart. -->
+    <item name="sketch_extrude_commit" type="id" />
+
+    <!-- A CAD Body's own exact-value editor: the profile's sizes, the depth
+         and the direction, and one Apply that is one history step. -->
+    <item name="cad_editor" type="id" />
+    <item name="cad_plane_summary" type="id" />
+    <item name="cad_profile_summary" type="id" />
+    <item name="cad_row_rectangle" type="id" />
+    <item name="cad_row_circle" type="id" />
+    <item name="field_cad_rect_width" type="id" />
+    <item name="field_cad_rect_height" type="id" />
+    <item name="field_cad_circle_radius" type="id" />
+    <item name="field_cad_depth" type="id" />
+    <item name="cad_direction_along" type="id" />
+    <item name="cad_direction_against" type="id" />
+    <item name="apply_cad" type="id" />
 </resources>

@@ -1,0 +1,297 @@
+package com.forgeshape.app;
+
+import android.content.Context;
+import android.view.View;
+import android.widget.LinearLayout;
+import android.widget.TextView;
+
+import java.math.BigDecimal;
+
+/**
+ * The exact-value editor for what a CAD Body <i>is</i> (CAD-R0-A1A2).
+ *
+ * <p>A CAD Body is a sketch extruded along its workplane's normal, so its
+ * editable truth is the profile's sizes — a rectangle's width and height, or a
+ * circle's radius — the extrusion depth and its direction. One Apply submits
+ * them together and is one history step; the body's mesh is regenerated from
+ * the new truth and the placement is untouched, exactly as a primitive edit
+ * leaves it.
+ *
+ * <p>A polygon profile (a closed polyline or a loop of lines) has no size to
+ * type in this version; the panel says so and offers the depth alone.
+ *
+ * <p><b>Presentation and input only.</b> It holds field text; it holds no size
+ * and no depth. Every number is read back from the active body, and the only
+ * way this class changes anything is to submit a complete request through
+ * {@link NativeViewport} and accept the verdict.
+ */
+final class CadFeatureEditorView extends LinearLayout
+        implements PropertyInspectorView.PinnedCommit {
+
+    private final InspectorHost host;
+    private final double[] nativeCad = new double[NativeViewport.CAD_STATE_SIZE];
+
+    private final TextView planeSummary;
+    private final TextView profileSummary;
+    private final LinearLayout rectangleRow;
+    private final LinearLayout circleRow;
+    private final NumericPropertyRow[] rectangleFields = new NumericPropertyRow[2];
+    private final NumericPropertyRow[] circleFields = new NumericPropertyRow[1];
+    private final NumericPropertyRow depthField;
+    private final TextView directionAlong;
+    private final TextView directionAgainst;
+    private final UnitChipsView unitChips;
+    private final TextView apply;
+
+    private int draftDirection = NativeViewport.EXTRUDE_ALONG_NORMAL;
+    private int profileKind = NativeViewport.CAD_PROFILE_NONE;
+
+    CadFeatureEditorView(Context context, final InspectorHost host) {
+        super(context);
+        this.host = host;
+        setId(R.id.cad_editor);
+        setOrientation(VERTICAL);
+        final int gap = EditorControlStyles.dimen(context, R.dimen.row_gap);
+        final int smallGap = EditorControlStyles.dimen(context, R.dimen.row_gap_small);
+        final int sectionGap = EditorControlStyles.dimen(context, R.dimen.section_gap);
+
+        planeSummary = EditorControlStyles.titleText(context, R.id.cad_plane_summary, "");
+        addView(planeSummary, EditorControlStyles.rowParams(0));
+        profileSummary = EditorControlStyles.titleText(context, R.id.cad_profile_summary, "");
+        addView(profileSummary, EditorControlStyles.rowParams(smallGap));
+
+        rectangleRow = buildRow(context, R.id.cad_row_rectangle, rectangleFields,
+                new int[]{R.id.field_cad_rect_width, R.id.field_cad_rect_height},
+                new int[]{R.string.label_width, R.string.label_height});
+        circleRow = buildRow(context, R.id.cad_row_circle, circleFields,
+                new int[]{R.id.field_cad_circle_radius}, new int[]{R.string.label_radius});
+        addView(rectangleRow, EditorControlStyles.rowParams(gap));
+        addView(circleRow, EditorControlStyles.rowParams(gap));
+
+        addView(EditorControlStyles.sectionLabel(context,
+                        context.getString(R.string.sketch_extrude_section)),
+                EditorControlStyles.rowParams(sectionGap));
+        depthField = new NumericPropertyRow(context, R.id.field_cad_depth,
+                context.getString(R.string.label_depth), true);
+        addView(depthField, EditorControlStyles.rowParams(smallGap));
+        final LinearLayout directions = new LinearLayout(context);
+        directions.setOrientation(HORIZONTAL);
+        directionAlong = EditorControlStyles.chip(context, R.id.cad_direction_along,
+                context.getString(R.string.extrude_direction_along));
+        directionAgainst = EditorControlStyles.chip(context, R.id.cad_direction_against,
+                context.getString(R.string.extrude_direction_against));
+        directionAlong.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                draftDirection = NativeViewport.EXTRUDE_ALONG_NORMAL;
+                showDirection();
+            }
+        });
+        directionAgainst.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                draftDirection = NativeViewport.EXTRUDE_AGAINST_NORMAL;
+                showDirection();
+            }
+        });
+        directions.addView(directionAlong, EditorControlStyles.evenShare(0));
+        directions.addView(directionAgainst, EditorControlStyles.evenShare(smallGap));
+        addView(directions, EditorControlStyles.rowParams(gap));
+
+        addView(EditorControlStyles.sectionLabel(context, context.getString(R.string.unit_selector)),
+                EditorControlStyles.rowParams(sectionGap));
+        unitChips = new UnitChipsView(context, new UnitChipsView.OnUnitSelected() {
+            @Override
+            public void onUnitSelected(LengthUnit unit) {
+                host.onDisplayUnitRequested(unit);
+            }
+        });
+        addView(unitChips, EditorControlStyles.rowParams(smallGap));
+
+        apply = EditorControlStyles.primaryButton(context, R.id.apply_cad,
+                context.getString(R.string.apply_cad));
+        apply.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                onApply();
+            }
+        });
+
+        refreshFromNative();
+    }
+
+    private LinearLayout buildRow(Context context, int rowId, NumericPropertyRow[] out,
+                                  int[] fieldIds, int[] labelRes) {
+        final LinearLayout row = new LinearLayout(context);
+        row.setId(rowId);
+        row.setOrientation(HORIZONTAL);
+        final int gap = EditorControlStyles.dimen(context, R.dimen.row_gap);
+        for (int i = 0; i < fieldIds.length; i++) {
+            out[i] = new NumericPropertyRow(context, fieldIds[i],
+                    context.getString(labelRes[i]), i == fieldIds.length - 1);
+            row.addView(out[i], EditorControlStyles.evenShare(i == 0 ? 0 : gap));
+        }
+        return row;
+    }
+
+    @Override
+    public View commitControl() {
+        return apply;
+    }
+
+    /** Rewrites every field from the active CAD Body. A no-op for any other body. */
+    void refreshFromNative() {
+        if (!NativeViewport.cadState(nativeCad)) {
+            return;
+        }
+        final Context context = getContext();
+        final LengthUnit unit = host.uiState().displayUnit();
+        final int plane = (int) nativeCad[NativeViewport.CAD_PLANE];
+        planeSummary.setText(context.getString(R.string.cad_plane_summary,
+                context.getString(planeName(plane))));
+        profileKind = (int) nativeCad[NativeViewport.CAD_PROFILE_KIND];
+        rectangleRow.setVisibility(GONE);
+        circleRow.setVisibility(GONE);
+        switch (profileKind) {
+            case NativeViewport.CAD_PROFILE_RECTANGLE:
+                profileSummary.setText(context.getString(R.string.cad_profile_rectangle));
+                rectangleRow.setVisibility(VISIBLE);
+                rectangleFields[0].setText(unit.format(nativeCad[NativeViewport.CAD_PRIMARY_SIZE]));
+                rectangleFields[1].setText(
+                        unit.format(nativeCad[NativeViewport.CAD_SECONDARY_SIZE]));
+                break;
+            case NativeViewport.CAD_PROFILE_CIRCLE:
+                profileSummary.setText(context.getString(R.string.cad_profile_circle));
+                circleRow.setVisibility(VISIBLE);
+                circleFields[0].setText(unit.format(nativeCad[NativeViewport.CAD_PRIMARY_SIZE]));
+                break;
+            default:
+                profileSummary.setText(context.getString(R.string.cad_profile_polygon,
+                        (int) nativeCad[NativeViewport.CAD_PROFILE_VERTICES]));
+                break;
+        }
+        depthField.setText(unit.format(nativeCad[NativeViewport.CAD_DEPTH]));
+        draftDirection = (int) nativeCad[NativeViewport.CAD_DIRECTION];
+        showDirection();
+        unitChips.showSelected(unit);
+    }
+
+    static int planeName(int plane) {
+        switch (plane) {
+            case NativeViewport.WORKPLANE_XZ: return R.string.workplane_xz;
+            case NativeViewport.WORKPLANE_YZ: return R.string.workplane_yz;
+            default: return R.string.workplane_xy;
+        }
+    }
+
+    private void showDirection() {
+        EditorControlStyles.setChipActive(directionAlong,
+                draftDirection == NativeViewport.EXTRUDE_ALONG_NORMAL);
+        EditorControlStyles.setChipActive(directionAgainst,
+                draftDirection == NativeViewport.EXTRUDE_AGAINST_NORMAL);
+    }
+
+    /**
+     * Submits the profile's sizes, the depth and the direction as ONE request.
+     *
+     * <p>Nothing is submitted unless every relevant field parses and is
+     * positive; native validation is the final authority and repairs nothing.
+     */
+    private void onApply() {
+        final Context context = getContext();
+        final LengthUnit unit = host.uiState().displayUnit();
+        final BigDecimal depth = readField(depthField);
+        if (depth == null) {
+            return;
+        }
+        final double depthMeters = unit.toMeters(depth).doubleValue();
+        int result;
+        switch (profileKind) {
+            case NativeViewport.CAD_PROFILE_RECTANGLE: {
+                final BigDecimal width = readField(rectangleFields[0]);
+                if (width == null) return;
+                final BigDecimal height = readField(rectangleFields[1]);
+                if (height == null) return;
+                result = NativeViewport.cadApplyRectangle(unit.toMeters(width).doubleValue(),
+                        unit.toMeters(height).doubleValue(), depthMeters, draftDirection);
+                break;
+            }
+            case NativeViewport.CAD_PROFILE_CIRCLE: {
+                final BigDecimal radius = readField(circleFields[0]);
+                if (radius == null) return;
+                result = NativeViewport.cadApplyCircle(unit.toMeters(radius).doubleValue(),
+                        depthMeters, draftDirection);
+                break;
+            }
+            default:
+                result = NativeViewport.cadApplyExtrude(depthMeters, draftDirection);
+                break;
+        }
+        switch (result) {
+            case NativeViewport.APPLY_APPLIED:
+                host.onNativeStateChanged();
+                host.showStatus(context.getString(R.string.status_cad_applied),
+                        R.attr.fsTextSuccess);
+                host.finishEditing();
+                break;
+            case NativeViewport.APPLY_UNCHANGED:
+                host.onNativeStateChanged();
+                host.showStatus(context.getString(R.string.status_cad_unchanged),
+                        R.attr.fsTextSecondary);
+                host.finishEditing();
+                break;
+            case NativeViewport.APPLY_REJECTED_NOT_POSITIVE:
+                host.showStatus(context.getString(R.string.reject_not_positive),
+                        R.attr.fsTextError);
+                break;
+            case NativeViewport.APPLY_REJECTED_NOT_FINITE:
+                host.showStatus(context.getString(R.string.reject_not_finite),
+                        R.attr.fsTextError);
+                break;
+            default:
+                host.showStatus(CadStatusMessages.describe(context,
+                        NativeViewport.cadLastStatus()), R.attr.fsTextError);
+                break;
+        }
+    }
+
+    private BigDecimal readField(NumericPropertyRow row) {
+        final String raw = row.text();
+        final BigDecimal value;
+        try {
+            value = LengthUnit.parse(raw);
+        } catch (NumberFormatException notANumber) {
+            fail(row, raw.trim().isEmpty()
+                    ? getContext().getString(R.string.field_empty, row.label())
+                    : getContext().getString(R.string.field_not_a_number, row.label(),
+                            raw.trim()));
+            return null;
+        }
+        if (value.signum() <= 0) {
+            fail(row, getContext().getString(R.string.field_not_positive, row.label(),
+                    host.uiState().displayUnit().label()));
+            return null;
+        }
+        return value;
+    }
+
+    private void fail(NumericPropertyRow row, String message) {
+        host.showStatus(message, R.attr.fsTextError);
+        row.focusForCorrection();
+    }
+
+    boolean convertDisplayUnit(LengthUnit from, LengthUnit to) {
+        boolean all = true;
+        for (NumericPropertyRow field : rectangleFields) all &= field.convertUnit(from, to);
+        for (NumericPropertyRow field : circleFields) all &= field.convertUnit(from, to);
+        all &= depthField.convertUnit(from, to);
+        unitChips.showSelected(to);
+        return all;
+    }
+
+    void clearEditFocus() {
+        for (NumericPropertyRow field : rectangleFields) field.clearEditFocus();
+        for (NumericPropertyRow field : circleFields) field.clearEditFocus();
+        depthField.clearEditFocus();
+    }
+}

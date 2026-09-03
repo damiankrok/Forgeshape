@@ -272,6 +272,84 @@
     -->
     <string name="tool_transform">Transform</string>
 
+    <!--
+      The sketch (CAD-R0-A1A2). The five tools, the two toolbar transitions,
+      the sketch group under the rail, the plane chooser, and the precision
+      surface's rows. "Sketch" names the editing context; "CAD Body" names a
+      body made by extruding one.
+    -->
+    <string name="tool_select">Select</string>
+    <string name="tool_line">Line</string>
+    <string name="tool_polyline">Polyline</string>
+    <string name="tool_rectangle">Rectangle</string>
+    <string name="tool_circle">Circle</string>
+    <string name="hint_select">tap an entity to select it, then edit or delete it</string>
+    <string name="hint_line">drag from one point to another</string>
+    <string name="hint_polyline">tap point by point; tap the first point again to close</string>
+    <string name="hint_rectangle">drag from one corner to the opposite corner</string>
+    <string name="hint_circle">drag from the centre out to the radius</string>
+    <string name="context_sketch">Sketch %1$s</string>
+    <string name="context_cad_body">CAD Body</string>
+    <string name="finish_sketch">Finish Sketch</string>
+    <string name="extrude">Extrude</string>
+    <string name="cancel_sketch">Cancel Sketch</string>
+    <string name="back_to_sketch">Back to Sketch</string>
+    <string name="new_sketch">New Sketch</string>
+    <string name="sketch_plane_prompt">Sketch on which plane?</string>
+    <string name="workplane_xy">XY</string>
+    <string name="workplane_xz">XZ</string>
+    <string name="workplane_yz">YZ</string>
+    <string name="workplane_xy_description">XY — the front view</string>
+    <string name="workplane_xz_description">XZ — the top view</string>
+    <string name="workplane_yz_description">YZ — the side view</string>
+    <string name="sketch_plane_back">Back to shapes</string>
+    <string name="precision_sketch">Sketch values</string>
+    <string name="inspector_sketch_title">Sketch — %1$s</string>
+    <string name="sketch_selected_section">Selected entity</string>
+    <string name="sketch_no_selection">Select an entity with the Select tool to edit its exact values.</string>
+    <string name="sketch_polyline_summary">Polyline — %1$d points, %2$s. Its points are not numerically editable in this version.</string>
+    <string name="sketch_polyline_closed">closed</string>
+    <string name="sketch_polyline_open">open</string>
+    <string name="label_radius">Radius</string>
+    <string name="label_start_x">Start X</string>
+    <string name="label_start_y">Start Y</string>
+    <string name="label_end_x">End X</string>
+    <string name="label_end_y">End Y</string>
+    <string name="apply_sketch_entity">Apply</string>
+    <string name="delete_sketch_entity">Delete entity</string>
+    <string name="sketch_profile_section">Profile to extrude</string>
+    <string name="sketch_profile_rectangle">Rectangle · %1$s</string>
+    <string name="sketch_profile_circle">Circle · %1$s</string>
+    <string name="sketch_profile_polygon">Polygon · %1$d points · %2$s</string>
+    <string name="sketch_extrude_section">Extrude</string>
+    <string name="extrude_direction_along">Along normal</string>
+    <string name="extrude_direction_against">Against normal</string>
+    <string name="apply_cad">Apply</string>
+    <string name="cad_plane_summary">Sketched on the %1$s plane.</string>
+    <string name="cad_profile_rectangle">Rectangle profile</string>
+    <string name="cad_profile_circle">Circle profile</string>
+    <string name="cad_profile_polygon">Polygon profile — %1$d points. Its points are not numerically editable in this version.</string>
+    <string name="status_sketch_started">Sketching on %1$s — %2$s.</string>
+    <string name="status_sketch_tool">%1$s: %2$s.</string>
+    <string name="status_sketch_finished">Profile found — set the depth, then Extrude.</string>
+    <string name="status_sketch_finished_choose">%1$d profiles found — choose one, set the depth, then Extrude.</string>
+    <string name="status_sketch_cancelled">Sketch discarded. Nothing was changed.</string>
+    <string name="status_sketch_extruded">Extruded %1$s — it is now selected.</string>
+    <string name="status_sketch_entity_applied">Entity updated.</string>
+    <string name="status_sketch_entity_deleted">Entity deleted.</string>
+    <string name="status_cad_applied">Applied — the body was regenerated.</string>
+    <string name="status_cad_unchanged">Unchanged — the values are already those.</string>
+    <string name="status_cad_open_profile">The profile is open — close the loop, or tap the polyline\'s first point to close it.</string>
+    <string name="status_cad_self_intersecting">The profile crosses itself. Redraw it without crossings.</string>
+    <string name="status_cad_no_closed_profile">No closed profile yet — draw a rectangle, a circle, or a closed loop.</string>
+    <string name="status_cad_ambiguous_profile">Several profiles are closed — choose one in Sketch values.</string>
+    <string name="status_cad_invalid_depth">Depth must be a positive length.</string>
+    <string name="status_cad_nested_profile">One profile lies inside another. Holes are not supported yet — extrude the inner one, or delete it.</string>
+    <string name="status_cad_zero_area">The profile has no area.</string>
+    <string name="status_cad_branching">Lines meet at a fork — a profile is one loop.</string>
+    <string name="status_cad_refused">Refused: %1$s. Nothing was changed.</string>
+    <string name="status_cad_no_sculpt">A CAD Body cannot be sculpted in this version.</string>
+
     <!-- Brush -->
     <string name="brush_radius">Radius</string>
     <string name="brush_strength">Strength</string>

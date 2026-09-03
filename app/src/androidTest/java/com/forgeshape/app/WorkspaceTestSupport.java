@@ -94,6 +94,10 @@ final class WorkspaceTestSupport {
                 // measure. Cases that are ABOUT recovery ask for it deliberately.
                 workspace.dismissRecoveryPromptForTest();
                 NativeViewport.enterConstructionMode();
+                // A sketch left open by a previous case is volatile by
+                // contract and would otherwise own the viewport for the next
+                // one. Dropping it changes nothing about the project.
+                NativeViewport.sketchCancel();
                 // The baseline is a CONSTRUCTION shape, so the body it is
                 // applied to must have a Construction Source. Since
                 // `IMPORT-01A` a scene can hold Imported Meshes, which refuse a

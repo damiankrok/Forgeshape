@@ -255,6 +255,7 @@ void Renderer::destroyDeviceScopedResources() {
         destroyMeshResources();
         destroyGridResources();
         destroyGizmoResources();
+        destroySketchOverlayResources();
         if (vertShader_ != VK_NULL_HANDLE) vkDestroyShaderModule(device_, vertShader_, nullptr);
         if (fragShader_ != VK_NULL_HANDLE) vkDestroyShaderModule(device_, fragShader_, nullptr);
         if (pipelineLayout_ != VK_NULL_HANDLE) vkDestroyPipelineLayout(device_, pipelineLayout_, nullptr);
@@ -1398,6 +1399,186 @@ void Renderer::destroyGizmoResources() {
 }
 
 // ---------------------------------------------------------------------------
+// Sketch overlay
+// ---------------------------------------------------------------------------
+
+void Renderer::destroySketchOverlayResources() {
+    if (device_ == VK_NULL_HANDLE) return;
+    if (sketchVertexBuffer_ != VK_NULL_HANDLE) {
+        vkDestroyBuffer(device_, sketchVertexBuffer_, nullptr);
+        sketchVertexBuffer_ = VK_NULL_HANDLE;
+    }
+    if (sketchVertexMemory_ != VK_NULL_HANDLE) {
+        vkFreeMemory(device_, sketchVertexMemory_, nullptr);
+        sketchVertexMemory_ = VK_NULL_HANDLE;
+    }
+    sketchVertexCapacityBytes_ = 0;
+    sketchVertexCount_ = 0;
+    sketchUploadedOnce_ = false;
+    sketchRanges_.clear();
+}
+
+bool Renderer::syncSketchOverlay() {
+    if (device_ == VK_NULL_HANDLE) {
+        return true;
+    }
+    if (!sketchOverlay_ || sketchOverlay_->vertices.empty()) {
+        // No sketch: nothing is drawn and nothing is transferred. The buffer
+        // is kept for the next sketch rather than freed per cancel.
+        sketchVertexCount_ = 0;
+        sketchRanges_.clear();
+        if (sketchOverlay_) {
+            sketchUploadedRevision_ = sketchOverlay_->revision;
+            sketchUploadedOnce_ = true;
+        }
+        return true;
+    }
+    const SketchOverlay& overlay = *sketchOverlay_;
+    if (sketchUploadedOnce_ && overlay.revision == sketchUploadedRevision_
+        && sketchVertexCount_ == overlay.vertices.size()) {
+        return true;  // the frame draws what the device already holds
+    }
+    if (overlay.vertices.size() > kMaxSketchOverlayVertices) {
+        FS_LOGE("FORGESHAPE_SKETCH_OVERLAY_FAIL:too_large vertices=%u",
+                (unsigned)overlay.vertices.size());
+        sketchVertexCount_ = 0;
+        return false;
+    }
+    const VkDeviceSize bytes =
+        sizeof(GizmoVertex) * static_cast<VkDeviceSize>(overlay.vertices.size());
+
+    // No in-flight frame may still be reading the buffer about to be written
+    // or retired -- the same rule every mesh upload follows.
+    if (!waitForMeshBuffersIdle()) {
+        return false;
+    }
+    if (sketchVertexBuffer_ == VK_NULL_HANDLE || bytes > sketchVertexCapacityBytes_) {
+        uint64_t grown = 0;
+        if (!growCapacityBytes(static_cast<uint64_t>(sketchVertexCapacityBytes_),
+                               static_cast<uint64_t>(bytes), &grown)) {
+            FS_FAIL("sketch_overlay_capacity_overflow");
+            return false;
+        }
+        if (sketchVertexBuffer_ != VK_NULL_HANDLE) vkDestroyBuffer(device_, sketchVertexBuffer_, nullptr);
+        if (sketchVertexMemory_ != VK_NULL_HANDLE) vkFreeMemory(device_, sketchVertexMemory_, nullptr);
+        sketchVertexBuffer_ = VK_NULL_HANDLE;
+        sketchVertexMemory_ = VK_NULL_HANDLE;
+        sketchVertexCapacityBytes_ = 0;
+        if (!createBuffer(static_cast<VkDeviceSize>(grown),
+                          VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &sketchVertexBuffer_,
+                          &sketchVertexMemory_)) {
+            FS_FAIL("sketch_overlay_vertex_buffer");
+            return false;
+        }
+        sketchVertexCapacityBytes_ = static_cast<VkDeviceSize>(grown);
+    }
+
+    // The same borrowed staging path the gizmo and every mesh use: host
+    // staging, one fenced copy, one barrier to vertex input.
+    if (!ensureStagingCapacity(bytes)) {
+        return false;
+    }
+    void* mapped = nullptr;
+    FS_VK_CHECK(vkMapMemory(device_, stagingMemory_, 0, bytes, 0, &mapped),
+                "vkMapMemory(sketch_staging)");
+    std::memcpy(mapped, overlay.vertices.data(), static_cast<size_t>(bytes));
+    vkUnmapMemory(device_, stagingMemory_);
+
+    FS_VK_CHECK(vkResetCommandBuffer(uploadCommandBuffer_, 0), "vkResetCommandBuffer(sketch_upload)");
+    VkCommandBufferBeginInfo begin{};
+    begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    FS_VK_CHECK(vkBeginCommandBuffer(uploadCommandBuffer_, &begin),
+                "vkBeginCommandBuffer(sketch_upload)");
+    VkBufferCopy copy{};
+    copy.size = bytes;
+    vkCmdCopyBuffer(uploadCommandBuffer_, stagingBuffer_, sketchVertexBuffer_, 1, &copy);
+    VkMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
+    vkCmdPipelineBarrier(uploadCommandBuffer_, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         VK_PIPELINE_STAGE_VERTEX_INPUT_BIT, 0, 1, &barrier, 0, nullptr, 0,
+                         nullptr);
+    FS_VK_CHECK(vkEndCommandBuffer(uploadCommandBuffer_), "vkEndCommandBuffer(sketch_upload)");
+    VkSubmitInfo submit{};
+    submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submit.commandBufferCount = 1;
+    submit.pCommandBuffers = &uploadCommandBuffer_;
+    FS_VK_CHECK(vkResetFences(device_, 1, &uploadFence_), "vkResetFences(sketch_upload)");
+    FS_VK_CHECK(vkQueueSubmit(graphicsQueue_, 1, &submit, uploadFence_),
+                "vkQueueSubmit(sketch_upload)");
+    FS_VK_CHECK(vkWaitForFences(device_, 1, &uploadFence_, VK_TRUE, UINT64_MAX),
+                "vkWaitForFences(sketch_upload)");
+
+    sketchVertexCount_ = static_cast<uint32_t>(overlay.vertices.size());
+    sketchRanges_ = overlay.ranges;
+    sketchUploadedRevision_ = overlay.revision;
+    sketchUploadedOnce_ = true;
+    return true;
+}
+
+void Renderer::recordSketchOverlayDraw(VkCommandBuffer cmd) {
+    if (sketchVertexCount_ == 0 || sketchVertexBuffer_ == VK_NULL_HANDLE ||
+        gizmoPipeline_ == VK_NULL_HANDLE || sketchRanges_.empty()) {
+        return;
+    }
+    const Mat4 viewProj = mat4Multiply(camera_.proj, camera_.view);
+    if (!mat4Finite(viewProj)) {
+        return;
+    }
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, gizmoPipeline_);
+    VkDeviceSize offset = 0;
+    vkCmdBindVertexBuffers(cmd, 0, 1, &sketchVertexBuffer_, &offset);
+
+    for (const SketchOverlayRange& range : sketchRanges_) {
+        if (range.vertexCount == 0 || range.firstVertex + range.vertexCount > sketchVertexCount_) {
+            continue;
+        }
+        // The vertices are WORLD positions, so the model is the identity and
+        // the gizmo push carries the view-projection alone. The packed scalars
+        // then decide the weight of this range -- see gizmo.vert for what each
+        // slot means.
+        GizmoPush push{};
+        std::memcpy(push.mvp, viewProj.m, sizeof(push.mvp));
+        gizmoAxisColor(display_.background, GizmoAxis::X, push.axisXColor);
+        gizmoAxisColor(display_.background, GizmoAxis::Y, push.axisYColor);
+        gizmoAxisColor(display_.background, GizmoAxis::Z, push.axisZColor);
+        gizmoHighlightColor(display_.background, push.highlight);
+        const float neutral = gizmoNeutralLevel(display_.background);
+        // Nothing in the overlay is dimmed relative to its neighbours: the
+        // held-handle mechanism is reused only to pick the highlight colour
+        // for an emphasised line (handle tag 1), never to fade the rest.
+        push.axisZColor[3] = 1.0f;
+        push.axisYColor[3] = 1.0f;
+        switch (range.style) {
+            case SketchOverlayStyle::GridMinor:
+                push.axisXColor[3] = neutral;
+                push.highlight[3] = kGizmoAxisAlpha * 0.22f;
+                break;
+            case SketchOverlayStyle::GridMajor:
+                push.axisXColor[3] = neutral;
+                push.highlight[3] = kGizmoAxisAlpha * 0.45f;
+                break;
+            case SketchOverlayStyle::Axes:
+                push.axisXColor[3] = neutral;
+                push.highlight[3] = kGizmoAxisAlpha * 0.9f;
+                break;
+            case SketchOverlayStyle::Entities:
+                // Entities read at full weight in a level that stands off the
+                // grid: the neutral pulled toward the highlight's own level.
+                push.axisXColor[3] = neutral * 0.35f + push.highlight[0] * 0.65f;
+                push.highlight[3] = kGizmoAxisAlpha;
+                break;
+        }
+        vkCmdPushConstants(cmd, gizmoPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
+                           sizeof(GizmoPush), &push);
+        vkCmdDraw(cmd, range.vertexCount, 1, range.firstVertex, 0);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // MatCap image and the one descriptor set
 // ---------------------------------------------------------------------------
 
@@ -2473,6 +2654,11 @@ bool Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex) {
     // the depth buffer and leaves it exactly as the bodies and the grid did.
     recordGizmoDraw(cmd);
 
+    // And the sketch overlay last, on the gizmo's pipeline and terms: a plane
+    // grid and the lines being drawn must read over the bodies they are drawn
+    // against, and they leave the depth buffer untouched.
+    recordSketchOverlayDraw(cmd);
+
     vkCmdEndRenderPass(cmd);
     FS_VK_CHECK(vkEndCommandBuffer(cmd), "vkEndCommandBuffer");
     return true;
@@ -2684,6 +2870,8 @@ bool Renderer::drawFrame() {
     // Mirror each body's newest published CPU mesh revision onto the GPU before
     // this frame is recorded. No-op for any body whose revision did not change.
     syncScene();
+    // And the sketch overlay, on the same revision-gated terms.
+    syncSketchOverlay();
 
     // Selection feedback is presentation and rides entirely on the frame loop
     // that was going to run anyway: no Java animator, no invalidate, no

@@ -25,6 +25,9 @@ ForgeShapeActivity
         |                 +-- DisplaySettingsPopoverView / ProjectActionsPopoverView
         |                 +-- PropertyInspectorView  (+ PrecisionScrollView)
         |                          +-- ConstructionShapeEditorView    what the object IS
+        |                          +-- CadFeatureEditorView   what a CAD Body IS: sketch sizes + depth
+        |                          +-- SketchEditorView       the sketch in progress: entity values,
+        |                          |                          profile choice, depth, Extrude
         |                          +-- ConstructionPlacementEditorView  where it SITS
         |                          +-- SculptContextView  mesh state + guarded re-Freeze
         |
@@ -51,8 +54,12 @@ forgeshape_jni.cpp            render thread, ANativeWindow, MotionEvent ->
         |         |   v            all-or-nothing; meshes are REGENERATED
         |    ConstructionScene
         |
-        |    ConstructionObject                 SculptSession
-        |        |                                  |
+        |    ConstructionObject   CadBody          SculptSession
+        |        |                   |                 |
+        |        |          SketchSession --commit--> CadBodyState (sketch + extrude)
+        |        |          (volatile; overlay ->        |
+        |        |           Renderer, never truth)  generateCadMesh() [LOCAL]
+        |        |                   |                 |
         |        generateMesh() [LOCAL] --Freeze--> SculptMesh [LOCAL copy,
         |        |                                  own SculptRevision]
         |        +---- the ACTIVE one is published -+
@@ -130,6 +137,13 @@ forgeshape_jni.cpp            render thread, ANativeWindow, MotionEvent ->
 | What an Imported Mesh may be, and what a `.forge` file may carry for one | `forgeshape_imported_mesh.{h,cpp}` | ONE validator (`validateImportedMeshData`) and ONE name rule (`sanitizeImportedMeshName`), called by the importer and by the codec alike, so a file can never carry geometry or a name the importer would have refused. It resolves per-submesh `doubleSided` into draw geometry; it holds no material, no `SculptRevision` and no source path |
 | Turning a parsed file into durable project objects | `forgeshape_import_commit.{h,cpp}` | it decides how many objects a file becomes, what they are called and where the node transform ends up. Atomic: everything is built and validated off the scene, and the whole commit is ONE `ScopedConstructionEdit`, so an import is one Undo and a refusal costs no `ObjectId` |
 | Which LOCAL mesh a body is sculpted FROM | `buildSculptSourceMesh` in `forgeshape_scene.{h,cpp}` | the second ONE dispatch point beside `publishSceneObject`: a Construction Body regenerates from its parameters, an Imported Mesh hands over the arrays it owns. Either source is only READ. It copies an imported object's RAW indices, never `buildDrawData`'s reversed duplicates, and collapses per-submesh `doubleSided` into the frozen mesh's one sidedness answer — see *Sculpting an Imported Mesh* |
+| The three principal workplanes and the ONE mapping between sketch `(u, v)` and body-local 3D | `forgeshape_workplane.{h,cpp}` | no camera, no pixel: a workplane is a fact about the body, right-handed by construction, and it reads nothing from the view |
+| What a sketch entity may be, the sketch's per-sketch identities, closed-profile extraction and ear-clipping triangulation | `forgeshape_sketch.{h,cpp}` | truth is the entity list; profiles, polygons and triangles are DERIVED and never stored. It fails closed by name — open, forked, crossing, zero-area, duplicate-edge and nested loops are refused, never repaired — and every refusal is one `CadStatus` |
+| A CAD Body's authored truth (`CadBodyState`: one sketch, one linear extrusion) and the ONE regeneration path from it to a mesh | `forgeshape_cad_body.{h,cpp}` | `applyState` validates and regenerates the whole requested state and writes nothing unless all of it passes; no vertex is truth; no parameter is ever read back out of a mesh |
+| The sketch edit session: the entity being placed, the selection, snapping, the pointer it owns, the profile choice and the depth BEFORE the one commit | `SketchSession` (`forgeshape_sketch_session.{h,cpp}`) | volatile: nothing in it is project truth, the scene, the history, the fingerprint and the codec never see it, and `commit` is ONE `ScopedConstructionEdit` around ONE `addCadBody`. Java holds no sketch: not an entity, not a profile, not a depth |
+| The sketch overlay the renderer draws: the plane grid, the axes, the entities, the drag and the extrude preview, as world-space lines | `SketchOverlay` (`forgeshape_sketch_overlay.h`), built by `SketchSession::overlay` | presentation on the gizmo's terms: no `ObjectId`, no revision, never published, never picked, never exported, never a `.forge` byte. The renderer re-uploads it only when its revision changes and draws it through the gizmo's line pipeline |
+| The view a sketch borrows — the orbit angles that look along a plane's normal, the orthographic projection, and the user's own pose kept for the way back | `beginSketchView` / `endSketchView` in `forgeshape_jni.cpp` over `CameraController::frameWorkplane` / `capturePose` / `restorePose` | the sketch stores no camera; the angles come from the plane's fixed frame, and the pose is restored on commit and on cancel alike |
+| Whether a one-finger gesture while sketching draws, selects, or is swallowed — and that two fingers still pan and pinch | the sketch arbitration block in `forgeshape_jni.cpp`, using `SketchSession::onTouch` | a single finger never orbits while a sketch is open; the gizmo and the sculpt arbitration are already out of the picture, because the gizmo is withdrawn at begin and a sketch cannot start in Sculpt |
 | Removing one body from the project | `forgeshape_body_delete.{h,cpp}` | one representation-neutral operation over the scene and the history. One Delete is one transaction; the removed body is HELD by the history rather than destroyed, so an Undo restores that object with its Imported Mesh and its Frozen Sculpt Mesh intact; the replacement selection and the last-body refusal are stated here and nowhere else |
 | The deterministic external-GLB compatibility fixture | `forgeshape_glb_import_fixture.{h,cpp}` | a synthetic file with the structural feature set of an external low-poly export; every coordinate an integer over a power of two, so its bytes are the same everywhere. A debug test seam, reachable from no product path |
 | What an imported preview IS, and every boundary it may not cross | `forgeshape_import_preview.{h,cpp}` | session-only: no scene `ObjectId`, no Construction Source, no sculpt representation, no `MeshStore`, no history, no `.forge`, no checkpoint, not selectable, not re-exportable, gone with the process. Its renderer keys are resource keys and never identities. Since `IMPORT-01A` it is reachable only from the verification suites |
@@ -2066,6 +2080,236 @@ Scale is strictly positive, so the transform still has no reflection: winding is
 unchanged and front-face-only picking means the same thing in either space. That
 is what keeps "what is drawn" and "what is pickable" identical under a transform,
 with no second collision representation to keep in sync.
+
+## CAD domain (`CAD-R0-A1A2`)
+
+A **CAD Body** is a body's third representation: one sketch on a principal
+workplane, and one linear **New Body** extrusion of one of the sketch's closed
+profiles. Like the other two domains it is platform-neutral C++ with no JNI,
+Android, Vulkan, renderer or UI type, and it holds no GPU resource.
+
+### Why a third representation
+
+A Construction Body is a primitive plus its parameters; an Imported Mesh IS its
+geometry. A CAD Body is neither. It has no `PrimitiveKind` and no six
+remembered parameter sets, so it cannot be a Construction Source without
+inventing a primitive it was never made from — the rule an Imported Mesh already
+refuses to break — and its geometry is DERIVED, so storing it as an Imported Mesh
+would throw away the very thing that makes it editable. So `BodyRepresentation`
+has three values, a `SceneObject` owns exactly one of them for its whole life,
+`cadOrNull()` is a pointer for the same reason `constructionOrNull()` is one, and
+the `.forge` document carries it in its own required section (`CADB`) on
+`IMPT`'s terms.
+
+### Dependency direction
+
+```
+forgeshape_workplane      (u, v) <-> body-local 3D; three fixed right-handed frames
+        ^
+forgeshape_sketch         entities, ids, validation, closed profiles, triangulation
+        ^
+forgeshape_cad_body       CadBodyState = sketch + ExtrudeFeature; generateCadMesh
+        ^
+forgeshape_scene          SceneObject owns a CadBody; addCadBody; publishSceneObject
+        ^                                                    ^
+forgeshape_history        a step copies CadBodyState;         |
+                          rebuilds a CAD body it never held    |
+forgeshape_project_*      CADB record <-> CadBodyState; regenerate on load
+forgeshape_gltf_export    re-evaluates generateCadMesh, never a buffer
+        ^
+forgeshape_sketch_session the volatile edit session; touch -> entities; overlay
+        ^
+forgeshape_jni            the acts, the touch arbitration, the borrowed view
+```
+
+Nothing above a line reads truth from below it through a mesh. The renderer
+sees a CAD Body exactly as it sees a primitive — a published `RuntimeMesh` —
+and sees a sketch only as a world-space line list it cannot read a coordinate
+back out of.
+
+### Workplane mapping
+
+`forgeshape_workplane.h` states the three frames once. Each is right-handed
+(`U × V = N`), so a profile that is counter-clockwise in `(u, v)` is
+counter-clockwise seen from `+N`, which is what lets the extrusion produce
+canonical outward winding on any plane without asking which:
+
+| Plane | U | V | N | The view it is read from |
+| --- | --- | --- | --- | --- |
+| XY | +X | +Y | +Z | the front view, from +Z |
+| XZ | +X | −Z | +Y | the top view, from +Y |
+| YZ | −Z | +Y | +X | the side view, from +X |
+
+XZ's V and YZ's U run along −Z so that, seen from the plane's positive normal
+with world +Y up, U runs to the RIGHT and V runs UP — the same reading the
+front view has. The mapping is written per plane in double and rounded once,
+so an exact sketch coordinate stays as exact as a float can hold it. The sketch
+origin is the body's local origin; nothing is recentred, and a CAD Body created
+from a sketch starts at the identity placement.
+
+### Sketch truth, and what is derived
+
+TRUTH is the entity list: a line's two endpoints, a polyline's vertices and
+whether it is closed, a rectangle's centre and its two sizes (axis-aligned in
+sketch space, PARAMETRIC on purpose — "make it 40 mm wide" is an edit to a
+rectangle, and four unrelated lines have no width to edit), a circle's centre
+and radius. Each entity carries a per-sketch `SketchEntityId`: minted by the
+sketch, monotonic, never reused, never an `ObjectId`. The sketch stores its
+allocator's high-water mark so a reopened sketch cannot mint a collision.
+
+DERIVED is everything `forgeshape_sketch` computes from that and never stores:
+which entities close a profile, the polygon a profile becomes, the triangles.
+Bounds are explicit — 256 entities, 256 polyline vertices, a 1e5 m coordinate
+range, a 1 µm coincidence tolerance — and every size computation downstream is
+provably finite because of them; they are also what makes a history step of a
+CAD Body BOUNDED.
+
+### Profile extraction
+
+`extractClosedProfiles` reads every closed profile out of a valid sketch. A
+rectangle and a circle each close one by construction (a circle tessellates to
+`kSketchCircleSegments` = 32 vertices — the same count every round primitive
+uses — with exact cardinal points). A polyline closes one when it is flagged
+closed or its last vertex coincides with its first. Lines are CHAINED by
+coincident endpoints: a connected component in which every endpoint meets
+exactly one other line is one loop, a free end is `OpenProfile`, a fork is
+`BranchingChain`. Every loop is then held to the same rules, in this order:
+at least three vertices, no duplicate consecutive edge, no crossing between
+non-adjacent edges (checked BEFORE area, because a bow tie's lobes cancel to
+zero area and "it crosses itself" is the reason the user can act on), non-zero
+area, and orientation normalised to counter-clockwise.
+
+A profile is identified by its **anchor entity id** — the rectangle, the circle
+or the polyline itself, or the smallest id among a chain of lines — never by an
+index, which would move when an unrelated entity was deleted. Profiles are
+reported ascending by anchor, which is the deterministic order every caller
+sees. A profile that CONTAINS another is refused as `NestedProfileUnsupported`
+— a hole this stage will not fill silently — while the inner one stays
+extrudable; two profiles that merely overlap are both kept. Every refusal is a
+named `CadStatus`, and nothing is repaired.
+
+### Triangulation
+
+`triangulateSimplePolygon` is ear clipping over a counter-clockwise simple
+polygon: deterministic (the same polygon yields the same triangles in the same
+order), bounded (at most n − 2 clips, each a search over at most n candidates,
+n ≤ 256), and fail-closed (a polygon it cannot finish is `TriangulationFailed`
+with nothing written). A vertex on an ear's boundary counts as inside, so a
+collinear vertex is never cut across. Clockwise input is refused rather than
+reversed, because orientation was decided upstream once.
+
+### The extrusion
+
+`generateCadMesh` is THE regeneration path: validate the whole state, extract,
+find the chosen profile, triangulate, extrude. The solid always spans from its
+−N face to its +N face; which of the two sits ON the sketch plane is the
+direction, so the winding rule never asks which way the user chose. The mesh
+shares the 2n profile vertices between the two caps and the n side quads, so
+every edge lies on exactly two triangles — watertight by construction — and
+hard edges are the render layer's business, exactly as they are for a box. The
++N cap keeps the profile's counter-clockwise order (counter-clockwise seen from
+outside), the −N cap is the same triangles reversed, and each side quad
+`(lower_i, lower_i+1, upper_i+1)` has normal `edge × N`, which for a
+counter-clockwise profile is outward. The self-test proves it by signed volume,
+which unlike a centroid heuristic is exact for a concave solid.
+
+### Regeneration is atomic
+
+`CadBody::applyState` regenerates the WHOLE requested state once into scratch
+and writes nothing unless it passes. An edit that would leave the body with no
+closed profile — or a profile the extrusion no longer names, or a depth that is
+not a length — is refused by name and the last valid state stands. An identical
+request reports Ok, changes nothing and counts nothing. The typed editors
+(`applyCadRectangle`, `applyCadCircle`, `applyCadExtrude`) build one candidate
+from the current state and apply it once, so a rectangle's centre and every
+entity the user did not type survive untouched. A JNI Apply is ONE
+`ScopedConstructionEdit` around that one call, so one user Apply is one history
+step and no step when refused or identical.
+
+### The history
+
+A `BodyConstructionState` carries a `CadBodyState` for a CAD Body, compared
+with `sameCadBodyState` (bit-exact), and `applyState` restores it through
+`CadBody::restoreState` and republishes. Because a CAD Body IS derivable from
+its state, a step can REBUILD one it never held (`makeCadBody`) — unlike an
+Imported Mesh, which can only come back as the object that was taken out. The
+placement is the body's and is restored beside it, so a CAD edit never moves a
+placement and a gizmo drag never moves a sketch.
+
+### The sketch session
+
+`SketchSession` is the bounded, VOLATILE state between New Sketch and the one
+commit. `Inactive → Editing → Ready → Inactive`, with `cancel` from anywhere
+and `backToEditing` from Ready. Nothing before `commit` is project truth: the
+scene, the history, the fingerprint and the codec know nothing of a half-drawn
+line, so `cancel` costs the project nothing and process death loses the sketch
+and nothing else. `commit` is one `ScopedConstructionEdit` around one
+`addCadBody`; a refusal mints no `ObjectId` and stays in Ready.
+
+Pointer samples arrive as the same `TouchPointer` the camera and the gizmo
+consume. The session owns ONE pointer by id; a second pointer cancels the
+entity in progress and hands the gesture to the camera, so pan and pinch stay
+available and a stroke can never become a pan half way through. Pixels become
+sketch coordinates ONCE, at the moment they are used, by intersecting the
+camera's pick ray with the workplane; the pixel itself is never stored. A
+rectangle is dragged corner to corner, a circle centre to radius, a line end to
+end; a polyline is placed tap by tap, closed by tapping its first vertex and
+ended open by tapping its last, and a tool change ends it open. Select is a
+tool, so a tap has exactly one meaning at a time.
+
+Snapping: an endpoint snap (existing endpoints, polyline vertices, rectangle
+corners and centres, circle centres, the polyline being placed) wins over a
+grid snap, both are always on, and both produce EXACT coordinates — the other
+entity's own stored value or an exact multiple of the 0.25 m grid — never a
+rounded pixel. A typed value is never snapped. Tolerances are in reference
+units (24 dp either side, the 48 dp floor as a diameter), resolved through the
+same camera-derived world-per-unit the gizmo uses, and sampled once at pointer
+down so a drag's tolerances are fixed for its life.
+
+### The sketch view
+
+The session stores no camera. The JNI layer keeps the user's pose
+(`CameraController::capturePose`) for as long as the sketch is open, frames the
+plane with `frameWorkplane` — the plane's own orbit angles, the world origin,
+the current distance, and the ORTHOGRAPHIC projection through the ordinary
+framing-preserving switch — and restores the pose on commit and on cancel
+alike. The top view sits at the pitch clamp rather than exactly vertical; the
+ray–plane intersection is exact regardless, so what the finger places is
+exact, and the ~3° tilt is honest about being near-orthographic.
+
+### The overlay
+
+`SketchSession::overlay` builds a world-space line list in four ranges — grid
+minor, grid major, the two axes in their world hues, and the entities with the
+selected one, the one being drawn, the snap marker and the extrude preview
+emphasised — under a revision that changes only when something did. The
+renderer uploads it through the same fenced staging path every mesh uses,
+re-uploads only on a revision change, and draws it last, through the gizmo's
+own line pipeline (depth test off) with one push constant per range. It is
+presentation on the gizmo's exact terms: no `ObjectId`, no revision of the
+scene's, never published, never picked, never exported, never a `.forge` byte,
+and the renderer cannot read a coordinate back out of world positions.
+
+### Threading
+
+Every session mutation and every read of it happens under `g_stateMutex`,
+exactly as the camera, the gizmo and the scene. A pointer move updates a few
+doubles and bumps a revision; it regenerates nothing. Extraction runs at
+Finish, and regeneration runs at commit and at an Apply — discrete user acts,
+each one publication. The render thread takes the overlay pointer under the
+same lock as the scene snapshot and does its upload with the lock released.
+
+### What this stage deliberately does not do
+
+CAD → Sculpt: `buildSculptSourceMesh` returns false for a CAD Body, the freeze
+refuses by name (`CadBodyNotSculptable`), *Start Sculpting* is absent for one,
+and a `SCUL` entry over a `CADB` body is refused by the codec. Enabling it needs
+three decisions this stage does not make — the wording of the way back out of
+Sculpt over a CAD Body, the stale-source rule over a CAD edit, and the
+`CADB`+`SCUL` file combination — and each deserves its own approval. Holes,
+booleans, fillets, chamfers, shells, revolves, sweeps, lofts, patterns, mirrors,
+offsets, trims, constraints, arcs, splines and face-based planes are absent and
+are not drawn anywhere.
 
 ## Sculpt domain
 

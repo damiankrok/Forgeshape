@@ -29,6 +29,7 @@
 #include "forgeshape_render_recovery.h"
 #include "forgeshape_scene.h"
 #include "forgeshape_selection_pulse.h"
+#include "forgeshape_sketch_overlay.h"
 
 namespace forgeshape {
 
@@ -119,6 +120,14 @@ public:
     // for, which is what keeps a tool overlay from becoming a second route by
     // which the render layer knows about identity.
     void setGizmo(const GizmoSnapshot& gizmo) { gizmo_ = gizmo; }
+
+    // Installs the sketch overlay the next frame draws (`CAD-R0-A1A2`): a
+    // world-space line list with a revision, consumed verbatim like the gizmo.
+    // Null or empty means no sketch is in progress and nothing is drawn. The
+    // renderer re-uploads only when the revision changes, so a frame with no
+    // sketch change costs no transfer -- and it cannot learn a sketch
+    // coordinate from it, because the vertices are already world positions.
+    void setSketchOverlay(SketchOverlayPtr overlay) { sketchOverlay_ = std::move(overlay); }
 
     // Device-independent setup: Vulkan instance only.
     bool createInstance();
@@ -279,6 +288,19 @@ private:
     // It writes no depth either, so it leaves the buffer exactly as the bodies
     // and the grid left it and nothing drawn after it could be occluded by it.
     void recordGizmoDraw(VkCommandBuffer cmd);
+
+    // --- Sketch overlay (renderer-owned, render thread) ---------------------
+    //
+    // Drawn through the gizmo's own line pipeline and shaders -- a sketch is a
+    // tool overlay on the gizmo's exact terms: no normal, no light, no
+    // descriptor set, depth test off. What differs is that its geometry
+    // CHANGES while the user draws, so it has a revision-gated upload of its
+    // own rather than a one-time device-creation upload. The upload waits on
+    // the renderer's frame fences before writing, exactly as a mesh upload
+    // does, so no in-flight frame can be reading the buffer it replaces.
+    bool syncSketchOverlay();
+    void destroySketchOverlayResources();
+    void recordSketchOverlayDraw(VkCommandBuffer cmd);
     // Waits on the renderer's own frame fences (never vkDeviceWaitIdle /
     // vkQueueWaitIdle) so no in-flight frame can still reference the mesh
     // buffers that are about to be overwritten or destroyed.
@@ -477,6 +499,18 @@ private:
     // is held. Invisible by default, so a frame recorded before anything pushes
     // one draws no handles rather than handles at the origin.
     GizmoSnapshot gizmo_{};
+
+    // The sketch overlay pushed in for this frame, and what the device holds.
+    // The buffer is device-local and grows on demand; a revision already
+    // uploaded is drawn again with no transfer.
+    SketchOverlayPtr sketchOverlay_;
+    VkBuffer sketchVertexBuffer_ = VK_NULL_HANDLE;
+    VkDeviceMemory sketchVertexMemory_ = VK_NULL_HANDLE;
+    VkDeviceSize sketchVertexCapacityBytes_ = 0;
+    uint32_t sketchVertexCount_ = 0;
+    uint64_t sketchUploadedRevision_ = 0;
+    bool sketchUploadedOnce_ = false;
+    std::vector<SketchOverlayRange> sketchRanges_;
 
     // True when this swapchain deliberately declared a pre-transform the surface
     // does not currently use (the identity-pre-transform orientation

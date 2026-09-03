@@ -65,10 +65,21 @@ final class EditorWorkspaceView extends FrameLayout
         ObjectsCapsuleView.OnObjectsCapsuleAction,
         AddPrimitivePaletteView.OnPrimitiveChosen,
         StartChooserView.OnStartFlowChosen,
+        SketchEditorView.OnSketchAction,
         AnchoredSurfaceView.OnOpenStateChanged {
 
     private static final int[] SCULPT_TOOL_HINTS = {
             R.string.hint_grab, R.string.hint_clay, R.string.hint_smooth, R.string.hint_inflate
+    };
+    /** The five sketch tools by name and by gesture rule, indexed by
+     *  {@code SKETCH_TOOL_*}. */
+    private static final int[] SKETCH_TOOL_NAMES = {
+            R.string.tool_select, R.string.tool_line, R.string.tool_polyline,
+            R.string.tool_rectangle, R.string.tool_circle
+    };
+    private static final int[] SKETCH_TOOL_HINTS = {
+            R.string.hint_select, R.string.hint_line, R.string.hint_polyline,
+            R.string.hint_rectangle, R.string.hint_circle
     };
     private static final int[] SCULPT_TOOL_NAMES = {
             R.string.tool_grab, R.string.tool_clay, R.string.tool_smooth, R.string.tool_inflate
@@ -207,6 +218,14 @@ final class EditorWorkspaceView extends FrameLayout
     private final ConstructionShapeEditorView shapeEditor;
     private final ConstructionPlacementEditorView placementEditor;
     private final SculptContextView sculptContext;
+    /** The sketch's precision surface, and a CAD Body's (CAD-R0-A1A2). */
+    private final SketchEditorView sketchEditor;
+    private final CadFeatureEditorView cadEditor;
+    /** Reused across reads; native fills this with the sketch session's state. */
+    private final double[] nativeSketch = new double[NativeViewport.SKETCH_STATE_SIZE];
+    /** The last sketch refusal the status line reported, so a gesture that
+     *  repeats the same refusal does not repeat the sentence. */
+    private int lastReportedSketchStatus = NativeViewport.CAD_OK;
 
     /** Reused across reads; native fills it with the authoritative state. */
     private final double[] nativeSculpt = new double[NativeViewport.SCULPT_STATE_SIZE];
@@ -332,6 +351,14 @@ final class EditorWorkspaceView extends FrameLayout
                             // changed; not noting would leave a whole stroke
                             // unprotected until some unrelated edit came along.
                             noteProjectMaybeDirty();
+                            // A sketch gesture places, selects or refuses; the
+                            // only chrome with something new to say is the
+                            // sketch's own precision surface and the status
+                            // line. Nothing about the scene moved.
+                            if (isSketching()) {
+                                onSketchGestureSettled();
+                                return;
+                            }
                             final long active = NativeViewport.sceneActiveBodyId();
                             if (active != lastKnownActiveBodyId) {
                                 lastKnownActiveBodyId = active;
@@ -576,6 +603,8 @@ final class EditorWorkspaceView extends FrameLayout
         shapeEditor = new ConstructionShapeEditorView(context, this);
         placementEditor = new ConstructionPlacementEditorView(context, this);
         sculptContext = new SculptContextView(context, this);
+        sketchEditor = new SketchEditorView(context, this, this);
+        cadEditor = new CadFeatureEditorView(context, this);
 
         // Last into the overlay, so the question is above everything it is
         // asking about. It stands on a WORKING workspace: native state already
@@ -1082,6 +1111,9 @@ final class EditorWorkspaceView extends FrameLayout
 
     private void setAddPrimitiveOpen(boolean open, View invoker) {
         if (open) {
+            // Always on the shapes: a plane is a question that follows New
+            // Sketch, and the palette must not reopen part way through it.
+            addPrimitivePalette.showPlanes(false);
             dismissPrimarySurfacesExcept(addPrimitivePalette);
             anchorOverlayTo(addPrimitivePalette,
                     invoker != null ? invoker : objectsCapsule.addControl());
@@ -1651,8 +1683,15 @@ final class EditorWorkspaceView extends FrameLayout
             // surface and the gizmo agree with the rail.
             uiState.setConstructionTool(EditorUiState.CONSTRUCTION_TOOL_TRANSFORM);
         }
+        // The sketch session (CAD-R0-A1A2) and the active body's third
+        // representation, both native truth read here and nowhere remembered.
+        NativeViewport.sketchState(nativeSketch);
+        final int sketchState = (int) nativeSketch[NativeViewport.SKETCH_STATE];
+        final boolean sketching = sketchState != NativeViewport.SKETCH_INACTIVE;
+        final boolean cad = NativeViewport.sceneActiveBodyIsCad();
 
-        toolbar.showContext(sculpting, hasFrozenMesh, imported);
+        toolbar.showContext(sculpting, hasFrozenMesh, imported, cad, sketchState,
+                (int) nativeSketch[NativeViewport.SKETCH_PLANE]);
         toolbar.showEditingTransitions(true);
         // Display settings are native-owned and process-scoped, so on a resume
         // they are already whatever they were; this only makes the popover's
@@ -1678,16 +1717,19 @@ final class EditorWorkspaceView extends FrameLayout
         // while sculpting. Both hosts are told, from the one refresh, in every
         // mode — so a window with a column and a window with a capsule cannot
         // disagree about whether a body can be created.
-        objectsCapsule.showCreationAvailable(!sculpting);
-        objectsSection.showCreationAvailable(!sculpting);
+        // And not while sketching either: the scene holds still until the
+        // sketch commits or is cancelled, and both acts are refused below JNI
+        // on those terms.
+        objectsCapsule.showCreationAvailable(!sculpting && !sketching);
+        objectsSection.showCreationAvailable(!sculpting && !sketching);
         // And deletion on the same terms, for the same reason: `sceneDeleteBody`
         // refuses while sculpting, because the Sculpt target is fixed for the
         // duration of the mode and Undo is refused there too -- a delete made
         // there could not be taken back until the user left. The other half of
         // the answer, that the last body cannot go, is the list's own and comes
         // from the scene's size.
-        objectsSection.showDeletionAvailable(!sculpting);
-        if (sculpting) {
+        objectsSection.showDeletionAvailable(!sculpting && !sketching);
+        if (sculpting || sketching) {
             // The palette is anchored to a control that has just gone. Left open
             // it would stand on the model attached to nothing, and choosing a
             // tile from it would reach exactly the refusal this removes.
@@ -1705,6 +1747,8 @@ final class EditorWorkspaceView extends FrameLayout
             brushControls.setVisibility(GONE);
             shapeEditor.refreshFromNative();
             placementEditor.refreshFromNative();
+            sketchEditor.refreshFromNative();
+            cadEditor.refreshFromNative();
         }
         objectsCapsule.refreshFromNative();
         refreshTransformGizmo(sculpting);
@@ -1797,7 +1841,9 @@ final class EditorWorkspaceView extends FrameLayout
         // a window that moves to another display changes it and an atomic float
         // store is not worth a lifecycle hook to avoid.
         NativeViewport.setGizmoPixelScale(getResources().getDisplayMetrics().density);
-        final boolean offered = !sculpting
+        // Not while sketching: the viewport is the sketch plane, and a handle
+        // over it would be pointing at a body the sketch is not about.
+        final boolean offered = !sculpting && !isSketching()
                 && uiState.constructionTool() == EditorUiState.CONSTRUCTION_TOOL_TRANSFORM
                 && NativeViewport.sceneActiveBodyId() != NativeViewport.NO_OBJECT;
         NativeViewport.setGizmoActive(offered);
@@ -1809,15 +1855,20 @@ final class EditorWorkspaceView extends FrameLayout
 
     /** Supplies the host one derived snapshot; native reads and commands stay here. */
     private void renderTrailingHost(boolean sculpting) {
-        final boolean transformOffered = !sculpting
+        NativeViewport.sketchState(nativeSketch);
+        final int sketchState = (int) nativeSketch[NativeViewport.SKETCH_STATE];
+        final boolean sketching = sketchState != NativeViewport.SKETCH_INACTIVE;
+        final boolean transformOffered = !sculpting && !sketching
                 && uiState.constructionTool() == EditorUiState.CONSTRUCTION_TOOL_TRANSFORM
                 && NativeViewport.sceneActiveBodyId() != NativeViewport.NO_OBJECT;
         if (transformOffered) {
             NativeViewport.gizmoState(nativeGizmo);
         }
-        final int activeTool = sculpting
-                ? (int) nativeSculpt[NativeViewport.SCULPT_TOOL]
-                : uiState.constructionTool();
+        final int activeTool = sketching
+                ? (int) nativeSketch[NativeViewport.SKETCH_TOOL]
+                : sculpting
+                        ? (int) nativeSculpt[NativeViewport.SCULPT_TOOL]
+                        : uiState.constructionTool();
         final int transformMode = transformOffered
                 ? (int) nativeGizmo[NativeViewport.GIZMO_MODE]
                 : NativeViewport.GIZMO_MODE_MOVE;
@@ -1840,8 +1891,10 @@ final class EditorWorkspaceView extends FrameLayout
                 // Shape has no answer for an Imported Mesh, so the rail does
                 // not offer it for one. Asked from native truth rather than
                 // remembered, exactly like every other fact this snapshot
-                // carries.
-                !NativeViewport.sceneActiveBodyIsImported()));
+                // carries. A CAD Body keeps it: Shape is what the body IS, and
+                // for one that is its sketch and its extrusion.
+                !NativeViewport.sceneActiveBodyIsImported(),
+                sketchState));
     }
 
     /**
@@ -1901,7 +1954,9 @@ final class EditorWorkspaceView extends FrameLayout
      * the pair.
      */
     private void refreshHistoryControls() {
-        historyGroup.setVisibility(VISIBLE);
+        // Withdrawn while sketching: a sketch in progress is not in the
+        // history yet, and a Construction step under it is refused below JNI.
+        historyGroup.setVisibility(isSketching() ? GONE : VISIBLE);
         undoAction.setEnabled(NativeViewport.historyUndoAvailable());
         redoAction.setEnabled(NativeViewport.historyRedoAvailable());
     }
@@ -2035,10 +2090,22 @@ final class EditorWorkspaceView extends FrameLayout
             inspector.setBody(sculptContext, context.getString(R.string.inspector_sculpt_title));
             return;
         }
+        if (isSketching()) {
+            // The sketch's own surface, titled by its plane: it edits the one
+            // sketch in progress, which belongs to no body yet.
+            inspector.setBody(sketchEditor, context.getString(R.string.inspector_sketch_title,
+                    context.getString(CadFeatureEditorView.planeName(
+                            (int) nativeSketch[NativeViewport.SKETCH_PLANE]))));
+            return;
+        }
         final String body = BodyLabels.ofActive(context);
         if (uiState.constructionTool() == EditorUiState.CONSTRUCTION_TOOL_TRANSFORM) {
             inspector.setBody(placementEditor,
                     context.getString(R.string.inspector_place_title_for_body, body));
+        } else if (NativeViewport.sceneActiveBodyIsCad()) {
+            // Shape, for a CAD Body, is its sketch and its extrusion.
+            inspector.setBody(cadEditor,
+                    context.getString(R.string.inspector_shape_title_for_body, body));
         } else {
             inspector.setBody(shapeEditor,
                     context.getString(R.string.inspector_shape_title_for_body, body));
@@ -2062,6 +2129,9 @@ final class EditorWorkspaceView extends FrameLayout
     private int precisionSurfaceName(boolean sculpting) {
         if (sculpting) {
             return R.string.precision_sculpt;
+        }
+        if (isSketching()) {
+            return R.string.precision_sketch;
         }
         return uiState.constructionTool() == EditorUiState.CONSTRUCTION_TOOL_TRANSFORM
                 ? R.string.precision_transform : R.string.precision_shape;
@@ -2135,12 +2205,143 @@ final class EditorWorkspaceView extends FrameLayout
         return NativeViewport.productMode() == NativeViewport.MODE_SCULPT;
     }
 
+    /** Whether the one native sketch session is open, read fresh every time. */
+    private boolean isSketching() {
+        NativeViewport.sketchState(nativeSketch);
+        return nativeSketch[NativeViewport.SKETCH_STATE] != NativeViewport.SKETCH_INACTIVE;
+    }
+
+    // -----------------------------------------------------------------------
+    // The sketch (CAD-R0-A1A2)
+    // -----------------------------------------------------------------------
+    //
+    // Every act here asks the one native session and re-reads. The workspace
+    // holds no sketch: not an entity, not a profile, not a depth. What it owns
+    // is which chrome is drawn for the session's state, and what the status
+    // line says about a refusal.
+
+    /** The palette's New Sketch, with a plane chosen. */
+    @Override
+    public void onNewSketchChosen(int workplane) {
+        final Context context = getContext();
+        final int status = NativeViewport.sketchBegin(workplane);
+        setAddPrimitiveOpen(false, null);
+        if (status != NativeViewport.CAD_OK) {
+            showStatus(CadStatusMessages.describe(context, status), R.attr.fsTextError);
+            return;
+        }
+        // A sketch is its own context: the surfaces of the one it replaces are
+        // put away, and the view the session framed is what the user sees.
+        dismissPrimarySurfacesExcept(null);
+        finishEditing();
+        lastReportedSketchStatus = NativeViewport.CAD_OK;
+        onNativeStateChanged();
+        NativeViewport.sketchState(nativeSketch);
+        final int tool = (int) nativeSketch[NativeViewport.SKETCH_TOOL];
+        showStatus(context.getString(R.string.status_sketch_started,
+                context.getString(CadFeatureEditorView.planeName(workplane)),
+                context.getString(SKETCH_TOOL_HINTS[tool])), R.attr.fsTextSecondary);
+    }
+
+    /** A sketch gesture ended: the entity list, the selection or a refusal. */
+    private void onSketchGestureSettled() {
+        sketchEditor.refreshFromNative();
+        NativeViewport.sketchState(nativeSketch);
+        final int last = (int) nativeSketch[NativeViewport.SKETCH_LAST_STATUS];
+        if (last != NativeViewport.CAD_OK && last != lastReportedSketchStatus) {
+            showStatus(CadStatusMessages.describe(getContext(), last), R.attr.fsTextError);
+        }
+        lastReportedSketchStatus = last;
+    }
+
+    @Override
+    public void onFinishSketchRequested() {
+        final Context context = getContext();
+        final int status = NativeViewport.sketchFinish();
+        if (status != NativeViewport.CAD_OK) {
+            showStatus(CadStatusMessages.describe(context, status), R.attr.fsTextError);
+            return;
+        }
+        finishEditing();
+        syncFromNative();
+        // The depth and the profile choice are the next act, so the surface
+        // that holds them opens without being asked for.
+        setPrecisionOpen(true);
+        NativeViewport.sketchState(nativeSketch);
+        final int profiles = (int) nativeSketch[NativeViewport.SKETCH_PROFILE_COUNT];
+        showStatus(profiles > 1
+                        ? context.getString(R.string.status_sketch_finished_choose, profiles)
+                        : context.getString(R.string.status_sketch_finished),
+                R.attr.fsTextSuccess);
+    }
+
+    /** The toolbar's Extrude and the precision surface's Extrude: one act. */
+    @Override
+    public void onExtrudeRequested() {
+        final Context context = getContext();
+        final long created = NativeViewport.sketchCommit();
+        if (created == NativeViewport.NO_OBJECT) {
+            showStatus(CadStatusMessages.describe(context, NativeViewport.sketchLastStatus()),
+                    R.attr.fsTextError);
+            return;
+        }
+        dismissPrimarySurfacesExcept(null);
+        finishEditing();
+        // The new body is active and its Shape is what the user just made; the
+        // rail lands there rather than wherever it was before the sketch.
+        uiState.setConstructionTool(EditorUiState.CONSTRUCTION_TOOL_SHAPE);
+        onNativeStateChanged();
+        showStatus(context.getString(R.string.status_sketch_extruded,
+                BodyLabels.of(context, created)), R.attr.fsTextSuccess);
+    }
+
+    @Override
+    public void onCancelSketchRequested() {
+        NativeViewport.sketchCancel();
+        dismissPrimarySurfacesExcept(null);
+        finishEditing();
+        onNativeStateChanged();
+        showStatus(getContext().getString(R.string.status_sketch_cancelled),
+                R.attr.fsTextSecondary);
+    }
+
+    @Override
+    public void onBackToSketchRequested() {
+        NativeViewport.sketchBackToEditing();
+        finishEditing();
+        syncFromNative();
+    }
+
+    SketchEditorView sketchEditor() {
+        return sketchEditor;
+    }
+
+    CadFeatureEditorView cadEditor() {
+        return cadEditor;
+    }
+
     // -----------------------------------------------------------------------
     // Tool Rail
     // -----------------------------------------------------------------------
 
     @Override
     public void onToolSelected(int key) {
+        if (isSketching()) {
+            // Ask, then read back, exactly as the sculpt brushes do: the rail
+            // draws the tool the session reports. Changing tool ends a polyline
+            // being placed and drops a drag; it touches no project state.
+            NativeViewport.sketchSetTool(key);
+            final int active = NativeViewport.sketchTool();
+            renderTrailingHost(false);
+            sketchEditor.refreshFromNative();
+            final int index = (active >= 0 && active < SKETCH_TOOL_NAMES.length)
+                    ? active : NativeViewport.SKETCH_TOOL_RECTANGLE;
+            showStatus(getContext().getString(R.string.status_sketch_tool,
+                    getContext().getString(SKETCH_TOOL_NAMES[index]),
+                    getContext().getString(SKETCH_TOOL_HINTS[index])), R.attr.fsTextSecondary);
+            finishEditing();
+            return;
+        }
         if (isSculpting()) {
             // Ask, then read back: the rail draws the tool native code reports,
             // not the one that was tapped. Changing tool touches no geometry --
@@ -2243,8 +2444,14 @@ final class EditorWorkspaceView extends FrameLayout
      */
     @Override
     public void onFreezeToSculpt() {
-        if (NativeViewport.freezeToSculpt() != NativeViewport.SCULPT_OK) {
-            showStatus(getContext().getString(R.string.status_sculpt_prepare_failed),
+        final int status = NativeViewport.freezeToSculpt();
+        if (status != NativeViewport.SCULPT_OK) {
+            // The CAD refusal has its own sentence: the control is absent for
+            // a CAD Body, so reaching it means a stale surface, and the user
+            // deserves the real reason rather than a generic failure.
+            showStatus(getContext().getString(status == NativeViewport.SCULPT_REFUSED_CAD_BODY
+                            ? R.string.status_cad_no_sculpt
+                            : R.string.status_sculpt_prepare_failed),
                     R.attr.fsTextError);
             return;
         }
@@ -3277,6 +3484,8 @@ final class EditorWorkspaceView extends FrameLayout
         uiState.setDisplayUnit(unit);
         boolean allConverted = shapeEditor.convertDisplayUnit(previous, unit);
         allConverted &= placementEditor.convertDisplayUnit(previous, unit);
+        allConverted &= sketchEditor.convertDisplayUnit(previous, unit);
+        allConverted &= cadEditor.convertDisplayUnit(previous, unit);
         showStatus(getContext().getString(allConverted ? R.string.status_unit_display_only
                         : R.string.status_unit_unparsed, unit.label()),
                 allConverted ? R.attr.fsTextSecondary : R.attr.fsTextError);
@@ -3286,6 +3495,8 @@ final class EditorWorkspaceView extends FrameLayout
     public void finishEditing() {
         shapeEditor.clearEditFocus();
         placementEditor.clearEditFocus();
+        sketchEditor.clearEditFocus();
+        cadEditor.clearEditFocus();
         final InputMethodManager ime =
                 (InputMethodManager) getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
         if (ime != null) {

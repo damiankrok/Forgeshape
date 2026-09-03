@@ -25,12 +25,20 @@ real feature, a **PrimitiveSource**, and the body's placement lives beside it.
 Future CAD features extend the graph; the format already carries a per-body
 feature list so that they can arrive without the file changing shape.
 
+Since `CAD-R0-A1A2` a body may instead be a **CAD Body**: one sketch on a
+principal workplane and one linear extrusion of one of its closed profiles.
+That is its own geometry source, carried in its own required section (`CADB`,
+§7b) on `IMPT`'s terms, because a CAD Body has no primitive to be a
+Construction Source with and no fixed geometry to be an Imported Mesh with. Its
+mesh is regenerated on load, exactly as a primitive's is.
+
 ### 1.1 Semantic project truth — serialized
 
 | Truth | Why it cannot be recomputed |
 | --- | --- |
 | Body identity (`ObjectId`), scene order, active body | Identity is minted, not derived |
-| Which representation a body's geometry comes from | A body owns a Construction Source or an Imported Mesh, never both |
+| Which representation a body's geometry comes from | A body owns a Construction Source, an Imported Mesh or a CAD Body's sketch-and-extrusion, exactly one of the three |
+| A CAD Body's workplane, every sketch entity with its per-sketch id, the sketch's id allocator, the chosen profile's anchor entity id, the extrusion depth and its direction | The authored truth of the body; the mesh is a product of it |
 | The id allocator's high-water mark | Stops a reopened project minting a collision |
 | Active primitive kind | The user chose it |
 | **All six** remembered primitive parameter sets, per body | A Box → Sphere → Box round trip must return the box the user typed |
@@ -45,6 +53,12 @@ feature list so that they can arrive without the file changing shape.
 ### 1.2 Derived runtime/render truth — **not** serialized
 
 * Every Construction `RuntimeMesh` — regenerated from the parameters on load.
+* Every CAD Body's closed profiles, their polygons, their triangulation and the
+  extruded mesh — all regenerated from the `CADB` record by `generateCadMesh`
+  on load. No polygon point and no vertex of an extrusion is ever stored.
+* The sketch edit session: a sketch in progress, its selection, its drag and
+  its held tool are volatile until the one commit that makes a CAD Body, and a
+  `.forge` file never carries a half-drawn sketch.
 * Vertex normals, sculpt adjacency (`SculptTopology`), render-mesh vertex
   duplication for hard edges.
 * `SculptRevision`, `MeshRevision`, update counters, rejection counters.
@@ -84,7 +98,7 @@ All multibyte fields are explicit little-endian. Offsets are from byte 0.
 | 10 | minor | `u16` | `0` |
 | 12 | headerBytes | `u16` | `28` |
 | 14 | projectKind | `u8` | `1` = Construction, `2` = Sculpt |
-| 15 | headerFlags | `u8` | bit0 `hasCONS`, bit1 `hasSCUL`, bit2 `hasIMPT`; all other bits zero |
+| 15 | headerFlags | `u8` | bit0 `hasCONS`, bit1 `hasSCUL`, bit2 `hasIMPT`, bit3 `hasCADB`; all other bits zero |
 | 16 | sectionCount | `u32` | exact number of sections that follow |
 | 20 | fileBytes | `u64` | exact total file size |
 
@@ -103,6 +117,11 @@ required bit says the same thing a second time, for a reader that got past the
 header. The `major`/`minor` pair is unchanged at `1`/`0`: §12 already allows a
 new required section within a major, and bumping the minor would have rewritten
 every legacy fixture's bytes for no added protection.
+
+`hasCADB` (`CAD-R0-A1A2`) is the same gate a second time, for the same reason:
+a build that cannot regenerate a sketch cannot open a file that needs one, and
+refuses it on the header flag first and the `CADB` section's required bit
+second. Files without a CAD Body are byte-for-byte what they were.
 
 ---
 
@@ -124,7 +143,7 @@ alone**, which is what lets a reader validate a section it does not understand
 and then skip it safely.
 
 **Canonical writer order:** `SCNE`, then `CONS` when present, then `SCUL` when
-present, then `IMPT` when present.
+present, then `IMPT` when present, then `CADB` when present.
 
 ---
 
@@ -151,6 +170,19 @@ project if it ever changes.
 | --- | ---: |
 | Construction | 1 |
 | Sculpt | 2 |
+
+The `CADB` codes (`CAD-R0-A1A2`), file-owned on the same terms:
+
+| Workplane | code | | Extrude direction | code | | Sketch entity kind | code |
+| --- | ---: | --- | --- | ---: | --- | --- | ---: |
+| XY (U = +X, V = +Y, N = +Z) | 1 | | Along the normal | 1 | | Line | 1 |
+| XZ (U = +X, V = −Z, N = +Y) | 2 | | Against the normal | 2 | | Polyline | 2 |
+| YZ (U = −Z, V = +Y, N = +X) | 3 | | | | | Rectangle | 3 |
+| | | | | | | Circle | 4 |
+
+Every workplane frame is right-handed (`U × V = N`), which is what lets a
+profile that is counter-clockwise in `(u, v)` extrude with canonical outward
+winding on any of the three.
 
 ---
 
@@ -336,8 +368,8 @@ cannot carry a name the importer could not have made.
 Nothing about the source `.glb` appears — no path, no `Uri`, no bytes, no node
 index. Where the geometry came from is not project truth.
 
-A body must be named by **exactly one** of `CONS` and `IMPT`; a body in both is
-two answers to what the object IS and is refused. A `SCUL` entry for an `IMPT`
+A body must be named by **exactly one** of `CONS`, `IMPT` and `CADB`; a body in
+two of them is two answers to what the object IS and is refused. A `SCUL` entry for an `IMPT`
 body was refused too until `IMPORT-01B` and is **valid now**: an imported object
 can be sculpted, seeded from its own geometry, and the sculpt mesh it gains is a
 second representation of the same body rather than a second answer to what the
@@ -352,6 +384,70 @@ The four valid combinations are `SCNE+CONS`, `SCNE+CONS+SCUL`, `SCNE+IMPT` and
 `SCNE+IMPT+SCUL`.
 
 ---
+
+## 7b. `CADB` v1 — the CAD Bodies
+
+Present when any body is a CAD Body (`CAD-R0-A1A2`), and then **required in
+both project kinds**, on `IMPT`'s terms: a CAD Body has no other branch
+describing it, and a reader that skipped this section would open the project
+with objects missing. Announced by header bit3 `hasCADB`.
+
+Section version 1. One entry per body whose representation is a CAD Body, as a
+subsequence of `SCNE` in strictly ascending scene order. v1 is exactly **one
+sketch and one linear extrusion** per body — a second feature kind takes a new
+section version rather than a discriminator inside this one.
+
+```
+u32  bodyCount                 1 .. 4096
+repeat bodyCount times, in ascending SCENE ORDER:
+  u64  objectId                must be a SCNE body; entries strictly ascending
+  u8   workplaneCode           1 .. 3, from the table in §4
+  u32  nextEntityId            != 0, must be > every entity id below
+  u32  profileEntityId         must be the anchor of one closed profile
+  u8   directionCode           1 along the normal, 2 against it
+  f64  depth                   metres, strictly positive, usable as a float
+  u32  entityCount             1 .. 256
+  repeat entityCount times, in the sketch's own order:
+    u32  entityId              != 0, unique within the body, < nextEntityId
+    u8   kindCode              1 .. 4, from the table in §4
+    Line:       f64 startU, startV, endU, endV
+    Polyline:   u8 flags (bit0 closed; all other bits zero)
+                u32 vertexCount (1 .. 256; 2 .. 256 to validate, 3 .. when closed)
+                f64 u, v  × vertexCount
+    Rectangle:  f64 centreU, centreV, width, height
+    Circle:     f64 centreU, centreV, radius
+```
+
+Per body: 8 + 1 + 4 + 4 + 1 + 8 + 4 = **30 bytes** plus its entities. A line is
+37 bytes, a rectangle 37, a circle 29, and a polyline 10 + 16 × vertexCount.
+
+Coordinates are **metres on the plane**, in the body's LOCAL space: `(u, v)`
+maps to local 3D through the plane's fixed frame (§4), with the sketch origin at
+the body's local origin. Nothing is recentred. A CAD Body created by extruding a
+sketch starts at the identity placement, and the placement in `SCNE` is the
+body's exactly as it is for a primitive — a gizmo moves it, and an edit to its
+sketch or its depth leaves the placement alone.
+
+**What is deliberately absent:** the profile's polygon, the triangulation, the
+extruded vertices and indices, and which OTHER profiles the sketch happened to
+close. All of it is regenerated by `generateCadMesh` on load, and a file that
+carried a vertex beside the sketch would be carrying a product of the truth
+beside the truth. A circle's tessellation is fixed at `kSketchCircleSegments`
+(32, the same count every round primitive uses) and is not a parameter.
+
+The record is held to the **domain's own rule**, `validateCadBodyState`, and to
+nothing restated: every entity's own geometry (finite, bounded, non-degenerate),
+the depth as a Construction length, the direction, AND that the sketch actually
+closes the profile `profileEntityId` names — extracted by the same
+`extractClosedProfiles` the product runs. A file whose sketch closes no profile,
+or whose chosen profile is open, crossing, zero-area, forked or nested, is
+refused rather than opened as an object with nothing to draw.
+
+A `SCUL` entry over a `CADB` body is **refused** (`UnresolvedReference`):
+`CAD-R0-A1A2` leaves CAD → Sculpt out, so such a file describes something this
+build cannot evaluate. The same fail-closed shape the pre-`IMPORT-01B` reader
+gave an `IMPT`+`SCUL` file. The valid combinations are therefore the four of
+§7a plus `SCNE+CADB` and `SCNE+CONS+CADB` (and either with `IMPT` beside them).
 
 ## 8. Validation and compatibility
 
@@ -372,18 +468,19 @@ active mode or body, not the session history.
 | Reserved section-flag bit set, non-zero section `reserved` word | `BadSectionHeader` |
 | Payload CRC mismatch | `ChecksumMismatch` |
 | Unknown section with the required bit set | `UnknownRequiredSection` |
-| A second `SCNE`, `CONS`, `SCUL` or `IMPT` — judged on the **tag**, before the version is, so a duplicate at a version the reader cannot read is still a duplicate | `DuplicateSection` |
+| A second `SCNE`, `CONS`, `SCUL`, `IMPT` or `CADB` — judged on the **tag**, before the version is, so a duplicate at a version the reader cannot read is still a duplicate | `DuplicateSection` |
 | `SCNE` absent; `SCUL` absent for a Sculpt project | `MissingRequiredSection` |
-| A payload's own structure does not add up; a sculpt or batch flags byte with a reserved bit; an imported record whose normals do not match its positions one for one, or whose batches do not tile its indices | `BadPayload` |
-| A count no project can have, or one whose byte size would overflow — refused **before any allocation** | `ImpossibleCount` |
-| A value the live model refuses: a non-positive or non-finite dimension, a broken capsule relation, a non-finite position or rotation, a zero or negative scale, a duplicate or reserved `ObjectId`, an allocator that could mint a collision, an index out of range, an unknown primitive or feature code, an imported normal that is not a unit direction, an imported name the domain's own sanitizer would not have produced | `InvalidSemanticValue` |
-| An active body no section carries, a `CONS`/`SCUL`/`IMPT` body `SCNE` does not carry, a Sculpt project whose active body has no sculpt mesh, a body claimed by both `CONS` and `IMPT` | `UnresolvedReference` |
+| A payload's own structure does not add up; a sculpt, batch or polyline flags byte with a reserved bit; an imported record whose normals do not match its positions one for one, or whose batches do not tile its indices | `BadPayload` |
+| A count no project can have, or one whose byte size would overflow — refused **before any allocation**; a `CADB` body with no entities or more than 256, a polyline with no vertices or more than 256 | `ImpossibleCount` |
+| A value the live model refuses: a non-positive or non-finite dimension, a broken capsule relation, a non-finite position or rotation, a zero or negative scale, a duplicate or reserved `ObjectId`, an allocator that could mint a collision, an index out of range, an unknown primitive, feature, workplane, direction or entity-kind code, an imported normal that is not a unit direction, an imported name the domain's own sanitizer would not have produced, and any `CADB` record `validateCadBodyState` refuses — a bad coordinate, size, depth or entity id, or a sketch that does not close the profile the extrusion names | `InvalidSemanticValue` |
+| An active body no section carries, a `CONS`/`SCUL`/`IMPT`/`CADB` body `SCNE` does not carry, a Sculpt project whose active body has no sculpt mesh, a body claimed by two of `CONS`, `IMPT` and `CADB`, a `SCUL` entry over a `CADB` body | `UnresolvedReference` |
 | A load attempted while a Construction edit is open (not a property of the file) | `RefusedEditInProgress` |
 
 Semantic values are checked by calling the **domain's own** validators —
 `validateDimensionMeters`, `validateCapsuleMeters`, `validateTransformValue`,
-`validateScaleValue` — never by restating the rules, so a file can never carry a
-value the editor would have refused.
+`validateScaleValue`, `validateImportedMeshData`, `validateCadBodyState` — never
+by restating the rules, so a file can never carry a value the editor would have
+refused.
 
 ### Accepted
 
@@ -397,10 +494,10 @@ value the editor would have refused.
 * A newer `minor` of the same `major` is accepted, provided every required
   section version is understood.
 
-The header's `hasCONS` / `hasSCUL` / `hasIMPT` flags are checked against the
-section **tags the file carried**, not against the sections this reader managed
-to decode. Otherwise skipping an optional section it could not read would make
-the header look like a lie.
+The header's `hasCONS` / `hasSCUL` / `hasIMPT` / `hasCADB` flags are checked
+against the section **tags the file carried**, not against the sections this
+reader managed to decode. Otherwise skipping an optional section it could not
+read would make the header look like a lie.
 
 ### One thing the FORMAT allows and this RUNTIME does not
 

@@ -53,6 +53,22 @@ enum LengthUnit {
         return value.movePointRight(decimalExponent - from.decimalExponent);
     }
 
+    /**
+     * Renders an area in this unit squared, for a profile's label.
+     *
+     * <p>Presentation only, and deliberately not an authored value: the domain
+     * never stores an area, and nothing may be typed as one. The point shift is
+     * twice the length shift, and the result is bounded to three decimals so a
+     * chip does not carry a double's whole expansion.
+     */
+    static String formatArea(LengthUnit unit, double squareMeters) {
+        final BigDecimal shifted = BigDecimal.valueOf(squareMeters)
+                .movePointRight(2 * unit.decimalExponent)
+                .setScale(3, java.math.RoundingMode.HALF_UP)
+                .stripTrailingZeros();
+        return shifted.toPlainString() + " " + unit.label + "²";
+    }
+
     /** Converts a value written in this unit into authoritative meters, exactly. */
     BigDecimal toMeters(BigDecimal display) {
         return display.movePointLeft(decimalExponent);

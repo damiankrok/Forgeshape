@@ -162,6 +162,12 @@ final class NativeViewport {
      * total height, which cannot be less than its diameter.
      */
     static final int APPLY_REJECTED_RELATION = 6;
+    /**
+     * Refused by a CAD rule that is not a plain length problem — the sketch
+     * would no longer close the extruded profile, for instance. The exact
+     * reason is {@link #cadLastStatus()} and is in the log.
+     */
+    static final int APPLY_REJECTED_CAD = 7;
 
     /** The active primitive is a box. */
     static final int PRIMITIVE_BOX = 0;
@@ -362,6 +368,8 @@ final class NativeViewport {
     static final int SCULPT_FAILED_FREEZE = 1;
     /** Nothing has ever been frozen, so there is no sculpt mesh to return to. */
     static final int SCULPT_NOTHING_FROZEN = 2;
+    /** The active body is a CAD Body, which this stage does not sculpt. */
+    static final int SCULPT_REFUSED_CAD_BODY = 3;
 
     // -----------------------------------------------------------------------
     // The four sculpt tools.
@@ -1529,4 +1537,198 @@ final class NativeViewport {
      * @return whether the command was accepted
      */
     static native boolean debugMeshCommand(int command);
+
+    // -----------------------------------------------------------------------
+    // The sketch session and the CAD Body (CAD-R0-A1A2)
+    // -----------------------------------------------------------------------
+    //
+    // The Java layer holds NO sketch. It asks the one native session what state
+    // it is in, which tool is held, what is selected and what it would build,
+    // and every answer comes from here. Pointer samples reach the session
+    // through the ordinary touchEvent path; these are the chrome's acts.
+    //
+    // Every status is a CAD_* code — the native CadStatus enum's own order —
+    // and cadStatusToken turns one back into its name for a log line.
+
+    /** The one status vocabulary of the CAD domain. */
+    static final int CAD_OK = 0;
+    static final int CAD_NON_FINITE = 1;
+    static final int CAD_OUT_OF_RANGE = 2;
+    static final int CAD_ZERO_LENGTH_LINE = 3;
+    static final int CAD_DUPLICATE_EDGE = 4;
+    static final int CAD_TOO_FEW_VERTICES = 5;
+    static final int CAD_ZERO_SIZE_RECTANGLE = 6;
+    static final int CAD_INVALID_CIRCLE_RADIUS = 7;
+    static final int CAD_TOO_MANY_ENTITIES = 8;
+    static final int CAD_UNKNOWN_ENTITY = 9;
+    static final int CAD_INVALID_WORKPLANE = 10;
+    static final int CAD_OPEN_PROFILE = 11;
+    static final int CAD_SELF_INTERSECTING_PROFILE = 12;
+    static final int CAD_ZERO_AREA_PROFILE = 13;
+    static final int CAD_BRANCHING_CHAIN = 14;
+    static final int CAD_NO_CLOSED_PROFILE = 15;
+    static final int CAD_AMBIGUOUS_PROFILE = 16;
+    static final int CAD_PROFILE_NOT_FOUND = 17;
+    static final int CAD_NESTED_PROFILE_UNSUPPORTED = 18;
+    static final int CAD_INVALID_EXTRUDE_DEPTH = 19;
+    static final int CAD_INVALID_EXTRUDE_DIRECTION = 20;
+    static final int CAD_TRIANGULATION_FAILED = 21;
+    static final int CAD_REGENERATION_FAILED = 22;
+    static final int CAD_NOT_SKETCHING = 23;
+    static final int CAD_NOT_CAD_BODY = 24;
+    static final int CAD_REFUSED_EDIT_IN_PROGRESS = 25;
+
+    /** The three principal workplanes, as the native Workplane index. */
+    static final int WORKPLANE_XY = 0;
+    static final int WORKPLANE_XZ = 1;
+    static final int WORKPLANE_YZ = 2;
+
+    /** The sketch session's state. */
+    static final int SKETCH_INACTIVE = 0;
+    static final int SKETCH_EDITING = 1;
+    static final int SKETCH_READY = 2;
+
+    /** The five sketch tools, as the native SketchTool index. */
+    static final int SKETCH_TOOL_SELECT = 0;
+    static final int SKETCH_TOOL_LINE = 1;
+    static final int SKETCH_TOOL_POLYLINE = 2;
+    static final int SKETCH_TOOL_RECTANGLE = 3;
+    static final int SKETCH_TOOL_CIRCLE = 4;
+
+    /** Which way an extrusion grows, as the native ExtrudeDirection index. */
+    static final int EXTRUDE_ALONG_NORMAL = 0;
+    static final int EXTRUDE_AGAINST_NORMAL = 1;
+
+    /** Slots of {@link #sketchState}. */
+    static final int SKETCH_STATE_SIZE = 13;
+    static final int SKETCH_STATE = 0;
+    static final int SKETCH_PLANE = 1;
+    static final int SKETCH_TOOL = 2;
+    static final int SKETCH_ENTITY_COUNT = 3;
+    static final int SKETCH_SELECTED_ENTITY = 4;
+    static final int SKETCH_PROFILE_COUNT = 5;
+    static final int SKETCH_CHOSEN_PROFILE = 6;
+    static final int SKETCH_EXTRUDE_DEPTH = 7;
+    static final int SKETCH_EXTRUDE_DIRECTION = 8;
+    static final int SKETCH_LAST_STATUS = 9;
+    static final int SKETCH_POLYLINE_IN_PROGRESS = 10;
+    static final int SKETCH_ENTITIES_PLACED = 11;
+    static final int SKETCH_LAST_SNAP = 12;
+
+    /** Slots of {@link #sketchSelectedEntity}. */
+    static final int SKETCH_ENTITY_SIZE = 6;
+    static final int SKETCH_ENTITY_ID = 0;
+    static final int SKETCH_ENTITY_KIND = 1;
+    /** The first of the entity's own values; see the native comment. */
+    static final int SKETCH_ENTITY_VALUES = 2;
+    static final int SKETCH_ENTITY_KIND_LINE = 0;
+    static final int SKETCH_ENTITY_KIND_POLYLINE = 1;
+    static final int SKETCH_ENTITY_KIND_RECTANGLE = 2;
+    static final int SKETCH_ENTITY_KIND_CIRCLE = 3;
+
+    /** Slots of {@link #sketchProfileInfo}. */
+    static final int SKETCH_PROFILE_INFO_SIZE = 3;
+    static final int SKETCH_PROFILE_KIND_RECTANGLE = 1;
+    static final int SKETCH_PROFILE_KIND_CIRCLE = 2;
+    static final int SKETCH_PROFILE_KIND_POLYGON = 3;
+
+    /** Begins a sketch on a workplane. Returns a CAD_* code. */
+    static native int sketchBegin(int workplane);
+
+    /** Drops the sketch. Never a project mutation. */
+    static native void sketchCancel();
+
+    static native boolean sketchSetTool(int tool);
+
+    static native int sketchTool();
+
+    static native void sketchState(double[] out);
+
+    /** Editing to Ready, or a named refusal that leaves the sketch editable. */
+    static native int sketchFinish();
+
+    static native void sketchBackToEditing();
+
+    static native int sketchSelectProfile(long anchorEntityId);
+
+    static native int sketchSetExtrude(double depthMeters, int direction);
+
+    /**
+     * THE commit: the sketch becomes one new CAD Body as one history step.
+     *
+     * @return the new body's ObjectId, or {@link #NO_OBJECT} with the reason in
+     *         {@link #sketchLastStatus()}
+     */
+    static native long sketchCommit();
+
+    static native int sketchLastStatus();
+
+    static native int sketchDeleteSelected();
+
+    /** Selects an entity by id, or clears the selection for 0. */
+    static native boolean sketchSelectEntity(long entityId);
+
+    static native boolean sketchSelectedEntity(double[] out);
+
+    static native int sketchApplyRectangle(long entityId, double widthMeters,
+                                           double heightMeters);
+
+    static native int sketchApplyCircle(long entityId, double radiusMeters);
+
+    static native int sketchApplyLine(long entityId, double x0, double y0, double x1,
+                                      double y1);
+
+    /** The closed profiles' anchor ids, in the domain's order. */
+    static native int sketchProfiles(long[] out);
+
+    static native boolean sketchProfileInfo(long anchorEntityId, double[] out);
+
+    /**
+     * Where a sketch point is on screen, in view-local pixels. Verification
+     * infrastructure on the gizmo's terms: the one honest source of a pixel
+     * to send a synthetic touch to.
+     */
+    static native boolean sketchScreenPoint(double u, double v, float[] out);
+
+    static native String cadStatusToken(int code);
+
+    /** 1 Construction, 2 Imported, 3 CAD; 0 for an unknown id. */
+    static native int sceneBodyRepresentation(long objectId);
+
+    static final int REPRESENTATION_CONSTRUCTION = 1;
+    static final int REPRESENTATION_IMPORTED = 2;
+    static final int REPRESENTATION_CAD = 3;
+
+    static native boolean sceneActiveBodyIsCad();
+
+    /** Slots of {@link #cadState}. */
+    static final int CAD_STATE_SIZE = 8;
+    static final int CAD_PLANE = 0;
+    static final int CAD_DEPTH = 1;
+    static final int CAD_DIRECTION = 2;
+    static final int CAD_PROFILE_KIND = 3;
+    /** A rectangle's width, or a circle's radius. */
+    static final int CAD_PRIMARY_SIZE = 4;
+    /** A rectangle's height. */
+    static final int CAD_SECONDARY_SIZE = 5;
+    static final int CAD_ENTITY_COUNT = 6;
+    static final int CAD_PROFILE_VERTICES = 7;
+    static final int CAD_PROFILE_NONE = 0;
+    static final int CAD_PROFILE_RECTANGLE = 1;
+    static final int CAD_PROFILE_CIRCLE = 2;
+    static final int CAD_PROFILE_POLYGON = 3;
+
+    /** The active CAD Body's authored values; false when it is not one. */
+    static native boolean cadState(double[] out);
+
+    /** One Apply, one history step, one regeneration. Returns an APPLY_* code. */
+    static native int cadApplyExtrude(double depthMeters, int direction);
+
+    static native int cadApplyRectangle(double widthMeters, double heightMeters,
+                                        double depthMeters, int direction);
+
+    static native int cadApplyCircle(double radiusMeters, double depthMeters, int direction);
+
+    /** The exact CAD reason behind the last CAD Apply, as a CAD_* code. */
+    static native int cadLastStatus();
 }
