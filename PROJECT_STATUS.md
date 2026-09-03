@@ -1,9 +1,86 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.57.0
+**Status Version:** 0.58.0
 **Updated:** 2026-09-03
-**Result:** **SCULPT-UNDO-R0 — COMPLETE. A sculpt stroke can be taken back, and
-sculpting has its own history.**
+**Result:** **CAD-R0-A1A2 — COMPLETE. A sketch on a workplane becomes an
+editable CAD Body.**
+
+The first end-to-end CAD workflow, as one vertical slice: **New Sketch → a
+principal plane → Rectangle / Circle / Line / Polyline with endpoint-then-grid
+snapping and exact typed values → Finish Sketch → a closed profile is found
+or the refusal is named → a typed depth and a direction → Extrude as a New
+Body → an ordinary object with an Objects row and a gizmo → its sizes and depth
+editable later, one Undo each → saved, reopened, recovered and exported as its
+sketch and its extrusion, never as a frozen mesh.**
+
+- **A third representation.** `BodyRepresentation::Cad` and `CadBody`
+  (`forgeshape_cad_body.{h,cpp}`): a `CadBodyState` of one sketch
+  (`forgeshape_sketch.{h,cpp}`) on one workplane (`forgeshape_workplane.{h,cpp}`)
+  and one linear extrusion. It has no primitive to be a Construction Source with
+  and no fixed geometry to be an Imported Mesh with, so it is its own, exclusive
+  for the body's life, and every one of the twenty-odd `constructionOrNull()` /
+  `importedOrNull()` call sites had to say what it does about it.
+- **Truth and product.** The sketch entities, their per-sketch ids, the chosen
+  profile's anchor id, the depth and the direction are truth; the closed
+  profiles, the polygon, the triangles and the mesh are regenerated through
+  `generateCadMesh`, the one path. `CadBody::applyState` validates and
+  regenerates the WHOLE requested state and writes nothing unless all of it
+  passes — no half-regenerated body, and an edit that would leave no closed
+  profile is refused by name.
+- **The profile engine fails closed by name.** Open, forked, crossing,
+  zero-area, duplicate-edge and nested loops are refused, never repaired;
+  crossings are tested before area so a bow tie says "it crosses itself"
+  rather than "zero area". A rectangle is parametric (centre, width, height);
+  a circle is centre and radius, tessellated at the round primitives' 32
+  segments with exact cardinal points; a chain of lines closes a loop anchored
+  by its smallest id. Bounded ear clipping; watertight extrusion with canonical
+  outward winding on all three planes, proved by signed volume for the concave
+  case.
+- **The sketch session is volatile.** `SketchSession` owns one pointer, snaps
+  to endpoints before the 0.25 m grid with EXACT coordinates, places a rectangle
+  corner to corner, a circle centre to radius, a line end to end and a polyline
+  tap by tap, and commits as ONE `ScopedConstructionEdit` around ONE
+  `addCadBody`. Nothing before that commit reaches the scene, the history, the
+  fingerprint or a `.forge` byte; `cancel` costs the project nothing. While a
+  sketch is open one finger draws and never orbits, two fingers still pan and
+  pinch, and creation, deletion, body switching, freeze and Construction
+  Undo/Redo are refused below JNI and withdrawn above it.
+- **The view is borrowed, not stored.** The camera frames the plane
+  orthographically along its normal and the user's own pose comes back on
+  commit and on cancel. The sketch is drawn as a world-space line list through
+  the gizmo's own pipeline, re-uploaded only when its revision changes.
+- **`.forge` gained `CADB`**, a required section on `IMPT`'s terms behind header
+  bit3: the authored state and never a vertex, held to `validateCadBodyState`
+  (extraction included) so a file whose sketch closes no profile is refused;
+  exclusive with `CONS` and `IMPT`; `SCUL` over it refused. No version bump;
+  the twelve older fixtures are byte-for-byte unchanged and four new ones are
+  pinned by both encoders at identical digests.
+- **Chrome.** New Sketch and a plane chooser inside the creation palette; the
+  five sketch tools on the Tool Rail; *Finish Sketch* and then *Extrude* as the
+  one toolbar transition per sketch state, with Cancel Sketch and Back to
+  Sketch under the rail; *Sketch values* for the selected entity, the profile
+  choice, the depth and the direction; a CAD Body's *Shape* panel for its sizes
+  and depth; *Start Sculpting* absent for a CAD Body.
+
+**Deliberately NOT this stage:** CAD → Sculpt (refused by name; three
+decisions it needs are recorded in `ARCHITECTURE.md`), holes, booleans,
+fillets, chamfers, shells, revolves, sweeps, lofts, patterns, mirrors, offsets,
+trims, constraints, arcs, splines, face-based planes, rotated rectangles, and
+numeric editing of a polygon profile's points.
+
+Verified: **18/18 native suites, 2845 checks, zero failures** (122 new `CADR0_*`,
+11 new project checks); JVM 70/70; both ABIs debug and release; device guards
+`DEV2-01..07` / `DEV3-01..06`; the sixteen-fixture corpus verified against the
+independent PowerShell encoder; the new focused device suite `SketchExtrudeTest`
+**OK (9 tests, `E2E-CADR0-01..16`)**; and the authoritative exhaustive-sharded
+aggregate — see *Current evidence summary* and `artifacts/cad-r0-a1a2/`. All
+device work on `emulator-5580`, confirmed `ForgeShape_Stage006`;
+`emulator-5554` never contacted.
+
+---
+
+**Previous result — SCULPT-UNDO-R0 — COMPLETE. A sculpt stroke can be taken
+back, and sculpting has its own history.**
 
 One bounded capability, under `ARCH-OWNER-12`, and nothing else.
 
@@ -1198,6 +1275,14 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 | Primitive and transform edits reach only the active body; A↔B round-trips the exact spec and placement | VERIFIED |
 | Per-body mesh publication: each body its own revision chain; A's edit cannot replace B's mesh | VERIFIED |
 | Renderer draws every body with its own transform and its own GPU buffers | VERIFIED |
+| **CAD Body** (`CAD-R0-A1A2`): New Sketch from the creation palette, a plane chooser (XY / XZ / YZ), an orthographic plane-aligned view that gives the user's pose back afterwards | VERIFIED |
+| Sketch tools Select / Line / Polyline / Rectangle / Circle through real MotionEvents; one finger draws and never orbits, two fingers pan and pinch; endpoint-then-grid snapping to EXACT coordinates; typed values never snapped | VERIFIED |
+| Finish Sketch finds closed profiles (rectangle, circle, closed polyline, loop of lines) and refuses open, forked, crossing, zero-area and nested profiles by name, staying editable | VERIFIED |
+| Extrude as a New Body: a typed depth, a direction, one CAD Body as one Undo, watertight and canonically wound on all three planes; Undo removes the whole body and Redo restores the same one | VERIFIED |
+| A CAD Body's rectangle sizes, circle radius and depth editable later, each one history step, regenerated atomically, placement untouched; the ordinary Objects row, gizmo and export | VERIFIED |
+| `CADB` `.forge` section: Save / Open / Save Copy / autosave / recovery / fingerprint carry the sketch and the extrusion; a reopened CAD Body is still editable truth; corrupt CAD records refused fail-closed; the twelve older fixtures unchanged | VERIFIED |
+| A cancelled sketch changes nothing: bytes, fingerprint and history identical | VERIFIED |
+| Import, Sculpt and Sculpt Undo/Redo unaffected beside a CAD Body; CAD → Sculpt deliberately refused by name | VERIFIED |
 | A project is saved to one app-private `.forge` slot and reopened after the process is killed | VERIFIED |
 | A reopened project keeps every body's ObjectId, scene order, active body, active kind, ALL SIX remembered parameter sets, and its exact placement including 370 degrees and a non-uniform scale | VERIFIED |
 | A reopened project regenerates every Construction mesh: no mesh, revision or GPU data is read from the file, and the file is exactly the size the semantic arithmetic predicts | VERIFIED |
@@ -1435,8 +1520,8 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 
 ## Self-test suite
 
-Seventeen debug-only native suites run once from `NativeViewport.start()` —
-never per frame — and total **2628 checks, zero failures**:
+Eighteen debug-only native suites run once from `NativeViewport.start()` —
+never per frame — and total **2845 checks, zero failures**:
 
 | suite token | checks |
 | --- | --- |
@@ -1448,15 +1533,23 @@ never per frame — and total **2628 checks, zero failures**:
 | `FORGESHAPE_CONSTRUCTION_PRIMITIVE_SELFTEST_OK` | 125 |
 | `FORGESHAPE_CONSTRUCTION_SPHERE_SELFTEST_OK` | 105 |
 | `FORGESHAPE_CONE_CAPSULE_SELFTEST_OK` | 163 |
-| `FORGESHAPE_SCULPT_BRUSH_KERNEL_SELFTEST_OK` | 410 |
+| `FORGESHAPE_SCULPT_BRUSH_KERNEL_SELFTEST_OK` | 494 |
 | `FORGESHAPE_RENDER_SHADING_SELFTEST_OK` | 329 |
 | `FORGESHAPE_SCENE_SELFTEST_OK` | 79 |
 | `FORGESHAPE_CONSTRUCTION_HISTORY_SELFTEST_OK` | 147 |
 | `FORGESHAPE_GIZMO_SELFTEST_OK` | 145 |
-| `FORGESHAPE_PROJECT_SELFTEST_OK` | 219 |
+| `FORGESHAPE_PROJECT_SELFTEST_OK` | 230 |
 | `FORGESHAPE_RENDER_RECOVERY_SELFTEST_OK` | 24 |
 | `FORGESHAPE_GLTF_EXPORT_SELFTEST_OK` | 93 |
 | `FORGESHAPE_GLTF_IMPORT_SELFTEST_OK` | 184 |
+| `FORGESHAPE_CAD_SELFTEST_OK` | 122 |
+
+The CAD suite (`forgeshape_cad_selftest.cpp`, `CADR0-*`) builds its own sketches,
+scenes, histories and camera, drives the sketch session through real
+`TouchPointer` samples, and prints `FORGESHAPE_CAD_PERFORMANCE` — its bounded
+extraction, triangulation and regeneration timings for a rectangle, a 32-gon
+circle and 32- and 128-edge polylines — on every launch. The project suite
+prints a fourth digest line, `FORGESHAPE_PROJECT_GOLDEN_SHA256_CAD`.
 
 followed by `FORGESHAPE_PROJECT_GOLDEN_SHA256`, `FORGESHAPE_MESH_UPLOAD_OK`,
 `FORGESHAPE_GRID_UPLOAD_OK`, `FORGESHAPE_GIZMO_UPLOAD_OK` and
@@ -1660,6 +1753,7 @@ device. `README.md` documents how to read them.
 | `PointerSemanticsTest` (JVM) | the Android tool-type mapping and its Unknown fallback | 6 |
 | `EditorWorkspacePointerTest` | synthetic stylus transport, per-pointer association, and that tap / navigation / sculpt arbitration are unchanged | 13 |
 | `EditorWorkspaceCompositionTest` | the UI-R2 role split: viewport dominance, the scene panel, one list with one owner, inspector-names-its-body, and that composition rebuilds no geometry | 10 |
+| `SketchExtrudeTest` | `E2E-CADR0-01..16`: New Sketch and the plane chooser; a real dragged rectangle, circle and tapped polyline; Finish Sketch; a typed depth and Extrude; the Objects row and the CAD context; Undo/Redo of the creation; later rectangle and depth edits as one step each; save/reopen as editable truth; an open polyline refused by name and Cancel leaving the project byte-identical; a gizmo drag surviving a depth edit; Imported Mesh Sculpt Undo/Redo beside a CAD Body | 9 |
 | `EditorWorkspaceMobileTest` | the UI-R4A structural claim: nothing owns the bottom edge in either mode (`UIR4A-01`, `-11`), the Objects capsule (`-02`), Add Primitive anchored to its `+` and offering exactly the six real primitives (`-03`, `-04`), Sphere and Plane routed through native truth (`-05`, `-06`), closing leaves one Objects control (`-07`), exact Shape and Transform one action away (`-08`, `-09`), the rail's icons and touch floor (`-10`), context surfaces rebuild no geometry (`-14`), the new surfaces leak no gesture (`-15`), one vocabulary in every window (`-17`) | 15 |
 | `EditorWorkspaceSculptRetentionTest` | `UIR4A-12` / `UIR4B-20`: Start Sculpting → real stroke → Back → Resume returns the same revision, counts, stroke history and ObjectId, with the Construction Source untouched; and that a stale source is readable from the resting workspace | 2 |
 | `EditorWorkspaceCorrectionTest` | the UI-R4B corrections: no Sculpt creation path and the scene still reachable (`UIR4B-01`), Construction's six-primitive path intact (`-02`), the rail's active state across a rebuild in both modes and cleared on a mode change (`-03`), the status lifecycle, the longer hold for a rejection, the empty resting line and the standing fault (`-04`), brush values beside their sliders and nowhere else and publishing nothing (`-05`), no mid-row cut in Shape or Transform with scrolling and fields intact (`-06`, `-07`), one shared anchored contract (`-08`), a correct first-open pivot for all four surfaces (`-09`), instant reduced motion and interruptibility (`-10`), zero geometry from chrome and motion (`-11`), inset floating surfaces on an expanded window (`-12`), Radius/Strength off the model in expanded Sculpt (`-13`), concentric active geometry and a fill-led selection with no stroke (`-14`), no user-facing *Freeze* over every `R.string` (`-15`), Start Sculpting with Back/Resume/confirmation intact (`-16`), the 48 dp floor in both modes and the toolbar still fitting (`-17`), three appearances and no geometry (`-18`), grid and selection feedback unchanged (`-19`) | 36 |
@@ -1786,7 +1880,28 @@ precondition. Runtime evidence separately shows the real keyboard.
 
 ## Current evidence summary
 
-Latest run (**IMPORT-01B**), on the isolated `ForgeShape_Stage006` /
+Latest run (**CAD-R0-A1A2**), on the isolated `ForgeShape_Stage006` /
+`emulator-5580` AVD, on the final tree:
+[`artifacts/cad-r0-a1a2/`](artifacts/cad-r0-a1a2/) — `INDEX.md`, the domain,
+workplane, entity, profile, triangulation, extrude, regeneration and data
+contracts, the corpus table, the `CADR0-01..40` results, the `E2E-CADR0-01..16`
+table, the performance record, the raw startup log (18/18 `_SELFTEST_OK`, 2845
+checks, zero failures, eleven digests) and the raw focused and aggregate logs.
+
+- **Instrumented (authoritative):** `scripts\run-instrumented-tests.ps1 -Serial
+  emulator-5580 -FullSharded` discovered **35 classes / 491 tests** — the new
+  `SketchExtrudeTest` raises the inventory from 482 — assigned them exhaustively
+  to five shards (**100 + 98 + 99 + 97 + 97**), missing = duplicates =
+  unexpected = 0, and emitted **`FULL_SHARDED_SUITE_PASS`**. A first aggregate
+  failed one pre-existing palette test (it counted creation actions one level
+  deep, ignoring visibility, against the palette's new two-section structure);
+  the test was corrected to count visible actions recursively and expect New
+  Sketch as the seventh, and the aggregate was rerun once from shard 1.
+- **Focused:** `SketchExtrudeTest` OK (9 tests). **JVM:** 70/70. **Native:**
+  18 suites, 2845 checks. **Builds:** debug and release, both ABIs. **Guards:**
+  `DEV2-01..07`, `DEV3-01..06`. **Corpus:** sixteen fixtures verified.
+
+Previous run (**IMPORT-01B**), on the isolated `ForgeShape_Stage006` /
 `emulator-5580` AVD, on the final tree:
 [`artifacts/import-01b/`](artifacts/import-01b/) — `INDEX.md`, the sculpt-source
 and delete contracts, the `.forge` data-contract decision, the corpus table, the
@@ -2236,6 +2351,32 @@ duration scale skips them outright rather than shortening them.
 Durable constraints and known-but-accepted costs. Narrative for how each was
 found lives in Git history.
 
+**CAD-R0-A1A2, recorded as bounded debt with timing LATER:**
+
+- **CAD → Sculpt is refused by name, not offered.** `buildSculptSourceMesh`
+  returns false for a CAD Body, `freezeToSculpt` answers
+  `SCULPT_REFUSED_CAD_BODY`, *Start Sculpting* is absent for one, and the codec
+  refuses `SCUL` over `CADB`. Enabling it needs three decisions: the wording of
+  the way back out of Sculpt over a CAD Body (a third abbreviated label needs
+  its own approval), the stale-source rule over a CAD edit, and the
+  `CADB`+`SCUL` file combination with its own fixture. Each is small; none is
+  this stage's.
+- **A polygon profile's points are not numerically editable.** A closed
+  polyline or a loop of lines extrudes and its depth is editable; its vertices
+  are shown by count only. Rectangle and circle sizes are the R0 editable
+  dimensions, as specified.
+- **The sketch grid is fixed at 0.25 m / 1 m and 8 m half extent.** An
+  adaptive multi-decade grid is a CAD grid system with its own contract.
+- **The top view sits at the pitch clamp (≈ 87°), not exactly vertical.** The
+  ray–plane mapping is exact regardless; only the presentation is
+  near-orthographic. Lifting the clamp for the sketch view alone would put a
+  degenerate look-at into the camera for one mode.
+- **The sketch session is process-scoped and volatile.** A rotation keeps it
+  (native state survives the Activity), process death loses it by contract, and
+  a project Open or Recover cancels it. Edit-session recovery is not a feature.
+- **`CADB` v1 is exactly one sketch and one extrusion.** A second feature kind
+  takes a new section version; nothing pretends a feature tree exists.
+
 **RESOLVED at IMPORT-01B: the renderer now prunes a body that left the
 snapshot.** ARCH-HEALTH-01 recorded this as bounded debt with timing LATER, and
 `UI-OWNER-45` made it unbounded: add and delete in a loop mints a fresh
@@ -2632,7 +2773,15 @@ regenerated per stage.
 | `app/src/main/java/.../PropertyInspectorView.java`, `PrecisionScrollView.java`, `BoundedScrollView.java` | The on-demand precision surface: open or absent, never collapsed, with a measured height cap — a scroll container that ends the visible body on a whole row rather than through one and fades its bottom edge while there is more, and a PINNED footer holding the body commit so Apply cannot scroll away. Owns no value |
 | `app/src/main/java/.../EditorWorkspaceView.java` (history capsule) | Undo and Redo: two icon controls in one capsule at the trailing end of the bottom row, opposite the Objects capsule. Withdrawn in Sculpt, enabled straight from native `canUndo`/`canRedo`, and holding no history of its own |
 | `app/src/main/java/.../ObjectsCapsuleView.java` | The resting scene control: the active body's name, and — in Construction only — the `+`. Holds no scene state; both its controls only report which was pressed |
-| `app/src/main/java/.../AddPrimitivePaletteView.java` | The one creation surface: six primitive tiles, shared by both `+` controls. Builds no geometry and defaults no dimension |
+| `app/src/main/java/.../AddPrimitivePaletteView.java` | The one creation surface: six primitive tiles and New Sketch with its plane chooser, shared by both `+` controls. Builds no geometry and defaults no dimension |
+| `app/src/main/java/.../SketchEditorView.java` | The sketch's precision surface: the selected entity's exact values with Apply and Delete entity while editing; the profile choice, the depth, the direction and the pinned Extrude once finished. Owns field text only |
+| `app/src/main/java/.../CadFeatureEditorView.java` | A CAD Body's *Shape* panel: the plane, the profile's sizes, the depth and the direction, one Apply that is one history step. Owns field text only |
+| `app/src/main/java/.../CadStatusMessages.java` | The one place a `CAD_*` refusal becomes a status-line sentence |
+| `app/src/main/cpp/forgeshape_workplane.{h,cpp}` | The three principal workplanes and the one right-handed `(u, v)` ↔ body-local mapping. No camera, no pixel |
+| `app/src/main/cpp/forgeshape_sketch.{h,cpp}` | Sketch entities and per-sketch ids, validation, closed-profile extraction (chaining, loop rules, nesting), bounded ear clipping, and the one `CadStatus` vocabulary |
+| `app/src/main/cpp/forgeshape_cad_body.{h,cpp}` | `CadBodyState` (one sketch, one linear extrusion), `generateCadMesh` (the one regeneration path), `CadBody::applyState` (atomic) and the typed rectangle / circle / extrude edits |
+| `app/src/main/cpp/forgeshape_sketch_session.{h,cpp}`, `forgeshape_sketch_overlay.h` | The volatile sketch edit session: tools, the one owned pointer, snapping, placement, selection, finish, profile choice, depth, the one-transaction commit, and the world-space overlay the renderer draws |
+| `app/src/main/cpp/forgeshape_cad_selftest.{h,cpp}` | The `CADR0-*` suite and its performance report |
 | `app/src/main/java/.../ConstructionShapeEditorView.java` | Primitive chooser, that primitive's exact fields, unit chips, Apply Shape. Owns field text and a DRAFT kind only |
 | `app/src/main/java/.../ConstructionPlacementEditorView.java` | Position/rotation fields, unit chips, Apply Transform. Owns field text only |
 | `app/src/main/java/.../SculptContextView.java` | Sculpt-mesh summary, stale-source warning, and the guarded reset (*Reset Sculpt from Shape…*) |
@@ -2728,15 +2877,29 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Exactly one next step: return the SCULPT-UNDO-R0 report to the ForgeShape
-coordinator for the owner's real-device Sculpt Undo/Redo retest.** No product
-stage may begin here, and **CAD is not started**. `BRIDGE-R1` (the one-way
-Construction-to-Sculpt project derivation) remains **future** and was
-deliberately not implemented; Stage 018A still owns rename, visibility, lock,
-duplicate and grouping — Delete arrived early under `UI-OWNER-45` and is the ONLY
-object command that exists; and Stage 033's full exporter, OBJ, FBX, `APP-H1` and
-`CAD-R0-DATA` are all **not started** and none may be begun without the
+**Exactly one next step: return the CAD-R0-A1A2 report to the ForgeShape
+coordinator for the owner's CAD retest.** No product stage may begin here:
+booleans, fillets, chamfers, a constraint solver and every other CAD feature
+beyond R0 are **not started**, CAD → Sculpt is **not started** (refused by name
+and recorded as the three decisions it needs), `BRIDGE-R1` remains **future**,
+Stage 018A still owns rename, visibility, lock, duplicate and grouping — Delete
+is the ONLY object command that exists — and Stage 033's full exporter, OBJ,
+FBX and `APP-H1` are all **not started**. None may be begun without the
 coordinator opening it. GATE-E2E remains the owner's and is not opened here.
+
+CAD-R0-A1A2 is closed on the technical side. `New Sketch → plane → Rectangle /
+Circle / Line / Polyline → Finish Sketch → depth → Extrude` works through the
+real chrome and real MotionEvents; a CAD Body is a third representation whose
+truth is its sketch and its extrusion; its sizes and depth are editable later
+as one Undo each with the placement untouched; the `CADB` branch survives Save,
+Open, Save Copy, autosave, recovery and export; a cancelled sketch changes
+nothing; the profile engine refuses by name; and the twelve older corpus
+fixtures are byte-for-byte unchanged beside four new ones pinned by two
+encoders. What the owner's retest is for is what no emulator settles: whether
+drawing a profile with a real finger or stylus on real hardware, snapping to a
+corner, typing a depth and taking the whole thing back reads as the product it
+should be. The two standing `OWNER_REAL_FILE_*_RETEST_PENDING` items are
+unchanged by this stage.
 
 SCULPT-UNDO-R0 is closed on the technical side. `Start/Resume Sculpt → stroke A →
 stroke B → Undo B → Undo A → Redo A → Redo B` works through the real controls for
@@ -2795,7 +2958,16 @@ verdict for the owner. The pre-bake files it first offered are recorded there as
 superseded history with their own digests, so neither pair can be mistaken for
 the other.
 
-A **UI moratorium remains active.** The corrected edge-host arrangement is the
+A **UI moratorium remains active**, with one owner-directed exception:
+CAD-R0-A1A2's brief named the sketch surfaces it needed, and they were added
+inside the accepted structure rather than beside it — New Sketch and the plane
+chooser as a second group INSIDE the creation palette, the five sketch tools as
+entries on the SAME Tool Rail, Cancel Sketch and Back to Sketch as a vertical
+group inside the SAME trailing host (on the transform selector's terms),
+*Finish Sketch* and *Extrude* as the one toolbar transition per sketch state
+with no abbreviated form, and two more bodies for the SAME precision surface.
+No region was added and the resting workspace is unchanged when no sketch is
+open. The corrected edge-host arrangement is the
 accepted baseline; E2E-R1C changed one existing control from reserved to working,
 and GLB-IMPORT-R0 added one group of three rows to the existing Project surface
 and moved nothing else. GLB-IMPORT-R1 changed only the WORDING of those three
@@ -2821,14 +2993,19 @@ an approved stage: today's whole-object tint is the shipped behaviour, and the
 readability enhancement was deferred because both candidates start the
 post-processing framework the shading stage was told not to build.
 
-**Still out** and unchanged: snap-to-grid and the Sketch grid, a different
-contract from the world reference grid; a View Cube, camera focus or named views;
-blur or glass of any kind; a post-processing framework; an automatic system
-theme; hierarchy, and every object command but Delete — rename, visibility, lock,
-duplicate, grouping, reorder and multi-select; Sketch/Extrude; Mirror, Subdivide
-and Remesh; materials, textures, UVs, animation and rigging in either direction;
-the one-way Construction-to-Sculpt project derivation (`BRIDGE-R1`); and
-pressure-driven sculpting.
+**Still out** and unchanged: snap-to-grid for the transform handles (the sketch
+grid and its snapping arrived with CAD-R0-A1A2 and are a different contract from
+the world reference grid, which is still not a snap target); a View Cube, camera
+focus or named views; blur or glass of any kind; a post-processing framework; an
+automatic system theme; hierarchy, and every object command but Delete — rename,
+visibility, lock, duplicate, grouping, reorder and multi-select; every CAD
+feature beyond the R0 sketch-and-extrude — holes, booleans, fillets, chamfers,
+shells, revolves, sweeps, lofts, patterns, mirrors, offsets, trims, constraints,
+arcs, splines, face-based planes, rotated rectangles, editing a polygon
+profile's points, and CAD → Sculpt; Mirror, Subdivide and Remesh; materials,
+textures, UVs, animation and rigging in either direction; the one-way
+Construction-to-Sculpt project derivation (`BRIDGE-R1`); and pressure-driven
+sculpting.
 
 Persistence is no longer on that list, in the shape E2E-R1A and E2E-R1B shipped:
 one app-private manual slot, one recovery checkpoint, and transfer of that same

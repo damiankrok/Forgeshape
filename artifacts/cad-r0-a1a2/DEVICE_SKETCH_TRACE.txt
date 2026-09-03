@@ -1,0 +1,72 @@
+FORGESHAPE_SKETCH_BEGIN plane=XY tool=Rectangle
+FORGESHAPE_SKETCH_GESTURE_END tool=Rectangle entities=1 placed=1 snap=1 status=Ok selected=1 polyline=0
+FORGESHAPE_SKETCH_FINISH profiles=1 chosen=1
+FORGESHAPE_SKETCH_CANCEL undo=0 bodies=1
+FORGESHAPE_SKETCH_BEGIN plane=XZ tool=Rectangle
+FORGESHAPE_SKETCH_CANCEL undo=0 bodies=1
+FORGESHAPE_SKETCH_BEGIN plane=XY tool=Rectangle
+FORGESHAPE_SKETCH_GESTURE_END tool=Rectangle entities=1 placed=1 snap=1 status=Ok selected=1 polyline=0
+FORGESHAPE_SKETCH_FINISH profiles=1 chosen=1
+FORGESHAPE_SKETCH_CANCEL undo=0 bodies=1
+FORGESHAPE_SKETCH_BEGIN plane=XY tool=Rectangle
+FORGESHAPE_SKETCH_GESTURE_END tool=Polyline entities=0 placed=0 snap=1 status=Ok selected=0 polyline=1
+FORGESHAPE_SKETCH_GESTURE_END tool=Polyline entities=0 placed=0 snap=1 status=Ok selected=0 polyline=1
+FORGESHAPE_SKETCH_GESTURE_END tool=Polyline entities=0 placed=0 snap=1 status=Ok selected=0 polyline=1
+FORGESHAPE_SKETCH_GESTURE_END tool=Polyline entities=1 placed=1 snap=2 status=Ok selected=1 polyline=0
+FORGESHAPE_SKETCH_FINISH_REFUSED:OpenProfile
+FORGESHAPE_SKETCH_FINISH_REFUSED:NoClosedProfile
+FORGESHAPE_SKETCH_CANCEL undo=0 bodies=1
+FORGESHAPE_SKETCH_BEGIN plane=XY tool=Rectangle
+FORGESHAPE_SKETCH_GESTURE_END tool=Polyline entities=0 placed=0 snap=1 status=Ok selected=0 polyline=1
+FORGESHAPE_SKETCH_GESTURE_END tool=Polyline entities=0 placed=0 snap=1 status=Ok selected=0 polyline=1
+FORGESHAPE_SKETCH_GESTURE_END tool=Polyline entities=0 placed=0 snap=1 status=Ok selected=0 polyline=1
+FORGESHAPE_SKETCH_GESTURE_END tool=Polyline entities=0 placed=0 snap=1 status=Ok selected=0 polyline=1
+FORGESHAPE_SKETCH_GESTURE_END tool=Polyline entities=1 placed=1 snap=2 status=Ok selected=1 polyline=0
+FORGESHAPE_SKETCH_FINISH profiles=1 chosen=1
+FORGESHAPE_SKETCH_CANCEL undo=0 bodies=1
+FORGESHAPE_SKETCH_BEGIN plane=YZ tool=Rectangle
+FORGESHAPE_SKETCH_GESTURE_END tool=Circle entities=1 placed=1 snap=1 status=Ok selected=1 polyline=0
+FORGESHAPE_SKETCH_FINISH profiles=1 chosen=1
+FORGESHAPE_SKETCH_CANCEL undo=0 bodies=1
+FORGESHAPE_SKETCH_BEGIN plane=XY tool=Rectangle
+FORGESHAPE_SKETCH_GESTURE_END tool=Rectangle entities=1 placed=1 snap=1 status=Ok selected=1 polyline=0
+FORGESHAPE_SKETCH_FINISH profiles=1 chosen=1
+FORGESHAPE_SKETCH_CANCEL undo=0 bodies=1
+FORGESHAPE_SKETCH_BEGIN plane=XY tool=Rectangle
+FORGESHAPE_SKETCH_GESTURE_END tool=Rectangle entities=1 placed=1 snap=1 status=Ok selected=1 polyline=0
+FORGESHAPE_SKETCH_FINISH profiles=1 chosen=1
+FORGESHAPE_SKETCH_CANCEL undo=0 bodies=1
+FORGESHAPE_SKETCH_BEGIN plane=XY tool=Rectangle
+FORGESHAPE_SKETCH_GESTURE_END tool=Rectangle entities=1 placed=1 snap=1 status=Ok selected=1 polyline=0
+FORGESHAPE_SKETCH_FINISH profiles=1 chosen=1
+FORGESHAPE_SKETCH_CANCEL undo=0 bodies=1
+FORGESHAPE_SKETCH_BEGIN plane=XY tool=Rectangle
+FORGESHAPE_SKETCH_GESTURE_END tool=Rectangle entities=1 placed=1 snap=1 status=Ok selected=1 polyline=0
+FORGESHAPE_SKETCH_FINISH profiles=1 chosen=1
+FORGESHAPE_SKETCH_EXTRUDE depth=2.500000 direction=AlongNormal Ok
+FORGESHAPE_SKETCH_COMMIT objectId=2 meshRev=1 vertices=8 indices=36 undo=1 bodies=2
+FORGESHAPE_SKETCH_BEGIN plane=XZ tool=Rectangle
+FORGESHAPE_SKETCH_CANCEL undo=0 bodies=1
+FORGESHAPE_SKETCH_BEGIN plane=XY tool=Rectangle
+FORGESHAPE_SKETCH_GESTURE_END tool=Rectangle entities=1 placed=1 snap=1 status=Ok selected=1 polyline=0
+FORGESHAPE_SKETCH_FINISH profiles=1 chosen=1
+FORGESHAPE_SKETCH_EXTRUDE depth=1.000000 direction=AlongNormal Ok
+FORGESHAPE_SKETCH_COMMIT objectId=3 meshRev=1 vertices=8 indices=36 undo=1 bodies=2
+FORGESHAPE_SKETCH_BEGIN plane=XY tool=Rectangle
+FORGESHAPE_SKETCH_GESTURE_END tool=Polyline entities=0 placed=0 snap=1 status=Ok selected=0 polyline=1
+FORGESHAPE_SKETCH_GESTURE_END tool=Polyline entities=0 placed=0 snap=1 status=Ok selected=0 polyline=1
+FORGESHAPE_SKETCH_GESTURE_END tool=Polyline entities=0 placed=0 snap=1 status=Ok selected=0 polyline=1
+FORGESHAPE_SKETCH_GESTURE_END tool=Polyline entities=1 placed=1 snap=2 status=Ok selected=1 polyline=0
+FORGESHAPE_SKETCH_FINISH_REFUSED:OpenProfile
+FORGESHAPE_SKETCH_COMMIT objectId=10 meshRev=1 vertices=8 indices=36 undo=1 bodies=2
+FORGESHAPE_SKETCH_COMMIT objectId=11 meshRev=1 vertices=64 indices=372 undo=1 bodies=2
+FORGESHAPE_CAD_APPLY:circle meshRev=2 undo=2
+FORGESHAPE_SKETCH_COMMIT objectId=12 meshRev=1 vertices=8 indices=36 undo=1 bodies=2
+FORGESHAPE_CAD_APPLY:extrude meshRev=2 undo=2
+FORGESHAPE_CAD_APPLY:rectangle meshRev=2 undo=1
+FORGESHAPE_SKETCH_COMMIT objectId=13 meshRev=1 vertices=8 indices=36 undo=1 bodies=2
+FORGESHAPE_GIZMO_DRAG_COMMIT:recorded updates=6 solve=resolved undo=2
+FORGESHAPE_CAD_APPLY:extrude meshRev=2 undo=3
+FORGESHAPE_SKETCH_COMMIT objectId=14 meshRev=1 vertices=8 indices=36 undo=1 bodies=2
+FORGESHAPE_CAD_APPLY:rectangle meshRev=2 undo=2
+FORGESHAPE_CAD_APPLY:rectangle meshRev=3 undo=3

@@ -231,12 +231,14 @@ public final class EditorWorkspaceMobileTest {
     }
 
     /**
-     * UIR4A-04. Exactly six creation actions, one per primitive the product
-     * builds, and no fake future one.
+     * UIR4A-04. Exactly the creation actions the product performs — the six
+     * primitives and, since CAD-R0-A1A2, New Sketch — and no fake future one.
      *
-     * <p>The count is asserted as well as the six, because an <i>Add from
+     * <p>The count is asserted as well as the ids, because an <i>Add from
      * file</i> tile drawn disabled would satisfy a per-id check and is precisely
-     * what this stage is not allowed to ship.
+     * what this stage is not allowed to ship. The plane chooser New Sketch
+     * opens is inside the same palette and is NOT on screen until asked for,
+     * so it contributes nothing to the resting count.
      */
     @Test
     public void uir4a04_addPrimitiveOffersTheSixRealPrimitivesAndNothingElse() {
@@ -257,8 +259,13 @@ public final class EditorWorkspaceMobileTest {
                 tiles++;
             }
             assertEquals("all six primitives are offered", PALETTE_IDS.length, tiles);
-            assertEquals("and the palette holds exactly those six and no placeholder",
-                    PALETTE_IDS.length, countTiles(workspace.addPrimitivePalette()));
+            final View newSketch = workspace.findViewById(R.id.add_sketch);
+            assertNotNull("and New Sketch is offered", newSketch);
+            assertTrue(newSketch.isEnabled() && newSketch.isClickable());
+            assertFalse("the plane chooser is not on screen until New Sketch is tapped",
+                    workspace.addPrimitivePalette().showingPlanes());
+            assertEquals("and the palette holds exactly those seven and no placeholder",
+                    PALETTE_IDS.length + 1, countTiles(workspace.addPrimitivePalette()));
             return null;
         });
     }
@@ -739,18 +746,26 @@ public final class EditorWorkspaceMobileTest {
     }
 
     /** How many tappable tiles the palette actually offers. */
+    /**
+     * Every VISIBLE clickable leaf under the palette, at any depth.
+     *
+     * <p>Recursive since CAD-R0-A1A2, because the palette now holds two
+     * sections — the shapes and the plane chooser New Sketch opens — and only
+     * the one on screen offers anything. A hidden section's controls are not
+     * offered and are not counted; a disabled placeholder would still be
+     * visible, still clickable, and still caught.
+     */
     private static int countTiles(ViewGroup palette) {
         int tiles = 0;
         for (int i = 0; i < palette.getChildCount(); i++) {
             final View child = palette.getChildAt(i);
-            if (!(child instanceof ViewGroup)) {
+            if (child.getVisibility() != View.VISIBLE) {
                 continue;
             }
-            final ViewGroup row = (ViewGroup) child;
-            for (int j = 0; j < row.getChildCount(); j++) {
-                if (row.getChildAt(j).isClickable()) {
-                    tiles++;
-                }
+            if (child instanceof ViewGroup && !child.isClickable()) {
+                tiles += countTiles((ViewGroup) child);
+            } else if (child.isClickable()) {
+                tiles++;
             }
         }
         return tiles;
