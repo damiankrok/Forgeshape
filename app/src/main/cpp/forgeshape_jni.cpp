@@ -221,6 +221,14 @@ constexpr jint kActionPointerUp = 6;
 forgeshape::CameraController::Pose g_sketchSavedPose;
 bool g_sketchPoseSaved = false;
 
+// Spatial support-chooser gesture state: a single-finger TAP selects the target
+// under it, a single-finger DRAG orbits, two fingers navigate.
+int32_t g_chooserPointerId = -1;
+float g_chooserDownX = 0.0f;
+float g_chooserDownY = 0.0f;
+bool g_chooserTravelled = false;
+constexpr float kChooserTapSlopPixels = 24.0f;
+
 // Frames the camera EXACTLY along the active sketch's authoring frame -- no
 // pitch-clamp approximation, and correct for a face frame at any orientation
 // (`CAD-A3` B3). Reads the frame the session already installed, so a world-plane
@@ -2208,6 +2216,7 @@ constexpr jint kDeleteUnknownBody = 1;
 constexpr jint kDeleteRefusedLastBody = 2;
 constexpr jint kDeleteRefusedEditInProgress = 3;
 constexpr jint kDeleteRefusedInSculpt = 4;
+constexpr jint kDeleteRefusedHasDependents = 5;
 
 // Removes one body from the project (`UI-OWNER-45`).
 //
@@ -2255,6 +2264,8 @@ Java_com_forgeshape_app_NativeViewport_sceneDeleteBody(JNIEnv*, jclass, jlong ob
             case forgeshape::DeleteBodyStatus::RefusedLastBody: return kDeleteRefusedLastBody;
             case forgeshape::DeleteBodyStatus::RefusedEditInProgress:
                 return kDeleteRefusedEditInProgress;
+            case forgeshape::DeleteBodyStatus::RefusedHasDependents:
+                return kDeleteRefusedHasDependents;
             case forgeshape::DeleteBodyStatus::Ok: break;
         }
         return kDeleteUnknownBody;
@@ -2674,6 +2685,29 @@ Java_com_forgeshape_app_NativeViewport_sketchBegin(JNIEnv*, jclass, jint planeIn
 // ---------------------------------------------------------------------------
 
 namespace {
+// Begins the sketch on the chooser's current selection and frames the camera
+// exactly on it. The caller holds g_stateMutex. Shared by the JNI confirm and
+// the confirm-on-reselect tap. Returns the CadStatus.
+forgeshape::CadStatus confirmChosenSupportLocked() {
+    const forgeshape::ChosenSupport& c = forgeshape::supportChooser().selected();
+    forgeshape::CadStatus status = forgeshape::CadStatus::NotSketching;
+    if (c.kind == forgeshape::ChosenSupport::Kind::WorldPlane) {
+        status = forgeshape::sketchSession().begin(c.plane);
+    } else if (c.kind == forgeshape::ChosenSupport::Kind::Face) {
+        status = forgeshape::sketchSession().beginOnFace(c.worldFrame, c.faceRef);
+    } else {
+        return status;
+    }
+    if (status == forgeshape::CadStatus::Ok) {
+        forgeshape::supportChooser().cancel();
+        forgeshape::gizmoSession().setActive(false);
+        g_selection.resetGesture();
+        g_camera.resetGesture();
+        beginSketchView();
+    }
+    return status;
+}
+
 // A ChosenSupport kind as a JNI code: -1 none, 0/1/2 world plane XY/XZ/YZ, 3 face.
 jint supportKindCode(const forgeshape::ChosenSupport& c) {
     switch (c.kind) {
@@ -2739,21 +2773,7 @@ JNIEXPORT jint JNICALL Java_com_forgeshape_app_NativeViewport_supportChooserConf
     forgeshape::CadStatus status = forgeshape::CadStatus::NotSketching;
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
-        const forgeshape::ChosenSupport& c = forgeshape::supportChooser().selected();
-        if (c.kind == forgeshape::ChosenSupport::Kind::WorldPlane) {
-            status = forgeshape::sketchSession().begin(c.plane);
-        } else if (c.kind == forgeshape::ChosenSupport::Kind::Face) {
-            status = forgeshape::sketchSession().beginOnFace(c.worldFrame, c.faceRef);
-        } else {
-            return cadCode(status);
-        }
-        if (status == forgeshape::CadStatus::Ok) {
-            forgeshape::supportChooser().cancel();
-            forgeshape::gizmoSession().setActive(false);
-            g_selection.resetGesture();
-            g_camera.resetGesture();
-            beginSketchView();
-        }
+        status = confirmChosenSupportLocked();
     }
     if (status == forgeshape::CadStatus::Ok) {
         FS_LOGI("FORGESHAPE_SUPPORT_CHOOSER_CONFIRM ok");
@@ -2772,6 +2792,32 @@ JNIEXPORT jboolean JNICALL Java_com_forgeshape_app_NativeViewport_supportChooser
     JNIEnv*, jclass) {
     std::lock_guard<std::mutex> lock(g_stateMutex);
     return forgeshape::supportChooser().active() ? JNI_TRUE : JNI_FALSE;
+}
+
+// Read-only projection of a world point to screen through the current camera.
+// A verification seam so a test can tap the exact pixel a plane or face target
+// projects to; it mutates nothing.
+JNIEXPORT jboolean JNICALL Java_com_forgeshape_app_NativeViewport_debugProjectWorld(
+    JNIEnv* env, jclass, jdouble x, jdouble y, jdouble z, jfloatArray out) {
+    if (out == nullptr || env->GetArrayLength(out) < 2) {
+        return JNI_FALSE;
+    }
+    float sx = 0.0f;
+    float sy = 0.0f;
+    bool ok = false;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        ok = forgeshape::projectWorldToScreen(
+            g_camera.snapshot(), forgeshape::Vec3{static_cast<float>(x), static_cast<float>(y),
+                                                  static_cast<float>(z)},
+            g_camera.viewportWidth(), g_camera.viewportHeight(), &sx, &sy);
+    }
+    if (!ok) {
+        return JNI_FALSE;
+    }
+    jfloat vals[2] = {sx, sy};
+    env->SetFloatArrayRegion(out, 0, 2, vals);
+    return JNI_TRUE;
 }
 
 // Drops the sketch. Never a project mutation, and gives the view back.
@@ -3193,6 +3239,15 @@ JNIEXPORT jboolean JNICALL
 Java_com_forgeshape_app_NativeViewport_sceneActiveBodyIsCad(JNIEnv*, jclass) {
     std::lock_guard<std::mutex> lock(g_stateMutex);
     return forgeshape::constructionScene().activeBody().isCad() ? JNI_TRUE : JNI_FALSE;
+}
+
+// Whether the active body is a FACE-SUPPORTED CAD body (`CAD-A3`): its placement
+// is derived from a producer and it cannot be moved independently. A
+// verification seam.
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_sceneActiveBodyIsFaceSupportedCad(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    return forgeshape::constructionScene().activeBody().isFaceSupportedCad() ? JNI_TRUE : JNI_FALSE;
 }
 
 // The active CAD Body's authored values, in NativeViewport's CAD_* slots:
@@ -4846,8 +4901,64 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
         // begin) and the product is in Construction, so the two arbitrations
         // below are already out of the picture; only the camera and the
         // selection have to be told.
+        // Spatial support selection (CAD-A3) owns the gesture the same way the
+        // sketch does: a single-finger TAP selects the plane or face under it,
+        // a single-finger DRAG orbits so the user can look around, and two
+        // fingers navigate. It never mutates the project.
+        bool chooserOwned = false;
+        if (forgeshape::supportChooser().active()) {
+            chooserOwned = true;
+            forgeshape::SupportChooser& chooser = forgeshape::supportChooser();
+            if (count > 1) {
+                // Two fingers: navigate, and this is not a tap.
+                g_chooserPointerId = -1;
+                g_chooserTravelled = true;
+                g_camera.onTouch(translated, static_cast<int32_t>(actionPointerId),
+                                 count > 0 ? pointers : nullptr, count);
+            } else if (translated == forgeshape::TouchAction::Down && count == 1) {
+                g_chooserPointerId = pointers[0].id;
+                g_chooserDownX = pointers[0].x;
+                g_chooserDownY = pointers[0].y;
+                g_chooserTravelled = false;
+                g_camera.onTouch(translated, static_cast<int32_t>(actionPointerId), pointers, count);
+            } else if (translated == forgeshape::TouchAction::Move && count == 1) {
+                const float dx = pointers[0].x - g_chooserDownX;
+                const float dy = pointers[0].y - g_chooserDownY;
+                if (dx * dx + dy * dy > kChooserTapSlopPixels * kChooserTapSlopPixels) {
+                    g_chooserTravelled = true;
+                }
+                g_camera.onTouch(translated, static_cast<int32_t>(actionPointerId), pointers, count);
+            } else if (translated == forgeshape::TouchAction::Up) {
+                if (!g_chooserTravelled && g_chooserPointerId >= 0) {
+                    // Tap to aim, tap the SAME target again to commit: the first
+                    // tap selects and highlights, a second tap on the target
+                    // already selected begins the sketch on it. No extra chrome.
+                    const forgeshape::ChosenSupport before = chooser.selected();
+                    const forgeshape::ChosenSupport now =
+                        chooser.select(g_camera.snapshot(), g_chooserDownX, g_chooserDownY,
+                                       viewWidth, viewHeight, forgeshape::constructionScene());
+                    const bool reselected =
+                        now.kind != forgeshape::ChosenSupport::Kind::None
+                        && before.kind == now.kind
+                        && (now.kind == forgeshape::ChosenSupport::Kind::WorldPlane
+                                ? before.plane == now.plane
+                                : forgeshape::sameTopoRef(before.faceRef, now.faceRef));
+                    if (reselected) {
+                        confirmChosenSupportLocked();
+                        sketchLogPending = true;
+                    }
+                }
+                g_chooserPointerId = -1;
+                g_camera.onTouch(translated, static_cast<int32_t>(actionPointerId), pointers, count);
+            } else {
+                g_camera.onTouch(translated, static_cast<int32_t>(actionPointerId),
+                                 count > 0 ? pointers : nullptr, count);
+            }
+            g_selection.resetGesture();
+        }
+
         bool sketchOwned = false;
-        {
+        if (!chooserOwned) {
             forgeshape::SketchSession& sketch = forgeshape::sketchSession();
             if (sketch.active()) {
                 sketchOwned = true;
@@ -5145,7 +5256,7 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
         // The two conditions are separate because they are separate rules: one
         // is Sculpt's brush arbitration, the other is Construction's handle
         // arbitration, and they are mutually exclusive by product mode.
-        if (!grabHandled && !gizmoHandled && !sketchOwned) {
+        if (!grabHandled && !gizmoHandled && !sketchOwned && !chooserOwned) {
             g_camera.onTouch(translated, static_cast<int32_t>(actionPointerId),
                              count > 0 ? pointers : nullptr, count);
 

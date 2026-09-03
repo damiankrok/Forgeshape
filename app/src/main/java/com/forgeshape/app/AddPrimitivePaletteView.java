@@ -46,6 +46,13 @@ final class AddPrimitivePaletteView extends AnchoredSurfaceView {
 
         /** A sketch on the given {@code WORKPLANE_*}. */
         void onNewSketchChosen(int workplane);
+
+        /**
+         * Enter spatial "Choose Sketch Support": pick a world plane OR a planar
+         * CAD face directly in the viewport (`CAD-A3`). The primary path; the
+         * by-name plane list stays as a fallback.
+         */
+        void onNewSketchSpatial();
     }
 
     /** Two rather than three: each tile carries a 26 dp silhouette above its
@@ -153,6 +160,20 @@ final class AddPrimitivePaletteView extends AnchoredSurfaceView {
         planeSection.addView(EditorControlStyles.sectionLabel(context,
                         context.getString(R.string.sketch_plane_prompt)),
                 EditorControlStyles.rowParams(0));
+        // The primary, viewport-first path: pick a plane or a planar CAD face
+        // directly in 3D. The by-name list below it is the fallback.
+        final TextView spatial = EditorControlStyles.listRow(context, R.id.sketch_support_spatial,
+                context.getString(R.string.sketch_support_spatial));
+        spatial.setContentDescription(context.getString(R.string.sketch_support_spatial));
+        spatial.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                listener.onNewSketchSpatial();
+            }
+        });
+        final LinearLayout.LayoutParams spatialParams = EditorControlStyles.rowParams(gap);
+        spatialParams.width = ViewGroup.LayoutParams.MATCH_PARENT;
+        planeSection.addView(spatial, spatialParams);
         for (int plane = 0; plane < PLANE_IDS.length; plane++) {
             final int chosen = plane;
             final TextView option = EditorControlStyles.listRow(context, PLANE_IDS[plane],

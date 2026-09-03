@@ -529,6 +529,12 @@ final class NativeViewport {
     static final int DELETE_REFUSED_IN_SCULPT = 4;
 
     /**
+     * The body is a producer with face-supported CAD dependents (`CAD-A3`):
+     * refused rather than cascaded. Delete the dependents first.
+     */
+    static final int DELETE_REFUSED_HAS_DEPENDENTS = 5;
+
+    /**
      * Removes one body from the project, as exactly one history transaction.
      *
      * <p>Representation-neutral: a Construction Body, an Imported Mesh and
@@ -1665,6 +1671,13 @@ final class NativeViewport {
     /** Whether spatial support selection is active. */
     static native boolean supportChooserActive();
 
+    /**
+     * Projects a world point to a screen pixel through the current camera, into
+     * {@code out[0..1]}. Read-only verification seam so a test can tap the exact
+     * pixel a plane or face target projects to. Returns false if off screen.
+     */
+    static native boolean debugProjectWorld(double x, double y, double z, float[] out);
+
     /** Begins a sketch on a workplane. Returns a CAD_* code. */
     static native int sketchBegin(int workplane);
 
@@ -1733,6 +1746,9 @@ final class NativeViewport {
     static final int REPRESENTATION_CAD = 3;
 
     static native boolean sceneActiveBodyIsCad();
+
+    /** Whether the active body is a face-supported CAD body (`CAD-A3`). */
+    static native boolean sceneActiveBodyIsFaceSupportedCad();
 
     /** Slots of {@link #cadState}. */
     static final int CAD_STATE_SIZE = 8;

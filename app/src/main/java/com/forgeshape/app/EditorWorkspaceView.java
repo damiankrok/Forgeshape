@@ -100,6 +100,9 @@ final class EditorWorkspaceView extends FrameLayout
 
     /** Last active body this chrome refreshed for; see the gesture listener. */
     private long lastKnownActiveBodyId = NativeViewport.sceneActiveBodyId();
+    /** Tracks sketch mode so a sketch STARTED in native (by the spatial
+     *  chooser's confirm tap, not by a Java call) still rebuilds the chrome. */
+    private boolean lastKnownSketching = false;
     private final LinearLayout chromeRoot;
     private final LinearLayout middleRow;
 
@@ -355,7 +358,18 @@ final class EditorWorkspaceView extends FrameLayout
                             // only chrome with something new to say is the
                             // sketch's own precision surface and the status
                             // line. Nothing about the scene moved.
-                            if (isSketching()) {
+                            // A sketch may have STARTED in native since the last
+                            // gesture -- the spatial chooser's confirm tap begins
+                            // one with no Java call -- so a mode transition here
+                            // must rebuild the chrome, not just refresh the
+                            // sketch surface.
+                            final boolean sketchingNow = isSketching();
+                            if (sketchingNow != lastKnownSketching) {
+                                lastKnownSketching = sketchingNow;
+                                onNativeStateChanged();
+                                return;
+                            }
+                            if (sketchingNow) {
                                 onSketchGestureSettled();
                                 return;
                             }
@@ -761,6 +775,15 @@ final class EditorWorkspaceView extends FrameLayout
      * @return whether a surface was dismissed; false means Back is not ours
      */
     boolean dismissTopmostSurface() {
+        // Spatial support selection is not a surface but it is the innermost
+        // thing System Back should leave: cancel it before anything else, with
+        // no project mutation, and put the camera back.
+        if (NativeViewport.supportChooserActive()) {
+            NativeViewport.supportChooserCancel();
+            onNativeStateChanged();
+            showStatus("", R.attr.fsTextSecondary);
+            return true;
+        }
         final AnchoredSurfaceView surface = topmostOpenSurface();
         if (surface == null) {
             return false;
@@ -2243,6 +2266,32 @@ final class EditorWorkspaceView extends FrameLayout
                 context.getString(SKETCH_TOOL_HINTS[tool])), R.attr.fsTextSecondary);
     }
 
+    /**
+     * Enters spatial "Choose Sketch Support" (`CAD-A3`): the three world planes
+     * become touchable targets and, in a CAD project, the planar faces of CAD
+     * bodies too. The user taps a target to highlight it and taps it again to
+     * begin the sketch there; System Back cancels. The primary, viewport-first
+     * path; the by-name plane list stays as the fallback.
+     */
+    @Override
+    public void onNewSketchSpatial() {
+        final Context context = getContext();
+        // Faces are eligible whenever there is a CAD body to sketch on; world
+        // planes are always available. Passing true is safe -- a non-CAD body
+        // simply resolves to no eligible face.
+        final boolean started = NativeViewport.supportChooserBegin(true);
+        setAddPrimitiveOpen(false, null);
+        if (!started) {
+            showStatus(context.getString(R.string.status_sketch_unavailable),
+                    R.attr.fsTextError);
+            return;
+        }
+        dismissPrimarySurfacesExcept(null);
+        finishEditing();
+        onNativeStateChanged();
+        showStatus(context.getString(R.string.status_support_chooser), R.attr.fsTextSecondary);
+    }
+
     /** A sketch gesture ended: the entity list, the selection or a refusal. */
     private void onSketchGestureSettled() {
         sketchEditor.refreshFromNative();
@@ -3439,6 +3488,10 @@ final class EditorWorkspaceView extends FrameLayout
 
     @Override
     public void onNativeStateChanged() {
+        // Keep the sketch-mode tracker current on every chrome rebuild, so the
+        // viewport-settle transition check only fires for a sketch that STARTED
+        // in native (the spatial chooser's confirm tap) without a rebuild.
+        lastKnownSketching = isSketching();
         // THE central re-read, and therefore the central place to notice that
         // the project may have moved. Every chrome-driven mutation — an Apply,
         // a creation, an undo, a mode change, a body selection — ends here, so

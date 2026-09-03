@@ -296,6 +296,9 @@
     <string name="back_to_sketch">Back to Sketch</string>
     <string name="new_sketch">New Sketch</string>
     <string name="sketch_plane_prompt">Sketch on which plane?</string>
+    <string name="sketch_support_spatial">Pick plane or face in 3D</string>
+    <string name="status_support_chooser">Tap a plane or a body face, then tap it again to sketch on it</string>
+    <string name="status_support_selected">Tap again to sketch on the highlighted %1$s</string>
     <string name="workplane_xy">XY</string>
     <string name="workplane_xz">XZ</string>
     <string name="workplane_yz">YZ</string>
@@ -330,6 +333,7 @@
     <string name="cad_profile_circle">Circle profile</string>
     <string name="cad_profile_polygon">Polygon profile — %1$d points. Its points are not numerically editable in this version.</string>
     <string name="status_sketch_started">Sketching on %1$s — %2$s.</string>
+    <string name="status_sketch_unavailable">Finish the current action before starting a sketch.</string>
     <string name="status_sketch_tool">%1$s: %2$s.</string>
     <string name="status_sketch_finished">Profile found — set the depth, then Extrude.</string>
     <string name="status_sketch_finished_choose">%1$d profiles found — choose one, set the depth, then Extrude.</string>

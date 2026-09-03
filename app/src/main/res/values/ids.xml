@@ -187,6 +187,7 @@
     <item name="sketch_plane_xz" type="id" />
     <item name="sketch_plane_yz" type="id" />
     <item name="sketch_plane_back" type="id" />
+    <item name="sketch_support_spatial" type="id" />
 
     <!--
       The presentation-only host for the complete trailing context cluster.
