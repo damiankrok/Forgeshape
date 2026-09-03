@@ -40,6 +40,7 @@
 #include <vector>
 
 #include "forgeshape_construction.h"
+#include "forgeshape_object_id.h"
 #include "forgeshape_workplane.h"
 
 namespace forgeshape {
@@ -162,6 +163,67 @@ constexpr uint32_t kMaxProfileVertices = kMaxSketchEntities;
 using SketchEntityId = uint32_t;
 constexpr SketchEntityId kNoSketchEntity = 0;
 
+// ---------------------------------------------------------------------------
+// Semantic CAD topology (`CAD-A3`, `ARCH-OWNER-13`)
+// ---------------------------------------------------------------------------
+//
+// A sketch may be supported by a world plane, as in `CAD-R0`, OR by a PLANAR
+// FACE of another CAD body. The identity of that face is SEMANTIC — feature
+// lineage, never a render-triangle index — so that it survives save/open, a
+// parent parameter edit, undo/redo and regeneration.
+
+// Which planar face of an extrusion. The two caps are always eligible; a side
+// face is eligible for a rectangle, a closed polyline and a line chain (one
+// planar face per profile edge) but NOT for a circle, whose side is cylindrical.
+enum class CadFaceKind : uint8_t {
+    // The cap lying ON the producing sketch's support plane (offset 0).
+    CapPlane,
+    // The cap at the far end of the extrusion (offset +depth from the plane).
+    CapFar,
+    // One planar side face, identified by the profile edge that produced it.
+    Side,
+};
+
+const char* cadFaceKindName(CadFaceKind kind);
+
+// A compact, stable identity of one face within a producer feature's topology.
+//
+// For a Side, `edgeEntityId` is the sketch entity that owns the profile edge
+// and `edgeLocalIndex` is which of that entity's edges it is (0..3 for a
+// rectangle, 0..n-1 for a polyline, 0 for a chained line). For a cap both are
+// zero. It is NEVER a triangle index.
+struct CadFaceToken {
+    CadFaceKind kind = CadFaceKind::CapPlane;
+    SketchEntityId edgeEntityId = kNoSketchEntity;
+    uint32_t edgeLocalIndex = 0;
+};
+
+bool sameCadFaceToken(const CadFaceToken& a, const CadFaceToken& b);
+// A stable u64 encoding, used to build a lineage signature and to compare.
+uint64_t cadFaceTokenCode(const CadFaceToken& token);
+
+// The v1 CAD feature id every CAD body's single Sketch+Extrude feature has,
+// mirrored from the codec's `kPrimitiveSourceFeatureId` so this header does not
+// depend on the codec.
+constexpr uint32_t kCadFeatureId = 1;
+
+// A persistent reference to a producer feature's face (`ARCH-OWNER-13`).
+//
+// `lineageToken` is a deterministic signature of the producer's face topology
+// at the time the reference was made. A supported parameter edit (a rectangle's
+// size, a circle's radius, a depth, a direction) does not change the set of
+// faces and so keeps the token valid; a change that removed the referenced face
+// would change the signature and the reference fails closed rather than
+// silently retargeting to the nearest face.
+struct TopoRef {
+    ObjectId producerObjectId = kNoObject;
+    uint32_t producerLocalFeatureId = kCadFeatureId;
+    CadFaceToken face{};
+    uint64_t lineageToken = 0;
+};
+
+bool sameTopoRef(const TopoRef& a, const TopoRef& b);
+
 enum class SketchEntityKind : uint8_t {
     Line,
     Polyline,
@@ -239,11 +301,24 @@ CadStatus validateSketchEntity(const SketchEntity& entity);
 // data, copyable, comparable: it is what a history step and a `.forge` record
 // hold for a CAD body, so it carries nothing derived.
 struct CadSketch {
+    // The authoring basis. For a WORLD-plane sketch this is the chosen principal
+    // plane; for a FACE-supported sketch it is always XY -- the sketch authors on
+    // its own canonical local XY and the support FRAME (see forgeshape_cad_face.h)
+    // places that local space onto the producer's face, so `generateCadMesh` is
+    // unchanged either way.
     Workplane plane = Workplane::XY;
     std::vector<SketchEntity> entities;
     // The id the NEXT entity will be given. Stored, because a reopened sketch
     // must not mint an id one of its own entities is wearing.
     SketchEntityId nextEntityId = 1;
+    // CAD-A3: where the sketch is supported. When false the support is the world
+    // plane above and the body has an INDEPENDENT placement (as in CAD-R0). When
+    // true the body is FACE-SUPPORTED: its placement is DERIVED from the producer
+    // named by `faceSupport`, `plane` is the canonical XY, and the body may not
+    // be moved independently. A CAD-R0 body has this false and is byte-identical
+    // in the v1 file.
+    bool hasFaceSupport = false;
+    TopoRef faceSupport{};
 };
 
 bool sameCadSketch(const CadSketch& a, const CadSketch& b);
@@ -293,6 +368,15 @@ struct ClosedProfile {
     // Every entity that takes part, ascending. One for a rectangle, a circle
     // or a polyline; several for a chain of lines.
     std::vector<SketchEntityId> memberEntityIds;
+    // Per polygon EDGE (edge k connects polygon[k] -> polygon[(k+1) % n]): which
+    // sketch entity owns it, and which of that entity's edges it is
+    // (`CAD-A3`). Parallel to `polygon`, same length. For a rectangle, a circle
+    // or a polyline every entry names the anchor with the edge's own index; for
+    // a line chain it names the member Line and index 0. This is what gives an
+    // extruded SIDE face a stable semantic identity that is not a triangle
+    // index.
+    std::vector<SketchEntityId> edgeEntityId;
+    std::vector<uint32_t> edgeLocalIndex;
 };
 
 // Why one candidate loop was NOT a profile, by the entity that anchors it.

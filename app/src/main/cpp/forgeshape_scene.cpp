@@ -2,6 +2,8 @@
 
 #include <algorithm>
 
+#include "forgeshape_cad_face.h"
+
 namespace forgeshape {
 
 ConstructionScene::ConstructionScene() {
@@ -130,6 +132,27 @@ std::unique_ptr<SceneObject> ConstructionScene::makeCadBody(ObjectId id,
     return std::unique_ptr<SceneObject>(new SceneObject(id, state));
 }
 
+CadStatus ConstructionScene::validateCadFaceSupport(const TopoRef& support) const {
+    const SceneObject* producer = findBody(support.producerObjectId);
+    if (producer == nullptr || producer->cadOrNull() == nullptr) {
+        return CadStatus::ProfileNotFound;
+    }
+    // The producer's topology must be the one the reference was made against,
+    // and the named face must resolve now.
+    if (cadTopologySignature(producer->cadOrNull()->state()) != support.lineageToken) {
+        return CadStatus::ProfileNotFound;
+    }
+    CadFace face;
+    const CadStatus why = resolveCadFace(producer->cadOrNull()->state(), support.face, &face);
+    if (why != CadStatus::Ok) {
+        return why;
+    }
+    if (!face.eligible) {
+        return CadStatus::NotCadBody;  // a curved side is not a sketch support
+    }
+    return CadStatus::Ok;
+}
+
 SceneObject* ConstructionScene::addCadBody(CadBodyState state, CadStatus* outWhy) {
     ConstructionMesh scratch;
     const CadStatus why = generateCadMesh(state, &scratch);
@@ -139,10 +162,69 @@ SceneObject* ConstructionScene::addCadBody(CadBodyState state, CadStatus* outWhy
     if (why != CadStatus::Ok) {
         return nullptr;  // refused before an id is minted; the scene is untouched
     }
+    // A face-supported body's producer must exist and its face must resolve
+    // BEFORE an id is minted, so a bad support costs nothing.
+    if (state.sketch.hasFaceSupport) {
+        const CadStatus supportWhy = validateCadFaceSupport(state.sketch.faceSupport);
+        if (supportWhy != CadStatus::Ok) {
+            if (outWhy != nullptr) {
+                *outWhy = supportWhy;
+            }
+            return nullptr;
+        }
+    }
     const ObjectId id = nextObjectId_++;
     bodies_.push_back(std::unique_ptr<SceneObject>(new SceneObject(id, std::move(state))));
     activeBodyId_ = id;
     return bodies_.back().get();
+}
+
+bool ConstructionScene::resolveWorldModel(ObjectId id, Mat4* outModel) const {
+    return resolveWorldModelDepth(id, outModel, 0);
+}
+
+bool ConstructionScene::resolveWorldModelDepth(ObjectId id, Mat4* outModel, int depth) const {
+    // A chain longer than the number of bodies must revisit one -- a cycle. The
+    // bound is what makes a corrupt or malicious dependency graph fail closed
+    // rather than recurse without end (`CAD-A3` G1).
+    if (depth > static_cast<int>(bodies_.size()) + 1) {
+        return false;
+    }
+    const SceneObject* body = findBody(id);
+    if (body == nullptr) {
+        return false;
+    }
+    const TopoRef* support = body->cadFaceSupportOrNull();
+    if (support == nullptr) {
+        // Independent placement: a world-plane CAD body, a Construction Body or
+        // an Imported Mesh. Its authored transform IS its world model.
+        *outModel = body->transform().modelMatrix();
+        return true;
+    }
+    // A face-supported CAD body. Its world model is the producer's world model
+    // composed with the resolved face frame -- computed fresh every snapshot, so
+    // moving, rotating or scaling the producer carries the dependent with it and
+    // no follow-state is stored anywhere.
+    const SceneObject* producer = findBody(support->producerObjectId);
+    if (producer == nullptr || producer->cadOrNull() == nullptr) {
+        return false;  // the producer is gone or is not a CAD body: fail closed
+    }
+    // The lineage check: the producer's face topology must still be the one the
+    // reference was made against, or the reference has gone stale and must not
+    // silently retarget to whatever face is nearest now (`ARCH-OWNER-13`).
+    if (cadTopologySignature(producer->cadOrNull()->state()) != support->lineageToken) {
+        return false;
+    }
+    CadFace face;
+    if (resolveCadFace(producer->cadOrNull()->state(), support->face, &face) != CadStatus::Ok) {
+        return false;
+    }
+    Mat4 producerModel;
+    if (!resolveWorldModelDepth(producer->objectId(), &producerModel, depth + 1)) {
+        return false;
+    }
+    *outModel = mat4Multiply(producerModel, cadFaceFrameMatrix(face));
+    return mat4Finite(*outModel);
 }
 
 SceneSnapshot ConstructionScene::snapshot() const {
@@ -153,18 +235,52 @@ SceneSnapshot ConstructionScene::snapshot() const {
         if (!mesh) {
             continue;  // nothing published for this body yet: not drawable, not pickable
         }
+        Mat4 model;
+        if (!resolveWorldModel(body->objectId(), &model)) {
+            // A face-supported body whose support cannot resolve -- a stale
+            // lineage or a missing producer -- is not drawn at a wrong place; it
+            // is left out until the support resolves again. A well-formed scene
+            // never reaches here: load validates the graph and a supported edit
+            // keeps the lineage.
+            continue;
+        }
+        Mat4 inverseModel;
+        if (!mat4AffineInverse(model, &inverseModel)) {
+            continue;
+        }
         SceneDrawItem item;
         item.objectId = body->objectId();
         item.mesh = std::move(mesh);
-        item.model = body->transform().modelMatrix();
-        item.inverseModel = body->transform().inverseModelMatrix();
-        item.normalModel = body->transform().normalMatrix();
+        item.model = model;
+        item.inverseModel = inverseModel;
+        item.normalModel = mat4NormalMatrix(model);
         // Highlighting is per body. A single global "something is selected"
         // flag would tint every body at once the moment anything was picked.
         item.selected = (body->objectId() == activeBodyId_);
         items.push_back(std::move(item));
     }
     return items;
+}
+
+std::vector<ObjectId> ConstructionScene::cadDependentsOf(ObjectId id) const {
+    std::vector<ObjectId> out;
+    for (const auto& body : bodies_) {
+        const TopoRef* support = body->cadFaceSupportOrNull();
+        if (support != nullptr && support->producerObjectId == id) {
+            out.push_back(body->objectId());
+        }
+    }
+    return out;
+}
+
+bool ConstructionScene::hasCadDependents(ObjectId id) const {
+    for (const auto& body : bodies_) {
+        const TopoRef* support = body->cadFaceSupportOrNull();
+        if (support != nullptr && support->producerObjectId == id) {
+            return true;
+        }
+    }
+    return false;
 }
 
 ConstructionScene& constructionScene() {

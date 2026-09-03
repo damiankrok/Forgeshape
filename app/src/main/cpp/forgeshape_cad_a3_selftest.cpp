@@ -1,0 +1,371 @@
+#include "forgeshape_cad_a3_selftest.h"
+
+#include <chrono>
+#include <cmath>
+#include <cstdio>
+#include <string>
+#include <vector>
+
+#include "forgeshape_cad_body.h"
+#include "forgeshape_cad_face.h"
+#include "forgeshape_history.h"
+#include "forgeshape_math.h"
+#include "forgeshape_scene.h"
+#include "forgeshape_sketch.h"
+
+namespace forgeshape {
+namespace {
+
+struct Recorder {
+    CadA3SelfTestResult* out;
+    int max;
+    int n = 0;
+    void check(const char* name, bool ok) {
+        if (n < max) {
+            out[n].name = name;
+            out[n].passed = ok;
+            ++n;
+        }
+    }
+};
+
+std::string g_performance = "not measured";
+
+bool nearf(float a, float b, float tol = 1e-4f) { return std::fabs(a - b) <= tol; }
+bool near3(const Vec3& a, const Vec3& b, float tol = 1e-4f) {
+    return nearf(a.x, b.x, tol) && nearf(a.y, b.y, tol) && nearf(a.z, b.z, tol);
+}
+
+CadBodyState rectBody(Workplane plane, double w, double h, double depth,
+                      ExtrudeDirection dir = ExtrudeDirection::AlongNormal) {
+    CadBodyState state;
+    state.sketch.plane = plane;
+    SketchRectangle r;
+    r.center = SketchPoint{0.0, 0.0};
+    r.width = w;
+    r.height = h;
+    addSketchEntity(&state.sketch, r);
+    state.extrude.profileEntityId = 1;
+    state.extrude.depth = depth;
+    state.extrude.direction = dir;
+    return state;
+}
+
+CadBodyState circleBody(Workplane plane, double radius, double depth) {
+    CadBodyState state;
+    state.sketch.plane = plane;
+    SketchCircle c;
+    c.center = SketchPoint{0.0, 0.0};
+    c.radius = radius;
+    addSketchEntity(&state.sketch, c);
+    state.extrude.profileEntityId = 1;
+    state.extrude.depth = depth;
+    state.extrude.direction = ExtrudeDirection::AlongNormal;
+    return state;
+}
+
+// A face-supported child rectangle on the given producer face.
+CadBodyState childOn(const CadBodyState& producer, ObjectId producerId, const CadFaceToken& token,
+                     double w, double h, double depth) {
+    CadBodyState state = rectBody(Workplane::XY, w, h, depth);
+    state.sketch.hasFaceSupport = true;
+    state.sketch.faceSupport.producerObjectId = producerId;
+    state.sketch.faceSupport.producerLocalFeatureId = kCadFeatureId;
+    state.sketch.faceSupport.face = token;
+    state.sketch.faceSupport.lineageToken = cadTopologySignature(producer);
+    return state;
+}
+
+CadFaceToken tokenFor(const CadBodyState& state, CadFaceKind kind, uint32_t sideIndex = 0) {
+    std::vector<CadFace> faces;
+    enumerateCadFaces(state, &faces);
+    for (const CadFace& f : faces) {
+        if (f.token.kind == kind && (kind != CadFaceKind::Side || f.token.edgeLocalIndex == sideIndex)) {
+            return f.token;
+        }
+    }
+    return CadFaceToken{};
+}
+
+double microseconds(std::chrono::steady_clock::time_point t) {
+    return std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - t).count();
+}
+
+}  // namespace
+
+const char* cadA3PerformanceReport() { return g_performance.c_str(); }
+
+int runCadA3SelfTests(CadA3SelfTestResult* out, int maxOut) {
+    Recorder r{out, maxOut};
+
+    // -----------------------------------------------------------------------
+    // CADA3-16..23: semantic faces, frames, ranges, lineage
+    // -----------------------------------------------------------------------
+    {
+        const CadBodyState box = rectBody(Workplane::XY, 2.0, 1.0, 3.0);
+        std::vector<CadFace> faces;
+        const CadStatus why = enumerateCadFaces(box, &faces);
+        // Two caps + four sides.
+        r.check("CADA3_16_a_rectangle_extrusion_has_two_caps_and_four_sides",
+                why == CadStatus::Ok && faces.size() == 6
+                        && faces[0].token.kind == CadFaceKind::CapPlane
+                        && faces[1].token.kind == CadFaceKind::CapFar);
+        // The plane cap sits on XY (z=0), outward -Z; the far cap at z=+3, outward +Z.
+        r.check("CADA3_16_CapPlane_frame_on_the_sketch_plane_outward_away_from_solid",
+                near3(faces[0].origin, Vec3{0, 0, 0}) && near3(faces[0].n, Vec3{0, 0, -1}));
+        r.check("CADA3_17_CapFar_frame_at_the_far_end_outward",
+                near3(faces[1].origin, Vec3{0, 0, 3}) && near3(faces[1].n, Vec3{0, 0, 1}));
+        // Every face frame is right-handed and orthonormal.
+        bool framesOk = true;
+        for (const CadFace& f : faces) {
+            framesOk &= near3(vec3Cross(f.u, f.v), f.n) && nearf(vec3Dot(f.u, f.v), 0.0f)
+                        && nearf(vec3Dot(f.u, f.u), 1.0f) && nearf(vec3Dot(f.n, f.n), 1.0f);
+        }
+        r.check("CADA3_22_23_every_face_frame_is_right_handed_and_orthonormal", framesOk);
+        // The four sides carry the rectangle's edge tokens 0..3, all eligible.
+        bool sidesOk = faces.size() == 6;
+        for (int i = 2; i < 6 && sidesOk; ++i) {
+            sidesOk &= faces[i].token.kind == CadFaceKind::Side
+                       && faces[i].token.edgeEntityId == 1
+                       && faces[i].token.edgeLocalIndex == static_cast<uint32_t>(i - 2)
+                       && faces[i].eligible;
+        }
+        r.check("CADA3_18_rectangle_sides_have_stable_edge_tokens_0_to_3", sidesOk);
+        // A side outward normal points away from the box centre.
+        const CadFace side0 = faces[2];
+        r.check("CADA3_18_side_outward_normal_points_out",
+                vec3Dot(side0.n, vec3Sub(side0.origin, Vec3{0, 0, 1.5f})) > 0.0f);
+
+        // Triangle ranges tile the mesh index count and tag every face.
+        ConstructionMesh mesh;
+        generateCadMesh(box, &mesh);
+        std::vector<CadFaceRange> ranges;
+        r.check("CADA3_20_face_ranges_tile_the_generated_index_buffer",
+                cadFaceRanges(box, &ranges) == CadStatus::Ok && [&] {
+                    uint32_t covered = 0;
+                    uint32_t cursor = 0;
+                    bool contiguous = true;
+                    for (const CadFaceRange& rg : ranges) {
+                        contiguous &= rg.firstIndex == cursor;
+                        cursor += rg.indexCount;
+                        covered += rg.indexCount;
+                    }
+                    return contiguous && covered == mesh.indices.size();
+                }());
+
+        // Lineage is stable across a size and a depth edit, and changes when the
+        // profile identity changes.
+        const uint64_t sig = cadTopologySignature(box);
+        r.check("CADA3_31_32_lineage_stable_across_size_and_depth_edits",
+                sig != 0 && cadTopologySignature(rectBody(Workplane::XY, 5.0, 0.5, 3.0)) == sig
+                        && cadTopologySignature(rectBody(Workplane::XY, 2.0, 1.0, 9.0)) == sig
+                        && cadTopologySignature(rectBody(Workplane::XY, 2.0, 1.0, 3.0,
+                                                         ExtrudeDirection::AgainstNormal)) == sig);
+        r.check("CADA3_31_lineage_changes_when_the_profile_kind_changes",
+                cadTopologySignature(circleBody(Workplane::XY, 1.0, 3.0)) != sig);
+    }
+
+    // -----------------------------------------------------------------------
+    // CADA3-19: a circle's cap is eligible, its side is not
+    // -----------------------------------------------------------------------
+    {
+        const CadBodyState cyl = circleBody(Workplane::XY, 1.0, 2.0);
+        std::vector<CadFace> faces;
+        enumerateCadFaces(cyl, &faces);
+        bool capsEligible = faces.size() >= 2 && faces[0].eligible && faces[1].eligible;
+        bool sidesIneligible = true;
+        int sideCount = 0;
+        for (const CadFace& f : faces) {
+            if (f.token.kind == CadFaceKind::Side) {
+                ++sideCount;
+                sidesIneligible &= !f.eligible;
+            }
+        }
+        r.check("CADA3_19_circle_caps_eligible_cylindrical_side_not",
+                capsEligible && sidesIneligible && sideCount == static_cast<int>(kSketchCircleSegments));
+        std::vector<CadFaceRange> ranges;
+        cadFaceRanges(cyl, &ranges);
+        bool rangeSidesIneligible = true;
+        for (const CadFaceRange& rg : ranges) {
+            if (rg.token.kind == CadFaceKind::Side) rangeSidesIneligible &= !rg.eligible;
+        }
+        r.check("CADA3_19_circle_side_ranges_report_ineligible", rangeSidesIneligible);
+    }
+
+    // -----------------------------------------------------------------------
+    // CADA3-16/17/28/33: scene dependency resolution and parent transform
+    // -----------------------------------------------------------------------
+    {
+        ConstructionScene scene;
+        // The startup body is a Box; ignore it. Add a world-plane CAD body A.
+        SceneObject* a = scene.addCadBody(rectBody(Workplane::XY, 2.0, 2.0, 1.0));
+        const ObjectId aId = a->objectId();
+        publishSceneObject(*a);
+
+        // A child B on A's far cap (z = +1).
+        const CadFaceToken capFar = tokenFor(a->cadOrNull()->state(), CadFaceKind::CapFar);
+        CadStatus why = CadStatus::Ok;
+        SceneObject* b = scene.addCadBody(
+            childOn(a->cadOrNull()->state(), aId, capFar, 1.0, 1.0, 0.5), &why);
+        r.check("CADA3_28_a_face_supported_child_is_created",
+                b != nullptr && why == CadStatus::Ok && b->isFaceSupportedCad());
+        const ObjectId bId = b != nullptr ? b->objectId() : kNoObject;
+        if (b != nullptr) publishSceneObject(*b);
+
+        // B's resolved world model places its local origin on A's far cap: at
+        // (0,0,1) with the frame's normal +Z.
+        Mat4 bModel;
+        r.check("CADA3_16_child_resolves_onto_the_producer_cap",
+                scene.resolveWorldModel(bId, &bModel)
+                        && near3(mat4TransformPoint(bModel, Vec3{0, 0, 0}), Vec3{0, 0, 1}));
+
+        // Move A: B follows, with no state stored on B.
+        TransformValues moved;
+        moved.positionX = 5.0;
+        moved.positionY = -2.0;
+        a->transform().setValues(moved);
+        r.check("CADA3_33_moving_the_producer_carries_the_dependent",
+                scene.resolveWorldModel(bId, &bModel)
+                        && near3(mat4TransformPoint(bModel, Vec3{0, 0, 0}), Vec3{5, -2, 1}));
+
+        // Rotate A 90 deg about Z: B's cap origin rotates with it.
+        TransformValues rot;
+        rot.rotationZ = 90.0;
+        a->transform().setValues(rot);
+        Vec3 origin = scene.resolveWorldModel(bId, &bModel)
+                          ? mat4TransformPoint(bModel, Vec3{0, 0, 0})
+                          : Vec3{9, 9, 9};
+        r.check("CADA3_33_rotating_the_producer_carries_the_dependent",
+                near3(origin, Vec3{0, 0, 1}, 1e-3f));  // the cap centre is on the Z axis
+
+        a->transform().setValues(TransformValues{});  // reset
+
+        // Dependents and Delete refusal.
+        r.check("CADA3_38_producer_reports_its_dependents",
+                scene.hasCadDependents(aId) && scene.cadDependentsOf(aId).size() == 1
+                        && scene.cadDependentsOf(aId)[0] == bId
+                        && !scene.hasCadDependents(bId));
+
+        // A size edit on A keeps B's lineage valid (B still resolves).
+        bool changed = false;
+        applyCadRectangle(*a->cadOrNull(), 4.0, 4.0, &changed);
+        r.check("CADA3_31_parent_size_edit_keeps_the_dependent_resolving",
+                changed && scene.resolveWorldModel(bId, &bModel));
+
+        // A depth edit moves A's far cap; a cap-supported child follows.
+        applyCadExtrude(*a->cadOrNull(), 3.0, ExtrudeDirection::AlongNormal, &changed);
+        r.check("CADA3_32_parent_depth_edit_moves_the_cap_supported_child",
+                scene.resolveWorldModel(bId, &bModel)
+                        && near3(mat4TransformPoint(bModel, Vec3{0, 0, 0}), Vec3{0, 0, 3}));
+    }
+
+    // -----------------------------------------------------------------------
+    // CADA3-18/31: a side-supported child follows a width edit
+    // -----------------------------------------------------------------------
+    {
+        ConstructionScene scene;
+        SceneObject* a = scene.addCadBody(rectBody(Workplane::XY, 2.0, 2.0, 1.0));
+        publishSceneObject(*a);
+        // Side edge 0 of the rectangle: from (-1,-1) to (1,-1), outward -Y at y=-1.
+        const CadFaceToken side0 = tokenFor(a->cadOrNull()->state(), CadFaceKind::Side, 0);
+        CadStatus why = CadStatus::Ok;
+        SceneObject* b = scene.addCadBody(
+            childOn(a->cadOrNull()->state(), a->objectId(), side0, 0.5, 0.5, 0.25), &why);
+        r.check("CADA3_18_a_side_supported_child_is_created", b != nullptr && why == CadStatus::Ok);
+        Mat4 bModel;
+        Vec3 before = scene.resolveWorldModel(b->objectId(), &bModel)
+                          ? mat4TransformPoint(bModel, Vec3{0, 0, 0})
+                          : Vec3{};
+        // The side-0 face origin sits at the middle of that face: y = -1, z = 0.5.
+        r.check("CADA3_23_side_frame_origin_on_the_face", nearf(before.y, -1.0f) && nearf(before.z, 0.5f));
+        // Grow the rectangle's height: the y=-1 face moves to y=-2. The child follows.
+        bool changed = false;
+        applyCadRectangle(*a->cadOrNull(), 2.0, 4.0, &changed);
+        Vec3 after = scene.resolveWorldModel(b->objectId(), &bModel)
+                         ? mat4TransformPoint(bModel, Vec3{0, 0, 0})
+                         : Vec3{};
+        r.check("CADA3_31_side_supported_child_follows_a_height_edit",
+                changed && nearf(after.y, -2.0f) && nearf(after.z, 0.5f));
+    }
+
+    // -----------------------------------------------------------------------
+    // CADA3-36/37: bad face ref and cycle fail closed
+    // -----------------------------------------------------------------------
+    {
+        ConstructionScene scene;
+        SceneObject* a = scene.addCadBody(rectBody(Workplane::XY, 2.0, 2.0, 1.0));
+        publishSceneObject(*a);
+        // A token that names no face of A (a side index past the rectangle).
+        CadFaceToken bad{CadFaceKind::Side, 1, 99};
+        CadStatus why = CadStatus::Ok;
+        SceneObject* b = scene.addCadBody(
+            childOn(a->cadOrNull()->state(), a->objectId(), bad, 1.0, 1.0, 0.5), &why);
+        r.check("CADA3_37_a_bad_face_ref_is_refused_no_body_minted",
+                b == nullptr && why == CadStatus::ProfileNotFound);
+
+        // A ref to a producer whose lineage no longer matches.
+        const CadFaceToken cap = tokenFor(a->cadOrNull()->state(), CadFaceKind::CapFar);
+        CadBodyState stale = childOn(a->cadOrNull()->state(), a->objectId(), cap, 1.0, 1.0, 0.5);
+        stale.sketch.faceSupport.lineageToken ^= 0x1234u;  // corrupt the token
+        SceneObject* c = scene.addCadBody(stale, &why);
+        r.check("CADA3_37_a_stale_lineage_ref_is_refused",
+                c == nullptr && why == CadStatus::ProfileNotFound);
+
+        // Circle side (ineligible) refused.
+        SceneObject* cyl = scene.addCadBody(circleBody(Workplane::XY, 1.0, 1.0));
+        publishSceneObject(*cyl);
+        CadFaceToken cylSide{CadFaceKind::Side, cyl->cadOrNull()->sketch().entities[0].id(), 0};
+        SceneObject* d = scene.addCadBody(
+            childOn(cyl->cadOrNull()->state(), cyl->objectId(), cylSide, 1.0, 1.0, 0.5), &why);
+        r.check("CADA3_19_a_curved_side_is_not_a_valid_support",
+                d == nullptr && why == CadStatus::NotCadBody);
+    }
+
+    // -----------------------------------------------------------------------
+    // CADA3-35: A -> B -> C chain resolves; performance
+    // -----------------------------------------------------------------------
+    {
+        struct Case {
+            const char* name;
+            int len;
+        };
+        Case cases[3] = {{"chain1", 1}, {"chain8", 8}, {"chain32", 32}};
+        std::string report;
+        char buf[256];
+        bool chainOk = true;
+        for (const Case& c : cases) {
+            ConstructionScene scene;
+            SceneObject* prev = scene.addCadBody(rectBody(Workplane::XY, 4.0, 4.0, 1.0));
+            publishSceneObject(*prev);
+            ObjectId lastId = prev->objectId();
+            for (int i = 0; i < c.len; ++i) {
+                const CadFaceToken cap = tokenFor(prev->cadOrNull()->state(), CadFaceKind::CapFar);
+                CadStatus why = CadStatus::Ok;
+                SceneObject* next = scene.addCadBody(
+                    childOn(prev->cadOrNull()->state(), lastId, cap, 1.0, 1.0, 1.0), &why);
+                chainOk &= next != nullptr;
+                if (next == nullptr) break;
+                publishSceneObject(*next);
+                prev = next;
+                lastId = next->objectId();
+            }
+            Mat4 model;
+            const auto t = std::chrono::steady_clock::now();
+            const bool resolved = scene.resolveWorldModel(lastId, &model);
+            const double us = microseconds(t);
+            chainOk &= resolved;
+            // A is at z 0..1; each child sits on the previous far cap, so the
+            // last body's local origin is at world z = chain length.
+            chainOk &= nearf(mat4TransformPoint(model, Vec3{0, 0, 0}).z,
+                             static_cast<float>(c.len), 1e-2f);
+            std::snprintf(buf, sizeof(buf), "%s resolveUs=%.1f depth=%d; ", c.name, us, c.len);
+            report += buf;
+        }
+        g_performance = report;
+        r.check("CADA3_35_dependency_chain_resolves_deterministically", chainOk);
+    }
+
+    return r.n;
+}
+
+}  // namespace forgeshape

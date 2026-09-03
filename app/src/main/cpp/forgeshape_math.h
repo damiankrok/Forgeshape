@@ -130,6 +130,82 @@ inline Mat4 mat4Translation(const Vec3& t) {
     return r;
 }
 
+// A column-major affine matrix from three basis directions and a translation:
+// the columns are `x`, `y`, `z` and the last column is `origin`. When the three
+// are an orthonormal right-handed frame this maps a point `(u, v, n)` in that
+// frame to `origin + u*x + v*y + n*z` in the parent space — which is exactly how
+// a CAD face support places a child body's local space onto a producer's face
+// (`CAD-A3`). No orthonormality is assumed here; the caller guarantees it.
+inline Mat4 mat4FromBasis(const Vec3& x, const Vec3& y, const Vec3& z, const Vec3& origin) {
+    Mat4 r = mat4Identity();
+    r.m[0] = x.x;  r.m[4] = y.x;  r.m[8]  = z.x;  r.m[12] = origin.x;
+    r.m[1] = x.y;  r.m[5] = y.y;  r.m[9]  = z.y;  r.m[13] = origin.y;
+    r.m[2] = x.z;  r.m[6] = y.z;  r.m[10] = z.z;  r.m[14] = origin.z;
+    return r;
+}
+
+// The inverse of an AFFINE matrix — one whose bottom row is (0,0,0,1), which is
+// every model matrix ForgeShape produces. It inverts the upper-left 3x3 by
+// cofactors and carries the translation through, so it works for a rotation, a
+// non-uniform scale and their composition (a `producerModel * faceFrame` a CAD
+// dependent needs), without the cost or the failure modes of a general 4x4
+// inverse. Returns false, leaving `out` untouched, when the 3x3 is singular.
+inline bool mat4AffineInverse(const Mat4& m, Mat4* out) {
+    const float a = m.m[0], b = m.m[4], c = m.m[8];
+    const float d = m.m[1], e = m.m[5], f = m.m[9];
+    const float g = m.m[2], h = m.m[6], i = m.m[10];
+    const float A = e * i - f * h;
+    const float B = -(d * i - f * g);
+    const float C = d * h - e * g;
+    const float det = a * A + b * B + c * C;
+    if (!(det != 0.0f) || !std::isfinite(det)) {
+        return false;
+    }
+    const float invDet = 1.0f / det;
+    // inv3 = adjugate / det, laid out column-major.
+    const float i00 = A * invDet;
+    const float i01 = -(b * i - c * h) * invDet;
+    const float i02 = (b * f - c * e) * invDet;
+    const float i10 = B * invDet;
+    const float i11 = (a * i - c * g) * invDet;
+    const float i12 = -(a * f - c * d) * invDet;
+    const float i20 = C * invDet;
+    const float i21 = -(a * h - b * g) * invDet;
+    const float i22 = (a * e - b * d) * invDet;
+    const float tx = m.m[12], ty = m.m[13], tz = m.m[14];
+    Mat4 r = mat4Identity();
+    r.m[0] = i00; r.m[4] = i01; r.m[8]  = i02;
+    r.m[1] = i10; r.m[5] = i11; r.m[9]  = i12;
+    r.m[2] = i20; r.m[6] = i21; r.m[10] = i22;
+    // The inverse translation is -inv3 * t.
+    r.m[12] = -(i00 * tx + i01 * ty + i02 * tz);
+    r.m[13] = -(i10 * tx + i11 * ty + i12 * tz);
+    r.m[14] = -(i20 * tx + i21 * ty + i22 * tz);
+    if (!mat4Finite(r)) {
+        return false;
+    }
+    *out = r;
+    return true;
+}
+
+// The matrix a NORMAL is carried by under an affine model: the inverse transpose
+// of the upper-left 3x3, embedded in a 4x4 with no translation. Equal to the
+// rotation for a rigid model, and the correct shear-free normal transform for a
+// non-uniform scale. Falls back to the model itself when the model is singular,
+// which cannot happen for a valid placement.
+inline Mat4 mat4NormalMatrix(const Mat4& model) {
+    Mat4 inv;
+    if (!mat4AffineInverse(model, &inv)) {
+        return model;
+    }
+    Mat4 r = mat4Identity();
+    // Transpose of the upper-left 3x3 of `inv`, translation cleared.
+    r.m[0] = inv.m[0]; r.m[4] = inv.m[1]; r.m[8]  = inv.m[2];
+    r.m[1] = inv.m[4]; r.m[5] = inv.m[5]; r.m[9]  = inv.m[6];
+    r.m[2] = inv.m[8]; r.m[6] = inv.m[9]; r.m[10] = inv.m[10];
+    return r;
+}
+
 // Transforms a POSITION (implicit w = 1), so translation applies.
 inline Vec3 mat4TransformPoint(const Mat4& m, const Vec3& p) {
     return Vec3{

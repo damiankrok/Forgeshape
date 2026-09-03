@@ -125,6 +125,16 @@ public:
     CadBody* cadOrNull() { return cad_.get(); }
     const CadBody* cadOrNull() const { return cad_.get(); }
 
+    // The face support of a FACE-SUPPORTED CAD body (`CAD-A3`), or nullptr for
+    // every other body -- including a world-plane CAD body, whose placement is
+    // its own. A face-supported body's world placement is DERIVED from the
+    // producer this names, so `transform()` is not its placement and the gizmo
+    // and the exact-value editors refuse it.
+    const TopoRef* cadFaceSupportOrNull() const {
+        return (cad_ && cad_->sketch().hasFaceSupport) ? &cad_->sketch().faceSupport : nullptr;
+    }
+    bool isFaceSupportedCad() const { return cadFaceSupportOrNull() != nullptr; }
+
     // The Construction Source, or nullptr for an Imported Mesh.
     //
     // Deliberately a POINTER rather than a reference: before `IMPORT-01A` every
@@ -279,8 +289,30 @@ public:
     SceneObject& activeBody();
     const SceneObject& activeBody() const;
 
-    // Every body that currently has something published, in scene order.
+    // Every body that currently has something published, in scene order. Each
+    // item's model is the body's RESOLVED world model: its own placement for an
+    // independent body, and the producer's world model composed with the
+    // resolved face frame for a face-supported CAD body (`CAD-A3`). A
+    // face-supported body whose support cannot resolve is left out.
     SceneSnapshot snapshot() const;
+
+    // The world model matrix a body draws and picks at, resolving a face
+    // support against its producer chain. Returns false -- writing nothing --
+    // for an unknown body, a broken or stale dependency, or a cycle. Bounded by
+    // the body count, so a corrupt graph fails closed rather than recursing.
+    bool resolveWorldModel(ObjectId id, Mat4* outModel) const;
+
+    // The CAD bodies whose face support names `id` as their producer, and
+    // whether there are any. Used by Delete (a producer with dependents is
+    // refused) and by the dependency graph.
+    std::vector<ObjectId> cadDependentsOf(ObjectId id) const;
+    bool hasCadDependents(ObjectId id) const;
+
+    // Whether a face support resolves against the scene right now: the producer
+    // exists and is a CAD body, its topology signature still matches the
+    // reference's lineage token, and the named face resolves and is eligible.
+    // `Ok`, or the reason it does not.
+    CadStatus validateCadFaceSupport(const TopoRef& support) const;
 
     // -----------------------------------------------------------------------
     // History support: the smallest scene mutations an undo needs
@@ -338,6 +370,10 @@ public:
     size_t indexOfBody(ObjectId id) const;
 
 private:
+    // The recursive worker behind resolveWorldModel, carrying the recursion
+    // depth so a dependency cycle is bounded rather than a stack overflow.
+    bool resolveWorldModelDepth(ObjectId id, Mat4* outModel, int depth) const;
+
     // unique_ptr rather than by value: SceneObject holds a mutex through
     // MeshStore and must not move when the vector grows.
     std::vector<std::unique_ptr<SceneObject>> bodies_;

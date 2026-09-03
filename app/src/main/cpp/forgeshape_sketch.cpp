@@ -273,12 +273,48 @@ CadStatus validateSketchEntity(const SketchEntity& entity) {
 }
 
 // ---------------------------------------------------------------------------
+// Semantic topology (`CAD-A3`)
+// ---------------------------------------------------------------------------
+
+const char* cadFaceKindName(CadFaceKind kind) {
+    switch (kind) {
+        case CadFaceKind::CapPlane: return "CapPlane";
+        case CadFaceKind::CapFar: return "CapFar";
+        case CadFaceKind::Side: return "Side";
+    }
+    return "unknown";
+}
+
+uint64_t cadFaceTokenCode(const CadFaceToken& token) {
+    // kind in the high byte, entity id in the middle, local index in the low
+    // bits: a stable, order-independent code that two equal tokens share and
+    // two different ones do not, for the lineage signature and for comparison.
+    return (static_cast<uint64_t>(token.kind) << 56)
+           | (static_cast<uint64_t>(token.edgeEntityId) << 16)
+           | static_cast<uint64_t>(token.edgeLocalIndex & 0xFFFFu);
+}
+
+bool sameCadFaceToken(const CadFaceToken& a, const CadFaceToken& b) {
+    return cadFaceTokenCode(a) == cadFaceTokenCode(b);
+}
+
+bool sameTopoRef(const TopoRef& a, const TopoRef& b) {
+    return a.producerObjectId == b.producerObjectId
+           && a.producerLocalFeatureId == b.producerLocalFeatureId
+           && sameCadFaceToken(a.face, b.face) && a.lineageToken == b.lineageToken;
+}
+
+// ---------------------------------------------------------------------------
 // The sketch
 // ---------------------------------------------------------------------------
 
 bool sameCadSketch(const CadSketch& a, const CadSketch& b) {
     if (a.plane != b.plane || a.nextEntityId != b.nextEntityId
-        || a.entities.size() != b.entities.size()) {
+        || a.entities.size() != b.entities.size()
+        || a.hasFaceSupport != b.hasFaceSupport) {
+        return false;
+    }
+    if (a.hasFaceSupport && !sameTopoRef(a.faceSupport, b.faceSupport)) {
         return false;
     }
     for (size_t i = 0; i < a.entities.size(); ++i) {
@@ -292,6 +328,17 @@ bool sameCadSketch(const CadSketch& a, const CadSketch& b) {
 CadStatus validateCadSketch(const CadSketch& sketch) {
     if (workplaneIndex(sketch.plane) < 0 || workplaneIndex(sketch.plane) >= kWorkplaneCount) {
         return CadStatus::InvalidWorkplane;
+    }
+    // A face-supported sketch authors on the canonical XY in its own local
+    // space; the support frame does the placing. Anything else would be two
+    // answers to what the sketch's basis is. The TopoRef's own resolution
+    // against a producer is checked where a scene exists, not here.
+    if (sketch.hasFaceSupport) {
+        if (sketch.plane != Workplane::XY
+            || sketch.faceSupport.producerObjectId == kNoObject
+            || sketch.faceSupport.producerLocalFeatureId != kCadFeatureId) {
+            return CadStatus::InvalidWorkplane;
+        }
     }
     if (sketch.entities.size() > kMaxSketchEntities) {
         return CadStatus::TooManyEntities;
@@ -430,7 +477,15 @@ namespace {
 
 // The rules every candidate loop is held to. Normalizes the orientation to
 // counter-clockwise on success; refuses, writing nothing, otherwise.
-CadStatus validateLoop(std::vector<SketchPoint>* polygon, double* outArea) {
+//
+// `edgeEntityId`/`edgeLocalIndex`, when given, are the per-edge identity
+// parallel to `polygon` (edge k connects polygon[k] -> polygon[k+1]). When the
+// polygon is reversed to make it counter-clockwise they are transformed to
+// stay aligned: the geometric edge is unchanged, so a side face's semantic
+// identity does not flip with a winding correction.
+CadStatus validateLoop(std::vector<SketchPoint>* polygon, double* outArea,
+                       std::vector<SketchEntityId>* edgeEntityId = nullptr,
+                       std::vector<uint32_t>* edgeLocalIndex = nullptr) {
     const size_t n = polygon->size();
     if (n < 3) {
         return CadStatus::TooFewVertices;
@@ -465,6 +520,26 @@ CadStatus validateLoop(std::vector<SketchPoint>* polygon, double* outArea) {
     }
     if (twice < 0.0) {
         std::reverse(polygon->begin(), polygon->end());
+        // Reversing [p0..p_{n-1}] to [p_{n-1}..p0] makes new edge j the same
+        // geometric edge as old edge (n-2-j) mod n. Rebuild the identity arrays
+        // by that map so a side face keeps its token whichever way the profile
+        // was drawn.
+        const auto rebuild = [n](std::vector<SketchEntityId>* ids) {
+            if (ids == nullptr || ids->size() != n) return;
+            std::vector<SketchEntityId> out(n);
+            for (size_t j = 0; j < n; ++j) {
+                out[j] = (*ids)[(n - 2 - j + n) % n];
+            }
+            *ids = std::move(out);
+        };
+        rebuild(edgeEntityId);
+        if (edgeLocalIndex != nullptr && edgeLocalIndex->size() == n) {
+            std::vector<uint32_t> out(n);
+            for (size_t j = 0; j < n; ++j) {
+                out[j] = (*edgeLocalIndex)[(n - 2 - j + n) % n];
+            }
+            *edgeLocalIndex = std::move(out);
+        }
     }
     *outArea = std::fabs(twice) * 0.5;
     return CadStatus::Ok;
@@ -475,6 +550,10 @@ struct LoopCandidate {
     std::vector<SketchPoint> polygon;
     bool fromCircle = false;
     std::vector<SketchEntityId> members;
+    // Parallel to `polygon`: which sketch entity and which of its edges owns
+    // polygon edge k. See ClosedProfile.
+    std::vector<SketchEntityId> edgeEntityId;
+    std::vector<uint32_t> edgeLocalIndex;
 };
 
 // Reads every loop a set of LINES closes.
@@ -594,6 +673,10 @@ void chainLines(const CadSketch& sketch, std::vector<LoopCandidate>* loops,
             used[current] = true;
             loop.members.push_back(lines[current].id);
             loop.polygon.push_back(nodes[static_cast<size_t>(enterNode)]);
+            // Polygon edge just started (enterNode -> leaveNode) is this line,
+            // and one line is one side face; index 0 within that line.
+            loop.edgeEntityId.push_back(lines[current].id);
+            loop.edgeLocalIndex.push_back(0u);
             // The other line at the leaving node.
             size_t next = lines.size();
             for (size_t i : member) {
@@ -654,13 +737,20 @@ ProfileExtraction extractClosedProfiles(const CadSketch& sketch) {
         } else {
             continue;  // lines are chained below
         }
+        // A rectangle, circle or polyline owns every edge of its own polygon:
+        // edge k is (this entity, k). The line chain fills its own above.
+        for (uint32_t k = 0; k < static_cast<uint32_t>(loop.polygon.size()); ++k) {
+            loop.edgeEntityId.push_back(entity.id());
+            loop.edgeLocalIndex.push_back(k);
+        }
         candidates.push_back(std::move(loop));
     }
     chainLines(sketch, &candidates, &out.rejections);
 
     for (LoopCandidate& candidate : candidates) {
         double area = 0.0;
-        const CadStatus why = validateLoop(&candidate.polygon, &area);
+        const CadStatus why = validateLoop(&candidate.polygon, &area, &candidate.edgeEntityId,
+                                           &candidate.edgeLocalIndex);
         if (why != CadStatus::Ok) {
             out.rejections.push_back(ProfileRejection{candidate.anchor, why});
             continue;
@@ -671,6 +761,8 @@ ProfileExtraction extractClosedProfiles(const CadSketch& sketch) {
         profile.area = area;
         profile.fromCircle = candidate.fromCircle;
         profile.memberEntityIds = std::move(candidate.members);
+        profile.edgeEntityId = std::move(candidate.edgeEntityId);
+        profile.edgeLocalIndex = std::move(candidate.edgeLocalIndex);
         out.profiles.push_back(std::move(profile));
     }
 
