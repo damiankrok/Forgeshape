@@ -11,6 +11,7 @@ const char* deleteBodyStatusName(DeleteBodyStatus status) {
         case DeleteBodyStatus::UnknownBody: return "UnknownBody";
         case DeleteBodyStatus::RefusedLastBody: return "RefusedLastBody";
         case DeleteBodyStatus::RefusedEditInProgress: return "RefusedEditInProgress";
+        case DeleteBodyStatus::RefusedHasDependents: return "RefusedHasDependents";
     }
     return "unknown";
 }
@@ -38,6 +39,14 @@ DeleteBodyStatus deleteSceneBody(ObjectId id, ConstructionScene& scene,
     }
     if (scene.bodyCount() <= 1) {
         return refuse(DeleteBodyStatus::RefusedLastBody);
+    }
+    // A producer that still has face-supported dependents is refused rather
+    // than cascaded (`CAD-A3` G2): a cascade would silently destroy bodies the
+    // user did not name, and no owner approved one. Delete the dependents
+    // first, then the producer. Representation-neutral in spirit -- only a CAD
+    // body can BE a producer, but the rule is asked of every body's id.
+    if (scene.hasCadDependents(id)) {
+        return refuse(DeleteBodyStatus::RefusedHasDependents);
     }
 
     // Resolved from the list as it is NOW, while the deleted body is still in

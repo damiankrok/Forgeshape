@@ -113,6 +113,11 @@ constexpr uint16_t kConstructionSectionVersion = 1;
 constexpr uint16_t kSculptSectionVersion = 1;
 constexpr uint16_t kImportedSectionVersion = 1;
 constexpr uint16_t kCadSectionVersion = 1;
+// CAD-A3: version 2 adds a per-body support kind and, for a face-supported
+// body, its TopoRef. Written only when a body IS face-supported; a world-only
+// CAD project stays byte-identical at v1. An older build refuses v2 (a required
+// section at an unknown version) rather than opening half a body.
+constexpr uint16_t kCadSectionVersionV2 = 2;
 
 // CADB v1 file codes. FILE-owned, 1-based, and deliberately not a cast of any
 // C++ enum, on the same terms as the primitive codes.
@@ -122,6 +127,10 @@ uint8_t extrudeDirectionFileCode(ExtrudeDirection direction);
 bool extrudeDirectionFromFileCode(uint8_t code, ExtrudeDirection* out);
 uint8_t sketchEntityKindFileCode(SketchEntityKind kind);
 bool sketchEntityKindFromFileCode(uint8_t code, SketchEntityKind* out);
+
+// CADB v2 face-kind file codes (`CAD-A3`), file-owned and 1-based like the rest.
+uint8_t cadFaceKindFileCode(CadFaceKind kind);
+bool cadFaceKindFromFileCode(uint8_t code, CadFaceKind* out);
 
 // v1 feature-graph codes. FILE-owned and independent of any C++ enum's ABI.
 constexpr uint8_t kFeatureKindPrimitiveSource = 1;

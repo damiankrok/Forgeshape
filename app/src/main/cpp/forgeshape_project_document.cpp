@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstring>
 
+#include "forgeshape_cad_face.h"
 #include "forgeshape_mesh.h"
 #include "forgeshape_project_bytes.h"
 
@@ -249,6 +250,37 @@ bool sketchEntityKindFromFileCode(uint8_t code, SketchEntityKind* out) {
         case 4: *out = SketchEntityKind::Circle; return true;
         default: return false;
     }
+}
+
+uint8_t cadFaceKindFileCode(CadFaceKind kind) {
+    switch (kind) {
+        case CadFaceKind::CapPlane: return 1;
+        case CadFaceKind::CapFar: return 2;
+        case CadFaceKind::Side: return 3;
+    }
+    return 0;
+}
+
+bool cadFaceKindFromFileCode(uint8_t code, CadFaceKind* out) {
+    if (out == nullptr) return false;
+    switch (code) {
+        case 1: *out = CadFaceKind::CapPlane; return true;
+        case 2: *out = CadFaceKind::CapFar; return true;
+        case 3: *out = CadFaceKind::Side; return true;
+        default: return false;
+    }
+}
+
+// Whether any CAD body needs the v2 section: the presence of a face support is
+// the ONLY thing v2 records that v1 cannot, so a world-only CAD project stays
+// v1 and byte-identical to what CAD-R0 wrote.
+bool cadDocumentNeedsV2(const ProjectDocument& document) {
+    for (const ProjectCadBody& body : document.cad.bodies) {
+        if (body.state.sketch.hasFaceSupport) {
+            return true;
+        }
+    }
+    return false;
 }
 
 uint8_t primitiveFileCode(PrimitiveKind kind) {
@@ -586,6 +618,58 @@ ProjectCodecStatus validateProjectDocument(const ProjectDocument& document) {
                 return ProjectCodecStatus::InvalidSemanticValue;
             }
         }
+
+        // CAD-A3 dependency graph. A face-supported body's producer must be
+        // another CAD body in this document, the named face must resolve
+        // against the producer's state and be eligible, the producer's topology
+        // signature must still match the reference's lineage token, and the
+        // whole graph must be acyclic. This is validated ENTIRELY on the
+        // decoded document, before anything is applied: a bad reference or a
+        // cycle refuses the file rather than opening a scene with a dangling or
+        // circular dependency (`CAD-A3` H3, G1).
+        const auto findCadState = [&](ObjectId id) -> const CadBodyState* {
+            for (const ProjectCadBody& b : document.cad.bodies) {
+                if (b.objectId == id) return &b.state;
+            }
+            return nullptr;
+        };
+        for (const ProjectCadBody& body : document.cad.bodies) {
+            if (!body.state.sketch.hasFaceSupport) {
+                continue;
+            }
+            const TopoRef& ref = body.state.sketch.faceSupport;
+            if (ref.producerObjectId == body.objectId) {
+                return ProjectCodecStatus::UnresolvedReference;  // self-support
+            }
+            const CadBodyState* producer = findCadState(ref.producerObjectId);
+            if (producer == nullptr) {
+                return ProjectCodecStatus::UnresolvedReference;
+            }
+            if (cadTopologySignature(*producer) != ref.lineageToken) {
+                return ProjectCodecStatus::InvalidSemanticValue;
+            }
+            CadFace face;
+            if (resolveCadFace(*producer, ref.face, &face) != CadStatus::Ok || !face.eligible) {
+                return ProjectCodecStatus::InvalidSemanticValue;
+            }
+            // Walk the producer chain; a chain longer than the body count must
+            // revisit a body -- a cycle -- and fails closed.
+            ObjectId cursor = ref.producerObjectId;
+            size_t steps = 0;
+            while (cursor != kNoObject) {
+                if (steps++ > document.cad.bodies.size()) {
+                    return ProjectCodecStatus::UnresolvedReference;  // cycle
+                }
+                const CadBodyState* up = findCadState(cursor);
+                if (up == nullptr || !up->sketch.hasFaceSupport) {
+                    break;
+                }
+                cursor = up->sketch.faceSupport.producerObjectId;
+                if (cursor == body.objectId) {
+                    return ProjectCodecStatus::UnresolvedReference;  // cycle back to self
+                }
+            }
+        }
     }
 
     // A body named by NEITHER branch is deliberately not refused here.
@@ -779,6 +863,7 @@ std::vector<uint8_t> encodeProjectV1(const ProjectDocument& document,
         }
     }
 
+    const bool cadV2 = document.hasCad && cadDocumentNeedsV2(document);
     std::vector<uint8_t> cadPayload;
     if (document.hasCad) {
         ByteWriter out(cadPayload);
@@ -787,6 +872,19 @@ std::vector<uint8_t> encodeProjectV1(const ProjectDocument& document,
             const CadBodyState& state = body.state;
             out.u64(body.objectId);
             out.u8(workplaneFileCode(state.sketch.plane));
+            if (cadV2) {
+                // Support kind, then -- only for a face support -- the TopoRef.
+                out.u8(state.sketch.hasFaceSupport ? 0x01u : 0x00u);
+                if (state.sketch.hasFaceSupport) {
+                    const TopoRef& ref = state.sketch.faceSupport;
+                    out.u64(ref.producerObjectId);
+                    out.u32(ref.producerLocalFeatureId);
+                    out.u8(cadFaceKindFileCode(ref.face.kind));
+                    out.u32(ref.face.edgeEntityId);
+                    out.u32(ref.face.edgeLocalIndex);
+                    out.u64(ref.lineageToken);
+                }
+            }
             out.u32(state.sketch.nextEntityId);
             out.u32(state.extrude.profileEntityId);
             out.u8(extrudeDirectionFileCode(state.extrude.direction));
@@ -885,7 +983,8 @@ std::vector<uint8_t> encodeProjectV1(const ProjectDocument& document,
         // ALWAYS required, on IMPT's terms: a CAD Body has no other branch
         // describing it, and a reader that skipped this would open the
         // project with objects silently missing.
-        appendSection(file, kSectionTagCad, kCadSectionVersion, /*required=*/true, cadPayload);
+        appendSection(file, kSectionTagCad, cadV2 ? kCadSectionVersionV2 : kCadSectionVersion,
+                      /*required=*/true, cadPayload);
     }
     return file;
 }
@@ -1124,7 +1223,8 @@ ProjectCodecStatus decodeImportedPayload(ByteReader& in, ProjectImportedRecord* 
     return ProjectCodecStatus::Ok;
 }
 
-ProjectCodecStatus decodeCadPayload(ByteReader& in, ProjectCadRecord* record) {
+ProjectCodecStatus decodeCadPayload(ByteReader& in, ProjectCadRecord* record, uint16_t version) {
+    const bool v2 = version >= kCadSectionVersionV2;
     uint32_t bodyCount = 0;
     if (!in.u32(&bodyCount)) {
         return ProjectCodecStatus::Truncated;
@@ -1145,9 +1245,33 @@ ProjectCodecStatus decodeCadPayload(ByteReader& in, ProjectCadRecord* record) {
         uint8_t planeCode = 0;
         uint8_t directionCode = 0;
         uint32_t entityCount = 0;
-        if (!in.u64(&body.objectId) || !in.u8(&planeCode) || !in.u32(&state.sketch.nextEntityId)
-            || !in.u32(&state.extrude.profileEntityId) || !in.u8(&directionCode)
-            || !in.f64(&state.extrude.depth) || !in.u32(&entityCount)) {
+        if (!in.u64(&body.objectId) || !in.u8(&planeCode)) {
+            return ProjectCodecStatus::Truncated;
+        }
+        // v2 only: the support kind, then the TopoRef for a face support.
+        if (v2) {
+            uint8_t supportKind = 0;
+            if (!in.u8(&supportKind)) {
+                return ProjectCodecStatus::Truncated;
+            }
+            if (supportKind == 0x01u) {
+                state.sketch.hasFaceSupport = true;
+                TopoRef& ref = state.sketch.faceSupport;
+                uint8_t faceKindCode = 0;
+                if (!in.u64(&ref.producerObjectId) || !in.u32(&ref.producerLocalFeatureId)
+                    || !in.u8(&faceKindCode) || !in.u32(&ref.face.edgeEntityId)
+                    || !in.u32(&ref.face.edgeLocalIndex) || !in.u64(&ref.lineageToken)) {
+                    return ProjectCodecStatus::Truncated;
+                }
+                if (!cadFaceKindFromFileCode(faceKindCode, &ref.face.kind)) {
+                    return ProjectCodecStatus::InvalidSemanticValue;
+                }
+            } else if (supportKind != 0x00u) {
+                return ProjectCodecStatus::InvalidSemanticValue;
+            }
+        }
+        if (!in.u32(&state.sketch.nextEntityId) || !in.u32(&state.extrude.profileEntityId)
+            || !in.u8(&directionCode) || !in.f64(&state.extrude.depth) || !in.u32(&entityCount)) {
             return ProjectCodecStatus::Truncated;
         }
         if (!workplaneFromFileCode(planeCode, &state.sketch.plane)
@@ -1311,13 +1435,22 @@ ProjectCodecStatus decodeProjectV1(ByteReader& file, ProjectKind kind, uint8_t h
         sawImportedTag = sawImportedTag || isImported;
         sawCadTag = sawCadTag || isCad;
 
-        const uint16_t known =
-                isScene ? kSceneSectionVersion
-                        : (isConstruction ? kConstructionSectionVersion
-                                          : (isSculpt ? kSculptSectionVersion
-                                                      : (isImported ? kImportedSectionVersion
-                                                                    : kCadSectionVersion)));
-        if (sectionVersion != known) {
+        // CADB is the one section with more than one readable version: v1 (a
+        // world-plane CAD project, as CAD-R0 wrote) and v2 (CAD-A3, which adds a
+        // face support). Every other section has exactly one.
+        bool versionOk;
+        if (isCad) {
+            versionOk = sectionVersion == kCadSectionVersion
+                        || sectionVersion == kCadSectionVersionV2;
+        } else {
+            const uint16_t known =
+                    isScene ? kSceneSectionVersion
+                            : (isConstruction ? kConstructionSectionVersion
+                                              : (isSculpt ? kSculptSectionVersion
+                                                          : kImportedSectionVersion));
+            versionOk = sectionVersion == known;
+        }
+        if (!versionOk) {
             if (required) {
                 return ProjectCodecStatus::UnsupportedSectionVersion;
             }
@@ -1345,7 +1478,7 @@ ProjectCodecStatus decodeProjectV1(ByteReader& file, ProjectKind kind, uint8_t h
             status = decodeImportedPayload(payload, &document.imported);
             document.hasImported = (status == ProjectCodecStatus::Ok);
         } else {
-            status = decodeCadPayload(payload, &document.cad);
+            status = decodeCadPayload(payload, &document.cad, sectionVersion);
             document.hasCad = (status == ProjectCodecStatus::Ok);
         }
         if (status != ProjectCodecStatus::Ok) {

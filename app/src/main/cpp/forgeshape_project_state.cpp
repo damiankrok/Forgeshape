@@ -405,6 +405,17 @@ void mixPoint(uint64_t& hash, const SketchPoint& p) {
 // and not a proxy.
 void mixCad(uint64_t& hash, const CadBodyState& state) {
     mixU64(hash, static_cast<uint64_t>(workplaneIndex(state.sketch.plane)));
+    // CAD-A3: the face support is project truth, so it is part of the semantic
+    // fingerprint -- a body re-supported on a different face is a different
+    // project and must trigger a checkpoint.
+    mixU64(hash, state.sketch.hasFaceSupport ? 1u : 0u);
+    if (state.sketch.hasFaceSupport) {
+        const TopoRef& ref = state.sketch.faceSupport;
+        mixU64(hash, static_cast<uint64_t>(ref.producerObjectId));
+        mixU64(hash, ref.producerLocalFeatureId);
+        mixU64(hash, cadFaceTokenCode(ref.face));
+        mixU64(hash, ref.lineageToken);
+    }
     mixU64(hash, state.sketch.nextEntityId);
     mixU64(hash, state.extrude.profileEntityId);
     mixDouble(hash, state.extrude.depth);

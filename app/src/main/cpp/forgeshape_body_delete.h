@@ -69,6 +69,9 @@ enum class DeleteBodyStatus {
     // never saw -- the same rule `loadProjectDocument` and
     // `commitImportedGlbScene` already apply.
     RefusedEditInProgress,
+    // The body is a producer with face-supported CAD dependents (`CAD-A3`).
+    // Refused rather than cascaded: delete the dependents first.
+    RefusedHasDependents,
 };
 
 const char* deleteBodyStatusName(DeleteBodyStatus status);

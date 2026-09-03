@@ -10,6 +10,8 @@
 #include "forgeshape_cad_face.h"
 #include "forgeshape_history.h"
 #include "forgeshape_math.h"
+#include "forgeshape_project_document.h"
+#include "forgeshape_project_state.h"
 #include "forgeshape_scene.h"
 #include "forgeshape_sketch.h"
 
@@ -363,6 +365,83 @@ int runCadA3SelfTests(CadA3SelfTestResult* out, int maxOut) {
         }
         g_performance = report;
         r.check("CADA3_35_dependency_chain_resolves_deterministically", chainOk);
+    }
+
+    // -----------------------------------------------------------------------
+    // CADA3-40/41/42: CADB v1 byte-identical, v2 face-support round-trip
+    // -----------------------------------------------------------------------
+    {
+        // A world-only CAD project still encodes at v1 and is byte-identical to
+        // what it was before CAD-A3 -- the support field is absent.
+        ConstructionScene worldOnly;
+        SceneObject* a = worldOnly.addCadBody(rectBody(Workplane::XY, 2.0, 2.0, 1.0));
+        publishSceneObject(*a);
+        const ProjectDocument v1doc = captureProjectDocument(worldOnly, ProjectKind::Construction);
+        ProjectCodecStatus why = ProjectCodecStatus::Ok;
+        const std::vector<uint8_t> v1bytes = encodeProjectV1(v1doc, &why);
+        // Byte 34 of the file is the first section's version word; the CAD
+        // section here is v1. We assert the decode reports a v1 CAD by
+        // round-tripping and by the absence of any face support.
+        ProjectDocument v1back;
+        const bool v1ok = why == ProjectCodecStatus::Ok
+                          && decodeProject(v1bytes.data(), v1bytes.size(), &v1back)
+                                 == ProjectCodecStatus::Ok
+                          && !v1back.cad.bodies.empty()
+                          && !v1back.cad.bodies[0].state.sketch.hasFaceSupport
+                          && encodeProjectV1(v1back) == v1bytes;
+        r.check("CADA3_40_world_only_cad_project_round_trips_at_v1", v1ok);
+
+        // A face-supported project encodes at v2, round-trips bit for bit, and
+        // validates its dependency graph.
+        ConstructionScene scene;
+        SceneObject* pa = scene.addCadBody(rectBody(Workplane::XY, 3.0, 3.0, 1.0));
+        publishSceneObject(*pa);
+        const CadFaceToken cap = tokenFor(pa->cadOrNull()->state(), CadFaceKind::CapFar);
+        SceneObject* pb = scene.addCadBody(
+            childOn(pa->cadOrNull()->state(), pa->objectId(), cap, 1.0, 1.0, 0.5));
+        publishSceneObject(*pb);
+        const ProjectDocument doc = captureProjectDocument(scene, ProjectKind::Construction);
+        const std::vector<uint8_t> bytes = encodeProjectV1(doc, &why);
+        ProjectDocument back;
+        const bool ok = why == ProjectCodecStatus::Ok
+                        && decodeProject(bytes.data(), bytes.size(), &back)
+                               == ProjectCodecStatus::Ok
+                        && validateProjectDocument(back) == ProjectCodecStatus::Ok
+                        && back.cad.bodies.size() == 2
+                        && back.cad.bodies[1].state.sketch.hasFaceSupport
+                        && sameTopoRef(back.cad.bodies[1].state.sketch.faceSupport,
+                                       pb->cadOrNull()->sketch().faceSupport)
+                        && encodeProjectV1(back) == bytes;
+        r.check("CADA3_41_42_face_supported_project_round_trips_at_v2", ok);
+
+        // The fingerprint is deterministic and follows the face-supported
+        // scene: two captures agree, and a world-only scene hashes differently.
+        r.check("CADA3_43_semantic_fingerprint_is_deterministic_and_support_aware",
+                projectSemanticFingerprint(scene, ProjectKind::Construction)
+                        == projectSemanticFingerprint(scene, ProjectKind::Construction)
+                        && projectSemanticFingerprint(scene, ProjectKind::Construction)
+                        != projectSemanticFingerprint(worldOnly, ProjectKind::Construction));
+
+        // Corruption: a document whose child names a nonexistent producer is
+        // refused; a cycle is refused.
+        ProjectDocument badRef = doc;
+        badRef.cad.bodies[1].state.sketch.faceSupport.producerObjectId = 9999;
+        r.check("CADA3_37_bad_producer_ref_document_is_refused",
+                validateProjectDocument(badRef) != ProjectCodecStatus::Ok);
+
+        ProjectDocument cycle = doc;
+        // Make A depend on B and B depend on A: a 2-cycle.
+        cycle.cad.bodies[0].state.sketch.hasFaceSupport = true;
+        cycle.cad.bodies[0].state.sketch.plane = Workplane::XY;
+        cycle.cad.bodies[0].state.sketch.faceSupport.producerObjectId =
+            cycle.cad.bodies[1].objectId;
+        cycle.cad.bodies[0].state.sketch.faceSupport.producerLocalFeatureId = kCadFeatureId;
+        cycle.cad.bodies[0].state.sketch.faceSupport.face =
+            CadFaceToken{CadFaceKind::CapFar, 0, 0};
+        cycle.cad.bodies[0].state.sketch.faceSupport.lineageToken =
+            cadTopologySignature(cycle.cad.bodies[1].state);
+        r.check("CADA3_36_dependency_cycle_document_is_refused",
+                validateProjectDocument(cycle) != ProjectCodecStatus::Ok);
     }
 
     return r.n;
