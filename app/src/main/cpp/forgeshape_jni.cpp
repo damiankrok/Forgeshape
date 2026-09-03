@@ -2129,15 +2129,105 @@ Java_com_forgeshape_app_NativeViewport_sceneDeleteBody(JNIEnv*, jclass, jlong ob
 // owner, which is what keeps the enabled state of a control and what the model
 // actually is from ever disagreeing.
 //
-// Undo and Redo are refused while sculpting, and the workspace withdraws the
-// controls there — see the Sculpt separation in ARCHITECTURE.md. The refusal
-// stays regardless: removing a control is not removing a guard.
+// TWO HISTORIES, ONE PAIR OF CONTROLS (`ARCH-OWNER-12`)
+// -----------------------------------------------------
+// There are two entirely separate histories below this boundary — the
+// Construction history for project/object truth, and each body's own Sculpt
+// history for stroke geometry — and there are three families of entry point
+// here rather than one, so nothing has to guess which is meant:
+//
+//   constructionUndo* / constructionRedo*  ALWAYS the Construction history, and
+//                                          still REFUSED in Sculpt. The guard
+//                                          did not move: a project act that
+//                                          could fire while sculpting is still
+//                                          a defect, and this is where that is
+//                                          stated.
+//   sculptUndo* / sculptRedo*              ALWAYS the active body's Sculpt
+//                                          history, and only in Sculpt mode.
+//   historyUndo* / historyRedo*            The CHROME's entry points, which
+//                                          dispatch on the product mode.
+//
+// The dispatch is native because the mode is native. Letting Java choose which
+// history a button means would put the one decision that must never be wrong
+// in the layer that holds no state to decide it with.
 
 // History status codes handed back to the Android UI. A JNI transport detail,
 // in step with NativeViewport's HISTORY_* fields.
 constexpr jint kHistoryOk = 0;
 constexpr jint kHistoryNothingToDo = 1;
+// Returned by the Construction entry points in Sculpt mode. The dispatching
+// entry points never return it: in Sculpt they mean the Sculpt history, so
+// there is nothing to refuse.
 constexpr jint kHistoryRefusedInSculpt = 2;
+// A stroke is in progress. Temporary and self-clearing: the finger lifts and
+// the step is available.
+constexpr jint kHistoryStrokeActive = 3;
+// Asked for a Sculpt step where there is no Sculpt history to step — not in
+// Sculpt mode, or the active body has no Frozen Sculpt Mesh.
+constexpr jint kHistoryUnavailable = 4;
+// Not returned by a step. It names the one condition a step cannot report
+// because it happened earlier: a stroke too large for
+// `kMaxSculptHistoryEntryBytes` applied but was not retained, so it cannot be
+// taken back. Surfaced through sculptHistoryNotRetainedCount().
+constexpr jint kHistoryEntryNotRetained = 5;
+
+// Turns a domain refusal into the transport code for it. One mapping, so a new
+// domain status cannot quietly arrive as a generic failure.
+static jint sculptHistoryStatusCode(forgeshape::SculptSession::SculptHistoryStatus status) {
+    using Status = forgeshape::SculptSession::SculptHistoryStatus;
+    switch (status) {
+        case Status::Ok:
+            return kHistoryOk;
+        case Status::NothingToDo:
+            return kHistoryNothingToDo;
+        case Status::StrokeActive:
+            return kHistoryStrokeActive;
+        case Status::NotSculpting:
+        case Status::NoSculptMesh:
+            return kHistoryUnavailable;
+    }
+    return kHistoryUnavailable;
+}
+
+// Runs one Sculpt history step and republishes what it produced.
+//
+// Under `g_stateMutex` for exactly the reasons a stroke's own position writes
+// are: this writes sculpt vertices and then publishes them, and the render
+// thread takes its whole-scene snapshot under the same lock. A step is one
+// discrete user act, so the cost is one publication.
+static jint runSculptHistoryStep(const char* label, bool forward) {
+    forgeshape::SculptSession::SculptHistoryStatus status;
+    forgeshape::SculptRevision revision = 0;
+    forgeshape::MeshRevision meshRevision = forgeshape::kNoMeshRevision;
+    size_t undoDepth = 0;
+    size_t redoDepth = 0;
+    bool edits = false;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        forgeshape::SculptSession& session = forgeshape::sculptSession();
+        status = forward ? session.redoStroke() : session.undoStroke();
+        if (status == forgeshape::SculptSession::SculptHistoryStatus::Ok) {
+            // The ordinary sculpt publication path, unchanged. A history step
+            // reaches the renderer exactly the way a stroke does, so there is
+            // no second way for sculpt geometry to become a frame.
+            meshRevision = publishSculptRepresentation(label);
+            revision = session.mesh().revision();
+            edits = session.mesh().hasEdits();
+        }
+        undoDepth = session.history().undoDepth();
+        redoDepth = session.history().redoDepth();
+    }
+    if (status != forgeshape::SculptSession::SculptHistoryStatus::Ok) {
+        FS_LOGI("FORGESHAPE_SCULPT_HISTORY_REFUSED:%s:%s", label,
+                forgeshape::SculptSession::sculptHistoryStatusName(status));
+        return sculptHistoryStatusCode(status);
+    }
+    FS_LOGI("FORGESHAPE_SCULPT_HISTORY:%s sculptRevision=%llu meshRevision=%llu edits=%d "
+            "undo=%d redo=%d",
+            label, (unsigned long long)revision, (unsigned long long)meshRevision, edits ? 1 : 0,
+            (int)undoDepth, (int)redoDepth);
+    return kHistoryOk;
+}
 
 JNIEXPORT jboolean JNICALL
 Java_com_forgeshape_app_NativeViewport_constructionUndoAvailable(JNIEnv*, jclass) {
@@ -2521,6 +2611,117 @@ Java_com_forgeshape_app_NativeViewport_constructionUndo(JNIEnv*, jclass) {
 JNIEXPORT jint JNICALL
 Java_com_forgeshape_app_NativeViewport_constructionRedo(JNIEnv*, jclass) {
     return runHistoryStep("redo", true);
+}
+
+// --- the active body's Sculpt history ---------------------------------------
+
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_sculptUndoAvailable(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    return forgeshape::sculptSession().canUndoSculpt() ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_sculptRedoAvailable(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    return forgeshape::sculptSession().canRedoSculpt() ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sculptUndoDepth(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    return static_cast<jint>(forgeshape::sculptSession().history().undoDepth());
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sculptRedoDepth(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    return static_cast<jint>(forgeshape::sculptSession().history().redoDepth());
+}
+
+// What the active body's retained Sculpt history costs right now, by the same
+// conservative measure the cap is enforced with. A diagnostic: the Java layer
+// derives nothing from it, and it exists so "bounded" is a value a test can read
+// rather than only an assertion that failed.
+JNIEXPORT jlong JNICALL
+Java_com_forgeshape_app_NativeViewport_sculptHistoryBytes(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    return static_cast<jlong>(forgeshape::sculptSession().history().payloadBytes());
+}
+
+// How many strokes on this body were too large to retain, and how many entries
+// have been evicted to stay inside the caps. Session-lifetime counters, never
+// project truth. The first is what makes `kHistoryEntryNotRetained` visible: a
+// stroke that cannot be taken back must say so rather than leave a user tapping
+// Undo at geometry that will not move.
+JNIEXPORT jlong JNICALL
+Java_com_forgeshape_app_NativeViewport_sculptHistoryNotRetainedCount(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    return static_cast<jlong>(forgeshape::sculptSession().history().notRetainedStrokes());
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_forgeshape_app_NativeViewport_sculptHistoryEvictedCount(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    return static_cast<jlong>(forgeshape::sculptSession().history().evictedEntries());
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sculptUndo(JNIEnv*, jclass) {
+    return runSculptHistoryStep("undo", false);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sculptRedo(JNIEnv*, jclass) {
+    return runSculptHistoryStep("redo", true);
+}
+
+// --- what the two chrome controls mean, decided here ------------------------
+//
+// The mode owns the answer, so the dispatch lives beside the mode. In Sculpt
+// the pair means the active body's strokes; everywhere else it means the
+// Construction history, with behaviour byte-for-byte what it was before this
+// feature existed.
+
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_historyUndoAvailable(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    if (forgeshape::sculptSession().inSculptMode()) {
+        return forgeshape::sculptSession().canUndoSculpt() ? JNI_TRUE : JNI_FALSE;
+    }
+    return forgeshape::constructionHistory().canUndo() ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_historyRedoAvailable(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    if (forgeshape::sculptSession().inSculptMode()) {
+        return forgeshape::sculptSession().canRedoSculpt() ? JNI_TRUE : JNI_FALSE;
+    }
+    return forgeshape::constructionHistory().canRedo() ? JNI_TRUE : JNI_FALSE;
+}
+
+// The mode is re-read under the step's own lock rather than passed in, so a
+// mode change between the availability read and the tap cannot route a step to
+// the history the user is no longer in.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_historyUndo(JNIEnv*, jclass) {
+    bool sculpting = false;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        sculpting = forgeshape::sculptSession().inSculptMode();
+    }
+    return sculpting ? runSculptHistoryStep("undo", false) : runHistoryStep("undo", false);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_historyRedo(JNIEnv*, jclass) {
+    bool sculpting = false;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        sculpting = forgeshape::sculptSession().inSculptMode();
+    }
+    return sculpting ? runSculptHistoryStep("redo", true) : runHistoryStep("redo", true);
 }
 
 // The transaction boundary, for a user act that is made of more than one

@@ -87,6 +87,7 @@ add_library(forgeshape_native SHARED
     forgeshape_scene.cpp
     forgeshape_scene_selftest.cpp
     forgeshape_sculpt.cpp
+    forgeshape_sculpt_history.cpp
     forgeshape_sculpt_selftest.cpp
     forgeshape_selection.cpp
     forgeshape_selection_pulse.cpp

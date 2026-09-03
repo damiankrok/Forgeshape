@@ -259,10 +259,12 @@ public final class ImportedMeshSculptTest {
      * IMP01B-06. Construction Undo and Redo do not reach a sculpted vertex, and
      * an imported body is no exception.
      *
-     * <p>Sculpt has no undo. What this asserts is the invariant that makes that
-     * safe: the pair is WITHDRAWN in Sculpt, it is refused below JNI, and a
+     * <p>Sculpting has its own history since {@code ARCH-OWNER-12}, and this is
+     * the invariant that keeps the two apart: the CONSTRUCTION entry points are
+     * refused below JNI while sculpting, whatever the chrome does, and a
      * Construction undo taken after leaving Sculpt moves the placement without
-     * touching one sculpted vertex.
+     * touching one sculpted vertex. Sculpt Undo itself is
+     * {@code SculptUndoTest}'s subject, not this one's.
      */
     @Test
     public void imp01b06_constructionHistoryNeverMovesAnImportedBodysSculptedVertices() {
@@ -272,10 +274,10 @@ public final class ImportedMeshSculptTest {
         final double[] sculpted = readSculpt();
 
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            assertEquals("Undo and Redo are withdrawn in Sculpt", View.GONE,
-                    workspace.historyGroup().getVisibility());
-            assertEquals("and refused below JNI", NativeViewport.HISTORY_REFUSED_IN_SCULPT,
-                    NativeViewport.constructionUndo());
+            assertEquals("Undo and Redo are drawn in Sculpt, meaning the Sculpt history",
+                    View.VISIBLE, workspace.historyGroup().getVisibility());
+            assertEquals("but the CONSTRUCTION history is still refused below JNI",
+                    NativeViewport.HISTORY_REFUSED_IN_SCULPT, NativeViewport.constructionUndo());
             return null;
         });
         assertEquals("so the sculpt mesh did not move",

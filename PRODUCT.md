@@ -794,11 +794,29 @@ ForgeShape to the home screen and back, and it is **not saved**: closing the app
 loses it along with everything else, and there is a limit — after about sixty
 changes the oldest ones stop being reachable.
 
-**Sculpting has no undo.** The two controls are not drawn at all while you are
-sculpting, rather than sitting there greyed, because a stroke cannot be taken
-back and a control that looked like it could would be a lie. Coming back to
-Construction and pressing Undo takes back a *Construction* change; it never
-touches a single sculpted vertex. If that Construction change was the shape your
+**Sculpting has its own Undo, and it is a separate history.** The same two
+controls stay on screen while you sculpt, and there they take back **strokes**:
+one press undoes the last stroke you made, however many times your finger moved
+during it, and Redo puts it back. They walk only the body you are sculpting —
+another sculpted body keeps its own strokes, untouched, and coming back to it
+finds them where you left them.
+
+The stroke history is separate from the Construction history in both directions.
+Undoing strokes never takes back a Construction change, and Construction Undo
+never touches a single sculpted vertex. Leaving to *Back to Construction* or
+*Back to Imported Mesh* and returning with *Resume Sculpt* keeps your strokes and
+your ability to take them back. Starting a sculpt again from the shape — the
+question that warns you first — is the one thing Undo cannot walk back across:
+once you have said the previous sculpt is gone, it is.
+
+It is **not saved**. Reopening a project gives you back exactly the mesh you
+left, with an empty stroke history over it: what a `.forge` file keeps is the
+model, not the path you took to it. There is a limit here too — a long session
+stops being able to reach its oldest strokes, and a single stroke big enough to
+be worth more than the whole budget applies normally but says, once, that it
+cannot be taken back.
+
+If a Construction change was the shape your
 sculpt mesh was built from, the usual out-of-date warning appears, exactly as it
 does when you retype the shape by hand — the sculpt work itself is untouched, and
 *Resume Sculpt* brings it back as it was.
@@ -1027,9 +1045,8 @@ sculpted sphere, a point out on a raised protrusion is part of the model and can
 be touched there, while the same distance from the centre in an untouched
 direction is empty space.
 
-A stroke that is interrupted stops where it is; it is not undone, because
-sculpting has no undo — the Construction Undo described above never touches a
-sculpted vertex.
+A stroke that is interrupted stops where it is rather than snapping back — but
+what it did is still a stroke, so Undo takes it back like any other.
 
 ## Viewport navigation
 
@@ -1347,10 +1364,11 @@ alters its sculpt mesh, and starting, leaving or resuming sculpting never alters
 its scale.
 
 Sculpting has exactly the four tools above — other
-brushes (Flatten, Crease, Pinch and the rest), remesh, **sculpt undo**, symmetry,
-masking, layers, brush presets and stylus pressure are not implemented — the Undo
-described above is Construction's alone. There is no undo *history panel*, no
-named steps and no keyboard shortcut for either control.
+brushes (Flatten, Crease, Pinch and the rest), remesh, symmetry, masking, layers,
+brush presets and stylus pressure are not implemented. Sculpt Undo IS
+implemented, over whole strokes, and is described above; there is no undo
+*history panel* for either history, no named steps and no keyboard shortcut for
+either control.
 
 **There is a grid, but there is no snapping of any kind.** Nothing you drag,
 type or place is quantised to it, no value is ever measured off it, and there is

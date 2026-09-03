@@ -537,6 +537,496 @@ void runSidednessSelfTests(Recorder& r) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// SCUNDO-01..23 — the Sculpt Undo/Redo history (`ARCH-OWNER-12`)
+// ---------------------------------------------------------------------------
+//
+// Every check here runs against LOCAL sessions, scenes and histories, so none
+// of it can disturb the live product state it runs beside. The two device
+// suites cover the chrome and the JNI dispatch; this covers the domain, which
+// is where the invariants actually live.
+
+// Runs one complete stroke — down, several moves, up — and reports whether it
+// moved anything. The zig-zag drives the three path-driven tools by pointer
+// PATH rather than by event count, which is the same thing driveTravel does for
+// the brush suites.
+bool runOneStroke(SculptSession& session, const CameraSnapshot& camera, const Mat4& model,
+                  float offsetX) {
+    if (!session.beginStroke(camera, kCentreX, kCentreY, kViewportWidth, kViewportHeight, model,
+                             model)) {
+        return false;
+    }
+    bool moved = false;
+    for (int i = 0; i < 4; ++i) {
+        if (session.updateStroke(kCentreX + offsetX * static_cast<float>(i + 1), kCentreY)) {
+            moved = true;
+        }
+    }
+    session.endStroke();
+    return moved;
+}
+
+// Every vertex position of a frozen mesh, so "the geometry came back exactly"
+// is a bit-exact comparison rather than a sample of one vertex.
+std::vector<Vec3> allPositions(const SculptMesh& mesh) {
+    std::vector<Vec3> out;
+    out.reserve(mesh.vertexCount());
+    for (uint32_t v = 0; v < mesh.vertexCount(); ++v) {
+        out.push_back(mesh.vertexPosition(v));
+    }
+    return out;
+}
+
+bool samePositions(const std::vector<Vec3>& a, const std::vector<Vec3>& b) {
+    if (a.size() != b.size()) {
+        return false;
+    }
+    for (size_t i = 0; i < a.size(); ++i) {
+        // Bit-exact. Undo restores stored floats verbatim; it does not
+        // recompute them, so anything but equality would be a real defect
+        // rather than rounding.
+        if (a[i].x != b[i].x || a[i].y != b[i].y || a[i].z != b[i].z) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// A delta of `vertices` synthetic vertices, for the bounds checks. Deliberately
+// built by hand rather than by sculpting: the caps are about SIZE, and driving
+// a real brush hard enough to produce a megabyte entry would make the check a
+// test of the brush instead.
+SculptStrokeDelta syntheticDelta(uint32_t vertices, float offset) {
+    SculptStrokeDelta delta;
+    delta.vertexIndices.reserve(vertices);
+    delta.beforePositions.reserve(vertices);
+    delta.afterPositions.reserve(vertices);
+    for (uint32_t i = 0; i < vertices; ++i) {
+        delta.vertexIndices.push_back(i);
+        delta.beforePositions.push_back(Vec3{static_cast<float>(i), 0.0f, 0.0f});
+        delta.afterPositions.push_back(Vec3{static_cast<float>(i) + offset, 0.0f, 0.0f});
+    }
+    delta.beforeHasEdits = false;
+    delta.afterHasEdits = true;
+    return delta;
+}
+
+void runSculptUndoChecks(Recorder& r) {
+    const CameraSnapshot camera = defaultCamera();
+    const Mat4 identity = mat4Identity();
+
+    // -----------------------------------------------------------------------
+    // SCUNDO-01/03/04/05/06/07/08/11/13 — one Construction sculpt, driven
+    // through the ordinary session
+    // -----------------------------------------------------------------------
+    {
+        ConstructionObject object = makeSphereObject();
+        SculptSession session;
+        session.freezeToSculpt(object.generateMesh(), object.objectId());
+
+        r.check("SCUNDO_01_a_fresh_freeze_starts_with_an_empty_history",
+                session.history().undoDepth() == 0 && session.history().redoDepth() == 0
+                    && !session.canUndoSculpt() && !session.canRedoSculpt());
+        r.check("SCUNDO_11_and_reports_no_edits", !session.mesh().hasEdits());
+
+        const std::vector<Vec3> seed = allPositions(session.mesh());
+
+        // SCUNDO-03: FOUR pointer moves inside one stroke. The entry count is
+        // what proves the transaction boundary is the stroke and not the event.
+        const SculptRevision beforeStroke = session.mesh().revision();
+        r.check("SCUNDO_01_a_real_stroke_moves_geometry",
+                runOneStroke(session, camera, identity, 24.0f));
+        const std::vector<Vec3> afterA = allPositions(session.mesh());
+        r.check("SCUNDO_01_one_completed_stroke_is_one_entry",
+                session.history().undoDepth() == 1);
+        r.check("SCUNDO_03_and_four_moves_did_not_make_four_entries",
+                session.history().undoDepth() == 1);
+        r.check("SCUNDO_13_the_revision_advanced_more_than_once_inside_the_stroke",
+                session.mesh().revision() > beforeStroke + 1);
+        r.check("SCUNDO_11_and_the_stroke_marked_the_mesh_edited", session.mesh().hasEdits());
+        r.check("SCUNDO_01_undo_is_now_available_and_redo_is_not",
+                session.canUndoSculpt() && !session.canRedoSculpt());
+
+        // SCUNDO-04: a stroke that starts and ends without a move writes
+        // nothing. Neither does one whose ray misses.
+        session.beginStroke(camera, kCentreX, kCentreY, kViewportWidth, kViewportHeight, identity,
+                            identity);
+        session.endStroke();
+        r.check("SCUNDO_04_a_stroke_that_moved_nothing_records_no_entry",
+                session.history().undoDepth() == 1);
+        r.check("SCUNDO_04_and_a_cancel_with_no_movement_records_nothing_either", [&] {
+            session.beginStroke(camera, kCentreX, kCentreY, kViewportWidth, kViewportHeight,
+                                identity, identity);
+            session.cancelStroke();
+            return session.history().undoDepth() == 1;
+        }());
+
+        // SCUNDO-05: Undo restores the seed exactly, and the flag with it.
+        const SculptRevision beforeUndo = session.mesh().revision();
+        r.check("SCUNDO_05_undo_reports_ok",
+                session.undoStroke() == SculptSession::SculptHistoryStatus::Ok);
+        r.check("SCUNDO_05_and_restores_the_exact_pre_stroke_positions",
+                samePositions(allPositions(session.mesh()), seed));
+        r.check("SCUNDO_11_a_fresh_first_stroke_undone_reports_no_edits",
+                !session.mesh().hasEdits());
+        r.check("SCUNDO_13_and_the_revision_still_went_forwards",
+                session.mesh().revision() > beforeUndo);
+        r.check("SCUNDO_05_the_entry_moved_to_the_redo_stack",
+                session.history().undoDepth() == 0 && session.history().redoDepth() == 1
+                    && !session.canUndoSculpt() && session.canRedoSculpt());
+        r.check("SCUNDO_05_a_second_undo_at_the_oldest_state_is_refused_cleanly",
+                session.undoStroke() == SculptSession::SculptHistoryStatus::NothingToDo
+                    && samePositions(allPositions(session.mesh()), seed));
+
+        // SCUNDO-06: Redo restores the post-stroke positions exactly.
+        const SculptRevision beforeRedo = session.mesh().revision();
+        r.check("SCUNDO_06_redo_reports_ok",
+                session.redoStroke() == SculptSession::SculptHistoryStatus::Ok);
+        r.check("SCUNDO_06_and_restores_the_exact_post_stroke_positions",
+                samePositions(allPositions(session.mesh()), afterA));
+        r.check("SCUNDO_06_with_the_edited_flag_back", session.mesh().hasEdits());
+        r.check("SCUNDO_13_and_the_revision_forwards_again",
+                session.mesh().revision() > beforeRedo);
+        r.check("SCUNDO_06_a_second_redo_is_refused_cleanly",
+                session.redoStroke() == SculptSession::SculptHistoryStatus::NothingToDo);
+
+        // SCUNDO-07: two strokes walk back and forward in order.
+        r.check("SCUNDO_07_a_second_stroke_lands",
+                runOneStroke(session, camera, identity, -30.0f));
+        const std::vector<Vec3> afterB = allPositions(session.mesh());
+        r.check("SCUNDO_07_two_strokes_are_two_entries", session.history().undoDepth() == 2);
+        session.undoStroke();
+        r.check("SCUNDO_07_undoing_B_lands_on_the_state_after_A",
+                samePositions(allPositions(session.mesh()), afterA));
+        session.undoStroke();
+        r.check("SCUNDO_07_undoing_A_lands_on_the_seed",
+                samePositions(allPositions(session.mesh()), seed)
+                    && !session.mesh().hasEdits());
+        session.redoStroke();
+        r.check("SCUNDO_07_redoing_A_lands_on_the_state_after_A",
+                samePositions(allPositions(session.mesh()), afterA)
+                    && session.mesh().hasEdits());
+        session.redoStroke();
+        r.check("SCUNDO_07_redoing_B_lands_on_the_state_after_B",
+                samePositions(allPositions(session.mesh()), afterB));
+
+        // SCUNDO-08: a new stroke after an Undo drops the redo branch.
+        session.undoStroke();
+        r.check("SCUNDO_08_precondition_a_redo_exists", session.history().redoDepth() == 1);
+        r.check("SCUNDO_08_a_new_stroke_lands", runOneStroke(session, camera, identity, 40.0f));
+        r.check("SCUNDO_08_and_clears_the_redo_stack",
+                session.history().redoDepth() == 0 && !session.canRedoSculpt());
+        r.check("SCUNDO_08_leaving_the_undo_stack_correct",
+                session.history().undoDepth() == 2);
+
+        // A step is refused while a finger is still writing positions.
+        session.beginStroke(camera, kCentreX, kCentreY, kViewportWidth, kViewportHeight, identity,
+                            identity);
+        session.updateStroke(kCentreX + 30.0f, kCentreY);
+        const std::vector<Vec3> midStroke = allPositions(session.mesh());
+        r.check("SCUNDO_24_undo_is_refused_while_a_stroke_is_active",
+                session.undoStroke() == SculptSession::SculptHistoryStatus::StrokeActive
+                    && !session.canUndoSculpt());
+        r.check("SCUNDO_24_redo_too",
+                session.redoStroke() == SculptSession::SculptHistoryStatus::StrokeActive);
+        r.check("SCUNDO_24_and_the_refusal_moved_no_vertex",
+                samePositions(allPositions(session.mesh()), midStroke));
+        session.endStroke();
+        r.check("SCUNDO_24_and_the_step_is_available_once_the_finger_lifts",
+                session.canUndoSculpt());
+
+        // SCUNDO-17: a destructive Reset from source clears the history, and
+        // Undo cannot cross it.
+        session.freezeToSculpt(object.generateMesh(), object.objectId());
+        r.check("SCUNDO_17_a_reset_from_source_clears_both_stacks",
+                session.history().undoDepth() == 0 && session.history().redoDepth() == 0);
+        r.check("SCUNDO_17_and_undo_cannot_cross_the_reset",
+                session.undoStroke() == SculptSession::SculptHistoryStatus::NothingToDo
+                    && samePositions(allPositions(session.mesh()), seed));
+        r.check("SCUNDO_17_with_the_rebuilt_mesh_reporting_no_edits",
+                !session.mesh().hasEdits());
+
+        // Outside Sculpt the history is not consulted at all.
+        r.check("SCUNDO_24_a_step_in_construction_mode_is_not_sculpt_history", [&] {
+            runOneStroke(session, camera, identity, 24.0f);
+            session.enterConstruction();
+            const bool refused =
+                session.undoStroke() == SculptSession::SculptHistoryStatus::NotSculpting
+                && session.redoStroke() == SculptSession::SculptHistoryStatus::NotSculpting
+                && !session.canUndoSculpt() && !session.canRedoSculpt();
+            // SCUNDO-16: and leaving Sculpt kept the entry, so Resume finds it.
+            const bool retained = session.history().undoDepth() == 1;
+            const bool resumed = session.enterSculpt() && session.canUndoSculpt();
+            return refused && retained && resumed;
+        }());
+    }
+
+    // -----------------------------------------------------------------------
+    // SCUNDO-02/09/10/14 — the same implementation over an Imported Mesh
+    // -----------------------------------------------------------------------
+    //
+    // SCUNDO-14 is proved by CONSTRUCTION rather than by comparison: there is
+    // one SculptHistory type, one record path and one apply path, and this case
+    // reaches all three through the same SculptSession the Construction case
+    // used. Nothing here is imported-specific except the seed.
+    {
+        ConstructionScene scene;
+        SceneObject* imported = scene.addImportedBody(importedSculptFixtureMesh(), "head_low");
+        if (imported == nullptr) {
+            r.check("SCUNDO_02_an_imported_body_exists", false);
+        } else {
+            TransformValues placed;
+            placed.positionX = 1.5;
+            placed.rotationY = 90.0;
+            placed.scaleX = 2.0;
+            imported->transform().setValues(placed);
+
+            SculptSession session;
+            session.bindTarget(&imported->frozenSculpt());
+            ConstructionMesh source;
+            r.check("SCUNDO_02_an_imported_seed_is_built", buildSculptSourceMesh(*imported, &source));
+            r.check("SCUNDO_02_and_freezes", session.freezeToSculpt(source, imported->objectId()));
+
+            // The one pose this suite's camera helper is valid for, with the
+            // body back at the identity so the screen centre lands on it.
+            imported->transform().setValues(TransformValues{});
+            const CameraSnapshot straightOn =
+                cameraAt(Vec3{0.0f, 8.0f, 0.0f}, ProjectionMode::Perspective);
+            const Mat4 model = imported->transform().modelMatrix();
+            session.setTool(SculptTool::Grab);
+            session.setRadiusPixels(400.0f);
+
+            const std::vector<Vec3> seed = allPositions(session.mesh());
+            const std::vector<float> positionsBefore = imported->importedOrNull()->positions();
+            const std::vector<float> normalsBefore = imported->importedOrNull()->normals();
+            const std::vector<uint32_t> indicesBefore = imported->importedOrNull()->indices();
+            const TransformValues transformBefore = imported->transform().values();
+
+            r.check("SCUNDO_02_a_stroke_lands_on_the_imported_derived_mesh",
+                    runOneStroke(session, straightOn, model, 24.0f));
+            r.check("SCUNDO_02_one_completed_imported_stroke_is_one_entry",
+                    session.history().undoDepth() == 1);
+            r.check("SCUNDO_02_undo_restores_the_imported_seed",
+                    session.undoStroke() == SculptSession::SculptHistoryStatus::Ok
+                        && samePositions(allPositions(session.mesh()), seed));
+            r.check("SCUNDO_02_and_redo_puts_the_stroke_back",
+                    session.redoStroke() == SculptSession::SculptHistoryStatus::Ok
+                        && !samePositions(allPositions(session.mesh()), seed));
+
+            // SCUNDO-09: the SOURCE is untouched by every one of those acts.
+            r.check("SCUNDO_09_the_imported_positions_never_moved",
+                    imported->importedOrNull()->positions() == positionsBefore);
+            r.check("SCUNDO_09_nor_the_normals",
+                    imported->importedOrNull()->normals() == normalsBefore);
+            r.check("SCUNDO_09_nor_the_topology",
+                    imported->importedOrNull()->indices() == indicesBefore);
+            r.check("SCUNDO_09_and_no_construction_source_was_invented",
+                    imported->constructionOrNull() == nullptr);
+            // SCUNDO-10: nor the body's placement.
+            r.check("SCUNDO_10_the_body_placement_is_unchanged",
+                    sameConstructionPlacement(imported->transform().values(), transformBefore));
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // SCUNDO-12 — a project loaded with an already-edited sculpt mesh
+    // -----------------------------------------------------------------------
+    //
+    // The case a depth counter cannot answer. The mesh arrives edited with an
+    // EMPTY history, exactly as a `.forge` load leaves it; one new stroke is
+    // taken; undoing it must land back on "edited", because the edits the file
+    // carried are still there.
+    {
+        ConstructionObject object = makeSphereObject();
+        SculptSession session;
+        session.freezeToSculpt(object.generateMesh(), object.objectId());
+        // What loadProjectDocument does for a stored `hasEdits`: restore the
+        // FACT, over an empty history.
+        session.mesh().advanceRevision();
+        r.check("SCUNDO_12_a_loaded_edited_mesh_reports_edits_with_no_history",
+                session.mesh().hasEdits() && session.history().undoDepth() == 0);
+
+        r.check("SCUNDO_12_a_new_stroke_lands", runOneStroke(session, camera, identity, 24.0f));
+        r.check("SCUNDO_12_undo_returns_to_the_loaded_state",
+                session.undoStroke() == SculptSession::SculptHistoryStatus::Ok);
+        r.check("SCUNDO_12_and_hasEdits_is_still_true_because_the_file_carried_edits",
+                session.mesh().hasEdits());
+        r.check("SCUNDO_12_which_is_not_what_undo_depth_would_have_said",
+                session.history().undoDepth() == 0);
+    }
+
+    // -----------------------------------------------------------------------
+    // SCUNDO-15 — two bodies, two histories, and no way across
+    // -----------------------------------------------------------------------
+    {
+        ConstructionScene scene;
+        SceneObject& a = scene.activeBody();
+        a.construction().setPrimitive(PrimitiveSpec::forSphere(2.0));
+        SceneObject* const b = &scene.addBody();
+        {
+            b->construction().setPrimitive(PrimitiveSpec::forSphere(2.0));
+
+            SculptSession session;
+            // Body A: two strokes.
+            session.bindTarget(&a.frozenSculpt());
+            session.freezeToSculpt(a.construction().generateMesh(), a.objectId());
+            const std::vector<Vec3> seedA = allPositions(session.mesh());
+            runOneStroke(session, camera, identity, 24.0f);
+            runOneStroke(session, camera, identity, -24.0f);
+            const std::vector<Vec3> afterA = allPositions(session.mesh());
+            r.check("SCUNDO_15_body_a_has_two_entries", session.history().undoDepth() == 2);
+
+            // Body B: one stroke, on its own history.
+            session.bindTarget(&b->frozenSculpt());
+            session.freezeToSculpt(b->construction().generateMesh(), b->objectId());
+            r.check("SCUNDO_15_switching_bodies_switches_history",
+                    session.history().undoDepth() == 0);
+            const std::vector<Vec3> seedB = allPositions(session.mesh());
+            runOneStroke(session, camera, identity, 30.0f);
+            r.check("SCUNDO_15_body_b_has_one_entry", session.history().undoDepth() == 1);
+
+            // Undo in B, twice: the second finds nothing and must not reach A.
+            session.undoStroke();
+            r.check("SCUNDO_15_undo_in_b_restores_b",
+                    samePositions(allPositions(session.mesh()), seedB));
+            r.check("SCUNDO_15_and_a_second_undo_in_b_finds_nothing",
+                    session.undoStroke() == SculptSession::SculptHistoryStatus::NothingToDo);
+            r.check("SCUNDO_15_body_a_geometry_was_never_touched",
+                    samePositions(allPositions(a.frozenSculpt().mesh), afterA));
+            r.check("SCUNDO_15_and_body_a_still_holds_its_own_two_entries",
+                    a.frozenSculpt().history.undoDepth() == 2);
+
+            // SCUNDO-16: coming back finds A exactly as it was left.
+            session.bindTarget(&a.frozenSculpt());
+            r.check("SCUNDO_16_returning_to_a_restores_its_stacks",
+                    session.history().undoDepth() == 2 && session.canUndoSculpt());
+            session.undoStroke();
+            session.undoStroke();
+            r.check("SCUNDO_16_and_walking_a_back_lands_on_a_s_own_seed",
+                    samePositions(allPositions(session.mesh()), seedA));
+            r.check("SCUNDO_16_while_b_kept_its_own_redo",
+                    b->frozenSculpt().history.redoDepth() == 1);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // SCUNDO-22/23 — the bounds
+    // -----------------------------------------------------------------------
+    //
+    // Driven with synthetic deltas, because the caps are about SIZE and a real
+    // brush cannot be made to produce a megabyte entry without turning this
+    // into a test of the brush.
+    {
+        SculptHistory history;
+        // A single vertex costs 28 payload bytes plus the fixed entry
+        // allowance, so this is the smallest real entry there is.
+        r.check("SCUNDO_22_one_vertex_costs_what_the_measure_says",
+                syntheticDelta(1, 1.0f).payloadBytes()
+                    == 28u + kSculptHistoryEntryOverheadBytes);
+
+        // Step cap: one more than the maximum evicts exactly one, from the
+        // OLDEST end, and never the entry just recorded.
+        for (uint32_t i = 0; i < kMaxSculptHistoryEntries; ++i) {
+            history.record(syntheticDelta(4, static_cast<float>(i + 1)));
+        }
+        r.check("SCUNDO_22_the_step_cap_is_reached_without_eviction",
+                history.undoDepth() == kMaxSculptHistoryEntries
+                    && history.evictedEntries() == 0);
+        history.record(syntheticDelta(4, 999.0f));
+        r.check("SCUNDO_22_the_next_stroke_evicts_exactly_one",
+                history.undoDepth() == kMaxSculptHistoryEntries
+                    && history.evictedEntries() == 1);
+        r.check("SCUNDO_22_and_it_was_the_oldest",
+                history.undoTop().afterPositions[0].x == 999.0f);
+        r.check("SCUNDO_22_the_retained_set_stays_inside_the_byte_cap",
+                history.payloadBytes() <= kMaxSculptHistoryBytes);
+
+        // Byte cap: entries large enough that the total cap bites before the
+        // step cap does.
+        SculptHistory heavy;
+        const uint32_t bigVertices = 20000;  // 560 KB of payload each
+        const size_t bigBytes = syntheticDelta(bigVertices, 1.0f).payloadBytes();
+        r.check("SCUNDO_23_a_big_entry_is_still_inside_the_per_entry_cap",
+                bigBytes <= kMaxSculptHistoryEntryBytes);
+        for (int i = 0; i < 12; ++i) {
+            heavy.record(syntheticDelta(bigVertices, static_cast<float>(i + 1)));
+        }
+        r.check("SCUNDO_22_the_byte_cap_bites_before_the_step_cap",
+                heavy.undoDepth() < kMaxSculptHistoryEntries && heavy.evictedEntries() > 0);
+        r.check("SCUNDO_22_and_the_total_stays_inside_the_budget",
+                heavy.payloadBytes() <= kMaxSculptHistoryBytes);
+        r.check("SCUNDO_22_the_newest_entry_is_never_the_one_evicted",
+                heavy.canUndo() && heavy.undoTop().afterPositions[0].x == 12.0f);
+
+        // SCUNDO-23: a single entry over the per-entry cap is refused, named,
+        // and leaves the history coherent — including clearing redo, because
+        // the geometry moved whether the entry was kept or not.
+        SculptHistory oversized;
+        oversized.record(syntheticDelta(4, 1.0f));
+        oversized.commitUndo();  // stand an entry in the redo stack
+        r.check("SCUNDO_23_precondition_a_redo_entry_exists",
+                oversized.redoDepth() == 1 && oversized.undoDepth() == 0);
+        const uint32_t hugeVertices =
+            static_cast<uint32_t>(kMaxSculptHistoryEntryBytes / 28u) + 1024u;
+        const SculptHistory::RecordOutcome outcome =
+            oversized.record(syntheticDelta(hugeVertices, 1.0f));
+        r.check("SCUNDO_23_an_oversized_stroke_is_refused_by_name",
+                outcome == SculptHistory::RecordOutcome::NotRetained
+                    && oversized.notRetainedStrokes() == 1);
+        r.check("SCUNDO_23_it_is_not_stored", oversized.undoDepth() == 0);
+        r.check("SCUNDO_23_but_the_stale_redo_branch_is_still_dropped",
+                oversized.redoDepth() == 0 && oversized.payloadBytes() == 0);
+        r.check("SCUNDO_23_and_the_history_still_works_afterwards", [&] {
+            return oversized.record(syntheticDelta(4, 2.0f))
+                       == SculptHistory::RecordOutcome::Recorded
+                && oversized.undoDepth() == 1;
+        }());
+
+        // A malformed delta is refused rather than stored and applied later.
+        SculptHistory strict;
+        SculptStrokeDelta unsorted = syntheticDelta(3, 1.0f);
+        unsorted.vertexIndices[0] = 5;  // now 5, 1, 2 — neither sorted nor unique-safe
+        r.check("SCUNDO_23_an_unsorted_delta_is_refused",
+                strict.record(std::move(unsorted))
+                        == SculptHistory::RecordOutcome::NothingChanged
+                    && strict.undoDepth() == 0);
+        SculptStrokeDelta ragged = syntheticDelta(3, 1.0f);
+        ragged.afterPositions.pop_back();
+        r.check("SCUNDO_23_and_so_is_a_ragged_one",
+                strict.record(std::move(ragged))
+                        == SculptHistory::RecordOutcome::NothingChanged
+                    && strict.undoDepth() == 0);
+        r.check("SCUNDO_23_an_empty_delta_records_nothing",
+                strict.record(SculptStrokeDelta{})
+                    == SculptHistory::RecordOutcome::NothingChanged);
+    }
+
+    // -----------------------------------------------------------------------
+    // Measured entry sizes, for the memory-bounds evidence
+    // -----------------------------------------------------------------------
+    //
+    // Not an assertion about a magic number: it states, as a value a reader can
+    // check, that a real default-brush stroke on the product's own sculpt
+    // fixture costs kilobytes rather than megabytes — which is the claim the
+    // constants above were chosen against.
+    {
+        ConstructionObject object = makeSphereObject();
+        SculptSession session;
+        session.freezeToSculpt(object.generateMesh(), object.objectId());
+        session.setRadiusPixels(kDefaultBrushRadiusPixels);
+        runOneStroke(session, camera, identity, 24.0f);
+        const size_t oneStroke = session.history().payloadBytes();
+        r.check("SCUNDO_22_a_default_brush_stroke_costs_far_less_than_the_per_entry_cap",
+                oneStroke > 0 && oneStroke < kMaxSculptHistoryEntryBytes / 8u);
+        for (int i = 0; i < 9; ++i) {
+            runOneStroke(session, camera, identity, 24.0f + static_cast<float>(i));
+        }
+        r.check("SCUNDO_22_and_ten_of_them_stay_far_inside_the_total",
+                session.history().undoDepth() == 10
+                    && session.history().payloadBytes() < kMaxSculptHistoryBytes / 4u);
+    }
+}
+
 int runSculptSelfTests(SculptSelfTestResult* out, int max) {
     Recorder r{out, max};
     if (out == nullptr || max <= 0) {
@@ -3167,6 +3657,8 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
                     && source.indices == generated.indices
                     && source.renderBothSides == generated.renderBothSides);
     }
+
+    runSculptUndoChecks(r);
 
     return r.n;
 }

@@ -40,7 +40,7 @@ feature list so that they can arrive without the file changing shape.
 | Each Frozen Sculpt Mesh's index topology | Same |
 | `renderBothSides` | A geometric fact about that frozen representation, not about the current source |
 | `sourceStale` | Whether the source moved on after the freeze |
-| `hasEdits` (a **boolean**, never the revision it derives from) | What the destructive *Reset Sculpt from Shape* guard asks; losing it would let a reset discard the whole file silently |
+| `hasEdits` (a **boolean**, never a revision or an undo depth) | What the destructive *Reset Sculpt from Shape* guard asks; losing it would let a reset discard the whole file silently. Since `ARCH-OWNER-12` it is a stored fact on the mesh rather than a predicate over the revision, because an Undo moves geometry backwards while the revision only ever goes forwards — and a project restored with edits starts with an empty sculpt history, so an undo depth could not answer it either |
 
 ### 1.2 Derived runtime/render truth — **not** serialized
 
@@ -60,6 +60,14 @@ feature list so that they can arrive without the file changing shape.
 * The Construction Undo/Redo stack. It is session history: a successful load
   starts a fresh session, and a failed load leaves the existing history
   untouched.
+* **The Sculpt Undo/Redo stacks** (`SculptHistory`, `ARCH-OWNER-12`). Runtime
+  only, and for the same reason: the stored positions are where the user's mesh
+  got to, and the strokes that reached it are a property of the editing session,
+  not of the document. A successful load starts an empty sculpt history over the
+  restored geometry; a failed load changes nothing at all. This added **no**
+  field, section, flag or version bump — the layout below is byte-identical to
+  what it was before Sculpt Undo existed, which the committed corpus digests
+  prove.
 * Camera pose, open panels, display unit, appearance, shading model, held tool,
   brush radius and strength. All session or presentation state.
 

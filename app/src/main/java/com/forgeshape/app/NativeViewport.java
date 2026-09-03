@@ -545,17 +545,42 @@ final class NativeViewport {
     // of the history would be a second answer to "what does undo do next", and
     // the enabled state of a control would eventually disagree with the model.
     //
-    // Both acts are refused below JNI while sculpting. The workspace withdraws
-    // the controls there as well, because Construction Undo is not Sculpt Undo
-    // and a control that could be read as one would be a lie; the native guard
-    // stays regardless.
+    // Both acts below are refused while sculpting, and that has not changed:
+    // Construction Undo is not Sculpt Undo, and one entry point that quietly
+    // meant either would be the ambiguity two histories exist to avoid. What
+    // ARCH-OWNER-12 added is a THIRD family — {@code historyUndo} and friends —
+    // which is what the two chrome controls call, and which dispatches on the
+    // product mode in native code where the mode actually lives.
 
     /** The step was performed. */
     static final int HISTORY_OK = 0;
     /** There was nothing to undo or redo; nothing changed. */
     static final int HISTORY_NOTHING_TO_DO = 1;
-    /** Refused: Construction history is not touched while sculpting. */
+    /**
+     * Refused: the Construction history is not touched while sculpting.
+     *
+     * <p>Only {@link #constructionUndo} and {@link #constructionRedo} return
+     * this. {@link #historyUndo} never does — in Sculpt it means the Sculpt
+     * history, so there is nothing there to refuse.
+     */
     static final int HISTORY_REFUSED_IN_SCULPT = 2;
+    /**
+     * Refused for now: a sculpt stroke is in progress. Self-clearing — the
+     * finger lifts and the step is available.
+     */
+    static final int HISTORY_STROKE_ACTIVE = 3;
+    /**
+     * Asked for a Sculpt step where there is no Sculpt history to step: not in
+     * Sculpt mode, or the active body has no sculpt mesh.
+     */
+    static final int HISTORY_UNAVAILABLE = 4;
+    /**
+     * Never returned by a step. It names the one condition a step cannot
+     * report because it happened earlier: a stroke too large for the history's
+     * byte budget applied but was not retained, so it cannot be taken back.
+     * Read through {@link #sculptHistoryNotRetainedCount}.
+     */
+    static final int HISTORY_ENTRY_NOT_RETAINED = 5;
 
     /** @return whether a Construction step can be undone right now */
     static native boolean constructionUndoAvailable();
@@ -1132,6 +1157,77 @@ final class NativeViewport {
 
     /** @return one of the {@code HISTORY_*} constants */
     static native int constructionRedo();
+
+    // -----------------------------------------------------------------------
+    // Sculpt history (ARCH-OWNER-12)
+    // -----------------------------------------------------------------------
+    //
+    // The ACTIVE BODY's own Undo/Redo over completed sculpt strokes. A separate
+    // history from the Construction one, with separate stacks, separate bounds
+    // and a separate lifetime: it is runtime-only, it is never written to a
+    // {@code .forge} document or a recovery checkpoint, and reopening a project
+    // starts an empty one over the geometry the file restored.
+    //
+    // As with the Construction history, this layer holds none of it.
+
+    /** @return whether a completed sculpt stroke can be undone right now */
+    static native boolean sculptUndoAvailable();
+
+    /** @return whether an undone sculpt stroke can be redone right now */
+    static native boolean sculptRedoAvailable();
+
+    /** @return how many strokes the active body's undo stack holds */
+    static native int sculptUndoDepth();
+
+    /** @return how many strokes the active body's redo stack holds */
+    static native int sculptRedoDepth();
+
+    /**
+     * @return what the active body's retained sculpt history costs, in bytes,
+     *     by the same conservative measure the cap is enforced with.
+     *     Diagnostic: nothing here derives anything from it.
+     */
+    static native long sculptHistoryBytes();
+
+    /**
+     * @return how many strokes on the active body were too large to retain.
+     *     A stroke counted here applied normally but cannot be taken back.
+     */
+    static native long sculptHistoryNotRetainedCount();
+
+    /**
+     * @return how many entries the active body's history has evicted to stay
+     *     inside its step and byte caps.
+     */
+    static native long sculptHistoryEvictedCount();
+
+    /** @return one of the {@code HISTORY_*} constants */
+    static native int sculptUndo();
+
+    /** @return one of the {@code HISTORY_*} constants */
+    static native int sculptRedo();
+
+    // -----------------------------------------------------------------------
+    // What the two chrome controls mean
+    // -----------------------------------------------------------------------
+    //
+    // These four dispatch on the product mode, in native code: in Sculpt they
+    // are the active body's stroke history, and everywhere else they are the
+    // Construction history with behaviour identical to what it was before
+    // Sculpt Undo existed. The workspace calls only these — it never picks a
+    // history itself, because it does not own the mode that decides.
+
+    /** @return whether the control pair's Undo can act right now */
+    static native boolean historyUndoAvailable();
+
+    /** @return whether the control pair's Redo can act right now */
+    static native boolean historyRedoAvailable();
+
+    /** @return one of the {@code HISTORY_*} constants */
+    static native int historyUndo();
+
+    /** @return one of the {@code HISTORY_*} constants */
+    static native int historyRedo();
 
     /**
      * Opens one Construction edit, so that every mutation until the matching

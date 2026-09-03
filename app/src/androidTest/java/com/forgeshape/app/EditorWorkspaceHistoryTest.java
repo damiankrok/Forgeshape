@@ -667,8 +667,14 @@ public final class EditorWorkspaceHistoryTest {
     // -----------------------------------------------------------------------
 
     /** S019-20, S019-24. Crossing the Construction/Sculpt seam writes no
-     *  Construction step, and the two controls are withdrawn in Sculpt rather
-     *  than left standing as an offer to undo a stroke. */
+     *  Construction step, and the Construction history is not reachable from
+     *  Sculpt.
+     *
+     *  <p>Since {@code ARCH-OWNER-12} the two controls are DRAWN in Sculpt,
+     *  because there they mean the Sculpt history — which is a different thing
+     *  this test deliberately does not touch. What it still asserts is the part
+     *  that did not change: the Construction entry points refuse in Sculpt, and
+     *  the refusal costs the Construction stack nothing. */
     @Test
     public void s01920_theSculptSeamWritesNoHistoryAndWithdrawsTheControls() {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
@@ -685,9 +691,8 @@ public final class EditorWorkspaceHistoryTest {
                     NativeViewport.MODE_SCULPT, NativeViewport.productMode());
             assertEquals("S019-20: Start Sculpting is navigation, not a Construction edit",
                     1, NativeViewport.constructionUndoDepth());
-            assertEquals("S019-24: the pair is absent while sculpting — a disabled "
-                            + "Undo beside a stroke would read as an offer to take the "
-                            + "stroke back", View.GONE,
+            assertEquals("S019-24: the pair is drawn in Sculpt too, where it means the "
+                            + "Sculpt history", View.VISIBLE,
                     workspace.historyGroup().getVisibility());
             assertEquals("S019-24: and the guard below JNI stands whatever the chrome does",
                     NativeViewport.HISTORY_REFUSED_IN_SCULPT, NativeViewport.constructionUndo());

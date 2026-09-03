@@ -1,12 +1,93 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.56.0
-**Updated:** 2026-09-02
-**Result:** **IMPORT-01B — COMPLETE. An imported mesh can be sculpted, and the
-Objects list can delete a real project object.**
+**Status Version:** 0.57.0
+**Updated:** 2026-09-03
+**Result:** **SCULPT-UNDO-R0 — COMPLETE. A sculpt stroke can be taken back, and
+sculpting has its own history.**
 
-Two bounded capabilities, under `ARCH-OWNER-11` and `UI-OWNER-45`, and nothing
-else.
+One bounded capability, under `ARCH-OWNER-12`, and nothing else.
+
+**Sculpt Undo and Redo.** The two chrome controls the user already knows are now
+drawn while sculpting, and there they step **strokes**. One press takes back the
+last stroke however many times the finger moved during it; Redo puts it back.
+Both work for a Construction-derived and an Imported-Mesh-derived sculpt, through
+the same one implementation.
+
+The owner's boundary — *project/object history never stores a sculpt vertex* —
+did not move. What arrived beside it is a second history:
+
+- **`SculptHistory`** in `forgeshape_sculpt_history.{h,cpp}` — a bounded,
+  volatile, **per-body** Undo/Redo, living inside `FrozenSculpt` beside the mesh
+  it describes. Ownership is the whole mechanism: no key, no registry, no
+  "current sculpt stack", so body A's Undo is *structurally incapable* of
+  reaching body B, and `sculptSession()`'s existing per-call rebind makes a body
+  switch switch history for free.
+- **One completed stroke is exactly one entry**, never one per pointer event.
+  `SculptStroke::begin` already captured the affected set with every member's
+  base position — the four brushes need it — so the entry's BEFORE side cost
+  nothing; `buildDelta` reads the AFTER side at close, keeping only vertices that
+  actually moved. `SculptSession::recordActiveStroke` is the ONE caller, reached
+  from both `endStroke` and `cancelStroke`, which makes the boundary structural
+  rather than a convention two call sites share.
+- **An entry is a DELTA** — sorted unique indices, before and after positions,
+  and the edited flag on both sides. No normals (the mesh regenerates them and a
+  copy could only disagree), no document, no Construction parameter, no
+  `ImportedMesh`, no transform, no `ObjectId`, no GPU handle, no `.forge` byte.
+  A malformed delta is refused rather than stored and applied later.
+- **Both caps are enforced**: 32 entries AND 4 MiB per body, with 1 MiB for one
+  stroke. Either alone is escapable. Eviction is oldest-first and never takes the
+  newest entry; a stroke too large to retain still APPLIES and says so by name
+  rather than silently. Measured: a whole-mesh stroke on the 482-vertex sphere
+  fixture costs 13.3 KiB, so a full 32-stroke stack is ~426 KiB — about a tenth
+  of the budget.
+- **`hasEdits` stopped deriving from the revision**, and had to. A revision must
+  stay monotonic — the renderer, picking and the autosave fingerprint all notice
+  a sculpt change by it, including the change an Undo makes — while "has edits"
+  must be able to go back. It is now an explicit flag; a project loaded with
+  edits starts with an EMPTY history and still reports them, which no undo depth
+  could answer. `.forge` already stored it as a boolean, so the format is
+  untouched.
+- **Nothing is serialized.** No `.forge` byte, no checkpoint, no new section, no
+  version bump — reopening a project restores the geometry and starts a fresh,
+  empty history. All twelve corpus fixtures and all seven canonical digests are
+  unchanged, verified against the independent PowerShell encoder.
+- **Two boundaries Undo cannot cross**: a Freeze or destructive *Reset from
+  source* clears both stacks, and a deleted body's history leaves with the body.
+  Undoing the Delete restores the SAME object, so the stacks return with it —
+  because `holdDetachedBody` holds the object, not because anything was
+  serialized.
+- **Native owns the dispatch.** `constructionUndo`/`Redo` are ALWAYS the
+  Construction history and are still refused in Sculpt — the guard did not move.
+  `sculptUndo`/`Redo` are always the active body's. The chrome calls a third
+  pair, `historyUndo`/`historyRedo`, which choose on the product mode below JNI,
+  because the layer that holds no state must not make that choice.
+
+Sculpt still has no history panel, no named steps and no keyboard shortcut, and
+brushes are still code rather than data: nothing here became a framework.
+
+Verified: 17/17 native suites, **2712 checks, zero failures** (84 new `SCUNDO_*`,
+green on the first run); JVM 70/70; both supported ABIs debug and release; device
+guards `DEV2-01..07` and `DEV3-01..06`; the `.forge` corpus verified against the
+independent PowerShell encoder with **all twelve fixtures and all seven digests
+unchanged**; the new focused device suite `SculptUndoTest` **OK (10 tests)**;
+eight focused instrumented classes re-run; and the authoritative
+exhaustive-sharded aggregate — **`FULL_SHARDED_SUITE_PASS`, 34 classes / 482
+tests / 5 shards, missing = duplicates = unexpected = 0**. All device work on
+`emulator-5580`, confirmed `ForgeShape_Stage006`; `emulator-5554` was never
+contacted. See `artifacts/sculpt-undo-r0/`.
+
+One decision worth the owner's eye: **a cancelled stroke that moved geometry is
+recorded**, so it can be taken back. The product's standing rule is that a
+cancelled stroke keeps the positions it already wrote, and excluding those from
+the history would make them the one deformation in the product the user cannot
+reverse. A cancel that moved nothing records nothing, and a *partial* entry is
+impossible by construction. See `artifacts/sculpt-undo-r0/INDEX.md`.
+
+---
+
+**Previous result — IMPORT-01B — COMPLETE. An imported mesh can be sculpted, and
+the Objects list can delete a real project object.** Two bounded capabilities,
+under `ARCH-OWNER-11` and `UI-OWNER-45`.
 
 **Imported Mesh Sculpt.** *Start Sculpting* is offered for a body whose geometry
 came from a `.glb`, and the workflow behind it is the one that already existed —
@@ -62,8 +143,10 @@ module for the reason `forgeshape_import_commit` is one.
   one was last, and unchanged when the deleted body was not active.
 - **The last body is refused by name** (`RefusedLastBody`), because this product
   has no empty project — and no replacement primitive is ever invented. Delete is
-  refused while sculpting too, on the same terms body switching and Undo/Redo
-  already are, and the control is withdrawn in both cases.
+  refused while sculpting too, on the same terms body switching is, and the
+  control is withdrawn in both cases. (Undo and Redo were withdrawn in Sculpt on
+  those terms as well until `SCULPT-UNDO-R0`; there they now mean the Sculpt
+  history, while the CONSTRUCTION entry points are still refused.)
 - **The renderer stopped leaking.** `releaseBodiesAbsentFromScene` frees the GPU
   copy for a body the scene no longer names. Delete made that a real unbounded
   growth — add/delete in a loop mints a fresh `ObjectId` every cycle, and each
@@ -80,16 +163,12 @@ deletes, and neither is reachable by the other. Delete is deliberately
 unconfirmed — it is one Undo away, and the product's one dialog guards the one
 act that genuinely cannot be undone.
 
-Verified: 17/17 native suites, **2628 checks, zero failures**; JVM 70/70; both
-supported ABIs debug and release; device guards `DEV2-01..07` and `DEV3-01..06`;
-the `.forge` corpus verified against the independent PowerShell encoder with the
-two new fixtures and the ten legacy digests unchanged; nine focused instrumented
-classes; and the authoritative exhaustive-sharded aggregate —
-**`FULL_SHARDED_SUITE_PASS`, 33 classes / 472 tests / 5 shards, missing =
-duplicates = unexpected = 0**. All device work on `emulator-5580`, confirmed
-`ForgeShape_Stage006`; `emulator-5554` was never contacted, and `adb kill-server`
-was never used because another program owns a reserved session on the same host
-daemon.
+Verified at the time by 17/17 native suites (2628 checks), JVM 70/70, both ABIs
+debug and release, the device guards, the `.forge` corpus, nine focused
+instrumented classes and its own `FULL_SHARDED_SUITE_PASS` (33 classes / 472
+tests). Every one of those gates was re-run for `SCULPT-UNDO-R0`, at the higher
+counts recorded above; `adb kill-server` has never been used, because another
+program owns a reserved session on the same host daemon.
 
 `E2E-IMP01B-12` is **`OWNER_REAL_FILE_01B_RETEST_PENDING`**: the owner's own
 `1 lowpoly.glb` is not in this environment and no user folder was searched for
@@ -543,7 +622,11 @@ Stage 016 (Plane), Stage 015D (camera projection), Stage 015C-R (front-face
 culling), Stage 015C (shading), Platform Fix P2, Stage 015B, Stage 014, the NDK
 r29 migration (Gate P0) and the Owner Decision Baseline. Per-stage narrative
 lives in Git history; only what still constrains the code is kept here.
-**Next Stage:** **`CAD-R0-DATA` — a COORDINATOR-owned decision/research gate. Claude Code does not execute it.** See *Next Stage*.
+`SCULPT-UNDO-R0` (`ARCH-OWNER-12` — a dedicated bounded volatile per-body Sculpt
+stroke history, with Undo and Redo on the existing controls) sits on top of
+`IMPORT-01B`/`UI-OWNER-45`.
+**Next Stage:** **return this report to the ForgeShape coordinator for the
+owner's real-device Sculpt Undo/Redo retest.** See *Next Stage*.
 
 ## Current state
 
@@ -564,7 +647,10 @@ seeded from its own geometry, and it is moved, rotated, scaled, saved, undone an
 reopened exactly like anything else. A body owns one SOURCE representation for
 its whole life, nothing converts between them, and either kind may additionally
 own a Frozen Sculpt Mesh. Any body but the last can be DELETED from the Objects
-list (`UI-OWNER-45`), as exactly one Undo.
+list (`UI-OWNER-45`), as exactly one Undo. Sculpt strokes have their own Undo and
+Redo (`ARCH-OWNER-12`): a bounded, per-body, runtime-only history over completed
+strokes, stepped by the same two chrome controls that step the project history
+outside Sculpt, and never written to a `.forge` document.
 Three approved dark appearances, two shading models, two projections, a world
 reference grid, and an Editor Workspace that re-composes itself per window.
 
@@ -2642,15 +2728,29 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Exactly one next step: return the IMPORT-01B report to the ForgeShape
-coordinator for the owner's real-file sculpt-and-delete retest.** No product
-stage may begin here. `BRIDGE-R1` (the one-way Construction-to-Sculpt project
-derivation) remains **future** and was deliberately not implemented; Stage 018A
-still owns rename, visibility, lock, duplicate and grouping — Delete arrived
-early under `UI-OWNER-45` and is the ONLY object command that exists; and Stage
-033's full exporter, OBJ, FBX, `APP-H1` and `CAD-R0-DATA` are all **not started**
-and none may be begun without the coordinator opening it. GATE-E2E remains the
-owner's and is not opened here.
+**Exactly one next step: return the SCULPT-UNDO-R0 report to the ForgeShape
+coordinator for the owner's real-device Sculpt Undo/Redo retest.** No product
+stage may begin here, and **CAD is not started**. `BRIDGE-R1` (the one-way
+Construction-to-Sculpt project derivation) remains **future** and was
+deliberately not implemented; Stage 018A still owns rename, visibility, lock,
+duplicate and grouping — Delete arrived early under `UI-OWNER-45` and is the ONLY
+object command that exists; and Stage 033's full exporter, OBJ, FBX, `APP-H1` and
+`CAD-R0-DATA` are all **not started** and none may be begun without the
+coordinator opening it. GATE-E2E remains the owner's and is not opened here.
+
+SCULPT-UNDO-R0 is closed on the technical side. `Start/Resume Sculpt → stroke A →
+stroke B → Undo B → Undo A → Redo A → Redo B` works through the real controls for
+both a Construction-derived and an Imported-Mesh-derived sculpt; one completed
+stroke is one entry however many events it took; the project history is untouched
+and still refuses its own entry points in Sculpt; source meshes, placements and
+`ObjectId`s are immutable throughout; both memory caps are enforced with
+deterministic oldest-first eviction; and nothing reaches a `.forge` byte, so all
+seven corpus digests are unchanged.
+
+What the owner's retest is for is the part no emulator can settle: whether taking
+a stroke back on real hardware, with a real finger and a real file, feels like
+the product it should be. The named gaps it may also close are the two standing
+`OWNER_REAL_FILE_*_RETEST_PENDING` items, which this stage did not change.
 
 IMPORT-01B is closed on the technical side. An imported body enters the ordinary
 reversible Sculpt workflow, a real stroke moves sculpt truth while the imported

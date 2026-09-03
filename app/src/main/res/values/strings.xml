@@ -324,6 +324,16 @@
       never also says nothing.
     -->
     <string name="status_history_refused_in_sculpt">Construction Undo does not act on sculpt work — return to Construction first.</string>
+
+    <!--
+      Both of these are refusals too, and both are self-clearing states rather
+      than instructions. The first is written only while a finger is still
+      sculpting; the second names the one thing the sculpt history's byte budget
+      can cost the user, at the moment it costs it, because a stroke that will
+      not come back deserves to say so rather than leave Undo looking broken.
+    -->
+    <string name="status_history_stroke_active">Finish the stroke before undoing.</string>
+    <string name="status_sculpt_stroke_not_retained">That stroke was too large to keep in sculpt history and cannot be undone.</string>
     <string name="body_label">Body #%1$d</string>
     <string name="status_body_selected">%1$s selected.</string>
 

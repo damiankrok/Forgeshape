@@ -226,6 +226,27 @@ final class EditorWorkspaceView extends FrameLayout
      */
     private long lastKnownGizmoCommits;
 
+    /**
+     * The active body's sculpt undo depth when a gesture last settled.
+     *
+     * <p>The same idea as {@link #lastKnownGizmoCommits} and for the same
+     * reason: a sculpt stroke never passes through Java, so the settled-gesture
+     * edge is the only moment this layer can learn one happened. Comparing the
+     * depth answers "did a stroke actually commit an entry", where re-reading
+     * unconditionally would rewrite the brush controls after every orbit.
+     *
+     * <p>Emphatically not a mirror of the history: it is one number used for one
+     * comparison, it is never read to decide what Undo does, and the enabled
+     * state still comes from native on every refresh.
+     */
+    private int lastKnownSculptUndoDepth;
+
+    /**
+     * How many oversized strokes had been reported to the user, so the same one
+     * is not announced twice. See {@link #reportUnretainedStrokes}.
+     */
+    private long unretainedStrokesReported;
+
     private WorkspaceLayoutMode layoutMode = WorkspaceLayoutMode.COMPACT;
     private WorkspaceLayoutMode.InspectorPlacement inspectorPlacement =
             WorkspaceLayoutMode.InspectorPlacement.BOTTOM_SHEET;
@@ -324,6 +345,21 @@ final class EditorWorkspaceView extends FrameLayout
                             // would throw away a half-typed draft — which is
                             // why this asks whether a drag COMMITTED rather
                             // than whether a gesture happened.
+                            // A completed sculpt stroke is the same kind of
+                            // event for the OTHER history: it made an Undo
+                            // available where there was none. Only the two
+                            // history controls have anything new to say, so
+                            // this refreshes them rather than calling
+                            // syncFromNative — a full re-read after every
+                            // stroke would rewrite the brush controls under a
+                            // user who is still sculpting with them.
+                            final int sculptDepth = NativeViewport.sculptUndoDepth();
+                            if (sculptDepth != lastKnownSculptUndoDepth) {
+                                lastKnownSculptUndoDepth = sculptDepth;
+                                refreshHistoryControls();
+                                reportUnretainedStrokes();
+                            }
+
                             NativeViewport.gizmoState(nativeGizmo);
                             final long commits =
                                     (long) nativeGizmo[NativeViewport.GIZMO_COMMITTED_DRAGS];
@@ -1672,7 +1708,7 @@ final class EditorWorkspaceView extends FrameLayout
         }
         objectsCapsule.refreshFromNative();
         refreshTransformGizmo(sculpting);
-        refreshHistoryControls(sculpting);
+        refreshHistoryControls();
         showActiveInspectorBody(sculpting);
         showPrecisionToggle(sculpting);
         showDefaultStatus(sculpting);
@@ -1849,41 +1885,78 @@ final class EditorWorkspaceView extends FrameLayout
      * there is deliberately no confirmation message, no animation and nothing
      * that could stutter under a repeated tap.
      *
-     * <p>In Sculpt the pair is <b>withdrawn</b>, not disabled. Sculpt has no
-     * undo, and a greyed Undo sitting beside a stroke the user just made would
-     * read as "your stroke can be taken back, just not yet" — which is a
-     * different and worse lie than the control simply not being there. Keeping
-     * them for shell consistency would also mean the one place in the product
-     * where a permanently inert control stands on the model, which is the
-     * pattern the Export chip is allowed as the single approved exception to.
+     * <p>The pair is now drawn in <b>both</b> modes. It was withdrawn in Sculpt
+     * for as long as sculpting had no undo, because a greyed Undo beside a
+     * stroke would have read as "your stroke can be taken back, just not yet".
+     * Since {@code ARCH-OWNER-12} it can be, so the controls mean exactly what
+     * they look like in either mode: in Construction they step the project
+     * history, and in Sculpt they step the active body's stroke history.
+     *
+     * <p>Which of the two a tap means is decided in native code and never
+     * here — see {@link NativeViewport#historyUndo}. This method deliberately
+     * takes no mode argument and reads none: the enabled state comes from the
+     * SAME dispatching query the tap will, so there is no branch here that
+     * could route a tap one way and light the control the other. It used to
+     * take a {@code sculpting} flag, and that flag existed only to withdraw
+     * the pair.
      */
-    private void refreshHistoryControls(boolean sculpting) {
-        historyGroup.setVisibility(sculpting ? GONE : VISIBLE);
-        if (sculpting) {
-            return;
-        }
-        undoAction.setEnabled(NativeViewport.constructionUndoAvailable());
-        redoAction.setEnabled(NativeViewport.constructionRedoAvailable());
+    private void refreshHistoryControls() {
+        historyGroup.setVisibility(VISIBLE);
+        undoAction.setEnabled(NativeViewport.historyUndoAvailable());
+        redoAction.setEnabled(NativeViewport.historyRedoAvailable());
     }
 
     /**
-     * Steps the Construction history one entry in the asked-for direction.
+     * Steps whichever history the product mode says these controls mean.
+     *
+     * <p>The choice is native — in Sculpt this is the active body's stroke
+     * history, and everywhere else the Construction history — so this method
+     * asks for a step and reports what came back rather than deciding anything.
      *
      * <p>The control's enabled state already answers whether there is a step, so
      * the ordinary outcome is silent: the model changes, the exact-value editors
-     * re-read, and nothing is written to the status line. Only a refusal —
-     * which the guard below JNI can still produce even though the controls are
-     * withdrawn in Sculpt — says anything, because a control that did nothing
-     * and said nothing would be the defect this reports.
+     * re-read, and nothing is written to the status line. Only a refusal says
+     * anything, because a control that did nothing and said nothing would be
+     * the defect this reports.
      */
     private void onHistoryStepRequested(boolean forward) {
-        final int status = forward ? NativeViewport.constructionRedo()
-                : NativeViewport.constructionUndo();
+        final int status = forward ? NativeViewport.historyRedo() : NativeViewport.historyUndo();
         finishEditing();
         onNativeStateChanged();
         if (status == NativeViewport.HISTORY_REFUSED_IN_SCULPT) {
             showStatus(getContext().getString(R.string.status_history_refused_in_sculpt),
                     R.attr.fsTextError);
+        } else if (status == NativeViewport.HISTORY_STROKE_ACTIVE) {
+            showStatus(getContext().getString(R.string.status_history_stroke_active),
+                    R.attr.fsTextError);
+        }
+        reportUnretainedStrokes();
+    }
+
+    /**
+     * Says so, once, when a stroke was too large for the sculpt history to hold.
+     *
+     * <p>A standing fault would be the wrong shape for this: it is news at the
+     * moment it becomes true and then it is history. So the count is compared
+     * against the last one seen and reported only when it moves — which is also
+     * why the check is cheap enough to sit on the ordinary refresh path.
+     *
+     * <p>This is the one user-visible consequence of the history's byte budget.
+     * The stroke itself applied normally; what it cannot do is be taken back,
+     * and a user tapping Undo at geometry that will not move deserves to be
+     * told why rather than left to conclude the control is broken.
+     */
+    private void reportUnretainedStrokes() {
+        final long count = NativeViewport.sculptHistoryNotRetainedCount();
+        if (count > unretainedStrokesReported) {
+            unretainedStrokesReported = count;
+            showStatus(getContext().getString(R.string.status_sculpt_stroke_not_retained),
+                    R.attr.fsTextError);
+        } else {
+            // Falls as well as rises: the counter is per body, so switching to
+            // a body that has never overflowed must not leave this armed to
+            // report the next stroke there.
+            unretainedStrokesReported = count;
         }
     }
 
@@ -3175,6 +3248,14 @@ final class EditorWorkspaceView extends FrameLayout
         // comparison mean what it says: "has the active body changed since the
         // last time these surfaces were refreshed?"
         lastKnownActiveBodyId = NativeViewport.sceneActiveBodyId();
+        // Rebased for exactly the same reason, and it matters more here: the
+        // sculpt undo depth is PER BODY, so a body switch, a Back, a Resume or
+        // a Reset from source all change the number this compares against
+        // without any stroke having happened. Recording it wherever the chrome
+        // re-reads keeps the comparison meaning "has a stroke committed since
+        // these controls were last refreshed" rather than "is this a different
+        // body's depth".
+        lastKnownSculptUndoDepth = NativeViewport.sculptUndoDepth();
         syncFromNative();
     }
 

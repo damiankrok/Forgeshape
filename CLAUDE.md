@@ -110,9 +110,9 @@ be read rather than only an assertion that failed.
   ONE edit around its mutations rather than recording each; a commit that finds
   nothing different records nothing and must leave the redo stack alone. The
   `ObjectId` allocator is never rolled back: an undone creation's id, and a
-  deleted body's, are restored by name and never reused. **Sculpt has no undo**,
-  and Construction undo may never move a sculpt vertex — the only sculpt state a
-  restore touches is the existing stale-source flag. A body an act removes from
+  deleted body's, are restored by name and never reused. Construction undo may
+  never move a sculpt vertex — the only sculpt state a restore touches is the
+  existing stale-source flag. A body an act removes from
   the scene is HELD by the history rather than destroyed (`holdDetachedBody`),
   because an Imported Mesh's geometry and a Frozen Sculpt Mesh are the two things
   a step cannot rebuild; one is released only when NO step in either stack names
@@ -122,6 +122,35 @@ be read rather than only an assertion that failed.
   history both ways. That bracket is reachable only from the start answer —
   never from Back to Construction, a rotation or a resume — and the debug-only
   `clear()` stays a test seam, never production behaviour.
+- **Sculpt has its OWN history, and the two never merge** (`ARCH-OWNER-12`).
+  Project/object history never stores a sculpt vertex, a sculpt mesh snapshot or
+  a `SculptRevision` — that rule did not move. What changed is the answer to
+  what a stroke can cost: `SculptHistory` is a **bounded, volatile, per-body**
+  Undo/Redo over completed strokes, living in `FrozenSculpt` beside the mesh it
+  describes, so ownership alone makes one body's Undo incapable of reaching
+  another's. **One completed stroke is exactly one entry** — never one per
+  pointer event — recorded once in `SculptSession`'s stroke close, from the
+  affected set the stroke captured at pointer-down; a stroke that moved nothing
+  records nothing, and a cancelled stroke whose positions stand records them too,
+  because the deformation the user can see must be one they can take back. An
+  entry is a DELTA (sorted unique indices, before and after positions, and the
+  edited flag on both sides), never normals, never a document, never a
+  Construction parameter, never a transform. Both caps are enforced —
+  `kMaxSculptHistoryEntries` and `kMaxSculptHistoryBytes`, with
+  `kMaxSculptHistoryEntryBytes` for one stroke — evicting oldest-first and never
+  the newest; a stroke too large to retain still APPLIES and says so by name
+  rather than silently. **`hasEdits` is a stored fact, not `undoDepth > 0`**: a
+  project loaded with edits starts with an empty history and must still report
+  them. **Revisions stay monotonic**: geometry goes backwards while the counter
+  goes forwards, because the renderer, the picker and the autosave fingerprint
+  all notice a sculpt change by that number. **Nothing here is ever serialized**
+  — no `.forge` byte, no checkpoint, no schema change — so reopening a project
+  restores the geometry and starts a fresh, empty history. A Freeze or a
+  destructive Reset from source clears it; Undo cannot cross that boundary. The
+  two chrome controls are drawn in both modes and native code alone decides
+  which history a tap means, from the product mode; the CONSTRUCTION entry
+  points still refuse in Sculpt, because removing a control is not removing a
+  guard.
 - **A `.forge` project file is a semantic document, and loading one is
   all-or-nothing.** The format is ForgeShape's own, versioned, and portable
   between compatible installations: every field is a file-owned fixed-width

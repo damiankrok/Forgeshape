@@ -49,6 +49,7 @@
 #include "forgeshape_mesh.h"
 #include "forgeshape_object_id.h"
 #include "forgeshape_picking.h"
+#include "forgeshape_sculpt_history.h"
 
 namespace forgeshape {
 
@@ -106,9 +107,14 @@ using SculptRevision = uint64_t;
 constexpr SculptRevision kNoSculptRevision = 0;
 
 // The revision every Freeze restarts at. A mesh still sitting at this revision
-// is a byte-identical copy of its Construction source: nothing has been
-// sculpted into it yet. That makes `revision > kFrozenSculptRevision` the exact
-// predicate for "THIS frozen mesh has user edits" — see SculptMesh::hasEdits().
+// is a byte-identical copy of its source: nothing has been sculpted into it yet.
+//
+// It is NOT the predicate for "this mesh has user edits". It was, until
+// `ARCH-OWNER-12`, and Sculpt Undo is what took the two apart: a revision is
+// monotonic and must stay so, because the renderer and every derived cache use
+// it to notice a change — including the change an Undo makes. Geometry can go
+// backwards while the counter only goes forwards, so "has edits" became its own
+// stored fact. See SculptMesh::hasEdits().
 constexpr SculptRevision kFrozenSculptRevision = 1;
 
 // ---------------------------------------------------------------------------
@@ -322,12 +328,17 @@ public:
     // The predicate the destructive re-Freeze guard asks, and deliberately NOT
     // a session-lifetime stroke count: re-Freeze destroys the edits on the mesh
     // that exists right now, so strokes that landed on some earlier frozen mesh
-    // are not something the user can still lose. `revision_` is restarted at
-    // kFrozenSculptRevision by every freezeFrom and advanced only by
-    // advanceRevision(), which runs only when a stroke actually moved a vertex —
-    // so a gesture that began and was abandoned to navigation, or a stroke that
-    // captured no vertex, correctly reports no edits.
-    bool hasEdits() const { return frozen() && revision_ > kFrozenSculptRevision; }
+    // are not something the user can still lose.
+    //
+    // An explicit flag rather than `revision_ > kFrozenSculptRevision`, which is
+    // what it was before Sculpt Undo existed. It is cleared by every freezeFrom
+    // and set by advanceRevision(), which runs only when a stroke actually moved
+    // a vertex — so a gesture abandoned to navigation, or a stroke that captured
+    // no vertex, still correctly reports no edits, exactly as before. What the
+    // flag adds is the one case a monotonic counter cannot express: an Undo that
+    // returns the mesh to its unedited seed must report NO edits while the
+    // revision keeps climbing. See restoreEditedFlag().
+    bool hasEdits() const { return frozen() && hasEdits_; }
 
     // Whether the frozen geometry is a flat, open sheet that is legitimately
     // usable from both sides — carried over from the Construction mesh this was
@@ -374,9 +385,21 @@ public:
     // all, and no counts can change.
     bool setVertexPosition(uint32_t index, const Vec3& position);
 
-    // Mints the next SculptRevision. Called once after a coherent batch of
-    // position writes, so a revision always describes a complete edit.
+    // Mints the next SculptRevision, and marks this mesh edited.
+    //
+    // Called once after a coherent batch of position writes, so a revision
+    // always describes a complete edit.
     SculptRevision advanceRevision();
+
+    // Restores the edited flag to a value a Sculpt history entry captured.
+    //
+    // The ONE caller is SculptSession's undo/redo, and it calls this AFTER
+    // advanceRevision(), because an Undo is a change the renderer must see
+    // (revision forward) that may nonetheless leave the mesh unedited (flag
+    // back). Nothing else may write it: outside history, "edited" is decided by
+    // whether a stroke moved a vertex, and a general setter would be a way to
+    // lie about that.
+    void restoreEditedFlag(bool edited) { hasEdits_ = edited; }
 
     // Non-owning triangle view, for picking the sculpt geometry directly.
     TriangleMeshView triangleView() const;
@@ -390,6 +413,8 @@ public:
 private:
     ObjectId objectId_ = kNoObject;
     SculptRevision revision_ = kNoSculptRevision;
+    // Whether a stroke has moved a vertex of THIS frozen mesh. See hasEdits().
+    bool hasEdits_ = false;
     bool renderBothSides_ = false;
     std::vector<MeshVertex> vertices_;
     std::vector<uint32_t> indices_;
@@ -460,9 +485,32 @@ public:
     void end();
 
     // Abandons the stroke. Positions already written stay written — a cancelled
-    // stroke is a stroke that stopped, not one that is undone; there is no undo
-    // in this stage and inventing a partial one here would be worse.
+    // stroke is a stroke that stopped, not one that is rolled back.
+    //
+    // Sculpt Undo does not change that rule, it completes it: because the
+    // deformation stands, it must be UNDOABLE, so `SculptSession::cancelStroke`
+    // records the same single entry an ordinary end would. A cancel that moved
+    // nothing still records nothing. What must never happen — and cannot,
+    // because the entry is built in one go from the affected set — is a PARTIAL
+    // entry describing half a stroke.
     void cancel();
+
+    // Builds the history entry for this stroke, as the vertices it actually
+    // moved and where they were before it started.
+    //
+    // Returns false, leaving `*out` untouched, when the stroke is inactive or
+    // when not one captured vertex ended up anywhere other than where it began
+    // — which is the no-op stroke the history must not record.
+    //
+    // The BEFORE positions cost nothing to keep: `begin` already captured every
+    // affected vertex's base position, because the four tools need it. The
+    // AFTER positions are read from the mesh here, which is why this must run
+    // BEFORE end() or cancel() clears the affected set.
+    //
+    // `beforeHasEdits` comes from what the mesh reported at pointer-down, not
+    // from what it reports now — by the time a stroke ends the answer is always
+    // "yes", and the whole point of the entry is to restore what it was.
+    bool buildDelta(const SculptMesh& mesh, SculptStrokeDelta* out) const;
 
     bool active() const { return active_; }
     SculptTool tool() const { return tool_; }
@@ -490,6 +538,11 @@ private:
 
     bool active_ = false;
     SculptTool tool_ = kDefaultSculptTool;
+
+    // What SculptMesh::hasEdits() said when this stroke went down. Captured
+    // because it is the only moment the answer is still the pre-stroke one; see
+    // buildDelta().
+    bool beganWithEdits_ = false;
 
     float anchorX_ = 0.0f;  // view-local pixel where the stroke went down
     float anchorY_ = 0.0f;
@@ -549,6 +602,19 @@ private:
 struct FrozenSculpt {
     SculptMesh mesh;
     bool sourceStale = false;
+
+    // This body's Sculpt Undo/Redo stacks (`ARCH-OWNER-12`).
+    //
+    // Per body for the same reason the mesh is: the history describes THESE
+    // vertices, and a body switch must carry both or neither. Ownership is the
+    // whole mechanism — there is no key, no registry and no "current sculpt
+    // stack", so body A's Undo is structurally incapable of reaching body B.
+    //
+    // Runtime-only and volatile. It is not project truth, no encoder can see
+    // it, and it dies with the body — which for a deleted body means when the
+    // Construction history finally releases the held object, not when the
+    // Delete happens.
+    SculptHistory history;
 
     // THE stale-source rule, and the only implementation of it.
     //
@@ -639,7 +705,67 @@ public:
     void endStroke();
     void cancelStroke();
 
+    // -----------------------------------------------------------------------
+    // Sculpt Undo / Redo (`ARCH-OWNER-12`)
+    // -----------------------------------------------------------------------
+    //
+    // The active body's OWN history, and the only place a history entry is ever
+    // applied to a mesh. `SculptHistory` decides what is retained; this decides
+    // what that means for geometry, for the edited flag and for the revision,
+    // so there is exactly one implementation of "an Undo is a step backwards in
+    // geometry and forwards in revision".
+    //
+    // Neither touches the Construction Source, the Imported Mesh, the body's
+    // placement, the ObjectId allocator or the Construction history. A sculpt
+    // step is not a project act and cannot become one.
+
+    // Why an Undo or Redo did not happen. Every one is a refusal that changes
+    // nothing: no vertex moves, no revision is minted, and both stacks stand.
+    enum class SculptHistoryStatus {
+        Ok,
+        // Not in Sculpt mode. The two histories are never consulted together,
+        // so a Construction-mode request is not silently answered from here.
+        NotSculpting,
+        // A stroke is in progress. Stepping the history under a finger that is
+        // still writing positions would apply an entry the stroke is about to
+        // overwrite, so it waits for the stroke to commit or cancel.
+        StrokeActive,
+        // The active body has no Frozen Sculpt Mesh to step.
+        NoSculptMesh,
+        // The stack in that direction is empty.
+        NothingToDo,
+    };
+
+    static const char* sculptHistoryStatusName(SculptHistoryStatus status);
+
+    // Whether a step exists AND could run right now. The enabled state of the
+    // two chrome controls, answered natively so no Java-side mirror can
+    // disagree with the stacks.
+    bool canUndoSculpt() const;
+    bool canRedoSculpt() const;
+
+    SculptHistoryStatus undoStroke();
+    SculptHistoryStatus redoStroke();
+
+    // The active body's history, for depth and byte-budget introspection.
+    const SculptHistory& history() const { return target().history; }
+
 private:
+    // Records the live stroke, if it moved anything, as ONE entry.
+    //
+    // The single implementation, called by both endStroke() and cancelStroke()
+    // — which is what makes "one completed stroke is one entry" a structural
+    // fact rather than a convention two call sites happen to share. It runs
+    // BEFORE the stroke clears its affected set, because that set is where the
+    // before-positions live.
+    void recordActiveStroke();
+
+    // Writes one side of a history entry into the mesh, then advances the
+    // revision and restores the entry's edited flag. Shared by undo and redo,
+    // which differ only in which side of the delta they hand it.
+    void applyHistorySide(const std::vector<uint32_t>& indices,
+                          const std::vector<Vec3>& positions, bool edited);
+
     // GLOBAL, because they describe the editing session rather than any one
     // body: which mode the product is in, the stroke in progress, the held
     // tool, and the brush. Radius and Strength being shared is a documented

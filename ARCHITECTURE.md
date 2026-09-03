@@ -1610,8 +1610,10 @@ never existed. An undo is one discrete user act, not a per-frame path.
 
 ### Sculpt is separate, and stays separate
 
-Sculpt has no undo. A stroke writes no Construction history, and Construction
-Undo never moves a sculpt vertex, a `SculptRevision` or a stroke count.
+Sculpting has its own history (`ARCH-OWNER-12`, below), and the separation is the
+point of both: a stroke writes no Construction history, and Construction Undo
+never moves a sculpt vertex, a `SculptRevision` or a stroke count. Neither
+history is ever consulted for the other, and there is no combined timeline.
 
 What a Construction restore *does* touch is the same stale-source bookkeeping an
 ordinary Construction edit performs: a body whose shape changed has its Frozen
@@ -1621,9 +1623,14 @@ on bodies the session is not bound to — an undo that changes body #2 while bod
 #1 is active must mark #2, and routing it through the session would mark the
 wrong body. Adopting a changed source stays an explicit user act.
 
-Both acts are refused below JNI while sculpting, and the workspace withdraws the
-controls there. The guard stays regardless: removing a control is not removing a
-guard.
+The CONSTRUCTION entry points — `constructionUndo` and `constructionRedo` — are
+refused below JNI while sculpting, and that did not change when Sculpt Undo
+arrived: one entry point that quietly meant either history is the ambiguity two
+histories exist to avoid. What the chrome calls is a third pair, `historyUndo`
+and `historyRedo`, which dispatch on the product mode in native code. The
+workspace no longer withdraws the controls in Sculpt — there they mean the Sculpt
+history — but the guard below JNI stays regardless: removing a control is not
+removing a guard.
 
 ### The drag coalescing boundary
 
@@ -2249,9 +2256,14 @@ Deliberate properties of the kernel, shared by all four tools:
   nothing or a brush without bound, and native code stays the authority.
 - A stroke **holds the tool it began with**. Changing the session's tool
   mid-stroke changes what the next stroke will be, never what this one is.
-- A cancelled stroke is a stroke that **stopped**, not one that is undone.
-  Positions already written stay written; there is no undo, and a partial one
-  invented here would be worse.
+- A cancelled stroke is a stroke that **stopped**, not one that is rolled back.
+  Positions already written stay written — and because they stand, they are
+  RECORDED: `SculptSession::cancelStroke` commits the same single history entry
+  an ordinary end would, so the one deformation a user can see is never the one
+  they cannot take back. A cancel that moved nothing records nothing. What is
+  forbidden is a PARTIAL entry, and `SculptStroke::buildDelta` makes that
+  structural: an entry is built in one pass from the whole affected set or not
+  at all.
 
 ### The brush metric under a non-uniform Scale
 
@@ -2362,6 +2374,93 @@ result is needed. Targets are computed from a coherent snapshot **before**
 anything is written (Jacobi, not Gauss-Seidel), so the outcome cannot depend on
 the affected set's order; only affected vertices are written. Inflate snapshots
 its normals the same way and for the same reason.
+
+### Sculpt Undo and Redo — `SculptHistory` (`ARCH-OWNER-12`)
+
+`forgeshape_sculpt_history.{h,cpp}`. The product's SECOND history, and
+deliberately not an extension of the first.
+
+**Why a second one at all.** A `ConstructionHistory` step holds bounded
+Construction-domain state and never one mesh byte. A sculpt stroke's entire
+effect *is* mesh bytes, so it could not become a step there without inverting
+that rule. Two histories that never merge is the answer; a combined timeline does
+not exist, and neither is consulted for the other.
+
+**Ownership is the mechanism.** A `SculptHistory` lives in `FrozenSculpt`, beside
+the mesh it describes, so it is per body by construction — no key, no registry,
+no "current sculpt stack". `sculptSession()` rebinds to the active body's
+`FrozenSculpt` on every call, so switching bodies switches history with no
+lookup, and body A's Undo is *structurally incapable* of reaching body B. It
+survives Back and Resume for the same reason it survives a body switch: leaving
+Sculpt is navigation and takes nothing off the body.
+
+**One completed stroke is exactly one entry.** The transaction boundary is the
+stroke's, not the pointer event's. `SculptStroke::begin` already captures the
+affected set with each vertex's base position — the four tools need it — so the
+BEFORE side costs nothing extra; `SculptStroke::buildDelta` reads the AFTER side
+off the mesh at close, keeping only vertices that actually moved.
+`SculptSession::recordActiveStroke` is the ONE caller, reached from both
+`endStroke` and `cancelStroke`, which is what makes the boundary structural
+rather than a convention two call sites share.
+
+**The entry is a delta.** Sorted unique indices, before positions, after
+positions, and the edited flag on both sides. Normals are absent because the mesh
+regenerates them deterministically from positions and a stored copy could only
+disagree. A document, a Construction parameter, an `ImportedMesh`, a transform,
+the `ObjectId` allocator, a GPU buffer and a `.forge` byte are all absent because
+none of them is what a stroke changed.
+
+**Both caps are enforced, on every record.** `kMaxSculptHistoryEntries` (32) and
+`kMaxSculptHistoryBytes` (4 MiB) per body, with `kMaxSculptHistoryEntryBytes`
+(1 MiB) for a single stroke. Either alone is escapable — a step cap lets 32
+whole-mesh strokes hold hundreds of megabytes; a byte cap lets an unbounded
+number of one-vertex allocations accumulate. Eviction is oldest-first and never
+takes the newest entry. A stroke over the per-entry cap still APPLIES, is counted
+by name (`RecordOutcome::NotRetained`) and is reported once to the user, because
+refusing to sculpt because the history is full would be the tail wagging the dog.
+The byte measure is recomputed from the contents rather than tracked
+incrementally: a running total that drifts from what is held is exactly how a cap
+stops being one.
+
+**`hasEdits` became a stored fact.** It was `revision > kFrozenSculptRevision`,
+and Sculpt Undo is what forced the two apart. The case a depth counter cannot
+answer: a project loaded with an already-edited sculpt mesh starts with an EMPTY
+history and must still report edits, so undoing the one new stroke taken since
+must land on `true` — while undoing the first stroke after a fresh Freeze must
+land on `false`. Only the value each entry captured at its own stroke's start
+answers both. `SculptMesh::restoreEditedFlag` has exactly one caller.
+
+**Revisions stay monotonic.** Geometry goes backwards; the counter goes forwards.
+The renderer, CPU picking and `projectSemanticFingerprint` all notice a sculpt
+change by that number, so an Undo that rewound it would be invisible to precisely
+the caches that must see it. `applyHistorySide` advances the revision and then
+restores the flag — the one place the two legitimately disagree.
+
+**Nothing here is serialized.** No `.forge` byte, no checkpoint, no schema
+change, no version bump. A document stores what cannot be recomputed; the PATH a
+user took to the current positions is a property of the editing session, like the
+camera or the held brush. Reopening a project restores the geometry and starts a
+fresh, empty history, and the first stroke after that is entry one.
+
+**Two boundaries Undo cannot cross.** A Freeze — including the destructive Reset
+from source — clears both stacks, because every entry names positions in a mesh
+that no longer exists and the confirmation the user just gave said the previous
+sculpt is gone. And a Delete: the body leaves whole, and its history leaves with
+it. Undoing the Delete restores the SAME object, so the stacks come back with it
+— not because anything was serialized or added to a history step, but because
+`holdDetachedBody` holds the object rather than destroying it. When no step names
+the body any more it is released, and the history dies with it.
+
+**The apply is not in this class.** `SculptHistory` includes `forgeshape_math.h`
+and nothing else from the domain: it is a bounded stack that decides what is
+retained and never writes a vertex. `SculptSession::undoStroke`/`redoStroke`
+read the top entry, apply it, then commit the move — so there is exactly one
+place a sculpt vertex can be written by history, and it is the same class that
+owns the stroke that wrote it in the first place. Every step runs under
+`g_stateMutex`, the same lock a stroke's own position writes and the render
+thread's scene snapshot take, and publishes through the ordinary
+`publishSculptRepresentation` path — a history step reaches the renderer exactly
+the way a stroke does.
 
 ### Sculpt-mode gesture rule and arbitration
 
@@ -3495,9 +3594,11 @@ own, and naming them is what stops one arriving by accident.
 
 - **No brush framework.** Four tools behind one kernel; a fifth is another enum
   case, another `apply*` and another button — a visible, deliberate cost. No
-  remesh, subdivision, dynamic topology, sculpt undo, stroke history, symmetry,
-  masking, layers or brush presets. Pressure and tilt are **carried** by the
-  pointer boundary and read by nothing: no brush behaviour derives from them.
+  remesh, subdivision, dynamic topology, symmetry, masking, layers or brush
+  presets. Sculpt Undo is no longer on this list — `ARCH-OWNER-12` implemented
+  it, as whole strokes in a bounded volatile per-body history, and nothing about
+  it made brushes into data. Pressure and tilt are **carried** by the pointer
+  boundary and read by nothing: no brush behaviour derives from them.
 - **No mesh library.** `SculptTopology` carries adjacency for a fixed topology
   and nothing more — no edge collapse, split, flip or incremental update, because
   the only thing that can happen to a frozen mesh is that a vertex moves.

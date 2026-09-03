@@ -310,6 +310,16 @@ final class WorkspaceTestSupport {
      * repository's existing touch harness injecting viewport input, and nothing
      * is inferred FROM the coordinate — what is asserted afterwards is the
      * revision and the vertex data native code reports.
+     *
+     * <p><b>Through the real view, not around it.</b> The gesture is dispatched
+     * to the {@code SurfaceView} the user actually touches, so it takes the
+     * whole production path: the surface converts the {@code MotionEvent},
+     * calls {@code NativeViewport.touchEvent}, and — on the {@code UP} — tells
+     * the workspace the gesture settled. That last edge is the only moment the
+     * Android layer ever learns a stroke happened, because a stroke is resolved
+     * entirely in native code; a helper that called {@code touchEvent} directly
+     * would exercise the brush but never the chrome that has to notice it, and
+     * would quietly pass while the real Undo control stayed grey.
      */
     static void sculptTheViewport(ActivityScenario<ForgeShapeActivity> scenario) {
         doOnWorkspace(scenario, new WorkspaceAction<Void>() {
@@ -321,24 +331,17 @@ final class WorkspaceTestSupport {
                 assertTrue("precondition: the viewport must be laid out", w > 0 && h > 0);
                 final float cx = w / 2f;
                 final float cy = h / 2f;
-                sendViewportTouch(MotionEvent.ACTION_DOWN, cx, cy, w, h);
+                final long down = SystemClock.uptimeMillis();
+                send(viewport, down, down, MotionEvent.ACTION_DOWN, cx, cy);
                 for (int step = 1; step <= 8; ++step) {
-                    sendViewportTouch(MotionEvent.ACTION_MOVE, cx + step * 6f, cy + step * 4f,
-                            w, h);
+                    send(viewport, down, down + step * 8L, MotionEvent.ACTION_MOVE,
+                            cx + step * 6f, cy + step * 4f);
                 }
-                sendViewportTouch(MotionEvent.ACTION_UP, cx + 48f, cy + 32f, w, h);
+                send(viewport, down, down + 96L, MotionEvent.ACTION_UP, cx + 48f, cy + 32f);
                 return null;
             }
         });
         settleLayout();
-    }
-
-    private static void sendViewportTouch(int action, float x, float y, int width, int height) {
-        // Null stylus arrays on purpose: this is a plain finger, and native code
-        // fills in the documented defaults exactly as it does for hardware that
-        // reports nothing.
-        NativeViewport.touchEvent(action, -1, 1, new int[]{0}, new float[]{x},
-                new float[]{y}, null, null, null, null, width, height);
     }
 
     static void settle() {

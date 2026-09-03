@@ -444,6 +444,10 @@ bool SculptMesh::freezeFrom(const ConstructionMesh& source, ObjectId objectId,
     // Every Freeze restarts this mesh's own revision at 1. It is not, and never
     // becomes, comparable with a MeshStore revision.
     revision_ = 1;
+    // A freshly frozen mesh is a byte-identical copy of its source, so it has
+    // no edits by definition. Cleared explicitly rather than implied by the
+    // revision, which is what the two used to share.
+    hasEdits_ = false;
     ++freezeCount_;
     return true;
 }
@@ -490,6 +494,11 @@ SculptRevision SculptMesh::advanceRevision() {
     if (!frozen()) {
         return kNoSculptRevision;
     }
+    // A revision is minted only after a batch of position writes, so reaching
+    // here IS the definition of "this mesh has been sculpted". Undo is the one
+    // caller that then puts the flag back, deliberately after this line — see
+    // restoreEditedFlag().
+    hasEdits_ = true;
     return ++revision_;
 }
 
@@ -648,6 +657,10 @@ bool SculptStroke::begin(SculptTool tool, const SculptMesh& mesh, const CameraSn
     cameraUp_ = viewUp(camera);
     inverseModel_ = inverseModel;
     scratchTargets_.clear();
+    // The pre-stroke answer, and the only moment it is still available: by the
+    // time this stroke ends the mesh will report edits whatever it reported
+    // now. See buildDelta().
+    beganWithEdits_ = mesh.hasEdits();
     active_ = true;
     return true;
 }
@@ -945,6 +958,54 @@ bool SculptStroke::applySmooth(SculptMesh& mesh, float strength, float travelFra
     return changed;
 }
 
+bool SculptStroke::buildDelta(const SculptMesh& mesh, SculptStrokeDelta* out) const {
+    if (out == nullptr || !active_ || !mesh.frozen() || affected_.empty()) {
+        return false;
+    }
+
+    // `affected_` is already ascending: it is filled by one forward scan over
+    // the vertex array in begin(), and nothing adds to it afterwards. Asserting
+    // that here rather than sorting keeps the entry's ordering guarantee true
+    // by construction, and catches the day someone changes how the set is
+    // built — a delta with a repeated or out-of-order index is refused by
+    // SculptHistory::record rather than silently applied out of order.
+    SculptStrokeDelta delta;
+    delta.vertexIndices.reserve(affected_.size());
+    delta.beforePositions.reserve(affected_.size());
+    delta.afterPositions.reserve(affected_.size());
+
+    for (const SculptStrokeVertex& v : affected_) {
+        const Vec3 after = mesh.vertexPosition(v.index);
+        // Only the vertices that actually MOVED. A brush captures everything
+        // inside its falloff, but a low-weight rim vertex, an isolated vertex
+        // Smooth could not average, and every vertex of a stroke that never got
+        // a Move are all unchanged — and an entry that restored them would be
+        // storing bytes that undo to themselves.
+        if (after.x == v.basePosition.x && after.y == v.basePosition.y
+            && after.z == v.basePosition.z) {
+            continue;
+        }
+        if (!delta.vertexIndices.empty() && v.index <= delta.vertexIndices.back()) {
+            return false;  // see above: refuse rather than repair
+        }
+        delta.vertexIndices.push_back(v.index);
+        delta.beforePositions.push_back(v.basePosition);
+        delta.afterPositions.push_back(after);
+    }
+
+    if (delta.vertexIndices.empty()) {
+        return false;  // the no-op stroke: nothing moved, so there is no entry
+    }
+
+    delta.beforeHasEdits = beganWithEdits_;
+    // A stroke that moved a vertex leaves the mesh edited, by definition. Stored
+    // rather than assumed at apply time, so redo restores a fact rather than
+    // re-deriving one.
+    delta.afterHasEdits = true;
+    *out = std::move(delta);
+    return true;
+}
+
 void SculptStroke::end() {
     active_ = false;
     affected_.clear();
@@ -974,30 +1035,43 @@ float SculptStroke::weightOfVertex(uint32_t meshVertexIndex) const {
 bool SculptSession::freezeToSculpt(const ConstructionMesh& source, ObjectId objectId,
                                    MeshValidation* outWhy) {
     // A live stroke cannot survive a Freeze: its captured vertex indices and
-    // base positions describe the mesh that is being replaced.
-    stroke_.cancel();
+    // base positions describe the mesh that is being replaced. It is still
+    // RECORDED first, because a Freeze that then fails leaves that mesh in
+    // place with the stroke's deformation on it, and the user must still be
+    // able to take it back.
+    cancelStroke();
     if (!target().mesh.freezeFrom(source, objectId, outWhy)) {
-        return false;  // mode and any previous frozen mesh both stand
+        return false;  // mode, the previous frozen mesh and its history all stand
     }
+    // Undo does not cross a Freeze. Every retained entry names positions in a
+    // mesh that no longer exists, and a destructive Reset from source is the
+    // user saying the previous sculpt is gone — offering to walk back into it
+    // would contradict the confirmation they just gave.
+    target().history.clear();
     target().sourceStale = false;
     mode_ = ProductMode::Sculpt;
     return true;
 }
 
 void SculptSession::enterConstruction() {
-    stroke_.cancel();
+    cancelStroke();
     mode_ = ProductMode::Construction;
     // The Frozen Sculpt Mesh is deliberately kept, untouched, so returning to
     // Sculpt restores the prior edits without re-freezing. Nothing at all is
     // written back into the Construction Source. The active tool is kept too:
     // it is a property of how the user is working, not of the mesh.
+    //
+    // And so is the Sculpt history, for the same reason and by the same
+    // mechanism: it lives on the body beside the mesh it describes, so leaving
+    // Sculpt is navigation and takes nothing away. Resume Sculpt comes back to
+    // both.
 }
 
 bool SculptSession::enterSculpt() {
     if (!target().mesh.frozen()) {
         return false;  // there is nothing to sculpt until something is frozen
     }
-    stroke_.cancel();
+    cancelStroke();
     mode_ = ProductMode::Sculpt;
     return true;
 }
@@ -1051,9 +1125,129 @@ bool SculptSession::updateStroke(float screenX, float screenY) {
     return true;
 }
 
-void SculptSession::endStroke() { stroke_.end(); }
+void SculptSession::recordActiveStroke() {
+    if (!stroke_.active()) {
+        return;
+    }
+    SculptStrokeDelta delta;
+    if (!stroke_.buildDelta(target().mesh, &delta)) {
+        return;  // the stroke moved nothing, so there is nothing to take back
+    }
+    target().history.record(std::move(delta));
+}
 
-void SculptSession::cancelStroke() { stroke_.cancel(); }
+// Both endings record, and that is the point.
+//
+// A stroke that is cancelled — a second finger, a Cancel from the window, or
+// leaving Sculpt mid-gesture — keeps the positions it already wrote, which has
+// been the product rule since the brush existed. Now that those positions CAN
+// be taken back, leaving them out of the history would be the one deformation
+// in the product the user cannot undo. What "no partial entry" means is that an
+// entry is built in one pass from the whole affected set or not at all, which
+// buildDelta guarantees; it does not mean a cancelled stroke's real effect goes
+// unrecorded.
+void SculptSession::endStroke() {
+    recordActiveStroke();
+    stroke_.end();
+}
+
+void SculptSession::cancelStroke() {
+    recordActiveStroke();
+    stroke_.cancel();
+}
+
+// ---------------------------------------------------------------------------
+// Sculpt Undo / Redo
+// ---------------------------------------------------------------------------
+
+const char* SculptSession::sculptHistoryStatusName(SculptHistoryStatus status) {
+    switch (status) {
+        case SculptHistoryStatus::Ok:
+            return "ok";
+        case SculptHistoryStatus::NotSculpting:
+            return "not_sculpting";
+        case SculptHistoryStatus::StrokeActive:
+            return "stroke_active";
+        case SculptHistoryStatus::NoSculptMesh:
+            return "no_sculpt_mesh";
+        case SculptHistoryStatus::NothingToDo:
+            return "nothing_to_do";
+    }
+    return "unknown";
+}
+
+bool SculptSession::canUndoSculpt() const {
+    return inSculptMode() && !stroke_.active() && target().mesh.frozen()
+        && target().history.canUndo();
+}
+
+bool SculptSession::canRedoSculpt() const {
+    return inSculptMode() && !stroke_.active() && target().mesh.frozen()
+        && target().history.canRedo();
+}
+
+void SculptSession::applyHistorySide(const std::vector<uint32_t>& indices,
+                                     const std::vector<Vec3>& positions, bool edited) {
+    SculptMesh& mesh = target().mesh;
+    for (size_t i = 0; i < indices.size() && i < positions.size(); ++i) {
+        // An out-of-range index cannot happen — a frozen mesh's vertex count is
+        // fixed for its life and clearing the history is part of every Freeze —
+        // and setVertexPosition refuses one anyway rather than trusting that.
+        mesh.setVertexPosition(indices[i], positions[i]);
+    }
+    // Forwards, always. The renderer, the picker and the autosave fingerprint
+    // all notice a sculpt change by this number, so a step that moved geometry
+    // backwards must still look like news to every one of them. Rewinding it to
+    // a historical value would make an Undo invisible to exactly the caches
+    // that need to see it.
+    mesh.advanceRevision();
+    // And then the flag, which advanceRevision has just set to true. This is
+    // the one place the two legitimately disagree.
+    mesh.restoreEditedFlag(edited);
+}
+
+SculptSession::SculptHistoryStatus SculptSession::undoStroke() {
+    if (mode_ != ProductMode::Sculpt) {
+        return SculptHistoryStatus::NotSculpting;
+    }
+    if (stroke_.active()) {
+        return SculptHistoryStatus::StrokeActive;
+    }
+    if (!target().mesh.frozen()) {
+        return SculptHistoryStatus::NoSculptMesh;
+    }
+    SculptHistory& history = target().history;
+    if (!history.canUndo()) {
+        return SculptHistoryStatus::NothingToDo;
+    }
+    const SculptStrokeDelta& entry = history.undoTop();
+    applyHistorySide(entry.vertexIndices, entry.beforePositions, entry.beforeHasEdits);
+    // Committed AFTER the apply, so a history that could not be applied would
+    // still be sitting where it was. Read-then-apply-then-commit is why this
+    // class, and not SculptHistory, is the only thing that writes a vertex.
+    history.commitUndo();
+    return SculptHistoryStatus::Ok;
+}
+
+SculptSession::SculptHistoryStatus SculptSession::redoStroke() {
+    if (mode_ != ProductMode::Sculpt) {
+        return SculptHistoryStatus::NotSculpting;
+    }
+    if (stroke_.active()) {
+        return SculptHistoryStatus::StrokeActive;
+    }
+    if (!target().mesh.frozen()) {
+        return SculptHistoryStatus::NoSculptMesh;
+    }
+    SculptHistory& history = target().history;
+    if (!history.canRedo()) {
+        return SculptHistoryStatus::NothingToDo;
+    }
+    const SculptStrokeDelta& entry = history.redoTop();
+    applyHistorySide(entry.vertexIndices, entry.afterPositions, entry.afterHasEdits);
+    history.commitRedo();
+    return SculptHistoryStatus::Ok;
+}
 
 // sculptSession() is now "the ACTIVE body's session" and is defined in
 // forgeshape_scene.cpp; see the note there for why it moved.
