@@ -206,6 +206,35 @@ public:
     // Restores the initial pose. Not wired to any gesture; used by self-tests.
     void resetCamera();
 
+    // Everything a sketch view has to put back when it ends: the pose, the
+    // projection and the orthographic span. Plain data so the sketch owner can
+    // hold it without holding a camera.
+    struct Pose {
+        Vec3 target{0.0f, 0.0f, 0.0f};
+        float yaw = kInitialYaw;
+        float pitch = kInitialPitch;
+        float distance = kInitialDistance;
+        ProjectionMode projection = kDefaultProjectionMode;
+        float orthoHalfHeightMeters = kInitialOrthoHalfHeightMeters;
+    };
+
+    Pose capturePose() const;
+
+    // Puts a captured pose back exactly. PRODUCT functionality, unlike
+    // setPose: it is how leaving a sketch returns the user to the view they
+    // had. Clamped as a gesture would be, so a stale pose cannot put the
+    // camera anywhere the product cannot reach. Gesture counters are not
+    // advanced.
+    void restorePose(const Pose& pose);
+
+    // Looks straight at a workplane: the given orbit angles, the target at the
+    // world origin, the current orbit distance kept, and the ORTHOGRAPHIC
+    // projection, so equal sketch lengths are equal on screen wherever they
+    // fall (`CAD-R0-A1A2`). PRODUCT functionality on the same terms as
+    // restorePose. The sketch itself never reads the camera: this only decides
+    // what the user is looking through.
+    void frameWorkplane(float yaw, float pitch);
+
     // Switches the projection, PRESERVING THE FRAMING at the target plane.
     //
     // The two modes describe the same visible span in different terms, so the

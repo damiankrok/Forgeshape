@@ -62,6 +62,16 @@ SourceGeometry evaluateSourceGeometry(const SceneObject& body, ProjectKind kind)
                                 mesh.indices.data(),
                                 static_cast<uint32_t>(mesh.indices.size()),
                                 SurfaceShading::Smooth, &surfaces, /*renderBothSides=*/false);
+    } else if (const CadBody* cad = body.cadOrNull()) {
+        ConstructionMesh mesh;
+        if (cad->generateMesh(&mesh) == CadStatus::Ok) {
+            built = buildRenderMesh(mesh.vertices.data(),
+                                    static_cast<uint32_t>(mesh.vertices.size()),
+                                    mesh.indices.data(),
+                                    static_cast<uint32_t>(mesh.indices.size()),
+                                    SurfaceShading::Smooth, &surfaces,
+                                    /*renderBothSides=*/false);
+        }
     }
     if (!built || surfaces.vertices.empty() || surfaces.indices.empty()) {
         return out;

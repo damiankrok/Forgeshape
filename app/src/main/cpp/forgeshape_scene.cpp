@@ -122,6 +122,29 @@ std::unique_ptr<SceneObject> ConstructionScene::makeBody(ObjectId id) {
     return std::make_unique<SceneObject>(id);
 }
 
+std::unique_ptr<SceneObject> ConstructionScene::makeCadBody(ObjectId id,
+                                                            const CadBodyState& state) {
+    if (id >= nextObjectId_) {
+        nextObjectId_ = id + 1;
+    }
+    return std::unique_ptr<SceneObject>(new SceneObject(id, state));
+}
+
+SceneObject* ConstructionScene::addCadBody(CadBodyState state, CadStatus* outWhy) {
+    ConstructionMesh scratch;
+    const CadStatus why = generateCadMesh(state, &scratch);
+    if (outWhy != nullptr) {
+        *outWhy = why;
+    }
+    if (why != CadStatus::Ok) {
+        return nullptr;  // refused before an id is minted; the scene is untouched
+    }
+    const ObjectId id = nextObjectId_++;
+    bodies_.push_back(std::unique_ptr<SceneObject>(new SceneObject(id, std::move(state))));
+    activeBodyId_ = id;
+    return bodies_.back().get();
+}
+
 SceneSnapshot ConstructionScene::snapshot() const {
     SceneSnapshot items;
     items.reserve(bodies_.size());
@@ -171,6 +194,7 @@ const char* bodyRepresentationName(BodyRepresentation representation) {
     switch (representation) {
         case BodyRepresentation::Construction: return "Construction";
         case BodyRepresentation::Imported: return "Imported";
+        case BodyRepresentation::Cad: return "Cad";
     }
     return "unknown";
 }
@@ -178,6 +202,24 @@ const char* bodyRepresentationName(BodyRepresentation representation) {
 MeshRevision publishSceneObject(SceneObject& body, MeshValidation* outWhy) {
     if (const ConstructionObject* source = body.constructionOrNull()) {
         return publishConstructionObject(*source, body.meshStore(), outWhy);
+    }
+    if (const CadBody* cad = body.cadOrNull()) {
+        // Regenerated NOW from the sketch and the extrusion, through the one
+        // CAD regeneration path, exactly as a primitive regenerates from its
+        // parameters. The state was validated when it was applied, so a
+        // failure here is the should-not-happen case and is reported as one.
+        ConstructionMesh mesh;
+        if (cad->generateMesh(&mesh) != CadStatus::Ok) {
+            if (outWhy != nullptr) {
+                *outWhy = MeshValidation::EmptyVertices;
+            }
+            return kNoMeshRevision;
+        }
+        return body.meshStore().publish(mesh.vertices.data(),
+                                        static_cast<uint32_t>(mesh.vertices.size()),
+                                        mesh.indices.data(),
+                                        static_cast<uint32_t>(mesh.indices.size()), outWhy,
+                                        mesh.renderBothSides);
     }
     const ImportedMesh* imported = body.importedOrNull();
     if (imported == nullptr) {
@@ -213,6 +255,10 @@ bool buildSculptSourceMesh(const SceneObject& body, ConstructionMesh* out) {
         // exactly what was on screen. Read only: generateMesh() is const.
         *out = source->generateMesh();
         return true;
+    }
+    if (body.cadOrNull() != nullptr) {
+        // Deliberately unsupported in `CAD-R0-A1A2`; see the header.
+        return false;
     }
     const ImportedMesh* imported = body.importedOrNull();
     if (imported == nullptr || !imported->valid()) {

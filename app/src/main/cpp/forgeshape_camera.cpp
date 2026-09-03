@@ -124,6 +124,52 @@ void CameraController::resetCamera() {
     resetGesture();
 }
 
+CameraController::Pose CameraController::capturePose() const {
+    Pose pose;
+    pose.target = target_;
+    pose.yaw = yaw_;
+    pose.pitch = pitch_;
+    pose.distance = distance_;
+    pose.projection = projection_;
+    pose.orthoHalfHeightMeters = orthoHalfHeightMeters_;
+    return pose;
+}
+
+void CameraController::restorePose(const Pose& pose) {
+    if (vec3Finite(pose.target)) {
+        target_ = pose.target;
+    }
+    if (std::isfinite(pose.yaw)) {
+        yaw_ = wrapAngle(pose.yaw);
+    }
+    if (std::isfinite(pose.pitch)) {
+        pitch_ = clampf(pose.pitch, -kPitchLimitRadians, kPitchLimitRadians);
+    }
+    if (std::isfinite(pose.distance)) {
+        distance_ = clampf(pose.distance, kMinDistance, kMaxDistance);
+    }
+    projection_ = pose.projection;
+    if (std::isfinite(pose.orthoHalfHeightMeters)) {
+        orthoHalfHeightMeters_ = clampf(pose.orthoHalfHeightMeters, kMinOrthoHalfHeightMeters,
+                                        kMaxOrthoHalfHeightMeters);
+    }
+    resetGesture();
+}
+
+void CameraController::frameWorkplane(float yaw, float pitch) {
+    if (!std::isfinite(yaw) || !std::isfinite(pitch)) {
+        return;
+    }
+    target_ = Vec3{0.0f, 0.0f, 0.0f};
+    yaw_ = wrapAngle(yaw);
+    pitch_ = clampf(pitch, -kPitchLimitRadians, kPitchLimitRadians);
+    // Through the ordinary switch, so the framing at the target plane is
+    // preserved rather than reset: the plane appears at the size the model
+    // had a moment ago.
+    setProjectionMode(ProjectionMode::Orthographic);
+    resetGesture();
+}
+
 // Converts the framing between the two descriptions rather than resetting it.
 // See the contract on the declaration: the target, yaw and pitch are untouched,
 // so only the visible SPAN is restated, and it is restated to the same span.

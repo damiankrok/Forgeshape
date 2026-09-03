@@ -19,6 +19,7 @@
 #include <string>
 #include <vector>
 
+#include "forgeshape_cad_body.h"
 #include "forgeshape_construction.h"
 #include "forgeshape_imported_mesh.h"
 #include "forgeshape_math.h"
@@ -66,6 +67,12 @@ enum class BodyRepresentation : uint8_t {
     // Polygon geometry read from a file. Geometry IS the truth: no rule could
     // recreate it, so it is serialized.
     Imported = 2,
+    // A sketch on a workplane, extruded (`CAD-R0-A1A2`). The sketch and the
+    // extrusion are the truth; the mesh is DERIVED and regenerated, exactly as
+    // a primitive's is. Its own representation because it has no primitive to
+    // be a Construction Source with, and no fixed geometry to be an Imported
+    // Mesh with.
+    Cad = 3,
 };
 
 const char* bodyRepresentationName(BodyRepresentation representation);
@@ -89,6 +96,15 @@ public:
           imported_(std::move(mesh)),
           name_(std::move(name)) {}
 
+    // A CAD Body. Takes the authored state by value because the body OWNS
+    // it; the caller has already validated that it regenerates (see
+    // ConstructionScene::addCadBody), so this cannot fail.
+    SceneObject(ObjectId id, CadBodyState cad)
+        : objectId_(id),
+          representation_(BodyRepresentation::Cad),
+          cad_(new CadBody(id, std::move(cad))),
+          meshStore_(id) {}
+
     SceneObject(const SceneObject&) = delete;
     SceneObject& operator=(const SceneObject&) = delete;
 
@@ -101,6 +117,13 @@ public:
         return representation_ == BodyRepresentation::Construction;
     }
     bool isImported() const { return representation_ == BodyRepresentation::Imported; }
+    bool isCad() const { return representation_ == BodyRepresentation::Cad; }
+
+    // The CAD Body, or nullptr for any other representation. A pointer for the
+    // same reason `constructionOrNull()` is one: every call site has to say
+    // what it does about a body that has none.
+    CadBody* cadOrNull() { return cad_.get(); }
+    const CadBody* cadOrNull() const { return cad_.get(); }
 
     // The Construction Source, or nullptr for an Imported Mesh.
     //
@@ -158,6 +181,8 @@ private:
     // that "this body has no Construction Source" is one null check and not a
     // second kind of emptiness beside the representation enum.
     std::unique_ptr<ConstructionObject> construction_;
+    // Null for every representation but Cad, on the same terms.
+    std::unique_ptr<CadBody> cad_;
     ConstructionTransform transform_;
     MeshStore meshStore_;
     FrozenSculpt frozen_;
@@ -287,6 +312,14 @@ public:
     // identity is an ordinary ForgeShape identity, not a second kind of key.
     SceneObject* addImportedBody(ImportedMesh mesh, const std::string& name);
 
+    // Appends an already-validated CAD Body, minting it a normal ObjectId, and
+    // makes it active. Returns it, or nullptr -- writing why to `outWhy` and
+    // leaving the scene untouched -- when the state does not regenerate.
+    //
+    // Validated by regenerating ONCE before the id is minted, so a refusal
+    // costs no id: the same rule `addImportedBody` follows.
+    SceneObject* addCadBody(CadBodyState state, CadStatus* outWhy = nullptr);
+
     // Builds a body with an EXPLICIT id, not appended to anything.
     //
     // The id allocator is only ever pushed forward, never rolled back: a redo
@@ -294,6 +327,12 @@ public:
     // reusing 5. Reuse is what would let a stale ObjectId held anywhere — a
     // selection, a render snapshot — silently resolve to a different body.
     std::unique_ptr<SceneObject> makeBody(ObjectId id);
+
+    // The same, for a CAD Body whose state a history step holds. A CAD Body IS
+    // derivable from its state -- unlike an Imported Mesh -- so a step can
+    // rebuild one that was never held. The state is NOT re-validated here: it
+    // was authoritative when captured.
+    std::unique_ptr<SceneObject> makeCadBody(ObjectId id, const CadBodyState& state);
 
     // Where a body sits in scene order, or bodyCount() when it is not present.
     size_t indexOfBody(ObjectId id) const;
@@ -357,7 +396,12 @@ MeshRevision publishSceneObject(SceneObject& body, MeshValidation* outWhy = null
 //     brush from behind, where the strict one would leave the user unable to
 //     touch half of what they imported.
 //
-// Returns false, writing nothing, for a body with no geometry to freeze.
+// Returns false, writing nothing, for a body with no geometry to freeze -- and
+// for a CAD Body, DELIBERATELY. `CAD-R0-A1A2` leaves CAD -> Sculpt out: the
+// regenerated mesh could seed a freeze, but the wording of the way back out of
+// Sculpt, the stale-source rule over a CAD edit and the `CADB`+`SCUL` file
+// combination each need their own decision, and none of them is this stage's.
+// The control is absent for a CAD Body and the freeze refuses by name.
 bool buildSculptSourceMesh(const SceneObject& body, ConstructionMesh* out);
 
 // The one process-scoped scene. `activeConstructionOrNull()`, `meshStore()`,

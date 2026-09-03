@@ -78,6 +78,11 @@ struct BodyConstructionState {
     // Meaningful only when `representation` is Construction. Left at its
     // default for an Imported Mesh and never compared for one.
     ConstructionObjectState construction{};
+    // Meaningful only when `representation` is Cad: the sketch and the
+    // extrusion, which are the whole of a CAD Body's truth and are BOUNDED
+    // (see kMaxSketchEntities). Never a vertex: the mesh is regenerated from
+    // exactly this, so a step holds the truth and not a product of it.
+    CadBodyState cad{};
     TransformValues transform{};
 };
 

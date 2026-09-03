@@ -75,12 +75,25 @@ const ProjectSculptBody* findSculptBody(const ProjectDocument& document, ObjectI
     return nullptr;
 }
 
+const ProjectCadBody* findCadBody(const ProjectDocument& document, ObjectId id) {
+    if (!document.hasCad) {
+        return nullptr;
+    }
+    for (const ProjectCadBody& body : document.cad.bodies) {
+        if (body.objectId == id) {
+            return &body;
+        }
+    }
+    return nullptr;
+}
+
 }  // namespace
 
 bool runtimeCanEvaluateProject(const ProjectDocument& document) {
     for (const ProjectBodyPlacement& placement : document.scene.bodies) {
         if (findConstructionBody(document, placement.objectId) == nullptr
-            && findImportedBody(document, placement.objectId) == nullptr) {
+            && findImportedBody(document, placement.objectId) == nullptr
+            && findCadBody(document, placement.objectId) == nullptr) {
             return false;
         }
     }
@@ -133,6 +146,14 @@ ProjectDocument captureProjectDocument(const ConstructionScene& scene, ProjectKi
             record.batches = imported->batches();
             document.imported.bodies.push_back(std::move(record));
             document.hasImported = true;
+        } else if (const CadBody* cad = body.cadOrNull()) {
+            // The authored state and nothing derived: the mesh is regenerated
+            // from exactly this on load.
+            ProjectCadBody record;
+            record.objectId = body.objectId();
+            record.state = cad->captureState();
+            document.cad.bodies.push_back(std::move(record));
+            document.hasCad = true;
         }
 
         const FrozenSculpt& frozen = body.frozenSculpt();
@@ -196,16 +217,23 @@ ProjectCodecStatus loadProjectDocument(const ProjectDocument& document, Construc
         const ProjectConstructionBody* shape =
                 findConstructionBody(document, placement.objectId);
         const ProjectImportedBody* imported = findImportedBody(document, placement.objectId);
+        const ProjectCadBody* cad = findCadBody(document, placement.objectId);
 
         // Proven above by runtimeCanEvaluateProject; re-checked here because
-        // both pointers are about to be dereferenced.
-        if (shape == nullptr && imported == nullptr) {
+        // the pointers are about to be dereferenced.
+        if (shape == nullptr && imported == nullptr && cad == nullptr) {
             return ProjectCodecStatus::MissingRequiredSection;
         }
 
         std::unique_ptr<SceneObject> body;
         MeshValidation meshWhy = MeshValidation::Ok;
-        if (imported != nullptr) {
+        if (cad != nullptr) {
+            // validateProjectDocument has already run the whole CAD rule over
+            // this state, so the body is built with it directly; the publish
+            // below regenerates the mesh through the one CAD path and is the
+            // second proof.
+            body.reset(new SceneObject(placement.objectId, cad->state));
+        } else if (imported != nullptr) {
             // Rebuilt through the same `ImportedMesh::build` an import goes
             // through, so a loaded object is exactly as validated as a freshly
             // imported one and no second construction path exists.
@@ -367,6 +395,44 @@ void mixShape(uint64_t& hash, const ConstructionObjectState& shape) {
     mixDouble(hash, shape.plane.depth);
 }
 
+void mixPoint(uint64_t& hash, const SketchPoint& p) {
+    mixDouble(hash, p.u);
+    mixDouble(hash, p.v);
+}
+
+// Every authored CAD value, because every one is in the file. Small by
+// construction -- the sketch is bounded -- so this is the values themselves
+// and not a proxy.
+void mixCad(uint64_t& hash, const CadBodyState& state) {
+    mixU64(hash, static_cast<uint64_t>(workplaneIndex(state.sketch.plane)));
+    mixU64(hash, state.sketch.nextEntityId);
+    mixU64(hash, state.extrude.profileEntityId);
+    mixDouble(hash, state.extrude.depth);
+    mixU64(hash, static_cast<uint64_t>(extrudeDirectionIndex(state.extrude.direction)));
+    mixU64(hash, state.sketch.entities.size());
+    for (const SketchEntity& entity : state.sketch.entities) {
+        mixU64(hash, entity.id());
+        mixU64(hash, static_cast<uint64_t>(entity.kind()));
+        if (const SketchLine* line = entity.line()) {
+            mixPoint(hash, line->start);
+            mixPoint(hash, line->end);
+        } else if (const SketchPolyline* polyline = entity.polyline()) {
+            mixU64(hash, polyline->closed ? 1u : 0u);
+            mixU64(hash, polyline->vertices.size());
+            for (const SketchPoint& p : polyline->vertices) {
+                mixPoint(hash, p);
+            }
+        } else if (const SketchRectangle* rectangle = entity.rectangle()) {
+            mixPoint(hash, rectangle->center);
+            mixDouble(hash, rectangle->width);
+            mixDouble(hash, rectangle->height);
+        } else if (const SketchCircle* circle = entity.circle()) {
+            mixPoint(hash, circle->center);
+            mixDouble(hash, circle->radius);
+        }
+    }
+}
+
 void mixTransform(uint64_t& hash, const TransformValues& values) {
     mixDouble(hash, values.positionX);
     mixDouble(hash, values.positionY);
@@ -418,6 +484,8 @@ uint64_t projectSemanticFingerprint(const ConstructionScene& scene, ProjectKind 
                 mixU64(hash, batch.indexCount);
                 mixU64(hash, batch.doubleSided ? 1u : 0u);
             }
+        } else if (const CadBody* cad = body.cadOrNull()) {
+            mixCad(hash, cad->state());
         }
         mixTransform(hash, body.transform().values());
 

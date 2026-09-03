@@ -42,6 +42,12 @@ bool sameSceneConstructionState(const SceneConstructionState& a,
             && !sameConstructionShape(a.bodies[i].construction, b.bodies[i].construction)) {
             return false;
         }
+        // A CAD Body's sketch and extrusion are its shape, and a numeric edit
+        // to either is a real change on exactly the terms a primitive edit is.
+        if (a.bodies[i].representation == BodyRepresentation::Cad
+            && !sameCadBodyState(a.bodies[i].cad, b.bodies[i].cad)) {
+            return false;
+        }
     }
     return true;
 }
@@ -57,6 +63,8 @@ SceneConstructionState captureSceneConstructionState(const ConstructionScene& sc
         captured.transform = body.transform().values();
         if (const ConstructionObject* source = body.constructionOrNull()) {
             captured.construction = source->captureState();
+        } else if (const CadBody* cad = body.cadOrNull()) {
+            captured.cad = cad->captureState();
         }
         state.bodies.push_back(captured);
     }
@@ -228,7 +236,7 @@ void ConstructionHistory::applyState(const SceneConstructionState& target,
             }
         }
         if (!body) {
-            if (wanted.representation != BodyRepresentation::Construction) {
+            if (wanted.representation == BodyRepresentation::Imported) {
                 // An Imported Mesh cannot be fabricated from a step: its
                 // geometry is not derived from anything a step holds. It can
                 // only come back as the object that was taken out, and
@@ -238,15 +246,23 @@ void ConstructionHistory::applyState(const SceneConstructionState& target,
                 // body wearing an imported object's identity.
                 continue;
             }
-            body = scene_.makeBody(wanted.objectId);
+            // A Construction Body and a CAD Body are both DERIVED from what
+            // the step holds, so either can be rebuilt from it.
+            body = (wanted.representation == BodyRepresentation::Cad)
+                       ? scene_.makeCadBody(wanted.objectId, wanted.cad)
+                       : scene_.makeBody(wanted.objectId);
         }
 
         const bool isConstruction = body->hasConstructionSource()
             && wanted.representation == BodyRepresentation::Construction;
         const ConstructionObjectState current =
             isConstruction ? body->construction().captureState() : ConstructionObjectState{};
+        const bool isCad = body->cadOrNull() != nullptr
+            && wanted.representation == BodyRepresentation::Cad;
+        const bool cadDiffers =
+            isCad && !sameCadBodyState(body->cadOrNull()->captureState(), wanted.cad);
         const bool shapeDiffers =
-            isConstruction && !sameConstructionShape(current, wanted.construction);
+            (isConstruction && !sameConstructionShape(current, wanted.construction)) || cadDiffers;
         const bool placementDiffers =
             !sameConstructionPlacement(body->transform().values(), wanted.transform);
         // A body that has never published anything must, whatever its
@@ -257,7 +273,9 @@ void ConstructionHistory::applyState(const SceneConstructionState& target,
         const bool mustPublish =
             shapeDiffers || body->meshStore().currentRevision() == kNoMeshRevision;
 
-        if (shapeDiffers) {
+        if (cadDiffers) {
+            body->cadOrNull()->restoreState(wanted.cad);
+        } else if (shapeDiffers) {
             body->construction().restoreState(wanted.construction);
         }
         if (placementDiffers) {

@@ -194,6 +194,63 @@ const char* projectCodecStatusName(ProjectCodecStatus status) {
     return "unknown";
 }
 
+uint8_t workplaneFileCode(Workplane plane) {
+    switch (plane) {
+        case Workplane::XY: return 1;
+        case Workplane::XZ: return 2;
+        case Workplane::YZ: return 3;
+    }
+    return 0;
+}
+
+bool workplaneFromFileCode(uint8_t code, Workplane* out) {
+    if (out == nullptr) return false;
+    switch (code) {
+        case 1: *out = Workplane::XY; return true;
+        case 2: *out = Workplane::XZ; return true;
+        case 3: *out = Workplane::YZ; return true;
+        default: return false;
+    }
+}
+
+uint8_t extrudeDirectionFileCode(ExtrudeDirection direction) {
+    switch (direction) {
+        case ExtrudeDirection::AlongNormal: return 1;
+        case ExtrudeDirection::AgainstNormal: return 2;
+    }
+    return 0;
+}
+
+bool extrudeDirectionFromFileCode(uint8_t code, ExtrudeDirection* out) {
+    if (out == nullptr) return false;
+    switch (code) {
+        case 1: *out = ExtrudeDirection::AlongNormal; return true;
+        case 2: *out = ExtrudeDirection::AgainstNormal; return true;
+        default: return false;
+    }
+}
+
+uint8_t sketchEntityKindFileCode(SketchEntityKind kind) {
+    switch (kind) {
+        case SketchEntityKind::Line: return 1;
+        case SketchEntityKind::Polyline: return 2;
+        case SketchEntityKind::Rectangle: return 3;
+        case SketchEntityKind::Circle: return 4;
+    }
+    return 0;
+}
+
+bool sketchEntityKindFromFileCode(uint8_t code, SketchEntityKind* out) {
+    if (out == nullptr) return false;
+    switch (code) {
+        case 1: *out = SketchEntityKind::Line; return true;
+        case 2: *out = SketchEntityKind::Polyline; return true;
+        case 3: *out = SketchEntityKind::Rectangle; return true;
+        case 4: *out = SketchEntityKind::Circle; return true;
+        default: return false;
+    }
+}
+
 uint8_t primitiveFileCode(PrimitiveKind kind) {
     switch (kind) {
         case PrimitiveKind::Box: return 1;
@@ -223,8 +280,20 @@ bool primitiveKindFromFileCode(uint8_t code, PrimitiveKind* out) {
 
 bool sameProjectDocument(const ProjectDocument& a, const ProjectDocument& b) {
     if (a.kind != b.kind || a.hasConstruction != b.hasConstruction
-        || a.hasSculpt != b.hasSculpt || a.hasImported != b.hasImported) {
+        || a.hasSculpt != b.hasSculpt || a.hasImported != b.hasImported
+        || a.hasCad != b.hasCad) {
         return false;
+    }
+    if (a.hasCad) {
+        if (a.cad.bodies.size() != b.cad.bodies.size()) {
+            return false;
+        }
+        for (size_t i = 0; i < a.cad.bodies.size(); ++i) {
+            if (a.cad.bodies[i].objectId != b.cad.bodies[i].objectId
+                || !sameCadBodyState(a.cad.bodies[i].state, b.cad.bodies[i].state)) {
+                return false;
+            }
+        }
     }
     if (a.scene.nextObjectId != b.scene.nextObjectId
         || a.scene.activeObjectId != b.scene.activeObjectId
@@ -481,6 +550,44 @@ ProjectCodecStatus validateProjectDocument(const ProjectDocument& document) {
         }
     }
 
+    if (document.hasCad) {
+        // The third geometry source, on IMPT's terms: a subsequence of the
+        // scene in strictly ascending order, claiming each body exactly once
+        // and never one CONS or IMPT already claimed.
+        if (document.cad.bodies.empty() || document.cad.bodies.size() > bodies.size()) {
+            return ProjectCodecStatus::ImpossibleCount;
+        }
+        size_t sceneCursor = 0;
+        for (const ProjectCadBody& body : document.cad.bodies) {
+            size_t found = bodies.size();
+            for (size_t s = sceneCursor; s < bodies.size(); ++s) {
+                if (bodies[s].objectId == body.objectId) {
+                    found = s;
+                    break;
+                }
+            }
+            if (found == bodies.size()) {
+                return ProjectCodecStatus::UnresolvedReference;
+            }
+            sceneCursor = found + 1;
+            if (covered[found] != 0) {
+                return ProjectCodecStatus::UnresolvedReference;
+            }
+            covered[found] = 3;
+            if (body.state.sketch.entities.size() > kMaxSketchEntities) {
+                return ProjectCodecStatus::ImpossibleCount;
+            }
+            // The DOMAIN's own rule, in full: every entity, the depth, the
+            // direction, and that the sketch closes the profile the extrusion
+            // names. A file cannot carry a CAD body this build could not
+            // regenerate, and a sketch with no closed profile is refused here
+            // rather than opening as an object with nothing to draw.
+            if (validateCadBodyState(body.state) != CadStatus::Ok) {
+                return ProjectCodecStatus::InvalidSemanticValue;
+            }
+        }
+    }
+
     // A body named by NEITHER branch is deliberately not refused here.
     //
     // It is a legal document: an optional section at a version this reader
@@ -530,6 +637,14 @@ ProjectCodecStatus validateProjectDocument(const ProjectDocument& document) {
                 return ProjectCodecStatus::UnresolvedReference;
             }
             sceneCursor = found + 1;
+            // A `SCUL` entry over a `CADB` body is REFUSED: `CAD-R0-A1A2`
+            // leaves CAD -> Sculpt out, so a file claiming a sculpt mesh for
+            // a CAD Body describes something this build cannot evaluate. The
+            // same fail-closed shape the pre-`IMPORT-01B` reader gave an
+            // `IMPT`+`SCUL` file.
+            if (covered[found] == 3) {
+                return ProjectCodecStatus::UnresolvedReference;
+            }
             // A `SCUL` entry over an `IMPT` body is VALID since `IMPORT-01B`.
             //
             // It was refused while an imported object could not be sculpted at
@@ -664,10 +779,53 @@ std::vector<uint8_t> encodeProjectV1(const ProjectDocument& document,
         }
     }
 
+    std::vector<uint8_t> cadPayload;
+    if (document.hasCad) {
+        ByteWriter out(cadPayload);
+        out.u32(static_cast<uint32_t>(document.cad.bodies.size()));
+        for (const ProjectCadBody& body : document.cad.bodies) {
+            const CadBodyState& state = body.state;
+            out.u64(body.objectId);
+            out.u8(workplaneFileCode(state.sketch.plane));
+            out.u32(state.sketch.nextEntityId);
+            out.u32(state.extrude.profileEntityId);
+            out.u8(extrudeDirectionFileCode(state.extrude.direction));
+            out.f64(state.extrude.depth);
+            out.u32(static_cast<uint32_t>(state.sketch.entities.size()));
+            for (const SketchEntity& entity : state.sketch.entities) {
+                out.u32(entity.id());
+                out.u8(sketchEntityKindFileCode(entity.kind()));
+                if (const SketchLine* line = entity.line()) {
+                    out.f64(line->start.u);
+                    out.f64(line->start.v);
+                    out.f64(line->end.u);
+                    out.f64(line->end.v);
+                } else if (const SketchPolyline* polyline = entity.polyline()) {
+                    out.u8(polyline->closed ? 0x01u : 0x00u);
+                    out.u32(static_cast<uint32_t>(polyline->vertices.size()));
+                    for (const SketchPoint& p : polyline->vertices) {
+                        out.f64(p.u);
+                        out.f64(p.v);
+                    }
+                } else if (const SketchRectangle* rectangle = entity.rectangle()) {
+                    out.f64(rectangle->center.u);
+                    out.f64(rectangle->center.v);
+                    out.f64(rectangle->width);
+                    out.f64(rectangle->height);
+                } else if (const SketchCircle* circle = entity.circle()) {
+                    out.f64(circle->center.u);
+                    out.f64(circle->center.v);
+                    out.f64(circle->radius);
+                }
+            }
+        }
+    }
+
     uint32_t sectionCount = 1;
     if (document.hasConstruction) ++sectionCount;
     if (document.hasSculpt) ++sectionCount;
     if (document.hasImported) ++sectionCount;
+    if (document.hasCad) ++sectionCount;
 
     uint64_t fileBytes = kForgeHeaderBytes;
     fileBytes += kForgeSectionHeaderBytes + scenePayload.size();
@@ -679,6 +837,9 @@ std::vector<uint8_t> encodeProjectV1(const ProjectDocument& document,
     }
     if (document.hasImported) {
         fileBytes += kForgeSectionHeaderBytes + importedPayload.size();
+    }
+    if (document.hasCad) {
+        fileBytes += kForgeSectionHeaderBytes + cadPayload.size();
     }
 
     std::vector<uint8_t> file;
@@ -692,7 +853,8 @@ std::vector<uint8_t> encodeProjectV1(const ProjectDocument& document,
         out.u8(static_cast<uint8_t>(document.kind));
         out.u8(static_cast<uint8_t>((document.hasConstruction ? kHeaderFlagHasConstruction : 0u)
                                     | (document.hasSculpt ? kHeaderFlagHasSculpt : 0u)
-                                    | (document.hasImported ? kHeaderFlagHasImported : 0u)));
+                                    | (document.hasImported ? kHeaderFlagHasImported : 0u)
+                                    | (document.hasCad ? kHeaderFlagHasCad : 0u)));
         out.u32(sectionCount);
         out.u64(fileBytes);
     }
@@ -718,6 +880,12 @@ std::vector<uint8_t> encodeProjectV1(const ProjectDocument& document,
         // would open the project with objects silently missing.
         appendSection(file, kSectionTagImported, kImportedSectionVersion, /*required=*/true,
                       importedPayload);
+    }
+    if (document.hasCad) {
+        // ALWAYS required, on IMPT's terms: a CAD Body has no other branch
+        // describing it, and a reader that skipped this would open the
+        // project with objects silently missing.
+        appendSection(file, kSectionTagCad, kCadSectionVersion, /*required=*/true, cadPayload);
     }
     return file;
 }
@@ -956,6 +1124,117 @@ ProjectCodecStatus decodeImportedPayload(ByteReader& in, ProjectImportedRecord* 
     return ProjectCodecStatus::Ok;
 }
 
+ProjectCodecStatus decodeCadPayload(ByteReader& in, ProjectCadRecord* record) {
+    uint32_t bodyCount = 0;
+    if (!in.u32(&bodyCount)) {
+        return ProjectCodecStatus::Truncated;
+    }
+    if (bodyCount == 0 || bodyCount > kMaxProjectBodies) {
+        return ProjectCodecStatus::ImpossibleCount;
+    }
+    // Smallest possible CAD body record: identity, plane, the two ids, the
+    // direction, the depth and an entity count.
+    if (static_cast<uint64_t>(bodyCount) * (8ull + 1ull + 4ull + 4ull + 1ull + 8ull + 4ull)
+        > in.remaining()) {
+        return ProjectCodecStatus::Truncated;
+    }
+    record->bodies.resize(bodyCount);
+    for (uint32_t i = 0; i < bodyCount; ++i) {
+        ProjectCadBody& body = record->bodies[i];
+        CadBodyState& state = body.state;
+        uint8_t planeCode = 0;
+        uint8_t directionCode = 0;
+        uint32_t entityCount = 0;
+        if (!in.u64(&body.objectId) || !in.u8(&planeCode) || !in.u32(&state.sketch.nextEntityId)
+            || !in.u32(&state.extrude.profileEntityId) || !in.u8(&directionCode)
+            || !in.f64(&state.extrude.depth) || !in.u32(&entityCount)) {
+            return ProjectCodecStatus::Truncated;
+        }
+        if (!workplaneFromFileCode(planeCode, &state.sketch.plane)
+            || !extrudeDirectionFromFileCode(directionCode, &state.extrude.direction)) {
+            return ProjectCodecStatus::InvalidSemanticValue;
+        }
+        if (entityCount == 0 || entityCount > kMaxSketchEntities) {
+            return ProjectCodecStatus::ImpossibleCount;
+        }
+        // Smallest entity: an id, a kind, and a circle's three values.
+        if (static_cast<uint64_t>(entityCount) * (4ull + 1ull + 24ull) > in.remaining()) {
+            return ProjectCodecStatus::Truncated;
+        }
+        state.sketch.entities.reserve(entityCount);
+        for (uint32_t e = 0; e < entityCount; ++e) {
+            uint32_t id = 0;
+            uint8_t kindCode = 0;
+            if (!in.u32(&id) || !in.u8(&kindCode)) {
+                return ProjectCodecStatus::Truncated;
+            }
+            SketchEntityKind kind;
+            if (!sketchEntityKindFromFileCode(kindCode, &kind)) {
+                return ProjectCodecStatus::InvalidSemanticValue;
+            }
+            switch (kind) {
+                case SketchEntityKind::Line: {
+                    SketchLine line;
+                    if (!in.f64(&line.start.u) || !in.f64(&line.start.v) || !in.f64(&line.end.u)
+                        || !in.f64(&line.end.v)) {
+                        return ProjectCodecStatus::Truncated;
+                    }
+                    state.sketch.entities.emplace_back(id, line);
+                    break;
+                }
+                case SketchEntityKind::Polyline: {
+                    SketchPolyline polyline;
+                    uint8_t flags = 0;
+                    uint32_t vertexCount = 0;
+                    if (!in.u8(&flags) || !in.u32(&vertexCount)) {
+                        return ProjectCodecStatus::Truncated;
+                    }
+                    if ((flags & ~0x01u) != 0u) {
+                        return ProjectCodecStatus::BadPayload;
+                    }
+                    if (vertexCount == 0 || vertexCount > kMaxPolylineVertices) {
+                        return ProjectCodecStatus::ImpossibleCount;
+                    }
+                    if (static_cast<uint64_t>(vertexCount) * 16ull > in.remaining()) {
+                        return ProjectCodecStatus::Truncated;
+                    }
+                    polyline.closed = (flags & 0x01u) != 0u;
+                    polyline.vertices.resize(vertexCount);
+                    for (SketchPoint& p : polyline.vertices) {
+                        if (!in.f64(&p.u) || !in.f64(&p.v)) {
+                            return ProjectCodecStatus::Truncated;
+                        }
+                    }
+                    state.sketch.entities.emplace_back(id, std::move(polyline));
+                    break;
+                }
+                case SketchEntityKind::Rectangle: {
+                    SketchRectangle rectangle;
+                    if (!in.f64(&rectangle.center.u) || !in.f64(&rectangle.center.v)
+                        || !in.f64(&rectangle.width) || !in.f64(&rectangle.height)) {
+                        return ProjectCodecStatus::Truncated;
+                    }
+                    state.sketch.entities.emplace_back(id, rectangle);
+                    break;
+                }
+                case SketchEntityKind::Circle: {
+                    SketchCircle circle;
+                    if (!in.f64(&circle.center.u) || !in.f64(&circle.center.v)
+                        || !in.f64(&circle.radius)) {
+                        return ProjectCodecStatus::Truncated;
+                    }
+                    state.sketch.entities.emplace_back(id, circle);
+                    break;
+                }
+            }
+        }
+    }
+    if (!in.atEnd()) {
+        return ProjectCodecStatus::BadPayload;
+    }
+    return ProjectCodecStatus::Ok;
+}
+
 ProjectCodecStatus decodeProjectV1(ByteReader& file, ProjectKind kind, uint8_t headerFlags,
                                    uint32_t sectionCount, ProjectDocument* out,
                                    uint32_t* outSkipped) {
@@ -965,6 +1244,7 @@ ProjectCodecStatus decodeProjectV1(ByteReader& file, ProjectKind kind, uint8_t h
     // could understand. The header's flags are a claim about the former, and the
     // singleton rule is about the former too.
     bool sawSceneTag = false;
+    bool sawCadTag = false;
     bool sawConstructionTag = false;
     bool sawSculptTag = false;
     bool sawImportedTag = false;
@@ -1004,8 +1284,9 @@ ProjectCodecStatus decodeProjectV1(ByteReader& file, ProjectKind kind, uint8_t h
         const bool isConstruction = tagIs(tag, kSectionTagConstruction);
         const bool isSculpt = tagIs(tag, kSectionTagSculpt);
         const bool isImported = tagIs(tag, kSectionTagImported);
+        const bool isCad = tagIs(tag, kSectionTagCad);
 
-        if (!isScene && !isConstruction && !isSculpt && !isImported) {
+        if (!isScene && !isConstruction && !isSculpt && !isImported && !isCad) {
             if (required) {
                 return ProjectCodecStatus::UnknownRequiredSection;
             }
@@ -1020,19 +1301,22 @@ ProjectCodecStatus decodeProjectV1(ByteReader& file, ProjectKind kind, uint8_t h
         // and letting the second one through because the reader happened not to
         // understand the first would be a hole in the singleton rule.
         if ((isScene && sawSceneTag) || (isConstruction && sawConstructionTag)
-            || (isSculpt && sawSculptTag) || (isImported && sawImportedTag)) {
+            || (isSculpt && sawSculptTag) || (isImported && sawImportedTag)
+            || (isCad && sawCadTag)) {
             return ProjectCodecStatus::DuplicateSection;
         }
         sawSceneTag = sawSceneTag || isScene;
         sawConstructionTag = sawConstructionTag || isConstruction;
         sawSculptTag = sawSculptTag || isSculpt;
         sawImportedTag = sawImportedTag || isImported;
+        sawCadTag = sawCadTag || isCad;
 
         const uint16_t known =
                 isScene ? kSceneSectionVersion
                         : (isConstruction ? kConstructionSectionVersion
                                           : (isSculpt ? kSculptSectionVersion
-                                                      : kImportedSectionVersion));
+                                                      : (isImported ? kImportedSectionVersion
+                                                                    : kCadSectionVersion)));
         if (sectionVersion != known) {
             if (required) {
                 return ProjectCodecStatus::UnsupportedSectionVersion;
@@ -1057,9 +1341,12 @@ ProjectCodecStatus decodeProjectV1(ByteReader& file, ProjectKind kind, uint8_t h
         } else if (isSculpt) {
             status = decodeSculptPayload(payload, &document.sculpt);
             document.hasSculpt = (status == ProjectCodecStatus::Ok);
-        } else {
+        } else if (isImported) {
             status = decodeImportedPayload(payload, &document.imported);
             document.hasImported = (status == ProjectCodecStatus::Ok);
+        } else {
+            status = decodeCadPayload(payload, &document.cad);
+            document.hasCad = (status == ProjectCodecStatus::Ok);
         }
         if (status != ProjectCodecStatus::Ok) {
             return status;
@@ -1077,7 +1364,8 @@ ProjectCodecStatus decodeProjectV1(ByteReader& file, ProjectKind kind, uint8_t h
     const uint8_t expectedFlags =
             static_cast<uint8_t>((sawConstructionTag ? kHeaderFlagHasConstruction : 0u)
                                  | (sawSculptTag ? kHeaderFlagHasSculpt : 0u)
-                                 | (sawImportedTag ? kHeaderFlagHasImported : 0u));
+                                 | (sawImportedTag ? kHeaderFlagHasImported : 0u)
+                                 | (sawCadTag ? kHeaderFlagHasCad : 0u));
     if (headerFlags != expectedFlags) {
         return ProjectCodecStatus::BadHeader;
     }
@@ -1138,7 +1426,8 @@ ProjectCodecStatus decodeProject(const uint8_t* data, size_t size, ProjectDocume
         return ProjectCodecStatus::BadHeader;
     }
     if ((headerFlags
-         & ~(kHeaderFlagHasConstruction | kHeaderFlagHasSculpt | kHeaderFlagHasImported))
+         & ~(kHeaderFlagHasConstruction | kHeaderFlagHasSculpt | kHeaderFlagHasImported
+             | kHeaderFlagHasCad))
         != 0u) {
         return ProjectCodecStatus::BadHeader;
     }

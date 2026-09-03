@@ -233,6 +233,21 @@ GlbExportStatus captureGlbExportScene(const ConstructionScene& scene, ProjectKin
                                         SurfaceShading::Smooth, &exported.render,
                                         /*renderBothSides=*/false);
             }
+        } else if (const CadBody* cad = body.cadOrNull()) {
+            // Regenerated NOW from the sketch and the extrusion through the one
+            // CAD path, on exactly the terms a primitive is regenerated from
+            // its parameters: never a GPU buffer, never a `.forge` file, so an
+            // edited dimension is what the file carries.
+            ConstructionMesh source;
+            exported.doubleSided = false;
+            if (cad->generateMesh(&source) == CadStatus::Ok) {
+                built = buildRenderMesh(source.vertices.data(),
+                                        static_cast<uint32_t>(source.vertices.size()),
+                                        source.indices.data(),
+                                        static_cast<uint32_t>(source.indices.size()),
+                                        SurfaceShading::Smooth, &exported.render,
+                                        /*renderBothSides=*/false);
+            }
         } else if (body.constructionOrNull() == nullptr) {
             // A representation this exporter does not know. Refused rather
             // than skipped, for the reason stated below.
