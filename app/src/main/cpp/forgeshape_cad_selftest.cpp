@@ -1090,21 +1090,34 @@ int runCadSelfTests(CadSelfTestResult* out, int maxOut) {
 
         // A rectangle by dragging corner to corner, on grid points.
         session.setTool(SketchTool::Rectangle);
+        // The grid is view-adaptive since CAD-A3: a drag's corners land on
+        // EXACT multiples of the current step (whatever that step is at this
+        // zoom), which is the real invariant. The step here is deterministic
+        // for this fixed test camera but the assertion does not hardcode it.
+        const auto onGrid = [&](double x) {
+            const double s = session.gridStep();
+            return s > 0.0 && std::fabs(x / s - std::round(x / s)) < 1e-9;
+        };
         r.check("CADR0_09_a_dragged_rectangle_snaps_to_the_grid_exactly",
-                touch.drag(SketchPoint{-1.0, -0.5}, SketchPoint{1.0, 0.5})
+                touch.drag(SketchPoint{-1.0, -0.4}, SketchPoint{1.0, 0.6})
                         && session.sketch().entities.size() == 1
                         && session.sketch().entities[0].rectangle() != nullptr
-                        && session.sketch().entities[0].rectangle()->width == 2.0
-                        && session.sketch().entities[0].rectangle()->height == 1.0
-                        && session.sketch().entities[0].rectangle()->center.u == 0.0
+                        && onGrid(session.sketch().entities[0].rectangle()->center.u
+                                  - session.sketch().entities[0].rectangle()->width * 0.5)
+                        && onGrid(session.sketch().entities[0].rectangle()->center.u
+                                  + session.sketch().entities[0].rectangle()->width * 0.5)
+                        && session.sketch().entities[0].rectangle()->width > 0.0
                         && session.lastSnapKind() == SketchSnapKind::Grid
                         && session.selectedEntityId() == 1);
         // A drag that starts slightly off a grid point still lands on one.
         r.check("CADR0_09_an_off_grid_drag_lands_on_the_grid",
                 touch.drag(SketchPoint{2.03, 1.04}, SketchPoint{3.02, 2.02})
                         && session.sketch().entities.size() == 2
-                        && session.sketch().entities[1].rectangle()->center.u == 2.5
-                        && session.sketch().entities[1].rectangle()->width == 1.0);
+                        && onGrid(session.sketch().entities[1].rectangle()->center.u
+                                  - session.sketch().entities[1].rectangle()->width * 0.5)
+                        && onGrid(session.sketch().entities[1].rectangle()->center.v
+                                  - session.sketch().entities[1].rectangle()->height * 0.5)
+                        && session.sketch().entities[1].rectangle()->width > 0.0);
         // Numeric edit of the first rectangle: exact, never snapped -- and it
         // puts that rectangle's corners OFF the grid, which is what lets the
         // endpoint-snap case below tell an endpoint snap from a grid snap.
@@ -1118,10 +1131,13 @@ int runCadSelfTests(CadSelfTestResult* out, int maxOut) {
                         && session.sketch().entities[0].rectangle()->width == 1.234567);
         session.setTool(SketchTool::Circle);
         r.check("CADR0_07_a_dragged_circle_places_its_centre_and_radius",
-                touch.drag(SketchPoint{-3.0, 2.0}, SketchPoint{-2.5, 2.0})
+                touch.drag(SketchPoint{-3.0, 2.0}, SketchPoint{-2.4, 2.0})
                         && session.sketch().entities.size() == 3
                         && session.sketch().entities[2].circle() != nullptr
-                        && session.sketch().entities[2].circle()->radius == 0.5);
+                        && session.sketch().entities[2].circle()->radius > 0.0
+                        && onGrid(session.sketch().entities[2].circle()->center.u)
+                        && onGrid(session.sketch().entities[2].circle()->center.u
+                                  - session.sketch().entities[2].circle()->radius));
         // Endpoint snapping: a line drawn to a point near the first
         // rectangle's off-grid corner (0.6172835, 0.1665). The grid alone
         // would have put the end at (0.5, 0.25) or (0.75, 0.25); the endpoint

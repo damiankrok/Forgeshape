@@ -91,6 +91,39 @@ void collectSnapPoints(const CadSketch& sketch, std::vector<SketchPoint>* out) {
 // Lifecycle
 // ---------------------------------------------------------------------------
 
+double adaptiveSketchGridStep(double worldPerPixel) {
+    const double raw = worldPerPixel * kSketchGridMinPixels;
+    if (!std::isfinite(raw) || raw <= 0.0) {
+        return kSketchGridSpacingMeters;
+    }
+    const double p = std::pow(10.0, std::floor(std::log10(raw)));
+    const double f = raw / p;  // in [1, 10)
+    const double nice = f <= 1.0 ? 1.0 : (f <= 2.0 ? 2.0 : (f <= 5.0 ? 5.0 : 10.0));
+    double step = nice * p;
+    if (step < kSketchGridMinStepMeters) step = kSketchGridMinStepMeters;
+    if (step > kSketchGridMaxStepMeters) step = kSketchGridMaxStepMeters;
+    return step;
+}
+
+CadStatus SketchSession::beginOnFace(const SketchFrame& worldFrame, const TopoRef& support) {
+    if (state_ != SketchSessionState::Inactive) {
+        return fail(CadStatus::NotSketching);
+    }
+    if (support.producerObjectId == kNoObject) {
+        return fail(CadStatus::ProfileNotFound);
+    }
+    const CadStatus started = begin(Workplane::XY);  // canonical authoring basis
+    if (started != CadStatus::Ok) {
+        return started;
+    }
+    // The sketch's support is a face; author on the producer's world frame.
+    sketch_.hasFaceSupport = true;
+    sketch_.faceSupport = support;
+    frame_ = worldFrame;
+    touchOverlay();
+    return fail(CadStatus::Ok);
+}
+
 CadStatus SketchSession::begin(Workplane plane) {
     if (state_ != SketchSessionState::Inactive) {
         return fail(CadStatus::NotSketching);
@@ -100,6 +133,11 @@ CadStatus SketchSession::begin(Workplane plane) {
     }
     sketch_ = CadSketch{};
     sketch_.plane = plane;
+    // The authoring frame is the plane's own frame at the world origin, so a
+    // world-plane sketch behaves exactly as before; a face sketch overrides it.
+    const WorkplaneFrame wf = workplaneFrame(plane);
+    frame_ = SketchFrame{Vec3{0.0f, 0.0f, 0.0f}, wf.uAxis, wf.vAxis, wf.normal};
+    gridStep_ = kSketchGridSpacingMeters;
     selectedEntityId_ = kNoSketchEntity;
     profiles_ = ProfileExtraction{};
     extrude_ = ExtrudeFeature{};
@@ -165,22 +203,34 @@ bool SketchSession::screenToSketch(const CameraSnapshot& camera, float x, float 
     if (!buildPickRay(camera, x, y, viewportWidth, viewportHeight, &ray)) {
         return false;
     }
-    const WorkplaneFrame frame = workplaneFrame(sketch_.plane);
     Vec3 hit;
-    // A sketch body starts at the identity placement, so the plane's local
-    // frame IS its world frame and the origin is the world origin.
-    if (!intersectRayPlane(ray, Vec3{0.0f, 0.0f, 0.0f}, frame.normal, &hit)) {
+    // Intersect with the authoring frame's plane, and read (u, v) off the
+    // frame's own axes. For a world-plane sketch the frame is the plane at the
+    // origin, so this is identical to CAD-R0; for a face sketch it is the
+    // producer's face frame in world space.
+    if (!intersectRayPlane(ray, frame_.origin, frame_.n, &hit)) {
         return false;
     }
-    *out = localToWorkplane(sketch_.plane, hit);
+    const Vec3 d = vec3Sub(hit, frame_.origin);
+    out->u = static_cast<double>(vec3Dot(d, frame_.u));
+    out->v = static_cast<double>(vec3Dot(d, frame_.v));
     return std::isfinite(out->u) && std::isfinite(out->v);
 }
 
 bool SketchSession::sketchToScreen(const CameraSnapshot& camera, const SketchPoint& point,
                                    int viewportWidth, int viewportHeight, float* outX,
                                    float* outY) const {
-    return projectWorldToScreen(camera, workplaneToLocal(sketch_.plane, point), viewportWidth,
-                                viewportHeight, outX, outY);
+    return projectWorldToScreen(camera, sketchToWorld(point), viewportWidth, viewportHeight, outX,
+                                outY);
+}
+
+Vec3 SketchSession::sketchToWorld(const SketchPoint& p) const {
+    return vec3Add(frame_.origin, vec3Add(vec3Scale(frame_.u, static_cast<float>(p.u)),
+                                          vec3Scale(frame_.v, static_cast<float>(p.v))));
+}
+
+Vec3 SketchSession::sketchToWorldAt(const SketchPoint& p, double offset) const {
+    return vec3Add(sketchToWorld(p), vec3Scale(frame_.n, static_cast<float>(offset)));
 }
 
 void SketchSession::sketchViewAngles(Workplane plane, float* outYaw, float* outPitch) {
@@ -229,9 +279,10 @@ SketchSession::SnapResult SketchSession::snap(const SketchPoint& raw, double sna
     if (result.kind == SketchSnapKind::Endpoint) {
         return result;
     }
-    // Then the grid: exact multiples of the spacing.
-    result.point.u = std::round(raw.u / kSketchGridSpacingMeters) * kSketchGridSpacingMeters;
-    result.point.v = std::round(raw.v / kSketchGridSpacingMeters) * kSketchGridSpacingMeters;
+    // Then the grid: exact multiples of the CURRENT adaptive step.
+    const double step = gridStep_ > 0.0 ? gridStep_ : kSketchGridSpacingMeters;
+    result.point.u = std::round(raw.u / step) * step;
+    result.point.v = std::round(raw.v / step) * step;
     result.kind = SketchSnapKind::Grid;
     return result;
 }
@@ -309,11 +360,13 @@ bool SketchSession::onTouch(TouchAction action, int32_t actionPointerId,
                 return false;
             }
             float perPixel = 0.0f;
-            const Vec3 origin{0.0f, 0.0f, 0.0f};
-            if (!worldMetersPerPixel(camera, origin, viewportHeight, &perPixel)) {
+            if (!worldMetersPerPixel(camera, frame_.origin, viewportHeight, &perPixel)) {
                 return false;
             }
             worldPerUnit_ = static_cast<double>(perPixel) * gizmoPixelsPerReferenceUnit();
+            // The grid step is fixed for the drag at the zoom it started under,
+            // exactly as the tolerances are.
+            gridStep_ = adaptiveSketchGridStep(static_cast<double>(perPixel));
             SnapResult at;
             if (!pointerToSketch(camera, pointers[0].x, pointers[0].y, viewportWidth,
                                  viewportHeight, &at)) {
@@ -702,16 +755,25 @@ void SketchSession::buildOverlay(float worldPerUnit) {
     auto built = std::make_shared<SketchOverlay>();
     built->revision = overlayRevision_;
     std::vector<GizmoVertex>& v = built->vertices;
-    const Workplane plane = sketch_.plane;
-    const WorkplaneFrame frame = workplaneFrame(plane);
-    const auto local = [plane](const SketchPoint& p) { return workplaneToLocal(plane, p); };
-    const auto localAt = [plane](const SketchPoint& p, double offset) {
-        return workplaneToLocalAtOffset(plane, p, offset);
+    // Map a sketch point onto the authoring frame in world space. For a
+    // world-plane sketch this is the plane at the origin; for a face sketch the
+    // producer's face frame.
+    const auto local = [this](const SketchPoint& p) { return sketchToWorld(p); };
+    const auto localAt = [this](const SketchPoint& p, double offset) {
+        return sketchToWorldAt(p, offset);
     };
 
+    // The adaptive minor step for the current zoom, and a grid drawn as a
+    // bounded number of lines each side of the frame origin. worldPerUnit was
+    // reference-unit metres; the per-pixel value is that over the dp scale.
+    const double perPixel = worldPerUnit > 0.0f
+                                ? static_cast<double>(worldPerUnit) / gizmoPixelsPerReferenceUnit()
+                                : 0.0;
+    const double step = adaptiveSketchGridStep(perPixel);
+    const double extent = step * kSketchGridLinesPerSide;
+    const int lines = kSketchGridLinesPerSide;
+
     // Grid, minor then major, as two ranges so they take two weights.
-    const int lines = static_cast<int>(std::round(kSketchGridHalfExtentMeters
-                                                  / kSketchGridSpacingMeters));
     for (int pass = 0; pass < 2; ++pass) {
         const bool major = pass == 1;
         SketchOverlayRange range;
@@ -721,11 +783,9 @@ void SketchSession::buildOverlay(float worldPerUnit) {
             if (isMajor != major || i == 0) {
                 continue;  // the two axes are their own range
             }
-            const double t = i * kSketchGridSpacingMeters;
-            pushLine(&v, local(SketchPoint{t, -kSketchGridHalfExtentMeters}),
-                     local(SketchPoint{t, kSketchGridHalfExtentMeters}), 0.0f, 0.0f);
-            pushLine(&v, local(SketchPoint{-kSketchGridHalfExtentMeters, t}),
-                     local(SketchPoint{kSketchGridHalfExtentMeters, t}), 0.0f, 0.0f);
+            const double t = i * step;
+            pushLine(&v, local(SketchPoint{t, -extent}), local(SketchPoint{t, extent}), 0.0f, 0.0f);
+            pushLine(&v, local(SketchPoint{-extent, t}), local(SketchPoint{extent, t}), 0.0f, 0.0f);
         }
         range.vertexCount = static_cast<uint32_t>(v.size()) - range.firstVertex;
         range.style = major ? SketchOverlayStyle::GridMajor : SketchOverlayStyle::GridMinor;
@@ -734,12 +794,10 @@ void SketchSession::buildOverlay(float worldPerUnit) {
     {
         SketchOverlayRange range;
         range.firstVertex = static_cast<uint32_t>(v.size());
-        pushLine(&v, local(SketchPoint{-kSketchGridHalfExtentMeters, 0.0}),
-                 local(SketchPoint{kSketchGridHalfExtentMeters, 0.0}),
-                 hueForWorldAxis(frame.uAxis), 0.0f);
-        pushLine(&v, local(SketchPoint{0.0, -kSketchGridHalfExtentMeters}),
-                 local(SketchPoint{0.0, kSketchGridHalfExtentMeters}),
-                 hueForWorldAxis(frame.vAxis), 0.0f);
+        pushLine(&v, local(SketchPoint{-extent, 0.0}), local(SketchPoint{extent, 0.0}),
+                 hueForWorldAxis(frame_.u), 0.0f);
+        pushLine(&v, local(SketchPoint{0.0, -extent}), local(SketchPoint{0.0, extent}),
+                 hueForWorldAxis(frame_.v), 0.0f);
         range.vertexCount = static_cast<uint32_t>(v.size()) - range.firstVertex;
         range.style = SketchOverlayStyle::Axes;
         built->ranges.push_back(range);

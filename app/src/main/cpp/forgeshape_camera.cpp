@@ -112,6 +112,7 @@ bool CameraController::setPose(float yaw, float pitch, float distance) {
 }
 
 void CameraController::resetCamera() {
+    sketchView_ = false;
     target_ = Vec3{0.0f, 0.0f, 0.0f};
     yaw_ = kInitialYaw;
     pitch_ = kInitialPitch;
@@ -153,6 +154,31 @@ void CameraController::restorePose(const Pose& pose) {
         orthoHalfHeightMeters_ = clampf(pose.orthoHalfHeightMeters, kMinOrthoHalfHeightMeters,
                                         kMaxOrthoHalfHeightMeters);
     }
+    sketchView_ = false;  // a captured pose is an orbit pose; leave sketch view
+    resetGesture();
+}
+
+void CameraController::frameSketchView(const Vec3& origin, const Vec3& u, const Vec3& v,
+                                       const Vec3& n) {
+    const Vec3 un = vec3Normalize(u);
+    const Vec3 vn = vec3Normalize(v);
+    const Vec3 nn = vec3Normalize(n);
+    if (!vec3Finite(origin) || !vec3Finite(un) || !vec3Finite(vn) || !vec3Finite(nn)) {
+        return;
+    }
+    // Carry the current visible span into the orthographic half-height so the
+    // sketch appears at the size the model had a moment ago, exactly as
+    // frameWorkplane's projection switch does.
+    if (projection_ != ProjectionMode::Orthographic) {
+        orthoHalfHeightMeters_ = clampf(distance_ * perspectiveHalfHeightPerMeter(),
+                                        kMinOrthoHalfHeightMeters, kMaxOrthoHalfHeightMeters);
+    }
+    projection_ = ProjectionMode::Orthographic;
+    sketchView_ = true;
+    svU_ = un;
+    svV_ = vn;
+    svN_ = nn;
+    target_ = origin;
     resetGesture();
 }
 
@@ -160,6 +186,7 @@ void CameraController::frameWorkplane(float yaw, float pitch) {
     if (!std::isfinite(yaw) || !std::isfinite(pitch)) {
         return;
     }
+    sketchView_ = false;
     target_ = Vec3{0.0f, 0.0f, 0.0f};
     yaw_ = wrapAngle(yaw);
     pitch_ = clampf(pitch, -kPitchLimitRadians, kPitchLimitRadians);
@@ -295,6 +322,13 @@ Vec3 CameraController::orbitDirection() const {
 }
 
 void CameraController::cameraBasis(Vec3* right, Vec3* up) const {
+    if (sketchView_) {
+        // In a sketch view the plane's own axes ARE screen right and up, so pan
+        // slides the sketch under the fingers with no rounding through yaw.
+        *right = svU_;
+        *up = svV_;
+        return;
+    }
     const Vec3 dir = orbitDirection();               // target -> eye
     const Vec3 forward = vec3Scale(dir, -1.0f);      // eye -> target
     const Vec3 worldUp{0.0f, 1.0f, 0.0f};
@@ -309,6 +343,11 @@ void CameraController::cameraBasis(Vec3* right, Vec3* up) const {
 // drag down tips the model toward the viewer (pitch increases / camera rises).
 void CameraController::applyOrbit(float dx, float dy) {
     if (!std::isfinite(dx) || !std::isfinite(dy)) {
+        return;
+    }
+    // A sketch view is not orbited: it is locked normal to its plane, and the
+    // single-finger gesture draws rather than turns the camera.
+    if (sketchView_) {
         return;
     }
     if (dx == 0.0f && dy == 0.0f) {
@@ -415,7 +454,12 @@ CameraSnapshot CameraController::snapshot() const {
     s.target = target_;
     s.projection = projection_;
 
-    const Vec3 direction = orbitDirection();  // target -> eye
+    // In a sketch view the eye sits on the frame normal and the up vector is
+    // the frame's own V, so the view is EXACTLY normal to the plane -- including
+    // straight down, which the orbit's world-up look-at cannot express without
+    // gimbal lock. That is why the sketch view bypasses yaw/pitch entirely.
+    const Vec3 direction = sketchView_ ? svN_ : orbitDirection();  // target -> eye
+    const Vec3 upVector = sketchView_ ? svV_ : Vec3{0.0f, 1.0f, 0.0f};
 
     // The view plane sits at the orbit eye in Perspective and is pulled back in
     // Orthographic. Only the projection differs in where it puts the eye; the
@@ -425,7 +469,7 @@ CameraSnapshot CameraController::snapshot() const {
                                   ? kOrthoViewPlaneDistance
                                   : distance_;
     s.eye = vec3Add(target_, vec3Scale(direction, eyeDistance));
-    s.view = mat4LookAt(s.eye, s.target, Vec3{0.0f, 1.0f, 0.0f});
+    s.view = mat4LookAt(s.eye, s.target, upVector);
 
     // One aspect, from the one viewport truth, for both projections. The
     // orientation convention (P2) is untouched: this is the window's own aspect

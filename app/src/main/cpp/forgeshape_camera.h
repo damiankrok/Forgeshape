@@ -235,6 +235,21 @@ public:
     // what the user is looking through.
     void frameWorkplane(float yaw, float pitch);
 
+    // Looks EXACTLY along a sketch frame's normal, orthographically, with no
+    // pitch-clamp approximation (`CAD-A3` B3). Unlike frameWorkplane it does
+    // not go through the orbit yaw/pitch -- which cannot represent a straight
+    // -down view without gimbal lock -- but installs the frame directly: the
+    // view is `lookAt(origin + n*D, origin, v)`, so `u` is exactly screen-right
+    // and `v` exactly screen-up. Used for BOTH a world-plane sketch (the
+    // plane's frame at the origin) and a face sketch (the producer's face frame
+    // in world space). Pan slides the target in `u`/`v`; pinch changes the
+    // orthographic span; orbit is inert. Presentation only: cleared by
+    // restorePose, frameWorkplane or resetCamera.
+    void frameSketchView(const Vec3& origin, const Vec3& u, const Vec3& v, const Vec3& n);
+
+    // Whether a sketch-frame view is currently installed.
+    bool sketchViewActive() const { return sketchView_; }
+
     // Switches the projection, PRESERVING THE FRAMING at the target plane.
     //
     // The two modes describe the same visible span in different terms, so the
@@ -286,6 +301,15 @@ private:
     // Orthonormal camera basis for the current pose.
     Vec3 orbitDirection() const;  // unit vector target -> eye
     void cameraBasis(Vec3* right, Vec3* up) const;
+
+    // CAD-A3 sketch-frame view. When active the snapshot is built from this
+    // world frame instead of the orbit pose, so the view is exactly normal to
+    // the sketch with no pitch-clamp and no gimbal singularity. `target_` is
+    // the in-plane look-at point (pan moves it along svU_/svV_).
+    bool sketchView_ = false;
+    Vec3 svU_{1.0f, 0.0f, 0.0f};
+    Vec3 svV_{0.0f, 1.0f, 0.0f};
+    Vec3 svN_{0.0f, 0.0f, 1.0f};
 
     Vec3 target_{0.0f, 0.0f, 0.0f};
     float yaw_ = kInitialYaw;

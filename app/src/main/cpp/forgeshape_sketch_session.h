@@ -94,9 +94,36 @@ enum class SketchSnapKind : uint8_t {
 // major rhythm IS the world grid's one-metre rhythm. Fixed rather than
 // zoom-derived: an adaptive multi-decade grid is a CAD grid system this stage
 // does not build. The grid never alters a typed value.
-constexpr double kSketchGridSpacingMeters = 0.25;
+constexpr double kSketchGridSpacingMeters = 0.25;  // the fallback / minimum minor step
 constexpr int kSketchGridMajorEveryNMinor = 4;
 constexpr double kSketchGridHalfExtentMeters = 8.0;
+
+// CAD-A3 adaptive grid. The minor step is chosen so a grid square is at least
+// this many screen pixels wide, and the grid is drawn as a bounded number of
+// lines each side of the frame origin rather than to a fixed world extent, so
+// it stays readable and cheap at every zoom.
+constexpr double kSketchGridMinPixels = 26.0;
+constexpr int kSketchGridLinesPerSide = 40;
+constexpr double kSketchGridMinStepMeters = 1.0e-4;   // 0.1 mm
+constexpr double kSketchGridMaxStepMeters = 100.0;
+
+// A deterministic view-adaptive minor grid step: the smallest 1/2/5 x 10^k
+// metres whose on-screen spacing is at least kSketchGridMinPixels. `worldPerPixel`
+// is metres per screen pixel at the sketch plane. Never persisted -- the grid is
+// display and snap only, and a typed value is never re-snapped to it (`CAD-A3`
+// J1). Falls back to kSketchGridSpacingMeters on a non-usable input.
+double adaptiveSketchGridStep(double worldPerPixel);
+
+// The world authoring frame a sketch is drawn on: a right-handed orthonormal
+// basis (u x v = n) at a world origin. For a world-plane sketch it is the
+// plane's frame at the world origin; for a face sketch it is the producer's
+// resolved face frame.
+struct SketchFrame {
+    Vec3 origin{0.0f, 0.0f, 0.0f};
+    Vec3 u{1.0f, 0.0f, 0.0f};
+    Vec3 v{0.0f, 1.0f, 0.0f};
+    Vec3 n{0.0f, 0.0f, 1.0f};
+};
 
 // Snap and hit tolerances, in reference units (dp). Both reach the 48-unit
 // interactive floor as a DIAMETER: a target 24 units either side of an
@@ -122,8 +149,27 @@ public:
     // --- lifecycle -------------------------------------------------------
 
     // Opens a fresh sketch on `plane`. Refused (NotSketching) while a session
-    // is already open; the caller cancels first.
+    // is already open; the caller cancels first. The authoring frame is the
+    // plane's own frame at the world origin -- a new world-plane CAD body
+    // starts at the identity placement.
     CadStatus begin(Workplane plane);
+
+    // Opens a fresh FACE-supported sketch (`CAD-A3`). `worldFrame` is the
+    // producer's chosen face resolved into WORLD space (origin, right-handed
+    // orthonormal u/v/n, n outward); `support` is the TopoRef the committed
+    // body carries. The sketch authors on that frame -- exactly as a world
+    // plane, but placed on the face -- and its canonical basis is XY. Refused
+    // (NotSketching) while a session is open; the caller cancels first.
+    CadStatus beginOnFace(const SketchFrame& worldFrame, const TopoRef& support);
+
+    // The world authoring frame the camera should look normal to. Valid while
+    // active; the plane's frame at the origin for a world-plane sketch, the
+    // producer's face frame for a face sketch.
+    const SketchFrame& frame() const { return frame_; }
+
+    // The current adaptive minor grid step, in metres. What a grid snap rounds
+    // to, and what the overlay draws. Sampled from the camera at pointer-down.
+    double gridStep() const { return gridStep_; }
 
     // Drops everything. Never a project mutation.
     void cancel();
@@ -211,6 +257,11 @@ public:
     // when the ray misses the plane.
     bool screenToSketch(const CameraSnapshot& camera, float x, float y, int viewportWidth,
                         int viewportHeight, SketchPoint* out) const;
+    // The authoring frame's (u, v) -> world, and with an out-of-plane offset
+    // along the frame normal. The one place a sketch point becomes world space.
+    Vec3 sketchToWorld(const SketchPoint& point) const;
+    Vec3 sketchToWorldAt(const SketchPoint& point, double offset) const;
+
     bool sketchToScreen(const CameraSnapshot& camera, const SketchPoint& point,
                         int viewportWidth, int viewportHeight, float* outX, float* outY) const;
 
@@ -249,6 +300,11 @@ private:
     SketchSessionState state_ = SketchSessionState::Inactive;
     SketchTool tool_ = SketchTool::Rectangle;
     CadSketch sketch_;
+    // The world frame the sketch is authored on. See SketchFrame.
+    SketchFrame frame_;
+    // The current adaptive minor grid step, in metres. Updated from the camera
+    // at pointer-down and when the overlay is rebuilt; never persisted.
+    double gridStep_ = kSketchGridSpacingMeters;
     SketchEntityId selectedEntityId_ = kNoSketchEntity;
 
     ProfileExtraction profiles_;

@@ -8,7 +8,9 @@
 
 #include "forgeshape_cad_body.h"
 #include "forgeshape_cad_face.h"
+#include "forgeshape_camera.h"
 #include "forgeshape_history.h"
+#include "forgeshape_sketch_session.h"
 #include "forgeshape_math.h"
 #include "forgeshape_project_document.h"
 #include "forgeshape_project_state.h"
@@ -442,6 +444,124 @@ int runCadA3SelfTests(CadA3SelfTestResult* out, int maxOut) {
             cadTopologySignature(cycle.cad.bodies[1].state);
         r.check("CADA3_36_dependency_cycle_document_is_refused",
                 validateProjectDocument(cycle) != ProjectCodecStatus::Ok);
+    }
+
+    // -----------------------------------------------------------------------
+    // CADA3-29/30: face-supported creation is one history step
+    // -----------------------------------------------------------------------
+    {
+        ConstructionScene scene;
+        ConstructionHistory history(scene);
+        SceneObject* a = scene.addCadBody(rectBody(Workplane::XY, 3.0, 3.0, 1.0));
+        publishSceneObject(*a);
+        const ObjectId aId = a->objectId();
+        const CadFaceToken cap = tokenFor(a->cadOrNull()->state(), CadFaceKind::CapFar);
+
+        ObjectId childId = kNoObject;
+        {
+            ScopedConstructionEdit edit(history);
+            SceneObject* b = scene.addCadBody(
+                childOn(a->cadOrNull()->state(), aId, cap, 1.0, 1.0, 0.5));
+            if (b != nullptr) {
+                childId = b->objectId();
+                publishSceneObject(*b);
+            }
+        }
+        const CadBodyState childState =
+            childId != kNoObject ? scene.findBody(childId)->cadOrNull()->state() : CadBodyState{};
+        // The scene starts with the default body, plus A, plus the child = 3.
+        r.check("CADA3_28_face_supported_creation_is_one_history_step",
+                childId != kNoObject && history.undoDepth() == 1 && scene.bodyCount() == 3
+                        && scene.findBody(childId)->isFaceSupportedCad());
+
+        ConstructionRestoreReport report;
+        r.check("CADA3_29_undo_removes_only_the_dependent_not_the_producer",
+                history.undo(&report) && scene.bodyCount() == 2
+                        && scene.findBody(childId) == nullptr && scene.findBody(aId) != nullptr);
+        r.check("CADA3_30_redo_restores_the_same_topo_ref",
+                history.redo(&report) && scene.bodyCount() == 3
+                        && scene.findBody(childId) != nullptr
+                        && scene.findBody(childId)->isFaceSupportedCad()
+                        && sameTopoRef(scene.findBody(childId)->cadFaceSupportOrNull()
+                                           ? *scene.findBody(childId)->cadFaceSupportOrNull()
+                                           : TopoRef{},
+                                       childState.sketch.faceSupport));
+    }
+
+    // -----------------------------------------------------------------------
+    // CADA3-12: exact-normal orthographic sketch camera, no pitch clamp
+    // -----------------------------------------------------------------------
+    {
+        CameraController cam;
+        cam.setViewport(1000, 1000);
+        // A top-down view of the XZ plane: normal +Y, u +X, v -Z. This is the
+        // case the old pitch clamp could not express.
+        cam.frameSketchView(Vec3{0, 0, 0}, Vec3{1, 0, 0}, Vec3{0, 0, -1}, Vec3{0, 1, 0});
+        const CameraSnapshot s = cam.snapshot();
+        // Orthographic (proj m[11] == 0), and the eye is straight above along +Y.
+        r.check("CADA3_12_sketch_camera_is_orthographic",
+                s.projection == ProjectionMode::Orthographic && nearf(s.proj.m[11], 0.0f));
+        r.check("CADA3_12_sketch_camera_eye_is_along_the_frame_normal",
+                s.eye.x == 0.0f && s.eye.z == 0.0f && s.eye.y > 0.0f);
+        // The view direction (row 2 of view, negated) is exactly -normal = -Y.
+        const Vec3 viewDir{-s.view.m[2], -s.view.m[6], -s.view.m[10]};
+        r.check("CADA3_12_sketch_camera_looks_exactly_down_the_normal",
+                near3(viewDir, Vec3{0, -1, 0}));
+        // A frame-right world point (origin + u) projects to screen right of a
+        // frame-up point; proving u maps right and v up.
+        float rx = 0, ry = 0, ux = 0, uy = 0;
+        const bool pr = projectWorldToScreen(s, Vec3{1, 0, 0}, 1000, 1000, &rx, &ry);
+        const bool pu = projectWorldToScreen(s, Vec3{0, 0, -1}, 1000, 1000, &ux, &uy);
+        r.check("CADA3_12_frame_u_is_screen_right_and_v_is_screen_up",
+                pr && pu && rx > 500.0f && uy < 500.0f);
+    }
+
+    // -----------------------------------------------------------------------
+    // CADA3-44/45: adaptive grid step
+    // -----------------------------------------------------------------------
+    {
+        // Nice 1/2/5 x 10^k steps, monotonic with zoom, and bounded.
+        const double s1 = adaptiveSketchGridStep(0.001);   // fine zoom
+        const double s2 = adaptiveSketchGridStep(0.02);    // mid
+        const double s3 = adaptiveSketchGridStep(0.5);     // coarse zoom
+        const auto isNice = [](double s) {
+            const double p = std::pow(10.0, std::floor(std::log10(s)));
+            const double f = s / p;
+            return nearf(static_cast<float>(f), 1.0f, 1e-3f) || nearf(static_cast<float>(f), 2.0f, 1e-3f)
+                   || nearf(static_cast<float>(f), 5.0f, 1e-3f);
+        };
+        r.check("CADA3_44_adaptive_grid_steps_are_nice_and_monotonic",
+                isNice(s1) && isNice(s2) && isNice(s3) && s1 < s2 && s2 < s3);
+        r.check("CADA3_44_adaptive_grid_step_is_bounded",
+                s1 >= kSketchGridMinStepMeters && s3 <= kSketchGridMaxStepMeters
+                        && adaptiveSketchGridStep(0.0) == kSketchGridSpacingMeters);
+        // A face sketch session frames the camera on the producer's face and
+        // authors on it: a point typed at (0,0) maps to the face origin in world.
+        ConstructionScene scene;
+        SceneObject* a = scene.addCadBody(rectBody(Workplane::XY, 2.0, 2.0, 1.0));
+        publishSceneObject(*a);
+        CadFace cap;
+        resolveCadFace(a->cadOrNull()->state(), tokenFor(a->cadOrNull()->state(), CadFaceKind::CapFar),
+                       &cap);
+        Mat4 world;
+        scene.resolveWorldModel(a->objectId(), &world);
+        const Mat4 faceWorld = mat4Multiply(world, cadFaceFrameMatrix(cap));
+        SketchFrame frame;
+        frame.origin = mat4TransformPoint(faceWorld, Vec3{0, 0, 0});
+        frame.u = vec3Normalize(mat4TransformDirection(faceWorld, Vec3{1, 0, 0}));
+        frame.v = vec3Normalize(mat4TransformDirection(faceWorld, Vec3{0, 1, 0}));
+        frame.n = vec3Normalize(mat4TransformDirection(faceWorld, Vec3{0, 0, 1}));
+        SketchSession session;
+        TopoRef ref;
+        ref.producerObjectId = a->objectId();
+        ref.producerLocalFeatureId = kCadFeatureId;
+        ref.face = tokenFor(a->cadOrNull()->state(), CadFaceKind::CapFar);
+        ref.lineageToken = cadTopologySignature(a->cadOrNull()->state());
+        r.check("CADA3_45_a_face_session_authors_on_the_producer_frame",
+                session.beginOnFace(frame, ref) == CadStatus::Ok
+                        && near3(session.sketchToWorld(SketchPoint{0, 0}), Vec3{0, 0, 1})
+                        && session.frame().origin.z == 1.0f);
+        session.cancel();
     }
 
     return r.n;
