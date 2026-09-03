@@ -16,6 +16,8 @@
 #include "forgeshape_project_state.h"
 #include "forgeshape_scene.h"
 #include "forgeshape_sketch.h"
+#include "forgeshape_support_chooser.h"
+#include "forgeshape_gizmo.h"
 
 namespace forgeshape {
 namespace {
@@ -486,6 +488,66 @@ int runCadA3SelfTests(CadA3SelfTestResult* out, int maxOut) {
                                            ? *scene.findBody(childId)->cadFaceSupportOrNull()
                                            : TopoRef{},
                                        childState.sketch.faceSupport));
+    }
+
+    // -----------------------------------------------------------------------
+    // CADA3-08/24/25/26: spatial support picking through the viewport
+    // -----------------------------------------------------------------------
+    {
+        ConstructionScene scene;
+        // Replace the default body's effect by adding a CAD box up at the top so
+        // faces are unobstructed. A rectangle 2x2 extruded 1 on XY: far cap at z=1.
+        SceneObject* a = scene.addCadBody(rectBody(Workplane::XY, 2.0, 2.0, 1.0));
+        publishSceneObject(*a);
+        CameraController cam;
+        cam.setViewport(1000, 1000);
+        // A 3/4 view so the far cap and a side are both visible.
+        cam.frameWorkplane(0.7f, 0.6f);
+        const CameraSnapshot s = cam.snapshot();
+
+        // Project the far-cap centre (0,0,1) to screen, then pick there.
+        float fx = 0, fy = 0;
+        const bool projected = projectWorldToScreen(s, Vec3{0, 0, 1}, 1000, 1000, &fx, &fy);
+        SupportChooser& chooser = supportChooser();
+        chooser.begin(/*allowFaces=*/true);
+        const ChosenSupport capPick = chooser.select(s, fx, fy, 1000, 1000, scene);
+        r.check("CADA3_24_tapping_a_planar_cap_selects_that_face",
+                projected && capPick.kind == ChosenSupport::Kind::Face
+                        && capPick.faceRef.face.kind == CadFaceKind::CapFar
+                        && capPick.faceRef.producerObjectId == a->objectId());
+
+        // A tap on empty space selects nothing (a plane target may still be hit,
+        // but far off the body it is the plane, not a face).
+        const ChosenSupport miss = chooser.select(s, 5.0f, 5.0f, 1000, 1000, scene);
+        r.check("CADA3_26_a_tap_far_off_target_is_world_plane_or_none",
+                miss.kind != ChosenSupport::Kind::Face);
+
+        // A curved side of a circle body is never a face support.
+        ConstructionScene cscene;
+        SceneObject* cyl = cscene.addCadBody(circleBody(Workplane::XY, 1.0, 2.0));
+        publishSceneObject(*cyl);
+        CameraController cc;
+        cc.setViewport(1000, 1000);
+        cc.frameWorkplane(0.0f, 0.0f);  // straight at the cylinder side
+        const CameraSnapshot cs = cc.snapshot();
+        float sx = 0, sy = 0;
+        projectWorldToScreen(cs, Vec3{1.0f, 0.0f, 1.0f}, 1000, 1000, &sx, &sy);  // side midpoint
+        chooser.begin(true);
+        const ChosenSupport sidePick = chooser.select(cs, sx, sy, 1000, 1000, cscene);
+        r.check("CADA3_26_a_curved_side_never_selects_as_a_face",
+                sidePick.kind != ChosenSupport::Kind::Face);
+        chooser.cancel();
+
+        // World-plane picking: with faces off, a tap on the XY plane near the
+        // origin selects the XY world plane.
+        chooser.begin(/*allowFaces=*/false);
+        float ox = 0, oy = 0;
+        projectWorldToScreen(s, Vec3{0.5f, 0.5f, 0.0f}, 1000, 1000, &ox, &oy);
+        const ChosenSupport planePick = chooser.select(s, ox, oy, 1000, 1000, scene);
+        r.check("CADA3_08_tapping_a_world_plane_selects_it",
+                planePick.kind == ChosenSupport::Kind::WorldPlane
+                        && planePick.plane == Workplane::XY);
+        chooser.cancel();
     }
 
     // -----------------------------------------------------------------------

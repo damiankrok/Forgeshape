@@ -1632,6 +1632,39 @@ final class NativeViewport {
     static final int SKETCH_PROFILE_KIND_CIRCLE = 2;
     static final int SKETCH_PROFILE_KIND_POLYGON = 3;
 
+    // --- spatial support chooser (CAD-A3) --------------------------------
+
+    /** A support-chooser pick that hit nothing. */
+    static final int SUPPORT_KIND_NONE = -1;
+    /** A support-chooser pick that hit a planar CAD face. */
+    static final int SUPPORT_KIND_FACE = 3;
+
+    /**
+     * Enters spatial "Choose Sketch Support": the three world planes are drawn
+     * as touchable targets, and (when {@code allowFaces}) the planar faces of
+     * CAD bodies are eligible too. Returns false if refused (sculpting or
+     * mid-edit).
+     */
+    static native boolean supportChooserBegin(boolean allowFaces);
+
+    /** Stylus hover: highlights the target under the point, never selects. */
+    static native int supportChooserHover(float x, float y);
+
+    /** A tap: selects the target under the point. Returns a SUPPORT_KIND_*. */
+    static native int supportChooserSelect(float x, float y);
+
+    /** The current selection's kind, or SUPPORT_KIND_NONE. */
+    static native int supportChooserSelectedKind();
+
+    /** Begins the sketch on the selected support, framing the camera on it. */
+    static native int supportChooserConfirm();
+
+    /** Leaves support selection without starting a sketch. */
+    static native void supportChooserCancel();
+
+    /** Whether spatial support selection is active. */
+    static native boolean supportChooserActive();
+
     /** Begins a sketch on a workplane. Returns a CAD_* code. */
     static native int sketchBegin(int workplane);
 

@@ -47,8 +47,10 @@
 #include "forgeshape_gltf_export_selftest.h"
 #include "forgeshape_gltf_import_selftest.h"
 #include "forgeshape_cad_body.h"
+#include "forgeshape_cad_a3_selftest.h"
 #include "forgeshape_cad_selftest.h"
 #include "forgeshape_sketch_session.h"
+#include "forgeshape_support_chooser.h"
 #include "forgeshape_history.h"
 #include "forgeshape_history_selftest.h"
 #include "forgeshape_input.h"
@@ -219,15 +221,17 @@ constexpr jint kActionPointerUp = 6;
 forgeshape::CameraController::Pose g_sketchSavedPose;
 bool g_sketchPoseSaved = false;
 
-void beginSketchView(forgeshape::Workplane plane) {
+// Frames the camera EXACTLY along the active sketch's authoring frame -- no
+// pitch-clamp approximation, and correct for a face frame at any orientation
+// (`CAD-A3` B3). Reads the frame the session already installed, so a world-plane
+// and a face sketch take the same path.
+void beginSketchView() {
     if (!g_sketchPoseSaved) {
         g_sketchSavedPose = g_camera.capturePose();
         g_sketchPoseSaved = true;
     }
-    float yaw = 0.0f;
-    float pitch = 0.0f;
-    forgeshape::SketchSession::sketchViewAngles(plane, &yaw, &pitch);
-    g_camera.frameWorkplane(yaw, pitch);
+    const forgeshape::SketchFrame& f = forgeshape::sketchSession().frame();
+    g_camera.frameSketchView(f.origin, f.u, f.v, f.n);
 }
 
 void endSketchView() {
@@ -428,6 +432,26 @@ void runCadSelfTestsAndLog() {
         FS_LOGI("FORGESHAPE_CAD_SELFTEST_OK (%d checks)", count);
     } else {
         FS_LOGE("FORGESHAPE_CAD_SELFTEST_FAIL (%d of %d checks failed)", failed, count);
+    }
+
+    // CAD-A3: semantic faces, TopoRef, the dependency graph, CADB v2, the exact
+    // sketch camera, the adaptive grid and the spatial support picking. Its own
+    // suite, building its own scenes/histories/camera.
+    constexpr int kMaxA3Checks = 128;
+    static forgeshape::CadA3SelfTestResult a3[kMaxA3Checks];
+    const int a3Count = forgeshape::runCadA3SelfTests(a3, kMaxA3Checks);
+    int a3Failed = 0;
+    for (int i = 0; i < a3Count; ++i) {
+        if (!a3[i].passed) {
+            ++a3Failed;
+            FS_LOGE("FORGESHAPE_CAD_A3_SELFTEST_CASE_FAIL:%s", a3[i].name);
+        }
+    }
+    FS_LOGI("FORGESHAPE_CAD_A3_PERFORMANCE %s", forgeshape::cadA3PerformanceReport());
+    if (a3Failed == 0) {
+        FS_LOGI("FORGESHAPE_CAD_A3_SELFTEST_OK (%d checks)", a3Count);
+    } else {
+        FS_LOGE("FORGESHAPE_CAD_A3_SELFTEST_FAIL (%d of %d checks failed)", a3Failed, a3Count);
     }
 #endif
 }
@@ -1315,7 +1339,16 @@ void renderThreadMain() {
                     forgeshape::gizmoWorldScale(g_camera.snapshot(),
                                                 forgeshape::Vec3{0.0f, 0.0f, 0.0f},
                                                 g_camera.viewportHeight(), &worldPerUnit);
-                    renderer.setSketchOverlay(forgeshape::sketchSession().overlay(worldPerUnit));
+                    // The spatial support chooser and the sketch never both run:
+                    // the chooser draws the plane/face targets, then the sketch
+                    // it starts draws the entities. When neither is active the
+                    // overlay is empty and free.
+                    if (forgeshape::supportChooser().active()) {
+                        renderer.setSketchOverlay(forgeshape::supportChooser().overlay());
+                    } else {
+                        renderer.setSketchOverlay(
+                            forgeshape::sketchSession().overlay(worldPerUnit));
+                    }
                 }
             }
             // Presentation only, and deliberately OUTSIDE the state mutex: the
@@ -2624,7 +2657,7 @@ Java_com_forgeshape_app_NativeViewport_sketchBegin(JNIEnv*, jclass, jint planeIn
             forgeshape::gizmoSession().setActive(false);
             g_selection.resetGesture();
             g_camera.resetGesture();
-            beginSketchView(plane);
+            beginSketchView();
         }
     }
     if (status != forgeshape::CadStatus::Ok) {
@@ -2634,6 +2667,111 @@ Java_com_forgeshape_app_NativeViewport_sketchBegin(JNIEnv*, jclass, jint planeIn
     FS_LOGI("FORGESHAPE_SKETCH_BEGIN plane=%s tool=%s", forgeshape::workplaneName(plane),
             forgeshape::sketchToolName(forgeshape::sketchSession().tool()));
     return cadCode(status);
+}
+
+// ---------------------------------------------------------------------------
+// Spatial "Choose Sketch Support" (CAD-A3)
+// ---------------------------------------------------------------------------
+
+namespace {
+// A ChosenSupport kind as a JNI code: -1 none, 0/1/2 world plane XY/XZ/YZ, 3 face.
+jint supportKindCode(const forgeshape::ChosenSupport& c) {
+    switch (c.kind) {
+        case forgeshape::ChosenSupport::Kind::WorldPlane:
+            return static_cast<jint>(forgeshape::workplaneIndex(c.plane));
+        case forgeshape::ChosenSupport::Kind::Face:
+            return 3;
+        case forgeshape::ChosenSupport::Kind::None:
+        default:
+            return -1;
+    }
+}
+}  // namespace
+
+// Enters spatial support selection. allowFaces true for New Sketch inside a CAD
+// project. Refused while sculpting or mid-edit (returns false).
+JNIEXPORT jboolean JNICALL Java_com_forgeshape_app_NativeViewport_supportChooserBegin(
+    JNIEnv*, jclass, jboolean allowFaces) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    if (forgeshape::sculptSession().inSculptMode() || forgeshape::sketchSession().active()
+        || forgeshape::constructionHistory().editInProgress()) {
+        return JNI_FALSE;
+    }
+    forgeshape::supportChooser().begin(allowFaces == JNI_TRUE);
+    FS_LOGI("FORGESHAPE_SUPPORT_CHOOSER_BEGIN allowFaces=%d", allowFaces == JNI_TRUE ? 1 : 0);
+    return JNI_TRUE;
+}
+
+// Stylus hover: highlights the target under the point, never selects it.
+JNIEXPORT jint JNICALL Java_com_forgeshape_app_NativeViewport_supportChooserHover(
+    JNIEnv*, jclass, jfloat x, jfloat y) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    if (!forgeshape::supportChooser().active()) return -1;
+    const forgeshape::ChosenSupport at = forgeshape::supportChooser().hover(
+        g_camera.snapshot(), x, y, g_camera.viewportWidth(), g_camera.viewportHeight(),
+        forgeshape::constructionScene());
+    return supportKindCode(at);
+}
+
+// A tap: selects the target under the point. Returns its kind code.
+JNIEXPORT jint JNICALL Java_com_forgeshape_app_NativeViewport_supportChooserSelect(
+    JNIEnv*, jclass, jfloat x, jfloat y) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    if (!forgeshape::supportChooser().active()) return -1;
+    const forgeshape::ChosenSupport at = forgeshape::supportChooser().select(
+        g_camera.snapshot(), x, y, g_camera.viewportWidth(), g_camera.viewportHeight(),
+        forgeshape::constructionScene());
+    FS_LOGI("FORGESHAPE_SUPPORT_CHOOSER_SELECT kind=%d", supportKindCode(at));
+    return supportKindCode(at);
+}
+
+// The current selection's kind, or -1.
+JNIEXPORT jint JNICALL Java_com_forgeshape_app_NativeViewport_supportChooserSelectedKind(
+    JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    return supportKindCode(forgeshape::supportChooser().selected());
+}
+
+// Confirms the current selection: begins the sketch on it and frames the camera
+// EXACTLY normal to it. Returns the CadStatus code (Ok on success).
+JNIEXPORT jint JNICALL Java_com_forgeshape_app_NativeViewport_supportChooserConfirm(
+    JNIEnv*, jclass) {
+    forgeshape::CadStatus status = forgeshape::CadStatus::NotSketching;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const forgeshape::ChosenSupport& c = forgeshape::supportChooser().selected();
+        if (c.kind == forgeshape::ChosenSupport::Kind::WorldPlane) {
+            status = forgeshape::sketchSession().begin(c.plane);
+        } else if (c.kind == forgeshape::ChosenSupport::Kind::Face) {
+            status = forgeshape::sketchSession().beginOnFace(c.worldFrame, c.faceRef);
+        } else {
+            return cadCode(status);
+        }
+        if (status == forgeshape::CadStatus::Ok) {
+            forgeshape::supportChooser().cancel();
+            forgeshape::gizmoSession().setActive(false);
+            g_selection.resetGesture();
+            g_camera.resetGesture();
+            beginSketchView();
+        }
+    }
+    if (status == forgeshape::CadStatus::Ok) {
+        FS_LOGI("FORGESHAPE_SUPPORT_CHOOSER_CONFIRM ok");
+    }
+    return cadCode(status);
+}
+
+// Leaves support selection without starting a sketch. No project mutation.
+JNIEXPORT void JNICALL Java_com_forgeshape_app_NativeViewport_supportChooserCancel(
+    JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    forgeshape::supportChooser().cancel();
+}
+
+JNIEXPORT jboolean JNICALL Java_com_forgeshape_app_NativeViewport_supportChooserActive(
+    JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    return forgeshape::supportChooser().active() ? JNI_TRUE : JNI_FALSE;
 }
 
 // Drops the sketch. Never a project mutation, and gives the view back.
