@@ -38,4 +38,13 @@ const char* canonicalMixedImportedFixtureSha256();
 const char* canonicalImportedSculptFixtureSha256();
 const char* canonicalMixedImportedSculptFixtureSha256();
 
+// And for the four `CAD-R0-A1A2` fixtures: a rectangle extrusion with no
+// Construction branch, a circle extrusion, a Construction body beside two CAD
+// bodies, and the rectangle fixture with a corrupt workplane code that only
+// the semantic check can refuse.
+const char* canonicalCadRectangleFixtureSha256();
+const char* canonicalCadCircleFixtureSha256();
+const char* canonicalMixedCadFixtureSha256();
+const char* canonicalCadBadPlaneFixtureSha256();
+
 }  // namespace forgeshape

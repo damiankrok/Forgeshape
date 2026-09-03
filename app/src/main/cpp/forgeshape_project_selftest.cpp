@@ -738,6 +738,162 @@ struct LiveFixture {
     }
 };
 
+// ---------------------------------------------------------------------------
+// The four `CAD-R0-A1A2` fixtures
+// ---------------------------------------------------------------------------
+//
+// Every coordinate, size and depth is an exact binary fraction, so the
+// independent PowerShell encoder has no rounding argument to make.
+
+// CAD RECTANGLE: one body, a rectangle on the XZ plane extruded along +Y,
+// at a placement that includes an uncanonicalized 370 degrees and a
+// non-uniform scale. No CONS at all: the fixture that proves a CAD Body needs
+// no Construction Source standing in for it.
+ProjectDocument canonicalCadRectangleDocument() {
+    ProjectDocument document;
+    document.kind = ProjectKind::Construction;
+    document.scene.nextObjectId = 2;
+    document.scene.activeObjectId = 1;
+
+    ProjectBodyPlacement body;
+    body.objectId = 1;
+    body.transform = placement(0.5, -0.25, 1.25, 370.0, -45.5, 12.25, 1.25, 2.0, 0.5);
+    document.scene.bodies.push_back(body);
+
+    document.hasCad = true;
+    ProjectCadBody cad;
+    cad.objectId = 1;
+    cad.state.sketch.plane = Workplane::XZ;
+    SketchRectangle rectangle;
+    rectangle.center = SketchPoint{0.5, 0.25};
+    rectangle.width = 2.0;
+    rectangle.height = 1.0;
+    cad.state.sketch.entities.emplace_back(1, rectangle);
+    cad.state.sketch.nextEntityId = 2;
+    cad.state.extrude.profileEntityId = 1;
+    cad.state.extrude.depth = 1.5;
+    cad.state.extrude.direction = ExtrudeDirection::AlongNormal;
+    document.cad.bodies.push_back(cad);
+    return document;
+}
+
+// CAD CIRCLE: one body, a circle on the YZ plane extruded AGAINST its normal.
+ProjectDocument canonicalCadCircleDocument() {
+    ProjectDocument document;
+    document.kind = ProjectKind::Construction;
+    document.scene.nextObjectId = 2;
+    document.scene.activeObjectId = 1;
+
+    ProjectBodyPlacement body;
+    body.objectId = 1;
+    body.transform = placement(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0);
+    document.scene.bodies.push_back(body);
+
+    document.hasCad = true;
+    ProjectCadBody cad;
+    cad.objectId = 1;
+    cad.state.sketch.plane = Workplane::YZ;
+    SketchCircle circle;
+    circle.center = SketchPoint{-0.5, 0.5};
+    circle.radius = 0.75;
+    cad.state.sketch.entities.emplace_back(1, circle);
+    cad.state.sketch.nextEntityId = 2;
+    cad.state.extrude.profileEntityId = 1;
+    cad.state.extrude.depth = 0.5;
+    cad.state.extrude.direction = ExtrudeDirection::AgainstNormal;
+    document.cad.bodies.push_back(cad);
+    return document;
+}
+
+// MIXED CAD: a Construction Body beside two CAD Bodies -- a closed polyline
+// profile with an unrelated open line in the same sketch, and a loop of three
+// lines -- so a SPARSE CONS sits next to a CADB and the CADB carries every
+// entity kind and both profile-closing rules.
+ProjectDocument canonicalMixedCadDocument() {
+    ProjectDocument document;
+    document.kind = ProjectKind::Construction;
+    document.scene.nextObjectId = 4;
+    document.scene.activeObjectId = 2;
+
+    ProjectBodyPlacement first;
+    first.objectId = 1;
+    first.transform = placement(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0);
+    document.scene.bodies.push_back(first);
+    ProjectBodyPlacement second;
+    second.objectId = 2;
+    second.transform = placement(1.5, 0.5, -2.0, 370.0, 0.0, 90.0, 1.0, 1.0, 1.0);
+    document.scene.bodies.push_back(second);
+    ProjectBodyPlacement third;
+    third.objectId = 3;
+    third.transform = placement(-2.5, 1.25, 0.5, 0.0, 45.0, 0.0, 1.0, 2.0, 1.0);
+    document.scene.bodies.push_back(third);
+
+    document.hasConstruction = true;
+    ProjectConstructionBody source;
+    source.objectId = 1;
+    source.shape = canonicalSharedShape(PrimitiveKind::Box);
+    source.features.push_back(ProjectFeatureRecord{});
+    document.construction.bodies.push_back(source);
+
+    document.hasCad = true;
+    {
+        ProjectCadBody cad;
+        cad.objectId = 2;
+        cad.state.sketch.plane = Workplane::XY;
+        SketchPolyline polyline;
+        polyline.vertices = {SketchPoint{0.0, 0.0}, SketchPoint{2.0, 0.0}, SketchPoint{2.0, 1.0},
+                             SketchPoint{1.0, 2.0}, SketchPoint{0.0, 1.0}};
+        polyline.closed = true;
+        cad.state.sketch.entities.emplace_back(1, polyline);
+        cad.state.sketch.entities.emplace_back(
+                2, SketchLine{SketchPoint{3.0, 3.0}, SketchPoint{4.0, 4.5}});
+        cad.state.sketch.nextEntityId = 3;
+        cad.state.extrude.profileEntityId = 1;
+        cad.state.extrude.depth = 2.0;
+        cad.state.extrude.direction = ExtrudeDirection::AlongNormal;
+        document.cad.bodies.push_back(cad);
+    }
+    {
+        ProjectCadBody cad;
+        cad.objectId = 3;
+        cad.state.sketch.plane = Workplane::XZ;
+        cad.state.sketch.entities.emplace_back(
+                1, SketchLine{SketchPoint{0.0, 0.0}, SketchPoint{2.0, 0.0}});
+        cad.state.sketch.entities.emplace_back(
+                2, SketchLine{SketchPoint{2.0, 0.0}, SketchPoint{0.0, 2.0}});
+        cad.state.sketch.entities.emplace_back(
+                3, SketchLine{SketchPoint{0.0, 2.0}, SketchPoint{0.0, 0.0}});
+        cad.state.sketch.nextEntityId = 4;
+        cad.state.extrude.profileEntityId = 1;
+        cad.state.extrude.depth = 0.25;
+        cad.state.extrude.direction = ExtrudeDirection::AlongNormal;
+        document.cad.bodies.push_back(cad);
+    }
+    return document;
+}
+
+// CAD BAD PLANE: the rectangle fixture with its workplane code set to 9 and
+// the CADB payload's CRC recomputed, so every length and checksum is right
+// and only the semantic check can refuse it. Derived from the encoded bytes
+// rather than from a document, because the encoder refuses to write it.
+std::vector<uint8_t> canonicalCadBadPlaneBytes(const std::vector<uint8_t>& rectangle) {
+    std::vector<uint8_t> bytes = rectangle;
+    size_t offset = kForgeHeaderBytes;
+    while (offset + kForgeSectionHeaderBytes <= bytes.size()) {
+        uint64_t payloadBytes = 0;
+        std::memcpy(&payloadBytes, &bytes[offset + 8], 8);
+        if (std::memcmp(&bytes[offset], kSectionTagCad, 4) == 0) {
+            const size_t payload = offset + kForgeSectionHeaderBytes;
+            bytes[payload + 12] = 9;  // bodyCount(4) + objectId(8), then the plane
+            const uint32_t crc = crc32IsoHdlc(&bytes[payload], static_cast<size_t>(payloadBytes));
+            std::memcpy(&bytes[offset + 16], &crc, 4);
+            break;
+        }
+        offset += kForgeSectionHeaderBytes + static_cast<size_t>(payloadBytes);
+    }
+    return bytes;
+}
+
 std::string g_constructionSha;
 std::string g_sculptSha;
 std::string g_importedOnlySha;
@@ -745,6 +901,10 @@ std::string g_constructionImportedSha;
 std::string g_mixedImportedSha;
 std::string g_importedSculptSha;
 std::string g_mixedImportedSculptSha;
+std::string g_cadRectangleSha;
+std::string g_cadCircleSha;
+std::string g_mixedCadSha;
+std::string g_cadBadPlaneSha;
 
 }  // namespace
 
@@ -756,6 +916,10 @@ const char* canonicalConstructionImportedFixtureSha256() {
 }
 const char* canonicalMixedImportedFixtureSha256() { return g_mixedImportedSha.c_str(); }
 const char* canonicalImportedSculptFixtureSha256() { return g_importedSculptSha.c_str(); }
+const char* canonicalCadRectangleFixtureSha256() { return g_cadRectangleSha.c_str(); }
+const char* canonicalCadCircleFixtureSha256() { return g_cadCircleSha.c_str(); }
+const char* canonicalMixedCadFixtureSha256() { return g_mixedCadSha.c_str(); }
+const char* canonicalCadBadPlaneFixtureSha256() { return g_cadBadPlaneSha.c_str(); }
 const char* canonicalMixedImportedSculptFixtureSha256() {
     return g_mixedImportedSculptSha.c_str();
 }
@@ -844,6 +1008,48 @@ int runProjectSelfTests(ProjectSelfTestResult* out, int maxOut) {
                                 == ProjectCodecStatus::Ok
                         && sameProjectDocument(canonicalMixedImportedSculptDocument(), back)
                         && encodeProjectV1(back) == mixedImportedSculptBytes);
+    }
+    // The four `CAD-R0-A1A2` fixtures, on the same terms.
+    const std::vector<uint8_t> cadRectangleBytes =
+            encodeProjectV1(canonicalCadRectangleDocument(), &why);
+    r.check("CADR0_33_canonical_cad_rectangle_document_encodes",
+            why == ProjectCodecStatus::Ok && !cadRectangleBytes.empty());
+    const std::vector<uint8_t> cadCircleBytes = encodeProjectV1(canonicalCadCircleDocument(), &why);
+    r.check("CADR0_34_canonical_cad_circle_document_encodes",
+            why == ProjectCodecStatus::Ok && !cadCircleBytes.empty());
+    const std::vector<uint8_t> mixedCadBytes = encodeProjectV1(canonicalMixedCadDocument(), &why);
+    r.check("CADR0_33_canonical_mixed_cad_document_encodes",
+            why == ProjectCodecStatus::Ok && !mixedCadBytes.empty());
+    const std::vector<uint8_t> cadBadPlaneBytes = canonicalCadBadPlaneBytes(cadRectangleBytes);
+    g_cadRectangleSha = sha256Hex(cadRectangleBytes);
+    g_cadCircleSha = sha256Hex(cadCircleBytes);
+    g_mixedCadSha = sha256Hex(mixedCadBytes);
+    g_cadBadPlaneSha = sha256Hex(cadBadPlaneBytes);
+    {
+        ProjectDocument back;
+        r.check("CADR0_33_the_cad_rectangle_fixture_roundtrips_bit_for_bit",
+                decodeProject(cadRectangleBytes.data(), cadRectangleBytes.size(), &back)
+                                == ProjectCodecStatus::Ok
+                        && sameProjectDocument(canonicalCadRectangleDocument(), back)
+                        && encodeProjectV1(back) == cadRectangleBytes);
+        r.check("CADR0_34_the_cad_circle_fixture_roundtrips_bit_for_bit",
+                decodeProject(cadCircleBytes.data(), cadCircleBytes.size(), &back)
+                                == ProjectCodecStatus::Ok
+                        && sameProjectDocument(canonicalCadCircleDocument(), back)
+                        && encodeProjectV1(back) == cadCircleBytes);
+        r.check("CADR0_33_the_mixed_cad_fixture_roundtrips_bit_for_bit",
+                decodeProject(mixedCadBytes.data(), mixedCadBytes.size(), &back)
+                                == ProjectCodecStatus::Ok
+                        && sameProjectDocument(canonicalMixedCadDocument(), back)
+                        && encodeProjectV1(back) == mixedCadBytes);
+        // The corrupt fixture differs from the valid one in exactly the plane
+        // byte and the CRC, and is refused by the SEMANTIC check -- proof that
+        // every length and checksum was right and the meaning alone stopped it.
+        r.check("CADR0_36_the_cad_bad_plane_fixture_is_refused_semantically",
+                cadBadPlaneBytes.size() == cadRectangleBytes.size()
+                        && cadBadPlaneBytes != cadRectangleBytes
+                        && decodeProject(cadBadPlaneBytes.data(), cadBadPlaneBytes.size(), &back)
+                                   == ProjectCodecStatus::InvalidSemanticValue);
     }
     {
         // A known-answer test for the digest itself, so a golden-corpus failure
@@ -1654,6 +1860,19 @@ int runProjectSelfTests(ProjectSelfTestResult* out, int maxOut) {
         r.check("IMP01B_12_mixed_imported_sculpt_fixture_matches_the_committed_digest",
                 g_mixedImportedSculptSha
                         == "ab709ecea27ec29f21b6fbef126e8cdc15dc5c733d9b751bd1c8832907f27a2b");
+        // The four `CAD-R0-A1A2` fixtures, which pin the `CADB` section.
+        r.check("CADR0_33_cad_rectangle_fixture_matches_the_committed_digest",
+                g_cadRectangleSha
+                        == "e2fd79c4070d1168ae883e064200438244c09a41bcf1682f9a0596b549d1b26b");
+        r.check("CADR0_34_cad_circle_fixture_matches_the_committed_digest",
+                g_cadCircleSha
+                        == "886b1538a1a20113316b7badcc7c6aaca6b17ccb54d3dcfed042ff41866e4559");
+        r.check("CADR0_33_mixed_cad_fixture_matches_the_committed_digest",
+                g_mixedCadSha
+                        == "94f014cdc01fe8beaa14301ef2a99c0805a7e13afe1bca0126b29026882c93db");
+        r.check("CADR0_36_cad_bad_plane_fixture_matches_the_committed_digest",
+                g_cadBadPlaneSha
+                        == "60476603b6c1b1e1cf6b785e863c953ee6aa63573c1a2453bd7db0935909aba9");
         // The dispatch seam exists and answers for exactly one version. There
         // has never been a production format before v1, so there is nothing to
         // migrate FROM and no v0 branch is claimed.

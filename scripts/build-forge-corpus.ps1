@@ -259,6 +259,51 @@ function New-ImportedPayload {
     return $p.ToArray()
 }
 
+# CADB v1: bodyCount, then per body an ObjectId, the workplane FILE code, the
+# sketch's next entity id, the extruded profile's anchor entity id, the
+# direction FILE code, the binary64 depth, and the entity list -- each entity
+# an id, a kind FILE code and that kind's own values.
+#
+# The AUTHORED truth and nothing derived: no polygon, no triangle, no vertex.
+# The mesh is regenerated from exactly this on load.
+#
+#   plane      1 XY, 2 XZ, 3 YZ
+#   direction  1 along the normal, 2 against it
+#   kind       1 Line (start u,v, end u,v)
+#              2 Polyline (flags bit0 closed, vertexCount, then u,v pairs)
+#              3 Rectangle (centre u,v, width, height)
+#              4 Circle (centre u,v, radius)
+function New-CadPayload {
+    param($Bodies)
+    $p = New-ByteBuffer
+    Add-U32 $p ([uint32] $Bodies.Count)
+    foreach ($body in $Bodies) {
+        Add-U64 $p ([uint64] $body.ObjectId)
+        Add-U8  $p $body.PlaneCode
+        Add-U32 $p ([uint32] $body.NextEntityId)
+        Add-U32 $p ([uint32] $body.ProfileEntityId)
+        Add-U8  $p $body.DirectionCode
+        Add-F64 $p $body.Depth
+        $entities = @($body.Entities)
+        Add-U32 $p ([uint32] $entities.Count)
+        foreach ($entity in $entities) {
+            Add-U32 $p ([uint32] $entity.Id)
+            Add-U8  $p $entity.KindCode
+            switch ($entity.KindCode) {
+                1 { foreach ($value in $entity.Values) { Add-F64 $p $value } }
+                2 {
+                    Add-U8  $p $(if ($entity.Closed) { 1 } else { 0 })
+                    Add-U32 $p ([uint32] ($entity.Values.Count / 2))
+                    foreach ($value in $entity.Values) { Add-F64 $p $value }
+                }
+                3 { foreach ($value in $entity.Values) { Add-F64 $p $value } }
+                4 { foreach ($value in $entity.Values) { Add-F64 $p $value } }
+            }
+        }
+    }
+    return $p.ToArray()
+}
+
 function New-PrimitiveSourceFeature {
     return @([pscustomobject]@{ LocalFeatureId = 1; KindCode = 1 })
 }
@@ -541,6 +586,106 @@ function New-MixedImportedSculptFile {
 }
 
 # ---------------------------------------------------------------------------
+# The CAD-R0-A1A2 fixtures
+# ---------------------------------------------------------------------------
+#
+# Every coordinate, size and depth is an exact binary fraction.
+
+# CAD RECTANGLE: one body, a rectangle on the XZ plane extruded along +Y, at a
+# placement with 370 degrees and a non-uniform scale. No CONS at all: a CAD
+# Body needs no Construction Source standing in for it. CADB is ALWAYS
+# required, on IMPT's terms, and the header announces it with bit3.
+function New-CadRectangleFile {
+    $sceneBodies = @(
+        [pscustomobject]@{ ObjectId = 1; Transform = @(0.5, -0.25, 1.25, 370.0, -45.5, 12.25, 1.25, 2.0, 0.5) }
+    )
+    $cadBodies = @(
+        [pscustomobject]@{
+            ObjectId = 1; PlaneCode = 2; NextEntityId = 2; ProfileEntityId = 1
+            DirectionCode = 1; Depth = 1.5
+            Entities = @([pscustomobject]@{ Id = 1; KindCode = 3; Values = @(0.5, 0.25, 2.0, 1.0) })
+        }
+    )
+    $scne = New-Section 'SCNE' 1 $true (New-ScenePayload $sceneBodies 2 1)
+    $cadb = New-Section 'CADB' 1 $true (New-CadPayload $cadBodies)
+    return New-ForgeFile 1 @($scne, $cadb) 8
+}
+
+# CAD CIRCLE: one body, a circle on the YZ plane extruded AGAINST its normal.
+function New-CadCircleFile {
+    $sceneBodies = @(
+        [pscustomobject]@{ ObjectId = 1; Transform = @(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0) }
+    )
+    $cadBodies = @(
+        [pscustomobject]@{
+            ObjectId = 1; PlaneCode = 3; NextEntityId = 2; ProfileEntityId = 1
+            DirectionCode = 2; Depth = 0.5
+            Entities = @([pscustomobject]@{ Id = 1; KindCode = 4; Values = @(-0.5, 0.5, 0.75) })
+        }
+    )
+    $scne = New-Section 'SCNE' 1 $true (New-ScenePayload $sceneBodies 2 1)
+    $cadb = New-Section 'CADB' 1 $true (New-CadPayload $cadBodies)
+    return New-ForgeFile 1 @($scne, $cadb) 8
+}
+
+# MIXED CAD: a Construction Body beside two CAD Bodies -- a closed polyline
+# profile with an unrelated open line in the same sketch, and a loop of three
+# lines -- so a SPARSE CONS sits next to a CADB and the CADB carries every
+# entity kind and both profile-closing rules.
+function New-MixedCadFile {
+    $sceneBodies = @(
+        [pscustomobject]@{ ObjectId = 1; Transform = @(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0) },
+        [pscustomobject]@{ ObjectId = 2; Transform = @(1.5, 0.5, -2.0, 370.0, 0.0, 90.0, 1.0, 1.0, 1.0) },
+        [pscustomobject]@{ ObjectId = 3; Transform = @(-2.5, 1.25, 0.5, 0.0, 45.0, 0.0, 1.0, 2.0, 1.0) }
+    )
+    $sourceBodies = @(
+        [pscustomobject]@{ ObjectId = 1; PrimitiveCode = 1
+                           Parameters = $script:CanonicalSharedParameters
+                           Features = New-PrimitiveSourceFeature }
+    )
+    $cadBodies = @(
+        [pscustomobject]@{
+            ObjectId = 2; PlaneCode = 1; NextEntityId = 3; ProfileEntityId = 1
+            DirectionCode = 1; Depth = 2.0
+            Entities = @(
+                [pscustomobject]@{ Id = 1; KindCode = 2; Closed = $true
+                                   Values = @(0.0, 0.0, 2.0, 0.0, 2.0, 1.0, 1.0, 2.0, 0.0, 1.0) },
+                [pscustomobject]@{ Id = 2; KindCode = 1; Values = @(3.0, 3.0, 4.0, 4.5) })
+        },
+        [pscustomobject]@{
+            ObjectId = 3; PlaneCode = 2; NextEntityId = 4; ProfileEntityId = 1
+            DirectionCode = 1; Depth = 0.25
+            Entities = @(
+                [pscustomobject]@{ Id = 1; KindCode = 1; Values = @(0.0, 0.0, 2.0, 0.0) },
+                [pscustomobject]@{ Id = 2; KindCode = 1; Values = @(2.0, 0.0, 0.0, 2.0) },
+                [pscustomobject]@{ Id = 3; KindCode = 1; Values = @(0.0, 2.0, 0.0, 0.0) })
+        }
+    )
+    $scne = New-Section 'SCNE' 1 $true (New-ScenePayload $sceneBodies 4 2)
+    $cons = New-Section 'CONS' 1 $true (New-ConstructionPayload $sourceBodies)
+    $cadb = New-Section 'CADB' 1 $true (New-CadPayload $cadBodies)
+    return New-ForgeFile 1 @($scne, $cons, $cadb) 9
+}
+
+# CAD BAD PLANE: the rectangle fixture with its workplane code set to 9 and
+# the CADB payload's CRC RECOMPUTED, so every length and checksum is right and
+# only the semantic check can refuse it.
+function New-CadBadPlaneFixture {
+    param([byte[]] $Rectangle)
+    $bytes = $Rectangle.Clone()
+    # Header 28, then SCNE (24 + 4 + 8 + 8 + 80) = 124 bytes, so the CADB
+    # section header starts at 152 and its payload at 176. bodyCount(4) +
+    # objectId(8) puts the plane code at payload + 12.
+    $cadHeader = 28 + 24 + 100
+    $payloadStart = $cadHeader + 24
+    $payloadBytes = [System.BitConverter]::ToUInt64((ConvertTo-LittleEndian $bytes[($cadHeader + 8)..($cadHeader + 15)]), 0)
+    $bytes[$payloadStart + 12] = 9
+    $payload = $bytes[$payloadStart..($payloadStart + $payloadBytes - 1)]
+    Set-U32At $bytes ($cadHeader + 16) (Get-Crc32 $payload)
+    return $bytes
+}
+
+# ---------------------------------------------------------------------------
 # The deliberately broken fixtures
 # ---------------------------------------------------------------------------
 #
@@ -612,6 +757,7 @@ if (-not (Test-Path $OutputDirectory)) {
 
 $construction = New-CanonicalConstructionFile
 $sculpt = New-CanonicalSculptFile
+$cadRectangle = New-CadRectangleFile
 
 $fixtures = [ordered]@{
     'construction_multibody_v1.forge' = $construction
@@ -626,6 +772,10 @@ $fixtures = [ordered]@{
     'mixed_imported_v1.forge'         = (New-MixedImportedFile)
     'imported_sculpt_v1.forge'        = (New-ImportedSculptFile)
     'mixed_imported_sculpt_v1.forge'  = (New-MixedImportedSculptFile)
+    'cad_rectangle_v1.forge'          = $cadRectangle
+    'cad_circle_v1.forge'             = (New-CadCircleFile)
+    'mixed_cad_v1.forge'              = (New-MixedCadFile)
+    'cad_bad_plane_v1.forge'          = (New-CadBadPlaneFixture $cadRectangle)
 }
 
 $rows = New-Object System.Collections.Generic.List[object]
@@ -654,3 +804,8 @@ Write-Host ("  construction_imported: {0}" -f ($rows | Where-Object Fixture -eq 
 Write-Host ("  mixed_imported:        {0}" -f ($rows | Where-Object Fixture -eq 'mixed_imported_v1.forge').Sha256)
 Write-Host ("  imported_sculpt:       {0}" -f ($rows | Where-Object Fixture -eq 'imported_sculpt_v1.forge').Sha256)
 Write-Host ("  mixed_imported_sculpt: {0}" -f ($rows | Where-Object Fixture -eq 'mixed_imported_sculpt_v1.forge').Sha256)
+Write-Host 'Digests the C++ self-test (CADR0-33/34/36) must assert:'
+Write-Host ("  cad_rectangle:         {0}" -f ($rows | Where-Object Fixture -eq 'cad_rectangle_v1.forge').Sha256)
+Write-Host ("  cad_circle:            {0}" -f ($rows | Where-Object Fixture -eq 'cad_circle_v1.forge').Sha256)
+Write-Host ("  mixed_cad:             {0}" -f ($rows | Where-Object Fixture -eq 'mixed_cad_v1.forge').Sha256)
+Write-Host ("  cad_bad_plane:         {0}" -f ($rows | Where-Object Fixture -eq 'cad_bad_plane_v1.forge').Sha256)
