@@ -1,8 +1,60 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.58.0
+**Status Version:** 0.59.0
 **Updated:** 2026-09-03
-**Result:** **CAD-R0-A1A2 — COMPLETE. A sketch on a workplane becomes an
+**Result:** **CAD-A3 — PARTIAL (`FAIL-CAD-A3-APP-H1`). A CAD sketch can be
+supported by a planar CAD face, and the dependent body follows its producer.
+APP-H1 Home is deferred.**
+
+The CAD-A3 domain and the viewport-first face-sketch feature landed and are
+verified; the APP-H1 Home / New-Project rework and several breadth items are
+honestly not done, so not every acceptance criterion is met. What works, from
+an existing CAD project: **New Sketch → Pick plane or face in 3D → tap a world
+plane OR a planar CAD face → an exact-normal orthographic sketch → draw →
+Extrude New Body → a durable, editable, FACE-SUPPORTED CAD body whose placement
+follows its producer's Move / Rotate / edit, whose producer cannot be deleted
+while it stands, and whose dependency survives a save / reopen.**
+
+- **Semantic face topology + TopoRef** (`forgeshape_cad_face.{h,cpp}`,
+  `ARCH-OWNER-13`): an extrusion exposes two caps and one side per profile edge,
+  each a stable feature token (never a triangle index) with a deterministic
+  body-local frame. A face-supported sketch stores a `TopoRef`; a stale lineage,
+  a missing producer, a bad token, a curved circle side or a cycle all fail
+  closed, with no nearest-face retargeting.
+- **Dependency graph and transform contract**: a face-supported body's world
+  placement is DERIVED (`ConstructionScene::resolveWorldModel` composes
+  `producerWorldModel · faceFrame` every snapshot), so a parent Move / Rotate /
+  parameter edit carries the dependent with no stored follow-state; the body is
+  not independently transformable; the graph is acyclic and bounded; and
+  deleting a producer with dependents is refused (`RefusedHasDependents`).
+- **CADB v2**: the `.forge` CADB section gains version 2 carrying the support; a
+  world-only CAD project stays v1 and byte-identical, an older build refuses v2,
+  and load validates the whole dependency graph before applying anything.
+- **Exact sketch camera and adaptive grid**: `frameSketchView` looks exactly
+  along the sketch frame's normal with no pitch-clamp approximation; the sketch
+  grid is view-adaptive (nice 1/2/5·10^k, never persisted, typed values never
+  re-snapped).
+- **Spatial support chooser**: world planes and planar CAD faces are picked in
+  the viewport (tap to aim, tap the same target again to commit), offered beside
+  the by-name plane list, which stays as the fallback.
+
+**Deliberately NOT done, and flagged for the coordinator:** the APP-H1 Home /
+New-Project routing and the empty New-CAD bootstrap (they conflict with the
+load-bearing no-empty-project invariant); the independent PowerShell v2 corpus
+builder and the five named v2 fixtures; stylus-hover device verification; the
+face-first contextual shortcut; and a deterministic screenshot contact sheet.
+See `artifacts/cad-a3-app-h1/INDEX.md`.
+
+Verified: **19/19 native suites, 2889 checks, zero failures** (44 new `CADA3_*`);
+JVM 70/70; both ABIs debug and release; device guards; the sixteen v1 fixtures
+byte-identical; the new device suite `SpatialSketchTest` OK (2 tests) and
+`SketchExtrudeTest` OK (9); and the authoritative aggregate — see *Current
+evidence summary*. All device work on `emulator-5580` = `ForgeShape_Stage006`;
+`emulator-5554` never contacted.
+
+---
+
+**Previous result — CAD-R0-A1A2 — COMPLETE. A sketch on a workplane becomes an
 editable CAD Body.**
 
 The first end-to-end CAD workflow, as one vertical slice: **New Sketch → a
@@ -1520,8 +1572,8 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 
 ## Self-test suite
 
-Eighteen debug-only native suites run once from `NativeViewport.start()` —
-never per frame — and total **2845 checks, zero failures**:
+Nineteen debug-only native suites run once from `NativeViewport.start()` —
+never per frame — and total **2889 checks, zero failures**:
 
 | suite token | checks |
 | --- | --- |
@@ -1543,6 +1595,7 @@ never per frame — and total **2845 checks, zero failures**:
 | `FORGESHAPE_GLTF_EXPORT_SELFTEST_OK` | 93 |
 | `FORGESHAPE_GLTF_IMPORT_SELFTEST_OK` | 184 |
 | `FORGESHAPE_CAD_SELFTEST_OK` | 122 |
+| `FORGESHAPE_CAD_A3_SELFTEST_OK` | 44 |
 
 The CAD suite (`forgeshape_cad_selftest.cpp`, `CADR0-*`) builds its own sketches,
 scenes, histories and camera, drives the sketch session through real

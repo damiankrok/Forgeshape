@@ -449,6 +449,46 @@ build cannot evaluate. The same fail-closed shape the pre-`IMPORT-01B` reader
 gave an `IMPT`+`SCUL` file. The valid combinations are therefore the four of
 §7a plus `SCNE+CADB` and `SCNE+CONS+CADB` (and either with `IMPT` beside them).
 
+## 7c. `CADB` v2 — a sketch supported by a CAD face (`CAD-A3`)
+
+A CAD sketch may be supported not by a world plane but by a planar FACE of
+another CAD body. That support is authored truth and no rule could recreate it,
+so it is stored — as a **section version 2** of `CADB`, written **only** when at
+least one CAD body is face-supported. A world-only CAD project still writes v1
+and is byte-identical to what `CAD-R0-A1A2` wrote; the sixteen corpus fixtures
+prove it. Section versions evolve independently of the file's major/minor, so
+this needs no header bump; an older build refuses a required `CADB` at an
+unknown version rather than opening half a body.
+
+The v2 record is the v1 record with a support block inserted after the
+workplane code:
+
+```
+u64  objectId
+u8   workplaneCode             XY (1) for a face support: the canonical basis
+u8   supportKind               0 world plane, 1 face          ← v2 only
+  if supportKind == 1 (face):                                 ← v2 only
+    u64  producerObjectId      a CADB body in this document, not this one
+    u32  producerFeatureId     the producer's CAD feature (v1: always 1)
+    u8   faceKind              1 CapPlane, 2 CapFar, 3 Side
+    u32  faceEdgeEntityId      the profile-edge entity for a Side; 0 for a cap
+    u32  faceEdgeLocalIndex    which of that entity's edges; 0 for a cap
+    u64  lineageToken          the producer's topology signature at authoring
+  ... then the v1 tail: nextEntityId, profileEntityId, directionCode, depth,
+      entityCount and the entities, exactly as §7b.
+```
+
+The token is SEMANTIC feature lineage — never a render-triangle index, of which
+no byte reaches the file. On load, after every body is decoded, the WHOLE
+dependency graph is validated before anything is applied: each face-supported
+body's producer must be another CAD body in the document; the producer's current
+topology signature (`cadTopologySignature`) must equal the stored
+`lineageToken`; the named face must resolve (`resolveCadFace`) and be eligible; a
+body may not support itself; and the graph must be acyclic (a chain longer than
+the body count is refused). A face-supported body's placement is **derived** and
+is NOT stored — its `SCNE` placement is the unused identity, and its world model
+is recomputed from the producer on every load and frame.
+
 ## 8. Validation and compatibility
 
 Decoding happens entirely into temporary document structures. **No live project

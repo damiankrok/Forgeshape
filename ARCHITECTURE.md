@@ -2164,6 +2164,32 @@ range, a 1 µm coincidence tolerance — and every size computation downstream i
 provably finite because of them; they are also what makes a history step of a
 CAD Body BOUNDED.
 
+### Semantic faces and the dependency graph (`CAD-A3`, `ARCH-OWNER-13`)
+
+`forgeshape_cad_face.{h,cpp}` turns a `CadBodyState` into a bounded set of planar
+faces — two caps and one side per profile edge — each with a stable
+`CadFaceToken` (its kind plus the profile-edge entity it came from) and a
+deterministic right-handed frame in body-local space. `cadFaceRanges` maps the
+generated mesh's triangle ranges to those tokens for picking, and is NEVER
+persisted; `cadTopologySignature` hashes the token set for lineage. A sketch
+supported by a face stores a `TopoRef` (producer `ObjectId`, feature id, token,
+lineage) on its `CadSketch`; the child authors on its own canonical local XY and
+`cadFaceFrameMatrix` places that space onto the producer's face.
+
+A face-supported body has NO independent placement. `ConstructionScene::
+resolveWorldModel` composes `producerWorldModel · faceFrame` every snapshot,
+bounded and cycle-guarded, so the renderer and picker (which already consume
+arbitrary snapshot matrices) carry the dependent with the producer and nothing
+is stored to go stale. `SceneObject::isFaceSupportedCad` marks such a body so the
+gizmo and the exact-value editors leave it alone; `hasCadDependents` /
+`cadDependentsOf` back Delete's `RefusedHasDependents`. A stale lineage, a
+missing producer, a bad token, a curved circle side or a cycle all fail closed.
+`forgeshape_support_chooser.{h,cpp}` resolves a viewport tap to a world plane or
+a face (through the ordinary scene pick), and the sketch camera frames exactly
+along the sketch frame's normal via `CameraController::frameSketchView` (no
+pitch clamp). `CADB` gains section version 2 for the support; v1 stays
+byte-identical, and load validates the whole dependency graph before applying.
+
 ### Profile extraction
 
 `extractClosedProfiles` reads every closed profile out of a valid sketch. A

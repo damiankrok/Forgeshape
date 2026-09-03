@@ -191,6 +191,10 @@ one (`IMPORT-01B`), and `ObjectsDeleteTest` covers removing one
 (`CAD-R0-A1A2`, `E2E-CADR0-01..16`): New Sketch, a plane, real drags and taps
 on the viewport, Finish Sketch, a typed depth, Extrude, Undo/Redo, later edits,
 save/reopen, the gizmo on a CAD Body, and the sculpt workflow beside it.
+`SpatialSketchTest` covers the CAD-A3 spatial support flow (`E2E-CADA3`): New
+Sketch → Pick plane or face in 3D, a tap-tap on a world plane and on a planar
+CAD face, a face-supported dependent body, the producer-delete refusal, and the
+dependency surviving a save/reopen.
 
 For the widened external-GLB subset (`GLB-IMPORT-R1`) use:
 
@@ -274,7 +278,7 @@ emit several hundred lines in a few milliseconds and the default buffer silently
 drops the tail, which reads exactly like a self-test that stopped partway
 through. That is a logging limit, not an app failure.
 
-A clean debug launch emits **eighteen** `*_SELFTEST_OK` tokens, in this order, then
+A clean debug launch emits **nineteen** `*_SELFTEST_OK` tokens, in this order, then
 `FORGESHAPE_NATIVE_VIEWPORT_OK` once the first frame is presented:
 
 ```
@@ -296,6 +300,7 @@ FORGESHAPE_RENDER_RECOVERY_SELFTEST_OK
 FORGESHAPE_GLTF_EXPORT_SELFTEST_OK
 FORGESHAPE_GLTF_IMPORT_SELFTEST_OK
 FORGESHAPE_CAD_SELFTEST_OK
+FORGESHAPE_CAD_A3_SELFTEST_OK
 ```
 
 Each suite reports `(<n> checks)` and fails as `<SUITE>_CASE_FAIL:<name>` plus

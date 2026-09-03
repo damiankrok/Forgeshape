@@ -18,8 +18,8 @@ adb -s <serial> logcat -s ForgeShape:V
 
 APK: `app/build/outputs/apk/debug/app-debug.apk`
 
-A clean debug launch emits **eighteen** `*_SELFTEST_OK` tokens, then
-`FORGESHAPE_NATIVE_VIEWPORT_OK`. All eighteen, in emission order:
+A clean debug launch emits **nineteen** `*_SELFTEST_OK` tokens, then
+`FORGESHAPE_NATIVE_VIEWPORT_OK`. All nineteen, in emission order:
 
 ```
 FORGESHAPE_CAMERA_SELFTEST_OK
@@ -40,6 +40,7 @@ FORGESHAPE_RENDER_RECOVERY_SELFTEST_OK
 FORGESHAPE_GLTF_EXPORT_SELFTEST_OK
 FORGESHAPE_GLTF_IMPORT_SELFTEST_OK
 FORGESHAPE_CAD_SELFTEST_OK
+FORGESHAPE_CAD_A3_SELFTEST_OK
 ```
 
 Failures: `FORGESHAPE_NATIVE_VIEWPORT_FAIL:*` and the matching `*_SELFTEST_FAIL`.
@@ -127,6 +128,35 @@ regeneration timings for its four sizes.
   single-finger gesture belongs to the sketch and never orbits, two fingers
   still pan and pinch, and creation, deletion, body switching, freeze and
   Construction Undo/Redo are refused below JNI and withdrawn above it.
+- **A CAD sketch may be supported by a world plane OR a planar CAD face, and a
+  face's identity is SEMANTIC** (`CAD-A3`, `ARCH-OWNER-13`). An extrusion
+  exposes a bounded set of planar faces — two caps and one side per profile
+  edge — each with a stable `CadFaceToken` (kind plus the profile-edge entity
+  it came from) and a deterministic frame in body-local space
+  (`forgeshape_cad_face.h`). A face-supported sketch stores a `TopoRef`
+  (producer `ObjectId`, feature id, face token, lineage signature); the render
+  triangle index is NEVER persisted and there is NO nearest-face retargeting. A
+  reference resolves only when the producer exists and is a CAD body, its
+  topology signature still equals the stored lineage token, and the named face
+  resolves and is eligible — a stale lineage, a missing producer, a bad token, a
+  curved circle side or a cycle all **fail closed**. A face-supported body's
+  world placement is DERIVED (`ConstructionScene::resolveWorldModel` composes
+  `producerWorldModel · faceFrame` every snapshot), so moving, rotating or
+  editing the producer carries the dependent with it and no follow-state is
+  stored; such a body is NOT independently transformable
+  (`SceneObject::isFaceSupportedCad`). Deleting a producer with dependents is
+  **refused** (`RefusedHasDependents`), never cascaded. The dependency graph is
+  acyclic and bounded by the body count. **CADB gains version 2** carrying the
+  support: a world-only CAD project stays v1 and byte-identical, an older build
+  refuses v2 as a required section at an unknown version, and load validates the
+  whole dependency graph before applying anything. The sketch camera frames
+  EXACTLY along the sketch frame's normal (`frameSketchView`, no pitch-clamp
+  approximation, no gimbal), and the sketch grid is view-adaptive (nice
+  1/2/5·10^k, never persisted, a typed value never re-snapped). **NOT this
+  stage**: the APP-H1 Home / New-Project rework and the empty New-CAD bootstrap
+  (they conflict with the no-empty-project invariant), CAD → Sculpt, custom
+  construction planes, curved-face sketches, projected edges, a constraint
+  solver, and every boolean/fillet/chamfer.
 - **A body's SOURCE is never written by sculpting.** A body has a source
   representation — a Construction Source, an Imported Mesh, or a CAD Body —
   and may also own a Frozen Sculpt Mesh (not yet for a CAD Body). A sculpt edit may never change a primitive parameter, a

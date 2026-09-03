@@ -502,6 +502,24 @@ What a CAD Body does **not** offer yet: *Start Sculpting*. It is absent for one,
 because the way back from Sculpt over a sketch needs its own design; every other
 body sculpts as before.
 
+**Sketching in 3D, and on a body's face** (`CAD-A3`). New Sketch now offers
+**Pick plane or face in 3D** beside the by-name plane list. It puts the three
+principal planes into the viewport as large targets and, in a CAD project, makes
+the flat faces of your CAD bodies eligible too: tap a plane or a face to
+highlight it, tap it again to start sketching on it, looking straight at it. Two
+fingers still orbit and pan while you choose; System Back leaves without
+changing anything. A sketch drawn on a body's face and extruded becomes a new
+CAD body that **stays attached to that face**: move, turn or resize the body it
+sits on and it comes along. You cannot delete a body while another still sits on
+its face — remove the one on top first. The whole arrangement is saved and
+reopens with the attachment intact. The sketch grid now adapts to how far you
+are zoomed in, so it stays a useful size, and a value you type is never nudged
+to it.
+
+Not yet: a Home screen or a New Project chooser at launch (the app still opens
+straight into the workspace); sketching on an imported or sculpted surface; a
+curved face as a sketch support; and moving a face-attached body on its own.
+
 ## Choosing and sizing the shape
 
 The Tool Rail in Construction carries exactly two entries, **Shape** and
