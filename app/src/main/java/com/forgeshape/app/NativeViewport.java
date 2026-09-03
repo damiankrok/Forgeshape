@@ -1736,6 +1736,10 @@ final class NativeViewport {
      */
     static native boolean sketchScreenPoint(double u, double v, float[] out);
 
+    /** The current adaptive sketch grid step in metres (`CAD-A3`): what a grid
+     *  snap rounds to at the zoom the last drag started under. */
+    static native double sketchGridStep();
+
     static native String cadStatusToken(int code);
 
     /** 1 Construction, 2 Imported, 3 CAD; 0 for an unknown id. */

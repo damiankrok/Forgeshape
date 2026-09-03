@@ -178,9 +178,17 @@ public final class SketchExtrudeTest {
         assertTrue("and selected it", NativeViewport.sketchSelectedEntity(entity));
         assertEquals("it is a rectangle", NativeViewport.SKETCH_ENTITY_KIND_RECTANGLE,
                 (int) entity[NativeViewport.SKETCH_ENTITY_KIND]);
-        assertEquals("of the dragged width, snapped to the grid exactly", 2.0,
-                entity[NativeViewport.SKETCH_ENTITY_VALUES + 2], 0.0);
-        assertEquals("and height", 1.0, entity[NativeViewport.SKETCH_ENTITY_VALUES + 3], 0.0);
+        // The grid is view-adaptive since CAD-A3, so the snapped width and
+        // height land on exact multiples of the CURRENT step (whatever that is
+        // at this zoom), which is the real invariant. The dragged span is
+        // positive and grid-aligned.
+        final double gridStep = NativeViewport.sketchGridStep();
+        final double width = entity[NativeViewport.SKETCH_ENTITY_VALUES + 2];
+        final double height = entity[NativeViewport.SKETCH_ENTITY_VALUES + 3];
+        assertTrue("the width is positive and on the grid",
+                width > 0.0 && onGrid(width, gridStep));
+        assertTrue("the height is positive and on the grid",
+                height > 0.0 && onGrid(height, gridStep));
 
         // E2E-CADR0-04: Finish Sketch through the toolbar.
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
@@ -225,8 +233,14 @@ public final class SketchExtrudeTest {
         assertEquals("extruded to the typed depth", 2.5, cad[NativeViewport.CAD_DEPTH], 0.0);
         assertEquals("from the rectangle profile", NativeViewport.CAD_PROFILE_RECTANGLE,
                 (int) cad[NativeViewport.CAD_PROFILE_KIND]);
-        assertEquals(2.0, cad[NativeViewport.CAD_PRIMARY_SIZE], 0.0);
-        assertEquals(1.0, cad[NativeViewport.CAD_SECONDARY_SIZE], 0.0);
+        // The sizes are the dragged span snapped to the adaptive grid: positive
+        // multiples of the current step, not a hardcoded 2.0 x 1.0.
+        final double primary = cad[NativeViewport.CAD_PRIMARY_SIZE];
+        final double secondary = cad[NativeViewport.CAD_SECONDARY_SIZE];
+        assertTrue("the width is positive and on the grid",
+                primary > 0.0 && onGrid(primary, NativeViewport.sketchGridStep()));
+        assertTrue("the height is positive and on the grid",
+                secondary > 0.0 && onGrid(secondary, NativeViewport.sketchGridStep()));
         assertNotEquals("and it has a published mesh", 0L,
                 NativeViewport.constructionMeshRevision());
 
@@ -391,8 +405,11 @@ public final class SketchExtrudeTest {
         assertTrue(NativeViewport.sketchSelectedEntity(entity));
         assertEquals(NativeViewport.SKETCH_ENTITY_KIND_CIRCLE,
                 (int) entity[NativeViewport.SKETCH_ENTITY_KIND]);
-        assertEquals("the radius is the dragged distance, on the grid", 0.75,
-                entity[NativeViewport.SKETCH_ENTITY_VALUES + 2], 0.0);
+        // The radius is the dragged distance snapped to the adaptive grid: a
+        // positive multiple of the current step, not a hardcoded 0.75.
+        final double radius = entity[NativeViewport.SKETCH_ENTITY_VALUES + 2];
+        assertTrue("the radius is positive and on the grid",
+                radius > 0.0 && onGrid(radius, NativeViewport.sketchGridStep()));
 
         finishAndExtrude("1.25");
         assertEquals("E2E-CADR0-12: the circle became a body", bodiesBefore + 1,
@@ -400,7 +417,8 @@ public final class SketchExtrudeTest {
         final double[] cad = new double[NativeViewport.CAD_STATE_SIZE];
         assertTrue(NativeViewport.cadState(cad));
         assertEquals(NativeViewport.CAD_PROFILE_CIRCLE, (int) cad[NativeViewport.CAD_PROFILE_KIND]);
-        assertEquals(0.75, cad[NativeViewport.CAD_PRIMARY_SIZE], 0.0);
+        assertEquals("the extruded radius is the sketched one", radius,
+                cad[NativeViewport.CAD_PRIMARY_SIZE], 1e-9);
         assertEquals(1.25, cad[NativeViewport.CAD_DEPTH], 0.0);
         assertEquals(NativeViewport.WORKPLANE_YZ, (int) cad[NativeViewport.CAD_PLANE]);
         // And its radius is editable later.
@@ -636,11 +654,16 @@ public final class SketchExtrudeTest {
         assertEquals(NativeViewport.SKETCH_INACTIVE, sketchState());
     }
 
-    /** A rectangle sketch on XY, extruded, through the real chrome. */
+    /**
+     * A rectangle sketch on XY, extruded, through the real chrome. The drag is
+     * from the origin to (width, height) rather than centred, so that integer
+     * dimensions land on the adaptive grid exactly and the authored sizes are
+     * predictable regardless of the current step.
+     */
     private long extrudeARectangle(double width, double height, double depth) {
         beginSketch(NativeViewport.WORKPLANE_XY);
         selectSketchTool(R.id.tool_rail_rectangle);
-        dragSketch(-width / 2, -height / 2, width / 2, height / 2);
+        dragSketch(0.0, 0.0, width, height);
         assertEquals(1, sketchEntityCount());
         finishAndExtrude(Double.toString(depth));
         assertTrue(NativeViewport.sceneActiveBodyIsCad());
@@ -780,5 +803,10 @@ public final class SketchExtrudeTest {
         } finally {
             event.recycle();
         }
+    }
+
+    /** Whether a value is an exact integer multiple of the grid step. */
+    private static boolean onGrid(double value, double step) {
+        return step > 0.0 && Math.abs(value / step - Math.rint(value / step)) < 1e-6;
     }
 }

@@ -3214,6 +3214,15 @@ Java_com_forgeshape_app_NativeViewport_sketchScreenPoint(JNIEnv* env, jclass, jd
     return JNI_TRUE;
 }
 
+// The current adaptive sketch grid step, in metres (`CAD-A3`): what a grid snap
+// rounds to at the zoom the last drag started under. A verification seam so a
+// test can assert a snapped value lands on the grid without hardcoding a step.
+JNIEXPORT jdouble JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchGridStep(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    return forgeshape::sketchSession().gridStep();
+}
+
 JNIEXPORT jstring JNICALL
 Java_com_forgeshape_app_NativeViewport_cadStatusToken(JNIEnv* env, jclass, jint code) {
     forgeshape::CadStatus status;
