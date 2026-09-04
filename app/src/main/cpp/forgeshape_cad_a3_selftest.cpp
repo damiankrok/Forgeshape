@@ -12,9 +12,11 @@
 #include "forgeshape_history.h"
 #include "forgeshape_sketch_session.h"
 #include "forgeshape_math.h"
+#include "forgeshape_project_bootstrap.h"
 #include "forgeshape_project_document.h"
 #include "forgeshape_project_state.h"
 #include "forgeshape_scene.h"
+#include "forgeshape_sculpt.h"
 #include "forgeshape_sketch.h"
 #include "forgeshape_support_chooser.h"
 #include "forgeshape_gizmo.h"
@@ -624,6 +626,206 @@ int runCadA3SelfTests(CadA3SelfTestResult* out, int maxOut) {
                         && near3(session.sketchToWorld(SketchPoint{0, 0}), Vec3{0, 0, 1})
                         && session.frame().origin.z == 1.0f);
         session.cancel();
+    }
+
+    // -----------------------------------------------------------------------
+    // CADA3-BOOT: Home is not a project, and the CAD bootstrap's first commit
+    // (`APP-H1`). Every scene here is the no-project scene the process starts
+    // with; nothing reads process-scoped state.
+    // -----------------------------------------------------------------------
+    {
+        // A no-project scene holds nothing, selects nothing and draws nothing.
+        ConstructionScene home{NoProjectTag{}};
+        r.check("CADA3_BOOT_01_a_no_project_scene_is_empty_and_selects_nothing",
+                !home.hasProject() && home.bodyCount() == 0
+                        && home.activeBodyId() == kNoObject && home.snapshot().empty());
+
+        // Reading the active body across Home is COUNTED, answered by a body in
+        // no scene, and never dereferences an empty list.
+        const uint64_t misuseBefore = ConstructionScene::activeBodyMisuseCount();
+        const SceneObject& nobody = home.activeBody();
+        r.check("CADA3_BOOT_02_reading_the_active_body_with_no_project_is_counted",
+                ConstructionScene::activeBodyMisuseCount() == misuseBefore + 1
+                        && nobody.objectId() == kNoObject && home.findBody(kNoObject) == nullptr
+                        && !home.hasProject());
+
+        // No project, no document: the capture is empty and the codec refuses
+        // to write it, so no `.forge` byte and no checkpoint can describe Home.
+        {
+            const ProjectDocument empty = captureProjectDocument(home, ProjectKind::Construction);
+            ProjectCodecStatus why = ProjectCodecStatus::Ok;
+            const std::vector<uint8_t> bytes = encodeProjectV1(empty, &why);
+            r.check("CADA3_BOOT_03_no_project_has_no_document_to_write",
+                    empty.scene.bodies.empty() && !empty.hasCad && !empty.hasConstruction
+                            && bytes.empty() && why != ProjectCodecStatus::Ok
+                            && projectSemanticFingerprint(home, ProjectKind::Construction)
+                                   == projectSemanticFingerprint(home, ProjectKind::Construction));
+        }
+
+        // A sketch session over an EMPTY scene, driven through real touches
+        // under the camera the product frames it with, exactly as the shell
+        // does. `draw` lays a rectangle; `line` lays a single open line.
+        struct Bootstrap {
+            SketchSession sketch;
+            CameraController camera;
+            enum : int { kW = 1000, kH = 1000 };
+            bool begin() {
+                if (sketch.begin(Workplane::XY) != CadStatus::Ok) return false;
+                camera.setViewport(kW, kH);
+                const SketchFrame& f = sketch.frame();
+                camera.frameSketchView(f.origin, f.u, f.v, f.n);
+                return true;
+            }
+            bool at(TouchAction action, float x, float y) {
+                TouchPointer p{7, x, y};
+                return sketch.onTouch(action, action == TouchAction::Up ? 7 : -1, &p, 1,
+                                      camera.snapshot(), kW, kH);
+            }
+            bool drag(SketchTool tool, const SketchPoint& from, const SketchPoint& to) {
+                sketch.setTool(tool);
+                float x0, y0, x1, y1;
+                if (!sketch.sketchToScreen(camera.snapshot(), from, kW, kH, &x0, &y0)
+                    || !sketch.sketchToScreen(camera.snapshot(), to, kW, kH, &x1, &y1)) {
+                    return false;
+                }
+                bool ok = at(TouchAction::Down, x0, y0);
+                for (int step = 1; step <= 4; ++step) {
+                    const float t = step / 4.0f;
+                    ok &= at(TouchAction::Move, x0 + (x1 - x0) * t, y0 + (y1 - y0) * t);
+                }
+                ok &= at(TouchAction::Up, x1, y1);
+                return ok;
+            }
+        };
+
+        const uint64_t misuseAtBootstrapStart = ConstructionScene::activeBodyMisuseCount();
+
+        // The whole first-project journey: plane -> rectangle -> Finish ->
+        // depth -> the first commit. Exactly one durable CAD body, active,
+        // published, world-supported, at the identity; the sketch is over; the
+        // history is empty both ways; the session is Construction.
+        {
+            ConstructionScene scene{NoProjectTag{}};
+            ConstructionHistory history(scene);
+            SculptSession session;
+            Bootstrap boot;
+            const ObjectId expectedId = scene.nextObjectId();
+            const bool drawn = boot.begin()
+                               && boot.drag(SketchTool::Rectangle, SketchPoint{-1.0, -1.0},
+                                            SketchPoint{1.0, 1.0})
+                               && boot.sketch.sketch().entities.size() == 1
+                               && boot.sketch.finish() == CadStatus::Ok
+                               && boot.sketch.setExtrude(1.5, ExtrudeDirection::AlongNormal)
+                                      == CadStatus::Ok;
+            r.check("CADA3_BOOT_04_the_bootstrap_sketch_reaches_ready_over_an_empty_scene",
+                    drawn && !scene.hasProject() && boot.sketch.state() == SketchSessionState::Ready);
+
+            FirstProjectReport report;
+            const CadStatus committed =
+                commitFirstCadProject(boot.sketch, scene, session, history, &report);
+            const SceneObject* body = scene.findBody(report.bodyId);
+            r.check("CADA3_BOOT_05_first_extrude_creates_exactly_one_durable_cad_body",
+                    committed == CadStatus::Ok && scene.hasProject() && scene.bodyCount() == 1
+                            && body != nullptr && body->isCad() && !body->isFaceSupportedCad()
+                            && scene.activeBodyId() == report.bodyId
+                            && report.bodyId == expectedId
+                            && body->transform().isIdentity()
+                            && body->meshStore().currentRevision() != kNoMeshRevision
+                            && report.revision == body->meshStore().currentRevision()
+                            && body->cadOrNull()->state().extrude.depth == 1.5);
+            r.check("CADA3_BOOT_06_the_first_project_starts_with_an_empty_history_and_no_sketch",
+                    history.undoDepth() == 0 && history.redoDepth() == 0
+                            && !history.editInProgress() && !boot.sketch.active()
+                            && !session.inSculptMode());
+            // What the first project would write is an ordinary world-only CAD
+            // project: CADB v1, one body, exactly what New Sketch would have made.
+            const ProjectDocument doc = captureProjectDocument(scene, ProjectKind::Construction);
+            ProjectCodecStatus why = ProjectCodecStatus::Ok;
+            const std::vector<uint8_t> bytes = encodeProjectV1(doc, &why);
+            r.check("CADA3_BOOT_07_the_first_project_is_an_ordinary_cad_project_document",
+                    why == ProjectCodecStatus::Ok && !bytes.empty() && doc.hasCad
+                            && doc.cad.bodies.size() == 1 && !doc.hasConstruction
+                            && !doc.cad.bodies[0].state.sketch.hasFaceSupport
+                            && doc.scene.activeObjectId == report.bodyId);
+            // A second first-commit is refused now that a project is open, and
+            // the project is untouched.
+            Bootstrap again;
+            const bool againReady = again.begin()
+                                    && again.drag(SketchTool::Rectangle, SketchPoint{0, 0},
+                                                  SketchPoint{1, 1})
+                                    && again.sketch.finish() == CadStatus::Ok;
+            r.check("CADA3_BOOT_08_the_first_commit_is_refused_while_a_project_is_open",
+                    againReady
+                            && commitFirstCadProject(again.sketch, scene, session, history)
+                                   == CadStatus::NotSketching
+                            && scene.bodyCount() == 1 && again.sketch.active());
+            again.sketch.cancel();
+        }
+
+        // Cancel before the first commit: no project, no body, no history --
+        // the scene never learned the sketch existed.
+        {
+            ConstructionScene scene{NoProjectTag{}};
+            ConstructionHistory history(scene);
+            Bootstrap boot;
+            const bool drawn = boot.begin()
+                               && boot.drag(SketchTool::Rectangle, SketchPoint{-1.0, -1.0},
+                                            SketchPoint{1.0, 1.0})
+                               && boot.sketch.finish() == CadStatus::Ok;
+            boot.sketch.cancel();
+            r.check("CADA3_BOOT_09_cancel_before_the_first_commit_leaves_no_project",
+                    drawn && !scene.hasProject() && scene.bodyCount() == 0
+                            && history.undoDepth() == 0 && !boot.sketch.active()
+                            && scene.nextObjectId() == kFirstBodyObjectId);
+        }
+
+        // An invalid profile -- one open line -- cannot finish, so the commit
+        // is refused in the sketch's own vocabulary and no project is created.
+        {
+            ConstructionScene scene{NoProjectTag{}};
+            ConstructionHistory history(scene);
+            SculptSession session;
+            Bootstrap boot;
+            const bool drawn = boot.begin()
+                               && boot.drag(SketchTool::Line, SketchPoint{-1.0, 0.0},
+                                            SketchPoint{1.0, 0.0})
+                               && boot.sketch.sketch().entities.size() == 1;
+            const CadStatus finished = boot.sketch.finish();
+            const CadStatus committed = commitFirstCadProject(boot.sketch, scene, session, history);
+            r.check("CADA3_BOOT_10_an_invalid_profile_creates_no_project",
+                    drawn && finished != CadStatus::Ok && committed == CadStatus::NotSketching
+                            && !scene.hasProject() && boot.sketch.active()
+                            && history.undoDepth() == 0);
+            boot.sketch.cancel();
+        }
+
+        r.check("CADA3_BOOT_11_the_bootstrap_never_reads_an_active_body",
+                ConstructionScene::activeBodyMisuseCount() == misuseAtBootstrapStart);
+
+        // Closing a project empties the scene without rolling the allocator
+        // back, so a later project's ids can never collide with the old one's.
+        {
+            ConstructionScene scene;
+            scene.addBody();
+            const ObjectId next = scene.nextObjectId();
+            scene.closeProject();
+            r.check("CADA3_BOOT_12_close_project_empties_the_scene_and_keeps_ids_unique",
+                    !scene.hasProject() && scene.bodyCount() == 0
+                            && scene.activeBodyId() == kNoObject && scene.nextObjectId() == next
+                            && scene.snapshot().empty());
+            // And the Sculpt bootstrap's seed -- the first body of a new project
+            // made inside the session-initialization bracket -- records nothing.
+            ConstructionHistory history(scene);
+            history.beginSessionInitialization();
+            {
+                ScopedConstructionEdit edit(history);
+                scene.addBody();
+            }
+            history.endSessionInitialization();
+            r.check("CADA3_BOOT_13_seeding_the_first_body_inside_the_bracket_records_nothing",
+                    scene.hasProject() && scene.bodyCount() == 1 && history.undoDepth() == 0
+                            && history.redoDepth() == 0 && scene.activeBodyId() == next);
+        }
     }
 
     return r.n;

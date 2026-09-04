@@ -60,17 +60,7 @@ Building debug app and androidTest APKs...
 > Task :app:mergeDebugAndroidTestResources UP-TO-DATE
 > Task :app:processDebugAndroidTestManifest UP-TO-DATE
 > Task :app:processDebugAndroidTestResources UP-TO-DATE
-
 > Task :app:compileDebugAndroidTestJavaWithJavac
-powershell : Note: Some input files use or override a deprecated API.
-At line:1 char:439
-+ ... tial2.log"; powershell -ExecutionPolicy Bypass -File scripts\run-inst ...
-+                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    + CategoryInfo          : NotSpecified: (Note: Some inpu...deprecated API.:String) [], RemoteException
-    + FullyQualifiedErrorId : NativeCommandError
- 
-Note: Recompile with -Xlint:deprecation for details.
-
 > Task :app:mergeDebugAndroidTestShaders UP-TO-DATE
 > Task :app:compileDebugAndroidTestShaders NO-SOURCE
 > Task :app:generateDebugAndroidTestAssets UP-TO-DATE
@@ -111,14 +101,41 @@ Installing test APK on -s emulator-5580 ...
 Performing Streamed Install
 Success
 MODE=FOCUSED_SUBSET (not full-suite evidence)
-Running instrumentation on -s emulator-5580 only: adb -s emulator-5580 shell am instrument -w -e class com.forgeshape.app.SpatialSketchTest com.forgeshape.app.test/androidx.test.runner.AndroidJUnitRunner
+Running instrumentation on -s emulator-5580 only: adb -s emulator-5580 shell am instrument -w -e class com.forgeshape.app.SpatialSketchTest,com.forgeshape.app.HomeFlowTest com.forgeshape.app.test/androidx.test.runner.AndroidJUnitRunner
 
-com.forgeshape.app.SpatialSketchTest:..
+com.forgeshape.app.SpatialSketchTest:
+Error in adaptiveGridFollowsZoomAndTypedValuesBypassSnap(com.forgeshape.app.SpatialSketchTest):
+java.lang.AssertionError: a typed width is exact expected:<1.2345> but was:<0.0>
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.failNotEquals(Assert.java:835)
+	at org.junit.Assert.assertEquals(Assert.java:555)
+	at com.forgeshape.app.SpatialSketchTest.adaptiveGridFollowsZoomAndTypedValuesBypassSnap(SpatialSketchTest.java:361)
+.......
+com.forgeshape.app.HomeFlowTest:............
 
-Time: 12.347
+Time: 274.706
+There was 1 failure:
+1) adaptiveGridFollowsZoomAndTypedValuesBypassSnap(com.forgeshape.app.SpatialSketchTest)
+java.lang.AssertionError: a typed width is exact expected:<1.2345> but was:<0.0>
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.failNotEquals(Assert.java:835)
+	at org.junit.Assert.assertEquals(Assert.java:555)
+	at com.forgeshape.app.SpatialSketchTest.adaptiveGridFollowsZoomAndTypedValuesBypassSnap(SpatialSketchTest.java:361)
 
-OK (2 tests)
+FAILURES!!!
+Tests run: 20,  Failures: 1
 
 
 Uninstalling test APK from -s emulator-5580 ...
-exit=0
+powershell.exe : D:\TRAVELAPPS\ForgeShape\scripts\run-instrumented-tests.ps1 : Instrumentation did not return one
+ valid successful
+At line:1 char:516
++ ... ound3.txt"; & powershell -ExecutionPolicy Bypass -File scripts\run-in ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (D:\TRAVELAPPS\F...alid successful:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+ result on 'emulator-5580'.
+    + CategoryInfo          : NotSpecified: (:) [Write-Error], WriteErrorException
+    + FullyQualifiedErrorId : Microsoft.PowerShell.Commands.WriteErrorException,run-instrumented-tests.ps1
+ 

@@ -117,24 +117,50 @@ While sculpting, the lighting follows the surface as it moves: a stroke that
 pulls a lobe out of a sphere lights that lobe immediately, with no stale shading
 left behind.
 
-## Starting a model
+## Starting a project
 
-The first time ForgeShape runs, it asks one question — **New Project** — and
-offers exactly two ways to begin. The question stands over the live viewport
-rather than replacing it, and it is asked once: turning the phone, leaving to
-the home screen and coming back, or anything else that rebuilds the screen does
-not ask again. Starting the app fresh does, because nothing is saved anywhere.
+ForgeShape opens on **Home** whenever no project is open — on a fresh launch,
+and after you leave a project. Home offers exactly two things: **New Project**
+and **Open File…**. Nothing stands behind it: there is no default body, no
+project, nothing to save and nothing to recover until you choose. Home stays
+Home if you cancel the file picker, or pick a file that is not a ForgeShape
+project, damaged, or from a newer ForgeShape — it says so on Home and nothing
+is created.
 
-**Construction / CAD** begins where the product always did: one default body,
-its shape chosen from the six exact primitives, its dimensions typed.
+**New Project** asks which representation the project begins in, and offers
+exactly two answers (and Cancel, which returns to wherever you were):
+
+**CAD** puts the three principal planes into the viewport as large targets —
+no list to pick from first. Tap a plane to highlight it, tap it again to look
+straight at it and start sketching, draw a closed profile, **Finish Sketch**,
+type a depth, and **Extrude** creates the project with that extrusion as its
+first body. Until that Extrude there is no project: **Back to Home** in the
+toolbar leaves with nothing to lose, *Cancel Sketch* goes back to the planes,
+and a sketch that cannot be extruded creates nothing and says why. The new
+project starts with an empty Undo history, as an opened file does.
 
 **Sculpt** begins on a sphere already prepared for sculpting, so the first thing
 you can do is make a stroke. Nothing is skipped to get there — the sphere is an
 ordinary exact Construction sphere and it was prepared the ordinary way, so
 **Back to Construction** shows that sphere with its diameter, and **Resume
 Sculpt** returns to the same sculpt mesh with the strokes already on it.
-Choosing Sculpt does not create a second body and does not consume the
-Construction Source.
+Preparing it is not your first Undo.
+
+**Open File…** opens a `.forge` from your files straight into the editor.
+
+Once a project is open, the Project surface offers **New Project…** beside Save,
+Open Saved Project, Save Copy…, Open File…, Share Diagnostics… and Import GLB….
+Starting a new project or opening one while the current project has changes
+you have not saved asks first — **Save and continue**, **Discard changes**, or
+**Cancel — stay in this project**. Save writes the project to this device and
+only then continues; if it cannot, the project stays open and the question
+stays. Discard continues without writing anything. Cancel, and System Back,
+leave the project exactly as it was. A project you just saved, opened or
+recovered is not asked about.
+
+System Back always goes one step: it cancels the question you are reading,
+closes the New Project chooser, takes a New-CAD sketch back to the planes and
+the planes back to Home, and from Home leaves the app.
 
 Neither choice is a document, a template or a saved project, and neither closes
 anything off: both representations stay one control apart for the life of the
@@ -441,12 +467,15 @@ is the whole object, sculpting included.
 ## Sketching a CAD Body
 
 The **+** offers one more thing beside the six shapes: **New Sketch**. Choosing
-it asks which plane to sketch on — **XY** (the front view), **XZ** (the top
-view) or **YZ** (the side view) — and choosing a plane turns the viewport into
-that plane: the camera looks straight at it, the view goes orthographic so equal
-lengths are equal on screen wherever they fall, a grid appears on it, and the
-toolbar reads *Sketch XY*. Your own viewpoint is kept and comes back the moment
-the sketch ends, whether you extrude it or cancel it.
+it puts the three principal planes — and, in a CAD project, the flat faces of
+your CAD bodies — into the viewport as targets: tap one to highlight it, tap it
+again to sketch on it. **Choose a plane by name** under the tile still lists
+**XY** (the front view), **XZ** (the top view) and **YZ** (the side view) for
+anyone who prefers the words. Either way the viewport becomes that plane: the
+camera looks straight at it, the view goes orthographic so equal lengths are
+equal on screen wherever they fall, a grid appears on it, and the toolbar reads
+*Sketch XY*. Your own viewpoint is kept and comes back the moment the sketch
+ends, whether you extrude it or cancel it.
 
 **One finger draws; two fingers pan and zoom.** While a sketch is open a single
 finger never orbits — the plane would slide away under the point you are
@@ -502,23 +531,21 @@ What a CAD Body does **not** offer yet: *Start Sculpting*. It is absent for one,
 because the way back from Sculpt over a sketch needs its own design; every other
 body sculpts as before.
 
-**Sketching in 3D, and on a body's face** (`CAD-A3`). New Sketch now offers
-**Pick plane or face in 3D** beside the by-name plane list. It puts the three
-principal planes into the viewport as large targets and, in a CAD project, makes
-the flat faces of your CAD bodies eligible too: tap a plane or a face to
-highlight it, tap it again to start sketching on it, looking straight at it. Two
-fingers still orbit and pan while you choose; System Back leaves without
-changing anything. A sketch drawn on a body's face and extruded becomes a new
-CAD body that **stays attached to that face**: move, turn or resize the body it
-sits on and it comes along. You cannot delete a body while another still sits on
-its face — remove the one on top first. The whole arrangement is saved and
-reopens with the attachment intact. The sketch grid now adapts to how far you
-are zoomed in, so it stays a useful size, and a value you type is never nudged
-to it.
+**Sketching on a body's face** (`CAD-A3`). In a CAD project the flat faces of
+your CAD bodies are targets too — both ends of an extrusion and every flat
+side; the curved side of an extruded circle is not. Tap a face to highlight it,
+tap it again to start sketching on it, looking straight at it. A stylus
+hovering over a target highlights it without choosing it. Two fingers still
+orbit and pan while you choose; System Back leaves without changing anything.
+A sketch drawn on a body's face and extruded becomes a new CAD body that
+**stays attached to that face**: move, turn or resize the body it sits on and
+it comes along. You cannot delete a body while another still sits on its face —
+remove the one on top first. The whole arrangement is saved and reopens with the
+attachment intact. The sketch grid adapts to how far you are zoomed in, so it
+stays a useful size, and a value you type is never nudged to it.
 
-Not yet: a Home screen or a New Project chooser at launch (the app still opens
-straight into the workspace); sketching on an imported or sculpted surface; a
-curved face as a sketch support; and moving a face-attached body on its own.
+Not yet: sketching on an imported or sculpted surface; a curved face as a
+sketch support; and moving a face-attached body on its own.
 
 ## Choosing and sizing the shape
 

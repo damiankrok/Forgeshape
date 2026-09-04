@@ -220,10 +220,20 @@ public final class EditorWorkspaceGestureTest {
         // RootWindowInsets exposes the IME's final target before the animated
         // chrome inset necessarily reaches it. Wait for that real platform
         // transition instead of assuming a fixed 250 ms animation duration.
+        // And wait for the inspector sheet to have FOLLOWED it: the sheet
+        // animates to its new place after the inset lands, so measuring it on
+        // the very frame the inset settled measured a sheet still on its way
+        // (56 px short, once, in an otherwise green aggregate).
         for (int attempt = 0; attempt < 12; attempt++) {
-            final boolean insetSettled = onWorkspace(rule.getScenario(),
-                    (activity, workspace) -> workspace.chromeBottomInsetPx() >= imeInset);
-            if (insetSettled) {
+            final boolean settled = onWorkspace(rule.getScenario(), (activity, workspace) -> {
+                if (workspace.chromeBottomInsetPx() < imeInset) {
+                    return false;
+                }
+                final View sheet = workspace.findViewById(R.id.property_inspector);
+                return boundsInWorkspace(sheet, workspace).bottom
+                        <= workspace.getHeight() - imeInset;
+            });
+            if (settled) {
                 break;
             }
             settleLayout();

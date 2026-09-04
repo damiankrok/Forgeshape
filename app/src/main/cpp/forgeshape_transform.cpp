@@ -393,7 +393,15 @@ TransformApplyResult applyTransformValues(ConstructionTransform& transform,
 // `IMPORT-01A` a body's placement is the body's own — an Imported Mesh has one
 // and has no Construction Source at all.
 ConstructionTransform& constructionTransform() {
-    return constructionScene().activeBody().transform();
+    ConstructionScene& scene = constructionScene();
+    if (!scene.hasProject()) {
+        // No project, no placement. An identity that belongs to no body: the
+        // exact-value editors read zeros and ones from it while hidden behind
+        // Home, and the edit entry point refuses before it could write to it.
+        static ConstructionTransform unbound;
+        return unbound;
+    }
+    return scene.activeBody().transform();
 }
 
 TransformApplyResult applyConstructionTransform(const TransformValues& requested) {

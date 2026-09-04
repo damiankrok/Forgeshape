@@ -81,11 +81,12 @@ final class WorkspaceTestSupport {
         doOnWorkspace(scenario, new WorkspaceAction<Void>() {
             @Override
             public Void run(ForgeShapeActivity activity, EditorWorkspaceView workspace) {
-                // The start question is asked once per process and stands over
-                // everything else, so every case that is not ABOUT it answers
-                // it first and then asserts against the ordinary workspace.
-                // Cases that are about it call showStartChooserAsFirstLaunch().
-                workspace.dismissStartChooserForConstruction();
+                // Home stands over everything while no project is open (APP-H1),
+                // so every case that is not ABOUT it makes sure a Construction
+                // project is open first and then asserts against the ordinary
+                // workspace. Cases that are about it call
+                // showHomeAsFirstLaunchForTest().
+                workspace.ensureConstructionProjectForTest();
                 // The recovery question stands over everything else in exactly
                 // the same way, and for a sharper reason: leaving the foreground
                 // checkpoints the project, so almost every case leaves a
@@ -144,20 +145,32 @@ final class WorkspaceTestSupport {
     }
 
     /**
-     * Makes the first body that has a Construction Source the active one.
+     * Makes the first body that has a Construction Source the active one, or
+     * adds one when the project holds none.
      *
-     * <p>Does nothing when there is none, which leaves the caller's Apply to
-     * fail visibly rather than being silently skipped here.
+     * <p>By REPRESENTATION, not by "not imported": since `CAD-R0-A1A2` a body
+     * may be a CAD Body, which refuses a box Apply exactly as an Imported Mesh
+     * does, and since `APP-H1` a case can leave a CAD-only project behind (the
+     * evidence journey does). A reset that selected a CAD body and had its
+     * Apply refused would hand the next case a baseline it never established,
+     * with no assertion to say so -- which is how two classes in the first
+     * aggregate inherited a CAD body as their box.
      */
     private static void selectFirstConstructionBody() {
         final long[] ids = new long[NativeViewport.sceneBodyCount()];
         final int written = NativeViewport.sceneBodyIds(ids);
         for (int i = 0; i < written; i++) {
-            if (!NativeViewport.sceneBodyIsImported(ids[i])) {
+            if (NativeViewport.sceneBodyRepresentation(ids[i])
+                    == NativeViewport.REPRESENTATION_CONSTRUCTION) {
                 NativeViewport.sceneSelectBody(ids[i]);
                 return;
             }
         }
+        // No Construction Body at all: add the one the baseline needs. The
+        // reset clears the history a moment later, so this is not a step the
+        // next case can see.
+        assertTrue("the reset must be able to add a Construction body",
+                NativeViewport.sceneAddBody() != NativeViewport.NO_OBJECT);
     }
 
     // -----------------------------------------------------------------------
@@ -275,6 +288,19 @@ final class WorkspaceTestSupport {
         if (workspace.objectsPopover().isOpen()) {
             workspace.objectsCapsule().findViewById(R.id.objects_capsule_active)
                     .performClick();
+        }
+    }
+
+    /**
+     * Presses Open Saved Project and, when the project is dirty, answers the
+     * unsaved-changes question the way these cases mean: <b>Discard</b>, so
+     * the saved project replaces the live one exactly as it did before the
+     * guard existed (`APP-H1`). A case ABOUT the guard drives it itself.
+     */
+    static void openSavedProjectDiscardingChanges(EditorWorkspaceView workspace) {
+        workspace.findViewById(R.id.project_open).performClick();
+        if (workspace.unsavedPromptVisible()) {
+            workspace.findViewById(R.id.unsaved_discard).performClick();
         }
     }
 

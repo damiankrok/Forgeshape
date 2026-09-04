@@ -93,12 +93,18 @@ public final class EditorWorkspaceGizmoTest {
      */
     @Test
     public void s020pre0103_answeringTheStartQuestionLeavesAnEmptyHistory() {
+        // Since APP-H1 the question is New Project's, asked from Home: Sculpt
+        // seeds a sphere through the product's own bootstrap, and a Construction
+        // project is seeded through the same bracket by the test seam.
         for (final boolean sculpt : new boolean[] {false, true}) {
             final int[] depths = onWorkspace(rule.getScenario(), (activity, workspace) -> {
-                NativeViewport.debugResetConstructionHistory();
-                workspace.showStartChooserAsFirstLaunch();
-                workspace.findViewById(sculpt ? R.id.start_option_sculpt
-                        : R.id.start_option_construction).performClick();
+                workspace.showHomeAsFirstLaunchForTest();
+                if (sculpt) {
+                    workspace.findViewById(R.id.home_new_project).performClick();
+                    workspace.findViewById(R.id.new_project_sculpt).performClick();
+                } else {
+                    workspace.ensureConstructionProjectForTest();
+                }
                 return new int[] {NativeViewport.constructionUndoDepth(),
                         NativeViewport.constructionRedoDepth()};
             });
@@ -123,11 +129,12 @@ public final class EditorWorkspaceGizmoTest {
     @Test
     public void s020pre02_theDirectSculptStartupPathIsProductionReachable() {
         final boolean[] facts = onWorkspace(rule.getScenario(), (activity, workspace) -> {
-            workspace.showStartChooserAsFirstLaunch();
-            final View sculptAnswer = workspace.findViewById(R.id.start_option_sculpt);
+            workspace.showHomeAsFirstLaunchForTest();
+            workspace.findViewById(R.id.home_new_project).performClick();
+            final View sculptAnswer = workspace.findViewById(R.id.new_project_sculpt);
             return new boolean[] {
                     sculptAnswer != null,
-                    sculptAnswer != null && sculptAnswer.getVisibility() == View.VISIBLE,
+                    sculptAnswer != null && sculptAnswer.isShown(),
                     sculptAnswer != null && sculptAnswer.isClickable()};
         });
         assertTrue("the Sculpt answer exists in the shipped chooser", facts[0]);
@@ -137,7 +144,7 @@ public final class EditorWorkspaceGizmoTest {
         // It really does seed a Construction change, which is the whole reason
         // the boundary has to exist.
         final int kindAfter = onWorkspace(rule.getScenario(), (activity, workspace) -> {
-            workspace.findViewById(R.id.start_option_sculpt).performClick();
+            workspace.findViewById(R.id.new_project_sculpt).performClick();
             final double[] primitive = new double[NativeViewport.PRIMITIVE_STATE_SIZE];
             NativeViewport.constructionPrimitive(primitive);
             return (int) primitive[NativeViewport.PRIMITIVE_KIND];
@@ -154,9 +161,9 @@ public final class EditorWorkspaceGizmoTest {
     @Test
     public void s020pre04_directSculptThenBackRevealsNoInitialisationStep() {
         final int[] depths = onWorkspace(rule.getScenario(), (activity, workspace) -> {
-            NativeViewport.debugResetConstructionHistory();
-            workspace.showStartChooserAsFirstLaunch();
-            workspace.findViewById(R.id.start_option_sculpt).performClick();
+            workspace.showHomeAsFirstLaunchForTest();
+            workspace.findViewById(R.id.home_new_project).performClick();
+            workspace.findViewById(R.id.new_project_sculpt).performClick();
             NativeViewport.enterConstructionMode();
             workspace.syncFromNative();
             return new int[] {NativeViewport.constructionUndoDepth(),
@@ -174,9 +181,8 @@ public final class EditorWorkspaceGizmoTest {
     @Test
     public void s020pre05_realHistorySurvivesRotationAndResumeAfterSeeding() {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            NativeViewport.debugResetConstructionHistory();
-            workspace.showStartChooserAsFirstLaunch();
-            workspace.findViewById(R.id.start_option_construction).performClick();
+            workspace.showHomeAsFirstLaunchForTest();
+            workspace.ensureConstructionProjectForTest();
             NativeViewport.applyBoxTransform(1.5, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0);
             return null;
         });

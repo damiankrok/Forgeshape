@@ -364,7 +364,10 @@ void testFixtures(Recorder& r) {
 void testCoherence(Recorder& r) {
     CameraController camera = makeController();
     const CameraSnapshot snapshot = camera.snapshot();
-    MeshStore& store = meshStore();
+    // Its OWN store, wearing the demo cube's id: since `APP-H1` the process
+    // scene holds no project at startup, so there is no process store to
+    // borrow, and every pick below names the mesh it reads explicitly.
+    MeshStore store(kDemoCubeObjectId);
     // Explicit identity transform, not the implicit process-global
     // ConstructionTransform: this suite can rerun within one process after
     // Activity recreation, by which point that global transform may no longer
@@ -378,16 +381,16 @@ void testCoherence(Recorder& r) {
     const MeshRevision ra =
         store.publish(a.vertices.data(), static_cast<uint32_t>(a.vertices.size()),
                       a.indices.data(), static_cast<uint32_t>(a.indices.size()));
-    SceneHit hitA = pickScene(snapshot, kCenterX, kCenterY, kTestViewportWidth,
-                              kTestViewportHeight, identity, identity, true);
+    SceneHit hitA = pickMesh(snapshot, kCenterX, kCenterY, kTestViewportWidth,
+                             kTestViewportHeight, store.current(), identity, identity, true);
     r.check("pick_reads_baseline_revision", ra != kNoMeshRevision && hitA.hit);
     r.check("pick_baseline_object_id_is_stable", hitA.objectId == kDemoCubeObjectId);
 
     const MeshRevision rb =
         store.publish(b.vertices.data(), static_cast<uint32_t>(b.vertices.size()),
                       b.indices.data(), static_cast<uint32_t>(b.indices.size()));
-    SceneHit hitB = pickScene(snapshot, kCenterX, kCenterY, kTestViewportWidth,
-                              kTestViewportHeight, identity, identity, true);
+    SceneHit hitB = pickMesh(snapshot, kCenterX, kCenterY, kTestViewportWidth,
+                             kTestViewportHeight, store.current(), identity, identity, true);
     r.check("pick_reads_same_topology_revision", rb > ra && hitB.hit);
     r.check("pick_same_topology_object_id_is_stable", hitB.objectId == kDemoCubeObjectId);
     r.check("pick_sees_changed_geometry", hitB.hit && hitA.hit && hitB.distance != hitA.distance);
@@ -395,8 +398,8 @@ void testCoherence(Recorder& r) {
     const MeshRevision rc =
         store.publish(c.vertices.data(), static_cast<uint32_t>(c.vertices.size()),
                       c.indices.data(), static_cast<uint32_t>(c.indices.size()));
-    SceneHit hitC = pickScene(snapshot, kCenterX, kCenterY, kTestViewportWidth,
-                              kTestViewportHeight, identity, identity, true);
+    SceneHit hitC = pickMesh(snapshot, kCenterX, kCenterY, kTestViewportWidth,
+                             kTestViewportHeight, store.current(), identity, identity, true);
     r.check("pick_reads_larger_replacement_revision", rc > rb && hitC.hit);
     r.check("pick_larger_object_id_is_stable", hitC.objectId == kDemoCubeObjectId);
     r.check("pick_larger_uses_updated_triangles",
@@ -421,8 +424,8 @@ void testCoherence(Recorder& r) {
                       static_cast<uint32_t>(bad.size()));
     const MeshRevision afterReject = store.currentRevision();
     SceneHit hitAfter =
-        pickScene(snapshot, kCenterX, kCenterY, kTestViewportWidth, kTestViewportHeight, identity,
-                 identity, true);
+        pickMesh(snapshot, kCenterX, kCenterY, kTestViewportWidth, kTestViewportHeight,
+                 store.current(), identity, identity, true);
     r.check("invalid_revision_fails_closed", rejected == kNoMeshRevision);
     r.check("pick_still_works_after_rejected_revision",
             hitAfter.hit && hitAfter.objectId == kDemoCubeObjectId && afterReject != kNoMeshRevision);

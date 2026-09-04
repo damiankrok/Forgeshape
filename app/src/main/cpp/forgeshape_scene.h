@@ -244,11 +244,44 @@ using SceneSnapshot = std::vector<SceneDrawItem>;
 // same way they already did for the singletons this replaces. That keeps the
 // lock order unchanged (state mutex, then MeshStore's own mutex inside
 // publish/current) rather than introducing a second scene-level lock.
+// The one way to build a scene that holds NO project. See ConstructionScene.
+struct NoProjectTag {};
+
 class ConstructionScene {
 public:
     // Creates the first Body, matching the single-object product's startup
-    // exactly: one default Box at identity, selected.
+    // exactly: one default Box at identity, selected. What every self-test and
+    // every loaded project starts from.
     ConstructionScene();
+
+    // Creates a scene with NO body: the "no project is open" state (`APP-H1`).
+    //
+    // The process scene starts this way. Home is not a project, and a project
+    // is never empty -- Delete still refuses the last body (`RefusedLastBody`)
+    // -- so the two facts are one fact: a project is open exactly when the
+    // scene holds at least one body. Nothing fabricates a default primitive or
+    // a placeholder body behind Home; the first body of a new project arrives
+    // through the CAD bootstrap's first commit, the Sculpt bootstrap's seed or
+    // a load, and never before the user asked for one.
+    explicit ConstructionScene(NoProjectTag) {}
+
+    // Whether a project is open: at least one body. The ONE answer the Android
+    // shell, the codec and the autosave read; no second flag exists.
+    bool hasProject() const { return !bodies_.empty(); }
+
+    // Closes the project: every body is destroyed and nothing is selected. The
+    // scene is then the no-project scene the process started with. The id
+    // allocator is NOT rolled back -- ids stay unique for the life of the
+    // process, so a renderer resource keyed by an old project's ObjectId can
+    // never be mistaken for a new project's body. Callers drop the history,
+    // the sketch and the sculpt mode beside it; this touches only the bodies.
+    void closeProject();
+
+    // How many times `activeBody()` was asked for a body while NO project was
+    // open. Zero in every product flow; a non-zero count is a shell that read
+    // the active body across Home or the CAD bootstrap and is a defect the
+    // device suite asserts against. Process-wide, never reset.
+    static uint64_t activeBodyMisuseCount();
 
     // Appends a new Body with the same defaults as the startup Body, mints it a
     // fresh ObjectId, and makes it active. Returns it.
@@ -286,6 +319,16 @@ public:
     // any body's ObjectId. Returns false (changing nothing) for an unknown id.
     bool setActiveBody(ObjectId id);
 
+    // The active body. TOTAL while a project is open: the constructor of a
+    // project scene creates and selects a Body, Delete refuses the last one and
+    // a load selects the document's active body, so an open project always has
+    // one. While NO project is open there is no body to return, and the answer
+    // is a process-static null object that is in no scene, is never rendered,
+    // picked, saved or edited, and wears no allocated id -- returned rather
+    // than dereferencing an empty list, and COUNTED (activeBodyMisuseCount) so
+    // the product can prove it never reads a body across Home. The four global
+    // accessors (`activeConstructionOrNull`, `meshStore`, `sculptSession`,
+    // `constructionTransform`) ask `hasProject()` first and never reach this.
     SceneObject& activeBody();
     const SceneObject& activeBody() const;
 

@@ -26,7 +26,7 @@ import android.widget.ScrollView;
  * <p><b>It is not a Home screen or a document browser.</b> It appears only when
  * a validated candidate exists, it is answered once, and the answer takes the
  * user straight into the ordinary workspace. Deliberately built like
- * {@link StartChooserView} — the same scrim, the same panel, the same two-card
+ * {@link ChooserSurfaceView} — the same scrim, the same panel, the same two-card
  * shape — because it occupies the same moment and a second visual grammar for
  * "one question before you start" would be a second thing to learn.
  *

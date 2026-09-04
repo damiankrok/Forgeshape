@@ -47,4 +47,16 @@ const char* canonicalCadCircleFixtureSha256();
 const char* canonicalMixedCadFixtureSha256();
 const char* canonicalCadBadPlaneFixtureSha256();
 
+// And for the six `CAD-A3` CADB v2 fixtures: a dependent on a producer's far
+// cap, one on a side face, a three-body chain, every representation beside a
+// face-supported body, and two corrupt files -- a face reference that names
+// no face, and a dependency cycle -- that only the semantic validation can
+// refuse.
+const char* canonicalCadFaceSketchCapFixtureSha256();
+const char* canonicalCadFaceSketchSideFixtureSha256();
+const char* canonicalCadFaceChainFixtureSha256();
+const char* canonicalMixedCadFaceFixtureSha256();
+const char* canonicalCadBadFaceRefFixtureSha256();
+const char* canonicalCadDependencyCycleFixtureSha256();
+
 }  // namespace forgeshape

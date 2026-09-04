@@ -105,12 +105,28 @@ void testActiveObjectDefaults(Recorder& r) {
     r.check("active_object_default_mesh_is_the_box",
             object.generateMesh().vertices.size() == kBoxVertexCount);
 
-    // The process-scoped transform IS the active BODY's transform, not a second
-    // singleton. Since IMPORT-01A it belongs to the body rather than to its
-    // Construction Source, which is what lets an Imported Mesh have one too --
-    // and it is still exactly one placement per body.
-    r.check("process_transform_belongs_to_the_active_body",
-            &constructionTransform() == &constructionScene().activeBody().transform());
+    // A placement belongs to the BODY, not to its Construction Source (since
+    // IMPORT-01A), which is what lets an Imported Mesh have one too -- and it
+    // is still exactly one placement per body: two reads of a body's transform
+    // are the same object. Asserted on a scene this suite builds, because
+    // since `APP-H1` the process scene holds no project at startup: there the
+    // process-scoped `constructionTransform()` answers with an unbound identity
+    // that belongs to no body, and reading it must NOT count as reading an
+    // active body across Home.
+    {
+        ConstructionScene scene;
+        SceneObject& body = scene.activeBody();
+        r.check("a_body_has_exactly_one_placement",
+                &body.transform() == &scene.activeBody().transform()
+                        && body.constructionOrNull() != nullptr);
+        const uint64_t misuseBefore = ConstructionScene::activeBodyMisuseCount();
+        const bool noProjectAnswerIsUnboundIdentity =
+                constructionScene().hasProject()
+                        || (constructionTransform().isIdentity()
+                                && ConstructionScene::activeBodyMisuseCount() == misuseBefore);
+        r.check("process_transform_answers_for_no_project_without_reading_a_body",
+                noProjectAnswerIsUnboundIdentity);
+    }
 }
 
 void testIdentityAndTransformSurviveKindChanges(Recorder& r) {

@@ -562,7 +562,7 @@ public final class ProjectProcessDeathTest {
         });
         settleLayout();
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            workspace.findViewById(R.id.project_open).performClick();
+            WorkspaceTestSupport.openSavedProjectDiscardingChanges(workspace);
             return null;
         });
         settleLayout();

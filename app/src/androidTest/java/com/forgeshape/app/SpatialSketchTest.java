@@ -1,6 +1,17 @@
 package com.forgeshape.app;
 
+import static com.forgeshape.app.SketchTestSupport.dragSketch;
+import static com.forgeshape.app.SketchTestSupport.drawRectangleAndExtrude;
+import static com.forgeshape.app.SketchTestSupport.finishAndExtrude;
+import static com.forgeshape.app.SketchTestSupport.hoverStylus;
+import static com.forgeshape.app.SketchTestSupport.onNativeStateChanged;
+import static com.forgeshape.app.SketchTestSupport.selectTool;
+import static com.forgeshape.app.SketchTestSupport.sketchEntityCount;
+import static com.forgeshape.app.SketchTestSupport.sketchState;
+import static com.forgeshape.app.SketchTestSupport.tapTapWorld;
+import static com.forgeshape.app.SketchTestSupport.tapWorld;
 import static com.forgeshape.app.WorkspaceTestSupport.doOnWorkspace;
+import static com.forgeshape.app.WorkspaceTestSupport.onWorkspace;
 import static com.forgeshape.app.WorkspaceTestSupport.resetToBaselineConstruction;
 import static com.forgeshape.app.WorkspaceTestSupport.settleLayout;
 import static org.junit.Assert.assertEquals;
@@ -9,8 +20,6 @@ import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
-import android.os.SystemClock;
-import android.view.MotionEvent;
 import android.view.View;
 import android.widget.EditText;
 
@@ -30,11 +39,14 @@ import org.junit.runner.RunWith;
  * <p>The DOMAIN half -- semantic faces, TopoRef, the dependency graph, CADB v2,
  * the exact camera, the adaptive grid and the picking -- is proved by the native
  * `CADA3-*` self-test, which builds its own scenes and camera. What is left, and
- * what this covers, is what can only be true on a device: that New Sketch offers
- * a viewport-first support pick, that a tap-tap on a world plane or a planar CAD
- * face begins a sketch on it, that a second body extruded on the first's face is
- * a face-supported dependent, that its producer cannot be deleted while it
- * stands, and that the dependency survives a save/reopen.
+ * what this covers, is what can only be true on a device: that New Sketch lands
+ * directly in a viewport-first support pick, that a tap-tap on a world plane or
+ * a planar CAD face begins a sketch on it, that a curved side never does, that
+ * a stylus hover lights a target without committing, that a second body
+ * extruded on the first's face is a face-supported dependent which follows a
+ * producer edit, that its producer cannot be deleted while it stands, that the
+ * dependency survives a save/reopen, and that the adaptive grid moves with the
+ * zoom while a typed value never re-snaps.
  *
  * <p>No control is located by coordinate. The one place a pixel appears is the
  * viewport gesture, and every such pixel is asked for from
@@ -71,8 +83,9 @@ public final class SpatialSketchTest {
     }
 
     // -----------------------------------------------------------------------
-    // E2E-CADA3-02/03: New Sketch offers the spatial support chooser, and a
-    // tap-tap on a world plane begins a sketch on it.
+    // E2E-CADA3-02/03: New Sketch lands DIRECTLY in the spatial support
+    // chooser, and a tap-tap on a world plane begins a sketch on it. The
+    // by-name plane list stays reachable as the fallback.
     // -----------------------------------------------------------------------
 
     @Test
@@ -83,189 +96,390 @@ public final class SpatialSketchTest {
 
         // A point unambiguously on the XY plane (the baseline body is
         // Construction, so no CAD face is eligible: only world planes are).
-        tapTapWorld(2.0, 2.0, 0.0);
+        tapTapWorld(rule.getScenario(), 2.0, 2.0, 0.0);
         assertFalse("the chooser has handed off", NativeViewport.supportChooserActive());
         assertEquals("a sketch began on a world plane", NativeViewport.SKETCH_EDITING, sketchState());
+        assertEquals(NativeViewport.WORKPLANE_XY, sketchPlane());
+        NativeViewport.sketchCancel();
+    }
+
+    @Test
+    public void byNamePlaneListRemainsTheAccessibilityFallback() {
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            WorkspaceTestSupport.openAddPrimitive(workspace);
+            assertFalse(workspace.addPrimitivePalette().showingPlanes());
+            final View byName =
+                    workspace.addPrimitivePalette().findViewById(R.id.sketch_plane_by_name);
+            assertNotNull("the by-name fallback is offered beside New Sketch", byName);
+            byName.performClick();
+            assertTrue(workspace.addPrimitivePalette().showingPlanes());
+            for (int id : new int[]{R.id.sketch_plane_xy, R.id.sketch_plane_xz,
+                    R.id.sketch_plane_yz, R.id.sketch_support_spatial}) {
+                assertNotNull(workspace.addPrimitivePalette().findViewById(id));
+            }
+            workspace.addPrimitivePalette().findViewById(R.id.sketch_plane_yz).performClick();
+            return null;
+        });
+        settleLayout();
+        assertEquals(NativeViewport.SKETCH_EDITING, sketchState());
+        assertEquals("on the plane named", NativeViewport.WORKPLANE_YZ, sketchPlane());
         NativeViewport.sketchCancel();
     }
 
     // -----------------------------------------------------------------------
-    // E2E-CADA3-05/28/33/38/12: a face-supported body, its dependency and its
-    // persistence.
+    // E2E-CADA3-11: all three world planes are reachable spatially through
+    // real MotionEvents, and a tap aims before a second tap commits.
+    // -----------------------------------------------------------------------
+
+    @Test
+    public void everyWorldPlaneIsSelectableSpatially() {
+        final double[][] pointsOn = {{2.0, 2.0, 0.0}, {2.0, 0.0, 2.0}, {0.0, 2.0, 2.0}};
+        final int[] planes = {NativeViewport.WORKPLANE_XY, NativeViewport.WORKPLANE_XZ,
+                NativeViewport.WORKPLANE_YZ};
+        for (int i = 0; i < planes.length; i++) {
+            openSpatialChooser();
+            // First tap AIMS: the target is selected and highlighted, nothing
+            // begins. Second tap on the same target COMMITS.
+            tapWorld(rule.getScenario(), pointsOn[i][0], pointsOn[i][1], pointsOn[i][2]);
+            assertEquals("plane " + planes[i] + " is aimed at", planes[i],
+                    NativeViewport.supportChooserSelectedKind());
+            assertEquals("aiming begins nothing", NativeViewport.SKETCH_INACTIVE, sketchState());
+            assertTrue(NativeViewport.supportChooserActive());
+            tapWorld(rule.getScenario(), pointsOn[i][0], pointsOn[i][1], pointsOn[i][2]);
+            assertEquals("the second tap begins the sketch", NativeViewport.SKETCH_EDITING,
+                    sketchState());
+            assertEquals(planes[i], sketchPlane());
+            NativeViewport.sketchCancel();
+            onNativeStateChanged(rule.getScenario());
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // E2E-CADA3-15 (hover): a stylus hover lights a target and commits nothing
+    // -----------------------------------------------------------------------
+
+    /**
+     * The authoritative emulator has no stylus, so the hover is a synthesized
+     * stylus {@code ACTION_HOVER_MOVE} through the viewport's real generic
+     * motion dispatch -- the path hardware hover takes -- and the touch commit
+     * that follows is a real finger tap. Real hardware hover is NOT claimed.
+     */
+    @Test
+    public void stylusHoverHighlightsATargetWithoutCommitting() {
+        openSpatialChooser();
+        final float[] at = new float[2];
+        assertTrue(NativeViewport.debugProjectWorld(2.0, 0.0, 2.0, at));
+        assertTrue("the hover lit the XZ plane target",
+                hoverStylus(rule.getScenario(), at[0], at[1]));
+        assertEquals("hover selects nothing", -1, NativeViewport.supportChooserSelectedKind());
+        assertEquals("and begins nothing", NativeViewport.SKETCH_INACTIVE, sketchState());
+        assertTrue(NativeViewport.supportChooserActive());
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final ForgeShapeSurfaceView viewport = workspace.findViewById(R.id.viewport_surface);
+            assertTrue(viewport.lastHoverHighlighted());
+            return null;
+        });
+        // A hover off every target lights nothing.
+        assertFalse(hoverStylus(rule.getScenario(), 2.0f, 2.0f));
+        // A finger still commits: aim, then commit, on the hovered plane.
+        tapTapWorld(rule.getScenario(), 2.0, 0.0, 2.0);
+        assertEquals(NativeViewport.SKETCH_EDITING, sketchState());
+        assertEquals(NativeViewport.WORKPLANE_XZ, sketchPlane());
+        NativeViewport.sketchCancel();
+    }
+
+    // -----------------------------------------------------------------------
+    // E2E-CADA3-05/12/13/16/17/28/33/38: a face-supported dependent, its
+    // producer, a parent edit, the refusals and the persistence.
     // -----------------------------------------------------------------------
 
     @Test
     public void faceSupportedSketchExtrudesADependentAndPersists() {
-        // Body A: a 2x2 rectangle extruded 2 on XY, through the proven list
-        // path. Its far cap is a 2x2 square centred at world (0, 0, 2).
+        // Body A: a 2x2 rectangle extruded 2 on XY. Its far cap is a 2x2
+        // square centred at world (0, 0, 2).
         final long producerId = extrudeARectangleOnXy(2.0, 2.0, 2.0);
         final int bodiesAfterA = NativeViewport.sceneBodyCount();
+        final int stepsAfterA = NativeViewport.constructionUndoDepth();
 
         // New Sketch -> spatial -> tap-tap A's far-cap centre. A sketch begins,
         // supported by that face.
         openSpatialChooser();
-        tapTapWorld(0.0, 0.0, 2.0);
+        tapWorld(rule.getScenario(), 0.0, 0.0, 2.0);
+        assertEquals("E2E-CADA3-12: the tap aims at a CAD face, not a world plane",
+                3, NativeViewport.supportChooserSelectedKind());
+        tapWorld(rule.getScenario(), 0.0, 0.0, 2.0);
         assertEquals("a sketch began on the tapped face", NativeViewport.SKETCH_EDITING,
                 sketchState());
 
         // Draw a rectangle on the face and extrude New Body -> body B.
-        selectTool(R.id.tool_rail_rectangle);
-        dragSketch(-0.5, -0.5, 0.5, 0.5);
-        assertEquals(1, sketchEntityCount());
-        finishAndExtrude("0.5");
-        assertTrue("B is a CAD body", NativeViewport.sceneActiveBodyIsCad());
+        final long dependentId = drawRectangleAndExtrude(rule.getScenario(), 1.0, 1.0, "0.5");
         assertTrue("E2E-CADA3-05: B is face-supported",
                 NativeViewport.sceneActiveBodyIsFaceSupportedCad());
-        final long dependentId = NativeViewport.sceneActiveBodyId();
         assertNotEquals(producerId, dependentId);
         assertEquals("one new body", bodiesAfterA + 1, NativeViewport.sceneBodyCount());
+        assertEquals("one history step for the dependent's creation",
+                stepsAfterA + 1, NativeViewport.constructionUndoDepth());
 
-        // E2E-CADA3-38: the producer cannot be deleted while the dependent
+        // E2E-CADA3-16: a parent parameter edit keeps the dependent attached
+        // and still resolving.
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            assertEquals(NativeViewport.SCULPT_OK, NativeViewport.sceneSelectBody(producerId));
+            assertEquals("the producer's depth is edited", NativeViewport.APPLY_APPLIED,
+                    NativeViewport.cadApplyExtrude(3.0, NativeViewport.EXTRUDE_ALONG_NORMAL));
+            assertEquals(NativeViewport.SCULPT_OK, NativeViewport.sceneSelectBody(dependentId));
+            workspace.syncFromNative();
+            assertTrue("the dependent is still face-supported after the edit",
+                    NativeViewport.sceneActiveBodyIsFaceSupportedCad());
+            final double[] cad = new double[NativeViewport.CAD_STATE_SIZE];
+            assertTrue(NativeViewport.cadState(cad));
+            return null;
+        });
+        // The dependent's world placement followed: its far cap is now at the
+        // producer's new top (z = 3 + 0.5), and that point projects on screen.
+        final float[] on = new float[2];
+        assertTrue(NativeViewport.debugProjectWorld(0.0, 0.0, 3.5, on));
+
+        // E2E-CADA3-17/38: the producer cannot be deleted while the dependent
         // stands; the dependent can, then the producer.
         assertEquals("deleting the producer is refused",
                 NativeViewport.DELETE_REFUSED_HAS_DEPENDENTS,
                 NativeViewport.sceneDeleteBody(producerId));
         assertEquals("both bodies remain", bodiesAfterA + 1, NativeViewport.sceneBodyCount());
 
-        // E2E-CADA3-12: save and reopen; the dependency restores and both
-        // bodies come back.
+        // E2E-CADA3-15: save and reopen; the dependency restores and both
+        // bodies come back with the edited producer depth.
         final byte[] saved = NativeViewport.encodeProject();
         assertNotNull(saved);
         final int total = NativeViewport.sceneBodyCount();
         assertEquals("the saved project reopens", NativeViewport.PROJECT_OK,
                 NativeViewport.loadProject(saved));
         assertEquals("every body restored", total, NativeViewport.sceneBodyCount());
+        assertEquals(NativeViewport.SCULPT_OK, NativeViewport.sceneSelectBody(dependentId));
+        assertTrue("the dependency survived the reopen",
+                NativeViewport.sceneActiveBodyIsFaceSupportedCad());
+        assertEquals(NativeViewport.DELETE_REFUSED_HAS_DEPENDENTS,
+                NativeViewport.sceneDeleteBody(producerId));
+    }
 
-        // E2E-CADA3-08: undo the dependent creation removes only it.
-        // (After a load, session history is fresh, so re-create is not asserted
-        //  here; the native suite covers undo/redo of a face-supported body.)
+    // -----------------------------------------------------------------------
+    // E2E-CADA3-13: a side face supports a sketch too
+    // -----------------------------------------------------------------------
+
+    @Test
+    public void aSideFaceSupportsASketch() {
+        // A: 2x2 rectangle extruded 2 on XY. Its +X side is the plane x = 1,
+        // centred at (1, 0, 1). Look at it from the +X direction so the side
+        // faces the camera rather than being edge-on.
+        extrudeARectangleOnXy(2.0, 2.0, 2.0);
+        assertTrue(NativeViewport.debugSetCameraPose(1.5708f, 0.35f, 8.0f));
+        openSpatialChooser();
+        tapWorld(rule.getScenario(), 1.0, 0.0, 1.0);
+        assertEquals("a planar side is a face target", 3,
+                NativeViewport.supportChooserSelectedKind());
+        tapWorld(rule.getScenario(), 1.0, 0.0, 1.0);
+        assertEquals(NativeViewport.SKETCH_EDITING, sketchState());
+        final long dependent = drawRectangleAndExtrude(rule.getScenario(), 0.5, 0.5, "0.25");
+        assertTrue("the side-supported body is a dependent",
+                NativeViewport.sceneActiveBodyIsFaceSupportedCad());
+        assertNotEquals(NativeViewport.NO_OBJECT, dependent);
+    }
+
+    // -----------------------------------------------------------------------
+    // E2E-CADA3-14: a circle's cylindrical side is never a support
+    // -----------------------------------------------------------------------
+
+    @Test
+    public void aCylindricalSideIsRefusedAsASupport() {
+        // A cylinder: a circle of radius 1 on XY extruded 2. Its side is
+        // curved; its far cap at (0, 0, 2) is planar.
+        beginSketchOnXy();
+        selectTool(rule.getScenario(), R.id.tool_rail_circle);
+        dragSketch(rule.getScenario(), 0.0, 0.0, 1.0, 0.0);
+        assertEquals(1, sketchEntityCount());
+        finishAndExtrude(rule.getScenario(), "2");
+        assertTrue(NativeViewport.sceneActiveBodyIsCad());
+
+        assertTrue(NativeViewport.debugSetCameraPose(1.5708f, 0.2f, 8.0f));
+        openSpatialChooser();
+        // A tap on the curved side at (1, 0, 1): never a face. It resolves to
+        // a world plane behind it or to nothing, and begins no face sketch.
+        tapWorld(rule.getScenario(), 1.0, 0.0, 1.0);
+        assertNotEquals("the curved side is not a face target", 3,
+                NativeViewport.supportChooserSelectedKind());
+        assertEquals(NativeViewport.SKETCH_INACTIVE, sketchState());
+        // The planar cap still is.
+        assertTrue(NativeViewport.debugSetCameraPose(0.7f, 0.9f, 8.0f));
+        tapWorld(rule.getScenario(), 0.0, 0.0, 2.0);
+        assertEquals("the cap is", 3, NativeViewport.supportChooserSelectedKind());
+        NativeViewport.supportChooserCancel();
+        onNativeStateChanged(rule.getScenario());
+    }
+
+    // -----------------------------------------------------------------------
+    // E2E-CADA3-18: the adaptive grid moves with the zoom; a typed value is
+    // never re-snapped to it.
+    // -----------------------------------------------------------------------
+
+    @Test
+    public void adaptiveGridFollowsZoomAndTypedValuesBypassSnap() {
+        beginSketchOnXy();
+        final double initial = NativeViewport.sketchGridStep();
+        assertTrue("a usable grid step", initial > 0.0);
+        // Two real pinches in opposite directions. The grid must follow the
+        // zoom both ways, and the closer view must draw the finer step: what
+        // is asserted is the ORDER of the two steps, not which finger motion
+        // the camera maps to which direction.
+        assertTrue(zoomSketchCamera(3.0f));
+        final double afterFirst = NativeViewport.sketchGridStep();
+        assertTrue(zoomSketchCamera(1.0f / 9.0f));
+        final double afterSecond = NativeViewport.sketchGridStep();
+        assertNotEquals("the grid followed the first zoom", initial, afterFirst, 0.0);
+        assertNotEquals("and the second, the other way", afterFirst, afterSecond, 0.0);
+        // The step before any camera sample is the documented 0.25 m fallback;
+        // every step chosen FROM the camera is a nice 1/2/5 x 10^k.
+        assertTrue("and every zoomed step is a nice 1/2/5 x 10^k",
+                isNiceStep(afterFirst) && isNiceStep(afterSecond));
+
+        // A rectangle placed by drag snaps to the grid; then a typed width
+        // that is NOT a multiple of any grid step is kept EXACTLY.
+        selectTool(rule.getScenario(), R.id.tool_rail_rectangle);
+        dragSketch(rule.getScenario(), -1.0, -1.0, 1.0, 1.0);
+        assertEquals(1, sketchEntityCount());
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final EditText width = workspace.sketchEditor().findViewById(R.id.field_sketch_rect_width);
+            final EditText height =
+                    workspace.sketchEditor().findViewById(R.id.field_sketch_rect_height);
+            assertNotNull(width);
+            width.setText("1.2345");
+            height.setText("0.777");
+            workspace.findViewById(R.id.apply_sketch_entity).performClick();
+            return null;
+        });
+        settleLayout();
+        final double[] entity = new double[NativeViewport.SKETCH_ENTITY_SIZE];
+        assertTrue(NativeViewport.sketchSelectedEntity(entity));
+        assertEquals("a typed width is exact", 1.2345,
+                entity[NativeViewport.SKETCH_ENTITY_VALUES + 2], 1e-12);
+        assertEquals("a typed height is exact", 0.777,
+                entity[NativeViewport.SKETCH_ENTITY_VALUES + 3], 1e-12);
+        NativeViewport.sketchCancel();
     }
 
     // -----------------------------------------------------------------------
     // helpers
     // -----------------------------------------------------------------------
 
+    /** New Sketch inside a project lands directly in the spatial chooser. */
     private void openSpatialChooser() {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             WorkspaceTestSupport.openAddPrimitive(workspace);
-            workspace.addPrimitivePalette().findViewById(R.id.add_sketch).performClick();
+            final View newSketch = workspace.addPrimitivePalette().findViewById(R.id.add_sketch);
+            assertNotNull(newSketch);
+            newSketch.performClick();
             return null;
         });
         settleLayout();
-        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            final View spatial =
-                    workspace.addPrimitivePalette().findViewById(R.id.sketch_support_spatial);
-            assertNotNull("New Sketch offers a viewport-first support pick", spatial);
-            spatial.performClick();
-            return null;
-        });
-        settleLayout();
+        assertTrue("New Sketch is a viewport-first support pick",
+                NativeViewport.supportChooserActive());
     }
 
-    /** A double-tap at the pixel a world point projects to: aim, then commit. */
-    private void tapTapWorld(double x, double y, double z) {
-        final float[] at = new float[2];
-        assertTrue("the target projects on screen",
-                NativeViewport.debugProjectWorld(x, y, z, at));
-        tapViewport(at[0], at[1]);
-        tapViewport(at[0], at[1]);
+    private void beginSketchOnXy() {
+        assertEquals(NativeViewport.CAD_OK, NativeViewport.sketchBegin(NativeViewport.WORKPLANE_XY));
+        onNativeStateChanged(rule.getScenario());
     }
 
     private long extrudeARectangleOnXy(double width, double height, double depth) {
-        final int status = NativeViewport.sketchBegin(NativeViewport.WORKPLANE_XY);
-        assertEquals(NativeViewport.CAD_OK, status);
-        onNativeStateChanged();
-        selectTool(R.id.tool_rail_rectangle);
-        dragSketch(-width / 2, -height / 2, width / 2, height / 2);
-        assertEquals(1, sketchEntityCount());
-        finishAndExtrude(Double.toString(depth));
-        assertTrue(NativeViewport.sceneActiveBodyIsCad());
-        return NativeViewport.sceneActiveBodyId();
+        beginSketchOnXy();
+        return drawRectangleAndExtrude(rule.getScenario(), width, height, Double.toString(depth));
     }
 
-    private void selectTool(int toolRailId) {
-        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            workspace.findViewById(toolRailId).performClick();
-            return null;
-        });
-        settleLayout();
-    }
-
-    private void finishAndExtrude(String depth) {
-        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            workspace.findViewById(R.id.finish_sketch).performClick();
-            return null;
-        });
-        settleLayout();
-        assertEquals(NativeViewport.SKETCH_READY, sketchState());
-        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            final EditText field = workspace.sketchEditor().findViewById(R.id.field_extrude_depth);
-            field.setText(depth);
-            workspace.findViewById(R.id.sketch_extrude_commit).performClick();
-            return null;
-        });
-        settleLayout();
-        assertEquals(NativeViewport.SKETCH_INACTIVE, sketchState());
-    }
-
-    private void dragSketch(double u0, double v0, double u1, double v1) {
-        final float[] from = new float[2];
-        final float[] to = new float[2];
-        assertTrue(NativeViewport.sketchScreenPoint(u0, v0, from));
-        assertTrue(NativeViewport.sketchScreenPoint(u1, v1, to));
-        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            final View viewport = workspace.findViewById(R.id.viewport_surface);
-            final long down = SystemClock.uptimeMillis();
-            send(viewport, down, down, MotionEvent.ACTION_DOWN, from[0], from[1]);
-            for (int step = 1; step <= 6; ++step) {
-                final float t = step / 6f;
-                send(viewport, down, down + step * 12L, MotionEvent.ACTION_MOVE,
-                        from[0] + (to[0] - from[0]) * t, from[1] + (to[1] - from[1]) * t);
-            }
-            send(viewport, down, down + 96L, MotionEvent.ACTION_UP, to[0], to[1]);
-            return null;
-        });
-        settleLayout();
-    }
-
-    private void tapViewport(float x, float y) {
-        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            final View viewport = workspace.findViewById(R.id.viewport_surface);
-            final long down = SystemClock.uptimeMillis();
-            send(viewport, down, down, MotionEvent.ACTION_DOWN, x, y);
-            send(viewport, down, down + 40L, MotionEvent.ACTION_UP, x, y);
-            return null;
-        });
-        settleLayout();
-    }
-
-    private void onNativeStateChanged() {
-        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            workspace.onNativeStateChanged();
-            return null;
-        });
-        settleLayout();
-    }
-
-    private int sketchState() {
+    private int sketchPlane() {
         final double[] state = new double[NativeViewport.SKETCH_STATE_SIZE];
         NativeViewport.sketchState(state);
-        return (int) state[NativeViewport.SKETCH_STATE];
+        return (int) state[NativeViewport.SKETCH_PLANE];
     }
 
-    private int sketchEntityCount() {
-        final double[] state = new double[NativeViewport.SKETCH_STATE_SIZE];
-        NativeViewport.sketchState(state);
-        return (int) state[NativeViewport.SKETCH_ENTITY_COUNT];
+    /**
+     * Dollies the sketch camera by a two-finger pinch through the real
+     * viewport, so the grid is re-sampled the way a user's zoom re-samples it.
+     */
+    private boolean zoomSketchCamera(final float factor) {
+        final double before = NativeViewport.sketchGridStep();
+        final Boolean moved = onWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final View viewport = workspace.findViewById(R.id.viewport_surface);
+            final float cx = viewport.getWidth() / 2f;
+            final float cy = viewport.getHeight() / 2f;
+            final long down = android.os.SystemClock.uptimeMillis();
+            // Two fingers whose separation changes by `factor`: closing for a
+            // factor above one, spreading for one below, both kept on screen.
+            final float fromHalf = factor >= 1f ? 200f : 60f;
+            final float toHalf = factor >= 1f ? 200f / factor : 60f / factor;
+            pinch(viewport, down, cx, cy, fromHalf, toHalf);
+            return true;
+        });
+        settleLayout();
+        // The step is re-sampled when the overlay is rebuilt for the new
+        // camera; a fresh read after the pinch settles is what the product draws.
+        return moved && NativeViewport.sketchGridStep() != before;
     }
 
-    private static void send(View target, long downTime, long eventTime, int action, float x,
-                             float y) {
-        final MotionEvent event = MotionEvent.obtain(downTime, eventTime, action, x, y, 0);
+    private static void pinch(View viewport, long down, float cx, float cy, float fromHalf,
+                              float toHalf) {
+        final android.view.MotionEvent.PointerProperties[] props = {
+                new android.view.MotionEvent.PointerProperties(),
+                new android.view.MotionEvent.PointerProperties()};
+        props[0].id = 0;
+        props[1].id = 1;
+        props[0].toolType = props[1].toolType = android.view.MotionEvent.TOOL_TYPE_FINGER;
+        final android.view.MotionEvent.PointerCoords[] coords = {
+                new android.view.MotionEvent.PointerCoords(),
+                new android.view.MotionEvent.PointerCoords()};
+        coords[0].x = cx - fromHalf;
+        coords[0].y = cy;
+        coords[1].x = cx + fromHalf;
+        coords[1].y = cy;
+        dispatch(viewport, down, down, android.view.MotionEvent.ACTION_DOWN, 1, props, coords);
+        dispatch(viewport, down, down + 8L,
+                android.view.MotionEvent.ACTION_POINTER_DOWN
+                        | (1 << android.view.MotionEvent.ACTION_POINTER_INDEX_SHIFT),
+                2, props, coords);
+        for (int step = 1; step <= 8; ++step) {
+            final float t = step / 8f;
+            final float half = fromHalf + (toHalf - fromHalf) * t;
+            coords[0].x = cx - half;
+            coords[1].x = cx + half;
+            dispatch(viewport, down, down + 8L + step * 12L, android.view.MotionEvent.ACTION_MOVE,
+                    2, props, coords);
+        }
+        dispatch(viewport, down, down + 120L,
+                android.view.MotionEvent.ACTION_POINTER_UP
+                        | (1 << android.view.MotionEvent.ACTION_POINTER_INDEX_SHIFT),
+                2, props, coords);
+        dispatch(viewport, down, down + 130L, android.view.MotionEvent.ACTION_UP, 1, props, coords);
+    }
+
+    private static void dispatch(View viewport, long down, long when, int action, int count,
+                                 android.view.MotionEvent.PointerProperties[] props,
+                                 android.view.MotionEvent.PointerCoords[] coords) {
+        final android.view.MotionEvent event = android.view.MotionEvent.obtain(down, when, action,
+                count, props, coords, 0, 0, 1f, 1f, 0, 0,
+                android.view.InputDevice.SOURCE_TOUCHSCREEN, 0);
         try {
-            target.dispatchTouchEvent(event);
+            viewport.dispatchTouchEvent(event);
         } finally {
             event.recycle();
         }
+    }
+
+    /** Whether a step is one of 1, 2 or 5 times a power of ten. */
+    private static boolean isNiceStep(double step) {
+        final double exponent = Math.floor(Math.log10(step));
+        final double mantissa = step / Math.pow(10.0, exponent);
+        for (double nice : new double[]{1.0, 2.0, 5.0, 10.0}) {
+            if (Math.abs(mantissa - nice) < 1e-9) {
+                return true;
+            }
+        }
+        return false;
     }
 }

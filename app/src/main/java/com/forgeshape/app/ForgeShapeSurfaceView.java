@@ -119,6 +119,39 @@ final class ForgeShapeSurfaceView extends SurfaceView implements SurfaceHolder.C
         return pointerDown;
     }
 
+    /**
+     * Stylus hover over the viewport (`CAD-A3` K1).
+     *
+     * <p>A hovering stylus is not a touch: nothing is pressed, so nothing may
+     * be selected, drawn, orbited or committed by it. The one thing it may do
+     * is HIGHLIGHT, and today the one surface that highlights is the spatial
+     * support chooser, whose target under the pen lights up so the tap that
+     * follows is aimed. Native code decides whether a chooser is active at
+     * all; when none is, the event is simply not ours and the platform's own
+     * hover handling continues. A finger never hovers, so this changes nothing
+     * for touch.
+     */
+    @Override
+    public boolean onHoverEvent(MotionEvent event) {
+        final int action = event.getActionMasked();
+        if (action == MotionEvent.ACTION_HOVER_MOVE
+                || action == MotionEvent.ACTION_HOVER_ENTER) {
+            if (NativeViewport.supportChooserHover(event.getX(), event.getY()) >= 0) {
+                lastHoverHighlighted = true;
+                return true;
+            }
+            lastHoverHighlighted = false;
+        }
+        return super.onHoverEvent(event);
+    }
+
+    /** Whether the last hover sample lit a chooser target, for verification. */
+    boolean lastHoverHighlighted() {
+        return lastHoverHighlighted;
+    }
+
+    private boolean lastHoverHighlighted;
+
     /** Told when a viewport gesture starts, and when it has finished and native
      *  state may have moved. */
     interface OnViewportGestureSettled {

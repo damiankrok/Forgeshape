@@ -35,8 +35,9 @@ public final class EditorWorkspaceObjectsTest {
             new ActivityScenarioRule<>(ForgeShapeActivity.class);
 
     /**
-     * Answers the start question, which is asked once per process and stands
-     * over everything else.
+     * Makes sure a Construction project is open: since APP-H1 Home stands
+     * over everything while none is, and the Objects surfaces belong to a
+     * project.
      *
      * <p>This class deliberately does not use the shared baseline reset: the
      * scene accumulates bodies across a run and these cases establish what they
@@ -45,7 +46,7 @@ public final class EditorWorkspaceObjectsTest {
     @org.junit.Before
     public void answerTheStartQuestion() {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            workspace.dismissStartChooserForConstruction();
+            workspace.ensureConstructionProjectForTest();
             return null;
         });
     }

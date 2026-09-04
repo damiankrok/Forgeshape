@@ -122,23 +122,16 @@ final class EditorUiState {
     private boolean sculptPrecisionOpen;
 
     /**
-     * Whether this PROCESS has already chosen how it started.
+     * Whether the New Project chooser is open.
      *
-     * <p>Static on purpose, and it is the one field here that is not per
-     * instance. The start chooser must not come back when the Activity is
-     * recreated — a theme change, a locale change, a low-memory restart — and
-     * an instance field would re-ask on every one of them, because a recreated
-     * Activity builds a fresh {@link EditorWorkspaceView} and therefore a fresh
-     * {@code EditorUiState}. Process-scoped is exactly the lifetime the
-     * question has.
-     *
-     * <p>It is still <b>losable</b>, which is what keeps it inside this class's
-     * contract: nothing is written to disk, no {@code Bundle} carries it, and a
-     * genuine process kill correctly asks again. It also cannot change the
-     * model — the chooser's two paths both run through the ordinary product
-     * entry points, and this flag only decides whether the question is put.
+     * <p>Presentation: which question is on screen, carried across the
+     * recreation a theme change performs exactly as an open panel is. Whether
+     * HOME is on screen is deliberately NOT here — it is derived from native
+     * truth ({@code projectOpen()}) on every refresh, because a Java copy of
+     * "is there a project" would be a second answer that could disagree with
+     * the scene.
      */
-    private static boolean startChoiceMade;
+    private boolean newProjectChooserOpen;
 
     /**
      * Whether this process has already settled what to do about unsaved work.
@@ -262,32 +255,22 @@ final class EditorUiState {
         appTheme = AppTheme.defaultTheme();
     }
 
-    /** Whether the start chooser still has a question to ask this process. */
-    boolean startChoiceMade() {
-        return startChoiceMade;
+    /** Whether the New Project chooser is on screen. */
+    boolean newProjectChooserOpen() {
+        return newProjectChooserOpen;
     }
 
     /**
-     * Records that the user answered the start chooser.
+     * Records that the New Project chooser is open or closed.
      *
-     * <p>What they chose is deliberately NOT remembered. Both paths end in the
-     * ordinary product — one in Construction, one in Sculpt on a frozen mesh —
-     * and after that the answer is already visible in native state, which is
-     * the authority. Keeping a copy here would be a second truth about which
-     * mode the product is in.
+     * <p>What is chosen is deliberately NOT remembered: both answers end in the
+     * ordinary product, and after that the answer is visible in native state,
+     * which is the authority.
      */
-    void recordStartChoice() {
-        startChoiceMade = true;
+    void setNewProjectChooserOpen(boolean open) {
+        newProjectChooserOpen = open;
     }
 
-    /**
-     * Puts the question back, as a fresh process would.
-     *
-     * <p>Exists so verification can exercise both sides of the flag inside one
-     * instrumentation process, where every test after the first would otherwise
-     * see an answered chooser. It destroys nothing: the model, the mode and the
-     * scene are native state and this does not touch any of them.
-     */
     /** Whether the recovery question has been settled in this process. */
     boolean recoveryResolved() {
         return recoveryResolved;
@@ -308,10 +291,6 @@ final class EditorUiState {
     /** Puts the recovery question back, as a fresh process would. Verification. */
     void clearRecoveryResolved() {
         recoveryResolved = false;
-    }
-
-    void clearStartChoice() {
-        startChoiceMade = false;
     }
 
     boolean chromeHidden() {

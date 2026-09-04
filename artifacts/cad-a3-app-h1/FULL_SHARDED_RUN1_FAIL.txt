@@ -101,36 +101,19 @@ Installing test APK on -s emulator-5580 ...
 Performing Streamed Install
 Success
 Discovering the complete live AndroidJUnitRunner inventory on -s emulator-5580 ...
-DISCOVERY_PASS | classes=36 | tests=493 | shards=5 | missing=0 | duplicates=0 | unexpected=0
-SHARD_START | shard=1/5 | classes=7 | tests=100 | filter=com.forgeshape.app.EditorWorkspaceChromeCompositionTest,com.forgeshape.app.EditorWorkspaceGestureTest,com.forgeshape.app.EditorWorkspaceGizmoTest,com.forgeshape.app.EditorWorkspaceLifecycleTest,com.forgeshape.app.EditorWorkspaceMotionTest,com.forgeshape.app.ProjectAutosaveRecoveryTest,com.forgeshape.app.SketchExtrudeTest
+DISCOVERY_PASS | classes=37 | tests=504 | shards=5 | missing=0 | duplicates=0 | unexpected=0
+SHARD_START | shard=1/5 | classes=7 | tests=100 | filter=com.forgeshape.app.CadA3VisualEvidenceTest,com.forgeshape.app.DiagnosticsAndRendererLossTest,com.forgeshape.app.EditorWorkspaceChromeCompositionTest,com.forgeshape.app.EditorWorkspaceGizmoTest,com.forgeshape.app.EditorWorkspaceLayoutTest,com.forgeshape.app.ProjectAutosaveRecoveryTest,com.forgeshape.app.ProjectProcessDeathTest
 
-com.forgeshape.app.EditorWorkspaceChromeCompositionTest:............
-com.forgeshape.app.EditorWorkspaceGestureTest:......
-com.forgeshape.app.EditorWorkspaceGizmoTest:..............................................
-com.forgeshape.app.EditorWorkspaceLifecycleTest:...
-com.forgeshape.app.EditorWorkspaceMotionTest:..........
-com.forgeshape.app.ProjectAutosaveRecoveryTest:..............
-com.forgeshape.app.SketchExtrudeTest:
-Error in e2eCadr0_03to08_aDraggedRectangleBecomesOneUndoableCadBody(com.forgeshape.app.SketchExtrudeTest):
-java.lang.AssertionError: and height expected:<1.0> but was:<0.8>
+com.forgeshape.app.CadA3VisualEvidenceTest:.
+com.forgeshape.app.DiagnosticsAndRendererLossTest:...
+Error in e2er1b07_theProjectStaysEditableAfterTheDeviceComesBack(com.forgeshape.app.DiagnosticsAndRendererLossTest):
+java.lang.AssertionError: expected:<0> but was:<2>
 	at org.junit.Assert.fail(Assert.java:89)
 	at org.junit.Assert.failNotEquals(Assert.java:835)
-	at org.junit.Assert.assertEquals(Assert.java:555)
-	at com.forgeshape.app.SketchExtrudeTest.e2eCadr0_03to08_aDraggedRectangleBecomesOneUndoableCadBody(SketchExtrudeTest.java:183)
-....
-Error in e2eCadr0_12_aDraggedCircleExtrudes(com.forgeshape.app.SketchExtrudeTest):
-java.lang.AssertionError: the radius is the dragged distance, on the grid expected:<0.75> but was:<0.8>
-	at org.junit.Assert.fail(Assert.java:89)
-	at org.junit.Assert.failNotEquals(Assert.java:835)
-	at org.junit.Assert.assertEquals(Assert.java:555)
-	at com.forgeshape.app.SketchExtrudeTest.e2eCadr0_12_aDraggedCircleExtrudes(SketchExtrudeTest.java:394)
-..
-Error in e2eCadr0_09and10_theRectangleAndTheDepthAreEditableLaterAsOneStepEach(com.forgeshape.app.SketchExtrudeTest):
-org.junit.ComparisonFailure: expected:<[1]> but was:<[0.8]>
-	at org.junit.Assert.assertEquals(Assert.java:117)
-	at org.junit.Assert.assertEquals(Assert.java:146)
-	at com.forgeshape.app.SketchExtrudeTest.lambda$e2eCadr0_09and10_theRectangleAndTheDepthAreEditableLaterAsOneStepEach$7(SketchExtrudeTest.java:284)
-	at com.forgeshape.app.SketchExtrudeTest$$ExternalSyntheticLambda21.run(D8$$SyntheticClass:0)
+	at org.junit.Assert.assertEquals(Assert.java:647)
+	at org.junit.Assert.assertEquals(Assert.java:633)
+	at com.forgeshape.app.DiagnosticsAndRendererLossTest.lambda$e2er1b07_theProjectStaysEditableAfterTheDeviceComesBack$7(DiagnosticsAndRendererLossTest.java:254)
+	at com.forgeshape.app.DiagnosticsAndRendererLossTest$$ExternalSyntheticLambda13.run(D8$$SyntheticClass:0)
 	at com.forgeshape.app.WorkspaceTestSupport$1.perform(WorkspaceTestSupport.java:59)
 	at com.forgeshape.app.WorkspaceTestSupport$1.perform(WorkspaceTestSupport.java:54)
 	at androidx.test.core.app.ActivityScenario.lambda$onActivity$2$androidx-test-core-app-ActivityScenario(ActivityScenario.java:794)
@@ -147,28 +130,72 @@ org.junit.ComparisonFailure: expected:<[1]> but was:<[0.8]>
 	at java.lang.reflect.Method.invoke(Native Method)
 	at com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run(RuntimeInit.java:566)
 	at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:929)
-
-
-Time: 254.449
-There were 3 failures:
-1) e2eCadr0_03to08_aDraggedRectangleBecomesOneUndoableCadBody(com.forgeshape.app.SketchExtrudeTest)
-java.lang.AssertionError: and height expected:<1.0> but was:<0.8>
+.....
+com.forgeshape.app.EditorWorkspaceChromeCompositionTest:
+Error in uir4c01_compactAndExpandedSculptDrawTheBackNavigationInFull(com.forgeshape.app.EditorWorkspaceChromeCompositionTest):
+java.lang.AssertionError: Back to Construction must be drawn in the window under test expected:<0> but was:<8>
 	at org.junit.Assert.fail(Assert.java:89)
 	at org.junit.Assert.failNotEquals(Assert.java:835)
-	at org.junit.Assert.assertEquals(Assert.java:555)
-	at com.forgeshape.app.SketchExtrudeTest.e2eCadr0_03to08_aDraggedRectangleBecomesOneUndoableCadBody(SketchExtrudeTest.java:183)
-2) e2eCadr0_12_aDraggedCircleExtrudes(com.forgeshape.app.SketchExtrudeTest)
-java.lang.AssertionError: the radius is the dragged distance, on the grid expected:<0.75> but was:<0.8>
+	at org.junit.Assert.assertEquals(Assert.java:647)
+	at com.forgeshape.app.EditorWorkspaceChromeCompositionTest.assertBackNavigationReads(EditorWorkspaceChromeCompositionTest.java:501)
+	at com.forgeshape.app.EditorWorkspaceChromeCompositionTest.lambda$uir4c01_compactAndExpandedSculptDrawTheBackNavigationInFull$0(EditorWorkspaceChromeCompositionTest.java:123)
+	at com.forgeshape.app.EditorWorkspaceChromeCompositionTest$$ExternalSyntheticLambda31.run(D8$$SyntheticClass:0)
+	at com.forgeshape.app.WorkspaceTestSupport$1.perform(WorkspaceTestSupport.java:59)
+	at com.forgeshape.app.WorkspaceTestSupport$1.perform(WorkspaceTestSupport.java:54)
+	at androidx.test.core.app.ActivityScenario.lambda$onActivity$2$androidx-test-core-app-ActivityScenario(ActivityScenario.java:794)
+	at androidx.test.core.app.ActivityScenario$$ExternalSyntheticLambda2.run(D8$$SyntheticClass:0)
+	at java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:520)
+	at java.util.concurrent.FutureTask.run(FutureTask.java:317)
+	at android.app.Instrumentation$SyncRunnable.run(Instrumentation.java:2647)
+	at android.os.Handler.handleCallback(Handler.java:1070)
+	at android.os.Handler.dispatchMessage(Handler.java:125)
+	at android.os.Looper.dispatchMessage(Looper.java:333)
+	at android.os.Looper.loopOnce(Looper.java:263)
+	at android.os.Looper.loop(Looper.java:367)
+	at android.app.ActivityThread.main(ActivityThread.java:9287)
+	at java.lang.reflect.Method.invoke(Native Method)
+	at com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run(RuntimeInit.java:566)
+	at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:929)
+...........
+com.forgeshape.app.EditorWorkspaceGizmoTest:..............................................
+com.forgeshape.app.EditorWorkspaceLayoutTest:..........
+com.forgeshape.app.ProjectAutosaveRecoveryTest:..............
+com.forgeshape.app.ProjectProcessDeathTest:........
+
+Time: 296.667
+There were 2 failures:
+1) e2er1b07_theProjectStaysEditableAfterTheDeviceComesBack(com.forgeshape.app.DiagnosticsAndRendererLossTest)
+java.lang.AssertionError: expected:<0> but was:<2>
 	at org.junit.Assert.fail(Assert.java:89)
 	at org.junit.Assert.failNotEquals(Assert.java:835)
-	at org.junit.Assert.assertEquals(Assert.java:555)
-	at com.forgeshape.app.SketchExtrudeTest.e2eCadr0_12_aDraggedCircleExtrudes(SketchExtrudeTest.java:394)
-3) e2eCadr0_09and10_theRectangleAndTheDepthAreEditableLaterAsOneStepEach(com.forgeshape.app.SketchExtrudeTest)
-org.junit.ComparisonFailure: expected:<[1]> but was:<[0.8]>
-	at org.junit.Assert.assertEquals(Assert.java:117)
-	at org.junit.Assert.assertEquals(Assert.java:146)
-	at com.forgeshape.app.SketchExtrudeTest.lambda$e2eCadr0_09and10_theRectangleAndTheDepthAreEditableLaterAsOneStepEach$7(SketchExtrudeTest.java:284)
-	at com.forgeshape.app.SketchExtrudeTest$$ExternalSyntheticLambda21.run(D8$$SyntheticClass:0)
+	at org.junit.Assert.assertEquals(Assert.java:647)
+	at org.junit.Assert.assertEquals(Assert.java:633)
+	at com.forgeshape.app.DiagnosticsAndRendererLossTest.lambda$e2er1b07_theProjectStaysEditableAfterTheDeviceComesBack$7(DiagnosticsAndRendererLossTest.java:254)
+	at com.forgeshape.app.DiagnosticsAndRendererLossTest$$ExternalSyntheticLambda13.run(D8$$SyntheticClass:0)
+	at com.forgeshape.app.WorkspaceTestSupport$1.perform(WorkspaceTestSupport.java:59)
+	at com.forgeshape.app.WorkspaceTestSupport$1.perform(WorkspaceTestSupport.java:54)
+	at androidx.test.core.app.ActivityScenario.lambda$onActivity$2$androidx-test-core-app-ActivityScenario(ActivityScenario.java:794)
+	at androidx.test.core.app.ActivityScenario$$ExternalSyntheticLambda2.run(D8$$SyntheticClass:0)
+	at java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:520)
+	at java.util.concurrent.FutureTask.run(FutureTask.java:317)
+	at android.app.Instrumentation$SyncRunnable.run(Instrumentation.java:2647)
+	at android.os.Handler.handleCallback(Handler.java:1070)
+	at android.os.Handler.dispatchMessage(Handler.java:125)
+	at android.os.Looper.dispatchMessage(Looper.java:333)
+	at android.os.Looper.loopOnce(Looper.java:263)
+	at android.os.Looper.loop(Looper.java:367)
+	at android.app.ActivityThread.main(ActivityThread.java:9287)
+	at java.lang.reflect.Method.invoke(Native Method)
+	at com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run(RuntimeInit.java:566)
+	at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:929)
+2) uir4c01_compactAndExpandedSculptDrawTheBackNavigationInFull(com.forgeshape.app.EditorWorkspaceChromeCompositionTest)
+java.lang.AssertionError: Back to Construction must be drawn in the window under test expected:<0> but was:<8>
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.failNotEquals(Assert.java:835)
+	at org.junit.Assert.assertEquals(Assert.java:647)
+	at com.forgeshape.app.EditorWorkspaceChromeCompositionTest.assertBackNavigationReads(EditorWorkspaceChromeCompositionTest.java:501)
+	at com.forgeshape.app.EditorWorkspaceChromeCompositionTest.lambda$uir4c01_compactAndExpandedSculptDrawTheBackNavigationInFull$0(EditorWorkspaceChromeCompositionTest.java:123)
+	at com.forgeshape.app.EditorWorkspaceChromeCompositionTest$$ExternalSyntheticLambda31.run(D8$$SyntheticClass:0)
 	at com.forgeshape.app.WorkspaceTestSupport$1.perform(WorkspaceTestSupport.java:59)
 	at com.forgeshape.app.WorkspaceTestSupport$1.perform(WorkspaceTestSupport.java:54)
 	at androidx.test.core.app.ActivityScenario.lambda$onActivity$2$androidx-test-core-app-ActivityScenario(ActivityScenario.java:794)
@@ -187,44 +214,43 @@ org.junit.ComparisonFailure: expected:<[1]> but was:<[0.8]>
 	at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:929)
 
 FAILURES!!!
-Tests run: 100,  Failures: 3
+Tests run: 100,  Failures: 2
 
 
 SHARD_RESULT | shard=1 | expected=100 | actual=0 | status=ASSERTION_FAILURE | reason=test assertion failure marker present
 FULL_SHARDED_SUMMARY_BEGIN
-discovered_classes=36
-discovered_tests=493
+discovered_classes=37
+discovered_tests=504
 shard_count=5
 shard_1_classes=7
 shard_1_tests=100
-shard_1_filter=com.forgeshape.app.EditorWorkspaceChromeCompositionTest,com.forgeshape.app.EditorWorkspaceGestureTest,com.forgeshape.app.EditorWorkspaceGizmoTest,com.forgeshape.app.EditorWorkspaceLifecycleTest,com.forgeshape.app.EditorWorkspaceMotionTest,com.forgeshape.app.ProjectAutosaveRecoveryTest,com.forgeshape.app.SketchExtrudeTest
+shard_1_filter=com.forgeshape.app.CadA3VisualEvidenceTest,com.forgeshape.app.DiagnosticsAndRendererLossTest,com.forgeshape.app.EditorWorkspaceChromeCompositionTest,com.forgeshape.app.EditorWorkspaceGizmoTest,com.forgeshape.app.EditorWorkspaceLayoutTest,com.forgeshape.app.ProjectAutosaveRecoveryTest,com.forgeshape.app.ProjectProcessDeathTest
 shard_1_status=ASSERTION_FAILURE
-shard_2_classes=6
-shard_2_tests=98
-shard_2_filter=com.forgeshape.app.EditorWorkspaceCorrectionTest,com.forgeshape.app.EditorWorkspacePointerTest,com.forgeshape.app.EditorWorkspaceUnifiedRightHostTest,com.forgeshape.app.ImportedMeshDurableTest,com.forgeshape.app.ProjectProcessDeathTest,com.forgeshape.app.SculptUndoTest
+shard_2_classes=7
+shard_2_tests=104
+shard_2_filter=com.forgeshape.app.EditorWorkspaceCorrectionTest,com.forgeshape.app.EditorWorkspaceFoundationTest,com.forgeshape.app.EditorWorkspaceGestureTest,com.forgeshape.app.EditorWorkspaceObjectsTest,com.forgeshape.app.EditorWorkspacePointerTest,com.forgeshape.app.EditorWorkspaceUnifiedRightHostTest,com.forgeshape.app.HomeFlowTest
 shard_2_status=NOT_RUN
-shard_3_classes=8
+shard_3_classes=7
 shard_3_tests=99
-shard_3_filter=com.forgeshape.app.EditorWorkspaceDisplayTest,com.forgeshape.app.EditorWorkspaceFoundationTest,com.forgeshape.app.EditorWorkspaceObjectsTest,com.forgeshape.app.EditorWorkspaceProjectActionsTest,com.forgeshape.app.EditorWorkspaceRightHostPlacementTest,com.forgeshape.app.EditorWorkspaceSculptRetentionTest,com.forgeshape.app.EditorWorkspaceThemeTest,com.forgeshape.app.GlbExportTest
+shard_3_filter=com.forgeshape.app.EditorWorkspaceDisplayTest,com.forgeshape.app.EditorWorkspaceMotionTest,com.forgeshape.app.EditorWorkspaceRightHostPlacementTest,com.forgeshape.app.EditorWorkspaceThemeTest,com.forgeshape.app.GlbExportTest,com.forgeshape.app.ImportedMeshSculptTest,com.forgeshape.app.SpatialSketchTest
 shard_3_status=NOT_RUN
 shard_4_classes=8
-shard_4_tests=99
-shard_4_filter=com.forgeshape.app.DiagnosticsAndRendererLossTest,com.forgeshape.app.EditorWorkspaceArchitectureTest,com.forgeshape.app.EditorWorkspaceCompositionTest,com.forgeshape.app.EditorWorkspaceControlsTest,com.forgeshape.app.EditorWorkspaceHistoryTest,com.forgeshape.app.EditorWorkspaceMobileTest,com.forgeshape.app.EditorWorkspaceStartFlowTest,com.forgeshape.app.SpatialSketchTest
+shard_4_tests=101
+shard_4_filter=com.forgeshape.app.EditorWorkspaceArchitectureTest,com.forgeshape.app.EditorWorkspaceControlsTest,com.forgeshape.app.EditorWorkspaceHistoryTest,com.forgeshape.app.EditorWorkspaceLifecycleTest,com.forgeshape.app.EditorWorkspaceMobileTest,com.forgeshape.app.EditorWorkspaceProjectActionsTest,com.forgeshape.app.ImportedMeshDurableTest,com.forgeshape.app.SketchExtrudeTest
 shard_4_status=NOT_RUN
-shard_5_classes=7
-shard_5_tests=97
-shard_5_filter=com.forgeshape.app.EditorWorkspaceLayoutTest,com.forgeshape.app.EditorWorkspaceLegibilityTest,com.forgeshape.app.GlbImportExternalR1Test,com.forgeshape.app.GlbImportPreviewTest,com.forgeshape.app.ImportedMeshSculptTest,com.forgeshape.app.ObjectsDeleteTest,com.forgeshape.app.ProjectTransferTest
+shard_5_classes=8
+shard_5_tests=100
+shard_5_filter=com.forgeshape.app.EditorWorkspaceCompositionTest,com.forgeshape.app.EditorWorkspaceLegibilityTest,com.forgeshape.app.EditorWorkspaceSculptRetentionTest,com.forgeshape.app.GlbImportExternalR1Test,com.forgeshape.app.GlbImportPreviewTest,com.forgeshape.app.ObjectsDeleteTest,com.forgeshape.app.ProjectTransferTest,com.forgeshape.app.SculptUndoTest
 shard_5_status=NOT_RUN
-assigned_union=493
+assigned_union=504
 executed_union=0
 missing=0
 duplicates=0
 unexpected=0
-execution_missing=493
+execution_missing=504
 failed_shards=5
 aborted_shards=0
 aggregate=FAIL
 FULL_SHARDED_SUITE_FAIL
 FULL_SHARDED_SUMMARY_END
 Uninstalling test APK from -s emulator-5580 ...
-exit=1

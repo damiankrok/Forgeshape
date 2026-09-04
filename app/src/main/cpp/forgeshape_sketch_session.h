@@ -273,6 +273,10 @@ public:
     // --- diagnostics -----------------------------------------------------
 
     CadStatus lastStatus() const { return lastStatus_; }
+    // The CAD bootstrap's first commit (`forgeshape_project_bootstrap.h`)
+    // reports through the same diagnostic the ordinary commit does, so the
+    // shell reads one `lastStatus` whichever commit it asked for.
+    void recordLastStatus(CadStatus why) { lastStatus_ = why; }
     SketchSnapKind lastSnapKind() const { return lastSnapKind_; }
     uint32_t entitiesPlaced() const { return entitiesPlaced_; }
     bool gestureActive() const { return pointerId_ >= 0; }

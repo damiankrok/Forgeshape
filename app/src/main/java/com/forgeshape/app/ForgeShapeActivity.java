@@ -470,6 +470,14 @@ public final class ForgeShapeActivity extends Activity {
     }
 
     /**
+     * The real picker host, so a case that swaps in a recording one — a system
+     * document picker cannot be driven from instrumentation — can put it back.
+     */
+    EditorWorkspaceView.ProjectTransferHost projectTransferHost() {
+        return transferHost;
+    }
+
+    /**
      * Stops native code only when this Activity is really going away.
      *
      * <p>{@code stop()} joins the render thread, which destroys the Vulkan

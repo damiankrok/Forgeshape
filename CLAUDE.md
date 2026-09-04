@@ -62,8 +62,8 @@ per frame. Each builds the domain objects it needs — the scene, history, gizmo
 and CAD suites build their own `ConstructionScene` and their own camera —
 rather than reading process-scoped state, so a suite's result never depends on
 what a live session left behind. The project suite also prints
-`FORGESHAPE_PROJECT_GOLDEN_SHA256`, `..._IMPORTED`, `..._IMPORTED_SCULPT` and
-`..._CAD` — the digests of all eleven canonical `.forge` fixtures as this build
+`FORGESHAPE_PROJECT_GOLDEN_SHA256`, `..._IMPORTED`, `..._IMPORTED_SCULPT`,
+`..._CAD` and `..._CAD_V2` — the digests of all seventeen canonical `.forge` fixtures as this build
 encodes them — so drift from the committed corpus is a value that can be read
 rather than only an assertion that failed. The CAD suite prints
 `FORGESHAPE_CAD_PERFORMANCE`, the bounded extraction, triangulation and
@@ -152,11 +152,45 @@ regeneration timings for its four sizes.
   whole dependency graph before applying anything. The sketch camera frames
   EXACTLY along the sketch frame's normal (`frameSketchView`, no pitch-clamp
   approximation, no gimbal), and the sketch grid is view-adaptive (nice
-  1/2/5·10^k, never persisted, a typed value never re-snapped). **NOT this
-  stage**: the APP-H1 Home / New-Project rework and the empty New-CAD bootstrap
-  (they conflict with the no-empty-project invariant), CAD → Sculpt, custom
-  construction planes, curved-face sketches, projected edges, a constraint
-  solver, and every boolean/fillet/chamfer.
+  1/2/5·10^k, never persisted, a typed value never re-snapped). **The lineage
+  token is a FORMAT field**: FNV-1a 64 (basis `0xCBF29CE484222325`, prime
+  `0x100000001B3`) over the profile anchor id, the face count and each face's
+  token code and eligibility, exactly as `DATA_PACKAGE_SPEC.md` §7c states,
+  and `scripts/build-forge-corpus.ps1` reimplements it from that text.
+  **Not this stage**: CAD → Sculpt, custom construction planes, curved-face
+  sketches, projected edges, a constraint solver, and every
+  boolean/fillet/chamfer.
+- **Home is not a project, and a project is never empty** (`APP-H1`,
+  `CAD-A3-C1`). The process starts with the scene EMPTY
+  (`ConstructionScene(NoProjectTag)`), and `hasProject()` — at least one body —
+  is the ONE answer to "is a project open": no Java flag mirrors it, and
+  `EditorWorkspaceView::refreshShellPhase` derives Home, the New Project
+  chooser, the unsaved-changes question or the editor from it on every
+  refresh. Behind Home nothing is drawn, picked, saved, checkpointed or
+  fingerprinted, and nothing fabricates a default primitive or an invisible
+  placeholder body. The four process-scoped accessors answer for "no project"
+  without reading `activeBody()` (null, an unbound store, an unbound identity
+  placement, an unbound sculpt target); the few JNI entry points that read it
+  directly ask `hasProject()` first and refuse by name; `activeBody()` on an
+  empty scene answers a counted null object rather than dereferencing an empty
+  list, and `HomeFlowTest` asserts the count never moves. **New Project offers
+  exactly CAD and Sculpt.** CAD is the transient bootstrap: the spatial
+  world-plane chooser and the one volatile sketch session over the empty scene,
+  owning no `ObjectId` and no `SceneObject`, and the first Extrude creates the
+  project through `commitFirstCadProject` — a one-body document replacing the
+  scene through the SAME all-or-nothing `loadProjectDocument` path Open takes,
+  so the new project starts with an EMPTY history like every loaded one, a
+  refusal creates nothing, and Back to Home before it costs nothing. Sculpt is
+  the seeded sphere inside the session-initialization bracket; a refusal
+  closes the project again. Leaving a dirty project (New Project…, Open Saved
+  Project, Open File…) asks Save / Discard / Cancel by FINGERPRINT against the
+  last Save/Open/Recover; Save continues only if the slot was written, Discard
+  retires the checkpoint, Cancel and System Back change nothing. `closeProject`
+  writes nothing. Back is one step in every phase and the platform's own at
+  Home. **New Sketch lands directly in the spatial chooser** (`UI-OWNER-46`);
+  the by-name plane list stays as `sketch_plane_by_name`, the accessibility
+  fallback, never removed. A stylus hover highlights a chooser target and
+  never commits; hardware hover is not claimed on the emulator.
 - **A body's SOURCE is never written by sculpting.** A body has a source
   representation — a Construction Source, an Imported Mesh, or a CAD Body —
   and may also own a Frozen Sculpt Mesh (not yet for a CAD Body). A sculpt edit may never change a primitive parameter, a
@@ -249,9 +283,14 @@ regeneration timings for its four sizes.
   always required, announced by header bit3, exclusive with `CONS` and `IMPT`
   per body, carrying the authored sketch and extrusion and never a vertex, and
   held to `validateCadBodyState` — a file whose sketch closes no profile is
-  refused rather than opened. The sixteen-fixture corpus adds `cad_rectangle`,
-  `cad_circle`, `mixed_cad` and `cad_bad_plane`; the twelve older fixtures are
-  byte-for-byte unchanged.
+  refused rather than opened. `CAD-R0-A1A2` added `cad_rectangle`,
+  `cad_circle`, `mixed_cad` and `cad_bad_plane`; `CAD-A3-C1` added the six
+  `CADB` v2 fixtures (`cad_face_sketch_cap`, `cad_face_sketch_side`,
+  `cad_face_chain`, `mixed_cad_face`, and the two the decoder must refuse,
+  `cad_bad_face_ref` and `cad_dependency_cycle`), a **twenty-two**-fixture
+  corpus in which every older fixture is byte-for-byte unchanged. The two
+  corrupt v2 fixtures are CONSTRUCTED by the PowerShell builder with the bad
+  value in place, never generated and then mutated.
   `DATA_PACKAGE_SPEC.md` owns the layout, and `scripts/build-forge-corpus.ps1`
   is a second implementation of it whose bytes must stay identical.
   **GLB/glTF, OBJ and FBX are not `.forge`.** A `.glb` is written by Export and
@@ -459,7 +498,8 @@ regeneration timings for its four sizes.
   deleted body is not RENDERED, PICKED, SAVED, checkpointed or EXPORTED, and no
   orphan `CONS`, `IMPT` or `SCUL` record may survive for one. Selection falls to
   the next body in scene order, or the previous when the deleted one was last;
-  deleting an inactive body moves nothing. **This product has no empty project**,
+  deleting an inactive body moves nothing. **A project is never empty** (an
+  empty scene is Home, reached only by leaving the project — see `APP-H1`),
   so deleting the last body is refused by name (`RefusedLastBody`) and NEVER
   answered by inventing a replacement primitive; Delete is refused while
   sculpting too, on the same terms body switching and Undo/Redo already are.

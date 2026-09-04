@@ -18,8 +18,11 @@ ObjectId or a `.forge` byte until the sketch it starts commits.
 
 ## Interaction (device)
 
-New Sketch offers "Pick plane or face in 3D" beside the by-name plane list (the
-list is the fallback, so the CAD-R0 flow is untouched). In the chooser a
+New Sketch lands DIRECTLY in the spatial chooser (`CAD-A3-C1`, `UI-OWNER-46`);
+the by-name plane list is reached from "Choose a plane by name"
+(`sketch_plane_by_name`) under the tile and stays as the accessibility fallback,
+so the CAD-R0 by-name flow is untouched. New Project -> CAD enters the same
+chooser with faces off, over a scene that holds no project. In the chooser a
 single-finger TAP selects and highlights a target; a second tap on the SAME
 target confirms and begins the sketch on it -- tap to aim, tap to commit. Two
 fingers navigate throughout; System Back cancels with no mutation. The native

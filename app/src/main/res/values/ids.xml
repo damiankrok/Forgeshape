@@ -14,15 +14,41 @@
     <item name="viewport_surface" type="id" />
 
     <!--
-      The start chooser. Shown once per process, over the live viewport, and
-      answered by exactly one of the two options below. Neither option is a
-      document, a template or a persisted project: they choose which
-      representation the user begins in, and both end in the ordinary product.
+      Home (APP-H1): what ForgeShape shows when NO project is open. Exactly two
+      primary actions, because a project comes to exist exactly two ways. Home
+      is not a project: nothing is drawn behind it, and whether it is on screen
+      is derived from native truth (projectOpen) rather than remembered.
     -->
-    <item name="start_chooser" type="id" />
-    <item name="start_chooser_panel" type="id" />
-    <item name="start_option_construction" type="id" />
-    <item name="start_option_sculpt" type="id" />
+    <item name="home_surface" type="id" />
+    <item name="home_panel" type="id" />
+    <item name="home_new_project" type="id" />
+    <item name="home_open_file" type="id" />
+    <!--
+      The New Project chooser: which representation a new project begins in.
+      CAD enters the transient CAD bootstrap (spatial plane chooser, one
+      sketch, and the first Extrude creates the project); Sculpt seeds a
+      sphere through the product's own Freeze. Reached from Home and from an
+      open project's Project surface; Cancel returns to wherever it was opened.
+    -->
+    <item name="new_project_chooser" type="id" />
+    <item name="new_project_chooser_panel" type="id" />
+    <item name="new_project_cad" type="id" />
+    <item name="new_project_sculpt" type="id" />
+    <item name="new_project_cancel" type="id" />
+    <!--
+      The unsaved-changes question, asked when New Project or Open File would
+      leave a project whose changes nobody saved. Save persists then continues,
+      Discard continues without writing, Cancel stays. Asked only when the
+      project is genuinely dirty by fingerprint.
+    -->
+    <item name="unsaved_prompt" type="id" />
+    <item name="unsaved_prompt_panel" type="id" />
+    <item name="unsaved_save" type="id" />
+    <item name="unsaved_discard" type="id" />
+    <item name="unsaved_cancel" type="id" />
+    <!-- The way out of the CAD bootstrap before its first commit: no project
+         exists yet, so leaving costs nothing. Full wording, never abbreviated. -->
+    <item name="back_to_home" type="id" />
 
     <!-- Global Toolbar -->
     <item name="global_toolbar" type="id" />
@@ -188,6 +214,12 @@
     <item name="sketch_plane_yz" type="id" />
     <item name="sketch_plane_back" type="id" />
     <item name="sketch_support_spatial" type="id" />
+    <!-- The by-name plane list is the accessibility fallback (UI-OWNER-46):
+         New Sketch itself lands directly in the spatial chooser, and this
+         secondary control is how the three named planes are still reached. -->
+    <item name="sketch_plane_by_name" type="id" />
+    <!-- Project actions (APP-H1): start a new project from an open one. -->
+    <item name="project_new" type="id" />
 
     <!--
       The presentation-only host for the complete trailing context cluster.

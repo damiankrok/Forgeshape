@@ -406,13 +406,16 @@ public final class EditorWorkspaceThemeTest {
         for (AppTheme theme : AppTheme.values()) {
             switchTo(theme);
             doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-                workspace.showStartChooserAsFirstLaunch();
+                workspace.showHomeAsFirstLaunchForTest();
                 return null;
             });
             settleLayout();
             doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-                assertEquals(theme + ": the chooser is on screen", View.VISIBLE,
-                        workspace.findViewById(R.id.start_chooser).getVisibility());
+                // Home is the surface a fresh process shows first since APP-H1;
+                // it is built on the same chooser scaffold the start question
+                // was, and this asks the same things of it.
+                assertEquals(theme + ": Home is on screen", View.VISIBLE,
+                        workspace.findViewById(R.id.home_surface).getVisibility());
                 final int card = EditorControlStyles.themeColor(
                         activity, R.attr.fsChooserCardSurface);
                 final int title = EditorControlStyles.themeColor(activity, R.attr.fsTextPrimary);
@@ -427,8 +430,8 @@ public final class EditorWorkspaceThemeTest {
                 // Product chrome rather than a dialog: the panel is separated by
                 // tone and depth, and draws no outline of its own.
                 assertTrue(theme + ": the chooser panel is raised",
-                        workspace.findViewById(R.id.start_chooser_panel).getElevation() > 0.0f);
-                workspace.dismissStartChooserForConstruction();
+                        workspace.findViewById(R.id.home_panel).getElevation() > 0.0f);
+                workspace.ensureConstructionProjectForTest();
                 return null;
             });
             settleLayout();
@@ -767,8 +770,11 @@ public final class EditorWorkspaceThemeTest {
 
     private void assertChooserStaysAnswered(final String why) {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            // Since APP-H1 the question a fresh process asks is Home, and it
+            // stands only while no project is open: the open project must
+            // survive the recreation, so Home must not come back.
             assertEquals(why, View.GONE,
-                    workspace.findViewById(R.id.start_chooser).getVisibility());
+                    workspace.findViewById(R.id.home_surface).getVisibility());
             return null;
         });
     }

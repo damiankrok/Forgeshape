@@ -134,10 +134,13 @@ powershell -ExecutionPolicy Bypass -File scripts\build-forge-corpus.ps1 -VerifyO
 That script is a second, independent implementation of the `.forge` v1 encoder,
 written from `DATA_PACKAGE_SPEC.md`. It needs no device and no Android tooling.
 Its digests must match the ones the native `FSR1A-12`, `IMP01A-19`,
-`IMP01B-11`/`IMP01B-12` and `CADR0-33`/`34`/`36` cases assert and the ones a
-debug launch prints as `FORGESHAPE_PROJECT_GOLDEN_SHA256`, `..._IMPORTED`,
-`..._IMPORTED_SCULPT` and `..._CAD`; a mismatch means the encoder and the
-specification have parted company. Seven of the sixteen fixtures are packaged
+`IMP01B-11`/`IMP01B-12`, `CADR0-33`/`34`/`36` and `CADA3-46..51` cases assert
+and the ones a debug launch prints as `FORGESHAPE_PROJECT_GOLDEN_SHA256`,
+`..._IMPORTED`, `..._IMPORTED_SCULPT`, `..._CAD` and `..._CAD_V2`; a mismatch
+means the encoder and the specification have parted company. The six `CADB` v2
+fixtures include the lineage token, which the script computes from the rule
+`DATA_PACKAGE_SPEC.md` §7c states rather than from the C++ — that parity is
+what found the mistyped FNV basis in `CAD-A3-C1`. Seven of the twenty-two fixtures are packaged
 into the test APK's assets as well, so
 `ImportedMeshDurableTest` can prove the independent encoder's bytes actually LOAD
 on a device rather than only hashing the same.
@@ -192,9 +195,22 @@ one (`IMPORT-01B`), and `ObjectsDeleteTest` covers removing one
 on the viewport, Finish Sketch, a typed depth, Extrude, Undo/Redo, later edits,
 save/reopen, the gizmo on a CAD Body, and the sculpt workflow beside it.
 `SpatialSketchTest` covers the CAD-A3 spatial support flow (`E2E-CADA3`): New
-Sketch → Pick plane or face in 3D, a tap-tap on a world plane and on a planar
-CAD face, a face-supported dependent body, the producer-delete refusal, and the
-dependency surviving a save/reopen.
+Sketch landing directly in the viewport-first support pick, the by-name plane
+fallback, every world plane by real taps, a synthesized stylus hover that
+highlights without committing, a tap-tap on a planar cap and on a side face, the
+cylindrical-side refusal, a face-supported dependent that follows a producer
+edit, the producer-delete refusal, the dependency surviving a save/reopen, and
+the adaptive grid moving with a real pinch while a typed value stays exact.
+`HomeFlowTest` covers `APP-H1` (`E2E-APPH1-01..12`): cold-launch Home with no
+project behind it, New Project → CAD through a spatial plane to the first
+durable body, New Project → Sculpt, Open File from Home (a saved dependency
+project, cancel, a corrupt file), the unsaved-changes guard's Cancel, Discard
+and Save paths, deterministic Back in every phase, and recreation — asserting on
+every journey that native never read an active body while no project was open.
+`CadA3VisualEvidenceTest` captures the ten-frame screenshot journey;
+`scripts\collect-cad-a3-evidence.ps1 -Serial <serial>` runs it, pulls the
+frames and builds `artifacts\cad-a3-app-h1\OWNER_CONTACT_SHEET.png` and
+`VISUAL_EVIDENCE.md`.
 
 For the widened external-GLB subset (`GLB-IMPORT-R1`) use:
 

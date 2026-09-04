@@ -101,10 +101,19 @@ public final class SketchExtrudeTest {
                     workspace.addPrimitivePalette().showingPlanes());
             final View newSketch = workspace.addPrimitivePalette().findViewById(R.id.add_sketch);
             assertNotNull("E2E-CADR0-01: the palette offers New Sketch", newSketch);
+            // Since CAD-A3 the tile lands directly in the spatial support
+            // chooser (UI-OWNER-46); the three named planes stay reachable
+            // from the secondary control beside it, which is the path this
+            // by-name case takes.
             newSketch.performClick();
-            assertTrue("E2E-CADR0-01: New Sketch asks which plane",
-                    workspace.addPrimitivePalette().showingPlanes());
+            assertTrue("E2E-CADR0-01: New Sketch is a viewport-first support pick",
+                    NativeViewport.supportChooserActive());
             assertEquals("no sketch has begun yet", NativeViewport.SKETCH_INACTIVE, sketchState());
+            NativeViewport.supportChooserCancel();
+            WorkspaceTestSupport.openAddPrimitive(workspace);
+            workspace.addPrimitivePalette().findViewById(R.id.sketch_plane_by_name).performClick();
+            assertTrue("E2E-CADR0-01: the by-name list asks which plane",
+                    workspace.addPrimitivePalette().showingPlanes());
             for (int id : new int[]{R.id.sketch_plane_xy, R.id.sketch_plane_xz,
                     R.id.sketch_plane_yz}) {
                 assertNotNull("all three principal planes are offered",
@@ -616,7 +625,8 @@ public final class SketchExtrudeTest {
     private void beginSketch(int plane) {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             WorkspaceTestSupport.openAddPrimitive(workspace);
-            workspace.addPrimitivePalette().findViewById(R.id.add_sketch).performClick();
+            // The by-name fallback: the tile itself enters the spatial chooser.
+            workspace.addPrimitivePalette().findViewById(R.id.sketch_plane_by_name).performClick();
             final int id = plane == NativeViewport.WORKPLANE_XZ ? R.id.sketch_plane_xz
                     : plane == NativeViewport.WORKPLANE_YZ ? R.id.sketch_plane_yz
                             : R.id.sketch_plane_xy;

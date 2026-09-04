@@ -308,6 +308,267 @@ function New-PrimitiveSourceFeature {
     return @([pscustomobject]@{ LocalFeatureId = 1; KindCode = 1 })
 }
 
+# ---------------------------------------------------------------------------
+# CADB v2 (CAD-A3): a sketch supported by another body's planar face
+# ---------------------------------------------------------------------------
+#
+# The v2 record is the v1 record with a support block after the workplane
+# code: a supportKind byte (0 world plane, 1 face) and, for a face, the
+# producer's ObjectId, its feature id, the face token (kind 1 CapPlane, 2
+# CapFar, 3 Side; the profile-edge entity id and local index, both 0 for a
+# cap) and the u64 lineage token. Written ONLY when at least one body is
+# face-supported; a world-only project stays v1, byte for byte.
+function New-CadPayloadV2 {
+    param($Bodies)
+    $p = New-ByteBuffer
+    Add-U32 $p ([uint32] $Bodies.Count)
+    foreach ($body in $Bodies) {
+        Add-U64 $p ([uint64] $body.ObjectId)
+        Add-U8  $p $body.PlaneCode
+        if ($null -ne $body.Support) {
+            Add-U8  $p 1
+            Add-U64 $p ([uint64] $body.Support.ProducerObjectId)
+            Add-U32 $p ([uint32] $body.Support.FeatureId)
+            Add-U8  $p $body.Support.FaceKindCode
+            Add-U32 $p ([uint32] $body.Support.EdgeEntityId)
+            Add-U32 $p ([uint32] $body.Support.EdgeLocalIndex)
+            Add-U64 $p ([uint64] $body.Support.LineageToken)
+        } else {
+            Add-U8  $p 0
+        }
+        Add-U32 $p ([uint32] $body.NextEntityId)
+        Add-U32 $p ([uint32] $body.ProfileEntityId)
+        Add-U8  $p $body.DirectionCode
+        Add-F64 $p $body.Depth
+        $entities = @($body.Entities)
+        Add-U32 $p ([uint32] $entities.Count)
+        foreach ($entity in $entities) {
+            Add-U32 $p ([uint32] $entity.Id)
+            Add-U8  $p $entity.KindCode
+            switch ($entity.KindCode) {
+                1 { foreach ($value in $entity.Values) { Add-F64 $p $value } }
+                2 {
+                    Add-U8  $p $(if ($entity.Closed) { 1 } else { 0 })
+                    Add-U32 $p ([uint32] ($entity.Values.Count / 2))
+                    foreach ($value in $entity.Values) { Add-F64 $p $value }
+                }
+                3 { foreach ($value in $entity.Values) { Add-F64 $p $value } }
+                4 { foreach ($value in $entity.Values) { Add-F64 $p $value } }
+            }
+        }
+    }
+    return $p.ToArray()
+}
+
+# The lineage token: FNV-1a over 64 bits, as DATA_PACKAGE_SPEC.md 7c states it.
+#
+# Every mixed value is a u64 fed least-significant byte first (eight steps of
+# XOR the byte, multiply by the prime). The values, in order: the extruded
+# profile's anchor entity id; the face count; then for every face in
+# enumeration order its token code (kind << 56 | edgeEntityId << 16 |
+# edgeLocalIndex & 0xFFFF, with kind 0 CapPlane, 1 CapFar, 2 Side) and its
+# eligibility (1, or 0 for a circle's cylindrical side). Enumeration order is
+# CapPlane, CapFar, then one Side per profile edge in profile order. A zero
+# result is reported as 1.
+#
+# Arithmetic is done in BigInteger, through its explicit operator methods, and
+# masked to 64 bits at every step: Windows PowerShell has no unsigned 64-bit
+# multiply, its infix bitwise operators are not defined for BigInteger, and a
+# silent conversion here would still produce a plausible-looking token.
+$script:Fnv64Mask = [System.Numerics.BigInteger]::Pow(2, 64) - 1
+function Add-Fnv64 {
+    param([System.Numerics.BigInteger] $Hash, [System.Numerics.BigInteger] $Value)
+    $prime = [System.Numerics.BigInteger]::Parse('1099511628211')
+    for ($i = 0; $i -lt 8; $i++) {
+        $byte = [System.Numerics.BigInteger]::op_BitwiseAnd(
+            [System.Numerics.BigInteger]::op_RightShift($Value, 8 * $i),
+            [System.Numerics.BigInteger] 255)
+        $Hash = [System.Numerics.BigInteger]::op_ExclusiveOr($Hash, $byte)
+        $Hash = [System.Numerics.BigInteger]::op_BitwiseAnd(
+            [System.Numerics.BigInteger]::Multiply($Hash, $prime), $script:Fnv64Mask)
+    }
+    return $Hash
+}
+
+function Get-CadFaceTokenCode {
+    param([int] $KindCode, [uint32] $EdgeEntityId, [uint32] $EdgeLocalIndex)
+    # KindCode here is the DOMAIN enumeration (0 CapPlane, 1 CapFar, 2 Side),
+    # not the file code (1, 2, 3): the token code is what the domain hashes.
+    $code = [System.Numerics.BigInteger]::op_LeftShift([System.Numerics.BigInteger] $KindCode, 56)
+    $code = [System.Numerics.BigInteger]::op_BitwiseOr($code,
+        [System.Numerics.BigInteger]::op_LeftShift([System.Numerics.BigInteger] $EdgeEntityId, 16))
+    $code = [System.Numerics.BigInteger]::op_BitwiseOr($code,
+        [System.Numerics.BigInteger] ($EdgeLocalIndex -band 0xFFFF))
+    return $code
+}
+
+# The topology signature of a body whose extruded profile is ONE entity with
+# EdgeCount planar edges (4 for a rectangle, 32 for a circle) -- the only
+# shapes the v2 corpus uses as producers. $Curved is true for a circle, whose
+# 32 sides are reported and never eligible.
+function Get-CadTopologySignature {
+    param([uint32] $ProfileEntityId, [int] $EdgeCount, [bool] $Curved)
+    $hash = [System.Numerics.BigInteger]::Parse('14695981039346656037')
+    $hash = Add-Fnv64 $hash ([System.Numerics.BigInteger] $ProfileEntityId)
+    $hash = Add-Fnv64 $hash ([System.Numerics.BigInteger] (2 + $EdgeCount))
+    $hash = Add-Fnv64 $hash (Get-CadFaceTokenCode 0 0 0)
+    $hash = Add-Fnv64 $hash ([System.Numerics.BigInteger] 1)
+    $hash = Add-Fnv64 $hash (Get-CadFaceTokenCode 1 0 0)
+    $hash = Add-Fnv64 $hash ([System.Numerics.BigInteger] 1)
+    for ($k = 0; $k -lt $EdgeCount; $k++) {
+        $hash = Add-Fnv64 $hash (Get-CadFaceTokenCode 2 $ProfileEntityId ([uint32] $k))
+        $hash = Add-Fnv64 $hash ([System.Numerics.BigInteger] $(if ($Curved) { 0 } else { 1 }))
+    }
+    if ($hash.IsZero) { $hash = [System.Numerics.BigInteger]::One }
+    return [uint64]::Parse($hash.ToString())
+}
+
+function New-RectangleBody {
+    param([int] $ObjectId, [int] $PlaneCode, [double] $CentreU, [double] $CentreV,
+          [double] $Width, [double] $Height, [double] $Depth, [int] $DirectionCode)
+    return [pscustomobject]@{
+        ObjectId = $ObjectId; PlaneCode = $PlaneCode; Support = $null
+        NextEntityId = 2; ProfileEntityId = 1; DirectionCode = $DirectionCode; Depth = $Depth
+        Entities = @([pscustomobject]@{ Id = 1; KindCode = 3
+                                        Values = @($CentreU, $CentreV, $Width, $Height) })
+    }
+}
+
+# A support on a rectangle producer's face. The producer's lineage is the
+# signature of a one-rectangle profile: two caps and four eligible sides.
+function New-RectangleFaceSupport {
+    param([int] $ProducerObjectId, [int] $FaceKindCode, [uint32] $EdgeEntityId,
+          [uint32] $EdgeLocalIndex)
+    return [pscustomobject]@{
+        ProducerObjectId = $ProducerObjectId; FeatureId = 1; FaceKindCode = $FaceKindCode
+        EdgeEntityId = $EdgeEntityId; EdgeLocalIndex = $EdgeLocalIndex
+        LineageToken = (Get-CadTopologySignature 1 4 $false)
+    }
+}
+
+$script:IdentityPlacement = @(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0)
+
+# CAD FACE SKETCH CAP: a producer rectangle on XY, translated, and a dependent
+# rectangle supported by its far cap. A face-supported body's own SCNE
+# placement is the unused identity.
+function New-CadFaceSketchCapFile {
+    $sceneBodies = @(
+        [pscustomobject]@{ ObjectId = 1; Transform = @(1.5, 0.5, -2.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0) },
+        [pscustomobject]@{ ObjectId = 2; Transform = $script:IdentityPlacement }
+    )
+    $producer = New-RectangleBody 1 1 0.0 0.0 2.0 2.0 2.0 1
+    $dependent = New-RectangleBody 2 1 0.25 -0.25 1.0 1.0 0.5 1
+    $dependent.Support = New-RectangleFaceSupport 1 2 0 0
+    $scne = New-Section 'SCNE' 1 $true (New-ScenePayload $sceneBodies 3 2)
+    $cadb = New-Section 'CADB' 2 $true (New-CadPayloadV2 @($producer, $dependent))
+    return New-ForgeFile 1 @($scne, $cadb) 8
+}
+
+# CAD FACE SKETCH SIDE: the same producer at the origin, and a dependent on the
+# producer's second profile edge (edge entity 1, local index 1), extruded
+# AGAINST the face normal.
+function New-CadFaceSketchSideFile {
+    $sceneBodies = @(
+        [pscustomobject]@{ ObjectId = 1; Transform = $script:IdentityPlacement },
+        [pscustomobject]@{ ObjectId = 2; Transform = $script:IdentityPlacement }
+    )
+    $producer = New-RectangleBody 1 1 0.0 0.0 2.0 2.0 2.0 1
+    $dependent = New-RectangleBody 2 1 0.0 0.0 0.5 0.5 0.25 2
+    $dependent.Support = New-RectangleFaceSupport 1 3 1 1
+    $scne = New-Section 'SCNE' 1 $true (New-ScenePayload $sceneBodies 3 2)
+    $cadb = New-Section 'CADB' 2 $true (New-CadPayloadV2 @($producer, $dependent))
+    return New-ForgeFile 1 @($scne, $cadb) 8
+}
+
+# CAD FACE CHAIN: A (world XZ, turned 45 degrees) <- B on A's far cap <- C, a
+# circle on B's far cap. B's lineage is A's rectangle signature; C's is B's.
+function New-CadFaceChainFile {
+    $sceneBodies = @(
+        [pscustomobject]@{ ObjectId = 1; Transform = @(0.0, 0.0, 0.0, 0.0, 45.0, 0.0, 1.0, 1.0, 1.0) },
+        [pscustomobject]@{ ObjectId = 2; Transform = $script:IdentityPlacement },
+        [pscustomobject]@{ ObjectId = 3; Transform = $script:IdentityPlacement }
+    )
+    $a = New-RectangleBody 1 2 0.0 0.0 3.0 3.0 1.0 1
+    $b = New-RectangleBody 2 1 0.0 0.0 1.5 1.5 0.5 1
+    $b.Support = New-RectangleFaceSupport 1 2 0 0
+    $c = [pscustomobject]@{
+        ObjectId = 3; PlaneCode = 1
+        Support = New-RectangleFaceSupport 2 2 0 0
+        NextEntityId = 2; ProfileEntityId = 1; DirectionCode = 1; Depth = 0.25
+        Entities = @([pscustomobject]@{ Id = 1; KindCode = 4; Values = @(0.0, 0.0, 0.5) })
+    }
+    $scne = New-Section 'SCNE' 1 $true (New-ScenePayload $sceneBodies 4 3)
+    $cadb = New-Section 'CADB' 2 $true (New-CadPayloadV2 @($a, $b, $c))
+    return New-ForgeFile 1 @($scne, $cadb) 8
+}
+
+# CAD BAD FACE REF: the side fixture with the dependent naming side 7 of a
+# rectangle that has sides 0..3. Built from scratch with the bad value: every
+# length and checksum is right, the producer exists and the lineage matches,
+# and only the face resolution can refuse it.
+function New-CadBadFaceRefFile {
+    $sceneBodies = @(
+        [pscustomobject]@{ ObjectId = 1; Transform = $script:IdentityPlacement },
+        [pscustomobject]@{ ObjectId = 2; Transform = $script:IdentityPlacement }
+    )
+    $producer = New-RectangleBody 1 1 0.0 0.0 2.0 2.0 2.0 1
+    $dependent = New-RectangleBody 2 1 0.0 0.0 0.5 0.5 0.25 2
+    $dependent.Support = New-RectangleFaceSupport 1 3 1 7
+    $scne = New-Section 'SCNE' 1 $true (New-ScenePayload $sceneBodies 3 2)
+    $cadb = New-Section 'CADB' 2 $true (New-CadPayloadV2 @($producer, $dependent))
+    return New-ForgeFile 1 @($scne, $cadb) 8
+}
+
+# CAD DEPENDENCY CYCLE: the chain with B on C's far cap and C on B's, while A
+# stays a world body. B's lineage is C's circle signature (two caps and 32
+# ineligible sides), so ONLY the cycle can refuse it.
+function New-CadDependencyCycleFile {
+    $sceneBodies = @(
+        [pscustomobject]@{ ObjectId = 1; Transform = @(0.0, 0.0, 0.0, 0.0, 45.0, 0.0, 1.0, 1.0, 1.0) },
+        [pscustomobject]@{ ObjectId = 2; Transform = $script:IdentityPlacement },
+        [pscustomobject]@{ ObjectId = 3; Transform = $script:IdentityPlacement }
+    )
+    $a = New-RectangleBody 1 2 0.0 0.0 3.0 3.0 1.0 1
+    $b = New-RectangleBody 2 1 0.0 0.0 1.5 1.5 0.5 1
+    $b.Support = [pscustomobject]@{
+        ProducerObjectId = 3; FeatureId = 1; FaceKindCode = 2; EdgeEntityId = 0; EdgeLocalIndex = 0
+        LineageToken = (Get-CadTopologySignature 1 32 $true)
+    }
+    $c = [pscustomobject]@{
+        ObjectId = 3; PlaneCode = 1
+        Support = New-RectangleFaceSupport 2 2 0 0
+        NextEntityId = 2; ProfileEntityId = 1; DirectionCode = 1; Depth = 0.25
+        Entities = @([pscustomobject]@{ Id = 1; KindCode = 4; Values = @(0.0, 0.0, 0.5) })
+    }
+    $scne = New-Section 'SCNE' 1 $true (New-ScenePayload $sceneBodies 4 3)
+    $cadb = New-Section 'CADB' 2 $true (New-CadPayloadV2 @($a, $b, $c))
+    return New-ForgeFile 1 @($scne, $cadb) 8
+}
+
+# MIXED CAD FACE: a Construction Box, an Imported Mesh, a CAD producer and a
+# dependent on its far cap -- SCNE, CONS, IMPT and a v2 CADB side by side.
+function New-MixedCadFaceFile {
+    $sceneBodies = @(
+        [pscustomobject]@{ ObjectId = 1; Transform = $script:IdentityPlacement },
+        [pscustomobject]@{ ObjectId = 2; Transform = (New-CanonicalImportedPlacement) },
+        [pscustomobject]@{ ObjectId = 3; Transform = @(-2.5, 1.25, 0.5, 0.0, 0.0, 90.0, 1.0, 1.0, 1.0) },
+        [pscustomobject]@{ ObjectId = 4; Transform = $script:IdentityPlacement }
+    )
+    $sourceBodies = @(
+        [pscustomobject]@{ ObjectId = 1; PrimitiveCode = 1
+                           Parameters = $script:CanonicalSharedParameters
+                           Features = New-PrimitiveSourceFeature }
+    )
+    $producer = New-RectangleBody 3 1 0.0 0.0 2.0 2.0 1.0 1
+    $dependent = New-RectangleBody 4 1 0.0 0.0 1.0 0.5 0.5 1
+    $dependent.Support = New-RectangleFaceSupport 3 2 0 0
+    $scne = New-Section 'SCNE' 1 $true (New-ScenePayload $sceneBodies 5 4)
+    $cons = New-Section 'CONS' 1 $true (New-ConstructionPayload $sourceBodies)
+    $impt = New-Section 'IMPT' 1 $true (New-ImportedPayload @(New-CanonicalImportedEntry 2))
+    $cadb = New-Section 'CADB' 2 $true (New-CadPayloadV2 @($producer, $dependent))
+    return New-ForgeFile 1 @($scne, $cons, $impt, $cadb) 13
+}
+
 # The one Imported Mesh every imported fixture carries.
 #
 # Four vertices, two submeshes with DIFFERENT doubleSided answers, and every
@@ -776,6 +1037,12 @@ $fixtures = [ordered]@{
     'cad_circle_v1.forge'             = (New-CadCircleFile)
     'mixed_cad_v1.forge'              = (New-MixedCadFile)
     'cad_bad_plane_v1.forge'          = (New-CadBadPlaneFixture $cadRectangle)
+    'cad_face_sketch_cap_v2.forge'    = (New-CadFaceSketchCapFile)
+    'cad_face_sketch_side_v2.forge'   = (New-CadFaceSketchSideFile)
+    'cad_face_chain_v2.forge'         = (New-CadFaceChainFile)
+    'mixed_cad_face_v2.forge'         = (New-MixedCadFaceFile)
+    'cad_bad_face_ref_v2.forge'       = (New-CadBadFaceRefFile)
+    'cad_dependency_cycle_v2.forge'   = (New-CadDependencyCycleFile)
 }
 
 $rows = New-Object System.Collections.Generic.List[object]
@@ -809,3 +1076,10 @@ Write-Host ("  cad_rectangle:         {0}" -f ($rows | Where-Object Fixture -eq 
 Write-Host ("  cad_circle:            {0}" -f ($rows | Where-Object Fixture -eq 'cad_circle_v1.forge').Sha256)
 Write-Host ("  mixed_cad:             {0}" -f ($rows | Where-Object Fixture -eq 'mixed_cad_v1.forge').Sha256)
 Write-Host ("  cad_bad_plane:         {0}" -f ($rows | Where-Object Fixture -eq 'cad_bad_plane_v1.forge').Sha256)
+Write-Host 'Digests the C++ self-test (CADA3-46..51) must assert:'
+Write-Host ("  cad_face_sketch_cap:   {0}" -f ($rows | Where-Object Fixture -eq 'cad_face_sketch_cap_v2.forge').Sha256)
+Write-Host ("  cad_face_sketch_side:  {0}" -f ($rows | Where-Object Fixture -eq 'cad_face_sketch_side_v2.forge').Sha256)
+Write-Host ("  cad_face_chain:        {0}" -f ($rows | Where-Object Fixture -eq 'cad_face_chain_v2.forge').Sha256)
+Write-Host ("  mixed_cad_face:        {0}" -f ($rows | Where-Object Fixture -eq 'mixed_cad_face_v2.forge').Sha256)
+Write-Host ("  cad_bad_face_ref:      {0}" -f ($rows | Where-Object Fixture -eq 'cad_bad_face_ref_v2.forge').Sha256)
+Write-Host ("  cad_dependency_cycle:  {0}" -f ($rows | Where-Object Fixture -eq 'cad_dependency_cycle_v2.forge').Sha256)

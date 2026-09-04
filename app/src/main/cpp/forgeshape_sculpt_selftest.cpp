@@ -464,24 +464,29 @@ void runSidednessSelfTests(Recorder& r) {
     // asserted straight after, so neither a hard-coded true nor a hard-coded
     // false can pass both.
     {
-        // Save and restore the process-global state this exercises, so the test
-        // is input-independent and leaves nothing behind for later suites.
-        const TransformValues savedTransform = constructionTransform().values();
-        // The active body here is the default Construction Body: this suite builds
-        // no imported object, so the source is present by construction.
-        ConstructionObject& activeSource = *activeConstructionOrNull();
-        const PrimitiveSpec savedPrimitive = activeSource.spec();
+        // Its OWN scene, so the case depends on nothing a live session left
+        // behind -- and since `APP-H1` the process scene holds no project at
+        // startup, so there is no process-global Source to borrow. Picked
+        // through `pickSceneSnapshot`, the path the implicit `pickScene`
+        // forwards the live scene to, so the claim under test is unchanged:
+        // sidedness is read from each item's published mesh, never from the
+        // body's Construction kind. The scene's first body is a Construction
+        // Body by construction, so the Source is present.
+        ConstructionScene scene;
+        SceneObject& sceneBody = scene.activeBody();
+        ConstructionObject& activeSource = *sceneBody.constructionOrNull();
+        MeshStore& bodyStore = sceneBody.meshStore();
         TransformValues atOrigin{};
-        constructionTransform().setValues(atOrigin);
+        sceneBody.transform().setValues(atOrigin);
 
         Ray backRay{};
         buildPickRay(back, kCentreX, kCentreY, kViewportWidth, kViewportHeight, &backRay);
 
         // Case A: active = frozen SOLID, Construction Source = PLANE.
         activeSource.setPrimitive(PrimitiveSpec::forPlane(2.0, 1.25));
-        publishSculptMesh(frozenSolid, meshStore(), &why);
-        const SceneHit staleSolidFromBehind =
-            pickScene(front, kCentreX, kCentreY, kViewportWidth, kViewportHeight);
+        publishSculptMesh(frozenSolid, bodyStore, &why);
+        const SceneHit staleSolidFromBehind = pickSceneSnapshot(
+            front, kCentreX, kCentreY, kViewportWidth, kViewportHeight, scene.snapshot());
         // Seen from the front the solid is hit normally; the point of the case
         // is that it is hit on its NEAR surface, not its far wall.
         r.check("side07_stale_frozen_solid_is_still_hit_from_outside", staleSolidFromBehind.hit);
@@ -489,8 +494,8 @@ void runSidednessSelfTests(Recorder& r) {
         // from the Plane Source this would wrongly hit.
         const CameraSnapshot inside =
             cameraAt(Vec3{0.0f, 0.2f, 0.0f}, ProjectionMode::Perspective);
-        const SceneHit fromInside =
-            pickScene(inside, kCentreX, kCentreY, kViewportWidth, kViewportHeight);
+        const SceneHit fromInside = pickSceneSnapshot(
+            inside, kCentreX, kCentreY, kViewportWidth, kViewportHeight, scene.snapshot());
         r.check("side07_stale_frozen_solid_does_not_inherit_plane_two_sidedness",
                 !fromInside.hit);
 
@@ -498,17 +503,14 @@ void runSidednessSelfTests(Recorder& r) {
         // mirror image, so the rule cannot be satisfied by ignoring sidedness.
         activeSource.setPrimitive(
             PrimitiveSpec::forSphere(kDefaultSphereDiameterMeters));
-        publishSculptMesh(frozenPlane, meshStore(), &why);
-        const SceneHit planeFromBack =
-            pickScene(back, kCentreX, kCentreY, kViewportWidth, kViewportHeight);
+        publishSculptMesh(frozenPlane, bodyStore, &why);
+        const SceneHit planeFromBack = pickSceneSnapshot(
+            back, kCentreX, kCentreY, kViewportWidth, kViewportHeight, scene.snapshot());
         r.check("side08_frozen_plane_still_picks_from_behind_under_a_solid_source",
                 planeFromBack.hit);
-        const SceneHit planeFromFront =
-            pickScene(front, kCentreX, kCentreY, kViewportWidth, kViewportHeight);
+        const SceneHit planeFromFront = pickSceneSnapshot(
+            front, kCentreX, kCentreY, kViewportWidth, kViewportHeight, scene.snapshot());
         r.check("side08_frozen_plane_still_picks_from_the_front", planeFromFront.hit);
-
-        activeSource.setPrimitive(savedPrimitive);
-        constructionTransform().setValues(savedTransform);
     }
 
     // --- SIDE-09: display settings are presentation and cannot move the fact --

@@ -320,19 +320,24 @@ public final class EditorWorkspaceChromeCompositionTest {
      * because the status capsule is a surface, an instruction that is always
      * true is a permanent claim on the workspace.
      *
-     * <p>Asserted from the real entry point, the start question's own
-     * Construction option, rather than from the reset helper — the defect was in
-     * what that entry point wrote.
+     * <p>Asserted from a real entry into a Construction workspace — a New
+     * Project that becomes one through the first Extrude and then a primitive
+     * added beside it would carry the same sentence — rather than from a
+     * helper that writes nothing; the defect was in what the entry point wrote.
+     * Since APP-H1 the product's Construction entry is a project's own
+     * workspace after Home, which the seeded first body reaches through the
+     * same session-initialization bracket the Sculpt bootstrap uses.
      */
     @Test
     public void uir4c09_restingConstructionCarriesNoInstructionalPill() {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            workspace.showStartChooserAsFirstLaunch();
+            workspace.showHomeAsFirstLaunchForTest();
             return null;
         });
         settleLayout();
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            workspace.findViewById(R.id.start_option_construction).performClick();
+            workspace.ensureConstructionProjectForTest();
+            workspace.syncFromNative();
             return null;
         });
         settleLayout();

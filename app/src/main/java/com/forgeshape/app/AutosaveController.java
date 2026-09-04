@@ -79,6 +79,7 @@ final class AutosaveController {
     private int requestCount;
     private int writeCount;
     private int skippedUnchangedCount;
+    private int skippedNoProjectCount;
     private int failedWriteCount;
 
     private boolean released;
@@ -144,6 +145,15 @@ final class AutosaveController {
     private void performCheckpoint() {
         final long fingerprint;
         try {
+            if (!NativeViewport.projectOpen()) {
+                // Home is not a project (APP-H1): there is nothing to protect
+                // and no document to write. Not a failure -- and not a write
+                // of an empty fake scene, which the codec would refuse anyway.
+                synchronized (this) {
+                    skippedNoProjectCount++;
+                }
+                return;
+            }
             fingerprint = NativeViewport.projectFingerprint();
         } catch (Throwable error) {
             // Native not ready, or gone. A checkpoint that cannot be taken is
@@ -201,6 +211,9 @@ final class AutosaveController {
             @Override
             public void run() {
                 try {
+                    if (!NativeViewport.projectOpen()) {
+                        return;  // nothing to agree about
+                    }
                     checkpointedFingerprint = NativeViewport.projectFingerprint();
                     everCheckpointed = true;
                 } catch (Throwable ignored) {
@@ -280,6 +293,11 @@ final class AutosaveController {
     /** How many scheduled checkpoints found nothing to do. */
     synchronized int skippedUnchangedCount() {
         return skippedUnchangedCount;
+    }
+
+    /** How many scheduled checkpoints found no project open to protect. */
+    synchronized int skippedNoProjectCount() {
+        return skippedNoProjectCount;
     }
 
     synchronized int failedWriteCount() {

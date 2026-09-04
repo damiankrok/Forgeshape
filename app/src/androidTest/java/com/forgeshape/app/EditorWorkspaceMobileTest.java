@@ -262,10 +262,18 @@ public final class EditorWorkspaceMobileTest {
             final View newSketch = workspace.findViewById(R.id.add_sketch);
             assertNotNull("and New Sketch is offered", newSketch);
             assertTrue(newSketch.isEnabled() && newSketch.isClickable());
-            assertFalse("the plane chooser is not on screen until New Sketch is tapped",
+            assertFalse("the plane list is not on screen until asked for by name",
                     workspace.addPrimitivePalette().showingPlanes());
-            assertEquals("and the palette holds exactly those seven and no placeholder",
-                    PALETTE_IDS.length + 1, countTiles(workspace.addPrimitivePalette()));
+            // Since CAD-A3-C1 New Sketch lands directly in the spatial chooser,
+            // and the one other control the palette draws at rest is the
+            // accessibility fallback to the named planes -- a secondary chip,
+            // not a creation action, and not a placeholder.
+            final View byName = workspace.findViewById(R.id.sketch_plane_by_name);
+            assertNotNull("the by-name plane fallback is offered", byName);
+            assertTrue(byName.isEnabled() && byName.isClickable());
+            assertEquals("and the palette holds exactly those seven, the fallback, and no"
+                            + " placeholder",
+                    PALETTE_IDS.length + 2, countTiles(workspace.addPrimitivePalette()));
             return null;
         });
     }

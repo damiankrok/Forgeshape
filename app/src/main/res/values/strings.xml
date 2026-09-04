@@ -20,19 +20,51 @@
     <string name="app_name">ForgeShape</string>
 
     <!--
-      Start chooser. Two ways to begin and nothing else: no template gallery,
-      no recent list, no marketing. The subtitle says the choice is not a
-      commitment, because it genuinely is not — both representations stay
-      reachable from the Global Toolbar for the life of the body.
+      Home (APP-H1). Two ways to have a project and nothing else: no template
+      gallery, no recent list, no marketing. Home is not a project and the
+      viewport behind it is honestly empty.
+    -->
+    <string name="home_title">Start</string>
+    <string name="home_prompt">Open a saved project file, or start a new one. Nothing is created until you choose.</string>
+    <string name="home_new_project_description">Begin a CAD model from a sketch on a plane, or a sculpt on a prepared sphere.</string>
+    <string name="home_open_file_description">Open a ForgeShape project (.forge) from your files. Nothing changes until it opens.</string>
+    <string name="status_home_open_cancelled">Nothing opened. Choose a file, or start a new project.</string>
+    <!--
+      New Project chooser. Two ways to begin and nothing else. The subtitle
+      says the choice is not a commitment, because it genuinely is not — shapes,
+      sketches and sculpting all stay reachable for the life of the project.
     -->
     <string name="new_project">New Project</string>
-    <string name="start_prompt">Choose how this model begins. You can move between Construction and Sculpt at any time.</string>
-    <string name="start_construction_title">Construction / CAD</string>
-    <string name="start_construction_description">Begin from an exact primitive and type its dimensions. Shape and placement stay exact, editable values.</string>
-    <string name="start_sculpt_title">Sculpt</string>
-    <string name="start_sculpt_description">Begin on a sphere already prepared for sculpting. Its exact source is kept, so Back to Construction returns to it.</string>
+    <string name="new_project_prompt">Choose how this project begins. You can add shapes, sketches and sculpting later.</string>
+    <string name="new_project_cad_title">CAD</string>
+    <string name="new_project_cad_description">Pick a plane in the viewport, sketch on it and extrude the first body. Sizes and depth stay exact, editable values.</string>
+    <string name="new_project_sculpt_title">Sculpt</string>
+    <string name="new_project_sculpt_description">Begin on a sphere already prepared for sculpting. Its exact source is kept, so Back to Construction returns to it.</string>
     <string name="status_started_sculpt">Now sculpting a sphere. The Construction sphere is kept.</string>
-    <string name="status_sculpt_start_failed">Could not prepare a sculptable mesh. Still in Construction; nothing was changed.</string>
+    <string name="status_sculpt_start_failed">Could not prepare a sculptable mesh. No project was created.</string>
+    <!--
+      The CAD bootstrap (APP-H1): a new CAD project before its first body
+      exists. Back to Home is the way out and costs nothing; the first Extrude
+      creates the project.
+    -->
+    <string name="back_to_home">Back to Home</string>
+    <string name="context_new_cad">New CAD project</string>
+    <string name="status_bootstrap_chooser">Tap a plane to sketch on, then tap it again to begin</string>
+    <string name="status_first_project_created">Project created — %1$s is its first body.</string>
+    <string name="status_bootstrap_left">Back at Home. No project was created.</string>
+    <!--
+      The unsaved-changes question, asked before New Project or Open File would
+      leave a dirty project. Three honest answers.
+    -->
+    <string name="unsaved_title">Unsaved changes</string>
+    <string name="unsaved_prompt">This project has changes that are not saved. Choose what to do before leaving it — nothing is replaced until you decide.</string>
+    <string name="unsaved_save_title">Save and continue</string>
+    <string name="unsaved_save_description">Save the project to this device first, then continue.</string>
+    <string name="unsaved_discard_title">Discard changes</string>
+    <string name="unsaved_discard_description">Continue without saving. The unsaved changes are lost.</string>
+    <string name="unsaved_cancel_title">Cancel — stay in this project</string>
+    <string name="project_new">New Project…</string>
+    <string name="status_project_closed">Project closed.</string>
 
     <!-- Global Toolbar -->
     <string name="context_construction">Construction</string>
@@ -297,6 +329,7 @@
     <string name="new_sketch">New Sketch</string>
     <string name="sketch_plane_prompt">Sketch on which plane?</string>
     <string name="sketch_support_spatial">Pick plane or face in 3D</string>
+    <string name="sketch_plane_by_name">Choose a plane by name</string>
     <string name="status_support_chooser">Tap a plane or a body face, then tap it again to sketch on it</string>
     <string name="status_support_selected">Tap again to sketch on the highlighted %1$s</string>
     <string name="workplane_xy">XY</string>

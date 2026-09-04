@@ -71,6 +71,9 @@ final class GlobalToolbarView extends LinearLayout {
 
         /** Ready -> a new CAD Body, as one history step. */
         void onExtrudeRequested();
+
+        /** The CAD bootstrap's way out before its first commit (APP-H1). */
+        void onBackToHomeRequested();
     }
 
     private final TextView contextLabel;
@@ -82,6 +85,10 @@ final class GlobalToolbarView extends LinearLayout {
     private final TextView extrudeButton;
     private final TextView exportAction;
     private final ImageView projectActionsButton;
+    private final TextView backToHomeButton;
+    /** Whether the CAD bootstrap is open: no project yet, so the project and
+     *  export controls are withdrawn and Back to Home is drawn. */
+    private boolean bootstrap;
     private final ImageView displaySettingsButton;
     private final ImageView hideUiToggle;
     private final TextView statusMessage;
@@ -267,6 +274,29 @@ final class GlobalToolbarView extends LinearLayout {
             }
         });
         editingGroup.addView(extrudeButton, EditorControlStyles.wrap(0));
+
+        // The way out of the CAD bootstrap (APP-H1) before its first commit.
+        // No project exists yet, so leaving costs nothing and is never
+        // confirmed. Quiet and tonal like Back to Construction, for the same
+        // reason: it is navigation, not a commit. It is drawn ONLY while the
+        // bootstrap is open, beside Finish Sketch or Extrude, and is the one
+        // control in this row that says where "back" goes when there is no
+        // project to go back to. Never abbreviated.
+        backToHomeButton = EditorControlStyles.chip(context, R.id.back_to_home,
+                context.getString(R.string.back_to_home));
+        EditorControlStyles.asCapsuleMember(backToHomeButton, R.drawable.bg_capsule_tonal);
+        backToHomeButton.setTextColor(
+                EditorControlStyles.themeColor(context, R.attr.fsTextPrimary));
+        backToHomeButton.setContentDescription(context.getString(R.string.back_to_home));
+        boundTransitionWidth(backToHomeButton);
+        backToHomeButton.setVisibility(GONE);
+        backToHomeButton.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                actions.onBackToHomeRequested();
+            }
+        });
+        editingGroup.addView(backToHomeButton, EditorControlStyles.wrap(0));
 
         // The flexible child of the row, and the only one. It is where the model
         // shows between the two groups, and it is what absorbs a squeeze — so a
@@ -580,6 +610,31 @@ final class GlobalToolbarView extends LinearLayout {
                 R.drawable.bg_pill_primary, R.drawable.bg_capsule_primary);
         applyMemberForm(extrudeButton, solo && lone == extrudeButton,
                 R.drawable.bg_pill_primary, R.drawable.bg_capsule_primary);
+        applyMemberForm(backToHomeButton, solo && lone == backToHomeButton,
+                R.drawable.bg_pill_tonal, R.drawable.bg_capsule_tonal);
+    }
+
+    /**
+     * Draws the toolbar for the CAD bootstrap (APP-H1), or for a project.
+     *
+     * <p>While the bootstrap is open there is no project: nothing to save, open,
+     * copy, import into or export, so the project control and Export are
+     * withdrawn rather than drawn and then refused, and Back to Home is the one
+     * way out. Display and Hide UI stay: both act on the viewport, which is
+     * live. Called before {@link #showContext}, which reads the flag for the
+     * context label.
+     */
+    void showBootstrap(boolean open) {
+        bootstrap = open;
+        backToHomeButton.setVisibility(open ? VISIBLE : GONE);
+        exportAction.setVisibility(open ? GONE : VISIBLE);
+        projectActionsButton.setVisibility(open ? GONE : VISIBLE);
+        applyEditingComposition();
+    }
+
+    /** Whether the toolbar is drawn for the CAD bootstrap, for verification. */
+    boolean showingBootstrap() {
+        return bootstrap;
     }
 
     private void applyMemberForm(TextView member, boolean alone, int pill, int capsuleMember) {
@@ -734,6 +789,7 @@ final class GlobalToolbarView extends LinearLayout {
         contextLabel.setText(sketching
                 ? context.getString(R.string.context_sketch,
                         context.getString(CadFeatureEditorView.planeName(workplane)))
+                : bootstrap ? context.getString(R.string.context_new_cad)
                 : context.getString(
                         sculpting ? R.string.context_sculpt
                                   : imported ? R.string.context_imported_mesh
@@ -752,9 +808,11 @@ final class GlobalToolbarView extends LinearLayout {
         // non-destructive act is the one that gets the toolbar slot. Neither is
         // drawn over a CAD Body or while sketching: a control that cannot
         // succeed is not drawn.
-        freezeButton.setVisibility(!sculpting && !hasFrozenMesh && !cad && !sketching
+        // And not in the CAD bootstrap either: there is no body to sculpt yet.
+        freezeButton.setVisibility(!sculpting && !hasFrozenMesh && !cad && !sketching && !bootstrap
                 ? VISIBLE : GONE);
-        resumeButton.setVisibility(!sculpting && hasFrozenMesh && !sketching ? VISIBLE : GONE);
+        resumeButton.setVisibility(!sculpting && hasFrozenMesh && !sketching && !bootstrap
+                ? VISIBLE : GONE);
         finishSketchButton.setVisibility(
                 sketchState == NativeViewport.SKETCH_EDITING ? VISIBLE : GONE);
         extrudeButton.setVisibility(sketchState == NativeViewport.SKETCH_READY ? VISIBLE : GONE);

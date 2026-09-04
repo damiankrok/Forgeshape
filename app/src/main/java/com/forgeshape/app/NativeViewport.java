@@ -1076,6 +1076,38 @@ final class NativeViewport {
     static native long projectFingerprint();
 
     // -----------------------------------------------------------------------
+    // Home and the project lifecycle (APP-H1)
+    // -----------------------------------------------------------------------
+    //
+    // A project is open exactly when the native scene holds a body. Home is
+    // what the shell shows when none is; it is derived from this answer on
+    // every refresh and is never remembered in Java, so a rotation, a
+    // recreation and a resume all land where native truth says.
+
+    /** Whether a project is open. False on a cold launch, at Home and during
+     *  the CAD bootstrap before its first commit. */
+    static native boolean projectOpen();
+
+    /**
+     * Closes the project: the way to Home.
+     *
+     * <p>Every body is destroyed, the Construction history is dropped, any
+     * sketch or support selection is cancelled with its borrowed view given
+     * back, and the session leaves Sculpt. <b>Writes nothing.</b> Whether the
+     * work was saved first is the shell's question, answered before this is
+     * called; the manual slot and the recovery checkpoint are not touched by
+     * this.
+     */
+    static native void closeProject();
+
+    /**
+     * DEBUG introspection: how many times native code was asked for the active
+     * body while no project was open. Zero in every product flow; the device
+     * suite asserts it across Home, the bootstrap and the first commit.
+     */
+    static native long debugActiveBodyMisuseCount();
+
+    // -----------------------------------------------------------------------
     // Renderer lifecycle
     // -----------------------------------------------------------------------
     //

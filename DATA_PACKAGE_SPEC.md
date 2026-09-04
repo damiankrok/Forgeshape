@@ -481,13 +481,45 @@ u8   supportKind               0 world plane, 1 face          ← v2 only
 The token is SEMANTIC feature lineage — never a render-triangle index, of which
 no byte reaches the file. On load, after every body is decoded, the WHOLE
 dependency graph is validated before anything is applied: each face-supported
-body's producer must be another CAD body in the document; the producer's current
-topology signature (`cadTopologySignature`) must equal the stored
-`lineageToken`; the named face must resolve (`resolveCadFace`) and be eligible; a
-body may not support itself; and the graph must be acyclic (a chain longer than
-the body count is refused). A face-supported body's placement is **derived** and
+body's producer must be another CAD body in the document
+(`UnresolvedReference` otherwise); the producer's current topology signature
+must equal the stored `lineageToken` and the named face must resolve and be
+eligible (`InvalidSemanticValue` otherwise — a circle's cylindrical side is
+never eligible); a body may not support itself; and the graph must be acyclic
+(a chain that revisits a body, or is longer than the body count, is
+`UnresolvedReference`). A face-supported body's placement is **derived** and
 is NOT stored — its `SCNE` placement is the unused identity, and its world model
 is recomputed from the producer on every load and frame.
+
+### The lineage token is a format field
+
+`lineageToken` is the producer's **topology signature**, and because a reader
+compares it against a value it computes itself, the rule is part of this
+format and is restated here so a second implementation can produce it:
+
+```
+faces  = [CapPlane, CapFar, Side(edge 0), Side(edge 1), …, Side(edge n-1)]
+           for the extruded profile's n polygon edges, in profile order
+code   = (kind << 56) | (edgeEntityId << 16) | (edgeLocalIndex & 0xFFFF)
+           kind: CapPlane 0, CapFar 1, Side 2   (the DOMAIN enumeration,
+           not the file's 1/2/3); edgeEntityId and edgeLocalIndex are 0 for a cap
+h      = 0xCBF29CE484222325                     (FNV-1a 64-bit offset basis)
+mix(v) = for each of v's 8 bytes, least significant first:
+           h = (h XOR byte) × 0x100000001B3  (mod 2^64)
+mix(profileEntityId); mix(faces.count)
+for each face: mix(code); mix(eligible ? 1 : 0)
+if h == 0 then h = 1
+```
+
+Eligibility is 1 for both caps and for every planar side, and 0 for a circle's
+cylindrical sides (all `kSketchCircleSegments` of them). For a one-rectangle
+profile the profile polygon runs counter-clockwise from the lower-left corner,
+so its four sides carry `edgeEntityId = ` the rectangle's entity id and
+`edgeLocalIndex = 0..3` in that order; a rectangle producer therefore hashes six
+faces, a circle producer thirty-four. Sizes, depth and direction take no part,
+which is what lets a supported parent edit keep a dependent attached.
+`scripts/build-forge-corpus.ps1` reimplements exactly this in
+`Get-CadTopologySignature`, from this text and not from the C++.
 
 ## 8. Validation and compatibility
 
@@ -673,6 +705,21 @@ debug launch as `FORGESHAPE_PROJECT_GOLDEN_SHA256`.
 | `mixed_imported_v1.forge` | 905 | `3fdc82a099da69b93552d7c84c56002ed8ae24ba7086ddbc6a69a9bbf671f1fb` | All three branches at once, representations interleaved rather than grouped, reopening in Sculpt on the sculpted body |
 | `imported_sculpt_v1.forge` | 489 | `b82430cf6dbb82fddf075722d7ae335460f687d2a06cde09db43817323729f76` | An Imported Mesh carrying a Frozen Sculpt Mesh, with **no `CONS` at all** — the `IMPORT-01B` fixture that pins the generalized `SCUL` rule; reopens in Sculpt |
 | `mixed_imported_sculpt_v1.forge` | 1266 | `ab709ecea27ec29f21b6fbef126e8cdc15dc5c733d9b751bd1c8832907f27a2b` | All **four** valid source/sculpt combinations in one document, `SCUL` entries over bodies of both source kinds; reopens in Sculpt on the sculpted imported body |
+| `cad_rectangle_v1.forge` | 247 | `e2fd79c4070d1168ae883e064200438244c09a41bcf1682f9a0596b549d1b26b` | One CAD Body — a rectangle on XZ extruded along +Y — at a 370° / non-uniform-scale placement, with **no `CONS` at all** |
+| `cad_circle_v1.forge` | 239 | `886b1538a1a20113316b7badcc7c6aaca6b17ccb54d3dcfed042ff41866e4559` | One CAD Body: a circle on YZ extruded AGAINST its normal |
+| `mixed_cad_v1.forge` | 780 | `94f014cdc01fe8beaa14301ef2a99c0805a7e13afe1bca0126b29026882c93db` | A Construction Body beside two CAD Bodies — a closed polyline with an unrelated open line, and a chained-line loop — a **sparse** `CONS` next to a `CADB` carrying every entity kind |
+| `cad_bad_plane_v1.forge` | 247 | `60476603b6c1b1e1cf6b785e863c953ee6aa63573c1a2453bd7db0935909aba9` | The rectangle fixture with workplane code 9 and the `CADB` CRC recomputed; only the semantic check can refuse it |
+| `cad_face_sketch_cap_v2.forge` | 425 | `4e4bdacc20954b063ef38d81a0c2c1c4bb4faff97255aea1e11d161bec560a86` | **`CADB` v2.** A translated rectangle producer and a dependent rectangle supported by its far cap (`CapFar`); the dependent's `SCNE` placement is the unused identity |
+| `cad_face_sketch_side_v2.forge` | 425 | `9afa0ae2036cc1c03ee2e49f42fe45c19e79a8f050c9c87a2202205e10ed5a3d` | A dependent supported by the producer's **side** face (edge entity 1, local index 1), extruded against the face normal |
+| `cad_face_chain_v2.forge` | 594 | `24ad47b5b5d600a47860ccafc3a644fa22e3d0bde994c43d969567cb299580b7` | A → B → C: a world body, a dependent on its far cap, and a circle dependent on that one's far cap — a chain a reader must resolve hop by hop |
+| `mixed_cad_face_v2.forge` | 923 | `4b20f3c8ea05876850043dff28591f19855efa4c0566bebd43df11f1c0ff1529` | A Construction Box, an Imported Mesh, a CAD producer and a face-supported dependent: `SCNE`, `CONS`, `IMPT` and a v2 `CADB` side by side |
+| `cad_bad_face_ref_v2.forge` | 425 | `2f728f27393ff19b9dfa327be8b6598f26eb595dfe9a8c399a0db5e8cd50f564` | The side fixture naming side **7** of a rectangle that has sides 0..3; producer present, lineage right, CRC right — refused `InvalidSemanticValue` by face resolution alone |
+| `cad_dependency_cycle_v2.forge` | 594 | `88072d355efa54f95e6d68c10d15c81a9cfebc0e2ed1f231255ebe5a42b117f0` | The chain with B on C's far cap and C on B's, B's lineage set to C's own signature — refused `UnresolvedReference` by the cycle alone |
+
+The two corrupt v2 fixtures are **constructed** by the PowerShell builder with
+the bad value in place, never generated and then mutated; the C++ self-test
+reaches the same bytes by patching the valid parent's one field and its CRC,
+and the digests agreeing is what proves the two routes describe one file.
 
 The five imported fixtures share one Imported Mesh: four vertices, two submeshes
 with **different** `doubleSided` answers, named `head_low`, placed at
@@ -683,9 +730,14 @@ the two matched could not tell a decoder that confused them apart. Every number
 is an exact binary fraction, so the two implementations agree byte for byte or
 not at all.
 
-The seven legacy fixtures are **unchanged**, and so are the three `IMPORT-01A`
-ones: the imported branch costs a project that has none exactly nothing, and
-generalizing `SCUL` changed no byte of any file that already existed.
+The sixteen v1 fixtures are **unchanged** by `CAD-A3`: a world-only CAD
+project still writes `CADB` v1, so the face support costs a project that has
+none exactly nothing, exactly as the imported branch and the generalized
+`SCUL` cost the files before them nothing. Twenty-two fixtures in all, verified
+on device by `FSR1A-12`, `IMP01A-19`, `IMP01B-11/12`, `CADR0-33..36` and
+`CADA3-46..51`, and printed on every debug launch as
+`FORGESHAPE_PROJECT_GOLDEN_SHA256`, `…_IMPORTED`, `…_IMPORTED_SCULPT`, `…_CAD`
+and `…_CAD_V2`.
 
 Regenerate and re-verify with:
 

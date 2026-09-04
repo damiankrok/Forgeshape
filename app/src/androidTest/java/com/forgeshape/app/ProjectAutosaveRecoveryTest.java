@@ -228,9 +228,9 @@ public final class ProjectAutosaveRecoveryTest {
         assertTrue("a validated candidate must be offered",
                 onWorkspace(rule.getScenario(),
                         (activity, workspace) -> workspace.recoveryPromptVisible()));
-        assertFalse("and the start question waits its turn",
+        assertFalse("and Home waits its turn",
                 onWorkspace(rule.getScenario(),
-                        (activity, workspace) -> workspace.startChooserVisible()));
+                        (activity, workspace) -> workspace.homeVisible()));
 
         // Rotating while the question is open re-presents the SAME pending
         // decision. Hiding it here would strand the user with a candidate and no
@@ -398,11 +398,16 @@ public final class ProjectAutosaveRecoveryTest {
         assertFalse("the candidate is gone", ProjectCheckpoint.exists(context()));
         assertArrayEquals("the explicitly saved project is byte-identical",
                 savedProject, ProjectSlot.read(context()));
-        assertTrue("and the start question is asked now that recovery is settled",
+        // Discarding starts normally: since APP-H1 that is Home when no project
+        // is open, and the project the case had open otherwise. Either way the
+        // recovery question itself is gone.
+        assertFalse("the recovery question is settled",
                 onWorkspace(rule.getScenario(),
-                        (activity, workspace) -> workspace.startChooserVisible())
-                        || onWorkspace(rule.getScenario(),
-                                (activity, workspace) -> workspace.uiState().startChoiceMade()));
+                        (activity, workspace) -> workspace.recoveryPromptVisible()));
+        assertEquals("Home stands exactly when no project is open",
+                !NativeViewport.projectOpen(),
+                onWorkspace(rule.getScenario(),
+                        (activity, workspace) -> workspace.homeVisible()).booleanValue());
     }
 
     // -----------------------------------------------------------------------

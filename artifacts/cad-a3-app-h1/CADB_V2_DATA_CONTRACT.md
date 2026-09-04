@@ -1,4 +1,4 @@
-# CADB v2 (`CAD-A3` H)
+# CADB v2 (`CAD-A3` H, closed by `CAD-A3-C1`)
 
 The `.forge` CADB section gains version 2, adding the face support. Section
 versions evolve independently of the file's major/minor.
@@ -7,7 +7,8 @@ versions evolve independently of the file's major/minor.
 
 Only when at least one CAD body is face-supported. A world-only CAD project
 still writes CADB v1, byte-identical to what CAD-R0 wrote -- proven by the
-sixteen corpus fixtures decoding to identical digests after this stage.
+sixteen v1 corpus fixtures decoding to identical digests after this stage, and
+by `CADA3_46` reading the section version word off the encoded files.
 
 ## The v2 per-body record
 
@@ -35,29 +36,40 @@ per entity: ...
 No source path, matrix, triangle range, GPU id, camera or preview mesh is ever
 written -- only the authored truth needed to regenerate.
 
+## The lineage token is a format field
+
+`lineageToken` is the producer's topology signature, and because a reader
+recomputes it and compares, its rule is part of the format:
+`DATA_PACKAGE_SPEC.md` §7c now states it in full (FNV-1a 64, basis
+`0xCBF29CE484222325`, prime `0x100000001B3`, over the profile anchor id, the
+face count, and each face's token code and eligibility in enumeration order),
+and `scripts/build-forge-corpus.ps1` reimplements it from that text. That
+independent reimplementation is what found the production basis mistyped one
+digit short; see `CORPUS.md`.
+
 ## Load ordering and fail-closed
 
 `decodeProject` reads the whole document into temporary state, then
 `validateProjectDocument` validates the ENTIRE dependency graph before anything
-is applied: every face-supported body's producer must be another CAD body in the
-document, its topology signature must equal the reference's lineage token, the
-named face must resolve and be eligible, and the graph must be acyclic (no
-self-support, no cycle). A bad reference or a cycle refuses the file; a
-successful load starts a fresh session history; a failed load changes nothing.
+is applied: every face-supported body's producer must be another CAD body in
+the document (`UnresolvedReference`), its topology signature must equal the
+reference's lineage token and the named face must resolve and be eligible
+(`InvalidSemanticValue`), and the graph must be acyclic — no self-support, no
+cycle (`UnresolvedReference`). A successful load starts a fresh session
+history; a failed load changes nothing.
 
 ## Compatibility
 
-- All legacy fixtures unchanged; the twelve v1 Construction/Imported/Sculpt
+- All sixteen v1 fixtures unchanged; the twelve Construction/Imported/Sculpt
   fixtures and the four v1 CAD fixtures decode identically.
 - An older build refuses a v2 CADB as a required section at an unknown version
   (`UnsupportedSectionVersion`) rather than opening half a body.
 
-`DATA_PACKAGE_SPEC.md` owns the authoritative layout.
+`DATA_PACKAGE_SPEC.md` owns the authoritative layout and the fixture table.
 
-## Deferred
+## Independent corpus
 
-The independent PowerShell corpus builder was NOT extended to emit v2 fixtures
-this pass, and the named v2 fixtures (`cad_face_sketch_cap_v2` etc.) are not
-committed. The v2 codec is proved instead by the native round-trip and
-fail-closed checks (`CADA3-40/41/42/36/37`) over documents the C++ encoder
-builds. Recorded as bounded debt.
+Delivered: six v2 fixtures written by the independent PowerShell encoder,
+pinned by `CADA3-46..51`, their bytes identical to the production encoder's
+for the four valid files and their refusals exact for the two corrupt ones.
+See `CORPUS.md`.

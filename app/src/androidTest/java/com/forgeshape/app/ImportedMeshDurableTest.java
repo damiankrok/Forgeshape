@@ -806,7 +806,7 @@ public final class ImportedMeshDurableTest {
     private void openSavedProjectThroughTheProductControl() {
         openProjectSurface();
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            workspace.findViewById(R.id.project_open).performClick();
+            WorkspaceTestSupport.openSavedProjectDiscardingChanges(workspace);
             return null;
         });
         settleLayout();

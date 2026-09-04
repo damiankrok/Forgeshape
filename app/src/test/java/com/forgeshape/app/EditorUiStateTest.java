@@ -100,43 +100,44 @@ public final class EditorUiStateTest {
     }
 
     // -----------------------------------------------------------------------
-    // The start question
+    // The New Project chooser (APP-H1)
     // -----------------------------------------------------------------------
 
     @Test
-    public void aFreshProcessHasNotYetAnsweredTheStartQuestion() {
-        final EditorUiState state = new EditorUiState();
-        state.clearStartChoice();
-        assertFalse("a process that has not been asked must be asked",
-                state.startChoiceMade());
+    public void aFreshWorkspaceHasTheNewProjectChooserClosed() {
+        assertFalse("nothing is asked until the user asks for a new project",
+                new EditorUiState().newProjectChooserOpen());
     }
 
     @Test
-    public void answeringTheStartQuestionIsRememberedForTheWholeProcess() {
+    public void theNewProjectChooserIsCarriedAcrossTheRecreationAThemeChangePerforms() {
         final EditorUiState state = new EditorUiState();
-        state.clearStartChoice();
-        state.recordStartChoice();
-        assertTrue(state.startChoiceMade());
+        state.setNewProjectChooserOpen(true);
+        assertTrue(state.newProjectChooserOpen());
 
-        // This is the case that matters, and the reason the flag is process
-        // scoped rather than per instance: an Activity recreation builds a
-        // whole new workspace and therefore a whole new EditorUiState, and it
-        // must NOT put the question back.
-        assertTrue("a recreated Activity must not re-ask how the model began",
-                new EditorUiState().startChoiceMade());
+        // Presentation state, carried like an open panel: the instance the
+        // recreated workspace adopts is this one, so the question the user was
+        // looking at is still on screen after a theme change.
+        EditorUiState.carryAcrossRecreation(state);
+        assertTrue("a recreated Activity keeps the question the user was reading",
+                EditorUiState.forNewWorkspace().newProjectChooserOpen());
+        // And a workspace built for any other reason starts closed: whether
+        // HOME is on screen is never remembered here at all -- it is derived
+        // from native truth, so there is nothing to carry.
+        assertFalse(EditorUiState.forNewWorkspace().newProjectChooserOpen());
     }
 
     @Test
-    public void theStartAnswerDoesNotRecordWHICHWayWasChosen() {
+    public void theNewProjectAnswerDoesNotRecordWHICHWayWasChosen() {
         final EditorUiState state = new EditorUiState();
-        state.clearStartChoice();
-        state.recordStartChoice();
+        state.setNewProjectChooserOpen(true);
+        state.setNewProjectChooserOpen(false);
 
         // Everything this class may remember is layout, drafts or presentation.
         // Which representation the user is in is native truth, read back on
         // every refresh, and a copy of it here would be a second answer that
         // could disagree with the first.
-        assertEquals("choosing a start flow must not touch the draft kind",
+        assertEquals("choosing how a project begins must not touch the draft kind",
                 NativeViewport.PRIMITIVE_BOX, state.draftPrimitiveKind());
         assertEquals("nor which Construction editor the rail points at",
                 EditorUiState.CONSTRUCTION_TOOL_SHAPE, state.constructionTool());

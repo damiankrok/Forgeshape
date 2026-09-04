@@ -62,16 +62,47 @@ bool ConstructionScene::setActiveBody(ObjectId id) {
     return true;
 }
 
+namespace {
+
+// The body `activeBody()` answers with while NO project is open. It exists so
+// the reference-returning accessor stays total instead of dereferencing an
+// empty list; it is in no scene, wears `kNoObject`, is never published, saved,
+// picked or edited, and every read of it is counted. See the header.
+SceneObject& noProjectBody() {
+    static SceneObject body(kNoObject);
+    return body;
+}
+
+uint64_t g_activeBodyMisuse = 0;
+
+}  // namespace
+
+uint64_t ConstructionScene::activeBodyMisuseCount() { return g_activeBodyMisuse; }
+
+void ConstructionScene::closeProject() {
+    bodies_.clear();
+    activeBodyId_ = kNoObject;
+}
+
 SceneObject& ConstructionScene::activeBody() {
+    if (bodies_.empty()) {
+        ++g_activeBodyMisuse;
+        return noProjectBody();
+    }
     SceneObject* body = findBody(activeBodyId_);
-    // The constructor creates and selects a Body, and Delete refuses to remove
-    // the last one, so an active body always exists. The fallback is a
-    // belt-and-braces guard that keeps this reference-returning accessor total
-    // rather than UB if that ever stops being true.
+    // The project constructor creates and selects a Body, Delete refuses to
+    // remove the last one and a load selects the document's active body, so
+    // an open project's active body always exists. The fallback is a
+    // belt-and-braces guard that keeps this accessor total rather than UB if
+    // that ever stops being true.
     return (body != nullptr) ? *body : *bodies_.front();
 }
 
 const SceneObject& ConstructionScene::activeBody() const {
+    if (bodies_.empty()) {
+        ++g_activeBodyMisuse;
+        return noProjectBody();
+    }
     const SceneObject* body = findBody(activeBodyId_);
     return (body != nullptr) ? *body : *bodies_.front();
 }
@@ -284,7 +315,10 @@ bool ConstructionScene::hasCadDependents(ObjectId id) const {
 }
 
 ConstructionScene& constructionScene() {
-    static ConstructionScene scene;
+    // The process starts with NO project (`APP-H1`): Home is what the user sees
+    // first, and the first body arrives when they ask for one. Every self-test
+    // builds its own scene with the project constructor and is unaffected.
+    static ConstructionScene scene{NoProjectTag{}};
     return scene;
 }
 
@@ -421,11 +455,30 @@ bool buildSculptSourceMesh(const SceneObject& body, ConstructionMesh* out) {
     return true;
 }
 
+// The four global accessors below are the funnels through which the product
+// reads "the active body", and each answers for the NO-PROJECT scene without
+// touching `activeBody()`: null, an unbound store, an unbound session, an
+// identity placement. That is what lets Home and the CAD bootstrap run over an
+// empty scene without a repository-wide optional-body rewrite -- the callers
+// that already handle "no Construction Source" handle "no project" for free,
+// and the edit entry points refuse before they write.
+
 ConstructionObject* activeConstructionOrNull() {
-    return constructionScene().activeBody().constructionOrNull();
+    ConstructionScene& scene = constructionScene();
+    return scene.hasProject() ? scene.activeBody().constructionOrNull() : nullptr;
 }
 
-MeshStore& meshStore() { return constructionScene().activeBody().meshStore(); }
+MeshStore& meshStore() {
+    ConstructionScene& scene = constructionScene();
+    if (!scene.hasProject()) {
+        // A store nothing draws from: the renderer takes the scene snapshot,
+        // and this store belongs to no body. A debug fixture published here
+        // while no project is open is simply not on screen.
+        static MeshStore unbound(kNoObject);
+        return unbound;
+    }
+    return scene.activeBody().meshStore();
+}
 
 // ONE editing session for the whole product, re-pointed at the active body's
 // Frozen Sculpt Mesh on every access.
@@ -442,7 +495,11 @@ MeshStore& meshStore() { return constructionScene().activeBody().meshStore(); }
 // left pointing at the body the user just navigated away from.
 SculptSession& sculptSession() {
     static SculptSession session;
-    session.bindTarget(&constructionScene().activeBody().frozenSculpt());
+    ConstructionScene& scene = constructionScene();
+    // Unbound while no project is open: the session's own null-target answer
+    // (`unbound_`) reports no mesh, no edits and no history, which is exactly
+    // what Home has.
+    session.bindTarget(scene.hasProject() ? &scene.activeBody().frozenSculpt() : nullptr);
     return session;
 }
 

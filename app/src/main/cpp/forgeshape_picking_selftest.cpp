@@ -384,12 +384,17 @@ void testDemoCubePicking(Recorder& r) {
     // fixture directly and pick with an explicit identity transform, so this
     // test is self-contained and its result cannot depend on ConstructionObject
     // or ConstructionTransform state left over from anything else.
-    meshStore().publish(demoCubeVertices(), demoCubeVertexCount(), demoCubeIndices(),
-                        demoCubeIndexCount());
+    // Its OWN store, wearing the demo cube's id: since `APP-H1` the process
+    // scene holds no project at startup, so there is no process store to
+    // borrow, and every pick below names the mesh it reads explicitly.
+    MeshStore store(kDemoCubeObjectId);
+    store.publish(demoCubeVertices(), demoCubeVertexCount(), demoCubeIndices(),
+                  demoCubeIndexCount());
     const Mat4 identity = mat4Identity();
 
-    const SceneHit center = pickScene(c.snapshot(), kCenterX, kCenterY, kTestViewportWidth,
-                                      kTestViewportHeight, identity, identity, true);
+    const SceneHit center = pickMesh(c.snapshot(), kCenterX, kCenterY, kTestViewportWidth,
+                                     kTestViewportHeight, store.current(), identity, identity,
+                                     true);
     r.check("scene_center_hits_cube", center.hit);
     r.check("scene_center_object_id", center.hit && center.objectId == kDemoCubeObjectId);
     r.check("scene_center_triangle_index_valid",
@@ -403,8 +408,9 @@ void testDemoCubePicking(Recorder& r) {
                 std::fabs(center.position.y) <= kDemoCubeHalfExtent + 1e-3f &&
                 std::fabs(center.position.z) <= kDemoCubeHalfExtent + 1e-3f);
 
-    const SceneHit background = pickScene(c.snapshot(), 5.0f, 5.0f, kTestViewportWidth,
-                                          kTestViewportHeight, identity, identity, true);
+    const SceneHit background = pickMesh(c.snapshot(), 5.0f, 5.0f, kTestViewportWidth,
+                                         kTestViewportHeight, store.current(), identity,
+                                         identity, true);
     r.check("scene_background_corner_misses", !background.hit);
     r.check("scene_miss_has_no_object_id", background.objectId == kNoObject);
 
@@ -421,8 +427,9 @@ void testDemoCubePicking(Recorder& r) {
                              !nearly(c.pitch(), kInitialPitch, 1e-3f);
     r.check("scene_camera_pose_actually_changed", poseChanged);
 
-    const SceneHit afterOrbit = pickScene(c.snapshot(), kCenterX, kCenterY, kTestViewportWidth,
-                                          kTestViewportHeight, identity, identity, true);
+    const SceneHit afterOrbit = pickMesh(c.snapshot(), kCenterX, kCenterY, kTestViewportWidth,
+                                         kTestViewportHeight, store.current(), identity,
+                                         identity, true);
     r.check("scene_hits_cube_after_camera_move", afterOrbit.hit);
     r.check("scene_object_id_stable_after_camera_move",
             afterOrbit.hit && afterOrbit.objectId == center.objectId);
@@ -439,14 +446,15 @@ void testDemoCubePicking(Recorder& r) {
     pair[1].x = 800.0f;
     c.onTouch(TouchAction::Move, -1, pair, 2);
     c.onTouch(TouchAction::Cancel, -1, pair, 2);
-    const SceneHit afterZoom = pickScene(c.snapshot(), kCenterX, kCenterY, kTestViewportWidth,
-                                         kTestViewportHeight, identity, identity, true);
+    const SceneHit afterZoom = pickMesh(c.snapshot(), kCenterX, kCenterY, kTestViewportWidth,
+                                        kTestViewportHeight, store.current(), identity,
+                                        identity, true);
     r.check("scene_hits_cube_after_zoom", afterZoom.hit);
     r.check("scene_object_id_stable_after_zoom",
             afterZoom.hit && afterZoom.objectId == kDemoCubeObjectId);
 
     r.check("scene_zero_viewport_safe",
-            !pickScene(c.snapshot(), kCenterX, kCenterY, 0, 0, identity, identity, true).hit);
+            !pickMesh(c.snapshot(), kCenterX, kCenterY, 0, 0, store.current(), identity, identity, true).hit);
 }
 
 // ---------------------------------------------------------------------------

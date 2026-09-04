@@ -179,7 +179,7 @@ public final class EditorWorkspaceProjectActionsTest {
 
         openProjectSurface();
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            workspace.findViewById(R.id.project_open).performClick();
+            WorkspaceTestSupport.openSavedProjectDiscardingChanges(workspace);
             return null;
         });
         settleLayout();
@@ -229,7 +229,7 @@ public final class EditorWorkspaceProjectActionsTest {
 
         openProjectSurface();
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            workspace.findViewById(R.id.project_open).performClick();
+            WorkspaceTestSupport.openSavedProjectDiscardingChanges(workspace);
             return null;
         });
         settleLayout();

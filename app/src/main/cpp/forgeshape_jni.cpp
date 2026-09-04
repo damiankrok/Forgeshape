@@ -59,6 +59,7 @@
 #include "forgeshape_mesh_selftest.h"
 #include "forgeshape_picking_selftest.h"
 #include "forgeshape_primitive_selftest.h"
+#include "forgeshape_project_bootstrap.h"
 #include "forgeshape_project_document.h"
 #include "forgeshape_project_selftest.h"
 #include "forgeshape_project_state.h"
@@ -548,6 +549,15 @@ void runProjectSelfTestsAndLog() {
             forgeshape::canonicalCadCircleFixtureSha256(),
             forgeshape::canonicalMixedCadFixtureSha256(),
             forgeshape::canonicalCadBadPlaneFixtureSha256());
+    FS_LOGI("FORGESHAPE_PROJECT_GOLDEN_SHA256_CAD_V2 cad_face_sketch_cap=%s "
+            "cad_face_sketch_side=%s cad_face_chain=%s mixed_cad_face=%s cad_bad_face_ref=%s "
+            "cad_dependency_cycle=%s",
+            forgeshape::canonicalCadFaceSketchCapFixtureSha256(),
+            forgeshape::canonicalCadFaceSketchSideFixtureSha256(),
+            forgeshape::canonicalCadFaceChainFixtureSha256(),
+            forgeshape::canonicalMixedCadFaceFixtureSha256(),
+            forgeshape::canonicalCadBadFaceRefFixtureSha256(),
+            forgeshape::canonicalCadDependencyCycleFixtureSha256());
     if (failed == 0) {
         FS_LOGI("FORGESHAPE_PROJECT_SELFTEST_OK (%d checks)", count);
     } else {
@@ -791,6 +801,12 @@ void describeSpec(const forgeshape::PrimitiveSpec& spec, char* out, size_t size)
 // through the same MeshStore path everything else uses. Parameters are never
 // read back out of the mesh, so this direction is the only one that exists.
 forgeshape::MeshRevision publishConstructionObject(const char* reason) {
+    if (!forgeshape::constructionScene().hasProject()) {
+        // No project is open (Home, or the CAD bootstrap before its first
+        // commit): there is no body to publish and nothing on screen to
+        // refresh. Not a failure -- an empty scene draws as empty.
+        return forgeshape::kNoMeshRevision;
+    }
     forgeshape::ConstructionObject* source = forgeshape::activeConstructionOrNull();
     if (source == nullptr) {
         // The active body is an Imported Mesh: it has no parameters to
@@ -894,15 +910,17 @@ forgeshape::PrimitiveApplyResult applyPrimitive(const char* label,
     }
     const forgeshape::ConstructionObject* source = forgeshape::activeConstructionOrNull();
     if (source == nullptr) {
-        // The active body is an Imported Mesh, so the entry point above refused
-        // and there is no Construction Source to report counts from. Logged by
-        // name rather than left silent: a refusal nobody can see is how a
-        // missing UI guard stays invisible.
+        // The active body is an Imported Mesh -- or no project is open at all
+        // -- so the entry point above refused and there is no Construction
+        // Source to report counts from. Logged by name rather than left silent:
+        // a refusal nobody can see is how a missing UI guard stays invisible.
         FS_LOGE("FORGESHAPE_CONSTRUCTION_PRIMITIVE_REJECTED:%s:NoConstructionSource "
                 "representation=%s",
                 label,
-                forgeshape::bodyRepresentationName(
-                    forgeshape::constructionScene().activeBody().representation()));
+                forgeshape::constructionScene().hasProject()
+                    ? forgeshape::bodyRepresentationName(
+                          forgeshape::constructionScene().activeBody().representation())
+                    : "NoProject");
         return result;
     }
     const forgeshape::ConstructionObject& object = *source;
@@ -999,6 +1017,14 @@ forgeshape::TransformApplyResult applyBoxTransform(const char* label,
         // step is the placement rather than a field. Declared after the lock so
         // the commit — which reads the scene — happens before the lock is
         // released.
+        if (!forgeshape::constructionScene().hasProject()) {
+            // No project, no placement to write. The unbound identity the
+            // global answers with belongs to no body and must not be edited.
+            FS_LOGE("FORGESHAPE_CONSTRUCTION_TRANSFORM_REJECTED:%s:NoProject", label);
+            result.status = forgeshape::TransformUpdateStatus::Rejected;
+            result.values = forgeshape::constructionTransform().values();
+            return result;
+        }
         forgeshape::ScopedConstructionEdit edit(forgeshape::constructionHistory());
         result = forgeshape::applyConstructionTransform(requested);
     }
@@ -1151,6 +1177,8 @@ void logMeshDiagnostics(const char* reason) {
                 reason, forgeshape::primitiveKindName(object->kind()), described,
                 (unsigned long long)object->objectId(), (unsigned long long)object->updateCount(),
                 (unsigned long long)object->rejectedUpdateCount());
+    } else if (!forgeshape::constructionScene().hasProject()) {
+        FS_LOGI("FORGESHAPE_NO_PROJECT_STATE:%s bodies=0", reason);
     } else {
         const forgeshape::SceneObject& body = forgeshape::constructionScene().activeBody();
         const forgeshape::ImportedMesh* imported = body.importedOrNull();
@@ -1429,11 +1457,12 @@ Java_com_forgeshape_app_NativeViewport_start(JNIEnv*, jclass) {
     g_viewport.rendererFailed = false;
     g_viewport.thread = std::thread(renderThreadMain);
     FS_LOGI("ForgeShape native viewport started (render thread launched)");
-    // Product geometry must exist before anything picks against it: picking
-    // reads the current CPU mesh snapshot, and an empty store is a miss. Since
-    // Stage 007 that geometry is generated by the Construction box, not by a
-    // debug fixture.
-    publishConstructionObject("startup");
+    // The process starts with NO project (`APP-H1`): the scene is empty, Home
+    // is what the shell shows, and the first body arrives when the user asks
+    // for one -- through the CAD bootstrap's first commit, the Sculpt seed or
+    // a load. Nothing is published here; an empty scene draws as empty.
+    FS_LOGI("FORGESHAPE_STARTUP_NO_PROJECT bodies=%d",
+            (int)forgeshape::constructionScene().bodyCount());
     runCameraSelfTestsAndLog();
     runPickingSelfTestsAndLog();
     runMeshSelfTestsAndLog();
@@ -1455,8 +1484,8 @@ Java_com_forgeshape_app_NativeViewport_start(JNIEnv*, jclass) {
     // The mesh and construction self-tests publish revisions of their own into
     // the store, so republish the ACTIVE representation: the app must always
     // come up showing what the current product mode says it is showing. At a
-    // cold start that is always the Construction object, because nothing has
-    // been frozen yet.
+    // cold start no project is open, so this is a no-op and the store the
+    // suites wrote into is the unbound one nothing draws from.
     publishActiveRepresentation("startup_after_selftests");
 }
 
@@ -1926,6 +1955,10 @@ Java_com_forgeshape_app_NativeViewport_freezeToSculpt(JNIEnv*, jclass) {
     bool sketching = false;
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
+        if (!forgeshape::constructionScene().hasProject()) {
+            FS_LOGE("FORGESHAPE_SCULPT_FREEZE_FAIL:NoProject");
+            return kSculptFailedFreeze;
+        }
         forgeshape::SceneObject& body = forgeshape::constructionScene().activeBody();
         objectId = body.objectId();
         cadBody = body.cadOrNull() != nullptr;
@@ -2110,7 +2143,8 @@ Java_com_forgeshape_app_NativeViewport_sceneBodyIsImported(JNIEnv*, jclass, jlon
 JNIEXPORT jboolean JNICALL
 Java_com_forgeshape_app_NativeViewport_sceneActiveBodyIsImported(JNIEnv*, jclass) {
     std::lock_guard<std::mutex> lock(g_stateMutex);
-    return forgeshape::constructionScene().activeBody().isImported() ? JNI_TRUE : JNI_FALSE;
+    const forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
+    return scene.hasProject() && scene.activeBody().isImported() ? JNI_TRUE : JNI_FALSE;
 }
 
 // Makes an existing body the edit target. Selection ONLY: it publishes nothing,
@@ -2665,6 +2699,10 @@ Java_com_forgeshape_app_NativeViewport_sketchBegin(JNIEnv*, jclass, jint planeIn
             status = forgeshape::sketchSession().begin(plane);
         }
         if (status == forgeshape::CadStatus::Ok) {
+            // A by-name plane chosen while the spatial chooser was still
+            // open supersedes it: the sketch owns the gesture from here, and
+            // a chooser left active would take every touch first.
+            forgeshape::supportChooser().cancel();
             forgeshape::gizmoSession().setActive(false);
             g_selection.resetGesture();
             g_camera.resetGesture();
@@ -2955,18 +2993,46 @@ JNIEXPORT jlong JNICALL Java_com_forgeshape_app_NativeViewport_sketchCommit(JNIE
     forgeshape::CadStatus status;
     forgeshape::ObjectId created = forgeshape::kNoObject;
     size_t undoDepth = 0;
+    bool firstProject = false;
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
-        status = forgeshape::sketchSession().commit(forgeshape::constructionScene(),
-                                                    forgeshape::constructionHistory(), &created);
-        if (status == forgeshape::CadStatus::Ok) {
-            endSketchView();
+        forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
+        if (!scene.hasProject()) {
+            // The CAD bootstrap (`APP-H1`): no project is open, so this commit
+            // CREATES the first one rather than adding a body to it. Decided
+            // here, from native truth, so the shell has one Extrude and no
+            // second code path; see forgeshape_project_bootstrap.h.
+            firstProject = true;
+            forgeshape::FirstProjectReport report;
+            status = forgeshape::commitFirstCadProject(
+                forgeshape::sketchSession(), scene, forgeshape::sculptSession(),
+                forgeshape::constructionHistory(), &report);
+            created = report.bodyId;
+            if (status == forgeshape::CadStatus::Ok) {
+                // A first project starts from the product's own opening view,
+                // not from the pose the sketch borrowed before there was
+                // anything to look at.
+                forgeshape::supportChooser().cancel();
+                endSketchView();
+            }
+        } else {
+            status = forgeshape::sketchSession().commit(scene, forgeshape::constructionHistory(),
+                                                        &created);
+            if (status == forgeshape::CadStatus::Ok) {
+                endSketchView();
+            }
         }
         undoDepth = forgeshape::constructionHistory().undoDepth();
     }
     if (status != forgeshape::CadStatus::Ok) {
-        FS_LOGI("FORGESHAPE_SKETCH_COMMIT_REFUSED:%s", forgeshape::cadStatusName(status));
+        FS_LOGI("FORGESHAPE_SKETCH_COMMIT_REFUSED:%s%s", forgeshape::cadStatusName(status),
+                firstProject ? " first_project" : "");
         return static_cast<jlong>(forgeshape::kNoObject);
+    }
+    if (firstProject) {
+        FS_LOGI("FORGESHAPE_FIRST_PROJECT_CREATED objectId=%llu bodies=%d undo=%d",
+                (unsigned long long)created, (int)forgeshape::constructionScene().bodyCount(),
+                (int)undoDepth);
     }
     const forgeshape::SceneObject* body = forgeshape::constructionScene().findBody(created);
     const forgeshape::RuntimeMeshPtr published = body ? body->meshStore().current() : nullptr;
@@ -3247,7 +3313,8 @@ Java_com_forgeshape_app_NativeViewport_sceneBodyRepresentation(JNIEnv*, jclass, 
 JNIEXPORT jboolean JNICALL
 Java_com_forgeshape_app_NativeViewport_sceneActiveBodyIsCad(JNIEnv*, jclass) {
     std::lock_guard<std::mutex> lock(g_stateMutex);
-    return forgeshape::constructionScene().activeBody().isCad() ? JNI_TRUE : JNI_FALSE;
+    const forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
+    return scene.hasProject() && scene.activeBody().isCad() ? JNI_TRUE : JNI_FALSE;
 }
 
 // Whether the active body is a FACE-SUPPORTED CAD body (`CAD-A3`): its placement
@@ -3256,7 +3323,8 @@ Java_com_forgeshape_app_NativeViewport_sceneActiveBodyIsCad(JNIEnv*, jclass) {
 JNIEXPORT jboolean JNICALL
 Java_com_forgeshape_app_NativeViewport_sceneActiveBodyIsFaceSupportedCad(JNIEnv*, jclass) {
     std::lock_guard<std::mutex> lock(g_stateMutex);
-    return forgeshape::constructionScene().activeBody().isFaceSupportedCad() ? JNI_TRUE : JNI_FALSE;
+    const forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
+    return scene.hasProject() && scene.activeBody().isFaceSupportedCad() ? JNI_TRUE : JNI_FALSE;
 }
 
 // The active CAD Body's authored values, in NativeViewport's CAD_* slots:
@@ -3275,7 +3343,9 @@ Java_com_forgeshape_app_NativeViewport_cadState(JNIEnv* env, jclass, jdoubleArra
     bool found = false;
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
-        const forgeshape::CadBody* cad = forgeshape::constructionScene().activeBody().cadOrNull();
+        const forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
+        const forgeshape::CadBody* cad =
+            scene.hasProject() ? scene.activeBody().cadOrNull() : nullptr;
         if (cad != nullptr) {
             found = true;
             const forgeshape::CadBodyState& state = cad->state();
@@ -3345,8 +3415,11 @@ static jint applyCadCandidate(const char* label,
     forgeshape::MeshRevision revision = forgeshape::kNoMeshRevision;
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
-        forgeshape::SceneObject& body = forgeshape::constructionScene().activeBody();
-        forgeshape::CadBody* cad = body.cadOrNull();
+        forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
+        forgeshape::CadBody* cad = nullptr;
+        if (scene.hasProject()) {
+            cad = scene.activeBody().cadOrNull();
+        }
         if (cad == nullptr) {
             status = forgeshape::CadStatus::NotCadBody;
         } else if (forgeshape::sketchSession().active()) {
@@ -3357,7 +3430,7 @@ static jint applyCadCandidate(const char* label,
             forgeshape::ScopedConstructionEdit edit(forgeshape::constructionHistory());
             status = cad->applyState(build(cad->state(), values, direction), &changed);
             if (status == forgeshape::CadStatus::Ok && changed) {
-                revision = forgeshape::publishSceneObject(body);
+                revision = forgeshape::publishSceneObject(scene.activeBody());
             }
         }
         g_lastCadApplyStatus = status;
@@ -3814,6 +3887,14 @@ Java_com_forgeshape_app_NativeViewport_encodeProject(JNIEnv* env, jclass) {
     forgeshape::ProjectKind kind = forgeshape::ProjectKind::Construction;
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
+        if (!forgeshape::constructionScene().hasProject()) {
+            // Home is not a project and has no document: nothing to save,
+            // nothing to checkpoint. Said by name rather than left to the
+            // codec's empty-SCNE refusal, because the shell asks this on every
+            // lifecycle edge and the answer is not a fault.
+            FS_LOGI("FORGESHAPE_PROJECT_ENCODE_SKIPPED:no_project");
+            return nullptr;
+        }
         // The mode the user is in IS the mode the file reopens in. Taken here,
         // under the same lock as the capture, so a file cannot say Sculpt and
         // then carry the scene as it was a moment before the mode changed.
@@ -4338,11 +4419,65 @@ Java_com_forgeshape_app_NativeViewport_validateProject(JNIEnv* env, jclass, jbyt
 JNIEXPORT jlong JNICALL
 Java_com_forgeshape_app_NativeViewport_projectFingerprint(JNIEnv*, jclass) {
     std::lock_guard<std::mutex> lock(g_stateMutex);
+    if (!forgeshape::constructionScene().hasProject()) {
+        return 0;  // no project, no document, no fingerprint
+    }
     const forgeshape::ProjectKind kind = forgeshape::sculptSession().inSculptMode()
                                              ? forgeshape::ProjectKind::Sculpt
                                              : forgeshape::ProjectKind::Construction;
     return static_cast<jlong>(
         forgeshape::projectSemanticFingerprint(forgeshape::constructionScene(), kind));
+}
+
+// ---------------------------------------------------------------------------
+// Home and the project lifecycle (`APP-H1`)
+// ---------------------------------------------------------------------------
+//
+// A project is open exactly when the scene holds a body; there is no second
+// flag. The shell derives Home from this, so a rotation, a recreation and a
+// resume all land where native truth says rather than where a Java field
+// remembers.
+
+JNIEXPORT jboolean JNICALL Java_com_forgeshape_app_NativeViewport_projectOpen(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    return forgeshape::constructionScene().hasProject() ? JNI_TRUE : JNI_FALSE;
+}
+
+// Closes the project: the way to Home. Every body is destroyed, the history is
+// dropped (it described a scene that no longer exists, exactly as after a
+// load), any sketch or support selection is cancelled with its borrowed view
+// given back, any stroke in flight is dropped, the session leaves Sculpt and
+// the gizmo is withdrawn. Writes NOTHING: whether the work was saved first is
+// the shell's dirty-guard question, answered before this is called.
+JNIEXPORT void JNICALL Java_com_forgeshape_app_NativeViewport_closeProject(JNIEnv*, jclass) {
+    int bodies = 0;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
+        bodies = static_cast<int>(scene.bodyCount());
+        g_grabbing = false;
+        g_strokePending = false;
+        forgeshape::supportChooser().cancel();
+        if (forgeshape::sketchSession().active()) {
+            forgeshape::sketchSession().cancel();
+        }
+        endSketchView();
+        forgeshape::sculptSession().cancelStroke();
+        forgeshape::sculptSession().enterConstruction();
+        forgeshape::gizmoSession().setActive(false);
+        g_selection.resetGesture();
+        forgeshape::constructionHistory().clear();
+        scene.closeProject();
+    }
+    FS_LOGI("FORGESHAPE_PROJECT_CLOSED bodies=%d", bodies);
+}
+
+// How many times the active body was read while no project was open. Zero in
+// every product flow; the device suite asserts it across Home, the bootstrap
+// and the first commit. Read-only.
+JNIEXPORT jlong JNICALL
+Java_com_forgeshape_app_NativeViewport_debugActiveBodyMisuseCount(JNIEnv*, jclass) {
+    return static_cast<jlong>(forgeshape::ConstructionScene::activeBodyMisuseCount());
 }
 
 // Where the renderer stands, in step with NativeViewport's RENDERER_* fields.

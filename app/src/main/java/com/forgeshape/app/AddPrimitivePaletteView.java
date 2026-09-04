@@ -26,10 +26,13 @@ import android.widget.TextView;
  * per primitive the product actually builds, and one New Sketch tile
  * (CAD-R0-A1A2), which is the second category this view's own layout was kept
  * ready for: it becomes a second group inside the palette without Objects, the
- * scene or the capsule learning anything new. New Sketch opens the plane
- * chooser INSIDE the palette; a sketch begins only once a plane has been
- * chosen, and a body exists only once that sketch has been extruded. There is
- * still no <i>Add from file</i>, no template and no disabled placeholder.
+ * scene or the capsule learning anything new. New Sketch enters the spatial
+ * support chooser directly (`CAD-A3`, `UI-OWNER-46`) — a plane or a planar CAD
+ * face is picked in the viewport — and the by-name plane list stays reachable
+ * from a secondary control as the accessibility fallback; a sketch begins only
+ * once a support has been chosen, and a body exists only once that sketch has
+ * been extruded. There is still no <i>Add from file</i>, no template and no
+ * disabled placeholder.
  *
  * <p>It offers no subdivisions, segments or any other topology control. Where a
  * primitive has exact parameters they are its own, and they are edited in the
@@ -138,18 +141,34 @@ final class AddPrimitivePaletteView extends AnchoredSurfaceView {
         // it reads as a peer of the shapes and not as a footer.
         final LinearLayout sketchRow = new LinearLayout(context);
         sketchRow.setOrientation(HORIZONTAL);
+        // New Sketch lands DIRECTLY in the spatial support chooser
+        // (`UI-OWNER-46`): the viewport's planes and faces are the primary way
+        // to choose a support, and no intermediary row stands between the tile
+        // and them. The by-name plane list is reached from the secondary
+        // control under it, and stays as the accessibility fallback.
         final View sketchTile = buildTile(context, R.id.add_sketch, R.drawable.ic_sketch_new,
                 context.getString(R.string.new_sketch));
         sketchTile.setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View v) {
-                showPlanes(true);
+                listener.onNewSketchSpatial();
             }
         });
         sketchRow.addView(sketchTile, EditorControlStyles.evenShare(0));
         sketchRow.addView(new View(context), EditorControlStyles.evenShare(gap));
         shapesSection.addView(sketchRow, EditorControlStyles.rowParams(
                 EditorControlStyles.dimen(context, R.dimen.section_gap)));
+        final TextView byName = EditorControlStyles.secondaryActionChip(context,
+                R.id.sketch_plane_by_name, context.getString(R.string.sketch_plane_by_name));
+        byName.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showPlanes(true);
+            }
+        });
+        final LinearLayout.LayoutParams byNameParams = EditorControlStyles.rowParams(gap);
+        byNameParams.width = ViewGroup.LayoutParams.MATCH_PARENT;
+        shapesSection.addView(byName, byNameParams);
         addView(shapesSection, EditorControlStyles.rowParams(0));
 
         // ----- the plane chooser -----
@@ -160,8 +179,9 @@ final class AddPrimitivePaletteView extends AnchoredSurfaceView {
         planeSection.addView(EditorControlStyles.sectionLabel(context,
                         context.getString(R.string.sketch_plane_prompt)),
                 EditorControlStyles.rowParams(0));
-        // The primary, viewport-first path: pick a plane or a planar CAD face
-        // directly in 3D. The by-name list below it is the fallback.
+        // The viewport-first path is offered here too, so a user who opened the
+        // by-name list can still go to the viewport from it; the tile above is
+        // the primary route.
         final TextView spatial = EditorControlStyles.listRow(context, R.id.sketch_support_spatial,
                 context.getString(R.string.sketch_support_spatial));
         spatial.setContentDescription(context.getString(R.string.sketch_support_spatial));

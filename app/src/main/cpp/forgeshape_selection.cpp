@@ -51,16 +51,6 @@ SceneHit pickSceneSnapshot(const CameraSnapshot& camera, float screenX, float sc
     return nearest;
 }
 
-SceneHit pickScene(const CameraSnapshot& camera, float screenX, float screenY,
-                   int viewportWidth, int viewportHeight, const Mat4& model,
-                   const Mat4& inverseModel, bool frontFacesOnly) {
-    // Picking reads the CURRENT CPU mesh revision, never Vulkan buffer memory.
-    // Holding the snapshot keeps that revision alive for the whole intersection,
-    // even if a newer revision is published concurrently.
-    return pickMesh(camera, screenX, screenY, viewportWidth, viewportHeight, meshStore().current(),
-                    model, inverseModel, frontFacesOnly);
-}
-
 SceneHit pickMesh(const CameraSnapshot& camera, float screenX, float screenY, int viewportWidth,
                   int viewportHeight, const RuntimeMeshPtr& mesh, const Mat4& model,
                   const Mat4& inverseModel, bool frontFacesOnly) {

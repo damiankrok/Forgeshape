@@ -15,7 +15,9 @@ What each box owns is in the Ownership table below; what the diagram adds is the
 ForgeShapeActivity
         |
         +-- EditorWorkspaceView   (+ EditorUiState, WorkspaceLayoutMode)
-        |        +-- StartChooserView / GlobalToolbarView
+        |        +-- HomeView / NewProjectChooserView / UnsavedChangesPromptView
+        |        |        (three ChooserSurfaceViews: no project, which kind, leave dirty?)
+        |        +-- RecoveryPromptView / GlobalToolbarView
         |        +-- WorkspaceTrailingHostView
         |        |        +-- BoundedScrollView -> vertical context column
         |        |                 +-- ToolRailView / transform + space / precision
@@ -227,8 +229,9 @@ The Activity's content view is `EditorWorkspaceView`, a `FrameLayout` with three
 children in z-order: the `SurfaceView` at the **whole window size**; `chromeRoot`,
 a transparent, non-clickable vertical `LinearLayout` holding every interactive
 surface; and `overlayRoot`, holding what must survive chrome being hidden — the
-restore chip, the Display popover, the Objects panel, the Add Primitive palette
-and the start chooser.
+restore chip, the Display popover, the Objects panel, the Add Primitive palette,
+Home, the New Project chooser, the unsaved-changes question and the recovery
+question.
 
 Inside `chromeRoot`: `GlobalToolbarView` at the top; then a weighted horizontal
 row carrying — leading edge first — the Objects column (expanded windows only),
@@ -479,7 +482,7 @@ toolbar's two capsules, the Tool Rail, the brush controls — and is the only
 translucent tier, because the model behind a narrow capsule is informative.
 `fsSurfaceContext` (Tier 2) is an expanded surface carrying a body of content to
 be read: the Display popover, the Objects panel, the Add Primitive palette,
-the start chooser.
+Home and the other chooser surfaces.
 `fsSurfacePrecision` (Tier 3) is the Property Inspector, where exact values are
 typed. **Nothing blurs and nothing pretends to**: the viewport is a `SurfaceView`
 and the platform cannot blur what is behind one, so "glass" is tone plus opacity
@@ -869,20 +872,87 @@ key listener accepts `0123456789.,-`, and the minus matters twice over: a negati
 coordinate or angle is ordinary, and a negative *dimension* must be enterable so
 it can be visibly refused rather than unreachable.
 
-### Start flow, and the destructive-act guard
+### Home, the New Project chooser and the CAD bootstrap (`APP-H1`)
 
-`StartChooserView` asks which representation the model begins in, over the live
-viewport, once per process. It owns no state and makes no native call; it reports
-which option was pressed. **Native state already exists when it is asked** — the
-Activity starts native code before building any view — so the scene, the default
-Body and its ObjectId are the same in both branches, neither answer creates
-anything, and startup is still one default Box at identity. *Construction*
-therefore only stops asking and re-reads. *Sculpt* makes exactly the two calls a
-user would make by hand: `applyConstructionSphere` with the diameter **read back
-from native state** rather than a constant invented in Java, then `freezeToSculpt`.
+**Home is not a project.** The process starts with the scene EMPTY —
+`constructionScene()` is built with `NoProjectTag`, and `ConstructionScene::
+hasProject()` (at least one body) is the ONE answer to "is a project open"; no
+Java flag mirrors it. `EditorWorkspaceView::refreshShellPhase` derives, at the
+end of every `syncFromNative`, which of Home, the New Project chooser, the
+unsaved-changes question or the editor stands, so a rotation, a recreation and a
+resume all land where native truth says. Behind Home the viewport is honestly
+empty: nothing is drawn (an empty snapshot), nothing is picked, no history
+exists, `encodeProject` returns null, `projectFingerprint` returns 0 and the
+autosave worker skips rather than writing an empty fake scene. Nothing
+fabricates a default primitive or an invisible placeholder body.
+
+**An empty scene is safe because the funnels are.** The four process-scoped
+accessors answer for "no project" without touching `activeBody()`:
+`activeConstructionOrNull()` is null, `meshStore()` and `constructionTransform()`
+return an unbound store and an unbound identity that belong to no body, and
+`sculptSession()` binds a null target (its own `unbound_` answer). The handful of
+JNI entry points that read `activeBody()` directly ask `hasProject()` first and
+refuse by name (`NoProject`). `activeBody()` on an empty scene still cannot
+dereference an empty list: it answers with a process-static null object that is
+in no scene and wears `kNoObject`, and COUNTS the read
+(`activeBodyMisuseCount`, `debugActiveBodyMisuseCount` across JNI) so the
+device suite can assert the product never reads a body across Home — which it
+does, in `HomeFlowTest`, on every journey. Nothing here is a repository-wide
+optional-body rewrite: `SceneObject`, the history, Delete and the codec are
+untouched, and every self-test still builds its scene with the project
+constructor that creates the default Box.
+
+**The CAD bootstrap** is the existing spatial support chooser and the existing
+volatile `SketchSession` run over that empty scene (`supportChooserBegin(false)`
+— no faces, there is nothing to sketch on). What changes is where the first
+commit lands: with no project open, `sketchCommit` dispatches to
+`commitFirstCadProject` (`forgeshape_project_bootstrap.{h,cpp}`), which builds
+a complete one-body `ProjectDocument` from the session's candidate state — one
+world-plane CAD body at the identity, wearing the id the allocator hands out
+next — and replaces the scene through `loadProjectDocument`, the same validated,
+all-or-nothing path Open and Recover take. So the sketch owns no `ObjectId` and
+no `SceneObject` until that moment; a refused profile, depth or regeneration
+creates no project and leaves the sketch in Ready with its reason in
+`lastStatus`; the new project starts with an EMPTY history, as every loaded
+document does (undoing the only body would give an empty project, which does
+not exist); and Back to Home before that moment costs nothing (`closeProject`
+cancels the chooser, the sketch and the borrowed view, and has no body to
+remove). Cancel in the bootstrap sketch goes one step back, to the plane
+chooser; Back from the chooser goes Home. The toolbar draws **Back to Home**
+and withdraws the project and export controls while the bootstrap is open; the
+Objects capsule, the history capsule and creation are withdrawn too, because a
+body created from the palette then would be a project the user never chose.
+
+**The Sculpt bootstrap** is the seeded path the product already had, inside
+the session-initialization bracket: `sceneAddBody`, `applyConstructionSphere`
+with the diameter **read back from native state**, then `freezeToSculpt`.
 Nothing about Freeze is duplicated, so *Back to Construction* finds the exact
 sphere and *Resume Sculpt* returns the same frozen mesh for the ordinary reasons.
-A refusal leaves the product in Construction, unchanged, and says so.
+A refusal closes the project again and says so: a project that could not become
+the sculpt the user asked for is not the project they asked for.
+
+**Leaving a project is guarded by fingerprint.** The workspace remembers the
+`projectFingerprint` at the last Save, Open, Open File or Recover and whether
+there ever was one; a project whose fingerprint differs, or that was never
+stored anywhere (a new project), is dirty. New Project…, Open Saved Project and
+Open File… from the Project surface ask `UnsavedChangesPromptView` first when it
+is: *Save and continue* writes the app's own slot and continues only if that
+succeeded (a failed save keeps the project alive and the question open);
+*Discard* continues without writing and retires the recovery checkpoint that
+was protecting the discarded changes; *Cancel* — and System Back — return to
+the project unchanged. For New Project the project closes at once so the
+chooser stands over Home; for Open File the project stays live until a file
+actually opens. `closeProject` (JNI) drops the history, cancels every session
+and destroys the bodies; it writes nothing.
+
+**Back is deterministic in every phase**, innermost outward: the unsaved
+question (Cancel), the New Project chooser (Cancel), a bootstrap sketch (to the
+plane chooser), the bootstrap chooser (Home), a support chooser inside a project
+(cancelled), then the anchored surfaces. Home with nothing open is the
+platform's Back. `hasDismissibleSurface` includes all of these, so the Activity's
+predictive-back registration follows them.
+
+### The destructive-act guard
 
 **Two vocabularies, on purpose.** This document, the code below JNI and the view
 ids say *Freeze*, *re-Freeze* and *Frozen Sculpt Mesh*, because those name what
@@ -3686,11 +3756,12 @@ the deleted body was last — to the one before it. Scene order is the Objects
 list's order, so what the user sees selected afterwards is the row that took the
 deleted row's place.
 
-**The last body is refused by name.** This product has no empty project:
-`ConstructionScene` creates a body eagerly, `activeBody()` returns a reference
-and every accessor built on it assumes one exists, and `validateProjectDocument`
-refuses a file with zero bodies. `RefusedLastBody` says so and changes nothing;
-no replacement primitive is ever invented. **Refused while sculpting** too, on
+**The last body is refused by name.** A project is never empty: a project
+scene creates a body eagerly, `validateProjectDocument` refuses a file with zero
+bodies, and since `APP-H1` an EMPTY scene means "no project is open" — Home —
+which Delete must never reach. `RefusedLastBody` says so and changes nothing;
+no replacement primitive is ever invented. The one way to an empty scene is
+`closeProject`, and that is leaving the project, not editing it. **Refused while sculpting** too, on
 the same terms body switching and Undo/Redo already follow: the Sculpt target is
 fixed for the duration of the mode, and Undo is refused there, so a delete made
 there could not be taken back until the user left.

@@ -1,56 +1,89 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.59.0
-**Updated:** 2026-09-03
-**Result:** **CAD-A3 — PARTIAL (`FAIL-CAD-A3-APP-H1`). A CAD sketch can be
-supported by a planar CAD face, and the dependent body follows its producer.
-APP-H1 Home is deferred.**
+**Status Version:** 0.60.0
+**Updated:** 2026-09-04
+**Result:** **CAD-A3 + APP-H1 — COMPLETE (`PASS-CAD-A3-APP-H1-OWNER-RETEST-READY`).
+ForgeShape opens on Home; a new CAD project begins from a plane picked in the
+viewport and exists the moment its first sketch is extruded; a CAD sketch can
+be supported by a planar CAD face; the CADB v2 corpus is independently
+encoded.**
 
-The CAD-A3 domain and the viewport-first face-sketch feature landed and are
-verified; the APP-H1 Home / New-Project rework and several breadth items are
-honestly not done, so not every acceptance criterion is met. What works, from
-an existing CAD project: **New Sketch → Pick plane or face in 3D → tap a world
-plane OR a planar CAD face → an exact-normal orthographic sketch → draw →
-Extrude New Body → a durable, editable, FACE-SUPPORTED CAD body whose placement
-follows its producer's Move / Rotate / edit, whose producer cannot be deleted
-while it stands, and whose dependency survives a save / reopen.**
+`CAD-A3-C1` closed every item the previous pass deferred, on top of the
+CAD-A3 domain it left green:
 
-- **Semantic face topology + TopoRef** (`forgeshape_cad_face.{h,cpp}`,
-  `ARCH-OWNER-13`): an extrusion exposes two caps and one side per profile edge,
-  each a stable feature token (never a triangle index) with a deterministic
-  body-local frame. A face-supported sketch stores a `TopoRef`; a stale lineage,
-  a missing producer, a bad token, a curved circle side or a cycle all fail
-  closed, with no nearest-face retargeting.
-- **Dependency graph and transform contract**: a face-supported body's world
-  placement is DERIVED (`ConstructionScene::resolveWorldModel` composes
-  `producerWorldModel · faceFrame` every snapshot), so a parent Move / Rotate /
-  parameter edit carries the dependent with no stored follow-state; the body is
-  not independently transformable; the graph is acyclic and bounded; and
-  deleting a producer with dependents is refused (`RefusedHasDependents`).
-- **CADB v2**: the `.forge` CADB section gains version 2 carrying the support; a
-  world-only CAD project stays v1 and byte-identical, an older build refuses v2,
-  and load validates the whole dependency graph before applying anything.
-- **Exact sketch camera and adaptive grid**: `frameSketchView` looks exactly
-  along the sketch frame's normal with no pitch-clamp approximation; the sketch
-  grid is view-adaptive (nice 1/2/5·10^k, never persisted, typed values never
-  re-snapped).
-- **Spatial support chooser**: world planes and planar CAD faces are picked in
-  the viewport (tap to aim, tap the same target again to commit), offered beside
-  the by-name plane list, which stays as the fallback.
+- **Home is not a project** (`APP-H1`). The process starts with the scene
+  EMPTY (`ConstructionScene(NoProjectTag)`), and `hasProject()` — at least one
+  body — is the ONE answer to "is a project open"; the workspace derives Home,
+  the New Project chooser, the unsaved-changes question or the editor from it
+  on every refresh and remembers none of them. Behind Home nothing is drawn,
+  picked, saved, checkpointed or fingerprinted, and nothing fabricates a
+  default primitive or a placeholder body. The four process-scoped accessors
+  answer for "no project" without reading `activeBody()`; the few JNI entry
+  points that read it directly refuse by name; and `activeBody()` on an empty
+  scene answers a COUNTED null object rather than dereferencing an empty list —
+  `HomeFlowTest` asserts on every journey that the count never moved, and it
+  never did.
+- **New Project offers exactly CAD and Sculpt.** CAD is the transient
+  bootstrap: the spatial world-plane chooser and the one volatile sketch
+  session over the empty scene, owning no `ObjectId` and no `SceneObject`; the
+  first Extrude creates the project through `commitFirstCadProject` — a
+  one-body document replacing the scene through the SAME all-or-nothing
+  `loadProjectDocument` path Open takes, so the new project starts with an
+  EMPTY history, a refusal creates nothing, and Back to Home before it costs
+  nothing. Sculpt is the seeded sphere inside the session-initialization
+  bracket. Open File from Home takes the existing SAF contract: cancel and a
+  refused file leave Home standing with the verdict on it.
+- **Leaving a dirty project asks Save / Discard / Cancel**, by fingerprint
+  against the last Save / Open / Open File / Recover; Save continues only if
+  the slot was written, Discard retires the checkpoint, Cancel and System Back
+  change nothing. Back is one step in every phase and the platform's own at
+  Home.
+- **New Sketch lands directly in the spatial chooser** (`UI-OWNER-46`); the
+  by-name planes stay as `sketch_plane_by_name`, the accessibility fallback.
+  A stylus hover highlights a target and never commits (verified as a
+  synthesized hover through the real dispatch; hardware hover is not claimed).
+- **The independent CADB v2 corpus** (`scripts/build-forge-corpus.ps1`): six
+  fixtures — cap support, side support, a three-body chain, every
+  representation beside a face-supported body, and two the decoder must refuse
+  (a face reference naming no face, a dependency cycle), the corrupt two
+  CONSTRUCTED with the bad value in place — PowerShell bytes = C++ bytes, pinned
+  by `CADA3-46..51`, all sixteen v1 fixtures byte-identical. **The parity found
+  a production defect**: the lineage token's FNV-1a offset basis in
+  `forgeshape_cad_face.cpp` was mistyped one digit short; because a reader
+  recomputes and compares that token it is a FORMAT field, so the contract was
+  fixed to the algorithm the code and `DATA_PACKAGE_SPEC.md` §7c state. No
+  shipped file carried a v2 token before this pass.
+- **Screenshot evidence**: `CadA3VisualEvidenceTest` captures the ten required
+  states through the composed display with measured facts, and
+  `scripts\collect-cad-a3-evidence.ps1` builds `OWNER_CONTACT_SHEET.png` and
+  `VISUAL_EVIDENCE.md` from them.
 
-**Deliberately NOT done, and flagged for the coordinator:** the APP-H1 Home /
-New-Project routing and the empty New-CAD bootstrap (they conflict with the
-load-bearing no-empty-project invariant); the independent PowerShell v2 corpus
-builder and the five named v2 fixtures; stylus-hover device verification; the
-face-first contextual shortcut; and a deterministic screenshot contact sheet.
+The CAD-A3 core is unchanged: semantic face topology and `TopoRef`
+(`forgeshape_cad_face.{h,cpp}`, `ARCH-OWNER-13`), the derived world placement
+of a face-supported body (`ConstructionScene::resolveWorldModel`), the acyclic
+bounded dependency graph and the producer-delete refusal, CADB v2 with v1
+byte-identical, the exact sketch camera and the adaptive grid.
+
+Verified: **19/19 native suites, 2920 checks, zero failures** (13 new
+`CADA3_BOOT_*`, 17 new project-suite checks); the standalone runner's 17
+platform-neutral suites 2567/0; JVM 70/70; both ABIs debug and release; device
+guards; the twenty-two-fixture corpus; the new device suites `HomeFlowTest` OK
+(12), `SpatialSketchTest` OK (8), `CadA3VisualEvidenceTest` OK (1),
+`SketchExtrudeTest` OK (9) and the seven classes the Home change touched; and
+the authoritative aggregate — see *Current evidence summary*. All device work
+on `emulator-5580` = `ForgeShape_Stage006`; `emulator-5554` never contacted.
 See `artifacts/cad-a3-app-h1/INDEX.md`.
 
-Verified: **19/19 native suites, 2889 checks, zero failures** (44 new `CADA3_*`);
-JVM 70/70; both ABIs debug and release; device guards; the sixteen v1 fixtures
-byte-identical; the new device suite `SpatialSketchTest` OK (2 tests) and
-`SketchExtrudeTest` OK (9); and the authoritative aggregate — see *Current
-evidence summary*. All device work on `emulator-5580` = `ForgeShape_Stage006`;
-`emulator-5554` never contacted.
+---
+
+**Previous result — CAD-A3 — PARTIAL (`FAIL-CAD-A3-APP-H1`), closed above.**
+A CAD sketch can be supported by a planar CAD face, and the dependent body
+follows its producer. What that pass delivered, from an existing CAD project:
+**New Sketch → Pick plane or face in 3D → tap a world plane OR a planar CAD
+face → an exact-normal orthographic sketch → draw → Extrude New Body → a
+durable, editable, FACE-SUPPORTED CAD body whose placement follows its
+producer's Move / Rotate / edit, whose producer cannot be deleted while it
+stands, and whose dependency survives a save / reopen.**
 
 ---
 
@@ -1799,7 +1832,9 @@ device. `README.md` documents how to read them.
 | `EditorWorkspaceLifecycleTest` | HOME/resume rebuilt from native truth | 3 |
 | `EditorWorkspaceDisplayTest` | display/projection ids, presentation-only, resume, refused index, the View/Grid group | 17 |
 | `EditorWorkspaceObjectsTest` | rows by ObjectId, viewport pick sync, the docked surface, 20-body scalability | 10 |
-| `EditorWorkspaceStartFlowTest` | the start question, and the direct Sculpt path's Freeze reuse | 8 |
+| `HomeFlowTest` | `E2E-APPH1-01..12` (`CAD-A3-C1`): cold-launch Home with no project, no body, no history, no document and exactly two actions; New Project → CAD/Sculpt and Cancel; New CAD through a real spatial plane tap-tap to the first durable body with an empty history; New Sculpt as a real sculpt project with Sculpt Undo green; Open File from Home restoring a producer + face-supported dependent; cancel and a corrupt/missing file leaving Home standing; the unsaved-changes guard's Cancel, Discard and Save paths; deterministic Back in every phase; Home and the bootstrap surviving a recreation — and, on every journey, that native never read an active body while no project was open | 12 |
+| `CadA3VisualEvidenceTest` | `E2E-CADA3-VIS`: the ten-frame Home → New CAD → face sketch → reopen journey captured through the composed display with measured facts per frame, for `OWNER_CONTACT_SHEET.png` / `VISUAL_EVIDENCE.md` | 1 |
+| `SpatialSketchTest` | `E2E-CADA3`: New Sketch landing directly in the spatial support chooser; the by-name plane fallback; every world plane by a real aiming tap and a committing tap; a synthesized stylus hover that highlights and never commits, then a finger commit; a planar cap and a side face each supporting a sketch; a cylindrical side never doing so; a face-supported dependent surviving a producer depth edit, refusing the producer's delete and surviving a save/reopen; the adaptive grid following two real pinches with a typed value kept exact | 8 |
 | `EditorWorkspaceFoundationTest` | icons, pressed feedback, touch floor in Construction **and in Sculpt** (`UIR3-01`) including the precision toggle and the capsule`+`, rail tap-vs-scroll, viewport floor, popover | 8 |
 | `EditorWorkspaceThemeTest` | the three-palette control, the switch, state preservation across the recreation, the material tiers, selection-vs-commit, contrast | 19 |
 | `EditorWorkspaceMotionTest` | popover preserved, inspector interruptibility, chrome hide/restore, viewport stability, reduced motion, gesture priority | 10 |
@@ -1933,7 +1968,43 @@ precondition. Runtime evidence separately shows the real keyboard.
 
 ## Current evidence summary
 
-Latest run (**CAD-R0-A1A2**), on the isolated `ForgeShape_Stage006` /
+Latest run (**CAD-A3-C1**), on the isolated `ForgeShape_Stage006` /
+`emulator-5580` AVD, on the final runtime/test tree:
+[`artifacts/cad-a3-app-h1/`](artifacts/cad-a3-app-h1/) — `INDEX.md`,
+`HOME_FLOW.md`, `BOOTSTRAP_SESSION.md`, `CORPUS.md`, the CAD-A3 contracts,
+`TEST_RESULTS.md`, `DEVICE_E2E.md`, `VISUAL_EVIDENCE.md` with
+`OWNER_CONTACT_SHEET.png` and `captures/`, the raw startup log (19/19
+`_SELFTEST_OK`, 2920 checks, zero failures, seventeen digests,
+`FORGESHAPE_STARTUP_NO_PROJECT`), the focused logs with the three first-fail
+transcripts, and the aggregate.
+
+- **Instrumented (authoritative):** `scripts\run-instrumented-tests.ps1 -Serial
+  emulator-5580 -FullSharded` discovered **37 classes / 504 tests** — the new
+  `HomeFlowTest` (12), `CadA3VisualEvidenceTest` (1) and the widened
+  `SpatialSketchTest` (8) beside the retired `EditorWorkspaceStartFlowTest`
+  raise the inventory from 491 — assigned them exhaustively to five shards
+  (**100 + 104 + 99 + 101 + 100**), missing = duplicates = unexpected =
+  execution_missing = 0, aborted_shards = 0, and emitted
+  **`FULL_SHARDED_SUITE_PASS`** on the final runtime/test tree
+  (`artifacts/cad-a3-app-h1/FULL_SHARDED.txt`). Five aggregates preceded it,
+  each kept as `FULL_SHARDED_RUN1..5_FAIL.txt` and each rerun from shard 1:
+  a baseline-reset defect that inherited a CAD body as the box, an
+  order-dependent selection assertion, a keyboard-sheet timing wait, one
+  guest state that refused its IME until a real reboot, and the palette count
+  that had to learn the by-name fallback. None was the product.
+- **Focused:** `HomeFlowTest` OK (12), `SpatialSketchTest` OK (8),
+  `SketchExtrudeTest` OK (9), `CadA3VisualEvidenceTest` OK (1), and the seven
+  classes the Home change touched OK. Three rounds before the passing one were
+  the new suites' own assertions (a dirty-project helper re-applying an
+  identical box, an absolute history depth, a pinch direction, the grid's
+  pre-sample fallback, a rectangle value slot) plus one emulator
+  `system_server` crash that the guest recovered from on its own.
+- **JVM:** 70/70. **Native:** 19 suites, 2920 checks. **Runner:** 17 suites,
+  2567 checks. **Builds:** debug and release, both ABIs. **Guards:**
+  `DEV2-01..07`, `DEV3-01..06`. **Corpus:** twenty-two fixtures verified,
+  PowerShell = C++ on all six v2 fixtures after the FNV basis fix.
+
+Previous run (**CAD-R0-A1A2**), on the isolated `ForgeShape_Stage006` /
 `emulator-5580` AVD, on the final tree:
 [`artifacts/cad-r0-a1a2/`](artifacts/cad-r0-a1a2/) — `INDEX.md`, the domain,
 workplane, entity, profile, triangulation, extrude, regeneration and data
@@ -2930,15 +3001,28 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Exactly one next step: return the CAD-R0-A1A2 report to the ForgeShape
-coordinator for the owner's CAD retest.** No product stage may begin here:
-booleans, fillets, chamfers, a constraint solver and every other CAD feature
-beyond R0 are **not started**, CAD → Sculpt is **not started** (refused by name
-and recorded as the three decisions it needs), `BRIDGE-R1` remains **future**,
-Stage 018A still owns rename, visibility, lock, duplicate and grouping — Delete
-is the ONLY object command that exists — and Stage 033's full exporter, OBJ,
-FBX and `APP-H1` are all **not started**. None may be begun without the
-coordinator opening it. GATE-E2E remains the owner's and is not opened here.
+**Exactly one next step: return the CAD-A3-C1 report to the ForgeShape
+coordinator for the OWNER's real-device Home + CAD workflow retest.** No
+product stage may begin here: booleans, fillets, chamfers, a constraint solver,
+custom construction planes, curved-face and imported/sculpted-surface sketches,
+an independently movable dependent and the face-first contextual shortcut are
+**not started**; CAD → Sculpt is **not started** (refused by name and recorded
+as the three decisions it needs); `BRIDGE-R1` remains **future**; Stage 018A
+still owns rename, visibility, lock, duplicate and grouping — Delete is the
+ONLY object command that exists — and Stage 033's full exporter, OBJ and FBX
+are **not started**. None may be begun without the coordinator opening it.
+GATE-E2E remains the owner's and is not opened here.
+
+CAD-A3 + APP-H1 is closed on the technical side. `Home → New Project → CAD →
+tap a plane in the viewport → sketch → Extrude = the first body and the
+project → New Sketch → tap a face → Extrude = a face-supported dependent → Save
+→ Home → Open File` works through the real chrome and real MotionEvents, with
+New Sculpt, the unsaved-changes guard and a one-step Back beside it; the CADB
+v2 corpus is independently encoded and its lineage token is a stated format
+field. What the owner's retest is for is what no emulator settles: whether
+choosing a plane, a face and a depth with a real finger or stylus — and a real
+stylus hover, which only hardware can show — reads as the product it should
+be.
 
 CAD-R0-A1A2 is closed on the technical side. `New Sketch → plane → Rectangle /
 Circle / Line / Polyline → Finish Sketch → depth → Extrude` works through the

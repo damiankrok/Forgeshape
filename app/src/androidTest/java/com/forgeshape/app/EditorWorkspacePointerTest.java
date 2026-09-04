@@ -205,6 +205,8 @@ public final class EditorWorkspacePointerTest {
      */
     @Test
     public void inr117_tapSelectionIsUnchanged() {
+        final long baseline = NativeViewport.sceneActiveBodyId();
+        final int bodies = NativeViewport.sceneBodyCount();
         final double[] before = onWorkspace(rule.getScenario(),
                 (activity, workspace) -> nativeSnapshot());
 
@@ -219,8 +221,16 @@ public final class EditorWorkspacePointerTest {
         });
         assertTrue("the viewport still owns its own tap", Boolean.TRUE.equals(consumed));
 
-        final double[] after = onWorkspace(rule.getScenario(),
-                (activity, workspace) -> nativeSnapshot());
+        // A tap may legitimately SELECT another body: the scene accumulates
+        // bodies across the process, and whichever one is nearest under the
+        // centre pixel is the one a tap chooses. That is what a tap is for and
+        // not a geometry change, so the claim is asserted about the SAME body
+        // -- selected back by id -- and about the scene's size.
+        assertEquals("a tap creates and removes nothing", bodies, NativeViewport.sceneBodyCount());
+        final double[] after = onWorkspace(rule.getScenario(), (activity, workspace) -> {
+            NativeViewport.sceneSelectBody(baseline);
+            return nativeSnapshot();
+        });
         assertArrayEquals("a tap changes no geometry:"
                 + describeSnapshotDifference(before, after), before, after, 0.0);
     }

@@ -56,6 +56,10 @@ final class ProjectActionsPopoverView extends AnchoredSurfaceView {
 
     /** Told which project action was asked for; the caller owns what it means. */
     interface OnProjectAction {
+        /** `APP-H1`: leave this project for a new one. Guarded by the
+         *  unsaved-changes question when the project is dirty. */
+        void onNewProjectRequested();
+
         void onSaveProjectRequested();
 
         void onOpenProjectRequested();
@@ -70,6 +74,7 @@ final class ProjectActionsPopoverView extends AnchoredSurfaceView {
         void onImportGlbRequested();
     }
 
+    private final TextView newRow;
     private final TextView saveRow;
     private final TextView openRow;
     private final TextView saveCopyRow;
@@ -91,6 +96,22 @@ final class ProjectActionsPopoverView extends AnchoredSurfaceView {
 
         addView(EditorControlStyles.sectionLabel(context, context.getString(R.string.project)),
                 EditorControlStyles.rowParams(0));
+
+        // New Project (APP-H1): the way from this project to another, through
+        // the New Project chooser and -- when there are unsaved changes -- the
+        // one question that guards them. First, because it is the act that
+        // leaves; Save and Open are acts on the project the user is in.
+        newRow = EditorControlStyles.listRow(context, R.id.project_new,
+                context.getString(R.string.project_new));
+        newRow.setGravity(Gravity.CENTER_VERTICAL);
+        newRow.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                listener.onNewProjectRequested();
+            }
+        });
+        addView(newRow, EditorControlStyles.rowParams(
+                EditorControlStyles.dimen(context, R.dimen.row_gap_small)));
 
         saveRow = EditorControlStyles.listRow(context, R.id.project_save,
                 context.getString(R.string.project_save));
@@ -190,6 +211,7 @@ final class ProjectActionsPopoverView extends AnchoredSurfaceView {
         // Every row carries the interactive floor as HIT AREA, reached with
         // padding rather than by growing the drawn row: the text stays the size
         // it reads at.
+        applyTouchFloor(context, newRow);
         applyTouchFloor(context, saveRow);
         applyTouchFloor(context, openRow);
         applyTouchFloor(context, saveCopyRow);
@@ -251,6 +273,10 @@ final class ProjectActionsPopoverView extends AnchoredSurfaceView {
     }
 
     /** The rows, for verification that names a control by its semantic id. */
+    TextView newRow() {
+        return newRow;
+    }
+
     TextView saveRow() {
         return saveRow;
     }

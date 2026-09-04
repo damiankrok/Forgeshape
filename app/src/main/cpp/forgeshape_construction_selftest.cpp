@@ -466,7 +466,11 @@ void testPickingUsesGeneratedBox(Recorder& r) {
     ConstructionBox box;
     box.setDimensionsMeters(5.5, 0.42, 1.125);
 
-    MeshStore& store = meshStore();
+    // Its OWN store, wearing the Construction box's id: since `APP-H1` the
+    // process scene holds no project at startup, so there is no process store
+    // to borrow. What is under test -- that picking reads the GENERATED box --
+    // is a property of the store and the mesh, not of the process.
+    MeshStore store(kConstructionBoxObjectId);
     const MeshRevision before = store.currentRevision();
     MeshValidation why = MeshValidation::Ok;
     const MeshRevision published = publishConstructionBox(box, store, &why);
@@ -519,8 +523,9 @@ void testPickingUsesGeneratedBox(Recorder& r) {
     camera.setViewport(kTestViewportWidth, kTestViewportHeight);
     const Mat4 identity = mat4Identity();
     const SceneHit scene =
-        pickScene(camera.snapshot(), kTestViewportWidth * 0.5f, kTestViewportHeight * 0.5f,
-                  kTestViewportWidth, kTestViewportHeight, identity, identity, true);
+        pickMesh(camera.snapshot(), kTestViewportWidth * 0.5f, kTestViewportHeight * 0.5f,
+                 kTestViewportWidth, kTestViewportHeight, store.current(), identity, identity,
+                 true);
     r.check("pick_scene_hits_construction_box",
             scene.hit && scene.objectId == kConstructionBoxObjectId);
     // The reported hit point must lie on the generated surface.

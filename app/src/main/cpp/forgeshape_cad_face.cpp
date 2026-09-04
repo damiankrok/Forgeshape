@@ -6,7 +6,14 @@
 namespace forgeshape {
 namespace {
 
-constexpr uint64_t kFnvOffset = 1469598103934665603ull;
+// FNV-1a over 64 bits: the offset basis 0xCBF29CE484222325 and the prime
+// 0x100000001B3. These two constants ARE the lineage-token format (see
+// DATA_PACKAGE_SPEC.md §7c): a `.forge` reader recomputes the producer's
+// signature and compares it to the stored token, so a second implementation
+// has to produce the same value from the same rule. `CAD-A3-C1`'s independent
+// PowerShell encoder found the basis here was mistyped one digit short
+// (1469598103934665603); it is now the FNV basis the comment always named.
+constexpr uint64_t kFnvOffset = 14695981039346656037ull;
 constexpr uint64_t kFnvPrime = 1099511628211ull;
 
 void mixU64(uint64_t& h, uint64_t v) {

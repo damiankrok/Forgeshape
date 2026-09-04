@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "forgeshape_cad_face.h"
 #include "forgeshape_history.h"
 #include "forgeshape_project_bytes.h"
 #include "forgeshape_project_document.h"
@@ -872,6 +873,245 @@ ProjectDocument canonicalMixedCadDocument() {
     return document;
 }
 
+// ---------------------------------------------------------------------------
+// The six `CAD-A3` CADB v2 fixtures
+// ---------------------------------------------------------------------------
+//
+// Every coordinate, size and depth is an exact binary fraction. Each dependent
+// body's lineage token is the producer's own topology signature, computed here
+// by the domain's `cadTopologySignature` and, in the PowerShell builder, by an
+// independent reimplementation of the rule DATA_PACKAGE_SPEC.md §7c states --
+// which is what makes the token a FORMAT field rather than an accident of this
+// build. A face-supported body's SCNE placement is the unused identity.
+
+ProjectCadBody canonicalCadRectangleBody(ObjectId objectId, Workplane plane, double centreU,
+                                         double centreV, double width, double height,
+                                         double depth, ExtrudeDirection direction) {
+    ProjectCadBody cad;
+    cad.objectId = objectId;
+    cad.state.sketch.plane = plane;
+    SketchRectangle rectangle;
+    rectangle.center = SketchPoint{centreU, centreV};
+    rectangle.width = width;
+    rectangle.height = height;
+    cad.state.sketch.entities.emplace_back(1, rectangle);
+    cad.state.sketch.nextEntityId = 2;
+    cad.state.extrude.profileEntityId = 1;
+    cad.state.extrude.depth = depth;
+    cad.state.extrude.direction = direction;
+    return cad;
+}
+
+// Supports `dependent` on `producer`'s face `token`, with the lineage the
+// producer's current topology carries.
+void supportOn(ProjectCadBody* dependent, const ProjectCadBody& producer,
+               const CadFaceToken& token) {
+    dependent->state.sketch.plane = Workplane::XY;
+    dependent->state.sketch.hasFaceSupport = true;
+    dependent->state.sketch.faceSupport.producerObjectId = producer.objectId;
+    dependent->state.sketch.faceSupport.producerLocalFeatureId = kCadFeatureId;
+    dependent->state.sketch.faceSupport.face = token;
+    dependent->state.sketch.faceSupport.lineageToken = cadTopologySignature(producer.state);
+}
+
+ProjectBodyPlacement placementOf(ObjectId objectId, const TransformValues& values) {
+    ProjectBodyPlacement body;
+    body.objectId = objectId;
+    body.transform = values;
+    return body;
+}
+
+// CAD FACE SKETCH CAP: a producer rectangle on XY, translated, and a dependent
+// rectangle supported by its far cap.
+ProjectDocument canonicalCadFaceSketchCapDocument() {
+    ProjectDocument document;
+    document.kind = ProjectKind::Construction;
+    document.scene.nextObjectId = 3;
+    document.scene.activeObjectId = 2;
+    document.scene.bodies.push_back(
+            placementOf(1, placement(1.5, 0.5, -2.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0)));
+    document.scene.bodies.push_back(placementOf(2, TransformValues{}));
+    document.hasCad = true;
+    const ProjectCadBody producer = canonicalCadRectangleBody(
+            1, Workplane::XY, 0.0, 0.0, 2.0, 2.0, 2.0, ExtrudeDirection::AlongNormal);
+    ProjectCadBody dependent = canonicalCadRectangleBody(
+            2, Workplane::XY, 0.25, -0.25, 1.0, 1.0, 0.5, ExtrudeDirection::AlongNormal);
+    supportOn(&dependent, producer, CadFaceToken{CadFaceKind::CapFar, 0, 0});
+    document.cad.bodies.push_back(producer);
+    document.cad.bodies.push_back(dependent);
+    return document;
+}
+
+// CAD FACE SKETCH SIDE: the same producer, and a dependent supported by the
+// producer's second profile edge (edge entity 1, local index 1) and extruded
+// AGAINST the face normal.
+ProjectDocument canonicalCadFaceSketchSideDocument() {
+    ProjectDocument document;
+    document.kind = ProjectKind::Construction;
+    document.scene.nextObjectId = 3;
+    document.scene.activeObjectId = 2;
+    document.scene.bodies.push_back(
+            placementOf(1, placement(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0)));
+    document.scene.bodies.push_back(placementOf(2, TransformValues{}));
+    document.hasCad = true;
+    const ProjectCadBody producer = canonicalCadRectangleBody(
+            1, Workplane::XY, 0.0, 0.0, 2.0, 2.0, 2.0, ExtrudeDirection::AlongNormal);
+    ProjectCadBody dependent = canonicalCadRectangleBody(
+            2, Workplane::XY, 0.0, 0.0, 0.5, 0.5, 0.25, ExtrudeDirection::AgainstNormal);
+    supportOn(&dependent, producer, CadFaceToken{CadFaceKind::Side, 1, 1});
+    document.cad.bodies.push_back(producer);
+    document.cad.bodies.push_back(dependent);
+    return document;
+}
+
+// CAD FACE CHAIN: A (world XZ) <- B (on A's far cap) <- C (a circle on B's far
+// cap). Three levels, so a reader has to resolve a chain rather than one hop.
+ProjectDocument canonicalCadFaceChainDocument() {
+    ProjectDocument document;
+    document.kind = ProjectKind::Construction;
+    document.scene.nextObjectId = 4;
+    document.scene.activeObjectId = 3;
+    document.scene.bodies.push_back(
+            placementOf(1, placement(0.0, 0.0, 0.0, 0.0, 45.0, 0.0, 1.0, 1.0, 1.0)));
+    document.scene.bodies.push_back(placementOf(2, TransformValues{}));
+    document.scene.bodies.push_back(placementOf(3, TransformValues{}));
+    document.hasCad = true;
+    const ProjectCadBody a = canonicalCadRectangleBody(
+            1, Workplane::XZ, 0.0, 0.0, 3.0, 3.0, 1.0, ExtrudeDirection::AlongNormal);
+    ProjectCadBody b = canonicalCadRectangleBody(
+            2, Workplane::XY, 0.0, 0.0, 1.5, 1.5, 0.5, ExtrudeDirection::AlongNormal);
+    supportOn(&b, a, CadFaceToken{CadFaceKind::CapFar, 0, 0});
+    ProjectCadBody c;
+    c.objectId = 3;
+    SketchCircle circle;
+    circle.center = SketchPoint{0.0, 0.0};
+    circle.radius = 0.5;
+    c.state.sketch.entities.emplace_back(1, circle);
+    c.state.sketch.nextEntityId = 2;
+    c.state.extrude.profileEntityId = 1;
+    c.state.extrude.depth = 0.25;
+    c.state.extrude.direction = ExtrudeDirection::AlongNormal;
+    supportOn(&c, b, CadFaceToken{CadFaceKind::CapFar, 0, 0});
+    document.cad.bodies.push_back(a);
+    document.cad.bodies.push_back(b);
+    document.cad.bodies.push_back(c);
+    return document;
+}
+
+// MIXED CAD FACE: a Construction Box, an Imported Mesh, a CAD producer and a
+// dependent on its far cap -- every representation and the face support in
+// one file, with SCNE, CONS, IMPT and a v2 CADB side by side.
+ProjectDocument canonicalMixedCadFaceDocument() {
+    ProjectDocument document;
+    document.kind = ProjectKind::Construction;
+    document.scene.nextObjectId = 5;
+    document.scene.activeObjectId = 4;
+    document.scene.bodies.push_back(
+            placementOf(1, placement(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0)));
+    document.scene.bodies.push_back(placementOf(2, canonicalImportedPlacement()));
+    document.scene.bodies.push_back(
+            placementOf(3, placement(-2.5, 1.25, 0.5, 0.0, 0.0, 90.0, 1.0, 1.0, 1.0)));
+    document.scene.bodies.push_back(placementOf(4, TransformValues{}));
+
+    document.hasConstruction = true;
+    ProjectConstructionBody source;
+    source.objectId = 1;
+    source.shape = canonicalSharedShape(PrimitiveKind::Box);
+    source.features.push_back(ProjectFeatureRecord{});
+    document.construction.bodies.push_back(source);
+
+    document.hasImported = true;
+    document.imported.bodies.push_back(canonicalImportedBody(2));
+
+    document.hasCad = true;
+    const ProjectCadBody producer = canonicalCadRectangleBody(
+            3, Workplane::XY, 0.0, 0.0, 2.0, 2.0, 1.0, ExtrudeDirection::AlongNormal);
+    ProjectCadBody dependent = canonicalCadRectangleBody(
+            4, Workplane::XY, 0.0, 0.0, 1.0, 0.5, 0.5, ExtrudeDirection::AlongNormal);
+    supportOn(&dependent, producer, CadFaceToken{CadFaceKind::CapFar, 0, 0});
+    document.cad.bodies.push_back(producer);
+    document.cad.bodies.push_back(dependent);
+    return document;
+}
+
+// Finds the CADB section's payload in an encoded file, by walking the section
+// headers rather than by a hard-coded offset, so the two corrupt v2 fixtures
+// below can be derived from a valid one whatever precedes the section.
+// Returns the payload's start offset, writing its length, or 0 when absent.
+size_t findCadPayload(const std::vector<uint8_t>& file, size_t* outLength) {
+    size_t at = kForgeHeaderBytes;
+    while (at + kForgeSectionHeaderBytes <= file.size()) {
+        uint64_t length = 0;
+        for (int i = 0; i < 8; ++i) {
+            length |= static_cast<uint64_t>(file[at + 8 + i]) << (8 * i);
+        }
+        const bool cad = file[at] == 'C' && file[at + 1] == 'A' && file[at + 2] == 'D'
+                         && file[at + 3] == 'B';
+        if (cad) {
+            *outLength = static_cast<size_t>(length);
+            return at + kForgeSectionHeaderBytes;
+        }
+        at += kForgeSectionHeaderBytes + static_cast<size_t>(length);
+    }
+    *outLength = 0;
+    return 0;
+}
+
+void writeU32At(std::vector<uint8_t>* bytes, size_t at, uint32_t value) {
+    for (int i = 0; i < 4; ++i) {
+        (*bytes)[at + i] = static_cast<uint8_t>((value >> (8 * i)) & 0xFFu);
+    }
+}
+
+void writeU64At(std::vector<uint8_t>* bytes, size_t at, uint64_t value) {
+    for (int i = 0; i < 8; ++i) {
+        (*bytes)[at + i] = static_cast<uint8_t>((value >> (8 * i)) & 0xFFu);
+    }
+}
+
+// Recomputes the CADB section's payload CRC after a patch, so every length and
+// checksum is right and only the semantic check can refuse the file.
+void refreshCadCrc(std::vector<uint8_t>* bytes, size_t payloadAt, size_t payloadLength) {
+    const uint32_t crc = crc32IsoHdlc(bytes->data() + payloadAt, payloadLength);
+    writeU32At(bytes, payloadAt - kForgeSectionHeaderBytes + 16, crc);
+}
+
+// The byte offset of the dependent's face block inside a v2 CADB payload whose
+// first body is a world-plane rectangle: bodyCount(4) + body 1 (objectId 8,
+// plane 1, supportKind 1, nextEntityId 4, profile 4, direction 1, depth 8,
+// entityCount 4, one rectangle entity 4 + 1 + 32) = 72; then body 2's
+// objectId(8), plane(1), supportKind(1) = 10 -> the block starts at 82:
+// producerObjectId u64 @82, featureId u32 @90, faceKind u8 @94,
+// edgeEntityId u32 @95, edgeLocalIndex u32 @99, lineageToken u64 @103.
+constexpr size_t kV2SecondBodyFaceBlock = 82;
+
+// CAD BAD FACE REF: the side fixture with the dependent's edgeLocalIndex set
+// to 7 -- a rectangle has sides 0..3 -- so the reference names no face. The
+// lineage still matches, the producer still exists; only the face is wrong.
+std::vector<uint8_t> canonicalCadBadFaceRefBytes(const std::vector<uint8_t>& side) {
+    std::vector<uint8_t> bytes = side;
+    size_t length = 0;
+    const size_t payload = findCadPayload(bytes, &length);
+    writeU32At(&bytes, payload + kV2SecondBodyFaceBlock + 17, 7u);
+    refreshCadCrc(&bytes, payload, length);
+    return bytes;
+}
+
+// CAD DEPENDENCY CYCLE: the chain fixture with B re-pointed at C -- B on C's
+// far cap and C on B's -- while A stays a world body. B's lineage is patched
+// to C's topology signature so ONLY the cycle can refuse it.
+std::vector<uint8_t> canonicalCadDependencyCycleBytes(const std::vector<uint8_t>& chain) {
+    std::vector<uint8_t> bytes = chain;
+    size_t length = 0;
+    const size_t payload = findCadPayload(bytes, &length);
+    const ProjectDocument document = canonicalCadFaceChainDocument();
+    writeU64At(&bytes, payload + kV2SecondBodyFaceBlock, 3u);
+    writeU64At(&bytes, payload + kV2SecondBodyFaceBlock + 21,
+               cadTopologySignature(document.cad.bodies[2].state));
+    refreshCadCrc(&bytes, payload, length);
+    return bytes;
+}
+
 // CAD BAD PLANE: the rectangle fixture with its workplane code set to 9 and
 // the CADB payload's CRC recomputed, so every length and checksum is right
 // and only the semantic check can refuse it. Derived from the encoded bytes
@@ -905,6 +1145,12 @@ std::string g_cadRectangleSha;
 std::string g_cadCircleSha;
 std::string g_mixedCadSha;
 std::string g_cadBadPlaneSha;
+std::string g_cadFaceCapSha;
+std::string g_cadFaceSideSha;
+std::string g_cadFaceChainSha;
+std::string g_cadBadFaceRefSha;
+std::string g_cadDependencyCycleSha;
+std::string g_mixedCadFaceSha;
 
 }  // namespace
 
@@ -920,6 +1166,14 @@ const char* canonicalCadRectangleFixtureSha256() { return g_cadRectangleSha.c_st
 const char* canonicalCadCircleFixtureSha256() { return g_cadCircleSha.c_str(); }
 const char* canonicalMixedCadFixtureSha256() { return g_mixedCadSha.c_str(); }
 const char* canonicalCadBadPlaneFixtureSha256() { return g_cadBadPlaneSha.c_str(); }
+const char* canonicalCadFaceSketchCapFixtureSha256() { return g_cadFaceCapSha.c_str(); }
+const char* canonicalCadFaceSketchSideFixtureSha256() { return g_cadFaceSideSha.c_str(); }
+const char* canonicalCadFaceChainFixtureSha256() { return g_cadFaceChainSha.c_str(); }
+const char* canonicalCadBadFaceRefFixtureSha256() { return g_cadBadFaceRefSha.c_str(); }
+const char* canonicalCadDependencyCycleFixtureSha256() {
+    return g_cadDependencyCycleSha.c_str();
+}
+const char* canonicalMixedCadFaceFixtureSha256() { return g_mixedCadFaceSha.c_str(); }
 const char* canonicalMixedImportedSculptFixtureSha256() {
     return g_mixedImportedSculptSha.c_str();
 }
@@ -1050,6 +1304,102 @@ int runProjectSelfTests(ProjectSelfTestResult* out, int maxOut) {
                         && cadBadPlaneBytes != cadRectangleBytes
                         && decodeProject(cadBadPlaneBytes.data(), cadBadPlaneBytes.size(), &back)
                                    == ProjectCodecStatus::InvalidSemanticValue);
+    }
+
+    // The six `CAD-A3` CADB v2 fixtures, on the same terms: encoded here so
+    // their digests are pinned beside the v1 corpus, round-tripped bit for bit,
+    // and the two corrupt ones refused by the production decoder for exactly
+    // the reason the fixture plants.
+    const std::vector<uint8_t> cadFaceCapBytes =
+            encodeProjectV1(canonicalCadFaceSketchCapDocument(), &why);
+    r.check("CADA3_46_canonical_cad_face_cap_document_encodes",
+            why == ProjectCodecStatus::Ok && !cadFaceCapBytes.empty());
+    const std::vector<uint8_t> cadFaceSideBytes =
+            encodeProjectV1(canonicalCadFaceSketchSideDocument(), &why);
+    r.check("CADA3_46_canonical_cad_face_side_document_encodes",
+            why == ProjectCodecStatus::Ok && !cadFaceSideBytes.empty());
+    const std::vector<uint8_t> cadFaceChainBytes =
+            encodeProjectV1(canonicalCadFaceChainDocument(), &why);
+    r.check("CADA3_46_canonical_cad_face_chain_document_encodes",
+            why == ProjectCodecStatus::Ok && !cadFaceChainBytes.empty());
+    const std::vector<uint8_t> mixedCadFaceBytes =
+            encodeProjectV1(canonicalMixedCadFaceDocument(), &why);
+    r.check("CADA3_46_canonical_mixed_cad_face_document_encodes",
+            why == ProjectCodecStatus::Ok && !mixedCadFaceBytes.empty());
+    const std::vector<uint8_t> cadBadFaceRefBytes = canonicalCadBadFaceRefBytes(cadFaceSideBytes);
+    const std::vector<uint8_t> cadDependencyCycleBytes =
+            canonicalCadDependencyCycleBytes(cadFaceChainBytes);
+    g_cadFaceCapSha = sha256Hex(cadFaceCapBytes);
+    g_cadFaceSideSha = sha256Hex(cadFaceSideBytes);
+    g_cadFaceChainSha = sha256Hex(cadFaceChainBytes);
+    g_mixedCadFaceSha = sha256Hex(mixedCadFaceBytes);
+    g_cadBadFaceRefSha = sha256Hex(cadBadFaceRefBytes);
+    g_cadDependencyCycleSha = sha256Hex(cadDependencyCycleBytes);
+    {
+        // The CADB section's version word, read off the file: a face-supported
+        // project writes v2, and the v1 corpus is untouched at v1.
+        const auto cadSectionVersion = [](const std::vector<uint8_t>& file) -> int {
+            size_t length = 0;
+            const size_t payload = findCadPayload(file, &length);
+            if (payload == 0) return -1;
+            const size_t header = payload - kForgeSectionHeaderBytes;
+            return static_cast<int>(file[header + 4]) | (static_cast<int>(file[header + 5]) << 8);
+        };
+        r.check("CADA3_46_face_supported_fixtures_carry_cadb_v2_and_v1_fixtures_stay_v1",
+                cadSectionVersion(cadFaceCapBytes) == 2 && cadSectionVersion(cadFaceSideBytes) == 2
+                        && cadSectionVersion(cadFaceChainBytes) == 2
+                        && cadSectionVersion(mixedCadFaceBytes) == 2
+                        && cadSectionVersion(cadRectangleBytes) == 1
+                        && cadSectionVersion(mixedCadBytes) == 1);
+        ProjectDocument back;
+        r.check("CADA3_46_the_cad_face_cap_fixture_roundtrips_bit_for_bit",
+                decodeProject(cadFaceCapBytes.data(), cadFaceCapBytes.size(), &back)
+                                == ProjectCodecStatus::Ok
+                        && sameProjectDocument(canonicalCadFaceSketchCapDocument(), back)
+                        && back.cad.bodies[1].state.sketch.hasFaceSupport
+                        && back.cad.bodies[1].state.sketch.faceSupport.face.kind
+                                   == CadFaceKind::CapFar
+                        && encodeProjectV1(back) == cadFaceCapBytes);
+        r.check("CADA3_47_the_cad_face_side_fixture_roundtrips_bit_for_bit",
+                decodeProject(cadFaceSideBytes.data(), cadFaceSideBytes.size(), &back)
+                                == ProjectCodecStatus::Ok
+                        && sameProjectDocument(canonicalCadFaceSketchSideDocument(), back)
+                        && back.cad.bodies[1].state.sketch.faceSupport.face.kind
+                                   == CadFaceKind::Side
+                        && back.cad.bodies[1].state.sketch.faceSupport.face.edgeLocalIndex == 1
+                        && encodeProjectV1(back) == cadFaceSideBytes);
+        r.check("CADA3_48_the_cad_face_chain_fixture_roundtrips_bit_for_bit",
+                decodeProject(cadFaceChainBytes.data(), cadFaceChainBytes.size(), &back)
+                                == ProjectCodecStatus::Ok
+                        && sameProjectDocument(canonicalCadFaceChainDocument(), back)
+                        && back.cad.bodies.size() == 3
+                        && back.cad.bodies[2].state.sketch.faceSupport.producerObjectId == 2
+                        && encodeProjectV1(back) == cadFaceChainBytes);
+        r.check("CADA3_49_the_mixed_cad_face_fixture_roundtrips_bit_for_bit",
+                decodeProject(mixedCadFaceBytes.data(), mixedCadFaceBytes.size(), &back)
+                                == ProjectCodecStatus::Ok
+                        && sameProjectDocument(canonicalMixedCadFaceDocument(), back)
+                        && back.hasConstruction && back.hasImported && back.hasCad
+                        && encodeProjectV1(back) == mixedCadFaceBytes);
+        // The corrupt fixtures differ from their valid parents only in the
+        // planted field and the CRC that vouches for it, so the refusal can
+        // only be the semantic one the fixture is about.
+        r.check("CADA3_50_the_cad_bad_face_ref_fixture_is_refused_semantically",
+                cadBadFaceRefBytes.size() == cadFaceSideBytes.size()
+                        && cadBadFaceRefBytes != cadFaceSideBytes
+                        && decodeProject(cadBadFaceRefBytes.data(), cadBadFaceRefBytes.size(),
+                                         &back)
+                                   == ProjectCodecStatus::InvalidSemanticValue);
+        r.check("CADA3_51_the_cad_dependency_cycle_fixture_is_refused_as_unresolvable",
+                cadDependencyCycleBytes.size() == cadFaceChainBytes.size()
+                        && cadDependencyCycleBytes != cadFaceChainBytes
+                        && decodeProject(cadDependencyCycleBytes.data(),
+                                         cadDependencyCycleBytes.size(), &back)
+                                   == ProjectCodecStatus::UnresolvedReference);
+        // Both corrupt files pass every structural check -- lengths, CRCs,
+        // counts -- and are refused ONLY once the document is validated. The
+        // structural half is proved by the CRC being right: a wrong CRC would
+        // refuse earlier, with a different status.
     }
     {
         // A known-answer test for the digest itself, so a golden-corpus failure
@@ -1873,6 +2223,27 @@ int runProjectSelfTests(ProjectSelfTestResult* out, int maxOut) {
         r.check("CADR0_36_cad_bad_plane_fixture_matches_the_committed_digest",
                 g_cadBadPlaneSha
                         == "60476603b6c1b1e1cf6b785e863c953ee6aa63573c1a2453bd7db0935909aba9");
+        // The six `CAD-A3` fixtures, which pin CADB v2: the face support, the
+        // lineage token as a FORMAT field the PowerShell builder reimplements
+        // from DATA_PACKAGE_SPEC.md, and the two refusals.
+        r.check("CADA3_46_cad_face_sketch_cap_fixture_matches_the_committed_digest",
+                g_cadFaceCapSha
+                        == "4e4bdacc20954b063ef38d81a0c2c1c4bb4faff97255aea1e11d161bec560a86");
+        r.check("CADA3_47_cad_face_sketch_side_fixture_matches_the_committed_digest",
+                g_cadFaceSideSha
+                        == "9afa0ae2036cc1c03ee2e49f42fe45c19e79a8f050c9c87a2202205e10ed5a3d");
+        r.check("CADA3_48_cad_face_chain_fixture_matches_the_committed_digest",
+                g_cadFaceChainSha
+                        == "24ad47b5b5d600a47860ccafc3a644fa22e3d0bde994c43d969567cb299580b7");
+        r.check("CADA3_49_mixed_cad_face_fixture_matches_the_committed_digest",
+                g_mixedCadFaceSha
+                        == "4b20f3c8ea05876850043dff28591f19855efa4c0566bebd43df11f1c0ff1529");
+        r.check("CADA3_50_cad_bad_face_ref_fixture_matches_the_committed_digest",
+                g_cadBadFaceRefSha
+                        == "2f728f27393ff19b9dfa327be8b6598f26eb595dfe9a8c399a0db5e8cd50f564");
+        r.check("CADA3_51_cad_dependency_cycle_fixture_matches_the_committed_digest",
+                g_cadDependencyCycleSha
+                        == "88072d355efa54f95e6d68c10d15c81a9cfebc0e2ed1f231255ebe5a42b117f0");
         // The dispatch seam exists and answers for exactly one version. There
         // has never been a production format before v1, so there is nothing to
         // migrate FROM and no v0 branch is claimed.

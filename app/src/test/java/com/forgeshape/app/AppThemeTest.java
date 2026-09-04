@@ -149,7 +149,7 @@ public final class AppThemeTest {
         before.setDisplayUnit(LengthUnit.MILLIMETERS);
         before.setConstructionTool(EditorUiState.CONSTRUCTION_TOOL_TRANSFORM);
         before.setPrecisionOpen(false, true);
-        before.recordStartChoice();
+        before.setNewProjectChooserOpen(true);
 
         EditorUiState.carryAcrossRecreation(before);
         final EditorUiState after = EditorUiState.forNewWorkspace();
@@ -158,6 +158,7 @@ public final class AppThemeTest {
         assertEquals(LengthUnit.MILLIMETERS, after.displayUnit());
         assertEquals(EditorUiState.CONSTRUCTION_TOOL_TRANSFORM, after.constructionTool());
         assertTrue(after.precisionOpen(false));
+        assertTrue("nor close the question the user was reading", after.newProjectChooserOpen());
     }
 
     @Test

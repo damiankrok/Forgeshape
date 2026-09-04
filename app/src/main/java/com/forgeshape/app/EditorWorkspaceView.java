@@ -64,7 +64,9 @@ final class EditorWorkspaceView extends FrameLayout
         RecoveryPromptView.OnRecoveryChoice,
         ObjectsCapsuleView.OnObjectsCapsuleAction,
         AddPrimitivePaletteView.OnPrimitiveChosen,
-        StartChooserView.OnStartFlowChosen,
+        HomeView.OnHomeAction,
+        NewProjectChooserView.OnNewProjectChoice,
+        UnsavedChangesPromptView.OnUnsavedChoice,
         SketchEditorView.OnSketchAction,
         AnchoredSurfaceView.OnOpenStateChanged {
 
@@ -153,8 +155,35 @@ final class EditorWorkspaceView extends FrameLayout
     private final ImageView restoreChip;
     private final DisplaySettingsPopoverView displayPopover;
     private final ProjectActionsPopoverView projectPopover;
-    private final StartChooserView startChooser;
+    /** Home, the New Project chooser and the unsaved-changes question (APP-H1).
+     *  Three surfaces for the three moments a project starts, is chosen, or is
+     *  left; which of them is drawn is decided by {@link #refreshShellPhase}. */
+    private final HomeView home;
+    private final NewProjectChooserView newProjectChooser;
+    private final UnsavedChangesPromptView unsavedPrompt;
     private final RecoveryPromptView recoveryPrompt;
+
+    /**
+     * The fingerprint of the project as it was last SAVED, OPENED or RECOVERED
+     * — the state the user already has safely stored — and whether there is
+     * one at all.
+     *
+     * <p>The dirty guard's whole memory. A project whose fingerprint still
+     * equals this is left without a question; one that differs, or one that
+     * has never been stored anywhere (a new project), is asked about before New
+     * Project or Open File would replace it. It is presentation state about the
+     * session, never project truth: the fingerprint itself is native's, this
+     * only remembers which value was persisted.
+     */
+    private long persistedFingerprint;
+    private boolean everPersisted;
+
+    /** What the unsaved-changes question is guarding: where the user was going. */
+    private static final int LEAVE_NONE = 0;
+    private static final int LEAVE_NEW_PROJECT = 1;
+    private static final int LEAVE_OPEN_FILE = 2;
+    private static final int LEAVE_OPEN_SLOT = 3;
+    private int pendingLeave = LEAVE_NONE;
 
     /**
      * Who decides when the project is checkpointed. Owned here because this is
@@ -620,19 +649,27 @@ final class EditorWorkspaceView extends FrameLayout
         sketchEditor = new SketchEditorView(context, this, this);
         cadEditor = new CadFeatureEditorView(context, this);
 
-        // Last into the overlay, so the question is above everything it is
-        // asking about. It stands on a WORKING workspace: native state already
-        // exists (the Activity starts native code before building any view),
-        // the default Body is already there, and the viewport is already
-        // rendering it behind the scrim. Choosing Construction therefore has
-        // nothing to build — it only stops asking.
-        startChooser = new StartChooserView(context, this);
-        overlayRoot.addView(startChooser, new LayoutParams(
+        // Home, the New Project chooser and the unsaved-changes question, in
+        // that z-order, all above the chrome. Home stands on an EMPTY viewport:
+        // no project is open behind it, nothing is drawn, and nothing is built
+        // until the user chooses. Which of the three is drawn is decided from
+        // native truth by refreshShellPhase, never remembered here.
+        home = new HomeView(context, this);
+        home.setVisibility(GONE);
+        overlayRoot.addView(home, new LayoutParams(
+                LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
+        newProjectChooser = new NewProjectChooserView(context, this);
+        newProjectChooser.setVisibility(GONE);
+        overlayRoot.addView(newProjectChooser, new LayoutParams(
+                LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
+        unsavedPrompt = new UnsavedChangesPromptView(context, this);
+        unsavedPrompt.setVisibility(GONE);
+        overlayRoot.addView(unsavedPrompt, new LayoutParams(
                 LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
 
-        // Above the start question, because it is asked FIRST: if there is
-        // unsaved work to recover, how a new model would have begun is not yet
-        // a question worth asking.
+        // Above Home, because it is asked FIRST: if there is unsaved work to
+        // recover, how a new project would begin is not yet a question worth
+        // asking.
         recoveryPrompt = new RecoveryPromptView(context, this);
         recoveryPrompt.setVisibility(GONE);
         overlayRoot.addView(recoveryPrompt, new LayoutParams(
@@ -651,14 +688,16 @@ final class EditorWorkspaceView extends FrameLayout
 
         autosave = new AutosaveController(context);
 
-        // The recovery question is asked ONCE PER PROCESS and before the start
-        // question, and both of those are the same rule: this is the moment the
-        // session begins, and it begins once. An Activity recreation — a theme
-        // change, a rotation the config did not absorb — rebuilds this view, and
-        // asking again there would present a second decision about a candidate
-        // the user has already answered.
-        final boolean asking = !uiState.recoveryResolved() && offerRecoveryIfPresent();
-        showStartChooser(!asking && !uiState.startChoiceMade());
+        // The recovery question is asked ONCE PER PROCESS and before Home: this
+        // is the moment the session begins, and it begins once. An Activity
+        // recreation — a theme change, a rotation the config did not absorb —
+        // rebuilds this view, and asking again there would present a second
+        // decision about a candidate the user has already answered. Home itself
+        // is not remembered: it is derived from whether a project is open.
+        if (!uiState.recoveryResolved()) {
+            offerRecoveryIfPresent();
+        }
+        refreshShellPhase();
     }
 
     // -----------------------------------------------------------------------
@@ -741,7 +780,9 @@ final class EditorWorkspaceView extends FrameLayout
 
     /** Whether a Back press has a surface to close before it may leave. */
     boolean hasDismissibleSurface() {
-        return topmostOpenSurface() != null;
+        return unsavedPromptVisible() || newProjectChooserVisible()
+                || NativeViewport.supportChooserActive() || bootstrapVisible()
+                || topmostOpenSurface() != null;
     }
 
     private AnchoredSurfaceView topmostOpenSurface() {
@@ -775,9 +816,30 @@ final class EditorWorkspaceView extends FrameLayout
      * @return whether a surface was dismissed; false means Back is not ours
      */
     boolean dismissTopmostSurface() {
-        // Spatial support selection is not a surface but it is the innermost
-        // thing System Back should leave: cancel it before anything else, with
-        // no project mutation, and put the camera back.
+        // The questions first, innermost outward: a question is answered
+        // "Cancel" by Back, never "Discard" or "Save". Then the CAD bootstrap,
+        // one step at a time -- a sketch back to the support chooser, the
+        // chooser back to Home -- so where Back goes is never a surprise. At
+        // Home with nothing open, Back is not ours and leaves the app.
+        if (unsavedPromptVisible()) {
+            onUnsavedCancelRequested();
+            return true;
+        }
+        if (newProjectChooserVisible()) {
+            onNewProjectCancelled();
+            return true;
+        }
+        if (bootstrapVisible()) {
+            if (isSketching()) {
+                onCancelSketchRequested();
+            } else {
+                onBackToHomeRequested();
+            }
+            return true;
+        }
+        // Spatial support selection inside a project is not a surface but it
+        // is the innermost thing System Back should leave: cancel it before
+        // anything else, with no project mutation, and put the camera back.
         if (NativeViewport.supportChooserActive()) {
             NativeViewport.supportChooserCancel();
             onNativeStateChanged();
@@ -1017,7 +1079,9 @@ final class EditorWorkspaceView extends FrameLayout
      * names the active body and opens the list.
      */
     private void applyObjectsPlacement() {
-        placeObjects(objectsColumnAffordable && !isSculpting());
+        // And only over a project: the CAD bootstrap has no bodies to list and
+        // no creation to offer, so an expanded window gets no column for it.
+        placeObjects(objectsColumnAffordable && !isSculpting() && NativeViewport.projectOpen());
     }
 
     /**
@@ -1549,58 +1613,143 @@ final class EditorWorkspaceView extends FrameLayout
     }
 
     // -----------------------------------------------------------------------
-    // The start chooser
+    // Home, the New Project chooser and the CAD bootstrap (APP-H1)
     // -----------------------------------------------------------------------
     //
-    // Asked once per PROCESS, not once per Activity and not once per window.
-    // The flag lives in EditorUiState precisely so a rotation, a HOME/resume or
-    // an Activity recreation cannot put the question back — see the field's own
-    // comment for why it is the one static there.
+    // Home is NOT a project. It is what the workspace shows while no project is
+    // open — a state derived from native truth (`projectOpen()`) on every
+    // refresh and never remembered here, so a rotation, a recreation and a
+    // resume all land where the scene says. Behind it the viewport is honestly
+    // empty: nothing is drawn, nothing can be picked, no history exists and no
+    // `.forge` byte, checkpoint or fingerprint describes it.
     //
-    // Neither answer is a new document. Native state already exists by the time
-    // this view is built (ForgeShapeActivity starts native code first), so the
-    // scene, the default Body and its ObjectId are the same in both branches.
-    // What the answer decides is only which representation the user lands in.
-
-    /** Shows or hides the question. Nothing else about the workspace changes. */
-    private void showStartChooser(boolean visible) {
-        startChooser.setVisibility(visible ? VISIBLE : GONE);
-    }
-
-    /** Whether the start question is currently on screen. */
-    boolean startChooserVisible() {
-        return startChooser.getVisibility() == VISIBLE;
-    }
+    // New Project -> CAD enters the CAD BOOTSTRAP: the spatial world-plane
+    // chooser and then the one volatile sketch session, over that same empty
+    // scene. Nothing before the first Extrude is a project; native creates the
+    // first durable body and the project in one validated step when the user
+    // commits, and Back to Home before that costs nothing.
+    //
+    // New Project -> Sculpt is the seeded path the product already had: a body,
+    // shaped into a sphere and frozen, inside the session-initialization
+    // bracket so the seed is never the user's first Undo.
 
     /**
-     * Construction / CAD: the workspace the product already had.
+     * Draws whichever of Home, the New Project chooser, the unsaved-changes
+     * question and the editor the moment calls for.
      *
-     * <p>There is deliberately nothing to build. The default Body is already in
-     * the scene at identity, already selected, and already published, so this
-     * only records that the question was answered and re-reads native state so
-     * the exact-value editors show that body's own numbers.
+     * <p>Visibility only: it decides nothing about the model, and it calls no
+     * native mutation. Called at the end of every {@link #syncFromNative}, so
+     * the answer is re-derived exactly as often as every other surface's.
+     */
+    private void refreshShellPhase() {
+        final boolean projectOpen = NativeViewport.projectOpen();
+        final boolean bootstrapping = !projectOpen && bootstrapActive();
+        final boolean recovering = recoveryPrompt.getVisibility() == VISIBLE;
+        final boolean unsaved = unsavedPrompt.getVisibility() == VISIBLE;
+        final boolean choosing = uiState.newProjectChooserOpen();
+        // Home stands whenever there is no project and nothing is being built
+        // toward one. The chooser stands on top of it (or on top of an open
+        // project it is about to replace); the recovery question outranks both.
+        final boolean atHome = !projectOpen && !bootstrapping;
+        home.setVisibility(atHome && !recovering ? VISIBLE : GONE);
+        newProjectChooser.setVisibility(choosing && !recovering && !unsaved ? VISIBLE : GONE);
+        // The editor chrome belongs to a project or to the bootstrap; at Home
+        // there is nothing for it to act on, so it is withdrawn as a whole.
+        // Away from Home the user's own Hide UI choice stands: the chrome and
+        // its restore chip are exactly one of them visible, as setChromeHidden
+        // leaves them once its fade lands.
+        final boolean chromeHidden = uiState.chromeHidden();
+        chromeRoot.setVisibility(atHome || chromeHidden ? GONE : VISIBLE);
+        restoreChip.setVisibility(!atHome && chromeHidden ? VISIBLE : GONE);
+        if (dismissibleSurfaceListener != null) {
+            dismissibleSurfaceListener.onDismissibleSurfaceChanged(hasDismissibleSurface());
+        }
+    }
+
+    /** Whether the CAD bootstrap is in progress: a support chooser or a sketch
+     *  over a scene that holds no project. */
+    private boolean bootstrapActive() {
+        return NativeViewport.supportChooserActive() || isSketching();
+    }
+
+    /** Whether Home is on screen. */
+    boolean homeVisible() {
+        return home.getVisibility() == VISIBLE;
+    }
+
+    /** Whether the New Project chooser is on screen. */
+    boolean newProjectChooserVisible() {
+        return newProjectChooser.getVisibility() == VISIBLE;
+    }
+
+    /** Whether the unsaved-changes question is on screen. */
+    boolean unsavedPromptVisible() {
+        return unsavedPrompt.getVisibility() == VISIBLE;
+    }
+
+    /** Whether the CAD bootstrap — no project yet — owns the workspace. */
+    boolean bootstrapVisible() {
+        return !NativeViewport.projectOpen() && bootstrapActive();
+    }
+
+    /** Home's own status line, for verification. */
+    CharSequence homeStatusText() {
+        return home.statusText();
+    }
+
+    // --- Home ---------------------------------------------------------------
+
+    @Override
+    public void onHomeNewProjectRequested() {
+        home.showStatus("", R.attr.fsTextSecondary);
+        setNewProjectChooserOpen(true);
+    }
+
+    @Override
+    public void onHomeOpenFileRequested() {
+        home.showStatus("", R.attr.fsTextSecondary);
+        // The same SAF contract the Project surface uses. Cancel, a damaged
+        // file and a refused file all leave Home standing and say so on it;
+        // see onOpenProjectDocumentChosen.
+        if (transferHost == null || !transferHost.requestOpenProjectDocument()) {
+            home.showStatus(getContext().getString(R.string.status_project_copy_failed),
+                    R.attr.fsTextError);
+        }
+    }
+
+    private void setNewProjectChooserOpen(boolean open) {
+        uiState.setNewProjectChooserOpen(open);
+        newProjectChooser.showStatus("", R.attr.fsTextSecondary);
+        refreshShellPhase();
+    }
+
+    // --- New Project --------------------------------------------------------
+
+    /**
+     * CAD: enter the bootstrap.
      *
-     * <p>And it says nothing. Nothing happened that the user did not just do,
-     * and the workspace behind the question already answers where they are —
-     * the held rail entry, the body named on the Objects capsule, the model
-     * itself. It used to write "Construction — choose a shape, type its exact
-     * values, then Apply.", which is a caption for the product rather than a
-     * verdict about an act, and it opened every resting Construction screenshot
-     * with a sentence across the top of the viewport.
+     * <p>Directly into the spatial world-plane chooser (`UI-OWNER-46`): the
+     * three planes are touchable targets in the viewport, and there is no
+     * list-first step. Faces are not offered because there is no body to
+     * sketch on. No project exists until the first Extrude.
      */
     @Override
-    public void onConstructionStartChosen() {
-        uiState.recordStartChoice();
-        showStartChooser(false);
-        // Bracketed even though this branch mutates nothing, and deliberately.
-        // Both answers to the start question are the same moment — the session
-        // being seeded — and the boundary is what states its postcondition: an
-        // empty Construction history before the user's first act. Making only
-        // the branch that happens to mutate carry it would make the invariant
-        // depend on which answer was pressed.
-        NativeViewport.beginSessionInitialization();
-        NativeViewport.endSessionInitialization();
-        syncFromNative();
+    public void onNewCadProjectChosen() {
+        setNewProjectChooserOpen(false);
+        beginCadBootstrap();
+    }
+
+    private void beginCadBootstrap() {
+        final Context context = getContext();
+        if (!NativeViewport.supportChooserBegin(false)) {
+            showStatus(context.getString(R.string.status_sketch_unavailable), R.attr.fsTextError);
+            refreshShellPhase();
+            return;
+        }
+        dismissPrimarySurfacesExcept(null);
+        finishEditing();
+        onNativeStateChanged();
+        showStatus(context.getString(R.string.status_bootstrap_chooser), R.attr.fsTextSecondary);
     }
 
     /**
@@ -1610,58 +1759,250 @@ final class EditorWorkspaceView extends FrameLayout
      * Nothing about Freeze is duplicated or re-implemented: no second
      * validation, no second {@code SculptMesh} construction, no opinion about
      * sidedness, the stale-source flag or revision numbering. This method makes
-     * exactly the two calls a user would make by hand, in the order they would
-     * make them, and then reads back what native code decided.
+     * exactly the calls a user would make by hand — add a body, shape it into
+     * a sphere, Start Sculpting — in the order they would make them, and then
+     * reads back what native code decided.
      *
      * <p>The diameter comes from native state rather than from a constant
-     * invented here. Every body remembers each primitive's parameters
-     * independently, so what is read back is the domain's own canonical default
-     * sphere — and if the user has already sized a sphere on this body, that is
-     * what they get, which is the correct answer and not a special case.
+     * invented here: what is read back is the domain's own canonical default
+     * sphere for the body just created.
      *
-     * <p>The Construction Source is not consumed by this. It stays an exact
-     * sphere with its own parameters and placement, so Back to Construction
-     * shows a sphere and Resume Sculpt returns to this same frozen mesh, both
-     * for the ordinary reasons and not because of anything this method does.
-     *
-     * <p>On any refusal the product is left in Construction, unchanged, and the
-     * status line says so. It is deliberately not retried and not repaired: a
-     * refusal here means native code declined a shape it validated, and hiding
-     * that behind a fallback would make the one honest signal disappear.
+     * <p>Everything this branch does to reach a sculptable mesh is SESSION
+     * SEEDING, not a user edit. Creating and shaping the body are real
+     * Construction changes and would otherwise be recorded — and the user's
+     * first Undo would then rewind the answer they gave to the chooser rather
+     * than anything they did. The boundary is closed on every path out of
+     * here, refusal included, so a failed start cannot leave the session
+     * inside it; and a refusal leaves NO project behind, because a project
+     * that could not become the sculpt the user asked for is not the project
+     * they asked for.
      */
     @Override
-    public void onSculptStartChosen() {
-        uiState.recordStartChoice();
-        showStartChooser(false);
-
-        // Everything this branch does to reach a sculptable mesh is SESSION
-        // SEEDING, not a user edit. Shaping the body into a sphere is a real
-        // Construction change and would otherwise be recorded — and the user's
-        // first Undo would then rewind the answer they gave to the start
-        // question rather than anything they did. The boundary is closed on
-        // every path out of here, refusal included, so a failed start cannot
-        // leave the session inside it.
+    public void onNewSculptProjectChosen() {
+        setNewProjectChooserOpen(false);
         NativeViewport.beginSessionInitialization();
-        final double[] primitive = new double[NativeViewport.PRIMITIVE_STATE_SIZE];
-        NativeViewport.constructionPrimitive(primitive);
-        final int applied = NativeViewport.applyConstructionSphere(
-                primitive[NativeViewport.PRIMITIVE_SPHERE_DIAMETER]);
-        // UNCHANGED is a success: it means the body was already exactly this
-        // sphere, which is a perfectly good thing to sculpt.
-        final boolean shaped = applied == NativeViewport.APPLY_APPLIED
-                || applied == NativeViewport.APPLY_UNCHANGED;
+        final long created = NativeViewport.sceneAddBody();
+        boolean shaped = false;
+        if (created != NativeViewport.NO_OBJECT) {
+            final double[] primitive = new double[NativeViewport.PRIMITIVE_STATE_SIZE];
+            NativeViewport.constructionPrimitive(primitive);
+            final int applied = NativeViewport.applyConstructionSphere(
+                    primitive[NativeViewport.PRIMITIVE_SPHERE_DIAMETER]);
+            // UNCHANGED is a success: it means the body was already exactly
+            // this sphere, which is a perfectly good thing to sculpt.
+            shaped = applied == NativeViewport.APPLY_APPLIED
+                    || applied == NativeViewport.APPLY_UNCHANGED;
+        }
         if (!shaped || NativeViewport.freezeToSculpt() != NativeViewport.SCULPT_OK) {
             NativeViewport.endSessionInitialization();
+            NativeViewport.closeProject();
             syncFromNative();
             showStatus(getContext().getString(R.string.status_sculpt_start_failed),
                     R.attr.fsTextError);
             return;
         }
         NativeViewport.endSessionInitialization();
+        noteProjectUnpersisted();
         finishEditing();
         syncFromNative();
         showStatus(getContext().getString(R.string.status_started_sculpt),
                 R.attr.fsTextSuccess);
+    }
+
+    @Override
+    public void onNewProjectCancelled() {
+        setNewProjectChooserOpen(false);
+    }
+
+    /**
+     * The CAD bootstrap's way out before its first commit.
+     *
+     * <p>Costs nothing: there is no project, so cancelling the support
+     * selection or the sketch drops volatile session state and nothing else.
+     * `closeProject` is what puts every session back — the chooser, the sketch,
+     * the borrowed view — and it has no body to remove.
+     */
+    @Override
+    public void onBackToHomeRequested() {
+        if (NativeViewport.projectOpen()) {
+            return;  // not the bootstrap; the control is not drawn here
+        }
+        NativeViewport.closeProject();
+        dismissPrimarySurfacesExcept(null);
+        finishEditing();
+        onNativeStateChanged();
+        home.showStatus(getContext().getString(R.string.status_bootstrap_left),
+                R.attr.fsTextSecondary);
+    }
+
+    // --- Leaving a project: the unsaved-changes question ----------------------
+
+    /**
+     * Whether the live project has changes nobody stored.
+     *
+     * <p>By fingerprint, against the value at the last Save, Open, Open File or
+     * Recover — and a project that has never been stored anywhere is dirty by
+     * definition. Asked only about an open project.
+     */
+    boolean projectDirty() {
+        if (!NativeViewport.projectOpen()) {
+            return false;
+        }
+        return !everPersisted || NativeViewport.projectFingerprint() != persistedFingerprint;
+    }
+
+    /** Records that the live project now equals what the user has stored. */
+    private void noteProjectPersisted() {
+        persistedFingerprint = NativeViewport.projectFingerprint();
+        everPersisted = true;
+    }
+
+    /** Records that the live project exists nowhere the user chose. */
+    private void noteProjectUnpersisted() {
+        everPersisted = false;
+        persistedFingerprint = 0L;
+    }
+
+    /**
+     * Starts leaving the project for `intent`, asking first when it is dirty.
+     *
+     * <p>The question stands over the workspace; Cancel returns to the project
+     * unchanged, Discard continues without writing, Save writes the app's own
+     * slot and continues only if that succeeded.
+     */
+    private void leaveProjectFor(int intent) {
+        if (projectDirty()) {
+            pendingLeave = intent;
+            unsavedPrompt.showStatus("", R.attr.fsTextSecondary);
+            unsavedPrompt.setVisibility(VISIBLE);
+            refreshShellPhase();
+            return;
+        }
+        proceedToLeave(intent);
+    }
+
+    /** Continues what the unsaved-changes question was guarding. */
+    private void proceedToLeave(int intent) {
+        switch (intent) {
+            case LEAVE_NEW_PROJECT:
+                // The project closes NOW, so the chooser stands over Home and
+                // Cancel from it lands at Home rather than back in a project
+                // the user has already decided to leave.
+                NativeViewport.closeProject();
+                dismissPrimarySurfacesExcept(null);
+                finishEditing();
+                noteProjectUnpersisted();
+                uiState.setNewProjectChooserOpen(true);
+                onNativeStateChanged();
+                break;
+            case LEAVE_OPEN_FILE:
+                // The current project stays live until a file actually opens:
+                // a cancelled picker or a refused file costs it nothing.
+                if (transferHost == null || !transferHost.requestOpenProjectDocument()) {
+                    showStatus(getContext().getString(R.string.status_project_copy_failed),
+                            R.attr.fsTextError);
+                }
+                break;
+            case LEAVE_OPEN_SLOT:
+                openSavedProjectSlot();
+                break;
+            default:
+                break;
+        }
+    }
+
+    @Override
+    public void onUnsavedSaveRequested() {
+        final int intent = pendingLeave;
+        if (!saveProjectToSlot()) {
+            // A failed save keeps the project alive and the question open, so
+            // the user can choose again knowing what happened.
+            unsavedPrompt.showStatus(
+                    getContext().getString(R.string.status_project_save_failed),
+                    R.attr.fsTextError);
+            return;
+        }
+        pendingLeave = LEAVE_NONE;
+        unsavedPrompt.setVisibility(GONE);
+        proceedToLeave(intent);
+    }
+
+    @Override
+    public void onUnsavedDiscardRequested() {
+        final int intent = pendingLeave;
+        pendingLeave = LEAVE_NONE;
+        unsavedPrompt.setVisibility(GONE);
+        // Discarding means the checkpoint that was protecting these changes has
+        // nothing left to protect: left in place it would offer the very work
+        // the user just chose to drop on the next launch.
+        ProjectCheckpoint.clear(getContext());
+        Diagnostics.info(DiagnosticLog.CAT_PERSISTENCE, "UNSAVED_DISCARDED", null);
+        proceedToLeave(intent);
+    }
+
+    @Override
+    public void onUnsavedCancelRequested() {
+        pendingLeave = LEAVE_NONE;
+        unsavedPrompt.setVisibility(GONE);
+        refreshShellPhase();
+    }
+
+    /** The Project surface's New Project… (APP-H1). */
+    @Override
+    public void onNewProjectRequested() {
+        setProjectPanelOpen(false);
+        leaveProjectFor(LEAVE_NEW_PROJECT);
+    }
+
+    // --- verification seams -------------------------------------------------
+
+    /**
+     * Returns the process to Home as a fresh launch would: no project, no
+     * bootstrap, no question on screen.
+     *
+     * <p>The instrumentation runs every case in one process, so without this
+     * only the first case could ever see Home. It goes through the product's
+     * own close, so what a test then sees is what a user sees.
+     */
+    void showHomeAsFirstLaunchForTest() {
+        pendingLeave = LEAVE_NONE;
+        unsavedPrompt.setVisibility(GONE);
+        uiState.setNewProjectChooserOpen(false);
+        NativeViewport.closeProject();
+        noteProjectUnpersisted();
+        home.showStatus("", R.attr.fsTextSecondary);
+        dismissPrimarySurfacesExcept(null);
+        finishEditing();
+        onNativeStateChanged();
+    }
+
+    /**
+     * Makes sure a Construction project is open, the way a case that is not
+     * about Home needs.
+     *
+     * <p>A seeded first body inside the session-initialization bracket — the
+     * same seam the Sculpt bootstrap uses — so the case starts from the one
+     * default Box the product used to start from, with an empty history. Does
+     * nothing when a project is already open.
+     */
+    void ensureConstructionProjectForTest() {
+        pendingLeave = LEAVE_NONE;
+        unsavedPrompt.setVisibility(GONE);
+        uiState.setNewProjectChooserOpen(false);
+        if (!NativeViewport.projectOpen()) {
+            NativeViewport.supportChooserCancel();
+            NativeViewport.sketchCancel();
+            NativeViewport.beginSessionInitialization();
+            NativeViewport.sceneAddBody();
+            NativeViewport.endSessionInitialization();
+            noteProjectUnpersisted();
+        }
+        refreshShellPhase();
+    }
+
+    /** The New Project chooser, so a test can name an option by its id. */
+    NewProjectChooserView newProjectChooser() {
+        return newProjectChooser;
     }
 
     // -----------------------------------------------------------------------
@@ -1688,6 +2029,10 @@ final class EditorWorkspaceView extends FrameLayout
         final boolean sculpting =
                 NativeViewport.productMode() == NativeViewport.MODE_SCULPT;
         final boolean hasFrozenMesh = nativeSculpt[NativeViewport.SCULPT_HAS_MESH] != 0.0;
+        // Whether a project is open at all (APP-H1), and whether the CAD
+        // bootstrap owns the workspace instead. Both read fresh: Home and the
+        // bootstrap are derived from native truth, never remembered.
+        final boolean projectOpen = NativeViewport.projectOpen();
         // An Imported Mesh is not derived from parameters and nothing may
         // invent a primitive for it, so Shape has no answer for one: that entry
         // is ABSENT for one rather than drawn and then refused, and the guard
@@ -1712,7 +2057,13 @@ final class EditorWorkspaceView extends FrameLayout
         final int sketchState = (int) nativeSketch[NativeViewport.SKETCH_STATE];
         final boolean sketching = sketchState != NativeViewport.SKETCH_INACTIVE;
         final boolean cad = NativeViewport.sceneActiveBodyIsCad();
+        final boolean bootstrap = !projectOpen
+                && (sketching || NativeViewport.supportChooserActive());
 
+        // Before the context, which reads the flag for its label: while the
+        // bootstrap is open the project and export controls are withdrawn and
+        // Back to Home is drawn.
+        toolbar.showBootstrap(bootstrap);
         toolbar.showContext(sculpting, hasFrozenMesh, imported, cad, sketchState,
                 (int) nativeSketch[NativeViewport.SKETCH_PLANE]);
         toolbar.showEditingTransitions(true);
@@ -1743,8 +2094,14 @@ final class EditorWorkspaceView extends FrameLayout
         // And not while sketching either: the scene holds still until the
         // sketch commits or is cancelled, and both acts are refused below JNI
         // on those terms.
-        objectsCapsule.showCreationAvailable(!sculpting && !sketching);
-        objectsSection.showCreationAvailable(!sculpting && !sketching);
+        // And never while no project is open: a body created from the palette
+        // during the CAD bootstrap would be a project the user never chose.
+        objectsCapsule.showCreationAvailable(projectOpen && !sculpting && !sketching);
+        objectsSection.showCreationAvailable(projectOpen && !sculpting && !sketching);
+        // The bottom edge names the active body and steps the history; in the
+        // bootstrap there is neither, so the whole edge is withdrawn rather
+        // than drawn empty.
+        bottomRow.setVisibility(projectOpen ? VISIBLE : GONE);
         // And deletion on the same terms, for the same reason: `sceneDeleteBody`
         // refuses while sculpting, because the Sculpt target is fixed for the
         // duration of the mode and Undo is refused there too -- a delete made
@@ -1780,6 +2137,7 @@ final class EditorWorkspaceView extends FrameLayout
         showPrecisionToggle(sculpting);
         showDefaultStatus(sculpting);
         applyImportedPreviewChrome();
+        refreshShellPhase();
     }
 
     /**
@@ -1918,6 +2276,13 @@ final class EditorWorkspaceView extends FrameLayout
                 // for one that is its sketch and its extrusion.
                 !NativeViewport.sceneActiveBodyIsImported(),
                 sketchState));
+        // The CAD bootstrap's plane chooser has no body and no sketch yet, so
+        // the rail's Construction entries and the precision toggle would all
+        // be controls that cannot succeed: the whole trailing cluster is
+        // withdrawn until the sketch begins, when its own tools arrive.
+        if (!sketching && !NativeViewport.projectOpen()) {
+            trailingHost.setVisibility(GONE);
+        }
     }
 
     /**
@@ -2324,10 +2689,18 @@ final class EditorWorkspaceView extends FrameLayout
                 R.attr.fsTextSuccess);
     }
 
-    /** The toolbar's Extrude and the precision surface's Extrude: one act. */
+    /**
+     * The toolbar's Extrude and the precision surface's Extrude: one act.
+     *
+     * <p>ONE native commit, whichever moment it is: inside a project it adds a
+     * body as one history step; in the CAD bootstrap (no project open) native
+     * creates the first project from the same sketch, atomically, and the
+     * workspace learns which by asking whether a project existed beforehand.
+     */
     @Override
     public void onExtrudeRequested() {
         final Context context = getContext();
+        final boolean firstProject = !NativeViewport.projectOpen();
         final long created = NativeViewport.sketchCommit();
         if (created == NativeViewport.NO_OBJECT) {
             showStatus(CadStatusMessages.describe(context, NativeViewport.sketchLastStatus()),
@@ -2339,16 +2712,34 @@ final class EditorWorkspaceView extends FrameLayout
         // The new body is active and its Shape is what the user just made; the
         // rail lands there rather than wherever it was before the sketch.
         uiState.setConstructionTool(EditorUiState.CONSTRUCTION_TOOL_SHAPE);
+        if (firstProject) {
+            // A project that exists nowhere the user chose yet, exactly as a
+            // new Sculpt project does.
+            noteProjectUnpersisted();
+        }
         onNativeStateChanged();
-        showStatus(context.getString(R.string.status_sketch_extruded,
-                BodyLabels.of(context, created)), R.attr.fsTextSuccess);
+        showStatus(firstProject
+                        ? context.getString(R.string.status_first_project_created,
+                                BodyLabels.of(context, created))
+                        : context.getString(R.string.status_sketch_extruded,
+                                BodyLabels.of(context, created)),
+                R.attr.fsTextSuccess);
     }
 
+    /**
+     * Drops the sketch. In the CAD bootstrap the way back is one step: the
+     * support chooser, from which Back to Home leaves.
+     */
     @Override
     public void onCancelSketchRequested() {
+        final boolean bootstrap = !NativeViewport.projectOpen();
         NativeViewport.sketchCancel();
         dismissPrimarySurfacesExcept(null);
         finishEditing();
+        if (bootstrap) {
+            beginCadBootstrap();
+            return;
+        }
         onNativeStateChanged();
         showStatus(getContext().getString(R.string.status_sketch_cancelled),
                 R.attr.fsTextSecondary);
@@ -2659,20 +3050,11 @@ final class EditorWorkspaceView extends FrameLayout
     @Override
     public void onSaveProjectRequested() {
         setProjectPanelOpen(false);
-        final byte[] bytes = NativeViewport.encodeProject();
-        if (bytes == null || bytes.length == 0
-                || !ProjectSlot.write(getContext(), bytes)) {
+        if (!saveProjectToSlot()) {
             showStatus(getContext().getString(R.string.status_project_save_failed),
                     R.attr.fsTextError);
             return;
         }
-        // The work the checkpoint was protecting is now in the slot the user
-        // named, so the checkpoint has nothing left to protect and is retired.
-        // Autosave writes a fresh one the moment the project changes again.
-        ProjectCheckpoint.clear(getContext());
-        autosave.noteProjectPersisted();
-        Diagnostics.info(DiagnosticLog.CAT_PERSISTENCE, "MANUAL_SAVE",
-                "bytes=" + bytes.length);
         // Saving reads the model and writes a file. It publishes no mesh, mints
         // no revision, changes no mode and records no history step, so nothing
         // on screen has to be re-read afterwards.
@@ -2680,9 +3062,38 @@ final class EditorWorkspaceView extends FrameLayout
                 R.attr.fsTextSuccess);
     }
 
+    /**
+     * Save Project: the one write to the app's own slot, shared by the Project
+     * surface and the unsaved-changes question.
+     *
+     * @return whether the slot now holds the live project
+     */
+    private boolean saveProjectToSlot() {
+        final byte[] bytes = NativeViewport.encodeProject();
+        if (bytes == null || bytes.length == 0
+                || !ProjectSlot.write(getContext(), bytes)) {
+            return false;
+        }
+        // The work the checkpoint was protecting is now in the slot the user
+        // named, so the checkpoint has nothing left to protect and is retired.
+        // Autosave writes a fresh one the moment the project changes again.
+        ProjectCheckpoint.clear(getContext());
+        autosave.noteProjectPersisted();
+        noteProjectPersisted();
+        Diagnostics.info(DiagnosticLog.CAT_PERSISTENCE, "MANUAL_SAVE",
+                "bytes=" + bytes.length);
+        return true;
+    }
+
+    /** Open Saved Project: guarded by the unsaved-changes question when the
+     *  live project would be lost. */
     @Override
     public void onOpenProjectRequested() {
         setProjectPanelOpen(false);
+        leaveProjectFor(LEAVE_OPEN_SLOT);
+    }
+
+    private void openSavedProjectSlot() {
         final byte[] bytes = ProjectSlot.read(getContext());
         if (bytes == null) {
             showStatus(getContext().getString(R.string.status_project_none), R.attr.fsTextError);
@@ -2706,6 +3117,7 @@ final class EditorWorkspaceView extends FrameLayout
         // checkpoint is retired for the same reason a Save retires it.
         ProjectCheckpoint.clear(getContext());
         autosave.noteProjectPersisted();
+        noteProjectPersisted();
         Diagnostics.info(DiagnosticLog.CAT_PERSISTENCE, "MANUAL_OPEN",
                 "bytes=" + bytes.length);
         dismissPrimarySurfacesExcept(null);
@@ -2834,7 +3246,7 @@ final class EditorWorkspaceView extends FrameLayout
     /**
      * Settles the recovery question the way a case that is not about it needs.
      *
-     * <p>The same role {@code dismissStartChooserForConstruction} plays, and for
+     * <p>The same role {@code ensureConstructionProjectForTest} plays, and for
      * the same reason. Leaving the foreground checkpoints the project, so almost
      * every instrumented case leaves a candidate behind — and the first Activity
      * of the next process would then put the recovery question over the chrome
@@ -2865,9 +3277,9 @@ final class EditorWorkspaceView extends FrameLayout
             ProjectCheckpoint.quarantine(getContext());
             Diagnostics.error(DiagnosticLog.CAT_RECOVERY, "RECOVER_FAILED",
                     "status=" + status);
-            showStatus(getContext().getString(R.string.status_recovery_failed),
+            refreshShellPhase();
+            home.showStatus(getContext().getString(R.string.status_recovery_failed),
                     R.attr.fsTextError);
-            showStartChooser(!uiState.startChoiceMade());
             return;
         }
         // Recovered work is the live project now, and the checkpoint has done
@@ -2875,9 +3287,9 @@ final class EditorWorkspaceView extends FrameLayout
         // same work again on the next launch, as though it had been lost twice.
         ProjectCheckpoint.clear(getContext());
         autosave.noteProjectPersisted();
-        // The start question is moot — this project already decided which
-        // representation it is in, and asking would offer to change it.
-        uiState.recordStartChoice();
+        // What was recovered is what the user has: a New Project straight after
+        // this asks nothing, exactly as after an Open.
+        noteProjectPersisted();
         dismissPrimarySurfacesExcept(null);
         onNativeStateChanged();
         Diagnostics.info(DiagnosticLog.CAT_RECOVERY, "RECOVERED",
@@ -2895,11 +3307,11 @@ final class EditorWorkspaceView extends FrameLayout
         // option's description promises the user.
         ProjectCheckpoint.clear(getContext());
         Diagnostics.info(DiagnosticLog.CAT_RECOVERY, "DISCARDED", null);
-        showStatus(getContext().getString(R.string.status_recovery_discarded),
+        // Discarding means starting normally: Home, which was deferred to make
+        // room for this question, stands now and carries the verdict.
+        refreshShellPhase();
+        home.showStatus(getContext().getString(R.string.status_recovery_discarded),
                 R.attr.fsTextPrimary);
-        // Discarding means starting normally, so the question that was deferred
-        // to make room for this one gets asked now.
-        showStartChooser(!uiState.startChoiceMade());
     }
 
     // -----------------------------------------------------------------------
@@ -2926,13 +3338,12 @@ final class EditorWorkspaceView extends FrameLayout
         }
     }
 
+    /** Open File… from the Project surface: guarded by the unsaved-changes
+     *  question when the live project would be lost. */
     @Override
     public void onOpenFileRequested() {
         setProjectPanelOpen(false);
-        if (transferHost == null || !transferHost.requestOpenProjectDocument()) {
-            showStatus(getContext().getString(R.string.status_project_copy_failed),
-                    R.attr.fsTextError);
-        }
+        leaveProjectFor(LEAVE_OPEN_FILE);
     }
 
     /**
@@ -3237,7 +3648,13 @@ final class EditorWorkspaceView extends FrameLayout
      */
     void onOpenProjectDocumentChosen(android.net.Uri source) {
         if (source == null) {
+            // Cancel. Wherever the picker was opened from stands unchanged:
+            // Home stays Home, a project stays open.
             Diagnostics.info(DiagnosticLog.CAT_TRANSFER, "OPEN_FILE_CANCELLED", null);
+            if (homeVisible()) {
+                home.showStatus(getContext().getString(R.string.status_home_open_cancelled),
+                        R.attr.fsTextSecondary);
+            }
             return;
         }
         final byte[] bytes = ProjectTransfer.readFrom(getContext(), source);
@@ -3248,12 +3665,17 @@ final class EditorWorkspaceView extends FrameLayout
         }
         final int status = NativeViewport.loadProject(bytes);
         if (status != NativeViewport.PROJECT_OK) {
+            // Fail-closed: nothing below JNI changed, so Home is still Home and
+            // an open project is still exactly what it was.
             Diagnostics.warn(DiagnosticLog.CAT_TRANSFER, "OPEN_FILE_REJECTED",
                     "status=" + status);
             showStatus(getContext().getString(projectFailureMessage(status)),
                     R.attr.fsTextError);
             return;
         }
+        // The file IS what the user has stored, so a New Project straight
+        // after this asks nothing.
+        noteProjectPersisted();
         dismissPrimarySurfacesExcept(null);
         onNativeStateChanged();
         // The live project is now something that exists nowhere in this app's
@@ -3483,6 +3905,13 @@ final class EditorWorkspaceView extends FrameLayout
 
     @Override
     public void showStatus(CharSequence message, int colorAttr) {
+        // At Home the toolbar is not on screen, so a verdict about an open that
+        // did not happen would be written where nobody can read it. Home
+        // carries its own line for exactly that moment.
+        if (homeVisible()) {
+            home.showStatus(message, colorAttr);
+            return;
+        }
         toolbar.showStatus(message, colorAttr);
     }
 
@@ -3699,25 +4128,6 @@ final class EditorWorkspaceView extends FrameLayout
     /** The Global Toolbar, so a test can reach a global control by id. */
     GlobalToolbarView globalToolbar() {
         return toolbar;
-    }
-
-    /**
-     * Puts the start question back and shows it, as a fresh process would.
-     *
-     * <p>The instrumentation runs every case in one process, so without this
-     * only the first test could ever see an unanswered chooser. It changes no
-     * native state: the scene, the mode and the body are exactly what they
-     * were, and only whether the question is drawn is different.
-     */
-    void showStartChooserAsFirstLaunch() {
-        uiState.clearStartChoice();
-        showStartChooser(true);
-    }
-
-    /** Answers the start question the way a test that is not about it needs. */
-    void dismissStartChooserForConstruction() {
-        uiState.recordStartChoice();
-        showStartChooser(false);
     }
 
     /**
