@@ -1154,6 +1154,15 @@ std::string g_mixedCadFaceSha;
 
 }  // namespace
 
+// The one hash implementation the corpus-pinning suites share; see the header.
+ConstructionObjectState canonicalCorpusShape(PrimitiveKind kind) {
+    return canonicalSharedShape(kind);
+}
+
+std::string projectFixtureSha256Hex(const std::vector<uint8_t>& bytes) {
+    return sha256Hex(bytes);
+}
+
 const char* canonicalConstructionFixtureSha256() { return g_constructionSha.c_str(); }
 const char* canonicalSculptFixtureSha256() { return g_sculptSha.c_str(); }
 const char* canonicalImportedOnlyFixtureSha256() { return g_importedOnlySha.c_str(); }

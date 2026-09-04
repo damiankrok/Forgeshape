@@ -1,6 +1,7 @@
 package com.forgeshape.app;
 
 import static com.forgeshape.app.SketchTestSupport.drawRectangleAndExtrude;
+import static com.forgeshape.app.SketchTestSupport.sketchPlane;
 import static com.forgeshape.app.SketchTestSupport.sketchState;
 import static com.forgeshape.app.SketchTestSupport.tapTapWorld;
 import static com.forgeshape.app.WorkspaceTestSupport.doOnWorkspace;
@@ -148,17 +149,27 @@ public final class HomeFlowTest {
     }
 
     // -----------------------------------------------------------------------
-    // E2E-APPH1-03: New CAD -> spatial XY plane -> rectangle -> Finish ->
+    // E2E-APPH1-03: New CAD -> the flat XY sketch -> rectangle -> Finish ->
     // Extrude -> the first durable body and the editor
+    //
+    // `SKETCH-UX-R1` B1 removed the plane-chooser step from this journey: the
+    // first sketch of a brand-new project opens DIRECTLY on the flat XY grid,
+    // because there was nothing in the empty world to relate three floating
+    // squares to. The plane is changed from the orientation navigator instead,
+    // where the sketch can be seen. The spatial chooser is unchanged and still
+    // the normal path for a LATER New Sketch — E2E-APPH1-05 below drives it.
     // -----------------------------------------------------------------------
 
     @Test
-    public void e2eAppH1_03_newCadBootstrapsThroughASpatialPlaneToTheFirstBody() {
+    public void e2eAppH1_03_newCadBootstrapsDirectlyIntoAFlatSketch() {
         press(R.id.home_new_project);
         press(R.id.new_project_cad);
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            assertTrue("New CAD lands directly in the spatial plane chooser",
+            assertFalse("no floating-plane step stands between New CAD and drawing",
                     NativeViewport.supportChooserActive());
+            assertEquals("New CAD lands directly in a sketch", NativeViewport.SKETCH_EDITING,
+                    sketchState());
+            assertEquals("on XY", NativeViewport.WORKPLANE_XY, sketchPlane());
             assertTrue(workspace.bootstrapVisible());
             assertFalse("Home is gone", workspace.homeVisible());
             assertFalse("and still no project exists", NativeViewport.projectOpen());
@@ -171,19 +182,11 @@ public final class HomeFlowTest {
                     workspace.findViewById(R.id.project_actions_button).isShown());
             assertFalse("no Objects capsule for a scene with no objects",
                     workspace.findViewById(R.id.objects_capsule).isShown());
-            return null;
-        });
-
-        // Tap-tap a point unambiguously on the XY plane: a sketch begins there.
-        tapTapWorld(rule.getScenario(), 2.0, 2.0, 0.0);
-        assertFalse(NativeViewport.supportChooserActive());
-        assertEquals("a sketch began on the world plane", NativeViewport.SKETCH_EDITING,
-                sketchState());
-        assertFalse("a sketch is not a project", NativeViewport.projectOpen());
-        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             assertTrue("the sketch tools are on the rail",
                     workspace.findViewById(R.id.tool_rail_rectangle).isShown());
             assertTrue(workspace.findViewById(R.id.finish_sketch).isShown());
+            assertTrue("and the orientation navigator is in the corner",
+                    workspace.findViewById(R.id.sketch_orientation_navigator).isShown());
             return null;
         });
 
@@ -252,7 +255,6 @@ public final class HomeFlowTest {
         // return to Home. The dependency is what the reopened file must carry.
         press(R.id.home_new_project);
         press(R.id.new_project_cad);
-        tapTapWorld(rule.getScenario(), 2.0, 2.0, 0.0);
         final long producer = drawRectangleAndExtrude(rule.getScenario(), 2.0, 2.0, "2");
         openSpatialChooserInProject();
         tapTapWorld(rule.getScenario(), 0.0, 0.0, 2.0);
@@ -450,19 +452,19 @@ public final class HomeFlowTest {
         });
         press(R.id.home_new_project);
         press(R.id.new_project_cad);
-        tapTapWorld(rule.getScenario(), 2.0, 2.0, 0.0);
         assertEquals(NativeViewport.SKETCH_EDITING, sketchState());
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            assertTrue("bootstrap sketch: Back goes one step, to the plane chooser",
+            // ONE step out of the bootstrap now, not two: the first sketch IS
+            // the bootstrap since `SKETCH-UX-R1` B1, and the scene behind it is
+            // empty, so there is nothing to go back TO but Home.
+            assertTrue("bootstrap sketch: Back goes Home",
                     workspace.dismissTopmostSurface());
             assertEquals(NativeViewport.SKETCH_INACTIVE, sketchState());
-            assertTrue(NativeViewport.supportChooserActive());
-            assertFalse(NativeViewport.projectOpen());
-            assertTrue("bootstrap chooser: Back goes Home",
-                    workspace.dismissTopmostSurface());
             assertFalse(NativeViewport.supportChooserActive());
             assertTrue(workspace.homeVisible());
-            assertFalse(NativeViewport.projectOpen());
+            assertFalse("and Back from the bootstrap created nothing",
+                    NativeViewport.projectOpen());
+            assertEquals(0, NativeViewport.sceneBodyCount());
             return null;
         });
         makeADirtyConstructionProject();
@@ -502,8 +504,8 @@ public final class HomeFlowTest {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             workspace.setProjectTransferHost(recordingHost);
             workspace.syncFromNative();
-            assertTrue("the bootstrap chooser is native state and survives",
-                    NativeViewport.supportChooserActive());
+            assertEquals("the bootstrap SKETCH is native state and survives a recreation",
+                    NativeViewport.SKETCH_EDITING, sketchState());
             assertTrue(workspace.bootstrapVisible());
             assertFalse(workspace.homeVisible());
             assertTrue(workspace.findViewById(R.id.back_to_home).isShown());

@@ -253,7 +253,13 @@ CadProfileKind cadProfileKind(const CadBodyState& state) {
     switch (anchor->kind()) {
         case SketchEntityKind::Rectangle: return CadProfileKind::Rectangle;
         case SketchEntityKind::Circle: return CadProfileKind::Circle;
+        // A chain anchored by a Line, an Arc or a Spline, and a closed
+        // Polyline, are all Polygon: the shell offers no per-vertex numeric
+        // field for any of them, and a curve's authored points are edited in
+        // the sketch rather than through the body's own editor.
         case SketchEntityKind::Polyline:
+        case SketchEntityKind::Arc:
+        case SketchEntityKind::Spline:
         case SketchEntityKind::Line: return CadProfileKind::Polygon;
     }
     return CadProfileKind::None;

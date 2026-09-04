@@ -19,7 +19,13 @@
       is not a project: nothing is drawn behind it, and whether it is on screen
       is derived from native truth (projectOpen) rather than remembered.
     -->
+    <!-- The start pages: Home and New Project (`SKETCH-UX-R1` A). A page,
+         not a modal; `home_panel` names the content column inside it. -->
     <item name="home_surface" type="id" />
+    <item name="start_page_wordmark" type="id" />
+    <item name="start_page_mark" type="id" />
+    <item name="start_page_product_name" type="id" />
+    <item name="start_page_headline" type="id" />
     <item name="home_panel" type="id" />
     <item name="home_new_project" type="id" />
     <item name="home_open_file" type="id" />
@@ -35,6 +41,24 @@
     <item name="new_project_cad" type="id" />
     <item name="new_project_sculpt" type="id" />
     <item name="new_project_cancel" type="id" />
+
+    <!-- The sketch orientation navigator (`SKETCH-UX-R1` C). Ids name the ACT:
+         choose a support plane, flip the view normal, roll the view. -->
+    <item name="sketch_orientation_navigator" type="id" />
+    <item name="sketch_navigator_view_label" type="id" />
+    <item name="sketch_navigator_plane_xy" type="id" />
+    <item name="sketch_navigator_plane_xz" type="id" />
+    <item name="sketch_navigator_plane_yz" type="id" />
+    <item name="sketch_navigator_flip" type="id" />
+    <item name="sketch_navigator_rotate_ccw" type="id" />
+    <item name="sketch_navigator_rotate_cw" type="id" />
+
+    <!-- The selected Line's dimension label and its numeric editor. -->
+    <item name="sketch_dimension_label" type="id" />
+    <item name="sketch_dimension_value" type="id" />
+    <item name="sketch_dimension_editor" type="id" />
+    <item name="field_sketch_line_length" type="id" />
+    <item name="apply_sketch_line_length" type="id" />
     <!--
       The unsaved-changes question, asked when New Project or Open File would
       leave a project whose changes nobody saved. Save persists then continues,
@@ -246,6 +270,8 @@
     <item name="tool_rail_polyline" type="id" />
     <item name="tool_rail_rectangle" type="id" />
     <item name="tool_rail_circle" type="id" />
+    <item name="tool_rail_arc" type="id" />
+    <item name="tool_rail_spline" type="id" />
     <!-- The sketch's own group under the rail: the way out of a sketch that
          keeps nothing, and the way back from the profile choice to editing.
          Both act on the one native sketch session. -->
@@ -416,4 +442,5 @@
     <item name="cad_direction_along" type="id" />
     <item name="cad_direction_against" type="id" />
     <item name="apply_cad" type="id" />
+    <item name="edit_cad_sketch" type="id" />
 </resources>

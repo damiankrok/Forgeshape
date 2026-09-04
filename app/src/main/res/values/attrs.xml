@@ -98,7 +98,25 @@
     <attr name="fsSliderFill" format="color" />
     <attr name="fsSliderThumb" format="color" />
 
-    <!-- The start chooser. -->
+    <!-- The start chooser: a question asked OVER a live project (the
+         unsaved-changes prompt, the recovery prompt), which is why it is still
+         a scrim and a panel. -->
     <attr name="fsChooserScrim" format="color" />
     <attr name="fsChooserCardSurface" format="color" />
+
+    <!--
+      The START PAGE — Home and New Project (`SKETCH-UX-R1` A).
+
+      Not a scrim and not a panel. There is no project behind these, so there is
+      nothing for a translucent surface to reveal: an empty viewport showing
+      through a card read as a dialog floating over a broken editor. The page is
+      OPAQUE and owns the whole window, and its two roles are its ground and the
+      barely-there geometric motif drawn on it.
+
+      The motif is decoration and nothing else: it is never interactive, never
+      an editor viewport, and never mistaken for one, because it does not move,
+      respond or contain anything.
+    -->
+    <attr name="fsStartPageSurface" format="color" />
+    <attr name="fsStartPageMotif" format="color" />
 </resources>

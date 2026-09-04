@@ -40,13 +40,12 @@ import java.util.List;
  * `E2E-CADA3-VIS`: deterministic screenshot evidence for the CAD-A3 + APP-H1
  * journey, captured through the real chrome on the authoritative emulator.
  *
- * <p>One journey, ten captures, in the order the brief names them: Home; the
- * New Project chooser; New CAD's spatial world planes; one plane highlighted by
- * a single aiming tap; the exact orthographic sketch view on it; an existing
- * CAD body with an eligible face highlighted; that face entering a sketch; the
- * face-supported sketch completed; the repeated Extrude with producer and
- * dependent on screen; and the saved `.forge` reopened with the dependency
- * restored.
+ * <p>One journey, ten captures: Home; the New Project page; New CAD's
+ * immediate flat sketch; the orientation navigator changing its plane; the
+ * exact orthographic view; an existing CAD body with an eligible face
+ * highlighted; that face entering a sketch; the face-supported sketch
+ * completed; the repeated Extrude with producer and dependent on screen; and
+ * the saved `.forge` reopened with the dependency restored.
  *
  * <p>Every capture is written beside a line of <b>measurable facts</b> — an
  * element's presence and bounds, a selected or highlighted state, the camera's
@@ -127,35 +126,46 @@ public final class CadA3VisualEvidenceTest {
         });
         capture("02_new_project_chooser");
 
-        // 3. New CAD: the three spatial world planes, no project behind them.
+        // 3. New CAD: the immediate flat XY sketch, no project behind it.
+        //
+        // `SKETCH-UX-R1` B1 replaced the three floating plane targets that used
+        // to be captured here with the sketch itself. The plane is now chosen
+        // from the orientation navigator, which capture 4 shows doing it.
         press(R.id.new_project_cad);
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            assertTrue(NativeViewport.supportChooserActive());
-            fact("support_chooser_active", true);
-            fact("project_open", NativeViewport.projectOpen());
-            fact("selected_kind", NativeViewport.supportChooserSelectedKind());
-            fact("projection_mode", NativeViewport.projectionMode());
-            bounds(workspace, "back_to_home", R.id.back_to_home);
-            planeTarget("xy", 2.0, 2.0, 0.0);
-            planeTarget("xz", 2.0, 0.0, 2.0);
-            planeTarget("yz", 0.0, 2.0, 2.0);
-            return null;
-        });
-        capture("03_new_cad_world_planes");
-
-        // 4. One world plane highlighted by a single aiming tap.
-        tapWorld(rule.getScenario(), 2.0, 0.0, 2.0);
-        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            assertEquals(NativeViewport.WORKPLANE_XZ, NativeViewport.supportChooserSelectedKind());
-            fact("selected_kind", NativeViewport.supportChooserSelectedKind());
-            fact("selected_plane", "XZ");
+            assertEquals(NativeViewport.SKETCH_EDITING, sketchState());
+            fact("support_chooser_active", NativeViewport.supportChooserActive());
             fact("sketch_state", sketchState());
+            fact("sketch_plane", NativeViewport.WORKPLANE_XY);
+            fact("project_open", NativeViewport.projectOpen());
+            fact("projection_mode", NativeViewport.projectionMode());
+            fact("grid_step_m", NativeViewport.sketchGridStep());
+            bounds(workspace, "back_to_home", R.id.back_to_home);
+            bounds(workspace, "sketch_orientation_navigator",
+                    R.id.sketch_orientation_navigator);
+            bounds(workspace, "finish_sketch", R.id.finish_sketch);
+            bounds(workspace, "tool_rail_rectangle", R.id.tool_rail_rectangle);
             return null;
         });
-        capture("04_world_plane_highlighted");
+        capture("03_new_cad_flat_sketch");
+
+        // 4. The navigator changing the plane while the sketch is still empty.
+        press(R.id.sketch_navigator_plane_xz);
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final double[] view = new double[NativeViewport.SKETCH_VIEW_SIZE];
+            NativeViewport.sketchViewState(view);
+            assertEquals(NativeViewport.WORKPLANE_XZ,
+                    (int) view[NativeViewport.SKETCH_VIEW_PLANE]);
+            fact("sketch_plane", "XZ");
+            fact("view_flipped", view[NativeViewport.SKETCH_VIEW_FLIPPED]);
+            fact("view_quarter_turns", view[NativeViewport.SKETCH_VIEW_QUARTER_TURNS]);
+            fact("plane_switchable", view[NativeViewport.SKETCH_VIEW_PLANE_SWITCHABLE]);
+            bounds(workspace, "navigator_plane_xz", R.id.sketch_navigator_plane_xz);
+            return null;
+        });
+        capture("04_navigator_plane_changed");
 
         // 5. The exact orthographic sketch view on that plane.
-        tapWorld(rule.getScenario(), 2.0, 0.0, 2.0);
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             assertEquals(NativeViewport.SKETCH_EDITING, sketchState());
             fact("sketch_state", sketchState());
@@ -328,15 +338,6 @@ public final class CadA3VisualEvidenceTest {
         final Rect rect = new Rect(at[0], at[1], at[0] + view.getWidth(), at[1] + view.getHeight());
         facts.add("  " + label + "=" + rect.toShortString() + " width_px=" + view.getWidth()
                 + " height_px=" + view.getHeight());
-    }
-
-    private void planeTarget(String plane, double x, double y, double z) {
-        final float[] at = new float[2];
-        if (NativeViewport.debugProjectWorld(x, y, z, at)) {
-            facts.add("  plane_" + plane + "_target_px=(" + (int) at[0] + "," + (int) at[1] + ")");
-        } else {
-            facts.add("  plane_" + plane + "_target_px=offscreen");
-        }
     }
 
     private void writeFacts() {

@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The start page's decorative motif: a light drafting grid with one accented
+  corner, echoing the sketch grid the product actually draws.
+
+  DECORATION, and structurally incapable of being anything else: it is a static
+  vector with no touch target, it never changes, and it contains nothing that
+  can be selected, moved or picked. It must never be mistaken for a live
+  viewport, which is why it does not fill the page — it sits behind the content
+  as a corner motif with the page's own gradient over most of it.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="240dp"
+    android:height="240dp"
+    android:viewportWidth="240"
+    android:viewportHeight="240"
+    android:alpha="0.5">
+    <!-- The minor rhythm. -->
+    <path
+        android:pathData="M0,40h240 M0,80h240 M0,120h240 M0,160h240 M0,200h240
+                          M40,0v240 M80,0v240 M120,0v240 M160,0v240 M200,0v240"
+        android:strokeColor="?attr/fsStartPageMotif"
+        android:strokeWidth="1" />
+    <!-- The major rhythm, every fourth line, exactly as the sketch grid's is. -->
+    <path
+        android:pathData="M0,160h240 M160,0v240"
+        android:strokeColor="?attr/fsStartPageMotif"
+        android:strokeWidth="2" />
+    <!-- One extruded corner: a square profile and the depth it was given. -->
+    <path
+        android:pathData="M40,160h80v-80h-80z"
+        android:strokeColor="?attr/fsAccent"
+        android:strokeWidth="2"
+        android:strokeAlpha="0.55" />
+    <path
+        android:pathData="M40,160l24,-24 M120,160l24,-24 M120,80l24,-24
+                          M64,136h80v-80 M144,136v-80"
+        android:strokeColor="?attr/fsAccent"
+        android:strokeWidth="1.5"
+        android:strokeAlpha="0.30" />
+</vector>

@@ -81,6 +81,8 @@
     <color name="p1_text_disabled">#FF7A746C</color>
     <color name="p1_slider_track">#FF34322F</color>
     <color name="p1_chooser_scrim">#99201E1C</color>
+    <color name="p1_start_page_surface">#FF262421</color>
+    <color name="p1_start_page_motif">#FF322F2B</color>
 
     <!-- =====================================================================
          PALETTE 02 — NEUTRAL CHARCOAL / STEEL.
@@ -116,6 +118,8 @@
     <color name="p2_text_disabled">#FF6C737A</color>
     <color name="p2_slider_track">#FF292C2F</color>
     <color name="p2_chooser_scrim">#99101214</color>
+    <color name="p2_start_page_surface">#FF1E2022</color>
+    <color name="p2_start_page_motif">#FF292C2F</color>
 
     <!-- =====================================================================
          PALETTE 03 — LIGHT CHARCOAL. The lightest dark.
@@ -153,4 +157,6 @@
     <!-- Deeper than the other two scrims for the same visual result: a scrim
          has to darken, and this palette's ground is already the lightest. -->
     <color name="p3_chooser_scrim">#A3202224</color>
+    <color name="p3_start_page_surface">#FF323537</color>
+    <color name="p3_start_page_motif">#FF3E4143</color>
 </resources>

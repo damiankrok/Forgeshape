@@ -53,6 +53,7 @@ add_library(forgeshape_native SHARED
     forgeshape_cad_a3_selftest.cpp
     forgeshape_sketch.cpp
     forgeshape_sketch_session.cpp
+    forgeshape_sketch_ux_selftest.cpp
     forgeshape_support_chooser.cpp
     forgeshape_workplane.cpp
     forgeshape_body_delete.cpp

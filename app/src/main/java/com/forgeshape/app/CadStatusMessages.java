@@ -35,6 +35,16 @@ final class CadStatusMessages {
                 return context.getString(R.string.status_cad_zero_area);
             case NativeViewport.CAD_BRANCHING_CHAIN:
                 return context.getString(R.string.status_cad_branching);
+            case NativeViewport.CAD_INVALID_ARC:
+                return context.getString(R.string.status_cad_invalid_arc);
+            case NativeViewport.CAD_INVALID_SPLINE:
+                return context.getString(R.string.status_cad_invalid_spline);
+            case NativeViewport.CAD_SKETCH_NOT_EMPTY:
+                return context.getString(R.string.status_sketch_plane_fixed);
+            case NativeViewport.CAD_DEPENDENT_FACE_LOST:
+                return context.getString(R.string.status_cad_dependent_face_lost);
+            case NativeViewport.CAD_ZERO_LENGTH_LINE:
+                return context.getString(R.string.status_cad_zero_length);
             default:
                 return context.getString(R.string.status_cad_refused,
                         NativeViewport.cadStatusToken(code));

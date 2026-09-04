@@ -60,18 +60,24 @@ enum class SketchSessionState : uint8_t {
 
 const char* sketchSessionStateName(SketchSessionState state);
 
-// The rail's five entries. Select is a tool so that a tap in the viewport has
+// The rail's seven entries. Select is a tool so that a tap in the viewport has
 // exactly one meaning at a time: with a drawing tool held it places geometry,
 // with Select held it chooses an entity.
+//
+// Arc and Spline are APPENDED (`SKETCH-UX-R1` D): the existing five keep their
+// indices, so a stored tool index, a test and the rail's own order do not move
+// under them.
 enum class SketchTool : uint8_t {
     Select,
     Line,
     Polyline,
     Rectangle,
     Circle,
+    Arc,
+    Spline,
 };
 
-constexpr int kSketchToolCount = 5;
+constexpr int kSketchToolCount = 7;
 
 const char* sketchToolName(SketchTool tool);
 bool sketchToolFromIndex(int index, SketchTool* out);
@@ -135,6 +141,17 @@ constexpr float kSketchHitToleranceUnits = 24.0f;
 // radius the selection controller uses.
 constexpr float kSketchTapSlopPixels = 24.0f;
 
+// The dimension annotation's proportions, in reference units (dp), so it reads
+// the same at any zoom (`SKETCH-UX-R1` E1). The dimension line stands this far
+// off the stroke it measures -- far enough that the label never sits on the
+// geometry -- the extension lines start a small gap away from the endpoints and
+// overshoot the dimension line, and the end ticks are the technical-drawing
+// slash rather than a filled arrowhead, which reads better at phone sizes.
+constexpr double kSketchDimensionOffsetUnits = 30.0;
+constexpr double kSketchDimensionExtensionGapUnits = 6.0;
+constexpr double kSketchDimensionOvershootUnits = 8.0;
+constexpr double kSketchDimensionTickUnits = 7.0;
+
 // The snap marker's half size, in reference units.
 constexpr float kSketchSnapMarkerUnits = 8.0f;
 
@@ -162,10 +179,105 @@ public:
     // (NotSketching) while a session is open; the caller cancels first.
     CadStatus beginOnFace(const SketchFrame& worldFrame, const TopoRef& support);
 
+    // Opens a session that EDITS an existing CAD body's sketch
+    // (`SKETCH-UX-R1` F).
+    //
+    // The session takes a STAGED COPY of the body's authored state and the
+    // project keeps its own until `commitEdit`. Nothing here regenerates the
+    // body, records a history step or moves a `.forge` byte, so `cancel` from
+    // an edit costs the project exactly what `cancel` from a new sketch costs:
+    // nothing. `worldFrame` is where the body's sketch is authored in world
+    // space, which the caller resolves the same way it does for a new sketch.
+    //
+    // Refused (`NotSketching`) while a session is already open.
+    CadStatus beginEdit(ObjectId bodyId, const CadBodyState& state, const SketchFrame& worldFrame);
+
+    // Which body this session is editing, or `kNoObject` when it is authoring a
+    // new one. The ONE answer to "is this an edit?" -- no shell flag mirrors it.
+    ObjectId editingBodyId() const { return editingBodyId_; }
+    bool editingExistingBody() const { return editingBodyId_ != kNoObject; }
+
+    // THE edit commit: Ready -> Inactive, applying the staged state to the body
+    // as ONE `ScopedConstructionEdit` and so exactly one Undo. A refusal changes
+    // nothing at all and stays in Ready with the reason named. Dependent
+    // face-supported bodies re-resolve as the derived consequence they are; no
+    // follow-state is written here.
+    CadStatus commitEdit(ConstructionScene& scene, ConstructionHistory& history);
+
     // The world authoring frame the camera should look normal to. Valid while
     // active; the plane's frame at the origin for a world-plane sketch, the
     // producer's face frame for a face sketch.
+    //
+    // AUTHORING TRUTH: `(u, v)` mean what this frame says they mean, and the
+    // orientation navigator never touches it. See `viewFrame`.
     const SketchFrame& frame() const { return frame_; }
+
+    // --- the orientation navigator (`SKETCH-UX-R1` C) --------------------
+    //
+    // Two PRESENTATION facts, and they are presentation in the strongest sense
+    // the project has: neither is persisted, neither reaches a history step, a
+    // checkpoint, the fingerprint or a `.forge` byte, and neither changes one
+    // authored coordinate. They decide only which way the camera is pointed and
+    // which way up the sketch is drawn.
+
+    // Whether the camera looks along the frame's NEGATIVE normal (the "back" of
+    // the plane) rather than its positive one.
+    bool viewFlipped() const { return viewFlipped_; }
+    // How many quarter turns the view is rolled about the normal, 0..3.
+    int viewQuarterTurns() const { return viewQuarterTurns_; }
+
+    // The frame the CAMERA should be framed on: `frame()` with the flip and the
+    // roll applied. Always right-handed, so no view state can mirror anything.
+    SketchFrame viewFrame() const;
+
+    // Rolls the view by `quarterTurns` (any integer; +1 makes the drawing
+    // appear to turn 90 degrees counter-clockwise). Never refused, because it
+    // cannot fail and cannot change the sketch.
+    void rotateView(int quarterTurns);
+    void setViewFlipped(bool flipped);
+
+    // Changes a WORLD-plane sketch's support plane, re-basing the authoring
+    // frame (`SKETCH-UX-R1` C4).
+    //
+    // Refused, changing nothing:
+    //   * `SketchNotEmpty`   -- the sketch already carries an entity. The
+    //                           authored `(u, v)` values would come to mean a
+    //                           different place in the world, and silently
+    //                           reinterpreting them is exactly what this
+    //                           refuses to do. The user empties the sketch, or
+    //                           cancels.
+    //   * `InvalidWorkplane` -- the sketch is FACE-supported. Its support is a
+    //                           TopoRef and switching to a world plane would
+    //                           detach it from the producer it follows; that
+    //                           takes a Cancel and a new support choice.
+    CadStatus setSupportPlane(Workplane plane);
+
+    // --- the selected line's dimension (`SKETCH-UX-R1` E) ----------------
+
+    // The selected entity's length, when it is a straight Line. False for any
+    // other selection, which is the whole condition for drawing the dimension.
+    bool selectedLineLength(Meters* outLength) const;
+
+    // Sets a straight Line's length EXACTLY, keeping its first endpoint fixed
+    // and its direction unchanged: `P1' = P0 + normalize(P1 - P0) * length`.
+    //
+    // Deliberately not a constraint solver: no neighbouring entity moves, no
+    // angle is preserved for anything else, and nothing is re-snapped. A chain
+    // this opens becomes an open profile, which `finish` then refuses by name --
+    // the honest outcome, rather than dragging the rest of the sketch along.
+    //
+    // Refused, changing nothing, on a non-finite, zero, negative or
+    // out-of-range length, and on an id that is not a Line's.
+    CadStatus applyLineLength(SketchEntityId id, Meters length);
+
+    // Where the dimension's numeric LABEL belongs, in sketch coordinates: the
+    // midpoint of the dimension line, offset clear of the stroke. The shell
+    // turns it into a screen position through `sketchToScreen` and draws the
+    // editable field there. False when no straight Line is selected.
+    //
+    // `worldPerUnit` is the same camera-derived scale the overlay is built
+    // with, so the label sits exactly on the annotation whatever the zoom.
+    bool selectedLineDimensionAnchor(double worldPerUnit, SketchPoint* out) const;
 
     // The current adaptive minor grid step, in metres. What a grid snap rounds
     // to, and what the overlay draws. Sampled from the camera at pointer-down.
@@ -296,6 +408,7 @@ private:
     SnapResult snap(const SketchPoint& raw, double snapWorld) const;
     SketchEntityId hitTest(const SketchPoint& point, double toleranceWorld) const;
     void placeFromDrag();
+    void placeArcThrough(const SketchPoint& through);
     void placePolylineVertex(const SnapResult& at);
     void touchOverlay() { ++overlayRevision_; overlayDirty_ = true; }
     CadStatus fail(CadStatus why) { lastStatus_ = why; return why; }
@@ -326,8 +439,29 @@ private:
     // so a drag's tolerances are fixed for its whole life.
     double worldPerUnit_ = 0.0;
 
+    // The multi-tap point run. ONE buffer, shared by the Polyline and the
+    // Spline tools, because only one multi-tap entity can be in progress at a
+    // time and two buffers would be two answers to what is being placed. Which
+    // entity it becomes is decided by the tool held when the run ENDS, and a
+    // tool change ends the run before it changes the tool.
     bool polylineInProgress_ = false;
     std::vector<SketchPoint> polylineVertices_;
+
+    // The Arc tool's two-step gesture: a drag sets the chord, then one tap sets
+    // the point the arc passes through. Dropped by a tool change, a cancel and
+    // a second pointer, exactly as a drag is.
+    bool arcPending_ = false;
+    SketchPoint arcStart_;
+    SketchPoint arcEnd_;
+
+    // The orientation navigator's PRESENTATION state. Never persisted; see the
+    // accessors.
+    bool viewFlipped_ = false;
+    int viewQuarterTurns_ = 0;
+
+    // The body this session is editing, or kNoObject when it is authoring a new
+    // one. See beginEdit.
+    ObjectId editingBodyId_ = kNoObject;
 
     CadStatus lastStatus_ = CadStatus::Ok;
     SketchSnapKind lastSnapKind_ = SketchSnapKind::None;

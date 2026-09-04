@@ -2,6 +2,7 @@
 
 #include <cmath>
 
+#include "forgeshape_cad_face.h"
 #include "forgeshape_gizmo.h"
 #include "forgeshape_picking.h"
 
@@ -23,6 +24,8 @@ const char* sketchToolName(SketchTool tool) {
         case SketchTool::Polyline: return "Polyline";
         case SketchTool::Rectangle: return "Rectangle";
         case SketchTool::Circle: return "Circle";
+        case SketchTool::Arc: return "Arc";
+        case SketchTool::Spline: return "Spline";
     }
     return "unknown";
 }
@@ -81,6 +84,16 @@ void collectSnapPoints(const CadSketch& sketch, std::vector<SketchPoint>* out) {
             out->push_back(rectangle->center);
         } else if (const SketchCircle* circle = entity.circle()) {
             out->push_back(circle->center);
+        } else if (const SketchArc* arc = entity.arc()) {
+            // The three AUTHORED points, not a tessellated sample: snapping to
+            // a curve means snapping to something the user placed.
+            out->push_back(arc->start);
+            out->push_back(arc->mid);
+            out->push_back(arc->end);
+        } else if (const SketchSpline* spline = entity.spline()) {
+            for (const SketchPoint& p : spline->points) {
+                out->push_back(p);
+            }
         }
     }
 }
@@ -145,6 +158,13 @@ CadStatus SketchSession::begin(Workplane plane) {
     resetGesture();
     polylineInProgress_ = false;
     polylineVertices_.clear();
+    arcPending_ = false;
+    // A fresh sketch is looked at from the front, the right way up. The
+    // navigator's state belongs to the session, not to the sketch, so it starts
+    // over with it rather than carrying a previous sketch's roll into this one.
+    viewFlipped_ = false;
+    viewQuarterTurns_ = 0;
+    editingBodyId_ = kNoObject;
     entitiesPlaced_ = 0;
     lastSnapKind_ = SketchSnapKind::None;
     state_ = SketchSessionState::Editing;
@@ -156,12 +176,309 @@ void SketchSession::cancel() {
     resetGesture();
     polylineInProgress_ = false;
     polylineVertices_.clear();
+    arcPending_ = false;
     sketch_ = CadSketch{};
     selectedEntityId_ = kNoSketchEntity;
     profiles_ = ProfileExtraction{};
     extrude_ = ExtrudeFeature{};
+    // An edit session that is cancelled has, by construction, written nothing
+    // to the body: the staged copy simply goes away with the session.
+    editingBodyId_ = kNoObject;
+    viewFlipped_ = false;
+    viewQuarterTurns_ = 0;
     state_ = SketchSessionState::Inactive;
     touchOverlay();
+}
+
+// ---------------------------------------------------------------------------
+// Editing an existing body's sketch (`SKETCH-UX-R1` F)
+// ---------------------------------------------------------------------------
+
+CadStatus SketchSession::beginEdit(ObjectId bodyId, const CadBodyState& state,
+                                   const SketchFrame& worldFrame) {
+    if (state_ != SketchSessionState::Inactive) {
+        return fail(CadStatus::NotSketching);
+    }
+    if (bodyId == kNoObject) {
+        return fail(CadStatus::NotCadBody);
+    }
+    // The state must be one this build can regenerate before it is staged: an
+    // edit session opened over a state the domain would refuse could never be
+    // finished, and would strand the user in a sketch with no way forward.
+    const CadStatus valid = validateCadBodyState(state);
+    if (valid != CadStatus::Ok) {
+        return fail(valid);
+    }
+    const CadStatus started = begin(state.sketch.plane);
+    if (started != CadStatus::Ok) {
+        return started;
+    }
+    // The STAGED copy. Everything the body knows about itself, including its
+    // face support and its extrusion, so Finish can regenerate the whole body
+    // rather than a sketch with a guessed depth.
+    sketch_ = state.sketch;
+    extrude_ = state.extrude;
+    frame_ = worldFrame;
+    editingBodyId_ = bodyId;
+    touchOverlay();
+    return fail(CadStatus::Ok);
+}
+
+CadStatus SketchSession::commitEdit(ConstructionScene& scene, ConstructionHistory& history) {
+    if (state_ != SketchSessionState::Ready || editingBodyId_ == kNoObject) {
+        return fail(CadStatus::NotSketching);
+    }
+    if (history.editInProgress()) {
+        return fail(CadStatus::RefusedEditInProgress);
+    }
+    if (extrude_.profileEntityId == kNoSketchEntity) {
+        return fail(profiles_.profiles.size() > 1 ? CadStatus::AmbiguousProfile
+                                                  : CadStatus::ProfileNotFound);
+    }
+    SceneObject* object = scene.findBody(editingBodyId_);
+    CadBody* body = object != nullptr ? object->cadOrNull() : nullptr;
+    if (body == nullptr) {
+        // The body went away under the edit -- deleted, or the project
+        // replaced. The staged sketch is not applied to anything else.
+        return fail(CadStatus::NotCadBody);
+    }
+    const CadBodyState candidate = candidateState();
+    // Validated BEFORE the transaction opens, so a refusal never opens an edit
+    // the history would then have to discard.
+    const CadStatus valid = validateCadBodyState(candidate);
+    if (valid != CadStatus::Ok) {
+        return fail(valid);
+    }
+    // An edit that would strip a planar face another body's sketch is standing
+    // on is REFUSED, checked against the CANDIDATE before anything is written.
+    // A size-only edit keeps the face SET and so keeps every reference valid;
+    // an edit that removes a profile edge does not, and the answer is a refusal
+    // by name rather than a dependent that quietly stops being drawn.
+    for (const ObjectId dependentId : scene.cadDependentsOf(editingBodyId_)) {
+        const SceneObject* dependent = scene.findBody(dependentId);
+        const CadBody* dependentCad = dependent != nullptr ? dependent->cadOrNull() : nullptr;
+        if (dependentCad == nullptr || !dependentCad->sketch().hasFaceSupport) {
+            continue;
+        }
+        const TopoRef& ref = dependentCad->sketch().faceSupport;
+        CadFace face;
+        if (cadTopologySignature(candidate) != ref.lineageToken
+            || resolveCadFace(candidate, ref.face, &face) != CadStatus::Ok || !face.eligible) {
+            return fail(CadStatus::DependentFaceLost);
+        }
+    }
+    CadStatus why = CadStatus::Ok;
+    {
+        // ONE transaction, so one Finish is exactly one Undo. `applyState` is
+        // itself all-or-nothing, and every dependent's world placement is
+        // DERIVED through `resolveWorldModel` on the next snapshot, so nothing
+        // here has to push the change to them.
+        ScopedConstructionEdit edit(history);
+        why = body->applyState(candidate);
+        if (why == CadStatus::Ok) {
+            publishSceneObject(*object);
+        }
+    }
+    if (why != CadStatus::Ok) {
+        return fail(why);
+    }
+    cancel();  // the session is over; the truth is the body's again
+    return fail(CadStatus::Ok);
+}
+
+// ---------------------------------------------------------------------------
+// The orientation navigator (`SKETCH-UX-R1` C)
+// ---------------------------------------------------------------------------
+
+SketchFrame SketchSession::viewFrame() const {
+    SketchFrame view = frame_;
+    if (viewFlipped_) {
+        // Looking at the back of the plane. The normal reverses and ONE of the
+        // in-plane axes must reverse with it, or the basis would be left-handed
+        // and the drawing would come out mirrored -- which is the one thing a
+        // view control must never do to a sketch.
+        view.n = vec3Scale(view.n, -1.0f);
+        view.v = vec3Scale(view.v, -1.0f);
+    }
+    // Roll about the view normal, a quarter turn at a time. +1 turns the VIEW
+    // clockwise, which sends what was at screen-up round to screen-left — so
+    // the DRAWING appears to turn counter-clockwise, which is what the +90
+    // control's content description says it does.
+    for (int i = 0; i < viewQuarterTurns_; ++i) {
+        const Vec3 u = view.u;
+        view.u = vec3Scale(view.v, -1.0f);
+        view.v = u;
+    }
+    return view;
+}
+
+void SketchSession::rotateView(int quarterTurns) {
+    if (!active()) {
+        return;
+    }
+    // Any integer, normalized into 0..3: the control sends +1 and -1, and a
+    // negative or a large value must land somewhere defined rather than index
+    // out of the loop above.
+    int turns = (viewQuarterTurns_ + quarterTurns) % 4;
+    if (turns < 0) {
+        turns += 4;
+    }
+    viewQuarterTurns_ = turns;
+    touchOverlay();
+}
+
+void SketchSession::setViewFlipped(bool flipped) {
+    if (!active() || flipped == viewFlipped_) {
+        return;
+    }
+    viewFlipped_ = flipped;
+    touchOverlay();
+}
+
+CadStatus SketchSession::setSupportPlane(Workplane plane) {
+    if (!active()) {
+        return fail(CadStatus::NotSketching);
+    }
+    if (sketch_.hasFaceSupport) {
+        return fail(CadStatus::InvalidWorkplane);
+    }
+    if (workplaneIndex(plane) < 0 || workplaneIndex(plane) >= kWorkplaneCount) {
+        return fail(CadStatus::InvalidWorkplane);
+    }
+    if (plane == sketch_.plane) {
+        return fail(CadStatus::Ok);
+    }
+    // The rule that makes this safe: the authored numbers only ever mean one
+    // plane, so the plane may change while there are no numbers and never
+    // afterwards. Nothing is remapped, projected or reinterpreted.
+    if (!sketch_.entities.empty() || polylineInProgress_) {
+        return fail(CadStatus::SketchNotEmpty);
+    }
+    sketch_.plane = plane;
+    const WorkplaneFrame wf = workplaneFrame(plane);
+    frame_ = SketchFrame{Vec3{0.0f, 0.0f, 0.0f}, wf.uAxis, wf.vAxis, wf.normal};
+    resetGesture();
+    arcPending_ = false;
+    touchOverlay();
+    return fail(CadStatus::Ok);
+}
+
+// ---------------------------------------------------------------------------
+// The selected line's dimension (`SKETCH-UX-R1` E)
+// ---------------------------------------------------------------------------
+
+bool SketchSession::selectedLineLength(Meters* outLength) const {
+    if (!active() || selectedEntityId_ == kNoSketchEntity) {
+        return false;
+    }
+    const SketchEntity* entity = findSketchEntity(sketch_, selectedEntityId_);
+    if (entity == nullptr) {
+        return false;
+    }
+    const SketchLine* line = entity->line();
+    if (line == nullptr) {
+        return false;
+    }
+    if (outLength != nullptr) {
+        *outLength = distance(line->start, line->end);
+    }
+    return true;
+}
+
+namespace {
+
+// The frame one dimension annotation is built in: the line's own direction and
+// the perpendicular the annotation is offset along. The perpendicular is chosen
+// deterministically (the direction turned a quarter turn counter-clockwise), so
+// the annotation does not jump to the other side of the line when the line is
+// redrawn the other way round.
+struct DimensionFrame {
+    SketchPoint start;
+    SketchPoint end;
+    double du = 1.0;   // unit direction
+    double dv = 0.0;
+    double pu = 0.0;   // unit perpendicular
+    double pv = 1.0;
+};
+
+bool dimensionFrameFor(const SketchLine& line, DimensionFrame* out) {
+    const double dx = line.end.u - line.start.u;
+    const double dy = line.end.v - line.start.v;
+    const double length = std::sqrt(dx * dx + dy * dy);
+    if (!std::isfinite(length) || length <= 0.0) {
+        return false;
+    }
+    out->start = line.start;
+    out->end = line.end;
+    out->du = dx / length;
+    out->dv = dy / length;
+    out->pu = -out->dv;
+    out->pv = out->du;
+    return true;
+}
+
+SketchPoint offsetBy(const SketchPoint& p, double du, double dv, double amount) {
+    return SketchPoint{p.u + du * amount, p.v + dv * amount};
+}
+
+}  // namespace
+
+bool SketchSession::selectedLineDimensionAnchor(double worldPerUnit, SketchPoint* out) const {
+    if (out == nullptr || !std::isfinite(worldPerUnit) || worldPerUnit <= 0.0) {
+        return false;
+    }
+    if (!active() || selectedEntityId_ == kNoSketchEntity) {
+        return false;
+    }
+    const SketchEntity* entity = findSketchEntity(sketch_, selectedEntityId_);
+    const SketchLine* line = entity != nullptr ? entity->line() : nullptr;
+    DimensionFrame f;
+    if (line == nullptr || !dimensionFrameFor(*line, &f)) {
+        return false;
+    }
+    const double offset = kSketchDimensionOffsetUnits * worldPerUnit;
+    const SketchPoint mid{(f.start.u + f.end.u) * 0.5, (f.start.v + f.end.v) * 0.5};
+    *out = offsetBy(mid, f.pu, f.pv, offset);
+    return true;
+}
+
+CadStatus SketchSession::applyLineLength(SketchEntityId id, Meters length) {
+    if (state_ != SketchSessionState::Editing) {
+        return fail(CadStatus::NotSketching);
+    }
+    const SketchEntity* entity = findSketchEntity(sketch_, id);
+    if (entity == nullptr) {
+        return fail(CadStatus::UnknownEntity);
+    }
+    const SketchLine* line = entity->line();
+    if (line == nullptr) {
+        return fail(CadStatus::UnknownEntity);
+    }
+    if (!std::isfinite(length)) {
+        return fail(CadStatus::NonFinite);
+    }
+    // Zero and negative are refused rather than clamped: a length is a length,
+    // and "make it -40 mm" is not a shorter line, it is a different question.
+    if (validateDimensionMeters(length) != DimensionValidation::Ok
+        || length > kMaxSketchCoordinateMeters) {
+        return fail(CadStatus::ZeroLengthLine);
+    }
+    const double current = distance(line->start, line->end);
+    if (!(current > 0.0)) {
+        return fail(CadStatus::ZeroLengthLine);
+    }
+    const double scale = length / current;
+    SketchLine moved;
+    // P0 FIXED, direction PRESERVED: the second endpoint alone moves, along the
+    // line it was already on.
+    moved.start = line->start;
+    moved.end = SketchPoint{line->start.u + (line->end.u - line->start.u) * scale,
+                            line->start.v + (line->end.v - line->start.v) * scale};
+    const CadStatus why = replaceSketchEntity(&sketch_, id, moved);
+    if (why == CadStatus::Ok) {
+        touchOverlay();
+    }
+    return fail(why);
 }
 
 bool SketchSession::setTool(SketchTool tool) {
@@ -175,6 +492,9 @@ bool SketchSession::setTool(SketchTool tool) {
     // belongs to the tool it started under.
     endPolylineInProgress();
     resetGesture();
+    // A pending arc chord belongs to the Arc tool; changing tool drops it, as
+    // a drag in progress is dropped.
+    arcPending_ = false;
     tool_ = tool;
     touchOverlay();
     return true;
@@ -322,6 +642,17 @@ SketchEntityId SketchSession::hitTest(const SketchPoint& point, double tolerance
             }
         } else if (const SketchCircle* circle = entity.circle()) {
             d = std::fabs(distance(point, circle->center) - circle->radius);
+        } else if (sketchEntityIsCurved(entity)) {
+            // A curve is hit-tested against its DERIVED polyline: what the user
+            // is aiming at is the stroke they can see, and the stroke is that
+            // polyline. Bounded by the same tessellation the profile uses, so
+            // hit-testing and extrusion agree about where the curve is.
+            std::vector<SketchPoint> points;
+            if (tessellateSketchCurve(entity, &points) == CadStatus::Ok && points.size() >= 2) {
+                for (size_t i = 1; i < points.size(); ++i) {
+                    d = std::fmin(d, segmentDistance(point, points[i - 1], points[i]));
+                }
+            }
         }
         // Ties keep the earlier entity: deterministic, and the same rule
         // scene picking uses.
@@ -420,8 +751,25 @@ bool SketchSession::onTouch(TouchAction action, int32_t actionPointerId,
                     break;
                 }
                 case SketchTool::Polyline:
+                case SketchTool::Spline:
+                    // Both are a run of tapped points; the tool held when the
+                    // run ends decides which entity it becomes.
                     if (tap) {
                         placePolylineVertex(at);
+                    }
+                    break;
+                case SketchTool::Arc:
+                    // Two steps. The DRAG sets the chord -- where the arc
+                    // starts and where it ends -- and the next TAP sets the
+                    // point it passes through, which is what decides the bulge
+                    // and which of the circle's two arcs was meant.
+                    if (arcPending_) {
+                        placeArcThrough(cursor_);
+                    } else if (dragValid_ && travelled_ && !nearlySame(anchor_, cursor_)) {
+                        arcPending_ = true;
+                        arcStart_ = anchor_;
+                        arcEnd_ = cursor_;
+                        lastStatus_ = CadStatus::Ok;
                     }
                     break;
                 case SketchTool::Line:
@@ -492,6 +840,26 @@ void SketchSession::placeFromDrag() {
     }
 }
 
+void SketchSession::placeArcThrough(const SketchPoint& through) {
+    SketchArc arc;
+    arc.start = arcStart_;
+    arc.mid = through;
+    arc.end = arcEnd_;
+    SketchEntityId id = kNoSketchEntity;
+    // Held to `validateSketchEntity` like every other placement: a tap that
+    // lands on the chord is collinear, and an arc with no circle through its
+    // three points is refused by name rather than becoming a straight line the
+    // user did not ask for. The pending chord is dropped either way, so a
+    // refusal does not leave the tool half-armed.
+    const CadStatus why = addSketchEntity(&sketch_, arc, &id);
+    arcPending_ = false;
+    lastStatus_ = why;
+    if (why == CadStatus::Ok) {
+        ++entitiesPlaced_;
+        selectedEntityId_ = id;
+    }
+}
+
 void SketchSession::placePolylineVertex(const SnapResult& at) {
     if (!polylineInProgress_) {
         polylineInProgress_ = true;
@@ -502,7 +870,18 @@ void SketchSession::placePolylineVertex(const SnapResult& at) {
     }
     // Tapping the FIRST vertex again closes the loop; tapping the LAST one
     // again ends it open. Anything else is one more vertex.
-    if (polylineVertices_.size() >= 3 && nearlySame(at.point, polylineVertices_.front())) {
+    //
+    // A SPLINE has no closed form -- a curve whose two ends meet is the one
+    // shape the single chain walker cannot read, and `validateSketchEntity`
+    // refuses it -- so for the Spline tool a tap on the first point ends the
+    // run open, exactly as a tap on the last one does.
+    if (tool_ == SketchTool::Spline && polylineVertices_.size() >= 2
+        && nearlySame(at.point, polylineVertices_.front())) {
+        endPolylineInProgress();
+        return;
+    }
+    if (tool_ != SketchTool::Spline && polylineVertices_.size() >= 3
+        && nearlySame(at.point, polylineVertices_.front())) {
         SketchPolyline polyline;
         polyline.vertices = polylineVertices_;
         polyline.closed = true;
@@ -520,7 +899,10 @@ void SketchSession::placePolylineVertex(const SnapResult& at) {
         endPolylineInProgress();
         return;
     }
-    if (polylineVertices_.size() >= kMaxPolylineVertices) {
+    // Each tool is held to its OWN cap, because a spline's authored points are
+    // a much smaller budget than a polyline's vertices.
+    const size_t cap = tool_ == SketchTool::Spline ? kMaxSplinePoints : kMaxPolylineVertices;
+    if (polylineVertices_.size() >= cap) {
         lastStatus_ = CadStatus::TooManyEntities;
         return;
     }
@@ -534,11 +916,17 @@ void SketchSession::endPolylineInProgress() {
     }
     polylineInProgress_ = false;
     if (polylineVertices_.size() >= 2) {
-        SketchPolyline polyline;
-        polyline.vertices = polylineVertices_;
-        polyline.closed = false;
         SketchEntityId id = kNoSketchEntity;
-        lastStatus_ = addSketchEntity(&sketch_, std::move(polyline), &id);
+        if (tool_ == SketchTool::Spline) {
+            SketchSpline spline;
+            spline.points = polylineVertices_;
+            lastStatus_ = addSketchEntity(&sketch_, std::move(spline), &id);
+        } else {
+            SketchPolyline polyline;
+            polyline.vertices = polylineVertices_;
+            polyline.closed = false;
+            lastStatus_ = addSketchEntity(&sketch_, std::move(polyline), &id);
+        }
         if (lastStatus_ == CadStatus::Ok) {
             ++entitiesPlaced_;
             selectedEntityId_ = id;
@@ -840,6 +1228,16 @@ void SketchSession::buildOverlay(float worldPerUnit) {
             for (size_t i = 0; i < ring.size(); ++i) {
                 pushLine(&v, local(ring[i]), local(ring[(i + 1) % ring.size()]), 0.0f, handle);
             }
+        } else if (sketchEntityIsCurved(entity)) {
+            // Drawn from the SAME derived polyline the profile engine and the
+            // hit test use, so what is seen, what can be grabbed and what is
+            // extruded are one shape rather than three approximations of one.
+            std::vector<SketchPoint> points;
+            if (tessellateSketchCurve(entity, &points) == CadStatus::Ok) {
+                for (size_t i = 1; i < points.size(); ++i) {
+                    pushLine(&v, local(points[i - 1]), local(points[i]), 0.0f, handle);
+                }
+            }
         }
     }
     // The polyline being placed, and the rubber band from its last vertex.
@@ -851,9 +1249,30 @@ void SketchSession::buildOverlay(float worldPerUnit) {
             pushLine(&v, local(polylineVertices_.back()), local(cursor_), 0.0f, 1.0f);
         }
     }
+    // The Arc tool's pending chord, and the arc it would become through the
+    // cursor. Shown between the two taps so the bulge is chosen by eye.
+    if (arcPending_ && state_ == SketchSessionState::Editing) {
+        pushLine(&v, local(arcStart_), local(arcEnd_), 0.0f, 0.0f);
+        SketchArc preview;
+        preview.start = arcStart_;
+        preview.mid = cursor_;
+        preview.end = arcEnd_;
+        std::vector<SketchPoint> points;
+        if (tessellateSketchCurve(SketchEntity(1, preview), &points) == CadStatus::Ok) {
+            for (size_t i = 1; i < points.size(); ++i) {
+                pushLine(&v, local(points[i - 1]), local(points[i]), 0.0f, 1.0f);
+            }
+        }
+    }
     // The drag in progress.
     if (pointerId_ >= 0 && dragValid_ && state_ == SketchSessionState::Editing) {
         switch (tool_) {
+            case SketchTool::Arc:
+                // Before the chord is set, the drag rubber-bands it.
+                if (!arcPending_) {
+                    pushLine(&v, local(anchor_), local(cursor_), 0.0f, 1.0f);
+                }
+                break;
             case SketchTool::Line:
                 pushLine(&v, local(anchor_), local(cursor_), 0.0f, 1.0f);
                 break;
@@ -914,6 +1333,47 @@ void SketchSession::buildOverlay(float worldPerUnit) {
     entities.vertexCount = static_cast<uint32_t>(v.size()) - entities.firstVertex;
     entities.style = SketchOverlayStyle::Entities;
     built->ranges.push_back(entities);
+
+    // The technical-drawing dimension on a selected straight Line
+    // (`SKETCH-UX-R1` E1). Its own range, so the renderer can draw it in the
+    // annotation weight rather than as geometry -- which it is not.
+    {
+        SketchOverlayRange dimension;
+        dimension.firstVertex = static_cast<uint32_t>(v.size());
+        const SketchEntity* selected = selectedEntityId_ == kNoSketchEntity
+                                           ? nullptr
+                                           : findSketchEntity(sketch_, selectedEntityId_);
+        const SketchLine* line = selected != nullptr ? selected->line() : nullptr;
+        DimensionFrame f;
+        const double unit = static_cast<double>(worldPerUnit);
+        if (line != nullptr && unit > 0.0 && std::isfinite(unit) && dimensionFrameFor(*line, &f)) {
+            const double offset = kSketchDimensionOffsetUnits * unit;
+            const double gap = kSketchDimensionExtensionGapUnits * unit;
+            const double overshoot = kSketchDimensionOvershootUnits * unit;
+            const double tick = kSketchDimensionTickUnits * unit;
+            // Extension lines: from just clear of each endpoint, past the
+            // dimension line. They never touch the geometry, which is what
+            // keeps the annotation legible over the stroke it measures.
+            for (const SketchPoint& end : {f.start, f.end}) {
+                pushLine(&v, local(offsetBy(end, f.pu, f.pv, gap)),
+                         local(offsetBy(end, f.pu, f.pv, offset + overshoot)), 0.0f, 1.0f);
+            }
+            const SketchPoint a = offsetBy(f.start, f.pu, f.pv, offset);
+            const SketchPoint b = offsetBy(f.end, f.pu, f.pv, offset);
+            pushLine(&v, local(a), local(b), 0.0f, 1.0f);
+            // The two end ticks: a slash at 45 degrees to the dimension line,
+            // the draughting convention, drawn as direction + perpendicular.
+            const double su = (f.du + f.pu) * 0.70710678118654752;
+            const double sv = (f.dv + f.pv) * 0.70710678118654752;
+            for (const SketchPoint& at : {a, b}) {
+                pushLine(&v, local(offsetBy(at, su, sv, -tick)),
+                         local(offsetBy(at, su, sv, tick)), 0.0f, 1.0f);
+            }
+        }
+        dimension.vertexCount = static_cast<uint32_t>(v.size()) - dimension.firstVertex;
+        dimension.style = SketchOverlayStyle::Dimension;
+        built->ranges.push_back(dimension);
+    }
 
     if (v.size() > kMaxSketchOverlayVertices) {
         // Cannot happen within the sketch's own bounds (256 entities of at most

@@ -521,6 +521,72 @@ which is what lets a supported parent edit keep a dependent attached.
 `scripts/build-forge-corpus.ps1` reimplements exactly this in
 `Get-CadTopologySignature`, from this text and not from the C++.
 
+## 7d. `CADB` v3 — the curve entities (`SKETCH-UX-R1`)
+
+A sketch may carry an **Arc** and a **Spline** beside its lines, polylines,
+rectangles and circles. Both are authored truth that no rule could recreate from
+anything else in the file, so both are stored — as a **section version 3** of
+`CADB`, written **only** when at least one CAD body's sketch actually carries
+one. A project drawn entirely from the four v1 entity kinds still writes v1 (or
+v2, if it is face-supported) and is **byte-identical** to what the earlier stage
+wrote; the twenty-two fixtures that predate this stage prove it. An older build
+refuses a required `CADB` at an unknown version rather than opening a body with
+a curve silently missing — or, far worse, replaced by the straight edge between
+its two ends.
+
+v3 is v2's record with two entity kinds added to the table. **v3 always writes
+the v2 support block**, whether or not any body is face-supported, because a
+version is a superset of the one below it and a reader that has to guess which
+optional blocks a version carries is not reading a format.
+
+```
+kindCode 5 — Arc:     f64 startU, startV, midU, midV, endU, endV
+kindCode 6 — Spline:  u32 pointCount (2 .. 32)
+                      f64 u, v  × pointCount
+```
+
+An Arc is 4 + 1 + 48 = **53 bytes**; a Spline is 4 + 1 + 4 + 16 × pointCount.
+
+**An Arc is three points on the curve** — where it starts, a point it passes
+through, and where it ends — and not a centre, a radius and two angles. Three
+points have no ambiguity to resolve: exactly one circle passes through three
+non-collinear points, and exactly one of its two arcs contains the middle point.
+A centre/angle form would have to store a sweep direction and a major/minor flag
+beside the endpoints and keep all of them consistent with each other. The
+centre, the radius and the swept angle are **derived** (`arcGeometry`) and no
+byte of them reaches the file.
+
+**A Spline is its authored points**, which the curve interpolates: a
+Catmull-Rom through the points, converted span by span to a cubic Bezier, so the
+curve passes exactly through every stored point and moving one moves the curve
+there. Control handles, knots and the tessellation are all derived.
+
+Neither carries a tessellated point. Both are turned into a polyline by
+`tessellateSketchCurve`, deterministically and from the authored values alone —
+an arc at the density a full circle gets (`kSketchCircleSegments` over 2π,
+clamped to 4..64 segments), a spline at 8 segments per authored span — with the
+two ENDS written as the authored points themselves rather than re-evaluated, so
+a chain closes on the numbers the snap produced. Nothing about the tessellation
+depends on a camera, a zoom or a window, because the extruded solid must not.
+
+The same domain rule decides the record's validity, and nothing is restated: an
+arc whose three points are collinear or coincident is refused (`InvalidArc`,
+surfacing as `InvalidSemanticValue`), as is a spline with fewer than two points,
+two coincident consecutive points, or two ends that meet — a chainable entity
+whose ends coincide is a loop the single chain walker cannot read, and it is
+refused rather than half-supported. A `pointCount` outside 2..32 is
+`ImpossibleCount`, refused before a byte is allocated for it.
+
+**A curve kind inside a section that declared itself v1 or v2 is refused**
+(`InvalidSemanticValue`). The version says what the payload may contain, and a
+payload contradicting its own version is malformed rather than newer.
+
+For the topology signature of §7c, a curve's derived polyline edges are **not
+eligible** side faces — each is a facet approximating a curved surface, the same
+answer a circle's cylindrical side already gets — while a straight line's side
+in the same profile stays eligible. Eligibility is decided per polygon edge for
+exactly this reason: one profile may mix both.
+
 ## 8. Validation and compatibility
 
 Decoding happens entirely into temporary document structures. **No live project
@@ -716,10 +782,18 @@ debug launch as `FORGESHAPE_PROJECT_GOLDEN_SHA256`.
 | `cad_bad_face_ref_v2.forge` | 425 | `2f728f27393ff19b9dfa327be8b6598f26eb595dfe9a8c399a0db5e8cd50f564` | The side fixture naming side **7** of a rectangle that has sides 0..3; producer present, lineage right, CRC right — refused `InvalidSemanticValue` by face resolution alone |
 | `cad_dependency_cycle_v2.forge` | 594 | `88072d355efa54f95e6d68c10d15c81a9cfebc0e2ed1f231255ebe5a42b117f0` | The chain with B on C's far cap and C on B's, B's lineage set to C's own signature — refused `UnresolvedReference` by the cycle alone |
 
-The two corrupt v2 fixtures are **constructed** by the PowerShell builder with
-the bad value in place, never generated and then mutated; the C++ self-test
-reaches the same bytes by patching the valid parent's one field and its CRC,
-and the digests agreeing is what proves the two routes describe one file.
+| `cad_arc_profile_v3.forge` | 301 | `580a47dcfa305ddec34c2ed7831ba88b7a05659008e7944285ca2a70fc02b8cd` | **`CADB` v3.** One body whose profile is a semicircular Arc closed by a Line — the smallest v3 file there is, and the one that pins the three-point arc encoding |
+| `cad_spline_profile_v3.forge` | 321 | `e3ff4f7be2529a30f040bd3d699b46df9792473b88755494144c15697b19261a` | One body whose profile is a four-point Spline closed by a Line; the authored points and nothing derived |
+| `cad_mixed_curve_profile_v3.forge` | 892 | `3e2fa16f05e353f1745a36e165aedadbb5d5378db0c039167293aececad7078d` | An Arc body, a Spline body and a Rectangle body in one v3 `CADB`, with a **sparse** `CONS` beside them |
+| `cad_face_curve_v3.forge` | 478 | `0a8218f0aa86cfb7cdcf7781c72864e76e9065e2f7a788d5b2cf4e6fc1250ad0` | A curve profile supported by a producer's far cap: v3 carrying a v2 support block, which is what makes a version a superset rather than a variant |
+| `cad_bad_arc_v3.forge` | 301 | `628d74fdbf3cf9082ef4869f9b948acef81c6a14517703b707896602e7c4b418` | The arc fixture with its three points made **collinear**; no circle passes through them, and only the semantic check can refuse it |
+| `cad_bad_spline_v3.forge` | 321 | `f5437366d894032e97b2e49d3027726fa2bc739bda747f05f3b1eaf8c9ed714d` | The spline fixture whose two **ends coincide** — a loop the one chain walker cannot read; every length, count and CRC is correct |
+
+The four corrupt v2 and v3 fixtures are **constructed** by the PowerShell
+builder with the bad value in place, never generated and then mutated; the C++
+self-test reaches the same bytes by patching the valid parent's one field and
+its CRC, and the digests agreeing is what proves the two routes describe one
+file.
 
 The five imported fixtures share one Imported Mesh: four vertices, two submeshes
 with **different** `doubleSided` answers, named `head_low`, placed at
@@ -730,14 +804,15 @@ the two matched could not tell a decoder that confused them apart. Every number
 is an exact binary fraction, so the two implementations agree byte for byte or
 not at all.
 
-The sixteen v1 fixtures are **unchanged** by `CAD-A3`: a world-only CAD
-project still writes `CADB` v1, so the face support costs a project that has
-none exactly nothing, exactly as the imported branch and the generalized
-`SCUL` cost the files before them nothing. Twenty-two fixtures in all, verified
-on device by `FSR1A-12`, `IMP01A-19`, `IMP01B-11/12`, `CADR0-33..36` and
-`CADA3-46..51`, and printed on every debug launch as
-`FORGESHAPE_PROJECT_GOLDEN_SHA256`, `…_IMPORTED`, `…_IMPORTED_SCULPT`, `…_CAD`
-and `…_CAD_V2`.
+The sixteen v1 fixtures were **unchanged** by `CAD-A3`, and all twenty-two are
+**unchanged** by `SKETCH-UX-R1`: a world-only CAD project still writes `CADB`
+v1 and a curveless one still writes v1 or v2, so each of these features costs a
+project that does not use it exactly nothing — exactly as the imported branch
+and the generalized `SCUL` cost the files before them nothing. Twenty-eight
+fixtures in all, verified on device by `FSR1A-12`, `IMP01A-19`, `IMP01B-11/12`,
+`CADR0-33..36`, `CADA3-46..51` and `CADUXR1-38`, and printed on every debug
+launch as `FORGESHAPE_PROJECT_GOLDEN_SHA256`, `…_IMPORTED`,
+`…_IMPORTED_SCULPT`, `…_CAD` and `…_CAD_V2`.
 
 Regenerate and re-verify with:
 

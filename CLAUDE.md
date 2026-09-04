@@ -18,8 +18,8 @@ adb -s <serial> logcat -s ForgeShape:V
 
 APK: `app/build/outputs/apk/debug/app-debug.apk`
 
-A clean debug launch emits **nineteen** `*_SELFTEST_OK` tokens, then
-`FORGESHAPE_NATIVE_VIEWPORT_OK`. All nineteen, in emission order:
+A clean debug launch emits **twenty** `*_SELFTEST_OK` tokens, then
+`FORGESHAPE_NATIVE_VIEWPORT_OK`. All twenty, in emission order:
 
 ```
 FORGESHAPE_CAMERA_SELFTEST_OK
@@ -41,6 +41,7 @@ FORGESHAPE_GLTF_EXPORT_SELFTEST_OK
 FORGESHAPE_GLTF_IMPORT_SELFTEST_OK
 FORGESHAPE_CAD_SELFTEST_OK
 FORGESHAPE_CAD_A3_SELFTEST_OK
+FORGESHAPE_SKETCH_UX_SELFTEST_OK
 ```
 
 Failures: `FORGESHAPE_NATIVE_VIEWPORT_FAIL:*` and the matching `*_SELFTEST_FAIL`.
@@ -63,11 +64,13 @@ and CAD suites build their own `ConstructionScene` and their own camera —
 rather than reading process-scoped state, so a suite's result never depends on
 what a live session left behind. The project suite also prints
 `FORGESHAPE_PROJECT_GOLDEN_SHA256`, `..._IMPORTED`, `..._IMPORTED_SCULPT`,
-`..._CAD` and `..._CAD_V2` — the digests of all seventeen canonical `.forge` fixtures as this build
-encodes them — so drift from the committed corpus is a value that can be read
-rather than only an assertion that failed. The CAD suite prints
+`..._CAD` and `..._CAD_V2` — the digests of the canonical `.forge` fixtures as
+this build encodes them — so drift from the committed corpus is a value that
+can be read rather than only an assertion that failed. The CAD suite prints
 `FORGESHAPE_CAD_PERFORMANCE`, the bounded extraction, triangulation and
-regeneration timings for its four sizes.
+regeneration timings for its four sizes, and the sketch-UX suite prints
+`FORGESHAPE_SKETCH_UX_PERFORMANCE`, the arc and spline tessellation and
+curve-profile timings.
 
 ## Hard rules
 
@@ -110,10 +113,12 @@ regeneration timings for its four sizes.
   engine (`extractClosedProfiles`) **fails closed by name** — open, forked,
   crossing, zero-area, duplicate-edge and nested loops are refused, never
   repaired — and a nested profile is refused as a hole this stage does not
-  fill. R0 has no boolean, no fillet, no chamfer, no shell, no revolve, no
-  taper, no constraint solver, no arc, no spline and no face-based plane; a
-  rectangle is parametric (centre, width, height, axis-aligned in sketch
-  space) and a circle is centre and radius, and both are editable later. The
+  fill. There is no boolean, no fillet, no chamfer, no shell, no revolve, no
+  taper and no constraint solver; a rectangle is parametric (centre, width,
+  height, axis-aligned in sketch space) and a circle is centre and radius, and
+  both are editable later. R0 had no arc and no spline either; `SKETCH-UX-R1`
+  adds both as AUTHORED-point entities — see the curve rule below — and they
+  change none of the rest of this. The
   **sketch edit session is volatile**: nothing before its one-transaction
   commit is project truth, `cancel` costs the project nothing, a half-drawn
   sketch never reaches a `.forge` byte, a checkpoint or the fingerprint, and
@@ -157,8 +162,13 @@ regeneration timings for its four sizes.
   `0x100000001B3`) over the profile anchor id, the face count and each face's
   token code and eligibility, exactly as `DATA_PACKAGE_SPEC.md` §7c states,
   and `scripts/build-forge-corpus.ps1` reimplements it from that text.
-  **Not this stage**: CAD → Sculpt, custom construction planes, curved-face
-  sketches, projected edges, a constraint solver, and every
+  **CADB gains version 3** for the curve entities (`SKETCH-UX-R1`), written
+  only when a body's sketch carries an Arc or a Spline, and always carrying the
+  v2 support block because a version is a superset of the one below it; a
+  curveless project keeps v1 or v2 byte-identical, and a curve code inside a
+  section that declared itself v1 or v2 is refused as malformed rather than
+  read. **Not this stage**: CAD → Sculpt, custom construction planes,
+  curved-face sketches, projected edges, a constraint solver, and every
   boolean/fillet/chamfer.
 - **Home is not a project, and a project is never empty** (`APP-H1`,
   `CAD-A3-C1`). The process starts with the scene EMPTY
@@ -173,24 +183,85 @@ regeneration timings for its four sizes.
   placement, an unbound sculpt target); the few JNI entry points that read it
   directly ask `hasProject()` first and refuse by name; `activeBody()` on an
   empty scene answers a counted null object rather than dereferencing an empty
-  list, and `HomeFlowTest` asserts the count never moves. **New Project offers
-  exactly CAD and Sculpt.** CAD is the transient bootstrap: the spatial
-  world-plane chooser and the one volatile sketch session over the empty scene,
-  owning no `ObjectId` and no `SceneObject`, and the first Extrude creates the
-  project through `commitFirstCadProject` — a one-body document replacing the
-  scene through the SAME all-or-nothing `loadProjectDocument` path Open takes,
-  so the new project starts with an EMPTY history like every loaded one, a
-  refusal creates nothing, and Back to Home before it costs nothing. Sculpt is
-  the seeded sphere inside the session-initialization bracket; a refusal
-  closes the project again. Leaving a dirty project (New Project…, Open Saved
-  Project, Open File…) asks Save / Discard / Cancel by FINGERPRINT against the
-  last Save/Open/Recover; Save continues only if the slot was written, Discard
-  retires the checkpoint, Cancel and System Back change nothing. `closeProject`
-  writes nothing. Back is one step in every phase and the platform's own at
-  Home. **New Sketch lands directly in the spatial chooser** (`UI-OWNER-46`);
-  the by-name plane list stays as `sketch_plane_by_name`, the accessibility
-  fallback, never removed. A stylus hover highlights a chooser target and
-  never commits; hardware hover is not claimed on the emulator.
+  list, and `HomeFlowTest` asserts the count never moves. **Home and New
+  Project are full-screen PAGES, not cards on a scrim** (`SKETCH-UX-R1`):
+  `StartPageView` owns both, each is opaque and owns the whole window, New
+  Project REPLACES Home rather than standing on it, insets go on the page's
+  CONTENT because the page is the window's own ground, and the decorative motif
+  is a static vector that is never interactive and never an editor viewport.
+  The two questions asked OVER a live project — unsaved changes and recovery —
+  stay `ChooserSurfaceView` modals, because there a scrim is the right shape.
+  **New Project offers exactly CAD and Sculpt.** CAD is the transient
+  bootstrap: ONE volatile sketch session over the empty scene, opened DIRECTLY
+  on XY seen along +Z with no plane-chooser step before it, owning no
+  `ObjectId` and no `SceneObject`; the first Extrude creates the project
+  through `commitFirstCadProject` — a one-body document replacing the scene
+  through the SAME all-or-nothing `loadProjectDocument` path Open takes, so the
+  new project starts with an EMPTY history like every loaded one, a refusal
+  creates nothing, and Back to Home before it costs nothing (one step, because
+  the first sketch IS the bootstrap). Sculpt is the seeded sphere inside the
+  session-initialization bracket; a refusal closes the project again. Leaving a
+  dirty project (New Project…, Open Saved Project, Open File…) asks Save /
+  Discard / Cancel by FINGERPRINT against the last Save/Open/Recover; Save
+  continues only if the slot was written, Discard retires the checkpoint,
+  Cancel and System Back change nothing. `closeProject` writes nothing. Back is
+  one step in every phase and the platform's own at Home. **A LATER New Sketch
+  still lands directly in the spatial chooser** (`UI-OWNER-46`) — there are
+  real bodies with real faces to pick by then, which is what the empty world of
+  a first sketch did not have; the by-name plane list stays as
+  `sketch_plane_by_name`, the accessibility fallback, never removed. A stylus
+  hover highlights a chooser target and never commits; hardware hover is not
+  claimed on the emulator.
+- **The sketch's plane and its VIEW are two different things**
+  (`SKETCH-UX-R1` C). The orientation navigator in the sketch's upper trailing
+  corner owns both, holds neither, and reads `sketchViewState` on every
+  refresh. `viewFlipped` and `viewQuarterTurns` are PRESENTATION in the
+  strongest sense the project has: never persisted, never in a history step, a
+  checkpoint or the fingerprint, and incapable of moving one authored
+  coordinate — `SketchSession::viewFrame` derives the camera's frame from the
+  authoring frame and is ALWAYS right-handed, so no view state can mirror a
+  sketch. The support plane may change only while the sketch is EMPTY and
+  world-supported; afterwards it is refused by name (`SketchNotEmpty`) and the
+  authored `(u, v)` are never silently reinterpreted on another plane, and a
+  FACE-supported sketch refuses a world plane outright (`InvalidWorkplane`)
+  rather than detaching from the TopoRef it follows. The navigator may stand on
+  the drawing; it may never stand on the Tool Rail.
+- **A selected straight Line carries a technical dimension, and it is an
+  INTERACTION overlay** (`SKETCH-UX-R1` E). Extension lines, a dimension line
+  and its end ticks are their own `SketchOverlayStyle::Dimension` range; the
+  numeric label is chrome, positioned from the anchor native reports. Neither
+  is geometry: neither is exported to GLB, reaches a `.forge` byte, mints a
+  revision or appears in a snapshot. `applyLineLength` keeps `P0` FIXED and the
+  direction UNCHANGED (`P1' = P0 + normalize(P1 - P0) * length`) — no solver,
+  no neighbour moved, nothing re-snapped. Zero, negative, non-finite and
+  out-of-range are refused, never clamped. If the edit opens a chain, `finish`
+  refuses `OpenProfile` by name; the sketch is never repaired around the user.
+- **An Arc and a Spline are AUTHORED points, and everything else about them is
+  derived** (`SKETCH-UX-R1` D). An Arc is three points ON the curve (start, a
+  point it passes through, end) — never a centre, a radius and a sweep, which
+  would need a direction flag and a major/minor flag kept consistent with the
+  endpoints. A Spline is the bounded point list its curve INTERPOLATES. The
+  centre, radius, sweep, control handles and every tessellated point are
+  regenerated by `tessellateSketchCurve` from the authored values and these
+  constants ALONE — never from a camera, a zoom or a window, because the
+  extruded solid must not depend on how the sketch was looked at. Both chain by
+  coincident AUTHORED endpoints through the ONE walker that also chains lines,
+  so connectivity and triangulation stay separate and a denser tessellation can
+  never open or close a profile. A curve's extruded side face is a facet of a
+  curved surface and is therefore NEVER eligible to support a sketch — decided
+  per polygon edge, because one profile may mix curves and exact lines. No
+  tangent, radius or dimensional constraint solver exists.
+- **Edit Sketch is STAGED, and Finish is one transaction**
+  (`SKETCH-UX-R1` F). `SketchSession::beginEdit` takes a copy of a committed
+  CAD Body's authored state; the project keeps its own until `commitEdit`, so
+  Cancel costs it exactly what cancelling a new sketch costs — nothing, and no
+  history step. `commitEdit` validates the whole candidate, then applies it
+  inside ONE `ScopedConstructionEdit`: one Finish is one Undo, Undo restores
+  the entire previous sketch and Redo the edited one, and no second body is
+  ever created. A dependent's world placement is DERIVED and needs no push. An
+  edit that would strip a planar face another body's sketch stands on is
+  REFUSED by name (`DependentFaceLost`) on exactly the terms deleting such a
+  producer is: never cascaded, never retargeted, never silently broken.
 - **A body's SOURCE is never written by sculpting.** A body has a source
   representation — a Construction Source, an Imported Mesh, or a CAD Body —
   and may also own a Frozen Sculpt Mesh (not yet for a CAD Body). A sculpt edit may never change a primitive parameter, a
@@ -287,9 +358,12 @@ regeneration timings for its four sizes.
   `cad_circle`, `mixed_cad` and `cad_bad_plane`; `CAD-A3-C1` added the six
   `CADB` v2 fixtures (`cad_face_sketch_cap`, `cad_face_sketch_side`,
   `cad_face_chain`, `mixed_cad_face`, and the two the decoder must refuse,
-  `cad_bad_face_ref` and `cad_dependency_cycle`), a **twenty-two**-fixture
-  corpus in which every older fixture is byte-for-byte unchanged. The two
-  corrupt v2 fixtures are CONSTRUCTED by the PowerShell builder with the bad
+  `cad_bad_face_ref` and `cad_dependency_cycle`); `SKETCH-UX-R1` added the six
+  **`CADB` v3** fixtures (`cad_arc_profile`, `cad_spline_profile`,
+  `cad_mixed_curve_profile`, `cad_face_curve`, and the two the decoder must
+  refuse, `cad_bad_arc` and `cad_bad_spline`) — a **twenty-eight**-fixture
+  corpus in which every older fixture is byte-for-byte unchanged. The four
+  corrupt v2/v3 fixtures are CONSTRUCTED by the PowerShell builder with the bad
   value in place, never generated and then mutated.
   `DATA_PACKAGE_SPEC.md` owns the layout, and `scripts/build-forge-corpus.ps1`
   is a second implementation of it whose bytes must stay identical.
@@ -542,9 +616,14 @@ regeneration timings for its four sizes.
   whose geometry came from a file and has no parameters behind it), *CAD Body*
   (a body made by extruding a sketch; its sketch and depth are editable),
   *Sketch* (the editing context between New Sketch and Extrude, on a
-  *workplane* XY, XZ or YZ, with the five sketch tools Select, Line, Polyline,
-  Rectangle and Circle on the Tool Rail and *Finish Sketch* / *Extrude* as its
-  two toolbar transitions), *Frozen Sculpt Mesh* (the
+  *workplane* XY, XZ or YZ, with the seven sketch tools Select, Line, Polyline,
+  Rectangle, Circle, Arc and Spline on the Tool Rail and *Finish Sketch* /
+  *Extrude* as its two toolbar transitions), *start page* (the full-window
+  opaque Home and New Project screens, `StartPageView`), *orientation
+  navigator* (the sketch's upper-trailing plane/normal/rotation control),
+  *dimension* (the technical-drawing annotation on a selected Line, with its
+  editable length), *Edit Sketch* (reopening a committed CAD Body's sketch,
+  staged until Finish), *Frozen Sculpt Mesh* (the
   polygon mesh `SculptMesh::freezeFrom` creates, from EITHER source), *history
   capsule* (the bottom trailing capsule holding Undo and Redo), *transform mode selector* (Move /
   Rotate / Scale) and *coordinate-space selector* (World / Local, where it

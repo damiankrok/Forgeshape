@@ -166,6 +166,50 @@ final class SketchTestSupport {
         return (int) state[NativeViewport.SKETCH_STATE];
     }
 
+    /**
+     * One tap at the pixel a SKETCH point projects to.
+     *
+     * <p>The pixel comes from {@code sketchScreenPoint} — the same projection
+     * native unprojects with — so a tap lands on the sketch coordinate it names
+     * whatever the window size, the zoom or the view rotation.
+     */
+    static void tapSketch(ActivityScenario<ForgeShapeActivity> scenario, double u, double v) {
+        final float[] at = new float[2];
+        assertTrue("the sketch point projects on screen",
+                NativeViewport.sketchScreenPoint(u, v, at));
+        tapViewport(scenario, at[0], at[1]);
+    }
+
+    /** Which workplane the open sketch is authored on, as a {@code WORKPLANE_*}. */
+    static int sketchPlane() {
+        final double[] state = new double[NativeViewport.SKETCH_STATE_SIZE];
+        NativeViewport.sketchState(state);
+        return (int) state[NativeViewport.SKETCH_PLANE];
+    }
+
+    /** The orientation navigator's state, re-read from the session. */
+    static double[] sketchViewState() {
+        final double[] state = new double[NativeViewport.SKETCH_VIEW_SIZE];
+        NativeViewport.sketchViewState(state);
+        return state;
+    }
+
+    /**
+     * Presses one of the navigator's controls, the way a finger does.
+     *
+     * <p>By ID, never by coordinate: the navigator moves with the window, and a
+     * pixel is only ever true for one run.
+     */
+    static void pressNavigator(ActivityScenario<ForgeShapeActivity> scenario, final int id) {
+        doOnWorkspace(scenario, (activity, workspace) -> {
+            final View control = workspace.findViewById(id);
+            assertTrue("the navigator control is on screen", control != null && control.isShown());
+            control.performClick();
+            return null;
+        });
+        settleLayout();
+    }
+
     static int sketchEntityCount() {
         final double[] state = new double[NativeViewport.SKETCH_STATE_SIZE];
         NativeViewport.sketchState(state);

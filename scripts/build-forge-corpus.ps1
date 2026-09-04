@@ -360,6 +360,66 @@ function New-CadPayloadV2 {
     return $p.ToArray()
 }
 
+# ---------------------------------------------------------------------------
+# CADB v3 (SKETCH-UX-R1): the curve entities
+# ---------------------------------------------------------------------------
+#
+# The v3 record is the v2 record with two entity kinds added. v3 ALWAYS writes
+# the v2 support block, present or not, because a version is a superset of the
+# one below it -- see DATA_PACKAGE_SPEC.md 7d.
+#
+#   kind 5  Arc     start u,v, mid u,v, end u,v   (three points ON the curve)
+#   kind 6  Spline  pointCount (2..32), then u,v pairs the curve interpolates
+#
+# Both store AUTHORED points only. No centre, no radius, no sweep, no control
+# handle and no tessellated point: every one of those is derived on load.
+function New-CadPayloadV3 {
+    param($Bodies)
+    $p = New-ByteBuffer
+    Add-U32 $p ([uint32] $Bodies.Count)
+    foreach ($body in $Bodies) {
+        Add-U64 $p ([uint64] $body.ObjectId)
+        Add-U8  $p $body.PlaneCode
+        if ($null -ne $body.Support) {
+            Add-U8  $p 1
+            Add-U64 $p ([uint64] $body.Support.ProducerObjectId)
+            Add-U32 $p ([uint32] $body.Support.FeatureId)
+            Add-U8  $p $body.Support.FaceKindCode
+            Add-U32 $p ([uint32] $body.Support.EdgeEntityId)
+            Add-U32 $p ([uint32] $body.Support.EdgeLocalIndex)
+            Add-U64 $p ([uint64] $body.Support.LineageToken)
+        } else {
+            Add-U8  $p 0
+        }
+        Add-U32 $p ([uint32] $body.NextEntityId)
+        Add-U32 $p ([uint32] $body.ProfileEntityId)
+        Add-U8  $p $body.DirectionCode
+        Add-F64 $p $body.Depth
+        $entities = @($body.Entities)
+        Add-U32 $p ([uint32] $entities.Count)
+        foreach ($entity in $entities) {
+            Add-U32 $p ([uint32] $entity.Id)
+            Add-U8  $p $entity.KindCode
+            switch ($entity.KindCode) {
+                1 { foreach ($value in $entity.Values) { Add-F64 $p $value } }
+                2 {
+                    Add-U8  $p $(if ($entity.Closed) { 1 } else { 0 })
+                    Add-U32 $p ([uint32] ($entity.Values.Count / 2))
+                    foreach ($value in $entity.Values) { Add-F64 $p $value }
+                }
+                3 { foreach ($value in $entity.Values) { Add-F64 $p $value } }
+                4 { foreach ($value in $entity.Values) { Add-F64 $p $value } }
+                5 { foreach ($value in $entity.Values) { Add-F64 $p $value } }
+                6 {
+                    Add-U32 $p ([uint32] ($entity.Values.Count / 2))
+                    foreach ($value in $entity.Values) { Add-F64 $p $value }
+                }
+            }
+        }
+    }
+    return $p.ToArray()
+}
+
 # The lineage token: FNV-1a over 64 bits, as DATA_PACKAGE_SPEC.md 7c states it.
 #
 # Every mixed value is a u64 fed least-significant byte first (eight steps of
@@ -567,6 +627,126 @@ function New-MixedCadFaceFile {
     $impt = New-Section 'IMPT' 1 $true (New-ImportedPayload @(New-CanonicalImportedEntry 2))
     $cadb = New-Section 'CADB' 2 $true (New-CadPayloadV2 @($producer, $dependent))
     return New-ForgeFile 1 @($scne, $cons, $impt, $cadb) 13
+}
+
+# ---------------------------------------------------------------------------
+# The v3 curve fixtures (SKETCH-UX-R1)
+# ---------------------------------------------------------------------------
+#
+# Every coordinate is an exact binary fraction, so neither implementation has a
+# rounding argument to make about the bytes.
+
+# The canonical semicircle: centre (0,0), radius 1, from (1,0) through (0,1) to
+# (-1,0), and the straight chord that closes it -- a "D" profile that is one
+# chain of two entities, one curved and one straight.
+function New-ArcProfileBody {
+    param([int] $ObjectId, [double] $Depth)
+    return [pscustomobject]@{
+        ObjectId = $ObjectId; PlaneCode = 1; Support = $null
+        NextEntityId = 3; ProfileEntityId = 1; DirectionCode = 1; Depth = $Depth
+        Entities = @(
+            [pscustomobject]@{ Id = 1; KindCode = 5
+                               Values = @(1.0, 0.0, 0.0, 1.0, -1.0, 0.0) },
+            [pscustomobject]@{ Id = 2; KindCode = 1
+                               Values = @(-1.0, 0.0, 1.0, 0.0) })
+    }
+}
+
+# A four-point spline and the chord that closes it.
+function New-SplineProfileBody {
+    param([int] $ObjectId, [double] $Depth)
+    return [pscustomobject]@{
+        ObjectId = $ObjectId; PlaneCode = 1; Support = $null
+        NextEntityId = 3; ProfileEntityId = 1; DirectionCode = 1; Depth = $Depth
+        Entities = @(
+            [pscustomobject]@{ Id = 1; KindCode = 6
+                               Values = @(-1.0, 0.0, -0.5, 0.75, 0.5, 0.75, 1.0, 0.0) },
+            [pscustomobject]@{ Id = 2; KindCode = 1
+                               Values = @(1.0, 0.0, -1.0, 0.0) })
+    }
+}
+
+# CAD ARC PROFILE: one body, one arc and one line closing it. The smallest v3
+# file there is.
+function New-CadArcProfileFile {
+    $sceneBodies = @([pscustomobject]@{ ObjectId = 1
+                                        Transform = @(0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0) })
+    $scne = New-Section 'SCNE' 1 $true (New-ScenePayload $sceneBodies 2 1)
+    $cadb = New-Section 'CADB' 3 $true (New-CadPayloadV3 @(New-ArcProfileBody 1 1.5))
+    return New-ForgeFile 1 @($scne, $cadb) 8
+}
+
+# CAD SPLINE PROFILE: one body, one spline and one line closing it.
+function New-CadSplineProfileFile {
+    $sceneBodies = @([pscustomobject]@{ ObjectId = 1; Transform = $script:IdentityPlacement })
+    $scne = New-Section 'SCNE' 1 $true (New-ScenePayload $sceneBodies 2 1)
+    $cadb = New-Section 'CADB' 3 $true (New-CadPayloadV3 @(New-SplineProfileBody 1 0.75))
+    return New-ForgeFile 1 @($scne, $cadb) 8
+}
+
+# CAD MIXED CURVE PROFILE: an arc body, a spline body and a plain rectangle
+# body side by side -- every entity kind the format has, in one v3 CADB, with a
+# Construction Body beside them so CONS stays sparse.
+function New-CadMixedCurveProfileFile {
+    $sceneBodies = @(
+        [pscustomobject]@{ ObjectId = 1; Transform = $script:IdentityPlacement },
+        [pscustomobject]@{ ObjectId = 2; Transform = @(2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0) },
+        [pscustomobject]@{ ObjectId = 3; Transform = @(-2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0) },
+        [pscustomobject]@{ ObjectId = 4; Transform = @(0.0, 3.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0) }
+    )
+    $sourceBodies = @(
+        [pscustomobject]@{ ObjectId = 1; PrimitiveCode = 1
+                           Parameters = $script:CanonicalSharedParameters
+                           Features = New-PrimitiveSourceFeature }
+    )
+    $scne = New-Section 'SCNE' 1 $true (New-ScenePayload $sceneBodies 5 2)
+    $cons = New-Section 'CONS' 1 $true (New-ConstructionPayload $sourceBodies)
+    $cadb = New-Section 'CADB' 3 $true (New-CadPayloadV3 @(
+        (New-ArcProfileBody 2 1.0),
+        (New-SplineProfileBody 3 0.5),
+        (New-RectangleBody 4 1 0.0 0.0 1.5 1.5 1.0 1)))
+    return New-ForgeFile 1 @($scne, $cons, $cadb) 9
+}
+
+# CAD FACE CURVE: a rectangle producer and a dependent whose sketch is a CURVE
+# profile supported by the producer's far cap. v3 carrying a v2 support block,
+# which is the whole point of v3 being a superset.
+function New-CadFaceCurveFile {
+    $sceneBodies = @(
+        [pscustomobject]@{ ObjectId = 1; Transform = @(0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0) },
+        [pscustomobject]@{ ObjectId = 2; Transform = $script:IdentityPlacement }
+    )
+    $producer = New-RectangleBody 1 1 0.0 0.0 4.0 4.0 1.0 1
+    $dependent = New-ArcProfileBody 2 0.5
+    $dependent.Support = New-RectangleFaceSupport 1 2 0 0
+    $scne = New-Section 'SCNE' 1 $true (New-ScenePayload $sceneBodies 3 2)
+    $cadb = New-Section 'CADB' 3 $true (New-CadPayloadV3 @($producer, $dependent))
+    return New-ForgeFile 1 @($scne, $cadb) 8
+}
+
+# CAD BAD ARC: the arc fixture with its three points made COLLINEAR, CONSTRUCTED
+# that way rather than generated and then mutated. No circle passes through
+# three collinear points, so only the semantic check can refuse it -- every
+# length, count and CRC is correct.
+function New-CadBadArcFile {
+    $sceneBodies = @([pscustomobject]@{ ObjectId = 1; Transform = $script:IdentityPlacement })
+    $body = New-ArcProfileBody 1 1.0
+    $body.Entities[0].Values = @(-1.0, 0.0, 0.0, 0.0, 1.0, 0.0)
+    $scne = New-Section 'SCNE' 1 $true (New-ScenePayload $sceneBodies 2 1)
+    $cadb = New-Section 'CADB' 3 $true (New-CadPayloadV3 @($body))
+    return New-ForgeFile 1 @($scne, $cadb) 8
+}
+
+# CAD BAD SPLINE: the spline fixture whose two ENDS coincide. A chainable
+# entity that closes on itself is a loop the one chain walker cannot read, and
+# the domain refuses it. Constructed with the bad value in place.
+function New-CadBadSplineFile {
+    $sceneBodies = @([pscustomobject]@{ ObjectId = 1; Transform = $script:IdentityPlacement })
+    $body = New-SplineProfileBody 1 1.0
+    $body.Entities[0].Values = @(-1.0, 0.0, -0.5, 0.75, 0.5, 0.75, -1.0, 0.0)
+    $scne = New-Section 'SCNE' 1 $true (New-ScenePayload $sceneBodies 2 1)
+    $cadb = New-Section 'CADB' 3 $true (New-CadPayloadV3 @($body))
+    return New-ForgeFile 1 @($scne, $cadb) 8
 }
 
 # The one Imported Mesh every imported fixture carries.
@@ -1043,6 +1223,12 @@ $fixtures = [ordered]@{
     'mixed_cad_face_v2.forge'         = (New-MixedCadFaceFile)
     'cad_bad_face_ref_v2.forge'       = (New-CadBadFaceRefFile)
     'cad_dependency_cycle_v2.forge'   = (New-CadDependencyCycleFile)
+    'cad_arc_profile_v3.forge'        = (New-CadArcProfileFile)
+    'cad_spline_profile_v3.forge'     = (New-CadSplineProfileFile)
+    'cad_mixed_curve_profile_v3.forge' = (New-CadMixedCurveProfileFile)
+    'cad_face_curve_v3.forge'         = (New-CadFaceCurveFile)
+    'cad_bad_arc_v3.forge'            = (New-CadBadArcFile)
+    'cad_bad_spline_v3.forge'         = (New-CadBadSplineFile)
 }
 
 $rows = New-Object System.Collections.Generic.List[object]
@@ -1083,3 +1269,10 @@ Write-Host ("  cad_face_chain:        {0}" -f ($rows | Where-Object Fixture -eq 
 Write-Host ("  mixed_cad_face:        {0}" -f ($rows | Where-Object Fixture -eq 'mixed_cad_face_v2.forge').Sha256)
 Write-Host ("  cad_bad_face_ref:      {0}" -f ($rows | Where-Object Fixture -eq 'cad_bad_face_ref_v2.forge').Sha256)
 Write-Host ("  cad_dependency_cycle:  {0}" -f ($rows | Where-Object Fixture -eq 'cad_dependency_cycle_v2.forge').Sha256)
+Write-Host 'Digests the C++ self-test (CADUXR1-38) must assert:'
+Write-Host ("  cad_arc_profile:       {0}" -f ($rows | Where-Object Fixture -eq 'cad_arc_profile_v3.forge').Sha256)
+Write-Host ("  cad_spline_profile:    {0}" -f ($rows | Where-Object Fixture -eq 'cad_spline_profile_v3.forge').Sha256)
+Write-Host ("  cad_mixed_curve:       {0}" -f ($rows | Where-Object Fixture -eq 'cad_mixed_curve_profile_v3.forge').Sha256)
+Write-Host ("  cad_face_curve:        {0}" -f ($rows | Where-Object Fixture -eq 'cad_face_curve_v3.forge').Sha256)
+Write-Host ("  cad_bad_arc:           {0}" -f ($rows | Where-Object Fixture -eq 'cad_bad_arc_v3.forge').Sha256)
+Write-Host ("  cad_bad_spline:        {0}" -f ($rows | Where-Object Fixture -eq 'cad_bad_spline_v3.forge').Sha256)

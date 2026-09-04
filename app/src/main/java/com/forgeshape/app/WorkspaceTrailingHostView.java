@@ -356,8 +356,10 @@ final class WorkspaceTrailingHostView extends FrameLayout
         showingSketchEntries = sketching;
         final Context context = getContext();
         if (sketching) {
-            // The five sketch tools (CAD-R0-A1A2). Select is a tool so that a
-            // tap in the viewport has exactly one meaning at a time.
+            // The seven sketch tools (CAD-R0-A1A2, plus Arc and Spline from
+            // `SKETCH-UX-R1` D). Select is a tool so that a tap in the viewport
+            // has exactly one meaning at a time. Arc and Spline are APPENDED, so
+            // the five that were here keep their order and their indices.
             toolRail.setEntries(new ToolRailView.Entry[]{
                     new ToolRailView.Entry(R.id.tool_rail_select, R.drawable.ic_tool_select,
                             context.getString(R.string.tool_select),
@@ -374,6 +376,11 @@ final class WorkspaceTrailingHostView extends FrameLayout
                     new ToolRailView.Entry(R.id.tool_rail_circle, R.drawable.ic_tool_circle,
                             context.getString(R.string.tool_circle),
                             NativeViewport.SKETCH_TOOL_CIRCLE),
+                    new ToolRailView.Entry(R.id.tool_rail_arc, R.drawable.ic_tool_arc,
+                            context.getString(R.string.tool_arc), NativeViewport.SKETCH_TOOL_ARC),
+                    new ToolRailView.Entry(R.id.tool_rail_spline, R.drawable.ic_tool_spline,
+                            context.getString(R.string.tool_spline),
+                            NativeViewport.SKETCH_TOOL_SPLINE),
             });
             return;
         }

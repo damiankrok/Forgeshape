@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The start page's ground (`SKETCH-UX-R1` A1).
+
+  OPAQUE and full-window. Home and New Project are not questions asked over a
+  project — there is no project — so there is nothing behind them worth showing
+  through, and a translucent card over an empty viewport is precisely what read
+  as a dialog floating over a broken editor.
+
+  A vertical gradient rather than one flat fill: it is what stops a full-screen
+  opaque page from reading as a blank error state, and it is subtle enough that
+  it is never mistaken for content.
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <gradient
+        android:angle="270"
+        android:startColor="?attr/fsStartPageMotif"
+        android:endColor="?attr/fsStartPageSurface"
+        android:type="linear" />
+</shape>

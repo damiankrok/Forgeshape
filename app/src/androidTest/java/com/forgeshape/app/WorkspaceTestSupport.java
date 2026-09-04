@@ -86,6 +86,22 @@ final class WorkspaceTestSupport {
                 // project is open first and then asserts against the ordinary
                 // workspace. Cases that are about it call
                 // showHomeAsFirstLaunchForTest().
+                // A project with NO Construction Body at all is not a baseline,
+                // whatever else is done to it. A CAD-only project — which the
+                // CAD evidence journeys leave behind — would otherwise be
+                // carried into the next class with a CAD Body as body 0, and
+                // any case that reasonably expects the first body to be a
+                // Construction one inherits a scene it never established.
+                //
+                // Appending a Construction body was not enough: it lands at the
+                // END, so body 0 stays a CAD Body. The honest reset is to close
+                // such a project and let the line below make a fresh one.
+                // Closing writes nothing and is exactly what Back to Home does.
+                if (NativeViewport.projectOpen() && !hasConstructionBody()) {
+                    NativeViewport.sketchCancel();
+                    NativeViewport.supportChooserCancel();
+                    NativeViewport.closeProject();
+                }
                 workspace.ensureConstructionProjectForTest();
                 // The recovery question stands over everything else in exactly
                 // the same way, and for a sharper reason: leaving the foreground
@@ -156,6 +172,19 @@ final class WorkspaceTestSupport {
      * with no assertion to say so -- which is how two classes in the first
      * aggregate inherited a CAD body as their box.
      */
+    /** Whether the open scene holds any body with a Construction Source. */
+    private static boolean hasConstructionBody() {
+        final long[] ids = new long[NativeViewport.sceneBodyCount()];
+        final int written = NativeViewport.sceneBodyIds(ids);
+        for (int i = 0; i < written; i++) {
+            if (NativeViewport.sceneBodyRepresentation(ids[i])
+                    == NativeViewport.REPRESENTATION_CONSTRUCTION) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static void selectFirstConstructionBody() {
         final long[] ids = new long[NativeViewport.sceneBodyCount()];
         final int written = NativeViewport.sceneBodyIds(ids);

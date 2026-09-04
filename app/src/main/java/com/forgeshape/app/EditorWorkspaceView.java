@@ -68,20 +68,24 @@ final class EditorWorkspaceView extends FrameLayout
         NewProjectChooserView.OnNewProjectChoice,
         UnsavedChangesPromptView.OnUnsavedChoice,
         SketchEditorView.OnSketchAction,
+        SketchOrientationNavigatorView.OnOrientationAction,
+        SketchDimensionLabelView.OnDimensionAction,
         AnchoredSurfaceView.OnOpenStateChanged {
 
     private static final int[] SCULPT_TOOL_HINTS = {
             R.string.hint_grab, R.string.hint_clay, R.string.hint_smooth, R.string.hint_inflate
     };
-    /** The five sketch tools by name and by gesture rule, indexed by
+    /** The seven sketch tools by name and by gesture rule, indexed by
      *  {@code SKETCH_TOOL_*}. */
     private static final int[] SKETCH_TOOL_NAMES = {
             R.string.tool_select, R.string.tool_line, R.string.tool_polyline,
-            R.string.tool_rectangle, R.string.tool_circle
+            R.string.tool_rectangle, R.string.tool_circle, R.string.tool_arc,
+            R.string.tool_spline
     };
     private static final int[] SKETCH_TOOL_HINTS = {
             R.string.hint_select, R.string.hint_line, R.string.hint_polyline,
-            R.string.hint_rectangle, R.string.hint_circle
+            R.string.hint_rectangle, R.string.hint_circle, R.string.hint_arc,
+            R.string.hint_spline
     };
     private static final int[] SCULPT_TOOL_NAMES = {
             R.string.tool_grab, R.string.tool_clay, R.string.tool_smooth, R.string.tool_inflate
@@ -253,6 +257,14 @@ final class EditorWorkspaceView extends FrameLayout
     /** The sketch's precision surface, and a CAD Body's (CAD-R0-A1A2). */
     private final SketchEditorView sketchEditor;
     private final CadFeatureEditorView cadEditor;
+    /**
+     * The two sketch-only surfaces that stand in the viewport
+     * (`SKETCH-UX-R1` C, E): the orientation navigator, and the selected Line's
+     * technical dimension label with its numeric editor. Both are present only
+     * while a sketch is open, and both read native truth on every refresh.
+     */
+    private final SketchOrientationNavigatorView sketchNavigator;
+    private final SketchDimensionLabelView sketchDimension;
     /** Reused across reads; native fills this with the sketch session's state. */
     private final double[] nativeSketch = new double[NativeViewport.SKETCH_STATE_SIZE];
     /** The last sketch refusal the status line reported, so a gesture that
@@ -649,19 +661,40 @@ final class EditorWorkspaceView extends FrameLayout
         sketchEditor = new SketchEditorView(context, this, this);
         cadEditor = new CadFeatureEditorView(context, this);
 
-        // Home, the New Project chooser and the unsaved-changes question, in
-        // that z-order, all above the chrome. Home stands on an EMPTY viewport:
-        // no project is open behind it, nothing is drawn, and nothing is built
-        // until the user chooses. Which of the three is drawn is decided from
-        // native truth by refreshShellPhase, never remembered here.
+        // The two sketch-only surfaces that stand IN the viewport
+        // (`SKETCH-UX-R1` C, E): the orientation navigator in the upper trailing
+        // corner, and the selected Line's dimension label wherever the
+        // annotation is. Both are added to `overlayRoot` so they are inset off
+        // the system bars like every other piece of chrome, both are GONE
+        // outside a sketch, and neither holds any state of its own.
+        sketchNavigator = new SketchOrientationNavigatorView(context, this);
+        sketchNavigator.setVisibility(GONE);
+        overlayRoot.addView(sketchNavigator,
+                SketchOrientationNavigatorView.anchoredParams(context));
+        sketchDimension = new SketchDimensionLabelView(context, this, this);
+        overlayRoot.addView(sketchDimension, SketchDimensionLabelView.anchoredParams());
+
+        // Home and New Project are START PAGES (`SKETCH-UX-R1` A): full-window,
+        // opaque, and added to THIS view rather than to `overlayRoot`, because
+        // `overlayRoot` carries the chrome's window-inset padding and a page is
+        // the window's own ground — the bars draw over it, exactly as they draw
+        // over the viewport. Each pads its own content off the bars instead;
+        // see StartPageView.applyContentInsets.
+        //
+        // No project is open behind either: nothing is drawn, nothing is built
+        // until the user chooses, and which page stands is decided from native
+        // truth by refreshShellPhase and never remembered here.
         home = new HomeView(context, this);
         home.setVisibility(GONE);
-        overlayRoot.addView(home, new LayoutParams(
-                LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
+        addView(home, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
         newProjectChooser = new NewProjectChooserView(context, this);
         newProjectChooser.setVisibility(GONE);
-        overlayRoot.addView(newProjectChooser, new LayoutParams(
+        addView(newProjectChooser, new LayoutParams(
                 LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
+
+        // The unsaved-changes and recovery questions stay CHOOSER surfaces on
+        // the scrim: each is asked over a live project the user can see, which
+        // is the moment a modal is the right shape.
         unsavedPrompt = new UnsavedChangesPromptView(context, this);
         unsavedPrompt.setVisibility(GONE);
         overlayRoot.addView(unsavedPrompt, new LayoutParams(
@@ -923,6 +956,10 @@ final class EditorWorkspaceView extends FrameLayout
             chromeRoot.setPadding(padding.left, padding.top, padding.right, padding.bottom);
             overlayRoot.setPadding(padding.left, padding.top, padding.right, padding.bottom);
         }
+        // A start page is the window's ground, so it is never padded itself:
+        // its CONTENT is, by the same rect the chrome uses. See StartPageView.
+        home.applyContentInsets(padding);
+        newProjectChooser.applyContentInsets(padding);
         // The keyboard is root-owned padding. The right host keeps the same
         // vertical grammar and scrolls inside its fixed external geometry when
         // less height is available.
@@ -1648,11 +1685,18 @@ final class EditorWorkspaceView extends FrameLayout
         final boolean unsaved = unsavedPrompt.getVisibility() == VISIBLE;
         final boolean choosing = uiState.newProjectChooserOpen();
         // Home stands whenever there is no project and nothing is being built
-        // toward one. The chooser stands on top of it (or on top of an open
-        // project it is about to replace); the recovery question outranks both.
+        // toward one. The recovery question outranks it.
+        //
+        // New Project REPLACES Home rather than standing on it
+        // (`SKETCH-UX-R1` A2): both are full-window opaque pages now, so leaving
+        // Home visible underneath would be two pages stacked — invisible, but
+        // real, and it would put two focusable action sets in the tree at once.
+        // Over an OPEN project it still stands in front, because there it is a
+        // step away from a workspace the user is about to leave.
         final boolean atHome = !projectOpen && !bootstrapping;
-        home.setVisibility(atHome && !recovering ? VISIBLE : GONE);
-        newProjectChooser.setVisibility(choosing && !recovering && !unsaved ? VISIBLE : GONE);
+        final boolean chooserUp = choosing && !recovering && !unsaved;
+        home.setVisibility(atHome && !recovering && !chooserUp ? VISIBLE : GONE);
+        newProjectChooser.setVisibility(chooserUp ? VISIBLE : GONE);
         // The editor chrome belongs to a project or to the bootstrap; at Home
         // there is nothing for it to act on, so it is withdrawn as a whole.
         // Away from Home the user's own Hide UI choice stands: the chrome and
@@ -1726,12 +1770,23 @@ final class EditorWorkspaceView extends FrameLayout
     // --- New Project --------------------------------------------------------
 
     /**
-     * CAD: enter the bootstrap.
+     * CAD: enter the bootstrap, landing DIRECTLY on a flat sketch
+     * (`SKETCH-UX-R1` B1).
      *
-     * <p>Directly into the spatial world-plane chooser (`UI-OWNER-46`): the
-     * three planes are touchable targets in the viewport, and there is no
-     * list-first step. Faces are not offered because there is no body to
-     * sketch on. No project exists until the first Extrude.
+     * <p>The first sketch of a brand-new project opens on the XY plane seen
+     * along +Z, in the exact orthographic view, with the grid filling the
+     * viewport — not on a step that asks the user to tap one of three squares
+     * floating in an otherwise empty 3D world. There was nothing in that world
+     * to relate the squares to, so the step asked a spatial question with no
+     * spatial context; the plane is a property of the sketch and it is changed
+     * from the orientation navigator, where the sketch can be seen.
+     *
+     * <p>The spatial chooser is unchanged and still the normal path for a LATER
+     * New Sketch, where there are real bodies with real faces to pick
+     * (`UI-OWNER-46`).
+     *
+     * <p>No project exists until the first Extrude. Back before that costs
+     * nothing, because there was nothing to cost.
      */
     @Override
     public void onNewCadProjectChosen() {
@@ -1741,15 +1796,16 @@ final class EditorWorkspaceView extends FrameLayout
 
     private void beginCadBootstrap() {
         final Context context = getContext();
-        if (!NativeViewport.supportChooserBegin(false)) {
-            showStatus(context.getString(R.string.status_sketch_unavailable), R.attr.fsTextError);
+        final int status = NativeViewport.sketchBegin(NativeViewport.WORKPLANE_XY);
+        if (status != NativeViewport.CAD_OK) {
+            showStatus(CadStatusMessages.describe(context, status), R.attr.fsTextError);
             refreshShellPhase();
             return;
         }
         dismissPrimarySurfacesExcept(null);
         finishEditing();
         onNativeStateChanged();
-        showStatus(context.getString(R.string.status_bootstrap_chooser), R.attr.fsTextSecondary);
+        showStatus(context.getString(R.string.status_bootstrap_sketch), R.attr.fsTextSecondary);
     }
 
     /**
@@ -2130,6 +2186,7 @@ final class EditorWorkspaceView extends FrameLayout
             sketchEditor.refreshFromNative();
             cadEditor.refreshFromNative();
         }
+        refreshSketchViewportSurfaces(sketching);
         objectsCapsule.refreshFromNative();
         refreshTransformGizmo(sculpting);
         refreshHistoryControls();
@@ -2657,9 +2714,96 @@ final class EditorWorkspaceView extends FrameLayout
         showStatus(context.getString(R.string.status_support_chooser), R.attr.fsTextSecondary);
     }
 
+    // -----------------------------------------------------------------------
+    // The sketch's two viewport surfaces (`SKETCH-UX-R1` C, E)
+    // -----------------------------------------------------------------------
+
+    /**
+     * Shows or withdraws the orientation navigator and the dimension label.
+     *
+     * <p>Both belong to a sketch and to nothing else, so both are absent outside
+     * one rather than disabled in place — the rule the brush controls already
+     * follow in Construction. Inside a sketch each re-reads native truth; the
+     * dimension label withdraws itself again whenever the selection is not a
+     * straight Line.
+     */
+    private void refreshSketchViewportSurfaces(boolean sketching) {
+        // The navigator is a sketch control; while the chrome is hidden the
+        // whole overlay is gone anyway, so this is only about the sketch.
+        sketchNavigator.setVisibility(sketching ? VISIBLE : GONE);
+        if (sketching) {
+            sketchNavigator.refreshFromNative();
+            sketchDimension.refreshFromNative();
+        } else {
+            sketchDimension.closeEditor();
+            sketchDimension.setVisibility(GONE);
+        }
+    }
+
+    /**
+     * The orientation navigator asked for a support plane.
+     *
+     * <p>Refused by name when the sketch already carries geometry: the authored
+     * coordinates mean one plane, and this product does not silently reinterpret
+     * them on another (`CADUXR1-15`).
+     */
+    @Override
+    public void onSketchPlaneChosen(int workplane) {
+        final Context context = getContext();
+        final int status = NativeViewport.sketchSetSupportPlane(workplane);
+        if (status != NativeViewport.CAD_OK) {
+            showStatus(status == NativeViewport.CAD_SKETCH_NOT_EMPTY
+                            ? context.getString(R.string.status_sketch_plane_fixed)
+                            : CadStatusMessages.describe(context, status),
+                    R.attr.fsTextError);
+            // Re-read regardless: the refusal changed nothing, and the control
+            // must go on showing what IS true rather than what was tapped.
+            sketchNavigator.refreshFromNative();
+            return;
+        }
+        syncFromNative();
+    }
+
+    @Override
+    public void onSketchViewFlipRequested(boolean flipped) {
+        NativeViewport.sketchSetViewFlipped(flipped);
+        syncFromNative();
+    }
+
+    @Override
+    public void onSketchViewRotateRequested(int quarterTurns) {
+        NativeViewport.sketchRotateView(quarterTurns);
+        syncFromNative();
+    }
+
+    /**
+     * An exact length was typed on the dimension label.
+     *
+     * <p>P0 stays put and the direction is preserved; nothing else in the sketch
+     * moves. If that opens a chain, the sketch says so when Extrude is asked
+     * for — the honest outcome, rather than dragging the rest along.
+     */
+    @Override
+    public void onSketchLineLengthEntered(long entityId, double lengthMeters) {
+        final Context context = getContext();
+        final int status = NativeViewport.sketchApplyLineLength(entityId, lengthMeters);
+        if (status != NativeViewport.CAD_OK) {
+            showStatus(CadStatusMessages.describe(context, status), R.attr.fsTextError);
+            return;
+        }
+        sketchDimension.closeEditor();
+        syncFromNative();
+        showStatus(context.getString(R.string.status_sketch_length_applied),
+                R.attr.fsTextSuccess);
+    }
+
     /** A sketch gesture ended: the entity list, the selection or a refusal. */
     private void onSketchGestureSettled() {
         sketchEditor.refreshFromNative();
+        // The dimension follows the selection: a gesture that selected a Line
+        // brings its annotation up, and one that selected anything else takes
+        // the annotation away.
+        refreshSketchViewportSurfaces(true);
         NativeViewport.sketchState(nativeSketch);
         final int last = (int) nativeSketch[NativeViewport.SKETCH_LAST_STATUS];
         if (last != NativeViewport.CAD_OK && last != lastReportedSketchStatus) {
@@ -2700,6 +2844,15 @@ final class EditorWorkspaceView extends FrameLayout
     @Override
     public void onExtrudeRequested() {
         final Context context = getContext();
+        // An EDIT session finishes into the body it staged rather than creating
+        // a second one (`SKETCH-UX-R1` F2). Which it is comes from native truth
+        // — the session knows which body it opened — so there is one Extrude
+        // control and no shell flag deciding what it means.
+        final long editing = NativeViewport.sketchEditingBodyId();
+        if (editing != NativeViewport.NO_OBJECT) {
+            onFinishSketchEditRequested(editing);
+            return;
+        }
         final boolean firstProject = !NativeViewport.projectOpen();
         final long created = NativeViewport.sketchCommit();
         if (created == NativeViewport.NO_OBJECT) {
@@ -2726,22 +2879,83 @@ final class EditorWorkspaceView extends FrameLayout
                 R.attr.fsTextSuccess);
     }
 
+    // -----------------------------------------------------------------------
+    // Edit Sketch (`SKETCH-UX-R1` F)
+    // -----------------------------------------------------------------------
+    //
+    // A committed CAD Body's sketch is reopened for editing, staged, and either
+    // finished into ONE history step or cancelled at no cost to the project.
+    // There is no feature tree: a CAD Body has exactly one sketch and one
+    // extrusion, so "edit the sketch" needs no browser to say which.
+
     /**
-     * Drops the sketch. In the CAD bootstrap the way back is one step: the
-     * support chooser, from which Back to Home leaves.
+     * Opens the active CAD Body's sketch for editing.
+     *
+     * <p>Everything the sketch tools can do applies — including the dimension
+     * edit, which is the point: the exact-length workflow must not be available
+     * only before the first Extrude. The project keeps its own truth until
+     * Finish, and Cancel costs it nothing.
+     */
+    @Override
+    public void onEditCadSketchRequested() {
+        final Context context = getContext();
+        final long bodyId = NativeViewport.sceneActiveBodyId();
+        final int status = NativeViewport.sketchBeginEdit(bodyId);
+        if (status != NativeViewport.CAD_OK) {
+            showStatus(CadStatusMessages.describe(context, status), R.attr.fsTextError);
+            return;
+        }
+        dismissPrimarySurfacesExcept(null);
+        finishEditing();
+        onNativeStateChanged();
+        showStatus(context.getString(R.string.status_sketch_edit_begun,
+                        BodyLabels.of(context, bodyId)), R.attr.fsTextSecondary);
+    }
+
+    /** Finishes a staged sketch edit: one transaction, one Undo. */
+    private void onFinishSketchEditRequested(long bodyId) {
+        final Context context = getContext();
+        final int status = NativeViewport.sketchCommitEdit();
+        if (status != NativeViewport.CAD_OK) {
+            showStatus(CadStatusMessages.describe(context, status), R.attr.fsTextError);
+            return;
+        }
+        dismissPrimarySurfacesExcept(null);
+        finishEditing();
+        uiState.setConstructionTool(EditorUiState.CONSTRUCTION_TOOL_SHAPE);
+        onNativeStateChanged();
+        showStatus(context.getString(R.string.status_sketch_edit_finished,
+                        BodyLabels.of(context, bodyId)), R.attr.fsTextSuccess);
+    }
+
+    /**
+     * Drops the sketch.
+     *
+     * <p>Three ways out, and native truth decides which: an EDIT session
+     * returns to the project it never touched; the CAD bootstrap returns to
+     * HOME, because the first sketch IS the bootstrap now that there is no
+     * plane-chooser step before it, and the scene it leaves behind is empty; and
+     * an ordinary New Sketch returns to the workspace.
      */
     @Override
     public void onCancelSketchRequested() {
         final boolean bootstrap = !NativeViewport.projectOpen();
+        final boolean editing = NativeViewport.sketchEditingBodyId() != NativeViewport.NO_OBJECT;
         NativeViewport.sketchCancel();
         dismissPrimarySurfacesExcept(null);
         finishEditing();
         if (bootstrap) {
-            beginCadBootstrap();
+            // Nothing was created, so there is nothing to go back TO but Home,
+            // and refreshShellPhase derives that from the still-empty scene.
+            onNativeStateChanged();
+            showStatus(getContext().getString(R.string.status_bootstrap_left),
+                    R.attr.fsTextSecondary);
             return;
         }
         onNativeStateChanged();
-        showStatus(getContext().getString(R.string.status_sketch_cancelled),
+        showStatus(getContext().getString(editing
+                        ? R.string.status_sketch_edit_cancelled
+                        : R.string.status_sketch_cancelled),
                 R.attr.fsTextSecondary);
     }
 
@@ -2754,6 +2968,27 @@ final class EditorWorkspaceView extends FrameLayout
 
     SketchEditorView sketchEditor() {
         return sketchEditor;
+    }
+
+    /** The selected Line's dimension label, for verification. */
+    SketchDimensionLabelView sketchDimensionLabel() {
+        return sketchDimension;
+    }
+
+    /** The sketch orientation navigator, for verification. */
+    SketchOrientationNavigatorView sketchNavigator() {
+        return sketchNavigator;
+    }
+
+    /**
+     * Opens or closes the precision surface, for verification.
+     *
+     * <p>A seam, not a second path: it calls the same {@link #setPrecisionOpen}
+     * the toggle does, so a case that needs the CAD editor on screen reaches it
+     * the way a user's tap does rather than by reaching past the workspace.
+     */
+    void setPrecisionOpenForTest(boolean open) {
+        setPrecisionOpen(open);
     }
 
     CadFeatureEditorView cadEditor() {

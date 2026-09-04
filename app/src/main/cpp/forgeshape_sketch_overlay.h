@@ -30,6 +30,12 @@ enum class SketchOverlayStyle : uint8_t {
     GridMajor,
     Axes,
     Entities,
+    // The technical-drawing dimension annotation on a selected straight Line
+    // (`SKETCH-UX-R1` E): extension lines, a dimension line and its two end
+    // ticks. An INTERACTION overlay in the strongest sense -- it is not
+    // geometry, it is never extruded, exported or serialized, and the numeric
+    // label beside it is drawn by the shell rather than by these vertices.
+    Dimension,
 };
 
 struct SketchOverlayRange {

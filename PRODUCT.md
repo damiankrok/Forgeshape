@@ -120,24 +120,33 @@ left behind.
 ## Starting a project
 
 ForgeShape opens on **Home** whenever no project is open — on a fresh launch,
-and after you leave a project. Home offers exactly two things: **New Project**
-and **Open File…**. Nothing stands behind it: there is no default body, no
-project, nothing to save and nothing to recover until you choose. Home stays
-Home if you cancel the file picker, or pick a file that is not a ForgeShape
-project, damaged, or from a newer ForgeShape — it says so on Home and nothing
-is created.
+and after you leave a project. Home is a **full screen of its own**, with the
+ForgeShape mark and name at the top, and it offers exactly two things: **New
+Project** and **Open File…**. Nothing stands behind it: no editor, no default
+body, no project, nothing to save and nothing to recover until you choose. Home
+stays Home if you cancel the file picker, or pick a file that is not a
+ForgeShape project, damaged, or from a newer ForgeShape — it says so on Home and
+nothing is created.
 
-**New Project** asks which representation the project begins in, and offers
-exactly two answers (and Cancel, which returns to wherever you were):
+**New Project** is the next page rather than a box over Home, and it asks which
+representation the project begins in. Exactly two answers, and **Back**:
 
-**CAD** puts the three principal planes into the viewport as large targets —
-no list to pick from first. Tap a plane to highlight it, tap it again to look
-straight at it and start sketching, draw a closed profile, **Finish Sketch**,
-type a depth, and **Extrude** creates the project with that extrusion as its
-first body. Until that Extrude there is no project: **Back to Home** in the
-toolbar leaves with nothing to lose, *Cancel Sketch* goes back to the planes,
-and a sketch that cannot be extruded creates nothing and says why. The new
-project starts with an empty Undo history, as an opened file does.
+**CAD** opens a sketch straight away, flat on the XY plane and seen square-on,
+with the grid filling the viewport — there is nothing to pick first. Draw a
+closed profile, **Finish Sketch**, type a depth, and **Extrude** creates the
+project with that extrusion as its first body. Until that Extrude there is no
+project: **Back to Home** in the toolbar leaves with nothing to lose, and a
+sketch that cannot be extruded creates nothing and says why. The new project
+starts with an empty Undo history, as an opened file does.
+
+Which plane you are drawing on is not fixed by that: the **orientation
+navigator** in the top corner of the sketch names it (*XY · Along +Z · 0°*) and
+changes it. Three chips choose XY, XZ or YZ; one control flips to look at the
+plane from the other side; and **−90°** and **+90°** turn the drawing on screen
+without moving anything you have drawn. The plane can be changed while the
+sketch is still empty — once there is geometry on it the numbers mean that
+plane, and ForgeShape will not quietly reinterpret them somewhere else, so it
+says the plane is fixed instead.
 
 **Sculpt** begins on a sphere already prepared for sculpting, so the first thing
 you can do is make a stroke. Nothing is skipped to get there — the sphere is an
@@ -159,8 +168,9 @@ leave the project exactly as it was. A project you just saved, opened or
 recovered is not asked about.
 
 System Back always goes one step: it cancels the question you are reading,
-closes the New Project chooser, takes a New-CAD sketch back to the planes and
-the planes back to Home, and from Home leaves the app.
+takes the New Project page back to Home, takes a New-CAD sketch back to Home
+(nothing was created, so there is nowhere else to go), and from Home leaves the
+app.
 
 Neither choice is a document, a template or a saved project, and neither closes
 anything off: both representations stay one control apart for the life of the
@@ -480,15 +490,26 @@ ends, whether you extrude it or cancel it.
 **One finger draws; two fingers pan and zoom.** While a sketch is open a single
 finger never orbits — the plane would slide away under the point you are
 placing — but pinching and two-finger panning work exactly as they always have.
-The Tool Rail carries the five sketch tools:
+The Tool Rail carries the seven sketch tools:
 
 - **Rectangle** — drag from one corner to the opposite corner.
 - **Circle** — drag from the centre out to the radius.
 - **Line** — drag from one point to another.
 - **Polyline** — tap point by point. Tap the first point again to close the
   loop; tap the last point again to end it open.
+- **Arc** — drag the two ends to set the chord, then tap the point the arc
+  passes through. Three points on the curve, so there is nothing ambiguous
+  about which arc you meant. Three points in a straight line describe no arc,
+  and ForgeShape says so rather than drawing a line you did not ask for.
+- **Spline** — tap point by point; tap the last point again to finish. The
+  curve passes exactly through every point you place, so moving one moves the
+  curve there.
 - **Select** — tap an entity to select it. Its exact values appear in *Sketch
   values*, and *Delete entity* removes it.
+
+An Arc and a Spline are ordinary sketch entities: selectable, deletable, and
+able to close a profile with lines or with each other, as long as their ends
+meet. A closed profile containing a curve extrudes exactly like any other.
 
 Points **snap**, always: to an existing endpoint, corner or centre first, and
 otherwise to the grid, which is a quarter of a metre with a heavier line every
@@ -497,6 +518,19 @@ multiple of the grid — never a rounded pixel. A small cross shows where the
 point will land. What you type is never snapped: select a rectangle, type
 `1.234567` for its width in *Sketch values*, press *Apply*, and that is its
 width.
+
+**A selected line shows its length, and you can type one.** Select a straight
+line and it is dimensioned the way a technical drawing dimensions it —
+extension lines out from each end, a dimension line between them with a tick at
+each end, and the length written beside it in your chosen unit. Tap the number
+and a small field opens right there: type an exact length, press *Apply*, and
+the line takes it. **The first end stays where it is and the direction does not
+change** — only the far end moves, along the line it was already on. Nothing
+else in the sketch moves with it: there is no constraint solver here, and if
+the line was part of a loop, shortening it opens that loop. ForgeShape says so
+when you try to extrude rather than quietly repairing the sketch. Zero, a
+negative number and anything that is not a number are refused, the field stays
+open so you can correct it, and nothing you drew moves.
 
 **Finish Sketch** is the one way forward. ForgeShape checks the sketch and
 finds every closed profile — a rectangle, a circle, a closed polyline, or a
@@ -526,6 +560,17 @@ was. A polygon profile shows its point count and is not numerically editable
 yet. Saving, reopening and recovery keep all of this: a reopened CAD Body is
 still its sketch and its extrusion, not a frozen mesh. Exporting a GLB writes
 the body as it currently is.
+
+**Edit Sketch** is beside those fields, and it reopens the sketch the body was
+made from. Everything the sketch tools do applies — move a point, add a curve,
+select a line and type an exact length — on the plane or face the body was
+sketched on, with the navigator in the corner as always. **Nothing changes
+until you finish**: the body on screen is still the body you had, and *Cancel
+Sketch* leaves it exactly that way with nothing recorded. *Extrude* applies the
+whole edit as **one Undo step**, and Undo puts the entire previous sketch back.
+If another body is sketched on one of this body's faces, an edit that would
+take that face away is refused and says so — the dependent is never quietly
+broken.
 
 What a CAD Body does **not** offer yet: *Start Sculpting*. It is absent for one,
 because the way back from Sculpt over a sketch needs its own design; every other

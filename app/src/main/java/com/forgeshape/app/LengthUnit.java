@@ -48,6 +48,19 @@ enum LengthUnit {
         return present(BigDecimal.valueOf(meters).movePointRight(decimalExponent));
     }
 
+    /**
+     * The same value with its unit written after it, for a label that stands on
+     * its OWN rather than under a caption naming the unit.
+     *
+     * <p>The dimension annotation is the one place a length is read away from
+     * the precision surface's captioned rows (`SKETCH-UX-R1` E1), and a bare
+     * number floating over a drawing is ambiguous in exactly the way a technical
+     * drawing must not be.
+     */
+    String formatWithUnit(double meters) {
+        return format(meters) + " " + label;
+    }
+
     /** Converts a value already written in {@code from} into this unit, exactly. */
     BigDecimal convertFrom(LengthUnit from, BigDecimal value) {
         return value.movePointRight(decimalExponent - from.decimalExponent);

@@ -118,6 +118,13 @@ constexpr uint16_t kCadSectionVersion = 1;
 // CAD project stays byte-identical at v1. An older build refuses v2 (a required
 // section at an unknown version) rather than opening half a body.
 constexpr uint16_t kCadSectionVersionV2 = 2;
+// SKETCH-UX-R1: version 3 adds the two CURVE entity kinds, Arc (file code 5)
+// and Spline (file code 6). Written only when a body's sketch actually carries
+// one; a project of lines, polylines, rectangles and circles stays at v1 or v2
+// and byte-identical. An older build refuses v3 -- a required section at an
+// unknown version -- rather than opening a body with a curve silently missing
+// or, worse, replaced by the straight edge between its ends.
+constexpr uint16_t kCadSectionVersionV3 = 3;
 
 // CADB v1 file codes. FILE-owned, 1-based, and deliberately not a cast of any
 // C++ enum, on the same terms as the primitive codes.

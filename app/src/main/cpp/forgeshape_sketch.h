@@ -107,9 +107,24 @@ enum class CadStatus : uint8_t {
     NotCadBody,
     // A sketch edit was refused while a Construction edit is open.
     RefusedEditInProgress,
+    // An arc's three authored points do not describe an arc: two coincide, or
+    // all three are collinear and no finite circle passes through them.
+    InvalidArc,
+    // A spline's authored points do not describe a curve: fewer than two, or
+    // two consecutive ones coincide.
+    InvalidSpline,
+    // The support plane of a sketch that already carries geometry may not be
+    // changed, because the authored (u, v) values would silently come to mean
+    // somewhere else. Refused by name rather than remapped (`CADUXR1-15`).
+    SketchNotEmpty,
+    // A sketch edit would remove a planar face another body's sketch is
+    // standing on. Refused on exactly the terms deleting such a producer is
+    // (`RefusedHasDependents`): the dependency is never cascaded, never
+    // retargeted to the nearest surviving face, and never silently broken.
+    DependentFaceLost,
 };
 
-constexpr int kCadStatusCount = 27;
+constexpr int kCadStatusCount = 31;
 
 const char* cadStatusName(CadStatus status);
 int cadStatusCode(CadStatus status);
@@ -147,9 +162,35 @@ constexpr uint32_t kMaxPolylineVertices = 256;
 // circle's truth is its radius, and the polygon is regenerated from it.
 constexpr uint32_t kSketchCircleSegments = kPrimitiveRadialSegments;
 
-// The largest polygon a profile may become: a polyline at its vertex cap, or a
-// chain of lines at the entity cap. Bounds the triangulation pass.
-constexpr uint32_t kMaxProfileVertices = kMaxSketchEntities;
+// ---------------------------------------------------------------------------
+// Curves (`SKETCH-UX-R1`)
+// ---------------------------------------------------------------------------
+//
+// An Arc and a Spline are AUTHORED as a bounded set of points and DERIVED into
+// a polyline when a profile needs one. The tessellation is a pure function of
+// the authored points and these constants -- never of the camera, the zoom or
+// the window -- because a profile that changed shape when the user pinched
+// would make the extruded solid depend on how the sketch was looked at.
+
+// How many points a spline may carry. Bounded for the same reason a polyline's
+// vertices are: it is what keeps a history step and a `.forge` record finite.
+constexpr uint32_t kMaxSplinePoints = 32;
+
+// A spline span (between two consecutive authored points) becomes this many
+// straight segments. Fixed, so the same authored points always yield the same
+// polygon.
+constexpr uint32_t kSplineSegmentsPerSpan = 8;
+
+// An arc's segment count is derived from its swept angle at the SAME angular
+// density a full circle gets (kSketchCircleSegments over 2*pi), then clamped,
+// so a quarter arc and a quarter of a circle are tessellated alike.
+constexpr uint32_t kMinArcSegments = 4;
+constexpr uint32_t kMaxArcSegments = 64;
+
+// The largest polygon a profile may become. A chain of curves contributes many
+// polygon vertices per entity, so this is no longer the entity cap: it is the
+// bound the triangulation pass and every O(n^2) check here are held to.
+constexpr uint32_t kMaxProfileVertices = 1024;
 
 // ---------------------------------------------------------------------------
 // Entities
@@ -229,6 +270,8 @@ enum class SketchEntityKind : uint8_t {
     Polyline,
     Rectangle,
     Circle,
+    Arc,
+    Spline,
 };
 
 const char* sketchEntityKindName(SketchEntityKind kind);
@@ -258,13 +301,53 @@ struct SketchCircle {
     Meters radius = 0.0;
 };
 
+// A three-point arc: it starts at `start`, passes THROUGH `mid` and ends at
+// `end` (`SKETCH-UX-R1` D1).
+//
+// Three points on the curve, rather than a centre, a radius and two angles,
+// because that is what the gesture produces and because it has no ambiguity to
+// resolve: there is exactly one circle through three non-collinear points and
+// exactly one of its two arcs contains the middle point. A centre/angle form
+// would have to store a sweep direction and a "major or minor" flag, and every
+// edit would have to keep them consistent with the endpoints.
+//
+// The centre, the radius and the sweep are DERIVED (`arcGeometry`), and the
+// endpoints are EXACTLY `start` and `end` -- never a tessellated approximation
+// of them -- so a chain closes on the authored values and not on rounding.
+struct SketchArc {
+    SketchPoint start;
+    SketchPoint mid;
+    SketchPoint end;
+};
+
+// A bounded interpolating spline through its authored points
+// (`SKETCH-UX-R1` D2).
+//
+// TRUTH is the point list. The curve is a Catmull-Rom interpolation converted
+// to a cubic Bezier span by span (`splineTessellation`), so the curve PASSES
+// THROUGH every authored point: moving one point moves the curve there, which
+// is the edit a user expects. Its endpoints are exactly `points.front()` and
+// `points.back()`.
+//
+// Deliberately not a NURBS, not a fitted stroke and not a knot vector: an
+// interpolating spline through a bounded point list is deterministic, editable
+// point by point, and small enough to store and to snapshot.
+struct SketchSpline {
+    std::vector<SketchPoint> points;
+};
+
 // One entity: an identity plus exactly one geometry. A real tagged union
 // rather than a struct carrying every payload at once, for the same reason
 // `PrimitiveSpec` is one: an entity that IS a circle physically carries no
 // rectangle width for anything to misread.
 class SketchEntity {
 public:
-    using Payload = std::variant<SketchLine, SketchPolyline, SketchRectangle, SketchCircle>;
+    // The variant's alternative ORDER is `SketchEntityKind`'s order: `kind()`
+    // is the variant index. New kinds are APPENDED, never inserted, so a kind
+    // never changes number under code that already switched on it. The `.forge`
+    // codes are separate and file-owned regardless.
+    using Payload = std::variant<SketchLine, SketchPolyline, SketchRectangle, SketchCircle,
+                                 SketchArc, SketchSpline>;
 
     SketchEntity() = default;
     SketchEntity(SketchEntityId id, Payload payload) : id_(id), payload_(std::move(payload)) {}
@@ -276,6 +359,8 @@ public:
     const SketchPolyline* polyline() const { return std::get_if<SketchPolyline>(&payload_); }
     const SketchRectangle* rectangle() const { return std::get_if<SketchRectangle>(&payload_); }
     const SketchCircle* circle() const { return std::get_if<SketchCircle>(&payload_); }
+    const SketchArc* arc() const { return std::get_if<SketchArc>(&payload_); }
+    const SketchSpline* spline() const { return std::get_if<SketchSpline>(&payload_); }
 
     const Payload& payload() const { return payload_; }
     Payload& payload() { return payload_; }
@@ -292,6 +377,42 @@ bool sameSketchEntity(const SketchEntity& a, const SketchEntity& b);
 // Validates one entity's own geometry against the bounds above. Says nothing
 // about whether it closes anything.
 CadStatus validateSketchEntity(const SketchEntity& entity);
+
+// ---------------------------------------------------------------------------
+// Chainable entities and their derived polylines
+// ---------------------------------------------------------------------------
+//
+// A Line, an Arc and a Spline are OPEN entities with two ends, and the profile
+// engine chains all three by coincident endpoints in exactly one walker. A
+// Rectangle, a Circle and a closed Polyline close a profile on their own and
+// are not chainable.
+
+// True, and fills the two endpoints, for a chainable entity. The endpoints are
+// AUTHORED values -- a line's own two points, an arc's own start and end, a
+// spline's own first and last -- never sampled off a tessellation, so a chain
+// joins on the numbers the user's snap produced.
+bool sketchEntityEndpoints(const SketchEntity& entity, SketchPoint* outStart, SketchPoint* outEnd);
+
+// True when the entity's derived polyline is an approximation of a CURVE rather
+// than the exact edge. It decides whether the extruded side face is planar and
+// therefore eligible to carry a sketch (`forgeshape_cad_face.h`), and nothing
+// else: a curved side is reported so a tap on it resolves, never as a support.
+bool sketchEntityIsCurved(const SketchEntity& entity);
+
+// The derived polyline of a chainable entity, from its start to its end,
+// INCLUSIVE of both, with at least two points and no consecutive duplicates.
+//
+// Deterministic and bounded: a Line gives exactly its two endpoints; an Arc
+// gives kMinArcSegments..kMaxArcSegments segments chosen from its own swept
+// angle; a Spline gives kSplineSegmentsPerSpan per authored span. None of it
+// depends on a camera, a zoom or a window, because the extruded solid must not.
+CadStatus tessellateSketchCurve(const SketchEntity& entity, std::vector<SketchPoint>* out);
+
+// The circle an arc lies on. Refuses `InvalidArc` when the three points are
+// collinear or two of them coincide. `outSweep` is the SIGNED swept angle from
+// start to end through mid, in radians, in (-2*pi, 2*pi) and never zero.
+CadStatus arcGeometry(const SketchArc& arc, SketchPoint* outCenter, double* outRadius,
+                      double* outStartAngle, double* outSweep);
 
 // ---------------------------------------------------------------------------
 // The sketch
@@ -377,6 +498,13 @@ struct ClosedProfile {
     // index.
     std::vector<SketchEntityId> edgeEntityId;
     std::vector<uint32_t> edgeLocalIndex;
+    // Per polygon EDGE, parallel to the two above: whether that edge is one
+    // segment of a CURVE's approximation rather than an exact straight edge of
+    // the authored sketch (`SKETCH-UX-R1` D3). The extruded side face of such
+    // an edge is a facet of a curved surface and is therefore not eligible to
+    // support a sketch -- the same answer a circle's cylindrical side already
+    // gets, now decided per edge because one profile may mix lines and curves.
+    std::vector<uint8_t> edgeCurved;
 };
 
 // Why one candidate loop was NOT a profile, by the entity that anchors it.

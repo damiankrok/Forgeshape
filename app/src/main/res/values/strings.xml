@@ -36,8 +36,9 @@
     -->
     <string name="new_project">New Project</string>
     <string name="new_project_prompt">Choose how this project begins. You can add shapes, sketches and sculpting later.</string>
+    <string name="back">Back</string>
     <string name="new_project_cad_title">CAD</string>
-    <string name="new_project_cad_description">Pick a plane in the viewport, sketch on it and extrude the first body. Sizes and depth stay exact, editable values.</string>
+    <string name="new_project_cad_description">Start on a flat sketch grid, draw a closed profile and extrude the first body. Sizes and depth stay exact, editable values.</string>
     <string name="new_project_sculpt_title">Sculpt</string>
     <string name="new_project_sculpt_description">Begin on a sphere already prepared for sculpting. Its exact source is kept, so Back to Construction returns to it.</string>
     <string name="status_started_sculpt">Now sculpting a sphere. The Construction sphere is kept.</string>
@@ -50,6 +51,7 @@
     <string name="back_to_home">Back to Home</string>
     <string name="context_new_cad">New CAD project</string>
     <string name="status_bootstrap_chooser">Tap a plane to sketch on, then tap it again to begin</string>
+    <string name="status_bootstrap_sketch">Draw a closed profile, then Extrude to create the project</string>
     <string name="status_first_project_created">Project created — %1$s is its first body.</string>
     <string name="status_bootstrap_left">Back at Home. No project was created.</string>
     <!--
@@ -315,11 +317,15 @@
     <string name="tool_polyline">Polyline</string>
     <string name="tool_rectangle">Rectangle</string>
     <string name="tool_circle">Circle</string>
+    <string name="tool_arc">Arc</string>
+    <string name="tool_spline">Spline</string>
     <string name="hint_select">tap an entity to select it, then edit or delete it</string>
     <string name="hint_line">drag from one point to another</string>
     <string name="hint_polyline">tap point by point; tap the first point again to close</string>
     <string name="hint_rectangle">drag from one corner to the opposite corner</string>
     <string name="hint_circle">drag from the centre out to the radius</string>
+    <string name="hint_arc">drag the two ends, then tap the point the arc passes through</string>
+    <string name="hint_spline">tap each point; tap the last one again to finish</string>
     <string name="context_sketch">Sketch %1$s</string>
     <string name="context_cad_body">CAD Body</string>
     <string name="finish_sketch">Finish Sketch</string>
@@ -338,6 +344,29 @@
     <string name="workplane_xy_description">XY — the front view</string>
     <string name="workplane_xz_description">XZ — the top view</string>
     <string name="workplane_yz_description">YZ — the side view</string>
+
+    <!-- The sketch orientation navigator (`SKETCH-UX-R1` C). -->
+    <string name="axis_x">X</string>
+    <string name="axis_y">Y</string>
+    <string name="axis_z">Z</string>
+    <!-- The flip control carries the signed AXIS alone: the summary line above
+         it already reads the sentence ("XY · Along +Z · 0°"), and a chip between
+         two arrows has room for a direction, not a phrase. -->
+    <string name="sketch_view_normal_positive">+%1$s</string>
+    <string name="sketch_view_normal_negative">−%1$s</string>
+    <string name="sketch_view_face_normal">Face</string>
+    <string name="sketch_view_flip_description">Looking along %1$s. Tap to look from the other side.</string>
+    <string name="sketch_view_label">%1$s · Along %2$s · %3$d°</string>
+    <string name="sketch_view_on_face">On a body face</string>
+    <!-- The rotation arrows say the ANGLE rather than carrying a curved-arrow
+         glyph: the two Unicode arrows (U+21BA, U+21BB) render identically in
+         several system fonts, and two controls that look the same and do
+         opposite things is worse than no glyph at all. -->
+    <string name="sketch_rotate_view_ccw_glyph">−90°</string>
+    <string name="sketch_rotate_view_cw_glyph">+90°</string>
+    <string name="sketch_rotate_view_ccw">Rotate the view 90° counter-clockwise</string>
+    <string name="sketch_rotate_view_cw">Rotate the view 90° clockwise</string>
+    <string name="status_sketch_plane_fixed">The support plane is fixed once the sketch has geometry. Delete it, or cancel the sketch, to change plane.</string>
     <string name="sketch_plane_back">Back to shapes</string>
     <string name="precision_sketch">Sketch values</string>
     <string name="inspector_sketch_title">Sketch — %1$s</string>
@@ -352,6 +381,12 @@
     <string name="label_end_x">End X</string>
     <string name="label_end_y">End Y</string>
     <string name="apply_sketch_entity">Apply</string>
+
+    <!-- The selected Line's technical dimension (`SKETCH-UX-R1` E). -->
+    <string name="apply">Apply</string>
+    <string name="label_length">Length</string>
+    <string name="sketch_dimension_description">Length %1$s. Tap to type an exact length.</string>
+    <string name="status_sketch_length_applied">Length applied. The first endpoint and the direction are unchanged.</string>
     <string name="delete_sketch_entity">Delete entity</string>
     <string name="sketch_profile_section">Profile to extrude</string>
     <string name="sketch_profile_rectangle">Rectangle · %1$s</string>
@@ -370,6 +405,11 @@
     <string name="status_sketch_tool">%1$s: %2$s.</string>
     <string name="status_sketch_finished">Profile found — set the depth, then Extrude.</string>
     <string name="status_sketch_finished_choose">%1$d profiles found — choose one, set the depth, then Extrude.</string>
+    <string name="status_sketch_edit_begun">Editing the sketch of %1$s. Finish to apply, or Cancel to leave it unchanged.</string>
+    <string name="status_sketch_edit_finished">Sketch of %1$s updated.</string>
+    <string name="status_sketch_edit_cancelled">Sketch edit cancelled. Nothing changed.</string>
+    <string name="edit_sketch">Edit Sketch</string>
+    <string name="edit_sketch_description">Reopen the sketch this body was made from. Nothing changes until you finish.</string>
     <string name="status_sketch_cancelled">Sketch discarded. Nothing was changed.</string>
     <string name="status_sketch_extruded">Extruded %1$s — it is now selected.</string>
     <string name="status_sketch_entity_applied">Entity updated.</string>
@@ -383,6 +423,10 @@
     <string name="status_cad_invalid_depth">Depth must be a positive length.</string>
     <string name="status_cad_nested_profile">One profile lies inside another. Holes are not supported yet — extrude the inner one, or delete it.</string>
     <string name="status_cad_zero_area">The profile has no area.</string>
+    <string name="status_cad_invalid_arc">Those three points do not describe an arc — they lie on a straight line, or two of them are the same point.</string>
+    <string name="status_cad_invalid_spline">A spline needs at least two distinct points, and its two ends must be different points.</string>
+    <string name="status_cad_dependent_face_lost">That edit would remove a face another body is sketched on. Edit or delete the dependent body first.</string>
+    <string name="status_cad_zero_length">A length must be a positive number.</string>
     <string name="status_cad_branching">Lines meet at a fork — a profile is one loop.</string>
     <string name="status_cad_refused">Refused: %1$s. Nothing was changed.</string>
     <string name="status_cad_no_sculpt">A CAD Body cannot be sculpted in this version.</string>

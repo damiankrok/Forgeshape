@@ -38,6 +38,10 @@ const char* cadStatusName(CadStatus status) {
         case CadStatus::NotSketching: return "NotSketching";
         case CadStatus::NotCadBody: return "NotCadBody";
         case CadStatus::RefusedEditInProgress: return "RefusedEditInProgress";
+        case CadStatus::InvalidArc: return "InvalidArc";
+        case CadStatus::InvalidSpline: return "InvalidSpline";
+        case CadStatus::SketchNotEmpty: return "SketchNotEmpty";
+        case CadStatus::DependentFaceLost: return "DependentFaceLost";
     }
     return "unknown";
 }
@@ -58,6 +62,8 @@ const char* sketchEntityKindName(SketchEntityKind kind) {
         case SketchEntityKind::Polyline: return "Polyline";
         case SketchEntityKind::Rectangle: return "Rectangle";
         case SketchEntityKind::Circle: return "Circle";
+        case SketchEntityKind::Arc: return "Arc";
+        case SketchEntityKind::Spline: return "Spline";
     }
     return "unknown";
 }
@@ -201,6 +207,23 @@ bool sameSketchEntity(const SketchEntity& a, const SketchEntity& b) {
         case SketchEntityKind::Circle:
             return samePointBits(a.circle()->center, b.circle()->center)
                    && sameBits(a.circle()->radius, b.circle()->radius);
+        case SketchEntityKind::Arc:
+            return samePointBits(a.arc()->start, b.arc()->start)
+                   && samePointBits(a.arc()->mid, b.arc()->mid)
+                   && samePointBits(a.arc()->end, b.arc()->end);
+        case SketchEntityKind::Spline: {
+            const SketchSpline& l = *a.spline();
+            const SketchSpline& r = *b.spline();
+            if (l.points.size() != r.points.size()) {
+                return false;
+            }
+            for (size_t i = 0; i < l.points.size(); ++i) {
+                if (!samePointBits(l.points[i], r.points[i])) {
+                    return false;
+                }
+            }
+            return true;
+        }
     }
     return false;
 }
@@ -268,6 +291,263 @@ CadStatus validateSketchEntity(const SketchEntity& entity) {
             }
             return CadStatus::Ok;
         }
+        case SketchEntityKind::Arc: {
+            const SketchArc& arc = *entity.arc();
+            for (const SketchPoint& p : {arc.start, arc.mid, arc.end}) {
+                const CadStatus why = validatePoint(p);
+                if (why != CadStatus::Ok) return why;
+            }
+            // The three points must be three DISTINCT points and must not be
+            // collinear: either would leave no finite circle through them, and
+            // an arc with no circle is not an arc. Refused by name rather than
+            // quietly turned into the straight line it nearly is.
+            if (coincident(arc.start, arc.mid) || coincident(arc.mid, arc.end)
+                || coincident(arc.start, arc.end)) {
+                return CadStatus::InvalidArc;
+            }
+            SketchPoint center;
+            double radius = 0.0;
+            double startAngle = 0.0;
+            double sweep = 0.0;
+            const CadStatus why = arcGeometry(arc, &center, &radius, &startAngle, &sweep);
+            if (why != CadStatus::Ok) {
+                return why;
+            }
+            // The derived circle must still be a usable Construction length and
+            // must stay inside the sketch range, exactly as a circle's is.
+            if (!usableLength(radius)) {
+                return CadStatus::InvalidArc;
+            }
+            return CadStatus::Ok;
+        }
+        case SketchEntityKind::Spline: {
+            const SketchSpline& spline = *entity.spline();
+            if (spline.points.size() > kMaxSplinePoints) {
+                return CadStatus::TooManyEntities;
+            }
+            if (spline.points.size() < 2) {
+                return CadStatus::InvalidSpline;
+            }
+            for (const SketchPoint& p : spline.points) {
+                const CadStatus why = validatePoint(p);
+                if (why != CadStatus::Ok) return why;
+            }
+            for (size_t i = 1; i < spline.points.size(); ++i) {
+                if (coincident(spline.points[i - 1], spline.points[i])) {
+                    return CadStatus::InvalidSpline;
+                }
+            }
+            // A chainable entity's two ends must be two places: a spline whose
+            // ends meet is a loop this stage's one chain walker cannot read,
+            // and it is refused rather than half-supported.
+            if (coincident(spline.points.front(), spline.points.back())) {
+                return CadStatus::InvalidSpline;
+            }
+            return CadStatus::Ok;
+        }
+    }
+    return CadStatus::UnknownEntity;
+}
+
+// ---------------------------------------------------------------------------
+// Curves: the derived polylines (`SKETCH-UX-R1`)
+// ---------------------------------------------------------------------------
+
+bool sketchEntityEndpoints(const SketchEntity& entity, SketchPoint* outStart,
+                           SketchPoint* outEnd) {
+    if (outStart == nullptr || outEnd == nullptr) {
+        return false;
+    }
+    if (const SketchLine* line = entity.line()) {
+        *outStart = line->start;
+        *outEnd = line->end;
+        return true;
+    }
+    if (const SketchArc* arc = entity.arc()) {
+        *outStart = arc->start;
+        *outEnd = arc->end;
+        return true;
+    }
+    if (const SketchSpline* spline = entity.spline()) {
+        if (spline->points.size() < 2) {
+            return false;
+        }
+        *outStart = spline->points.front();
+        *outEnd = spline->points.back();
+        return true;
+    }
+    return false;
+}
+
+bool sketchEntityIsCurved(const SketchEntity& entity) {
+    return entity.kind() == SketchEntityKind::Arc || entity.kind() == SketchEntityKind::Spline;
+}
+
+CadStatus arcGeometry(const SketchArc& arc, SketchPoint* outCenter, double* outRadius,
+                      double* outStartAngle, double* outSweep) {
+    // The circumcentre of the three points, from the perpendicular bisectors.
+    // `d` is twice the signed area of the triangle: zero exactly when the three
+    // points are collinear, which is the case with no finite circle.
+    const double ax = arc.start.u;
+    const double ay = arc.start.v;
+    const double bx = arc.mid.u;
+    const double by = arc.mid.v;
+    const double cx = arc.end.u;
+    const double cy = arc.end.v;
+    const double d = 2.0 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by));
+    if (!std::isfinite(d)) {
+        return CadStatus::NonFinite;
+    }
+    // The collinearity test is SCALED by the triangle's size rather than an
+    // absolute epsilon: three points a kilometre apart and three a millimetre
+    // apart are equally collinear when their area is negligible against their
+    // own extent.
+    const double scale = std::fmax(std::fabs(ax) + std::fabs(ay),
+                                   std::fmax(std::fabs(bx) + std::fabs(by),
+                                             std::fabs(cx) + std::fabs(cy)));
+    const double floorScale = scale > 1.0 ? scale : 1.0;
+    if (std::fabs(d) <= kSketchCoincidenceMeters * floorScale) {
+        return CadStatus::InvalidArc;
+    }
+    const double a2 = ax * ax + ay * ay;
+    const double b2 = bx * bx + by * by;
+    const double c2 = cx * cx + cy * cy;
+    const double ux = (a2 * (by - cy) + b2 * (cy - ay) + c2 * (ay - by)) / d;
+    const double uy = (a2 * (cx - bx) + b2 * (ax - cx) + c2 * (bx - ax)) / d;
+    if (!std::isfinite(ux) || !std::isfinite(uy)) {
+        return CadStatus::NonFinite;
+    }
+    const double radius = std::sqrt((ax - ux) * (ax - ux) + (ay - uy) * (ay - uy));
+    if (!std::isfinite(radius) || radius <= 0.0) {
+        return CadStatus::InvalidArc;
+    }
+    const double startAngle = std::atan2(ay - uy, ax - ux);
+    const double midAngle = std::atan2(by - uy, bx - ux);
+    const double endAngle = std::atan2(cy - uy, cx - ux);
+
+    // Which of the circle's two arcs the user drew is decided by where `mid`
+    // lies, not by a stored flag: sweep counter-clockwise if the middle point
+    // is reached before the end going that way, clockwise otherwise. Both
+    // deltas are normalized into (0, 2*pi) so the comparison is total.
+    const double twoPi = 2.0 * 3.14159265358979323846;
+    const auto ccwDelta = [twoPi](double from, double to) {
+        double delta = to - from;
+        while (delta <= 0.0) delta += twoPi;
+        while (delta > twoPi) delta -= twoPi;
+        return delta;
+    };
+    const double midCcw = ccwDelta(startAngle, midAngle);
+    const double endCcw = ccwDelta(startAngle, endAngle);
+    const double sweep = (midCcw < endCcw) ? endCcw : endCcw - twoPi;
+    if (!std::isfinite(sweep) || std::fabs(sweep) <= 0.0) {
+        return CadStatus::InvalidArc;
+    }
+    if (outCenter != nullptr) *outCenter = SketchPoint{ux, uy};
+    if (outRadius != nullptr) *outRadius = radius;
+    if (outStartAngle != nullptr) *outStartAngle = startAngle;
+    if (outSweep != nullptr) *outSweep = sweep;
+    return CadStatus::Ok;
+}
+
+namespace {
+
+// How many straight segments one arc becomes: the same angular density a full
+// circle gets, clamped. A pure function of the swept angle.
+uint32_t arcSegmentCount(double sweep) {
+    const double twoPi = 2.0 * 3.14159265358979323846;
+    const double fraction = std::fabs(sweep) / twoPi;
+    double wanted = std::ceil(fraction * static_cast<double>(kSketchCircleSegments));
+    if (!std::isfinite(wanted) || wanted < 1.0) {
+        wanted = 1.0;
+    }
+    uint32_t segments = static_cast<uint32_t>(wanted);
+    if (segments < kMinArcSegments) segments = kMinArcSegments;
+    if (segments > kMaxArcSegments) segments = kMaxArcSegments;
+    return segments;
+}
+
+// One cubic Bezier span, evaluated at t.
+SketchPoint bezierAt(const SketchPoint& p0, const SketchPoint& p1, const SketchPoint& p2,
+                     const SketchPoint& p3, double t) {
+    const double s = 1.0 - t;
+    const double w0 = s * s * s;
+    const double w1 = 3.0 * s * s * t;
+    const double w2 = 3.0 * s * t * t;
+    const double w3 = t * t * t;
+    return SketchPoint{p0.u * w0 + p1.u * w1 + p2.u * w2 + p3.u * w3,
+                       p0.v * w0 + p1.v * w1 + p2.v * w2 + p3.v * w3};
+}
+
+}  // namespace
+
+CadStatus tessellateSketchCurve(const SketchEntity& entity, std::vector<SketchPoint>* out) {
+    if (out == nullptr) {
+        return CadStatus::UnknownEntity;
+    }
+    const CadStatus valid = validateSketchEntity(entity);
+    if (valid != CadStatus::Ok) {
+        return valid;
+    }
+    out->clear();
+    if (const SketchLine* line = entity.line()) {
+        out->push_back(line->start);
+        out->push_back(line->end);
+        return CadStatus::Ok;
+    }
+    if (const SketchArc* arc = entity.arc()) {
+        SketchPoint center;
+        double radius = 0.0;
+        double startAngle = 0.0;
+        double sweep = 0.0;
+        const CadStatus why = arcGeometry(*arc, &center, &radius, &startAngle, &sweep);
+        if (why != CadStatus::Ok) {
+            return why;
+        }
+        const uint32_t segments = arcSegmentCount(sweep);
+        out->reserve(segments + 1u);
+        // The two ENDS are the authored points, written exactly rather than
+        // recomputed from the angle: a chain must close on the numbers the snap
+        // produced, and cos/sin of a derived angle would land an ulp away.
+        out->push_back(arc->start);
+        for (uint32_t i = 1; i < segments; ++i) {
+            const double t = static_cast<double>(i) / static_cast<double>(segments);
+            const double angle = startAngle + sweep * t;
+            out->push_back(SketchPoint{center.u + radius * std::cos(angle),
+                                       center.v + radius * std::sin(angle)});
+        }
+        out->push_back(arc->end);
+        return CadStatus::Ok;
+    }
+    if (const SketchSpline* spline = entity.spline()) {
+        const std::vector<SketchPoint>& p = spline->points;
+        const size_t n = p.size();
+        out->reserve((n - 1) * kSplineSegmentsPerSpan + 1u);
+        out->push_back(p.front());
+        for (size_t i = 0; i + 1 < n; ++i) {
+            // Catmull-Rom tangents, with the end spans reflecting their one
+            // neighbour so the curve still passes through the endpoint with a
+            // defined direction. Converted to the equivalent cubic Bezier: the
+            // curve INTERPOLATES p[i] and p[i+1] exactly.
+            const SketchPoint& p1 = p[i];
+            const SketchPoint& p2 = p[i + 1];
+            const SketchPoint p0 = (i == 0) ? SketchPoint{2.0 * p1.u - p2.u, 2.0 * p1.v - p2.v}
+                                            : p[i - 1];
+            const SketchPoint p3 = (i + 2 < n) ? p[i + 2]
+                                               : SketchPoint{2.0 * p2.u - p1.u, 2.0 * p2.v - p1.v};
+            const SketchPoint c1{p1.u + (p2.u - p0.u) / 6.0, p1.v + (p2.v - p0.v) / 6.0};
+            const SketchPoint c2{p2.u - (p3.u - p1.u) / 6.0, p2.v - (p3.v - p1.v) / 6.0};
+            for (uint32_t s = 1; s <= kSplineSegmentsPerSpan; ++s) {
+                if (s == kSplineSegmentsPerSpan) {
+                    // The span's last point is the authored point itself, for
+                    // the same reason an arc's ends are: exact, not evaluated.
+                    out->push_back(p2);
+                    break;
+                }
+                const double t = static_cast<double>(s) / static_cast<double>(kSplineSegmentsPerSpan);
+                out->push_back(bezierAt(p1, c1, c2, p2, t));
+            }
+        }
+        return CadStatus::Ok;
     }
     return CadStatus::UnknownEntity;
 }
@@ -485,7 +765,8 @@ namespace {
 // identity does not flip with a winding correction.
 CadStatus validateLoop(std::vector<SketchPoint>* polygon, double* outArea,
                        std::vector<SketchEntityId>* edgeEntityId = nullptr,
-                       std::vector<uint32_t>* edgeLocalIndex = nullptr) {
+                       std::vector<uint32_t>* edgeLocalIndex = nullptr,
+                       std::vector<uint8_t>* edgeCurved = nullptr) {
     const size_t n = polygon->size();
     if (n < 3) {
         return CadStatus::TooFewVertices;
@@ -540,6 +821,13 @@ CadStatus validateLoop(std::vector<SketchPoint>* polygon, double* outArea,
             }
             *edgeLocalIndex = std::move(out);
         }
+        if (edgeCurved != nullptr && edgeCurved->size() == n) {
+            std::vector<uint8_t> out(n);
+            for (size_t j = 0; j < n; ++j) {
+                out[j] = (*edgeCurved)[(n - 2 - j + n) % n];
+            }
+            *edgeCurved = std::move(out);
+        }
     }
     *outArea = std::fabs(twice) * 0.5;
     return CadStatus::Ok;
@@ -554,26 +842,56 @@ struct LoopCandidate {
     // polygon edge k. See ClosedProfile.
     std::vector<SketchEntityId> edgeEntityId;
     std::vector<uint32_t> edgeLocalIndex;
+    std::vector<uint8_t> edgeCurved;
 };
 
-// Reads every loop a set of LINES closes.
+// Reads every loop a set of CHAINABLE entities closes: Lines, Arcs and
+// Splines, in one walker (`SKETCH-UX-R1` D3).
 //
 // Endpoints within the coincidence tolerance are one NODE. A component in
-// which every node meets exactly two line ends is one loop; a free end is an
+// which every node meets exactly two entity ends is one loop; a free end is an
 // open profile and a node with three or more ends is a fork. Each component
-// is reported once, under its smallest line id.
-void chainLines(const CadSketch& sketch, std::vector<LoopCandidate>* loops,
-                std::vector<ProfileRejection>* rejections) {
+// is reported once, under its smallest entity id.
+//
+// The chain is read from AUTHORED endpoints, never from a tessellation: a
+// curve joins a line on the numbers the snap produced. Only when the loop's
+// polygon is built does each member contribute its derived points, so the
+// connectivity decision and the triangulation input are two separate things
+// and a denser tessellation can never open or close a profile.
+void chainCurves(const CadSketch& sketch, std::vector<LoopCandidate>* loops,
+                 std::vector<ProfileRejection>* rejections) {
     struct LineRef {
         SketchEntityId id;
         SketchPoint p[2];
         int node[2];
+        // The member's own derived polyline, start -> end inclusive, and
+        // whether those segments approximate a curve.
+        std::vector<SketchPoint> points;
+        bool curved = false;
     };
     std::vector<LineRef> lines;
     for (const SketchEntity& entity : sketch.entities) {
-        if (const SketchLine* line = entity.line()) {
-            lines.push_back(LineRef{entity.id(), {line->start, line->end}, {-1, -1}});
+        SketchPoint start;
+        SketchPoint end;
+        if (!sketchEntityEndpoints(entity, &start, &end)) {
+            continue;
         }
+        LineRef ref;
+        ref.id = entity.id();
+        ref.p[0] = start;
+        ref.p[1] = end;
+        ref.node[0] = -1;
+        ref.node[1] = -1;
+        ref.curved = sketchEntityIsCurved(entity);
+        if (tessellateSketchCurve(entity, &ref.points) != CadStatus::Ok
+            || ref.points.size() < 2) {
+            // A member whose own geometry cannot be derived cannot take part.
+            // The sketch was validated before extraction, so this is the
+            // defensive branch rather than the expected one.
+            rejections->push_back(ProfileRejection{entity.id(), CadStatus::UnknownEntity});
+            continue;
+        }
+        lines.push_back(std::move(ref));
     }
     if (lines.empty()) {
         return;
@@ -669,14 +987,36 @@ void chainLines(const CadSketch& sketch, std::vector<LoopCandidate>* loops,
         size_t current = start;
         int enterNode = lines[start].node[0];
         int leaveNode = lines[start].node[1];
+        bool tooManyVertices = false;
         for (size_t steps = 0; steps < member.size(); ++steps) {
             used[current] = true;
             loop.members.push_back(lines[current].id);
-            loop.polygon.push_back(nodes[static_cast<size_t>(enterNode)]);
-            // Polygon edge just started (enterNode -> leaveNode) is this line,
-            // and one line is one side face; index 0 within that line.
-            loop.edgeEntityId.push_back(lines[current].id);
-            loop.edgeLocalIndex.push_back(0u);
+            const LineRef& ref = lines[current];
+            // Which way this member is being traversed: forward when the walk
+            // enters at its start.
+            const bool forward = (ref.node[0] == enterNode);
+            const size_t pointCount = ref.points.size();
+            const uint32_t edgeCount = static_cast<uint32_t>(pointCount - 1);
+            if (loop.polygon.size() + edgeCount > kMaxProfileVertices) {
+                tooManyVertices = true;
+                break;
+            }
+            // The member contributes its own derived points from the node it
+            // was entered at, EXCLUDING the far end -- the next member (or the
+            // closing wrap) contributes that. The first point is the NODE's
+            // representative rather than the member's own copy, so two members
+            // that met within tolerance produce exactly one polygon vertex.
+            for (uint32_t j = 0; j < edgeCount; ++j) {
+                const size_t sourceIndex = forward ? j : (pointCount - 1 - j);
+                loop.polygon.push_back(j == 0 ? nodes[static_cast<size_t>(enterNode)]
+                                              : ref.points[sourceIndex]);
+                loop.edgeEntityId.push_back(ref.id);
+                // The local index is the edge's place in the member's OWN
+                // canonical start->end order, so a face token does not depend on
+                // which way round the chain happened to be walked.
+                loop.edgeLocalIndex.push_back(forward ? j : (edgeCount - 1u - j));
+                loop.edgeCurved.push_back(ref.curved ? 1u : 0u);
+            }
             // The other line at the leaving node.
             size_t next = lines.size();
             for (size_t i : member) {
@@ -693,6 +1033,10 @@ void chainLines(const CadSketch& sketch, std::vector<LoopCandidate>* loops,
             leaveNode = (lines[next].node[0] == leaveNode) ? lines[next].node[1]
                                                             : lines[next].node[0];
             current = next;
+        }
+        if (tooManyVertices) {
+            rejections->push_back(ProfileRejection{anchor, CadStatus::TooManyEntities});
+            continue;
         }
         if (loop.members.size() != member.size()) {
             // Cannot happen when every degree is two and the component is
@@ -742,15 +1086,19 @@ ProfileExtraction extractClosedProfiles(const CadSketch& sketch) {
         for (uint32_t k = 0; k < static_cast<uint32_t>(loop.polygon.size()); ++k) {
             loop.edgeEntityId.push_back(entity.id());
             loop.edgeLocalIndex.push_back(k);
+            // A rectangle, a circle and a polyline own STRAIGHT polygon edges. The
+            // circle is the exception the face module already knows about by
+            // `fromCircle`, so nothing here marks its tessellation curved twice.
+            loop.edgeCurved.push_back(0u);
         }
         candidates.push_back(std::move(loop));
     }
-    chainLines(sketch, &candidates, &out.rejections);
+    chainCurves(sketch, &candidates, &out.rejections);
 
     for (LoopCandidate& candidate : candidates) {
         double area = 0.0;
         const CadStatus why = validateLoop(&candidate.polygon, &area, &candidate.edgeEntityId,
-                                           &candidate.edgeLocalIndex);
+                                           &candidate.edgeLocalIndex, &candidate.edgeCurved);
         if (why != CadStatus::Ok) {
             out.rejections.push_back(ProfileRejection{candidate.anchor, why});
             continue;
@@ -763,6 +1111,7 @@ ProfileExtraction extractClosedProfiles(const CadSketch& sketch) {
         profile.memberEntityIds = std::move(candidate.members);
         profile.edgeEntityId = std::move(candidate.edgeEntityId);
         profile.edgeLocalIndex = std::move(candidate.edgeLocalIndex);
+        profile.edgeCurved = std::move(candidate.edgeCurved);
         out.profiles.push_back(std::move(profile));
     }
 

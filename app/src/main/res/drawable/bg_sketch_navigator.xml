@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The sketch orientation navigator's own surface.
+
+  A Tier 1 floating control group standing ON the sketch: translucent, because
+  the grid and the strokes behind a corner control are informative and the
+  navigator must not become a wall in the corner of the drawing.
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="?attr/fsSurfaceFloating" />
+    <corners android:radius="@dimen/radius_sheet" />
+</shape>

@@ -140,8 +140,9 @@ and the ones a debug launch prints as `FORGESHAPE_PROJECT_GOLDEN_SHA256`,
 means the encoder and the specification have parted company. The six `CADB` v2
 fixtures include the lineage token, which the script computes from the rule
 `DATA_PACKAGE_SPEC.md` §7c states rather than from the C++ — that parity is
-what found the mistyped FNV basis in `CAD-A3-C1`. Seven of the twenty-two fixtures are packaged
-into the test APK's assets as well, so
+what found the mistyped FNV basis in `CAD-A3-C1`. The six `CADB` v3 curve
+fixtures are pinned the same way, by `CADUXR1-38`. Seven of the twenty-eight
+fixtures are packaged into the test APK's assets as well, so
 `ImportedMeshDurableTest` can prove the independent encoder's bytes actually LOAD
 on a device rather than only hashing the same.
 
@@ -294,7 +295,7 @@ emit several hundred lines in a few milliseconds and the default buffer silently
 drops the tail, which reads exactly like a self-test that stopped partway
 through. That is a logging limit, not an app failure.
 
-A clean debug launch emits **nineteen** `*_SELFTEST_OK` tokens, in this order, then
+A clean debug launch emits **twenty** `*_SELFTEST_OK` tokens, in this order, then
 `FORGESHAPE_NATIVE_VIEWPORT_OK` once the first frame is presented:
 
 ```
@@ -317,6 +318,7 @@ FORGESHAPE_GLTF_EXPORT_SELFTEST_OK
 FORGESHAPE_GLTF_IMPORT_SELFTEST_OK
 FORGESHAPE_CAD_SELFTEST_OK
 FORGESHAPE_CAD_A3_SELFTEST_OK
+FORGESHAPE_SKETCH_UX_SELFTEST_OK
 ```
 
 Each suite reports `(<n> checks)` and fails as `<SUITE>_CASE_FAIL:<name>` plus

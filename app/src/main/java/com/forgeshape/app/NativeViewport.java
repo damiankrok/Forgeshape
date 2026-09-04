@@ -1615,6 +1615,10 @@ final class NativeViewport {
     static final int CAD_NOT_SKETCHING = 23;
     static final int CAD_NOT_CAD_BODY = 24;
     static final int CAD_REFUSED_EDIT_IN_PROGRESS = 25;
+    static final int CAD_INVALID_ARC = 26;
+    static final int CAD_INVALID_SPLINE = 27;
+    static final int CAD_SKETCH_NOT_EMPTY = 28;
+    static final int CAD_DEPENDENT_FACE_LOST = 29;
 
     /** The three principal workplanes, as the native Workplane index. */
     static final int WORKPLANE_XY = 0;
@@ -1626,12 +1630,14 @@ final class NativeViewport {
     static final int SKETCH_EDITING = 1;
     static final int SKETCH_READY = 2;
 
-    /** The five sketch tools, as the native SketchTool index. */
+    /** The seven sketch tools, as the native SketchTool index. */
     static final int SKETCH_TOOL_SELECT = 0;
     static final int SKETCH_TOOL_LINE = 1;
     static final int SKETCH_TOOL_POLYLINE = 2;
     static final int SKETCH_TOOL_RECTANGLE = 3;
     static final int SKETCH_TOOL_CIRCLE = 4;
+    static final int SKETCH_TOOL_ARC = 5;
+    static final int SKETCH_TOOL_SPLINE = 6;
 
     /** Which way an extrusion grows, as the native ExtrudeDirection index. */
     static final int EXTRUDE_ALONG_NORMAL = 0;
@@ -1663,6 +1669,24 @@ final class NativeViewport {
     static final int SKETCH_ENTITY_KIND_POLYLINE = 1;
     static final int SKETCH_ENTITY_KIND_RECTANGLE = 2;
     static final int SKETCH_ENTITY_KIND_CIRCLE = 3;
+    static final int SKETCH_ENTITY_KIND_ARC = 4;
+    static final int SKETCH_ENTITY_KIND_SPLINE = 5;
+
+    /** Slots of {@link #sketchViewState} — the orientation navigator's state. */
+    static final int SKETCH_VIEW_SIZE = 6;
+    static final int SKETCH_VIEW_ACTIVE = 0;
+    static final int SKETCH_VIEW_PLANE = 1;
+    static final int SKETCH_VIEW_FLIPPED = 2;
+    static final int SKETCH_VIEW_QUARTER_TURNS = 3;
+    static final int SKETCH_VIEW_FACE_SUPPORTED = 4;
+    static final int SKETCH_VIEW_PLANE_SWITCHABLE = 5;
+
+    /** Slots of {@link #sketchLineDimension}. */
+    static final int SKETCH_DIMENSION_SIZE = 4;
+    static final int SKETCH_DIMENSION_ENTITY = 0;
+    static final int SKETCH_DIMENSION_LENGTH = 1;
+    static final int SKETCH_DIMENSION_ANCHOR_U = 2;
+    static final int SKETCH_DIMENSION_ANCHOR_V = 3;
 
     /** Slots of {@link #sketchProfileInfo}. */
     static final int SKETCH_PROFILE_INFO_SIZE = 3;
@@ -1771,6 +1795,60 @@ final class NativeViewport {
     /** The current adaptive sketch grid step in metres (`CAD-A3`): what a grid
      *  snap rounds to at the zoom the last drag started under. */
     static native double sketchGridStep();
+
+    // --- the orientation navigator (`SKETCH-UX-R1` C) --------------------
+    //
+    // The navigator holds NO state: it reads what the session says on every
+    // refresh and sends acts back. Nothing here is persisted, and none of the
+    // three acts can move an authored coordinate.
+
+    /** The navigator's state, in the SKETCH_VIEW_* slots. */
+    static native void sketchViewState(double[] out);
+
+    /**
+     * Chooses the world support plane. Refused by name — {@code
+     * CAD_SKETCH_NOT_EMPTY} once the sketch carries geometry, {@code
+     * CAD_INVALID_WORKPLANE} for a face-supported sketch — and a refusal
+     * changes nothing, the camera included.
+     */
+    static native int sketchSetSupportPlane(int workplane);
+
+    /** Looks at the plane's positive or negative normal. Presentation only. */
+    static native int sketchSetViewFlipped(boolean flipped);
+
+    /** Rolls the view a quarter turn about the sketch normal (+1 or -1). */
+    static native int sketchRotateView(int quarterTurns);
+
+    // --- the selected line's dimension (`SKETCH-UX-R1` E) ----------------
+
+    /**
+     * The selected straight Line's dimension, in the SKETCH_DIMENSION_* slots.
+     * False, writing nothing, when the selection is not a straight Line — which
+     * is exactly the condition for the annotation not being drawn.
+     */
+    static native boolean sketchLineDimension(double[] out);
+
+    /**
+     * Sets a straight Line's length EXACTLY: the first endpoint stays put, the
+     * direction is unchanged, and the second endpoint moves along it. No
+     * solver, no neighbour moved, nothing re-snapped.
+     */
+    static native int sketchApplyLineLength(long entityId, double lengthMeters);
+
+    // --- Edit Sketch (`SKETCH-UX-R1` F) ----------------------------------
+
+    /**
+     * Opens a STAGED edit of a committed CAD body's sketch. The project keeps
+     * its own truth until {@link #sketchCommitEdit}; {@link #sketchCancel}
+     * costs it nothing.
+     */
+    static native int sketchBeginEdit(long bodyId);
+
+    /** Which body the open session edits, or 0 when it authors a new one. */
+    static native long sketchEditingBodyId();
+
+    /** Finishes a staged sketch edit: one transaction, one Undo. */
+    static native int sketchCommitEdit();
 
     static native String cadStatusToken(int code);
 

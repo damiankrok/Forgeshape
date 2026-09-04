@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  One action row on a start page.
+
+  RECESSED into the page rather than raised off it, exactly as the chooser's
+  option cards are recessed into their panel: a well is the tonal way to say
+  "this is a slot you choose", and a raised card on an opaque page would bring
+  back the floating-dialog reading the page exists to remove.
+-->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_pressed="true">
+        <shape android:shape="rectangle">
+            <solid android:color="?attr/fsControlSurfacePressed" />
+            <corners android:radius="@dimen/radius_control" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="?attr/fsChooserCardSurface" />
+            <corners android:radius="@dimen/radius_control" />
+        </shape>
+    </item>
+</selector>

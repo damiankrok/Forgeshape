@@ -61,6 +61,17 @@ interface InspectorHost {
      */
     void onAddPrimitiveRequested(android.view.View invoker);
 
+    /**
+     * Asks to reopen the active CAD Body's sketch for editing
+     * (`SKETCH-UX-R1` F1).
+     *
+     * <p>Routed through the host because it is a <b>mode transition</b>, not a
+     * value edit: the workspace leaves the precision surface, hands the viewport
+     * to the sketch session and re-frames the camera. The panel that asked owns
+     * only the fact that the user asked.
+     */
+    void onEditCadSketchRequested();
+
     /** The UI-owned draft, presentation and layout state. */
     EditorUiState uiState();
 }

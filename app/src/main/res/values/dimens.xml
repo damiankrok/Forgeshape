@@ -290,4 +290,24 @@
     <dimen name="chooser_max_width">440dp</dimen>
     <dimen name="chooser_option_padding">16dp</dimen>
     <dimen name="chooser_option_icon_size">28dp</dimen>
+
+    <!-- Start page (Home, New Project). A PAGE, so its margins are the
+         window's rather than a card's, and its content is capped and centred
+         on a wide window instead of stretching to the edges. -->
+    <dimen name="start_page_padding">28dp</dimen>
+    <dimen name="start_page_max_width">520dp</dimen>
+    <dimen name="start_page_mark_size">40dp</dimen>
+    <!-- The decorative corner motif's floor; it grows with the window. -->
+    <dimen name="start_page_motif_size">200dp</dimen>
+
+    <!-- The sketch orientation navigator (`SKETCH-UX-R1` C): a compact corner
+         control, translucent, and standing clear of the Global Toolbar rather
+         than under it. -->
+    <dimen name="sketch_navigator_padding">8dp</dimen>
+    <dimen name="sketch_navigator_top_margin">104dp</dimen>
+    <dimen name="sketch_navigator_max_width">184dp</dimen>
+
+    <!-- The dimension label's field: wide enough for a signed length in
+         millimetres without becoming a panel over the drawing. -->
+    <dimen name="sketch_dimension_field">96dp</dimen>
 </resources>

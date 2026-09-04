@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The product mark: a closed profile and the depth it was extruded to.
+
+  It says what the program makes, in the product's own vocabulary, before the
+  user has made anything. Drawn on the same 24-unit grid as every other icon,
+  white and tinted at use like all of them, so it belongs to the set rather than
+  sitting outside it as a logo.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- The profile: the face the sketch closed. -->
+    <path
+        android:pathData="M3,9h10v10h-10z"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.6"
+        android:strokeLineJoin="round" />
+    <!-- The extrusion: the same profile offset, and the three edges that join
+         the two. -->
+    <path
+        android:pathData="M3,9l5,-4h10v10l-5,4 M13,9l5,-4"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.6"
+        android:strokeLineJoin="round" />
+</vector>

@@ -1205,10 +1205,14 @@ int runCadSelfTests(CadSelfTestResult* out, int maxOut) {
         // The overlay carries the grid, the axes and the entities, in ranges.
         {
             const SketchOverlayPtr overlay = session.overlay(0.002f);
-            bool ranged = overlay->ranges.size() == 4
+            // Five ranges since SKETCH-UX-R1: the dimension annotation is its
+            // own, so the renderer draws it in the annotation weight rather
+            // than as geometry. It is EMPTY here, because nothing is selected.
+            bool ranged = overlay->ranges.size() == 5
                           && overlay->ranges[0].style == SketchOverlayStyle::GridMinor
                           && overlay->ranges[3].style == SketchOverlayStyle::Entities
                           && overlay->ranges[3].vertexCount > 0
+                          && overlay->ranges[4].style == SketchOverlayStyle::Dimension
                           && overlay->vertices.size() <= kMaxSketchOverlayVertices;
             const uint64_t rev = overlay->revision;
             const SketchOverlayPtr again = session.overlay(0.002f);
@@ -1245,7 +1249,7 @@ int runCadSelfTests(CadSelfTestResult* out, int maxOut) {
         {
             const SketchOverlayPtr overlay = session.overlay(0.002f);
             r.check("CADR0_14_the_extrude_preview_is_drawn_while_ready",
-                    overlay->ranges.size() == 4 && overlay->ranges[3].vertexCount > 40);
+                    overlay->ranges.size() == 5 && overlay->ranges[3].vertexCount > 40);
         }
         // Back to editing keeps the sketch; finishing again re-extracts.
         session.backToEditing();

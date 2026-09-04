@@ -71,6 +71,8 @@
         <item name="fsSliderThumb">@color/p1_text_primary</item>
 
         <item name="fsChooserScrim">@color/p1_chooser_scrim</item>
+        <item name="fsStartPageSurface">@color/p1_start_page_surface</item>
+        <item name="fsStartPageMotif">@color/p1_start_page_motif</item>
         <item name="fsChooserCardSurface">@color/p1_field_surface</item>
     </style>
 
@@ -112,6 +114,8 @@
         <item name="fsSliderThumb">@color/p2_text_primary</item>
 
         <item name="fsChooserScrim">@color/p2_chooser_scrim</item>
+        <item name="fsStartPageSurface">@color/p2_start_page_surface</item>
+        <item name="fsStartPageMotif">@color/p2_start_page_motif</item>
         <item name="fsChooserCardSurface">@color/p2_field_surface</item>
     </style>
 
@@ -153,6 +157,8 @@
         <item name="fsSliderThumb">@color/p3_text_primary</item>
 
         <item name="fsChooserScrim">@color/p3_chooser_scrim</item>
+        <item name="fsStartPageSurface">@color/p3_start_page_surface</item>
+        <item name="fsStartPageMotif">@color/p3_start_page_motif</item>
         <item name="fsChooserCardSurface">@color/p3_field_surface</item>
     </style>
 

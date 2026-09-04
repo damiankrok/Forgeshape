@@ -116,8 +116,13 @@ CadFace makeSide(const ExtrudeContext& ctx, uint32_t k) {
     face.token.edgeEntityId = profile.edgeEntityId.size() == n ? profile.edgeEntityId[k]
                                                                : profile.anchorEntityId;
     face.token.edgeLocalIndex = profile.edgeLocalIndex.size() == n ? profile.edgeLocalIndex[k] : k;
-    // A circle's side is cylindrical: reported so a tap resolves, never eligible.
-    face.eligible = !profile.fromCircle;
+    // A curved side is reported so a tap resolves, but never carries a sketch.
+    // Two ways an edge is curved: the whole profile is a circle's tessellation,
+    // or -- since `SKETCH-UX-R1` -- this one edge belongs to an Arc or a Spline
+    // in a profile that may also contain exact straight lines. The per-edge
+    // answer is the one that matters now, because one profile can mix both.
+    const bool curvedEdge = profile.edgeCurved.size() == n && profile.edgeCurved[k] != 0u;
+    face.eligible = !profile.fromCircle && !curvedEdge;
     face.n = outward;
     face.u = edgeDir;
     face.v = normalizedOr(vec3Cross(outward, edgeDir), ctx.frame.vAxis);

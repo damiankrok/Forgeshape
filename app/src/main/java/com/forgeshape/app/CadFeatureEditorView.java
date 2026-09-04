@@ -42,6 +42,8 @@ final class CadFeatureEditorView extends LinearLayout
     private final TextView directionAgainst;
     private final UnitChipsView unitChips;
     private final TextView apply;
+    /** Reopens the body's sketch for editing (`SKETCH-UX-R1` F1). */
+    private final TextView editSketch;
 
     private int draftDirection = NativeViewport.EXTRUDE_ALONG_NORMAL;
     private int profileKind = NativeViewport.CAD_PROFILE_NONE;
@@ -97,6 +99,25 @@ final class CadFeatureEditorView extends LinearLayout
         directions.addView(directionAlong, EditorControlStyles.evenShare(0));
         directions.addView(directionAgainst, EditorControlStyles.evenShare(smallGap));
         addView(directions, EditorControlStyles.rowParams(gap));
+
+        // Edit Sketch (`SKETCH-UX-R1` F1). The panel above types the sizes this
+        // build can express as numbers; this reopens the SKETCH itself, which is
+        // where a profile's shape — a curve, an extra edge, a line's exact
+        // length — is changed. One control, because a CAD Body has exactly one
+        // sketch and needs no feature tree to say which.
+        editSketch = EditorControlStyles.secondaryActionChip(context, R.id.edit_cad_sketch,
+                context.getString(R.string.edit_sketch));
+        editSketch.setContentDescription(context.getString(R.string.edit_sketch) + ". "
+                + context.getString(R.string.edit_sketch_description));
+        editSketch.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                host.onEditCadSketchRequested();
+            }
+        });
+        final LinearLayout.LayoutParams editParams = EditorControlStyles.rowParams(sectionGap);
+        editParams.width = LayoutParams.MATCH_PARENT;
+        addView(editSketch, editParams);
 
         addView(EditorControlStyles.sectionLabel(context, context.getString(R.string.unit_selector)),
                 EditorControlStyles.rowParams(sectionGap));

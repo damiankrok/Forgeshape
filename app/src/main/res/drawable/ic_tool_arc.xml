@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The Arc tool: an arc and the three points that author it.
+
+  Drawn white and tinted at use; see EditorControlStyles.icon().
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:pathData="M4,18a10,10 0 0,1 16,0"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round" />
+    <!-- The two ends and the point it passes through. -->
+    <path
+        android:pathData="M4,18m-2,0a2,2 0 1,0 4,0a2,2 0 1,0 -4,0
+                          M20,18m-2,0a2,2 0 1,0 4,0a2,2 0 1,0 -4,0
+                          M12,10m-2,0a2,2 0 1,0 4,0a2,2 0 1,0 -4,0"
+        android:fillColor="#FFFFFFFF" />
+</vector>

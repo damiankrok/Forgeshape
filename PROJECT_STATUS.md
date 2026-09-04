@@ -1,15 +1,68 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.60.0
+**Status Version:** 0.61.0
 **Updated:** 2026-09-04
-**Result:** **CAD-A3 + APP-H1 — COMPLETE (`PASS-CAD-A3-APP-H1-OWNER-RETEST-READY`).
-ForgeShape opens on Home; a new CAD project begins from a plane picked in the
-viewport and exists the moment its first sketch is extruded; a CAD sketch can
-be supported by a planar CAD face; the CADB v2 corpus is independently
-encoded.**
+**Result:** **CAD-A3-C2 / SKETCH-UX-R1 — COMPLETE
+(`PASS-CAD-A3-C2-SKETCH-UX-R1-OWNER-RETEST-READY`). ForgeShape opens on a
+full-screen start page; New Project → CAD lands straight on a flat sketch grid;
+the plane and the view are chosen from an orientation navigator; a selected
+Line carries an editable technical dimension; Arc and Spline are durable sketch
+entities; a committed body's sketch can be reopened and edited.**
 
-`CAD-A3-C1` closed every item the previous pass deferred, on top of the
-CAD-A3 domain it left green:
+This pass is an OWNER-requested UX correction plus an approved capability
+expansion. The owner saw Home as a large rounded card floating over an empty
+viewport and rejected it, and asked for a real start page, an immediate flat
+first sketch, an orientation navigator instead of floating plane targets,
+curves, and a technical dimension a length can be typed into.
+
+- **Home and New Project are full-screen PAGES** (`StartPageView`). Opaque, the
+  whole window, the product mark and name at the top, actions as full-width
+  rows. New Project REPLACES Home rather than standing on it — as two opaque
+  pages they would otherwise be stacked, with two focusable action sets in the
+  tree at once, which is what `CADUXR1-04` caught. Insets go on the page's
+  CONTENT, because the page is the window's own ground. The decorative motif is
+  a static vector: never interactive, never an editor viewport. The two
+  questions asked OVER a live project — unsaved changes and recovery — stay
+  scrim modals, because there a modal is the right shape.
+- **New CAD opens a flat sketch immediately**, on XY seen along +Z, in the
+  exact orthographic view, with no plane-chooser step. The empty world gave
+  three floating squares nothing to be related to. Back out of the bootstrap is
+  now ONE step to Home, because the first sketch IS the bootstrap. The spatial
+  chooser is unchanged and still the normal path for a LATER New Sketch, where
+  there are real bodies with real faces to pick.
+- **The orientation navigator** (`SketchOrientationNavigatorView`) holds no
+  state: it reads `sketchViewState` and sends acts back. Six principal
+  orientations (three planes × two normals) and ±90° view rotation. The flip
+  and the roll are PRESENTATION — never persisted, never in a history step, a
+  checkpoint or the fingerprint — and `viewFrame` is always right-handed, so no
+  view state can mirror a sketch. The plane may change only while the sketch is
+  EMPTY; afterwards it is refused by name (`SketchNotEmpty`) and the authored
+  `(u, v)` are never reinterpreted on another plane.
+- **A selected Line carries a technical dimension** — extension lines, a
+  dimension line, end ticks, and an editable numeric label. `applyLineLength`
+  keeps P0 FIXED and the direction UNCHANGED; no solver, no neighbour moved,
+  nothing re-snapped. If that opens a chain, Extrude refuses `OpenProfile` by
+  name rather than repairing the sketch. Zero, negative, non-finite and
+  out-of-range are refused, and a refused value leaves the editor open so the
+  number can be corrected.
+- **Arc and Spline are real durable entities.** An Arc is three points ON the
+  curve; a Spline is the bounded point list its curve interpolates. Centre,
+  radius, sweep, handles and every tessellated point are derived from the
+  authored values alone — never from a camera or a zoom. Both chain by
+  coincident authored endpoints through the ONE walker that also chains lines,
+  and a curve's extruded side face is never eligible to support a sketch,
+  decided per polygon edge because one profile may mix curves and exact lines.
+- **Edit Sketch** stages a copy of a committed CAD Body's state. Cancel costs
+  the project nothing; Finish is ONE transaction and one Undo, and an edit that
+  would strip a face a dependent stands on is refused by name
+  (`DependentFaceLost`) rather than cascaded.
+- **`CADB` v3** carries the two curve kinds, written only when one is present;
+  all twenty-two older fixtures are byte-for-byte unchanged, and the six new
+  v3 fixtures agree byte for byte between the production codec and the
+  independent PowerShell encoder.
+
+`CAD-A3-C1` closed every item its own predecessor deferred, and its work is
+unchanged by this pass:
 
 - **Home is not a project** (`APP-H1`). The process starts with the scene
   EMPTY (`ConstructionScene(NoProjectTag)`), and `hasProject()` — at least one
@@ -64,15 +117,17 @@ of a face-supported body (`ConstructionScene::resolveWorldModel`), the acyclic
 bounded dependency graph and the producer-delete refusal, CADB v2 with v1
 byte-identical, the exact sketch camera and the adaptive grid.
 
-Verified: **19/19 native suites, 2920 checks, zero failures** (13 new
-`CADA3_BOOT_*`, 17 new project-suite checks); the standalone runner's 17
-platform-neutral suites 2567/0; JVM 70/70; both ABIs debug and release; device
-guards; the twenty-two-fixture corpus; the new device suites `HomeFlowTest` OK
-(12), `SpatialSketchTest` OK (8), `CadA3VisualEvidenceTest` OK (1),
-`SketchExtrudeTest` OK (9) and the seven classes the Home change touched; and
-the authoritative aggregate — see *Current evidence summary*. All device work
-on `emulator-5580` = `ForgeShape_Stage006`; `emulator-5554` never contacted.
-See `artifacts/cad-a3-app-h1/INDEX.md`.
+Verified: **20/20 native suites, 2970 checks, zero failures** (the 50 new
+`CADUXR1_*`, on top of CAD-A3-C1's 13 `CADA3_BOOT_*` and 17 project-suite
+checks); the standalone runner's 18 platform-neutral suites 2523/0; JVM;
+both ABIs debug and release; device guards; the **twenty-eight**-fixture
+corpus, all twenty-two older fixtures byte-identical; the device suites
+`SketchUxTest` OK (14), `HomeFlowTest` OK (12), `SpatialSketchTest` OK (8),
+`SketchExtrudeTest` OK (9), `EditorWorkspaceCompositionTest` OK (10),
+`EditorWorkspaceLayoutTest` OK (10); and the authoritative aggregate — see
+*Current evidence summary*. All device work on `emulator-5580` =
+`ForgeShape_Stage006`; `emulator-5554` never contacted. See
+`artifacts/cad-a3-c2-sketch-ux-r1/INDEX.md`.
 
 ---
 
@@ -1605,8 +1660,8 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 
 ## Self-test suite
 
-Nineteen debug-only native suites run once from `NativeViewport.start()` —
-never per frame — and total **2889 checks, zero failures**:
+Twenty debug-only native suites run once from `NativeViewport.start()` —
+never per frame — and total **2970 checks, zero failures**:
 
 | suite token | checks |
 | --- | --- |
@@ -1615,7 +1670,7 @@ never per frame — and total **2889 checks, zero failures**:
 | `FORGESHAPE_DYNAMIC_MESH_SELFTEST_OK` | 91 |
 | `FORGESHAPE_CONSTRUCTION_BOX_SELFTEST_OK` | 100 |
 | `FORGESHAPE_CONSTRUCTION_TRANSFORM_SELFTEST_OK` | 121 |
-| `FORGESHAPE_CONSTRUCTION_PRIMITIVE_SELFTEST_OK` | 125 |
+| `FORGESHAPE_CONSTRUCTION_PRIMITIVE_SELFTEST_OK` | 126 |
 | `FORGESHAPE_CONSTRUCTION_SPHERE_SELFTEST_OK` | 105 |
 | `FORGESHAPE_CONE_CAPSULE_SELFTEST_OK` | 163 |
 | `FORGESHAPE_SCULPT_BRUSH_KERNEL_SELFTEST_OK` | 494 |
@@ -1623,12 +1678,13 @@ never per frame — and total **2889 checks, zero failures**:
 | `FORGESHAPE_SCENE_SELFTEST_OK` | 79 |
 | `FORGESHAPE_CONSTRUCTION_HISTORY_SELFTEST_OK` | 147 |
 | `FORGESHAPE_GIZMO_SELFTEST_OK` | 145 |
-| `FORGESHAPE_PROJECT_SELFTEST_OK` | 230 |
+| `FORGESHAPE_PROJECT_SELFTEST_OK` | 247 |
 | `FORGESHAPE_RENDER_RECOVERY_SELFTEST_OK` | 24 |
 | `FORGESHAPE_GLTF_EXPORT_SELFTEST_OK` | 93 |
 | `FORGESHAPE_GLTF_IMPORT_SELFTEST_OK` | 184 |
 | `FORGESHAPE_CAD_SELFTEST_OK` | 122 |
-| `FORGESHAPE_CAD_A3_SELFTEST_OK` | 44 |
+| `FORGESHAPE_CAD_A3_SELFTEST_OK` | 57 |
+| `FORGESHAPE_SKETCH_UX_SELFTEST_OK` | 50 |
 
 The CAD suite (`forgeshape_cad_selftest.cpp`, `CADR0-*`) builds its own sketches,
 scenes, histories and camera, drives the sketch session through real
@@ -1636,6 +1692,15 @@ scenes, histories and camera, drives the sketch session through real
 extraction, triangulation and regeneration timings for a rectangle, a 32-gon
 circle and 32- and 128-edge polylines — on every launch. The project suite
 prints a fourth digest line, `FORGESHAPE_PROJECT_GOLDEN_SHA256_CAD`.
+
+The sketch-UX suite (`forgeshape_sketch_ux_selftest.cpp`, `CADUXR1-*`) is the
+native half of `SKETCH-UX-R1`: the arc and spline domain and their bounded
+deterministic tessellation, the exact line-length edit's fixed-P0 semantics,
+the orientation navigator's view frames, support-plane switching, the staged
+Edit Sketch session with its one-transaction Finish and its dependency refusal,
+and the six `CADB` v3 corpus digests against the independent PowerShell
+encoder. It prints `FORGESHAPE_SKETCH_UX_PERFORMANCE` — arc and spline
+tessellation and curve-profile timings — on every launch.
 
 followed by `FORGESHAPE_PROJECT_GOLDEN_SHA256`, `FORGESHAPE_MESH_UPLOAD_OK`,
 `FORGESHAPE_GRID_UPLOAD_OK`, `FORGESHAPE_GIZMO_UPLOAD_OK` and
@@ -3001,17 +3066,30 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Exactly one next step: return the CAD-A3-C1 report to the ForgeShape
-coordinator for the OWNER's real-device Home + CAD workflow retest.** No
+**Exactly one next step: return the CAD-A3-C2 / SKETCH-UX-R1 report to the
+ForgeShape coordinator for the OWNER's real-device review of the start page,
+the first-sketch flow, the navigator, the dimension and the curves.** No
 product stage may begin here: booleans, fillets, chamfers, a constraint solver,
 custom construction planes, curved-face and imported/sculpted-surface sketches,
-an independently movable dependent and the face-first contextual shortcut are
-**not started**; CAD → Sculpt is **not started** (refused by name and recorded
-as the three decisions it needs); `BRIDGE-R1` remains **future**; Stage 018A
-still owns rename, visibility, lock, duplicate and grouping — Delete is the
-ONLY object command that exists — and Stage 033's full exporter, OBJ and FBX
-are **not started**. None may be begun without the coordinator opening it.
-GATE-E2E remains the owner's and is not opened here.
+projected edges, a feature-tree redesign, an independently movable dependent
+and the face-first contextual shortcut are **not started**; CAD → Sculpt is
+**not started** (refused by name and recorded as the three decisions it needs);
+`BRIDGE-R1` remains **future**; Stage 018A still owns rename, visibility, lock,
+duplicate and grouping — Delete is the ONLY object command that exists — and
+Stage 033's full exporter, OBJ and FBX are **not started**. None may be begun
+without the coordinator opening it. GATE-E2E remains the owner's and is not
+opened here.
+
+CAD-A3-C2 / SKETCH-UX-R1 is closed on the technical side. `Launch →
+full-screen Home → New Project → CAD → an immediate flat XY sketch → choose a
+plane and a view from the navigator → draw a Line, an Arc, a Spline → select a
+Line, read its dimension, type an exact length → Extrude = the first body and
+the project → Edit Sketch → Finish = one Undo` works through the real chrome
+and real MotionEvents, with the later face-picking New Sketch, New Sculpt and
+the unsaved-changes guard unchanged beside it. **No aesthetic approval is
+claimed**: what the owner's review is for is whether the start page, the
+navigator's placement and the dimension's legibility read as the product they
+should on real hardware, at real sizes, under a real finger and stylus.
 
 CAD-A3 + APP-H1 is closed on the technical side. `Home → New Project → CAD →
 tap a plane in the viewport → sketch → Extrude = the first body and the

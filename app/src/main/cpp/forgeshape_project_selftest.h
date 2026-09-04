@@ -7,6 +7,12 @@
 // depends on what a live session or an earlier suite left behind.
 #pragma once
 
+#include <cstdint>
+#include <string>
+#include <vector>
+
+#include "forgeshape_construction.h"
+
 namespace forgeshape {
 
 struct ProjectSelfTestResult {
@@ -58,5 +64,19 @@ const char* canonicalCadFaceChainFixtureSha256();
 const char* canonicalMixedCadFaceFixtureSha256();
 const char* canonicalCadBadFaceRefFixtureSha256();
 const char* canonicalCadDependencyCycleFixtureSha256();
+
+// The SHA-256 of an arbitrary byte sequence, lowercase hex.
+//
+// Debug-only and shared: every suite that pins a corpus fixture needs this one
+// function, and a second copy of a hash implementation is a second thing that
+// could be subtly wrong while agreeing with itself. `SKETCH-UX-R1`'s suite
+// pins the six `CADB` v3 fixtures through it.
+std::string projectFixtureSha256Hex(const std::vector<uint8_t>& bytes);
+
+// The canonical parameter set every corpus fixture's Construction Body carries:
+// all six remembered dimension sets at the same values, with `kind` selecting
+// which is active. Shared for the same reason the hash is -- a second copy is a
+// second thing that could drift while agreeing with itself.
+ConstructionObjectState canonicalCorpusShape(PrimitiveKind kind);
 
 }  // namespace forgeshape

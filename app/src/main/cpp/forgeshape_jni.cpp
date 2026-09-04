@@ -48,6 +48,7 @@
 #include "forgeshape_gltf_import_selftest.h"
 #include "forgeshape_cad_body.h"
 #include "forgeshape_cad_a3_selftest.h"
+#include "forgeshape_sketch_ux_selftest.h"
 #include "forgeshape_cad_selftest.h"
 #include "forgeshape_sketch_session.h"
 #include "forgeshape_support_chooser.h"
@@ -461,6 +462,27 @@ void runCadSelfTestsAndLog() {
         FS_LOGI("FORGESHAPE_CAD_A3_SELFTEST_OK (%d checks)", a3Count);
     } else {
         FS_LOGE("FORGESHAPE_CAD_A3_SELFTEST_FAIL (%d of %d checks failed)", a3Failed, a3Count);
+    }
+
+    // SKETCH-UX-R1: the curve domain, the exact line-length edit, the
+    // orientation navigator's presentation state, support-plane switching, the
+    // staged Edit Sketch session and the CADB v3 round trip. Its own suite,
+    // building its own sketches, scenes, histories and documents.
+    constexpr int kMaxSketchUxChecks = 128;
+    static forgeshape::SketchUxSelfTestResult ux[kMaxSketchUxChecks];
+    const int uxCount = forgeshape::runSketchUxSelfTests(ux, kMaxSketchUxChecks);
+    int uxFailed = 0;
+    for (int i = 0; i < uxCount; ++i) {
+        if (!ux[i].passed) {
+            ++uxFailed;
+            FS_LOGE("FORGESHAPE_SKETCH_UX_SELFTEST_CASE_FAIL:%s", ux[i].name);
+        }
+    }
+    FS_LOGI("FORGESHAPE_SKETCH_UX_PERFORMANCE %s", forgeshape::sketchUxPerformanceReport());
+    if (uxFailed == 0) {
+        FS_LOGI("FORGESHAPE_SKETCH_UX_SELFTEST_OK (%d checks)", uxCount);
+    } else {
+        FS_LOGE("FORGESHAPE_SKETCH_UX_SELFTEST_FAIL (%d of %d checks failed)", uxFailed, uxCount);
     }
 #endif
 }
@@ -3075,11 +3097,17 @@ Java_com_forgeshape_app_NativeViewport_sketchSelectEntity(JNIEnv*, jclass, jlong
 }
 
 // The selected entity's own values, in NativeViewport's SKETCH_ENTITY_* slots:
-//   [0] id  [1] kind (0 line, 1 polyline, 2 rectangle, 3 circle)
+//   [0] id  [1] kind (0 line, 1 polyline, 2 rectangle, 3 circle, 4 arc,
+//                     5 spline)
 //   line:      [2] x0 [3] y0 [4] x1 [5] y1
 //   rectangle: [2] cu [3] cv [4] width [5] height
 //   circle:    [2] cu [3] cv [4] radius
 //   polyline:  [2] vertex count [3] 1 when closed
+//   arc:       [2] start u [3] start v [4] end u [5] end v
+//   spline:    [2] point count [3] 0
+// A curve reports what the shell needs to NAME it and to draw its selection;
+// its authored points are edited in the sketch, not through a numeric field,
+// so nothing here has to carry them all.
 // Returns false, writing nothing, when nothing is selected.
 JNIEXPORT jboolean JNICALL
 Java_com_forgeshape_app_NativeViewport_sketchSelectedEntity(JNIEnv* env, jclass,
@@ -3116,6 +3144,13 @@ Java_com_forgeshape_app_NativeViewport_sketchSelectedEntity(JNIEnv* env, jclass,
             } else if (const forgeshape::SketchPolyline* polyline = entity->polyline()) {
                 values[2] = static_cast<double>(polyline->vertices.size());
                 values[3] = polyline->closed ? 1.0 : 0.0;
+            } else if (const forgeshape::SketchArc* arc = entity->arc()) {
+                values[2] = arc->start.u;
+                values[3] = arc->start.v;
+                values[4] = arc->end.u;
+                values[5] = arc->end.v;
+            } else if (const forgeshape::SketchSpline* spline = entity->spline()) {
+                values[2] = static_cast<double>(spline->points.size());
             }
         }
     }
@@ -3287,6 +3322,269 @@ JNIEXPORT jdouble JNICALL
 Java_com_forgeshape_app_NativeViewport_sketchGridStep(JNIEnv*, jclass) {
     std::lock_guard<std::mutex> lock(g_stateMutex);
     return forgeshape::sketchSession().gridStep();
+}
+
+// ---------------------------------------------------------------------------
+// The orientation navigator (`SKETCH-UX-R1` C)
+// ---------------------------------------------------------------------------
+//
+// Three acts, and each of them re-frames the camera on the session's own VIEW
+// frame. The authoring frame is untouched by all three: nothing here can move
+// an authored coordinate, and the shell holds no orientation of its own.
+
+// The navigator's current state, in NativeViewport's SKETCH_VIEW_* slots:
+//   [0] 1 when a sketch is active
+//   [1] the support plane index (a face sketch reports its canonical XY)
+//   [2] 1 when the view is flipped to the plane's negative normal
+//   [3] the quarter turns, 0..3
+//   [4] 1 when the support is a FACE and so cannot be switched to a world plane
+//   [5] 1 when the support plane may be switched right now (the sketch is empty)
+JNIEXPORT void JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchViewState(JNIEnv* env, jclass, jdoubleArray out) {
+    constexpr jsize kSize = 6;
+    if (out == nullptr || env->GetArrayLength(out) < kSize) {
+        return;
+    }
+    jdouble values[kSize] = {0, 0, 0, 0, 0, 0};
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const forgeshape::SketchSession& s = forgeshape::sketchSession();
+        values[0] = s.active() ? 1.0 : 0.0;
+        values[1] = static_cast<double>(forgeshape::workplaneIndex(s.plane()));
+        values[2] = s.viewFlipped() ? 1.0 : 0.0;
+        values[3] = static_cast<double>(s.viewQuarterTurns());
+        values[4] = s.sketch().hasFaceSupport ? 1.0 : 0.0;
+        values[5] = (s.active() && !s.sketch().hasFaceSupport && s.sketch().entities.empty())
+                            ? 1.0
+                            : 0.0;
+    }
+    env->SetDoubleArrayRegion(out, 0, kSize, values);
+}
+
+// Chooses the world support plane. Refused by name -- SketchNotEmpty once the
+// sketch carries geometry, InvalidWorkplane for a face-supported sketch -- and
+// a refusal changes nothing, including the camera.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchSetSupportPlane(JNIEnv*, jclass, jint planeIndex) {
+    forgeshape::Workplane plane;
+    if (!forgeshape::workplaneFromIndex(static_cast<int>(planeIndex), &plane)) {
+        return cadCode(forgeshape::CadStatus::InvalidWorkplane);
+    }
+    forgeshape::CadStatus status;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        status = forgeshape::sketchSession().setSupportPlane(plane);
+        if (status == forgeshape::CadStatus::Ok) {
+            beginSketchView();
+        }
+    }
+    FS_LOGI("FORGESHAPE_SKETCH_SUPPORT_PLANE plane=%s %s", forgeshape::workplaneName(plane),
+            forgeshape::cadStatusName(status));
+    return cadCode(status);
+}
+
+// Looks at the plane's positive or negative normal. Presentation only.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchSetViewFlipped(JNIEnv*, jclass, jboolean flipped) {
+    forgeshape::CadStatus status = forgeshape::CadStatus::Ok;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        forgeshape::SketchSession& s = forgeshape::sketchSession();
+        if (!s.active()) {
+            status = forgeshape::CadStatus::NotSketching;
+        } else {
+            s.setViewFlipped(flipped == JNI_TRUE);
+            beginSketchView();
+        }
+    }
+    return cadCode(status);
+}
+
+// Rolls the view a quarter turn about the sketch normal. Presentation only:
+// no authored coordinate moves, and nothing is mirrored.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchRotateView(JNIEnv*, jclass, jint quarterTurns) {
+    forgeshape::CadStatus status = forgeshape::CadStatus::Ok;
+    int turns = 0;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        forgeshape::SketchSession& s = forgeshape::sketchSession();
+        if (!s.active()) {
+            status = forgeshape::CadStatus::NotSketching;
+        } else {
+            s.rotateView(static_cast<int>(quarterTurns));
+            turns = s.viewQuarterTurns();
+            beginSketchView();
+        }
+    }
+    if (status == forgeshape::CadStatus::Ok) {
+        FS_LOGI("FORGESHAPE_SKETCH_VIEW_ROTATED quarters=%d", turns);
+    }
+    return cadCode(status);
+}
+
+// ---------------------------------------------------------------------------
+// The selected line's dimension (`SKETCH-UX-R1` E)
+// ---------------------------------------------------------------------------
+
+// The dimension of the selected straight Line, in NativeViewport's
+// SKETCH_DIMENSION_* slots:
+//   [0] the entity id  [1] the length in metres
+//   [2] the label anchor's u  [3] its v
+// Returns false, writing nothing, when the selection is not a straight Line --
+// which is exactly the condition for the annotation not being drawn.
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchLineDimension(JNIEnv* env, jclass, jdoubleArray out) {
+    constexpr jsize kSize = 4;
+    if (out == nullptr || env->GetArrayLength(out) < kSize) {
+        return JNI_FALSE;
+    }
+    jdouble values[kSize] = {0, 0, 0, 0};
+    bool found = false;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const forgeshape::SketchSession& s = forgeshape::sketchSession();
+        forgeshape::Meters length = 0.0;
+        forgeshape::SketchPoint anchor;
+        // The SAME camera-derived scale the overlay is built with, so the label
+        // sits exactly on the annotation the renderer drew.
+        float perPixel = 0.0f;
+        double worldPerUnit = 0.0;
+        if (forgeshape::worldMetersPerPixel(g_camera.snapshot(), s.frame().origin,
+                                            g_camera.viewportHeight(), &perPixel)) {
+            worldPerUnit = static_cast<double>(perPixel) * forgeshape::gizmoPixelsPerReferenceUnit();
+        }
+        if (s.selectedLineLength(&length)
+            && s.selectedLineDimensionAnchor(worldPerUnit, &anchor)) {
+            found = true;
+            values[0] = static_cast<double>(s.selectedEntityId());
+            values[1] = length;
+            values[2] = anchor.u;
+            values[3] = anchor.v;
+        }
+    }
+    if (!found) {
+        return JNI_FALSE;
+    }
+    env->SetDoubleArrayRegion(out, 0, kSize, values);
+    return JNI_TRUE;
+}
+
+// Sets a straight Line's length EXACTLY: P0 fixed, direction preserved. No
+// solver, no neighbour moved, nothing re-snapped.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchApplyLineLength(JNIEnv*, jclass, jlong entityId,
+                                                             jdouble lengthMeters) {
+    forgeshape::CadStatus status;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        status = forgeshape::sketchSession().applyLineLength(
+            static_cast<forgeshape::SketchEntityId>(entityId), lengthMeters);
+    }
+    FS_LOGI("FORGESHAPE_SKETCH_LINE_LENGTH id=%lld length=%.6f %s", (long long)entityId,
+            (double)lengthMeters, forgeshape::cadStatusName(status));
+    return cadCode(status);
+}
+
+// ---------------------------------------------------------------------------
+// Edit Sketch (`SKETCH-UX-R1` F)
+// ---------------------------------------------------------------------------
+
+// Opens a staged edit of a committed CAD body's sketch. Refused while
+// sculpting, while a Construction edit is open, while a session is already
+// open, and for a body that is not a CAD Body. On success the camera frames the
+// body's own sketch support exactly as a new sketch's does.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchBeginEdit(JNIEnv*, jclass, jlong bodyId) {
+    forgeshape::CadStatus status = forgeshape::CadStatus::Ok;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
+        if (!scene.hasProject()) {
+            status = forgeshape::CadStatus::NotSketching;
+        } else if (forgeshape::sculptSession().inSculptMode()) {
+            status = forgeshape::CadStatus::NotSketching;
+        } else if (forgeshape::constructionHistory().editInProgress()) {
+            status = forgeshape::CadStatus::RefusedEditInProgress;
+        } else {
+            const forgeshape::ObjectId id = static_cast<forgeshape::ObjectId>(bodyId);
+            forgeshape::SceneObject* object = scene.findBody(id);
+            const forgeshape::CadBody* body = object != nullptr ? object->cadOrNull() : nullptr;
+            if (body == nullptr) {
+                status = forgeshape::CadStatus::NotCadBody;
+            } else {
+                // Where the body's sketch is authored in WORLD space. A
+                // face-supported body's frame is its producer's resolved face
+                // frame composed with the producer's world model, which is
+                // exactly what `resolveWorldModel` already computes; a
+                // world-plane body's is the plane at its own placement origin.
+                forgeshape::SketchFrame frame;
+                forgeshape::Mat4 model;
+                const forgeshape::WorkplaneFrame wf =
+                    forgeshape::workplaneFrame(body->sketch().plane);
+                if (scene.resolveWorldModel(id, &model)) {
+                    frame.origin = forgeshape::mat4TransformPoint(model,
+                                                                  forgeshape::Vec3{0, 0, 0});
+                    frame.u = forgeshape::vec3Normalize(
+                        forgeshape::mat4TransformDirection(model, wf.uAxis));
+                    frame.v = forgeshape::vec3Normalize(
+                        forgeshape::mat4TransformDirection(model, wf.vAxis));
+                    frame.n = forgeshape::vec3Normalize(
+                        forgeshape::mat4TransformDirection(model, wf.normal));
+                } else {
+                    frame = forgeshape::SketchFrame{forgeshape::Vec3{0, 0, 0}, wf.uAxis, wf.vAxis,
+                                                    wf.normal};
+                }
+                status = forgeshape::sketchSession().beginEdit(id, body->state(), frame);
+            }
+        }
+        if (status == forgeshape::CadStatus::Ok) {
+            forgeshape::supportChooser().cancel();
+            forgeshape::gizmoSession().setActive(false);
+            g_selection.resetGesture();
+            g_camera.resetGesture();
+            beginSketchView();
+        }
+    }
+    if (status != forgeshape::CadStatus::Ok) {
+        FS_LOGE("FORGESHAPE_SKETCH_EDIT_REFUSED:%s", forgeshape::cadStatusName(status));
+        return cadCode(status);
+    }
+    FS_LOGI("FORGESHAPE_SKETCH_EDIT_BEGIN objectId=%lld", (long long)bodyId);
+    return cadCode(status);
+}
+
+// Which body the open session is editing, or 0 when it is authoring a new one.
+JNIEXPORT jlong JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchEditingBodyId(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    return static_cast<jlong>(forgeshape::sketchSession().editingBodyId());
+}
+
+// Finishes a staged sketch edit: one transaction, one Undo. A refusal changes
+// nothing and leaves the session in Ready with the reason named.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchCommitEdit(JNIEnv*, jclass) {
+    forgeshape::CadStatus status;
+    forgeshape::ObjectId edited = forgeshape::kNoObject;
+    size_t undoDepth = 0;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        edited = forgeshape::sketchSession().editingBodyId();
+        status = forgeshape::sketchSession().commitEdit(forgeshape::constructionScene(),
+                                                        forgeshape::constructionHistory());
+        if (status == forgeshape::CadStatus::Ok) {
+            endSketchView();
+        }
+        undoDepth = forgeshape::constructionHistory().undoDepth();
+    }
+    if (status != forgeshape::CadStatus::Ok) {
+        FS_LOGI("FORGESHAPE_SKETCH_EDIT_REFUSED:%s", forgeshape::cadStatusName(status));
+        return cadCode(status);
+    }
+    FS_LOGI("FORGESHAPE_SKETCH_EDIT_COMMIT objectId=%lld undo=%d", (long long)edited,
+            (int)undoDepth);
+    return cadCode(status);
 }
 
 JNIEXPORT jstring JNICALL

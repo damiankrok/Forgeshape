@@ -15,9 +15,17 @@ What each box owns is in the Ownership table below; what the diagram adds is the
 ForgeShapeActivity
         |
         +-- EditorWorkspaceView   (+ EditorUiState, WorkspaceLayoutMode)
-        |        +-- HomeView / NewProjectChooserView / UnsavedChangesPromptView
-        |        |        (three ChooserSurfaceViews: no project, which kind, leave dirty?)
-        |        +-- RecoveryPromptView / GlobalToolbarView
+        |        +-- HomeView / NewProjectChooserView
+        |        |        (two StartPageViews: full-window, opaque, added to the
+        |        |         workspace root rather than the inset overlay, because
+        |        |         a page is the window's own ground)
+        |        +-- UnsavedChangesPromptView / RecoveryPromptView
+        |        |        (two ChooserSurfaceViews: questions asked OVER a live
+        |        |         project, where a scrim modal is the right shape)
+        |        +-- GlobalToolbarView
+        |        +-- SketchOrientationNavigatorView  plane / normal / +-90 view
+        |        +-- SketchDimensionLabelView        a selected Line's length,
+        |        |                                   editable in place
         |        +-- WorkspaceTrailingHostView
         |        |        +-- BoundedScrollView -> vertical context column
         |        |                 +-- ToolRailView / transform + space / precision
@@ -2259,6 +2267,41 @@ a face (through the ordinary scene pick), and the sketch camera frames exactly
 along the sketch frame's normal via `CameraController::frameSketchView` (no
 pitch clamp). `CADB` gains section version 2 for the support; v1 stays
 byte-identical, and load validates the whole dependency graph before applying.
+
+### Curves, the view, the dimension and Edit Sketch (`SKETCH-UX-R1`)
+
+**Curves are authored points.** `SketchArc` is three points ON the curve and
+`SketchSpline` is the point list its curve interpolates; `arcGeometry` and
+`tessellateSketchCurve` derive the centre, radius, sweep, handles and every
+tessellated point from those alone, bounded and deterministically, with no
+camera or zoom anywhere in the derivation. `chainCurves` — the generalization of
+what was `chainLines` — chains Lines, Arcs and Splines through ONE walker on
+coincident AUTHORED endpoints, so connectivity and triangulation stay separate
+and a denser tessellation can never open or close a profile. `ClosedProfile`
+gains a per-edge `edgeCurved`, and `forgeshape_cad_face.cpp` reads it so a
+curve's side face is ineligible while a line's in the same profile is not.
+
+**The view is not the plane.** `SketchSession` keeps `viewFlipped_` and
+`viewQuarterTurns_` and derives `viewFrame()` from the authoring `frame_`;
+`beginSketchView` frames the camera on the derived one. Nothing about either
+reaches the sketch, the history, the codec or the fingerprint, and `viewFrame`
+is always right-handed so no view state can mirror a sketch. `setSupportPlane`
+re-bases the authoring frame only while the sketch is empty.
+
+**The dimension is an interaction overlay.** `SketchOverlayStyle::Dimension` is
+its own range in the same line list the grid and the entities use;
+`selectedLineDimensionAnchor` gives the shell a sketch point to place the
+editable label at. `applyLineLength` is the exact edit: P0 fixed, direction
+preserved, everything else untouched.
+
+**Edit Sketch is staged.** `beginEdit` copies a committed body's
+`CadBodyState` into the session and records `editingBodyId_` — the ONE answer
+to whether a session is an edit, which is also what makes one Extrude control
+serve both. `commitEdit` validates the candidate, checks every dependent's
+reference against it (`DependentFaceLost` when one would be stripped), and then
+applies inside ONE `ScopedConstructionEdit`. `CADB` gains section version 3 for
+the curve kinds, written only when one is present and always carrying the v2
+support block; v1 and v2 stay byte-identical.
 
 ### Profile extraction
 

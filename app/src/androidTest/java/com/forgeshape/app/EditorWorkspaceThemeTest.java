@@ -411,26 +411,43 @@ public final class EditorWorkspaceThemeTest {
             });
             settleLayout();
             doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-                // Home is the surface a fresh process shows first since APP-H1;
-                // it is built on the same chooser scaffold the start question
-                // was, and this asks the same things of it.
+                // Home is the surface a fresh process shows first (`APP-H1`),
+                // and since `SKETCH-UX-R1` it is a full-window PAGE rather than
+                // a raised panel on a scrim — the composition the owner
+                // rejected. So what is asked of it here is what a page must
+                // satisfy, not what a dialog had to.
                 assertEquals(theme + ": Home is on screen", View.VISIBLE,
                         workspace.findViewById(R.id.home_surface).getVisibility());
                 final int card = EditorControlStyles.themeColor(
                         activity, R.attr.fsChooserCardSurface);
                 final int title = EditorControlStyles.themeColor(activity, R.attr.fsTextPrimary);
-                assertTrue(theme + ": an option's title must be readable on its card,"
+                assertTrue(theme + ": an action's title must be readable on its row,"
                                 + " contrast was " + contrast(title, card),
                         contrast(title, card) >= MIN_TEXT_CONTRAST);
-                // A scrim has to DARKEN, or the panel does not come forward.
+                // The page's ground is OPAQUE in every appearance: there is no
+                // project behind Home, so a translucent ground would be
+                // revealing an empty viewport, which is what read as a dialog
+                // stranded over a broken editor.
+                final int page = EditorControlStyles.themeColor(
+                        activity, R.attr.fsStartPageSurface);
+                assertEquals(theme + ": the start page's ground is opaque",
+                        255, Color.alpha(page));
+                assertTrue(theme + ": the page title must be readable on it, contrast was "
+                                + contrast(title, page),
+                        contrast(title, page) >= MIN_TEXT_CONTRAST);
+                // And it owns the whole window rather than floating in it.
+                final View home = workspace.findViewById(R.id.home_surface);
+                final View root = (View) home.getParent();
+                assertEquals(theme + ": the page spans the window", root.getWidth(),
+                        home.getWidth());
+                assertEquals(theme + ": in both axes", root.getHeight(), home.getHeight());
+                // The SCRIM role is still real and still has to darken: it is
+                // what the unsaved-changes and recovery questions stand on,
+                // each asked over a project the user can see.
                 final int scrim = EditorControlStyles.themeColor(activity, R.attr.fsChooserScrim);
                 assertTrue(theme + ": the scrim darkens", luminance(scrim) < 0.25);
-                assertTrue(theme + ": and is partial, so the viewport shows through",
+                assertTrue(theme + ": and is partial, so the project shows through",
                         Color.alpha(scrim) < 255);
-                // Product chrome rather than a dialog: the panel is separated by
-                // tone and depth, and draws no outline of its own.
-                assertTrue(theme + ": the chooser panel is raised",
-                        workspace.findViewById(R.id.home_panel).getElevation() > 0.0f);
                 workspace.ensureConstructionProjectForTest();
                 return null;
             });
