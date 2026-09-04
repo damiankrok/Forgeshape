@@ -27,7 +27,7 @@ deterministic Back beside it.
   `SpatialSketchTest` (8, hover included), `CadA3VisualEvidenceTest` (1), the
   reworked `SketchExtrudeTest` and the seven classes the Home change touched.
 - **Screenshot evidence** (`VISUAL_EVIDENCE.md`, `OWNER_CONTACT_SHEET.png`,
-  `captures/`): ten composed-display frames with measured facts.
+  `frames/`): ten composed-display frames with measured facts.
 - **New Sketch lands directly in the spatial chooser**; the by-name planes stay
   as the accessibility fallback (`SPATIAL_PLANE_PICKING.md`).
 

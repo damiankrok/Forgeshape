@@ -8,7 +8,7 @@
     Home -> New Project -> CAD bootstrap -> face-sketch -> reopen journey and
     writes them, with a line of measurable facts per capture, into the app's
     external files directory on the device. This script pulls that directory
-    into artifacts/cad-a3-app-h1/captures/, composes OWNER_CONTACT_SHEET.png
+    into artifacts/cad-a3-app-h1/frames/, composes OWNER_CONTACT_SHEET.png
     from the ten frames with System.Drawing (no third-party tool), and writes
     VISUAL_EVIDENCE.md from facts.txt.
 
@@ -33,7 +33,7 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $adb = Join-Path $env:LOCALAPPDATA 'Android\Sdk\platform-tools\adb.exe'
 $artifacts = Join-Path $root 'artifacts\cad-a3-app-h1'
-$captures = Join-Path $artifacts 'captures'
+$captures = Join-Path $artifacts 'frames'
 $remote = '/sdcard/Android/data/com.forgeshape.app/files/evidence/cad-a3-app-h1'
 
 if ($Serial -eq 'emulator-5554') {
@@ -108,7 +108,7 @@ $md.Add('# Visual evidence - CAD-A3 + APP-H1 (`E2E-CADA3-VIS`)')
 $md.Add('')
 $md.Add(("Captured by `CadA3VisualEvidenceTest` on `{0}` (AVD `{1}`) through the composed display, " -f $Serial, $avd) +
         'one journey in ten frames. `OWNER_CONTACT_SHEET.png` is the ten frames at 300 px wide, five per row, in order; ' +
-        'the full-resolution frames are in `captures/`.')
+        'the full-resolution frames are in `frames/`.')
 $md.Add('')
 $md.Add('Every line below is a fact the suite measured on the device at the moment of the capture: an element''s presence and ' +
         'on-screen bounds in pixels, a selected or highlighted state, the camera projection mode (0 perspective, 1 orthographic), ' +
@@ -123,7 +123,7 @@ foreach ($line in $facts) {
     if ($line -match '^capture=(\S+)\s+width=(\d+)\s+height=(\d+)') {
         $md.Add(('## `{0}` ({1} x {2})' -f $matches[1], $matches[2], $matches[3]))
         $md.Add('')
-        $md.Add(('![{0}](captures/{0})' -f $matches[1]))
+        $md.Add(('![{0}](frames/{0})' -f $matches[1]))
         $md.Add('')
         foreach ($fact in $pending) { $md.Add($fact) }
         $md.Add('')
