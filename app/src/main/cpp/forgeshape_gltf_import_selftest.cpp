@@ -1502,6 +1502,24 @@ int runGltfImportSelfTests(GltfImportSelfTestResult* out, int maxOut) {
                                 == "ROUNDTRIP_MISMATCH");
     }
 
+    // -----------------------------------------------------------------------
+    // DEEP-AUDIT-R1 F-03: a name may carry a supplementary character, and the
+    // JNI boundary hands it to Java as UTF-16, never as raw 4-byte UTF-8
+    // -----------------------------------------------------------------------
+    {
+        const std::string emoji = "\xF0\x9F\x98\x80";  // U+1F600
+        r.check("DAR1_03_the_sanitizer_keeps_a_four_byte_sequence",
+                sanitizeImportedMeshName("face " + emoji) == "face " + emoji
+                        && importedMeshNameIsStorable("face " + emoji));
+        JsonDocument json;
+        const char* text = "{\"name\":\"\\uD83D\\uDE00\"}";
+        std::string decoded;
+        const bool parsed = json.parse(text, std::strlen(text)) == JsonStatus::Ok
+                            && json.stringMember(json.root(), "name", &decoded);
+        r.check("DAR1_03_a_json_surrogate_pair_decodes_to_four_byte_utf8",
+                parsed && decoded == emoji);
+    }
+
     return r.n;
 }
 
