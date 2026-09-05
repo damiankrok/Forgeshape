@@ -1,8 +1,26 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.61.1
+**Status Version:** 0.62.0
 **Updated:** 2026-09-05
-**Result:** **DEEP-AUDIT-R1 — COMPLETE (`PASS-DEEP-AUDIT-R1-WITH-DEBT`).** A
+**Result:** **POST-AUDIT-HARDEN-R1 — COMPLETE
+(`PASS-POST-AUDIT-HARDEN-R1-OWNER-RETEST-READY`).** A narrow maintenance
+stage that closed five DEEP-AUDIT-R1 findings and nothing else. **F-08**: every
+`sculptSession()` call in `forgeshape_jni.cpp` now runs under
+`g_stateMutex` (the seven audited readers plus five same-shape sites; 54 calls,
+0 unlocked, checked mechanically by
+`artifacts/post-audit-harden-r1/tools/lock_context.js`), and
+`JniBoundaryHardeningTest` races a reader thread against body switch, project
+load, Delete/Undo and brush edits with bounded joins. **F-16**: the twenty
+self-test translation units are compiled only in the Debug CMake configuration,
+so the release `.so` carries no `run*SelfTests` symbol and no check-name
+string (arm64 2 084 968 → 1 171 552 bytes, x86_64 2 339 080 → 1 236 296) while
+the debug launch still prints all twenty tokens. **F-11**: `touchEvent`
+checks for a pending exception after EACH required array read (RED under
+CheckJNI on the pre-fix JNI, GREEN after). **F-15**: `buildSpherifiedBox` has
+internal linkage. **F-18**: `setChipReserved` and both reserved drawables are
+gone. Evidence: `artifacts/post-audit-harden-r1/INDEX.md`.
+
+**Previous result:** **DEEP-AUDIT-R1 — COMPLETE (`PASS-DEEP-AUDIT-R1-WITH-DEBT`).** A
 read-first audit of every surface at baseline `be5b729c`. Three proven P1
 defects were found and fixed with tests (the semantic fingerprint omitted
 Arc/Spline points; a sculpt stroke in flight at project load was attributed to
@@ -12,7 +30,7 @@ runtime change; the current-truth documents were reconciled. Remaining findings
 are P2/P3 debt, reported not implemented. Evidence:
 `artifacts/deep-audit-r1/INDEX.md`.
 
-**Previous result:** CAD-A3-C2 / SKETCH-UX-R1 — COMPLETE
+**Before that:** CAD-A3-C2 / SKETCH-UX-R1 — COMPLETE
 (`PASS-CAD-A3-C2-SKETCH-UX-R1-OWNER-RETEST-READY`). ForgeShape opens on a
 full-screen start page; New Project → CAD lands straight on a flat sketch grid;
 the plane and the view are chosen from an orientation navigator; a selected
@@ -853,7 +871,8 @@ lives in Git history; only what still constrains the code is kept here.
 stroke history, with Undo and Redo on the existing controls) sits on top of
 `IMPORT-01B`/`UI-OWNER-45`.
 **Next Stage:** **return this report to the ForgeShape coordinator for the
-owner's real-device Sculpt Undo/Redo retest.** See *Next Stage*.
+owner's real-device CAD-A3-C2 review and the pending Delete verdict.** See
+*Next Stage*.
 
 ## Current state
 
@@ -2644,17 +2663,12 @@ draws needs a renderer that separates buffers from draw items, which is real
 Vulkan work a diagnostic did not need at these sizes (a 2k-vertex character is
 under a megabyte either way).
 
-**The reserved-control styling is now dead code.** (E2E-R1C.)
-`EditorControlStyles.setChipReserved` and `res/drawable/bg_capsule_reserved.xml`
-had exactly one caller, the reserved Export chip, and it is gone. Both were left
-in place rather than deleted, because deleting them would have changed the
-product tree after the authoritative sharded aggregate was taken and bought a
-second full run for two unreferenced declarations. They are unreferenced,
-compile to nothing that runs, and are the first thing to remove in the next
-stage that touches `EditorControlStyles` — or the thing to reuse, if a control
-is ever approved as reserved again. The `fsTextDisabled` palette role is NOT
-part of this: it is still read by `res/color/control_content_tint.xml` and is
-still asserted by the theme suite.
+**The reserved-control styling is gone.** (E2E-R1C left
+`EditorControlStyles.setChipReserved`, `bg_control_reserved.xml` and
+`bg_capsule_reserved.xml` in place with no caller; POST-AUDIT-HARDEN-R1
+removed all three after proving no Java, XML or accessibility path referenced
+them.) The `fsTextDisabled` palette role is NOT part of this: it is still read
+by `res/color/control_content_tint.xml` and stays.
 
 **Export cannot say WHY it refused.** (E2E-R1C.) `NativeViewport.exportGlb()`
 returns null for every refusal — an empty scene, a mesh the writer will not
@@ -2801,16 +2815,16 @@ deserves its own attention.
 accessors in `EditorWorkspaceView` are inside `SDK_INT` branches for API 26–30,
 which is correct, and are what produces the javac note above.
 
-**"Debug-only" code is debug-*guarded* at the CALL SITE but LINKS INTO the
-release binary — CONFIRMED (DEEP-AUDIT-R1 F-16).** Every self-test and
-mesh-fixture entry point is behind `#ifndef NDEBUG`, so the suites never run in
-release; but the `*selftest*` translation units sit on the CMake source list
-unconditionally, so their code and their internal string literals link into the
-release `.so`. Inspection of `app-release-unsigned.apk` at DEEP-AUDIT-R1 found
-`runProjectSelfTests` (and the other 19 `run*SelfTests`) as an exported dynamic
-symbol and the `FSR1A_01`/`CADUXR1_25`/`DAR1_0*` check-name strings present in
-the release binary, which is ~500 KB larger than needed. Closing this means a
-CMake condition that drops the suites from a release build. Reported as P2.
+**Self-tests are absent from the release binary — CLOSED (POST-AUDIT-HARDEN-R1,
+F-16).** Every self-test entry point was already `#ifndef NDEBUG` at the call
+site; the twenty `*_selftest.cpp` translation units are now on the CMake
+source list only in the Debug configuration (`FORGESHAPE_SELFTEST_SOURCES`),
+the one that leaves `NDEBUG` undefined. The release `.so` exports no
+`run*SelfTests` symbol and carries no check-name string (0 of each, both ABIs;
+before: 20 symbols and 181 strings), and shrank by 913 KB (arm64) and 1.10 MB
+(x86_64); the debug launch still prints all twenty tokens. The two debug
+FIXTURE files stay in every configuration because the guarded debug entry
+points reference them.
 
 **Reduced motion is pushed on refresh, not observed.** `syncFromNative` reads
 `ANIMATOR_DURATION_SCALE` and hands the answer to native code, covering every
@@ -2968,25 +2982,23 @@ regenerated per stage.
   (`cadTopologySignature` + `resolveCadFace`) for every face-supported CAD body
   every frame, under `g_stateMutex` (measured 4.35 ms at chain depth 32). A
   cached resolved frame invalidated on producer edit would fix it.
-- **F-08 (P2)** — seven unlocked JNI readers (`productMode`, `sculptState`,
-  `sculptTool`, `constructionPrimitive`, `constructionMeshRevision`, the
-  brush-set log read, `logMeshDiagnostics`) call `sculptSession()`, which writes
-  the borrowed `target_` pointer; the autosave thread writes it under the lock —
-  a formal data race, benign in practice (same value, aligned store). Taking the
-  lock in those readers closes it.
+- **F-08 (P2) — CLOSED (POST-AUDIT-HARDEN-R1).** The seven unlocked JNI readers
+  (and five same-shape sites) now take `g_stateMutex`; every `sculptSession()`
+  call in `forgeshape_jni.cpp` is inside a lock scope.
 - **F-09 (P2)** — CAD triangulation is O(n³) (`isEar` O(n)) and the nested-profile
   check O(P²·n·m); bounded (256 profiles, 1024 verts) but a hostile `.forge` can
   cost ~1 s at load. No crash.
-- **F-16 (P2)** — self-tests link into the release binary (above).
-- **F-10/F-11/F-13/F-14/F-15/F-18 (P3)** — `activeBody()` self-heals to
-  `bodies_.front()` silently (a debug assert would be better); `touchEvent` reads
-  three JNI arrays before one `ExceptionCheck` (unreachable in the product); the
-  five representation `if/else` chains ARCH-HEALTH-01 said to unify are still
-  separate now that the third representation exists; `forgeshape_jni.cpp` is 5870
-  lines; `buildSpherifiedBox` has accidental external linkage; and
-  `EditorControlStyles.setChipReserved` + `bg_capsule_reserved.xml` are dead since
-  the reserved Export chip was removed. Full detail in
+- **F-16 (P2) — CLOSED (POST-AUDIT-HARDEN-R1).** Self-tests are compiled only in
+  the Debug configuration (above).
+- **F-10/F-13/F-14 (P3)** — `activeBody()` self-heals to `bodies_.front()`
+  silently (a debug assert would be better); the five representation `if/else`
+  chains ARCH-HEALTH-01 said to unify are still separate now that the third
+  representation exists; `forgeshape_jni.cpp` is ~5 900 lines. Full detail in
   `artifacts/deep-audit-r1/FINDINGS.md`.
+- **F-11/F-15/F-18 (P3) — CLOSED (POST-AUDIT-HARDEN-R1).** `touchEvent` checks
+  for a pending exception after each required array read; `buildSpherifiedBox`
+  has internal linkage; the dead reserved-chip method and both reserved
+  drawables are removed.
 
 ## Current Files / Modules
 
@@ -3114,11 +3126,12 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Exactly one next step: return the DEEP-AUDIT-R1 report to the ForgeShape
-coordinator.** The audit is closed on the technical side: three proven P1
-defects fixed with tests, comments compressed with no runtime change, the
-current-truth documents reconciled, and the P2/P3 debt above recorded for the
-coordinator to schedule. No product stage may begin here. The prior owner-retest
+**Exactly one next step: return the POST-AUDIT-HARDEN-R1 report to the
+ForgeShape coordinator for the OWNER's real-device CAD-A3-C2 review and the
+pending Delete verdict.** This stage closed F-08, F-16, F-11, F-15 and F-18
+and nothing else; the remaining P2/P3 debt (F-06, F-07, F-09, F-10, F-13,
+F-14) is recorded above for the coordinator to schedule. No product stage may
+begin here. The prior owner-retest
 readiness is unchanged by the audit — the paragraph below still stands for the
 OWNER's real-device review of the start page, the first-sketch flow, the
 navigator, the dimension and the curves. No

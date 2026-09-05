@@ -883,8 +883,12 @@ forgeshape::MeshRevision publishConstructionObject(const char* reason) {
 // draws the store's current revision and picking already reads it, so making the
 // sculpt mesh the active representation is a publication, not a renderer change.
 // The renderer therefore still owns no sculpt truth.
-forgeshape::MeshRevision publishSculptRepresentation(const char* reason) {
-    forgeshape::SculptSession& session = forgeshape::sculptSession();
+//
+// Takes the session rather than fetching it: `sculptSession()` rebinds the
+// borrowed target and is only called under g_stateMutex, which some callers
+// hold across this call and others release first.
+forgeshape::MeshRevision publishSculptRepresentation(forgeshape::SculptSession& session,
+                                                     const char* reason) {
     forgeshape::MeshValidation why = forgeshape::MeshValidation::Ok;
     const forgeshape::MeshRevision revision =
         forgeshape::publishSculptMesh(session.mesh(), forgeshape::meshStore(), &why);
@@ -902,8 +906,15 @@ forgeshape::MeshRevision publishSculptRepresentation(const char* reason) {
 // choice, so the renderer and the picker can never end up looking at different
 // representations.
 forgeshape::MeshRevision publishActiveRepresentation(const char* reason) {
-    if (forgeshape::sculptSession().inSculptMode()) {
-        return publishSculptRepresentation(reason);
+    forgeshape::SculptSession* session = nullptr;
+    bool sculpting = false;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        session = &forgeshape::sculptSession();
+        sculpting = session->inSculptMode();
+    }
+    if (sculpting) {
+        return publishSculptRepresentation(*session, reason);
     }
     return publishConstructionObject(reason);
 }
@@ -990,7 +1001,8 @@ forgeshape::PrimitiveApplyResult applyPrimitive(const char* label,
             // left on screen. This restores the sculpt geometry immediately;
             // the Construction Source keeps its new parameters regardless.
             if (forgeshape::sculptSession().inSculptMode()) {
-                publishSculptRepresentation("construction_changed_in_sculpt_mode");
+                publishSculptRepresentation(forgeshape::sculptSession(),
+                                            "construction_changed_in_sculpt_mode");
             }
             break;
         case forgeshape::PrimitiveUpdateStatus::Unchanged:
@@ -1163,7 +1175,8 @@ forgeshape::MeshRevision publishFixture(const char* label, const forgeshape::Fix
 // Reports the product mode and the Frozen Sculpt Mesh side by side with the
 // Construction state, so one dump shows both representations and it is visible
 // that the SculptRevision and the MeshStore revision are different counters.
-void logSculptState(const char* reason) {
+// Requires g_stateMutex: `sculptSession()` rebinds the borrowed target.
+void logSculptStateLocked(const char* reason) {
     const forgeshape::SculptSession& session = forgeshape::sculptSession();
     const forgeshape::SculptMesh& mesh = session.mesh();
     FS_LOGI("FORGESHAPE_SCULPT_STATE:%s mode=%s tool=%s frozen=%d sculptRev=%llu v=%u i=%u "
@@ -1180,8 +1193,17 @@ void logSculptState(const char* reason) {
             (unsigned long long)mesh.normalRecomputeCount());
 }
 
+void logSculptState(const char* reason) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    logSculptStateLocked(reason);
+}
+
 void logMeshDiagnostics(const char* reason) {
+    // The GPU counters are atomics and are read before the lock; everything
+    // below reads scene state and the sculpt target, so one bounded lock covers
+    // the whole dump. Callers never hold g_stateMutex here.
     const forgeshape::MeshGpuStats s = forgeshape::meshUploadDiagnostics().snapshot();
+    std::lock_guard<std::mutex> lock(g_stateMutex);
     forgeshape::MeshStore& store = forgeshape::meshStore();
     FS_LOGI("FORGESHAPE_MESH_DIAG:%s currentRev=%llu uploadedRev=%llu v=%llu i=%llu "
             "vcap=%llu icap=%llu scap=%llu grows=%llu sgrows=%llu uploads=%llu reuse=%llu "
@@ -1221,11 +1243,7 @@ void logMeshDiagnostics(const char* reason) {
     // Placement is reported next to the dimensions and the mesh numbers, so one
     // line pair shows both truths and it is obvious that the transform's update
     // count is independent of the mesh revision.
-    forgeshape::TransformValues t;
-    {
-        std::lock_guard<std::mutex> lock(g_stateMutex);
-        t = forgeshape::constructionTransform().values();
-    }
+    const forgeshape::TransformValues t = forgeshape::constructionTransform().values();
     const forgeshape::ConstructionTransform& transform = forgeshape::constructionTransform();
     FS_LOGI("FORGESHAPE_CONSTRUCTION_TRANSFORM_STATE:%s pos=(%.6f,%.6f,%.6f)m "
             "rot=(%.6f,%.6f,%.6f)deg scale=(%.6f,%.6f,%.6f) identity=%d unscaled=%d "
@@ -1234,7 +1252,7 @@ void logMeshDiagnostics(const char* reason) {
             t.scaleX, t.scaleY, t.scaleZ, transform.isIdentity() ? 1 : 0,
             transform.isUnscaled() ? 1 : 0, (unsigned long long)transform.updateCount(),
             (unsigned long long)transform.rejectedUpdateCount());
-    logSculptState(reason);
+    logSculptStateLocked(reason);
 }
 
 // Bounded repeated-update test. One short-lived thread, not a task system: it
@@ -1564,13 +1582,14 @@ void freezeStressMeshToSculpt() {
     source.indices = g_lastStressMesh.indices;
     forgeshape::MeshValidation why = forgeshape::MeshValidation::Ok;
     bool froze = false;
+    forgeshape::SculptSession* session = nullptr;
     const auto start = std::chrono::steady_clock::now();
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
         g_grabbing = false;
         g_strokePending = false;
-        froze = forgeshape::sculptSession().freezeToSculpt(
-            source, forgeshape::kConstructionBoxObjectId, &why);
+        session = &forgeshape::sculptSession();
+        froze = session->freezeToSculpt(source, forgeshape::kConstructionBoxObjectId, &why);
     }
     const double freezeMs = std::chrono::duration<double, std::milli>(
                                 std::chrono::steady_clock::now() - start)
@@ -1580,7 +1599,8 @@ void freezeStressMeshToSculpt() {
                 forgeshape::meshValidationName(why));
         return;
     }
-    const forgeshape::MeshRevision revision = publishSculptRepresentation("stress_freeze");
+    const forgeshape::MeshRevision revision =
+        publishSculptRepresentation(*session, "stress_freeze");
     FS_LOGI("FORGESHAPE_STRESS_SCULPT_FROZEN:%s freezeMs=%.3f meshRev=%llu", g_lastStressLabel,
             freezeMs, (unsigned long long)revision);
     logSculptState("after_stress_freeze");
@@ -1804,33 +1824,40 @@ Java_com_forgeshape_app_NativeViewport_constructionPrimitive(JNIEnv* env, jclass
     if (outState == nullptr || env->GetArrayLength(outState) < kSlots) {
         return;
     }
-    const forgeshape::ConstructionObject* source = forgeshape::activeConstructionOrNull();
-    if (source == nullptr) {
-        // An Imported Mesh has no primitive and no dimensions, and there is no
-        // honest value to write here. The array is left EXACTLY as the caller
-        // supplied it rather than filled with zeroes or a default Box: a zero
-        // width is a length the editor refuses, and a default Box is project
-        // data this body does not have. The Android layer asks
-        // `sceneActiveBodyIsImported()` before it offers Shape at all, so this
-        // is the second line of defence and not the first.
-        return;
+    // Scene reads happen under the state lock; the JNI write happens after it.
+    jdouble values[kSlots];
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const forgeshape::ConstructionObject* source = forgeshape::activeConstructionOrNull();
+        if (source == nullptr) {
+            // An Imported Mesh has no primitive and no dimensions, and there is
+            // no honest value to write here. The array is left EXACTLY as the
+            // caller supplied it rather than filled with zeroes or a default
+            // Box: a zero width is a length the editor refuses, and a default
+            // Box is project data this body does not have. The Android layer
+            // asks `sceneActiveBodyIsImported()` before it offers Shape at all,
+            // so this is the second line of defence and not the first.
+            return;
+        }
+        const forgeshape::ConstructionObject& object = *source;
+        const forgeshape::BoxDimensionsMeters box = object.box().dimensionsMeters();
+        const forgeshape::CylinderDimensionsMeters cylinder =
+            object.cylinder().dimensionsMeters();
+        const forgeshape::SphereDimensionsMeters sphere = object.sphere().dimensionsMeters();
+        const forgeshape::ConeDimensionsMeters cone = object.cone().dimensionsMeters();
+        const forgeshape::CapsuleDimensionsMeters capsule = object.capsule().dimensionsMeters();
+        const forgeshape::PlaneDimensionsMeters plane = object.plane().dimensionsMeters();
+        const jdouble read[kSlots] = {
+            static_cast<jdouble>(static_cast<int>(object.kind())),
+            box.width, box.height, box.depth,
+            cylinder.diameter, cylinder.height,
+            sphere.diameter,
+            cone.bottomDiameter, cone.height,
+            capsule.diameter, capsule.totalHeight,
+            plane.width, plane.depth,
+        };
+        std::copy(read, read + kSlots, values);
     }
-    const forgeshape::ConstructionObject& object = *source;
-    const forgeshape::BoxDimensionsMeters box = object.box().dimensionsMeters();
-    const forgeshape::CylinderDimensionsMeters cylinder = object.cylinder().dimensionsMeters();
-    const forgeshape::SphereDimensionsMeters sphere = object.sphere().dimensionsMeters();
-    const forgeshape::ConeDimensionsMeters cone = object.cone().dimensionsMeters();
-    const forgeshape::CapsuleDimensionsMeters capsule = object.capsule().dimensionsMeters();
-    const forgeshape::PlaneDimensionsMeters plane = object.plane().dimensionsMeters();
-    const jdouble values[kSlots] = {
-        static_cast<jdouble>(static_cast<int>(object.kind())),
-        box.width, box.height, box.depth,
-        cylinder.diameter, cylinder.height,
-        sphere.diameter,
-        cone.bottomDiameter, cone.height,
-        capsule.diameter, capsule.totalHeight,
-        plane.width, plane.depth,
-    };
     env->SetDoubleArrayRegion(outState, 0, kSlots, values);
 }
 
@@ -1956,6 +1983,7 @@ constexpr jint kSculptRefusedCadBody = 3;
 
 JNIEXPORT jint JNICALL
 Java_com_forgeshape_app_NativeViewport_productMode(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
     return forgeshape::sculptSession().inSculptMode() ? 1 : 0;
 }
 
@@ -1983,6 +2011,7 @@ Java_com_forgeshape_app_NativeViewport_freezeToSculpt(JNIEnv*, jclass) {
     bool froze = false;
     bool cadBody = false;
     bool sketching = false;
+    forgeshape::SculptSession* session = nullptr;
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
         if (!forgeshape::constructionScene().hasProject()) {
@@ -1998,7 +2027,8 @@ Java_com_forgeshape_app_NativeViewport_freezeToSculpt(JNIEnv*, jclass) {
         if (haveSource) {
             g_grabbing = false;
             g_strokePending = false;
-            froze = forgeshape::sculptSession().freezeToSculpt(source, objectId, &why);
+            session = &forgeshape::sculptSession();
+            froze = session->freezeToSculpt(source, objectId, &why);
         }
     }
     if (cadBody) {
@@ -2024,28 +2054,33 @@ Java_com_forgeshape_app_NativeViewport_freezeToSculpt(JNIEnv*, jclass) {
         return kSculptFailedFreeze;
     }
 
-    const forgeshape::SculptMesh& mesh = forgeshape::sculptSession().mesh();
-    // The log names WHAT was frozen from, which is the one thing that differs
-    // between the two representations and the one thing evidence needs.
-    char described[128];
-    const forgeshape::SceneObject& body = forgeshape::constructionScene().activeBody();
-    if (const forgeshape::ConstructionObject* source = body.constructionOrNull()) {
-        describeSpec(source->spec(), described, sizeof(described));
-        FS_LOGI("FORGESHAPE_SCULPT_FROZEN:%u:%u sculptRev=%llu objectId=%llu from kind=%s %s",
-                mesh.vertexCount(), mesh.indexCount(), (unsigned long long)mesh.revision(),
-                (unsigned long long)mesh.objectId(),
-                forgeshape::primitiveKindName(source->kind()), described);
-    } else {
-        const forgeshape::ImportedMesh* imported = body.importedOrNull();
-        FS_LOGI("FORGESHAPE_SCULPT_FROZEN:%u:%u sculptRev=%llu objectId=%llu from "
-                "representation=Imported sourceVertices=%u sourceTriangles=%u batches=%u",
-                mesh.vertexCount(), mesh.indexCount(), (unsigned long long)mesh.revision(),
-                (unsigned long long)mesh.objectId(),
-                imported != nullptr ? imported->vertexCount() : 0u,
-                imported != nullptr ? imported->triangleCount() : 0u,
-                imported != nullptr ? imported->batchCount() : 0u);
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const forgeshape::SculptMesh& mesh = session->mesh();
+        // The log names WHAT was frozen from, which is the one thing that
+        // differs between the two representations and the one thing evidence
+        // needs.
+        char described[128];
+        const forgeshape::SceneObject& body = forgeshape::constructionScene().activeBody();
+        if (const forgeshape::ConstructionObject* source = body.constructionOrNull()) {
+            describeSpec(source->spec(), described, sizeof(described));
+            FS_LOGI("FORGESHAPE_SCULPT_FROZEN:%u:%u sculptRev=%llu objectId=%llu from kind=%s "
+                    "%s",
+                    mesh.vertexCount(), mesh.indexCount(), (unsigned long long)mesh.revision(),
+                    (unsigned long long)mesh.objectId(),
+                    forgeshape::primitiveKindName(source->kind()), described);
+        } else {
+            const forgeshape::ImportedMesh* imported = body.importedOrNull();
+            FS_LOGI("FORGESHAPE_SCULPT_FROZEN:%u:%u sculptRev=%llu objectId=%llu from "
+                    "representation=Imported sourceVertices=%u sourceTriangles=%u batches=%u",
+                    mesh.vertexCount(), mesh.indexCount(), (unsigned long long)mesh.revision(),
+                    (unsigned long long)mesh.objectId(),
+                    imported != nullptr ? imported->vertexCount() : 0u,
+                    imported != nullptr ? imported->triangleCount() : 0u,
+                    imported != nullptr ? imported->batchCount() : 0u);
+        }
     }
-    const forgeshape::MeshRevision revision = publishSculptRepresentation("freeze");
+    const forgeshape::MeshRevision revision = publishSculptRepresentation(*session, "freeze");
     FS_LOGI("FORGESHAPE_SCULPT_MODE:sculpt meshRev=%llu", (unsigned long long)revision);
     logSculptState("freeze");
     return kSculptOk;
@@ -2078,9 +2113,11 @@ Java_com_forgeshape_app_NativeViewport_enterConstructionMode(JNIEnv*, jclass) {
 JNIEXPORT jint JNICALL
 Java_com_forgeshape_app_NativeViewport_enterSculptMode(JNIEnv*, jclass) {
     bool entered = false;
+    forgeshape::SculptSession* session = nullptr;
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
-        entered = forgeshape::sculptSession().enterSculpt();
+        session = &forgeshape::sculptSession();
+        entered = session->enterSculpt();
         g_grabbing = false;
         g_strokePending = false;
     }
@@ -2088,7 +2125,8 @@ Java_com_forgeshape_app_NativeViewport_enterSculptMode(JNIEnv*, jclass) {
         FS_LOGI("FORGESHAPE_SCULPT_MODE_REFUSED:nothing_frozen");
         return kSculptNothingFrozen;
     }
-    const forgeshape::MeshRevision revision = publishSculptRepresentation("mode_sculpt");
+    const forgeshape::MeshRevision revision =
+        publishSculptRepresentation(*session, "mode_sculpt");
     FS_LOGI("FORGESHAPE_SCULPT_MODE:sculpt meshRev=%llu", (unsigned long long)revision);
     logSculptState("mode_sculpt");
     return kSculptOk;
@@ -2432,7 +2470,7 @@ static jint runSculptHistoryStep(const char* label, bool forward) {
             // The ordinary sculpt publication path, unchanged. A history step
             // reaches the renderer exactly the way a stroke does, so there is
             // no second way for sculpt geometry to become a frame.
-            meshRevision = publishSculptRepresentation(label);
+            meshRevision = publishSculptRepresentation(session, label);
             revision = session.mesh().revision();
             edits = session.mesh().hasEdits();
         }
@@ -2472,6 +2510,7 @@ Java_com_forgeshape_app_NativeViewport_constructionRedoAvailable(JNIEnv*, jclass
 // rebuild" is a checkable claim rather than an assertion.
 JNIEXPORT jlong JNICALL
 Java_com_forgeshape_app_NativeViewport_constructionMeshRevision(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
     return static_cast<jlong>(forgeshape::meshStore().currentRevision());
 }
 
@@ -3928,27 +3967,32 @@ Java_com_forgeshape_app_NativeViewport_constructionRedoDepth(JNIEnv*, jclass) {
 // a per-frame path, so the cost is one publication of the bodies that actually
 // changed.
 static jint runHistoryStep(const char* label, bool forward) {
-    if (forgeshape::sculptSession().inSculptMode()) {
-        FS_LOGI("FORGESHAPE_CONSTRUCTION_HISTORY_REFUSED:%s:in_sculpt_mode", label);
-        return kHistoryRefusedInSculpt;
-    }
-    if (forgeshape::sketchSession().active()) {
-        // A sketch in progress is not in the history yet, and a Construction
-        // step under it would move the scene it is about to land in. The
-        // controls are withdrawn while sketching; this is the guard behind them.
-        FS_LOGI("FORGESHAPE_CONSTRUCTION_HISTORY_REFUSED:%s:in_sketch", label);
-        return kHistoryRefusedInSculpt;
-    }
     forgeshape::ConstructionRestoreReport report;
     bool moved = false;
     size_t undoDepth = 0;
     size_t redoDepth = 0;
+    size_t bodyCount = 0;
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
+        // The mode and the sketch guards are read under the same lock as the
+        // step they guard, so neither can change between the check and the act.
+        if (forgeshape::sculptSession().inSculptMode()) {
+            FS_LOGI("FORGESHAPE_CONSTRUCTION_HISTORY_REFUSED:%s:in_sculpt_mode", label);
+            return kHistoryRefusedInSculpt;
+        }
+        if (forgeshape::sketchSession().active()) {
+            // A sketch in progress is not in the history yet, and a Construction
+            // step under it would move the scene it is about to land in. The
+            // controls are withdrawn while sketching; this is the guard behind
+            // them.
+            FS_LOGI("FORGESHAPE_CONSTRUCTION_HISTORY_REFUSED:%s:in_sketch", label);
+            return kHistoryRefusedInSculpt;
+        }
         forgeshape::ConstructionHistory& history = forgeshape::constructionHistory();
         moved = forward ? history.redo(&report) : history.undo(&report);
         undoDepth = history.undoDepth();
         redoDepth = history.redoDepth();
+        bodyCount = forgeshape::constructionScene().bodyCount();
     }
     if (!moved) {
         FS_LOGI("FORGESHAPE_CONSTRUCTION_HISTORY_EMPTY:%s", label);
@@ -3958,7 +4002,7 @@ static jint runHistoryStep(const char* label, bool forward) {
             "removed=%d activeChanged=%d undo=%d redo=%d bodies=%d",
             label, report.republishedBodies, report.replacedPlacements, report.restoredBodies,
             report.removedBodies, report.activeBodyChanged ? 1 : 0, (int)undoDepth,
-            (int)redoDepth, (int)forgeshape::constructionScene().bodyCount());
+            (int)redoDepth, (int)bodyCount);
     return kHistoryOk;
 }
 
@@ -4857,22 +4901,29 @@ Java_com_forgeshape_app_NativeViewport_sculptState(JNIEnv* env, jclass, jdoubleA
     if (outState == nullptr || env->GetArrayLength(outState) < kSculptStateSize) {
         return;
     }
-    const forgeshape::SculptSession& session = forgeshape::sculptSession();
-    const forgeshape::SculptMesh& mesh = session.mesh();
-    const jdouble values[kSculptStateSize] = {
-        session.inSculptMode() ? 1.0 : 0.0,
-        session.hasSculptMesh() ? 1.0 : 0.0,
-        static_cast<jdouble>(mesh.revision()),
-        static_cast<jdouble>(mesh.vertexCount()),
-        static_cast<jdouble>(mesh.indexCount()),
-        static_cast<jdouble>(session.radiusPixels()),
-        static_cast<jdouble>(session.strength()),
-        session.sourceStale() ? 1.0 : 0.0,
-        static_cast<jdouble>(session.strokeCount()),
-        static_cast<jdouble>(mesh.objectId()),
-        static_cast<jdouble>(forgeshape::sculptToolIndex(session.tool())),
-        mesh.hasEdits() ? 1.0 : 0.0,
-    };
+    // One locked read of the session and its target, so the twelve values
+    // describe one body at one instant; the JNI write happens after the lock.
+    jdouble values[kSculptStateSize];
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const forgeshape::SculptSession& session = forgeshape::sculptSession();
+        const forgeshape::SculptMesh& mesh = session.mesh();
+        const jdouble read[kSculptStateSize] = {
+            session.inSculptMode() ? 1.0 : 0.0,
+            session.hasSculptMesh() ? 1.0 : 0.0,
+            static_cast<jdouble>(mesh.revision()),
+            static_cast<jdouble>(mesh.vertexCount()),
+            static_cast<jdouble>(mesh.indexCount()),
+            static_cast<jdouble>(session.radiusPixels()),
+            static_cast<jdouble>(session.strength()),
+            session.sourceStale() ? 1.0 : 0.0,
+            static_cast<jdouble>(session.strokeCount()),
+            static_cast<jdouble>(mesh.objectId()),
+            static_cast<jdouble>(forgeshape::sculptToolIndex(session.tool())),
+            mesh.hasEdits() ? 1.0 : 0.0,
+        };
+        std::copy(read, read + kSculptStateSize, values);
+    }
     env->SetDoubleArrayRegion(outState, 0, kSculptStateSize, values);
 }
 
@@ -4884,15 +4935,20 @@ Java_com_forgeshape_app_NativeViewport_sculptState(JNIEnv* env, jclass, jdoubleA
 JNIEXPORT void JNICALL
 Java_com_forgeshape_app_NativeViewport_setSculptBrush(JNIEnv*, jclass, jdouble radiusPixels,
                                                        jdouble strength) {
-    forgeshape::SculptSession& session = forgeshape::sculptSession();
+    const char* toolName = "";
+    float radiusNow = 0.0f;
+    float strengthNow = 0.0f;
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
+        forgeshape::SculptSession& session = forgeshape::sculptSession();
         session.setRadiusPixels(static_cast<float>(radiusPixels));
         session.setStrength(static_cast<float>(strength));
+        toolName = forgeshape::sculptToolName(session.tool());
+        radiusNow = session.radiusPixels();
+        strengthNow = session.strength();
     }
-    FS_LOGI("FORGESHAPE_SCULPT_BRUSH:%s radiusPx=%.1f strength=%.3f",
-            forgeshape::sculptToolName(session.tool()), session.radiusPixels(),
-            session.strength());
+    FS_LOGI("FORGESHAPE_SCULPT_BRUSH:%s radiusPx=%.1f strength=%.3f", toolName, radiusNow,
+            strengthNow);
 }
 
 // Selects the active tool. Java may REQUEST a tool and is told which tool is
@@ -4905,23 +4961,25 @@ Java_com_forgeshape_app_NativeViewport_setSculptBrush(JNIEnv*, jclass, jdouble r
 // change under a finger that is already moving.
 JNIEXPORT jint JNICALL
 Java_com_forgeshape_app_NativeViewport_setSculptTool(JNIEnv*, jclass, jint toolIndex) {
-    forgeshape::SculptSession& session = forgeshape::sculptSession();
-    forgeshape::SculptTool requested = session.tool();
+    forgeshape::SculptTool requested = forgeshape::SculptTool::Grab;
     const bool known = forgeshape::sculptToolFromIndex(static_cast<int>(toolIndex), &requested);
+    forgeshape::SculptTool active = requested;
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
+        forgeshape::SculptSession& session = forgeshape::sculptSession();
         if (known) {
             session.setTool(requested);
         }
+        active = session.tool();
     }
-    FS_LOGI("FORGESHAPE_SCULPT_TOOL:%s requested=%d known=%d",
-            forgeshape::sculptToolName(session.tool()), static_cast<int>(toolIndex),
-            known ? 1 : 0);
-    return static_cast<jint>(forgeshape::sculptToolIndex(session.tool()));
+    FS_LOGI("FORGESHAPE_SCULPT_TOOL:%s requested=%d known=%d", forgeshape::sculptToolName(active),
+            static_cast<int>(toolIndex), known ? 1 : 0);
+    return static_cast<jint>(forgeshape::sculptToolIndex(active));
 }
 
 JNIEXPORT jint JNICALL
 Java_com_forgeshape_app_NativeViewport_sculptTool(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
     return static_cast<jint>(forgeshape::sculptToolIndex(forgeshape::sculptSession().tool()));
 }
 
@@ -5227,8 +5285,20 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
         jint idBuf[forgeshape::kMaxTrackedPointers];
         jfloat xBuf[forgeshape::kMaxTrackedPointers];
         jfloat yBuf[forgeshape::kMaxTrackedPointers];
+        // JNI rule: a region read may raise ArrayIndexOutOfBounds, and no JNI
+        // call may follow while that exception is pending, so each read is
+        // checked before the next. A short required array drops the event, as
+        // it always has; the stylus arrays below stay optional.
         env->GetIntArrayRegion(ids, 0, count, idBuf);
+        if (env->ExceptionCheck()) {
+            env->ExceptionClear();
+            return;
+        }
         env->GetFloatArrayRegion(xs, 0, count, xBuf);
+        if (env->ExceptionCheck()) {
+            env->ExceptionClear();
+            return;
+        }
         env->GetFloatArrayRegion(ys, 0, count, yBuf);
         if (env->ExceptionCheck()) {
             env->ExceptionClear();
@@ -5312,6 +5382,9 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
     float grabMaxWorld = 0.0f;
     float grabMaxLocal = 0.0f;
     forgeshape::SculptRevision grabRevision = 0;
+    // The sculpt revision as the lock is released, for the two arbitration
+    // tokens logged after it; nothing reads the session outside the lock.
+    forgeshape::SculptRevision sculptRevisionAfter = 0;
     forgeshape::MeshRevision grabMeshRevision = 0;
     forgeshape::Vec3 grabDisplacement{};
     bool sketchLogPending = false;
@@ -5624,7 +5697,7 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
                                 grabRevision = sculpt.mesh().revision();
                                 grabDisplacement = sculpt.stroke().lastLocalDisplacement();
                                 grabMeshRevision = publishSculptRepresentation(
-                                    forgeshape::sculptToolName(sculpt.stroke().tool()));
+                                    sculpt, forgeshape::sculptToolName(sculpt.stroke().tool()));
                                 grabPublished =
                                     grabMeshRevision != forgeshape::kNoMeshRevision;
                             }
@@ -5656,7 +5729,7 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
                             if (sculpt.updateStroke(pointers[0].x, pointers[0].y)) {
                                 grabRevision = sculpt.mesh().revision();
                                 grabDisplacement = sculpt.stroke().lastLocalDisplacement();
-                                grabMeshRevision = publishSculptRepresentation(grabTool);
+                                grabMeshRevision = publishSculptRepresentation(sculpt, grabTool);
                                 grabPublished = grabMeshRevision != forgeshape::kNoMeshRevision;
                             }
                             grabHandled = true;
@@ -5750,6 +5823,9 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
                         translated == forgeshape::TouchAction::Cancel);
         }
         selectedNow = g_selection.selected();
+        if (grabPending || grabAbandoned) {
+            sculptRevisionAfter = forgeshape::sculptSession().mesh().revision();
+        }
 
         if (!g_loggedOrbit && g_camera.orbitCount() > 0) { g_loggedOrbit = true; logOrbit = true; }
         if (!g_loggedPan && g_camera.panCount() > 0) { g_loggedPan = true; logPan = true; }
@@ -5796,11 +5872,11 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
 
     if (grabPending) {
         FS_LOGI("FORGESHAPE_SCULPT_STROKE_PENDING sculptRev=%llu",
-                (unsigned long long)forgeshape::sculptSession().mesh().revision());
+                (unsigned long long)sculptRevisionAfter);
     }
     if (grabAbandoned) {
         FS_LOGI("FORGESHAPE_SCULPT_STROKE_ABANDONED:navigation sculptRev=%llu",
-                (unsigned long long)forgeshape::sculptSession().mesh().revision());
+                (unsigned long long)sculptRevisionAfter);
     }
     if (grabBegan) {
         FS_LOGI("FORGESHAPE_SCULPT_STROKE_BEGIN:%s:%d radiusWorld=%.4f maxWorld=%.4f "

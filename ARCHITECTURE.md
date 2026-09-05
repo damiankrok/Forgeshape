@@ -3420,7 +3420,14 @@ resting tint and runs no pulse.
   Construction state (a shape Apply, a placement Apply, a history step, a load,
   an import, a mode change) takes `g_stateMutex` across the write, mesh
   generation included: a parameter written unlocked is a parameter a checkpoint
-  could read half-written.
+  could read half-written. The same reader is why every READER of the sculpt
+  session takes it too: `sculptSession()` re-points the session at the active
+  body on every call (a write to its borrowed target), so every call of it in
+  `forgeshape_jni.cpp` is inside a `g_stateMutex` scope — a multi-field read
+  such as `sculptState` copies under one hold and writes the JNI array after
+  it, the publish helper takes the session its caller already holds, and a
+  helper that reads it on its caller's lock is named `...Locked`
+  (`artifacts/post-audit-harden-r1/tools/lock_context.js` checks the rule).
 - One short-lived thread per DEBUG stress run, which publishes CPU revisions and
   exits. There is no general task or job system.
 

@@ -43,23 +43,21 @@ add_custom_target(forgeshape_shaders DEPENDS ${FORGESHAPE_SHADER_HEADERS})
 # ---------------------------------------------------------------------------
 # Native library
 # ---------------------------------------------------------------------------
-add_library(forgeshape_native SHARED
+# Product sources: everything the shipped `.so` needs in every configuration.
+# The debug fixtures (`forgeshape_mesh_fixtures`, `forgeshape_glb_import_fixture`)
+# stay here because the `#ifndef NDEBUG` debug entry points in forgeshape_jni.cpp
+# reference them; they are not self-tests.
+set(FORGESHAPE_PRODUCT_SOURCES
     forgeshape_jni.cpp
     forgeshape_camera.cpp
-    forgeshape_camera_selftest.cpp
     forgeshape_cad_body.cpp
     forgeshape_cad_face.cpp
-    forgeshape_cad_selftest.cpp
-    forgeshape_cad_a3_selftest.cpp
     forgeshape_sketch.cpp
     forgeshape_sketch_session.cpp
-    forgeshape_sketch_ux_selftest.cpp
     forgeshape_support_chooser.cpp
     forgeshape_workplane.cpp
     forgeshape_body_delete.cpp
     forgeshape_construction.cpp
-    forgeshape_construction_selftest.cpp
-    forgeshape_cone_capsule_selftest.cpp
     forgeshape_demo_mesh.cpp
     forgeshape_display.cpp
     forgeshape_gizmo.cpp
@@ -71,40 +69,61 @@ add_library(forgeshape_native SHARED
     forgeshape_import_commit.cpp
     forgeshape_imported_mesh.cpp
     forgeshape_json.cpp
-    forgeshape_gltf_export_selftest.cpp
-    forgeshape_gltf_import_selftest.cpp
-    forgeshape_gizmo_selftest.cpp
     forgeshape_grid.cpp
     forgeshape_history.cpp
-    forgeshape_history_selftest.cpp
     forgeshape_input.cpp
     forgeshape_matcap.cpp
     forgeshape_mesh.cpp
     forgeshape_mesh_fixtures.cpp
-    forgeshape_mesh_selftest.cpp
     forgeshape_picking.cpp
     forgeshape_project_bootstrap.cpp
     forgeshape_project_bytes.cpp
     forgeshape_project_document.cpp
-    forgeshape_project_selftest.cpp
     forgeshape_project_state.cpp
     forgeshape_render_mesh.cpp
     forgeshape_render_recovery.cpp
+    forgeshape_scene.cpp
+    forgeshape_sculpt.cpp
+    forgeshape_sculpt_history.cpp
+    forgeshape_selection.cpp
+    forgeshape_selection_pulse.cpp
+    forgeshape_transform.cpp
+    forgeshape_renderer.cpp)
+
+# Self-test suites. Their only call sites are the `#ifndef NDEBUG` runners in
+# forgeshape_jni.cpp, so a release `.so` must not carry their code, their check
+# names or their exported entry points. Debug is the one configuration that
+# leaves NDEBUG undefined, and it is the only one that compiles them.
+set(FORGESHAPE_SELFTEST_SOURCES
+    forgeshape_camera_selftest.cpp
+    forgeshape_cad_selftest.cpp
+    forgeshape_cad_a3_selftest.cpp
+    forgeshape_sketch_ux_selftest.cpp
+    forgeshape_construction_selftest.cpp
+    forgeshape_cone_capsule_selftest.cpp
+    forgeshape_gltf_export_selftest.cpp
+    forgeshape_gltf_import_selftest.cpp
+    forgeshape_gizmo_selftest.cpp
+    forgeshape_history_selftest.cpp
+    forgeshape_mesh_selftest.cpp
+    forgeshape_project_selftest.cpp
     forgeshape_render_recovery_selftest.cpp
     forgeshape_render_mesh_selftest.cpp
     forgeshape_picking_selftest.cpp
     forgeshape_primitive_selftest.cpp
-    forgeshape_scene.cpp
     forgeshape_scene_selftest.cpp
-    forgeshape_sculpt.cpp
-    forgeshape_sculpt_history.cpp
     forgeshape_sculpt_selftest.cpp
-    forgeshape_selection.cpp
-    forgeshape_selection_pulse.cpp
     forgeshape_sphere_selftest.cpp
-    forgeshape_transform.cpp
-    forgeshape_transform_selftest.cpp
-    forgeshape_renderer.cpp)
+    forgeshape_transform_selftest.cpp)
+
+add_library(forgeshape_native SHARED ${FORGESHAPE_PRODUCT_SOURCES})
+
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    target_sources(forgeshape_native PRIVATE ${FORGESHAPE_SELFTEST_SOURCES})
+    message(STATUS "ForgeShape: debug build, self-test suites compiled in")
+else()
+    message(STATUS "ForgeShape: ${CMAKE_BUILD_TYPE} build, self-test suites excluded")
+endif()
 
 add_dependencies(forgeshape_native forgeshape_shaders)
 

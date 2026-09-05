@@ -456,10 +456,9 @@ final class EditorControlStyles {
     /**
      * Enables or disables a chip, label and all.
      *
-     * <p>Distinct from {@link #setChipReserved}: that one names something the
-     * product does not have, and this one names something this product DOES
-     * have that cannot succeed in the state the user is in right now — a
-     * support plane that is fixed because the sketch already carries geometry.
+     * <p>This names something the product DOES have that cannot succeed in
+     * the state the user is in right now — a support plane that is fixed
+     * because the sketch already carries geometry.
      * The chip stays visible, because the state it reports is real information;
      * it simply cannot be pressed while it would be refused.
      */
@@ -467,14 +466,6 @@ final class EditorControlStyles {
         chip.setEnabled(enabled);
         chip.setClickable(enabled);
         chip.setAlpha(enabled ? 1.0f : 0.45f);
-    }
-
-    /** A chip that names something the product does not have yet. */
-    static void setChipReserved(TextView chip, CharSequence reason) {
-        chip.setEnabled(false);
-        chip.setTextColor(themeColor(chip.getContext(), R.attr.fsTextDisabled));
-        chip.setBackgroundResource(R.drawable.bg_control_reserved);
-        chip.setContentDescription(reason);
     }
 
     /**

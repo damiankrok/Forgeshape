@@ -42,6 +42,8 @@ FixtureMesh buildFixtureDeformed() {
     return mesh;
 }
 
+namespace {
+
 // Shared by buildFixtureLarge (fixed subdivision) and buildStressMesh
 // (caller-chosen subdivision): six subdivided faces, each vertex pushed out to
 // a fixed radius, giving a closed "spherified box" with canonical outward
@@ -111,6 +113,8 @@ FixtureMesh buildSpherifiedBox(uint32_t n, float radius) {
     }
     return mesh;
 }
+
+}  // namespace
 
 FixtureMesh buildFixtureLarge() { return buildSpherifiedBox(kFixtureLargeSubdivisions, 1.28f); }
 
