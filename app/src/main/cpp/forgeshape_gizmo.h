@@ -41,19 +41,17 @@
 //
 // Rotation, composed as matrices and stored as Euler degrees
 // ----------------------------------------------------------
-// A ring drag never adds its angle to one Euler component. That is only correct
-// when the other two are zero, and it is exactly the defect this stage exists to
-// remove: on a mixed orientation it produces a rotation about neither the world
-// axis nor the local one. Instead each sample composes
+// A ring drag never adds its angle to one Euler component -- that is only
+// correct when the other two are zero, and on a mixed orientation it rotates
+// about neither the world axis nor the local one. Each sample composes
 //
 //     World:  R_target = Relem(A, delta) * R_start
 //     Local:  R_target = R_start * Relem(A, delta)
 //
-// from the IMMUTABLE start orientation and the accumulated angle, and then
-// decomposes R_target back to the authoritative Euler degrees through the one
-// branch-continuous helper in forgeshape_transform.h. A mixed drag therefore
-// legitimately moves more than one Euler field, and correctness is a statement
-// about the ORIENTATION rather than about which field changed.
+// from the IMMUTABLE start orientation and the accumulated angle, then
+// decomposes R_target back to Euler degrees through the one branch-continuous
+// helper in forgeshape_transform.h. A mixed drag therefore legitimately moves
+// more than one Euler field; correctness is a statement about the ORIENTATION.
 //
 // Screen-constant size
 // --------------------

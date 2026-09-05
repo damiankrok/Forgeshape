@@ -14,39 +14,23 @@ import android.widget.TextView;
  * The contextual exact-value panel — a precision surface the user <b>asks
  * for</b>.
  *
- * <p>One container, three different bodies: the Construction shape editor, the
- * Construction placement editor, or the Sculpt context. Which body it holds is
- * a function of the active mode and the active Tool Rail entry, and swapping it
- * changes the inspector's content and never its structure.
+ * <p>One container, five bodies: the Construction shape editor, the placement
+ * editor, the Sculpt context, the sketch editor and the CAD feature editor.
+ * Which body it holds is a function of the active mode and the active Tool
+ * Rail entry, and swapping it changes the inspector's content and never its
+ * structure.
  *
- * <p><b>Closed means absent, not collapsed.</b> This is the load-bearing change
- * of the mobile workspace: the panel used to have a resting detent, and a
- * collapsed detent is still a full-width strip anchored to the bottom of the
- * window — a permanent structural claim on the workspace made by a surface
- * nobody had asked for. It is now either open, carrying its whole body, or it
- * is not in the window at all, and the viewport reaches the bottom edge. Exact
- * values are ForgeShape's advantage and are one tap away from the tool context
- * that owns them; what changed is which of the two owns the resting layout.
+ * <p><b>Closed means absent, not collapsed.</b> A collapsed detent is still a
+ * full-width strip anchored to the bottom of the window — a permanent
+ * structural claim made by a surface nobody asked for — so the panel is either
+ * open, carrying its whole body, or not in the window at all. It <b>grows out
+ * of the control that opened it</b>, the rail's precision toggle, so the
+ * relation between the held tool and its numbers is spatial.
  *
- * <p><b>It grows out of the control that opened it</b> — the Tool Rail's
- * precision toggle — rather than sliding in from an edge, so the relation
- * between the tool being held and the numbers behind it is spatial rather than
- * something to be remembered.
- *
- * <p><b>Its body still scrolls</b>, and is still capped when it is a bottom
- * sheet: a body that does not fit must be reachable, not lost, and an uncapped
- * wrap-content sheet grows to whatever its content wants.
- *
- * <p><b>But the cap now ends on a row, not through one.</b> The cap is a height
- * in pixels and the body is a stack of rows, so the two agreed only by accident:
- * a sheet capped at 30 % of the window landed wherever it landed, which at rest
- * was regularly half-way through a chip or a field caption. A control sliced
- * across its middle by a panel edge reads as a rendering fault, not as "there is
- * more below" — the user cannot tell a clipped surface from a broken one. See
- * {@link PrecisionScrollView}, which rounds the visible body DOWN to the last
- * row that fits whole. Nothing about the cap, the scrolling, the keyboard or
- * exact-value editing changes; what changes is where the surface is allowed to
- * end.
+ * <p><b>Its body scrolls and is capped as a bottom sheet</b>, and the cap ends
+ * on a row, not through one: a control sliced across its middle reads as a
+ * rendering fault, not as "there is more below". {@link PrecisionScrollView}
+ * rounds the visible body DOWN to the last row that fits whole.
  *
  * <p><b>Owns no value.</b> The bodies read and submit; this is a frame with a
  * title, a close control and a scroll container.

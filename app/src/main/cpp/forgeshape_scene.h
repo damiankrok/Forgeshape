@@ -1,15 +1,13 @@
 // The editable scene: an ordered collection of bodies, each a Construction
-// Body or an Imported Mesh.
+// Body, an Imported Mesh or a CAD Body.
 //
-// Before Stage 017 the product was one object expressed as three process-global
-// singletons -- the Construction object, `meshStore()` and `sculptSession()` --
-// and "the object" was simply whichever thing each of them held. That is the
-// assumption this file removes. A body is now a `SceneObject` that owns its
-// representation, its MeshStore, its Frozen Sculpt Mesh and its placement; the
-// scene owns an ordered list of them; and the global accessors are redefined
-// (in forgeshape_scene.cpp) as "the ACTIVE body's" -- with the Construction one
-// now `activeConstructionOrNull()`, because since `IMPORT-01A` the active body
-// may have no Construction Source at all.
+// A body is a `SceneObject` that owns its source representation, its MeshStore,
+// its Frozen Sculpt Mesh and its placement; the scene owns an ordered list of
+// them, the monotonic ObjectId allocator and which body is active. The
+// process-scoped accessors in forgeshape_scene.cpp (`meshStore()`,
+// `sculptSession()`, `activeConstructionOrNull()`, `constructionTransform()`)
+// mean "the ACTIVE body's", and each answers for "no project" without reading
+// `activeBody()` (`APP-H1`).
 //
 // Platform-neutral C++17: no JNI, no Android, no Vulkan, no renderer type.
 #pragma once
@@ -34,21 +32,18 @@ namespace forgeshape {
 constexpr ObjectId kFirstBodyObjectId = kConstructionBoxObjectId;
 
 // ---------------------------------------------------------------------------
-// One Construction Body
+// One body
 // ---------------------------------------------------------------------------
 //
 // Everything that is this body's own truth, and nothing that is the scene's.
 // A body is deliberately NOT copyable: it owns a MeshStore (which owns a mutex
-// and the published revision chain) and a SculptSession, and duplicating either
+// and the published revision chain) and a FrozenSculpt, and duplicating either
 // would duplicate identity, which is the one thing an ObjectId exists to
 // prevent.
 //
-// The transform is the BODY's, not the Construction Source's. It lived inside
-// `ConstructionObject` while every body was a Construction Body, so that a
-// primitive change could not lose the placement; `IMPORT-01A` moved it up here
-// because a body now has a choice of representation and an Imported Mesh has a
-// placement with no primitive to hang it on. Still exactly one per body, and
-// still never touched by a primitive change.
+// The transform is the BODY's, not the representation's: a body has a placement
+// because it is a body, whatever generates its geometry, and no primitive or
+// sketch change ever touches it.
 
 // ---------------------------------------------------------------------------
 // Which representation a body's geometry comes from
@@ -476,11 +471,10 @@ MeshRevision publishSceneObject(SceneObject& body, MeshValidation* outWhy = null
 //     touch half of what they imported.
 //
 // Returns false, writing nothing, for a body with no geometry to freeze -- and
-// for a CAD Body, DELIBERATELY. `CAD-R0-A1A2` leaves CAD -> Sculpt out: the
-// regenerated mesh could seed a freeze, but the wording of the way back out of
-// Sculpt, the stale-source rule over a CAD edit and the `CADB`+`SCUL` file
-// combination each need their own decision, and none of them is this stage's.
-// The control is absent for a CAD Body and the freeze refuses by name.
+// for a CAD Body, DELIBERATELY: CAD -> Sculpt is not implemented (the wording
+// of the way back out of Sculpt, the stale-source rule over a CAD edit and the
+// `CADB`+`SCUL` file combination each need an owner decision). The control is
+// absent for a CAD Body and the freeze refuses by name.
 bool buildSculptSourceMesh(const SceneObject& body, ConstructionMesh* out);
 
 // The one process-scoped scene. `activeConstructionOrNull()`, `meshStore()`,

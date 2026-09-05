@@ -4,40 +4,37 @@
 // Platform-independent: no JNI, no Android, no Vulkan, no renderer and no UI
 // type appears here, and nothing here holds a GPU resource.
 //
-// The two representations
-// -----------------------
-//     Construction Source           ConstructionObject
-//         ObjectId                      kind + that kind's exact parameters
-//         PrimitiveKind                 + ConstructionTransform
-//         exact parameters
-//         ConstructionTransform     -> generateMesh()  (LOCAL space, derived)
+// Source and sculpt: two truths per body
+// --------------------------------------
+//     SOURCE representation           Construction Source or Imported Mesh
+//         ObjectId                        (a CAD Body has no sculpt yet)
+//         -> buildSculptSourceMesh()      LOCAL space, derived, read only
 //
-//     Frozen Sculpt Mesh            SculptMesh
-//         the SAME ObjectId             a COPY of the local vertices/indices
-//         its own SculptRevision        taken at the moment of Freeze
+//     Frozen Sculpt Mesh              SculptMesh + SculptHistory (`FrozenSculpt`)
+//         the SAME ObjectId               a COPY of the local vertices/indices
+//         its own SculptRevision          taken at the moment of Freeze
 //
-// These are separate truths and they never write to each other:
+// These never write to each other:
 //
-//   * Freeze COPIES the Construction object's current local mesh. Nothing is
-//     shared, so a sculpt edit cannot reach back into Construction data.
-//   * A sculpt edit NEVER modifies a primitive parameter, a kind or a transform.
-//   * Nothing ever reconstructs a Construction parameter from SculptMesh
-//     vertices. That direction does not exist, exactly as it does not exist from
-//     the Construction mesh.
-//   * The Construction Source stays fully available after a Freeze, so switching
-//     back shows the original object, unsculpted.
+//   * Freeze COPIES the body's current local source mesh. Nothing is shared, so
+//     a sculpt edit cannot reach back into a parameter or an imported vertex.
+//   * A sculpt edit NEVER modifies a primitive parameter, a kind, an imported
+//     array or the body's transform, and nothing reconstructs any of them from
+//     SculptMesh vertices.
+//   * The source stays fully available after a Freeze, so switching back shows
+//     the original object, unsculpted.
 //   * Vulkan buffers remain DERIVED copies: whichever representation is active
-//     is published through the existing MeshStore path, and the renderer still
-//     owns no geometry truth.
+//     is published through the MeshStore path, and the renderer owns no truth.
 //
-// The transform is deliberately NOT duplicated here. Both representations are
-// LOCAL geometry under the one ConstructionTransform, so the object sits in
-// exactly the same place in either mode.
+// The transform is NOT duplicated here. Both representations are LOCAL geometry
+// under the body's one placement, so the object sits in the same place in
+// either mode.
 //
-// Scope: exactly ONE Frozen Sculpt Mesh for the one active object, and exactly
-// FOUR tools sharing ONE stroke kernel. There is no multi-object sculpt storage,
-// no brush plugin surface or registry, no undo, no symmetry, no mask, no remesh
-// and no topology mutation of any kind.
+// Scope: one Frozen Sculpt Mesh PER BODY (owned by `SceneObject`, borrowed by
+// the one process-scoped `SculptSession`), FOUR tools sharing ONE stroke
+// kernel, and a bounded per-body stroke Undo/Redo (forgeshape_sculpt_history.h).
+// No brush plugin surface or registry, no symmetry, no mask, no remesh and no
+// topology mutation of any kind.
 #pragma once
 
 #include <cstdint>

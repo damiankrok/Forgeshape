@@ -1,51 +1,27 @@
-// Turning a parsed GLB file into durable project objects.
+// Turning a parsed GLB file into durable project objects (`IMPORT-01A`).
 //
-// This is the whole of `IMPORT-01A`'s write direction, and it is deliberately
-// one function. Everything either side of it already exists: the R1 parser
-// (`forgeshape_gltf_import.h`) reads the bytes and decides nothing about the
-// project, and `ImportedMesh` (`forgeshape_imported_mesh.h`) is what a body
-// owns once the decision is made. What lives here is the decision — how many
-// objects a file becomes, what they are called, where they are placed, and the
-// rule that none of it happens by halves.
+// The parser (`forgeshape_gltf_import.h`) reads bytes and decides nothing about
+// the project; `ImportedMesh` is what a body owns afterwards. This one function
+// is the decision between them: how many objects a file becomes, what they are
+// called, where they are placed, and that none of it happens by halves.
 //
-// ATOMIC, AND WHY
-// ---------------
-// An import can produce several objects, and a file that describes four good
-// meshes and one broken one is not four fifths of a project. Every object is
-// built and validated OFF the scene first; only when all of them exist does
-// anything reach `ConstructionScene`. So a refusal costs nothing at all: no
-// `ObjectId` is minted, no body is appended, no history step is recorded, no
-// fingerprint moves, and the user's project is byte-for-byte what it was.
+// ATOMIC. Every object is built and validated OFF the scene first; only when
+// all of them exist does anything reach `ConstructionScene`. A refusal mints no
+// `ObjectId`, appends no body, records no step and moves no fingerprint. The
+// whole commit is ONE `ScopedConstructionEdit`, so forty objects are one Undo.
 //
-// The whole commit runs inside ONE `ScopedConstructionEdit`, so an import of
-// forty objects is exactly one Undo — the same rule Add Primitive follows for
-// its two mutations.
+// THE TRANSFORM SPLIT. `Model = T · L`. A glTF node's linear part may carry
+// rotation, non-uniform scale and shear, which the nine-value placement (with
+// its strictly positive diagonal scale) cannot store; decomposing a sheared
+// node has no correct answer. So `L` is BAKED into the local geometry and `T`
+// becomes the body's placement: an imported body arrives at rotation 0,0,0 and
+// scale 1,1,1, with its origin the node's own origin -- the pivot every
+// downstream tool inherits. Nothing is recentred.
 //
-// THE TRANSFORM SPLIT
-// -------------------
-// `Model = T · L`. glTF states a node transform this product cannot store: its
-// linear part may carry rotation, non-uniform scale and shear, and ForgeShape's
-// placement is nine authored values with a strictly positive diagonal scale.
-// Rather than decompose it — which for a sheared node has no correct answer —
-// the linear part is BAKED into the object's local geometry and the translation
-// becomes the body's placement. An imported body therefore arrives at
-// `rotation = 0,0,0` and `scale = 1,1,1`, with the geometry already carrying
-// whatever the file's node did to it, and every later Move/Rotate/Scale is an
-// ordinary ForgeShape transform over that. Nothing is recentred: the object's
-// origin is the node's own origin, which is the pivot every downstream tool
-// inherits.
-//
-// WHAT THIS IS NOT
-// ----------------
-// Not the diagnostic preview. `ImportedMeshPreview` still exists, still shares
-// nothing with this, and is still session-only; this path creates real bodies
-// with real identities that are saved, undone and reopened.
-//
-// Not sculpt. `IMPORT-01A` gives an imported body no Frozen Sculpt Mesh and no
-// Start Sculpting — that is `IMPORT-01B`.
-//
-// Not appearance. Materials, textures, colours and UVs were validated and then
-// ignored by the parser, so there is nothing here to carry them.
+// NOT the diagnostic preview (`ImportedMeshPreview` is session-only and shares
+// nothing with this). NOT appearance: materials, textures, colours and UVs were
+// validated and ignored by the parser. Sculpting an imported body is
+// `IMPORT-01B`'s and happens later, through `buildSculptSourceMesh`.
 //
 // Platform-neutral C++17: no Android, no JNI, no Vulkan, no filesystem, no
 // `Uri`. Where the bytes came from is not project truth and does not appear.

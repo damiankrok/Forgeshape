@@ -27,18 +27,12 @@ import android.widget.TextView;
  *
  * <p><b>Each column is one variable, read top to bottom.</b> The caption names
  * it, the value directly under the caption says what it is, and the track under
- * both is how it is changed. Before UI-R4B the value sat above the track and the
- * caption below it, so the two halves of one fact were separated by 200 dp of
- * slider and the eye had to pair "Radius" with a number at the other end of the
- * column — which is why the readouts looked like two unlabelled gauges with
- * captions underneath rather than like two named values.
+ * both is how it is changed; separating the caption from its number by the
+ * length of the track made the readouts read as unlabelled gauges.
  *
- * <p><b>The live value is here and nowhere else.</b> Dragging a slider used to
- * also write "Brush: radius 120 px, strength 0.45." into the workspace's status
- * line, so the same two numbers were on screen twice, one of them at the top of
- * the window where the user is not looking, and the last drag's numbers then sat
- * there for the rest of the session. A value being dragged belongs beside the
- * thing dragging it.
+ * <p><b>The live value is here and nowhere else.</b> A value being dragged
+ * belongs beside the thing dragging it, not duplicated in a status line at the
+ * top of the window where it would outlive the drag.
  */
 final class BrushEdgeControlsView extends LinearLayout {
 

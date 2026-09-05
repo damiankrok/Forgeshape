@@ -23,16 +23,13 @@ import android.widget.TextView;
  * and a shape chosen here can be refused exactly as a typed one can.
  *
  * <p><b>Two creation categories, and nothing else.</b> Six primitive tiles, one
- * per primitive the product actually builds, and one New Sketch tile
- * (CAD-R0-A1A2), which is the second category this view's own layout was kept
- * ready for: it becomes a second group inside the palette without Objects, the
- * scene or the capsule learning anything new. New Sketch enters the spatial
- * support chooser directly (`CAD-A3`, `UI-OWNER-46`) — a plane or a planar CAD
- * face is picked in the viewport — and the by-name plane list stays reachable
- * from a secondary control as the accessibility fallback; a sketch begins only
- * once a support has been chosen, and a body exists only once that sketch has
- * been extruded. There is still no <i>Add from file</i>, no template and no
- * disabled placeholder.
+ * per primitive the product actually builds, and one New Sketch tile as a
+ * second group. New Sketch enters the spatial support chooser directly
+ * (`UI-OWNER-46`) — a plane or a planar CAD face is picked in the viewport —
+ * and the by-name plane list stays reachable from a secondary control as the
+ * accessibility fallback; a body exists only once that sketch has been
+ * extruded. There is no <i>Add from file</i> here (Import GLB… is the project
+ * surface's), no template and no disabled placeholder.
  *
  * <p>It offers no subdivisions, segments or any other topology control. Where a
  * primitive has exact parameters they are its own, and they are edited in the

@@ -34,16 +34,12 @@ import android.widget.TextView;
  * {@link #onBodyDeleted} for why it is not confirmed.
  *
  * <p><b>Its {@code +} creates nothing by itself.</b> It opens the Add Primitive
- * palette, and a body exists only once a shape has been chosen there. A control
- * that silently appended a default box is what made creation read as an
- * administrative operation on a list rather than as a choice about the model —
- * and it also meant the first thing a user did after creating a body was
- * change what it was.
+ * palette, and a body exists only once a shape has been chosen there — a
+ * choice about the model, not an administrative operation on a list.
  *
- * <p><b>And in Sculpt the {@code +} is not drawn at all.</b> See
- * {@link #showCreationAvailable}: creation is refused below JNI while sculpting,
- * so offering it here could only ever lead the user through a palette to a
- * refusal.
+ * <p><b>In Sculpt and while sketching the {@code +} is not drawn at all.</b>
+ * See {@link #showCreationAvailable}: creation is refused below JNI there, so
+ * offering it could only lead the user through a palette to a refusal.
  */
 final class ObjectsSectionView extends LinearLayout {
 

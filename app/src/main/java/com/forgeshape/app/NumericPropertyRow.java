@@ -30,21 +30,13 @@ import java.math.BigDecimal;
  *
  * <h2>The complete value and what is drawn are two different strings</h2>
  *
- * <p>They used to be one, and that produced two defects in the same field.
- *
- * <p><b>A long value lost its sign.</b> {@code -98765.4321098} in a 117 dp
- * column rendered as {@code 765.4321098}: a single-line field scrolls to the
- * caret, so the clipping happened at the LEFT and the user was shown a plausible
- * POSITIVE number, with no ellipsis, fade or anything else saying something was
- * missing. Losing the minus sign and the leading digits of a coordinate is the
- * worst possible place for a truncation to be silent.
- *
- * <p><b>And a tap on a populated field appended to it.</b> Tapping placed a
- * caret rather than selecting, so typing into a field reading {@code 0} produced
- * {@code 0-98765.4321098}, which the panel then accepted into its own state.
- *
- * <p>So this row keeps {@link #value}, the complete text — what the caller set
- * or the user typed, to the last digit — and draws a PRESENTATION of it:
+ * <p>A single-line field scrolls to the caret, so a value too long for its
+ * column clips at the LEFT: {@code -98765.4321098} in a 117 dp column would
+ * read {@code 765.4321098} — a plausible POSITIVE number with nothing saying
+ * anything is missing. Losing the sign and the leading digits of a coordinate
+ * is the worst place for a truncation to be silent. So this row keeps
+ * {@link #value}, the complete text — what the caller set or the user typed,
+ * to the last digit — and draws a PRESENTATION of it:
  *
  * <ul>
  *   <li><b>The type shrinks before anything is dropped.</b> A value too long for

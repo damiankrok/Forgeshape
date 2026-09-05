@@ -14,9 +14,10 @@
 //
 // The CAD bootstrap
 // -----------------
-// New Project -> CAD enters the spatial world-plane chooser and then the one
-// volatile `SketchSession`, exactly as New Sketch does inside an open project.
-// The difference is where the commit lands. Inside a project a commit is one
+// New Project -> CAD opens the one volatile `SketchSession` directly on XY
+// (`SKETCH-UX-R1`; a LATER New Sketch inside a project goes through the spatial
+// support chooser first). The difference from an in-project sketch is where
+// the commit lands. Inside a project a commit is one
 // `addCadBody` inside one history step; with NO project open there is nothing
 // to add the body TO, and `commitFirstCadProject` below instead builds a
 // complete one-body `ProjectDocument` from the session's candidate state and

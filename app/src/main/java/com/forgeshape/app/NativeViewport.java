@@ -349,12 +349,12 @@ final class NativeViewport {
     // ---------------------------------------------------------------------
     // Product mode and the Frozen Sculpt Mesh.
     //
-    // The object has two representations: the Construction Source (its exact
-    // primitive, that primitive's parameters and its placement) and the Frozen
-    // Sculpt Mesh (a copy of the Construction local mesh taken at the moment of
-    // Freeze, with its own SculptRevision). Native code owns which one is
-    // active. Java may request a mode; it holds none, holds no vertex and holds
-    // no brush setting.
+    // A body has a SOURCE representation (a Construction Source, an Imported
+    // Mesh or a CAD Body) and may also own a Frozen Sculpt Mesh: a copy of its
+    // local source mesh taken at the moment of Freeze, with its own
+    // SculptRevision and its own per-body stroke history. Native code owns
+    // which one is active. Java may request a mode; it holds none, holds no
+    // vertex and holds no brush setting.
     // ---------------------------------------------------------------------
 
     /** Editing the exact primitive, its parameters and its placement. */
@@ -511,10 +511,10 @@ final class NativeViewport {
     /**
      * The scene holds exactly one body.
      *
-     * <p>This product has no empty project: the scene creates a body eagerly,
-     * every active-body accessor assumes one exists, and a {@code .forge} file
-     * with zero bodies is refused. So the last body is refused by name rather
-     * than removed and replaced with a primitive nobody asked for.
+     * <p>A project is never empty: an empty scene is Home, reached only by
+     * closing the project, and a {@code .forge} file with zero bodies is
+     * refused. So the last body is refused by name rather than removed and
+     * replaced with a primitive nobody asked for.
      */
     static final int DELETE_REFUSED_LAST_BODY = 2;
     /** A Construction edit is open; its captured pre-state names this body. */
@@ -556,15 +556,11 @@ final class NativeViewport {
     // This layer holds NO history. It asks whether an undo is available, asks
     // for one, and re-reads native state afterwards. There is deliberately no
     // Java-side depth counter and no list of parameter snapshots: a second copy
-    // of the history would be a second answer to "what does undo do next", and
-    // the enabled state of a control would eventually disagree with the model.
+    // of the history would be a second answer to "what does undo do next".
     //
-    // Both acts below are refused while sculpting, and that has not changed:
-    // Construction Undo is not Sculpt Undo, and one entry point that quietly
-    // meant either would be the ambiguity two histories exist to avoid. What
-    // ARCH-OWNER-12 added is a THIRD family — {@code historyUndo} and friends —
-    // which is what the two chrome controls call, and which dispatches on the
-    // product mode in native code where the mode actually lives.
+    // The construction* pair is refused while sculpting: Construction Undo is
+    // not Sculpt Undo. The chrome calls the {@code history*} family instead,
+    // which dispatches on the product mode in native code where the mode lives.
 
     /** The step was performed. */
     static final int HISTORY_OK = 0;
@@ -865,11 +861,10 @@ final class NativeViewport {
     // gizmo, one Undo step for the whole import, and a place in every `.forge`
     // file the project is saved into afterwards.
     //
-    // An imported body is NON-PARAMETRIC. It has no Construction Source and
-    // nothing may invent one for it, so `Shape` has no answer for it; and
-    // `IMPORT-01A` gives it no Frozen Sculpt Mesh either, so Start Sculpting is
-    // `IMPORT-01B`'s. Both controls are withdrawn for one, and both are also
-    // refused below JNI.
+    // An imported body is NON-PARAMETRIC: it has no Construction Source and
+    // nothing may invent one, so `Shape` is withdrawn for one and refused below
+    // JNI. It CAN be sculpted (`IMPORT-01B`), seeded from its own geometry,
+    // with the imported arrays immutable throughout.
     // ---------------------------------------------------------------------
 
     /**
@@ -1279,11 +1274,11 @@ final class NativeViewport {
      * Opens one Construction edit, so that every mutation until the matching
      * commit becomes a single history step.
      *
-     * <p>For a user act made of more than one native mutation — choosing a
-     * shape from Add Primitive is the one that exists today, and a dragged
-     * handle is the one that is coming. Between begin and commit the ordinary
-     * entry points still publish, so the model follows the edit live; they
-     * simply stop being steps of their own.
+     * <p>For a user act made of more than one native mutation, such as
+     * choosing a shape from Add Primitive (add, then apply). Between begin and
+     * commit the ordinary entry points still publish, so the model follows the
+     * edit live; they simply stop being steps of their own. A gizmo drag opens
+     * its own edit below JNI.
      *
      * @return true when this call opened the edit, false when one was already
      *         open (in which case the caller must NOT commit it)

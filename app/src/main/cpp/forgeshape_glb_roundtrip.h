@@ -1,48 +1,26 @@
-// The GLB-IMPORT-R0 roundtrip diagnostic.
+// The GLB roundtrip diagnostic (`GLB-IMPORT-R0`).
 //
-// THE QUESTION
-// ------------
-// *Does the `.glb` ForgeShape wrote, decoded by something that is not the
-// writer, describe the same WORLD-SPACE geometry as the ForgeShape scene it
-// came from?*
+// THE QUESTION: does the `.glb` ForgeShape wrote, decoded by something that is
+// not the writer, describe the same WORLD-SPACE geometry as the scene it came
+// from? A "no" is an exporter or reader defect; a "yes" means an external tool
+// showing something different is presenting the same geometry differently.
 //
-// The owner asked it because Blender showed a discrepancy the corrected node
-// scale of 1/1/1 did not explain, and there are three possible answers:
-// ForgeShape's exporter is wrong, the reader is wrong, or the external tool is
-// presenting the same geometry differently. This module can only distinguish
-// the first from the other two — but that is the distinction that decides
-// whether ForgeShape has a defect.
-//
-// WHERE EACH SIDE COMES FROM
-// --------------------------
-// The two sides are deliberately produced by different code:
-//
-//   * EXPECTED is re-derived from DOMAIN TRUTH — `generateMesh()` or the
-//     Frozen Sculpt Mesh, through `buildRenderMesh`, then through
-//     `ConstructionTransform::modelMatrix()`. It is not the exporter's
-//     `GlbExportScene`, not its serialized arrays and not anything the writer
-//     kept. If the exporter captured the wrong geometry, this side still holds
-//     the right geometry and the comparison fails, which is the whole point.
-//
+// The two sides are produced by different code on purpose:
+//   * EXPECTED is re-derived from DOMAIN TRUTH -- the effective mesh of each
+//     body through `buildRenderMesh`, then `modelMatrix()` -- never from the
+//     exporter's `GlbExportScene` or its serialized arrays, so an exporter that
+//     captured the wrong geometry still fails here;
 //   * ACTUAL is `forgeshape_gltf_import`'s parse of the real bytes, with the
 //     node transform applied per glTF semantics.
 //
-// So the identity under test is:
+// The identity under test is `modelMatrix() * p_local == nodeTranslation *
+// p_baked`, i.e. `T·L·p == T·(L·p)`, which holds only if the bake, the node
+// transform and the file agree.
 //
-//     modelMatrix() * p_local   ==   nodeTranslation * p_baked
-//
-// which is `T·L·p == T·(L·p)`. It holds only if the bake, the node transform
-// and the file all agree.
-//
-// TOLERANCE
-// ---------
-// The only loss permitted between the two sides is float32 quantization: the
-// domain computes in float and glTF stores float32, and `%.9g` round-trips
-// float32 exactly. So the tolerance is scaled to the magnitude of the
-// coordinate rather than fixed, because absolute error in a float grows with
-// the value — a 1e-4 m tolerance is generous at 0.5 m and meaningless at
-// 5000 m. Anything larger than quantization is a real disagreement and must
-// be reported as one.
+// TOLERANCE: the only permitted loss is float32 quantization (`%.9g` round-trips
+// float32 exactly), so the tolerance scales with the coordinate's magnitude --
+// 1e-4 m is generous at 0.5 m and meaningless at 5000 m. Anything larger is a
+// real disagreement and is reported as one.
 //
 // Platform-neutral C++17: no Android, no JNI, no Vulkan, no filesystem.
 #pragma once

@@ -1,56 +1,29 @@
-// GLB-IMPORT — a bounded, diagnostic glTF 2.0 binary reader.
+// The bounded glTF 2.0 binary reader (`GLB-IMPORT-R0/R1`, `ARCH-OWNER-08/09`).
 //
-// WHAT THIS IS FOR
-// ----------------
-// R0 (`ARCH-OWNER-08`) asked one question: *does the `.glb` ForgeShape wrote,
-// decoded according to glTF semantics by something that is not the writer,
-// describe the same world-space geometry as the ForgeShape scene it came
-// from?* Answering that needs a reader with no shared assumptions with the
-// writer, so nothing here calls `forgeshape_gltf_export.*`. It shares
-// `forgeshape_json.*` (which knows only what JSON is) and `forgeshape_math.h`
-// (vectors and matrices, no glTF in either), and it re-derives every offset,
-// length, stride and bound from the file rather than from what a writer
-// intended.
+// INDEPENDENT OF THE WRITER. Nothing here calls `forgeshape_gltf_export.*`; it
+// shares only `forgeshape_json.*` and `forgeshape_math.h`, and re-derives every
+// offset, length, stride and bound from the file rather than from what a writer
+// intended. That independence is what lets the roundtrip diagnostic prove the
+// exporter against something other than itself.
 //
-// R1 (`ARCH-OWNER-09`) widens the subset to ordinary STATIC low-poly GLB files
-// written by other tools — the class of file a sculpting app exports — so the
-// owner can look at one in the ForgeShape viewport. What widened, exactly:
+// THE SUPPORTED SUBSET is ordinary STATIC geometry: a node `matrix` or TRS,
+// several TRIANGLES primitives per mesh (including ones sharing a POSITION
+// accessor), a missing NORMAL (generated), COLOR_*/TEXCOORD_* validated and
+// ignored, a material's `doubleSided`, and `extras` ignored. Everything else
+// -- a required extension, a sparse accessor, an interleaved view, an external
+// buffer, animation, skinning, morph targets, a non-triangle mode, a node with
+// children, a node stating both `matrix` and TRS, an unknown attribute --
+// FAILS CLOSED with a named `GlbImportStatus`. Silently ignoring any of them
+// would put geometry the file does not describe into a project that keeps it.
 //
-//   * a node `matrix`, or ordinary TRS, instead of a bare translation;
-//   * several TRIANGLES primitives per mesh, including ones that share a
-//     POSITION accessor;
-//   * a missing NORMAL, which is generated;
-//   * COLOR_0/COLOR_1/TEXCOORD_0/TEXCOORD_1, validated and then ignored;
-//   * a material's `doubleSided`, which reaches preview culling and nothing
-//     else;
-//   * `extras`, which is ignored and never becomes project data.
+// THIS DECIDES NOTHING ABOUT THE PROJECT. It produces GEOMETRY (`ParsedGlbScene`)
+// and never a body, an `ObjectId`, a history step or a `.forge` byte, so one
+// parse serves both the durable import (`forgeshape_import_commit.h`) and the
+// session-only diagnostic preview (`forgeshape_import_preview.h`).
 //
-// WHAT THIS IS NOT
-// ----------------
-// **This decides nothing about the project.** It produces GEOMETRY — a
-// `ParsedGlbScene` — and never a body, an `ObjectId`, a history step or a
-// `.forge` byte. That is what lets one parse serve two destinations:
-// `IMPORT-01A`'s durable import (`forgeshape_import_commit.h`), which turns it
-// into real objects, and the session-only diagnostic preview
-// (`forgeshape_import_preview.h`), which draws it beside the scene. Which of
-// those a file becomes is the caller's decision and is not made here.
-//
-// What stays out of the subset stays out of both: materials, textures, UVs,
-// colours, hierarchy, animation and skinning are unread in either direction,
-// and OBJ and FBX are absent in both.
-//
-// Everything outside the supported subset FAILS CLOSED with a named reason. A
-// reader that silently ignored a transform, a sparse accessor or a compression
-// extension would answer the owner's question wrongly — and would put geometry
-// the file does not describe into a project that then keeps it — which is worse
-// than refusing to answer it.
-//
-// COORDINATES
-// -----------
-// None are converted. glTF is right-handed, +Y-up and metric, and so is
-// ForgeShape, so an axis swap here would be a defect — the same fact that
-// makes the exporter's lack of a conversion node correct. In particular there
-// is no Blender-style Y/Z fix.
+// COORDINATES are not converted: glTF and ForgeShape are both right-handed,
+// +Y-up and metric, so an axis swap here would be a defect -- the same fact
+// that makes the exporter's lack of a conversion node correct.
 //
 // Platform-neutral C++17: no Android, no JNI, no Vulkan, no filesystem, no
 // `Uri`. It takes bytes and produces geometry.

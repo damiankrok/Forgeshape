@@ -15,37 +15,30 @@ import android.widget.TextView;
  * The mode-independent controls at the top of the Editor Workspace.
  *
  * <p>It carries only what is true in every mode <b>and</b> is not something the
- * user works from: what is being edited, the way across the Construction/Sculpt
- * seam, the reserved global Export action, the chrome hide control, and — the
- * part that matters most — the status and error message. The scene itself is
- * not here: it is the Objects capsule's, which can say which body is current
- * rather than only offering to open a list.
+ * user works from: what is being edited, the mode transitions (Start
+ * Sculpting / Resume Sculpt / Back to Construction, Finish Sketch / Extrude,
+ * Back to Home), Export, the project and Display openers, the chrome hide
+ * control, and the status and error message. The scene itself is the Objects
+ * capsule's.
  *
  * <p><b>It is not a bar.</b> This container is transparent and draws nothing of
  * its own; what the user sees is two floating control <i>groups</i> with the
- * model between and behind them — an editing group on the leading edge holding
- * the mode context and the one transition that belongs to it, and a utility
- * group on the trailing edge holding Export and the icon controls. A full-width
- * opaque strip with a hairline under it is the one shape that reads as an
- * Android app bar no matter what colour it is painted, and the workspace is
- * meant to read as one spatial composition rather than as a document editor with
- * a title bar. Grouping is also what makes the hierarchy visible without
- * colour: a primary commit is the loudest thing in the leading group, and the
- * trailing group is uniformly tertiary.
+ * model between and behind them — an editing group on the leading edge and a
+ * utility group on the trailing edge. A full-width opaque strip reads as an
+ * Android app bar whatever colour it is painted, and the workspace is meant to
+ * read as one spatial composition. Grouping is also what makes the hierarchy
+ * visible without colour: a primary commit is the loudest thing in the leading
+ * group, and the trailing group is uniformly tertiary.
  *
- * <p><b>The status message is always laid out inside the window.</b> The
- * previous shell put it at the bottom of a wrap-content panel, where in
- * landscape it measured below the window edge with no scroll container anywhere
- * to reach it, which made validation verdicts and the stale-source warning
- * silently unreachable in the one configuration that needed them most. Here it
- * has a reserved place: inline with the controls when the window is short, on
- * its own line when it is not. It is a small capsule sized to its own text
- * rather than a full-width band, because it is persistent — see
- * {@link EditorControlStyles#statusText}.
+ * <p><b>The status message is always laid out inside the window</b>: inline
+ * with the controls when the window is short, on its own line when it is not,
+ * as a capsule sized to its own text — see
+ * {@link EditorControlStyles#statusText}. A verdict that measured below the
+ * window edge would be unreachable exactly where it mattered.
  *
- * <p><b>Owns no mode.</b> The three transition buttons ask native code; which
- * one is on screen is decided by {@link #showContext} from what native code
- * reports afterwards.
+ * <p><b>Owns no mode.</b> The transition buttons ask native code; which one is
+ * on screen is decided by {@link #showContext} from what native code reports
+ * afterwards.
  */
 final class GlobalToolbarView extends LinearLayout {
 

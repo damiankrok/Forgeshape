@@ -30,17 +30,17 @@
 // by the same generator the product already uses, so copying a published mesh
 // into every step would be storing a product of the truth beside the truth, at
 // hundreds of kilobytes a step. It holds no sculpt vertex, no SculptRevision
-// and no stroke: Sculpt has no undo, and Construction history must never be
-// able to move a sculpted vertex.
+// and no stroke: sculpt strokes have their OWN per-body history
+// (forgeshape_sculpt_history.h, `ARCH-OWNER-12`), and Construction history
+// must never be able to move a sculpted vertex.
 //
-// Snapshot rather than a typed reversible command per operation: the product
-// today has three Construction mutations and is about to grow a fourth that
-// emits a continuous stream, and a per-operation inverse would have to be
-// written, tested and kept correct for each of them plus every composition of
+// Snapshot rather than a typed reversible command per operation: a drag emits a
+// continuous stream of mutations, and a per-operation inverse would have to be
+// written, tested and kept correct for every mutation and every composition of
 // them. The cost is that a step is proportional to the SCENE rather than to the
-// edit; at this scene size and this capacity that is a few hundred kilobytes in
-// the worst case, and it buys atomicity for creation — where the "inverse" spans
-// the scene's body list, its order and its selection — for free.
+// edit -- a few hundred kilobytes in the worst case at this capacity -- and it
+// buys atomicity for creation and deletion, whose "inverse" spans the body
+// list, its order and the selection, for free.
 #pragma once
 
 #include <cstddef>

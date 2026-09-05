@@ -17,27 +17,15 @@ import android.widget.ScrollView;
  * {@code ObjectId} and does not remember which body is active. There is one
  * scene list in the product and it simply moves between three hosts.
  *
- * <p><b>Why it exists.</b> The scene list used to live inside the Construction
- * shape editor, which is the Property Inspector's body — so a panel titled
- * "Shape" opened with the list of bodies first and pushed the width/height/depth
- * fields, the thing it is named after, below the fold of a sheet capped at 30 %
- * of the window. Scene-level content nested inside the active-object value panel
- * is a role confusion, and on a compact window it was also a list scrolling
- * inside another scroll. Here the two concerns are separate surfaces: what the
- * scene HOLDS, and what the selected body's numbers ARE.
+ * <p><b>Why it is its own surface.</b> Scene-level content nested inside the
+ * active-object value panel is a role confusion (and a list scrolling inside
+ * another scroll), so the two concerns are separate surfaces: what the scene
+ * HOLDS, and what the selected body's numbers ARE.
  *
  * <p>It scrolls, because a scene can grow without limit while a window cannot,
- * and it is capped so it can never become the window the way the old sheet did.
- *
- * <p>Opened from the Objects capsule and anchored to it, so reaching the scene
- * costs one tap in every mode and every window, and the list visibly comes out
- * of the control that names the active body rather than arriving from a window
- * edge that has nothing to do with it.
- *
- * <p>The growth itself is {@link AnchoredSurfaceView}'s, not this class's. It
- * used to be a private copy — its own duration constants, its own pivot, no
- * interpolator — and the copy is what made the first open of the session grow
- * from the wrong corner.
+ * and it is capped so it can never become the window. Opened from the Objects
+ * capsule and anchored to it, so reaching the scene costs one tap in every mode
+ * and every window. The growth itself is {@link AnchoredSurfaceView}'s.
  */
 final class ObjectsPopoverView extends AnchoredSurfaceView {
 

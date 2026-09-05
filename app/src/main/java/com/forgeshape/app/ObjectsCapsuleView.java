@@ -30,18 +30,15 @@ import android.widget.TextView;
  *
  * <p><b>{@code +} is an anchor, not an act.</b> It creates nothing on its own —
  * tapping it opens the palette, and a body exists only once a shape has been
- * chosen. A {@code +} that silently appended a default box is what made
- * creation feel like an administrative operation rather than a choice.
+ * chosen; a {@code +} that silently appended a default box would make creation
+ * an administrative operation rather than a choice.
  *
- * <p><b>And in Sculpt there is no {@code +} at all.</b> {@code sceneAddBody()}
- * refuses while sculpting — that is the domain's rule and it is correct — but
- * the control was drawn anyway, so a user could tap it, be shown six shapes,
- * choose one, and only then be told no. A path that must fail is worse than an
- * absent one, and it is worse than a disabled one too: what a greyed {@code +}
- * would say is "not now", which is exactly as much as its absence says, at the
- * cost of a dead control in the resting workspace. The scene stays reachable —
- * the body name still opens the list — because seeing what the scene holds is
- * as true in Sculpt as anywhere else. See {@link #showCreationAvailable}.
+ * <p><b>In Sculpt (and while sketching) there is no {@code +} at all.</b>
+ * {@code sceneAddBody()} refuses there, and a path that must fail is worse than
+ * an absent one — and worse than a disabled one, which says "not now" at the
+ * cost of a dead control in the resting workspace. The scene stays reachable
+ * because the body name still opens the list. See
+ * {@link #showCreationAvailable}.
  */
 final class ObjectsCapsuleView extends LinearLayout {
 

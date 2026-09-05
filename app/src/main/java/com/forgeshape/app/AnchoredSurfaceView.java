@@ -6,33 +6,19 @@ import android.widget.LinearLayout;
 /**
  * A context surface that <b>grows out of the control that opened it</b>.
  *
- * <p>Four surfaces in the Editor Workspace are this: the Objects panel, the Add
- * Primitive palette, the precision surface and the Display popover. They are
- * different content in different places, but they are one <i>motion</i> — a
- * panel leaving a control — and before UI-R4B each of them owned a private copy
- * of it. The copies had drifted: three different pairs of duration constants for
- * one family, no interpolator anywhere (so the platform's ease-in-out ran, which
- * is the wrong curve for a response to a tap), non-uniform X/Y scale in two of
- * them, and — the visible one — a first open that grew from the wrong corner.
+ * <p>Five surfaces in the Editor Workspace are this: the Objects panel, the Add
+ * Primitive palette, the precision surface, the Display popover and the project
+ * surface. Different content in different places, but one <i>motion</i> — a
+ * panel leaving a control — with one owner, so the durations, the curve and
+ * the pivot cannot drift between them.
  *
- * <p><b>The first-open defect, and why it needed a class rather than a fix.</b>
- * The pivot is the corner the surface grows from, and it is the invoker's
- * corner: the surface's own bottom-left when it unfolds upward, its top-left
- * when it unfolds down, its top-right for the popover under the toolbar. All
- * three are expressed in the surface's own size — and on the first open the
- * surface has never been laid out, so {@code getHeight()} is 0 and the pivot
- * lands at the top-left of a zero-sized box. The very first time a user opened
- * the scene list, the palette or the exact values, it grew from nowhere in
- * particular; every later open was correct, which is exactly why it survived
- * review. The Display popover had already been patched with an
- * {@code onSizeChanged} pivot; the other three had not, and a patch per surface
- * is how the next one is forgotten.
- *
- * <p>Here the growth simply <b>waits for a size</b>. An open with no size yet
- * puts the surface in its start state and makes it visible so the traversal
- * measures it, and the animation starts from {@link #onSizeChanged} with a real
- * pivot. That costs one frame on the first open of each surface in a process and
- * nothing ever after.
+ * <p><b>The growth waits for a size.</b> The pivot is the invoker's corner
+ * expressed in the surface's own size, and on the first open the surface has
+ * never been laid out, so {@code getHeight()} is 0 and the pivot would land on
+ * a zero-sized box. An open with no size yet puts the surface in its start
+ * state and makes it visible so the traversal measures it, and the animation
+ * starts from {@link #onSizeChanged} with a real pivot. That costs one frame on
+ * the first open of each surface in a process and nothing ever after.
  *
  * <p><b>What every subclass inherits, and may not re-decide:</b>
  *

@@ -1,43 +1,25 @@
-// The Imported Mesh — a durable, non-parametric project representation.
+// The Imported Mesh — a durable, non-parametric project representation
+// (`IMPORT-01A`, `ARCH-OWNER-10`).
 //
-// WHAT IT IS
-// ----------
-// `IMPORT-01A` (`ARCH-OWNER-10`) promotes the GLB-IMPORT-R1 ingestion path from
-// a session-only preview into real project objects. An Imported Mesh is one of
-// the two representations a `SceneObject` can own, and it is the first one that
-// is **not** derived from parameters:
+// One of the three SOURCE representations a `SceneObject` owns for life
+// (Construction Source, Imported Mesh, CAD Body), and the one that is NOT
+// derived from parameters: a Construction Source and a CAD Body are REGENERATED
+// on every load, an Imported Mesh IS the geometry. No rule could recreate it,
+// so it is project truth and it is serialized (`IMPT`).
 //
-//   * a Construction Source is a primitive plus its dimensions, and its
-//     geometry is REGENERATED on every load by `generateMesh()`;
-//   * an Imported Mesh IS the geometry. There is no rule that could recreate
-//     it, so it is project truth and it is serialized.
+// NOT a Construction Source: no `PrimitiveKind`, no dimensions, no remembered
+// parameter sets, and nothing may reconstruct one from it. NOT a Frozen Sculpt
+// Mesh: this type carries no `SculptRevision`, adjacency or stroke state; since
+// `IMPORT-01B` a body may freeze one FROM it (`buildSculptSourceMesh`) and the
+// imported arrays stay immutable throughout. NOT appearance: COLOR_*, TEXCOORD*
+// and the material's colour/roughness/metallic/textures are validated by the
+// parser and decoded by nothing, so no document may claim they are preserved.
+// `doubleSided` is the one exception, carried per submesh because it changes
+// which triangles are VISIBLE.
 //
-// That difference is the whole reason this type exists rather than an imported
-// file being flattened into a Box nobody could edit back.
-//
-// WHAT IT IS NOT
-// --------------
-// **Not a Construction Source.** It has no `PrimitiveKind`, no dimensions and
-// no remembered parameter sets, and nothing may reconstruct one from it. A body
-// owns one representation or the other and never both.
-//
-// **Not a Frozen Sculpt Mesh.** `IMPORT-01A` deliberately has no Start
-// Sculpting on an imported body — that is `IMPORT-01B` — and this type carries
-// no `SculptRevision`, no adjacency and no stroke state.
-//
-// **Not appearance.** The R1 parser validates COLOR_0/COLOR_1/TEXCOORD and the
-// material's colour, roughness, metallic and textures, and decodes none of
-// them. They were never read, so they are not preserved here and no document
-// may claim they are. `doubleSided` is the single exception, and it is carried
-// because it changes which triangles are VISIBLE, not how they look.
-//
-// SUBMESH BATCHES
-// ---------------
-// One glTF mesh's several TRIANGLES primitives stay INSIDE one object — they
-// are submeshes, not objects, and they must never appear as separate rows in
-// the Objects list. They survive as index ranges over one vertex array, each
-// carrying its own `doubleSided`, because a character whose eyes are open
-// sheets and whose body is a closed solid is one mesh with two culling answers.
+// SUBMESH BATCHES: one glTF mesh's several TRIANGLES primitives stay INSIDE one
+// object as index ranges over one vertex array, each with its own
+// `doubleSided`. They are submeshes, never rows in the Objects list.
 //
 // Platform-neutral C++17: no Android, no JNI, no Vulkan, no filesystem, no
 // `Uri`. Where the bytes came from is not project truth and is not here.

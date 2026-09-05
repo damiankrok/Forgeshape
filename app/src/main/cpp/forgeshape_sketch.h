@@ -9,9 +9,10 @@
 // What is truth, and what is derived
 // ----------------------------------
 // TRUTH is the entity list: a line's two endpoints, a polyline's vertices, a
-// rectangle's centre and its two sizes, a circle's centre and its radius --
-// each with a stable, per-sketch integer identity. That is what the project
-// file stores and what a numeric edit changes.
+// rectangle's centre and its two sizes, a circle's centre and its radius, an
+// arc's three authored points and a spline's authored point list -- each with
+// a stable, per-sketch integer identity. That is what the project file stores
+// and what a numeric edit changes.
 //
 // DERIVED is everything this file computes from it: which entities close a
 // profile, the polygon a profile becomes, the triangles that polygon splits

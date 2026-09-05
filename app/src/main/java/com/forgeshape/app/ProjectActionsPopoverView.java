@@ -11,46 +11,34 @@ import android.widget.TextView;
  *
  * <p><b>Every entry works, and there are only as many as there are working
  * things.</b> Three groups, because there are three questions. The first is the
- * app's own storage — one project slot, so exactly Save Project and Open Saved
- * Project. The second is the device's, through the system's own document UI:
+ * app's own storage — New Project…, Save Project and Open Saved Project (one
+ * slot). The second is the device's, through the system's own document UI:
  * Save Copy… writes the same canonical `.forge` bytes wherever the user says,
  * Open File… reads one back, and Share Diagnostics… writes the local report.
  * The third is somebody else's mesh — Import GLB…, and nothing beside it.
  *
  * <p><b>Transfer is not interchange.</b> What Save Copy… writes is a ForgeShape
- * project, readable by another ForgeShape installation. The wording never says
- * export, because Export is a different act with its own home in the Global
- * Toolbar. No New, no Save As and no recent list either.
+ * project, readable by another ForgeShape installation; Export is a different
+ * act with its own home in the Global Toolbar. No Save As and no recent list.
  *
- * <p><b>The third group brings somebody else's mesh in.</b> It opens a `.glb` —
- * one ForgeShape wrote, or an ordinary static mesh another tool wrote — reads
- * it with a parser that shares nothing with the writer, and turns each
- * supported mesh node into a real object: a row in the Objects list, an
- * ordinary gizmo, one Undo step for the whole import, and geometry that is
- * saved into `.forge` and comes back without the source file. An imported
- * object is non-parametric, so <i>Shape</i> has no answer for it, and
- * <i>Start Sculpting</i> on one is `IMPORT-01B`; both are withdrawn while it is
- * selected. OBJ and FBX remain absent in both directions.
+ * <p><b>Import GLB… creates real objects</b>: one per supported mesh node, each
+ * a row in the Objects list with the ordinary gizmo, one Undo step for the
+ * whole import, and geometry saved into `.forge` without the source file. An
+ * imported object is non-parametric, so <i>Shape</i> is withdrawn for one; it
+ * can be sculpted (`IMPORT-01B`). OBJ and FBX remain absent in both
+ * directions. This is the ONE user-facing GLB route: the session-only
+ * diagnostic preview below JNI is reached only from the verification suites,
+ * because two visible ways to open a `.glb` that did different things to the
+ * project is exactly the confusion to avoid.
  *
- * <p>There is exactly ONE user-facing GLB route in here. The session-only
- * diagnostic preview that `GLB-IMPORT-R0/R1` built still exists below JNI and
- * still draws a file beside the scene, but it is reached only from the
- * verification suites: two visible ways to open a `.glb` that did different
- * things to the project is precisely the confusion this surface must not
- * create.
- *
- * <p>It is an {@link AnchoredSurfaceView} like every other context surface, and
- * it grows out of the control that opened it rather than sliding in from a
- * window edge, so it reads as belonging to that control. It hangs UNDER the
- * toolbar, which is where its anchor is in every window; that is stated here
- * rather than pushed in by the workspace, exactly as the display popover states
- * it, because this surface's anchor cannot move either.
+ * <p>It is an {@link AnchoredSurfaceView} that hangs UNDER the toolbar, where
+ * its anchor is in every window; that is stated here rather than pushed in by
+ * the workspace, exactly as the display popover states it.
  *
  * <p><b>Owns no state.</b> Each row reports a request; the workspace performs it
  * and writes the outcome to the one status line. The only thing this view is
  * told is whether there is a saved project to open at all, which decides whether
- * Open is offered as a working control or drawn as the recessed, inert row it
- * honestly is — a control that cannot succeed is not offered as though it could.
+ * Open is a working control or the recessed, inert row it honestly is.
  */
 final class ProjectActionsPopoverView extends AnchoredSurfaceView {
 

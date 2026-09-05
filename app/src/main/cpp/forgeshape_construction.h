@@ -30,9 +30,10 @@
 // named accordingly at every boundary. RuntimeMesh positions are DERIVED `float`
 // data. There is no mm/cm/m presentation or input conversion in this module.
 //
-// Scope: exactly ONE active object which is a box, a cylinder, a sphere, a cone,
-// a capsule or a plane. There is no registry, no scene graph, no hierarchy, no
-// second object and no create or delete operation.
+// Scope: ONE body's Construction Source -- a box, a cylinder, a sphere, a cone,
+// a capsule or a plane. The scene that holds several bodies, their placement,
+// creation and deletion live in forgeshape_scene.h and forgeshape_body_delete.h,
+// not here.
 #pragma once
 
 #include <cstdint>
@@ -689,11 +690,12 @@ bool sameConstructionShape(const ConstructionObjectState& a, const ConstructionO
 // Construction Source.
 bool sameConstructionPlacement(const TransformValues& a, const TransformValues& b);
 
-// THE one active Construction object.
+// One body's Construction Source.
 //
-// It owns identity, which primitive is active, both primitives' parameters, and
-// the placement. This is deliberately ONE object, not a registry: there is no
-// container, no list, no parent, no create and no delete.
+// It owns identity, which primitive is active and all six primitives'
+// parameters. The placement is the BODY's (`SceneObject`), not this object's,
+// and the collection is the scene's: there is no container, parent, create or
+// delete here.
 //
 // Every primitive's parameters are retained across a kind change, so switching
 // Box -> Cylinder -> Box does not silently forget the box's dimensions. Only

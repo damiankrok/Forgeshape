@@ -1,7 +1,9 @@
-// ForgeShape native Vulkan renderer (Stage 003 viewport foundation).
+// ForgeShape native Vulkan renderer.
 //
-// Owns exactly what is needed to present one indexed cube with perspective and
-// depth into an Android Surface. This is deliberately NOT a generic engine.
+// Owns exactly what is needed to present the scene snapshot it is handed -- the
+// bodies' derived render meshes, the grid, the gizmo and the sketch overlay --
+// into an Android Surface, and no geometry truth. Deliberately NOT a generic
+// engine: one device, one swapchain, a fixed set of pipelines.
 #pragma once
 
 // Required before <vulkan/vulkan.h> to expose VkAndroidSurfaceCreateInfoKHR

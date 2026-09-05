@@ -1,7 +1,7 @@
 // ForgeShape minimal math.
 //
-// Deliberately tiny and self-owned: only what one perspective cube needs.
-// No third-party math library is used.
+// Deliberately tiny and self-owned: only what the viewport, picking and the
+// geometry domain need. No third-party math library is used (repository rule).
 #pragma once
 
 #include <cmath>

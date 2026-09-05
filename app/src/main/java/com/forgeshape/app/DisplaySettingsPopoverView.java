@@ -19,50 +19,26 @@ import android.widget.TextView;
  * grow into one invites exactly that.
  *
  * <p><b>Every control here works.</b> Nothing in this popover is drawn disabled
- * as a promise — the Tool Rail carries reserved entries because a rail is a map
- * of the product, and a settings surface is not. That is why the View group
- * holds one chip pair and not five: a selection outline, a view cube and named
- * views arrive in this group when they arrive, and not before.
+ * as a promise, which is why the View group holds one chip pair and not five:
+ * a selection outline, a view cube and named views arrive here when they
+ * arrive, and not before.
  *
  * <p>Projection is the odd member and is here on purpose. It is <em>camera</em>
  * state rather than a display setting — native code keeps it with the camera
  * pose, not in the display store — but it is the other control that changes how
- * the object reads without changing what it is, and giving it its own chrome
- * surface would cost the user a second place to look for the same kind of
- * decision.
+ * the object reads without changing what it is, and a second surface for the
+ * same kind of decision would cost the user a second place to look.
  *
  * <p><b>Owns no state.</b> Every chip reports a request; native code decides,
  * and {@link #showSettings} repaints from what native code reports afterwards.
- * That is why the settings survive a HOME/resume with no save/restore code here
- * — the truth was never in this view to begin with.
+ * That is why the settings survive a HOME/resume with no save/restore code here.
  *
- * <h2>Motion</h2>
- *
- * <p>Three patterns, taken from how creative apps on iOS handle a compact
- * settings surface (Craft's line-style popover, Apple Mail's shape popover,
- * Freeform's alignment settings):
- *
- * <ul>
- *   <li><b>The panel grows from its anchor</b> rather than sliding in from a
- *       screen edge, so it reads as belonging to the button that opened it.
- *   <li><b>Selection feedback happens in place.</b> Choosing Faceted repaints
- *       one chip; the popover does not move, re-animate or close. Freeform's
- *       alignment menu does the same thing, and it is what makes trying several
- *       options feel like one continuous act instead of four separate ones.
- *   <li><b>The surface is not modal</b> and stays open across several changes.
- * </ul>
- *
- * <p>Every animation here is short, interruptible, and cancelled outright when
- * the system animator scale is zero — the platform's own "reduce motion"
- * signal. Nothing here is ever on the path of a stylus sample: the popover is a
- * chrome surface, and a viewport gesture never touches it.
- *
- * <p><b>None of that motion is written here any more.</b> This popover was the
- * one surface that had already solved the anchor-pivot problem, so at UI-R4B
- * the solution was lifted out of it into {@link AnchoredSurfaceView} and the
- * other three surfaces were moved onto it. The only thing this class still says
- * about its own motion is which edge it hangs off, which is a fact about where
- * it is anchored rather than about how it moves.
+ * <p><b>Motion.</b> The panel grows from its anchor (it belongs to the button
+ * that opened it), selection feedback happens in place (choosing Faceted
+ * repaints one chip; the popover does not move, re-animate or close), and the
+ * surface is not modal, so comparing options is one continuous act. The growth
+ * itself is {@link AnchoredSurfaceView}'s; this class states only which edge it
+ * hangs off. Nothing here is ever on the path of a pointer sample.
  */
 final class DisplaySettingsPopoverView extends AnchoredSurfaceView {
 

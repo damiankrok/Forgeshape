@@ -18,16 +18,10 @@ import android.view.animation.PathInterpolator;
  * durations, the reduced-motion question, the cancel-first rule, one alpha
  * helper, and the anchored-surface growth.
  *
- * <p><b>The anchored growth was four copies before UI-R4B</b> — the Objects
- * panel, the Add Primitive palette, the precision surface and the Display
- * popover each carried private {@code OPEN_DURATION_MS} / {@code
- * CLOSE_DURATION_MS} constants for the same motion, three of them had drifted
- * to different numbers from {@link #ENTER_MS} / {@link #EXIT_MS}, none of them
- * set an interpolator at all (so the platform's default ease-in-out ran, which
- * starts a surface slowly at the moment the user is waiting for it), and two
- * scaled X and Y by different amounts, which stretches a panel rather than
- * growing it. One family of motion now has one owner. See
- * {@link AnchoredSurfaceView}, which is where a surface takes it.
+ * <p>The anchored growth has one owner — {@link AnchoredSurfaceView} takes it
+ * — so its durations, its ease-out curve (a response to a tap must start fast)
+ * and its uniform scale (a growth, never a stretch) cannot drift between the
+ * surfaces that share it.
  *
  * <p>The rules:
  *

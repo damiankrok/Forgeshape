@@ -8,8 +8,8 @@
 // only thing that may turn a touch gesture into a selection change. It contains
 // no JNI, Android or Vulkan types.
 //
-// Stage 005 is a selection FOUNDATION: there is exactly one selectable object,
-// no hierarchy, no scene graph and no multi-select.
+// Exactly one body is selected at a time (`kNoObject` for none): no hierarchy,
+// no scene graph and no multi-select.
 #pragma once
 
 #include <cstdint>

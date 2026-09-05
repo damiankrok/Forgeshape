@@ -128,22 +128,13 @@ final class EditorWorkspaceView extends FrameLayout
     /**
      * Undo and Redo, in one capsule at the trailing end of the bottom row.
      *
-     * <p><b>Why not the Global Toolbar's utility group.</b> That is where
-     * mode-independent global chrome lives and it is the first place these
-     * belong by category — but the toolbar row is already the tightest thing in
-     * the workspace. On the narrowest window the product supports, the utility
-     * group, the status capsule and the editing group divide 395 dp between
-     * them, and two more 48 dp controls would leave the mode transition under
-     * its natural width, which is how "Back to Constructi…" happened before.
-     * Buying a place for Undo by abbreviating the way out of Sculpt Mode is a
-     * bad trade.
-     *
-     * <p>The bottom row had room and, more importantly, is where the hand is:
-     * Undo is the most repeated act in an editor and the top trailing corner is
-     * the hardest point on a phone to reach. It sits opposite the Objects
-     * capsule, so the bottom edge reads as what the project IS on the leading
-     * side and what just happened to it on the trailing one, with the model
-     * between. Neither capsule spans, so this is not a bottom toolbar.
+     * <p>Not in the Global Toolbar's utility group: on the narrowest supported
+     * window that row is already the tightest thing in the workspace, and two
+     * more 48 dp controls would push the mode transition under its natural
+     * width. The bottom row has room and is where the hand is — Undo is the
+     * most repeated act in an editor and the top trailing corner is the hardest
+     * point on a phone to reach. Neither bottom capsule spans, so this is not a
+     * bottom toolbar.
      */
     private final LinearLayout historyGroup;
     private final ImageView undoAction;
@@ -371,39 +362,26 @@ final class EditorWorkspaceView extends FrameLayout
                     new ForgeShapeSurfaceView.OnViewportGestureSettled() {
                         @Override
                         public void onViewportGestureStarted() {
-                            // The user's pointer is on the model — in Sculpt
-                            // Mode that is a real stroke. Chrome must not spend
-                            // main-thread time on a transition while pointer
-                            // samples are arriving, so from here until the
-                            // gesture settles every chrome detent change is
-                            // instant. Nothing about the gesture's own
-                            // arbitration is touched: this decides only whether
-                            // a PANEL animates.
+                            // Pointer samples outrank chrome motion: while a
+                            // gesture (in Sculpt, a real stroke) is in flight,
+                            // every panel transition is instant. Only whether
+                            // a PANEL animates is decided here.
                             setChromeMotionAllowed(false);
                         }
 
                         @Override
                         public void onViewportGestureSettled() {
                             setChromeMotionAllowed(true);
-                            // Unconditionally, and before any of the questions
-                            // below. A sculpt stroke never passes through Java
-                            // — it is resolved entirely in native code from the
-                            // touch samples — so this gesture edge is the only
-                            // moment the Android layer ever learns that a stroke
-                            // may have happened. Noting is cheap and the
-                            // controller decides whether anything actually
-                            // changed; not noting would leave a whole stroke
-                            // unprotected until some unrelated edit came along.
+                            // Unconditionally and first: a sculpt stroke never
+                            // passes through Java, so this edge is the only
+                            // moment the Android layer learns one may have
+                            // happened. The controller decides whether the
+                            // fingerprint actually moved.
                             noteProjectMaybeDirty();
-                            // A sketch gesture places, selects or refuses; the
-                            // only chrome with something new to say is the
-                            // sketch's own precision surface and the status
-                            // line. Nothing about the scene moved.
                             // A sketch may have STARTED in native since the last
-                            // gesture -- the spatial chooser's confirm tap begins
-                            // one with no Java call -- so a mode transition here
-                            // must rebuild the chrome, not just refresh the
-                            // sketch surface.
+                            // gesture (the spatial chooser's confirm tap begins
+                            // one with no Java call), so a transition here must
+                            // rebuild the chrome, not only the sketch surface.
                             final boolean sketchingNow = isSketching();
                             if (sketchingNow != lastKnownSketching) {
                                 lastKnownSketching = sketchingNow;
@@ -420,21 +398,14 @@ final class EditorWorkspaceView extends FrameLayout
                                 onNativeStateChanged();
                                 return;
                             }
-                            // A gizmo drag that committed a step moved the
-                            // authoritative placement, so the exact values and
-                            // the history controls both have something new to
-                            // say. An orbit did not, and re-reading for one
-                            // would throw away a half-typed draft — which is
-                            // why this asks whether a drag COMMITTED rather
-                            // than whether a gesture happened.
-                            // A completed sculpt stroke is the same kind of
-                            // event for the OTHER history: it made an Undo
-                            // available where there was none. Only the two
-                            // history controls have anything new to say, so
-                            // this refreshes them rather than calling
-                            // syncFromNative — a full re-read after every
-                            // stroke would rewrite the brush controls under a
-                            // user who is still sculpting with them.
+                            // Only what COMMITTED is refreshed, never every
+                            // gesture: an orbit changed nothing, and a re-read
+                            // for one would discard a half-typed draft. A
+                            // completed stroke refreshes only the two history
+                            // controls (a full sync would rewrite the brush
+                            // controls under a user still sculpting); a gizmo
+                            // drag that recorded a step moved the placement and
+                            // re-reads everything.
                             final int sculptDepth = NativeViewport.sculptUndoDepth();
                             if (sculptDepth != lastKnownSculptUndoDepth) {
                                 lastKnownSculptUndoDepth = sculptDepth;
@@ -489,47 +460,31 @@ final class EditorWorkspaceView extends FrameLayout
         objectsDock = new ScrollView(context);
         objectsDock.setId(R.id.objects_dock);
         objectsDock.setVisibility(GONE);
-        // TIER 2, INSET — the same material the Objects PANEL wears on a phone,
-        // and deliberately not a docked slab any more.
-        //
-        // It used to be bg_chrome_docked_leading: opaque, flat, square against
-        // the window edge and rounded only on the side facing the model. That is
-        // desktop-CAD furniture. It made the expanded window a different product
-        // from the phone rather than the same product with more room — the same
-        // scene list, in the same session, wore a floating rounded surface on one
-        // window and a wall on the other. Here it is a context surface standing
-        // clear of the edge, which is the vocabulary every other surface in the
-        // workspace already speaks.
+        // TIER 2, INSET: the same context-surface material the Objects PANEL
+        // wears on a phone, standing clear of the window edge. A docked slab
+        // flush against the edge is desktop-CAD furniture and would make the
+        // expanded window a different product rather than the same one with
+        // more room.
         EditorControlStyles.applyContextSurface(objectsDock);
-        // Opaque to touch, exactly as every other chrome surface is, so reaching
-        // for a body never orbits the camera behind the column. A clickable
-        // ScrollView consumes what its own scrolling and its own rows did not.
+        // Opaque to touch like every chrome surface, so reaching for a body
+        // never orbits the camera behind the column.
         objectsDock.setClickable(true);
-        // The same padding the Property Inspector uses, because the two are the
-        // two docked columns of the same layout and a 4 dp inset put the OBJECTS
-        // heading hard against the window edge.
+        // The Property Inspector's padding: the two are the two docked columns
+        // of one layout.
         final int dockPad = EditorControlStyles.dimen(context, R.dimen.inspector_padding);
         objectsDock.setPadding(dockPad, dockPad, dockPad, dockPad);
-        // Top-aligned and WRAPPING its content, for the same reason the side
-        // inspector does: a scene of two bodies in a full-height column is one
-        // short list and an arm's length of empty panel. Bounded by the row, so
-        // a scene that outgrows the window scrolls instead of stretching it.
+        // Top-aligned and WRAPPING its content, bounded by the row: a two-body
+        // scene is a short list, not an arm's length of empty panel, and a
+        // scene that outgrows the window scrolls instead of stretching it.
         final LinearLayout.LayoutParams objectsParams = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT);
         objectsParams.gravity = Gravity.TOP;
         objectsParams.rightMargin = EditorControlStyles.dimen(context, R.dimen.row_gap_small);
-        // INSET from the leading window edge, not flush against it. This is the
-        // half of "same vocabulary" that is a margin rather than a material: a
-        // surface touching the window edge is part of the frame, and a surface
-        // standing off it is a panel in a workspace. It is the same claim the
-        // inset bottom sheet already makes.
+        // Inset on every side: off the leading edge (a surface touching the
+        // window edge is part of the frame), clear of the status capsule above
+        // (the toolbar container is transparent) and of the bottom edge.
         objectsParams.leftMargin = EditorControlStyles.dimen(context, R.dimen.row_gap);
-        // Clear of the status capsule above it. The toolbar container is
-        // transparent, so without this the column's top edge butts straight into
-        // a floating capsule and the two read as one broken surface.
         objectsParams.topMargin = EditorControlStyles.dimen(context, R.dimen.row_gap);
-        // And clear of the bottom edge, so it is a bounded panel rather than a
-        // column that happens to be short.
         objectsParams.bottomMargin = EditorControlStyles.dimen(context, R.dimen.row_gap);
         middleRow.addView(objectsDock, objectsParams);
 
@@ -1097,23 +1052,12 @@ final class EditorWorkspaceView extends FrameLayout
      * Decides whether Objects has a column right now, from the window <b>and</b>
      * the mode.
      *
-     * <p>A window wide enough is necessary and no longer sufficient. In Sculpt a
-     * permanent scene column is not context, it is furniture: body switching is
-     * refused while sculpting, creation is refused, and what is left is a list
-     * of names with nothing to do — 180 dp of the leading edge spent on it.
-     *
-     * <p>And it was not free. The column sits before the brush controls in the
-     * middle row, so its width pushed Radius and Strength 180 dp inboard, onto
-     * the model and out from under the hand that reaches for them. That is the
-     * expanded-window defect the owner review named: the two most-used Sculpt
-     * controls displaced by a panel that Sculpt cannot use. Withdrawing the
-     * column in Sculpt answers both at once — the brush controls return to the
-     * leading edge, and Sculpt gets the same Objects capsule the phone has, in
-     * the same place, which is the vocabulary the expanded window is supposed to
-     * share.
-     *
-     * <p>The scene stays reachable in every window and every mode: the capsule
-     * names the active body and opens the list.
+     * <p>A wide window is necessary, not sufficient. In Sculpt a permanent scene
+     * column is furniture — body switching and creation are refused there — and
+     * it sits before the brush controls in the middle row, so its width would
+     * push Radius and Strength inboard onto the model. Withdrawing it in Sculpt
+     * gives Sculpt the same Objects capsule the phone has; the scene stays
+     * reachable through it in every window and mode.
      */
     private void applyObjectsPlacement() {
         // And only over a project: the CAD bootstrap has no bodies to list and
@@ -1122,20 +1066,14 @@ final class EditorWorkspaceView extends FrameLayout
     }
 
     /**
-     * Gives Objects a column of its own, or hands it back to the shape editor.
+     * Gives Objects a column of its own, or hands it back to the popover.
      *
-     * <p><b>One instance, re-parented</b> — never a second list. A second Java
-     * Objects view would be a second place for "which body is active" to be
-     * remembered, and the answer to that question lives in exactly one place,
-     * below JNI. Because the same view moves, a viewport pick, an Objects row
-     * tap and Add Body all still end at the same one native fact and the same
-     * one {@code refreshFromNative()}, whichever window the user is in.
-     *
-     * <p>Instant, not animated. This runs inside {@code onMeasure}, and
-     * starting an animation from a measure pass is how a re-parented surface
-     * ends up laid out at zero height; a structural rearrangement caused by a
-     * rotation or a window resize is also not a transition a user asked for.
-     * {@link ChromeMotion} is untouched.
+     * <p><b>One instance, re-parented</b> — never a second list, which would be
+     * a second place for "which body is active" to be remembered; that answer
+     * lives below JNI. Instant, not animated: this runs inside
+     * {@code onMeasure}, where starting an animation lays a re-parented
+     * surface out at zero height, and a rearrangement caused by a rotation is
+     * not a transition a user asked for.
      */
     private void placeObjects(boolean docked) {
         if (appliedObjectsDocked != null && appliedObjectsDocked == docked) {
@@ -1143,14 +1081,11 @@ final class EditorWorkspaceView extends FrameLayout
         }
         appliedObjectsDocked = docked;
 
-        // The capsule exists only while the panel is the way to reach the
-        // scene. A docked column IS the scene, permanently, and names the
-        // active body itself — so a capsule beside it would draw one fact
-        // twice. GONE rather than invisible: the capsule then costs the row no
-        // width at all, so the leading end of the bottom edge gives the model
-        // back everything the capsule was standing on. The history capsule at
-        // the trailing end is unaffected and stays: which body is current has a
-        // second home on a docked window, and taking a change back does not.
+        // A docked column IS the scene and names the active body itself, so a
+        // capsule beside it would draw one fact twice. GONE rather than
+        // invisible, so the row gives the model back the capsule's width; the
+        // history capsule stays, because taking a change back has no second
+        // home on a docked window.
         objectsCapsule.setVisibility(docked ? GONE : VISIBLE);
 
         if (!docked) {
@@ -1262,10 +1197,9 @@ final class EditorWorkspaceView extends FrameLayout
      * so choosing Box legitimately changes nothing.
      *
      * <p>On a refusal the body still exists and is still a box, and the status
-     * line says exactly that. It is deliberately not repaired and the body is
-     * deliberately not removed — there is no scene delete in the product, and
-     * inventing one to tidy up after a refusal would put a destructive path
-     * into the shell for the sake of a tidier message.
+     * line says exactly that; the one edit around both calls records nothing
+     * when the add itself was refused, and the user can delete an unwanted body
+     * from the Objects list as they would any other.
      */
     @Override
     public void onAddPrimitiveChosen(int primitiveKind) {
@@ -1412,36 +1346,16 @@ final class EditorWorkspaceView extends FrameLayout
      * How far right an anchored surface may reach before it starts covering a
      * control that is still live underneath it.
      *
-     * <p>A context surface may stand on the model — that is what makes it a
-     * surface over a viewport rather than a second column — but it may not stand
-     * on <b>another control</b>. Add Primitive did: anchored to the Objects
-     * capsule's {@code +} low on the leading edge, it is wider than the distance
-     * from that {@code +} to the window edge, so the old clamp — "as far right
-     * as the window allows" — slid it under the trailing tool cluster and left a
-     * crescent of the precision toggle sticking out from behind it. A control
-     * half-covered by a panel is worse than one that is not drawn: it still
-     * takes a touch, and the panel above it reads as broken rather than as
-     * layered.
+     * <p>A context surface may stand on the model but never on <b>another
+     * control</b>: a half-covered control still takes touches and the panel
+     * above it reads as broken rather than layered, and moving it in front by
+     * z-order is not a fix. So the limit is the leading edge of the trailing
+     * tool cluster or of an open side-placed precision surface, whichever comes
+     * first, less the gap every anchored surface stands off its invoker. The
+     * surface moves; the cluster does not.
      *
-     * <p>So the limit is the tool cluster's own leading edge, less the same gap
-     * every anchored surface already stands off its invoker. The palette moves
-     * rather than the cluster, and it still grows out of the {@code +} it came
-     * from — nothing about the motion, the pivot or the z-order changes, because
-     * hiding the collision behind a z-order is not resolving it: the control
-     * would still be under the panel and still be taking touches.
-     *
-     * <p>The rule is skipped for a surface the cluster itself opened. The
-     * precision surface's invoker IS the cluster's toggle, and a surface
-     * forbidden to overlap the control it grew out of could not be anchored to
-     * it at all.
-     *
-     * <p>An open side-placed precision surface belongs to the same trailing
-     * region and is measured with the host. It used to sit outboard of the
-     * cluster, so clamping to the cluster cleared it for free; now that the
-     * host keeps the trailing edge and the panel is seated inboard of it, the
-     * limit is the leading edge of whichever of the two comes first — otherwise
-     * the crescent this rule exists to prevent simply reappears under an open
-     * panel instead of under the rail.
+     * <p>Skipped for a surface the cluster itself opened: the precision
+     * surface's invoker IS the cluster's toggle.
      */
     private int trailingLimitFor(View invoker, int width, int gap) {
         final int windowLimit = getWidth() - gap;
@@ -1546,42 +1460,23 @@ final class EditorWorkspaceView extends FrameLayout
             applyPrimarySurfaceChromePolicy();
             return;
         }
-        // WRAP_CONTENT and top-aligned, not MATCH_PARENT.
-        //
-        // A side panel stretched to the full window height is mostly empty for
-        // most of the product's life — a box has three dimensions, a placement
-        // has six fields, and a tablet window is 2500 px tall. That emptiness is
-        // what made the expanded layout read as a desktop CAD frame rather than
-        // as a viewport with panels beside it. Wrapping its content means the
-        // panel ends where its content ends and the viewport keeps the rest of
-        // the column, which is the whole point of a viewport-first tool.
-        //
-        // It still cannot outgrow the window: a WRAP_CONTENT child of a bounded
-        // LinearLayout is measured AT_MOST the parent's height, so a long body
-        // simply scrolls exactly as it always did.
+        // WRAP_CONTENT and top-aligned, not MATCH_PARENT: a side panel
+        // stretched to a 2500 px tablet window is mostly empty and reads as a
+        // desktop CAD frame; wrapping lets the viewport keep the rest of the
+        // column. It still cannot outgrow the window — a WRAP_CONTENT child of
+        // a bounded LinearLayout is measured AT_MOST the parent's height — so a
+        // long body scrolls.
         final LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 widthPx, ViewGroup.LayoutParams.WRAP_CONTENT);
         params.gravity = Gravity.TOP;
         params.leftMargin = EditorControlStyles.dimen(context, R.dimen.row_gap_small);
-        // Clear of the toolbar's utility capsule, for the same reason the
-        // Objects column is: nothing above this is an opaque strip any more.
+        // Clear of the toolbar's utility capsule: nothing above is an opaque strip.
         params.topMargin = EditorControlStyles.dimen(context, R.dimen.row_gap);
-        // The gap to the right host, not an inset from the trailing window edge.
-        //
-        // The trailing window edge belongs to the right host and to nothing
-        // else. Appending this panel to the row put it AFTER the host, and a
-        // laid-out sibling in a horizontal row costs width: the host was pushed
-        // inward by the panel's own width plus these margins, so its 8 dp
-        // resting inset became about 320 dp in a short landscape window and
-        // about 360 dp on a tablet for the whole time Exact or Details was
-        // open. The host is the one fixed external surface of the workspace and
-        // a panel opening beside it may not translate it.
-        //
-        // So the panel is seated BEFORE the host, taking width the weighted
-        // spacer was holding, and this margin is the standoff between the two
-        // surfaces — the same gap every anchored surface keeps off the cluster
-        // (see trailingLimitFor). The host's own right margin is then the only
-        // thing deciding where the trailing edge is, in every state.
+        // The standoff to the right host, not an inset from the window edge.
+        // The trailing edge belongs to the host alone, so the panel is seated
+        // BEFORE it (a sibling appended after it would translate the host by the
+        // panel's width); this margin is the same gap every anchored surface
+        // keeps off the cluster (see trailingLimitFor).
         params.rightMargin = EditorControlStyles.dimen(context, R.dimen.overlay_anchor_gap);
         params.bottomMargin = EditorControlStyles.dimen(context, R.dimen.row_gap);
         middleRow.addView(inspector, middleRow.indexOfChild(trailingHost), params);
@@ -2221,34 +2116,24 @@ final class EditorWorkspaceView extends FrameLayout
             // than a remembered copy of it.
             return;
         }
-        // Closing comes FIRST. Each of these re-renders the trailing host as a
-        // side effect of putting a surface away, so withdrawing the host before
-        // them would simply be undone — which is exactly what the first run of
-        // `GLBIR0-19` caught.
+        // Closing comes FIRST: each of these re-renders the trailing host as a
+        // side effect, so withdrawing the host before them would be undone.
         setPrecisionOpen(false);
         setAddPrimitiveOpen(false, null);
         setObjectsPanelOpen(false);
 
-        // The Tool Rail is a member of the trailing host, so withdrawing the
-        // host withdraws the rail, the transform selectors and the precision
-        // trigger together — one surface, one decision.
+        // The Tool Rail is a member of the trailing host, so one visibility
+        // withdraws the rail, the transform selectors and the precision trigger.
         trailingHost.setVisibility(GONE);
         objectsCapsule.setVisibility(GONE);
         objectsSection.setVisibility(GONE);
         historyGroup.setVisibility(GONE);
-        // The Property Inspector is CLOSED above rather than hidden here, and
-        // the difference matters: it is an AnchoredSurfaceView that owns its
-        // own visibility as its open/closed state, and nothing else in the
-        // workspace ever writes that field. Setting it GONE from here is an
-        // override with no owner to undo it — which is exactly what the first
-        // full-suite run caught, as an inspector that stayed gone for the rest
-        // of the process and a later IME case finding it in the wrong place.
-        // Every other view above has its normal value rewritten by
-        // syncFromNative on the way past, so hiding those is safe.
-        // Start Sculpting, Resume Sculpt and Back to Construction all act on
-        // the active body, which is not the thing on the screen. The utility
-        // group stays — Display still applies to the viewport, and the project
-        // control is how the user gets back.
+        // The Property Inspector is CLOSED above, never set GONE here: as an
+        // AnchoredSurfaceView it owns its visibility as its open state, and an
+        // override from here would have no owner to undo it. Every other view
+        // above is rewritten by syncFromNative on the way past.
+        // The mode transitions act on the active body, which is not the thing
+        // on screen; Display and the project control stay.
         toolbar.showEditingTransitions(false);
     }
 
@@ -2383,20 +2268,13 @@ final class EditorWorkspaceView extends FrameLayout
      * there is deliberately no confirmation message, no animation and nothing
      * that could stutter under a repeated tap.
      *
-     * <p>The pair is now drawn in <b>both</b> modes. It was withdrawn in Sculpt
-     * for as long as sculpting had no undo, because a greyed Undo beside a
-     * stroke would have read as "your stroke can be taken back, just not yet".
-     * Since {@code ARCH-OWNER-12} it can be, so the controls mean exactly what
-     * they look like in either mode: in Construction they step the project
-     * history, and in Sculpt they step the active body's stroke history.
-     *
-     * <p>Which of the two a tap means is decided in native code and never
-     * here — see {@link NativeViewport#historyUndo}. This method deliberately
-     * takes no mode argument and reads none: the enabled state comes from the
-     * SAME dispatching query the tap will, so there is no branch here that
-     * could route a tap one way and light the control the other. It used to
-     * take a {@code sculpting} flag, and that flag existed only to withdraw
-     * the pair.
+     * <p>The pair is drawn in <b>both</b> modes: in Construction it steps the
+     * project history, in Sculpt the active body's stroke history. Which of the
+     * two a tap means is decided in native code — see
+     * {@link NativeViewport#historyUndo} — so this method takes no mode
+     * argument: the enabled state comes from the SAME dispatching query the tap
+     * will, and no branch here could route a tap one way and light the control
+     * the other.
      */
     private void refreshHistoryControls() {
         // Withdrawn while sketching: a sketch in progress is not in the
@@ -2463,26 +2341,15 @@ final class EditorWorkspaceView extends FrameLayout
     /**
      * Writes what STANDS in the status line — which is usually nothing.
      *
-     * <p>The line used to be written on every refresh with something ambient:
-     * "Showing the current box in m." in Construction, and the gesture rule in
-     * Sculpt. Both were true and neither was news, and because nothing ever
-     * cleared the line, the last verdict — a body selected, a shape applied —
-     * simply sat there until the next one replaced it. A line that always says
-     * something is a line nobody reads, and it spends a capsule at the top of
-     * the model to do it.
+     * <p>The resting line says nothing and the capsule is not drawn: a line
+     * that always says something is a line nobody reads, and what an ambient
+     * message would say is said permanently elsewhere (the precision surface's
+     * title, the unit chips) or as a transient at the moment it is news (the
+     * gesture rule on entering Sculpt or changing tool).
      *
-     * <p>So the resting line says nothing, and the capsule is not drawn at all.
-     * What the ambient messages said is said better elsewhere and permanently:
-     * the precision surface's own title names the body and the mode, the unit
-     * chips name the unit, and the gesture rule is written as a transient when
-     * the user enters Sculpt or changes tool — at the moment it is news.
-     *
-     * <p><b>One exception, and it is a state rather than a verdict.</b> A stale
-     * Construction Source is a standing fault: it is still true after any
-     * message that covers it, and it stays true until the user acts. It lives in
-     * the Sculpt context surface beside the action that resolves it, and that
-     * surface no longer opens by itself, so it is also written here — where it
-     * re-asserts itself on every refresh.
+     * <p><b>One exception, a state rather than a verdict.</b> A stale
+     * Construction Source is a standing fault that stays true until the user
+     * acts, so it re-asserts itself here on every refresh.
      */
     private void showDefaultStatus(boolean sculpting) {
         if (sculpting && nativeSculpt[NativeViewport.SCULPT_SOURCE_STALE] != 0.0) {
@@ -3051,25 +2918,15 @@ final class EditorWorkspaceView extends FrameLayout
         // dismissing the panel, and switching while it is closed leaves it
         // closed.
         showPrecisionToggle(false);
-        // Nothing is written for this, and that is the point. Switching rail
-        // entry is not an event to report: the rail draws which entry is held,
-        // the toggle under it names what it will open, and the surface it opens
-        // titles itself "Exact Shape — Body #1". "Shape and placement — edit
-        // exact values, then Apply." was a third copy of the same fact, and
-        // because it was written on every switch it stood over the model
-        // whenever a user was doing exactly what it described.
+        // Nothing is written for this: the rail draws which entry is held, the
+        // toggle under it names what it will open, and the surface titles
+        // itself. A status line repeating that would stand over the model
+        // whenever the user was doing exactly what it described.
     }
 
-    // The brush controls report nothing upward, deliberately.
-    //
-    // Dragging Radius used to write "Brush: radius 120 px, strength 0.45." into
-    // the status line, so the same two numbers stood on screen twice — once
-    // beside the finger moving them and once in a capsule at the top of the
-    // window, where nobody adjusting a brush is looking. The status copy then
-    // outlived the drag by the rest of the session, which is how a resting
-    // Sculpt screenshot came to be captioned with the last slider position.
-    // A value being dragged belongs beside the control dragging it, and it is
-    // there. See BrushEdgeControlsView.
+    // The brush controls report nothing upward: a value being dragged belongs
+    // beside the control dragging it (BrushEdgeControlsView), not duplicated in
+    // a status line that would outlive the drag.
 
     /**
      * Whether chrome may spend time on a transition.
@@ -3112,10 +2969,9 @@ final class EditorWorkspaceView extends FrameLayout
      * surface, which is the one that replaces an edited mesh.
      *
      * <p>It changes no dimension, no primitive kind and no placement — the
-     * Construction Source is only read, and it is still here, unchanged, when
-     * Sculpt Mode is left. The wording changed at UI-R4B and none of that did:
-     * the method still calls {@code freezeToSculpt()}, which is still what the
-     * domain calls the operation, and it is still reversible in both directions.
+     * source is only read, and it is still here, unchanged, when Sculpt Mode is
+     * left. The user reads "Start Sculpting"; the domain calls the operation
+     * {@code freezeToSculpt()}, and the two vocabularies stay apart on purpose.
      */
     @Override
     public void onFreezeToSculpt() {
@@ -3175,14 +3031,11 @@ final class EditorWorkspaceView extends FrameLayout
     /**
      * Back to the body's SOURCE representation, which sculpting never wrote.
      *
-     * <p>The wording elsewhere changed at UI-R4B and again at `IMPORT-01B`, and
-     * what this does did not. A Construction Body's exact primitive, its
-     * parameters and its placement, or an Imported Mesh's positions, normals,
-     * topology and submesh batches, are exactly what they were before Start
-     * Sculpting — no sculpt edit has ever been allowed to reach either — and
-     * Resume Sculpt returns to the same mesh with the same revision, the same
-     * counts and the same stroke history. The user reads the control as Back to
-     * Construction or Back to Imported Mesh; the one native act is the same.
+     * <p>A Construction Body's primitive, parameters and placement, or an
+     * Imported Mesh's arrays, are exactly what they were before Start Sculpting,
+     * and Resume Sculpt returns to the same mesh with the same revision and the
+     * same stroke history. The user reads the control as Back to Construction
+     * or Back to Imported Mesh; the one native act is the same.
      */
     @Override
     public void onBackToConstruction() {
@@ -4152,33 +4005,17 @@ final class EditorWorkspaceView extends FrameLayout
 
     @Override
     public void onNativeStateChanged() {
-        // Keep the sketch-mode tracker current on every chrome rebuild, so the
-        // viewport-settle transition check only fires for a sketch that STARTED
-        // in native (the spatial chooser's confirm tap) without a rebuild.
+        // THE central re-read, so every chrome-driven mutation ends here and one
+        // dirty note covers all of them (selection counts: the active body is
+        // part of the document). The three gesture-settle baselines are rebased
+        // HERE rather than only in the gesture listener, so each comparison
+        // means "changed since these surfaces were last refreshed": tracked
+        // only in the listener, a body switch through Add Body or an Objects
+        // row left them stale, and the sculpt undo depth is PER BODY, so a body
+        // switch or a Resume would otherwise read as a committed stroke.
         lastKnownSketching = isSketching();
-        // THE central re-read, and therefore the central place to notice that
-        // the project may have moved. Every chrome-driven mutation — an Apply,
-        // a creation, an undo, a mode change, a body selection — ends here, so
-        // one note covers all of them rather than each call site remembering.
-        // Selection counts: which body is active is part of the document.
         noteProjectMaybeDirty();
-        // Recorded HERE, in the one place every surface re-reads, rather than
-        // in the viewport gesture listener that consults it. Tracking it only
-        // there left it stale whenever the active body changed by some other
-        // route — Add Body, or an Objects row — and a later viewport pick that
-        // happened to land back on the stale value then compared equal and
-        // skipped the refresh, leaving the Inspector showing another body's
-        // numbers. Updating it wherever the chrome actually re-reads makes the
-        // comparison mean what it says: "has the active body changed since the
-        // last time these surfaces were refreshed?"
         lastKnownActiveBodyId = NativeViewport.sceneActiveBodyId();
-        // Rebased for exactly the same reason, and it matters more here: the
-        // sculpt undo depth is PER BODY, so a body switch, a Back, a Resume or
-        // a Reset from source all change the number this compares against
-        // without any stroke having happened. Recording it wherever the chrome
-        // re-reads keeps the comparison meaning "has a stroke committed since
-        // these controls were last refreshed" rather than "is this a different
-        // body's depth".
         lastKnownSculptUndoDepth = NativeViewport.sculptUndoDepth();
         syncFromNative();
     }
@@ -4320,14 +4157,9 @@ final class EditorWorkspaceView extends FrameLayout
     }
 
     /**
-     * Every surface that grows out of a control, in one place.
-     *
-     * <p>So a case can assert the shared motion contract over the SET rather
-     * than over a list it maintains by hand — which is how the Display popover
-     * came to be the only one with a correct first-open pivot: nothing was
-     * measuring them together. The set has caught it twice now; the project
-     * surface joined at E2E-R1A growing from the wrong corner, and UIR4B-08's
-     * count is what made that a failure rather than a surprise later.
+     * Every surface that grows out of a control, in one place, so a case can
+     * assert the shared motion contract over the SET rather than over a list it
+     * maintains by hand.
      */
     AnchoredSurfaceView[] anchoredSurfaces() {
         return new AnchoredSurfaceView[]{

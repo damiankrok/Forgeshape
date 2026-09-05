@@ -9,18 +9,13 @@ import android.widget.LinearLayout;
  * The precision surface's body, which <b>ends on a row rather than through
  * one</b>.
  *
- * <p>The defect this fixes is the one the owner review named first about the
- * exact-value panel: at rest, the bottom of the surface regularly cut a chip, a
- * field or a caption across its middle. The bottom inset was there and the
- * scrolling worked — what was wrong was where the surface was allowed to stop.
- * A bottom sheet is capped at a fraction of the window, that cap is a number of
- * pixels, and the body under it is a stack of rows of unrelated heights, so the
- * two lined up only by luck.
- *
- * <p>A control sliced across its middle is not read as "there is more below".
- * It is read as a rendering fault: the user cannot tell a clipped surface from a
- * broken one, and half a glyph is the single most expensive thing a precision
- * panel can show, because the panel's whole claim is that its numbers are exact.
+ * <p>A bottom sheet is capped at a fraction of the window, that cap is a number
+ * of pixels, and the body under it is a stack of rows of unrelated heights, so
+ * without this rule the two line up only by luck and the cap regularly cuts a
+ * chip or a caption across its middle. A control sliced across its middle is
+ * not read as "there is more below" but as a rendering fault, and half a glyph
+ * is the most expensive thing a panel whose whole claim is exact numbers can
+ * show.
  *
  * <p><b>The rule.</b> When the content is taller than the space, the visible
  * body is rounded DOWN to the bottom of the last row that fits whole. The user

@@ -13,6 +13,10 @@
 //                                   +---backToEditing()--+
 //         any state --cancel()--> Inactive
 //
+// `beginEdit(body)` enters the same Editing state over a STAGED copy of a
+// committed CAD Body's state, and `commitEdit()` replaces `commit()` for it
+// (`SKETCH-UX-R1` F): one transaction into the existing body, no second body.
+//
 // Nothing before `commit` is project truth. A half-drawn line, a deleted
 // entity, a chosen profile and a typed depth all live here, and the scene,
 // the history, the autosave fingerprint and the `.forge` document know

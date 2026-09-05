@@ -1,48 +1,28 @@
-// Removing one body from the project.
+// Removing one body from the project (`UI-OWNER-45`).
 //
-// `UI-OWNER-45`. Deliberately its own small module rather than a method on
-// either collaborator, exactly like `forgeshape_import_commit.h`: deleting a
-// body is a decision ABOUT the project that needs both the scene and the
-// history, and neither of them owns the other. The scene knows how to detach a
-// body and nothing about transactions; the history knows how to record one and
-// nothing about which body should be selected afterwards.
+// Its own module rather than a method on either collaborator: a delete is a
+// decision ABOUT the project that needs both the scene (which detaches) and the
+// history (which records), and neither owns the other.
 //
-// REPRESENTATION-NEUTRAL, AND WHY THAT IS THE WHOLE DESIGN
-// -------------------------------------------------------
-// Nothing here asks what a body IS. A Construction Body, an Imported Mesh, and
-// either of them carrying a retained Frozen Sculpt Mesh are all removed by the
-// same three lines, because a body is removed as a whole object: its identity,
-// its representation, its placement, its published mesh and its sculpt state
-// leave together and come back together. A per-representation delete path is
-// exactly how one of them would eventually come back missing something.
-//
-// THE BODY IS NOT DESTROYED
-// -------------------------
-// It is detached and HANDED TO THE HISTORY, which holds it for as long as some
-// step still names it. That is not an optimization: an Imported Mesh's geometry
-// and any Frozen Sculpt Mesh are not derived from anything a history step
-// holds, so a step could not rebuild them and an undo that had to would come
-// back with an empty object wearing the right id. Undo restores the SAME
-// object, and a redo removes that same object again.
-//
-// ONE TRANSACTION
-// ---------------
-// One Delete is exactly one Undo, through the ordinary `ScopedConstructionEdit`
-// every other act uses -- and always as the scope that OWNS the edit, because an
-// edit already in progress is refused outright (`RefusedEditInProgress`), the
-// same rule `loadProjectDocument` and `commitImportedGlbScene` apply. Nothing in
-// the product wraps a delete in a larger act, and refusing rather than joining
-// keeps this operation's transaction boundary unambiguous.
-//
-// THE LAST BODY IS REFUSED
-// ------------------------
-// This product has no empty project. `ConstructionScene` creates a body
-// eagerly, `activeBody()` returns a reference and every accessor built on it --
-// `meshStore()`, `sculptSession()`, `activeConstructionOrNull()` -- assumes one
-// exists, and `validateProjectDocument` refuses a `.forge` file with zero
-// bodies. So deleting the only body is refused BY NAME
-// (`RefusedLastBody`) and changes nothing at all, rather than being made to
-// work by inventing a replacement primitive the user did not ask for.
+// Invariants:
+//   * REPRESENTATION-NEUTRAL. Nothing here asks what a body is. A Construction
+//     Body, an Imported Mesh, a CAD Body, and any of them carrying a Frozen
+//     Sculpt Mesh leave as one whole object -- identity, representation,
+//     placement, published mesh and sculpt state together -- so no per-kind
+//     path can bring one back missing a part.
+//   * THE BODY IS NOT DESTROYED. It is handed to the history, which holds it
+//     while any step names it: an Imported Mesh's geometry and a Frozen Sculpt
+//     Mesh cannot be rebuilt from step state, so Undo must restore the SAME
+//     object and Redo remove that same object again.
+//   * ONE TRANSACTION. One Delete is one `ScopedConstructionEdit` that OWNS
+//     the edit; an edit already open is refused (`RefusedEditInProgress`), as
+//     `loadProjectDocument` and `commitImportedGlbScene` refuse it.
+//   * THE LAST BODY IS REFUSED (`RefusedLastBody`). A project is never empty:
+//     an empty scene is Home (`APP-H1`), reached only by closing the project,
+//     and `validateProjectDocument` refuses a zero-body file. Nothing invents
+//     a replacement primitive.
+//   * A PRODUCER WITH FACE-SUPPORTED DEPENDENTS IS REFUSED
+//     (`RefusedHasDependents`), never cascaded (`CAD-A3`).
 //
 // Platform-neutral C++17: no Android, no JNI, no Vulkan, no renderer, no
 // filesystem.

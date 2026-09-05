@@ -11,10 +11,11 @@
 // What a project IS
 // -----------------
 // A declarative semantic document -- a feature graph -- never a render-mesh
-// snapshot, never a UI event log and never the Undo/Redo stack. Today the graph
-// is degenerate: each Construction Body carries exactly one real feature, a
-// PrimitiveSource, plus the body's placement. Future CAD features extend the
-// graph; nothing here assumes there will only ever be one.
+// snapshot, never a UI event log and never the Undo/Redo stack. Each body is
+// named by exactly ONE geometry section -- `CONS` (a PrimitiveSource), `IMPT`
+// (an Imported Mesh) or `CADB` (a sketch and its extrusion, optionally
+// supported by another body's face) -- plus its `SCNE` placement and an
+// optional `SCUL` Frozen Sculpt Mesh.
 //
 // Truth vs. derived, stated once
 // ------------------------------

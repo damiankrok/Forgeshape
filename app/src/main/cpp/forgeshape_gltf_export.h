@@ -33,12 +33,11 @@
 //
 // WHAT IS EXPORTED
 // ----------------
-// The CURRENT representation of each body, evaluated now — never a decoded
-// `.forge` file and never a GPU buffer. Construction bodies are re-evaluated
-// through `ConstructionObject::generateMesh()`, the same generator the product
-// publishes from. A Sculpt project exports each sculpted body's Frozen Sculpt
-// Mesh, because that is what the user is working on; falling back to the
-// Construction shape there would silently export something they did not make.
+// The CURRENT effective geometry of EVERY body, evaluated now -- never a decoded
+// `.forge` file and never a GPU buffer: a body with a Frozen Sculpt Mesh exports
+// that mesh (it is what the user is working on), an Imported Mesh exports its
+// own arrays, a CAD Body its regenerated extrusion, and a Construction Body its
+// re-evaluated primitive through the same generator the product publishes from.
 //
 // HOW THE PLACEMENT TRAVELS — the baked static contract (ARCH-OWNER-07)
 // ---------------------------------------------------------------------
@@ -46,41 +45,30 @@
 //
 //     Model = T * L      where   L = Rz * Ry * Rx * S
 //
-//   * `L` is BAKED into the vertices. Every exported position is `L * p` and
-//     every exported normal is `normalize(N * n)` with `N = transpose(inverse(L))`.
-//   * `T` stays at the node, as a glTF `translation`. The node writes NO
+//   * `L` is BAKED into the vertices: every exported position is `L * p` and
+//     every exported normal `normalize(N * n)` with `N = transpose(inverse(L))`
+//     (never `L * n`, which is only the same answer while the scale is uniform).
+//   * `T` stays at the node as a glTF `translation`. The node writes NO
 //     rotation, NO scale and NO matrix, so a consumer reads identity for both.
 //
-// This is a deliberate reversal of the first shape of this exporter, which
-// wrote the whole `T*R*S` as the node matrix. Both are valid glTF and both
-// place the object identically; the difference is what the receiving tool has
-// in its hands. A static asset arriving with a live rotation and a non-uniform
-// node scale is an object whose every downstream operation — a modifier, a
-// boolean, a physics shape, a normal recalculation, a second export — has to
-// keep re-deriving the shape the user actually made. Baked, the shape simply IS
-// the mesh, and the node says only where it stands. The owner reviewed the
-// pre-bake files in Blender and chose this.
+// Baked, the shape simply IS the mesh and the node says only where it stands,
+// so no downstream modifier, boolean, physics shape or re-export has to
+// re-derive what the user made. The split deliberately does NOT:
 //
-// What the split deliberately does NOT do:
+//   * recentre -- `L` is applied about the body's LOCAL ORIGIN, which `T` then
+//     positions, so the pivot a body is rotated about is the pivot it exports
+//     with;
+//   * merge -- each body bakes its OWN `L` into its OWN mesh and keeps its own
+//     node, in scene order;
+//   * convert axes -- see above;
+//   * mirror -- `det(L) = sx*sy*sz > 0` in this product's strictly positive
+//     scale domain, so winding survives baking unchanged; a zero or negative
+//     determinant is REFUSED (`SingularTransform` / `MirroredTransform`), never
+//     compensated by reversing triangles, which would export a shape the domain
+//     says cannot exist.
 //
-//   * It does not recentre. `L` is applied about the body's LOCAL ORIGIN, and
-//     that origin is what `T` then positions, so the pivot a body is drawn and
-//     rotated about is the pivot it exports with. Baking around a bounds centre
-//     would move the origin and quietly break every downstream pivot.
-//   * It does not merge. Each body bakes its OWN `L` into its OWN mesh and
-//     keeps its own node, in scene order.
-//   * It does not convert axes. Metres, +Y up and right-handedness are
-//     untouched by the split — see above.
-//   * It does not mirror. `det(L) = sx*sy*sz > 0` for the product's strictly
-//     positive scale domain, so winding survives baking unchanged. A
-//     determinant that is zero or negative is REFUSED rather than silently
-//     compensated, because the only way to keep winding correct through a
-//     mirror is to reverse every triangle, and a file that silently did that
-//     would be exporting a shape the domain says cannot exist.
-//
-// `.forge` is untouched by all of this: authored transforms are stored as the
-// nine authored values exactly as before. Baking is an interchange decision and
-// lives only here.
+// `.forge` stores the nine authored values untouched by all of this: baking is
+// an interchange decision and lives only here.
 #pragma once
 
 #include <cstdint>

@@ -1,17 +1,20 @@
-﻿// Minimal JNI boundary for the ForgeShape native viewport.
+﻿// The JNI boundary for the ForgeShape native viewport: the ONE place Android
+// and JNI types appear.
 //
 // Responsibilities, and nothing more:
-//   - own the render thread;
-//   - convert the Java Surface to an ANativeWindow;
-//   - forward surface create/resize/destroy to the renderer;
-//   - guarantee the renderer never touches a destroyed ANativeWindow;
-//   - translate Android MotionEvent data into platform-neutral touch events for
-//     the CameraController and the SelectionController, and hand the resulting
-//     camera snapshot and selection visual state to the renderer once per frame.
+//   - own the render thread and the Surface handshake (create/resize/destroy),
+//     and guarantee the renderer never touches a destroyed ANativeWindow;
+//   - translate Android MotionEvent data into platform-neutral touch samples
+//     and arbitrate one gesture between the support chooser, the sketch, the
+//     gizmo, the sculpt brush, the camera and selection -- in that order;
+//   - expose the process-scoped domain (scene, histories, sketch session,
+//     sculpt session, display settings, project codec, GLB import/export) to
+//     `NativeViewport.java` as flat primitive calls, under `g_stateMutex`;
+//   - hand the renderer one scene snapshot, gizmo snapshot and overlay per
+//     frame.
 //
-// It owns no camera math, no gesture semantics, no picking math and no selected
-// identity; those live in forgeshape_camera.{h,cpp}, forgeshape_picking.{h,cpp}
-// and forgeshape_selection.{h,cpp}.
+// It owns no domain rule: camera, picking, selection, construction, sculpt,
+// CAD, history and the codec each live in their own platform-neutral module.
 
 #include <android/log.h>
 #include <android/native_window.h>
@@ -152,45 +155,34 @@ bool g_loggedZoom = false;
 // Sculpt gesture arbitration
 // -------------------------------------------------------------------------
 //
-// A one-finger Down on the Frozen Sculpt Mesh is ambiguous at the moment it
-// arrives: it is either the start of a brush stroke, or the first of the two
-// fingers of a pan/pinch. Android cannot tell us which, because the second
-// finger has not landed yet.
+// A one-finger Down on the Frozen Sculpt Mesh is ambiguous when it arrives: the
+// start of a brush stroke, or the first of two fingers of a pan/pinch. Starting
+// the stroke on Down would let a two-finger gesture commit a stroke, so the
+// rule is PENDING-then-promote, decided entirely in native code:
 //
-// Stage 012 resolved it optimistically — the stroke began on Down — so a
-// two-finger gesture whose first finger happened to land on the mesh committed a
-// stroke that a moment later ended having moved nothing. It was harmless in
-// practice but it was a real stroke: it advanced the stroke counter and it was
-// one brush event away from deforming geometry.
-//
-// The rule now is PENDING-then-promote, decided entirely in native code:
-//
-//   Down, one finger, hits the mesh   -> PENDING. The event is swallowed:
-//                                        nothing is deformed, no stroke exists,
-//                                        and neither the camera nor the
-//                                        selection sees it.
+//   Down, one finger, hits the mesh   -> PENDING. Swallowed: nothing deformed,
+//                                        no stroke exists, and neither the
+//                                        camera nor the selection sees it.
 //   Move, still one finger, travelled
 //   at least kStrokeArmPixels         -> PROMOTE. The stroke begins at the
-//                                        ORIGINAL down point, so the anchor, the
-//                                        hit and the affected set are exactly
-//                                        what Stage 012 would have captured.
+//                                        ORIGINAL down point, so the anchor,
+//                                        the hit and the affected set are what
+//                                        the Down would have captured.
 //   Anything else (a second finger,
 //   an Up, a Cancel, a multi-pointer
 //   event)                            -> ABANDON. No stroke ever existed, so
-//                                        there is nothing to end and nothing to
-//                                        undo, and the gesture becomes ordinary
-//                                        navigation from that event onward.
+//                                        there is nothing to end or undo, and
+//                                        the gesture is ordinary navigation
+//                                        from that event onward.
 //
-// Because the camera re-anchors on any pointer-set change, handing it a gesture
-// mid-flight produces no jump; because the selection never saw a Down, an
-// abandoned pending gesture cannot resolve a tap either.
+// The camera re-anchors on any pointer-set change, so handing it a gesture
+// mid-flight produces no jump; the selection never saw a Down, so an abandoned
+// pending gesture cannot resolve a tap either.
 //
 // Both flags are guarded by g_stateMutex, like the camera and the selection,
-// because the same touch event decides between brushing and navigating and the
-// two must not disagree. The product mode, the active tool and the Frozen Sculpt
-// Mesh themselves live in the process-scoped SculptSession; these are only
-// gesture routing, and they are dropped whenever the Surface goes away, exactly
-// as camera anchors and tap candidacy are.
+// because one touch event decides between brushing and navigating and the two
+// must not disagree. They are gesture routing only -- mode, tool and mesh live
+// in the SculptSession -- and are dropped whenever the Surface goes away.
 
 // How far a pending finger must travel before it is committed to a stroke.
 // Deliberately well below the 24 px tap slop (so a stroke still starts long
