@@ -1,0 +1,44 @@
+locked   publishActiveRepresentation: sculptSession@913
+locked   applyPrimitive: sculptSession@994 sculptSession@995 sculptSession@997 sculptSession@1003 sculptSession@1004
+locked   logSculptStateLocked: logSculptStateLocked@1179 sculptSession@1180
+locked   logSculptState: logSculptStateLocked@1198
+locked   logMeshDiagnostics: logSculptStateLocked@1255
+locked   freezeStressMeshToSculpt: sculptSession@1591
+locked   productMode: sculptSession@1987
+locked   freezeToSculpt: sculptSession@2030
+locked   enterConstructionMode: sculptSession@2101
+locked   enterSculptMode: sculptSession@2119
+locked   sceneSelectBody: sculptSession@2231 sculptSession@2271
+locked   sceneDeleteBody: sculptSession@2344
+locked   runSculptHistoryStep: sculptSession@2467
+locked   constructionMeshRevision: sculptSession@2543
+locked   sketchBegin: sculptSession@2761
+locked   supportKindCode: sculptSession@2835
+locked   sketchSetExtrude: sculptSession@3075
+locked   sketchBeginEdit: sculptSession@3550
+locked   runHistoryStep: sculptSession@3979
+locked   sculptUndoAvailable: sculptSession@4024
+locked   sculptRedoAvailable: sculptSession@4030
+locked   sculptUndoDepth: sculptSession@4036
+locked   sculptRedoDepth: sculptSession@4042
+locked   sculptHistoryBytes: sculptSession@4052
+locked   sculptHistoryNotRetainedCount: sculptSession@4063
+locked   sculptHistoryEvictedCount: sculptSession@4069
+locked   historyUndoAvailable: sculptSession@4092 sculptSession@4093
+locked   historyRedoAvailable: sculptSession@4101 sculptSession@4102
+locked   historyUndo: sculptSession@4115
+locked   historyRedo: sculptSession@4125
+locked   encodeProject: sculptSession@4249
+locked   loadProject: sculptSession@4323
+locked   exportGlb: sculptSession@4360
+locked   glbRoundtripReport: sculptSession@4687
+locked   glbCompareReport: sculptSession@4711
+locked   projectFingerprint: sculptSession@4773 sculptSession@4813 sculptSession@4814
+locked   sculptState: sculptSession@4909
+locked   setSculptBrush: sculptSession@4943
+locked   setSculptTool: sculptSession@4969
+locked   sculptTool: sculptSession@4983
+locked   surfaceCreated: sculptSession@5178
+locked   surfaceDestroyed: sculptSession@5222
+locked   touchEvent: sculptSession@5624 sculptSession@5827
+TOTAL calls=54 unlocked=0
