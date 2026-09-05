@@ -1,8 +1,23 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.62.0
+**Status Version:** 0.63.0
 **Updated:** 2026-09-05
-**Result:** **POST-AUDIT-HARDEN-R1 — COMPLETE
+**Result:** **CAD-A3-C2 / SKETCH-UX-R1 — COMPLETE / OWNER ACCEPTED.** The
+OWNER's real-device verdict, `OWNER_CAD_A3_C2_VERDICT = PASS` (received
+2026-09-05 through the ForgeShape coordinator), closes the owner review the
+pass had been waiting on: the start page, the immediate flat first sketch, the
+orientation navigator, the technical dimension, the curves and Edit Sketch
+work on real hardware as the product they should. With it, **UI-OWNER-47,
+UI-OWNER-48 and ARCH-OWNER-14 are IMPLEMENTED / OWNER ACCEPTED** (see *Owner
+Decision Baseline*). This is a documentation/status synchronization only: no
+runtime code, no test and no evidence package changed, and no new product
+stage is opened. **What stays pending:** the Delete → Undo → Redo owner check
+of `IMPORT-01B` / `UI-OWNER-45` — no owner verdict for it was supplied, so its
+OWNER acceptance remains open. DEEP-AUDIT-R1 and POST-AUDIT-HARDEN-R1 stay
+COMPLETE, and the deferred audit debt (F-06, F-07, F-09, F-10, F-13, F-14) is
+unchanged.
+
+**Previous result:** **POST-AUDIT-HARDEN-R1 — COMPLETE
 (`PASS-POST-AUDIT-HARDEN-R1-OWNER-RETEST-READY`).** A narrow maintenance
 stage that closed five DEEP-AUDIT-R1 findings and nothing else. **F-08**: every
 `sculptSession()` call in `forgeshape_jni.cpp` now runs under
@@ -20,7 +35,7 @@ CheckJNI on the pre-fix JNI, GREEN after). **F-15**: `buildSpherifiedBox` has
 internal linkage. **F-18**: `setChipReserved` and both reserved drawables are
 gone. Evidence: `artifacts/post-audit-harden-r1/INDEX.md`.
 
-**Previous result:** **DEEP-AUDIT-R1 — COMPLETE (`PASS-DEEP-AUDIT-R1-WITH-DEBT`).** A
+**Before that:** **DEEP-AUDIT-R1 — COMPLETE (`PASS-DEEP-AUDIT-R1-WITH-DEBT`).** A
 read-first audit of every surface at baseline `be5b729c`. Three proven P1
 defects were found and fixed with tests (the semantic fingerprint omitted
 Arc/Spline points; a sculpt stroke in flight at project load was attributed to
@@ -30,8 +45,9 @@ runtime change; the current-truth documents were reconciled. Remaining findings
 are P2/P3 debt, reported not implemented. Evidence:
 `artifacts/deep-audit-r1/INDEX.md`.
 
-**Before that:** CAD-A3-C2 / SKETCH-UX-R1 — COMPLETE
-(`PASS-CAD-A3-C2-SKETCH-UX-R1-OWNER-RETEST-READY`). ForgeShape opens on a
+**Before that:** CAD-A3-C2 / SKETCH-UX-R1 — COMPLETE / OWNER ACCEPTED
+(technical result `PASS-CAD-A3-C2-SKETCH-UX-R1-OWNER-RETEST-READY`; the
+OWNER's real-device verdict is PASS, 2026-09-05). ForgeShape opens on a
 full-screen start page; New Project → CAD lands straight on a flat sketch grid;
 the plane and the view are chosen from an orientation navigator; a selected
 Line carries an editable technical dimension; Arc and Spline are durable sketch
@@ -870,9 +886,9 @@ lives in Git history; only what still constrains the code is kept here.
 `SCULPT-UNDO-R0` (`ARCH-OWNER-12` — a dedicated bounded volatile per-body Sculpt
 stroke history, with Undo and Redo on the existing controls) sits on top of
 `IMPORT-01B`/`UI-OWNER-45`.
-**Next Stage:** **return this report to the ForgeShape coordinator for the
-owner's real-device CAD-A3-C2 review and the pending Delete verdict.** See
-*Next Stage*.
+**Next Stage:** **return this report to the ForgeShape coordinator.** The
+OWNER's CAD-A3-C2 review is closed with PASS; the Delete → Undo → Redo owner
+verdict (`IMPORT-01B` / `UI-OWNER-45`) is still pending. See *Next Stage*.
 
 ## Current state
 
@@ -1300,10 +1316,25 @@ decision was recorded, and working since Stage 023 in the same place),
 ARCH-OWNER-07 (the baked static interchange transform, E2E-R1C-C1),
 ARCH-OWNER-08 (the diagnostic imported mesh preview, GLB-IMPORT-R0),
 ARCH-OWNER-09 (the widened external static GLB preview, GLB-IMPORT-R1),
-UI-OWNER-05 (the destructive re-Freeze guard) and UI-OWNER-06 (stylus-friendly,
-no pressure). **Still a decision only, with no behaviour and no drawn control:**
-UI-OWNER-04 — Sketch and Extrude have no implementation whatsoever and no entry
-in the Tool Rail.
+UI-OWNER-05 (the destructive re-Freeze guard), UI-OWNER-06 (stylus-friendly,
+no pressure), UI-OWNER-04 (Sketch + Extrude — its first vertical slice,
+one New Body extrusion of a closed profile, has been real since
+`CAD-R0-A1A2`; Add, Cut and everything the approval excludes stay out),
+ARCH-OWNER-10 (durable GLB import, IMPORT-01A), ARCH-OWNER-11 (sculpting an
+Imported Mesh, IMPORT-01B), ARCH-OWNER-12 (the per-body Sculpt history,
+SCULPT-UNDO-R0), ARCH-OWNER-13 (semantic faces and the dependency graph,
+CAD-A3), UI-OWNER-46 (New Sketch lands in the spatial chooser, CAD-A3-C1),
+and — **OWNER ACCEPTED on the real device, `OWNER_CAD_A3_C2_VERDICT = PASS`,
+2026-09-05** — **UI-OWNER-47, UI-OWNER-48 and ARCH-OWNER-14**, the three
+decisions under which CAD-A3-C2 / SKETCH-UX-R1 was built: the full-screen
+start pages and the immediate flat first sketch, the orientation navigator and
+the typeable technical dimension, and Arc/Spline as authored-point entities
+with the staged Edit Sketch and `CADB` v3. The coordinator issued those three
+ids and the verdict; their individual wording is the coordinator's brief, and
+this file records them at the pass they cover. **Implemented but still
+awaiting its OWNER verdict:** UI-OWNER-45 (Delete as one transaction,
+IMPORT-01B) — no Delete → Undo → Redo verdict has been supplied, and none is
+claimed.
 
 Bare `D1`–`D6` decision numbers are retired and non-authoritative. No stage gate,
 acceptance table or preflight may cite a bare `D` number.
@@ -3126,15 +3157,15 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Exactly one next step: return the POST-AUDIT-HARDEN-R1 report to the
-ForgeShape coordinator for the OWNER's real-device CAD-A3-C2 review and the
-pending Delete verdict.** This stage closed F-08, F-16, F-11, F-15 and F-18
-and nothing else; the remaining P2/P3 debt (F-06, F-07, F-09, F-10, F-13,
-F-14) is recorded above for the coordinator to schedule. No product stage may
-begin here. The prior owner-retest
-readiness is unchanged by the audit — the paragraph below still stands for the
-OWNER's real-device review of the start page, the first-sketch flow, the
-navigator, the dimension and the curves. No
+**Exactly one next step: return this status to the ForgeShape coordinator.**
+The OWNER's real-device CAD-A3-C2 / SKETCH-UX-R1 review is CLOSED with PASS
+(2026-09-05), so nothing about the start page, the first-sketch flow, the
+navigator, the dimension or the curves is waiting on an owner any more. What
+is still waiting is the **Delete → Undo → Redo owner verdict** of
+`IMPORT-01B` / `UI-OWNER-45`: no verdict for it has been supplied, and this
+file does not invent one. POST-AUDIT-HARDEN-R1 closed F-08, F-16, F-11, F-15
+and F-18 and nothing else; the remaining P2/P3 debt (F-06, F-07, F-09, F-10,
+F-13, F-14) is recorded above for the coordinator to schedule. No
 product stage may begin here: booleans, fillets, chamfers, a constraint solver,
 custom construction planes, curved-face and imported/sculpted-surface sketches,
 projected edges, a feature-tree redesign, an independently movable dependent
@@ -3146,16 +3177,17 @@ Stage 033's full exporter, OBJ and FBX are **not started**. None may be begun
 without the coordinator opening it. GATE-E2E remains the owner's and is not
 opened here.
 
-CAD-A3-C2 / SKETCH-UX-R1 is closed on the technical side. `Launch →
+CAD-A3-C2 / SKETCH-UX-R1 is closed on both sides. `Launch →
 full-screen Home → New Project → CAD → an immediate flat XY sketch → choose a
 plane and a view from the navigator → draw a Line, an Arc, a Spline → select a
 Line, read its dimension, type an exact length → Extrude = the first body and
 the project → Edit Sketch → Finish = one Undo` works through the real chrome
 and real MotionEvents, with the later face-picking New Sketch, New Sculpt and
-the unsaved-changes guard unchanged beside it. **No aesthetic approval is
-claimed**: what the owner's review is for is whether the start page, the
-navigator's placement and the dimension's legibility read as the product they
-should on real hardware, at real sizes, under a real finger and stylus.
+the unsaved-changes guard unchanged beside it — and the OWNER has confirmed
+on a real device that the start page, the navigator and the dimension read as
+the product they should (`OWNER_CAD_A3_C2_VERDICT = PASS`, 2026-09-05). That
+verdict covers the flow as shipped at `5cf981a9`; it is not a claim about any
+capability the pass did not implement.
 
 CAD-A3 + APP-H1 is closed on the technical side. `Home → New Project → CAD →
 tap a plane in the viewport → sketch → Extrude = the first body and the
