@@ -87,6 +87,22 @@
 
 namespace {
 
+// The ONE way a domain string reaches a Java `String`.
+//
+// `NewStringUTF` takes MODIFIED UTF-8, in which a 4-byte sequence is illegal
+// and CheckJNI aborts a debuggable process on one. A sanitized imported-mesh
+// name may legally carry one (an emoji from another tool), so every string that
+// can contain user or file text is converted to UTF-16 first and handed to
+// `NewString`. ASCII-only tokens elsewhere still use `NewStringUTF`.
+jstring newJavaString(JNIEnv* env, const std::string& utf8) {
+    const std::vector<uint16_t> units = forgeshape::utf8ToUtf16(utf8);
+    if (units.empty()) {
+        return env->NewStringUTF("");
+    }
+    return env->NewString(reinterpret_cast<const jchar*>(units.data()),
+                          static_cast<jsize>(units.size()));
+}
+
 using forgeshape::Renderer;
 
 struct ViewportThread {
@@ -2135,9 +2151,7 @@ Java_com_forgeshape_app_NativeViewport_sceneBodyName(JNIEnv* env, jclass, jlong 
             name = body->name();
         }
     }
-    // Already sanitized by the domain — well-formed UTF-8, bounded, no control
-    // characters — which is what makes handing it to NewStringUTF safe.
-    return env->NewStringUTF(name.c_str());
+    return newJavaString(env, name);
 }
 
 // Whether a body's geometry came from a file rather than from parameters.
@@ -4632,7 +4646,7 @@ Java_com_forgeshape_app_NativeViewport_glbRoundtripReport(JNIEnv* env, jclass) {
         report = forgeshape::formatRoundtripReport(
                 forgeshape::runGlbRoundtripDiagnostic(forgeshape::constructionScene(), kind));
     }
-    return env->NewStringUTF(report.c_str());
+    return newJavaString(env, report);
 }
 
 // The same comparison against bytes the caller supplies, so a file from the
@@ -4656,7 +4670,7 @@ Java_com_forgeshape_app_NativeViewport_glbCompareReport(JNIEnv* env, jclass, jby
         report = forgeshape::formatRoundtripReport(forgeshape::compareSceneToGlb(
                 forgeshape::constructionScene(), kind, bytes.data(), bytes.size()));
     }
-    return env->NewStringUTF(report.c_str());
+    return newJavaString(env, report);
 }
 
 // Validates bytes as a project WITHOUT applying them.

@@ -293,6 +293,65 @@ std::string sanitizeImportedMeshName(const std::string& raw) {
     return trimmed;
 }
 
+std::vector<uint16_t> utf8ToUtf16(const std::string& utf8) {
+    std::vector<uint16_t> out;
+    out.reserve(utf8.size());
+    constexpr uint16_t kReplacement = 0xFFFDu;
+    for (size_t i = 0; i < utf8.size();) {
+        const unsigned char lead = static_cast<unsigned char>(utf8[i]);
+        if (lead < 0x80u) {
+            out.push_back(lead);
+            ++i;
+            continue;
+        }
+        size_t extra = 0;
+        uint32_t code = 0;
+        if ((lead & 0xE0u) == 0xC0u) {
+            extra = 1;
+            code = lead & 0x1Fu;
+        } else if ((lead & 0xF0u) == 0xE0u) {
+            extra = 2;
+            code = lead & 0x0Fu;
+        } else if ((lead & 0xF8u) == 0xF0u) {
+            extra = 3;
+            code = lead & 0x07u;
+        } else {
+            out.push_back(kReplacement);
+            ++i;
+            continue;
+        }
+        if (i + extra >= utf8.size()) {
+            out.push_back(kReplacement);
+            break;
+        }
+        bool wellFormed = true;
+        for (size_t c = 1; c <= extra; ++c) {
+            const unsigned char cont = static_cast<unsigned char>(utf8[i + c]);
+            if ((cont & 0xC0u) != 0x80u) {
+                wellFormed = false;
+                break;
+            }
+            code = (code << 6) | (cont & 0x3Fu);
+        }
+        const uint32_t floors[4] = {0u, 0x80u, 0x800u, 0x10000u};
+        if (!wellFormed || code < floors[extra] || code > 0x10FFFFu
+            || (code >= 0xD800u && code <= 0xDFFFu)) {
+            out.push_back(kReplacement);
+            ++i;  // drop only the lead byte; the rest is re-judged on its own
+            continue;
+        }
+        if (code >= 0x10000u) {
+            const uint32_t v = code - 0x10000u;
+            out.push_back(static_cast<uint16_t>(0xD800u | (v >> 10)));
+            out.push_back(static_cast<uint16_t>(0xDC00u | (v & 0x3FFu)));
+        } else {
+            out.push_back(static_cast<uint16_t>(code));
+        }
+        i += extra + 1;
+    }
+    return out;
+}
+
 bool importedMeshNameIsStorable(const std::string& name) {
     // Stated as "this is what the sanitizer would produce for it" rather than
     // as a second list of rules, so the `.forge` decoder and the importer can

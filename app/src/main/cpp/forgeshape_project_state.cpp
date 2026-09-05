@@ -309,6 +309,12 @@ ProjectCodecStatus loadProjectDocument(const ProjectDocument& document, Construc
     // Commit. Everything from here on is arithmetic on already-built objects
     // and cannot fail.
     // -----------------------------------------------------------------------
+    // A stroke still in flight belongs to the body it started on, which is
+    // about to be destroyed. It is closed HERE, while the session is still
+    // bound to that body, so its entry lands on the old body's history and
+    // never on a loaded body's (DEEP-AUDIT-R1 F-02): recorded after the rebind
+    // below it would carry the old mesh's positions into the new body's Undo.
+    session.cancelStroke();
     while (scene.bodyCount() > 0) {
         scene.detachBody(scene.bodyAt(0).objectId());
     }
@@ -440,6 +446,17 @@ void mixCad(uint64_t& hash, const CadBodyState& state) {
         } else if (const SketchCircle* circle = entity.circle()) {
             mixPoint(hash, circle->center);
             mixDouble(hash, circle->radius);
+        } else if (const SketchArc* arc = entity.arc()) {
+            // Every authored point, or an in-place curve edit that keeps the
+            // entity id would not move the fingerprint (DEEP-AUDIT-R1 F-01).
+            mixPoint(hash, arc->start);
+            mixPoint(hash, arc->mid);
+            mixPoint(hash, arc->end);
+        } else if (const SketchSpline* spline = entity.spline()) {
+            mixU64(hash, spline->points.size());
+            for (const SketchPoint& p : spline->points) {
+                mixPoint(hash, p);
+            }
         }
     }
 }

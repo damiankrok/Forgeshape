@@ -196,4 +196,16 @@ bool importedMeshNameIsStorable(const std::string& name);
 // file produce different names in different sessions.
 std::string fallbackImportedMeshName(uint32_t ordinal);
 
+// UTF-8 to UTF-16 code units, for the one place a name crosses into a Java
+// `String`.
+//
+// A sanitized name may carry a 4-byte sequence (an emoji is a legal name from
+// another tool), and JNI's `NewStringUTF` takes MODIFIED UTF-8, in which a
+// supplementary character is two 3-byte surrogate encodings and a 4-byte lead
+// is illegal -- CheckJNI aborts a debuggable process on one. So the boundary
+// converts to UTF-16 and uses `NewString`. Malformed input never reaches this
+// from the domain, but a bad sequence is still mapped to U+FFFD rather than
+// dropped, so the unit count is always what a reader expects.
+std::vector<uint16_t> utf8ToUtf16(const std::string& utf8);
+
 }  // namespace forgeshape

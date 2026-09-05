@@ -1518,6 +1518,17 @@ int runGltfImportSelfTests(GltfImportSelfTestResult* out, int maxOut) {
                             && json.stringMember(json.root(), "name", &decoded);
         r.check("DAR1_03_a_json_surrogate_pair_decodes_to_four_byte_utf8",
                 parsed && decoded == emoji);
+        r.check("DAR1_03_utf8_to_utf16_is_exact_for_one_two_and_three_byte_sequences",
+                utf8ToUtf16("abc") == std::vector<uint16_t>{0x61u, 0x62u, 0x63u}
+                        && utf8ToUtf16("\xC3\xA9") == std::vector<uint16_t>{0xE9u}
+                        && utf8ToUtf16("\xE2\x82\xAC") == std::vector<uint16_t>{0x20ACu});
+        r.check("DAR1_03_a_four_byte_sequence_becomes_a_surrogate_pair",
+                utf8ToUtf16(emoji) == std::vector<uint16_t>{0xD83Du, 0xDE00u});
+        r.check("DAR1_03_malformed_input_maps_to_the_replacement_character_and_keeps_going",
+                utf8ToUtf16("a\xC3z") == std::vector<uint16_t>{0x61u, 0xFFFDu, 0x7Au}
+                        && utf8ToUtf16("\xF0\x9F") == std::vector<uint16_t>{0xFFFDu}
+                        && utf8ToUtf16("\xED\xA0\x80")
+                                   == std::vector<uint16_t>{0xFFFDu, 0xFFFDu, 0xFFFDu});
     }
 
     return r.n;

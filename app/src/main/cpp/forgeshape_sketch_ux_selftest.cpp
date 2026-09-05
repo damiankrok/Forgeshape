@@ -726,6 +726,66 @@ void testEditSketch(Recorder& r) {
 // The CADB v3 data contract (`CADUXR1-37, 38`)
 // -------------------------------------------------------------------------
 
+// -------------------------------------------------------------------------
+// The semantic fingerprint covers every authored curve point (DEEP-AUDIT-R1)
+// -------------------------------------------------------------------------
+//
+// `projectSemanticFingerprint` is what autosave and the dirty guard trust to
+// notice that the document would differ. An Arc's or a Spline's authored points
+// are document truth, so moving one while the entity keeps its id must move the
+// fingerprint exactly as moving a line's endpoint does.
+void testFingerprintCoversCurves(Recorder& r) {
+    {
+        ConstructionScene scene((NoProjectTag()));
+        ConstructionHistory history(scene);
+        CadStatus why = CadStatus::Ok;
+        SceneObject* object = scene.addCadBody(arcAndLineBody(), &why);
+        const bool built = object != nullptr && why == CadStatus::Ok;
+        if (built) {
+            publishSceneObject(*object);
+        }
+        const uint64_t before = projectSemanticFingerprint(scene, ProjectKind::Construction);
+        SketchSession session;
+        session.beginEdit(object->objectId(), object->cadOrNull()->state(),
+                          planeFrameOf(Workplane::XY));
+        SketchArc moved = unitSemicircle();
+        moved.mid = SketchPoint{0.0, 0.5};  // same ends, same id, another curve
+        const CadStatus replaced = session.replaceEntity(1, moved);
+        const CadStatus finished = session.finish();
+        session.selectProfile(1);
+        const CadStatus committed = session.commitEdit(scene, history);
+        const uint64_t after = projectSemanticFingerprint(scene, ProjectKind::Construction);
+        r.check("DAR1_01_moving_an_arc_point_in_place_moves_the_fingerprint",
+                built && replaced == CadStatus::Ok && finished == CadStatus::Ok
+                        && committed == CadStatus::Ok && after != before);
+    }
+    {
+        ConstructionScene scene((NoProjectTag()));
+        ConstructionHistory history(scene);
+        CadStatus why = CadStatus::Ok;
+        SceneObject* object = scene.addCadBody(splineAndLineBody(), &why);
+        const bool built = object != nullptr && why == CadStatus::Ok;
+        if (built) {
+            publishSceneObject(*object);
+        }
+        const uint64_t before = projectSemanticFingerprint(scene, ProjectKind::Construction);
+        SketchSession session;
+        session.beginEdit(object->objectId(), object->cadOrNull()->state(),
+                          planeFrameOf(Workplane::XY));
+        SketchSpline moved;
+        moved.points = {SketchPoint{-1.0, 0.0}, SketchPoint{-0.5, 0.5}, SketchPoint{0.5, 0.5},
+                        SketchPoint{1.0, 0.0}};
+        const CadStatus replaced = session.replaceEntity(1, moved);
+        const CadStatus finished = session.finish();
+        session.selectProfile(1);
+        const CadStatus committed = session.commitEdit(scene, history);
+        const uint64_t after = projectSemanticFingerprint(scene, ProjectKind::Construction);
+        r.check("DAR1_01_moving_a_spline_point_in_place_moves_the_fingerprint",
+                built && replaced == CadStatus::Ok && finished == CadStatus::Ok
+                        && committed == CadStatus::Ok && after != before);
+    }
+}
+
 ProjectDocument documentFor(const CadBodyState& state) {
     ConstructionScene scene((NoProjectTag()));
     CadStatus why = CadStatus::Ok;
@@ -1128,6 +1188,7 @@ int runSketchUxSelfTests(SketchUxSelfTestResult* out, int maxOut) {
     testLineDimension(r);
     testOrientationNavigator(r);
     testEditSketch(r);
+    testFingerprintCoversCurves(r);
     testDataContract(r);
     measurePerformance();
     return r.n;

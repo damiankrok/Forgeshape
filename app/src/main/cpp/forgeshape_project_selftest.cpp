@@ -2764,6 +2764,85 @@ int runProjectSelfTests(ProjectSelfTestResult* out, int maxOut) {
         }
     }
 
+    // -----------------------------------------------------------------------
+    // DEEP-AUDIT-R1 F-02: a stroke still in flight when a project loads
+    // -----------------------------------------------------------------------
+    //
+    // The load destroys the body the stroke started on and rebinds the session
+    // to the loaded active body. The stroke has to be closed against the OLD
+    // body before that: recorded after the rebind, its delta -- the old mesh's
+    // positions -- would land in the loaded body's history, and an Undo there
+    // would write foreign positions into the loaded mesh.
+    {
+        LiveFixture live;
+        SceneObject& active = live.scene.activeBody();
+        // A sphere, so a brush at the screen centre captures vertices (a
+        // cylinder's 66 vertices all sit on its rims, out of the brush).
+        applyPrimitive(active.construction(), active.meshStore(), PrimitiveSpec::forSphere(1.5));
+        const bool frozen = live.session.freezeToSculpt(active.construction().generateMesh(),
+                                                        active.objectId());
+        live.session.setRadiusPixels(240.0f);
+        CameraController cameraController;
+        cameraController.setViewport(1080, 2400);
+        const CameraSnapshot camera = cameraController.snapshot();
+        const Mat4 identity = mat4Identity();
+        const bool began = frozen
+                           && live.session.beginStroke(camera, 540.0f, 1200.0f, 1080, 2400,
+                                                       identity, identity);
+        const bool moved = began && live.session.updateStroke(580.0f, 1230.0f);
+        const bool inFlight = live.session.stroke().active();
+
+        const ProjectDocument sculptDoc = canonicalSculptDocument();
+        const std::vector<uint8_t> sculptBytes = encodeProjectV1(sculptDoc);
+        ProjectLoadReport report;
+        const ProjectCodecStatus loaded = live.load(sculptBytes, &report);
+        const SceneObject& loadedActive = live.scene.activeBody();
+        const SculptMesh& loadedMesh = loadedActive.frozenSculpt().mesh;
+        const std::vector<float>& expected = sculptDoc.sculpt.bodies[0].positions;
+        bool positionsMatch = loadedMesh.frozen()
+                              && static_cast<size_t>(loadedMesh.vertexCount()) * 3 == expected.size();
+        for (uint32_t v = 0; positionsMatch && v < loadedMesh.vertexCount(); ++v) {
+            const Vec3 p = loadedMesh.vertexPosition(v);
+            positionsMatch = p.x == expected[v * 3] && p.y == expected[v * 3 + 1]
+                             && p.z == expected[v * 3 + 2];
+        }
+        r.check("DAR1_02_precondition_a_stroke_was_in_flight_when_the_load_began",
+                began && moved && inFlight);
+        r.check("DAR1_02_a_load_closes_the_stroke_and_records_nothing_on_the_loaded_body",
+                loaded == ProjectCodecStatus::Ok && !live.session.stroke().active()
+                        && loadedActive.frozenSculpt().history.undoDepth() == 0
+                        && loadedActive.frozenSculpt().history.redoDepth() == 0);
+        r.check("DAR1_02_the_loaded_mesh_is_exactly_the_document_s",
+                loaded == ProjectCodecStatus::Ok && positionsMatch);
+    }
+    // And the defensive half: rebinding the session to ANOTHER body while a
+    // stroke is in flight drops the stroke unrecorded, on either body.
+    {
+        LiveFixture live;
+        SceneObject& active = live.scene.activeBody();
+        SceneObject& other = live.scene.bodyAt(0);
+        // A sphere, so a brush at the screen centre captures vertices (a
+        // cylinder's 66 vertices all sit on its rims, out of the brush).
+        applyPrimitive(active.construction(), active.meshStore(), PrimitiveSpec::forSphere(1.5));
+        const bool frozen = live.session.freezeToSculpt(active.construction().generateMesh(),
+                                                        active.objectId());
+        live.session.setRadiusPixels(240.0f);
+        CameraController cameraController;
+        cameraController.setViewport(1080, 2400);
+        const CameraSnapshot camera = cameraController.snapshot();
+        const Mat4 identity = mat4Identity();
+        const bool began = frozen
+                           && live.session.beginStroke(camera, 540.0f, 1200.0f, 1080, 2400,
+                                                       identity, identity)
+                           && live.session.updateStroke(580.0f, 1230.0f);
+        live.session.bindTarget(&other.frozenSculpt());
+        r.check("DAR1_02_rebinding_mid_stroke_drops_the_stroke_and_records_it_nowhere",
+                began && !live.session.stroke().active()
+                        && active.frozenSculpt().history.undoDepth() == 0
+                        && other.frozenSculpt().history.undoDepth() == 0);
+        live.session.bindTarget(&active.frozenSculpt());
+    }
+
     return r.n;
 }
 

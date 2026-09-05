@@ -637,7 +637,18 @@ public:
     // active body is resolved, so the session always edits the body the user is
     // on; the mode, the tool, the brush and any stroke in progress are the
     // session's own and are unaffected by rebinding.
-    void bindTarget(FrozenSculpt* target) { target_ = target; }
+    // Rebinding to a DIFFERENT body while a stroke is in flight drops that
+    // stroke unrecorded: its affected set and base positions describe the mesh
+    // it started on, and recording it against another body's history would let
+    // an Undo there write foreign positions. The old target may already be
+    // gone, so nothing is read from it. Callers that can close a stroke
+    // properly (`loadProjectDocument`) do so before rebinding.
+    void bindTarget(FrozenSculpt* target) {
+        if (target != target_ && stroke_.active()) {
+            stroke_.cancel();
+        }
+        target_ = target;
+    }
 
     // Takes a coherent snapshot of the supplied Construction local mesh, makes
     // it the Frozen Sculpt Mesh, and enters Sculpt mode.
