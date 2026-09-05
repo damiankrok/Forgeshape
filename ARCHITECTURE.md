@@ -3572,7 +3572,7 @@ Objects list, the ordinary Move/Rotate/Scale gizmo, one Undo step for the whole
 import, and geometry the `.forge` document carries so the project reopens without
 the source file ever being consulted again.
 
-### A body has two possible representations
+### A body has three possible source representations
 
 `SceneObject` owns exactly one of them for its whole life, named by
 `BodyRepresentation`:
@@ -3581,16 +3581,19 @@ the source file ever being consulted again.
   is DERIVED — `generateMesh()` regenerates it on every load, so a `.forge` file
   stores parameters and no vertices;
 - an **Imported Mesh** IS the geometry. No rule could recreate it and the `.glb`
-  is not part of the project, so it is project truth and it is serialized.
+  is not part of the project, so it is project truth and it is serialized;
+- a **CAD Body** is a sketch and one extrusion (`CADB`), regenerated through
+  `generateCadMesh` — see *CAD domain* above.
 
-There is no conversion between them and no fabrication in either direction:
+There is no conversion between them and no fabrication in any direction:
 nothing invents a primitive an imported object was never made from, and no
-Construction Body becomes one. `IMPORT-01B` does not weaken that -- it lets
-EITHER of them be sculpted, and a Frozen Sculpt Mesh is a body's SECOND
-representation rather than a change of its first. `constructionOrNull()` is a POINTER
-precisely so the compiler asks every call site what it does about a body with
-none, and the process-scoped accessor is `activeConstructionOrNull()` for the
-same reason.
+Construction Body becomes one. `IMPORT-01B` does not weaken that -- it lets a
+Construction Body or an Imported Mesh be sculpted, and a Frozen Sculpt Mesh is a
+body's SECOND representation rather than a change of its first (a CAD Body has
+none yet). `constructionOrNull()`, `importedOrNull()` and `cadOrNull()` are
+POINTERS precisely so the compiler asks every call site what it does about a
+body of another kind, and the process-scoped accessor is
+`activeConstructionOrNull()` for the same reason.
 
 The **placement is the BODY's**, hoisted out of `ConstructionObject` by
 `IMPORT-01A`: a body has one because it is a body, not because it is a primitive.
@@ -3996,13 +3999,14 @@ own, and naming them is what stops one arriving by accident.
   back. There is no *command* framework: undo is `ConstructionHistory`'s bounded
   step state, not a reversible-command object graph, and it covers Construction
   edits only. Both Objects hosts are **views** of that same flat list and carry
-  exactly the two verbs it has.
-- **No snapping, and no Sketch grid.** The world reference grid is a viewport
+  exactly the three verbs it has.
+- **No snapping in the world viewport.** The world reference grid is a viewport
   reference only: nothing snaps to it, no cursor is quantised, no dimension is
-  derived from it. A Sketch grid — drawn on a sketch plane, with snapping — is a
-  different contract with its own approval and must not be grown out of
-  `forgeshape_grid.h`. Nor is there a Selection Outline, View Cube, camera focus,
-  named views, blur/glass or any post-processing framework.
+  derived from it. The sketch grid is a different contract that does exist —
+  `SketchSession::snap` quantises sketch points to an adaptive 1/2/5·10^k step
+  and to existing endpoints (`CAD-R0-A1A2`, `CAD-A3`) — and it is not grown out
+  of `forgeshape_grid.h`. Nor is there a Selection Outline, View Cube, camera
+  focus, named views, blur/glass or any post-processing framework.
 - **No Mirror, no shear, no custom pivot, no hierarchy.** `ConstructionTransform`
   is translation, rotation and a strictly positive per-axis scale, and nothing
   else. A negative factor would be a Mirror — inverted winding, wrong normals,

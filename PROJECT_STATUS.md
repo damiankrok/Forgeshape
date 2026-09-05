@@ -854,16 +854,21 @@ platform-neutral C++17 domain beneath a native renderer that owns no geometry
 truth. No Compose, no AndroidX, no third-party runtime library, no engine.
 
 A scene holds several bodies, each with a nine-value placement — double-meter
-Position, double-degree Rotation and a unitless positive Scale — and one of two
-representations. A **Construction Body** is an exact primitive (Box, Cylinder,
-Sphere, Cone, Capsule, Plane) with authoritative double-meter dimensions, and can
-be frozen to a Frozen Sculpt Mesh and deformed with four brush tools. An
-**Imported Mesh** (`IMPORT-01A`) is polygon geometry read from a `.glb`: it has
-no parameters, so it has no *Shape* — but since `IMPORT-01B` it can be sculpted,
-seeded from its own geometry, and it is moved, rotated, scaled, saved, undone and
-reopened exactly like anything else. A body owns one SOURCE representation for
-its whole life, nothing converts between them, and either kind may additionally
-own a Frozen Sculpt Mesh. Any body but the last can be DELETED from the Objects
+Position, double-degree Rotation and a unitless positive Scale — and one of
+three representations. A **Construction Body** is an exact primitive (Box,
+Cylinder, Sphere, Cone, Capsule, Plane) with authoritative double-meter
+dimensions, and can be frozen to a Frozen Sculpt Mesh and deformed with four
+brush tools. An **Imported Mesh** (`IMPORT-01A`) is polygon geometry read from a
+`.glb`: it has no parameters, so it has no *Shape* — but since `IMPORT-01B` it
+can be sculpted, seeded from its own geometry, and it is moved, rotated, scaled,
+saved, undone and reopened exactly like anything else. A **CAD Body**
+(`CAD-R0-A1A2`, `CAD-A3`, `SKETCH-UX-R1`) is a sketch of lines, polylines,
+rectangles, circles, arcs and splines on a principal plane or on a planar face
+of another CAD body, plus one linear extrusion; its mesh is regenerated from
+that truth, its sizes, depth and sketch stay editable, and it does not sculpt
+yet. A body owns one SOURCE representation for its whole life, nothing converts
+between them, and a Construction Body or an Imported Mesh may additionally own a
+Frozen Sculpt Mesh. Any body but the last can be DELETED from the Objects
 list (`UI-OWNER-45`), as exactly one Undo. Sculpt strokes have their own Undo and
 Redo (`ARCH-OWNER-12`): a bounded, per-body, runtime-only history over completed
 strokes, stepped by the same two chrome controls that step the project history
@@ -2554,12 +2559,12 @@ found lives in Git history.
   polyline or a loop of lines extrudes and its depth is editable; its vertices
   are shown by count only. Rectangle and circle sizes are the R0 editable
   dimensions, as specified.
-- **The sketch grid is fixed at 0.25 m / 1 m and 8 m half extent.** An
-  adaptive multi-decade grid is a CAD grid system with its own contract.
-- **The top view sits at the pitch clamp (≈ 87°), not exactly vertical.** The
-  ray–plane mapping is exact regardless; only the presentation is
-  near-orthographic. Lifting the clamp for the sketch view alone would put a
-  degenerate look-at into the camera for one mode.
+- **RESOLVED at CAD-A3: the sketch grid was fixed at 0.25 m / 1 m and 8 m half
+  extent.** It is now view-adaptive (nice 1/2/5·10^k), never persisted, and a
+  typed value is never re-snapped.
+- **RESOLVED at CAD-A3: the top view sat at the pitch clamp (≈ 87°).** The
+  sketch camera now frames exactly along the sketch frame's normal
+  (`frameSketchView`), with no pitch-clamp approximation.
 - **The sketch session is process-scoped and volatile.** A rotation keeps it
   (native state survives the Activity), process death loses it by contract, and
   a project Open or Recover cancels it. Edit-session recovery is not a feature.
@@ -2576,14 +2581,16 @@ frees the GPU copy for any body the current scene no longer names, after waiting
 on every in-flight frame and only when there is something to free. An Undo costs
 one re-upload, through the path a body already takes the first time it is drawn.
 
-**Export and the roundtrip diagnostic extract a body's geometry twice.**
-(ARCH-HEALTH-01.) `forgeshape_gltf_export.cpp` and `forgeshape_glb_roundtrip.cpp`
-each re-evaluate a Construction Source or read an Imported Mesh's arrays with
-their own `if/else` over the representation. Two sites is bounded; a third body
-representation would be the moment to give them one shared "interchange
-geometry of a body" function, and turning the Java `sceneActiveBodyIsImported()`
-boolean into a representation query would come with it. Timing:
-BEFORE_NEXT_MAJOR_FEATURE.
+**Export and the roundtrip diagnostic extract a body's geometry twice, and the
+third representation has arrived.** (ARCH-HEALTH-01, re-examined by
+DEEP-AUDIT-R1.) `forgeshape_gltf_export.cpp` and `forgeshape_glb_roundtrip.cpp`
+each branch over the representation — Construction, Imported and now CAD — with
+their own `if/else`, beside `buildSculptSourceMesh` and `publishSceneObject` in
+`forgeshape_scene.cpp`. The moment ARCH-HEALTH-01 named for giving them one
+shared "effective geometry of a body" function has passed; the sites are still
+correct and each is covered by its suite, so this is recorded as P3 debt, and
+the Java `sceneActiveBodyIsImported()` / `sceneActiveBodyIsCad()` pair would
+become one `sceneBodyRepresentation()` query with it. Timing: LATER.
 
 **The `.forge` decoder does not bound `nextObjectId` below the preview key
 range.** (ARCH-HEALTH-01.) `validateProjectDocument` requires
@@ -2807,9 +2814,10 @@ future partial or asynchronous path must beat. The affected set is found by a
 linear scan at stroke start, and picking is a linear scan too: both want the same
 missing spatial acceleration.
 
-**Sculpt state and feel.** Process-scoped with no save, load or undo, so a stroke
-is unrecoverable the moment it lands and Freeze silently discards the previous
-sculpt (the panel says so; the honest fix is undo). The path-driven gain constants
+**Sculpt feel.** Sculpt meshes are saved and reopened (E2E-R1A) and strokes have
+a bounded per-body Undo (`ARCH-OWNER-12`); a re-Freeze still discards the
+previous sculpt after its confirmation, and Undo cannot cross that boundary. The
+path-driven gain constants
 (`kNormalBrushGain` 0.35, `kSmoothGain` 1.0, `kMaxSmoothLambda` 0.9) are chosen,
 not derived, and have never been tuned against a real modelling session; if brush
 feel is tuned they should move together.
@@ -2862,9 +2870,10 @@ nothing to the product APK, which still has no runtime dependency of any kind. T
 instrumented suites share one process, so native state (in particular *whether
 anything has ever been frozen*, and how many bodies exist) carries across tests;
 no instrumented test may assume a body count, which body is at the origin, or
-which mode is current. There is no camera read-back across JNI, so "a chrome
-gesture did not move the camera" is proven by runtime screenshot rather than by
-assertion.
+which mode is current. The camera pose is readable and settable across JNI only
+through the DEBUG-only `debugCameraPose` / `debugSetCameraPose` seams, which the
+gizmo suite uses to assert that a captured handle did not orbit; a release build
+has no camera read-back.
 
 **Transform and math.** `modelMatrix()` / `inverseModelMatrix()` recompute six trig
 calls per frame and per pick for a value that only changes on Apply. The transform
@@ -2932,7 +2941,7 @@ reference, so this is correct, but a future stage adding a second camera should
 rename it. The ortho depth slab is a fixed 500 m rather than fitted to the scene.
 `kInitialOrthoHalfHeightMeters` is a literal because `std::tan` is not `constexpr`;
 a self-test asserts it still equals `kInitialDistance × tan(fovY/2)`. The camera
-still has no read-back of pose across JNI.
+pose crosses JNI only through the debug-only test seams named above.
 
 **Naming.** `kConstructionBoxObjectId` and `kDemoCubeObjectId` are the same value
 under two names and are both misnamed: the object is not always a box and never
@@ -3176,8 +3185,8 @@ the other.
 A **UI moratorium remains active**, with one owner-directed exception:
 CAD-R0-A1A2's brief named the sketch surfaces it needed, and they were added
 inside the accepted structure rather than beside it — New Sketch and the plane
-chooser as a second group INSIDE the creation palette, the five sketch tools as
-entries on the SAME Tool Rail, Cancel Sketch and Back to Sketch as a vertical
+chooser as a second group INSIDE the creation palette, the sketch tools (five at
+R0, seven since `SKETCH-UX-R1`) as entries on the SAME Tool Rail, Cancel Sketch and Back to Sketch as a vertical
 group inside the SAME trailing host (on the transform selector's terms),
 *Finish Sketch* and *Extrude* as the one toolbar transition per sketch state
 with no abbreviated form, and two more bodies for the SAME precision surface.
@@ -3214,10 +3223,11 @@ the world reference grid, which is still not a snap target); a View Cube, camera
 focus or named views; blur or glass of any kind; a post-processing framework; an
 automatic system theme; hierarchy, and every object command but Delete — rename,
 visibility, lock, duplicate, grouping, reorder and multi-select; every CAD
-feature beyond the R0 sketch-and-extrude — holes, booleans, fillets, chamfers,
-shells, revolves, sweeps, lofts, patterns, mirrors, offsets, trims, constraints,
-arcs, splines, face-based planes, rotated rectangles, editing a polygon
-profile's points, and CAD → Sculpt; Mirror, Subdivide and Remesh; materials,
+feature beyond sketch-and-extrude with curves and face support — holes,
+booleans, fillets, chamfers, shells, revolves, sweeps, lofts, patterns, mirrors,
+offsets, trims, constraints, custom construction planes, curved-face and
+imported-surface sketches, rotated rectangles, editing a polygon profile's or a
+spline's points in place, and CAD → Sculpt; Mirror, Subdivide and Remesh; materials,
 textures, UVs, animation and rigging in either direction; the one-way
 Construction-to-Sculpt project derivation (`BRIDGE-R1`); and pressure-driven
 sculpting.

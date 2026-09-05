@@ -19,9 +19,11 @@ normally. Changing a body from one of those shapes to another changes what *that
 body* is — it does not create a second one, and it does not touch any other
 body.
 
-ForgeShape comes up with a single body: a box **2.0 m wide × 1.0 m high × 0.5 m
-deep**, centred at the world origin and unrotated, so it is visibly not a cube.
-It is already selected, so there is never a step where nothing is being edited.
+ForgeShape opens on **Home**, not on a body — see *Starting a project*. A new
+Construction Body, whichever way it is created, begins as a box **2.0 m wide ×
+1.0 m high × 0.5 m deep**, centred at the world origin and unrotated, so it is
+visibly not a cube; choosing a shape from Add Primitive replaces that box with
+the shape you chose, and it is selected at once.
 
 **Behind the bodies there is a grid** — a reference floor on the ground plane
 through the world origin, with a line every **1 metre** and a stronger line every
@@ -512,9 +514,10 @@ able to close a profile with lines or with each other, as long as their ends
 meet. A closed profile containing a curve extrudes exactly like any other.
 
 Points **snap**, always: to an existing endpoint, corner or centre first, and
-otherwise to the grid, which is a quarter of a metre with a heavier line every
-metre. A snapped point is exact — the other entity's own value, or an exact
-multiple of the grid — never a rounded pixel. A small cross shows where the
+otherwise to the grid, whose spacing adapts to how far you are zoomed in (1, 2
+or 5 times a power of ten metres) so it stays a useful size. A snapped point is
+exact — the other entity's own value, or an exact multiple of the grid spacing
+in force when the drag began — never a rounded pixel. A small cross shows where the
 point will land. What you type is never snapped: select a rectangle, type
 `1.234567` for its width in *Sketch values*, press *Apply*, and that is its
 width.
@@ -907,8 +910,10 @@ Transform is pressed.
 ## Undo and Redo
 
 Two controls sit in a small capsule at the trailing end of the bottom edge,
-opposite the Objects capsule, and they are drawn only in Construction. **Undo**
-takes back the last change to the model; **Redo** puts it back. Each is live
+opposite the Objects capsule, in Construction and in Sculpt alike; only while a
+sketch is open are they withdrawn, because a sketch in progress is not in the
+history yet. **Undo** takes back the last change to the model; **Redo** puts it
+back. Each is live
 exactly when there is something to take back or put back, and greyed otherwise —
 there is no message and no animation, because the model changing is the answer.
 
@@ -1497,12 +1502,15 @@ focus-on-selection command and any camera animation are not implemented — the
 projection can be switched, but the camera is aimed only by hand. An editable
 tessellation and booleans are not implemented, and **shape is still edited only
 by typing exact values and pressing Apply**: there are no handles that change a
-body's *dimensions*. A sketch is R0: rectangles, circles, lines and polylines
-on the three principal planes, one linear New-Body extrusion, and later edits
-to a rectangle's or a circle's sizes and the depth. There is no hole, boolean,
-fillet, chamfer, shell, revolve, sweep, loft, pattern, mirror, offset, trim,
-constraint, arc, spline or face-based plane, a polygon profile's points are not
-numerically editable, and a CAD Body does not sculpt. The Scale handles change how large it is drawn, which is a
+body's *dimensions*. A sketch is lines, polylines, rectangles, circles, arcs
+and splines on one of the three principal planes or on a flat face of a CAD
+body, one linear New-Body extrusion, later edits to a rectangle's or a circle's
+sizes and the depth, and Edit Sketch for everything else. There is no hole,
+boolean, fillet, chamfer, shell, revolve, sweep, loft, pattern, mirror, offset,
+trim or constraint solver, no custom construction plane and no sketch on a
+curved or imported surface; a polygon profile's points are not numerically
+editable, a spline's points are edited by redrawing it, and a CAD Body does not
+sculpt. The Scale handles change how large it is drawn, which is a
 different thing — see *Scaling is not redimensioning*.
 
 **The handles Move, Rotate and Scale, in World or Local axes, and that is all
@@ -1532,9 +1540,10 @@ either control.
 **There is a grid, but there is no snapping of any kind.** Nothing you drag,
 type or place is quantised to it, no value is ever measured off it, and there is
 no snap setting to turn on. That includes the handles: dragging one gives the
-exact value the drag lands on, never a rounded one. A sketch grid — the one you would draw on, with
-snapping — is a different thing entirely and does not exist. The grid is a
-reference the viewport draws and nothing more.
+exact value the drag lands on, never a rounded one. The sketch grid — the one
+you draw on, which does snap — is a different thing entirely and belongs to the
+sketch alone; see *Sketching a CAD Body*. The world grid is a reference the
+viewport draws and nothing more.
 
 Exactly one body is selected at a time. Selecting more than one, lasso and box
 selection, and object commands that act on a selection — duplicate, rename, hide,
@@ -1548,9 +1557,8 @@ selection and UV are not implemented.
 ForgeShape does not follow the system's own light/dark setting, and there is no
 automatic or scheduled switching: the three palettes are chosen by hand and
 nothing else changes them. The appearance is not saved between runs, and neither
-is the start choice or the camera, so starting ForgeShape fresh always gives you
-Warm Graphite and always asks again how the model begins — even when you then
-open a saved project.
+is the camera, so starting ForgeShape fresh always gives you Warm Graphite and
+always opens on Home.
 
 **Selection is still a tint over the whole body, not an outline.** It is much
 lighter at rest than it used to be and it announces itself when it changes, but
@@ -1567,14 +1575,15 @@ preview belongs to later work on materials and export.
 now writes a real `.glb`; everything drawn in the workspace does what it says.
 
 **Every entry on the Tool Rail does something**, and so does every shape in Add
-Primitive. There is no sketching and no extruding: a body's shape comes from one
-of the six exact primitives and its dimensions, and nothing else makes geometry.
+Primitive. Geometry comes from one of the six exact primitives and its
+dimensions, from a sketch and its extrusion, or from an imported `.glb`, and
+from nothing else.
 
-**Add Primitive offers the six shapes ForgeShape builds and nothing else.** A
-body you create there always has dimensions behind it. *Import GLB…* is the
-other way objects appear, and what it makes is a mesh rather than a shape: real,
-editable in place and saved with the project, but with no dimensions to type and
-no sculpting yet.
+**Add Primitive offers the six shapes ForgeShape builds, and New Sketch.** A
+body you create from a shape always has dimensions behind it. *Import GLB…* is
+the other way objects appear, and what it makes is a mesh rather than a shape:
+real, editable in place, saved with the project and sculptable, but with no
+dimensions to type.
 
 **There is one saved project and no project library.** There is no Save As, no
 naming, no recent list, no thumbnails, no folders and no multi-project library:
