@@ -1,0 +1,14 @@
+﻿DEV2-01 | PASS | start-forgeshape-emulator.ps1 -Port 5554 exited 1 (nonzero = rejected)
+DEV2-02 | PASS | start-forgeshape-emulator.ps1 -Port 58123 (pre-occupied) exited 1 (nonzero = BLOCKED)
+DEV2-03 | PASS | default $Port = 5580 and launch command line interpolates "-avd $Avd -port $Port"
+DEV2-04 | PASS | -Serial '' exited 1 (engine Mandatory binding); -Serial ' ' exited 1 (script's own IsNullOrWhiteSpace guard); both nonzero = rejected pre-adb
+DEV2-05 | PASS | run-instrumented-tests.ps1 -Serial emulator-5554 exited 1 (nonzero = rejected pre-adb)
+DEV2-06 | PASS | no bare '& adb' invocation across 11 other script(s)
+DEV2-07 | PASS 
+DEV3-01 | PASS | bare 'adb shell' -> 1 violation(s) (1 = detected)
+DEV3-02 | PASS | bare '& adb shell' -> 1 violation(s) (1 = detected)
+DEV3-03 | PASS | scoped calls + prose/comments -> 0 violation(s) (0 = correct)
+DEV3-04 | PASS | array proving -s -> 0 violation(s) (0 expected); identically-named array WITHOUT -s -> 1 (1 expected, so the name alone is not trusted)
+DEV3-05 | PASS | executable connectedDebugAndroidTest -> 1 violation(s) (1 = detected)
+DEV3-06 | PASS | scanned 15 executable surface(s) including all 4 required; 0 violations
+All device-guard checks PASS.

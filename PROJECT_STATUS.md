@@ -1,13 +1,23 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.61.0
-**Updated:** 2026-09-04
-**Result:** **CAD-A3-C2 / SKETCH-UX-R1 — COMPLETE
+**Status Version:** 0.61.1
+**Updated:** 2026-09-05
+**Result:** **DEEP-AUDIT-R1 — COMPLETE (`PASS-DEEP-AUDIT-R1-WITH-DEBT`).** A
+read-first audit of every surface at baseline `be5b729c`. Three proven P1
+defects were found and fixed with tests (the semantic fingerprint omitted
+Arc/Spline points; a sculpt stroke in flight at project load was attributed to
+the loaded body; a 4-byte-UTF-8 imported name aborted CheckJNI in a debuggable
+build). Source comments were compressed and stale narration removed with no
+runtime change; the current-truth documents were reconciled. Remaining findings
+are P2/P3 debt, reported not implemented. Evidence:
+`artifacts/deep-audit-r1/INDEX.md`.
+
+**Previous result:** CAD-A3-C2 / SKETCH-UX-R1 — COMPLETE
 (`PASS-CAD-A3-C2-SKETCH-UX-R1-OWNER-RETEST-READY`). ForgeShape opens on a
 full-screen start page; New Project → CAD lands straight on a flat sketch grid;
 the plane and the view are chosen from an orientation navigator; a selected
 Line carries an editable technical dimension; Arc and Spline are durable sketch
-entities; a committed body's sketch can be reopened and edited.**
+entities; a committed body's sketch can be reopened and edited.
 
 This pass is an OWNER-requested UX correction plus an approved capability
 expansion. The owner saw Home as a large rounded card floating over an empty
@@ -2791,13 +2801,16 @@ deserves its own attention.
 accessors in `EditorWorkspaceView` are inside `SDK_INT` branches for API 26–30,
 which is correct, and are what produces the javac note above.
 
-**"Debug-only" code is proven debug-*guarded*, not proven absent from a release
-binary.** Every self-test and mesh-fixture entry point is behind `#ifndef NDEBUG`
-or an equivalent guard, verified by reading the call sites. But those translation
-units sit on the CMake source list unconditionally and no release `.so` has ever
-been inspected to confirm the linker drops the symbols. Closing this means
-examining a real release artifact and possibly moving the files behind a CMake
-condition.
+**"Debug-only" code is debug-*guarded* at the CALL SITE but LINKS INTO the
+release binary — CONFIRMED (DEEP-AUDIT-R1 F-16).** Every self-test and
+mesh-fixture entry point is behind `#ifndef NDEBUG`, so the suites never run in
+release; but the `*selftest*` translation units sit on the CMake source list
+unconditionally, so their code and their internal string literals link into the
+release `.so`. Inspection of `app-release-unsigned.apk` at DEEP-AUDIT-R1 found
+`runProjectSelfTests` (and the other 19 `run*SelfTests`) as an exported dynamic
+symbol and the `FSR1A_01`/`CADUXR1_25`/`DAR1_0*` check-name strings present in
+the release binary, which is ~500 KB larger than needed. Closing this means a
+CMake condition that drops the suites from a release build. Reported as P2.
 
 **Reduced motion is pushed on refresh, not observed.** `syncFromNative` reads
 `ANIMATOR_DURATION_SCALE` and hands the answer to native code, covering every
@@ -2949,6 +2962,32 @@ was a demo cube. Renaming is deferred to avoid churning unrelated code. There is
 still no checked-in `uinput` harness file, so the multi-touch gesture is
 regenerated per stage.
 
+**DEEP-AUDIT-R1 findings held as debt (P2/P3, reported not implemented):**
+
+- **F-07 (P2)** — `resolveWorldModel` re-runs full profile extraction
+  (`cadTopologySignature` + `resolveCadFace`) for every face-supported CAD body
+  every frame, under `g_stateMutex` (measured 4.35 ms at chain depth 32). A
+  cached resolved frame invalidated on producer edit would fix it.
+- **F-08 (P2)** — seven unlocked JNI readers (`productMode`, `sculptState`,
+  `sculptTool`, `constructionPrimitive`, `constructionMeshRevision`, the
+  brush-set log read, `logMeshDiagnostics`) call `sculptSession()`, which writes
+  the borrowed `target_` pointer; the autosave thread writes it under the lock —
+  a formal data race, benign in practice (same value, aligned store). Taking the
+  lock in those readers closes it.
+- **F-09 (P2)** — CAD triangulation is O(n³) (`isEar` O(n)) and the nested-profile
+  check O(P²·n·m); bounded (256 profiles, 1024 verts) but a hostile `.forge` can
+  cost ~1 s at load. No crash.
+- **F-16 (P2)** — self-tests link into the release binary (above).
+- **F-10/F-11/F-13/F-14/F-15/F-18 (P3)** — `activeBody()` self-heals to
+  `bodies_.front()` silently (a debug assert would be better); `touchEvent` reads
+  three JNI arrays before one `ExceptionCheck` (unreachable in the product); the
+  five representation `if/else` chains ARCH-HEALTH-01 said to unify are still
+  separate now that the third representation exists; `forgeshape_jni.cpp` is 5870
+  lines; `buildSpherifiedBox` has accidental external linkage; and
+  `EditorControlStyles.setChipReserved` + `bg_capsule_reserved.xml` are dead since
+  the reserved Export chip was removed. Full detail in
+  `artifacts/deep-audit-r1/FINDINGS.md`.
+
 ## Current Files / Modules
 
 | Path | Ownership |
@@ -3075,9 +3114,14 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Exactly one next step: return the CAD-A3-C2 / SKETCH-UX-R1 report to the
-ForgeShape coordinator for the OWNER's real-device review of the start page,
-the first-sketch flow, the navigator, the dimension and the curves.** No
+**Exactly one next step: return the DEEP-AUDIT-R1 report to the ForgeShape
+coordinator.** The audit is closed on the technical side: three proven P1
+defects fixed with tests, comments compressed with no runtime change, the
+current-truth documents reconciled, and the P2/P3 debt above recorded for the
+coordinator to schedule. No product stage may begin here. The prior owner-retest
+readiness is unchanged by the audit — the paragraph below still stands for the
+OWNER's real-device review of the start page, the first-sketch flow, the
+navigator, the dimension and the curves. No
 product stage may begin here: booleans, fillets, chamfers, a constraint solver,
 custom construction planes, curved-face and imported/sculpted-surface sketches,
 projected edges, a feature-tree redesign, an independently movable dependent
