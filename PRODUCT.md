@@ -938,6 +938,12 @@ still 2 m: Scale is a multiplier on the drawing, not a new size for the shape.
 If you want the box to *be* 4 m wide, retype its Width; if you want this copy of
 it drawn twice as large, set its Scale.
 
+**Dimensions** is the third way, and it asks the question most people mean:
+*how big is this object on screen, overall?* That is the Width times the Scale —
+4 m for the box above — and typing 6 there sets the Scale that makes it 6 m
+across while leaving the Width at 2 m. Nothing is rebuilt. See *Exact
+dimensions, and relative scale*, below.
+
 ### Position, rotation and scale
 
 Position is measured in the display unit, from the world origin, and is applied
@@ -981,6 +987,58 @@ they were — a scale of zero cannot leave a new position half applied — and a
 value that is not a number at all, or a scale that is not greater than zero, is
 reported with the field named. Editing the text does nothing until Apply
 Transform is pressed.
+
+### Exact dimensions, and relative scale
+
+Under **Transform**, two more entries stand below the Move / Rotate / Scale
+selector in the right-hand surface: **Dimensions** and **Relative scale**. Both
+are offered only for a Construction Body that is visible and unlocked, and are
+absent otherwise.
+
+**Dimensions** is a mode. Entering it puts the transform handles away — the
+handles and the leaders are two ways to change the same placement, and this mode
+is about typing an exact number — and draws a technical-drawing annotation
+around the body on each of its own three axes, with the measurement beside it in
+the display unit. Tapping a measurement opens a small field over the viewport
+with that value already in it, selected whole; typing a new one and pressing
+Apply resizes the body along that axis to exactly that size.
+
+The size shown is the body's own size along its own axes: the object's local
+width, height and depth multiplied by the scale it carries. **Turning the body
+does not change the numbers**, and neither does moving it or looking at it from
+somewhere else. A **plane** truthfully reports zero thickness, and asking to
+resize that axis is refused by name rather than answered by inventing a
+thickness for it.
+
+An **anchor** decides which side of the body stays where it is while the other
+side moves. Three choices stand under Dimensions, each with its own pictogram
+and each naming what it holds:
+
+| Anchor | What stays still |
+| --- | --- |
+| Hold the negative side | the body's own negative face on that axis; it grows and shrinks the other way |
+| Hold the centre | the object's position; it grows and shrinks both ways equally |
+| Hold the positive side | the body's own positive face on that axis |
+
+The two side anchors hold a real point in the world still, correctly for a body
+that has been turned in all three axes. Dimensions opens on **Hold the centre**
+every time.
+
+**Relative scale** is a different question and has its own panel: three
+multipliers and one Apply. It always opens at **1, 1, 1** — it asks how much to
+change the size *by*, not what the size *is* — and applying multiplies the scale
+the body already carries. If X was 6.64 and you type 2, X becomes 13.28; open
+the panel again and it reads 1 once more. The multiplier itself is never saved.
+It is centred: applying it moves nothing.
+
+Each exact dimension and each relative-scale Apply is **one Undo**. Undo puts
+back both the position and the scale exactly, and Redo reapplies both. A value
+that is not a number, is zero, is negative, or is applied to a locked or hidden
+body is reported with the reason and changes nothing at all.
+
+These are the size of the **body**. They are not the size of a CAD sketch: a
+sketch line's length, a circle's radius and an extrusion depth stay in the CAD
+shape editor, and neither control touches them.
 
 ## Undo and Redo
 

@@ -488,4 +488,31 @@
     <item name="cad_direction_against" type="id" />
     <item name="apply_cad" type="id" />
     <item name="edit_cad_sketch" type="id" />
+
+    <!-- Body Dimensions and Relative Scale (Stage 020M). Each id names the ACT
+         the code performs, never the label, so copy can be rewritten without
+         renaming a control. -->
+    <item name="body_size_group" type="id" />
+    <item name="body_dimensions" type="id" />
+    <item name="body_relative_scale" type="id" />
+    <item name="dimension_anchor_group" type="id" />
+    <item name="dimension_anchor_negative" type="id" />
+    <item name="dimension_anchor_center" type="id" />
+    <item name="dimension_anchor_positive" type="id" />
+    <!-- The three numeric labels over the viewport, one per body axis, and the
+         compact editor one of them opens. -->
+    <item name="body_dimension_labels" type="id" />
+    <item name="body_dimension_label_x" type="id" />
+    <item name="body_dimension_label_y" type="id" />
+    <item name="body_dimension_label_z" type="id" />
+    <item name="body_dimension_editor" type="id" />
+    <item name="field_body_dimension" type="id" />
+    <item name="apply_body_dimension" type="id" />
+    <!-- The Relative Scale precision-surface body: three multipliers that open
+         at 1 every time, and one Apply that is one history step. -->
+    <item name="relative_scale_editor" type="id" />
+    <item name="field_relative_scale_x" type="id" />
+    <item name="field_relative_scale_y" type="id" />
+    <item name="field_relative_scale_z" type="id" />
+    <item name="apply_relative_scale" type="id" />
 </resources>

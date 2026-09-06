@@ -701,4 +701,47 @@
     <string name="hint_clay">deposit material outward as you drag</string>
     <string name="hint_smooth">even out roughness as you drag</string>
     <string name="hint_inflate">expand the surface outward as you drag</string>
+
+    <!--
+      Body Dimensions and Relative Scale (Stage 020M).
+
+      "Dimensions" is the overall size of the BODY on its own X, Y and Z — never
+      a CAD feature dimension, which is a sketch parameter and belongs to the
+      sketch. "Relative Scale" is deliberately not called World Scale: it is a
+      temporary multiplier on the size the body already has, and it opens at 1
+      every time.
+    -->
+    <string name="body_dimensions">Dimensions</string>
+    <string name="body_dimensions_close">Close dimensions</string>
+    <string name="body_relative_scale">Relative scale</string>
+    <string name="inspector_relative_scale_title">Relative scale — %1$s</string>
+    <string name="precision_relative_scale">Relative scale</string>
+    <string name="section_relative_scale">Multiply the current size by</string>
+    <string name="apply_relative_scale">Apply Relative Scale</string>
+    <string name="label_relative_scale_x">X ×</string>
+    <string name="label_relative_scale_y">Y ×</string>
+    <string name="label_relative_scale_z">Z ×</string>
+    <string name="relative_scale_note">Opens at 1 every time. Applying multiplies the stored scale; the multiplier itself is not kept.</string>
+    <!--
+      The three anchors, named for what STAYS STILL. A pictogram alone cannot
+      say which side is held, so every one of them carries these words as its
+      content description and no control means "<", ":" or ">" by symbol alone.
+    -->
+    <string name="dimension_anchor_negative">Hold the negative side</string>
+    <string name="dimension_anchor_center">Hold the centre</string>
+    <string name="dimension_anchor_positive">Hold the positive side</string>
+    <string name="body_dimension_x">Width (local X)</string>
+    <string name="body_dimension_y">Height (local Y)</string>
+    <string name="body_dimension_z">Depth (local Z)</string>
+    <string name="body_dimension_description">%1$s: %2$s</string>
+    <string name="apply_body_dimension">Apply</string>
+    <string name="status_body_dimension_applied">%1$s set to %2$s — %3$s.</string>
+    <string name="status_body_dimension_unchanged">%1$s is already %2$s.</string>
+    <string name="status_relative_scale_applied">Relative scale applied — the stored scale is now %1$s.</string>
+    <string name="status_relative_scale_unchanged">Relative scale unchanged — a multiplier of 1 changes nothing.</string>
+    <string name="reject_dimension_not_positive">Rejected: a dimension must be greater than 0. Body unchanged.</string>
+    <string name="reject_dimension_degenerate">Rejected: %1$s has no thickness to resize. Body unchanged.</string>
+    <string name="reject_dimension_unavailable">Rejected: this body cannot be resized here. Body unchanged.</string>
+    <string name="reject_dimension_locked">Rejected: the body is locked. Unlock it to resize it.</string>
+    <string name="reject_dimension_other">Rejected: a value is not a finite number. Body unchanged.</string>
 </resources>

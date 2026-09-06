@@ -163,6 +163,8 @@ forgeshape_jni.cpp            render thread, ANativeWindow, MotionEvent ->
 | Whether a one-finger gesture while sketching draws, selects, or is swallowed — and that two fingers still pan and pinch | the sketch arbitration block in `forgeshape_jni.cpp`, using `SketchSession::onTouch` | a single finger never orbits while a sketch is open; the gizmo and the sculpt arbitration are already out of the picture, because the gizmo is withdrawn at begin and a sketch cannot start in Sculpt |
 | Removing one body from the project | `forgeshape_body_delete.{h,cpp}` | one representation-neutral operation over the scene and the history. One Delete is one transaction; the removed body is HELD by the history rather than destroyed, so an Undo restores that object with its Imported Mesh and its Frozen Sculpt Mesh intact; the replacement selection and the last-body refusal are stated here and nowhere else |
 | The four object commands — Rename, Show/Hide, Lock/Unlock, Duplicate | `forgeshape_body_commands.{h,cpp}` | one representation-neutral module over the scene and the history, on `forgeshape_body_delete`'s terms and for the same reason: each is a decision ABOUT the project that needs both collaborators and neither owns the other. Each act is one transaction; the name rule is the domain's existing one rather than a second policy; Duplicate is the only entry point that dispatches on representation, because it has to COPY one |
+| A body's overall DIMENSIONS, and every resize about an anchor | `forgeshape_body_dimensions.{h,cpp}` | the ONE resize/anchor solver (`UI-OWNER-33B`, Stage 020M), deliberately a pure function over values — no scene, no history, no body, no camera, no renderer — so Stage 020D's Directional Scale drives the same arithmetic rather than a second copy of it. It also owns the exact local bounds of the six Construction primitives, read from their PARAMETERS, and the two product acts over the scene and the history |
+| The dimension leaders, and the Dimensions interaction state | `forgeshape_body_dimension_overlay.{h,cpp}` | presentation on the sketch overlay's terms: a world-space line list in the SketchOverlay's own structure and ranges, fed through the renderer's existing line path so no renderer change was needed. Also the session-only mode, active axis and anchor, which no Java flag mirrors |
 | The deterministic external-GLB compatibility fixture | `forgeshape_glb_import_fixture.{h,cpp}` | a synthetic file with the structural feature set of an external low-poly export; every coordinate an integer over a power of two, so its bytes are the same everywhere. A debug test seam, reachable from no product path |
 | What an imported preview IS, and every boundary it may not cross | `forgeshape_import_preview.{h,cpp}` | session-only: no scene `ObjectId`, no Construction Source, no sculpt representation, no `MeshStore`, no history, no `.forge`, no checkpoint, not selectable, not re-exportable, gone with the process. Its renderer keys are resource keys and never identities. Since `IMPORT-01A` it is reachable only from the verification suites |
 | What a body is CALLED wherever the user reads it | `BodyLabels` (Java) | one answer for the Objects list, the Objects capsule, the precision surface's title and the status line: an Imported Mesh uses the name its file gave it, a Construction Body is `Body #id`, and the empty string native code returns for the latter is the SIGNAL for that fallback, not a name |
@@ -4217,6 +4219,136 @@ Both toggles change their GLYPH with the state as well as their words, so what
 is hidden and what is locked reads without relying on colour. The overflow and
 the strip are withdrawn in Sculpt and while sketching, where all four commands
 are refused below JNI — and, as everywhere else, the guard stays.
+
+## Body dimensions, the shared resize/anchor solver, and Relative Scale
+
+`UI-OWNER-33B`, Stage 020M. Construction-only.
+
+**A dimension is derived, and nothing stores one.** For a Construction Body's
+own axis `a`,
+
+```
+dimension[a] = unscaledLocalExtent[a] * absoluteScale[a]
+```
+
+The extent comes from `constructionLocalBounds`, which reads the ACTIVE
+primitive's parameters — a box's width, a cylinder's diameter, a capsule's TOTAL
+height, a plane's exactly-zero thickness — and never measures a generated
+vertex. That is the same one-way rule the rest of the domain follows: a mesh is
+derived, and reading a dimension back out of one is the loop this project
+forbids. It is also why **rotation is not an input**: a world axis-aligned
+bounding box of a turned body reports the size of the box AROUND it, which is a
+fact about that hull and not about the body. Neither is the camera an input;
+nothing in this module projects.
+
+**One solver owns every resize.** `solveAxisResize` and `solveAxisDimension` are
+pure functions over values — they take a `TransformValues`, a `LocalBounds`, an
+axis, a target and an anchor, and they take no scene, no history, no body, no
+`ObjectId` and no camera. That shape is deliberate and is exactly what
+`UI-OWNER-33B` asks for: Stage 020D's Directional Scale handles are meant to
+drive this same arithmetic from a drag, so there must be nothing about it that
+only an exact-value editor could supply. No renderer math owns this contract and
+there is no second implementation.
+
+**The anchor arithmetic, stated once.** With `Model = T · Rz · Ry · Rx · S`, a
+local point `p` sits at `P = T + R·S·p`. Only `S[a]` changes, so holding the
+point at local coordinate `b` on that axis stationary requires
+
+```
+T_new = T_old + (R · e_a) · (S_old[a] − S_new[a]) · b
+```
+
+`R · e_a` is column `a` of the rotation matrix, obtained through
+`rotationMatrixFromEuler` — the ONE bridge between the Euler truth and a matrix
+(`forgeshape_transform.h`) — rather than through a second copy of the
+convention. The correction does not depend on which point of the face was
+chosen, which is what makes "the negative side stays where it is" a statement
+about a whole face. `b` is `bounds.min(a)` for the negative side and
+`bounds.max(a)` for the positive.
+
+**Centre is a rule, not an inference.** Centre writes NO position: the scale
+changes and the placement does not. For today's origin-centred primitives that
+coincides with "the bounds centre stays put", but the stated rule is the one
+that holds, and `LocalBounds` carries min AND max rather than a half-extent so
+the solver never assumes the two descriptions are the same — which is also what
+lets Stage 020D reuse it for bounds that are not centred.
+
+**Refusals are by name and never clamped.** Zero, negative, non-finite, an
+out-of-range axis, and a DEGENERATE axis — a plane's zero-thickness local Y,
+where no scale gives a size — each have their own `ResizeStatus`. No thickness
+is fabricated and no division by zero happens; the plane's own width and depth
+still resize normally, because it is an axis that is refused and not a body.
+Every solution is put through the transform's own `validateTransformValue` /
+`validateScaleValue` before it is returned, so a caller is never handed a value
+the transform is then going to reject.
+
+**Relative Scale is a temporary multiplier, and it is not a second scale
+vector.** It opens at `(1, 1, 1)` every activation for the strongest possible
+reason: nothing anywhere stores one. `solveRelativeScale` commits
+`newAbsolute = oldAbsolute ⊙ multiplier` with the position untouched — it is
+pivot-based in Stage 020M and exposes no one-sided anchor — and fails closed on
+all three multipliers at once, on exactly the terms `applyTransformValues`
+refuses a bad ninth value. The multiplier never reaches a `.forge` byte, a
+history step, a checkpoint or the fingerprint, and there is no accessor to read
+one back. `RelativeScaleEditorView` is the only thing in the product that ever
+holds one, and it resets to 1 when it opens and again the moment an Apply lands.
+
+**The two product acts are one transaction each.** `applyBodyDimension` and
+`applyBodyRelativeScale` sit over the scene and the history in the same module,
+on `forgeshape_body_commands`' terms: a shared preamble refuses an open edit,
+an unknown body, a non-Construction representation, a LOCKED body (Stage 018A's
+guard, because a resize MOVES one) and a HIDDEN body (the leaders are read off
+geometry that is not drawn — and the refusal does not touch the visibility the
+user set), then one `ScopedConstructionEdit` writes the solved placement.
+A commit that finds the placement it already had reports `Unchanged` and records
+nothing. Neither publishes a mesh, mints a `MeshRevision`, rebuilds a CAD mesh
+or moves a sculpt vertex — a dimension edit is a transform edit, however it was
+expressed.
+
+**No persistence change.** Because the whole act writes Position and Scale, the
+`.forge` document is untouched: no field, no section, no version. `DIM020M-16`
+proves it directly — a project reached by a dimension edit encodes
+byte-for-byte identically to one reached by typing the same numbers into the
+placement editor — and the thirty-fixture corpus digests are unchanged beside
+it.
+
+**The leaders are the sketch overlay, reused.**
+`forgeshape_body_dimension_overlay.{h,cpp}` builds a `SketchOverlay`: a
+world-space `GizmoVertex` line list in two of the ranges the renderer already
+draws — the active axis in `Dimension` (the annotation highlight) and the other
+two in `Entities` (the neutral weight). It becomes the third producer for the
+one overlay slot the JNI frame loop fills, beside the support chooser and the
+sketch session, and **the renderer needed no change at all**. The geometry is
+the body's own local bounds carried through its placement; the stand-off that
+holds the annotation clear of the body is applied in WORLD units along the
+body's own UNIT axes, so a large scale does not push the leaders away and a
+small one does not bury them. The overlay is rebuilt only when the bounds, the
+placement, the active axis or the camera scale actually changed, so a resting
+frame costs no transfer.
+
+**Dimensions mode withdraws the gizmo, below JNI as well as above it.** The
+leaders and the transform handles are two instruments for one placement, and a
+mode whose whole point is an exact typed value must not also invite a drag. The
+session turns the gizmo off when it opens; the frame loop answers again every
+frame, so a mode entered mid-drag cannot leave one standing. The mode also
+CLOSES ITSELF, in one place and every frame, the moment what it measures stops
+being measurable — another body selected, this one locked, hidden or deleted,
+Sculpt entered, the project closed — so no caller has to remember to unwind it.
+
+**The numbers are chrome.** `BodyDimensionLabelsView` draws three labels over
+the viewport, each centred on the projected midpoint of its own real dimension
+line (`bodyDimensionLabelPoint`), because a number has to stay upright at any
+zoom and be typeable. It is the same split, and the same grammar,
+`SketchDimensionLabelView` uses for a selected sketch Line. One label opens a
+compact field at a time; native owns which axis that is, because it is what the
+renderer draws in the highlight weight.
+
+**Not this stage:** Directional Scale handles or mode (Stage 020D, blocked by
+OQ-01); Sculpt dimensions (`SCULPT-DIM-01`, blocked by OQ-02); Imported Mesh and
+CAD Body dimensions; CAD FEATURE dimensions — a sketch line length, a circle
+radius, an extrusion depth — which stay CAD authored truth and are edited by the
+CAD feature editor; multi-select and group scale; hierarchy; snapping; Mirror; a
+new unit system.
 
 ## The diagnostic imported mesh preview
 

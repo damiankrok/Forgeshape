@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Relative Scale: multiply the size the body already has.
+
+  A small square growing into a larger one, with a multiplication cross between
+  them. The MULTIPLY sign is the whole message and is the one difference from
+  ic_gizmo_scale: that glyph says "drag this end", this one says "times this
+  much", which is exactly the difference between the handles and a temporary
+  multiplier.
+
+  Drawn white and tinted at use; see EditorControlStyles.iconButton().
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.8"
+        android:strokeLineJoin="round"
+        android:pathData="M2.8,13.6 L9.0,13.6 L9.0,20.6 L2.8,20.6 Z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.8"
+        android:strokeLineJoin="round"
+        android:pathData="M12.2,8.2 L21.2,8.2 L21.2,20.6 L12.2,20.6 Z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:pathData="M13.4,2.0 L19.0,6.0 M19.0,2.0 L13.4,6.0" />
+</vector>

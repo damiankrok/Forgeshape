@@ -71,8 +71,18 @@ final class EditorWorkspaceView extends FrameLayout
         SketchEditorView.OnSketchAction,
         SketchOrientationNavigatorView.OnOrientationAction,
         SketchDimensionLabelView.OnDimensionAction,
+        BodyDimensionLabelsView.OnDimensionAction,
         AnchoredSurfaceView.OnOpenStateChanged {
 
+    /** The three body axes by name, for a status line (Stage 020M). */
+    private static final int[] BODY_DIMENSION_NAMES = {
+            R.string.body_dimension_x, R.string.body_dimension_y, R.string.body_dimension_z
+    };
+    /** The three anchors by name, indexed by {@code DIMENSION_ANCHOR_*}. */
+    private static final int[] ANCHOR_NAMES = {
+            R.string.dimension_anchor_negative, R.string.dimension_anchor_center,
+            R.string.dimension_anchor_positive
+    };
     private static final int[] SCULPT_TOOL_HINTS = {
             R.string.hint_grab, R.string.hint_clay, R.string.hint_smooth, R.string.hint_inflate
     };
@@ -260,6 +270,23 @@ final class EditorWorkspaceView extends FrameLayout
     private final SketchEditorView sketchEditor;
     private final CadFeatureEditorView cadEditor;
     /**
+     * The Relative Scale precision-surface body (Stage 020M).
+     *
+     * <p>A sixth body for the one container, on the same terms as the other
+     * five: it edits one section and reports on it.
+     */
+    private final RelativeScaleEditorView relativeScaleEditor;
+    /**
+     * Whether the precision surface is currently showing Relative Scale.
+     *
+     * <p>The one piece of UI-owned state this stage adds, and it is a choice of
+     * BODY rather than a value: which of the container's bodies the Transform
+     * tool's precision surface is showing. It carries no multiplier — the fields
+     * are reset to 1 every time the surface opens — and nothing below JNI reads
+     * it.
+     */
+    private boolean relativeScaleOpen;
+    /**
      * The two sketch-only surfaces that stand in the viewport
      * (`SKETCH-UX-R1` C, E): the orientation navigator, and the selected Line's
      * technical dimension label with its numeric editor. Both are present only
@@ -267,6 +294,15 @@ final class EditorWorkspaceView extends FrameLayout
      */
     private final SketchOrientationNavigatorView sketchNavigator;
     private final SketchDimensionLabelView sketchDimension;
+    /**
+     * The three overall-dimension labels over the viewport (Stage 020M).
+     *
+     * <p>Chrome, like the sketch's own dimension label beside it: the leaders
+     * are the renderer's and the numbers are Android views, because a number
+     * has to stay upright and be typeable. Present only while Dimensions mode
+     * is open, and holding no dimension of its own.
+     */
+    private final BodyDimensionLabelsView bodyDimensionLabels;
     /** Reused across reads; native fills this with the sketch session's state. */
     private final double[] nativeSketch = new double[NativeViewport.SKETCH_STATE_SIZE];
     /** The last sketch refusal the status line reported, so a gesture that
@@ -279,6 +315,16 @@ final class EditorWorkspaceView extends FrameLayout
     /** Scratch for the gizmo read-back. Reused rather than allocated per
      *  refresh: this is read on every sync and on every settled gesture. */
     private final double[] nativeGizmo = new double[NativeViewport.GIZMO_STATE_SIZE];
+    /**
+     * Body Dimensions and Relative Scale state, re-read on every refresh
+     * (Stage 020M).
+     *
+     * <p>Whether the controls may be drawn, whether the mode is open, which
+     * anchor is held and the three derived dimensions are ALL native's answer.
+     * Nothing about them is remembered here, which is what makes a rotation, a
+     * resume and a body switch land where native truth says.
+     */
+    private final double[] nativeBodyDim = new double[NativeViewport.BODY_DIM_SIZE];
 
     /**
      * How many gizmo drags had committed a step when a gesture last settled.
@@ -627,6 +673,7 @@ final class EditorWorkspaceView extends FrameLayout
         sculptContext = new SculptContextView(context, this);
         sketchEditor = new SketchEditorView(context, this, this);
         cadEditor = new CadFeatureEditorView(context, this);
+        relativeScaleEditor = new RelativeScaleEditorView(context, this);
 
         // The two sketch-only surfaces that stand IN the viewport
         // (`SKETCH-UX-R1` C, E): the orientation navigator in the upper trailing
@@ -640,6 +687,16 @@ final class EditorWorkspaceView extends FrameLayout
                 SketchOrientationNavigatorView.anchoredParams(context));
         sketchDimension = new SketchDimensionLabelView(context, this, this);
         overlayRoot.addView(sketchDimension, SketchDimensionLabelView.anchoredParams());
+
+        // Stage 020M's three overall-dimension labels, on exactly those terms
+        // and in the same overlay. It fills the chrome area rather than wrapping
+        // its content, because it positions three children anywhere the leaders
+        // land and has to clamp them into the window; it is not clickable
+        // itself, so a touch that misses a label falls straight through to the
+        // viewport underneath.
+        bodyDimensionLabels = new BodyDimensionLabelsView(context, this, this);
+        overlayRoot.addView(bodyDimensionLabels, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
         // Home and New Project are START PAGES (`SKETCH-UX-R1` A): full-window,
         // opaque, and added to THIS view rather than to `overlayRoot`, because
@@ -2480,7 +2537,14 @@ final class EditorWorkspaceView extends FrameLayout
         // against one is rejected below JNI, so a handle there could only be
         // grabbed and then refused. The domain guard stays regardless —
         // removing a control is not removing a guard.
+        //
+        // And not in Dimensions mode (Stage 020M), for a related reason: the
+        // leaders and the handles are two instruments for the same placement,
+        // and a mode whose whole point is an exact typed value must not also
+        // offer a drag. Native withdraws it below JNI as well.
+        NativeViewport.bodyDimensionsState(nativeBodyDim);
         final boolean offered = !sculpting && !isSketching()
+                && nativeBodyDim[NativeViewport.BODY_DIM_MODE_ACTIVE] == 0.0
                 && uiState.constructionTool() == EditorUiState.CONSTRUCTION_TOOL_TRANSFORM
                 && !NativeViewport.sceneActiveBodyIsLocked()
                 && NativeViewport.sceneActiveBodyId() != NativeViewport.NO_OBJECT;
@@ -2494,6 +2558,7 @@ final class EditorWorkspaceView extends FrameLayout
     /** Supplies the host one derived snapshot; native reads and commands stay here. */
     private void renderTrailingHost(boolean sculpting) {
         NativeViewport.sketchState(nativeSketch);
+        NativeViewport.bodyDimensionsState(nativeBodyDim);
         final int sketchState = (int) nativeSketch[NativeViewport.SKETCH_STATE];
         final boolean sketching = sketchState != NativeViewport.SKETCH_INACTIVE;
         final boolean transformOffered = !sculpting && !sketching
@@ -2533,7 +2598,14 @@ final class EditorWorkspaceView extends FrameLayout
                 // carries. A CAD Body keeps it: Shape is what the body IS, and
                 // for one that is its sketch and its extrusion.
                 !NativeViewport.sceneActiveBodyIsImported(),
-                sketchState));
+                sketchState,
+                // Stage 020M, all three from NATIVE truth: whether this body
+                // can be measured at all, whether the mode is open, and which
+                // side a resize holds. No Java flag mirrors any of them, so a
+                // rotation and a resume land where native says.
+                nativeBodyDim[NativeViewport.BODY_DIM_SUPPORTED] != 0.0,
+                nativeBodyDim[NativeViewport.BODY_DIM_MODE_ACTIVE] != 0.0,
+                (int) nativeBodyDim[NativeViewport.BODY_DIM_ANCHOR]));
         // The CAD bootstrap's plane chooser has no body and no sketch yet, so
         // the rail's Construction entries and the precision toggle would all
         // be controls that cannot succeed: the whole trailing cluster is
@@ -2727,7 +2799,15 @@ final class EditorWorkspaceView extends FrameLayout
             return;
         }
         final String body = BodyLabels.ofActive(context);
-        if (uiState.constructionTool() == EditorUiState.CONSTRUCTION_TOOL_TRANSFORM) {
+        if (uiState.constructionTool() == EditorUiState.CONSTRUCTION_TOOL_TRANSFORM
+                && relativeScaleOpen) {
+            // Stage 020M's sixth body. It stands in the SAME container, under
+            // the same tool, because it is another exact-value question about
+            // the same placement -- and it is titled by the body it multiplies,
+            // exactly as the placement editor next to it is.
+            inspector.setBody(relativeScaleEditor,
+                    context.getString(R.string.inspector_relative_scale_title, body));
+        } else if (uiState.constructionTool() == EditorUiState.CONSTRUCTION_TOOL_TRANSFORM) {
             inspector.setBody(placementEditor,
                     context.getString(R.string.inspector_place_title_for_body, body));
         } else if (NativeViewport.sceneActiveBodyIsCad()) {
@@ -2761,8 +2841,11 @@ final class EditorWorkspaceView extends FrameLayout
         if (isSketching()) {
             return R.string.precision_sketch;
         }
-        return uiState.constructionTool() == EditorUiState.CONSTRUCTION_TOOL_TRANSFORM
-                ? R.string.precision_transform : R.string.precision_shape;
+        if (uiState.constructionTool() != EditorUiState.CONSTRUCTION_TOOL_TRANSFORM) {
+            return R.string.precision_shape;
+        }
+        return relativeScaleOpen ? R.string.precision_relative_scale
+                                 : R.string.precision_transform;
     }
 
     /**
@@ -2791,6 +2874,12 @@ final class EditorWorkspaceView extends FrameLayout
             // Typing is over; the keyboard and the focus belong back on the
             // model rather than on a field that has just left the window.
             finishEditing();
+            // Stage 020M: closing the surface gives it back to the placement
+            // editor, which is what the Transform tool's precision toggle means
+            // by default. Relative Scale is opened by its own control and is
+            // never what the surface reopens on -- a temporary multiplier
+            // should not be what the panel shows the next time it is asked for.
+            relativeScaleOpen = false;
         }
         showPrecisionToggle(sculpting);
     }
@@ -2921,6 +3010,12 @@ final class EditorWorkspaceView extends FrameLayout
             sketchDimension.closeEditor();
             sketchDimension.setVisibility(GONE);
         }
+        // Stage 020M's body-dimension labels follow the same rule from the
+        // other side: they belong to Dimensions mode and to nothing else, and
+        // a sketch and that mode can never both be open. The view withdraws
+        // itself when native says the mode is closed or the body cannot be
+        // measured, so this needs no second predicate here.
+        bodyDimensionLabels.refreshFromNative();
     }
 
     /**
@@ -3158,6 +3253,155 @@ final class EditorWorkspaceView extends FrameLayout
         return sketchDimension;
     }
 
+    // -----------------------------------------------------------------------
+    // Body Dimensions and Relative Scale (Stage 020M, `UI-OWNER-33B`)
+    // -----------------------------------------------------------------------
+
+    /**
+     * Opens or closes Dimensions mode.
+     *
+     * <p>A presentation act that changes nothing about the project: no mesh, no
+     * revision, no history step, no dirty flag. Native owns whether the mode is
+     * open and refuses to open it over a body it cannot measure, so this asks
+     * and then re-reads rather than assuming.
+     *
+     * <p>Opening withdraws the transform gizmo, below JNI as well as above it:
+     * the leaders and the handles are two instruments for the same placement,
+     * and a mode whose whole point is an exact typed value should not also
+     * invite a drag.
+     */
+    @Override
+    public void onBodyDimensionsRequested() {
+        NativeViewport.bodyDimensionsState(nativeBodyDim);
+        final boolean open = nativeBodyDim[NativeViewport.BODY_DIM_MODE_ACTIVE] != 0.0;
+        bodyDimensionLabels.closeEditor();
+        final boolean nowOpen = NativeViewport.setBodyDimensionsMode(!open);
+        if (nowOpen) {
+            // The precision surface is dismissed the way every other primary
+            // surface dismisses its neighbours: the leaders and their labels
+            // stand IN the viewport, and a panel over them would cover the
+            // thing being measured.
+            dismissPrimarySurfacesExcept(null);
+        } else {
+            refreshTransformGizmo(isSculpting());
+        }
+        finishEditing();
+        syncFromNative();
+        showStatus(getContext().getString(nowOpen ? R.string.body_dimensions
+                                                  : R.string.body_dimensions_close),
+                R.attr.fsTextSecondary);
+    }
+
+    /**
+     * Opens the Relative Scale precision surface, reset to 1/1/1.
+     *
+     * <p>The reset is unconditional and is the whole of the "temporary
+     * multiplier" rule at this layer: there is nothing to read back from native,
+     * because nothing below JNI stores a multiplier.
+     */
+    @Override
+    public void onRelativeScaleRequested() {
+        // Dimensions mode and Relative Scale are two different questions about
+        // the same body, and the second wants a panel where the first wants the
+        // viewport. Closing the mode is what keeps one of them on screen at a
+        // time.
+        if (NativeViewport.setBodyDimensionsMode(false)) {
+            // Cannot happen -- a close always closes -- and not trusted.
+            return;
+        }
+        bodyDimensionLabels.closeEditor();
+        refreshTransformGizmo(isSculpting());
+        relativeScaleOpen = true;
+        relativeScaleEditor.resetToIdentity();
+        setPrecisionOpen(true);
+        syncFromNative();
+    }
+
+    /**
+     * Chooses which side of the body a resize holds still.
+     *
+     * <p>Presentation until an Apply: choosing an anchor moves nothing, records
+     * nothing and publishes nothing. Native owns the choice so the value that
+     * an Apply reads and the value the control shows cannot drift apart.
+     */
+    @Override
+    public void onDimensionAnchorRequested(int anchor) {
+        if (!NativeViewport.setBodyDimensionAnchor(anchor)) {
+            return;
+        }
+        syncFromNative();
+    }
+
+    /**
+     * An exact overall dimension was typed for one body axis.
+     *
+     * <p>One call is one Construction history transaction, and the anchor the
+     * mode currently holds decides whether the body grows about its centre or
+     * away from one of its two sides. Nothing is clamped here: an invalid value
+     * is refused below JNI and reported by name.
+     */
+    @Override
+    public void onBodyDimensionEntered(int axis, double meters) {
+        final Context context = getContext();
+        final int status = NativeViewport.applyBodyDimension(axis, meters);
+        final String axisName = context.getString(BODY_DIMENSION_NAMES[
+                Math.max(0, Math.min(BODY_DIMENSION_NAMES.length - 1, axis))]);
+        switch (status) {
+            case NativeViewport.APPLY_APPLIED:
+                bodyDimensionLabels.closeEditor();
+                onNativeStateChanged();
+                NativeViewport.bodyDimensionsState(nativeBodyDim);
+                showStatus(context.getString(R.string.status_body_dimension_applied, axisName,
+                                uiState.displayUnit().formatWithUnit(
+                                        nativeBodyDim[NativeViewport.BODY_DIM_X + axis]),
+                                context.getString(ANCHOR_NAMES[(int) nativeBodyDim[
+                                        NativeViewport.BODY_DIM_ANCHOR]])),
+                        R.attr.fsTextSuccess);
+                break;
+            case NativeViewport.APPLY_UNCHANGED:
+                bodyDimensionLabels.closeEditor();
+                showStatus(context.getString(R.string.status_body_dimension_unchanged, axisName,
+                                uiState.displayUnit().formatWithUnit(meters)),
+                        R.attr.fsTextSecondary);
+                break;
+            case NativeViewport.APPLY_REJECTED_NOT_POSITIVE:
+                showStatus(context.getString(R.string.reject_dimension_not_positive),
+                        R.attr.fsTextError);
+                break;
+            case NativeViewport.APPLY_REJECTED_DEGENERATE_AXIS:
+                showStatus(context.getString(R.string.reject_dimension_degenerate, axisName),
+                        R.attr.fsTextError);
+                break;
+            case NativeViewport.APPLY_REJECTED_LOCKED:
+                showStatus(context.getString(R.string.reject_dimension_locked),
+                        R.attr.fsTextError);
+                break;
+            case NativeViewport.APPLY_REJECTED_UNAVAILABLE:
+                showStatus(context.getString(R.string.reject_dimension_unavailable),
+                        R.attr.fsTextError);
+                break;
+            case NativeViewport.APPLY_REJECTED_NOT_REPRESENTABLE:
+                showStatus(context.getString(R.string.reject_transform_not_representable),
+                        R.attr.fsTextError);
+                break;
+            default:
+                showStatus(context.getString(R.string.reject_dimension_other),
+                        R.attr.fsTextError);
+                break;
+        }
+        syncFromNative();
+    }
+
+    /** The Relative Scale editor, for verification. */
+    RelativeScaleEditorView relativeScaleEditor() {
+        return relativeScaleEditor;
+    }
+
+    /** The overall-dimension labels, for verification. */
+    BodyDimensionLabelsView bodyDimensionLabels() {
+        return bodyDimensionLabels;
+    }
+
     /** The sketch orientation navigator, for verification. */
     SketchOrientationNavigatorView sketchNavigator() {
         return sketchNavigator;
@@ -3222,6 +3466,14 @@ final class EditorWorkspaceView extends FrameLayout
         // screen. Native code has no such concept, makes no call here, and
         // nothing about the object changes.
         uiState.setConstructionTool(key);
+        // Stage 020M: Dimensions and Relative Scale are contextual to Transform
+        // and leave with it, the way the mode selector already does. Native
+        // closes the mode; the surface goes back to the placement editor.
+        if (key != EditorUiState.CONSTRUCTION_TOOL_TRANSFORM) {
+            NativeViewport.setBodyDimensionsMode(false);
+            bodyDimensionLabels.closeEditor();
+            relativeScaleOpen = false;
+        }
         showActiveInspectorBody(false);
         // Transform is the entry that owns direct manipulation, so the handles
         // and their Move/Rotate selector arrive with it and leave with it. This

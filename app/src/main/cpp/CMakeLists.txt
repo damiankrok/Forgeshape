@@ -57,6 +57,8 @@ set(FORGESHAPE_PRODUCT_SOURCES
     forgeshape_sketch_session.cpp
     forgeshape_support_chooser.cpp
     forgeshape_workplane.cpp
+    forgeshape_body_dimension_overlay.cpp
+    forgeshape_body_dimensions.cpp
     forgeshape_body_commands.cpp
     forgeshape_body_delete.cpp
     forgeshape_construction.cpp
@@ -98,6 +100,7 @@ set(FORGESHAPE_PRODUCT_SOURCES
 # names or their exported entry points. Debug is the one configuration that
 # leaves NDEBUG undefined, and it is the only one that compiles them.
 set(FORGESHAPE_SELFTEST_SOURCES
+    forgeshape_body_dimensions_selftest.cpp
     forgeshape_camera_selftest.cpp
     forgeshape_cad_selftest.cpp
     forgeshape_cad_a3_selftest.cpp

@@ -35,7 +35,10 @@
 
 #include "forgeshape_body_commands.h"
 #include "forgeshape_body_delete.h"
+#include "forgeshape_body_dimension_overlay.h"
+#include "forgeshape_body_dimensions.h"
 #include "forgeshape_camera.h"
+#include "forgeshape_body_dimensions_selftest.h"
 #include "forgeshape_camera_selftest.h"
 #include "forgeshape_construction.h"
 #include "forgeshape_construction_selftest.h"
@@ -452,6 +455,29 @@ void runHistorySelfTestsAndLog() {
 }
 
 
+
+void runBodyDimensionsSelfTestsAndLog() {
+#ifndef NDEBUG
+    constexpr int kMaxBodyDimensionChecks = 256;
+    static forgeshape::BodyDimensionsSelfTestResult results[kMaxBodyDimensionChecks];
+    const int count = forgeshape::runBodyDimensionsSelfTests(results, kMaxBodyDimensionChecks);
+    int failed = 0;
+    for (int i = 0; i < count; ++i) {
+        if (!results[i].passed) {
+            ++failed;
+            FS_LOGE("FORGESHAPE_BODY_DIMENSIONS_SELFTEST_CASE_FAIL:%s", results[i].name);
+        } else {
+            FS_LOGI("body dimensions selftest pass: %s", results[i].name);
+        }
+    }
+    if (failed == 0) {
+        FS_LOGI("FORGESHAPE_BODY_DIMENSIONS_SELFTEST_OK (%d checks)", count);
+    } else {
+        FS_LOGE("FORGESHAPE_BODY_DIMENSIONS_SELFTEST_FAIL (%d of %d checks failed)", failed,
+                count);
+    }
+#endif
+}
 void runGltfExportSelfTestsAndLog() {
 #ifndef NDEBUG
     constexpr int kMaxGltfChecks = 128;
@@ -1493,7 +1519,16 @@ void renderThreadMain() {
                 // same reason the editing controls are: a gizmo drawn over an
                 // imported mesh would be pointing at a body that is not on the
                 // screen, and dragging it would move something invisible.
-                if (forgeshape::importedMeshPreview().visible()) {
+                //
+                // They are withdrawn in Dimensions mode for a related reason
+                // (Stage 020M): the leaders and the handles are two instruments
+                // for the same placement, and drawing both would invite a drag
+                // in a mode whose whole point is an exact typed value. The
+                // session already turned the gizmo off when it opened; this is
+                // the frame's own answer, so a mode entered mid-drag cannot
+                // leave one standing.
+                if (forgeshape::importedMeshPreview().visible()
+                    || forgeshape::bodyDimensionSession().active()) {
                     renderer.setGizmo(forgeshape::GizmoSnapshot{});
                 } else {
                     renderer.setGizmo(forgeshape::gizmoSession().snapshot(
@@ -1513,8 +1548,41 @@ void renderThreadMain() {
                     // the chooser draws the plane/face targets, then the sketch
                     // it starts draws the entities. When neither is active the
                     // overlay is empty and free.
+                    //
+                    // Dimensions mode is the third producer for the same one
+                    // slot, and it borrows the whole path rather than adding a
+                    // second: a body's dimension leaders and a sketch's
+                    // dimension annotation are the same kind of drawing, so the
+                    // renderer needed no change for either. The three are
+                    // mutually exclusive by construction -- a sketch cannot be
+                    // open over a body being measured, because the mode refuses
+                    // to open in Sculpt and creation is refused in a sketch.
                     if (forgeshape::supportChooser().active()) {
                         renderer.setSketchOverlay(forgeshape::supportChooser().overlay());
+                    } else if (forgeshape::bodyDimensionSession().active()) {
+                        forgeshape::LocalBounds bounds;
+                        const forgeshape::ConstructionScene& scene =
+                            forgeshape::constructionScene();
+                        const bool measurable =
+                            scene.hasProject()
+                            && forgeshape::sceneBodyDimensions(scene.activeBodyId(), scene,
+                                                               &bounds, nullptr)
+                            && forgeshape::bodySizeEditable(scene.activeBody())
+                            && !forgeshape::sculptSession().inSculptMode();
+                        if (measurable) {
+                            renderer.setSketchOverlay(forgeshape::bodyDimensionSession().overlay(
+                                bounds, scene.activeBody().transform().values(), worldPerUnit));
+                        } else {
+                            // The mode CLOSES itself the moment what it measures
+                            // stops being measurable -- another body selected,
+                            // this one locked, hidden or deleted, Sculpt entered,
+                            // the project closed. One place decides that, every
+                            // frame, so no caller has to remember to unwind it
+                            // and the shell's next refresh simply finds the mode
+                            // shut.
+                            forgeshape::bodyDimensionSession().close();
+                            renderer.setSketchOverlay(forgeshape::SketchOverlayPtr{});
+                        }
                     } else {
                         renderer.setSketchOverlay(
                             forgeshape::sketchSession().overlay(worldPerUnit));
@@ -1635,6 +1703,7 @@ Java_com_forgeshape_app_NativeViewport_start(JNIEnv*, jclass) {
     runGltfExportSelfTestsAndLog();
     runGltfImportSelfTestsAndLog();
     runCadSelfTestsAndLog();
+    runBodyDimensionsSelfTestsAndLog();
     // The mesh and construction self-tests publish revisions of their own into
     // the store, so republish the ACTIVE representation: the app must always
     // come up showing what the current product mode says it is showing. At a
@@ -2070,6 +2139,279 @@ Java_com_forgeshape_app_NativeViewport_applyBoxTransform(JNIEnv*, jclass, jdoubl
     bool refusedLocked = false;
     const jint status = transformResultToJni(applyBoxTransform("ui", requested, &refusedLocked));
     return refusedLocked ? kApplyRejectedLocked : status;
+}
+
+// ---------------------------------------------------------------------------
+// Body Dimensions and Relative Scale (Stage 020M, `UI-OWNER-33B`)
+// ---------------------------------------------------------------------------
+//
+// Two acts and one interaction mode, all Construction-only. Nothing here is new
+// project truth: a dimension is DERIVED from the body's own local bounds and
+// its stored Absolute Scale, and editing one writes the transform the product
+// already had. Relative Scale is a temporary multiplier that never crosses this
+// boundary in the other direction -- there is nothing to read back, because
+// nothing stores one.
+
+// Two more refusal codes, in step with NativeViewport's APPLY_* fields. Both
+// exist because the honest reason for a refusal is not a bad number: an axis
+// with no thickness cannot be given one, and a body this stage does not measure
+// is not a body whose value was wrong.
+constexpr jint kApplyRejectedDegenerateAxis = 9;
+constexpr jint kApplyRejectedUnavailable = 10;
+
+jint bodySizeResultToJni(const forgeshape::BodySizeResult& result) {
+    switch (result.status) {
+        case forgeshape::BodySizeStatus::Ok: return kApplyApplied;
+        case forgeshape::BodySizeStatus::Unchanged: return kApplyUnchanged;
+        case forgeshape::BodySizeStatus::RefusedLocked: return kApplyRejectedLocked;
+        case forgeshape::BodySizeStatus::UnknownBody:
+        case forgeshape::BodySizeStatus::RefusedRepresentation:
+        case forgeshape::BodySizeStatus::RefusedHidden:
+        case forgeshape::BodySizeStatus::RefusedEditInProgress:
+            return kApplyRejectedUnavailable;
+        case forgeshape::BodySizeStatus::RefusedGeometry: break;
+    }
+    switch (result.resize) {
+        case forgeshape::ResizeStatus::NotPositive: return kApplyRejectedNotPositive;
+        case forgeshape::ResizeStatus::NotRepresentable: return kApplyRejectedNotRepresentable;
+        case forgeshape::ResizeStatus::DegenerateAxis: return kApplyRejectedDegenerateAxis;
+        case forgeshape::ResizeStatus::InvalidAxis: return kApplyRejectedUnavailable;
+        case forgeshape::ResizeStatus::NotFinite:
+        case forgeshape::ResizeStatus::Ok: break;
+    }
+    return kApplyRejectedNotFinite;
+}
+
+// Whether the ACTIVE body can be measured at all, and its bounds. Called under
+// the state lock by everything below.
+bool activeBodyDimensions(forgeshape::LocalBounds* outBounds,
+                          forgeshape::BodyDimensions* outDimensions) {
+    const forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
+    if (!scene.hasProject()) {
+        return false;
+    }
+    return forgeshape::sceneBodyDimensions(scene.activeBodyId(), scene, outBounds, outDimensions);
+}
+
+// The whole Dimensions state, in NativeViewport's BODY_DIM_* slots.
+JNIEXPORT void JNICALL
+Java_com_forgeshape_app_NativeViewport_bodyDimensionsState(JNIEnv* env, jclass, jdoubleArray out) {
+    constexpr jsize kSize = 14;
+    if (out == nullptr || env->GetArrayLength(out) < kSize) {
+        return;
+    }
+    jdouble values[kSize] = {0, 0, -1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0};
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        forgeshape::LocalBounds bounds;
+        forgeshape::BodyDimensions dimensions;
+        const bool measurable = activeBodyDimensions(&bounds, &dimensions);
+        const forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
+        // "Supported" is what decides whether the CONTROLS are drawn, and it is
+        // the domain's own predicate rather than a second rule written here.
+        const bool editable = measurable && scene.hasProject()
+                           && forgeshape::bodySizeEditable(scene.activeBody())
+                           && !forgeshape::sculptSession().inSculptMode();
+        const forgeshape::BodyDimensionSession& session = forgeshape::bodyDimensionSession();
+        values[0] = editable ? 1.0 : 0.0;
+        values[1] = session.active() ? 1.0 : 0.0;
+        values[2] = static_cast<double>(session.activeAxis());
+        values[3] = static_cast<double>(forgeshape::resizeAnchorIndex(session.anchor()));
+        if (measurable) {
+            values[4] = dimensions.x;
+            values[5] = dimensions.y;
+            values[6] = dimensions.z;
+            values[7] = bounds.extent(0);
+            values[8] = bounds.extent(1);
+            values[9] = bounds.extent(2);
+            const forgeshape::TransformValues t = scene.activeBody().transform().values();
+            values[10] = t.scaleX;
+            values[11] = t.scaleY;
+            values[12] = t.scaleZ;
+        }
+        values[13] = measurable ? 1.0 : 0.0;
+    }
+    env->SetDoubleArrayRegion(out, 0, kSize, values);
+}
+
+// Opens or closes Dimensions mode. Returns what the mode IS afterwards, so the
+// shell never has to assume a request succeeded.
+//
+// Opening WITHDRAWS the transform gizmo below JNI, not only above it: the two
+// are alternative ways to change the same placement and a handle left standing
+// under the leaders would be a second instrument for one act. Closing does not
+// put it back -- the shell decides what tool is held, exactly as it does today.
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_setBodyDimensionsMode(JNIEnv*, jclass, jboolean on) {
+    bool nowActive = false;
+    bool refused = false;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        forgeshape::BodyDimensionSession& session = forgeshape::bodyDimensionSession();
+        if (on == JNI_TRUE) {
+            forgeshape::LocalBounds bounds;
+            const forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
+            const bool editable = activeBodyDimensions(&bounds, nullptr) && scene.hasProject()
+                               && forgeshape::bodySizeEditable(scene.activeBody())
+                               && !forgeshape::sculptSession().inSculptMode();
+            if (!editable) {
+                // A locked, hidden, imported, CAD or sculpted body, or no
+                // project at all. Refused by name; the mode is left CLOSED
+                // rather than opened over something it cannot measure.
+                refused = true;
+                session.close();
+            } else {
+                session.open();
+                forgeshape::gizmoSession().setActive(false);
+            }
+        } else {
+            session.close();
+        }
+        nowActive = session.active();
+    }
+    if (refused) {
+        FS_LOGI("FORGESHAPE_BODY_DIMENSIONS_REFUSED:not_measurable");
+    } else {
+        FS_LOGI("FORGESHAPE_BODY_DIMENSIONS_MODE:%d", nowActive ? 1 : 0);
+    }
+    return nowActive ? JNI_TRUE : JNI_FALSE;
+}
+
+// Which axis's value is being read or edited. -1 clears it.
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_setBodyDimensionAxis(JNIEnv*, jclass, jint axis) {
+    bool accepted = false;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        accepted = forgeshape::bodyDimensionSession().setActiveAxis(static_cast<int>(axis));
+    }
+    return accepted ? JNI_TRUE : JNI_FALSE;
+}
+
+// Which side of the body a resize holds still.
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_setBodyDimensionAnchor(JNIEnv*, jclass, jint anchorIndex) {
+    forgeshape::ResizeAnchor anchor;
+    if (!forgeshape::resizeAnchorFromIndex(static_cast<int>(anchorIndex), &anchor)) {
+        FS_LOGE("FORGESHAPE_BODY_DIMENSION_ANCHOR_REJECTED:%d", (int)anchorIndex);
+        return JNI_FALSE;
+    }
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        forgeshape::bodyDimensionSession().setAnchor(anchor);
+    }
+    FS_LOGI("FORGESHAPE_BODY_DIMENSION_ANCHOR:%s", forgeshape::resizeAnchorName(anchor));
+    return JNI_TRUE;
+}
+
+// One exact overall dimension, in METRES, on one axis, with the session's
+// current anchor. One call is one history transaction.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_applyBodyDimension(JNIEnv*, jclass, jint axis,
+                                                          jdouble targetMeters) {
+    forgeshape::BodySizeResult result;
+    forgeshape::ResizeAnchor anchor = forgeshape::ResizeAnchor::Center;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        if (!forgeshape::constructionScene().hasProject()) {
+            FS_LOGE("FORGESHAPE_BODY_DIMENSION_REJECTED:NoProject");
+            return kApplyRejectedUnavailable;
+        }
+        if (forgeshape::sculptSession().inSculptMode()) {
+            // Stage 020M is Construction-only and `SCULPT-DIM-01` is still
+            // blocked by OQ-02. Refused below JNI as well as withdrawn above
+            // it: removing a control is not removing a guard.
+            FS_LOGE("FORGESHAPE_BODY_DIMENSION_REJECTED:InSculpt");
+            return kApplyRejectedUnavailable;
+        }
+        anchor = forgeshape::bodyDimensionSession().anchor();
+        result = forgeshape::applyBodyDimension(
+            forgeshape::constructionScene().activeBodyId(), static_cast<int>(axis), targetMeters,
+            anchor, forgeshape::constructionScene(), forgeshape::constructionHistory());
+    }
+    if (result.status == forgeshape::BodySizeStatus::Ok) {
+        FS_LOGI("FORGESHAPE_BODY_DIMENSION:axis=%d target=%.6fm anchor=%s "
+                "pos=(%.6f,%.6f,%.6f)m scale=(%.6f,%.6f,%.6f)",
+                (int)axis, (double)targetMeters, forgeshape::resizeAnchorName(anchor),
+                result.values.positionX, result.values.positionY, result.values.positionZ,
+                result.values.scaleX, result.values.scaleY, result.values.scaleZ);
+    } else {
+        FS_LOGE("FORGESHAPE_BODY_DIMENSION_REJECTED:%s:%s axis=%d target=%.6f",
+                forgeshape::bodySizeStatusName(result.status),
+                forgeshape::resizeStatusName(result.resize), (int)axis, (double)targetMeters);
+    }
+    return bodySizeResultToJni(result);
+}
+
+// One Relative Scale Apply: the three multipliers, committed into the stored
+// Absolute Scale as one history transaction. The multipliers themselves are not
+// stored anywhere, which is why the next interaction opens at (1, 1, 1).
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_applyBodyRelativeScale(JNIEnv*, jclass, jdouble x,
+                                                              jdouble y, jdouble z) {
+    forgeshape::BodySizeResult result;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        if (!forgeshape::constructionScene().hasProject()) {
+            FS_LOGE("FORGESHAPE_BODY_RELATIVE_SCALE_REJECTED:NoProject");
+            return kApplyRejectedUnavailable;
+        }
+        if (forgeshape::sculptSession().inSculptMode()) {
+            FS_LOGE("FORGESHAPE_BODY_RELATIVE_SCALE_REJECTED:InSculpt");
+            return kApplyRejectedUnavailable;
+        }
+        result = forgeshape::applyBodyRelativeScale(
+            forgeshape::constructionScene().activeBodyId(), x, y, z,
+            forgeshape::constructionScene(), forgeshape::constructionHistory());
+    }
+    if (result.status == forgeshape::BodySizeStatus::Ok) {
+        FS_LOGI("FORGESHAPE_BODY_RELATIVE_SCALE:multiplier=(%.6f,%.6f,%.6f) "
+                "absolute=(%.6f,%.6f,%.6f)",
+                (double)x, (double)y, (double)z, result.values.scaleX, result.values.scaleY,
+                result.values.scaleZ);
+    } else {
+        FS_LOGE("FORGESHAPE_BODY_RELATIVE_SCALE_REJECTED:%s:%s multiplier=(%.6f,%.6f,%.6f)",
+                forgeshape::bodySizeStatusName(result.status),
+                forgeshape::resizeStatusName(result.resize), (double)x, (double)y, (double)z);
+    }
+    return bodySizeResultToJni(result);
+}
+
+// Where one axis's numeric label belongs, in view-local pixels.
+//
+// Derived from the MIDPOINT of that axis's real dimension line, through the
+// same projection everything else in the viewport uses -- never from a guessed
+// offset off a world bounding box. False when the mode is closed, the overlay
+// has not been built or the anchor does not project, and a label with nowhere
+// honest to stand is not drawn.
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_bodyDimensionLabelPoint(JNIEnv* env, jclass, jint axis,
+                                                               jfloatArray out) {
+    if (out == nullptr || env->GetArrayLength(out) < 2) {
+        return JNI_FALSE;
+    }
+    const int index = static_cast<int>(axis);
+    if (index < 0 || index >= forgeshape::kBodyAxisCount) {
+        return JNI_FALSE;
+    }
+    float point[2] = {0.0f, 0.0f};
+    bool found = false;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const forgeshape::BodyDimensionSession& session = forgeshape::bodyDimensionSession();
+        const forgeshape::BodyDimensionLabelAnchors& anchors = session.labelAnchors();
+        if (session.active() && anchors.valid) {
+            found = forgeshape::projectWorldToScreen(g_camera.snapshot(), anchors.axis[index],
+                                                     g_camera.viewportWidth(),
+                                                     g_camera.viewportHeight(), &point[0],
+                                                     &point[1]);
+        }
+    }
+    if (!found) {
+        return JNI_FALSE;
+    }
+    env->SetFloatArrayRegion(out, 0, 2, point);
+    return JNI_TRUE;
 }
 
 // ---------------------------------------------------------------------------

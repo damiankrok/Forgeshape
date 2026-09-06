@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Anchor: the NEGATIVE side stays where it is; the body grows and shrinks the
+  other way.
+
+  A solid PIN bar at the held edge, an outlined body beside it, and an arrow
+  leaving the free end. The bar is what says "this side is fixed" — it is the
+  wall the body is pressed against — and it is drawn solid while the body is
+  outlined so the two can never be read the wrong way round. The arrow points
+  the ONE way the body can move.
+
+  Direction is stated by geometry and never by a "<" character: every one of the
+  three carries its meaning in words as its content description as well
+  (R.string.dimension_anchor_negative).
+
+  Drawn white and tinted at use; see EditorControlStyles.iconButton().
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M2.4,4.0 L4.6,4.0 L4.6,20.0 L2.4,20.0 Z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.8"
+        android:strokeLineJoin="round"
+        android:pathData="M4.6,7.6 L15.2,7.6 L15.2,16.4 L4.6,16.4 Z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M17.4,12.0 L21.8,12.0 M19.4,9.4 L22.0,12.0 L19.4,14.6" />
+</vector>

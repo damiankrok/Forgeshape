@@ -356,6 +356,123 @@ final class NativeViewport {
                                         double rotationYDegrees, double rotationZDegrees,
                                         double scaleX, double scaleY, double scaleZ);
 
+    /**
+     * Refused: the axis has no thickness to resize (Stage 020M).
+     *
+     * <p>A plane's local Y extent is exactly zero, and no scale gives it a
+     * size. Its own code because the number the user typed may be perfectly
+     * good — what cannot be done is the resize, and no thickness is fabricated
+     * to make it possible.
+     */
+    static final int APPLY_REJECTED_DEGENERATE_AXIS = 9;
+
+    /**
+     * Refused: this body cannot be measured or resized here (Stage 020M).
+     *
+     * <p>An Imported Mesh, a CAD Body, a hidden body, Sculpt, no project at
+     * all, or an edit already in progress. The controls are absent in every one
+     * of those states; this is the guard that stays regardless.
+     */
+    static final int APPLY_REJECTED_UNAVAILABLE = 10;
+
+    // ---------------------------------------------------------------------
+    // Body Dimensions and Relative Scale (Stage 020M, `UI-OWNER-33B`)
+    //
+    // Construction-only, and NOT new project truth. A body's overall dimension
+    // on one axis is DERIVED — its own unscaled local extent times its stored
+    // Absolute Scale — so it is read on demand and never held here. Editing one
+    // writes the Scale (and, for a one-sided anchor, the Position) the transform
+    // already had, which is why this stage changes no `.forge` byte.
+    //
+    // RELATIVE Scale is a temporary multiplier that opens at (1, 1, 1) EVERY
+    // time. Nothing stores one — not this class, not the domain and not the
+    // file — so there is deliberately no way to read one back, and reopening
+    // the interaction starts from the identity because there is nothing else it
+    // could start from.
+    // ---------------------------------------------------------------------
+
+    /** Slots in {@link #bodyDimensionsState(double[])}. */
+    static final int BODY_DIM_SIZE = 14;
+    /** 1 when the Dimensions and Relative Scale controls may be drawn at all. */
+    static final int BODY_DIM_SUPPORTED = 0;
+    /** 1 while Dimensions mode is open. */
+    static final int BODY_DIM_MODE_ACTIVE = 1;
+    /** 0, 1 or 2 for the axis being read, or {@link #BODY_DIM_AXIS_NONE}. */
+    static final int BODY_DIM_ACTIVE_AXIS = 2;
+    /** One of the {@code DIMENSION_ANCHOR_*} constants. */
+    static final int BODY_DIM_ANCHOR = 3;
+    /** The overall X dimension in METRES; Y and Z follow. */
+    static final int BODY_DIM_X = 4;
+    /** The unscaled local X extent in METRES; Y and Z follow. */
+    static final int BODY_DIM_EXTENT_X = 7;
+    /** The stored Absolute Scale X; Y and Z follow. */
+    static final int BODY_DIM_SCALE_X = 10;
+    /** 1 when the dimension values above are meaningful. */
+    static final int BODY_DIM_MEASURABLE = 13;
+
+    /** No axis is being read or edited. */
+    static final int BODY_DIM_AXIS_NONE = -1;
+
+    /** The body's negative side on that axis stays where it is in the world. */
+    static final int DIMENSION_ANCHOR_NEGATIVE = 0;
+    /** The Position does not move; only the Scale changes. */
+    static final int DIMENSION_ANCHOR_CENTER = 1;
+    /** The body's positive side on that axis stays where it is in the world. */
+    static final int DIMENSION_ANCHOR_POSITIVE = 2;
+
+    /**
+     * The whole Dimensions state, in the {@code BODY_DIM_*} slots.
+     *
+     * <p>A read: it opens no edit, records nothing and publishes nothing.
+     */
+    static native void bodyDimensionsState(double[] out);
+
+    /**
+     * Opens or closes Dimensions mode, and returns what the mode IS afterwards.
+     *
+     * <p>Opening withdraws the transform gizmo below JNI as well as above it:
+     * the leaders and the handles are two instruments for the same placement.
+     * Opening over a body this stage cannot measure — locked, hidden, imported,
+     * CAD, sculpted, or none at all — is refused and leaves the mode closed.
+     */
+    static native boolean setBodyDimensionsMode(boolean on);
+
+    /** Which axis's value is being read, or {@link #BODY_DIM_AXIS_NONE}. */
+    static native boolean setBodyDimensionAxis(int axis);
+
+    /** Which side of the body a resize holds still. */
+    static native boolean setBodyDimensionAnchor(int anchor);
+
+    /**
+     * Sets one axis to an exact overall dimension, in METRES, with the mode's
+     * current anchor. One call is one Construction history transaction.
+     *
+     * @return one of the {@code APPLY_*} constants
+     */
+    static native int applyBodyDimension(int axis, double targetMeters);
+
+    /**
+     * Commits a Relative Scale multiplier into the stored Absolute Scale, as
+     * one Construction history transaction.
+     *
+     * <p>The multiplier itself is not persisted anywhere: what survives is the
+     * product, and the next interaction opens at (1, 1, 1).
+     *
+     * @return one of the {@code APPLY_*} constants
+     */
+    static native int applyBodyRelativeScale(double multiplierX, double multiplierY,
+                                             double multiplierZ);
+
+    /**
+     * Where one axis's numeric label belongs, in view-local pixels.
+     *
+     * <p>Derived from the midpoint of that axis's real dimension line through
+     * the same projection the viewport uses — never from a guessed offset off a
+     * world bounding box. False when the mode is closed or the anchor does not
+     * project, and a label with nowhere honest to stand is not drawn.
+     */
+    static native boolean bodyDimensionLabelPoint(int axis, float[] out);
+
     // ---------------------------------------------------------------------
     // Product mode and the Frozen Sculpt Mesh.
     //

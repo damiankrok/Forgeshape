@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Dimensions: read and type the body's overall size on its own X, Y and Z.
+
+  A technical-drawing DIMENSION, not a tool: two extension lines, a measure line
+  between them and a tick at each end — the draughting convention every engineer
+  already reads, and deliberately not an arrow, a cube or a ruler. The body it
+  measures is the light rectangle behind it, so the glyph says "the size of that
+  thing" rather than "a length".
+
+  Drawn white and tinted at use; see EditorControlStyles.iconButton().
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.4"
+        android:strokeLineJoin="round"
+        android:pathData="M4.2,3.4 L19.8,3.4 L19.8,13.4 L4.2,13.4 Z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.4"
+        android:strokeLineCap="round"
+        android:pathData="M4.2,15.2 L4.2,21.0 M19.8,15.2 L19.8,21.0" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:pathData="M4.2,18.6 L19.8,18.6" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.6"
+        android:strokeLineCap="round"
+        android:pathData="M2.6,20.2 L5.8,17.0 M18.2,20.2 L21.4,17.0" />
+</vector>

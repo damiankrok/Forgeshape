@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Anchor: the POSITIVE side stays where it is; the body grows and shrinks the
+  other way.
+
+  The mirror of ic_anchor_negative, in the same vocabulary: a solid PIN bar at
+  the held edge, an outlined body beside it, and an arrow leaving the free end.
+  Mirroring the glyph is the honest way to say the opposite side is held, and it
+  mirrors NOTHING about the geometry — the domain has no Mirror, and this is a
+  picture.
+
+  Drawn white and tinted at use; see EditorControlStyles.iconButton().
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M19.4,4.0 L21.6,4.0 L21.6,20.0 L19.4,20.0 Z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.8"
+        android:strokeLineJoin="round"
+        android:pathData="M8.8,7.6 L19.4,7.6 L19.4,16.4 L8.8,16.4 Z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M6.6,12.0 L2.2,12.0 M4.6,9.4 L2.0,12.0 L4.6,14.6" />
+</vector>

@@ -34,6 +34,15 @@ final class WorkspaceTrailingHostView extends FrameLayout
 
         void onTransformSpaceRequested(int space);
 
+        /** Open or close Dimensions mode (Stage 020M). Never a mutation. */
+        void onBodyDimensionsRequested();
+
+        /** Open the Relative Scale precision surface (Stage 020M). */
+        void onRelativeScaleRequested();
+
+        /** Which side of the body a Dimensions resize holds still. */
+        void onDimensionAnchorRequested(int anchor);
+
         /** Drop the sketch in progress. Never a project mutation. */
         void onCancelSketchRequested();
 
@@ -58,6 +67,19 @@ final class WorkspaceTrailingHostView extends FrameLayout
         /** The native sketch session's state; the rail carries the sketch tools
          *  while it is not inactive, and the sketch group under them. */
         final int sketchState;
+        /**
+         * Whether the body-size controls may be drawn at all (Stage 020M).
+         *
+         * <p>Native's own answer, never a second rule written here: a
+         * Construction Body that is visible and unlocked, in Construction mode.
+         * A control that cannot succeed is not drawn, and the domain guards
+         * below JNI stay whatever this says.
+         */
+        final boolean bodySizeOffered;
+        /** Whether Dimensions mode is open, which is native's answer too. */
+        final boolean dimensionsOpen;
+        /** One of the {@code DIMENSION_ANCHOR_*} constants. */
+        final int dimensionAnchor;
 
         PresentationState(boolean sculpting, int activeTool,
                           boolean transformOffered, int transformMode,
@@ -76,7 +98,23 @@ final class WorkspaceTrailingHostView extends FrameLayout
                           boolean precisionOpen, CharSequence precisionSurfaceName,
                           boolean compactRail, boolean displaySuppressed,
                           boolean shapeOffered, int sketchState) {
+            this(sculpting, activeTool, transformOffered, transformMode, transformSpaceOffered,
+                    transformSpace, precisionOpen, precisionSurfaceName, compactRail,
+                    displaySuppressed, shapeOffered, sketchState, false, false,
+                    NativeViewport.DIMENSION_ANCHOR_CENTER);
+        }
+
+        PresentationState(boolean sculpting, int activeTool,
+                          boolean transformOffered, int transformMode,
+                          boolean transformSpaceOffered, int transformSpace,
+                          boolean precisionOpen, CharSequence precisionSurfaceName,
+                          boolean compactRail, boolean displaySuppressed,
+                          boolean shapeOffered, int sketchState,
+                          boolean bodySizeOffered, boolean dimensionsOpen, int dimensionAnchor) {
             this.sketchState = sketchState;
+            this.bodySizeOffered = bodySizeOffered;
+            this.dimensionsOpen = dimensionsOpen;
+            this.dimensionAnchor = dimensionAnchor;
             this.sculpting = sculpting;
             this.activeTool = activeTool;
             this.transformOffered = transformOffered;
@@ -105,6 +143,15 @@ final class WorkspaceTrailingHostView extends FrameLayout
     private final LinearLayout transformSpaceGroup;
     private final ImageView transformSpaceWorldAction;
     private final ImageView transformSpaceLocalAction;
+    /** Stage 020M's two entries, under the transform selector they belong with. */
+    private final LinearLayout bodySizeGroup;
+    private final ImageView bodyDimensionsAction;
+    private final ImageView bodyRelativeScaleAction;
+    /** The three anchors, drawn only while Dimensions mode is open. */
+    private final LinearLayout dimensionAnchorGroup;
+    private final ImageView anchorNegativeAction;
+    private final ImageView anchorCenterAction;
+    private final ImageView anchorPositiveAction;
     /** The sketch's own group: Cancel Sketch, and Back to Sketch once finished. */
     private final LinearLayout sketchGroup;
     private final ImageView cancelSketchAction;
@@ -179,6 +226,53 @@ final class WorkspaceTrailingHostView extends FrameLayout
         transformSelectorRow.addView(transformModeGroup, sectionParams(context, 0));
         transformSelectorRow.addView(transformSpaceGroup, sectionParams(context,
                 EditorControlStyles.dimen(context, R.dimen.row_gap_small)));
+
+        // Stage 020M. Dimensions and Relative Scale are two more ways to change
+        // the SAME placement the transform selector above them changes, so they
+        // are a group inside this one host on exactly the mode selector's terms
+        // — never a detached capsule and never a second selector grammar. They
+        // are contextual to Transform and absent everywhere else, and absent
+        // again for a body this stage cannot measure, because a control that
+        // cannot succeed is not drawn.
+        bodySizeGroup = internalGroup(context, R.id.body_size_group);
+        bodyDimensionsAction = selectorButton(context, R.id.body_dimensions,
+                R.drawable.ic_dimensions, R.string.body_dimensions,
+                view -> callbacks.onBodyDimensionsRequested());
+        bodySizeGroup.addView(bodyDimensionsAction, internalButtonParams(context, 0));
+        bodyRelativeScaleAction = selectorButton(context, R.id.body_relative_scale,
+                R.drawable.ic_relative_scale, R.string.body_relative_scale,
+                view -> callbacks.onRelativeScaleRequested());
+        bodySizeGroup.addView(bodyRelativeScaleAction, internalButtonParams(context,
+                EditorControlStyles.dimen(context, R.dimen.rail_item_gap)));
+        transformSelectorRow.addView(bodySizeGroup, sectionParams(context,
+                EditorControlStyles.dimen(context, R.dimen.row_gap_small)));
+
+        // The anchor is a property of the RESIZE, not of the mode, so it stands
+        // under the entry that opened it and disappears with it. Each glyph
+        // carries its meaning in words as its content description: a pictogram
+        // alone cannot say which side is held.
+        dimensionAnchorGroup = internalGroup(context, R.id.dimension_anchor_group);
+        anchorNegativeAction = selectorButton(context, R.id.dimension_anchor_negative,
+                R.drawable.ic_anchor_negative, R.string.dimension_anchor_negative,
+                view -> callbacks.onDimensionAnchorRequested(
+                        NativeViewport.DIMENSION_ANCHOR_NEGATIVE));
+        dimensionAnchorGroup.addView(anchorNegativeAction, internalButtonParams(context, 0));
+        anchorCenterAction = selectorButton(context, R.id.dimension_anchor_center,
+                R.drawable.ic_anchor_center, R.string.dimension_anchor_center,
+                view -> callbacks.onDimensionAnchorRequested(
+                        NativeViewport.DIMENSION_ANCHOR_CENTER));
+        dimensionAnchorGroup.addView(anchorCenterAction, internalButtonParams(context,
+                EditorControlStyles.dimen(context, R.dimen.rail_item_gap)));
+        anchorPositiveAction = selectorButton(context, R.id.dimension_anchor_positive,
+                R.drawable.ic_anchor_positive, R.string.dimension_anchor_positive,
+                view -> callbacks.onDimensionAnchorRequested(
+                        NativeViewport.DIMENSION_ANCHOR_POSITIVE));
+        dimensionAnchorGroup.addView(anchorPositiveAction, internalButtonParams(context,
+                EditorControlStyles.dimen(context, R.dimen.rail_item_gap)));
+        dimensionAnchorGroup.setVisibility(GONE);
+        transformSelectorRow.addView(dimensionAnchorGroup, sectionParams(context,
+                EditorControlStyles.dimen(context, R.dimen.row_gap_small)));
+
         contentColumn.addView(transformSelectorRow, sectionParams(context,
                 EditorControlStyles.dimen(context, R.dimen.row_gap_small)));
 
@@ -318,6 +412,28 @@ final class WorkspaceTrailingHostView extends FrameLayout
                     state.transformSpace == NativeViewport.GIZMO_SPACE_WORLD);
             setInternalButtonActive(transformSpaceLocalAction,
                     state.transformSpace == NativeViewport.GIZMO_SPACE_LOCAL);
+        }
+
+        // Stage 020M. Offered only under Transform and only for a body the
+        // domain will actually resize; the anchor group appears with the mode
+        // it belongs to and goes away with it.
+        final boolean bodySize = state.transformOffered && state.bodySizeOffered;
+        bodySizeGroup.setVisibility(bodySize ? VISIBLE : GONE);
+        dimensionAnchorGroup.setVisibility(bodySize && state.dimensionsOpen ? VISIBLE : GONE);
+        if (bodySize) {
+            setInternalButtonActive(bodyDimensionsAction, state.dimensionsOpen);
+            bodyDimensionsAction.setContentDescription(getContext().getString(
+                    state.dimensionsOpen ? R.string.body_dimensions_close
+                                         : R.string.body_dimensions));
+            setInternalButtonActive(bodyRelativeScaleAction, false);
+            if (state.dimensionsOpen) {
+                setInternalButtonActive(anchorNegativeAction,
+                        state.dimensionAnchor == NativeViewport.DIMENSION_ANCHOR_NEGATIVE);
+                setInternalButtonActive(anchorCenterAction,
+                        state.dimensionAnchor == NativeViewport.DIMENSION_ANCHOR_CENTER);
+                setInternalButtonActive(anchorPositiveAction,
+                        state.dimensionAnchor == NativeViewport.DIMENSION_ANCHOR_POSITIVE);
+            }
         }
         setVisibility(state.displaySuppressed ? GONE : VISIBLE);
     }

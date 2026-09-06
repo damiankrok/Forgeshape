@@ -18,8 +18,8 @@ adb -s <serial> logcat -s ForgeShape:V
 
 APK: `app/build/outputs/apk/debug/app-debug.apk`
 
-A clean debug launch emits **twenty** `*_SELFTEST_OK` tokens, then
-`FORGESHAPE_NATIVE_VIEWPORT_OK`. All twenty, in emission order:
+A clean debug launch emits **twenty-one** `*_SELFTEST_OK` tokens, then
+`FORGESHAPE_NATIVE_VIEWPORT_OK`. All twenty-one, in emission order:
 
 ```
 FORGESHAPE_CAMERA_SELFTEST_OK
@@ -42,6 +42,7 @@ FORGESHAPE_GLTF_IMPORT_SELFTEST_OK
 FORGESHAPE_CAD_SELFTEST_OK
 FORGESHAPE_CAD_A3_SELFTEST_OK
 FORGESHAPE_SKETCH_UX_SELFTEST_OK
+FORGESHAPE_BODY_DIMENSIONS_SELFTEST_OK
 ```
 
 Failures: `FORGESHAPE_NATIVE_VIEWPORT_FAIL:*` and the matching `*_SELFTEST_FAIL`.
@@ -539,6 +540,47 @@ curve-profile timings.
   publishes no `MeshRevision`. Anything consuming the transform must be
   non-uniform-scale correct: normals ride `R·S⁻¹`, and picking's local ray
   direction stays un-normalized so its parameter is still world distance.
+- **A body DIMENSION is derived, and one solver owns every resize**
+  (`UI-OWNER-33B`, Stage 020M). A Construction Body's overall size on one of
+  its own axes is `unscaledLocalExtent[a] * absoluteScale[a]` — the extent read
+  from the Construction Source's PARAMETERS, never measured off generated
+  vertices, and never a world AABB, so rotating, moving or looking at a body
+  cannot change what it measures. Nothing stores a dimension: editing one
+  writes the Scale the transform already had, plus a Position correction for a
+  one-sided anchor, so **no `.forge` byte, section or version changes** and a
+  project reached by a dimension edit encodes byte-identically to one reached
+  by typing the same numbers into the placement editor. `forgeshape_
+  body_dimensions.{h,cpp}` is the ONE implementation, deliberately a pure
+  function over values (no scene, no history, no body, no camera, no renderer)
+  precisely so Stage 020D's Directional Scale can drive the same arithmetic:
+  `T_new = T_old + (R·e_a)·(S_old[a] − S_new[a])·b`, with `b` the held face's
+  local coordinate and `R·e_a` column `a` of the rotation matrix, which is what
+  makes a turned body correct. **Center writes NO position** — the scale
+  changes and the placement does not — and the other two hold the negative or
+  positive face STILL in world space. Zero, negative, non-finite, an
+  out-of-range axis and a degenerate axis (a plane's zero-thickness Y) are all
+  **refused by name, never clamped**, and no thickness is fabricated for one.
+  **Relative Scale is a temporary multiplier, not a second scale vector**: it
+  opens at `(1, 1, 1)` EVERY activation because nothing anywhere stores one,
+  commits as `newAbsolute = oldAbsolute ⊙ multiplier` with the position
+  untouched, and is never serialized, never in a history step, a checkpoint or
+  the fingerprint. It is never called World Scale. One exact dimension edit is
+  ONE `ScopedConstructionEdit` and one Relative Scale Apply is another; a
+  commit that finds nothing different records nothing. Both refuse a LOCKED
+  body (Stage 018A's guard, because a resize MOVES one), a HIDDEN body (the
+  leaders are read off geometry that is not drawn — the visibility the user set
+  is not touched by the refusal), and every representation this stage does not
+  cover. Entering Dimensions WITHDRAWS the transform gizmo below JNI as well as
+  above it, because the leaders and the handles are two instruments for one
+  placement. The leaders are the SKETCH overlay's own line list and ranges fed
+  through the same renderer path — the renderer needed no change — and the
+  numeric labels are chrome anchored to the projected midpoint of the real
+  dimension line. **Not this stage:** Directional Scale handles or mode (Stage
+  020D, blocked by OQ-01), Sculpt dimensions (`SCULPT-DIM-01`, blocked by
+  OQ-02), Imported Mesh and CAD Body dimensions, CAD FEATURE dimensions (a
+  sketch length, a radius, an extrusion depth — those stay CAD authored truth),
+  multi-select and group scale, hierarchy, snapping, Mirror and a new unit
+  system.
 - **Selection is the Objects capsule plus an OUTLINE, and the outline is a
   true silhouette of the body's own rendered geometry** (`SEL-OUT-R1`,
   UI-OWNER-10 / UI-OWNER-11). There is no persistent whole-object glow:
@@ -772,7 +814,15 @@ curve-profile timings.
   staged until Finish), *Frozen Sculpt Mesh* (the
   polygon mesh `SculptMesh::freezeFrom` creates, from EITHER source),
   *selection outline* (the persistent silhouette band around the selected body;
-  never "selection highlight", which is what the tint it replaced was), *history
+  never "selection highlight", which is what the tint it replaced was),
+  *Dimensions* (the mode that reads and types a Construction Body's overall
+  local X/Y/Z size; never a CAD feature dimension, which is a sketch
+  parameter), *dimension leader* (one axis's extension lines, dimension line and
+  end ticks, drawn by the renderer), *anchor* (which side of the body a resize
+  holds still: negative, centre or positive), *Relative Scale* (the temporary
+  multiplier on the size a body already has, opening at 1/1/1 every time; never
+  "World Scale"), *Absolute Scale* (the stored, authoritative, unitless scale
+  vector the transform has always had), *history
   capsule* (the bottom trailing capsule holding Undo and Redo), *transform mode selector* (Move /
   Rotate / Scale) and *coordinate-space selector* (World / Local, where it
   applies — Scale omits it, because a world-axis scale of a turned body is a
