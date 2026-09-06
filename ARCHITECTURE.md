@@ -162,6 +162,7 @@ forgeshape_jni.cpp            render thread, ANativeWindow, MotionEvent ->
 | The view a sketch borrows — the orbit angles that look along a plane's normal, the orthographic projection, and the user's own pose kept for the way back | `beginSketchView` / `endSketchView` in `forgeshape_jni.cpp` over `CameraController::frameWorkplane` / `capturePose` / `restorePose` | the sketch stores no camera; the angles come from the plane's fixed frame, and the pose is restored on commit and on cancel alike |
 | Whether a one-finger gesture while sketching draws, selects, or is swallowed — and that two fingers still pan and pinch | the sketch arbitration block in `forgeshape_jni.cpp`, using `SketchSession::onTouch` | a single finger never orbits while a sketch is open; the gizmo and the sculpt arbitration are already out of the picture, because the gizmo is withdrawn at begin and a sketch cannot start in Sculpt |
 | Removing one body from the project | `forgeshape_body_delete.{h,cpp}` | one representation-neutral operation over the scene and the history. One Delete is one transaction; the removed body is HELD by the history rather than destroyed, so an Undo restores that object with its Imported Mesh and its Frozen Sculpt Mesh intact; the replacement selection and the last-body refusal are stated here and nowhere else |
+| The four object commands — Rename, Show/Hide, Lock/Unlock, Duplicate | `forgeshape_body_commands.{h,cpp}` | one representation-neutral module over the scene and the history, on `forgeshape_body_delete`'s terms and for the same reason: each is a decision ABOUT the project that needs both collaborators and neither owns the other. Each act is one transaction; the name rule is the domain's existing one rather than a second policy; Duplicate is the only entry point that dispatches on representation, because it has to COPY one |
 | The deterministic external-GLB compatibility fixture | `forgeshape_glb_import_fixture.{h,cpp}` | a synthetic file with the structural feature set of an external low-poly export; every coordinate an integer over a power of two, so its bytes are the same everywhere. A debug test seam, reachable from no product path |
 | What an imported preview IS, and every boundary it may not cross | `forgeshape_import_preview.{h,cpp}` | session-only: no scene `ObjectId`, no Construction Source, no sculpt representation, no `MeshStore`, no history, no `.forge`, no checkpoint, not selectable, not re-exportable, gone with the process. Its renderer keys are resource keys and never identities. Since `IMPORT-01A` it is reachable only from the verification suites |
 | What a body is CALLED wherever the user reads it | `BodyLabels` (Java) | one answer for the Objects list, the Objects capsule, the precision surface's title and the status line: an Imported Mesh uses the name its file gave it, a Construction Body is `Body #id`, and the empty string native code returns for the latter is the SIGNAL for that fallback, not a name |
@@ -4064,6 +4065,159 @@ never tears down. On anything but success the release leaves every entry residen
 and asks again next frame. A capacity GROW keeps the unbounded wait, because it
 must complete before it reallocates.
 
+## The four object commands: Rename, Show/Hide, Lock/Unlock, Duplicate
+
+`UI-OWNER-40`, Stage 018A. `forgeshape_body_commands.{h,cpp}` owns all four, as
+its own module on exactly `forgeshape_body_delete`'s terms and for the same
+reason: each is a decision ABOUT the project that needs both the scene and the
+history, and neither of those owns the other. Delete stays where it is and was
+not touched.
+
+**Three of the four are representation-neutral by construction.** Nothing in
+Rename, Show/Hide or Lock/Unlock asks what a body is, because a body has a name,
+a visibility and a lock *because it is a body* — exactly as it has a placement
+because it is a body. `SceneObject` carries all three beside `transform_`, and
+that is the whole of it. Duplicate is the one that dispatches on
+`BodyRepresentation`, because it has to COPY a representation; it dispatches
+through the existing enum rather than through a new boolean.
+
+**Each act is one transaction**, through the ordinary `ScopedConstructionEdit`
+and always as the scope that OWNS the edit: an edit already in progress is
+refused (`RefusedEditInProgress`), the rule `deleteSceneBody` and
+`loadProjectDocument` already apply. One Rename is one Undo; so is one toggle
+and one Duplicate. An act that changes nothing records nothing and leaves the
+redo stack alone — that is `commitEdit`'s existing comparison, and none of these
+restates it.
+
+**Undo and Redo needed no per-command inverse.** The Construction history is a
+scene SNAPSHOT, so adding `name`, `visible` and `locked` to
+`BodyConstructionState` — captured, compared and restored beside `transform` —
+is the entire implementation of undoing all three. `applyState` restores them
+unconditionally rather than behind a "differs" test, because all three are plain
+assignments with no derived work behind them: no mesh to republish, no adjacency
+to rebuild, no revision to mint.
+
+### Hidden is enforced in exactly one place
+
+`ConstructionScene::snapshot` skips a body that is not visible, and that is the
+only place visibility is read. It is one place on purpose: this snapshot is what
+the renderer draws AND what CPU picking casts against, so leaving a hidden body
+out of it makes "not rendered" and "not pickable" the same fact rather than two
+predicates that could drift apart. The selection outline follows for free — the
+mask pass rasterises the snapshot, so a hidden body cannot leave a stale
+silhouette behind, and no renderer branch was added.
+
+Hiding is not deleting. The body keeps its row, its selectability from that row,
+its published revision, its `.forge` record and its export; showing it again
+costs no republication. Hiding the ACTIVE body is allowed and the selection does
+NOT move — the smallest coherent behaviour, because the row stays selected so
+Show is one tap away, and nothing downstream needs an active body to be
+drawable.
+
+### Locked stays visible and stays pickable
+
+What lock removes is the ability to be MOVED, and it is enforced by two named
+guards rather than by a missing control:
+
+* `setGizmoActive` refuses over a locked active body and turns the gizmo OFF —
+  which also cancels a captured handle, so a finger already dragging stops
+  (`FORGESHAPE_GIZMO_REFUSED:body_locked`);
+* the transform entry point rejects the write
+  (`FORGESHAPE_CONSTRUCTION_TRANSFORM_REJECTED:ui:BodyLocked`).
+
+The refusal carries its own JNI code, `APPLY_REJECTED_LOCKED`, reported through
+an out-parameter rather than through `TransformValidation`, because a lock is
+not a statement about a VALUE: every number the caller passed may be perfectly
+good, and a status line that blamed a coordinate would describe the wrong
+problem. The workspace withdraws the transform controls as well, on the standing
+rule that a control which cannot succeed is not drawn — and the guards stay
+regardless, because removing a control is not removing a guard.
+
+A locked body is deliberately still selectable and still pickable: a body you
+can see and select but not move is what a lock means to a user, and one that
+silently stopped responding to taps would read as a rendering fault. Reaching
+Unlock therefore needs no special path. **Delete is unchanged by lock**, which
+is `UI-OWNER-45`'s semantics left alone rather than redefined here.
+
+### Rename reuses the domain's one name rule
+
+There is one name policy in this product and Rename is a new way to reach it,
+not a second one: `sanitizeImportedMeshName` trims, drops malformed UTF-8,
+replaces control characters and cuts on a UTF-8 boundary at
+`kMaxImportedMeshNameBytes`, and `importedMeshNameIsStorable` states the check
+as "this is what the sanitizer would produce for it". A name that sanitizes to
+empty is REFUSED and the body keeps what it had — empty is the UI's signal for
+the ObjectId-derived fallback label, and a user must not be able to type their
+way into it.
+
+The JNI boundary needed its own half. `GetStringUTFChars` returns MODIFIED
+UTF-8, in which a supplementary character is two 3-byte surrogate encodings
+rather than one 4-byte sequence; the sanitizer would correctly drop that as
+malformed, and an emoji typed into Rename would silently vanish. So
+`readJavaString` reads UTF-16 units and encodes real UTF-8 through
+`utf16ToUtf8`, the exact inverse of the `utf8ToUtf16` that has carried names the
+other way since `IMPORT-01A`. The two live beside each other in
+`forgeshape_imported_mesh.{h,cpp}` because they are one boundary rule read in
+two directions.
+
+### What a Duplicate copies, and what it must not
+
+Copied: the source representation's own truth (a Construction Source's active
+kind and all six remembered parameter sets, an Imported Mesh's positions,
+normals, indices and submesh batches, or a CAD Body's sketch and extrusion), the
+placement, a deterministic `name copy` / `name copy 2` suffix, the visibility,
+the lock, and the Frozen Sculpt Mesh's CURRENT positions and topology.
+
+Not copied, and each for its own reason:
+
+* the `ObjectId` — a fresh one is minted, which is the point, and the allocator
+  is never rolled back;
+* the `SculptHistory` — it is a bounded, volatile, per-body Undo over strokes
+  made on THIS mesh (`ARCH-OWNER-12`), and the copy has made none. The clone
+  goes through `freezeFrom`, the same entry point a Freeze and a `.forge` load
+  use, so an empty history is a property of the construction rather than
+  something cleared afterwards. The `hasEdits` FACT is carried, because that is
+  a stored fact about the geometry rather than a stack depth;
+* renderer resources, published revisions and GPU handles — the copy publishes
+  once through the one `publishSceneObject` dispatch and owns its own
+  `MeshStore` by construction;
+* the Construction history, the selection pulse and the outline.
+
+The copy is appended (scene order is insertion order and this product has no
+reorder) and becomes the active body, the same answer Add Primitive and Import
+already give.
+
+**A face-supported CAD Body is refused by name** (`RefusedFaceSupportedCad`).
+Its world placement is DERIVED from its producer's face frame and is not stored,
+so a copy would stand exactly where the original stands, permanently, and
+`SceneObject::isFaceSupportedCad` is the very predicate that refuses to let the
+user move it apart. A duplicate that can be neither seen as separate nor
+separated is not a duplicate. Nothing is retargeted, nothing is detached from
+its `TopoRef`, and no dependency is rewritten — the refusal is the whole
+behaviour, and it is asked before an id is minted or an edit opened. A
+world-plane CAD Body duplicates normally, and so does a PRODUCER that has
+dependents: one Duplicate copies one body and never a graph, so the copy is
+simply a producer of its own with none.
+
+### The row keeps two targets plus one overflow
+
+The Objects panel is 220 dp wide. Four more 48 dp targets beside the label would
+leave the label nothing, and a persistent command column is the desktop shape
+this product does not have. So the row stays a pair — the label, which selects,
+and Delete, which removes, exactly where `UI-OWNER-45` put them — plus one
+overflow that grows a **row command strip** out INLINE beneath its own row. The
+strip pushes the rows below it rather than standing over them, so it never
+partially covers another live control; at most one row is open at a time; and
+Rename replaces the strip with an inline field whose IME Done commits and whose
+System Back cancels, costing the project nothing because nothing is a
+transaction until it is committed. System Back closes the strip before the panel
+that hosts it, innermost outward, so Back stays one step in every phase.
+
+Both toggles change their GLYPH with the state as well as their words, so what
+is hidden and what is locked reads without relying on colour. The overflow and
+the strip are withdrawn in Sculpt and while sketching, where all four commands
+are refused below JNI — and, as everywhere else, the guard stays.
+
 ## The diagnostic imported mesh preview
 
 `GLB-IMPORT-R0` under `ARCH-OWNER-08`, widened by `GLB-IMPORT-R1` under
@@ -4213,14 +4367,16 @@ own, and naming them is what stops one arriving by accident.
 - **No primitive framework.** No base class, polymorphism, registry, property
   metadata, reflection or plugin surface. A further primitive costs another
   member, `PrimitiveKind` case, variant alternative and per-kind JNI method.
-- **Almost no object commands, and no hierarchy.** The scene adds, selects and —
-  since `UI-OWNER-45` — deletes bodies, and does nothing else: no duplicate,
-  rename, hide, lock, group, nesting, reorder, parent field or multi-select. Even
-  Delete adds no ObjectId reuse policy, because it does not roll the allocator
-  back. There is no *command* framework: undo is `ConstructionHistory`'s bounded
-  step state, not a reversible-command object graph, and it covers Construction
-  edits only. Both Objects hosts are **views** of that same flat list and carry
-  exactly the three verbs it has.
+- **A closed set of object commands, and no hierarchy.** The scene adds,
+  selects, deletes (`UI-OWNER-45`) and — since Stage 018A (`UI-OWNER-40`) —
+  renames, shows/hides, locks/unlocks and duplicates bodies, one named row at a
+  time. It does nothing else: no group, nesting, reorder, parent field,
+  multi-select or drag and drop. Neither Delete nor Duplicate adds an ObjectId
+  reuse policy, because neither rolls the allocator back. There is no *command*
+  framework: undo is `ConstructionHistory`'s bounded step state, not a
+  reversible-command object graph, and it covers Construction edits only. Both
+  Objects hosts are **views** of that same flat list and carry exactly the verbs
+  it has.
 - **No snapping in the world viewport.** The world reference grid is a viewport
   reference only: nothing snaps to it, no cursor is quantised, no dimension is
   derived from it. The sketch grid is a different contract that does exist —

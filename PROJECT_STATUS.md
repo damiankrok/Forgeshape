@@ -1,91 +1,129 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.66.0
+**Status Version:** 0.67.0
 **Updated:** 2026-09-06
-**Result:** **SEL-OUT-R1 — COMPLETE, OWNER RETEST READY.** The selected body now
-carries a **true renderer-derived silhouette outline**, and the persistent
+**Result:** **STAGE 018A — COMPLETE, OWNER RETEST READY, WITH A NAMED CAD
+DUPLICATE REFUSAL.** The Objects list gained **Rename**, **Show/Hide**,
+**Lock/Unlock** and **Duplicate** (`UI-OWNER-40`). All four are project truth
+rather than row decoration: each is exactly one Construction history
+transaction, each survives Undo and Redo exactly, each reaches the `.forge`
+file, and each moves the autosave fingerprint.
+
+**One module owns all four**, on `forgeshape_body_delete`'s terms and for the
+same reason: `forgeshape_body_commands.{h,cpp}` is a decision ABOUT the project
+that needs both the scene and the history, and neither owns the other. Delete
+itself was not touched. Three of the four are **representation-neutral by
+construction** — a body has a name, a visibility and a lock because it is a
+body, exactly as it has a placement — and `SceneObject` carries all three beside
+its transform. Duplicate is the one that dispatches on `BodyRepresentation`,
+because it has to COPY one.
+
+**Undo and Redo needed no per-command inverse.** The Construction history is a
+scene SNAPSHOT, so adding `name`, `visible` and `locked` to
+`BodyConstructionState` — captured, compared and restored beside `transform` —
+is the whole implementation of undoing all three.
+
+**Hidden is enforced in exactly ONE place**: `ConstructionScene::snapshot`, the
+single list the renderer draws and CPU picking casts against. That makes "not
+rendered" and "not pickable" one fact rather than two predicates that could
+drift, and the selection outline follows for free — the mask pass rasterises the
+snapshot, so a hidden body cannot leave a stale silhouette. No renderer branch
+was added. A hidden body keeps its row, its selectability from that row, its
+published revision, its `.forge` record and its export; hiding the ACTIVE body
+does not move the selection, so Show is one tap away.
+
+**Locked stays visible and stays pickable**; what it refuses is being MOVED,
+through two named guards rather than a missing control — `setGizmoActive`
+refuses and turns the gizmo off (which also cancels a captured handle), and the
+transform entry point rejects the write with its own code,
+`APPLY_REJECTED_LOCKED`, because a lock is not a statement about a value. The
+workspace withdraws the transform controls as well, and the guards stay
+regardless. **Delete is unchanged by lock.**
+
+**Rename reuses the domain's one name rule** (`sanitizeImportedMeshName` /
+`importedMeshNameIsStorable` / `kMaxImportedMeshNameBytes`) rather than a second
+policy; an empty or unsanitizable name is REFUSED rather than replaced by the
+ObjectId fallback label. The JNI boundary gained its missing half:
+`readJavaString` reads UTF-16 units and encodes real UTF-8 through the new
+`utf16ToUtf8`, never `GetStringUTFChars`, whose modified UTF-8 would have made
+the sanitizer drop a legitimate emoji.
+
+**Duplicate** mints a fresh `ObjectId` (the allocator only moves forward) and
+copies the source representation's truth, the placement, the visibility, the
+lock, a deterministic `name copy` suffix and the Frozen Sculpt Mesh's current
+geometry — but **not** the `SculptHistory`, which describes strokes made on the
+original, and not a renderer resource, a published revision or the Construction
+history. The copy is appended and becomes active.
+
+**The one named refusal:** a **face-supported CAD Body cannot be duplicated**
+(`RefusedFaceSupportedCad`). Its world placement is DERIVED from its producer's
+face frame and is not stored, so a copy would stand permanently coincident with
+the original and `isFaceSupportedCad` is the very predicate that refuses to let
+the user move it apart. Nothing is retargeted, nothing is detached from its
+`TopoRef`, no dependency is rewritten, and the refusal costs no `ObjectId` and
+no history step. A world-plane CAD Body duplicates normally, and so does a
+PRODUCER that has dependents — one Duplicate copies one body, never a graph.
+
+**`SCNE` gains version 2**, carrying a per-body flags byte and a name, written
+ONLY when a body is hidden, locked or named. A project without any of them stays
+v1 and **byte-identical**, which is why all 28 pre-existing fixtures are
+unchanged; `SCNE` is a required section, so an older build refuses v2 rather
+than opening a project with a lock silently dropped, and a v1 file loads visible
+and unlocked by the model's own member initializers rather than by a migration.
+The NAME has ONE owner per representation — `IMPT`'s for an imported body,
+`SCNE` v2's for every other — and a file stating both is refused. A reserved
+flag bit is refused, never masked. Two fixtures were added
+(`object_state_v2.forge`, `object_state_bad_flags_v2.forge`), taking the corpus
+to **thirty**, and the C++ encoder reproduces both byte for byte against the
+PowerShell builder.
+
+**The row keeps two targets plus one overflow.** The Objects panel is 220 dp
+wide, so four more 48 dp targets beside the label would leave the label nothing,
+and a persistent command column is the desktop shape this product does not have.
+The label still selects and Delete still removes, exactly where `UI-OWNER-45`
+put them; one **⋯** grows a row command strip out INLINE beneath its own row,
+pushing the rows below rather than covering them, at most one row open at a
+time. Rename replaces the strip with an inline field whose IME Done commits and
+whose System Back cancels, costing the project nothing. Both toggles change
+their GLYPH with the state, so what is hidden and what is locked reads without
+relying on colour. The overflow is withdrawn in Sculpt and while sketching,
+where all four are refused below JNI.
+
+**Verified:** **twenty** `*_SELFTEST_OK` tokens then
+`FORGESHAPE_NATIVE_VIEWPORT_OK` with zero failures (Scene 155 checks, up from
+130; Project 256, up from 251); **1385 native checks, 0 failed** on the
+standalone runner; the one device journey `ObjectCommandsTest` **OK (1 test)**;
+a focused device regression on the final tree **OK (118 tests)**;
+`assembleDebug` successful; all 28 older `.forge` fixtures byte-identical; and
+`verify-device-guards.ps1` green over 19 surfaces. Evidence:
+`artifacts/stage-018a/`.
+
+**Run under `TEST-OWNER-03`, the reduced-testing policy.** `-FullSharded` was
+**NOT run** and no `FULL_SHARDED_SUITE_PASS` is claimed for Stage 018A. This is
+focused evidence and cannot stand in for the exhaustive gate. Automated work
+took **≈21 minutes**, inside the 30-minute hard stop; a further ≈8 minutes went
+on recovering the isolated AVD after it dropped off adb, which was an
+infrastructure fault and is reported separately.
+
+**What stays pending:** the owner's own retest of these four commands (see
+`artifacts/stage-018a/OWNER_LATER_TEST_PACK.md`), the still-outstanding
+Delete → Undo → Redo owner verdict of `IMPORT-01B` / `UI-OWNER-45`, the combined
+UI-PREF-R1 retest, and no owner aesthetic approval of the row overflow or the
+selection outline. **Known test debt retained:** the `SpatialSketchTest` suite
+isolation defect, bisected during SEL-OUT-R1 and deliberately not fixed here.
+The deferred audit debt (F-06, F-07, F-09, F-10, F-13, F-14) is unchanged.
+
+**Previous result:** **SEL-OUT-R1 — COMPLETE, OWNER RETEST READY.** The selected
+body carries a **true renderer-derived silhouette outline**, and the persistent
 whole-object glow UI-OWNER-10 prohibited is gone: `kSelectionRestingAlpha` is
 **0**, so the 220 ms acknowledgement pulse is the only thing that ever tints a
 surface and what stays afterwards is a band about **3 px** wide around the
-selected body.
-
-**How it is drawn.** Two steps per frame, and only while a drawable body is
-selected. A **mask pass**, recorded before the frame's own pass, rasterises
-*every* scene body through a position-only pipeline into an `R8_UNORM` image
-with its own depth attachment — unselected bodies write 0 and their depth, the
-selected one writes 1 — so what survives is exactly the part of the selected
-body that is **visible**. Then a **composite** full-screen triangle, recorded
-inside the main pass after the grid and before the gizmo, paints the band where
-a pixel is outside that coverage and something within the band's width is
-inside. Occlusion is therefore settled by the mask pass's depth test and by
-nothing else, which is why an x-ray outline is not something this path could
-draw: `artifacts/sel-out-r1/frames/06_occluded_selected.png` shows the band
-tracing the visible arc of a sphere and stopping dead at the slab in front of
-it.
-
-**It is representation-neutral without a single branch.** The mask pass binds
-each body's *own* device-local buffers — the ones its shaded draw binds — so
-Construction, Imported Mesh, Sculpt and CAD are correct for free, and a
-selection change costs one push-constant float per body. Measured over forty
-selection changes: **0** outline allocations, **0** mesh republications (mesh
-revision 25 → 25), the fingerprint unmoved, and with the toggle off **0**
-composite draws recorded — off costs one boolean per frame, not a pass that
-paints nothing (`artifacts/sel-out-r1/PERFORMANCE.md`).
-
-**The width and colour are policy, not preference.** The band is a fraction of
-the viewport's short side clamped to `[2, 5]` px, so the camera is not an input
-and zoom cannot change it; the colour is authored per ground FAMILY through
-`viewportBackgroundIsLight` and measured against every one of the five grounds
-at **6.14:1 or better** (7.84 / 8.56 / 6.14 dark, 6.25 / 6.25 light). There is
-no outline width or colour control anywhere.
-
-**The toggle is the grid's in every respect.** `Selection Outline` sits beside
-`Grid` in the Display popover's View group, lives in the process-scoped
-`DisplaySettingsStore`, is session-only and native-owned, survives rotation and
-HOME/resume, and is **not** an `AppPreferences` field.
-
-**Evidence:** `artifacts/sel-out-r1/INDEX.md` — the twenty native tokens with
-`FORGESHAPE_RENDER_SHADING_SELFTEST_OK` at **412 checks** (71 of them new),
-`SelectionOutlineTest` 19/19 focused cases, a twelve-frame visual journey whose
-band thickness, colour and bounding box are **measured out of each bitmap**
-(median run 3 px in every frame with the outline on, 0 pixels with it off, and
-0 pixels of the other ground family's colour anywhere), the JVM suite, release
-builds for both ABIs with no self-test symbol or check name in them, the device
-guards over 19 surfaces, and the twenty-eight-fixture `.forge` corpus verified
-byte-identical — this stage touched no project-state code.
-
-**The aggregate did NOT pass, and the reason is not this stage.** The first-ever
-real five-shard `-FullSharded` run returned shards 1–4 **PASS (448/448)** —
-including shard 4, which carries `SelectionOutlineTest` — and shard 5
-`ASSERTION_FAILURE` on two `SpatialSketchTest` cases, both of the form *a tap
-aimed at a CAD face landed somewhere else*. A nine-step bisection reduced it to
-`GlbImportPreviewTest,SpatialSketchTest` and then reproduced it **identically at
-the clean baseline `538623c2` with all of this stage's work stashed and the APKs
-rebuilt from it** (`artifacts/sel-out-r1/PREEXISTING_SHARD5_FAILURE.md`). The
-defect is `SpatialSketchTest` inheriting a populated scene — `setUp` resets the
-active body but does not remove bodies an earlier class left — and this stage's
-diff contains no CAD, sketch, picking, chooser, scene or construction file.
-`FULL_SHARDED_SUITE_PASS` is therefore **not claimed and is not obtainable by
-this stage**: it requires every shard, and shard 5 fails without this stage's
-code. Nothing was concatenated into a PASS and no result criterion was weakened.
-**TEST-RUNTIME-R1 never ran a real five-shard aggregate**, which is why this was
-never seen before; the repair belongs to a `CAD-A3` follow-up or to an explicit
-owner waiver, and is the coordinator's call.
-
-**That call was made: the OWNER WAIVED it.** Further SEL-OUT closeout testing
-was cancelled and feature work directed to continue, so no additional SEL-OUT
-test was run and the candidate was committed as measured. The waiver excuses the
-gate and does not manufacture the marker: `FULL_SHARDED_SUITE_PASS` is still not
-claimed for SEL-OUT-R1. The `SpatialSketchTest` isolation defect is **retained as
-known test debt** for a later test-hardening batch.
-
-**What stays pending:** the Delete → Undo → Redo owner check of `IMPORT-01B` /
-`UI-OWNER-45`. This stage's Delete cases are automated **non-collision**
-evidence — Delete, Undo and Redo behave exactly as before and the outline
-renders whatever selection actually is — and are explicitly **not** that
-verdict. No owner aesthetic approval of the outline is claimed either. The
-deferred audit debt (F-06, F-07, F-09, F-10, F-13, F-14) is unchanged.
-
+selected body. Its `-FullSharded` aggregate was **not** achieved — shards 1–4
+passed 448/448 and shard 5 failed on two `SpatialSketchTest` cases that
+reproduce identically at the clean baseline with the work stashed — and the
+**OWNER waived it**, cancelling further SEL-OUT testing so feature work could
+continue. No `FULL_SHARDED_SUITE_PASS` exists for SEL-OUT-R1 and none is
+claimed. Evidence: `artifacts/sel-out-r1/`.
 **Previous result:** **TEST-RUNTIME-R1 — COMPLETE (`PASS-TEST-RUNTIME-R1`).** A
 test-tooling stage: no product source was touched and no five-shard aggregate
 was run. The instrumented runner can now be driven a shard at a time and
@@ -1921,7 +1959,10 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 ## Self-test suite
 
 Twenty debug-only native suites run once from `NativeViewport.start()` —
-never per frame — and total **3086 checks, zero failures**. `SEL-OUT-R1` moved
+never per frame — and total **3176 checks, zero failures**. Stage 018A moved the
+scene suite from 130 to 155 and the project suite from 251 to 256: twenty-five
+`OBJ018A-*` checks over the four object commands and their history, and five
+over the two `SCNE` v2 fixtures. `SEL-OUT-R1` moved
 the render-shading suite from 345 to 412: it added 71 selection-outline checks
 (the band width policy, the five measured per-ground contrast ratios, the
 edge-extraction kernel and the toggle's inertness) and rewrote the four that
@@ -2192,7 +2233,8 @@ device. `README.md` documents how to read them.
 | `ProjectAutosaveRecoveryTest` | `FSR1B-01..09`: autosave writes the canonical `.forge` document to its OWN slot and never the manual one; twenty dirty generations cost exactly one write and the newest state wins; an unchanged project, a refused edit and an identical re-apply each cost none; a failed write leaves the previous valid checkpoint byte-identical with no pending file beside it; a validated candidate is offered on a cold launch, re-offered while unanswered and never again once answered; Recover restores exact Construction values including 370 degrees and a non-uniform scale, and a fresh history; Recover restores the sculpt mesh, its counts, its stale-source state and its `hasEdits` safety state; Discard removes the candidate and leaves an explicitly saved project byte-identical; a corrupt and an unsupported-major candidate are each quarantined, change nothing, and never come back; leaving the foreground checkpoints the latest state and a recreation duplicates no body | 14 |
 | `ImportedMeshDurableTest` | `IMP01A-14/15/19/21..25`, `E2E-IMP01A-01..12`: durable GLB import on a device. A `.glb` picked through the real picker-result seam becomes six objects appended after the bodies that were there, all imported, all with rows found by tag, the first one selected, in exactly one Undo step (`E2E-01`, `E2E-05`); a row reads the file's name rather than `Body #id` and selecting it makes that body active (`-23`, `E2E-02`); `Shape` and a sculpt transition are both drawn for a Construction Body; since `IMPORT-01B` an imported body keeps the sculpt transition and loses only `Shape`, which is still refused below JNI with no project byte moving and comes back when a Construction Body is reselected (`-14`, `E2E-10`); a nine-value transform Apply on an imported body moves it, undoes to the placement the file gave it and redoes exactly, with no vertex touched (`E2E-03`, `E2E-04`); undoing the IMPORT removes every object it created and the project is what it was but for the id allocator, which never rolls back (`E2E-03`); a saved project reopens every body with its representation after the scene has been genuinely replaced, and re-encodes byte-identically without the source `.glb` (`E2E-06`); Save Copy and Open File carry an imported body and keep no trace of the path (`-22`, `E2E-08`); an import is checkpointed and the checkpoint decodes and restores through the ordinary load (`-21`, `E2E-07`); a cancel, a `.forge` offered as a GLB and a missing file each change nothing, move no fingerprint, record no step and write no checkpoint, while a success dirties the project and earns one (`-24`, `E2E-09`); the trailing host, the Tool Rail, the precision trigger, Undo/Redo and the 48 dp floor are unchanged and no OBJ or FBX route appears (`-25`, `E2E-11`); and the seven committed corpus fixtures written by the INDEPENDENT PowerShell encoder — the two `IMPORT-01B` ones included — decode, load with the representations the specification states, and re-encode identically (`-19`) | 12 |
 | `ImportedMeshSculptTest` | `IMP01B-01..14`, `E2E-IMP01B-01..07`, `-12`: sculpting an Imported Mesh on a device. *Start Sculpting* is drawn for an imported body with the product's one wording, the toolbar names the *Imported Mesh* context, and the freeze lands on that body's own `ObjectId` (`-01`, `E2E-01`); the first pre-stroke frame carries the imported vertex count, reports no edits, and the authored placement is untouched by the freeze (`-02`, `-03`, `E2E-02`); a real Grab stroke through the whole touch path mints a new `SculptRevision` and turns `SCULPT_HAS_EDITS` on while the `.forge` `IMPT` section stays byte-identical (`-04`, `-05`, `E2E-03`); *Back to Imported Mesh* is drawn, announced by its full wording, republishes the imported vertex count and leaves the source byte-identical, and *Resume Sculpt* returns the same revision, counts and edits (`-07`, `-08`, `E2E-04`, `E2E-05`); Undo/Redo are withdrawn in Sculpt, refused below JNI, and a Construction undo taken after leaving moves no sculpted vertex (`-06`); the destructive reset reads *Reset Sculpt from Imported Mesh…*, carries no Construction wording, shows no stale-source block, still asks first, still names the consequence, and cancelling keeps the work (`-09`); Save, the autosave checkpoint, a saved copy and a fresh load all carry `IMPT`+`SCUL`, the reopened project re-encodes to the same bytes and offers the way back in (`-11`, `-13`, `E2E-06`, `E2E-07`); export follows the sculpted geometry in Sculpt and the imported source outside it, records no history step and moves neither slot (`-14`); and no Construction Source is invented, the brush set is still exactly four by the domain's own answer, and no OBJ, FBX or second import route appeared (`-10`, `-24`). One case records `OWNER_REAL_FILE_01B_RETEST_PENDING` as a checked fact rather than a comment (`E2E-12`) | 9 |
-| `ObjectsDeleteTest` | `IMP01B-15..24`, `E2E-IMP01B-08..11`: Delete on a device. The row's Delete is a SIBLING of the label with its own semantic id, its ObjectId tag, a content description naming the body, and 48 dp in both dimensions with the label still reachable beside it (`-23`); pressing it removes the body, records exactly one history step, leaves the selection on a body that still exists and takes the row with it (`-15`, `E2E-08`); Undo restores the project byte-for-byte and the row with it, Redo removes both again (`-18`, `-19`, `E2E-09`); an imported body carrying retained sculpt work deletes and returns whole, with no orphan `IMPT` and no orphan `SCUL` surviving (`-16`, `-17`); deleting the ACTIVE body selects the next row and the chrome follows, leaving no stale *Resume Sculpt* from the deleted body, and deleting the last row falls back to the one before it while deleting an inactive body moves nothing (`-20`, `E2E-10`); the only body's row draws no Delete and the domain refuses it as `DELETE_REFUSED_LAST_BODY` with no project byte and no history step moving, and no replacement body is invented (`-21`); Delete is withdrawn on every row while sculpting, refused as `DELETE_REFUSED_IN_SCULPT`, and back the moment Sculpt is left (`-21`); a deleted body cannot be picked and is absent from the saved document, the checkpoint and the exported GLB, with Undo restoring it to all of them and Redo omitting it again (`-22`, `E2E-11`); and the list gained Delete and nothing else — no rename, duplicate, hide, lock or group (`-24`) | 8 |
+| `ObjectsDeleteTest` | `IMP01B-15..24`, `E2E-IMP01B-08..11`: Delete on a device. The row's Delete is a SIBLING of the label with its own semantic id, its ObjectId tag, a content description naming the body, and 48 dp in both dimensions with the label still reachable beside it (`-23`); pressing it removes the body, records exactly one history step, leaves the selection on a body that still exists and takes the row with it (`-15`, `E2E-08`); Undo restores the project byte-for-byte and the row with it, Redo removes both again (`-18`, `-19`, `E2E-09`); an imported body carrying retained sculpt work deletes and returns whole, with no orphan `IMPT` and no orphan `SCUL` surviving (`-16`, `-17`); deleting the ACTIVE body selects the next row and the chrome follows, leaving no stale *Resume Sculpt* from the deleted body, and deleting the last row falls back to the one before it while deleting an inactive body moves nothing (`-20`, `E2E-10`); the only body's row draws no Delete and the domain refuses it as `DELETE_REFUSED_LAST_BODY` with no project byte and no history step moving, and no replacement body is invented (`-21`); Delete is withdrawn on every row while sculpting, refused as `DELETE_REFUSED_IN_SCULPT`, and back the moment Sculpt is left (`-21`); a deleted body cannot be picked and is absent from the saved document, the checkpoint and the exported GLB, with Undo restoring it to all of them and Redo omitting it again (`-22`, `E2E-11`); and the list still has no grouping, nesting, reorder or multi-select (`-24`, rewritten at Stage 018A, which implemented rename, hide, lock and duplicate behind the row overflow) | 8 |
+| `ObjectCommandsTest` | `E2E-OBJ018A-01`: the one device journey for the four object commands. A two-body project, driven through the real controls found by semantic id and ObjectId tag: the row overflow opens the inline command strip; Rename opens the inline field, commits, reaches the domain as one history step and is read back by the row label; Hide removes the body and leaves the row, Show brings it back; the transform gizmo is confirmed offered, then Lock withdraws it AND a transform write reached directly below JNI returns `APPLY_REJECTED_LOCKED`, and Unlock restores it; Duplicate adds exactly one body as one history step with a NEW ObjectId, makes the copy active, names it deterministically and gives it a row of its own. Every control asserts its 48 dp hit area and a content description naming the act and the body | 1 |
 | `ProjectTransferTest` | `FSR1B-10..13`, `FSR1B-18`: Save Copy writes canonical bytes the decoder accepts and TRUNCATES a longer existing document rather than overwriting its front; Open File applies a valid document and starts a fresh history; a damaged one, an unreadable one and a cancel each change nothing below JNI; a cancelled copy cannot be written by a later pick; neither direction touches the internal manual slot; a project opened from a distinctively named file re-encodes to the ORIGINAL bytes exactly, and carries no filename, scheme, authority or path; the two native project entry points take bytes and structurally cannot take a `Uri`; and the project surface offers no GLB, glTF, OBJ, FBX or import/export entry | 13 |
 | `DiagnosticsAndRendererLossTest` | `FSR1B-14..17`, `E2ER1B-07/08`: a report is written locally, is bounded, names the build and the device and never a project dimension, `.forge` magic or vertex data, and stays bounded after a flood; ForgeShape requests no INTERNET permission and the platform agrees it holds none, so nothing can be sent anywhere; sharing is a document-creation intent that writes where the user chose; an injected device loss leaves every project value and the encoded document bit-identical and either rebuilds the device or reports restart-required with the work checkpointed; the project stays editable and publishing after a rebuild; and all six project controls plus both recovery answers clear 48 x 48 dp without moving the accepted R2 right host | 9 |
 | `DiagnosticLogTest` (JVM) | `FSR1B-14` core: the ring never grows past its bound, drops the oldest and says how many, caps its rendered output, truncates a detail far below anything worth hiding, and cannot be made to forge a second record from one record's contents | 11 |
@@ -3387,15 +3429,35 @@ was added and no marketing claim is made.
 ## Next Stage
 
 **Exactly one next step: return this status to the ForgeShape coordinator for a
-combined OWNER review.** SEL-OUT-R1 is closed on the technical side: the
-outline is a true renderer-derived silhouette, it is depth-correct, it is
-representation-neutral, it costs no rebuild and no upload, and its control lives
-in the View group on the grid's terms. What no emulator settles is whether the
-band reads as the right weight under a real thumb on a real panel, on a dark
-studio ground and on the two light papers — that is the OWNER's, and no
-aesthetic approval is claimed here. It joins the still-pending **Delete → Undo →
-Redo owner verdict** of `IMPORT-01B` / `UI-OWNER-45` and the combined OWNER
-retest of UI-PREF-R1, whose aggregate the OWNER waived.
+combined OWNER review.** Stage 018A is closed on the technical side: the four
+object commands are project truth, each is one history transaction, hidden is
+enforced in the one list the renderer and the picker share, lock is two named
+guards rather than a missing control, Duplicate clones the source's truth
+without its sculpt Undo stack, and the `SCNE` v2 bump leaves every older file
+byte-identical. What no emulator settles is whether the row overflow is
+discoverable, whether a locked-but-still-selectable object reads as locked
+rather than as broken, and whether the copy naming and placement are right —
+that is the OWNER's, and no approval is claimed here. The full list is
+`artifacts/stage-018a/OWNER_LATER_TEST_PACK.md`.
+
+It joins the still-pending **Delete → Undo → Redo owner verdict** of
+`IMPORT-01B` / `UI-OWNER-45`, the combined OWNER retest of UI-PREF-R1 (whose
+aggregate the OWNER waived), and the SEL-OUT-R1 outline retest (whose further
+testing the OWNER cancelled). **Do not start Stage 018B or 018C.**
+
+**Two items belong to the coordinator, not to this stage.** First, the
+`SpatialSketchTest` suite-isolation defect is still unfixed and is retained as
+known test debt: it blocks nothing while `TEST-OWNER-03` forbids an aggregate,
+but it will block the next `-FullSharded` run and belongs in the next
+test-hardening batch. Second, **no aggregate has been run since SEL-OUT-R1**, so
+whenever the exhaustive gate is next wanted, it needs a fresh full run on a
+stable tree rather than a resume.
+
+**On SEL-OUT-R1, closed by waiver:** the outline is a true renderer-derived
+silhouette, depth-correct, representation-neutral, costing no rebuild and no
+upload, with its control in the View group on the grid's terms. Its aggregate
+was refused by a pre-existing shard-5 failure, the OWNER waived the gate and
+cancelled further SEL-OUT testing, and the candidate was committed as measured.
 
 TEST-RUNTIME-R1 is closed; the runner is the supported way to run, resume and
 budget an aggregate, and this stage is the first feature stage to exercise its

@@ -455,9 +455,10 @@ dimension, applying a placement, Freezing and sculpting all reach that body and
 no other. Switching to another body and back brings the first one's exact
 numbers back unchanged.
 
-What the scene deliberately does **not** offer: there is no way to duplicate,
-rename, hide or lock a body, no groups or nesting and no reordering the list.
-Adding and deleting are the two verbs the list has, and both are undoable — see
+What the scene deliberately does **not** offer: no groups, no nesting, no
+reordering the list, no multi-select and no drag and drop.
+Adding, deleting, renaming, hiding, locking and duplicating are the verbs the
+list has, and every one of them is undoable — see
 *Undo and Redo*.
 
 ### Deleting a body
@@ -489,6 +490,66 @@ available in Sculpt Mode either. Leave Sculpt and the control is there again.
 Deleting works the same way on every kind of object — a constructed body, an
 imported mesh, and either of them with sculpting on it. What comes back on Undo
 is the whole object, sculpting included.
+
+### Renaming, hiding, locking and duplicating
+
+Beside each row's name is a **⋯**. It opens that row's own small strip of
+commands, just underneath the row, pushing the rows below it down rather than
+covering them. One row is open at a time, a second press closes it, and System
+Back closes it before it closes anything else.
+
+The strip holds four things:
+
+**Rename.** The row turns into a field holding the object's current name. Type,
+and either press the keyboard's **Done** or the control beside the field. The
+new name appears wherever the object is named — the row, the Objects capsule,
+the panel title, the status line — because there is one name and every surface
+reads it. Accented letters, other scripts and emoji all survive exactly. An
+empty name is refused and the old one stands: a nameless object falls back to
+*Body #3*, and that is what an object with no name gets, not something you can
+type your way into. Back, or closing the strip, cancels and changes nothing.
+
+**Show / Hide.** A hidden object stops being drawn and stops being selectable in
+the viewport — you cannot tap it by accident, and it grows no selection outline.
+It is **not** deleted: its row stays where it was, you can still select it from
+that row, it is still in the file you save and in anything you export, and
+showing it again brings it straight back. Hiding the object you are working on
+does not move your selection, so Show is one tap away. The glyph is an open eye
+or a struck-through one, so the state reads without depending on colour.
+
+**Lock / Unlock.** A locked object stays visible and stays tappable — what it
+refuses is being **moved**. The Move/Rotate/Scale handles do not appear over it,
+and typing a position, rotation or scale for it is refused with a message saying
+so. Everything else still works: you can select it, rename it, hide it,
+duplicate it, unlock it, and delete it. Locking is not a permission or a
+password; it is a switch you set and clear.
+
+**Duplicate.** You get a second object with the same shape (or the same imported
+geometry, or the same sketch and extrusion), in the same place, with the same
+visibility and lock, named *Bracket copy* — then *Bracket copy 2*, and so on.
+If the original had sculpting on it, the copy carries that sculpted shape too,
+but starts with its own clean sculpt Undo history: the strokes you took on the
+original belong to the original. The copy becomes the selected object.
+
+One object that cannot be duplicated is **a CAD body whose sketch sits on
+another body's face**. Where such a body sits is decided by the face it stands
+on, so a copy would sit in exactly the same place forever with no way to move it
+off — ForgeShape says so and creates nothing rather than leaving you a copy you
+cannot separate. A CAD body on a world plane duplicates normally, and so does a
+body that other sketches are standing on.
+
+**Each of the four is one Undo.** Undo puts the old name back, shows a hidden
+object again, unlocks a locked one, or removes a duplicate; Redo does it again.
+All four are saved with the project and come back when you reopen it. A project
+saved by an older version of ForgeShape opens with everything visible and
+unlocked, which is what it was.
+
+**None of the four is offered while sculpting or while a sketch is open**, for
+the same reason the **+** and Delete are not: the scene holds still there. Leave
+Sculpt, or finish or cancel the sketch, and the **⋯** is back.
+
+There is no multi-select, no grouping, no nesting, no reordering and no drag and
+drop. The list is a flat list of objects.
 
 ## Sketching a CAD Body
 
@@ -946,6 +1007,16 @@ there is no message and no animation, because the model changing is the answer.
   object*: the same shape or the same imported geometry, any sculpting that was
   on it, the same placement, and the same position in the Objects list, with the
   selection where it was before. Redo removes it again.
+- **Renaming a body** — one commit of the inline field. Undo puts the previous
+  name back, Redo reapplies the new one, and the object never moves or changes
+  shape. Renaming to the name it already has records nothing.
+- **Showing or hiding a body** — one press. Undo shows a hidden object again or
+  hides a shown one, and nothing about its geometry or its place in the list
+  moves.
+- **Locking or unlocking a body** — one press, on the same terms.
+- **Duplicating a body** — one press. Undo removes *only the copy*, leaving the
+  original untouched; Redo brings back the same copy, with the same identity it
+  had. The copy's number is never handed to anything else afterwards.
 - **One handle drag** — however long you held it and however many times the
   object moved while you dragged, Undo puts all nine values back to what they
   were before you touched the handle. A press that never moved records nothing.
@@ -1614,9 +1685,10 @@ sketch alone; see *Sketching a CAD Body*. The world grid is a reference the
 viewport draws and nothing more.
 
 Exactly one body is selected at a time. Selecting more than one, lasso and box
-selection, and object commands that act on a selection — duplicate, rename, hide,
-lock, group, nesting and reordering — are not implemented. The Objects list adds,
-selects and deletes; it does nothing else.
+selection, and object commands that act on a *selection* rather than on one
+named row — along with grouping, nesting, reordering and drag and drop — are not
+implemented. The Objects list adds, selects, deletes, renames, shows and hides,
+locks and unlocks, and duplicates, one row at a time; it does nothing else.
 
 Two-finger twist/roll, inertia, camera presets, focus-on-selection, long-press
 selection and UV are not implemented.

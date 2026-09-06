@@ -186,9 +186,11 @@ winding on any of the three.
 
 ---
 
-## 5. `SCNE` v1 — the project-neutral scene record
+## 5. `SCNE` — the project-neutral scene record
 
-Required for **both** project kinds. Section version 1, required bit set.
+Required for **both** project kinds, required bit set. Two readable versions:
+**v1**, as every build before Stage 018A wrote, and **v2**, which adds per-body
+visibility, lock and name.
 
 ```
 u32  bodyCount                 1 .. 4096
@@ -199,9 +201,52 @@ repeat bodyCount times, in SCENE ORDER:
   f64  positionX, positionY, positionZ      metres
   f64  rotationX, rotationY, rotationZ      degrees, NOT canonicalized
   f64  scaleX,    scaleY,    scaleZ         unitless, strictly positive
+  --- v2 only, from here ---
+  u8   flags                   bit0 hidden, bit1 locked; all others RESERVED
+  u16  nameBytes               0 .. 96
+  u8   name[nameBytes]         UTF-8, no terminator
 ```
 
-Per body: 8 + 9 × 8 = **80 bytes**. Payload = `4 + 8 + 8 + bodyCount × 80`.
+Per body: v1 is 8 + 9 × 8 = **80 bytes**; v2 adds 3 + `nameBytes`.
+Payload = `4 + 8 + 8 + Σ per-body`.
+
+### 5a. When v2 is written, and what an older reader does
+
+v2 is written **only when at least one body needs it** — one that is hidden,
+locked, or carries a name `SCNE` owns. A project of visible, unlocked, unnamed
+bodies stays at **v1 and byte-identical**, which is what keeps every fixture
+written before Stage 018A unchanged. This is exactly the rule `CADB` v2 and v3
+follow, for exactly the same reason.
+
+`SCNE` is a **required** section, so a build that does not know v2 refuses the
+whole file (`UnsupportedSectionVersion`) rather than opening a project with
+every body visible and unlocked when the user hid or locked some. Fail-closed is
+the right side to err on: silently ignoring a lock is worse than declining.
+
+A **v1 file loads as the default a body has always had** — visible, unlocked,
+and named only where its own section already named it. That is the live model's
+own member initializers, not a migration step, and nothing is rewritten.
+
+### 5b. The name has ONE owner per representation
+
+`IMPT` has carried an imported object's name since `IMPORT-01A` — it came from
+the file the geometry came from — and Rename writes that same field rather than
+a second one. So an imported body's `SCNE` name is required to be **empty**, and
+a file that states both is refused (`InvalidSemanticValue`): two answers to what
+one body is called is a choice the next writer would have to make silently. A
+Construction Body and a CAD Body had nowhere to store a name, so `SCNE` v2 is
+where theirs lives.
+
+A non-empty `SCNE` name is held to the domain's own storability rule — the same
+`sanitizeImportedMeshName` idempotence check `IMPT`'s name is held to — so a
+file cannot carry a name Rename could not have produced.
+
+### 5c. Reserved flag bits are refused, never masked
+
+Only bits 0 and 1 are defined. A set reserved bit is refused as `BadPayload`
+rather than masked off, because a future flag this build cannot honour must not
+be silently dropped — that would open a project in a state its writer did not
+mean. `object_state_bad_flags_v2.forge` is the fixture that pins this.
 
 Rotation is stored **exactly as given**: `370°` stays `370°` and comes back as
 `370°`. Reduction modulo 360 happens only inside derived trigonometry.
@@ -608,7 +653,7 @@ active mode or body, not the session history.
 | Unknown section with the required bit set | `UnknownRequiredSection` |
 | A second `SCNE`, `CONS`, `SCUL`, `IMPT` or `CADB` — judged on the **tag**, before the version is, so a duplicate at a version the reader cannot read is still a duplicate | `DuplicateSection` |
 | `SCNE` absent; `SCUL` absent for a Sculpt project | `MissingRequiredSection` |
-| A payload's own structure does not add up; a sculpt, batch or polyline flags byte with a reserved bit; an imported record whose normals do not match its positions one for one, or whose batches do not tile its indices | `BadPayload` |
+| A payload's own structure does not add up; a sculpt, batch, polyline or SCNE v2 body flags byte with a reserved bit; an imported record whose normals do not match its positions one for one, or whose batches do not tile its indices | `BadPayload` |
 | A count no project can have, or one whose byte size would overflow — refused **before any allocation**; a `CADB` body with no entities or more than 256, a polyline with no vertices or more than 256 | `ImpossibleCount` |
 | A value the live model refuses: a non-positive or non-finite dimension, a broken capsule relation, a non-finite position or rotation, a zero or negative scale, a duplicate or reserved `ObjectId`, an allocator that could mint a collision, an index out of range, an unknown primitive, feature, workplane, direction or entity-kind code, an imported normal that is not a unit direction, an imported name the domain's own sanitizer would not have produced, and any `CADB` record `validateCadBodyState` refuses — a bad coordinate, size, depth or entity id, or a sketch that does not close the profile the extrusion names | `InvalidSemanticValue` |
 | An active body no section carries, a `CONS`/`SCUL`/`IMPT`/`CADB` body `SCNE` does not carry, a Sculpt project whose active body has no sculpt mesh, a body claimed by two of `CONS`, `IMPT` and `CADB`, a `SCUL` entry over a `CADB` body | `UnresolvedReference` |
@@ -788,12 +833,18 @@ debug launch as `FORGESHAPE_PROJECT_GOLDEN_SHA256`.
 | `cad_face_curve_v3.forge` | 478 | `0a8218f0aa86cfb7cdcf7781c72864e76e9065e2f7a788d5b2cf4e6fc1250ad0` | A curve profile supported by a producer's far cap: v3 carrying a v2 support block, which is what makes a version a superset rather than a variant |
 | `cad_bad_arc_v3.forge` | 301 | `628d74fdbf3cf9082ef4869f9b948acef81c6a14517703b707896602e7c4b418` | The arc fixture with its three points made **collinear**; no circle passes through them, and only the semantic check can refuse it |
 | `cad_bad_spline_v3.forge` | 321 | `f5437366d894032e97b2e49d3027726fa2bc739bda747f05f3b1eaf8c9ed714d` | The spline fixture whose two **ends coincide** — a loop the one chain walker cannot read; every length, count and CRC is correct |
+| `object_state_v2.forge` | 698 | `3c9bcd6305bcdc26ac2f6ad5db72d0f8a163acb26236a4e48f2afe12905ba608` | **`SCNE` v2.** Three Construction Bodies carrying between them every piece of per-body state v2 adds — the first named `housing` and **locked**, the second **hidden**, the third plain so the file also pins an unmarked body at v2 |
+| `object_state_bad_flags_v2.forge` | 494 | `b2cc2bf2eac579361111565cd9de24e535387928e1cbe916cc4aec1f118fd159` | The same shape with a **reserved** flag bit (`0x04`) on the first body; every length, count and CRC is correct, so only the reserved-bit rule can refuse it |
 
-The four corrupt v2 and v3 fixtures are **constructed** by the PowerShell
+The five corrupt v2 and v3 fixtures are **constructed** by the PowerShell
 builder with the bad value in place, never generated and then mutated; the C++
 self-test reaches the same bytes by patching the valid parent's one field and
 its CRC, and the digests agreeing is what proves the two routes describe one
 file.
+
+Every fixture written before Stage 018A is **byte-for-byte unchanged** by the
+`SCNE` v2 bump, because none of them hides, locks or names a body and v2 is
+written only when one does — the same promise `CADB` v2 and v3 already keep.
 
 The five imported fixtures share one Imported Mesh: four vertices, two submeshes
 with **different** `doubleSided` answers, named `head_low`, placed at

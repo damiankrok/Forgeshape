@@ -403,10 +403,12 @@ curve-profile timings.
   `cad_bad_face_ref` and `cad_dependency_cycle`); `SKETCH-UX-R1` added the six
   **`CADB` v3** fixtures (`cad_arc_profile`, `cad_spline_profile`,
   `cad_mixed_curve_profile`, `cad_face_curve`, and the two the decoder must
-  refuse, `cad_bad_arc` and `cad_bad_spline`) — a **twenty-eight**-fixture
-  corpus in which every older fixture is byte-for-byte unchanged. The four
-  corrupt v2/v3 fixtures are CONSTRUCTED by the PowerShell builder with the bad
-  value in place, never generated and then mutated.
+  refuse, `cad_bad_arc` and `cad_bad_spline`); Stage 018A added the two
+  **`SCNE` v2** fixtures (`object_state`, and the one the decoder must refuse,
+  `object_state_bad_flags`) — a **thirty**-fixture corpus in which every older
+  fixture is byte-for-byte unchanged. The five corrupt fixtures are CONSTRUCTED
+  by the PowerShell builder with the bad value in place, never generated and
+  then mutated.
   `DATA_PACKAGE_SPEC.md` owns the layout, and `scripts/build-forge-corpus.ps1`
   is a second implementation of it whose bytes must stay identical.
   **GLB/glTF, OBJ and FBX are not `.forge`.** A `.glb` is written by Export and
@@ -661,7 +663,61 @@ curve-profile timings.
   so deleting the last body is refused by name (`RefusedLastBody`) and NEVER
   answered by inventing a replacement primitive; Delete is refused while
   sculpting too, on the same terms body switching and Undo/Redo already are.
-  Rename, visibility, lock, duplicate and grouping stay out.
+  Grouping stays out; Rename, visibility, lock and duplicate arrived in Stage
+  018A, below.
+- **A body's NAME, VISIBILITY and LOCK are representation-neutral project
+  truth** (`UI-OWNER-40`, Stage 018A). A body has all three because it is a
+  body, exactly as it has a placement because it is a body, and nothing in
+  `forgeshape_body_commands.{h,cpp}` — the one implementation, beside
+  `deleteSceneBody` and on its terms — asks what a body is in order to decide
+  whether it can be renamed, hidden or locked. Each act is ONE
+  `ScopedConstructionEdit` (one Undo), each is refused while sculpting and
+  while a sketch is open, an act that changes nothing records nothing, and a
+  refusal changes nothing at all. None of the three publishes a mesh, mints a
+  `MeshRevision`, rebuilds a CAD mesh or moves a sculpt vertex; all three move
+  the fingerprint, because all three reach `.forge` bytes.
+  **Hidden is enforced in exactly ONE place** — `ConstructionScene::snapshot`,
+  the single list the renderer draws and CPU picking casts against — so "not
+  rendered" and "not pickable" are one fact rather than two predicates that
+  could drift, and the selection outline follows for free. A hidden body keeps
+  its row, its selection, its published revision, its `.forge` record and its
+  export; hiding is not deleting, and hiding the ACTIVE body does not move the
+  selection. **Locked stays visible and stays pickable**; what it refuses is
+  being MOVED, through two named guards — the gizmo is not activated over one
+  (`FORGESHAPE_GIZMO_REFUSED:body_locked`) and a transform write is rejected
+  (`APPLY_REJECTED_LOCKED`, its own code because a lock is not a statement
+  about a value). Lock changes Delete not at all. **Rename reuses the DOMAIN's
+  existing name rule** (`sanitizeImportedMeshName` /
+  `importedMeshNameIsStorable` / `kMaxImportedMeshNameBytes`) rather than a
+  second policy, an empty or unsanitizable name is REFUSED rather than replaced
+  by the ObjectId fallback label, and the JNI boundary reads UTF-16 units
+  through `utf16ToUtf8` — never `GetStringUTFChars`, whose modified UTF-8 would
+  make the sanitizer drop a legitimate emoji. **Duplicate** mints a fresh
+  `ObjectId`, never reuses one, and copies the source representation's own
+  truth, the placement, the visibility, the lock, a deterministic `name copy`
+  suffix and the Frozen Sculpt Mesh's current geometry — but NOT the
+  `SculptHistory`, which describes strokes made on the original, and not a
+  renderer resource, a published revision or the Construction history. The copy
+  is appended and becomes active. A **face-supported CAD Body is refused by
+  name** (`RefusedFaceSupportedCad`): its placement is derived from its
+  producer's face frame, so a copy would stand permanently coincident with the
+  original and could never be moved off it; nothing is retargeted and no
+  dependency is rewritten. A world-plane CAD Body duplicates normally, and so
+  does a producer that has dependents — one Duplicate copies one body, never a
+  graph. **`SCNE` gains version 2** carrying the per-body flags byte and name,
+  written ONLY when a body is hidden, locked or named, so a project without any
+  of them stays v1 and byte-identical and the whole existing fixture corpus is
+  unchanged; `SCNE` is required, so an older build refuses v2 rather than
+  opening a project with a lock silently dropped, and a v1 file loads visible
+  and unlocked by the model's own defaults rather than by a migration. The NAME
+  has ONE owner per representation — `IMPT`'s for an imported body, `SCNE` v2's
+  for every other — and a file stating both is refused. A reserved flag bit is
+  refused, never masked. The row keeps two targets (the label and Delete) plus
+  ONE overflow that grows the other four out INLINE beneath it, because a
+  220 dp panel cannot carry a command column and a persistent one is the
+  desktop shape this product does not have. **Not this stage:** multi-select,
+  hierarchy, nesting, reorder, drag and drop, a group command bar, and bulk
+  rename.
 - **A control that cannot succeed is not drawn.** Where the domain refuses an act
   in some state — creation or Delete while sculpting, Delete of the last body,
   `Shape` on an Imported Mesh — the control is absent there rather than shown and
@@ -692,7 +748,9 @@ curve-profile timings.
 - **The UI vocabulary is fixed:** *Editor Workspace* (the whole editor UI),
   *Global Toolbar* (mode-independent top/global controls), *Tool Rail* (the edge
   tool selector), *Objects capsule* (the resting scene control: the active body's
-  name plus creation), *Add Primitive* (the six-shape creation surface),
+  name plus creation), *row command strip* (the inline group of Rename,
+  Show/Hide, Lock/Unlock and Duplicate an Objects row's overflow grows out
+  beneath itself), *Add Primitive* (the six-shape creation surface),
   *precision surface* (the on-demand exact-value panel, implemented by
   *Property Inspector*), *anchored surface* (any panel that grows out of the
   control that opened it; `AnchoredSurfaceView` owns the growth for all of them),
