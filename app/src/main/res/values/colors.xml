@@ -27,13 +27,16 @@
   warm grey stays warm, the error stays red — so the appearance still reads as
   the same appearance. UILR1-11 measures this and will fail if it drifts back.
 
-  All three are dark. That is the appearance set, not a default with variants:
-  the product is a viewport-first modelling tool and every one of its grounds is
-  chosen so a neutral clay render reads as lit. Warm Graphite leans red, Neutral
-  Charcoal leans blue-grey, and Light Charcoal is the lightest ground the set
-  allows.
+  The first three are dark, and they are the approved dark set: the product is
+  a viewport-first modelling tool and every one of those grounds is chosen so a
+  neutral clay render reads as lit. Warm Graphite leans red, Neutral Charcoal
+  leans blue-grey, and Light Charcoal is the lightest dark ground. UI-PREF-R1
+  (UI-OWNER-42) adds two LIGHT palettes, 04 and 05, DERIVED through the same
+  roles and held to the same measured contrast: every text role clears 4.5:1
+  on every ground it is drawn on (see artifacts/ui-pref-r1/CONTRAST.md). The
+  three dark palettes are value-for-value what they were.
 
-  One accent across all three, so the product still reads as itself in every
+  One accent across all five, so the product still reads as itself in every
   appearance: the same #4C8FD6, meaning "primary commit" or "focused field" and
   nothing else. A SELECTION is a different, much quieter answer — see
   `attrs.xml` on why those are two roles and not one.
@@ -159,4 +162,83 @@
     <color name="p3_chooser_scrim">#A3202224</color>
     <color name="p3_start_page_surface">#FF323537</color>
     <color name="p3_start_page_motif">#FF3E4143</color>
+
+    <!-- =====================================================================
+         PALETTE 04 — WARM LIGHT (UI-PREF-R1 D2). A cream-biased paper.
+
+         Red leads blue by seventeen points on the ground, so it reads as paper
+         rather than as grey turned up. On a light ground a control is LIFTED
+         by being slightly darker than the surface under it, a field is
+         recessed by being darker still, and every text role is an ink measured
+         against all eight grounds it is drawn on. The verdict hues keep their
+         meaning — amber measures, red refuses, green confirms — at the depth a
+         light ground needs.
+         ===================================================================== -->
+    <color name="p4_viewport_background">#FFEDE7DC</color>
+    <color name="p4_chrome_surface">#FFF4EFE6</color>
+    <color name="p4_surface_floating">#FFFAF7F1</color>
+    <color name="p4_surface_precision">#FFF7F3EC</color>
+    <color name="p4_chrome_hairline">#FFD6CFC3</color>
+    <color name="p4_text_primary">#FF1F1C18</color>
+    <color name="p4_text_secondary">#FF5C564D</color>
+    <color name="p4_accent">#FF4C8FD6</color>
+    <color name="p4_selected_rest">#FFD5E1EF</color>
+    <color name="p4_text_measure">#FF7A4F00</color>
+    <color name="p4_text_error">#FFB3261E</color>
+    <color name="p4_text_success">#FF1F6B2E</color>
+
+    <!-- DERIVED -->
+    <color name="p4_surface_floating_translucent">#F0FAF7F1</color>
+    <color name="p4_control_surface">#FFEAE3D7</color>
+    <color name="p4_control_surface_pressed">#FFDDD5C6</color>
+    <color name="p4_control_border">#FFD6CFC3</color>
+    <color name="p4_field_surface">#FFE6DFD2</color>
+    <color name="p4_selected_rest_pressed">#FFC6D6E8</color>
+    <color name="p4_accent_border">#734C8FD6</color>
+    <color name="p4_primary_fill_pressed">#FF6BA3DF</color>
+    <!-- The same ink as the dark palettes: #4C8FD6 carries near-black at 5.5:1
+         on every ground, and a primary commit reads the same everywhere. -->
+    <color name="p4_text_on_primary">#FF12110F</color>
+    <color name="p4_text_disabled">#FF847D73</color>
+    <color name="p4_slider_track">#FFE6DFD2</color>
+    <!-- A scrim still darkens; lighter than the dark palettes' because the
+         ground under it is already light. -->
+    <color name="p4_chooser_scrim">#66201E1C</color>
+    <color name="p4_start_page_surface">#FFF1EBE1</color>
+    <color name="p4_start_page_motif">#FFE4DCCE</color>
+
+    <!-- =====================================================================
+         PALETTE 05 — COOL LIGHT (UI-PREF-R1 D3). A steel-biased paper.
+
+         Blue leads red by eight points on the ground — the same separation
+         from Warm Light that Neutral Charcoal has from Warm Graphite.
+         ===================================================================== -->
+    <color name="p5_viewport_background">#FFE4E8EC</color>
+    <color name="p5_chrome_surface">#FFEEF1F4</color>
+    <color name="p5_surface_floating">#FFF7F9FB</color>
+    <color name="p5_surface_precision">#FFF3F5F8</color>
+    <color name="p5_chrome_hairline">#FFC9D0D8</color>
+    <color name="p5_text_primary">#FF171B20</color>
+    <color name="p5_text_secondary">#FF4F5862</color>
+    <color name="p5_accent">#FF4C8FD6</color>
+    <color name="p5_selected_rest">#FFCFDDEC</color>
+    <color name="p5_text_measure">#FF7F5400</color>
+    <color name="p5_text_error">#FFB3261E</color>
+    <color name="p5_text_success">#FF1E6B34</color>
+
+    <!-- DERIVED -->
+    <color name="p5_surface_floating_translucent">#F0F7F9FB</color>
+    <color name="p5_control_surface">#FFE5E9EE</color>
+    <color name="p5_control_surface_pressed">#FFD6DCE3</color>
+    <color name="p5_control_border">#FFC9D0D8</color>
+    <color name="p5_field_surface">#FFDFE4EA</color>
+    <color name="p5_selected_rest_pressed">#FFBFD1E5</color>
+    <color name="p5_accent_border">#734C8FD6</color>
+    <color name="p5_primary_fill_pressed">#FF6BA3DF</color>
+    <color name="p5_text_on_primary">#FF101214</color>
+    <color name="p5_text_disabled">#FF757E88</color>
+    <color name="p5_slider_track">#FFDFE4EA</color>
+    <color name="p5_chooser_scrim">#66101214</color>
+    <color name="p5_start_page_surface">#FFEAEEF2</color>
+    <color name="p5_start_page_motif">#FFDCE2E8</color>
 </resources>

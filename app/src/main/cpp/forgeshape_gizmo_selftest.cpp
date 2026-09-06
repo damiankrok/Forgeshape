@@ -1,6 +1,7 @@
 #include "forgeshape_gizmo_selftest.h"
 
 #include <cmath>
+#include <cstring>
 #include <limits>
 
 #include "forgeshape_construction.h"
@@ -1605,6 +1606,307 @@ int runGizmoSelfTests(GizmoSelfTestResult* out, int maxOut) {
                 f.scene.activeBody().transform().values().positionX == 0.0 &&
                     f.scene.activeBody().construction().kind() ==
                         PrimitiveKind::Sphere);
+    }
+
+    // -----------------------------------------------------------------------
+    // UI-PREF-R1 E: the visual size preference
+    //
+    // A bounded multiplier on where the handles STAND, never on what a touch
+    // grabs or how far a drag moves. Each claim below is arithmetic against the
+    // same snapshot the renderer draws from.
+    // -----------------------------------------------------------------------
+    {
+        Fixture f;
+        r.check("uipref_visual_scale_defaults_to_one",
+                f.gizmo.visualScale() == kGizmoDefaultVisualScale &&
+                    kGizmoDefaultVisualScale == 1.0f);
+        r.check("uipref_visual_scale_bounds_are_the_documented_ones",
+                kGizmoMinVisualScale == 0.9f && kGizmoMaxVisualScale == 1.5f);
+        r.check("uipref_visual_scale_refuses_out_of_range_and_non_finite_not_clamps",
+                !f.gizmo.setVisualScale(0.75f) && !f.gizmo.setVisualScale(2.0f) &&
+                    !f.gizmo.setVisualScale(0.0f) && !f.gizmo.setVisualScale(-1.0f) &&
+                    !f.gizmo.setVisualScale(std::numeric_limits<float>::quiet_NaN()) &&
+                    !f.gizmo.setVisualScale(std::numeric_limits<float>::infinity()) &&
+                    f.gizmo.visualScale() == 1.0f);
+        r.check("uipref_visual_scale_accepts_both_bounds",
+                f.gizmo.setVisualScale(kGizmoMinVisualScale) &&
+                    f.gizmo.visualScale() == kGizmoMinVisualScale &&
+                    f.gizmo.setVisualScale(kGizmoMaxVisualScale) &&
+                    f.gizmo.visualScale() == kGizmoMaxVisualScale);
+        r.check("uipref_visual_scale_records_nothing",
+                f.history.undoDepth() == 0 && f.history.redoDepth() == 0);
+
+        const CameraSnapshot camera =
+            perspectiveCamera(Vec3{7.0f, 6.0f, 9.0f}, Vec3{0.0f, 0.0f, 0.0f}, f.width, f.height);
+        const float bounds[2] = {kGizmoMinVisualScale, kGizmoMaxVisualScale};
+        const GizmoMode modes[3] = {GizmoMode::Move, GizmoMode::Rotate, GizmoMode::Scale};
+
+        // The snapshot carries the preference and the placement scale is the
+        // product of the two; the camera-derived unit itself is untouched.
+        f.gizmo.setVisualScale(kGizmoMinVisualScale);
+        const GizmoSnapshot atMin = f.gizmo.snapshot(camera, f.width, f.height);
+        f.gizmo.setVisualScale(kGizmoMaxVisualScale);
+        const GizmoSnapshot atMax = f.gizmo.snapshot(camera, f.width, f.height);
+        r.check("uipref_snapshot_carries_the_visual_scale_beside_the_camera_scale",
+                atMin.visible && atMax.visible && atMin.visualScale == kGizmoMinVisualScale &&
+                    atMax.visualScale == kGizmoMaxVisualScale &&
+                    atMin.worldPerReferenceUnit == atMax.worldPerReferenceUnit &&
+                    nearly(gizmoPlacementScale(atMax) / gizmoPlacementScale(atMin),
+                           kGizmoMaxVisualScale / kGizmoMinVisualScale, 1e-5));
+
+        // Every handle of every mode is hit at its own pixel at BOTH bounds:
+        // the smallest instrument is still fully pickable and the largest still
+        // resolves each handle rather than losing one behind another.
+        bool allFoundAtBounds = true;
+        bool handlesMoveWithScale = true;
+        for (int b = 0; b < 2; ++b) {
+            f.gizmo.setVisualScale(bounds[b]);
+            for (int m = 0; m < 3; ++m) {
+                f.gizmo.setMode(modes[m]);
+                GizmoHandle handles[kGizmoMaxHandles];
+                const int count = gizmoHandlesForMode(modes[m], handles, kGizmoMaxHandles);
+                for (int i = 0; i < count; ++i) {
+                    float x = 0.0f, y = 0.0f;
+                    if (!f.handlePixel(camera, handles[i], &x, &y) ||
+                        f.gizmo.hitTest(camera, x, y, f.width, f.height) != handles[i]) {
+                        allFoundAtBounds = false;
+                    }
+                }
+            }
+        }
+        r.check("uipref_every_handle_is_pickable_at_both_visual_bounds", allFoundAtBounds);
+
+        // The handles genuinely move: the X shaft's grab point stands twice as
+        // far from the pivot at 1.5 as at 0.75, which is what "size" means.
+        {
+            f.gizmo.setMode(GizmoMode::Move);
+            Vec3 nearGrab{}, farGrab{};
+            f.gizmo.setVisualScale(kGizmoMinVisualScale);
+            const GizmoSnapshot sMin = f.gizmo.snapshot(camera, f.width, f.height);
+            f.gizmo.setVisualScale(kGizmoMaxVisualScale);
+            const GizmoSnapshot sMax = f.gizmo.snapshot(camera, f.width, f.height);
+            handlesMoveWithScale = gizmoHandleGrabPoint(sMin, GizmoHandle::AxisX, &nearGrab) &&
+                                   gizmoHandleGrabPoint(sMax, GizmoHandle::AxisX, &farGrab);
+            const Vec3 nearOffset = vec3Sub(nearGrab, sMin.pivot);
+            const float nearDistance = std::sqrt(vec3Dot(nearOffset, nearOffset));
+            const Vec3 farOffset = vec3Sub(farGrab, sMax.pivot);
+            const float farDistance = std::sqrt(vec3Dot(farOffset, farOffset));
+            handlesMoveWithScale = handlesMoveWithScale &&
+                                   nearly(farDistance / nearDistance,
+                                          kGizmoMaxVisualScale / kGizmoMinVisualScale, 1e-4);
+        }
+        r.check("uipref_handles_stand_further_out_at_a_larger_visual_size", handlesMoveWithScale);
+
+        // The hit CORRIDOR does not shrink with the instrument: at the smallest
+        // size a touch 20 reference units off the X shaft's grab point, across
+        // the shaft, still lands on that shaft. The corridor is 24 units wide
+        // either side, in density pixels, whatever the visual scale.
+        {
+            f.gizmo.setVisualScale(kGizmoMinVisualScale);
+            f.gizmo.setMode(GizmoMode::Move);
+            const GizmoSnapshot s = f.gizmo.snapshot(camera, f.width, f.height);
+            float gx = 0.0f, gy = 0.0f, px = 0.0f, py = 0.0f;
+            bool ok = f.handlePixel(camera, GizmoHandle::AxisX, &gx, &gy) &&
+                      projectWorldToScreen(camera, s.pivot, f.width, f.height, &px, &py);
+            if (ok) {
+                // Perpendicular, on screen, to the projected shaft direction.
+                float dx = gx - px, dy = gy - py;
+                const float length = std::sqrt(dx * dx + dy * dy);
+                ok = length > 1.0f;
+                dx /= length;
+                dy /= length;
+                const float off = 20.0f * gizmoPixelsPerReferenceUnit();
+                ok = ok && f.gizmo.hitTest(camera, gx - dy * off, gy + dx * off, f.width,
+                                           f.height) == GizmoHandle::AxisX;
+            }
+            r.check("uipref_the_hit_corridor_keeps_its_floor_at_the_smallest_size", ok);
+        }
+
+        // NO EFFECT ON THE AMOUNT. The scale mapping's reference is the
+        // canonical handle length, so the same pixel drag on the X cube
+        // stretches the body by exactly the same factor at both visual sizes.
+        {
+            double factors[2] = {0.0, 0.0};
+            bool ran = true;
+            for (int b = 0; b < 2; ++b) {
+                Fixture g;
+                g.gizmo.setVisualScale(bounds[b]);
+                g.gizmo.setMode(GizmoMode::Scale);
+                float x = 0.0f, y = 0.0f;
+                if (!g.grab(1, camera, GizmoHandle::AxisX, &x, &y)) {
+                    ran = false;
+                    continue;
+                }
+                float hx = 0.0f, hy = 0.0f, ppx = 0.0f, ppy = 0.0f;
+                const GizmoSnapshot state = g.gizmo.snapshot(camera, g.width, g.height);
+                Vec3 handleWorld{};
+                gizmoHandleGrabPoint(state, GizmoHandle::AxisX, &handleWorld);
+                projectWorldToScreen(camera, handleWorld, g.width, g.height, &hx, &hy);
+                projectWorldToScreen(camera, state.pivot, g.width, g.height, &ppx, &ppy);
+                float dx = hx - ppx, dy = hy - ppy;
+                const float length = std::sqrt(dx * dx + dy * dy);
+                dx /= length;
+                dy /= length;
+                g.gizmo.updateDrag(1, camera, x + dx * 60.0f, y + dy * 60.0f, g.width, g.height);
+                factors[b] = g.placement().scaleX;
+                g.gizmo.cancelDrag();
+            }
+            r.check("uipref_the_same_pixel_drag_scales_by_the_same_factor_at_every_visual_size",
+                    ran && factors[0] > 1.0 && nearly(factors[0], factors[1], 1e-6));
+        }
+
+        // And the same for the uniform handle, whose reference is a constant.
+        {
+            double factors[2] = {0.0, 0.0};
+            bool ran = true;
+            for (int b = 0; b < 2; ++b) {
+                Fixture g;
+                g.gizmo.setVisualScale(bounds[b]);
+                g.gizmo.setMode(GizmoMode::Scale);
+                float x = 0.0f, y = 0.0f;
+                if (!g.grab(1, camera, GizmoHandle::Uniform, &x, &y)) {
+                    ran = false;
+                    continue;
+                }
+                g.gizmo.updateDrag(1, camera, x + 40.0f, y - 40.0f, g.width, g.height);
+                factors[b] = g.placement().scaleX;
+                g.gizmo.cancelDrag();
+            }
+            r.check("uipref_a_uniform_drag_is_the_same_factor_at_every_visual_size",
+                    ran && factors[0] > 1.0 && nearly(factors[0], factors[1], 1e-9));
+        }
+
+        // A move is solved from the RAY, so the same two pixels move the body
+        // by the same world distance whatever size the instrument is drawn at.
+        {
+            double moved[2] = {0.0, 0.0};
+            bool ran = true;
+            float startX = 0.0f, startY = 0.0f;
+            for (int b = 0; b < 2; ++b) {
+                Fixture g;
+                g.gizmo.setVisualScale(bounds[b]);
+                g.gizmo.setMode(GizmoMode::Move);
+                float x = 0.0f, y = 0.0f;
+                if (b == 0) {
+                    if (!g.grab(1, camera, GizmoHandle::AxisX, &x, &y)) {
+                        ran = false;
+                        continue;
+                    }
+                    startX = x;
+                    startY = y;
+                } else {
+                    // The SAME pixel the small instrument was grabbed at: it is
+                    // inside the large instrument's grab span too.
+                    x = startX;
+                    y = startY;
+                    if (g.gizmo.hitTest(camera, x, y, g.width, g.height) != GizmoHandle::AxisX ||
+                        !g.gizmo.beginDrag(1, camera, x, y, g.width, g.height)) {
+                        ran = false;
+                        continue;
+                    }
+                }
+                g.gizmo.updateDrag(1, camera, x + 45.0f, y + 10.0f, g.width, g.height);
+                moved[b] = g.placement().positionX;
+                g.gizmo.cancelDrag();
+            }
+            r.check("uipref_the_same_two_pixels_move_the_body_the_same_distance_at_every_size",
+                    ran && moved[0] != 0.0 && nearly(moved[0], moved[1], 1e-9));
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // UI-PREF-R1 F: the stroke weight recipes
+    //
+    // Regular IS the pre-preference gizmo: the two-argument generator and the
+    // Regular recipe produce the same bytes, and the counts every existing
+    // reader names are the Regular counts. The other two recipes are
+    // bounded, finite and drawn in their own contiguous ranges.
+    // -----------------------------------------------------------------------
+    {
+        static GizmoVertex regularA[kGizmoVertexCountMax];
+        static GizmoVertex regularB[kGizmoVertexCountMax];
+        static GizmoVertex thin[kGizmoVertexCountMax];
+        static GizmoVertex bold[kGizmoVertexCountMax];
+        const int wroteA = generateGizmoVertices(regularA, kGizmoVertexCountMax);
+        const int wroteB =
+            generateGizmoVertices(regularB, kGizmoVertexCountMax, GizmoStrokeWeight::Regular);
+        const int wroteThin =
+            generateGizmoVertices(thin, kGizmoVertexCountMax, GizmoStrokeWeight::Thin);
+        const int wroteBold =
+            generateGizmoVertices(bold, kGizmoVertexCountMax, GizmoStrokeWeight::Bold);
+
+        r.check("uipref_regular_is_the_pre_preference_gizmo_byte_for_byte",
+                wroteA == kGizmoVertexCount && wroteB == kGizmoVertexCount &&
+                    std::memcmp(regularA, regularB, sizeof(GizmoVertex) * kGizmoVertexCount) == 0);
+        r.check("uipref_the_regular_count_is_the_accepted_1116",
+                kGizmoVertexCount == 1116 && gizmoVertexCountFor(GizmoStrokeWeight::Regular) == 1116);
+        r.check("uipref_thin_has_the_regular_count_and_different_bytes",
+                wroteThin == kGizmoVertexCount &&
+                    std::memcmp(regularA, thin, sizeof(GizmoVertex) * kGizmoVertexCount) != 0);
+        r.check("uipref_bold_is_the_widest_recipe_and_sizes_the_buffer",
+                wroteBold == gizmoVertexCountFor(GizmoStrokeWeight::Bold) &&
+                    gizmoVertexCountFor(GizmoStrokeWeight::Bold) == 2268 &&
+                    kGizmoVertexCountMax == 2268 && wroteBold > wroteThin);
+        r.check("uipref_a_too_small_capacity_writes_nothing",
+                generateGizmoVertices(bold, kGizmoVertexCount, GizmoStrokeWeight::Bold) == 0);
+
+        // The centre line of every shaft is the same line in every recipe: a
+        // weight widens the band around the stroke and never moves the stroke.
+        // The first shaft line written after the pivot mark is that centre.
+        const int centre = 2 * kGizmoPivotMarkLineCount;  // vertex index
+        r.check("uipref_the_shaft_centre_line_is_identical_in_every_recipe",
+                std::memcmp(&regularA[centre], &thin[centre], 2 * sizeof(GizmoVertex)) == 0 &&
+                    std::memcmp(&regularA[centre], &bold[centre], 2 * sizeof(GizmoVertex)) == 0);
+
+        // Every recipe's ranges are contiguous, ordered Move/Rotate/Scale and
+        // end exactly at its own count; every vertex is finite.
+        const GizmoStrokeWeight weights[3] = {GizmoStrokeWeight::Thin, GizmoStrokeWeight::Regular,
+                                              GizmoStrokeWeight::Bold};
+        const GizmoVertex* lists[3] = {thin, regularA, bold};
+        bool rangesHold = true;
+        bool allFinite = true;
+        for (int w = 0; w < 3; ++w) {
+            int first = 0, count = 0, expectedFirst = 0;
+            const GizmoMode modes[3] = {GizmoMode::Move, GizmoMode::Rotate, GizmoMode::Scale};
+            for (int m = 0; m < 3; ++m) {
+                if (!gizmoVertexRange(modes[m], weights[w], &first, &count) ||
+                    first != expectedFirst || count <= 0) {
+                    rangesHold = false;
+                }
+                expectedFirst = first + count;
+            }
+            if (expectedFirst != gizmoVertexCountFor(weights[w])) {
+                rangesHold = false;
+            }
+            for (int i = 0; i < gizmoVertexCountFor(weights[w]); ++i) {
+                for (int c = 0; c < 3; ++c) {
+                    if (!std::isfinite(lists[w][i].position[c])) {
+                        allFinite = false;
+                    }
+                }
+            }
+        }
+        r.check("uipref_every_recipe_draws_contiguous_ordered_ranges", rangesHold);
+        r.check("uipref_every_recipe_is_finite", allFinite);
+        r.check("uipref_the_two_argument_range_is_the_regular_range", [] {
+            int a = 0, b = 0, c = 0, d = 0;
+            return gizmoVertexRange(GizmoMode::Scale, &a, &b) &&
+                   gizmoVertexRange(GizmoMode::Scale, GizmoStrokeWeight::Regular, &c, &d) &&
+                   a == c && b == d && a == kGizmoScaleFirstVertex;
+        }());
+
+        // The bold band is genuinely wider: its widest shaft offset is twice
+        // the regular spread, and the thin band is half of it.
+        bool spreads = true;
+        {
+            const GizmoStrokeStyle t = gizmoStrokeStyle(GizmoStrokeWeight::Thin);
+            const GizmoStrokeStyle g = gizmoStrokeStyle(GizmoStrokeWeight::Regular);
+            const GizmoStrokeStyle b = gizmoStrokeStyle(GizmoStrokeWeight::Bold);
+            spreads = nearly(t.spread, 0.5f * g.spread, 1e-6) && g.spread == kGizmoStrokeOffsetUnits &&
+                      b.spread == g.spread && b.shaftBundle == 13 && g.shaftBundle == 5 &&
+                      t.shaftBundle == 5 && b.ringPasses == 4 && g.ringPasses == 2;
+        }
+        r.check("uipref_stroke_recipes_are_the_documented_bundles", spreads);
     }
 
     return r.n;

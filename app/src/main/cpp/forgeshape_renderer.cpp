@@ -1307,30 +1307,56 @@ void Renderer::destroyGridResources() {
 // ---------------------------------------------------------------------------
 
 bool Renderer::createGizmoResources() {
-    // Generated on the stack from a compile-time constant count, uploaded, and
-    // then forgotten — exactly like the grid. There is no cache to invalidate
-    // and no revision to follow, because the geometry is authored in a canonical
-    // reference-unit space that nothing can move: where the gizmo IS and how big
-    // it looks are a matrix, computed per frame, per drag, for free.
-    GizmoVertex vertices[kGizmoVertexCount];
-    const int written = generateGizmoVertices(vertices, kGizmoVertexCount);
-    if (written != kGizmoVertexCount) {
-        FS_FAIL("gizmo_generate_incomplete");
-        return false;
-    }
-    const VkDeviceSize bytes = sizeof(GizmoVertex) * static_cast<VkDeviceSize>(written);
-
-    if (!createBuffer(bytes,
+    // ONE device-local buffer, sized to the widest stroke weight's list, so a
+    // weight change is a re-upload into it and never a reallocation. The
+    // geometry is still authored in a canonical reference-unit space that
+    // nothing can move: where the gizmo IS and how big it looks are a matrix,
+    // computed per frame, per drag, for free. What CAN change the list is the
+    // stroke weight preference (UI-PREF-R1 F), and only that — see
+    // syncGizmoGeometry.
+    const VkDeviceSize capacity =
+        sizeof(GizmoVertex) * static_cast<VkDeviceSize>(kGizmoVertexCountMax);
+    if (!createBuffer(capacity,
                       VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &gizmoVertexBuffer_,
                       &gizmoVertexMemory_)) {
         FS_FAIL("gizmo_vertex_buffer");
         return false;
     }
+    gizmoUploadedOnce_ = false;
+    return uploadGizmoGeometry(display_.gizmoStrokeWeight);
+}
+
+bool Renderer::syncGizmoGeometry() {
+    if (device_ == VK_NULL_HANDLE || gizmoVertexBuffer_ == VK_NULL_HANDLE) {
+        return true;
+    }
+    if (gizmoUploadedOnce_ && gizmoUploadedWeight_ == display_.gizmoStrokeWeight) {
+        return true;  // the frame draws the list the device already holds
+    }
+    // No in-flight frame may still be reading the buffer about to be
+    // rewritten -- the same rule the sketch overlay and every mesh follow.
+    if (!waitForMeshBuffersIdle()) {
+        return false;
+    }
+    return uploadGizmoGeometry(display_.gizmoStrokeWeight);
+}
+
+bool Renderer::uploadGizmoGeometry(GizmoStrokeWeight weight) {
+    // Generated on the stack from a compile-time constant capacity, uploaded,
+    // and then forgotten — exactly like the grid.
+    static GizmoVertex vertices[kGizmoVertexCountMax];
+    const int expected = gizmoVertexCountFor(weight);
+    const int written = generateGizmoVertices(vertices, kGizmoVertexCountMax, weight);
+    if (written != expected || written <= 0) {
+        FS_FAIL("gizmo_generate_incomplete");
+        return false;
+    }
+    const VkDeviceSize bytes = sizeof(GizmoVertex) * static_cast<VkDeviceSize>(written);
 
     // Shares the mesh path's staging buffer and upload command buffer, which is
     // why this runs after createMeshUploadObjects — the same transient scratch
-    // the grid borrows, for the same one-time few-kilobyte copy.
+    // the grid borrows, for the same few-kilobyte copy.
     if (!ensureStagingCapacity(bytes)) {
         return false;
     }
@@ -1373,15 +1399,22 @@ bool Renderer::createGizmoResources() {
                 "vkWaitForFences(gizmo_upload)");
 
     gizmoVertexCount_ = static_cast<uint32_t>(written);
-    // Logged ONCE per device. A second occurrence of this line in a session log
-    // is direct evidence that a drag, an orbit or a mode switch re-uploaded
-    // geometry it must never touch.
-    FS_LOGI("FORGESHAPE_GIZMO_UPLOAD_OK vertices=%u bytes=%llu move=[%d,%d) rotate=[%d,%d) "
-            "scale=[%d,%d)",
-            gizmoVertexCount_, (unsigned long long)bytes, kGizmoMoveFirstVertex,
-            kGizmoMoveFirstVertex + kGizmoMoveVertexCount, kGizmoRotateFirstVertex,
-            kGizmoRotateFirstVertex + kGizmoRotateVertexCount, kGizmoScaleFirstVertex,
-            kGizmoScaleFirstVertex + kGizmoScaleVertexCount);
+    gizmoUploadedWeight_ = weight;
+    gizmoUploadedOnce_ = true;
+    // Logged ONCE per device AND once per stroke-weight change, naming the
+    // weight. Any other occurrence of this line in a session log is direct
+    // evidence that a drag, an orbit, a mode switch or a visual-size change
+    // re-uploaded geometry it must never touch.
+    int moveFirst = 0, moveCount = 0, rotateFirst = 0, rotateCount = 0, scaleFirst = 0,
+        scaleCount = 0;
+    gizmoVertexRange(GizmoMode::Move, weight, &moveFirst, &moveCount);
+    gizmoVertexRange(GizmoMode::Rotate, weight, &rotateFirst, &rotateCount);
+    gizmoVertexRange(GizmoMode::Scale, weight, &scaleFirst, &scaleCount);
+    FS_LOGI("FORGESHAPE_GIZMO_UPLOAD_OK weight=%s vertices=%u bytes=%llu move=[%d,%d) "
+            "rotate=[%d,%d) scale=[%d,%d)",
+            gizmoStrokeWeightName(weight), gizmoVertexCount_, (unsigned long long)bytes,
+            moveFirst, moveFirst + moveCount, rotateFirst, rotateFirst + rotateCount,
+            scaleFirst, scaleFirst + scaleCount);
     return true;
 }
 
@@ -1396,6 +1429,7 @@ void Renderer::destroyGizmoResources() {
         gizmoVertexMemory_ = VK_NULL_HANDLE;
     }
     gizmoVertexCount_ = 0;
+    gizmoUploadedOnce_ = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -2786,7 +2820,9 @@ void Renderer::recordGizmoDraw(VkCommandBuffer cmd) {
     // Canonical gizmo space -> world -> clip. The canonical vertices are
     // authored in REFERENCE UNITS, so one uniform scale by the world length of a
     // reference unit at the pivot depth is exactly what keeps the handles a
-    // near-constant size on screen at any zoom.
+    // near-constant size on screen at any zoom. The user's visual size
+    // preference rides in that same scale (gizmoPlacementScale), so the hit test
+    // — which reads the same function — and the drawing cannot disagree.
     //
     // The rotation in this matrix is the gizmo BASIS the session decided —
     // identity in World space, the body orientation in Local — and it is taken
@@ -2794,7 +2830,7 @@ void Renderer::recordGizmoDraw(VkCommandBuffer cmd) {
     // hit-tested handles cannot point different ways. The body own SCALE is
     // deliberately absent: stretching a body must not stretch the instrument
     // used to stretch it, and the snapshot carries no scale for it to reach.
-    const float scale = gizmo_.worldPerReferenceUnit;
+    const float scale = gizmoPlacementScale(gizmo_);
     Mat4 model = gizmo_.orientation;
     for (int column = 0; column < 3; ++column) {
         for (int row = 0; row < 3; ++row) {
@@ -2836,7 +2872,10 @@ void Renderer::recordGizmoDraw(VkCommandBuffer cmd) {
     // nothing else in the whole renderer.
     int firstVertex = 0;
     int vertexCount = 0;
-    if (!gizmoVertexRange(gizmo_.mode, &firstVertex, &vertexCount)) {
+    // The ranges of the list the device HOLDS, which is the weight last
+    // uploaded — never the weight the display store may have moved to since,
+    // which syncGizmoGeometry reconciles before the next frame is recorded.
+    if (!gizmoVertexRange(gizmo_.mode, gizmoUploadedWeight_, &firstVertex, &vertexCount)) {
         return;
     }
     const uint32_t first = static_cast<uint32_t>(firstVertex);
@@ -2872,6 +2911,8 @@ bool Renderer::drawFrame() {
     syncScene();
     // And the sketch overlay, on the same revision-gated terms.
     syncSketchOverlay();
+    // And the gizmo's canonical list, on the stroke weight alone.
+    syncGizmoGeometry();
 
     // Selection feedback is presentation and rides entirely on the frame loop
     // that was going to run anyway: no Java animator, no invalidate, no

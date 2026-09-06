@@ -183,6 +183,63 @@ abstract class StartPageView extends FrameLayout {
         return action;
     }
 
+    /**
+     * Adds a section heading: the name of a GROUP of rows (`UI-PREF-R1` A3).
+     *
+     * <p>The Settings page is the first start page with more than one group,
+     * and a group needs a name the way an inspector section does — the same
+     * label role, the same section gap above it, so the two kinds of grouped
+     * surface read as one product.
+     */
+    final TextView addSectionLabel(CharSequence label, boolean first) {
+        final Context context = getContext();
+        final TextView heading = EditorControlStyles.sectionLabel(context, label);
+        content.addView(heading, EditorControlStyles.rowParams(
+                EditorControlStyles.dimen(context, R.dimen.section_gap)));
+        return heading;
+    }
+
+    /** A field caption inside a group, naming one preference among several. */
+    final TextView addFieldLabel(CharSequence label) {
+        final Context context = getContext();
+        final TextView caption = EditorControlStyles.fieldLabel(context, label);
+        content.addView(caption, EditorControlStyles.rowParams(
+                EditorControlStyles.dimen(context, R.dimen.row_gap)));
+        return caption;
+    }
+
+    /** One line of secondary prose under a heading: what the group changes. */
+    final TextView addCaption(CharSequence text) {
+        final Context context = getContext();
+        final TextView caption = EditorControlStyles.captionText(context, View.NO_ID, text);
+        content.addView(caption, EditorControlStyles.rowParams(
+                EditorControlStyles.dimen(context, R.dimen.row_gap_small)));
+        return caption;
+    }
+
+    /**
+     * One selectable option in a group: a full-width list row.
+     *
+     * <p>A list row rather than a chip, because the options have real names
+     * ("Neutral Charcoal", "Right-handed (default)") that a row of chips would
+     * wrap or clip, and because a short list of named, mutually exclusive
+     * options is how a preference is chosen in every tool that has them. The
+     * row already carries the 48 dp floor as hit area through its own box. The
+     * bare label is kept as the row's tag, so a caller can decorate the text
+     * (a check mark) without the row remembering two strings.
+     */
+    final TextView addOptionRow(int id, CharSequence label, OnClickListener onChosen) {
+        final Context context = getContext();
+        final TextView row = EditorControlStyles.listRow(context, id, label);
+        row.setTag(label);
+        row.setOnClickListener(onChosen);
+        final LinearLayout.LayoutParams params = EditorControlStyles.rowParams(
+                EditorControlStyles.dimen(context, R.dimen.row_gap_small));
+        params.width = ViewGroup.LayoutParams.MATCH_PARENT;
+        content.addView(row, params);
+        return row;
+    }
+
     /** Adds the page's status line under the actions. Called once. */
     final void addStatusLine() {
         content.addView(status, EditorControlStyles.rowParams(

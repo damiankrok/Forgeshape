@@ -28,6 +28,27 @@
     <item name="start_page_headline" type="id" />
     <item name="home_panel" type="id" />
     <item name="home_new_project" type="id" />
+    <!-- Settings (UI-PREF-R1): the page, its content column, and the row on
+         Home and on the Project surface that open it. -->
+    <item name="home_settings" type="id" />
+    <item name="project_settings" type="id" />
+    <item name="settings_page" type="id" />
+    <item name="settings_panel" type="id" />
+    <item name="settings_back" type="id" />
+    <!-- Its rows, named for the act each performs. The three original
+         appearance ids are unchanged: an id names the act, not the surface it
+         moved to. -->
+    <item name="appearance_warm_light" type="id" />
+    <item name="appearance_cool_light" type="id" />
+    <item name="handedness_right" type="id" />
+    <item name="handedness_left" type="id" />
+    <item name="gizmo_size_small" type="id" />
+    <item name="gizmo_size_default" type="id" />
+    <item name="gizmo_size_large" type="id" />
+    <item name="gizmo_size_largest" type="id" />
+    <item name="gizmo_weight_thin" type="id" />
+    <item name="gizmo_weight_regular" type="id" />
+    <item name="gizmo_weight_bold" type="id" />
     <item name="home_open_file" type="id" />
     <!--
       The New Project chooser: which representation a new project begins in.

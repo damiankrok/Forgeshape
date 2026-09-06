@@ -113,11 +113,14 @@ public final class HomeFlowTest {
             assertEquals("no document can describe Home", 0L, NativeViewport.projectFingerprint());
             assertNull("and no `.forge` bytes can be written for it",
                     NativeViewport.encodeProject());
-            // Exactly two primary actions, counted rather than spot-checked.
+            // Exactly two primary actions, counted rather than spot-checked --
+            // plus, since UI-PREF-R1, the quiet Settings row at the foot, which
+            // is not a way to have a project and is drawn as a secondary action.
             assertNotNull(workspace.findViewById(R.id.home_new_project));
             assertNotNull(workspace.findViewById(R.id.home_open_file));
-            assertEquals("Home offers two ways to have a project and nothing else",
-                    2, countClickable(workspace.findViewById(R.id.home_panel)));
+            assertNotNull(workspace.findViewById(R.id.home_settings));
+            assertEquals("Home offers two ways to have a project, Settings, and nothing else",
+                    3, countClickable(workspace.findViewById(R.id.home_panel)));
             return null;
         });
     }

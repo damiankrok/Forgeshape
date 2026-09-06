@@ -10,13 +10,15 @@ import android.widget.TextView;
 /**
  * The compact display control: how the viewport PRESENTS the object.
  *
- * <p>Five labelled groups and nothing else — the shading model (Studio Solid or
+ * <p>Four labelled groups and nothing else — the shading model (Studio Solid or
  * MatCap), the surface shading (Smooth or Faceted), the camera projection
- * (Perspective or Orthographic), the <b>view</b> (the world reference grid) and
- * the appearance (one of the three palettes). It is deliberately not a material
- * editor, a preset browser, a light rig or a view-cube: those are later
- * decisions with their own approvals, and a surface that looks like it could
- * grow into one invites exactly that.
+ * (Perspective or Orthographic) and the <b>view</b> (the world reference grid).
+ * It is deliberately not a material editor, a preset browser, a light rig or a
+ * view-cube: those are later decisions with their own approvals, and a surface
+ * that looks like it could grow into one invites exactly that. The appearance
+ * lived here until `UI-PREF-R1`; it is a PERSISTENT application preference
+ * now (UI-OWNER-37) and belongs to the Settings page with the other persistent
+ * ones, while this popover keeps the transient, per-session viewport controls.
  *
  * <p><b>Every control here works.</b> Nothing in this popover is drawn disabled
  * as a promise, which is why the View group holds one chip pair and not five:
@@ -50,8 +52,6 @@ final class DisplaySettingsPopoverView extends AnchoredSurfaceView {
 
         void onProjectionModeRequested(int mode);
 
-        void onAppThemeRequested(AppTheme theme);
-
         void onGridVisibleRequested(boolean visible);
     }
 
@@ -64,27 +64,6 @@ final class DisplaySettingsPopoverView extends AnchoredSurfaceView {
     private final TextView orthographicChip;
     private final TextView gridOnChip;
     private final TextView gridOffChip;
-
-    /**
-     * The appearance options, in {@link AppTheme} declaration order.
-     *
-     * <p>Three parallel arrays rather than three fields, because there is
-     * nothing per-palette to say: every option is the same control with a
-     * different name and a different {@code AppTheme}, and a fourth palette
-     * would be one more entry rather than one more block of code. The view ids
-     * stay explicit and stable, because verification locates a control by its
-     * semantic id and never by position.
-     */
-    private static final AppTheme[] APPEARANCES = {
-            AppTheme.WARM_GRAPHITE, AppTheme.NEUTRAL_CHARCOAL, AppTheme.LIGHT_CHARCOAL};
-    private static final int[] APPEARANCE_IDS = {
-            R.id.appearance_warm_graphite, R.id.appearance_neutral_charcoal,
-            R.id.appearance_light_charcoal};
-    private static final int[] APPEARANCE_LABELS = {
-            R.string.appearance_warm_graphite, R.string.appearance_neutral_charcoal,
-            R.string.appearance_light_charcoal};
-
-    private final TextView[] appearanceOptions;
 
     DisplaySettingsPopoverView(Context context, final OnDisplaySettingChanged listener,
                                boolean includeDebugShading) {
@@ -269,41 +248,6 @@ final class DisplaySettingsPopoverView extends AnchoredSurfaceView {
         });
         viewRow.addView(gridOffChip, EditorControlStyles.wrap(gap));
 
-        // Appearance sits with the other three because it is the same kind of
-        // decision: it changes how the model READS and nothing about what it is.
-        // Giving the palettes their own settings screen would cost the user a
-        // second place to look for one act, and this popover is already the
-        // product's answer to "how is this drawn".
-        //
-        // A COLUMN of full-width rows rather than a row of chips, and that is
-        // about the content rather than about taste: the three palettes have
-        // real names, they are mutually exclusive, and three chips carrying
-        // "Neutral Charcoal" would either wrap, ellipsise or make the popover
-        // wider than everything else in it. A short list of named options is
-        // also how a palette is chosen in every tool that has palettes.
-        addView(EditorControlStyles.sectionLabel(context, context.getString(R.string.appearance)),
-                EditorControlStyles.rowParams(
-                        EditorControlStyles.dimen(context, R.dimen.row_gap)));
-
-        appearanceOptions = new TextView[APPEARANCES.length];
-        for (int i = 0; i < APPEARANCES.length; i++) {
-            final AppTheme theme = APPEARANCES[i];
-            final TextView option = EditorControlStyles.listRow(context, APPEARANCE_IDS[i],
-                    context.getString(APPEARANCE_LABELS[i]));
-            option.setOnClickListener(new OnClickListener() {
-                @Override
-                public void onClick(View v) {
-                    listener.onAppThemeRequested(theme);
-                }
-            });
-            final LinearLayout.LayoutParams params = EditorControlStyles.rowParams(
-                    EditorControlStyles.dimen(context,
-                            i == 0 ? R.dimen.row_gap_small : R.dimen.row_gap_small));
-            params.width = ViewGroup.LayoutParams.MATCH_PARENT;
-            addView(option, params);
-            appearanceOptions[i] = option;
-        }
-
         setVisibility(GONE);
     }
 
@@ -315,19 +259,13 @@ final class DisplaySettingsPopoverView extends AnchoredSurfaceView {
      * difference that matters when a request was refused.
      */
     void showSettings(int shadingModel, int surfaceShading, int projectionMode,
-                      AppTheme theme, boolean gridVisible) {
+                      boolean gridVisible) {
         // Read back from native truth like every other chip here, never from
         // what was tapped: the grid's visibility is process-scoped native
         // presentation state, so on a resume it is already whatever it was and
         // this only makes the control agree with it.
         EditorControlStyles.setChipActive(gridOnChip, gridVisible);
         EditorControlStyles.setChipActive(gridOffChip, !gridVisible);
-        // The appearance is UI truth rather than native truth, so it is passed
-        // in like the rest instead of being read here: this view owns nothing
-        // and reports what it is told, whichever layer the answer came from.
-        for (int i = 0; i < APPEARANCES.length; i++) {
-            EditorControlStyles.setListRowActive(appearanceOptions[i], APPEARANCES[i] == theme);
-        }
         EditorControlStyles.setChipActive(studioChip, shadingModel == NativeViewport.SHADING_STUDIO);
         EditorControlStyles.setChipActive(matcapChip, shadingModel == NativeViewport.SHADING_MATCAP);
         if (debugChip != null) {

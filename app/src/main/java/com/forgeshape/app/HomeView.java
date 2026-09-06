@@ -18,7 +18,9 @@ import android.view.View;
  * begins in; <b>Open File…</b> reads a {@code .forge} the user picks through the
  * system's own document UI. No recent list, no template gallery, no account —
  * a Home that offered any of those would be advertising something the product
- * does not have.
+ * does not have. Beneath them, and quieter, <b>Settings</b> (`UI-PREF-R1` A1)
+ * opens the persistent application preferences: not a way to have a project,
+ * which is why it is a secondary action at the foot rather than a third row.
  *
  * <p>Behind the page nothing is drawn, nothing can be picked, no history exists
  * and no {@code .forge} byte, checkpoint or fingerprint describes it. Whether
@@ -35,6 +37,9 @@ final class HomeView extends StartPageView {
         void onHomeNewProjectRequested();
 
         void onHomeOpenFileRequested();
+
+        /** `UI-PREF-R1`: open the Settings page over Home. */
+        void onHomeSettingsRequested();
     }
 
     HomeView(Context context, final OnHomeAction listener) {
@@ -60,5 +65,13 @@ final class HomeView extends StartPageView {
                     }
                 });
         addStatusLine();
+        addSecondaryAction(R.id.home_settings, context.getString(R.string.settings),
+                new OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        listener.onHomeSettingsRequested();
+                    }
+                }).setContentDescription(context.getString(R.string.settings) + ". "
+                + context.getString(R.string.settings_home_description));
     }
 }

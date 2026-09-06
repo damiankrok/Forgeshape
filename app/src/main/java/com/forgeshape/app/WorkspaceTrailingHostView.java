@@ -253,11 +253,39 @@ final class WorkspaceTrailingHostView extends FrameLayout
         return true;
     }
 
+    /**
+     * Which window edge the host stands off (`UI-PREF-R1` C).
+     *
+     * <p>The handedness preference mirrors the EDGE the host is anchored to and
+     * nothing about what it holds: the same 8 dp inset, the same fixed width
+     * and the same top, on the left edge instead of the right. The workspace
+     * owns the row order that puts the host on that edge; the host owns which
+     * of its two margins carries the inset, and that is all this flag decides.
+     */
+    void setMirrored(boolean mirrored) {
+        if (this.mirrored == mirrored) {
+            return;
+        }
+        this.mirrored = mirrored;
+        refreshParentPlacement();
+    }
+
+    boolean mirrored() {
+        return mirrored;
+    }
+
+    private boolean mirrored;
+
     private void applyParentPlacement(LinearLayout.LayoutParams params) {
         params.gravity = Gravity.TOP;
         params.topMargin = EditorControlStyles.dimen(getContext(), R.dimen.row_gap)
                 - upstreamToolbarExpansionPx;
-        params.rightMargin = EditorControlStyles.dimen(getContext(), R.dimen.brush_gap);
+        // The one inset the host keeps off its window edge, on whichever edge
+        // the handedness preference put it. The other margin is zero: the gap
+        // to a side-placed precision surface is that surface's own standoff.
+        final int inset = EditorControlStyles.dimen(getContext(), R.dimen.brush_gap);
+        params.rightMargin = mirrored ? 0 : inset;
+        params.leftMargin = mirrored ? inset : 0;
     }
 
     void render(PresentationState state) {

@@ -323,6 +323,39 @@ constexpr float kGizmoMaxPixelsPerReferenceUnit = 16.0f;
 bool setGizmoPixelsPerReferenceUnit(float scale);
 float gizmoPixelsPerReferenceUnit();
 
+// The VISUAL SIZE preference (UI-PREF-R1 E, UI-OWNER-32): one bounded multiplier
+// on how large the instrument is drawn and where its handles stand, in
+// reference units. 1.0 is exactly the accepted gizmo.
+//
+// What it scales is the PLACEMENT of every handle — shaft length, ring radius,
+// plane-square distance, cube size — for the drawing AND the hit test alike, so
+// what is seen and what can be grabbed still cannot differ. What it deliberately
+// does NOT scale is any hit CORRIDOR (kGizmoHitSlopUnits and the three radii
+// below stay in reference units, so the 48-unit floor holds at the smallest
+// setting) or any drag AMOUNT: the axis and plane solvers are world-space
+// arithmetic on the ray, the ring solver is an angle about the pivot, and the
+// scale mapping's reference length reads kGizmoHandleLengthUnits at the
+// canonical scale — so the same pixel drag moves, turns or stretches a body by
+// the same amount at every visual size.
+//
+// The bounds come from the screen. The FLOOR is set by the two hit radii
+// that do not scale: a plane handle is grabbed within 24 units of its centre
+// and the pivot's 24-unit dead disc grabs nothing, so a plane centre whose
+// PROJECTED distance from the pivot falls under 24 units is unreachable. From
+// an oblique three-quarter view that projection is about 0.68 of the centre
+// distance (40 units at 1.0 -> 27 projected, a 3-unit margin the accepted gizmo
+// already lives with); at 0.9 it is 24.4 and still clear, at 0.75 it is 20 and
+// the handle is lost. The CEILING: at 1.5 the Rotate rings are 117 units in
+// radius — 234 units across, which still leaves a 360-unit-wide window a margin
+// on both sides. Out-of-range and non-finite are REFUSED at the session, never clamped
+// into a silently different size; the Android layer clamps its stored value
+// before it ever asks (see AppPreferences).
+constexpr float kGizmoDefaultVisualScale = 1.0f;
+constexpr float kGizmoMinVisualScale = 0.9f;
+constexpr float kGizmoMaxVisualScale = 1.5f;
+
+bool gizmoVisualScaleIsValid(float scale);
+
 // ---------------------------------------------------------------------------
 // Projection helpers
 // ---------------------------------------------------------------------------
@@ -510,7 +543,17 @@ struct GizmoSnapshot {
     // canonical gizmo by this, so it and the hit test are the same size by
     // construction.
     float worldPerReferenceUnit = 0.0f;
+    // The user's visual size preference, carried beside the camera-derived
+    // scale rather than folded into it: the drawing and the hit test multiply
+    // the two (gizmoPlacementScale), the scale-drag reference length reads the
+    // camera-derived one alone. See kGizmoDefaultVisualScale.
+    float visualScale = kGizmoDefaultVisualScale;
 };
+
+// The one world scale a handle is PLACED at — the camera-derived reference unit
+// times the visual size preference. Every "where is this handle" answer, drawn
+// or hit-tested, goes through this so the two cannot disagree.
+float gizmoPlacementScale(const GizmoSnapshot& state);
 
 // ---------------------------------------------------------------------------
 // The drawn geometry
@@ -555,6 +598,44 @@ struct GizmoVertex {
 // drag solvers refuse it for the same reason.
 constexpr float kGizmoStrokeOffsetUnits = 1.1f;
 constexpr int kGizmoStrokeBundle = 5;  // the centre line plus four offsets
+
+// The STROKE WEIGHT preference (UI-PREF-R1 F) is a bundle RECIPE, and Regular
+// is exactly the recipe the constants above describe — the pre-preference gizmo,
+// vertex for vertex. Thin is the same bundle at half the spread. Bold widens the
+// shaft bundle to thirteen lines (the + pattern, the x pattern between them and a
+// second + one spread further out, which fills the band rather than fanning
+// it), bundles the arrowhead strokes, and adds a concentric pass to the rings,
+// the plane squares and the Scale cubes. Every recipe is still one-pixel lines:
+// no wideLines feature is requested for any weight.
+//
+// Hit testing never reads a weight. A wider band is still inside the 48-unit
+// corridor around the nominal stroke, so what is drawn heavier is grabbed
+// exactly where the thinner one was.
+struct GizmoStrokeStyle {
+    float spread;          // the offset unit between bundled lines
+    int shaftBundle;       // lines per shaft: 5 (+ pattern) or 13
+    int arrowBundle;       // lines per arrowhead stroke: 1, or 5 when bundled
+    int ringPasses;        // concentric ring passes: 2 (r, r+s) or 4 (r-s .. r+2s)
+    int squarePasses;      // concentric plane-square passes: 2 or 3
+    int axisCubeOutlines;  // outlines per Scale end cube: 1 or 2
+    int uniformOutlines;   // outlines of the uniform cube: 2 or 3
+};
+
+constexpr GizmoStrokeStyle gizmoStrokeStyle(GizmoStrokeWeight weight) {
+    switch (weight) {
+        case GizmoStrokeWeight::Thin:
+            return GizmoStrokeStyle{0.5f * kGizmoStrokeOffsetUnits, kGizmoStrokeBundle, 1, 2, 2,
+                                    1, 2};
+        case GizmoStrokeWeight::Bold:
+            return GizmoStrokeStyle{kGizmoStrokeOffsetUnits, 13, 5, 4, 3, 2, 3};
+        case GizmoStrokeWeight::Regular:
+            break;
+    }
+    return GizmoStrokeStyle{kGizmoStrokeOffsetUnits, kGizmoStrokeBundle, 1, 2, 2, 1, 2};
+}
+
+// The widest bundle any weight authors: sizes the offset table in the writer.
+constexpr int kGizmoStrokeBundleMax = 13;
 
 // A plane handle square: drawn twice a stroke offset apart for the same
 // legibility reason the shafts are bundled, PLUS the two diagonals across it.
@@ -603,19 +684,65 @@ constexpr int kGizmoScaleVertexCount = 2 * kGizmoScaleLineCount;
 constexpr int kGizmoVertexCount =
     kGizmoMoveVertexCount + kGizmoRotateVertexCount + kGizmoScaleVertexCount;
 
+// The same counts for ANY weight. The constants above are the Regular answers
+// and are kept as the names every existing reader uses; the static_asserts
+// below are what make "Regular is the pre-preference gizmo" a compile-time
+// fact rather than a comment.
+constexpr int gizmoPlaneLineCountFor(const GizmoStrokeStyle& style) {
+    return 3 * (4 * style.squarePasses + 2);
+}
+constexpr int gizmoMoveLineCountFor(GizmoStrokeWeight weight) {
+    const GizmoStrokeStyle style = gizmoStrokeStyle(weight);
+    return kGizmoPivotMarkLineCount + 3 * style.shaftBundle +
+           3 * kGizmoArrowLineCount * style.arrowBundle + gizmoPlaneLineCountFor(style);
+}
+constexpr int gizmoRotateLineCountFor(GizmoStrokeWeight weight) {
+    return gizmoStrokeStyle(weight).ringPasses * 3 * kGizmoRingSegments +
+           kGizmoPivotMarkLineCount;
+}
+constexpr int gizmoScaleLineCountFor(GizmoStrokeWeight weight) {
+    const GizmoStrokeStyle style = gizmoStrokeStyle(weight);
+    return 3 * style.shaftBundle + 3 * kGizmoCubeLineCount * style.axisCubeOutlines +
+           gizmoPlaneLineCountFor(style) + kGizmoCubeLineCount * style.uniformOutlines;
+}
+constexpr int gizmoVertexCountFor(GizmoStrokeWeight weight) {
+    return 2 * (gizmoMoveLineCountFor(weight) + gizmoRotateLineCountFor(weight) +
+                gizmoScaleLineCountFor(weight));
+}
+
+static_assert(2 * gizmoMoveLineCountFor(GizmoStrokeWeight::Regular) == kGizmoMoveVertexCount,
+              "Regular must author exactly the pre-preference Move geometry");
+static_assert(2 * gizmoRotateLineCountFor(GizmoStrokeWeight::Regular) == kGizmoRotateVertexCount,
+              "Regular must author exactly the pre-preference Rotate geometry");
+static_assert(2 * gizmoScaleLineCountFor(GizmoStrokeWeight::Regular) == kGizmoScaleVertexCount,
+              "Regular must author exactly the pre-preference Scale geometry");
+static_assert(gizmoVertexCountFor(GizmoStrokeWeight::Thin) == kGizmoVertexCount,
+              "Thin is the Regular recipe at half spread, so it has the Regular count");
+
+// The largest list any weight produces, which is what the renderer's one buffer
+// is sized to so a weight change is a re-upload and never a reallocation.
+constexpr int kGizmoVertexCountMax = gizmoVertexCountFor(GizmoStrokeWeight::Bold);
+static_assert(kGizmoVertexCountMax >= kGizmoVertexCount, "Bold is the widest recipe");
+
 // Where each mode vertices begin, so the caller draws a range rather than
 // deciding an offset from arithmetic of its own.
 constexpr int kGizmoMoveFirstVertex = 0;
 constexpr int kGizmoRotateFirstVertex = kGizmoMoveVertexCount;
 constexpr int kGizmoScaleFirstVertex = kGizmoRotateFirstVertex + kGizmoRotateVertexCount;
 
-// The vertex range one mode draws. Returns false for nothing to draw.
+// The vertex range one mode draws, in the list one WEIGHT authors — Move then
+// Rotate then Scale, so the offsets depend on the weight. Returns false for
+// nothing to draw. The two-argument form is the Regular list.
+bool gizmoVertexRange(GizmoMode mode, GizmoStrokeWeight weight, int* outFirst, int* outCount);
 bool gizmoVertexRange(GizmoMode mode, int* outFirst, int* outCount);
 
-// Fills `out` with kGizmoVertexCount vertices, Move then Rotate then Scale.
-// Pure, deterministic and allocation-free; returns how many were written so a
-// caller sizing a buffer from the constant and a caller reading the result
-// cannot disagree.
+// Fills `out` with gizmoVertexCountFor(weight) vertices, Move then Rotate then
+// Scale. Pure, deterministic and allocation-free; returns how many were written
+// so a caller sizing a buffer from the constant and a caller reading the result
+// cannot disagree, and 0 when `capacity` cannot hold the weight's list. The
+// two-argument form is the Regular list and is byte-identical to what the
+// product drew before the weight existed.
+int generateGizmoVertices(GizmoVertex* out, int capacity, GizmoStrokeWeight weight);
 int generateGizmoVertices(GizmoVertex* out, int capacity);
 
 // A point on one ring, relative to the pivot IN CANONICAL GIZMO SPACE, that lies
@@ -739,6 +866,14 @@ public:
     // mode. The shell draws the selector exactly when this is true.
     bool spaceIsSelectable() const { return mode_ != GizmoMode::Scale; }
 
+    // The visual size preference (UI-PREF-R1 E). Presentation on the mode's
+    // terms — no revision, no publication, no history — and REFUSED outside
+    // [kGizmoMinVisualScale, kGizmoMaxVisualScale] or non-finite, leaving the
+    // current value standing. Accepted mid-drag: the captured handle keeps its
+    // world-space anchor, so a resize under a held finger moves nothing.
+    bool setVisualScale(float scale);
+    float visualScale() const { return visualScale_; }
+
     // What the renderer draws this frame. Invisible when inactive, when the
     // scene has no active body, or when the camera cannot produce a scale.
     GizmoSnapshot snapshot(const CameraSnapshot& camera, int viewportWidth,
@@ -839,6 +974,9 @@ private:
     // The space to go back to when Scale is left. Not a second truth about the
     // current space — it is only ever read at the moment Scale is left.
     GizmoSpace restoreSpace_ = GizmoSpace::World;
+    // How large the instrument is drawn and placed, as a multiplier on the
+    // reference unit. Bounded; see kGizmoDefaultVisualScale.
+    float visualScale_ = kGizmoDefaultVisualScale;
 
     // --- capture state, valid only while capturing_ -------------------------
     bool capturing_ = false;

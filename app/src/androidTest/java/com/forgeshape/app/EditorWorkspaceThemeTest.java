@@ -16,6 +16,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNotSame;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
@@ -38,7 +39,8 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 
 /**
- * R1B2-01..17 — the three approved appearances.
+ * R1B2-01..17 — the approved appearances: three dark, and since `UI-PREF-R1`
+ * two light (UI-OWNER-42), chosen from the Settings page.
  *
  * <p>Two things are being proven and they are not the same. One is that the
  * appearance actually changes: the chrome resolves different colours, the
@@ -91,7 +93,8 @@ public final class EditorWorkspaceThemeTest {
     /** The id of the row that chooses each appearance, in declaration order. */
     private static final int[] APPEARANCE_IDS = {
             R.id.appearance_warm_graphite, R.id.appearance_neutral_charcoal,
-            R.id.appearance_light_charcoal};
+            R.id.appearance_light_charcoal, R.id.appearance_warm_light,
+            R.id.appearance_cool_light};
 
     @Rule
     public ActivityScenarioRule<ForgeShapeActivity> rule =
@@ -117,7 +120,7 @@ public final class EditorWorkspaceThemeTest {
     public void r1b2_01_theProductDefaultIsWarmGraphite() {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             assertSame("Warm Graphite is what a process that has not been asked wears",
-                    AppTheme.WARM_GRAPHITE, workspace.uiState().appTheme());
+                    AppTheme.WARM_GRAPHITE, workspace.appTheme());
             assertEquals("and the renderer was told the same thing",
                     NativeViewport.VIEWPORT_BACKGROUND_WARM_GRAPHITE,
                     NativeViewport.viewportBackground());
@@ -126,32 +129,36 @@ public final class EditorWorkspaceThemeTest {
     }
 
     @Test
-    public void r1b2_02_appearanceOffersExactlyTheThreeApprovedPalettes() {
-        openDisplayPopover();
+    public void r1b2_02_appearanceOffersExactlyTheFiveApprovedPalettes() {
+        openSettings();
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            assertEquals("the approved set is three palettes",
-                    3, AppTheme.values().length);
+            assertEquals("the approved set is five palettes (UI-OWNER-42)",
+                    5, AppTheme.values().length);
             assertEquals(AppTheme.values().length, APPEARANCE_IDS.length);
 
             final int floor = EditorControlStyles.dimen(activity, R.dimen.control_height);
             for (int i = 0; i < APPEARANCE_IDS.length; i++) {
-                final View option = workspace.findViewById(APPEARANCE_IDS[i]);
+                final View option = workspace.settingsPage().findViewById(APPEARANCE_IDS[i]);
                 final String name = activity.getResources().getResourceEntryName(
                         APPEARANCE_IDS[i]);
-                assertNotNull(name + ": the palettes live in the Display popover,"
-                        + " not on a settings screen of their own", option);
+                assertNotNull(name + ": the palettes live on the Settings page since"
+                        + " UI-PREF-R1, because a palette is a persistent preference", option);
                 assertEquals(name + ": exactly the one in force is drawn selected",
-                        AppTheme.values()[i] == workspace.uiState().appTheme(),
+                        AppTheme.values()[i] == workspace.appTheme(),
                         option.isActivated());
+                assertEquals(name + ": and says so to a screen reader, not by colour alone",
+                        AppTheme.values()[i] == workspace.appTheme(), option.isSelected());
                 // The stylus-first floor applies here as much as anywhere.
                 assertTrue(name + " is " + option.getHeight() + " px tall",
                         option.getHeight() >= floor);
                 assertTrue(name + " must answer a press like every other control",
                         hasPressedFeedback(option));
             }
+            assertNull("and the Display popover no longer carries a palette row",
+                    workspace.displayPopover().findViewById(R.id.appearance_warm_graphite));
             return null;
         });
-        closeDisplayPopover();
+        closeSettings();
     }
 
     // -----------------------------------------------------------------------
@@ -178,16 +185,24 @@ public final class EditorWorkspaceThemeTest {
                         + " appearance wearing two names", differs);
             }
         }
-        // Not merely different: ordered. Light Charcoal is the lightest ground
-        // in the set and its chrome has to be lighter than the other two, or the
-        // palette does not do what its own name says.
-        assertTrue("Light Charcoal's base chrome is the lightest of the three",
+        // Not merely different: ordered. Light Charcoal is the lightest DARK
+        // ground and its chrome has to be lighter than the other two dark ones,
+        // or the palette does not do what its own name says; and both LIGHT
+        // palettes are lighter than all three dark ones, or theirs do not.
+        assertTrue("Light Charcoal's base chrome is the lightest of the dark three",
                 luminance(resolved[2][0]) > luminance(resolved[0][0])
                         && luminance(resolved[2][0]) > luminance(resolved[1][0]));
+        for (int light = 3; light < 5; light++) {
+            for (int dark = 0; dark < 3; dark++) {
+                assertTrue(AppTheme.values()[light] + " is lighter than "
+                                + AppTheme.values()[dark],
+                        luminance(resolved[light][0]) > luminance(resolved[dark][0]));
+            }
+        }
     }
 
     @Test
-    public void r1b2_04_everyPaletteIsADarkGroundAndTheWindowAgreesWithIt() {
+    public void r1b2_04_everyPaletteIsItsOwnGroundAndTheWindowAgreesWithIt() {
         for (AppTheme theme : AppTheme.values()) {
             switchTo(theme);
             doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
@@ -200,11 +215,20 @@ public final class EditorWorkspaceThemeTest {
                 // renderer clears to, or launching flashes the wrong shade.
                 final int window = EditorControlStyles.themeColor(
                         activity, android.R.attr.windowBackground);
-                assertTrue(theme + ": every approved ground is DARK, luminance was "
-                                + luminance(window), luminance(window) < 0.20);
-                assertTrue(theme + ": and none of them is near-black either,"
-                                + " which is the ground the set replaced",
-                        luminance(window) > 0.015);
+                if (theme.isLight()) {
+                    assertTrue(theme + ": a LIGHT palette is a light canvas, luminance was "
+                            + luminance(window), luminance(window) > 0.60);
+                } else {
+                    assertTrue(theme + ": every dark ground is DARK, luminance was "
+                                    + luminance(window), luminance(window) < 0.20);
+                    assertTrue(theme + ": and none of them is near-black either,"
+                                    + " which is the ground the set replaced",
+                            luminance(window) > 0.015);
+                }
+                // UIPREFR1-26: the system bars draw dark icons over a light
+                // canvas and light icons over a dark one.
+                assertEquals(theme + ": the system bars' icon appearance follows the"
+                        + " ground", theme.isLight(), activity.systemBarsLight());
                 // Text on the model has to survive over the ground itself, since
                 // the toolbar's control groups are translucent.
                 final int primary = EditorControlStyles.themeColor(activity, R.attr.fsTextPrimary);
@@ -497,9 +521,14 @@ public final class EditorWorkspaceThemeTest {
                 final int disabled = EditorControlStyles.themeColor(activity, R.attr.fsTextDisabled);
                 final int secondary = EditorControlStyles.themeColor(activity,
                         R.attr.fsTextSecondary);
+                final int ground = EditorControlStyles.themeColor(activity,
+                        R.attr.fsSurfacePrecision);
+                // "Dimmer" means CLOSER TO THE GROUND: darker on a dark palette,
+                // lighter on a light one. Stated as contrast so it is the same
+                // rule in every appearance.
                 assertTrue(theme + ": a disabled tone must stay visibly dimmer than"
-                                + " an available one — on a dark ground that means DARKER",
-                        luminance(disabled) < luminance(secondary));
+                                + " an available one",
+                        contrast(disabled, ground) < contrast(secondary, ground));
                 return null;
             });
         }
@@ -615,10 +644,12 @@ public final class EditorWorkspaceThemeTest {
                         + " what made five blue blocks compete on one screen",
                         selected, commit);
                 assertEquals(theme + ": a commit IS the accent", accent, commit);
+                // Quieter means nearer the resting control it sits beside, on a
+                // light ground as on a dark one.
                 assertTrue(theme + ": a selection is far quieter than the accent:"
-                                + " selected=" + luminance(selected) + " accent="
-                                + luminance(accent),
-                        luminance(selected) < luminance(accent));
+                                + " selected=" + contrast(selected, control) + " accent="
+                                + contrast(accent, control),
+                        contrast(selected, control) < contrast(accent, control));
                 // Quiet, but not invisible: a selected control must still be a
                 // visible step off the control beside it, and since UI-R4B
                 // removed the accent hairline that step carries MORE of the
@@ -719,28 +750,64 @@ public final class EditorWorkspaceThemeTest {
      */
     private void switchTo(final AppTheme theme) {
         final Boolean alreadyWearing = onWorkspace(rule.getScenario(),
-                (activity, workspace) -> workspace.uiState().appTheme() == theme);
+                (activity, workspace) -> workspace.appTheme() == theme);
         if (Boolean.TRUE.equals(alreadyWearing)) {
             return;
         }
-        openDisplayPopover();
+        openSettings();
+        final Integer before = onWorkspace(rule.getScenario(),
+                (activity, workspace) -> System.identityHashCode(activity));
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            workspace.findViewById(APPEARANCE_IDS[theme.ordinal()]).performClick();
+            workspace.settingsPage().findViewById(APPEARANCE_IDS[theme.ordinal()]).performClick();
             return null;
         });
         // The Activity is being torn down and rebuilt underneath us; wait for a
-        // workspace that reports the new appearance and has been laid out.
+        // workspace that reports the new appearance and has been laid out. It
+        // comes back on the Settings page the palette was chosen from.
         for (int attempt = 0; attempt < 80; attempt++) {
             settleLayout();
             final Boolean ready = onWorkspace(rule.getScenario(),
-                    (activity, workspace) -> workspace.uiState().appTheme() == theme
-                            && workspace.getWidth() > 0);
+                    (activity, workspace) -> workspace.appTheme() == theme
+                            && workspace.getWidth() > 0 && workspace.settingsVisible()
+                            && (before == null
+                                    || System.identityHashCode(activity) != before));
             if (Boolean.TRUE.equals(ready)) {
+                closeSettings();
                 return;
             }
             SystemClock.sleep(100);
         }
         throw new AssertionError("the workspace never came back wearing " + theme);
+    }
+
+    /**
+     * Opens the Settings page through the product's own door for wherever the
+     * workspace is: Home's Settings row, or the Project surface's Settings…
+     */
+    private void openSettings() {
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            if (workspace.settingsVisible()) {
+                return null;
+            }
+            if (workspace.homeVisible()) {
+                workspace.findViewById(R.id.home_settings).performClick();
+                return null;
+            }
+            workspace.findViewById(R.id.project_actions_button).performClick();
+            workspace.findViewById(R.id.project_settings).performClick();
+            return null;
+        });
+        settleLayout();
+    }
+
+    private void closeSettings() {
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            if (workspace.settingsVisible()) {
+                workspace.findViewById(R.id.settings_back).performClick();
+            }
+            return null;
+        });
+        settleLayout();
     }
 
     private void openDisplayPopover() {
@@ -778,7 +845,7 @@ public final class EditorWorkspaceThemeTest {
 
     private void assertWearing(final AppTheme theme, final String why) {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            assertSame(why, theme, workspace.uiState().appTheme());
+            assertSame(why, theme, workspace.appTheme());
             assertEquals(why + " (the renderer too)", theme.viewportBackground(),
                     NativeViewport.viewportBackground());
             return null;

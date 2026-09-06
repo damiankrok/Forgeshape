@@ -1194,28 +1194,32 @@ public final class EditorWorkspaceCorrectionTest {
      * add, remove or replace an appearance.
      */
     @Test
-    public void uir4b18_thereAreStillExactlyThreeAppearancesAndTheyChangeNoGeometry() {
-        assertEquals("three approved appearances, and no fourth",
-                3, AppTheme.values().length);
+    public void uir4b18_thereAreExactlyFiveAppearancesAndTheyChangeNoGeometry() {
+        assertEquals("five approved appearances (UI-OWNER-42), and no sixth",
+                5, AppTheme.values().length);
         final double[] before = onWorkspace(rule.getScenario(),
                 (activity, workspace) -> nativeSnapshot());
+        // Since UI-PREF-R1 the palettes are chosen on the Settings page, reached
+        // from the Project surface: a palette is a persistent preference.
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            workspace.globalToolbar().findViewById(R.id.display_settings_button)
+            workspace.globalToolbar().findViewById(R.id.project_actions_button)
                     .performClick();
+            workspace.findViewById(R.id.project_settings).performClick();
             return null;
         });
         settleLayout();
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            assertTrue(workspace.settingsVisible());
             for (int id : new int[]{R.id.appearance_warm_graphite,
-                    R.id.appearance_neutral_charcoal, R.id.appearance_light_charcoal}) {
+                    R.id.appearance_neutral_charcoal, R.id.appearance_light_charcoal,
+                    R.id.appearance_warm_light, R.id.appearance_cool_light}) {
                 assertNotNull("each approved appearance is offered",
-                        workspace.displayPopover().findViewById(id));
+                        workspace.settingsPage().findViewById(id));
             }
             final double[] after = nativeSnapshot();
             assertArrayEquals("opening the appearance list touches nothing:"
                     + describeSnapshotDifference(before, after), before, after, 0.0);
-            workspace.globalToolbar().findViewById(R.id.display_settings_button)
-                    .performClick();
+            workspace.findViewById(R.id.settings_back).performClick();
             return null;
         });
         settleLayout();

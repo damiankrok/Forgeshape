@@ -906,8 +906,10 @@ void checkDisplaySettings(Recorder& r) {
 
     r.check("display_viewport_background_default_is_warm_graphite",
             kDefaultViewportBackground == ViewportBackground::WarmGraphite);
-    r.check("display_viewport_background_has_three_appearances",
-            kViewportBackgroundCount == 3);
+    // Five since UI-PREF-R1: the three dark grounds keep their indices — the
+    // index is what crosses JNI — and the two light grounds are appended.
+    r.check("display_viewport_background_has_five_appearances",
+            kViewportBackgroundCount == 5);
 
     ViewportBackground background = ViewportBackground::LightCharcoal;
     r.check("display_viewport_background_index_0_is_warm_graphite",
@@ -919,6 +921,12 @@ void checkDisplaySettings(Recorder& r) {
     r.check("display_viewport_background_index_2_is_light_charcoal",
             viewportBackgroundFromIndex(2, &background) &&
                 background == ViewportBackground::LightCharcoal);
+    r.check("display_viewport_background_index_3_is_warm_light",
+            viewportBackgroundFromIndex(3, &background) &&
+                background == ViewportBackground::WarmLight);
+    r.check("display_viewport_background_index_4_is_cool_light",
+            viewportBackgroundFromIndex(4, &background) &&
+                background == ViewportBackground::CoolLight);
     r.check("display_viewport_background_refuses_negative",
             !viewportBackgroundFromIndex(-1, &background));
     r.check("display_viewport_background_refuses_out_of_range",
@@ -926,7 +934,16 @@ void checkDisplaySettings(Recorder& r) {
     r.check("display_viewport_background_index_round_trips",
             viewportBackgroundIndex(ViewportBackground::WarmGraphite) == 0 &&
                 viewportBackgroundIndex(ViewportBackground::NeutralCharcoal) == 1 &&
-                viewportBackgroundIndex(ViewportBackground::LightCharcoal) == 2);
+                viewportBackgroundIndex(ViewportBackground::LightCharcoal) == 2 &&
+                viewportBackgroundIndex(ViewportBackground::WarmLight) == 3 &&
+                viewportBackgroundIndex(ViewportBackground::CoolLight) == 4);
+    // The one question every per-ground tool colour asks, answered once.
+    r.check("display_only_the_two_light_grounds_are_light",
+            !viewportBackgroundIsLight(ViewportBackground::WarmGraphite) &&
+                !viewportBackgroundIsLight(ViewportBackground::NeutralCharcoal) &&
+                !viewportBackgroundIsLight(ViewportBackground::LightCharcoal) &&
+                viewportBackgroundIsLight(ViewportBackground::WarmLight) &&
+                viewportBackgroundIsLight(ViewportBackground::CoolLight));
 
     r.check("display_store_background_starts_at_the_default",
             store.viewportBackground() == ViewportBackground::WarmGraphite);
@@ -966,10 +983,69 @@ void checkDisplaySettings(Recorder& r) {
             neutral[2] > neutral[1] && neutral[1] > neutral[0]);
     r.check("display_light_charcoal_is_the_lightest_ground",
             lightest[0] > warm[0] && lightest[0] > neutral[0]);
-    // Every ground in the set is DARK. A palette that had crept up into a light
-    // canvas would change what the whole product is.
-    r.check("display_every_ground_is_dark",
+    // The three ORIGINAL grounds are DARK, exactly as approved: a dark palette
+    // that had crept up into a light canvas would change what those three are.
+    r.check("display_every_dark_ground_is_dark",
             warm[0] < 0.4f && neutral[0] < 0.4f && lightest[0] < 0.4f);
+
+    // DISP-VBG-08/09 -- the two LIGHT grounds (UI-PREF-R1, UI-OWNER-42), pinned
+    // against colors.xml exactly as the dark three are, and separated from each
+    // other by the same warm/cool lean that separates Warm Graphite from
+    // Neutral Charcoal.
+    float warmLight[3];
+    float coolLight[3];
+    viewportBackgroundColor(ViewportBackground::WarmLight, warmLight);
+    r.check("display_warm_light_background_is_ede7dc",
+            nearly(warmLight[0], 0.929f) && nearly(warmLight[1], 0.906f) &&
+                nearly(warmLight[2], 0.863f));
+    viewportBackgroundColor(ViewportBackground::CoolLight, coolLight);
+    r.check("display_cool_light_background_is_e4e8ec",
+            nearly(coolLight[0], 0.894f) && nearly(coolLight[1], 0.910f) &&
+                nearly(coolLight[2], 0.925f));
+    r.check("display_warm_light_leans_warm",
+            warmLight[0] > warmLight[1] && warmLight[1] > warmLight[2]);
+    r.check("display_cool_light_leans_cool",
+            coolLight[2] > coolLight[1] && coolLight[1] > coolLight[0]);
+    r.check("display_every_light_ground_is_light",
+            warmLight[0] > 0.8f && warmLight[1] > 0.8f && warmLight[2] > 0.8f &&
+                coolLight[0] > 0.8f && coolLight[1] > 0.8f && coolLight[2] > 0.8f);
+    r.check("display_the_two_light_grounds_are_distinguishable",
+            std::fabs((warmLight[0] - warmLight[2]) - (coolLight[0] - coolLight[2])) > 0.05f);
+
+    // The gizmo stroke weight (UI-PREF-R1 F) lives in the same store on the
+    // same terms: a closed enum, a refusing index contract, a counted change.
+    r.check("display_gizmo_stroke_weight_default_is_regular",
+            kDefaultGizmoStrokeWeight == GizmoStrokeWeight::Regular &&
+                kGizmoStrokeWeightCount == 3);
+    GizmoStrokeWeight weight = GizmoStrokeWeight::Bold;
+    r.check("display_gizmo_stroke_weight_index_round_trips",
+            gizmoStrokeWeightFromIndex(0, &weight) && weight == GizmoStrokeWeight::Thin &&
+                gizmoStrokeWeightFromIndex(1, &weight) && weight == GizmoStrokeWeight::Regular &&
+                gizmoStrokeWeightFromIndex(2, &weight) && weight == GizmoStrokeWeight::Bold &&
+                gizmoStrokeWeightIndex(GizmoStrokeWeight::Thin) == 0 &&
+                gizmoStrokeWeightIndex(GizmoStrokeWeight::Regular) == 1 &&
+                gizmoStrokeWeightIndex(GizmoStrokeWeight::Bold) == 2);
+    r.check("display_gizmo_stroke_weight_refuses_unknown",
+            !gizmoStrokeWeightFromIndex(-1, &weight) &&
+                !gizmoStrokeWeightFromIndex(kGizmoStrokeWeightCount, &weight));
+    r.check("display_store_stroke_weight_starts_regular",
+            store.gizmoStrokeWeight() == GizmoStrokeWeight::Regular);
+    r.check("display_store_stroke_weight_no_op_reports_false",
+            !store.setGizmoStrokeWeight(GizmoStrokeWeight::Regular));
+    const uint64_t changesBeforeWeight = store.changeCount();
+    r.check("display_store_stroke_weight_change_reports_true_and_counts",
+            store.setGizmoStrokeWeight(GizmoStrokeWeight::Bold) &&
+                store.gizmoStrokeWeight() == GizmoStrokeWeight::Bold &&
+                store.changeCount() == changesBeforeWeight + 1 &&
+                store.snapshot().gizmoStrokeWeight == GizmoStrokeWeight::Bold);
+    r.check("display_stroke_weight_names_present",
+            std::strcmp(gizmoStrokeWeightName(GizmoStrokeWeight::Thin), "Thin") == 0 &&
+                std::strcmp(gizmoStrokeWeightName(GizmoStrokeWeight::Regular), "Regular") == 0 &&
+                std::strcmp(gizmoStrokeWeightName(GizmoStrokeWeight::Bold), "Bold") == 0 &&
+                std::strcmp(viewportBackgroundName(ViewportBackground::WarmLight), "WarmLight") ==
+                    0 &&
+                std::strcmp(viewportBackgroundName(ViewportBackground::CoolLight), "CoolLight") ==
+                    0);
 
     // A snapshot must be a coherent set, which is what a frame is recorded with.
     const ViewportDisplaySettings snapshot = store.snapshot();
@@ -1155,7 +1231,8 @@ void checkGridPalette(Recorder& r) {
         GridLineTier::Minor, GridLineTier::Major, GridLineTier::AxisX, GridLineTier::AxisZ};
     const ViewportBackground appearances[kViewportBackgroundCount] = {
         ViewportBackground::WarmGraphite, ViewportBackground::NeutralCharcoal,
-        ViewportBackground::LightCharcoal};
+        ViewportBackground::LightCharcoal, ViewportBackground::WarmLight,
+        ViewportBackground::CoolLight};
 
     float palette[kViewportBackgroundCount][kGridLineTierCount][4];
     float ground[kViewportBackgroundCount][3];
@@ -1200,21 +1277,24 @@ void checkGridPalette(Recorder& r) {
 
     // The direction of the contrast, which is what "readable" actually means.
     // Judged on the minor tier, which is the faintest and therefore the one
-    // that decides.
-    bool linesLift = true;
+    // that decides. Lines LIFT off a dark ground and SINK into a light one
+    // (UI-PREF-R1): the direction follows the ground family, never a member.
+    bool linesContrast = true;
     for (int a = 0; a < kViewportBackgroundCount; ++a) {
         const float bgLuma = (ground[a][0] + ground[a][1] + ground[a][2]) / 3.0f;
         const float minorLuma =
             (palette[a][0][0] + palette[a][0][1] + palette[a][0][2]) / 3.0f;
-        if (minorLuma <= bgLuma) {
-            linesLift = false;
+        const bool lifts = minorLuma > bgLuma;
+        if (lifts == viewportBackgroundIsLight(appearances[a])) {
+            linesContrast = false;
         }
     }
-    r.check("r1c2_07_lines_lift_off_every_ground", linesLift);
+    r.check("r1c2_07_lines_contrast_with_every_ground_in_the_right_direction", linesContrast);
 
-    // The lightest ground needs the most weight, or its floor reads as unlined.
-    // That is the whole reason three palettes exist rather than one.
-    r.check("r1c2_07_the_lightest_ground_carries_the_most_weight",
+    // The lightest DARK ground needs the most weight of the three, or its floor
+    // reads as unlined. That is the whole reason three dark palettes exist
+    // rather than one.
+    r.check("r1c2_07_the_lightest_dark_ground_carries_the_most_weight",
             palette[2][0][3] > palette[0][0][3] && palette[2][0][3] > palette[1][0][3]);
 
     // The weight ladder: a major line reads more strongly than a minor one and

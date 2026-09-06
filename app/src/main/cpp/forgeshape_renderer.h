@@ -285,6 +285,12 @@ private:
     bool createGizmoResources();
     void destroyGizmoResources();
     bool createGizmoPipeline();
+    // Re-uploads the canonical list when — and only when — the stroke weight
+    // preference (UI-PREF-R1 F) differs from the list the device holds. The
+    // one buffer is sized to the widest weight, so this is a copy and never a
+    // reallocation; a visual-size change touches nothing here, being a matrix.
+    bool syncGizmoGeometry();
+    bool uploadGizmoGeometry(GizmoStrokeWeight weight);
     // Records the gizmo last of all, on its own pipeline, with depth testing
     // OFF so a handle is reachable even where it lies inside the body it moves.
     // It writes no depth either, so it leaves the buffer exactly as the bodies
@@ -449,6 +455,10 @@ private:
     VkBuffer gizmoVertexBuffer_ = VK_NULL_HANDLE;
     VkDeviceMemory gizmoVertexMemory_ = VK_NULL_HANDLE;
     uint32_t gizmoVertexCount_ = 0;
+    // Which weight's list the device holds, so the draw reads the ranges of
+    // what was actually uploaded and a change is noticed once per frame.
+    GizmoStrokeWeight gizmoUploadedWeight_ = kDefaultGizmoStrokeWeight;
+    bool gizmoUploadedOnce_ = false;
 
     // Surface-dependent
     ANativeWindow* window_ = nullptr;

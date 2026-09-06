@@ -166,12 +166,15 @@ public final class ForgeShapeActivity extends Activity {
     }
 
     /**
-     * Puts this Activity into the appearance the process has chosen, and tells
+     * Puts this Activity into the appearance the user has chosen, and tells
      * native code what the viewport should be cleared to.
      *
-     * <p>Both halves come from the <b>one</b> UI-owned choice in
-     * {@link EditorUiState}, so the chrome and the viewport cannot disagree
-     * about which theme is in force. The derivation runs here and nowhere else.
+     * <p>Both halves come from the <b>one</b> persisted choice in
+     * {@link AppPreferences}, read through {@link AppPreferencesStore} BEFORE
+     * anything is inflated — so the first frame is already in the stored
+     * palette and there is no default-to-stored flicker — and the chrome and
+     * the viewport cannot disagree about which theme is in force. The
+     * derivation runs here and nowhere else.
      *
      * <p>The native call is the whole of what a theme means below JNI: a closed
      * viewport appearance index. No Android theme, no style, no colour authored
@@ -179,9 +182,64 @@ public final class ForgeShapeActivity extends Activity {
      * revision, rebuilds no geometry and re-uploads nothing.
      */
     private void applyTheme() {
-        final AppTheme theme = EditorUiState.currentAppTheme();
+        final AppTheme theme = AppPreferencesStore.current(this).palette();
         setTheme(theme.styleRes());
         NativeViewport.setViewportBackground(theme.viewportBackground());
+    }
+
+    /**
+     * Tells the system bars whether to draw their icons dark or light.
+     *
+     * <p>The theme already states this declaratively
+     * ({@code windowLightStatusBar}), and this restates it through the insets
+     * controller so the answer is the same object the test reads back and does
+     * not depend on which platform release resolved the attribute. A light
+     * palette gets dark icons; a dark palette keeps light ones.
+     */
+    private void applySystemBarAppearance() {
+        final boolean light = AppPreferencesStore.current(this).palette().isLight();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            final android.view.WindowInsetsController controller =
+                    getWindow().getInsetsController();
+            if (controller != null) {
+                final int mask = android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
+                        | android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;
+                controller.setSystemBarsAppearance(light ? mask : 0, mask);
+                Diagnostics.info(DiagnosticLog.CAT_LIFECYCLE, "SYSTEM_BARS",
+                        (light ? "light" : "dark") + " appearance="
+                                + controller.getSystemBarsAppearance());
+            }
+            return;
+        }
+        // minSdk is 26; there the flag-based API is the only one.
+        final View decor = getWindow().getDecorView();
+        int flags = decor.getSystemUiVisibility();
+        final int lightFlags = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+                | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+        flags = light ? (flags | lightFlags) : (flags & ~lightFlags);
+        decor.setSystemUiVisibility(flags);
+    }
+
+    /**
+     * Whether the system bars are drawing dark icons; verification.
+     *
+     * <p>Two platform sources are read, because the platform keeps two. The
+     * theme's `windowLightStatusBar` is applied by the window itself as the
+     * legacy light flag on the decor view, and an explicit request lands in
+     * the insets controller's appearance; either one means dark icons.
+     */
+    boolean systemBarsLight() {
+        final boolean legacyFlag = (getWindow().getDecorView().getSystemUiVisibility()
+                & View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR) != 0;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            final android.view.WindowInsetsController controller =
+                    getWindow().getInsetsController();
+            final boolean controlled = controller != null
+                    && (controller.getSystemBarsAppearance()
+                    & android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS) != 0;
+            return controlled || legacyFlag;
+        }
+        return legacyFlag;
     }
 
     /**
@@ -208,7 +266,8 @@ public final class ForgeShapeActivity extends Activity {
      * re-run.
      */
     void requestTheme(AppTheme theme) {
-        if (!EditorUiState.setCurrentAppTheme(theme)) {
+        final AppPreferences before = AppPreferencesStore.current(this);
+        if (theme == null || !AppPreferencesStore.update(this, before.withPalette(theme))) {
             return;  // already wearing it; recreating would flash for nothing
         }
         // The session state goes with it. Changing colour must not also snap
@@ -243,6 +302,18 @@ public final class ForgeShapeActivity extends Activity {
     }
 
     /**
+     * The insets controller exists only once the decor view is attached to a
+     * ViewRootImpl, which is after onCreate, so the system-bar appearance is
+     * restated here rather than beside the edge-to-edge flags. The theme's
+     * own `windowLightStatusBar` already covers the first frame.
+     */
+    @Override
+    public void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        applySystemBarAppearance();
+    }
+
+    /**
      * Re-reads the authoritative native state after a resume.
      *
      * <p>Native state survives home/resume untouched, so this is a display
@@ -254,6 +325,9 @@ public final class ForgeShapeActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        // Restated on every resume as well as at attach: the window is
+        // attached by now on every release, and the call is idempotent.
+        applySystemBarAppearance();
         Diagnostics.info(DiagnosticLog.CAT_LIFECYCLE, "ACTIVITY_RESUME", null);
         if (workspace != null) {
             workspace.syncFromNative();

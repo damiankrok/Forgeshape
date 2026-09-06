@@ -400,8 +400,9 @@ public final class EditorWorkspaceChromeCompositionTest {
     // -----------------------------------------------------------------------
 
     /**
-     * UIR4C-11. The appearance set is still three, and the composition cleanup
-     * introduced no colour.
+     * UIR4C-11. The appearance set is the approved one — five since
+     * `UI-PREF-R1` (UI-OWNER-42) — and the composition cleanup introduced no
+     * colour.
      *
      * <p>The lone transition control needed a background at the capsule's own
      * radius rather than at the member radius inside it. That is a corner, not a
@@ -410,13 +411,13 @@ public final class EditorWorkspaceChromeCompositionTest {
      * fourth value of a twelve-value approved palette.
      *
      * <p>Resolved through a {@link ContextThemeWrapper} per appearance rather
-     * than by switching the running one, so all three are asserted in one case
+     * than by switching the running one, so all five are asserted in one case
      * and none of them depends on an Activity recreation landing.
      */
     @Test
-    public void uir4c11_theThreeAppearancesKeepTheirExactValues() {
+    public void uir4c11_theApprovedAppearancesKeepTheirExactValues() {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            assertEquals("exactly three appearances", 3, AppTheme.values().length);
+            assertEquals("exactly five appearances", 5, AppTheme.values().length);
             for (AppTheme theme : AppTheme.values()) {
                 final Context themed = new ContextThemeWrapper(activity, theme.styleRes());
                 assertEquals(theme + ": the lone primary form takes the member form's fill",

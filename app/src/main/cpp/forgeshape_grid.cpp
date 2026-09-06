@@ -81,11 +81,13 @@ void gridLineColor(ViewportBackground background, GridLineTier tier, float* outR
         float axisZ[4];
     };
 
-    // All three grounds are dark, so all three lift the lines LIGHTER than the
-    // floor and differ only in how much weight that takes. A lighter ground
-    // needs more alpha to say the same thing, which is why these are three
-    // palettes rather than one: the same alpha that is a whisper over #26282A
-    // is invisible over #3C3F41.
+    // The three dark grounds lift the lines LIGHTER than the floor and differ
+    // only in how much weight that takes. A lighter ground needs more alpha to
+    // say the same thing, which is why these are three palettes rather than
+    // one: the same alpha that is a whisper over #26282A is invisible over
+    // #3C3F41. The two LIGHT grounds (UI-PREF-R1) invert the direction and
+    // nothing else: lines sink DARKER than the paper, still by alpha, still
+    // with a warm X and a cool Z, and the three dark palettes are untouched.
 
     // Over #302E2B. Warm-neutral lines over a warm ground.
     static const Palette kWarmGraphite = {
@@ -112,11 +114,30 @@ void gridLineColor(ViewportBackground background, GridLineTier tier, float* outR
         {0.52f, 0.70f, 0.92f, 0.56f},
     };
 
+    // Over #EDE7DC. Warm-neutral ink over cream; the darkest line is still
+    // blended at well under half weight so the paper stays paper.
+    static const Palette kWarmLight = {
+        {0.36f, 0.33f, 0.28f, 0.16f},
+        {0.30f, 0.27f, 0.22f, 0.30f},
+        {0.72f, 0.30f, 0.14f, 0.55f},
+        {0.16f, 0.38f, 0.72f, 0.55f},
+    };
+
+    // Over #E4E8EC. Cool-neutral ink over steel paper.
+    static const Palette kCoolLight = {
+        {0.28f, 0.32f, 0.37f, 0.16f},
+        {0.22f, 0.26f, 0.31f, 0.30f},
+        {0.72f, 0.30f, 0.14f, 0.55f},
+        {0.14f, 0.36f, 0.72f, 0.55f},
+    };
+
     const Palette* selected = &kWarmGraphite;
     switch (background) {
         case ViewportBackground::WarmGraphite: selected = &kWarmGraphite; break;
         case ViewportBackground::NeutralCharcoal: selected = &kNeutralCharcoal; break;
         case ViewportBackground::LightCharcoal: selected = &kLightCharcoal; break;
+        case ViewportBackground::WarmLight: selected = &kWarmLight; break;
+        case ViewportBackground::CoolLight: selected = &kCoolLight; break;
     }
     const Palette& palette = *selected;
 

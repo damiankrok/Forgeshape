@@ -644,6 +644,8 @@ struct GizmoVertexWriter {
     GizmoVertex* out;
     int capacity;
     int written;
+    // The bundle recipe every stroke follows. See GizmoStrokeStyle.
+    GizmoStrokeStyle style;
 
     void line(const Vec3& a, const Vec3& b, GizmoAxis colorAxis, GizmoHandle handle) {
         if (written + 2 > capacity) {
@@ -659,6 +661,57 @@ struct GizmoVertexWriter {
             out[written].axis = tag;
             out[written].handle = handleCode;
             ++written;
+        }
+    }
+
+    // The offsets one bundled stroke is drawn at, perpendicular to a direction.
+    //
+    // Five is the + pattern (centre, ±u, ±v at one spread); thirteen adds the x
+    // pattern between them and a second + one spread further out, so the band
+    // is FILLED rather than fanned. Returns how many were written.
+    int bundleOffsets(const Vec3& u, const Vec3& v, int count, Vec3* offsets) const {
+        const float s = style.spread;
+        int n = 0;
+        offsets[n++] = Vec3{0.0f, 0.0f, 0.0f};
+        if (count >= 5) {
+            offsets[n++] = vec3Scale(u, s);
+            offsets[n++] = vec3Scale(u, -s);
+            offsets[n++] = vec3Scale(v, s);
+            offsets[n++] = vec3Scale(v, -s);
+        }
+        if (count >= 13) {
+            const float d = s * 0.70710678f;
+            offsets[n++] = vec3Add(vec3Scale(u, d), vec3Scale(v, d));
+            offsets[n++] = vec3Add(vec3Scale(u, d), vec3Scale(v, -d));
+            offsets[n++] = vec3Add(vec3Scale(u, -d), vec3Scale(v, d));
+            offsets[n++] = vec3Add(vec3Scale(u, -d), vec3Scale(v, -d));
+            offsets[n++] = vec3Scale(u, 2.0f * s);
+            offsets[n++] = vec3Scale(u, -2.0f * s);
+            offsets[n++] = vec3Scale(v, 2.0f * s);
+            offsets[n++] = vec3Scale(v, -2.0f * s);
+        }
+        return n;
+    }
+
+    // One stroke of ANY direction as a bundle: the perpendicular pair is derived
+    // from the segment itself. Used for the arrowhead strokes, whose direction is
+    // not a basis axis. A count of 1 is the plain line.
+    void bundledLine(const Vec3& a, const Vec3& b, GizmoAxis colorAxis, GizmoHandle handle,
+                     int count) {
+        if (count <= 1) {
+            line(a, b, colorAxis, handle);
+            return;
+        }
+        const Vec3 direction = vec3Normalize(vec3Sub(b, a));
+        // Any axis not parallel to the stroke gives a usable perpendicular.
+        const Vec3 helper = std::fabs(direction.y) < 0.9f ? Vec3{0.0f, 1.0f, 0.0f}
+                                                          : Vec3{1.0f, 0.0f, 0.0f};
+        const Vec3 u = vec3Normalize(vec3Cross(direction, helper));
+        const Vec3 v = vec3Cross(direction, u);
+        Vec3 offsets[kGizmoStrokeBundleMax];
+        const int n = bundleOffsets(u, v, count, offsets);
+        for (int i = 0; i < n; ++i) {
+            line(vec3Add(a, offsets[i]), vec3Add(b, offsets[i]), colorAxis, handle);
         }
     }
 
@@ -694,8 +747,8 @@ struct GizmoVertexWriter {
         const GizmoAxis colorAxis = gizmoHandleColorAxis(handle);
         const Vec3 u = canonicalAxis(a);
         const Vec3 v = canonicalAxis(b);
-        for (int pass = 0; pass < 2; ++pass) {
-            const float grow = static_cast<float>(pass) * kGizmoStrokeOffsetUnits;
+        for (int pass = 0; pass < style.squarePasses; ++pass) {
+            const float grow = static_cast<float>(pass) * style.spread;
             const float inner = kGizmoPlaneInnerUnits - grow;
             const float outer = kGizmoPlaneOuterUnits + grow;
             const Vec3 corners[4] = {
@@ -750,14 +803,12 @@ struct GizmoVertexWriter {
         const Vec3 u = canonicalAxis(ui);
         const Vec3 v = canonicalAxis(vi);
         const Vec3 end = vec3Scale(direction, shaftEnd);
-        const Vec3 strokeOffsets[kGizmoStrokeBundle] = {
-            Vec3{0.0f, 0.0f, 0.0f},
-            vec3Scale(u, kGizmoStrokeOffsetUnits),
-            vec3Scale(u, -kGizmoStrokeOffsetUnits),
-            vec3Scale(v, kGizmoStrokeOffsetUnits),
-            vec3Scale(v, -kGizmoStrokeOffsetUnits),
-        };
-        for (int s = 0; s < kGizmoStrokeBundle; ++s) {
+        // The + pattern at one spread is exactly the Regular bundle; the wider
+        // recipes add to it and never move it, so the centre line of every
+        // weight is the same line.
+        Vec3 strokeOffsets[kGizmoStrokeBundleMax];
+        const int n = bundleOffsets(u, v, style.shaftBundle, strokeOffsets);
+        for (int s = 0; s < n; ++s) {
             line(strokeOffsets[s], vec3Add(end, strokeOffsets[s]), colorAxis, handle);
         }
     }
@@ -765,18 +816,21 @@ struct GizmoVertexWriter {
 
 }  // namespace
 
-bool gizmoVertexRange(GizmoMode mode, int* outFirst, int* outCount) {
-    int first = kGizmoMoveFirstVertex;
-    int count = kGizmoMoveVertexCount;
+bool gizmoVertexRange(GizmoMode mode, GizmoStrokeWeight weight, int* outFirst, int* outCount) {
+    const int move = 2 * gizmoMoveLineCountFor(weight);
+    const int rotate = 2 * gizmoRotateLineCountFor(weight);
+    const int scale = 2 * gizmoScaleLineCountFor(weight);
+    int first = 0;
+    int count = move;
     switch (mode) {
         case GizmoMode::Move: break;
         case GizmoMode::Rotate:
-            first = kGizmoRotateFirstVertex;
-            count = kGizmoRotateVertexCount;
+            first = move;
+            count = rotate;
             break;
         case GizmoMode::Scale:
-            first = kGizmoScaleFirstVertex;
-            count = kGizmoScaleVertexCount;
+            first = move + rotate;
+            count = scale;
             break;
     }
     if (outFirst) *outFirst = first;
@@ -784,11 +838,20 @@ bool gizmoVertexRange(GizmoMode mode, int* outFirst, int* outCount) {
     return count > 0;
 }
 
+bool gizmoVertexRange(GizmoMode mode, int* outFirst, int* outCount) {
+    return gizmoVertexRange(mode, GizmoStrokeWeight::Regular, outFirst, outCount);
+}
+
 int generateGizmoVertices(GizmoVertex* out, int capacity) {
-    if (out == nullptr || capacity < kGizmoVertexCount) {
+    return generateGizmoVertices(out, capacity, GizmoStrokeWeight::Regular);
+}
+
+int generateGizmoVertices(GizmoVertex* out, int capacity, GizmoStrokeWeight weight) {
+    if (out == nullptr || capacity < gizmoVertexCountFor(weight)) {
         return 0;
     }
-    GizmoVertexWriter writer{out, capacity, 0};
+    const GizmoStrokeStyle style = gizmoStrokeStyle(weight);
+    GizmoVertexWriter writer{out, capacity, 0, style};
 
     // --- Move: pivot mark, shafts, arrowheads, plane squares -------------
     const float length = kGizmoHandleLengthUnits;
@@ -815,12 +878,13 @@ int generateGizmoVertices(GizmoVertex* out, int capacity) {
                                 vec3Scale(canonicalAxis(vi), arrowHalfWidth),
                                 vec3Scale(canonicalAxis(vi), -arrowHalfWidth)};
         for (int s = 0; s < 4; ++s) {
-            writer.line(tip, vec3Add(base, spokes[s]), axisFromIndex(i), axisHandleFromIndex(i));
+            writer.bundledLine(tip, vec3Add(base, spokes[s]), axisFromIndex(i),
+                               axisHandleFromIndex(i), style.arrowBundle);
         }
-        writer.line(vec3Add(base, spokes[0]), vec3Add(base, spokes[1]), axisFromIndex(i),
-                    axisHandleFromIndex(i));
-        writer.line(vec3Add(base, spokes[2]), vec3Add(base, spokes[3]), axisFromIndex(i),
-                    axisHandleFromIndex(i));
+        writer.bundledLine(vec3Add(base, spokes[0]), vec3Add(base, spokes[1]), axisFromIndex(i),
+                           axisHandleFromIndex(i), style.arrowBundle);
+        writer.bundledLine(vec3Add(base, spokes[2]), vec3Add(base, spokes[3]), axisFromIndex(i),
+                           axisHandleFromIndex(i), style.arrowBundle);
     }
     for (int p = 0; p < 3; ++p) {
         writer.planeSquare(kPlaneHandles[p]);
@@ -837,8 +901,11 @@ int generateGizmoVertices(GizmoVertex* out, int capacity) {
     // shafts are bundled. The HIT test still measures against the nominal radius
     // alone: the corridor is 48 units wide and a one-unit ring thickness is
     // inside it, so what is drawn and what can be grabbed do not disagree.
-    const float radii[2] = {kGizmoRingRadiusUnits,
-                            kGizmoRingRadiusUnits + kGizmoStrokeOffsetUnits};
+    // Two passes at r and r+s is the Regular recipe; four passes run from r-s
+    // to r+2s, so the nominal radius is always one of the passes drawn.
+    float radii[4] = {kGizmoRingRadiusUnits, kGizmoRingRadiusUnits + style.spread,
+                      kGizmoRingRadiusUnits - style.spread,
+                      kGizmoRingRadiusUnits + 2.0f * style.spread};
     // The same neutral pivot mark Move has. Three rings around a point with
     // nothing at the point does not say where the rotation is centred, and the
     // centre is the one thing a rotation is entirely about.
@@ -849,7 +916,7 @@ int generateGizmoVertices(GizmoVertex* out, int capacity) {
         gizmoPerpendicularIndices(i, &ui, &vi);
         const Vec3 u = canonicalAxis(ui);
         const Vec3 v = canonicalAxis(vi);
-        for (int pass = 0; pass < 2; ++pass) {
+        for (int pass = 0; pass < style.ringPasses; ++pass) {
             const float radius = radii[pass];
             for (int s = 0; s < kGizmoRingSegments; ++s) {
                 const float a0 = kTwoPi * static_cast<float>(s) /
@@ -874,8 +941,11 @@ int generateGizmoVertices(GizmoVertex* out, int capacity) {
     for (int i = 0; i < 3; ++i) {
         const float cubeCentre = length - kGizmoScaleCubeHalfUnits;
         writer.axisShaft(i, cubeCentre);
-        writer.cube(vec3Scale(canonicalAxis(i), cubeCentre), kGizmoScaleCubeHalfUnits,
-                    axisFromIndex(i), axisHandleFromIndex(i));
+        for (int outline = 0; outline < style.axisCubeOutlines; ++outline) {
+            writer.cube(vec3Scale(canonicalAxis(i), cubeCentre),
+                        kGizmoScaleCubeHalfUnits + static_cast<float>(outline) * style.spread,
+                        axisFromIndex(i), axisHandleFromIndex(i));
+        }
     }
     for (int p = 0; p < 3; ++p) {
         writer.planeSquare(kPlaneHandles[p]);
@@ -887,12 +957,21 @@ int generateGizmoVertices(GizmoVertex* out, int capacity) {
     // pivot mark is drawn in Scale: this cube is what stands on that point, and
     // a reference mark and a control sharing one point is exactly what made the
     // control unreadable.
-    writer.cube(Vec3{0.0f, 0.0f, 0.0f}, kGizmoUniformCubeHalfUnits, GizmoAxis::None,
-                GizmoHandle::Uniform);
-    writer.cube(Vec3{0.0f, 0.0f, 0.0f}, kGizmoUniformCubeHalfUnits + kGizmoStrokeOffsetUnits,
-                GizmoAxis::None, GizmoHandle::Uniform);
+    for (int outline = 0; outline < style.uniformOutlines; ++outline) {
+        writer.cube(Vec3{0.0f, 0.0f, 0.0f},
+                    kGizmoUniformCubeHalfUnits + static_cast<float>(outline) * style.spread,
+                    GizmoAxis::None, GizmoHandle::Uniform);
+    }
 
     return writer.written;
+}
+
+float gizmoPlacementScale(const GizmoSnapshot& state) {
+    return state.worldPerReferenceUnit * state.visualScale;
+}
+
+bool gizmoVisualScaleIsValid(float scale) {
+    return std::isfinite(scale) && scale >= kGizmoMinVisualScale && scale <= kGizmoMaxVisualScale;
 }
 
 Vec3 gizmoRingGrabOffset(GizmoAxis axis, float radius) {
@@ -926,7 +1005,8 @@ bool gizmoHandleGrabPoint(const GizmoSnapshot& state, GizmoHandle handle, Vec3* 
     auto basisAxis = [&basis](int index) {
         return Vec3{basis.m[index * 4 + 0], basis.m[index * 4 + 1], basis.m[index * 4 + 2]};
     };
-    const float scale = state.worldPerReferenceUnit;
+    // PLACED at the visual size, exactly as the renderer draws it.
+    const float scale = gizmoPlacementScale(state);
 
     if (handle == GizmoHandle::Uniform) {
         *out = state.pivot;
@@ -1004,8 +1084,15 @@ const GizmoPalette kLightPalette = {
     0.18f,
 };
 
+// Light Charcoal has always taken the saturated palette, and the two LIGHT
+// grounds of UI-PREF-R1 take it for the reason it was authored: contrast against
+// a pale ground needs darker, more saturated hues. The two darker grounds are
+// untouched.
 const GizmoPalette& paletteFor(ViewportBackground background) {
-    return (background == ViewportBackground::LightCharcoal) ? kLightPalette : kDarkPalette;
+    return (background == ViewportBackground::LightCharcoal ||
+            viewportBackgroundIsLight(background))
+               ? kLightPalette
+               : kDarkPalette;
 }
 
 }  // namespace
@@ -1099,6 +1186,14 @@ bool GizmoSession::setSpace(GizmoSpace space) {
     return true;
 }
 
+bool GizmoSession::setVisualScale(float scale) {
+    if (!gizmoVisualScaleIsValid(scale)) {
+        return false;
+    }
+    visualScale_ = scale;
+    return true;
+}
+
 GizmoSnapshot GizmoSession::snapshot(const CameraSnapshot& camera, int viewportWidth,
                                      int viewportHeight) const {
     GizmoSnapshot out;
@@ -1132,6 +1227,7 @@ GizmoSnapshot GizmoSession::snapshot(const CameraSnapshot& camera, int viewportW
     out.orientation = gizmoBasisMatrix(capturing_ ? basis_
                                                   : gizmoBasisFor(space_, values));
     out.worldPerReferenceUnit = scale;
+    out.visualScale = visualScale_;
     return out;
 }
 
@@ -1222,7 +1318,7 @@ GizmoHandle GizmoSession::hitTest(const CameraSnapshot& camera, float screenX, f
                 // which is what keeps a ring grabbable from every camera angle
                 // instead of only the face-on ones.
                 const int axisIndex = gizmoHandleAxisIndex(handle);
-                const float radius = kGizmoRingRadiusUnits * state.worldPerReferenceUnit;
+                const float radius = kGizmoRingRadiusUnits * gizmoPlacementScale(state);
                 int ui = 0;
                 int vi = 0;
                 gizmoPerpendicularIndices(axisIndex, &ui, &vi);
@@ -1259,7 +1355,7 @@ GizmoHandle GizmoSession::hitTest(const CameraSnapshot& camera, float screenX, f
             } else {
                 const int axisIndex = gizmoHandleAxisIndex(handle);
                 const Vec3 direction = basisAxis(axisIndex);
-                const float length = kGizmoHandleLengthUnits * state.worldPerReferenceUnit;
+                const float length = kGizmoHandleLengthUnits * gizmoPlacementScale(state);
                 const Vec3 start = vec3Add(
                     state.pivot, vec3Scale(direction, length * kGizmoShaftGrabStartFraction));
                 const Vec3 end =
@@ -1431,9 +1527,20 @@ bool GizmoSession::beginDrag(int32_t pointerId, const CameraSnapshot& camera, fl
             // sensitivity depend on where along the handle the user grabbed.
             Vec3 reference{};
             bool haveReference = false;
+            // The reference is measured on a CANONICAL snapshot -- the visual size
+            // preference set aside -- so a plane handle's centre and a shaft's
+            // length are the same ruler at every visual size.
+            GizmoSnapshot canonical = state;
+            canonical.visualScale = kGizmoDefaultVisualScale;
             if (gizmoHandleIsPlane(handle_)) {
-                haveReference = gizmoHandleGrabPoint(state, handle_, &reference);
+                haveReference = gizmoHandleGrabPoint(canonical, handle_, &reference);
             } else {
+                // At the CANONICAL scale, deliberately not the visual one: the
+                // reference length is the ruler a scale drag is measured
+                // against, and the visual size preference must change how the
+                // instrument looks and never how far a drag stretches the body.
+                // (A plane handle's reference is its centre, which the visual
+                // scale does move; the uniform handle's is a constant.)
                 reference = vec3Add(pivot_,
                                     vec3Scale(basisDirection(axisIndex),
                                               kGizmoHandleLengthUnits * state.worldPerReferenceUnit));

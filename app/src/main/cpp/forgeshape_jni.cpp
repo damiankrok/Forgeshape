@@ -2590,6 +2590,58 @@ Java_com_forgeshape_app_NativeViewport_setGizmoPixelScale(JNIEnv*, jclass, jfloa
     return accepted ? JNI_TRUE : JNI_FALSE;
 }
 
+// The VISUAL SIZE preference (UI-PREF-R1 E): how large the instrument is drawn
+// and placed, as a bounded multiplier the Android layer persists. Presentation
+// on the mode's terms — no revision, no publication, no history, no change to
+// what a drag does — and refused outside the domain's bounds rather than
+// clamped, leaving the current size standing. Taken under the state lock like
+// the mode, because the session is.
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_setGizmoVisualScale(JNIEnv*, jclass, jfloat scale) {
+    bool accepted = false;
+    float inEffect = forgeshape::kGizmoDefaultVisualScale;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        accepted = forgeshape::gizmoSession().setVisualScale(static_cast<float>(scale));
+        inEffect = forgeshape::gizmoSession().visualScale();
+    }
+    FS_LOGI("FORGESHAPE_GIZMO_VISUAL_SCALE:%.3f requested=%.3f accepted=%d", (double)inEffect,
+            (double)scale, accepted ? 1 : 0);
+    return accepted ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jfloat JNICALL
+Java_com_forgeshape_app_NativeViewport_gizmoVisualScale(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    return static_cast<jfloat>(forgeshape::gizmoSession().visualScale());
+}
+
+// The STROKE WEIGHT preference (UI-PREF-R1 F), on the display store's terms:
+// no lock, a closed index that is refused if unrecognised, and the answer is
+// what is actually in effect afterwards. Its one consequence is that the
+// renderer re-uploads the gizmo's canonical vertex list before its next frame.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_setGizmoStrokeWeight(JNIEnv*, jclass, jint weightIndex) {
+    forgeshape::DisplaySettingsStore& settings = forgeshape::displaySettings();
+    forgeshape::GizmoStrokeWeight requested = settings.gizmoStrokeWeight();
+    const bool known =
+        forgeshape::gizmoStrokeWeightFromIndex(static_cast<int>(weightIndex), &requested);
+    bool changed = false;
+    if (known) {
+        changed = settings.setGizmoStrokeWeight(requested);
+    }
+    FS_LOGI("FORGESHAPE_GIZMO_STROKE_WEIGHT:%s requested=%d known=%d changed=%d",
+            forgeshape::gizmoStrokeWeightName(settings.gizmoStrokeWeight()),
+            static_cast<int>(weightIndex), known ? 1 : 0, changed ? 1 : 0);
+    return static_cast<jint>(forgeshape::gizmoStrokeWeightIndex(settings.gizmoStrokeWeight()));
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_gizmoStrokeWeight(JNIEnv*, jclass) {
+    return static_cast<jint>(
+        forgeshape::gizmoStrokeWeightIndex(forgeshape::displaySettings().gizmoStrokeWeight()));
+}
+
 // World or Local. Presentation state on the same terms as the mode: no
 // revision, no publication, no history. Returns false for an unknown index,
 // while a drag is captured, and for World while the mode is Scale — a

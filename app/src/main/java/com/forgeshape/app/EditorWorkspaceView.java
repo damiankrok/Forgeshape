@@ -65,6 +65,7 @@ final class EditorWorkspaceView extends FrameLayout
         ObjectsCapsuleView.OnObjectsCapsuleAction,
         AddPrimitivePaletteView.OnPrimitiveChosen,
         HomeView.OnHomeAction,
+        SettingsPageView.OnSettingsAction,
         NewProjectChooserView.OnNewProjectChoice,
         UnsavedChangesPromptView.OnUnsavedChoice,
         SketchEditorView.OnSketchAction,
@@ -155,6 +156,16 @@ final class EditorWorkspaceView extends FrameLayout
      *  left; which of them is drawn is decided by {@link #refreshShellPhase}. */
     private final HomeView home;
     private final NewProjectChooserView newProjectChooser;
+    /** The Settings page (`UI-PREF-R1` A): the persistent application
+     *  preferences, a start page reached from Home and from the Project
+     *  surface alike. Whether it stands is UI state carried across the
+     *  recreation a palette change performs. */
+    private final SettingsPageView settingsPage;
+    /** The weighted gap in the middle row where the model shows. Kept so the
+     *  handedness preference can re-seat the row's members around it. */
+    private final View middleSpacer;
+    /** Which edge the rail zone was last seated on; null until the first. */
+    private Boolean appliedLeftHanded;
     private final UnsavedChangesPromptView unsavedPrompt;
     private final RecoveryPromptView recoveryPrompt;
 
@@ -501,7 +512,8 @@ final class EditorWorkspaceView extends FrameLayout
 
         // The empty middle is where the model lives. It is a weighted gap with
         // no background and no listener, so it costs the viewport nothing.
-        middleRow.addView(EditorControlStyles.spacer(context));
+        middleSpacer = EditorControlStyles.spacer(context);
+        middleRow.addView(middleSpacer);
 
         trailingHost = new WorkspaceTrailingHostView(context, this);
 
@@ -647,6 +659,16 @@ final class EditorWorkspaceView extends FrameLayout
         addView(newProjectChooser, new LayoutParams(
                 LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
 
+        // The Settings page (UI-PREF-R1) is a start page on the same terms:
+        // full-window, opaque, its own content insets, added to THIS view so it
+        // stands over the chrome and the overlay alike. Over an open project it
+        // stands in front of the workspace exactly as New Project does, and the
+        // viewport is not reachable through it.
+        settingsPage = new SettingsPageView(context, this);
+        settingsPage.setVisibility(GONE);
+        addView(settingsPage, new LayoutParams(
+                LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
+
         // The unsaved-changes and recovery questions stay CHOOSER surfaces on
         // the scrim: each is asked over a live project the user can see, which
         // is the moment a modal is the right shape.
@@ -673,6 +695,13 @@ final class EditorWorkspaceView extends FrameLayout
 
         installInsetListener();
         syncFromNative();
+
+        // The persisted presentation preferences (UI-PREF-R1), applied once
+        // per workspace: the gizmo's two values are pushed down to native
+        // presentation state, and the rail zone is seated on the chosen edge.
+        // The palette was applied by the Activity before this view existed.
+        pushGizmoPreferences();
+        applyHandedness(currentPreferences().handedness());
 
         autosave = new AutosaveController(context);
 
@@ -768,7 +797,7 @@ final class EditorWorkspaceView extends FrameLayout
 
     /** Whether a Back press has a surface to close before it may leave. */
     boolean hasDismissibleSurface() {
-        return unsavedPromptVisible() || newProjectChooserVisible()
+        return unsavedPromptVisible() || settingsVisible() || newProjectChooserVisible()
                 || NativeViewport.supportChooserActive() || bootstrapVisible()
                 || topmostOpenSurface() != null;
     }
@@ -811,6 +840,11 @@ final class EditorWorkspaceView extends FrameLayout
         // Home with nothing open, Back is not ours and leaves the app.
         if (unsavedPromptVisible()) {
             onUnsavedCancelRequested();
+            return true;
+        }
+        // Settings is one step from wherever it was opened, in every phase.
+        if (settingsVisible()) {
+            onSettingsBackRequested();
             return true;
         }
         if (newProjectChooserVisible()) {
@@ -915,6 +949,7 @@ final class EditorWorkspaceView extends FrameLayout
         // its CONTENT is, by the same rect the chrome uses. See StartPageView.
         home.applyContentInsets(padding);
         newProjectChooser.applyContentInsets(padding);
+        settingsPage.applyContentInsets(padding);
         // The keyboard is root-owned padding. The right host keeps the same
         // vertical grammar and scrolls inside its fixed external geometry when
         // less height is available.
@@ -1322,9 +1357,11 @@ final class EditorWorkspaceView extends FrameLayout
         // nearest to.
         final boolean upward = bounds.centerY() > getHeight() / 2;
         params.gravity = (upward ? Gravity.BOTTOM : Gravity.TOP) | Gravity.START;
-        params.leftMargin = Math.max(0,
-                Math.min(bounds.left, trailingLimitFor(invoker, width, gap) - width)
-                        - overlayRoot.getPaddingLeft());
+        int left = Math.min(bounds.left, trailingLimitFor(invoker, width, gap) - width);
+        // With the rail zone on the LEFT edge (UI-PREF-R1 C) the surface must
+        // start clear of it: the same rule as the trailing limit, mirrored.
+        left = Math.max(left, leadingLimitFor(invoker, width, gap));
+        params.leftMargin = Math.max(0, left - overlayRoot.getPaddingLeft());
         params.rightMargin = 0;
         params.topMargin = upward ? 0
                 : Math.max(0, bounds.bottom + gap - overlayRoot.getPaddingTop());
@@ -1359,7 +1396,7 @@ final class EditorWorkspaceView extends FrameLayout
      */
     private int trailingLimitFor(View invoker, int width, int gap) {
         final int windowLimit = getWidth() - gap;
-        if (!trailingHost.isShown() || isInTrailingCluster(invoker)) {
+        if (!trailingHost.isShown() || isInTrailingCluster(invoker) || leftHanded()) {
             return windowLimit;
         }
         int limit = windowLimit;
@@ -1375,6 +1412,30 @@ final class EditorWorkspaceView extends FrameLayout
         // seat it beside the cluster is still laid out, at the leading edge,
         // rather than at a negative margin.
         return Math.max(limit, width);
+    }
+
+    /**
+     * How far LEFT an anchored surface must start so it stands clear of a rail
+     * zone seated on the left edge: the mirror of {@link #trailingLimitFor},
+     * and zero -- no constraint -- while the rail is on the right.
+     */
+    private int leadingLimitFor(View invoker, int width, int gap) {
+        if (!leftHanded() || !trailingHost.isShown() || isInTrailingCluster(invoker)) {
+            return 0;
+        }
+        int limit = 0;
+        for (View surface : new View[]{trailingHost, sideInspector()}) {
+            if (surface == null) {
+                continue;
+            }
+            final Rect bounds = new Rect(0, 0, surface.getWidth(), surface.getHeight());
+            offsetDescendantRectToMyCoords(surface, bounds);
+            limit = Math.max(limit, bounds.right + gap);
+        }
+        // Never so far that the surface leaves the window: a window too narrow
+        // to seat it beside the cluster still lays it out, at the trailing
+        // edge, rather than off screen.
+        return Math.min(limit, Math.max(0, getWidth() - gap - width));
     }
 
     /** The precision surface while it is laid out beside the model, else null. */
@@ -1469,17 +1530,18 @@ final class EditorWorkspaceView extends FrameLayout
         final LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 widthPx, ViewGroup.LayoutParams.WRAP_CONTENT);
         params.gravity = Gravity.TOP;
-        params.leftMargin = EditorControlStyles.dimen(context, R.dimen.row_gap_small);
         // Clear of the toolbar's utility capsule: nothing above is an opaque strip.
         params.topMargin = EditorControlStyles.dimen(context, R.dimen.row_gap);
-        // The standoff to the right host, not an inset from the window edge.
-        // The trailing edge belongs to the host alone, so the panel is seated
-        // BEFORE it (a sibling appended after it would translate the host by the
-        // panel's width); this margin is the same gap every anchored surface
-        // keeps off the cluster (see trailingLimitFor).
-        params.rightMargin = EditorControlStyles.dimen(context, R.dimen.overlay_anchor_gap);
+        // A small inset on the model side and the standoff to the host, not an
+        // inset from the window edge. The edge belongs to the host alone, so
+        // the panel is seated INBOARD of it -- before it on the right, after
+        // it on the left (a sibling on the wrong side would translate the host
+        // by the panel's width); the standoff is the same gap every anchored
+        // surface keeps off the cluster (see trailingLimitFor).
+        applySideInspectorMargins(params);
         params.bottomMargin = EditorControlStyles.dimen(context, R.dimen.row_gap);
-        middleRow.addView(inspector, middleRow.indexOfChild(trailingHost), params);
+        final int hostIndex = middleRow.indexOfChild(trailingHost);
+        middleRow.addView(inspector, leftHanded() ? hostIndex + 1 : hostIndex, params);
         applyPrimarySurfaceChromePolicy();
     }
 
@@ -1589,17 +1651,30 @@ final class EditorWorkspaceView extends FrameLayout
         // Over an OPEN project it still stands in front, because there it is a
         // step away from a workspace the user is about to leave.
         final boolean atHome = !projectOpen && !bootstrapping;
-        final boolean chooserUp = choosing && !recovering && !unsaved;
-        home.setVisibility(atHome && !recovering && !chooserUp ? VISIBLE : GONE);
+        // Settings (UI-PREF-R1) is a page over whatever it was opened from --
+        // Home, or an open project -- and the questions asked over a live
+        // project still outrank it, because a question is answered before a
+        // preference is browsed.
+        final boolean settingsUp = uiState.settingsOpen() && !recovering && !unsaved;
+        final boolean chooserUp = choosing && !recovering && !unsaved && !settingsUp;
+        home.setVisibility(atHome && !recovering && !chooserUp && !settingsUp ? VISIBLE : GONE);
         newProjectChooser.setVisibility(chooserUp ? VISIBLE : GONE);
+        if (settingsUp && settingsPage.getVisibility() != VISIBLE) {
+            // Repainted from the store every time the page comes on screen —
+            // including the page the recreation a palette change performs
+            // brings back, which no row press ever opened.
+            settingsPage.showPreferences(currentPreferences());
+        }
+        settingsPage.setVisibility(settingsUp ? VISIBLE : GONE);
         // The editor chrome belongs to a project or to the bootstrap; at Home
-        // there is nothing for it to act on, so it is withdrawn as a whole.
-        // Away from Home the user's own Hide UI choice stands: the chrome and
-        // its restore chip are exactly one of them visible, as setChromeHidden
-        // leaves them once its fade lands.
+        // there is nothing for it to act on, so it is withdrawn as a whole, and
+        // under an opaque Settings page it is withdrawn for the same reason a
+        // start page withdraws it. Away from both the user's own Hide UI choice
+        // stands: the chrome and its restore chip are exactly one of them
+        // visible, as setChromeHidden leaves them once its fade lands.
         final boolean chromeHidden = uiState.chromeHidden();
-        chromeRoot.setVisibility(atHome || chromeHidden ? GONE : VISIBLE);
-        restoreChip.setVisibility(!atHome && chromeHidden ? VISIBLE : GONE);
+        chromeRoot.setVisibility(atHome || chromeHidden || settingsUp ? GONE : VISIBLE);
+        restoreChip.setVisibility(!atHome && chromeHidden && !settingsUp ? VISIBLE : GONE);
         if (dismissibleSurfaceListener != null) {
             dismissibleSurfaceListener.onDismissibleSurfaceChanged(hasDismissibleSurface());
         }
@@ -1660,6 +1735,226 @@ final class EditorWorkspaceView extends FrameLayout
         uiState.setNewProjectChooserOpen(open);
         newProjectChooser.showStatus("", R.attr.fsTextSecondary);
         refreshShellPhase();
+    }
+
+    // --- Settings (UI-PREF-R1) ----------------------------------------------
+    //
+    // One page, one store, two doors. Every row on the page reports a request
+    // here; the workspace writes the preference through AppPreferencesStore,
+    // applies it to the presentation it governs, and repaints the page from
+    // what is actually in force. Nothing on this path touches a project: no
+    // history step, no fingerprint, no checkpoint, no .forge byte.
+
+    @Override
+    public void onHomeSettingsRequested() {
+        home.showStatus("", R.attr.fsTextSecondary);
+        setSettingsOpen(true);
+    }
+
+    /** The Project surface's Settings… row. */
+    @Override
+    public void onSettingsRequested() {
+        setProjectPanelOpen(false);
+        setSettingsOpen(true);
+    }
+
+    @Override
+    public void onSettingsBackRequested() {
+        setSettingsOpen(false);
+    }
+
+    private void setSettingsOpen(boolean open) {
+        uiState.setSettingsOpen(open);
+        if (open) {
+            // An opaque page over the workspace: whatever context surface was
+            // open under it is closed first, so nothing is left standing on a
+            // model the user can no longer see.
+            dismissPrimarySurfacesExcept(null);
+            settingsPage.showStatus("", R.attr.fsTextSecondary);
+            settingsPage.showPreferences(currentPreferences());
+        }
+        refreshShellPhase();
+        if (!open) {
+            viewport.requestFocus();
+        }
+    }
+
+    @Override
+    public void onPaletteChosen(AppTheme palette) {
+        if (palette == currentPreferences().palette()) {
+            settingsPage.showPreferences(currentPreferences());
+            return;  // already wearing it; recreating would flash for nothing
+        }
+        // Applied by recreating the Activity, which is the only clean way to
+        // re-resolve themed resources for a UI built entirely in code. The
+        // store is written first, the session state (this page being open
+        // included) is carried across, and the rebuilt workspace comes back
+        // here in the new palette. See ForgeShapeActivity#requestTheme.
+        final Context context = getContext();
+        if (context instanceof ForgeShapeActivity) {
+            ((ForgeShapeActivity) context).requestTheme(palette);
+        }
+    }
+
+    @Override
+    public void onHandednessChosen(Handedness handedness) {
+        final AppPreferences before = currentPreferences();
+        if (AppPreferencesStore.update(getContext(), before.withHandedness(handedness))) {
+            applyHandedness(handedness);
+        }
+        settingsPage.showPreferences(currentPreferences());
+    }
+
+    @Override
+    public void onGizmoVisualScaleChosen(float scale) {
+        final AppPreferences before = currentPreferences();
+        if (AppPreferencesStore.update(getContext(), before.withGizmoVisualScale(scale))) {
+            pushGizmoPreferences();
+        }
+        settingsPage.showPreferences(currentPreferences());
+    }
+
+    @Override
+    public void onGizmoStrokeWeightChosen(GizmoStrokeWeight weight) {
+        final AppPreferences before = currentPreferences();
+        if (AppPreferencesStore.update(getContext(), before.withGizmoStrokeWeight(weight))) {
+            pushGizmoPreferences();
+        }
+        settingsPage.showPreferences(currentPreferences());
+    }
+
+    /** The preferences in force, read through the one store. */
+    AppPreferences currentPreferences() {
+        return AppPreferencesStore.current(getContext());
+    }
+
+    /** The appearance in force. It is a persisted preference, not UI state. */
+    AppTheme appTheme() {
+        return currentPreferences().palette();
+    }
+
+    /**
+     * Pushes the gizmo's two presentation preferences down to native state.
+     *
+     * <p>Both are refused-not-clamped below JNI, and the store already holds
+     * values inside the domain's bounds, so a refusal here would be a contract
+     * drift between the two — logged by native code, and never silently
+     * repaired above it.
+     */
+    private void pushGizmoPreferences() {
+        final AppPreferences preferences = currentPreferences();
+        NativeViewport.setGizmoVisualScale(preferences.gizmoVisualScale());
+        NativeViewport.setGizmoStrokeWeight(preferences.gizmoStrokeWeight().nativeIndex());
+    }
+
+    /**
+     * Seats the rail zone on the chosen edge (`UI-PREF-R1` C).
+     *
+     * <p>Mirrors the middle row and nothing else: the trailing host, a
+     * side-placed precision surface, the Sculpt brush controls and the expanded
+     * window's Objects column change edge, keep their widths, their tops and
+     * their insets, and open inward. Nothing about what any of them does
+     * changes, the bottom row and the Global Toolbar are untouched, and no
+     * axis, workplane, camera or gesture is mirrored -- the model is the same
+     * model seen from the same place. Applied immediately, with an open
+     * precision surface re-seated rather than left on the old edge.
+     */
+    private void applyHandedness(Handedness handedness) {
+        final boolean left = handedness == Handedness.LEFT;
+        if (appliedLeftHanded != null && appliedLeftHanded == left) {
+            return;
+        }
+        appliedLeftHanded = left;
+        final Context context = getContext();
+        trailingHost.setMirrored(left);
+
+        final int brushGap = EditorControlStyles.dimen(context, R.dimen.brush_gap);
+        final LinearLayout.LayoutParams brushParams =
+                (LinearLayout.LayoutParams) brushControls.getLayoutParams();
+        brushParams.leftMargin = left ? 0 : brushGap;
+        brushParams.rightMargin = left ? brushGap : 0;
+
+        final LinearLayout.LayoutParams objectsParams =
+                (LinearLayout.LayoutParams) objectsDock.getLayoutParams();
+        objectsParams.leftMargin = EditorControlStyles.dimen(context,
+                left ? R.dimen.row_gap_small : R.dimen.row_gap);
+        objectsParams.rightMargin = EditorControlStyles.dimen(context,
+                left ? R.dimen.row_gap : R.dimen.row_gap_small);
+
+        // The row order is the whole of what puts the host on an edge. The
+        // members keep their own layout params across the re-seat; a
+        // side-placed precision surface is re-seated beside the host on the
+        // new edge with its standoff turned to face it.
+        final boolean inspectorSeated = inspector.getParent() == middleRow;
+        if (inspectorSeated) {
+            applySideInspectorMargins((LinearLayout.LayoutParams) inspector.getLayoutParams());
+        }
+        middleRow.removeAllViews();
+        if (left) {
+            middleRow.addView(trailingHost, trailingHost.getLayoutParams());
+            if (inspectorSeated) {
+                middleRow.addView(inspector, inspector.getLayoutParams());
+            }
+            middleRow.addView(middleSpacer, middleSpacer.getLayoutParams());
+            middleRow.addView(brushControls, brushParams);
+            middleRow.addView(objectsDock, objectsParams);
+        } else {
+            middleRow.addView(objectsDock, objectsParams);
+            middleRow.addView(brushControls, brushParams);
+            middleRow.addView(middleSpacer, middleSpacer.getLayoutParams());
+            if (inspectorSeated) {
+                middleRow.addView(inspector, inspector.getLayoutParams());
+            }
+            middleRow.addView(trailingHost, trailingHost.getLayoutParams());
+        }
+        // An anchored surface that was open is anchored against the old edge's
+        // limits; the ones that can stand beside the rail are closed rather
+        // than left where a re-seated host may now be.
+        setObjectsPanelOpen(false);
+        setAddPrimitiveOpen(false, null);
+        requestLayout();
+    }
+
+    /**
+     * Re-applies the stored preferences to this workspace and to native state.
+     *
+     * <p>For verification: a case that resets or plants the store behind the
+     * workspace's back needs the live surfaces to follow, exactly as a fresh
+     * workspace would have read them. The palette is not re-applied here —
+     * that is a recreation, which the case asks the Activity for.
+     */
+    void reapplyPreferencesForTest() {
+        pushGizmoPreferences();
+        applyHandedness(currentPreferences().handedness());
+    }
+
+    /** Whether the rail zone stands on the left edge right now. */
+    boolean leftHanded() {
+        return Boolean.TRUE.equals(appliedLeftHanded);
+    }
+
+    /**
+     * The margins a side-placed precision surface keeps: a small inset to the
+     * model side and the anchored standoff toward the host, on whichever edge
+     * the host is.
+     */
+    private void applySideInspectorMargins(LinearLayout.LayoutParams params) {
+        final Context context = getContext();
+        final int inboard = EditorControlStyles.dimen(context, R.dimen.row_gap_small);
+        final int standoff = EditorControlStyles.dimen(context, R.dimen.overlay_anchor_gap);
+        final boolean left = leftHanded();
+        params.leftMargin = left ? standoff : inboard;
+        params.rightMargin = left ? inboard : standoff;
+    }
+
+    /** Whether the Settings page is on screen. */
+    boolean settingsVisible() {
+        return settingsPage.getVisibility() == VISIBLE;
+    }
+
+    /** The Settings page, so a test can name a row by its id. */
+    SettingsPageView settingsPage() {
+        return settingsPage;
     }
 
     // --- New Project --------------------------------------------------------
@@ -3916,34 +4211,6 @@ final class EditorWorkspaceView extends FrameLayout
     }
 
     /**
-     * Switches the whole workspace's appearance.
-     *
-     * <p>The one control here that is <b>not</b> answered by native code, and
-     * the only one that does not repaint in place: applying a theme means
-     * re-resolving every themed resource, which the Activity does by recreating
-     * itself. So there is nothing to refresh afterwards — this view is about to
-     * be replaced by one built in the new theme.
-     *
-     * <p>It changes no Construction parameter, no transform, no
-     * {@code ObjectId}, no revision, nothing about what is pickable and nothing
-     * about what is selected: all of that is process-scoped native state that
-     * outlives the Activity, which is exactly why recreating it is safe.
-     */
-    @Override
-    public void onAppThemeRequested(AppTheme theme) {
-        if (theme == uiState.appTheme()) {
-            // Already wearing it. Repaint the chips rather than recreating, so a
-            // tap on the current appearance is inert instead of a visible flash.
-            refreshDisplaySettings();
-            return;
-        }
-        final Context context = getContext();
-        if (context instanceof ForgeShapeActivity) {
-            ((ForgeShapeActivity) context).requestTheme(theme);
-        }
-    }
-
-    /**
      * Shows or hides the world reference grid.
      *
      * <p>The same shape of act as the shading chips above it, and the popover
@@ -3970,7 +4237,7 @@ final class EditorWorkspaceView extends FrameLayout
     private void refreshDisplaySettings() {
         displayPopover.showSettings(NativeViewport.shadingModel(),
                 NativeViewport.surfaceShading(), NativeViewport.projectionMode(),
-                uiState.appTheme(), NativeViewport.gridVisible());
+                NativeViewport.gridVisible());
     }
 
     /**

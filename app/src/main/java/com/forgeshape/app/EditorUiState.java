@@ -151,24 +151,17 @@ final class EditorUiState {
     private static boolean recoveryResolved;
 
     /**
-     * Which appearance this PROCESS is wearing.
+     * Whether the Settings page is on screen (`UI-PREF-R1` A).
      *
-     * <p>Static for the same reason the start flag is, and more sharply: a theme
-     * change is applied by <b>recreating the Activity</b>, which is the only
-     * clean way to re-resolve themed resources for a UI built entirely in code.
-     * An instance field would therefore be destroyed by the very act that
-     * applies it, and the recreated workspace would come back in the theme the
-     * user just left.
-     *
-     * <p>Still <b>losable</b>, and deliberately so: nothing is written to disk
-     * and no {@code Bundle} carries it, so a genuine process kill returns to the
-     * documented default. Persistence is not part of this stage.
-     *
-     * <p>It is presentation. It cannot change a Construction parameter, a
-     * transform, an {@code ObjectId}, a revision, what is pickable or what is
-     * selected — all of which are native truth that outlives the Activity.
+     * <p>Presentation: which page is up, carried across the recreation a
+     * palette change performs exactly as the New Project chooser is — the user
+     * chose a palette FROM this page and must come back to it, in the new
+     * palette, rather than to wherever they were before opening it. The
+     * appearance itself is no longer remembered here: since `UI-PREF-R1` it is
+     * one field of the persisted {@link AppPreferences}, read through
+     * {@link AppPreferencesStore}, and this class holds no copy of it.
      */
-    private static AppTheme appTheme = AppTheme.defaultTheme();
+    private boolean settingsOpen;
 
     /** Whether every chrome surface is hidden, leaving the bare model. */
     private boolean chromeHidden;
@@ -213,46 +206,13 @@ final class EditorUiState {
         }
     }
 
-    /** The appearance in force, which a fresh process reports as the default. */
-    AppTheme appTheme() {
-        return appTheme;
+    /** Whether the Settings page is on screen. */
+    boolean settingsOpen() {
+        return settingsOpen;
     }
 
-    /**
-     * The appearance in force, reachable before any workspace exists.
-     *
-     * <p>Static because the Activity must apply the theme <i>before</i> it
-     * inflates anything, and at that moment there is no
-     * {@link EditorWorkspaceView} and therefore no instance to ask.
-     */
-    static AppTheme currentAppTheme() {
-        return appTheme;
-    }
-
-    /**
-     * Records the appearance the user chose.
-     *
-     * @return whether this actually changed anything, so a caller can avoid
-     *         recreating the Activity for a tap on the theme that is already on
-     *         screen — which would be a visible flash for no result
-     */
-    static boolean setCurrentAppTheme(AppTheme theme) {
-        if (theme == null || theme == appTheme) {
-            return false;
-        }
-        appTheme = theme;
-        return true;
-    }
-
-    /**
-     * Returns the process to the documented default, as a fresh one starts.
-     *
-     * <p>Exists so verification can assert the default and then exercise both
-     * appearances inside one instrumentation process. It destroys nothing: the
-     * scene, the mode and every body are native state this does not touch.
-     */
-    static void resetAppTheme() {
-        appTheme = AppTheme.defaultTheme();
+    void setSettingsOpen(boolean open) {
+        settingsOpen = open;
     }
 
     /** Whether the New Project chooser is on screen. */

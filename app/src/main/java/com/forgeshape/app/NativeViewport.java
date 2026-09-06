@@ -1440,8 +1440,14 @@ final class NativeViewport {
     /** The cooler steel-grey ground. */
     static final int VIEWPORT_BACKGROUND_NEUTRAL_CHARCOAL = 1;
 
-    /** The lightest ground in the set, and still a dark one. */
+    /** The lightest DARK ground. */
     static final int VIEWPORT_BACKGROUND_LIGHT_CHARCOAL = 2;
+
+    /** A warm, cream-biased LIGHT ground (`UI-PREF-R1`, UI-OWNER-42). */
+    static final int VIEWPORT_BACKGROUND_WARM_LIGHT = 3;
+
+    /** A cool, steel-biased LIGHT ground. */
+    static final int VIEWPORT_BACKGROUND_COOL_LIGHT = 4;
 
     /**
      * Requests what the viewport is CLEARED to, behind everything.
@@ -1466,6 +1472,51 @@ final class NativeViewport {
 
     /** @return the active {@code VIEWPORT_BACKGROUND_*} constant */
     static native int viewportBackground();
+
+    // --- gizmo appearance preferences (`UI-PREF-R1` E/F) ---------------------
+    //
+    // Both are PRESENTATION on the display settings' terms: no mesh is
+    // published, no revision minted, no history step recorded, no vertex moved,
+    // and nothing about which handle a touch grabs or how far a drag moves a
+    // body changes. The Android layer persists them in AppPreferences and pushes
+    // them down on every launch, exactly as it pushes the viewport appearance.
+
+    /** The smallest visual size the domain accepts, as a multiplier. */
+    static final float GIZMO_VISUAL_SCALE_MIN = 0.9f;
+    /** The accepted gizmo, exactly. */
+    static final float GIZMO_VISUAL_SCALE_DEFAULT = 1.0f;
+    /** The largest visual size the domain accepts. */
+    static final float GIZMO_VISUAL_SCALE_MAX = 1.5f;
+
+    /**
+     * Requests how large the gizmo is drawn and placed. Refused — leaving the
+     * current size standing — outside
+     * [{@link #GIZMO_VISUAL_SCALE_MIN}, {@link #GIZMO_VISUAL_SCALE_MAX}] or
+     * non-finite; the hit corridors and every drag amount are unchanged at any
+     * accepted value.
+     */
+    static native boolean setGizmoVisualScale(float scale);
+
+    /** @return the visual size multiplier in effect */
+    static native float gizmoVisualScale();
+
+    /** The Regular bundle at half the spread. */
+    static final int GIZMO_STROKE_THIN = 0;
+    /** The accepted gizmo, byte-identical to the pre-preference geometry. */
+    static final int GIZMO_STROKE_REGULAR = 1;
+    /** A wider, filled bundle. */
+    static final int GIZMO_STROKE_BOLD = 2;
+
+    /**
+     * Requests how heavily the gizmo's strokes are drawn. An unknown index is
+     * refused and the current weight stands.
+     *
+     * @return the {@code GIZMO_STROKE_*} constant in effect afterwards
+     */
+    static native int setGizmoStrokeWeight(int weight);
+
+    /** @return the active {@code GIZMO_STROKE_*} constant */
+    static native int gizmoStrokeWeight();
 
     /**
      * Shows or hides the world reference grid: the 1 m floor on the world XZ

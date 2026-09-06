@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Settings (UI-PREF-R1): the persistent application preferences.
+
+  Three horizontal sliders with their thumbs at different positions — the one
+  symbol that says "adjustable preferences" without saying "gear", which on a
+  modelling tool would read as a machine part, and without saying "display",
+  which the half-toned circle already means.
+
+  Drawn white and tinted at use; see EditorControlStyles.icon().
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:pathData="M4,7 L20,7 M4,12 L20,12 M4,17 L20,17" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M9,7 m-2.2,0 a2.2,2.2 0 1,0 4.4,0 a2.2,2.2 0 1,0 -4.4,0 Z M15,12 m-2.2,0 a2.2,2.2 0 1,0 4.4,0 a2.2,2.2 0 1,0 -4.4,0 Z M7,17 m-2.2,0 a2.2,2.2 0 1,0 4.4,0 a2.2,2.2 0 1,0 -4.4,0 Z" />
+</vector>

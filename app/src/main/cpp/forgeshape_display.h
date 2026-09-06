@@ -60,17 +60,24 @@ constexpr int kShadingModelCount = 3;
 // value is written into the render pass every frame anyway, so a switch rebuilds
 // no geometry, mints no revision, re-uploads nothing and does not touch the
 // swapchain, the pipeline or any GPU buffer.
-// All three grounds are DARK, which is the whole authored appearance set. They
-// are not three shades of one idea: Warm Graphite leans red, Neutral Charcoal
-// leans blue-grey, and Light Charcoal is the lightest ground the set allows
-// while a neutral clay render still reads as lit rather than washed out.
+// Three grounds are DARK — the original authored set: Warm Graphite leans red,
+// Neutral Charcoal leans blue-grey, and Light Charcoal is the lightest DARK
+// ground while a neutral clay render still reads as lit rather than washed
+// out. `UI-PREF-R1` (UI-OWNER-42) adds two LIGHT grounds, Warm Light and Cool
+// Light, derived through the same semantic roles; everything drawn against a
+// ground asks `viewportBackgroundIsLight` rather than naming a member, so a
+// tool colour is authored per ground FAMILY and the three dark answers stay
+// exactly what they were. The three dark members keep their indices, because
+// the index is what crosses JNI.
 enum class ViewportBackground {
     WarmGraphite,     // the product default: a warm dark studio ground
     NeutralCharcoal,  // a cooler steel-grey ground
-    LightCharcoal,    // the lightest ground in the set
+    LightCharcoal,    // the lightest DARK ground
+    WarmLight,        // a warm, cream-biased light ground
+    CoolLight,        // a cool, steel-biased light ground
 };
 
-constexpr int kViewportBackgroundCount = 3;
+constexpr int kViewportBackgroundCount = 5;
 constexpr ViewportBackground kDefaultViewportBackground = ViewportBackground::WarmGraphite;
 
 const char* viewportBackgroundName(ViewportBackground background);
@@ -80,14 +87,44 @@ const char* viewportBackgroundName(ViewportBackground background);
 bool viewportBackgroundFromIndex(int index, ViewportBackground* out);
 int viewportBackgroundIndex(ViewportBackground background);
 
+// Whether this ground is a LIGHT canvas, which is the one question every
+// per-ground tool colour (grid, gizmo) asks. Stated once here rather than as a
+// member comparison at each site, so adding a ground touches this file and the
+// palettes, never a switch in a renderer.
+bool viewportBackgroundIsLight(ViewportBackground background);
+
 // The linear RGB the render pass clears to, in the order Vulkan wants.
 //
-// These MUST stay in step with `p1_viewport_background`,
-// `p2_viewport_background` and `p3_viewport_background` in `colors.xml`, which is
-// what the Android window is painted with before the surface has anything on it;
-// a mismatch shows as a flash on launch. `DISP-VBG-03`/`04`/`05` pin the exact
+// These MUST stay in step with `p1_viewport_background` ..
+// `p5_viewport_background` in `colors.xml`, which is what the Android window is
+// painted with before the surface has anything on it; a mismatch shows as a
+// flash on launch. `DISP-VBG-03`..`05` and `DISP-VBG-08`/`09` pin the exact
 // values so the set cannot drift silently.
 void viewportBackgroundColor(ViewportBackground background, float* outRgb);
+
+// How heavily the Construction gizmo's strokes are drawn (`UI-PREF-R1` F).
+//
+// A closed enum, not a width: the gizmo is a LINE LIST drawn at Vulkan's
+// guaranteed 1-pixel width, and a "thick" stroke is a BUNDLE of parallel lines
+// (see kGizmoStrokeOffsetUnits in forgeshape_gizmo.h), so the only honest
+// choices are the bundles the geometry generator knows how to author. Regular
+// is EXACTLY the geometry the product drew before the preference existed.
+//
+// Presentation only, on the display store's terms: it changes which canonical
+// vertex list the renderer holds and nothing about where a handle is, what it
+// grabs, or how far a drag moves — hit testing never reads it.
+enum class GizmoStrokeWeight {
+    Thin,     // the same bundle at half the spread: a finer instrument
+    Regular,  // the accepted default, byte-identical to the pre-preference gizmo
+    Bold,     // a wider, filled bundle for a heavier instrument
+};
+
+constexpr int kGizmoStrokeWeightCount = 3;
+constexpr GizmoStrokeWeight kDefaultGizmoStrokeWeight = GizmoStrokeWeight::Regular;
+
+const char* gizmoStrokeWeightName(GizmoStrokeWeight weight);
+bool gizmoStrokeWeightFromIndex(int index, GizmoStrokeWeight* out);
+int gizmoStrokeWeightIndex(GizmoStrokeWeight weight);
 
 // Whether the world reference grid is drawn.
 //
@@ -134,6 +171,11 @@ struct ViewportDisplaySettings {
     // Whether the viewport may spend TIME expressing a change, or must land on
     // the final appearance at once. See setReducedMotion.
     bool reducedMotion = false;
+
+    // How heavily the gizmo's strokes are drawn. Rides in the snapshot so the
+    // renderer decides ONCE per frame whether the canonical vertex list it
+    // holds is the one this weight names, and re-uploads only on a change.
+    GizmoStrokeWeight gizmoStrokeWeight = kDefaultGizmoStrokeWeight;
 };
 
 // The two values, readable from the render thread and writable from the UI
@@ -181,6 +223,13 @@ public:
     // is whether a selection acknowledgement takes 220 ms or no time at all.
     bool setReducedMotion(bool reduced);
 
+    // The gizmo's stroke weight (`UI-PREF-R1` F). A user preference the Android
+    // layer persists and pushes down on every launch, exactly as it pushes the
+    // viewport appearance; counted as a display change like the grid, and on
+    // the same terms: no revision, no publication, no history, no picking.
+    GizmoStrokeWeight gizmoStrokeWeight() const;
+    bool setGizmoStrokeWeight(GizmoStrokeWeight weight);
+
     // --- introspection (logging and self-tests only) ---
     uint64_t changeCount() const { return changeCount_.load(std::memory_order_relaxed); }
 
@@ -193,6 +242,7 @@ private:
     std::atomic<int> background_{static_cast<int>(kDefaultViewportBackground)};
     std::atomic<bool> gridVisible_{kDefaultGridVisible};
     std::atomic<bool> reducedMotion_{false};
+    std::atomic<int> gizmoStrokeWeight_{static_cast<int>(kDefaultGizmoStrokeWeight)};
     std::atomic<uint64_t> changeCount_{0};
 };
 

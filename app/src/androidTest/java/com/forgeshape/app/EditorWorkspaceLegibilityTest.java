@@ -348,7 +348,14 @@ public final class EditorWorkspaceLegibilityTest {
         settleLayout();
 
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            assertFalse("one Back closed the palette", workspace.addPrimitivePalette().isOpen());
+            assertFalse("one Back closed the palette (finishing=" + activity.isFinishing()
+                            + " armed=" + activity.backDismissalArmed()
+                            + " dismissible=" + workspace.hasDismissibleSurface()
+                            + " settings=" + workspace.settingsVisible()
+                            + " home=" + workspace.homeVisible()
+                            + " chooser=" + workspace.newProjectChooserVisible()
+                            + " bootstrap=" + workspace.bootstrapVisible() + ")",
+                    workspace.addPrimitivePalette().isOpen());
             assertFalse("and did NOT leave the app", activity.isFinishing());
             return null;
         });
@@ -521,7 +528,7 @@ public final class EditorWorkspaceLegibilityTest {
 
     /**
      * UILR1-11. The secondary and error text roles clear WCAG AA against every
-     * ground they are drawn on, in all three appearances.
+     * ground they are drawn on, in every appearance.
      */
     @Test
     public void uilr111_secondaryAndErrorTextClearTheContrastTargetEverywhere() {
@@ -551,13 +558,17 @@ public final class EditorWorkspaceLegibilityTest {
                             contrast(error, background) >= MIN_TEXT_CONTRAST);
                 }
                 // And a quieter role is still quieter: raising contrast must not
-                // have flattened the hierarchy it sits in.
+                // have flattened the hierarchy it sits in. Stated as contrast
+                // against the panel, which is the same rule on a light palette
+                // (where quieter means LIGHTER) as on a dark one.
+                final int panel = EditorControlStyles.themeColor(activity,
+                        R.attr.fsSurfacePrecision);
                 assertTrue(theme + ": secondary stays below primary",
-                        luminance(secondary) < luminance(EditorControlStyles.themeColor(
-                                activity, R.attr.fsTextPrimary)));
+                        contrast(secondary, panel) < contrast(EditorControlStyles.themeColor(
+                                activity, R.attr.fsTextPrimary), panel));
                 assertTrue(theme + ": and a reserved label stays below secondary",
-                        luminance(EditorControlStyles.themeColor(activity, R.attr.fsTextDisabled))
-                                < luminance(secondary));
+                        contrast(EditorControlStyles.themeColor(activity, R.attr.fsTextDisabled),
+                                panel) < contrast(secondary, panel));
                 return null;
             });
         }
@@ -1219,12 +1230,47 @@ public final class EditorWorkspaceLegibilityTest {
         return "";
     }
 
+    /**
+     * Puts the workspace in one appearance and WAITS for the Activity the
+     * change recreates.
+     *
+     * <p>The wait is the whole of this helper. Applying an appearance destroys
+     * and rebuilds the Activity, and the preference store answers the new
+     * palette the moment it is written — before the recreation has even begun —
+     * so neither the store nor a settle is a signal that the new workspace is
+     * on screen. What proves it is a DIFFERENT Activity instance, laid out,
+     * reporting the palette. Without that a recreation started by the last
+     * appearance of a loop is still in flight when the next case begins, and a
+     * key event sent then reaches a window that is on its way out.
+     */
     private void switchTo(final AppTheme theme) {
+        final Integer before = onWorkspace(rule.getScenario(),
+                (activity, workspace) -> System.identityHashCode(activity));
+        final Boolean alreadyWearing = onWorkspace(rule.getScenario(),
+                (activity, workspace) -> workspace.appTheme() == theme);
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             activity.requestTheme(theme);
             return null;
         });
-        settleLayout();
+        if (Boolean.TRUE.equals(alreadyWearing)) {
+            // Already worn: requestTheme recreates nothing, so there is no new
+            // Activity to wait for and waiting would time out.
+            settleLayout();
+            return;
+        }
+        for (int attempt = 0; attempt < 100; attempt++) {
+            settleLayout();
+            final Boolean ready = onWorkspace(rule.getScenario(),
+                    (activity, workspace) -> workspace.appTheme() == theme
+                            && workspace.getWidth() > 0
+                            && (before == null
+                                    || System.identityHashCode(activity) != before));
+            if (Boolean.TRUE.equals(ready)) {
+                return;
+            }
+            SystemClock.sleep(100);
+        }
+        throw new AssertionError("the workspace never came back wearing " + theme);
     }
 
     private static int imeBottomInset(View view) {

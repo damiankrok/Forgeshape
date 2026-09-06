@@ -60,6 +60,9 @@ final class ProjectActionsPopoverView extends AnchoredSurfaceView {
 
         /** `IMPORT-01A`: pick a `.glb` and turn what it describes into objects. */
         void onImportGlbRequested();
+
+        /** `UI-PREF-R1`: open the Settings page over the project. */
+        void onSettingsRequested();
     }
 
     private final TextView newRow;
@@ -70,6 +73,7 @@ final class ProjectActionsPopoverView extends AnchoredSurfaceView {
     private final TextView diagnosticsRow;
     private final TextView importSectionLabel;
     private final TextView importRow;
+    private final TextView settingsRow;
 
     ProjectActionsPopoverView(Context context, final OnProjectAction listener) {
         super(context);
@@ -196,6 +200,28 @@ final class ProjectActionsPopoverView extends AnchoredSurfaceView {
         addView(importRow, EditorControlStyles.rowParams(
                 EditorControlStyles.dimen(context, R.dimen.row_gap_small)));
 
+        // A fourth group, for a fourth question: not this project at all, but
+        // the APPLICATION (UI-PREF-R1, UI-OWNER-37). Settings is reached from
+        // here because this surface is the one mode-independent menu an open
+        // project has, and it opens the same page Home opens -- one Settings
+        // implementation, one store, two doors.
+        addView(EditorControlStyles.sectionLabel(context,
+                context.getString(R.string.application_section)),
+                EditorControlStyles.rowParams(
+                        EditorControlStyles.dimen(context, R.dimen.row_gap)));
+        settingsRow = EditorControlStyles.listRow(context, R.id.project_settings,
+                context.getString(R.string.project_settings));
+        settingsRow.setGravity(Gravity.CENTER_VERTICAL);
+        settingsRow.setContentDescription(context.getString(R.string.settings));
+        settingsRow.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                listener.onSettingsRequested();
+            }
+        });
+        addView(settingsRow, EditorControlStyles.rowParams(
+                EditorControlStyles.dimen(context, R.dimen.row_gap_small)));
+
         // Every row carries the interactive floor as HIT AREA, reached with
         // padding rather than by growing the drawn row: the text stays the size
         // it reads at.
@@ -206,6 +232,7 @@ final class ProjectActionsPopoverView extends AnchoredSurfaceView {
         applyTouchFloor(context, openFileRow);
         applyTouchFloor(context, diagnosticsRow);
         applyTouchFloor(context, importRow);
+        applyTouchFloor(context, settingsRow);
     }
 
     /** The import section label, so a layout test can find it by reference. */
@@ -283,6 +310,10 @@ final class ProjectActionsPopoverView extends AnchoredSurfaceView {
 
     TextView diagnosticsRow() {
         return diagnosticsRow;
+    }
+
+    TextView settingsRow() {
+        return settingsRow;
     }
 
     static ViewGroup.LayoutParams anchoredParams(Context context, int topOffsetPx) {

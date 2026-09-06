@@ -43,8 +43,36 @@ const char* viewportBackgroundName(ViewportBackground background) {
         case ViewportBackground::WarmGraphite: return "WarmGraphite";
         case ViewportBackground::NeutralCharcoal: return "NeutralCharcoal";
         case ViewportBackground::LightCharcoal: return "LightCharcoal";
+        case ViewportBackground::WarmLight: return "WarmLight";
+        case ViewportBackground::CoolLight: return "CoolLight";
     }
     return "Unknown";
+}
+
+bool viewportBackgroundIsLight(ViewportBackground background) {
+    return background == ViewportBackground::WarmLight ||
+           background == ViewportBackground::CoolLight;
+}
+
+const char* gizmoStrokeWeightName(GizmoStrokeWeight weight) {
+    switch (weight) {
+        case GizmoStrokeWeight::Thin: return "Thin";
+        case GizmoStrokeWeight::Regular: return "Regular";
+        case GizmoStrokeWeight::Bold: return "Bold";
+    }
+    return "Unknown";
+}
+
+bool gizmoStrokeWeightFromIndex(int index, GizmoStrokeWeight* out) {
+    if (index < 0 || index >= kGizmoStrokeWeightCount || out == nullptr) {
+        return false;
+    }
+    *out = static_cast<GizmoStrokeWeight>(index);
+    return true;
+}
+
+int gizmoStrokeWeightIndex(GizmoStrokeWeight weight) {
+    return static_cast<int>(weight);
 }
 
 bool viewportBackgroundFromIndex(int index, ViewportBackground* out) {
@@ -81,6 +109,22 @@ void viewportBackgroundColor(ViewportBackground background, float* outRgb) {
             outRgb[1] = 0.247f;
             outRgb[2] = 0.255f;
             return;
+        case ViewportBackground::WarmLight:
+            // #EDE7DC. A cream-biased light canvas (UI-PREF-R1, UI-OWNER-42):
+            // red leads blue by seventeen points, so it reads as paper rather
+            // than as a grey that has merely been turned up.
+            outRgb[0] = 0.929f;
+            outRgb[1] = 0.906f;
+            outRgb[2] = 0.863f;
+            return;
+        case ViewportBackground::CoolLight:
+            // #E4E8EC. A steel-biased light canvas: blue leads red by eight
+            // points, which separates it from Warm Light at a glance the same
+            // way Neutral Charcoal is separated from Warm Graphite.
+            outRgb[0] = 0.894f;
+            outRgb[1] = 0.910f;
+            outRgb[2] = 0.925f;
+            return;
         case ViewportBackground::WarmGraphite:
             break;
     }
@@ -99,6 +143,7 @@ ViewportDisplaySettings DisplaySettingsStore::snapshot() const {
     out.background = viewportBackground();
     out.gridVisible = gridVisible();
     out.reducedMotion = reducedMotion();
+    out.gizmoStrokeWeight = gizmoStrokeWeight();
     return out;
 }
 
@@ -182,6 +227,24 @@ bool DisplaySettingsStore::setReducedMotion(bool reduced) {
     // display suite can prove a real display transition happened, and reduced
     // motion is an accessibility preference arriving from the platform rather
     // than a display setting the user chose here.
+    return true;
+}
+
+GizmoStrokeWeight DisplaySettingsStore::gizmoStrokeWeight() const {
+    GizmoStrokeWeight weight = kDefaultGizmoStrokeWeight;
+    gizmoStrokeWeightFromIndex(gizmoStrokeWeight_.load(std::memory_order_relaxed), &weight);
+    return weight;
+}
+
+bool DisplaySettingsStore::setGizmoStrokeWeight(GizmoStrokeWeight weight) {
+    const int next = gizmoStrokeWeightIndex(weight);
+    const int previous = gizmoStrokeWeight_.exchange(next, std::memory_order_relaxed);
+    if (previous == next) {
+        return false;
+    }
+    // Counted like the grid: a display setting the user chose, whose one
+    // consequence is a re-upload of the gizmo's canonical vertex list.
+    changeCount_.fetch_add(1, std::memory_order_relaxed);
     return true;
 }
 
