@@ -1,0 +1,25 @@
+﻿TESTRUNTIME-01 | PASS | fingerprint is stable for the same APKs and inventory | assertions passed
+TESTRUNTIME-02 | PASS | a changed app APK invalidates the checkpoint | assertions passed
+TESTRUNTIME-03 | PASS | a changed test APK invalidates the checkpoint | assertions passed
+TESTRUNTIME-04 | PASS | a changed test inventory invalidates the checkpoint | assertions passed
+TESTRUNTIME-05 | PASS | a changed partition invalidates the checkpoint | assertions passed
+TESTRUNTIME-06 | PASS | a changed shard count invalidates the checkpoint | assertions passed
+TESTRUNTIME-07 | PASS | a different device invalidates the checkpoint | assertions passed
+TESTRUNTIME-08 | PASS | a corrupt checkpoint is refused | assertions passed
+TESTRUNTIME-09 | PASS | a future checkpoint schema is refused | assertions passed
+TESTRUNTIME-10 | PASS | a checkpoint write replaces atomically | assertions passed
+TESTRUNTIME-11 | PASS | shard-only plans exactly one shard | assertions passed
+TESTRUNTIME-12 | PASS | shard-only cannot emit an aggregate marker | assertions passed
+TESTRUNTIME-13 | PASS | a same-tree resume skips the shards that passed | assertions passed
+TESTRUNTIME-14 | PASS | a resume reruns the shard that failed | assertions passed
+TESTRUNTIME-15 | PASS | a resume reruns a shard that never ran | assertions passed
+TESTRUNTIME-16 | PASS | a changed tree cannot reuse a passed shard | assertions passed
+TESTRUNTIME-17 | PASS | the target budget warns and does not stop | assertions passed
+TESTRUNTIME-18 | PASS | the hard stop stops launching shards | assertions passed
+TESTRUNTIME-19 | PASS | invalid budget parameters are refused | assertions passed
+TESTRUNTIME-20 | PASS | the first two aggregate attempts are allowed | assertions passed
+TESTRUNTIME-21 | PASS | a third aggregate attempt needs an explicit override | assertions passed
+TESTRUNTIME-22 | PASS | infrastructure signatures classify as infrastructure | assertions passed
+TESTRUNTIME-23 | PASS | an assertion failure classifies as a product failure | assertions passed
+TESTRUNTIME-24 | PASS | ambiguous evidence fails closed | assertions passed
+TESTRUNTIME-01..24 PASS (24 checks).

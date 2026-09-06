@@ -1,0 +1,11 @@
+﻿THR1-01 | PASS | discovery finds complete inventory | assertions passed
+THR1-02 | PASS | partition is deterministic | assertions passed
+THR1-03 | PASS | zero duplicate assignment | assertions passed
+THR1-04 | PASS | zero missing assignment | assertions passed
+THR1-05 | PASS | changing shard count preserves union | assertions passed
+THR1-06 | PASS | shard failure makes aggregate fail | assertions passed
+THR1-07 | PASS | instrumentation abort makes aggregate fail | assertions passed
+THR1-08 | PASS | missing result makes aggregate fail | assertions passed
+THR1-09 | PASS | focused mode cannot emit full-suite PASS | assertions passed
+THR1-10 | PASS | aggregate totals equal discovered totals | assertions passed
+THR1-01..10 PASS.

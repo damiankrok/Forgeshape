@@ -1,0 +1,7 @@
+Stop-InstrumentedRun : Resume refused: RESUME_INVALID_TEST_APK_CHANGED
+At D:\TRAVELAPPS\ForgeShape\scripts\run-instrumented-tests.ps1:307 char:13
++             Stop-InstrumentedRun "Resume refused: $($resumeState.Reas ...
++             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:) [Write-Error], WriteErrorException
+    + FullyQualifiedErrorId : Microsoft.PowerShell.Commands.WriteErrorException,Stop-InstrumentedRun
+ 

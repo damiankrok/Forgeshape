@@ -132,9 +132,16 @@ Invoke-THR1Check 'THR1-09' 'focused mode cannot emit full-suite PASS' {
     Assert-True ([string]::IsNullOrEmpty($focusedMarker)) 'focused mode produced a full-suite marker'
     $engine = (Get-Process -Id $PID).Path
     $runner = Join-Path $PSScriptRoot 'run-instrumented-tests.ps1'
+    # The child refuses the reserved serial with Write-Error, which reaches this
+    # parent as an error record; under the parent's Stop preference that would
+    # terminate the check before it could assert anything. The preference is
+    # relaxed for exactly this call and restored immediately after.
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
     $focusedOutput = @(& $engine -NoProfile -File $runner -Serial emulator-5554 `
         -TestClass com.forgeshape.FocusedTest 2>&1 | ForEach-Object { "$_" })
     $focusedExit = $LASTEXITCODE
+    $ErrorActionPreference = $previousPreference
     Assert-True ($focusedExit -ne 0) 'reserved-serial focused fixture did not stop before adb'
     Assert-True (($focusedOutput -join "`n") -notmatch 'FULL_SHARDED_SUITE_PASS') `
         'actual focused runner invocation emitted full-suite PASS'

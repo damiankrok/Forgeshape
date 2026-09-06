@@ -1,0 +1,12 @@
+# Parse check
+
+Every runner script parses with zero errors ([System.Management.Automation.Language.Parser]::ParseFile):
+
+```
+scripts\run-instrumented-tests.ps1 | parse_errors=0
+scripts\instrumented-runtime.ps1 | parse_errors=0
+scripts\instrumented-sharding.ps1 | parse_errors=0
+scripts\test-instrumented-runtime.ps1 | parse_errors=0
+scripts\test-instrumented-sharding.ps1 | parse_errors=0
+scripts\verify-device-guards.ps1 | parse_errors=0
+```

@@ -4,6 +4,12 @@
 # are ignored. Source, shaders, tests, repository documentation, the Gradle
 # wrapper and the referenced evidence artifacts are versioned.
 
+# --- Transient instrumented-run state ---
+# Checkpoints and per-shard logs the test runner writes per tested fingerprint.
+# The evidence a stage cites is copied into its own artifacts folder; these are
+# working files for a run in progress.
+/artifacts/instrumented-runs/
+
 # --- Gradle build output and local caches ---
 /build/
 /app/build/
@@ -47,6 +53,13 @@ captures/
 
 # --- Transient logs and emulator/device-local scratch ---
 *.log
+# ... except a stage's evidence logs, which its INDEX cites and which must be
+# readable from the repository. Without this the rule above silently dropped
+# every focused/*.log and startup.log from UI-PREF-R1's evidence commit while
+# its own documents referenced them. Run state under
+# artifacts/instrumented-runs/ stays excluded: an excluded DIRECTORY cannot be
+# re-included by a later negation, which is exactly the behaviour wanted there.
+!/artifacts/**/*.log
 /logs/
 /scratch/
 /tmp/

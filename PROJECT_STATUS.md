@@ -1,8 +1,37 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.64.0
+**Status Version:** 0.65.0
 **Updated:** 2026-09-06
-**Result:** **UI-PREF-R1 — OWNER ACCEPTED / TECHNICAL EVIDENCE WAIVER
+**Result:** **TEST-RUNTIME-R1 — COMPLETE (`PASS-TEST-RUNTIME-R1`).** A
+test-tooling stage: no product source was touched and no five-shard aggregate
+was run. The instrumented runner can now be driven a shard at a time and
+resumed, without weakening what its PASS means. It fingerprints the tested
+tree from the INSTALLED BYTES — both APK hashes, the discovered inventory with
+its shard assignment, the partition, the shard count and the device — rather
+than from Git HEAD, because a dirty candidate is routinely what is under test.
+A versioned checkpoint is written atomically after every shard, so `-Resume`
+re-runs only what did not pass and skips a shard ONLY when that fingerprint is
+identical; every mismatch is refused by name, and **editing any source
+rebuilds the APKs and invalidates every earlier PASS**. `-ShardOnly N` and
+`-PlanOnly` are subset and dry-run evidence that emit no aggregate marker in
+either direction, and `-Resume -PlanOnly` is a resume dry run.
+`FULL_SHARDED_SUITE_PASS` keeps every integrity condition it had and gains
+one: every contributing shard must belong to the same fingerprint. **The
+runner never restarts an aggregate from shard 1 by itself** — it stops,
+classifies (a product failure is claimed only for attributable assertion
+evidence; aborts and device faults are infrastructure; ambiguity fails closed
+to a runner error), and prints the exact rerun and resume commands.
+TEST-OWNER-02 is enforced in the runner: a warning at 90 minutes, a stop at
+120, and at most two automatic aggregate attempts per fingerprint unless an
+explicit owner override is passed and logged. Evidence:
+`artifacts/test-runtime-r1/INDEX.md` — `TESTRUNTIME-01..24` (24 checks, ~5 s,
+no device), `THR1-01..10` unchanged, the device guards passing over 18
+surfaces, and five bounded device runs totalling about 8 minutes. Two defects
+in this stage's own code were found on the device and are recorded with the
+cases that now catch them; one pre-existing harness fragility in `THR1-09` was
+surfaced and fixed after confirming the baseline runner behaved identically.
+
+**Previous result:** **UI-PREF-R1 — OWNER ACCEPTED / TECHNICAL EVIDENCE WAIVER
 (`PASS-UI-PREF-R1-OWNER-WAIVER-CLOSEOUT`).** The Settings hub, persistent
 application preferences, right/left handedness, five palettes and the gizmo's
 visual size and thickness are implemented and verified on the isolated AVD by
@@ -3253,8 +3282,15 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Exactly one next step: return this status to the ForgeShape coordinator for
-a combined OWNER retest later.** UI-PREF-R1 is closed under an OWNER waiver of
+**Exactly one next step: return this status to the ForgeShape coordinator.**
+TEST-RUNTIME-R1 is closed; the runner is the supported way to run, resume and
+budget an aggregate, and the first real aggregate under it will be the first to
+exercise its summary and failure-guidance blocks end to end (the one gap the
+evidence names). What remains open is unchanged by it: the **Delete → Undo →
+Redo owner verdict** of `IMPORT-01B` / `UI-OWNER-45`, and the combined OWNER
+retest of UI-PREF-R1, whose aggregate the OWNER waived.
+
+**On UI-PREF-R1, unchanged by this stage:** UI-PREF-R1 is closed under an OWNER waiver of
 the aggregate gate (`PASS-UI-PREF-R1-OWNER-WAIVER-CLOSEOUT`): the Settings hub,
 the persisted preferences, the left-handed rail, the five palettes and the
 gizmo's visual size and thickness work through the real chrome and survive

@@ -84,6 +84,38 @@ supported authoritative exhaustive-sharded full-suite path is:
 scripts\run-instrumented-tests.ps1 -Serial <serial> -FullSharded -ShardCount 5
 ```
 
+Since `TEST-RUNTIME-R1` an aggregate no longer has to start from shard 1 after
+a failure:
+
+```
+scripts\run-instrumented-tests.ps1 -Serial <serial> -FullSharded -ShardCount 5 -Fresh      # a new attempt
+scripts\run-instrumented-tests.ps1 -Serial <serial> -FullSharded -ShardCount 5 -PlanOnly   # dry run, executes nothing
+scripts\run-instrumented-tests.ps1 -Serial <serial> -FullSharded -ShardCount 5 -ShardOnly 5
+scripts\run-instrumented-tests.ps1 -Serial <serial> -FullSharded -ShardCount 5 -Resume
+scripts\run-instrumented-tests.ps1 -Serial <serial> -FullSharded -ShardCount 5 -Resume -PlanOnly
+```
+
+The runner fingerprints the tested tree from the installed APK bytes, the
+discovered inventory, the partition, the shard count and the device, and writes
+a checkpoint into `artifacts\instrumented-runs\<fingerprint>\` after every
+shard. `-Resume` skips only the shards that already passed FOR THAT EXACT
+FINGERPRINT. **A resume never combines shards across changed app or test APK
+bytes**: edit anything, and the rebuild refuses the resume by name
+(`RESUME_INVALID_TEST_APK_CHANGED` and friends). The right sequence after a
+failure is to rerun the failing shard with `-ShardOnly`, stabilise the tree,
+and then give a final aggregate one `-Fresh` run. `-ShardOnly` and
+`-PlanOnly` are subset and dry-run evidence and never print an aggregate
+marker. Budgets default to a 90-minute warning and a 120-minute stop
+(`-TargetMinutes`, `-HardStopMinutes`), and a third automatic aggregate
+attempt on one fingerprint needs `-OwnerOverrideAttemptLimit`.
+
+The runner's own logic is covered without a device by:
+
+```
+scripts\test-instrumented-runtime.ps1     # TESTRUNTIME-01..24, about 5 seconds
+scripts\test-instrumented-sharding.ps1    # THR1-01..10
+```
+
 `-FullSharded` asks AndroidJUnitRunner to discover the complete live test-APK
 inventory, verifies its sequential and advertised totals, assigns every
 discovered class to exactly one deterministic class-atomic shard, and proves

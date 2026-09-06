@@ -768,7 +768,33 @@ the code depends on: that is a regression, not a saving.
   above mechanically (`DEV2-01`..`07`) and needs no device attached.
 - Instrumented full-suite policy: runner execution with no filter is the
   supported monolithic full-suite path; `-FullSharded` is the supported
-  authoritative exhaustive-sharded full-suite path. `-FullSharded` must use
+  authoritative exhaustive-sharded full-suite path.
+- **An aggregate is resumable, and a resume never crosses a rebuild**
+  (`TEST-RUNTIME-R1`). The runner fingerprints the tested tree from the
+  INSTALLED BYTES — the app APK's SHA-256, the test APK's SHA-256, the
+  discovered inventory with its shard assignment, the partition, the shard
+  count and the device — never from Git HEAD, because a dirty candidate is
+  routinely what is under test. A checkpoint is written into the run directory
+  after every shard, so `-Resume` re-runs only what did not pass; it skips a
+  shard ONLY when the fingerprint is identical, and refuses by name
+  (`RESUME_INVALID_APP_APK_CHANGED`, `..._TEST_APK_CHANGED`,
+  `..._TEST_INVENTORY_CHANGED`, `..._PARTITION_CHANGED`,
+  `..._SHARD_COUNT_CHANGED`, `..._DEVICE_CHANGED`,
+  `..._CHECKPOINT_SCHEMA`) otherwise. **Editing any source rebuilds the APKs
+  and invalidates every earlier PASS**: rerun the failing shard focused,
+  stabilise the tree, and give a final aggregate one fresh run.
+  `FULL_SHARDED_SUITE_PASS` keeps every integrity condition it had and adds
+  one — every contributing shard belongs to the same fingerprint — so it can
+  never be assembled from two builds. `-ShardOnly N` and `-PlanOnly` are
+  subset and dry-run evidence and emit no aggregate marker in either
+  direction. **The runner never restarts an aggregate from shard 1 by
+  itself**: on a failure it stops, classifies (`PRODUCT_TEST_FAILURE` only for
+  attributable assertion evidence, `INFRASTRUCTURE_FAILURE` for aborts and
+  device faults, `RUNNER_ERROR` when the evidence is ambiguous), and prints
+  the exact rerun and resume commands. **TEST-OWNER-02** budgets are enforced:
+  a warning at `-TargetMinutes` (90) and a stop at `-HardStopMinutes` (120),
+  and at most two automatic aggregate attempts per fingerprint —
+  `-OwnerOverrideAttemptLimit` is the only way past that and is logged. `-FullSharded` must use
   live AndroidJUnitRunner discovery, prove a deterministic exactly-once union,
   require a valid successful result from every shard, and emit
   `FULL_SHARDED_SUITE_PASS` only for the complete aggregate. `-TestClass` is
