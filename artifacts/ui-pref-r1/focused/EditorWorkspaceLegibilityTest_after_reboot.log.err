@@ -1,0 +1,6 @@
+D:\TRAVELAPPS\ForgeShape\scripts\run-instrumented-tests.ps1 : Instrumentation did not return one valid
+ successful result on 'emulator-5580'.
+    + CategoryInfo          : NotSpecified: (:) [Write-Error], WriteErrorException
+    + FullyQualifiedErrorId : Microsoft.PowerShell.Commands.WriteErrorException,run-instrumented-test 
+   s.ps1
+ 

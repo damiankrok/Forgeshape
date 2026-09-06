@@ -64,7 +64,7 @@ launcher itself will report the port BLOCKED rather than starting a duplicate.
 ## Test
 
 ```
-gradlew.bat :app:testDebugUnitTest         # JVM: layout rules, UI state, units
+gradlew.bat :app:testDebugUnitTest         # JVM: layout rules, UI state, units, preferences
 ```
 
 **Never run bare `gradlew.bat :app:connectedDebugAndroidTest` when more than one
@@ -212,6 +212,18 @@ every journey that native never read an active body while no project was open.
 `scripts\collect-cad-a3-evidence.ps1 -Serial <serial>` runs it, pulls the
 frames and builds `artifacts\cad-a3-app-h1\OWNER_CONTACT_SHEET.png` and
 `VISUAL_EVIDENCE.md`.
+
+`SettingsPreferencesTest` covers `UI-PREF-R1` (`UIPREFR1-01..40`): the
+Settings page from Home and from the Project surface, the persisted
+preferences surviving a recreation and a fresh read, the fallback rules for a
+bad file, identical project bytes after every preference changed, the
+right-handed frame unchanged and the left-handed rail 8 dp off the left edge
+with Exact opening inward, and every gizmo handle pickable at the smallest and
+largest visual size. `UiPrefVisualEvidenceTest` captures the twenty-frame
+Settings → five palettes → handedness → gizmo journey;
+`scripts\collect-ui-pref-evidence.ps1 -Serial <serial>` runs it, pulls the
+frames and builds `artifacts\ui-pref-r1\OWNER_CONTACT_SHEET_UI_PREF_R1.png`
+and `VISUAL_EVIDENCE.md`.
 
 For the widened external-GLB subset (`GLB-IMPORT-R1`) use:
 

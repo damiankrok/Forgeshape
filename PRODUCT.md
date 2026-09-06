@@ -188,7 +188,7 @@ There is no bar across the top: the **Global Toolbar**'s controls sit in two sma
 floating groups with the model visible between and behind them — an editing group
 on the leading edge carrying what is being edited and the control that crosses
 between constructing and sculpting, and a utility group on the trailing edge
-carrying the viewport's appearance settings and the control that hides the chrome.
+carrying the viewport's display settings and the control that hides the chrome.
 
 **The workspace at rest says nothing, and draws nothing to say it.** A status or
 error message appears in a quiet capsule of its own just below the toolbar, sized
@@ -272,7 +272,7 @@ Touching the model between the two toolbar groups navigates: they are surfaces,
 not a bar, and only the surfaces themselves take a touch.
 
 **The system Back gesture closes what you opened before it leaves.** With the
-shape palette, the list of bodies, the exact values or the appearance settings
+shape palette, the list of bodies, the exact values or the display settings
 open, Back closes that panel — with the same short animation its own control
 gives it — and ForgeShape stays where it was. Back leaves the app only when there
 is nothing open to close, which is exactly what it did before you opened
@@ -334,26 +334,29 @@ the product is the one around a value you can type into.
 not the drawing: the icons are the size they look, and the extra is reach. It
 holds in portrait and in landscape, with a fingertip and with a stylus.
 
-**ForgeShape comes in three appearances, and you choose which.** *Display*
-carries an **Appearance** group listing **Warm Graphite**, **Neutral Charcoal**
-and **Light Charcoal**. All three are dark workspaces, and the viewport's own
-ground changes with each: Warm Graphite — what a fresh start gives you — is a
-warm dark studio ground, Neutral Charcoal is a cooler steel grey, and Light
-Charcoal is the lightest of the three. They are three grounds to work a model
-against rather than a light option and a dark one; a light canvas makes a
-neutral clay render read as grey and washed out, which is the one thing a
-modelling viewport must not do.
+**ForgeShape comes in five appearances, and you choose which.** *Settings*
+carries an **Appearance** group listing **Warm Graphite**, **Neutral
+Charcoal**, **Light Charcoal**, **Warm Light** and **Cool Light**. The first
+three are dark workspaces, and the viewport's own ground changes with each:
+Warm Graphite — what a fresh install gives you — is a warm dark studio ground,
+Neutral Charcoal is a cooler steel grey, and Light Charcoal is the lightest of
+the dark three. Warm Light is a cream paper and Cool Light a steel paper: the
+same controls, the same panels and the same grid, drawn as ink on a light
+canvas, with the grid's lines sinking into the paper instead of lifting off
+the floor and the status bar's icons turning dark to stay readable.
 
 Switching changes how everything is drawn and nothing about what you are
 drawing. The model, its exact dimensions, its placement, which body is selected,
 whether you are in Construction or Sculpt, and any sculpting already done all
 come through untouched. So does what you were doing: the display unit you had
 chosen, the panel you had open and the editor you were in are all still there.
-The whole workspace is rebuilt in the new appearance, so it blinks once.
+The whole workspace is rebuilt in the new appearance, so it blinks once, and
+comes back on the Settings page you chose it from.
 
-The choice lasts as long as the app is running — turning the phone or leaving and
-coming back keeps it — and is not saved. Starting ForgeShape fresh gives you Warm
-Graphite again.
+The choice is saved on the device: turning the phone, leaving and coming back,
+and starting ForgeShape fresh all keep it. It is not part of any project — a
+project file saved in Cool Light opens in whatever appearance the device it is
+opened on has chosen.
 
 Tools, modes and panels are named by drawn icons rather than by characters, and
 a control that is reserved for a feature the product does not have yet is drawn
@@ -365,7 +368,7 @@ and dragging the rail scrolls it without selecting whatever it started on.
 **Panels move, briefly, and never make you wait.** Every panel that opens from a
 control grows out of that control — the list of bodies and the shape palette out
 of the Objects capsule, the exact values out of the control beside the rail, the
-appearance settings out of the button in the toolbar — and all four move the same
+display settings out of the button in the toolbar — and all four move the same
 way, at the same speed, on the same curve. They leave immediately and settle at
 the end, rather than starting slowly, because you have already decided to open
 them. Arriving takes about a fifth of a second and leaving is quicker. Hiding and
@@ -1207,6 +1210,37 @@ direction is empty space.
 A stroke that is interrupted stops where it is rather than snapping back — but
 what it did is still a stroke, so Undo takes it back like any other.
 
+## Settings
+
+**Settings** is one full-window page holding every preference ForgeShape keeps
+between runs, and nothing else. It opens from the quiet **Settings** row at the
+foot of Home and from **Settings…** at the bottom of the Project surface, and
+**Back** returns you exactly where you were — Home, or the workspace with the
+same body selected and the same tool in hand. While it stands the viewport is
+not reachable, and nothing behind it can be touched.
+
+Three groups. **Appearance** is the five palettes above. **Workspace** is
+**Handedness**: *Right-handed (default)* keeps the tool rail on the right edge;
+*Left-handed* moves the rail — and the exact-value panel, the sculpt sliders
+and, on a wide window, the Objects column — to the left edge, the same 8 dp off
+it, the same width, the same height down the window, with the exact-value panel
+opening inward beside it. That is all it moves. The model, its axes, the
+sketch's plane, the camera, every handle's meaning and every gesture are
+exactly what they were; a left-handed user is looking at the same model from
+the same place with the controls under the other thumb. **Gizmo** is how the
+transform handles are drawn: **Visual size** in four steps — *Smaller (90%)*,
+*Default (100%)*, *Larger (125%)*, *Largest (150%)* — and **Thickness** in
+three — *Thin*, *Regular (default)*, *Bold*. Both are presentation only: the
+handle you can grab is always at least 48 dp across whatever the size, and the
+same drag moves, turns or stretches the body by the same amount at every size
+and weight. There is no handle-style choice: the gizmo has one style.
+
+Every row shows which option is chosen with a filled row, a check mark and,
+to a screen reader, the word "selected" — never colour alone. Choosing an
+option applies it at once and saves it; there is nothing to confirm. Changing a
+preference changes no project: nothing is added to Undo, nothing is saved into
+a project file, and a project that was not dirty stays not dirty.
+
 ## Viewport navigation
 
 Touches that land on any chrome surface — the Global Toolbar, the Tool Rail, the
@@ -1492,8 +1526,11 @@ itself is what a **Save** put in the one saved project: the bodies, their
 shapes, their remembered sizes, their placements, their sculpted meshes, which
 body was active and which representation you were in. Everything else returns to
 its defaults when ForgeShape restarts — the camera, the selection, the display
-unit, the appearance, the held tool, the brush, the Undo history, and the
-question of how the model begins.
+unit, the held tool, the brush, the Undo history, and the question of how the
+model begins. The **Settings** preferences — the appearance, handedness and how
+the gizmo is drawn — are the one exception: they are saved on the device the
+moment you choose them and are back on the next start, and they are never part
+of a project.
 
 ## Not yet implemented
 
@@ -1553,12 +1590,14 @@ selects and deletes; it does nothing else.
 Two-finger twist/roll, inertia, camera presets, focus-on-selection, long-press
 selection and UV are not implemented.
 
-**There are three appearances and no fourth, and none of them is light.**
-ForgeShape does not follow the system's own light/dark setting, and there is no
-automatic or scheduled switching: the three palettes are chosen by hand and
-nothing else changes them. The appearance is not saved between runs, and neither
-is the camera, so starting ForgeShape fresh always gives you Warm Graphite and
-always opens on Home.
+**There are five appearances and no sixth, and none of them follows the
+system.** ForgeShape does not follow the system's own light/dark setting, and
+there is no automatic or scheduled switching: the five palettes are chosen by
+hand in Settings and nothing else changes them. The appearance is saved between
+runs; the camera is not, so starting ForgeShape fresh opens on Home in the
+palette you last chose. There is no gizmo handle style to choose, no custom
+workspace layout beyond right- or left-handed, no account, no cloud, and no
+per-project preferences.
 
 **Selection is still a tint over the whole body, not an outline.** It is much
 lighter at rest than it used to be and it announces itself when it changes, but

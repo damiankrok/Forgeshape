@@ -1,0 +1,25 @@
+﻿avd=ForgeShape_Stage006
+pid_after_force_stop= (empty = no process)
+planted file:
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<map>
+    <int name="schema_version" value="1" />
+    <string name="palette">COOL_LIGHT</string>
+    <string name="handedness">LEFT</string>
+    <float name="gizmo_visual_scale" value="1.5" />
+    <string name="gizmo_stroke_weight">BOLD</string>
+</map>
+cold start, first tokens:
+FORGESHAPE_VIEWPORT_BACKGROUND:CoolLight requested=4 known=1 changed=1
+render shading selftest pass: display_gizmo_stroke_weight_default_is_regular
+render shading selftest pass: display_gizmo_stroke_weight_index_round_trips
+render shading selftest pass: display_gizmo_stroke_weight_refuses_unknown
+FORGESHAPE_GIZMO_VISUAL_SCALE:1.500 requested=1.500 accepted=1
+FORGESHAPE_GIZMO_STROKE_WEIGHT:Bold requested=2 known=1 changed=1
+FORGESHAPE_GIZMO_UPLOAD_OK weight=Regular vertices=1116 bytes=22320 move=[0,132) rotate=[132,906) scale=[906,1116)
+Gizmo pipeline created (LINE_LIST, cull NONE, depth test OFF, depth write OFF, alpha blend, no descriptor set)
+Gizmo pipeline created (LINE_LIST, cull NONE, depth test OFF, depth write OFF, alpha blend, no descriptor set)
+FORGESHAPE_GIZMO_UPLOAD_OK weight=Bold vertices=2268 bytes=45360 move=[0,348) rotate=[348,1890) scale=[1890,2268)
+FORGESHAPE_NATIVE_VIEWPORT_OK
+selftest_ok=20 fail=0
+planted file removed; app force-stopped

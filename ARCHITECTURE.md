@@ -105,7 +105,9 @@ forgeshape_jni.cpp            render thread, ANativeWindow, MotionEvent ->
 | mm/cm/m ↔ meter conversion and number formatting | `LengthUnit` | the domain never sees a display unit |
 | The ordered collection of Construction Bodies, ObjectId minting, and which body is active | `ConstructionScene` (`forgeshape_scene.{h,cpp}`) | a flat list, not a scene graph or a hierarchy; ids are never a collection index |
 | Identity, which primitive is active, every primitive's parameters, and placement — for ONE body | `ConstructionObject` (`forgeshape_construction.{h,cpp}`) | it knows nothing of the collection holding it |
-| Which of the three approved appearances the process wears | `EditorUiState` (static) → `AppTheme` | UI-owned, losable, never persisted; the domain sees only a viewport-background index |
+| Which of the five approved appearances the app wears, which edge the rail zone stands on, and how large and how heavily the gizmo is drawn | `AppPreferences` (one immutable value) + `AppPreferencesStore` (the SharedPreferences adapter) | app-level and persisted, never project truth; the domain sees only a viewport-background index, a bounded visual-scale multiplier and a stroke-weight index |
+| The Settings page: the one surface every persistent preference is chosen on | `SettingsPageView` (a start page) | owns no state; reports a request, and is repainted from the store |
+| Seating the rail zone on the chosen edge | `EditorWorkspaceView.applyHandedness` | mirrors row ORDER and margins only; no axis, workplane, camera, gizmo or gesture is mirrored |
 | What the viewport is cleared to | `ViewportBackground` in `forgeshape_display.{h,cpp}` | native owns the colours; no Android theme or RGB crosses JNI |
 | The world reference grid's plane, spacing, extent, tiers and palette | `forgeshape_grid.{h,cpp}` | it is not a `SceneObject`, has no `ObjectId` or revision, is not pickable, and is not a snap target |
 | Whether the grid is drawn | `DisplaySettingsStore` | the renderer owns no presentation preference; the grid module owns no visibility |
@@ -461,15 +463,28 @@ sliders, which are drawn onto a Canvas rather than composed.
 
 That buys three things at once: pressed and active states come from the platform
 instead of a repaint call; instances share one parsed `ConstantState` rather than
-allocating a `GradientDrawable` per control; and **three appearances cost one
+allocating a `GradientDrawable` per control; and **five appearances cost one
 component tree** — one `bg_control.xml`, one `chip()`, one
-`control_content_tint.xml`, no `if (warmGraphite)` anywhere, so a fourth palette
-would touch two resource files and nothing else.
+`control_content_tint.xml`, no `if (warmGraphite)` anywhere — so the fourth and
+fifth palettes touched `attrs.xml`, `themes.xml` and `colors.xml` (and the native
+viewport ground they clear to) and no view class at all.
 
-**The approved appearance set is three DARK palettes** — Warm Graphite (the
-default), Neutral Charcoal and Light Charcoal. Twelve values of each are
-owner-approved and live in `colors.xml`; everything else in a palette is a
-derived neighbour of one of those twelve. **Two of the twelve were lightened on
+**The approved appearance set is five palettes** (UI-OWNER-42): three DARK —
+Warm Graphite (the default), Neutral Charcoal and Light Charcoal — whose twelve
+owner-approved values each live in `colors.xml` untouched, with everything else
+in a palette a derived neighbour of one of those twelve; and, since
+`UI-PREF-R1`, two LIGHT — Warm Light (a cream paper) and Cool Light (a steel
+paper) — derived through the same roles and held to the same measured contrast
+targets, with every text role clearing 4.5:1 on every ground
+(`artifacts/ui-pref-r1/CONTRAST.md`). The light two share
+`Theme.ForgeShape.LightBase`, which also states that the system bars draw dark
+icons; `ForgeShapeActivity.applySystemBarAppearance` restates it through the
+insets controller once the window is attached. Below JNI a ground is one of
+five `ViewportBackground` members with the three dark indices unchanged, and
+every per-ground tool colour — the grid, the gizmo — asks
+`viewportBackgroundIsLight` rather than naming a member: grid lines sink into a
+light paper instead of lifting off a dark floor, and the gizmo takes the
+saturated palette Light Charcoal already used. **Two of the twelve were lightened on
 instruction in UI-LAYOUT-R1**, because they were measured below the repository's own
 accessibility target on the grounds they are actually drawn on: `*_text_secondary`
 (field captions, section headings, slider labels, the active body's name) at
@@ -480,9 +495,9 @@ grounds** either is ever drawn on — the viewport ground, the chrome surface, t
 floating material, the precision surface, a control fill and a field well — with
 each hue kept, so the appearances still read as themselves. `UILR1-11` measures
 every combination and `EditorWorkspaceThemeTest` holds the caption role to the
-body-text target it used to be excused from. There is no light
-appearance and no `-night` qualifier: ForgeShape is viewport-first, and every
-ground in the set is chosen so a neutral clay render reads as lit.
+body-text target it used to be excused from. There is no `-night` qualifier
+and no System member: the appearance is an explicit choice on the Settings
+page, and the two light palettes are that choice, never the system's.
 
 **Three material tiers, and every surface is exactly one of them.**
 `fsSurfaceFloating` (Tier 1) is a control group standing ON the model — the
@@ -556,19 +571,76 @@ the twelve anchors are owner-approved values and are not the UI layer's to move.
 Every surface in the workspace — the Objects capsule, the Add Primitive palette,
 the precision toggle — maps through those same roles. The capsule and the toggle are
 Tier 1, the palette is Tier 2, and no colour, tint or state anywhere in them is
-written in Java, so the three appearances still cost one component tree.
+written in Java, so the five appearances still cost one component tree.
 
-**The appearance itself is UI-owned, process-scoped and losable**, in the one static
-field in `EditorUiState` beside the start choice. It is applied by `setTheme()`
-**before** anything is inflated and changed by recreating the Activity — the only
-clean way to re-resolve themed resources for a UI built entirely in code. Safe,
-because nothing that matters lives in the Activity: scene, bodies, active
-ObjectId, mode, Frozen Sculpt Mesh, camera and display settings are process-scoped
-native state. Free, because **`onDestroy` skips `NativeViewport.stop()` while
-`isChangingConfigurations()`**, so the render thread, the Vulkan device and every
-GPU buffer survive and `start()` returns early rather than re-running the
-self-tests. `EditorUiState` is handed to the incoming workspace. Nothing is
-persisted: a real process kill returns to Warm Graphite.
+**The appearance is one field of the persisted `AppPreferences`** (see
+*Application preferences* below), read through `AppPreferencesStore` by the
+Activity **before** anything is inflated and applied with `setTheme()`, so the
+first frame is already the stored palette. It is changed by recreating the
+Activity — the only clean way to re-resolve themed resources for a UI built
+entirely in code. Safe, because nothing that matters lives in the Activity:
+scene, bodies, active ObjectId, mode, Frozen Sculpt Mesh, camera and display
+settings are process-scoped native state. Free, because **`onDestroy` skips
+`NativeViewport.stop()` while `isChangingConfigurations()`**, so the render
+thread, the Vulkan device and every GPU buffer survive and `start()` returns
+early rather than re-running the self-tests. `EditorUiState` is handed to the
+incoming workspace — the open Settings page included, so the user comes back to
+the row they chose. A real process kill returns to the stored palette.
+
+### Application preferences and the Settings page (`UI-PREF-R1`)
+
+**`AppPreferences` is one immutable, versioned value** — the palette, the
+handedness, the gizmo's visual scale and its stroke weight — and it is
+**application truth, never project truth**: it enters no `.forge` byte, moves
+no fingerprint, dirties no project, records no history step and never reaches a
+checkpoint. `SettingsPreferencesTest.uiprefr1_09_10_11_37` serialises a
+project, changes every field, and asserts the bytes, the fingerprint, the dirty
+flag, both history depths and the native snapshot are identical. It holds no
+Android type; the rules it applies when a stored value is read are one per
+field and are proven on the JVM (`AppPreferencesTest`): an unknown enum name is
+the default, a non-finite number is the default, a finite out-of-range number
+is clamped to the nearer bound, a missing key is the exact product default, and
+a key this build does not know is ignored — so a newer build's file never
+crashes an older reader, without a migration framework.
+
+**`AppPreferencesStore` is the Android adapter**: the app's own
+`SharedPreferences` file (`forgeshape_preferences`), written synchronously and
+atomically by the platform, read once per process into one cached copy. Enum
+fields are stored by NAME, so a reordering can never change a user's palette.
+The store knows nothing about projects and no project file, `Uri` or path is
+involved. The Activity reads it before `setTheme`; the workspace pushes the two
+gizmo values to native presentation state and seats the rail zone on the chosen
+edge once per construction, and again on every change.
+
+**`SettingsPageView` is a start page** on `StartPageView`'s terms — opaque,
+full-window, content insets, Back at the foot — reached from Home's quiet
+Settings row and from the Project surface's `Settings…`, and it is the ONE home
+of every persistent preference (UI-OWNER-37). The transient viewport controls
+(Shading, Surface, Projection, Grid) stay in the Display popover; the palette,
+which used to live there, moved because it is now persistent. Every option is a
+full-width list row carrying the selected fill, a check mark, `isSelected()` and
+a "selected" content description, so the choice is never colour alone. The page
+owns no state: each row reports a request, the workspace writes the store,
+applies the change and repaints the page from what is in force. Whether the page
+stands is `EditorUiState.settingsOpen`, carried across the recreation a palette
+change performs. There is no Handle Style row: the gizmo is a one-pixel line
+list by renderer contract and no second style shares its hit semantics, so the
+row is absent rather than inert.
+
+**Handedness mirrors edge anchoring and nothing else** (UI-SPEC-R0 Rev1).
+`EditorWorkspaceView.applyHandedness` re-seats the middle row's members —
+Objects column, brush controls, the weighted gap, a side-placed precision
+surface, the trailing host — in mirrored ORDER and swaps their edge margins;
+`WorkspaceTrailingHostView.setMirrored` moves the host's one 8 dp inset to the
+other margin. Right is the default and reproduces the accepted UI-LAYOUT-R2
+frame exactly (`SettingsPreferencesTest.assertRightHandedFrame`); Left seats the
+host first in the row with the same width, top and inset, seats a side-placed
+precision surface AFTER it with its standoff toward it, and
+`leadingLimitFor` keeps an anchored surface clear of a left rail exactly as
+`trailingLimitFor` keeps one clear of a right rail. The bottom row and the
+Global Toolbar are untouched, and no axis, workplane, camera, gizmo solver,
+transform, exported byte or gesture meaning is mirrored — a left-handed user
+sees the same model from the same place.
 
 **The Vulkan viewport is full-bleed and stays that way.** No layout decision
 insets, pads or resizes the `SurfaceView`; window insets are applied to
@@ -1842,6 +1914,37 @@ the 48-unit floor be a number the domain states rather than an aspiration. Every
 target meets it — `2 * kGizmoHitSlopUnits` for a shaft or an arc,
 `2 * kGizmoPlaneHitRadiusUnits` around a plane square's centre,
 `2 * kGizmoUniformHitRadiusUnits` around the pivot.
+
+**The visual size preference** (`UI-PREF-R1` E, UI-OWNER-32) rides beside the
+camera-derived scale in the snapshot as `visualScale`, bounded to
+`[kGizmoMinVisualScale, kGizmoMaxVisualScale]` = `[0.9, 1.5]` and refused, never
+clamped, outside it (`GizmoSession::setVisualScale`). `gizmoPlacementScale`
+multiplies the two, and it is the ONE scale every handle is PLACED at — the
+renderer's model matrix, `gizmoHandleGrabPoint` and the hit test all read it, so
+the drawing and the grabbing still cannot disagree. What it does not touch: the
+hit corridors (density pixels, so the 48-unit floor holds at the smallest
+size), the pivot dead disc, and every drag amount — the axis and plane solvers
+are ray arithmetic, the ring solver is an angle about the pivot, and the scale
+mapping's reference length is measured on a CANONICAL snapshot with the
+preference set aside, so the same pixel drag stretches a body by the same
+factor at every size (`uipref_the_same_pixel_drag_scales_by_the_same_factor…`).
+The floor is 0.9 because a plane handle is grabbed within 24 units of its
+centre and the dead disc is 24 units: from an oblique three-quarter view the
+centre's projected distance is about 0.68 of its 40-unit standoff — 27 units at
+1.0, 24.4 at 0.9, and 20 at 0.75, where the handle would be lost.
+
+**The stroke weight preference** (`UI-PREF-R1` F) is a closed bundle recipe,
+`GizmoStrokeWeight` in the display store: Regular is the pre-preference gizmo
+vertex for vertex (`generateGizmoVertices`'s two-argument form, pinned at 1116
+vertices by static_assert and by the self-test's byte comparison); Thin is the
+same bundle at half the spread; Bold widens the shaft bundle to thirteen
+one-pixel lines, bundles the arrowhead strokes and adds a concentric pass to
+the rings, squares and cubes (2268 vertices). Hit testing never reads it. The
+renderer keeps ONE buffer sized to the widest recipe and
+`syncGizmoGeometry` re-uploads the canonical list only when the store's weight
+differs from the one the device holds — a size change is a matrix and uploads
+nothing, and `FORGESHAPE_GIZMO_UPLOAD_OK` now names the weight so any other
+occurrence is still evidence of a re-upload that must not happen.
 
 Handles resolve in **priority tiers**, smallest target first: uniform, then
 planes, then axes, nearest-within-tier, with the enumeration order breaking an

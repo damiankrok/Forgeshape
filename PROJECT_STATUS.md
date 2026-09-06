@@ -1,8 +1,56 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.63.0
-**Updated:** 2026-09-05
-**Result:** **CAD-A3-C2 / SKETCH-UX-R1 — COMPLETE / OWNER ACCEPTED.** The
+**Status Version:** 0.64.0
+**Updated:** 2026-09-06
+**Result:** **UI-PREF-R1 — OWNER ACCEPTED / TECHNICAL EVIDENCE WAIVER
+(`PASS-UI-PREF-R1-OWNER-WAIVER-CLOSEOUT`).** The Settings hub, persistent
+application preferences, right/left handedness, five palettes and the gizmo's
+visual size and thickness are implemented and verified on the isolated AVD by
+the focused, device, native, JVM, build and corpus gates. **The final
+`-FullSharded` aggregate was NOT achieved, and the OWNER explicitly waived it
+for this stage**: the feature works in manual use, every other gate is green,
+repeated aggregate attempts consumed excessive time, and the last unresolved
+failure was diagnosed as a test-harness Activity-recreation wait race rather
+than a demonstrated product defect. No `FULL_SHARDED_SUITE_PASS` exists for
+UI-PREF-R1 and none is claimed; the three failed aggregate transcripts are
+kept in `artifacts/ui-pref-r1/` and the waiver is recorded in
+`artifacts/ui-pref-r1/OWNER_WAIVER_CLOSEOUT.md`. The waiver applies to this
+stage alone, and **TEST-OWNER-02** — a bounded automated test budget, 30
+minutes target and 45 minutes hard stop per closeout — governs future runs. **What it is:** `AppPreferences` is ONE versioned, immutable
+value — palette, handedness, gizmo visual scale, gizmo stroke weight —
+persisted by `AppPreferencesStore` (the app's own `SharedPreferences` file,
+no new dependency), read before the Activity applies its theme and surviving
+recreation, resume and a fresh process; it is never project truth
+(`SettingsPreferencesTest.uiprefr1_09_10_11_37`: identical `.forge` bytes,
+fingerprint, dirty flag, both history depths and native snapshot after every
+field changed). **Settings** is a full-window start page reached from Home's
+quiet Settings row and from the Project surface's `Settings…`, holding
+Appearance (five palettes), Workspace (Handedness) and Gizmo (Visual size,
+Thickness) and nothing that does not work. **Five palettes** (UI-OWNER-42):
+the three dark ones value-for-value as approved, and Warm Light / Cool Light
+derived through the same semantic roles with every text role clearing 4.5:1
+on every ground (`artifacts/ui-pref-r1/CONTRAST.md`), the grid sinking into
+the paper and the system bars flipping to dark icons; the Appearance group
+moved from the Display popover to Settings because it is persistent
+(UI-OWNER-37). **Handedness**: Right reproduces UI-LAYOUT-R2 exactly; Left
+seats the rail zone on the left edge with the same 8 dp inset, width and top,
+Exact opening inward, and mirrors nothing else — no axis, workplane, camera,
+gizmo solver, transform, byte or gesture. **Gizmo** (UI-OWNER-32): visual
+size is a bounded multiplier on handle PLACEMENT — `[0.9, 1.5]`, presets
+0.9 / 1.0 / 1.25 / 1.5, refused-not-clamped below JNI — read by the drawing
+and the hit test alike while every hit corridor and every drag amount is
+unchanged; thickness is a closed bundle recipe (Thin / Regular / Bold) with
+Regular byte-identical to the accepted gizmo (FNV-1a `84976216ea9f24b8`,
+1116 vertices, before and after). **Deviation:**
+`GIZMO_STYLE_DEFERRED_BY_RENDERER_CONTRACT` — the gizmo is a one-pixel line
+list by renderer contract and no second style shares its hit semantics, so
+Handle Style is ABSENT rather than inert. Evidence:
+`artifacts/ui-pref-r1/INDEX.md`. **The Delete → Undo → Redo owner check of
+`IMPORT-01B` / `UI-OWNER-45` stays pending**: none of its files changed
+(`artifacts/ui-pref-r1/DELETE_HOLD.md`) and no verdict is invented. The
+deferred audit debt (F-06, F-07, F-09, F-10, F-13, F-14) is unchanged.
+
+**Previous result:** **CAD-A3-C2 / SKETCH-UX-R1 — COMPLETE / OWNER ACCEPTED.** The
 OWNER's real-device verdict, `OWNER_CAD_A3_C2_VERDICT = PASS` (received
 2026-09-05 through the ForgeShape coordinator), closes the owner review the
 pass had been waiting on: the start page, the immediate flat first sketch, the
@@ -969,7 +1017,7 @@ an R2 blocker; environment hazards are in *Known Issues*.
 Runtime-verified on `ForgeShape_Stage006` / `emulator-5580` in compact portrait,
 short landscape and expanded/tablet windows —
 compact portrait, compact landscape (short height) and an overridden
-1600 × 2560 @ 240 dpi expanded — in all three appearances.
+1600 × 2560 @ 240 dpi expanded — in every appearance (three at the time; five since UI-PREF-R1).
 
 **The right context is one bounded surface with one composition owner.**
 `WorkspaceTrailingHostView` owns the right-cluster children, their vertical order,
@@ -1334,7 +1382,24 @@ ids and the verdict; their individual wording is the coordinator's brief, and
 this file records them at the pass they cover. **Implemented but still
 awaiting its OWNER verdict:** UI-OWNER-45 (Delete as one transaction,
 IMPORT-01B) — no Delete → Undo → Redo verdict has been supplied, and none is
-claimed.
+claimed — and, since UI-PREF-R1, **UI-OWNER-37** (the Settings hub owning
+every persistent preference), **UI-OWNER-32** (the gizmo's visual size and
+thickness as bounded presentation preferences; handle style deferred by the
+renderer contract rather than faked) and **UI-OWNER-42** (exactly five
+palettes: the accepted dark three preserved, Warm Light and Cool Light derived
+through the semantic theme system and measured), together with the
+UI-SPEC-R0 Rev1 mirrored-zone reservation as the left-handed rail — all
+implemented and verified on the AVD, none aesthetically approved; the
+coordinator's combined OWNER retest is what closes them.
+
+**TEST-OWNER-02 — bounded automated test budget.** Recorded 2026-09-06 with
+the UI-PREF-R1 aggregate waiver. A closeout's automated tests target **30
+minutes** in total and stop at **45 minutes**; no single focused command may
+run past 20 minutes without being stopped and classified; an emulator is not
+rebooted or recreated repeatedly unless one specific failure requires one
+clean restart; broad unrelated suites are not run to "check". It governs
+future test budgets and does not retroactively excuse any earlier stage's
+evidence.
 
 Bare `D1`–`D6` decision numbers are retired and non-authoritative. No stage gate,
 acceptance table or preflight may cite a bare `D` number.
@@ -1564,15 +1629,21 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 | Sculpt topology fixed; buffers reused, never reallocated during a stroke | VERIFIED |
 | Construction Source bit-identical after sculpting with all four tools | VERIFIED |
 | Lifecycle: shape, placement, identity, unit, mode, tool, sculpt, camera and selection survive home/resume with no re-upload | VERIFIED |
-| Three explicit approved appearances — Warm Graphite, Neutral Charcoal, Light Charcoal — chosen from a named list in the Display popover's Appearance group | VERIFIED |
+| Five explicit approved appearances — Warm Graphite, Neutral Charcoal, Light Charcoal, Warm Light, Cool Light — chosen from a named list on the Settings page's Appearance group (UI-OWNER-42; moved out of the Display popover in UI-PREF-R1 because the choice is persistent) | VERIFIED |
+| The Settings page: one full-window start page reached from Home and from the Project surface's `Settings…`, holding Appearance, Workspace (Handedness) and Gizmo (Visual size, Thickness); every row a real saved preference, chosen in more than colour; Back one step in every phase; the viewport not reachable through it | VERIFIED (UI-PREF-R1) |
+| `AppPreferences` persisted in the app's own `SharedPreferences` file, read before the theme is applied, surviving Activity recreation, resume and a fresh process; unknown names, NaN and out-of-range values landing on the documented fallbacks | VERIFIED (UI-PREF-R1) |
+| Changing every preference leaves the `.forge` bytes, the fingerprint, the dirty flag, both history depths, the mesh revision and the whole native snapshot identical | VERIFIED (UI-PREF-R1) |
+| Handedness Right = the accepted UI-LAYOUT-R2 frame exactly; Left = the rail zone on the left edge with the same 8 dp inset, width and top, a side-placed Exact seated inward and never overlapping it, anchored surfaces kept clear, the tool, gizmo mode, selection, camera and handle pixels unchanged | VERIFIED (UI-PREF-R1) |
+| Gizmo visual size in `[0.9, 1.5]` (presets 0.9 / 1.0 / 1.25 / 1.5), refused-not-clamped below JNI; every handle of every mode grabbed at its own pixel at 0.9 and 1.5; the hit corridor and every drag amount unchanged | VERIFIED (UI-PREF-R1) |
+| Gizmo thickness Thin / Regular / Bold as closed bundle recipes; Regular byte-identical to the accepted gizmo; the canonical list re-uploaded only on a weight change; no handle moved by a weight | VERIFIED (UI-PREF-R1) |
 | Warm Graphite is the product default and what a fresh process wears; a process kill returns to it | VERIFIED |
-| Each appearance changes the VIEWPORT ground as well as the chrome (`#302E2B` / `#26282A` / `#3C3F41`), and every ground in the set is dark | VERIFIED |
+| Each appearance changes the VIEWPORT ground as well as the chrome (`#302E2B` / `#26282A` / `#3C3F41` / `#EDE7DC` / `#E4E8EC`); the three dark grounds are dark and the two light grounds light, with the system bars' icons following the ground | VERIFIED |
 | A theme switch publishes no mesh, mints no revision and causes zero GPU upload or render-mesh rebuild | VERIFIED |
 | Scene, active ObjectId, primitive spec, placement, product mode and Frozen Sculpt Mesh survive the switch bit-identically | VERIFIED |
 | The appearance survives rotation and HOME/resume; the start chooser does not reappear because of it | VERIFIED |
 | The UI session — display unit, whether the precision surface was asked for, Tool Rail entry — survives the recreation that applies a theme | VERIFIED |
-| Icons, pressed feedback, active-not-by-colour-alone and 48 dp hit areas all hold in all three dark appearances | VERIFIED |
-| Property Inspector values, labels and verdicts meet WCAG AA contrast in every one of the three appearances; its surfaces stay opaque | VERIFIED |
+| Icons, pressed feedback, active-not-by-colour-alone and 48 dp hit areas all hold in all five appearances | VERIFIED |
+| Property Inspector values, labels and verdicts meet WCAG AA contrast in every one of the five appearances; its surfaces stay opaque | VERIFIED |
 | Start chooser: New Project offers exactly Construction/CAD and Sculpt, over the live viewport | VERIFIED |
 | The start question is asked once per process; rotation, HOME/resume and Activity recreation do not re-ask; a process kill does | VERIFIED |
 | Choosing Construction creates no body and changes no active body — the default Body is already there | VERIFIED |
@@ -1601,7 +1672,7 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 | A tap on a populated numeric field selects it, so the first keystroke replaces; no concatenation of the old value and the new can occur | VERIFIED (UI-LAYOUT-R1) |
 | Apply is pinned below the precision body in every placement and is on screen with no scrolling, keyboard up or down; the body fades its bottom edge while there is more | VERIFIED (UI-LAYOUT-R1) |
 | The mm/cm/m chips sit inside the Position group and are headed *Position unit*; nothing about a unit is drawn near the unitless Scale row | VERIFIED (UI-LAYOUT-R1) |
-| The secondary and error text roles clear 4.5:1 against all six grounds they are drawn on, in all three appearances, with primary above secondary above disabled | VERIFIED (UI-LAYOUT-R1) |
+| The secondary and error text roles clear 4.5:1 against all six grounds they are drawn on, in all five appearances, with primary above secondary above disabled (stated as contrast, so it is one rule on light and dark grounds) | VERIFIED (UI-LAYOUT-R1, UI-PREF-R1) |
 | The gizmo draws four kinds of handle as four kinds of mark — bundled axis, closed arrowhead or cube, crossed plane square, neutral pivot cross, doubled uniform cube — with hit radii, handle sets, grab points, solvers and space rules unchanged | VERIFIED (UI-LAYOUT-R1) |
 | Every chrome surface consumes its own gesture; viewport pixel-identical across chrome drags | VERIFIED |
 | Freeze / Resume wording follows whether a Frozen Sculpt Mesh exists | VERIFIED |
@@ -1726,7 +1797,9 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 ## Self-test suite
 
 Twenty debug-only native suites run once from `NativeViewport.start()` —
-never per frame — and total **2970 checks, zero failures**:
+never per frame — and total **3019 checks, zero failures** (UI-PREF-R1 added
+16 render-shading checks for the two light grounds and the stroke weight, and
+22 gizmo checks for the visual size and the stroke recipes):
 
 | suite token | checks |
 | --- | --- |
@@ -1739,17 +1812,17 @@ never per frame — and total **2970 checks, zero failures**:
 | `FORGESHAPE_CONSTRUCTION_SPHERE_SELFTEST_OK` | 105 |
 | `FORGESHAPE_CONE_CAPSULE_SELFTEST_OK` | 163 |
 | `FORGESHAPE_SCULPT_BRUSH_KERNEL_SELFTEST_OK` | 494 |
-| `FORGESHAPE_RENDER_SHADING_SELFTEST_OK` | 329 |
+| `FORGESHAPE_RENDER_SHADING_SELFTEST_OK` | 345 |
 | `FORGESHAPE_SCENE_SELFTEST_OK` | 79 |
 | `FORGESHAPE_CONSTRUCTION_HISTORY_SELFTEST_OK` | 147 |
-| `FORGESHAPE_GIZMO_SELFTEST_OK` | 145 |
-| `FORGESHAPE_PROJECT_SELFTEST_OK` | 247 |
+| `FORGESHAPE_GIZMO_SELFTEST_OK` | 167 |
+| `FORGESHAPE_PROJECT_SELFTEST_OK` | 251 |
 | `FORGESHAPE_RENDER_RECOVERY_SELFTEST_OK` | 24 |
 | `FORGESHAPE_GLTF_EXPORT_SELFTEST_OK` | 93 |
-| `FORGESHAPE_GLTF_IMPORT_SELFTEST_OK` | 184 |
+| `FORGESHAPE_GLTF_IMPORT_SELFTEST_OK` | 189 |
 | `FORGESHAPE_CAD_SELFTEST_OK` | 122 |
 | `FORGESHAPE_CAD_A3_SELFTEST_OK` | 57 |
-| `FORGESHAPE_SKETCH_UX_SELFTEST_OK` | 50 |
+| `FORGESHAPE_SKETCH_UX_SELFTEST_OK` | 52 |
 
 The CAD suite (`forgeshape_cad_selftest.cpp`, `CADR0-*`) builds its own sketches,
 scenes, histories and camera, drives the sketch session through real
@@ -1953,20 +2026,23 @@ device. `README.md` documents how to read them.
 | `WorkspaceLayoutModeTest` (JVM) | breakpoints, placement, chrome sizing and the Objects dock decision; no dead trailing-rail docking state remains | 15 |
 | `EditorUiStateTest` (JVM) | what the UI may remember and what it refuses, including that the precision surface starts closed in both modes and no window size opens it | 10 |
 | `LengthUnitTest` (JVM) | exact mm/cm/m round-tripping and parse refusal | 5 |
-| `AppThemeTest` (JVM) | the default, the three approved appearances, the JNI index contract, and that choosing one moves nothing else | 11 |
+| `AppThemeTest` (JVM) | the default, the five approved appearances (exactly two light), the JNI index contract with the dark three unchanged, name and ordinal fallbacks, and that choosing one moves nothing else the UI remembers — the open Settings page included | 10 |
+| `AppPreferencesTest` (JVM) | `UIPREFR1-03/04/07/08/40` on the JVM: the defaults are the product, missing keys are the exact defaults, unknown names fall back, non-finite is the default and out-of-range is clamped, the bounds and presets agree with the JNI seam, a null choice is the default, one field changes alone, a future schema reads, and exactly the approved preferences exist — no handle style | 10 |
 | `ChromeMotionTest` (JVM) | the fade durations, the anchored-growth durations and curve shape (`UIR4B-08`), the uniform start scale, and that reduced motion returns 0 rather than a short duration (`UIR4B-10`) | 8 |
-| `DisplaySettingsContractTest` (JVM) | the shading/surface index contract across JNI | 4 |
+| `DisplaySettingsContractTest` (JVM) | the shading/surface index contract across JNI, the five viewport-background indices with the dark three unchanged, and the gizmo stroke-weight indices and visual-size bounds | 6 |
 | `EditorWorkspaceControlsTest` | control sets, fields, validation, freeze wording, tools, the six-kind round trip | 23 |
 | `EditorWorkspaceLayoutTest` | measured viewport floor, landscape, expanded, collapse, the UI-R1C2 adaptive pass | 10 |
 | `EditorWorkspaceGestureTest` | chrome gesture ownership, IME | 6 |
 | `EditorWorkspaceLifecycleTest` | HOME/resume rebuilt from native truth | 3 |
 | `EditorWorkspaceDisplayTest` | display/projection ids, presentation-only, resume, refused index, the View/Grid group | 17 |
 | `EditorWorkspaceObjectsTest` | rows by ObjectId, viewport pick sync, the docked surface, 20-body scalability | 10 |
-| `HomeFlowTest` | `E2E-APPH1-01..12` (`CAD-A3-C1`): cold-launch Home with no project, no body, no history, no document and exactly two actions; New Project → CAD/Sculpt and Cancel; New CAD through a real spatial plane tap-tap to the first durable body with an empty history; New Sculpt as a real sculpt project with Sculpt Undo green; Open File from Home restoring a producer + face-supported dependent; cancel and a corrupt/missing file leaving Home standing; the unsaved-changes guard's Cancel, Discard and Save paths; deterministic Back in every phase; Home and the bootstrap surviving a recreation — and, on every journey, that native never read an active body while no project was open | 12 |
+| `HomeFlowTest` | `E2E-APPH1-01..12` (`CAD-A3-C1`): cold-launch Home with no project, no body, no history, no document and exactly two primary actions plus the quiet Settings row; New Project → CAD/Sculpt and Cancel; New CAD through a real spatial plane tap-tap to the first durable body with an empty history; New Sculpt as a real sculpt project with Sculpt Undo green; Open File from Home restoring a producer + face-supported dependent; cancel and a corrupt/missing file leaving Home standing; the unsaved-changes guard's Cancel, Discard and Save paths; deterministic Back in every phase; Home and the bootstrap surviving a recreation — and, on every journey, that native never read an active body while no project was open | 12 |
 | `CadA3VisualEvidenceTest` | `E2E-CADA3-VIS`: the ten-frame Home → New CAD → face sketch → reopen journey captured through the composed display with measured facts per frame, for `OWNER_CONTACT_SHEET.png` / `VISUAL_EVIDENCE.md` | 1 |
 | `SpatialSketchTest` | `E2E-CADA3`: New Sketch landing directly in the spatial support chooser; the by-name plane fallback; every world plane by a real aiming tap and a committing tap; a synthesized stylus hover that highlights and never commits, then a finger commit; a planar cap and a side face each supporting a sketch; a cylindrical side never doing so; a face-supported dependent surviving a producer depth edit, refusing the producer's delete and surviving a save/reopen; the adaptive grid following two real pinches with a typed value kept exact | 8 |
 | `EditorWorkspaceFoundationTest` | icons, pressed feedback, touch floor in Construction **and in Sculpt** (`UIR3-01`) including the precision toggle and the capsule`+`, rail tap-vs-scroll, viewport floor, popover | 8 |
-| `EditorWorkspaceThemeTest` | the three-palette control, the switch, state preservation across the recreation, the material tiers, selection-vs-commit, contrast | 19 |
+| `EditorWorkspaceThemeTest` | the five-palette control on the Settings page, the switch through it, light grounds light and dark grounds dark with the system bars following, state preservation across the recreation, the material tiers, selection-vs-commit and hierarchy stated as contrast, contrast | 19 |
+| `SettingsPreferencesTest` | `UIPREFR1-01..40` on the device: Settings from Home and from the Project surface with Back one step; one store whose defaults reproduce the product and the UI-LAYOUT-R2 frame; preferences surviving `recreate()` and a fresh read from disk; planted unknown names, NaN and out-of-range values landing on the fallbacks; identical project bytes, fingerprint, dirty flag, history depths and native snapshot after every preference changed; the left rail 8 dp off the left edge with the accepted width and top and the right frame restored exactly; a side-placed Exact opening inward of a left rail and re-seated live; the tool, gizmo mode, selection, camera and handle pixels unchanged by a switch; the four sizes and three weights reaching native with the out-of-range refused; every handle pickable at 0.9, 1.5 and 1.0 in every mode; no handle moved by a weight; the two light palettes light, readable and flipping the system bars; exactly the approved rows and no handle style | 15 |
+| `UiPrefVisualEvidenceTest` | `E2E-UIPREFR1-VIS`: the twenty-frame Settings → five palettes (Home and editor) → right/left-handed with Exact → gizmo default / smallest-thin / largest-bold journey, captured through the composed display with measured facts per frame, for `OWNER_CONTACT_SHEET_UI_PREF_R1.png` / `VISUAL_EVIDENCE.md` | 1 |
 | `EditorWorkspaceMotionTest` | popover preserved, inspector interruptibility, chrome hide/restore, viewport stability, reduced motion, gesture priority | 10 |
 | `PointerSemanticsTest` (JVM) | the Android tool-type mapping and its Unknown fallback | 6 |
 | `EditorWorkspacePointerTest` | synthetic stylus transport, per-pointer association, and that tap / navigation / sculpt arbitration are unchanged | 13 |
@@ -1974,8 +2050,8 @@ device. `README.md` documents how to read them.
 | `SketchExtrudeTest` | `E2E-CADR0-01..16`: New Sketch and the plane chooser; a real dragged rectangle, circle and tapped polyline; Finish Sketch; a typed depth and Extrude; the Objects row and the CAD context; Undo/Redo of the creation; later rectangle and depth edits as one step each; save/reopen as editable truth; an open polyline refused by name and Cancel leaving the project byte-identical; a gizmo drag surviving a depth edit; Imported Mesh Sculpt Undo/Redo beside a CAD Body | 9 |
 | `EditorWorkspaceMobileTest` | the UI-R4A structural claim: nothing owns the bottom edge in either mode (`UIR4A-01`, `-11`), the Objects capsule (`-02`), Add Primitive anchored to its `+` and offering exactly the six real primitives (`-03`, `-04`), Sphere and Plane routed through native truth (`-05`, `-06`), closing leaves one Objects control (`-07`), exact Shape and Transform one action away (`-08`, `-09`), the rail's icons and touch floor (`-10`), context surfaces rebuild no geometry (`-14`), the new surfaces leak no gesture (`-15`), one vocabulary in every window (`-17`) | 15 |
 | `EditorWorkspaceSculptRetentionTest` | `UIR4A-12` / `UIR4B-20`: Start Sculpting → real stroke → Back → Resume returns the same revision, counts, stroke history and ObjectId, with the Construction Source untouched; and that a stale source is readable from the resting workspace | 2 |
-| `EditorWorkspaceCorrectionTest` | the UI-R4B corrections: no Sculpt creation path and the scene still reachable (`UIR4B-01`), Construction's six-primitive path intact (`-02`), the rail's active state across a rebuild in both modes and cleared on a mode change (`-03`), the status lifecycle, the longer hold for a rejection, the empty resting line and the standing fault (`-04`), brush values beside their sliders and nowhere else and publishing nothing (`-05`), no mid-row cut in Shape or Transform with scrolling and fields intact (`-06`, `-07`), one shared anchored contract (`-08`), a correct first-open pivot for all four surfaces (`-09`), instant reduced motion and interruptibility (`-10`), zero geometry from chrome and motion (`-11`), inset floating surfaces on an expanded window (`-12`), Radius/Strength off the model in expanded Sculpt (`-13`), concentric active geometry and a fill-led selection with no stroke (`-14`), no user-facing *Freeze* over every `R.string` (`-15`), Start Sculpting with Back/Resume/confirmation intact (`-16`), the 48 dp floor in both modes and the toolbar still fitting (`-17`), three appearances and no geometry (`-18`), grid and selection feedback unchanged (`-19`) | 36 |
-| `EditorWorkspaceChromeCompositionTest` | the UI-R4C composition cleanup: back navigation drawn in full with no ellipsis and no clipping in the window under test (`UIR4C-01`, `-03`) and in short landscape (`-02`), Add Primitive intersecting neither the tool cluster nor the precision control in either window (`-04`), the six primitives and their native routing after the reflow (`-05`), a single-member editing group drawn as one control and a two-member one still a capsule (`-06`), Resume Sculpt on the same geometry returning the same revision and mesh (`-07`), the 48 dp floor after the reduction (`-08`), no instructional capsule at rest (`-09`) or with the exact values open, with the transient path intact (`-10`), three appearances and no new colour in the lone-control forms (`-11`), zero native change across the whole sequence (`-12`) | 12 |
+| `EditorWorkspaceCorrectionTest` | the UI-R4B corrections: no Sculpt creation path and the scene still reachable (`UIR4B-01`), Construction's six-primitive path intact (`-02`), the rail's active state across a rebuild in both modes and cleared on a mode change (`-03`), the status lifecycle, the longer hold for a rejection, the empty resting line and the standing fault (`-04`), brush values beside their sliders and nowhere else and publishing nothing (`-05`), no mid-row cut in Shape or Transform with scrolling and fields intact (`-06`, `-07`), one shared anchored contract (`-08`), a correct first-open pivot for all four surfaces (`-09`), instant reduced motion and interruptibility (`-10`), zero geometry from chrome and motion (`-11`), inset floating surfaces on an expanded window (`-12`), Radius/Strength off the model in expanded Sculpt (`-13`), concentric active geometry and a fill-led selection with no stroke (`-14`), no user-facing *Freeze* over every `R.string` (`-15`), Start Sculpting with Back/Resume/confirmation intact (`-16`), the 48 dp floor in both modes and the toolbar still fitting (`-17`), five appearances on the Settings page and no geometry (`-18`), grid and selection feedback unchanged (`-19`) | 36 |
+| `EditorWorkspaceChromeCompositionTest` | the UI-R4C composition cleanup: back navigation drawn in full with no ellipsis and no clipping in the window under test (`UIR4C-01`, `-03`) and in short landscape (`-02`), Add Primitive intersecting neither the tool cluster nor the precision control in either window (`-04`), the six primitives and their native routing after the reflow (`-05`), a single-member editing group drawn as one control and a two-member one still a capsule (`-06`), Resume Sculpt on the same geometry returning the same revision and mesh (`-07`), the 48 dp floor after the reduction (`-08`), no instructional capsule at rest (`-09`) or with the exact values open, with the transient path intact (`-10`), every appearance and no new colour in the lone-control forms (`-11`), zero native change across the whole sequence (`-12`) | 12 |
 | `EditorWorkspaceArchitectureTest` | UI-ARCH-R1 ownership and parity (`UIAR1-01..12`): host-owned semantic children; no right-cluster leaf fields/accessors in the root; native readback for Move/Rotate/Scale and World/Local; Exact callback parity; Display suppression/restoration; compact, IME and expanded contracts; Sculpt rail parity; no duplicate state authority; stable no-op geometry/visibility snapshot | 12 |
 | `EditorWorkspaceHistoryTest` | Stage 019, from the product side of JNI: an empty history and both controls disabled (`S019-01`, `-27`), one Apply as one reversible step down to the ObjectId (`-02`..`-04`), rejection and no-op writing nothing and publishing nothing (`-05`, `-06`), six placement values as one atomic step with 370° intact (`-07`, `-08`), Add Primitive as one creation transaction with no default-Box remnant and a redo restoring the same id, order and parameters (`-09`, `-10`), interleaved multi-object undo/redo in chronological order (`-11`), redo invalidation and the three things that do not invalidate it (`-12`, `-13`), no history from selection, context, surfaces, unit, grid, shading or chrome-hide (`-14`), begin/many-updates/commit as one step and cancel as none (`-15`, `-16`), bounded capacity with a clean exhaustion (`-17`), rotation and HOME/resume retention with the rebuilt chrome reading native state (`-18`, `-19`), the Sculpt seam writing nothing and withdrawing the pair while the native guard stands (`-20`, `-24`), a real Grab stroke writing no Construction history and a Construction undo leaving the sculpt mesh's revision, counts, strokes and identity alone except for the existing stale-source flag (`-21`, `-22`), enabled state always native state including across a rotation (`-23`), the 48 dp floor and no intersection with any other chrome surface (`-25`), and one Apply still exactly one publication with a commit adding none (`-26`) | 20 |
 
@@ -2098,7 +2174,23 @@ precondition. Runtime evidence separately shows the real keyboard.
 
 ## Current evidence summary
 
-Latest run (**CAD-A3-C1**), on the isolated `ForgeShape_Stage006` /
+Latest run (**UI-PREF-R1**), on the isolated `ForgeShape_Stage006` /
+`emulator-5580` AVD, on the final runtime/test tree:
+[`artifacts/ui-pref-r1/`](artifacts/ui-pref-r1/) — `INDEX.md`,
+`PREFERENCES.md`, `HANDEDNESS.md`, `GIZMO_APPEARANCE.md`, `CONTRAST.md`,
+`DELETE_HOLD.md`, `PERFORMANCE.md`, `NATIVE_STANDALONE.md`,
+`TEST_RESULTS.md`, `DEVICE_E2E.md`, `VISUAL_EVIDENCE.md` with
+`OWNER_CONTACT_SHEET_UI_PREF_R1.png` and `frames/`, the raw startup log
+(20/20 `_SELFTEST_OK`, 3019 checks, zero failures), the focused logs and the
+three FAILED aggregate transcripts (`FULL_SHARDED_RUN1_FAIL.txt`,
+`FULL_SHARDED_RUN2_ABORT.txt`, `FULL_SHARDED_RUN3_FAIL.txt`) and
+`OWNER_WAIVER_CLOSEOUT.md`. See `INDEX.md` for the run-by-run account.
+**UI-PREF-R1 has no authoritative aggregate**: the last one reached shards
+1–4 PASS and failed shard 5 on a test-harness race, the OWNER waived the gate,
+and this closeout verified the fix with focused runs only. The earlier stages'
+aggregates below stand as the record of their stages and are unaffected.
+
+Previous run (**CAD-A3-C1**), on the isolated `ForgeShape_Stage006` /
 `emulator-5580` AVD, on the final runtime/test tree:
 [`artifacts/cad-a3-app-h1/`](artifacts/cad-a3-app-h1/) — `INDEX.md`,
 `HOME_FLOW.md`, `BOOTSTRAP_SESSION.md`, `CORPUS.md`, the CAD-A3 contracts,
@@ -3047,7 +3139,10 @@ regenerated per stage.
 | `app/src/main/java/.../WorkspaceLayoutMode.java` | Window-dp breakpoints, where the precision surface appears when open, and chrome sizing, as arithmetic. It has no opinion about whether that surface is open. No Android type |
 | `app/src/main/java/.../EditorUiState.java` | The closed list of UI-owned state: display unit, draft kind, rail selection, whether the precision surface was asked for (per mode, false to begin with), chrome-hidden |
 | `app/src/main/java/.../GlobalToolbarView.java` | Editing context, the three mutually exclusive mode transitions, Export (a working control since Stage 023, no longer reserved), the project control, the Display control, chrome hide, and the one status line — including its lifecycle: transient versus standing, the two holds, and cancel-first. Owns no scene control — that is the Objects capsule's |
-| `app/src/main/java/.../DisplaySettingsPopoverView.java` | The compact display popover: Shading (Studio / MatCap / Debug), Surface (Smooth / Faceted) and Projection (Perspective / Orthographic), with short interruptible open/close motion that honours the system animator scale. Owns no state |
+| `app/src/main/java/.../DisplaySettingsPopoverView.java` | The compact display popover: Shading (Studio / MatCap / Debug), Surface (Smooth / Faceted), Projection (Perspective / Orthographic) and the Grid, with short interruptible open/close motion that honours the system animator scale. The transient viewport controls only — Appearance moved to Settings in UI-PREF-R1. Owns no state |
+| `app/src/main/java/.../AppPreferences.java`, `Handedness.java`, `GizmoStrokeWeight.java` | The one versioned, immutable application-preference value and its two closed enums, with the per-field fallback rules. No Android type; never project truth |
+| `app/src/main/java/.../AppPreferencesStore.java` | The SharedPreferences adapter: one file, names not ordinals, synchronous atomic writes, one cached copy per process, guarded reads, and the verification seams (reset, drop cache, plant) |
+| `app/src/main/java/.../SettingsPageView.java` | The Settings page: Appearance, Workspace (Handedness) and Gizmo (Visual size, Thickness) as full-width option rows on the start-page grammar, chosen in more than colour. Owns no state; reports a request |
 | `app/src/main/java/.../ToolRailView.java` | The edge tool selector for either mode. Every entry works — there is no reserved-entry support left. Selects; decides nothing |
 | `app/src/main/java/.../BrushEdgeControlsView.java`, `VerticalSliderView.java` | Direct Radius and Strength, and the custom vertical control behind them. Own no brush value |
 | `app/src/main/java/.../PropertyInspectorView.java`, `PrecisionScrollView.java`, `BoundedScrollView.java` | The on-demand precision surface: open or absent, never collapsed, with a measured height cap — a scroll container that ends the visible body on a whole row rather than through one and fades its bottom edge while there is more, and a PINNED footer holding the body commit so Apply cannot scroll away. Owns no value |
@@ -3069,10 +3164,11 @@ regenerated per stage.
 | `app/src/main/java/.../LengthUnit.java` | Exact `BigDecimal` mm/cm/m ↔ meter conversion, parsing and formatting |
 | `app/src/main/java/.../StartChooserView.java` | The New Project question: two ways to begin, over the live viewport. Owns no state, makes no native call |
 | `app/src/main/res/values/*` | `ids.xml` (the stable semantic id contract), `dimens.xml` (radius/type/depth scales), `colors.xml` (role names, dark values), `strings.xml`, `themes.xml` (edge-to-edge) |
-| `app/src/main/java/.../AppTheme.java` | The three approved appearances: the Android style each applies, and the viewport ground each hands to native code |
+| `app/src/main/java/.../AppTheme.java` | The five approved appearances: the Android style each applies, the viewport ground each hands to native code, whether it is light (the system bars follow), and the name the store writes |
 | `app/src/main/java/.../ChromeMotion.java` | The rules every chrome transition follows: the fade durations, the anchored-growth durations, the one ease-out curve, the uniform start scale, the reduced-motion question, cancel-first, and one alpha helper. Not a framework and must not become one |
 | `app/src/main/java/.../AnchoredSurfaceView.java` | The one implementation of "a surface grows out of the control that opened it", shared by all four: pivot, staging an open that has no size yet, cancel-first, reduced motion, and the open/closed state the invoking control reads |
-| `app/src/main/res/values/attrs.xml`, `themes.xml` | The semantic roles, and the one place each is given a value per theme. Adding a theme touches these two files and nothing else |
+| `app/src/main/res/values/attrs.xml`, `themes.xml` | The semantic roles, and the one place each is given a value per theme — five themes on two bases (dark, and the light base that states dark system-bar icons). Adding a theme touches these two files and `colors.xml` and nothing else |
+| `scripts/collect-ui-pref-evidence.ps1` | Runs `UiPrefVisualEvidenceTest` through the one supported runner, pulls the twenty frames and composes the UI-PREF-R1 contact sheet and `VISUAL_EVIDENCE.md` |
 | `app/src/main/res/drawable/*` | 21 icon vector drawables on one 24 dp grid, plus the `bg_*` background state lists every control's look comes from, all written in `?attr/fs*` — including the `bg_capsule_*` set, whose only difference from the ordinary controls is a corner concentric with the capsule they sit in |
 | `app/src/main/res/color/*` | `control_content_tint.xml` — the one state list an icon and its label both read, so they cannot disagree |
 | `app/src/test/java/...` | JVM suites: layout arithmetic, UI-owned state, unit conversion |
@@ -3157,13 +3253,26 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Exactly one next step: return this status to the ForgeShape coordinator.**
-The OWNER's real-device CAD-A3-C2 / SKETCH-UX-R1 review is CLOSED with PASS
-(2026-09-05), so nothing about the start page, the first-sketch flow, the
-navigator, the dimension or the curves is waiting on an owner any more. What
-is still waiting is the **Delete → Undo → Redo owner verdict** of
-`IMPORT-01B` / `UI-OWNER-45`: no verdict for it has been supplied, and this
-file does not invent one. POST-AUDIT-HARDEN-R1 closed F-08, F-16, F-11, F-15
+**Exactly one next step: return this status to the ForgeShape coordinator for
+a combined OWNER retest later.** UI-PREF-R1 is closed under an OWNER waiver of
+the aggregate gate (`PASS-UI-PREF-R1-OWNER-WAIVER-CLOSEOUT`): the Settings hub,
+the persisted preferences, the left-handed rail, the five palettes and the
+gizmo's visual size and thickness work through the real chrome and survive
+recreation, resume and a fresh process, with the project untouched by every
+one of them — and what no emulator settles is whether the two light papers,
+the mirrored rail under a real left thumb and the smallest and boldest gizmo
+under a real stylus read as the product they should. That is the OWNER's
+retest, combined with the still-pending **Delete → Undo → Redo owner verdict**
+of `IMPORT-01B` / `UI-OWNER-45`, whose files this stage did not touch
+(`artifacts/ui-pref-r1/DELETE_HOLD.md`); the pre-stage owner-verdict prompt is
+tied to `565d400` and must be regenerated on the new HEAD. No verdict for
+either is invented here. The OWNER's real-device CAD-A3-C2 / SKETCH-UX-R1
+review is CLOSED with PASS (2026-09-05), so nothing about the start page, the
+first-sketch flow, the navigator, the dimension or the curves is waiting on an
+owner. Not this stage and not started: a gizmo handle style (deferred by the
+renderer contract), Selection Outline, Body Dimensions, relative or
+directional scale, custom workspace layouts, cloud/account, per-project
+preferences. POST-AUDIT-HARDEN-R1 closed F-08, F-16, F-11, F-15
 and F-18 and nothing else; the remaining P2/P3 debt (F-06, F-07, F-09, F-10,
 F-13, F-14) is recorded above for the coordinator to schedule. No
 product stage may begin here: booleans, fillets, chamfers, a constraint solver,

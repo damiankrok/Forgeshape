@@ -262,6 +262,48 @@ curve-profile timings.
   edit that would strip a planar face another body's sketch stands on is
   REFUSED by name (`DependentFaceLost`) on exactly the terms deleting such a
   producer is: never cascaded, never retargeted, never silently broken.
+- **Preferences are application state, never project truth** (`UI-PREF-R1`,
+  UI-OWNER-37, UI-OWNER-32, UI-OWNER-42). `AppPreferences` is ONE versioned,
+  immutable value — palette, handedness, gizmo visual scale, gizmo stroke
+  weight — persisted by `AppPreferencesStore` in the app's own
+  `SharedPreferences` file and read BEFORE the Activity applies its theme, so
+  the first frame is already the stored palette. It enters no `.forge` byte,
+  moves no fingerprint, dirties no project, records no Construction or Sculpt
+  step, mints no `ObjectId` and never reaches a checkpoint;
+  `SettingsPreferencesTest` serialises a project before and after changing
+  every field and asserts identical bytes. Reading is forgiving by ONE rule per
+  field: an unknown name is the default, a non-finite number is the default, a
+  finite out-of-range number is CLAMPED to the nearer bound, a missing key is
+  the exact product default, and an unknown key is ignored — no migration
+  framework. **The Settings page** (`SettingsPageView`, a start page) is the
+  ONE home of every persistent preference, reached from Home and from the
+  Project surface's `Settings…`; the transient viewport controls (Shading,
+  Surface, Projection, Grid) stay in the Display popover and must not move
+  there. **Exactly five palettes**: the three DARK ones are value-for-value
+  what was approved, the two LIGHT ones (Warm Light, Cool Light) are derived
+  through the same `attrs.xml` roles and held to the same measured targets
+  (`artifacts/ui-pref-r1/CONTRAST.md`), every per-ground tool colour below JNI
+  asks `viewportBackgroundIsLight` rather than naming a member, and the system
+  bars flip their icon appearance with the ground. **Handedness mirrors edge
+  anchoring and nothing else**: Right is the default and reproduces
+  UI-LAYOUT-R2 exactly; Left seats the trailing host, a side-placed precision
+  surface, the brush controls and the Objects column on the left edge with the
+  same 8 dp inset, width and top, opening inward (`applyHandedness`), and no
+  CAD coordinate, axis, workplane, camera, gizmo arithmetic, transform,
+  exported byte or gesture meaning is mirrored. **The gizmo's visual size is a
+  bounded multiplier on handle PLACEMENT** (`[0.9, 1.5]`, default 1.0,
+  refused-not-clamped below JNI) applied to drawing and hit test alike through
+  `gizmoPlacementScale`, while every hit corridor stays in reference units and
+  every drag amount — the ray solvers, the ring angle, the scale ruler measured
+  on a canonical snapshot — is unchanged; the floor is 0.9 because below it an
+  obliquely viewed plane handle's centre falls inside the pivot's 24-unit dead
+  disc. **The stroke weight is a closed bundle recipe** (Thin, Regular, Bold;
+  Regular is byte-identical to the pre-preference gizmo, pinned at 1116
+  vertices) that hit testing never reads, and the renderer re-uploads the
+  canonical list only when it changes. There is NO handle-style preference:
+  the gizmo is a one-pixel line list by renderer contract, and a second style
+  that shared its hit semantics does not exist, so the row is ABSENT rather
+  than inert (`GIZMO_STYLE_DEFERRED_BY_RENDERER_CONTRACT`).
 - **A body's SOURCE is never written by sculpting.** A body has a source
   representation — a Construction Source, an Imported Mesh, or a CAD Body —
   and may also own a Frozen Sculpt Mesh (not yet for a CAD Body). A sculpt edit may never change a primitive parameter, a
@@ -619,7 +661,11 @@ curve-profile timings.
   *workplane* XY, XZ or YZ, with the seven sketch tools Select, Line, Polyline,
   Rectangle, Circle, Arc and Spline on the Tool Rail and *Finish Sketch* /
   *Extrude* as its two toolbar transitions), *start page* (the full-window
-  opaque Home and New Project screens, `StartPageView`), *orientation
+  opaque Home and New Project screens, `StartPageView`), *Settings page* (the
+  full-window persistent-preferences page, `SettingsPageView`, reached from
+  Home and from the Project surface), *palette* (one of the five appearances:
+  Warm Graphite, Neutral Charcoal, Light Charcoal, Warm Light, Cool Light),
+  *handedness* (which window edge the rail zone stands on), *orientation
   navigator* (the sketch's upper-trailing plane/normal/rotation control),
   *dimension* (the technical-drawing annotation on a selected Line, with its
   editable length), *Edit Sketch* (reopening a committed CAD Body's sketch,

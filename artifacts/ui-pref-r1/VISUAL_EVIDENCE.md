@@ -1,0 +1,407 @@
+# Visual evidence - UI-PREF-R1 (`E2E-UIPREFR1-VIS`)
+
+Captured by UiPrefVisualEvidenceTest on emulator-5580 (AVD ForgeShape_Stage006) through the composed display, one journey in twenty frames. `OWNER_CONTACT_SHEET_UI_PREF_R1.png` is the twenty frames at 240 px wide, five per row, in order; the full-resolution frames are in `frames/`.
+
+Every line below is a fact the suite measured on the device at the moment of the capture: the preference in force (the palette by name, the handedness, the gizmo visual scale and stroke weight), the native values the preference reached (the viewport background index 0..4, the native visual scale and stroke weight 0 Thin / 1 Regular / 2 Bold), whether the system bars draw dark icons, the window ground's WCAG luminance, an element's presence and on-screen bounds in pixels, the rail's inset, width and top in dp, the gizmo's pivot and handle pixels with the handle each pixel hits, the body count and the history depth. **Nothing aesthetic is asserted, and no owner approval of how anything looks is claimed.**
+
+Captures: 20
+
+## `01_home_settings_entry.png` (1080 x 2400)
+
+![01_home_settings_entry.png](frames/01_home_settings_entry.png)
+
+- `phase` = `home`
+- `palette` = `WARM_GRAPHITE`
+- `handedness` = `RIGHT`
+- `gizmo_visual_scale` = `1.0`
+- `gizmo_stroke_weight` = `REGULAR`
+- `viewport_background_index` = `0`
+- `native_gizmo_visual_scale` = `1.0`
+- `native_gizmo_stroke_weight` = `1`
+- `project_open` = `false`
+- `body_count` = `0`
+- `construction_undo_depth` = `0`
+- `left_handed` = `false`
+- `home_settings` = `[74,1106][1006,1232] width_px=932 height_px=126`
+
+## `02_settings_page.png` (1080 x 2400)
+
+![02_settings_page.png](frames/02_settings_page.png)
+
+- `phase` = `settings_from_home`
+- `palette` = `WARM_GRAPHITE`
+- `handedness` = `RIGHT`
+- `gizmo_visual_scale` = `1.0`
+- `gizmo_stroke_weight` = `REGULAR`
+- `viewport_background_index` = `0`
+- `native_gizmo_visual_scale` = `1.0`
+- `native_gizmo_stroke_weight` = `1`
+- `project_open` = `false`
+- `body_count` = `0`
+- `construction_undo_depth` = `0`
+- `left_handed` = `false`
+- `settings_page` = `[0,0][1080,2400] width_px=1080 height_px=2400`
+- `appearance_warm_graphite` = `[74,614][1006,740] width_px=932 height_px=126`
+- `handedness_left` = `[74,1622][1006,1748] width_px=932 height_px=126`
+- `gizmo_size_largest` = `[74,2416][1006,2542] width_px=932 height_px=126`
+- `gizmo_weight_bold` = `[74,2887][1006,3013] width_px=932 height_px=126`
+- `settings_back` = `[74,3060][1006,3186] width_px=932 height_px=126`
+
+## `03_editor_settings_entry.png` (1080 x 2400)
+
+![03_editor_settings_entry.png](frames/03_editor_settings_entry.png)
+
+- `phase` = `project_surface_settings_entry`
+- `project_settings` = `[648,1511][1022,1637] width_px=374 height_px=126`
+
+## `04_editor_warm_graphite.png` (1080 x 2400)
+
+![04_editor_warm_graphite.png](frames/04_editor_warm_graphite.png)
+
+- `phase` = `editor_WARM_GRAPHITE`
+- `palette` = `WARM_GRAPHITE`
+- `handedness` = `RIGHT`
+- `gizmo_visual_scale` = `1.0`
+- `gizmo_stroke_weight` = `REGULAR`
+- `viewport_background_index` = `0`
+- `native_gizmo_visual_scale` = `1.0`
+- `native_gizmo_stroke_weight` = `1`
+- `project_open` = `true`
+- `body_count` = `1`
+- `construction_undo_depth` = `0`
+- `left_handed` = `false`
+- `system_bars_light` = `false`
+- `window_luminance` = `0.028`
+
+## `05_home_warm_graphite.png` (1080 x 2400)
+
+![05_home_warm_graphite.png](frames/05_home_warm_graphite.png)
+
+- `phase` = `home_WARM_GRAPHITE`
+- `palette` = `WARM_GRAPHITE`
+- `handedness` = `RIGHT`
+- `gizmo_visual_scale` = `1.0`
+- `gizmo_stroke_weight` = `REGULAR`
+- `viewport_background_index` = `0`
+- `native_gizmo_visual_scale` = `1.0`
+- `native_gizmo_stroke_weight` = `1`
+- `project_open` = `false`
+- `body_count` = `0`
+- `construction_undo_depth` = `0`
+- `left_handed` = `false`
+
+## `06_editor_neutral_charcoal.png` (1080 x 2400)
+
+![06_editor_neutral_charcoal.png](frames/06_editor_neutral_charcoal.png)
+
+- `phase` = `editor_NEUTRAL_CHARCOAL`
+- `palette` = `NEUTRAL_CHARCOAL`
+- `handedness` = `RIGHT`
+- `gizmo_visual_scale` = `1.0`
+- `gizmo_stroke_weight` = `REGULAR`
+- `viewport_background_index` = `1`
+- `native_gizmo_visual_scale` = `1.0`
+- `native_gizmo_stroke_weight` = `1`
+- `project_open` = `true`
+- `body_count` = `1`
+- `construction_undo_depth` = `0`
+- `left_handed` = `false`
+- `system_bars_light` = `false`
+- `window_luminance` = `0.021`
+
+## `07_home_neutral_charcoal.png` (1080 x 2400)
+
+![07_home_neutral_charcoal.png](frames/07_home_neutral_charcoal.png)
+
+- `phase` = `home_NEUTRAL_CHARCOAL`
+- `palette` = `NEUTRAL_CHARCOAL`
+- `handedness` = `RIGHT`
+- `gizmo_visual_scale` = `1.0`
+- `gizmo_stroke_weight` = `REGULAR`
+- `viewport_background_index` = `1`
+- `native_gizmo_visual_scale` = `1.0`
+- `native_gizmo_stroke_weight` = `1`
+- `project_open` = `false`
+- `body_count` = `0`
+- `construction_undo_depth` = `0`
+- `left_handed` = `false`
+
+## `08_editor_light_charcoal.png` (1080 x 2400)
+
+![08_editor_light_charcoal.png](frames/08_editor_light_charcoal.png)
+
+- `phase` = `editor_LIGHT_CHARCOAL`
+- `palette` = `LIGHT_CHARCOAL`
+- `handedness` = `RIGHT`
+- `gizmo_visual_scale` = `1.0`
+- `gizmo_stroke_weight` = `REGULAR`
+- `viewport_background_index` = `2`
+- `native_gizmo_visual_scale` = `1.0`
+- `native_gizmo_stroke_weight` = `1`
+- `project_open` = `true`
+- `body_count` = `1`
+- `construction_undo_depth` = `0`
+- `left_handed` = `false`
+- `system_bars_light` = `false`
+- `window_luminance` = `0.049`
+
+## `09_home_light_charcoal.png` (1080 x 2400)
+
+![09_home_light_charcoal.png](frames/09_home_light_charcoal.png)
+
+- `phase` = `home_LIGHT_CHARCOAL`
+- `palette` = `LIGHT_CHARCOAL`
+- `handedness` = `RIGHT`
+- `gizmo_visual_scale` = `1.0`
+- `gizmo_stroke_weight` = `REGULAR`
+- `viewport_background_index` = `2`
+- `native_gizmo_visual_scale` = `1.0`
+- `native_gizmo_stroke_weight` = `1`
+- `project_open` = `false`
+- `body_count` = `0`
+- `construction_undo_depth` = `0`
+- `left_handed` = `false`
+
+## `10_editor_warm_light.png` (1080 x 2400)
+
+![10_editor_warm_light.png](frames/10_editor_warm_light.png)
+
+- `phase` = `editor_WARM_LIGHT`
+- `palette` = `WARM_LIGHT`
+- `handedness` = `RIGHT`
+- `gizmo_visual_scale` = `1.0`
+- `gizmo_stroke_weight` = `REGULAR`
+- `viewport_background_index` = `3`
+- `native_gizmo_visual_scale` = `1.0`
+- `native_gizmo_stroke_weight` = `1`
+- `project_open` = `true`
+- `body_count` = `1`
+- `construction_undo_depth` = `0`
+- `left_handed` = `false`
+- `system_bars_light` = `true`
+- `window_luminance` = `0.803`
+
+## `11_home_warm_light.png` (1080 x 2400)
+
+![11_home_warm_light.png](frames/11_home_warm_light.png)
+
+- `phase` = `home_WARM_LIGHT`
+- `palette` = `WARM_LIGHT`
+- `handedness` = `RIGHT`
+- `gizmo_visual_scale` = `1.0`
+- `gizmo_stroke_weight` = `REGULAR`
+- `viewport_background_index` = `3`
+- `native_gizmo_visual_scale` = `1.0`
+- `native_gizmo_stroke_weight` = `1`
+- `project_open` = `false`
+- `body_count` = `0`
+- `construction_undo_depth` = `0`
+- `left_handed` = `false`
+
+## `12_editor_cool_light.png` (1080 x 2400)
+
+![12_editor_cool_light.png](frames/12_editor_cool_light.png)
+
+- `phase` = `editor_COOL_LIGHT`
+- `palette` = `COOL_LIGHT`
+- `handedness` = `RIGHT`
+- `gizmo_visual_scale` = `1.0`
+- `gizmo_stroke_weight` = `REGULAR`
+- `viewport_background_index` = `4`
+- `native_gizmo_visual_scale` = `1.0`
+- `native_gizmo_stroke_weight` = `1`
+- `project_open` = `true`
+- `body_count` = `1`
+- `construction_undo_depth` = `0`
+- `left_handed` = `false`
+- `system_bars_light` = `true`
+- `window_luminance` = `0.803`
+
+## `13_home_cool_light.png` (1080 x 2400)
+
+![13_home_cool_light.png](frames/13_home_cool_light.png)
+
+- `phase` = `home_COOL_LIGHT`
+- `palette` = `COOL_LIGHT`
+- `handedness` = `RIGHT`
+- `gizmo_visual_scale` = `1.0`
+- `gizmo_stroke_weight` = `REGULAR`
+- `viewport_background_index` = `4`
+- `native_gizmo_visual_scale` = `1.0`
+- `native_gizmo_stroke_weight` = `1`
+- `project_open` = `false`
+- `body_count` = `0`
+- `construction_undo_depth` = `0`
+- `left_handed` = `false`
+
+## `14_right_handed_editor.png` (1080 x 2400)
+
+![14_right_handed_editor.png](frames/14_right_handed_editor.png)
+
+- `phase` = `right_handed_editor`
+- `palette` = `WARM_GRAPHITE`
+- `handedness` = `RIGHT`
+- `gizmo_visual_scale` = `1.0`
+- `gizmo_stroke_weight` = `REGULAR`
+- `viewport_background_index` = `0`
+- `native_gizmo_visual_scale` = `1.0`
+- `native_gizmo_stroke_weight` = `1`
+- `project_open` = `true`
+- `body_count` = `1`
+- `construction_undo_depth` = `0`
+- `left_handed` = `false`
+- `workspace_trailing_host` = `[880,296][1059,806] width_px=179 height_px=510`
+- `brush_edge_controls` = `absent`
+- `objects_capsule` = `[21,2168][442,2316] width_px=421 height_px=148`
+- `history_group` = `[774,2168][1059,2316] width_px=285 height_px=148`
+- `rail_left_inset_dp` = `335.2`
+- `rail_right_inset_dp` = `8.0`
+- `rail_width_dp` = `68.2`
+- `rail_top_dp` = `64.0`
+
+## `15_left_handed_editor.png` (1080 x 2400)
+
+![15_left_handed_editor.png](frames/15_left_handed_editor.png)
+
+- `phase` = `left_handed_editor`
+- `palette` = `WARM_GRAPHITE`
+- `handedness` = `LEFT`
+- `gizmo_visual_scale` = `1.0`
+- `gizmo_stroke_weight` = `REGULAR`
+- `viewport_background_index` = `0`
+- `native_gizmo_visual_scale` = `1.0`
+- `native_gizmo_stroke_weight` = `1`
+- `project_open` = `true`
+- `body_count` = `1`
+- `construction_undo_depth` = `0`
+- `left_handed` = `true`
+- `workspace_trailing_host` = `[21,296][200,1473] width_px=179 height_px=1177`
+- `brush_edge_controls` = `absent`
+- `objects_capsule` = `[21,2168][442,2316] width_px=421 height_px=148`
+- `history_group` = `[774,2168][1059,2316] width_px=285 height_px=148`
+- `rail_left_inset_dp` = `8.0`
+- `rail_right_inset_dp` = `335.2`
+- `rail_width_dp` = `68.2`
+- `rail_top_dp` = `64.0`
+
+## `16_left_handed_exact_open.png` (2400 x 1080)
+
+![16_left_handed_exact_open.png](frames/16_left_handed_exact_open.png)
+
+- `phase` = `left_handed_exact_open`
+- `palette` = `WARM_GRAPHITE`
+- `handedness` = `LEFT`
+- `gizmo_visual_scale` = `1.0`
+- `gizmo_stroke_weight` = `REGULAR`
+- `viewport_background_index` = `0`
+- `native_gizmo_visual_scale` = `1.0`
+- `native_gizmo_stroke_weight` = `1`
+- `project_open` = `true`
+- `body_count` = `1`
+- `construction_undo_depth` = `0`
+- `left_handed` = `true`
+- `workspace_trailing_host` = `[149,231][328,848] width_px=179 height_px=617`
+- `brush_edge_controls` = `absent`
+- `objects_capsule` = `[149,848][570,996] width_px=421 height_px=148`
+- `history_group` = `[2094,848][2379,996] width_px=285 height_px=148`
+- `rail_left_inset_dp` = `8.0`
+- `rail_right_inset_dp` = `789.3`
+- `rail_width_dp` = `68.2`
+- `rail_top_dp` = `64.0`
+- `property_inspector` = `[349,231][1137,820] width_px=788 height_px=589`
+- `exact_overlaps_rail` = `false`
+
+## `17_gizmo_default.png` (1080 x 2400)
+
+![17_gizmo_default.png](frames/17_gizmo_default.png)
+
+- `phase` = `gizmo_default`
+- `palette` = `WARM_GRAPHITE`
+- `handedness` = `RIGHT`
+- `gizmo_visual_scale` = `1.0`
+- `gizmo_stroke_weight` = `REGULAR`
+- `viewport_background_index` = `0`
+- `native_gizmo_visual_scale` = `1.0`
+- `native_gizmo_stroke_weight` = `1`
+- `project_open` = `true`
+- `body_count` = `1`
+- `construction_undo_depth` = `0`
+- `left_handed` = `false`
+- `gizmo_visible` = `1.0`
+- `gizmo_mode` = `0`
+- `gizmo_pivot_px` = `540.0001,1200.0`
+- `handle_1_px` = `678.53174,1255.9412 hit=1`
+- `handle_2_px` = `540.0001,1042.2299 hit=2`
+- `handle_3_px` = `422.23013,1267.034 hit=3`
+
+## `18_gizmo_smallest_thin.png` (1080 x 2400)
+
+![18_gizmo_smallest_thin.png](frames/18_gizmo_smallest_thin.png)
+
+- `phase` = `gizmo_smallest_thin`
+- `palette` = `WARM_GRAPHITE`
+- `handedness` = `RIGHT`
+- `gizmo_visual_scale` = `0.9`
+- `gizmo_stroke_weight` = `THIN`
+- `viewport_background_index` = `0`
+- `native_gizmo_visual_scale` = `0.9`
+- `native_gizmo_stroke_weight` = `0`
+- `project_open` = `true`
+- `body_count` = `1`
+- `construction_undo_depth` = `0`
+- `left_handed` = `false`
+- `gizmo_visible` = `1.0`
+- `gizmo_mode` = `0`
+- `gizmo_pivot_px` = `540.0001,1200.0`
+- `handle_1_px` = `664.0673,1250.1002 hit=1`
+- `handle_2_px` = `540.0001,1058.5933 hit=2`
+- `handle_3_px` = `434.6292,1259.9764 hit=3`
+
+## `19_gizmo_largest_bold.png` (1080 x 2400)
+
+![19_gizmo_largest_bold.png](frames/19_gizmo_largest_bold.png)
+
+- `phase` = `gizmo_largest_bold`
+- `palette` = `WARM_GRAPHITE`
+- `handedness` = `RIGHT`
+- `gizmo_visual_scale` = `1.5`
+- `gizmo_stroke_weight` = `BOLD`
+- `viewport_background_index` = `0`
+- `native_gizmo_visual_scale` = `1.5`
+- `native_gizmo_stroke_weight` = `2`
+- `project_open` = `true`
+- `body_count` = `1`
+- `construction_undo_depth` = `0`
+- `left_handed` = `false`
+- `gizmo_visible` = `1.0`
+- `gizmo_mode` = `0`
+- `gizmo_pivot_px` = `540.0001,1200.0`
+- `handle_1_px` = `753.04565,1286.031 hit=1`
+- `handle_2_px` = `540.0001,958.334 hit=2`
+- `handle_3_px` = `357.97205,1303.6094 hit=3`
+
+## `20_gizmo_largest_bold_rotate.png` (1080 x 2400)
+
+![20_gizmo_largest_bold_rotate.png](frames/20_gizmo_largest_bold_rotate.png)
+
+- `phase` = `gizmo_largest_bold_rotate`
+- `palette` = `WARM_GRAPHITE`
+- `handedness` = `RIGHT`
+- `gizmo_visual_scale` = `1.5`
+- `gizmo_stroke_weight` = `BOLD`
+- `viewport_background_index` = `0`
+- `native_gizmo_visual_scale` = `1.5`
+- `native_gizmo_stroke_weight` = `2`
+- `project_open` = `true`
+- `body_count` = `1`
+- `construction_undo_depth` = `0`
+- `left_handed` = `false`
+- `gizmo_visible` = `1.0`
+- `gizmo_mode` = `1`
+- `gizmo_pivot_px` = `540.0001,1200.0`
+- `handle_1_px` = `380.97656,1073.8862 hit=1`
+- `handle_2_px` = `570.083,1368.4746 hit=2`
+- `handle_3_px` = `726.4554,1061.354 hit=3`
+
+
+Phone viewport only: the test harness has no separate tablet viewport (the layout suites simulate window sizes for the chrome, not a second display), so no physical tablet capture is claimed.
