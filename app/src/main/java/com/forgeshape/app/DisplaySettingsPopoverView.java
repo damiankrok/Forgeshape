@@ -21,9 +21,10 @@ import android.widget.TextView;
  * ones, while this popover keeps the transient, per-session viewport controls.
  *
  * <p><b>Every control here works.</b> Nothing in this popover is drawn disabled
- * as a promise, which is why the View group holds one chip pair and not five:
- * a selection outline, a view cube and named views arrive here when they
- * arrive, and not before.
+ * as a promise, which is why the View group holds two chip pairs and not five:
+ * the world reference grid and, since {@code SEL-OUT-R1}, the selected body's
+ * persistent outline. A view cube and named views arrive here when they arrive,
+ * and not before.
  *
  * <p>Projection is the odd member and is here on purpose. It is <em>camera</em>
  * state rather than a display setting — native code keeps it with the camera
@@ -53,6 +54,8 @@ final class DisplaySettingsPopoverView extends AnchoredSurfaceView {
         void onProjectionModeRequested(int mode);
 
         void onGridVisibleRequested(boolean visible);
+
+        void onSelectionOutlineVisibleRequested(boolean visible);
     }
 
     private final TextView studioChip;
@@ -64,6 +67,8 @@ final class DisplaySettingsPopoverView extends AnchoredSurfaceView {
     private final TextView orthographicChip;
     private final TextView gridOnChip;
     private final TextView gridOffChip;
+    private final TextView outlineOnChip;
+    private final TextView outlineOffChip;
 
     DisplaySettingsPopoverView(Context context, final OnDisplaySettingChanged listener,
                                boolean includeDebugShading) {
@@ -197,13 +202,13 @@ final class DisplaySettingsPopoverView extends AnchoredSurfaceView {
 
         // View: what the viewport draws BESIDES the model.
         //
-        // A group rather than a lone chip, because what will join it later is
-        // the same kind of thing — a selection outline, a view cube, named
-        // views. What it must NOT do is show them now: a disabled control
-        // promising a feature that does not exist is a worse answer than an
-        // absent one, and it would also start turning this popover into the
-        // settings screen it was designed not to be. In UI-R1C2 the group
-        // holds exactly one working control.
+        // A group rather than a lone chip, because what joins it is the same
+        // kind of thing — the selection outline did, and a view cube and named
+        // views may. What it must NOT do is show them before they work: a
+        // disabled control promising a feature that does not exist is a worse
+        // answer than an absent one, and it would also start turning this
+        // popover into the settings screen it was designed not to be. The group
+        // holds exactly the controls that work, which is two.
         addView(EditorControlStyles.sectionLabel(context, context.getString(R.string.view)),
                 EditorControlStyles.rowParams(
                         EditorControlStyles.dimen(context, R.dimen.row_gap)));
@@ -248,6 +253,54 @@ final class DisplaySettingsPopoverView extends AnchoredSurfaceView {
         });
         viewRow.addView(gridOffChip, EditorControlStyles.wrap(gap));
 
+        // Selection Outline (`SEL-OUT-R1`, UI-OWNER-11). Its OWN row rather
+        // than a third pair on the grid's: "Selection Outline" is a long
+        // caption, and sharing a row would have pushed the popover wider than
+        // the surface it is meant to be.
+        //
+        // It belongs beside Grid and not in Settings because it is the same
+        // KIND of thing — a transient viewport overlay native code owns for the
+        // session — and it shares the grid's lifecycle exactly. The persistent
+        // preferences (palette, handedness, gizmo) moved OUT of this popover at
+        // `UI-PREF-R1` for the opposite reason; adding this one here does not
+        // walk that back.
+        final LinearLayout outlineRow = new LinearLayout(context);
+        outlineRow.setOrientation(HORIZONTAL);
+        outlineRow.setGravity(Gravity.CENTER_VERTICAL);
+        addView(outlineRow, EditorControlStyles.rowParams(
+                EditorControlStyles.dimen(context, R.dimen.row_gap_small)));
+
+        final TextView outlineLabel = EditorControlStyles.fieldLabel(
+                context, context.getString(R.string.view_selection_outline));
+        outlineRow.addView(outlineLabel, EditorControlStyles.wrap(0));
+
+        outlineOnChip = EditorControlStyles.chip(context, R.id.view_selection_outline_on,
+                context.getString(R.string.view_selection_outline_on));
+        // Named for verification and for a screen reader, exactly as the grid's
+        // chips are: "On" alone says nothing about what it turns on, and the
+        // caption beside it is a sibling view rather than part of the chip.
+        outlineOnChip.setContentDescription(context.getString(R.string.view_selection_outline) + " "
+                + context.getString(R.string.view_selection_outline_on));
+        outlineOnChip.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                listener.onSelectionOutlineVisibleRequested(true);
+            }
+        });
+        outlineRow.addView(outlineOnChip, EditorControlStyles.wrap(gap));
+
+        outlineOffChip = EditorControlStyles.chip(context, R.id.view_selection_outline_off,
+                context.getString(R.string.view_selection_outline_off));
+        outlineOffChip.setContentDescription(context.getString(R.string.view_selection_outline) + " "
+                + context.getString(R.string.view_selection_outline_off));
+        outlineOffChip.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                listener.onSelectionOutlineVisibleRequested(false);
+            }
+        });
+        outlineRow.addView(outlineOffChip, EditorControlStyles.wrap(gap));
+
         setVisibility(GONE);
     }
 
@@ -259,13 +312,16 @@ final class DisplaySettingsPopoverView extends AnchoredSurfaceView {
      * difference that matters when a request was refused.
      */
     void showSettings(int shadingModel, int surfaceShading, int projectionMode,
-                      boolean gridVisible) {
+                      boolean gridVisible, boolean selectionOutlineVisible) {
         // Read back from native truth like every other chip here, never from
         // what was tapped: the grid's visibility is process-scoped native
         // presentation state, so on a resume it is already whatever it was and
         // this only makes the control agree with it.
         EditorControlStyles.setChipActive(gridOnChip, gridVisible);
         EditorControlStyles.setChipActive(gridOffChip, !gridVisible);
+        // And the outline on exactly the same terms, from the same store.
+        EditorControlStyles.setChipActive(outlineOnChip, selectionOutlineVisible);
+        EditorControlStyles.setChipActive(outlineOffChip, !selectionOutlineVisible);
         EditorControlStyles.setChipActive(studioChip, shadingModel == NativeViewport.SHADING_STUDIO);
         EditorControlStyles.setChipActive(matcapChip, shadingModel == NativeViewport.SHADING_MATCAP);
         if (debugChip != null) {

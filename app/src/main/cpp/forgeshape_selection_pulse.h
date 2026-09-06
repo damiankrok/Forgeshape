@@ -16,14 +16,26 @@
 
 namespace forgeshape {
 
-// What a body's selection tint settles at while it stays selected.
+// What a body's selection tint settles at while it stays selected: NOTHING.
 //
 // A Construction Body is selected for the entire time the user is editing it,
-// so this is the state the object is normally WORKED in — it has to say
-// "this one" without repainting the form. The value it replaced (0.55) cost
-// about half the surface's measured face-to-face contrast, and on the light
-// theme it was the heaviest thing on screen.
-constexpr float kSelectionRestingAlpha = 0.20f;
+// so this is the state the object is normally WORKED in, and any tint at all
+// repaints the form the user is judging. UI-R1C1 cut the legacy 0.55 flood to a
+// 0.20 resting tint, which was the right direction and still the wrong shape:
+// a whole-object wash is a whole-object wash at any strength, and at 0.20 it
+// still cost measurable face-to-face contrast on the light grounds.
+//
+// `SEL-OUT-R1` (UI-OWNER-10) finishes the job. Persistent selection is now the
+// Objects capsule plus a true silhouette OUTLINE derived from the body's own
+// rendered geometry (forgeshape_selection_outline.h), so the tint has no
+// persistent job left and settles at zero. The acknowledgement pulse below is
+// unchanged and is the only thing that ever mixes this hue into a surface.
+//
+// Zero rather than "very small": a tint that had to be kept because nothing
+// else said what was selected is exactly the state the outline replaced, and
+// leaving a residue would mean the product had two persistent selection
+// languages instead of one.
+constexpr float kSelectionRestingAlpha = 0.0f;
 
 // The top of the acknowledgement pulse: what the tint reaches the instant a
 // body BECOMES selected, before decaying to the resting value. Deliberately the
@@ -65,7 +77,11 @@ struct SelectionPulseState {
 // The reduced-motion branch lands on the RESTING value rather than on the peak:
 // a user who has asked for no animation must still be able to see what is
 // selected without waiting for anything, and a permanent peak would simply
-// restore the state this whole change exists to remove.
+// restore the state this whole change exists to remove. Since `SEL-OUT-R1` the
+// resting value is zero, so reduced motion means the body is never tinted at
+// all — which is the correct answer precisely BECAUSE the outline is not an
+// animation: it appears on the frame selection changes and stays, so a user who
+// asked for no motion still gets an immediate, permanent answer to "which one".
 float advanceSelectionPulse(SelectionPulseState& state, bool selectedNow,
                             double deltaSeconds, bool motionEnabled);
 

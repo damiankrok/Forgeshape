@@ -97,12 +97,25 @@ public final class EditorWorkspaceDisplayTest {
             assertTrue("Grid On is a working control", on.isEnabled());
             assertTrue("Grid Off is a working control", off.isEnabled());
 
-            // Bounded: the group is the grid and nothing else. A View group that
-            // had quietly grown a Selection Outline, a View Cube, Named Views or
-            // any snapping control would fail here, which is the scope guard.
-            assertEquals("no Selection Outline control exists yet", 0,
-                    activity.getResources().getIdentifier(
-                            "view_selection_outline", "id", activity.getPackageName()));
+            // Bounded: the group is the grid and the selection outline, and
+            // nothing else. `SEL-OUT-R1` added the second pair, which is why
+            // that name is no longer in the list below; a View group that had
+            // quietly grown a View Cube, Named Views or any snapping control
+            // would still fail here, which is the scope guard.
+            //
+            // The Selection Outline group has its own coverage in
+            // SelectionOutlineTest — its ids, its touch floor, its content
+            // descriptions and its read-back from native truth — so this case
+            // asserts only that it is present and working, and does not
+            // duplicate that suite.
+            assertNotNull("SEL-OUT-R1: the View group offers Selection Outline On",
+                    workspace.findViewById(R.id.view_selection_outline_on));
+            assertNotNull("and Selection Outline Off",
+                    workspace.findViewById(R.id.view_selection_outline_off));
+            assertTrue("and both are working controls",
+                    workspace.findViewById(R.id.view_selection_outline_on).isEnabled()
+                            && workspace.findViewById(R.id.view_selection_outline_off)
+                                    .isEnabled());
             assertEquals("no View Cube control exists yet", 0,
                     activity.getResources().getIdentifier(
                             "view_cube", "id", activity.getPackageName()));

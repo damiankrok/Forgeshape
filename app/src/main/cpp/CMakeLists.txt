@@ -26,7 +26,8 @@ set(FORGESHAPE_SHADER_OUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated_shaders")
 file(MAKE_DIRECTORY "${FORGESHAPE_SHADER_OUT_DIR}")
 
 set(FORGESHAPE_SHADER_HEADERS "")
-foreach(shader surface.vert surface.frag grid.vert grid.frag gizmo.vert gizmo.frag)
+foreach(shader surface.vert surface.frag grid.vert grid.frag gizmo.vert gizmo.frag
+                outline_mask.vert outline_mask.frag outline.vert outline.frag)
     set(_src "${CMAKE_CURRENT_SOURCE_DIR}/shaders/${shader}")
     set(_out "${FORGESHAPE_SHADER_OUT_DIR}/${shader}.spv.inc")
     add_custom_command(
@@ -86,6 +87,7 @@ set(FORGESHAPE_PRODUCT_SOURCES
     forgeshape_sculpt.cpp
     forgeshape_sculpt_history.cpp
     forgeshape_selection.cpp
+    forgeshape_selection_outline.cpp
     forgeshape_selection_pulse.cpp
     forgeshape_transform.cpp
     forgeshape_renderer.cpp)

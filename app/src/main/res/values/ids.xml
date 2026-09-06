@@ -179,14 +179,17 @@
     <item name="projection_orthographic" type="id" />
 
     <!--
-      View. What the viewport draws BESIDES the model. In UI-R1C2 that is
-      exactly one working control, the world reference grid; the group exists
-      rather than the chip standing alone because the things that will join it
-      are view references too. Nothing disabled or fake is drawn here — a
-      control the product cannot honour yet has no home in this group.
+      View. What the viewport draws BESIDES the model. Two working controls
+      as of `SEL-OUT-R1`: the world reference grid, and the selected body's
+      persistent silhouette outline. The group exists rather than the chips
+      standing alone because both are view references over the same model.
+      Nothing disabled or fake is drawn here: a control the product cannot
+      honour yet has no home in this group.
     -->
     <item name="view_grid_on" type="id" />
     <item name="view_grid_off" type="id" />
+    <item name="view_selection_outline_on" type="id" />
+    <item name="view_selection_outline_off" type="id" />
 
     <!--
       The expanded window's Objects column. It HOSTS the one Objects section;

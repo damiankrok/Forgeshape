@@ -139,6 +139,27 @@ int gizmoStrokeWeightIndex(GizmoStrokeWeight weight);
 // different plane, not a third state of this one. See forgeshape_grid.h.
 constexpr bool kDefaultGridVisible = true;
 
+// Whether the SELECTED body is drawn with a persistent silhouette outline
+// (`SEL-OUT-R1`, UI-OWNER-10 / UI-OWNER-11).
+//
+// ON by default, and for the reason the grid is: with it off, the only thing
+// that says which body is selected is the Objects capsule's name, and a user
+// who wants the bare model turns the edge off deliberately rather than
+// discovering that selection has no visual answer.
+//
+// It sits beside the grid rather than in AppPreferences because it is exactly
+// the same KIND of state: a transient, per-session, process-scoped viewport
+// overlay that native code owns, that survives a HOME/resume for free, and that
+// enters no `.forge` byte, no checkpoint, no fingerprint and no history. The
+// persistent application preferences (palette, handedness, gizmo) live in the
+// Settings page; this is a View/Overlay control and shares the grid's whole
+// lifecycle, including being reset only when the process dies.
+//
+// A plain bool for the same reason the grid's is: "on" and "off" exhaust the
+// answers. An outline WIDTH or COLOUR preference is deliberately not here — see
+// forgeshape_selection_outline.h, where both are policy rather than choice.
+constexpr bool kDefaultSelectionOutlineVisible = true;
+
 // The product default. Studio Solid, so a freshly launched viewport shows a
 // neutral modelling surface rather than a diagnostic.
 constexpr ShadingModel kDefaultShadingModel = ShadingModel::StudioSolid;
@@ -168,6 +189,13 @@ struct ViewportDisplaySettings {
     // state once, at a known point, and never mid-frame.
     bool gridVisible = kDefaultGridVisible;
 
+    // Whether the selected body is drawn with its persistent outline. Rides in
+    // the same snapshot as the grid and for the same reason: the render thread
+    // must read presentation state once, at a known point, and never mid-frame
+    // — otherwise a toggle landing between the mask pass and the composite
+    // would record half an outline.
+    bool selectionOutlineVisible = kDefaultSelectionOutlineVisible;
+
     // Whether the viewport may spend TIME expressing a change, or must land on
     // the final appearance at once. See setReducedMotion.
     bool reducedMotion = false;
@@ -195,6 +223,7 @@ public:
     SurfaceShading surfaceShading() const;
     ViewportBackground viewportBackground() const;
     bool gridVisible() const;
+    bool selectionOutlineVisible() const;
     bool reducedMotion() const;
 
     // All four return true when the value actually changed, so a caller can log
@@ -211,6 +240,16 @@ public:
     // No body's render mesh is rebuilt, no buffer is re-uploaded and no
     // MeshRevision is minted — see R1C2-03 and R1C2-06.
     bool setGridVisible(bool visible);
+
+    // Shows or hides the selected body's persistent outline (`SEL-OUT-R1`).
+    //
+    // As cheap as the grid and structurally so: with it off the renderer
+    // records neither the mask pass nor the composite draw, and with it on it
+    // records both from GPU buffers that were already there for the body's own
+    // draw. No body's render mesh is rebuilt, no vertex or index buffer is
+    // re-uploaded, no MeshRevision is minted and no CAD body is regenerated —
+    // see SELOUTR1-09, SELOUTR1-10 and SELOUTR1-17..19.
+    bool setSelectionOutlineVisible(bool visible);
 
     // Whether the user has asked the SYSTEM for reduced motion.
     //
@@ -241,6 +280,7 @@ private:
     std::atomic<int> surface_{static_cast<int>(kDefaultSurfaceShading)};
     std::atomic<int> background_{static_cast<int>(kDefaultViewportBackground)};
     std::atomic<bool> gridVisible_{kDefaultGridVisible};
+    std::atomic<bool> selectionOutlineVisible_{kDefaultSelectionOutlineVisible};
     std::atomic<bool> reducedMotion_{false};
     std::atomic<int> gizmoStrokeWeight_{static_cast<int>(kDefaultGizmoStrokeWeight)};
     std::atomic<uint64_t> changeCount_{0};

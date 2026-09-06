@@ -30,6 +30,7 @@
 #include "forgeshape_render_mesh.h"
 #include "forgeshape_render_recovery.h"
 #include "forgeshape_scene.h"
+#include "forgeshape_selection_outline.h"
 #include "forgeshape_selection_pulse.h"
 #include "forgeshape_sketch_overlay.h"
 
@@ -175,6 +176,35 @@ public:
     void injectDeviceLossForTest() { injectDeviceLossOnce_ = true; }
 #endif
 
+    // Bounded selection-outline diagnostics (`SEL-OUT-R1` §12/§13). Plain
+    // counters written by the render thread and read by JNI, exactly as the
+    // device-rebuild count is: they exist so "no GPU allocation leak over
+    // repeated selection switches" and "no body upload on a selection change"
+    // can be ASSERTED from a test rather than inferred from a screenshot.
+    //
+    // They describe the renderer's own derived resources and carry no identity:
+    // there is no ObjectId here, no geometry, no dimension and nothing a
+    // diagnostic could leak a model through.
+    struct SelectionOutlineStats {
+        // How many times the extent-sized mask + depth images have been
+        // ALLOCATED for the life of the process. It must move only when the
+        // swapchain extent changes or the device is rebuilt, and never once per
+        // selection switch — which is the whole point of measuring it.
+        uint64_t maskAllocations = 0;
+        // Frames in which the mask pass and the composite draw were actually
+        // recorded. Zero while nothing is selected or the toggle is off.
+        uint64_t maskPassFrames = 0;
+        uint64_t compositeDraws = 0;
+        // The mask's current extent, so a test can prove it follows the render
+        // extent rather than being a fixed-size buffer that is stretched.
+        uint32_t maskWidth = 0;
+        uint32_t maskHeight = 0;
+        // The band's half-width in screen pixels the last recorded composite
+        // used. Reported so the visual evidence can quote a measured value.
+        float widthPixels = 0.0f;
+    };
+    SelectionOutlineStats selectionOutlineStats() const;
+
 private:
     bool pickPhysicalDeviceAndQueues();
     bool createLogicalDevice();
@@ -239,9 +269,10 @@ private:
 
     // --- MatCap sampling resources (renderer-owned, render thread only) ------
     //
-    // The only sampled image in ForgeShape, and therefore the only reason a
-    // descriptor set exists at all: everything else the pipeline needs still
-    // travels as push constants. The image content is generated on the CPU by
+    // One of the two sampled images in ForgeShape, and therefore one of the two
+    // reasons a descriptor set exists at all — the selection outline's mask is
+    // the other, and everything else the pipelines need still travels as push
+    // constants. The image content is generated on the CPU by
     // forgeshape_matcap.cpp; this side only uploads and binds it.
     //
     // Device-scoped, like the mesh buffers: created once with the device and
@@ -309,6 +340,72 @@ private:
     bool syncSketchOverlay();
     void destroySketchOverlayResources();
     void recordSketchOverlayDraw(VkCommandBuffer cmd);
+
+    // --- Selection outline (renderer-owned, render thread) -------------------
+    //
+    // `SEL-OUT-R1` / UI-OWNER-10. A TRUE silhouette of the selected body,
+    // derived from the geometry the GPU already holds for that body's own draw,
+    // in two steps:
+    //
+    //   1. a MASK pass, recorded before the main pass, that rasterises every
+    //      body in the scene through a position-only pipeline into a
+    //      single-channel image with its own depth attachment. Unselected
+    //      bodies write 0 and their depth; the selected body writes 1. What
+    //      survives is therefore exactly the part of the selected body that is
+    //      VISIBLE — occlusion is resolved by the depth test, not by a rule;
+    //
+    //   2. a COMPOSITE draw, recorded inside the main pass after the bodies and
+    //      the grid and before the gizmo, that samples the mask through a
+    //      full-screen triangle and paints the band around its silhouette.
+    //
+    // WHY THIS AND NOT A CHEAPER SHAPE. A normal-extruded shell was the other
+    // candidate and is wrong for this product: the render mesh splits normals
+    // at every hard edge (that is what RenderMeshCache exists for), and a
+    // Faceted box therefore has no shared corner normal to extrude along, so
+    // the shell opens a gap at every corner of the primitive the product is
+    // most often used on. A screen-space mask has no such failure mode and is
+    // representation-neutral for free.
+    //
+    // WHAT IT DELIBERATELY DOES NOT DO. It builds no geometry, extracts no
+    // edges on the CPU, holds no ObjectId, keeps no per-body state and reads
+    // nothing back. A selection change costs one bool per scene item — which
+    // the snapshot already carried — and re-uploads nothing, because the
+    // buffers it rasterises are the ones the body was already going to be drawn
+    // from.
+    //
+    // Device-scoped: the shaders, the sampler, the descriptor set layout, the
+    // pool, the one set and both pipeline layouts. A Surface swap keeps them.
+    bool createOutlineDeviceResources();
+    void destroyOutlineDeviceResources();
+
+    // Swapchain-scoped: everything whose size is the render extent — the mask
+    // image, the mask pass's own depth image, the render pass, the framebuffer
+    // and both pipelines. Recreated only when the extent changes, which is what
+    // keeps `maskAllocations` flat across a selection loop.
+    //
+    // The mask pass gets its OWN depth image rather than sharing the main
+    // pass's. Sharing would be smaller by one allocation and would put a
+    // write-after-write hazard between the mask pass's depth writes and the
+    // main pass's depth CLEAR, which the main render pass's existing external
+    // dependency does not cover. Widening a dependency in the one render pass
+    // every frame already depends on, to save an image that is freed with the
+    // swapchain, is the wrong trade.
+    bool createOutlineSwapchainResources();
+    void destroyOutlineSwapchainResources();
+    bool createOutlineMaskPipeline();
+    bool createOutlineCompositePipeline();
+
+    // Whether this frame draws an outline at all. False when the toggle is off,
+    // when nothing is selected, when the selected body has no uploaded
+    // geometry yet, or when any outline resource is missing — so a frame that
+    // cannot draw a correct outline draws none rather than a stale one.
+    bool selectionOutlineActive() const;
+    // Records the whole mask pass. Called before the main render pass begins,
+    // and only when selectionOutlineActive().
+    void recordOutlineMaskPass(VkCommandBuffer cmd);
+    // Records the composite draw INSIDE the main pass, after the grid and
+    // before the gizmo: over the model and the floor, under the instrument.
+    void recordSelectionOutlineDraw(VkCommandBuffer cmd);
     // Waits on the renderer's own frame fences (never vkDeviceWaitIdle /
     // vkQueueWaitIdle) so no in-flight frame can still reference the mesh
     // buffers that are about to be overwritten or destroyed.
@@ -417,8 +514,11 @@ private:
     // The scene this frame draws. Immutable for the duration of the frame.
     SceneSnapshot scene_;
 
-    // The one sampled image, its sampler, and the single descriptor set that
-    // binds them. Device-scoped: a Surface swap does not touch them.
+    // The MatCap image, its sampler, and the descriptor set that binds them.
+    // Device-scoped: a Surface swap does not touch them. The selection
+    // outline's mask has its OWN layout, pool, set and sampler below, because
+    // this set is written once for the life of the device and that one is
+    // rewritten whenever the render extent changes.
     VkImage matcapImage_ = VK_NULL_HANDLE;
     VkDeviceMemory matcapMemory_ = VK_NULL_HANDLE;
     VkImageView matcapImageView_ = VK_NULL_HANDLE;
@@ -459,6 +559,47 @@ private:
     // what was actually uploaded and a change is noticed once per frame.
     GizmoStrokeWeight gizmoUploadedWeight_ = kDefaultGizmoStrokeWeight;
     bool gizmoUploadedOnce_ = false;
+
+    // The selection outline's own shaders, layouts and sampler. Device-scoped,
+    // like the MatCap's: a Surface swap does not touch them.
+    //
+    // A SEPARATE descriptor set layout, pool and set from the MatCap's, rather
+    // than a second binding added to the existing one. The MatCap set is
+    // written once for the life of the device and shared by every body draw;
+    // this one is rewritten whenever the swapchain extent changes, because the
+    // image view it names is extent-sized. Folding them together would mean
+    // re-writing the MatCap binding on every rotation for no reason.
+    VkShaderModule outlineMaskVertShader_ = VK_NULL_HANDLE;
+    VkShaderModule outlineMaskFragShader_ = VK_NULL_HANDLE;
+    VkShaderModule outlineVertShader_ = VK_NULL_HANDLE;
+    VkShaderModule outlineFragShader_ = VK_NULL_HANDLE;
+    VkPipelineLayout outlineMaskPipelineLayout_ = VK_NULL_HANDLE;
+    VkPipelineLayout outlinePipelineLayout_ = VK_NULL_HANDLE;
+    VkDescriptorSetLayout outlineSetLayout_ = VK_NULL_HANDLE;
+    VkDescriptorPool outlinePool_ = VK_NULL_HANDLE;
+    VkDescriptorSet outlineSet_ = VK_NULL_HANDLE;
+    VkSampler outlineSampler_ = VK_NULL_HANDLE;
+
+    // The selection outline's extent-sized resources. Swapchain-scoped: created
+    // with the swapchain, destroyed with it, and never reallocated for a
+    // selection change.
+    VkImage outlineMaskImage_ = VK_NULL_HANDLE;
+    VkDeviceMemory outlineMaskMemory_ = VK_NULL_HANDLE;
+    VkImageView outlineMaskView_ = VK_NULL_HANDLE;
+    VkImage outlineMaskDepthImage_ = VK_NULL_HANDLE;
+    VkDeviceMemory outlineMaskDepthMemory_ = VK_NULL_HANDLE;
+    VkImageView outlineMaskDepthView_ = VK_NULL_HANDLE;
+    VkRenderPass outlineMaskPass_ = VK_NULL_HANDLE;
+    VkFramebuffer outlineMaskFramebuffer_ = VK_NULL_HANDLE;
+    VkPipeline outlineMaskPipeline_ = VK_NULL_HANDLE;
+    VkPipeline outlinePipeline_ = VK_NULL_HANDLE;
+    VkExtent2D outlineMaskExtent_{0, 0};
+
+    // Bounded diagnostics. See SelectionOutlineStats.
+    uint64_t outlineMaskAllocations_ = 0;
+    uint64_t outlineMaskPassFrames_ = 0;
+    uint64_t outlineCompositeDraws_ = 0;
+    float outlineWidthPixels_ = 0.0f;
 
     // Surface-dependent
     ANativeWindow* window_ = nullptr;

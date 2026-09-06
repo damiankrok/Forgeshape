@@ -320,6 +320,17 @@
     <string name="view_grid_off">Off</string>
     <string name="status_grid_on">Grid on — a 1 m reference floor. The model is unchanged.</string>
     <string name="status_grid_off">Grid off — the model is unchanged.</string>
+    <!--
+      Selection Outline. Named for what it draws, not for what it means: "Show
+      Selection" would suggest the outline is what selection IS, and it is one
+      of the two ways selection reads — the Objects capsule always names the
+      selected body whether the outline is on or off.
+    -->
+    <string name="view_selection_outline">Selection Outline</string>
+    <string name="view_selection_outline_on">On</string>
+    <string name="view_selection_outline_off">Off</string>
+    <string name="status_selection_outline_on">Selection outline on — the selected body is edged. The model is unchanged.</string>
+    <string name="status_selection_outline_off">Selection outline off — Objects still names the selected body.</string>
 
     <!-- Tool Rail -->
     <string name="tool_rail">Tool Rail</string>

@@ -142,6 +142,7 @@ ViewportDisplaySettings DisplaySettingsStore::snapshot() const {
     out.surface = surfaceShading();
     out.background = viewportBackground();
     out.gridVisible = gridVisible();
+    out.selectionOutlineVisible = selectionOutlineVisible();
     out.reducedMotion = reducedMotion();
     out.gizmoStrokeWeight = gizmoStrokeWeight();
     return out;
@@ -210,6 +211,23 @@ bool DisplaySettingsStore::setGridVisible(bool visible) {
     // Counted, unlike reduced motion: this IS a display setting the user chose,
     // exactly like the shading model beside it, and the display suite proves a
     // real transition happened by watching this counter move.
+    changeCount_.fetch_add(1, std::memory_order_relaxed);
+    return true;
+}
+
+bool DisplaySettingsStore::selectionOutlineVisible() const {
+    return selectionOutlineVisible_.load(std::memory_order_relaxed);
+}
+
+bool DisplaySettingsStore::setSelectionOutlineVisible(bool visible) {
+    const bool previous = selectionOutlineVisible_.exchange(visible, std::memory_order_relaxed);
+    if (previous == visible) {
+        return false;
+    }
+    // Counted for exactly the reason the grid's toggle is: it is a display
+    // setting the user chose, and the display suite proves a real transition
+    // happened by watching this counter move rather than by re-reading the flag
+    // it just wrote.
     changeCount_.fetch_add(1, std::memory_order_relaxed);
     return true;
 }

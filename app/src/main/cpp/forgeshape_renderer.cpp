@@ -29,6 +29,18 @@ static const uint32_t kGizmoFragSpv[] =
 static const uint32_t kGridFragSpv[] =
 #include "grid.frag.spv.inc"
     ;
+static const uint32_t kOutlineMaskVertSpv[] =
+#include "outline_mask.vert.spv.inc"
+    ;
+static const uint32_t kOutlineMaskFragSpv[] =
+#include "outline_mask.frag.spv.inc"
+    ;
+static const uint32_t kOutlineVertSpv[] =
+#include "outline.vert.spv.inc"
+    ;
+static const uint32_t kOutlineFragSpv[] =
+#include "outline.frag.spv.inc"
+    ;
 
 #define FS_TAG "ForgeShape"
 #define FS_LOGI(...) __android_log_print(ANDROID_LOG_INFO, FS_TAG, __VA_ARGS__)
@@ -162,6 +174,50 @@ constexpr float kGridDepthNudge = 1.0e-4f;
 // the colour below are all a body needs to disappear from the highlight.
 const float kSelectionTintRgb[3] = {1.00f, 0.62f, 0.10f};
 
+// The selection outline MASK pass's per-draw block, mirrored by
+// shaders/outline_mask.vert and shaders/outline_mask.frag.
+//
+// 80 bytes rather than the 128 the other three fill, because a mask has nothing
+// else to say: one matrix to put the body where the shaded pass puts it, and
+// one float saying whether this body is the selected one. Deliberately NOT an
+// ObjectId — the renderer still cannot learn which object is selected, exactly
+// as it could not before this stage. The scene snapshot carries a plain bool
+// per item and identity stays with SelectionController.
+struct OutlineMaskPush {
+    float mvp[16];    // offset 0
+    float params[4];  // offset 64, x = the coverage this body writes (1 or 0)
+};
+
+static_assert(sizeof(OutlineMaskPush) == 80,
+              "the outline mask push block must stay inside the guaranteed 128-byte budget");
+
+// The selection outline COMPOSITE draw's block, mirrored by
+// shaders/outline.frag. See that file for the packing.
+struct OutlinePush {
+    float color[4];   // offset 0,  rgb = outline colour, a = blend strength
+    float params[4];  // offset 16, xy = one texel in uv, z = band radius in px
+};
+
+static_assert(sizeof(OutlinePush) == 32,
+              "the outline composite push block must stay inside the guaranteed 128-byte budget");
+
+// The coverage the mask pass writes for the selected body and for every other
+// one. Named rather than inlined because the composite's `> 0.5` interior test
+// is the other half of the same convention.
+constexpr float kOutlineMaskSelected = 1.0f;
+constexpr float kOutlineMaskUnselected = 0.0f;
+
+// How strongly the outline colour is blended where coverage is full. Opaque:
+// the band is thin enough that anything less reads as a smudge rather than an
+// edge, and the anti-aliasing at its limit comes from the sampler's fractional
+// coverage rather than from a global alpha.
+constexpr float kOutlineAlpha = 1.0f;
+
+// The mask's format. One channel, one byte: a coverage question with two
+// answers is not an image, and R8_UNORM is required to be supported as a colour
+// attachment by every Vulkan implementation.
+constexpr VkFormat kOutlineMaskFormat = VK_FORMAT_R8_UNORM;
+
 }  // namespace
 
 // Seeded with the camera's own defaults so the very first recorded frame is
@@ -256,6 +312,7 @@ void Renderer::destroyDeviceScopedResources() {
         destroyGridResources();
         destroyGizmoResources();
         destroySketchOverlayResources();
+        destroyOutlineDeviceResources();
         if (vertShader_ != VK_NULL_HANDLE) vkDestroyShaderModule(device_, vertShader_, nullptr);
         if (fragShader_ != VK_NULL_HANDLE) vkDestroyShaderModule(device_, fragShader_, nullptr);
         if (pipelineLayout_ != VK_NULL_HANDLE) vkDestroyPipelineLayout(device_, pipelineLayout_, nullptr);
@@ -399,6 +456,10 @@ bool Renderer::attachSurface(ANativeWindow* window) {
         // upload command buffer that createMeshUploadObjects provides — so the
         // two halves of the sampler setup sit on either side of it.
         if (!createDescriptorResources()) return false;
+        // Before createShaderModules, which builds the outline's composite
+        // pipeline layout and therefore needs its descriptor set layout to
+        // exist — the same ordering the MatCap's set layout has above.
+        if (!createOutlineDeviceResources()) return false;
         if (!createShaderModules()) return false;
         if (!createSyncObjects()) return false;
         if (!createMeshUploadObjects()) return false;
@@ -1199,12 +1260,82 @@ bool Renderer::createShaderModules() {
     FS_VK_CHECK(vkCreatePipelineLayout(device_, &gizmoLayoutInfo, nullptr, &gizmoPipelineLayout_),
                 "vkCreatePipelineLayout(gizmo)");
 
+    // --- the selection outline's two shader pairs and two layouts ----------
+    //
+    // Two pipelines, so two of everything: the MASK pass rasterises bodies into
+    // a coverage image, and the COMPOSITE draw reads that image back through a
+    // full-screen triangle.
+    VkShaderModuleCreateInfo maskVertInfo{};
+    maskVertInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    maskVertInfo.codeSize = sizeof(kOutlineMaskVertSpv);
+    maskVertInfo.pCode = kOutlineMaskVertSpv;
+    FS_VK_CHECK(vkCreateShaderModule(device_, &maskVertInfo, nullptr, &outlineMaskVertShader_),
+                "vkCreateShaderModule(outline_mask_vert)");
+
+    VkShaderModuleCreateInfo maskFragInfo{};
+    maskFragInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    maskFragInfo.codeSize = sizeof(kOutlineMaskFragSpv);
+    maskFragInfo.pCode = kOutlineMaskFragSpv;
+    FS_VK_CHECK(vkCreateShaderModule(device_, &maskFragInfo, nullptr, &outlineMaskFragShader_),
+                "vkCreateShaderModule(outline_mask_frag)");
+
+    VkPushConstantRange maskRange{};
+    maskRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    maskRange.offset = 0;
+    maskRange.size = sizeof(OutlineMaskPush);
+
+    // setLayoutCount = 0. The mask pass consults no sampler and evaluates no
+    // shading: it answers "is this pixel covered by the selected body", and
+    // letting it reach the MatCap would be letting a coverage question reach a
+    // lighting asset.
+    VkPipelineLayoutCreateInfo maskLayoutInfo{};
+    maskLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    maskLayoutInfo.setLayoutCount = 0;
+    maskLayoutInfo.pushConstantRangeCount = 1;
+    maskLayoutInfo.pPushConstantRanges = &maskRange;
+    FS_VK_CHECK(
+        vkCreatePipelineLayout(device_, &maskLayoutInfo, nullptr, &outlineMaskPipelineLayout_),
+        "vkCreatePipelineLayout(outline_mask)");
+
+    VkShaderModuleCreateInfo outlineVertInfo{};
+    outlineVertInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    outlineVertInfo.codeSize = sizeof(kOutlineVertSpv);
+    outlineVertInfo.pCode = kOutlineVertSpv;
+    FS_VK_CHECK(vkCreateShaderModule(device_, &outlineVertInfo, nullptr, &outlineVertShader_),
+                "vkCreateShaderModule(outline_vert)");
+
+    VkShaderModuleCreateInfo outlineFragInfo{};
+    outlineFragInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    outlineFragInfo.codeSize = sizeof(kOutlineFragSpv);
+    outlineFragInfo.pCode = kOutlineFragSpv;
+    FS_VK_CHECK(vkCreateShaderModule(device_, &outlineFragInfo, nullptr, &outlineFragShader_),
+                "vkCreateShaderModule(outline_frag)");
+
+    VkPushConstantRange outlineRange{};
+    outlineRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    outlineRange.offset = 0;
+    outlineRange.size = sizeof(OutlinePush);
+
+    // The one place in the renderer besides the surface pipeline that binds a
+    // descriptor set, and it binds the OUTLINE's own — never the MatCap's.
+    VkPipelineLayoutCreateInfo outlineLayoutInfo{};
+    outlineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    outlineLayoutInfo.setLayoutCount = 1;
+    outlineLayoutInfo.pSetLayouts = &outlineSetLayout_;
+    outlineLayoutInfo.pushConstantRangeCount = 1;
+    outlineLayoutInfo.pPushConstantRanges = &outlineRange;
+    FS_VK_CHECK(vkCreatePipelineLayout(device_, &outlineLayoutInfo, nullptr, &outlinePipelineLayout_),
+                "vkCreatePipelineLayout(outline)");
+
     FS_LOGI("Shader modules created (SPIR-V: vert %zu bytes, frag %zu bytes, push %zu bytes; "
             "grid vert %zu bytes, grid frag %zu bytes, grid push %zu bytes; "
-            "gizmo vert %zu bytes, gizmo frag %zu bytes, gizmo push %zu bytes)",
+            "gizmo vert %zu bytes, gizmo frag %zu bytes, gizmo push %zu bytes; "
+            "outline mask %zu/%zu bytes push %zu, outline %zu/%zu bytes push %zu)",
             sizeof(kSurfaceVertSpv), sizeof(kSurfaceFragSpv), sizeof(SurfacePush),
             sizeof(kGridVertSpv), sizeof(kGridFragSpv), sizeof(GridPush),
-            sizeof(kGizmoVertSpv), sizeof(kGizmoFragSpv), sizeof(GizmoPush));
+            sizeof(kGizmoVertSpv), sizeof(kGizmoFragSpv), sizeof(GizmoPush),
+            sizeof(kOutlineMaskVertSpv), sizeof(kOutlineMaskFragSpv), sizeof(OutlineMaskPush),
+            sizeof(kOutlineVertSpv), sizeof(kOutlineFragSpv), sizeof(OutlinePush));
     return true;
 }
 
@@ -1827,6 +1958,117 @@ void Renderer::destroyMatCapResources() {
     descriptorPool_ = VK_NULL_HANDLE;
     descriptorSet_ = VK_NULL_HANDLE;
     descriptorSetLayout_ = VK_NULL_HANDLE;
+}
+
+// ---------------------------------------------------------------------------
+// Selection outline (SEL-OUT-R1 / UI-OWNER-10)
+// ---------------------------------------------------------------------------
+//
+// See the declarations in forgeshape_renderer.h for why the technique is a mask
+// pass plus a screen-space composite rather than a normal-extruded shell.
+
+bool Renderer::createOutlineDeviceResources() {
+    // CLAMP_TO_BORDER with an opaque-black border, not CLAMP_TO_EDGE. The
+    // composite samples a ring around every pixel, so at the window edge some
+    // taps land outside the image; clamp-to-edge would return the edge texel's
+    // coverage and draw a band along the window edge for any body that reaches
+    // it, while the border returns 0 and correctly says "nothing selected out
+    // there". LINEAR filtering is what turns the mask's hard 0/1 step into the
+    // fractional coverage the composite blends with, so the band's outer limit
+    // is anti-aliased without a second pass.
+    VkSamplerCreateInfo samplerInfo{};
+    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    samplerInfo.magFilter = VK_FILTER_LINEAR;
+    samplerInfo.minFilter = VK_FILTER_LINEAR;
+    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+    samplerInfo.anisotropyEnable = VK_FALSE;
+    samplerInfo.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK;
+    samplerInfo.compareEnable = VK_FALSE;
+    samplerInfo.maxLod = 0.0f;
+    FS_VK_CHECK(vkCreateSampler(device_, &samplerInfo, nullptr, &outlineSampler_),
+                "vkCreateSampler(outline)");
+
+    VkDescriptorSetLayoutBinding binding{};
+    binding.binding = 0;
+    binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    binding.descriptorCount = 1;
+    binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    VkDescriptorSetLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = 1;
+    layoutInfo.pBindings = &binding;
+    FS_VK_CHECK(vkCreateDescriptorSetLayout(device_, &layoutInfo, nullptr, &outlineSetLayout_),
+                "vkCreateDescriptorSetLayout(outline)");
+
+    // ONE set for the life of the device, REWRITTEN rather than reallocated
+    // when the swapchain extent changes. That is what makes "repeated selection
+    // switches allocate nothing" structural: there is nothing per selection to
+    // allocate, and nothing per resize either.
+    VkDescriptorPoolSize poolSize{};
+    poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    poolSize.descriptorCount = 1;
+
+    VkDescriptorPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.maxSets = 1;
+    poolInfo.poolSizeCount = 1;
+    poolInfo.pPoolSizes = &poolSize;
+    FS_VK_CHECK(vkCreateDescriptorPool(device_, &poolInfo, nullptr, &outlinePool_),
+                "vkCreateDescriptorPool(outline)");
+
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = outlinePool_;
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts = &outlineSetLayout_;
+    FS_VK_CHECK(vkAllocateDescriptorSets(device_, &allocInfo, &outlineSet_),
+                "vkAllocateDescriptorSets(outline)");
+    return true;
+}
+
+void Renderer::destroyOutlineDeviceResources() {
+    if (device_ == VK_NULL_HANDLE) return;
+
+    if (outlinePipelineLayout_ != VK_NULL_HANDLE) {
+        vkDestroyPipelineLayout(device_, outlinePipelineLayout_, nullptr);
+    }
+    if (outlineMaskPipelineLayout_ != VK_NULL_HANDLE) {
+        vkDestroyPipelineLayout(device_, outlineMaskPipelineLayout_, nullptr);
+    }
+    if (outlineFragShader_ != VK_NULL_HANDLE) {
+        vkDestroyShaderModule(device_, outlineFragShader_, nullptr);
+    }
+    if (outlineVertShader_ != VK_NULL_HANDLE) {
+        vkDestroyShaderModule(device_, outlineVertShader_, nullptr);
+    }
+    if (outlineMaskFragShader_ != VK_NULL_HANDLE) {
+        vkDestroyShaderModule(device_, outlineMaskFragShader_, nullptr);
+    }
+    if (outlineMaskVertShader_ != VK_NULL_HANDLE) {
+        vkDestroyShaderModule(device_, outlineMaskVertShader_, nullptr);
+    }
+    // Freeing the pool frees the set allocated from it; the set must not be
+    // freed separately.
+    if (outlinePool_ != VK_NULL_HANDLE) vkDestroyDescriptorPool(device_, outlinePool_, nullptr);
+    if (outlineSetLayout_ != VK_NULL_HANDLE) {
+        vkDestroyDescriptorSetLayout(device_, outlineSetLayout_, nullptr);
+    }
+    if (outlineSampler_ != VK_NULL_HANDLE) vkDestroySampler(device_, outlineSampler_, nullptr);
+
+    outlinePipelineLayout_ = VK_NULL_HANDLE;
+    outlineMaskPipelineLayout_ = VK_NULL_HANDLE;
+    outlineFragShader_ = VK_NULL_HANDLE;
+    outlineVertShader_ = VK_NULL_HANDLE;
+    outlineMaskFragShader_ = VK_NULL_HANDLE;
+    outlineMaskVertShader_ = VK_NULL_HANDLE;
+    outlinePool_ = VK_NULL_HANDLE;
+    outlineSet_ = VK_NULL_HANDLE;
+    outlineSetLayout_ = VK_NULL_HANDLE;
+    outlineSampler_ = VK_NULL_HANDLE;
 }
 
 bool Renderer::createSyncObjects() {
@@ -2554,6 +2796,445 @@ bool Renderer::createCommandBuffers() {
     return true;
 }
 
+bool Renderer::createOutlineSwapchainResources() {
+    outlineMaskExtent_ = swapchainExtent_;
+
+    // --- the coverage image ------------------------------------------------
+    VkImageCreateInfo maskInfo{};
+    maskInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    maskInfo.imageType = VK_IMAGE_TYPE_2D;
+    maskInfo.format = kOutlineMaskFormat;
+    maskInfo.extent = {outlineMaskExtent_.width, outlineMaskExtent_.height, 1};
+    maskInfo.mipLevels = 1;
+    maskInfo.arrayLayers = 1;
+    maskInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    maskInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    maskInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    maskInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    maskInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    FS_VK_CHECK(vkCreateImage(device_, &maskInfo, nullptr, &outlineMaskImage_),
+                "vkCreateImage(outline_mask)");
+
+    VkMemoryRequirements maskReq{};
+    vkGetImageMemoryRequirements(device_, outlineMaskImage_, &maskReq);
+    uint32_t maskType = 0;
+    if (!findMemoryType(maskReq.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &maskType)) {
+        FS_FAIL("no_device_local_memory_for_outline_mask");
+        return false;
+    }
+    VkMemoryAllocateInfo maskAlloc{};
+    maskAlloc.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    maskAlloc.allocationSize = maskReq.size;
+    maskAlloc.memoryTypeIndex = maskType;
+    FS_VK_CHECK(vkAllocateMemory(device_, &maskAlloc, nullptr, &outlineMaskMemory_),
+                "vkAllocateMemory(outline_mask)");
+    FS_VK_CHECK(vkBindImageMemory(device_, outlineMaskImage_, outlineMaskMemory_, 0),
+                "vkBindImageMemory(outline_mask)");
+
+    VkImageViewCreateInfo maskViewInfo{};
+    maskViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    maskViewInfo.image = outlineMaskImage_;
+    maskViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    maskViewInfo.format = kOutlineMaskFormat;
+    maskViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    maskViewInfo.subresourceRange.levelCount = 1;
+    maskViewInfo.subresourceRange.layerCount = 1;
+    FS_VK_CHECK(vkCreateImageView(device_, &maskViewInfo, nullptr, &outlineMaskView_),
+                "vkCreateImageView(outline_mask)");
+
+    // --- the mask pass's own depth -----------------------------------------
+    //
+    // The same format the main pass uses, so the two resolve occlusion
+    // identically. A cheaper D16 would save memory and let two nearly coplanar
+    // bodies disagree between the shaded image and the mask, which would show
+    // as a speckled outline along their intersection.
+    VkImageCreateInfo depthInfo{};
+    depthInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    depthInfo.imageType = VK_IMAGE_TYPE_2D;
+    depthInfo.format = depthFormat_;
+    depthInfo.extent = {outlineMaskExtent_.width, outlineMaskExtent_.height, 1};
+    depthInfo.mipLevels = 1;
+    depthInfo.arrayLayers = 1;
+    depthInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    depthInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    depthInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    depthInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    depthInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    FS_VK_CHECK(vkCreateImage(device_, &depthInfo, nullptr, &outlineMaskDepthImage_),
+                "vkCreateImage(outline_mask_depth)");
+
+    VkMemoryRequirements depthReq{};
+    vkGetImageMemoryRequirements(device_, outlineMaskDepthImage_, &depthReq);
+    uint32_t depthType = 0;
+    if (!findMemoryType(depthReq.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &depthType)) {
+        FS_FAIL("no_device_local_memory_for_outline_mask_depth");
+        return false;
+    }
+    VkMemoryAllocateInfo depthAlloc{};
+    depthAlloc.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    depthAlloc.allocationSize = depthReq.size;
+    depthAlloc.memoryTypeIndex = depthType;
+    FS_VK_CHECK(vkAllocateMemory(device_, &depthAlloc, nullptr, &outlineMaskDepthMemory_),
+                "vkAllocateMemory(outline_mask_depth)");
+    FS_VK_CHECK(vkBindImageMemory(device_, outlineMaskDepthImage_, outlineMaskDepthMemory_, 0),
+                "vkBindImageMemory(outline_mask_depth)");
+
+    VkImageViewCreateInfo depthViewInfo{};
+    depthViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    depthViewInfo.image = outlineMaskDepthImage_;
+    depthViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    depthViewInfo.format = depthFormat_;
+    depthViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+    depthViewInfo.subresourceRange.levelCount = 1;
+    depthViewInfo.subresourceRange.layerCount = 1;
+    FS_VK_CHECK(vkCreateImageView(device_, &depthViewInfo, nullptr, &outlineMaskDepthView_),
+                "vkCreateImageView(outline_mask_depth)");
+
+    // --- the mask render pass ----------------------------------------------
+    //
+    // finalLayout SHADER_READ_ONLY_OPTIMAL, so the transition the composite
+    // needs is the render pass's own and no manual barrier exists anywhere in
+    // this path. The two subpass dependencies order it against the frame either
+    // side: nothing may still be reading the mask when it is cleared, and the
+    // main pass's fragment reads must see everything this pass wrote.
+    VkAttachmentDescription attachments[2]{};
+    attachments[0].format = kOutlineMaskFormat;
+    attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
+    attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    attachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    attachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    attachments[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    attachments[0].finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    attachments[1].format = depthFormat_;
+    attachments[1].samples = VK_SAMPLE_COUNT_1_BIT;
+    attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    attachments[1].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    attachments[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    attachments[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    attachments[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    attachments[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+    VkAttachmentReference colorRef{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+    VkAttachmentReference depthRef{1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
+
+    VkSubpassDescription subpass{};
+    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpass.colorAttachmentCount = 1;
+    subpass.pColorAttachments = &colorRef;
+    subpass.pDepthStencilAttachment = &depthRef;
+
+    VkSubpassDependency dependencies[2]{};
+    dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependencies[0].dstSubpass = 0;
+    dependencies[0].srcStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    dependencies[0].srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    dependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+                                   VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+                                    VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    dependencies[1].srcSubpass = 0;
+    dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
+    dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    dependencies[1].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    dependencies[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+    VkRenderPassCreateInfo passInfo{};
+    passInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+    passInfo.attachmentCount = 2;
+    passInfo.pAttachments = attachments;
+    passInfo.subpassCount = 1;
+    passInfo.pSubpasses = &subpass;
+    passInfo.dependencyCount = 2;
+    passInfo.pDependencies = dependencies;
+    FS_VK_CHECK(vkCreateRenderPass(device_, &passInfo, nullptr, &outlineMaskPass_),
+                "vkCreateRenderPass(outline_mask)");
+
+    VkImageView views[2] = {outlineMaskView_, outlineMaskDepthView_};
+    VkFramebufferCreateInfo fbInfo{};
+    fbInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+    fbInfo.renderPass = outlineMaskPass_;
+    fbInfo.attachmentCount = 2;
+    fbInfo.pAttachments = views;
+    fbInfo.width = outlineMaskExtent_.width;
+    fbInfo.height = outlineMaskExtent_.height;
+    fbInfo.layers = 1;
+    FS_VK_CHECK(vkCreateFramebuffer(device_, &fbInfo, nullptr, &outlineMaskFramebuffer_),
+                "vkCreateFramebuffer(outline_mask)");
+
+    if (!createOutlineMaskPipeline()) return false;
+    if (!createOutlineCompositePipeline()) return false;
+
+    // The ONE descriptor write. Not per frame and not per selection: the set
+    // names an image whose only reason to change is the render extent.
+    VkDescriptorImageInfo imageBinding{};
+    imageBinding.sampler = outlineSampler_;
+    imageBinding.imageView = outlineMaskView_;
+    imageBinding.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    VkWriteDescriptorSet write{};
+    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write.dstSet = outlineSet_;
+    write.dstBinding = 0;
+    write.descriptorCount = 1;
+    write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    write.pImageInfo = &imageBinding;
+    vkUpdateDescriptorSets(device_, 1, &write, 0, nullptr);
+
+    ++outlineMaskAllocations_;
+    FS_LOGI("FORGESHAPE_SELECTION_OUTLINE_RESOURCES:%ux%u allocations=%llu width=%.2fpx",
+            outlineMaskExtent_.width, outlineMaskExtent_.height,
+            (unsigned long long)outlineMaskAllocations_,
+            selectionOutlineWidthPixels(static_cast<int>(outlineMaskExtent_.width),
+                                        static_cast<int>(outlineMaskExtent_.height)));
+    return true;
+}
+
+void Renderer::destroyOutlineSwapchainResources() {
+    if (device_ == VK_NULL_HANDLE) return;
+
+    if (outlinePipeline_ != VK_NULL_HANDLE) vkDestroyPipeline(device_, outlinePipeline_, nullptr);
+    if (outlineMaskPipeline_ != VK_NULL_HANDLE) {
+        vkDestroyPipeline(device_, outlineMaskPipeline_, nullptr);
+    }
+    if (outlineMaskFramebuffer_ != VK_NULL_HANDLE) {
+        vkDestroyFramebuffer(device_, outlineMaskFramebuffer_, nullptr);
+    }
+    if (outlineMaskPass_ != VK_NULL_HANDLE) vkDestroyRenderPass(device_, outlineMaskPass_, nullptr);
+    if (outlineMaskDepthView_ != VK_NULL_HANDLE) {
+        vkDestroyImageView(device_, outlineMaskDepthView_, nullptr);
+    }
+    if (outlineMaskDepthImage_ != VK_NULL_HANDLE) {
+        vkDestroyImage(device_, outlineMaskDepthImage_, nullptr);
+    }
+    if (outlineMaskDepthMemory_ != VK_NULL_HANDLE) {
+        vkFreeMemory(device_, outlineMaskDepthMemory_, nullptr);
+    }
+    if (outlineMaskView_ != VK_NULL_HANDLE) vkDestroyImageView(device_, outlineMaskView_, nullptr);
+    if (outlineMaskImage_ != VK_NULL_HANDLE) vkDestroyImage(device_, outlineMaskImage_, nullptr);
+    if (outlineMaskMemory_ != VK_NULL_HANDLE) vkFreeMemory(device_, outlineMaskMemory_, nullptr);
+
+    outlinePipeline_ = VK_NULL_HANDLE;
+    outlineMaskPipeline_ = VK_NULL_HANDLE;
+    outlineMaskFramebuffer_ = VK_NULL_HANDLE;
+    outlineMaskPass_ = VK_NULL_HANDLE;
+    outlineMaskDepthView_ = VK_NULL_HANDLE;
+    outlineMaskDepthImage_ = VK_NULL_HANDLE;
+    outlineMaskDepthMemory_ = VK_NULL_HANDLE;
+    outlineMaskView_ = VK_NULL_HANDLE;
+    outlineMaskImage_ = VK_NULL_HANDLE;
+    outlineMaskMemory_ = VK_NULL_HANDLE;
+    outlineMaskExtent_ = {0, 0};
+}
+
+bool Renderer::createOutlineMaskPipeline() {
+    VkPipelineShaderStageCreateInfo stages[2]{};
+    stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+    stages[0].module = outlineMaskVertShader_;
+    stages[0].pName = "main";
+    stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    stages[1].module = outlineMaskFragShader_;
+    stages[1].pName = "main";
+
+    // The SAME RenderVertex stride the surface pipeline declares, with only the
+    // position attribute read. That is what makes the mask draw from the very
+    // buffers the body's own draw uses: no second vertex format, no second
+    // upload, and nothing to keep in step.
+    VkVertexInputBindingDescription binding{};
+    binding.binding = 0;
+    binding.stride = sizeof(RenderVertex);
+    binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    VkVertexInputAttributeDescription attribute{};
+    attribute.location = 0;
+    attribute.binding = 0;
+    attribute.format = VK_FORMAT_R32G32B32_SFLOAT;
+    attribute.offset = offsetof(RenderVertex, position);
+
+    VkPipelineVertexInputStateCreateInfo vertexInput{};
+    vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertexInput.vertexBindingDescriptionCount = 1;
+    vertexInput.pVertexBindingDescriptions = &binding;
+    vertexInput.vertexAttributeDescriptionCount = 1;
+    vertexInput.pVertexAttributeDescriptions = &attribute;
+
+    VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
+    inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+
+    VkViewport viewport{0.0f, 0.0f, static_cast<float>(outlineMaskExtent_.width),
+                        static_cast<float>(outlineMaskExtent_.height), 0.0f, 1.0f};
+    VkRect2D scissor{{0, 0}, outlineMaskExtent_};
+
+    VkPipelineViewportStateCreateInfo viewportState{};
+    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewportState.viewportCount = 1;
+    viewportState.pViewports = &viewport;
+    viewportState.scissorCount = 1;
+    viewportState.pScissors = &scissor;
+
+    // The SAME cull mode and winding as the surface pipeline. A mask that
+    // culled differently would produce a silhouette that is not the silhouette
+    // the user can see, which is the one thing this pass exists to guarantee.
+    VkPipelineRasterizationStateCreateInfo raster{};
+    raster.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    raster.polygonMode = VK_POLYGON_MODE_FILL;
+    raster.cullMode = VK_CULL_MODE_BACK_BIT;
+    raster.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    raster.lineWidth = 1.0f;
+
+    VkPipelineMultisampleStateCreateInfo multisample{};
+    multisample.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    multisample.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+    // Depth ON and WRITING, exactly as the surface pipeline does. This is what
+    // resolves occlusion inside the mask itself: an unselected body in front
+    // writes depth and its own zero coverage, so the selected body behind it
+    // fails the test there and leaves nothing to outline. Occlusion is decided
+    // here and nowhere else in this path.
+    VkPipelineDepthStencilStateCreateInfo depthStencil{};
+    depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depthStencil.depthTestEnable = VK_TRUE;
+    depthStencil.depthWriteEnable = VK_TRUE;
+    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
+    depthStencil.minDepthBounds = 0.0f;
+    depthStencil.maxDepthBounds = 1.0f;
+
+    VkPipelineColorBlendAttachmentState blendAttachment{};
+    blendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT;
+    blendAttachment.blendEnable = VK_FALSE;
+
+    VkPipelineColorBlendStateCreateInfo colorBlend{};
+    colorBlend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    colorBlend.attachmentCount = 1;
+    colorBlend.pAttachments = &blendAttachment;
+
+    VkGraphicsPipelineCreateInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    info.stageCount = 2;
+    info.pStages = stages;
+    info.pVertexInputState = &vertexInput;
+    info.pInputAssemblyState = &inputAssembly;
+    info.pViewportState = &viewportState;
+    info.pRasterizationState = &raster;
+    info.pMultisampleState = &multisample;
+    info.pDepthStencilState = &depthStencil;
+    info.pColorBlendState = &colorBlend;
+    info.layout = outlineMaskPipelineLayout_;
+    info.renderPass = outlineMaskPass_;
+    info.subpass = 0;
+
+    FS_VK_CHECK(
+        vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1, &info, nullptr, &outlineMaskPipeline_),
+        "vkCreateGraphicsPipelines(outline_mask)");
+    return true;
+}
+
+bool Renderer::createOutlineCompositePipeline() {
+    VkPipelineShaderStageCreateInfo stages[2]{};
+    stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+    stages[0].module = outlineVertShader_;
+    stages[0].pName = "main";
+    stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    stages[1].module = outlineFragShader_;
+    stages[1].pName = "main";
+
+    // NO vertex buffer at all: the triangle comes from gl_VertexIndex. That is
+    // also why nothing here is ever uploaded, grown or freed per frame.
+    VkPipelineVertexInputStateCreateInfo vertexInput{};
+    vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+
+    VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
+    inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+
+    VkViewport viewport{0.0f, 0.0f, static_cast<float>(swapchainExtent_.width),
+                        static_cast<float>(swapchainExtent_.height), 0.0f, 1.0f};
+    VkRect2D scissor{{0, 0}, swapchainExtent_};
+
+    VkPipelineViewportStateCreateInfo viewportState{};
+    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewportState.viewportCount = 1;
+    viewportState.pViewports = &viewport;
+    viewportState.scissorCount = 1;
+    viewportState.pScissors = &scissor;
+
+    // Culling OFF. The full-screen triangle's winding is whatever the index
+    // arithmetic in outline.vert produces, and making a screen-space pass
+    // depend on a face convention would be one more thing to get wrong.
+    VkPipelineRasterizationStateCreateInfo raster{};
+    raster.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    raster.polygonMode = VK_POLYGON_MODE_FILL;
+    raster.cullMode = VK_CULL_MODE_NONE;
+    raster.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    raster.lineWidth = 1.0f;
+
+    VkPipelineMultisampleStateCreateInfo multisample{};
+    multisample.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    multisample.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+    // Depth test OFF and depth write OFF, exactly like the gizmo's. The mask it
+    // reads is ALREADY depth resolved, so testing again against the main pass's
+    // depth would be asking the same question twice with a worse answer — the
+    // band lies just OUTSIDE the body, where the depth belongs to whatever is
+    // behind it, and a test there would erase the outline rather than protect
+    // it. Writing no depth leaves the buffer exactly as the bodies and the grid
+    // left it, so the gizmo recorded after this is unaffected.
+    VkPipelineDepthStencilStateCreateInfo depthStencil{};
+    depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depthStencil.depthTestEnable = VK_FALSE;
+    depthStencil.depthWriteEnable = VK_FALSE;
+    depthStencil.depthCompareOp = VK_COMPARE_OP_ALWAYS;
+    depthStencil.minDepthBounds = 0.0f;
+    depthStencil.maxDepthBounds = 1.0f;
+
+    // Straight (non-premultiplied) alpha, matching what outline.frag writes and
+    // the gizmo's own blend.
+    VkPipelineColorBlendAttachmentState blendAttachment{};
+    blendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                                     VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    blendAttachment.blendEnable = VK_TRUE;
+    blendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    blendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    blendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+    blendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    blendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+    blendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
+
+    VkPipelineColorBlendStateCreateInfo colorBlend{};
+    colorBlend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    colorBlend.attachmentCount = 1;
+    colorBlend.pAttachments = &blendAttachment;
+
+    VkGraphicsPipelineCreateInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    info.stageCount = 2;
+    info.pStages = stages;
+    info.pVertexInputState = &vertexInput;
+    info.pInputAssemblyState = &inputAssembly;
+    info.pViewportState = &viewportState;
+    info.pRasterizationState = &raster;
+    info.pMultisampleState = &multisample;
+    info.pDepthStencilState = &depthStencil;
+    info.pColorBlendState = &colorBlend;
+    info.layout = outlinePipelineLayout_;
+    // The MAIN render pass, not the mask's: the composite is recorded inside
+    // the frame's own pass, between the grid and the gizmo.
+    info.renderPass = renderPass_;
+    info.subpass = 0;
+
+    FS_VK_CHECK(
+        vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1, &info, nullptr, &outlinePipeline_),
+        "vkCreateGraphicsPipelines(outline)");
+    return true;
+}
+
 bool Renderer::createSwapchainDependents() {
     if (!createSwapchain()) return false;
     if (!createDepthResources()) return false;
@@ -2562,6 +3243,10 @@ bool Renderer::createSwapchainDependents() {
     if (!createPipeline()) return false;
     if (!createGridPipeline()) return false;
     if (!createGizmoPipeline()) return false;
+    // After the main render pass exists, because the composite pipeline is
+    // built against it, and after the depth format is known, because the mask
+    // pass's own depth image uses the same one.
+    if (!createOutlineSwapchainResources()) return false;
     if (!createCommandBuffers()) return false;
     needsSwapchainRebuild_ = false;
     return true;
@@ -2581,6 +3266,9 @@ void Renderer::destroySwapchainDependents() {
                              commandBuffers_.data());
         commandBuffers_.clear();
     }
+    // Before the render pass and the depth image it names, and before the
+    // pipelines built against them.
+    destroyOutlineSwapchainResources();
     if (gizmoPipeline_ != VK_NULL_HANDLE) {
         vkDestroyPipeline(device_, gizmoPipeline_, nullptr);
         gizmoPipeline_ = VK_NULL_HANDLE;
@@ -2645,6 +3333,18 @@ bool Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex) {
     float background[3];
     viewportBackgroundColor(display_.background, background);
 
+    // The selection outline's MASK pass, recorded BEFORE the frame's own pass
+    // begins. It is a whole render pass, so it cannot be nested inside one, and
+    // it must come first because the composite draw inside the main pass
+    // samples what it produced. When nothing is selected, the outline is turned
+    // off, or the selected body has no uploaded geometry, this is one boolean
+    // and the pass is not recorded at all — which is the entire cost of the
+    // feature being off.
+    const bool outlineThisFrame = selectionOutlineActive();
+    if (outlineThisFrame) {
+        recordOutlineMaskPass(cmd);
+    }
+
     VkClearValue clears[2]{};
     clears[0].color = {{background[0], background[1], background[2], 1.0f}};
     clears[1].depthStencil = {1.0f, 0};
@@ -2683,7 +3383,21 @@ bool Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex) {
     // coplanar case the bias exists to settle.
     recordGridDraw(cmd);
 
-    // And the gizmo after the grid, so a handle is never lost behind a floor
+    // Then the selection outline, over the model and the floor and UNDER the
+    // instrument. Over the model because the band it paints is the answer to
+    // "which body is this", and a floor line crossing it would break the edge
+    // it draws; under the gizmo because a handle the user is about to drag must
+    // never be obscured by feedback about what it is attached to.
+    //
+    // It samples the mask the pass above produced, so a frame that recorded no
+    // mask pass records no composite either — the two are decided by the same
+    // boolean and cannot disagree, which is what makes a stale outline from a
+    // previous frame's mask impossible.
+    if (outlineThisFrame) {
+        recordSelectionOutlineDraw(cmd);
+    }
+
+    // And the gizmo after the outline, so a handle is never lost behind a floor
     // line. It is depth-test-off and depth-write-off, so it reads nothing from
     // the depth buffer and leaves it exactly as the bodies and the grid did.
     recordGizmoDraw(cmd);
@@ -2889,6 +3603,143 @@ void Renderer::recordGizmoDraw(VkCommandBuffer cmd) {
     // recording starts from vkCmdBindPipeline(pipeline_) again — so this pass
     // leaves no pipeline, blend, depth or scissor state behind for a body draw
     // to inherit.
+}
+
+bool Renderer::selectionOutlineActive() const {
+    if (!display_.selectionOutlineVisible) {
+        return false;
+    }
+    if (outlineMaskPipeline_ == VK_NULL_HANDLE || outlinePipeline_ == VK_NULL_HANDLE ||
+        outlineMaskFramebuffer_ == VK_NULL_HANDLE || outlineSet_ == VK_NULL_HANDLE ||
+        outlineMaskExtent_.width == 0 || outlineMaskExtent_.height == 0) {
+        return false;
+    }
+    // A selected body with nothing uploaded yet is not drawable, so it gets no
+    // outline rather than an outline of the empty set. It is the same test the
+    // body's own draw makes, asked BEFORE any pass is begun so a frame that
+    // cannot draw a correct outline pays nothing at all.
+    for (const SceneDrawItem& item : scene_) {
+        if (!item.selected) continue;
+        auto found = bodies_.find(item.objectId);
+        if (found == bodies_.end()) continue;
+        const BodyRenderResources& body = found->second;
+        if (body.vertexBuffer != VK_NULL_HANDLE && body.indexBuffer != VK_NULL_HANDLE &&
+            body.indexCount > 0) {
+            return true;
+        }
+    }
+    // Nothing selected, or the selected body left the scene between the
+    // snapshot and this frame — a Delete, an Undo, a project close, Home. No
+    // stale outline is possible: the mask pass is simply not recorded, and the
+    // composite is gated on the same answer, so this frame cannot sample the
+    // previous frame's mask either.
+    return false;
+}
+
+void Renderer::recordOutlineMaskPass(VkCommandBuffer cmd) {
+    VkClearValue clears[2]{};
+    clears[0].color = {{kOutlineMaskUnselected, 0.0f, 0.0f, 0.0f}};
+    clears[1].depthStencil = {1.0f, 0};
+
+    VkRenderPassBeginInfo rp{};
+    rp.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    rp.renderPass = outlineMaskPass_;
+    rp.framebuffer = outlineMaskFramebuffer_;
+    rp.renderArea.offset = {0, 0};
+    rp.renderArea.extent = outlineMaskExtent_;
+    rp.clearValueCount = 2;
+    rp.pClearValues = clears;
+
+    vkCmdBeginRenderPass(cmd, &rp, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, outlineMaskPipeline_);
+
+    // EVERY body, not only the selected one. The unselected ones are what write
+    // the depth that occludes the selected one, and they write zero coverage —
+    // which is what the attachment was cleared to — so the mask that comes out
+    // is the selected body's VISIBLE silhouette and nothing else.
+    for (const SceneDrawItem& item : scene_) {
+        auto found = bodies_.find(item.objectId);
+        if (found == bodies_.end()) {
+            continue;  // nothing uploaded for this body yet
+        }
+        const BodyRenderResources& body = found->second;
+        if (body.vertexBuffer == VK_NULL_HANDLE || body.indexBuffer == VK_NULL_HANDLE ||
+            body.indexCount == 0) {
+            continue;
+        }
+
+        // Composed exactly as recordBodyDraw composes it, from the same camera
+        // snapshot and the same derived model. Deriving it here a second way is
+        // precisely how a mask ends up a pixel off from the body it traces —
+        // which is why this is the same two multiplies and not a variation.
+        const Mat4 modelView = mat4Multiply(camera_.view, item.model);
+        const Mat4 mvp = mat4Multiply(camera_.proj, modelView);
+
+        OutlineMaskPush push{};
+        std::memcpy(push.mvp, mvp.m, sizeof(push.mvp));
+        push.params[0] = item.selected ? kOutlineMaskSelected : kOutlineMaskUnselected;
+
+        // The body's OWN buffers. Nothing is uploaded, derived, tessellated or
+        // copied for the outline: this is the same vertex and index buffer the
+        // shaded draw binds a few instructions later in the main pass, which is
+        // what makes the outline representation-neutral without one branch on
+        // what a body is.
+        VkDeviceSize offset = 0;
+        vkCmdPushConstants(cmd, outlineMaskPipelineLayout_,
+                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                           sizeof(OutlineMaskPush), &push);
+        vkCmdBindVertexBuffers(cmd, 0, 1, &body.vertexBuffer, &offset);
+        vkCmdBindIndexBuffer(cmd, body.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+        vkCmdDrawIndexed(cmd, body.indexCount, 1, 0, 0, 0);
+    }
+
+    vkCmdEndRenderPass(cmd);
+    ++outlineMaskPassFrames_;
+}
+
+void Renderer::recordSelectionOutlineDraw(VkCommandBuffer cmd) {
+    // From the VIEWPORT's size and nothing else. The camera is not an input, so
+    // the band is the same thickness at any zoom, in either projection, for a
+    // body at any distance — which is what "screen-space stable" means.
+    const float radius = selectionOutlineWidthPixels(static_cast<int>(outlineMaskExtent_.width),
+                                                     static_cast<int>(outlineMaskExtent_.height));
+    outlineWidthPixels_ = radius;
+
+    OutlinePush push{};
+    // Per GROUND, asked the way every other tool colour asks it. Switching
+    // palette is these three floats and no upload, exactly as it is for the
+    // grid and the gizmo.
+    selectionOutlineColor(display_.background, push.color);
+    push.color[3] = kOutlineAlpha;
+    push.params[0] = 1.0f / static_cast<float>(outlineMaskExtent_.width);
+    push.params[1] = 1.0f / static_cast<float>(outlineMaskExtent_.height);
+    push.params[2] = radius;
+    push.params[3] = 0.0f;
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, outlinePipeline_);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, outlinePipelineLayout_, 0, 1,
+                            &outlineSet_, 0, nullptr);
+    vkCmdPushConstants(cmd, outlinePipelineLayout_, VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                       sizeof(OutlinePush), &push);
+    // Three vertices, no vertex buffer and no index buffer. The whole per-frame
+    // CPU cost of a selection outline is this call and the push above it.
+    vkCmdDraw(cmd, 3, 1, 0, 0);
+    ++outlineCompositeDraws_;
+
+    // The gizmo is recorded next and binds its own pipeline, so nothing here is
+    // inherited: this leaves no blend, depth or descriptor state behind that a
+    // later draw could read. It wrote no depth either.
+}
+
+Renderer::SelectionOutlineStats Renderer::selectionOutlineStats() const {
+    SelectionOutlineStats stats;
+    stats.maskAllocations = outlineMaskAllocations_;
+    stats.maskPassFrames = outlineMaskPassFrames_;
+    stats.compositeDraws = outlineCompositeDraws_;
+    stats.maskWidth = outlineMaskExtent_.width;
+    stats.maskHeight = outlineMaskExtent_.height;
+    stats.widthPixels = outlineWidthPixels_;
+    return stats;
 }
 
 bool Renderer::drawFrame() {

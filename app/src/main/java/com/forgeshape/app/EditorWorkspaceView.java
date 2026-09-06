@@ -4233,11 +4233,32 @@ final class EditorWorkspaceView extends FrameLayout
                 R.attr.fsTextSecondary);
     }
 
+    /**
+     * Shows or hides the selected body's persistent outline ({@code
+     * SEL-OUT-R1}).
+     *
+     * <p>The grid's act, in every respect. The popover stays open because
+     * deciding whether an edge helps means switching it back and forth, and
+     * nothing else is refreshed because nothing else can have gone stale: the
+     * outline is derived from the geometry the GPU already holds, so toggling
+     * it mints no revision, rebuilds no render mesh, uploads nothing and does
+     * not dirty the project. Calling {@code syncFromNative()} here would throw
+     * away a half-typed dimension for a change that touched no value.
+     */
+    @Override
+    public void onSelectionOutlineVisibleRequested(boolean visible) {
+        final boolean inEffect = NativeViewport.setSelectionOutlineVisible(visible);
+        refreshDisplaySettings();
+        showStatus(getContext().getString(inEffect ? R.string.status_selection_outline_on
+                        : R.string.status_selection_outline_off),
+                R.attr.fsTextSecondary);
+    }
+
     /** Repaints the popover from native truth, so a refused request shows. */
     private void refreshDisplaySettings() {
         displayPopover.showSettings(NativeViewport.shadingModel(),
                 NativeViewport.surfaceShading(), NativeViewport.projectionMode(),
-                NativeViewport.gridVisible());
+                NativeViewport.gridVisible(), NativeViewport.selectionOutlineVisible());
     }
 
     /**

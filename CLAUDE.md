@@ -278,8 +278,8 @@ curve-profile timings.
   framework. **The Settings page** (`SettingsPageView`, a start page) is the
   ONE home of every persistent preference, reached from Home and from the
   Project surface's `Settings…`; the transient viewport controls (Shading,
-  Surface, Projection, Grid) stay in the Display popover and must not move
-  there. **Exactly five palettes**: the three DARK ones are value-for-value
+  Surface, Projection, Grid and, since `SEL-OUT-R1`, Selection Outline) stay in
+  the Display popover and must not move there. **Exactly five palettes**: the three DARK ones are value-for-value
   what was approved, the two LIGHT ones (Warm Light, Cool Light) are derived
   through the same `attrs.xml` roles and held to the same measured targets
   (`artifacts/ui-pref-r1/CONTRAST.md`), every per-ground tool colour below JNI
@@ -537,6 +537,48 @@ curve-profile timings.
   publishes no `MeshRevision`. Anything consuming the transform must be
   non-uniform-scale correct: normals ride `R·S⁻¹`, and picking's local ray
   direction stays un-normalized so its parameter is still world distance.
+- **Selection is the Objects capsule plus an OUTLINE, and the outline is a
+  true silhouette of the body's own rendered geometry** (`SEL-OUT-R1`,
+  UI-OWNER-10 / UI-OWNER-11). There is no persistent whole-object glow:
+  `kSelectionRestingAlpha` is **0**, so the acknowledgement pulse
+  (`forgeshape_selection_pulse.h`, 0.55 decaying over 220 ms) is the only thing
+  that ever tints a surface, and what stays afterwards is a band a few screen
+  pixels wide around the selected body. The renderer draws it in TWO steps: a
+  **mask pass** recorded before the frame's own pass rasterises every scene body
+  through a position-only pipeline into a single-channel image with its own
+  depth attachment — unselected bodies write 0 and their depth, the selected one
+  writes 1 — and a **composite** full-screen triangle recorded inside the main
+  pass, after the grid and before the gizmo, that paints the band where a pixel
+  is OUTSIDE that coverage and something within the band's width is inside.
+  Occlusion is therefore resolved by the mask pass's depth test and by nothing
+  else: the hidden part of a selected body is simply not in the mask, so an
+  x-ray outline is not something the composite could draw. The band is drawn
+  OUTSIDE the silhouette, never inside, because an inner band on a small or thin
+  body is the full-object fill this stage exists to avoid. **It is
+  representation-neutral without one branch**: the mask pass binds the body's
+  OWN device-local buffers — the ones its shaded draw binds — so Construction,
+  Imported Mesh, Sculpt and CAD are correct for free, and a selection change
+  costs one push-constant float per body and re-uploads nothing. The width is
+  screen-space and bounded (`forgeshape_selection_outline.h`: a fraction of the
+  viewport's short side clamped to [2, 5] px, ~3.0 px on a 1080-wide phone), so
+  the camera is not an input and zoom cannot change it; the colour is authored
+  per ground FAMILY through `viewportBackgroundIsLight` like every other tool
+  colour, and both values are **policy, not preference** — there is no outline
+  width or colour control anywhere. `selectionOutlineCoverage` is the CPU
+  REFERENCE implementation of the edge rule and `shaders/outline.frag` mirrors
+  its tap counts, exactly as `grid.vert` mirrors `kGridDepthNudge`. **The
+  toggle is the GRID's in every respect**: `Selection Outline` sits beside
+  `Grid` in the Display popover's View group, lives in the process-scoped
+  `DisplaySettingsStore`, is session-only and native-owned, survives rotation
+  and HOME/resume, and is NOT an `AppPreferences` field — the Settings page owns
+  persistent preferences and a transient viewport overlay does not belong there.
+  With it off the renderer records neither pass, so "off" costs one boolean per
+  frame. Nothing here is truth: no `MeshRevision`, no rebuild, no upload, no CAD
+  regeneration, no history step, no dirty flag, no `.forge` byte. The mask and
+  its depth image are swapchain-scoped and their allocation count moves on an
+  extent change or a device rebuild and on nothing else. **Not this stage:** an
+  x-ray or hidden-object reveal, multi-select, a second selection mode, and any
+  user setting for the band.
 - **Shading is presentation, never truth.** Normals, the derived render mesh and
   every display setting are one-way products of a published `RuntimeMesh`.
   Nothing may read a dimension, a Construction parameter, a sculpt deformation,
@@ -670,7 +712,9 @@ curve-profile timings.
   *dimension* (the technical-drawing annotation on a selected Line, with its
   editable length), *Edit Sketch* (reopening a committed CAD Body's sketch,
   staged until Finish), *Frozen Sculpt Mesh* (the
-  polygon mesh `SculptMesh::freezeFrom` creates, from EITHER source), *history
+  polygon mesh `SculptMesh::freezeFrom` creates, from EITHER source),
+  *selection outline* (the persistent silhouette band around the selected body;
+  never "selection highlight", which is what the tint it replaced was), *history
   capsule* (the bottom trailing capsule holding Undo and Redo), *transform mode selector* (Move /
   Rotate / Scale) and *coordinate-space selector* (World / Local, where it
   applies — Scale omits it, because a world-axis scale of a turned body is a

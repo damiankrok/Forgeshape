@@ -23,6 +23,7 @@
 #include "forgeshape_grid.h"
 #include "forgeshape_scene.h"
 #include "forgeshape_sculpt.h"
+#include "forgeshape_selection_outline.h"
 #include "forgeshape_selection_pulse.h"
 
 namespace forgeshape {
@@ -2225,21 +2226,51 @@ void checkSelectionPulse(Recorder& r) {
                 afterOneFrame > kSelectionRestingAlpha + kEpsilon);
     }
 
-    // --- R1C1-03: the resting alpha is materially below the legacy 0.55 ----
+    // --- SELOUTR1-11 / -12 / -13: the pulse is now the WHOLE tint ----------
+    //
+    // UI-R1C1 cut the legacy 0.55 flood to a 0.20 resting tint and this suite
+    // asserted the tint was "still visible". `SEL-OUT-R1` (UI-OWNER-10) removes
+    // the resting tint outright, because a whole-object wash is a whole-object
+    // wash at any strength: persistent selection is the Objects capsule plus
+    // the silhouette outline, and the tint's only remaining job is the brief
+    // acknowledgement.
     {
-        // The number this replaced, quoted here so the comparison is visible
-        // rather than implied. It is not a constant anywhere in the product any
-        // more, which is the point.
+        // The number the resting value replaced, and then replaced again.
+        // Neither is a constant anywhere in the product any more, which is the
+        // point of quoting them here.
         constexpr float kLegacySelectedAlpha = 0.55f;
-        r.check("r1c1_03_resting_alpha_is_below_the_legacy_flood",
-                kSelectionRestingAlpha < kLegacySelectedAlpha);
-        r.check("r1c1_03_resting_alpha_is_less_than_half_the_legacy_flood",
-                kSelectionRestingAlpha < kLegacySelectedAlpha * 0.5f);
-        // A tint mixed at 0 would make selection invisible, which is the
-        // opposite failure and just as bad.
-        r.check("r1c1_03_resting_alpha_is_still_visible", kSelectionRestingAlpha > 0.1f);
-        r.check("r1c1_03_the_peak_still_matches_the_legacy_flood",
+        constexpr float kSupersededRestingAlpha = 0.20f;
+
+        r.check("seloutr1_13_no_persistent_whole_object_glow_remains",
+                kSelectionRestingAlpha == 0.0f);
+        r.check("seloutr1_13_the_resting_tint_is_below_what_it_superseded",
+                kSelectionRestingAlpha < kSupersededRestingAlpha);
+        r.check("seloutr1_11_the_peak_still_matches_the_legacy_flood",
                 nearly(kSelectionPulseAlpha, kLegacySelectedAlpha));
+        // The acknowledgement is still an acknowledgement: loud, and brief.
+        r.check("seloutr1_11_the_pulse_is_still_a_real_peak",
+                kSelectionPulseAlpha > 0.5f);
+        r.check("seloutr1_11_the_pulse_is_still_short",
+                kSelectionPulseSeconds > 0.1 && kSelectionPulseSeconds < 0.4);
+
+        // A selected body settles at EXACTLY nothing, however long it stays
+        // selected. This is what SELOUTR1-12 rests on: after the pulse ends,
+        // the only thing saying "this one" is the outline.
+        SelectionPulseState settled;
+        advanceSelectionPulse(settled, true, kFrame, true);
+        for (int i = 0; i < 240; ++i) {
+            advanceSelectionPulse(settled, true, kFrame, true);
+        }
+        const float longSettled = advanceSelectionPulse(settled, true, kFrame, true);
+        r.check("seloutr1_12_a_long_selected_body_carries_no_tint_at_all",
+                longSettled == 0.0f);
+        // And a selected body is then indistinguishable from an unselected one
+        // AS FAR AS THE TINT GOES — which is exactly why the outline had to
+        // exist before this value could be taken to zero.
+        SelectionPulseState never;
+        const float unselected = advanceSelectionPulse(never, false, kFrame, true);
+        r.check("seloutr1_13_settled_selection_tints_exactly_as_much_as_none",
+                longSettled == unselected);
     }
 
     // --- R1C1-04: deselection clears the visual state ----------------------
@@ -2296,8 +2327,14 @@ void checkSelectionPulse(Recorder& r) {
     // --- R1C1-05b: reduced motion, and a resume mid-pulse ------------------
     {
         SelectionPulseState s;
-        // Reduced motion: selection is readable at once, at the RESTING value.
-        // Landing on the peak instead would simply restore the flood.
+        // Reduced motion lands on the RESTING value at once. Landing on the
+        // peak instead would restore the flood and hold it there forever.
+        //
+        // Since `SEL-OUT-R1` the resting value is zero, so reduced motion means
+        // no tint at all — which is the correct answer precisely BECAUSE the
+        // outline is not an animation: it appears on the frame selection
+        // changes and stays, so a user who asked for no motion still gets an
+        // immediate, permanent answer to "which one".
         const float instant = advanceSelectionPulse(s, true, kFrame, false);
         r.check("r1c1_06_reduced_motion_reaches_resting_immediately",
                 nearly(instant, kSelectionRestingAlpha));
@@ -2367,6 +2404,466 @@ void checkSelectionPulse(Recorder& r) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Selection outline (SEL-OUT-R1): SELOUTR1-01, -13..-16, -20..-22, -28..-32
+// ---------------------------------------------------------------------------
+//
+// Here for exactly the reason the pulse and the grid are here: the outline is
+// PRESENTATION. This suite owns how a thing is drawn; the picking and selection
+// suites own what is in the scene and which body is selected, and the whole
+// point of the outline is that it is neither.
+//
+// What can be proven deterministically on the CPU is the POLICY and the RULE:
+// the width, the colours and their measured contrast, and the edge-extraction
+// kernel `shaders/outline.frag` mirrors. What cannot — that Vulkan rasterised
+// the mask the mask pipeline described — is proven on the device by
+// SelectionOutlineTest and by the visual evidence, which is the same division
+// the grid's geometry and the grid's appearance already live under.
+
+// A synthetic coverage mask: a filled axis-aligned rectangle in a field of
+// zeroes. Deliberately not a rendered one — the rule under test is "which
+// pixels are within the band of a covered region", and a hand-built region
+// makes every expected answer arithmetic rather than a judgement.
+void fillMaskRect(std::vector<float>* mask, int width, int height, int x0, int y0, int x1, int y1) {
+    mask->assign(static_cast<size_t>(width) * static_cast<size_t>(height), 0.0f);
+    for (int y = y0; y <= y1; ++y) {
+        for (int x = x0; x <= x1; ++x) {
+            if (x < 0 || y < 0 || x >= width || y >= height) continue;
+            (*mask)[static_cast<size_t>(y) * static_cast<size_t>(width) +
+                    static_cast<size_t>(x)] = 1.0f;
+        }
+    }
+}
+
+void checkSelectionOutlineWidth(Recorder& r) {
+    // --- the width is screen-space and BOUNDED at both ends ----------------
+    {
+        // A typical phone short side, a small window, and an implausibly large
+        // one. The floor keeps the band visible on the small window; the
+        // ceiling keeps it from swallowing small geometry on the large one.
+        const float phone = selectionOutlineWidthPixels(1080, 2400);
+        const float small = selectionOutlineWidthPixels(320, 480);
+        const float huge = selectionOutlineWidthPixels(4000, 6000);
+
+        r.check("seloutr1_03_width_is_within_its_bounds_on_a_phone",
+                phone >= kSelectionOutlineMinPixels && phone <= kSelectionOutlineMaxPixels);
+        r.check("seloutr1_03_a_small_window_lands_on_the_floor",
+                nearly(small, kSelectionOutlineMinPixels));
+        r.check("seloutr1_03_a_huge_window_lands_on_the_ceiling",
+                nearly(huge, kSelectionOutlineMaxPixels));
+        // Between the two it actually tracks the size, rather than being a
+        // constant with two clamps around it.
+        r.check("seloutr1_03_width_grows_with_the_viewport",
+                selectionOutlineWidthPixels(1440, 3000) > phone);
+        // It reads the SHORT side, so a rotation cannot change the band.
+        r.check("seloutr1_03_width_is_orientation_independent",
+                nearly(selectionOutlineWidthPixels(1080, 2400),
+                       selectionOutlineWidthPixels(2400, 1080)));
+        // The floor exists because a two-pixel band is the thinnest thing that
+        // still reads as a deliberate edge rather than as aliasing.
+        r.check("seloutr1_03_the_floor_is_at_least_two_pixels",
+                kSelectionOutlineMinPixels >= 2.0f);
+        // And the ceiling exists so a 12-pixel feature is edged, not covered.
+        r.check("seloutr1_03_the_ceiling_stays_thin", kSelectionOutlineMaxPixels <= 6.0f);
+    }
+
+    // --- a degenerate viewport answers the floor, never zero or a NaN ------
+    {
+        const float zero = selectionOutlineWidthPixels(0, 0);
+        const float negative = selectionOutlineWidthPixels(-100, 200);
+        r.check("seloutr1_22_a_zero_viewport_answers_the_floor",
+                nearly(zero, kSelectionOutlineMinPixels));
+        r.check("seloutr1_22_a_negative_viewport_answers_the_floor",
+                nearly(negative, kSelectionOutlineMinPixels));
+        r.check("seloutr1_22_a_degenerate_viewport_never_answers_zero", zero > 0.0f);
+    }
+
+    // --- the camera is NOT an input ----------------------------------------
+    //
+    // Structural rather than incidental: the function's whole signature is two
+    // integers, so there is nothing camera-shaped to reach. This states it as a
+    // check so a future overload that took a camera would have to delete a
+    // named assertion rather than quietly widen the contract.
+    {
+        const float a = selectionOutlineWidthPixels(1080, 2400);
+        const float b = selectionOutlineWidthPixels(1080, 2400);
+        r.check("seloutr1_03_width_is_a_pure_function_of_the_viewport", a == b);
+    }
+}
+
+void checkSelectionOutlineColour(Recorder& r) {
+    // --- SELOUTR1-28..32: legible on every one of the five grounds ---------
+    //
+    // Measured, not asserted in prose, and with the same WCAG arithmetic the
+    // evidence document quotes. The viewport's swapchain format is UNORM, so
+    // the floats the renderer writes ARE the sRGB values the panel shows and
+    // this is a measurement rather than an approximation of one.
+    const ViewportBackground grounds[kViewportBackgroundCount] = {
+        ViewportBackground::WarmGraphite, ViewportBackground::NeutralCharcoal,
+        ViewportBackground::LightCharcoal, ViewportBackground::WarmLight,
+        ViewportBackground::CoolLight,
+    };
+    static const char* const names[kViewportBackgroundCount] = {
+        "seloutr1_28_warm_graphite_clears_4_5_to_1",
+        "seloutr1_29_neutral_charcoal_clears_4_5_to_1",
+        "seloutr1_30_light_charcoal_clears_4_5_to_1",
+        "seloutr1_31_warm_light_clears_4_5_to_1",
+        "seloutr1_32_cool_light_clears_4_5_to_1",
+    };
+
+    bool everyGroundFinite = true;
+    for (int i = 0; i < kViewportBackgroundCount; ++i) {
+        float outline[3] = {0.0f, 0.0f, 0.0f};
+        float ground[3] = {0.0f, 0.0f, 0.0f};
+        selectionOutlineColor(grounds[i], outline);
+        viewportBackgroundColor(grounds[i], ground);
+        for (int c = 0; c < 3; ++c) {
+            if (!(outline[c] >= 0.0f && outline[c] <= 1.0f)) everyGroundFinite = false;
+        }
+        r.check(names[i], srgbContrastRatio(outline, ground) >= 4.5f);
+    }
+    r.check("seloutr1_28_every_outline_colour_is_a_valid_rgb", everyGroundFinite);
+
+    // --- it is one question, asked once ------------------------------------
+    //
+    // Every DARK ground answers the same colour and every LIGHT ground answers
+    // the same colour, so adding a sixth ground touches the palette and never a
+    // switch in a renderer. Light Charcoal takes the DARK answer even though
+    // the gizmo's palette lumps it with the light ones — the gizmo's split is
+    // about saturation against a mid ground, and this one is about luminance
+    // contrast, which #3C3F41 settles by measuring at well over 4.5:1 above.
+    {
+        float warmGraphite[3];
+        float neutral[3];
+        float lightCharcoal[3];
+        float warmLight[3];
+        float coolLight[3];
+        selectionOutlineColor(ViewportBackground::WarmGraphite, warmGraphite);
+        selectionOutlineColor(ViewportBackground::NeutralCharcoal, neutral);
+        selectionOutlineColor(ViewportBackground::LightCharcoal, lightCharcoal);
+        selectionOutlineColor(ViewportBackground::WarmLight, warmLight);
+        selectionOutlineColor(ViewportBackground::CoolLight, coolLight);
+
+        const bool darkFamilyAgrees = std::memcmp(warmGraphite, neutral, sizeof(warmGraphite)) == 0 &&
+                                      std::memcmp(warmGraphite, lightCharcoal,
+                                                  sizeof(warmGraphite)) == 0;
+        const bool lightFamilyAgrees =
+            std::memcmp(warmLight, coolLight, sizeof(warmLight)) == 0;
+        const bool familiesDiffer =
+            std::memcmp(warmGraphite, warmLight, sizeof(warmLight)) != 0;
+        r.check("seloutr1_28_the_three_dark_grounds_share_one_outline_colour", darkFamilyAgrees);
+        r.check("seloutr1_31_the_two_light_grounds_share_one_outline_colour", lightFamilyAgrees);
+        r.check("seloutr1_28_the_two_families_are_genuinely_different", familiesDiffer);
+
+        // Over paper the edge SINKS darker; over a dark ground it LIFTS
+        // brighter. The same inversion the grid's palette makes, and for the
+        // same reason.
+        r.check("seloutr1_31_the_light_ground_outline_is_darker_than_the_dark_ground_one",
+                srgbRelativeLuminance(warmLight) < srgbRelativeLuminance(warmGraphite));
+    }
+
+    // --- and a null destination is survivable ------------------------------
+    {
+        selectionOutlineColor(ViewportBackground::WarmGraphite, nullptr);
+        r.check("seloutr1_28_a_null_destination_is_ignored_not_dereferenced", true);
+    }
+}
+
+void checkSelectionOutlineKernel(Recorder& r) {
+    // A 64x64 field with a 20x20 filled square at (20,20)..(39,39).
+    constexpr int kW = 64;
+    constexpr int kH = 64;
+    constexpr int kX0 = 20;
+    constexpr int kY0 = 20;
+    constexpr int kX1 = 39;
+    constexpr int kY1 = 39;
+    constexpr float kRadius = 3.0f;
+    std::vector<float> mask;
+    fillMaskRect(&mask, kW, kH, kX0, kY0, kX1, kY1);
+
+    // --- SELOUTR1-13: an INTERIOR pixel is never painted -------------------
+    //
+    // This is what makes the result an outline rather than a highlight, and it
+    // is what keeps a small or thin body edged rather than filled.
+    {
+        bool everyInteriorClear = true;
+        for (int y = kY0; y <= kY1; ++y) {
+            for (int x = kX0; x <= kX1; ++x) {
+                if (selectionOutlineCoverage(mask.data(), kW, kH, x, y, kRadius) != 0.0f) {
+                    everyInteriorClear = false;
+                }
+            }
+        }
+        r.check("seloutr1_13_no_interior_pixel_is_ever_painted", everyInteriorClear);
+    }
+
+    // --- SELOUTR1-02: the band exists, just outside the silhouette ---------
+    {
+        // One pixel outside the left edge, and one outside the top edge.
+        r.check("seloutr1_02_the_pixel_just_left_of_the_edge_is_outlined",
+                selectionOutlineCoverage(mask.data(), kW, kH, kX0 - 1, 30, kRadius) > 0.0f);
+        r.check("seloutr1_02_the_pixel_just_above_the_edge_is_outlined",
+                selectionOutlineCoverage(mask.data(), kW, kH, 30, kY0 - 1, kRadius) > 0.0f);
+        // And a corner, which a naive axis-only kernel would miss.
+        r.check("seloutr1_02_the_diagonal_corner_is_outlined",
+                selectionOutlineCoverage(mask.data(), kW, kH, kX0 - 1, kY0 - 1, kRadius) > 0.0f);
+    }
+
+    // --- SELOUTR1-03: the band is the width the policy asked for -----------
+    {
+        // Walking left from the edge: painted while within the radius, clear
+        // beyond it. The taps are rounded to whole pixels, so the transition is
+        // allowed to land one pixel either side of the exact radius, which is
+        // what the +1 tolerance below states rather than hides.
+        bool insideBandPainted = true;
+        for (int d = 1; d <= static_cast<int>(kRadius); ++d) {
+            if (!(selectionOutlineCoverage(mask.data(), kW, kH, kX0 - d, 30, kRadius) > 0.0f)) {
+                insideBandPainted = false;
+            }
+        }
+        const float justBeyond = selectionOutlineCoverage(
+            mask.data(), kW, kH, kX0 - static_cast<int>(kRadius) - 2, 30, kRadius);
+        r.check("seloutr1_03_every_pixel_within_the_band_is_painted", insideBandPainted);
+        r.check("seloutr1_03_nothing_beyond_the_band_is_painted", justBeyond == 0.0f);
+
+        // Far away is emphatically clear — the band is a band, not a glow.
+        r.check("seloutr1_13_a_distant_pixel_is_never_painted",
+                selectionOutlineCoverage(mask.data(), kW, kH, 2, 2, kRadius) == 0.0f);
+    }
+
+    // --- SELOUTR1-01 / -20 / -21: an EMPTY mask outlines nothing -----------
+    //
+    // The same rule covers three product facts, because all three arrive as an
+    // empty or partial mask rather than as a special case: nothing selected
+    // (SELOUTR1-01), a selected body entirely hidden behind another
+    // (SELOUTR1-21), and the hidden PART of a partly occluded one
+    // (SELOUTR1-20). Occlusion is resolved by the mask pass's depth test, so
+    // the kernel never learns that occlusion exists — it just sees no coverage.
+    {
+        std::vector<float> empty(static_cast<size_t>(kW) * static_cast<size_t>(kH), 0.0f);
+        bool everyPixelClear = true;
+        for (int y = 0; y < kH; ++y) {
+            for (int x = 0; x < kW; ++x) {
+                if (selectionOutlineCoverage(empty.data(), kW, kH, x, y, kRadius) != 0.0f) {
+                    everyPixelClear = false;
+                }
+            }
+        }
+        r.check("seloutr1_01_an_empty_mask_paints_nothing_anywhere", everyPixelClear);
+    }
+
+    // A HALF-occluded body: the mask carries only its visible left half. The
+    // band must trace that half's boundary — including the cut edge, which is
+    // the "contour at a visible depth discontinuity" §4.2 sanctions — and must
+    // NOT appear anywhere along the hidden half.
+    {
+        std::vector<float> half;
+        fillMaskRect(&half, kW, kH, kX0, kY0, 29, kY1);  // right half absent
+        r.check("seloutr1_20_the_visible_half_is_still_outlined",
+                selectionOutlineCoverage(half.data(), kW, kH, kX0 - 1, 30, kRadius) > 0.0f);
+        r.check("seloutr1_20_the_cut_edge_is_outlined",
+                selectionOutlineCoverage(half.data(), kW, kH, 31, 30, kRadius) > 0.0f);
+        // Deep inside the OCCLUDED half there is no coverage within a band, so
+        // nothing is painted: no x-ray silhouette of the hidden part exists.
+        r.check("seloutr1_21_the_hidden_half_grows_no_x_ray_outline",
+                selectionOutlineCoverage(half.data(), kW, kH, kX1, 30, kRadius) == 0.0f);
+    }
+
+    // --- SELOUTR1-22: the window edge, and defensive inputs ----------------
+    //
+    // A body flush against the window edge must not grow a band along the
+    // window edge: samples outside the image read as 0, which is what the GPU
+    // sampler's opaque-black border does.
+    {
+        std::vector<float> flush;
+        fillMaskRect(&flush, kW, kH, 0, 0, 10, kH - 1);  // touching the left edge
+        r.check("seloutr1_22_a_body_flush_to_the_edge_is_outlined_on_its_open_side",
+                selectionOutlineCoverage(flush.data(), kW, kH, 12, 30, kRadius) > 0.0f);
+        // x = 0 is interior, so it is not painted, and there is no x < 0 to
+        // paint. Nothing runs along the window edge.
+        r.check("seloutr1_22_nothing_is_painted_at_the_window_edge_itself",
+                selectionOutlineCoverage(flush.data(), kW, kH, 0, 30, kRadius) == 0.0f);
+
+        r.check("seloutr1_22_a_null_mask_paints_nothing",
+                selectionOutlineCoverage(nullptr, kW, kH, 30, 30, kRadius) == 0.0f);
+        r.check("seloutr1_22_a_zero_extent_paints_nothing",
+                selectionOutlineCoverage(mask.data(), 0, 0, 0, 0, kRadius) == 0.0f);
+        r.check("seloutr1_22_a_zero_radius_paints_nothing",
+                selectionOutlineCoverage(mask.data(), kW, kH, kX0 - 1, 30, 0.0f) == 0.0f);
+        r.check("seloutr1_22_an_out_of_range_pixel_paints_nothing",
+                selectionOutlineCoverage(mask.data(), kW, kH, -5, -5, kRadius) == 0.0f);
+    }
+
+    // --- the tap pattern is the one the shader mirrors ---------------------
+    //
+    // Stated as a check rather than only as a comment, because outline.frag
+    // hard-codes these three numbers: a change here that was not mirrored there
+    // would produce a band of a different shape with nothing to catch it.
+    r.check("seloutr1_03_the_kernel_uses_the_documented_tap_pattern",
+            kSelectionOutlineOuterTaps == 8 && kSelectionOutlineInnerTaps == 4 &&
+                nearly(kSelectionOutlineInnerRingScale, 0.5f));
+}
+
+void checkSelectionOutlineIsPresentationOnly(Recorder& r) {
+    // --- SELOUTR1-14..19: the toggle is a display setting and nothing more --
+    //
+    // Its ownership, its default and its inertness, on the grid's exact terms.
+    // The `.forge` half of SELOUTR1-19 is proven from Java against real bytes;
+    // what is proven here is that there is nothing in the domain for the
+    // toggle to reach in the first place.
+    {
+        r.check("seloutr1_16_the_outline_is_on_by_default", kDefaultSelectionOutlineVisible);
+
+        DisplaySettingsStore store;
+        r.check("seloutr1_16_a_fresh_store_reports_the_default",
+                store.selectionOutlineVisible() == kDefaultSelectionOutlineVisible);
+
+        const uint64_t changesBefore = store.changeCount();
+        r.check("seloutr1_15_turning_it_off_is_a_real_change",
+                store.setSelectionOutlineVisible(false));
+        r.check("seloutr1_15_and_it_reports_off_afterwards", !store.selectionOutlineVisible());
+        r.check("seloutr1_15_a_real_change_is_counted", store.changeCount() == changesBefore + 1);
+        // Idempotent: asking for what is already in effect is inert and is NOT
+        // counted, so a caller can tell a transition from a no-op.
+        r.check("seloutr1_15_setting_the_value_it_already_has_is_a_no_op",
+                !store.setSelectionOutlineVisible(false));
+        r.check("seloutr1_15_a_no_op_is_not_counted", store.changeCount() == changesBefore + 1);
+        r.check("seloutr1_16_turning_it_back_on_is_a_real_change",
+                store.setSelectionOutlineVisible(true));
+        r.check("seloutr1_16_and_it_reports_on_afterwards", store.selectionOutlineVisible());
+
+        // It rides in the SNAPSHOT, so the render thread reads it once at a
+        // known point. A toggle landing between the mask pass and the composite
+        // would otherwise record half an outline.
+        store.setSelectionOutlineVisible(false);
+        r.check("seloutr1_15_the_snapshot_carries_it",
+                !store.snapshot().selectionOutlineVisible);
+        store.setSelectionOutlineVisible(true);
+        r.check("seloutr1_16_the_snapshot_follows_it",
+                store.snapshot().selectionOutlineVisible);
+    }
+
+    // --- the outline and the grid are genuinely independent ----------------
+    //
+    // Two overlays sharing one store must not share one answer.
+    {
+        DisplaySettingsStore store;
+        store.setGridVisible(false);
+        r.check("seloutr1_14_hiding_the_grid_leaves_the_outline_alone",
+                store.selectionOutlineVisible());
+        store.setSelectionOutlineVisible(false);
+        store.setGridVisible(true);
+        r.check("seloutr1_14_showing_the_grid_leaves_the_outline_alone",
+                !store.selectionOutlineVisible());
+        // And neither touches the shading model, the surface shading or the
+        // viewport ground.
+        const ViewportDisplaySettings snapshot = store.snapshot();
+        r.check("seloutr1_17_the_overlays_leave_the_shading_model_alone",
+                snapshot.shading == kDefaultShadingModel);
+        r.check("seloutr1_17_the_overlays_leave_the_surface_shading_alone",
+                snapshot.surface == kDefaultSurfaceShading);
+        r.check("seloutr1_17_the_overlays_leave_the_ground_alone",
+                snapshot.background == kDefaultViewportBackground);
+    }
+
+    // --- SELOUTR1-09 / -10 / -17: it cannot reach geometry truth -----------
+    //
+    // Structural, exactly as the pulse's own inertness check is: a whole
+    // outline cycle runs beside a real published mesh and the revision, the
+    // vertex data and the index data all come out bit-identical. There is no
+    // path from a display store to a MeshStore, and this is what says so with
+    // a real mesh rather than with prose.
+    {
+        const ConstructionMesh source = defaultSphere();
+        MeshStore store(kConstructionBoxObjectId);
+        const MeshRevision revisionBefore =
+            store.publish(source.vertices.data(), static_cast<uint32_t>(source.vertices.size()),
+                          source.indices.data(), static_cast<uint32_t>(source.indices.size()));
+        const RuntimeMeshPtr before = store.current();
+
+        DisplaySettingsStore display;
+        for (int i = 0; i < 20; ++i) {
+            display.setSelectionOutlineVisible(i % 2 == 0);
+            // And the whole colour/width policy exercised beside it, because
+            // that is what a frame would actually run.
+            float rgb[3];
+            selectionOutlineColor(display.snapshot().background, rgb);
+            (void)selectionOutlineWidthPixels(1080, 2400);
+        }
+
+        const RuntimeMeshPtr after = store.current();
+        const bool sameRevision = after && store.currentRevision() == revisionBefore &&
+                                  after->revision() == revisionBefore &&
+                                  revisionBefore != kNoMeshRevision;
+        bool sameBytes = after && before && after->vertexCount() == before->vertexCount() &&
+                         after->indexCount() == before->indexCount();
+        if (sameBytes) {
+            sameBytes = std::memcmp(after->vertices(), before->vertices(),
+                                    after->vertexCount() * sizeof(MeshVertex)) == 0 &&
+                        std::memcmp(after->indices(), before->indices(),
+                                    after->indexCount() * sizeof(uint32_t)) == 0;
+        }
+        r.check("seloutr1_09_the_fixture_published", revisionBefore != kNoMeshRevision);
+        r.check("seloutr1_09_toggling_the_outline_mints_no_mesh_revision", sameRevision);
+        r.check("seloutr1_10_toggling_the_outline_leaves_the_mesh_bit_identical", sameBytes);
+        r.check("seloutr1_10_it_is_still_the_same_published_object", after == before);
+    }
+
+    // --- SELOUTR1-08: a selection CHANGE is inert on the same terms --------
+    //
+    // Selection travels to the renderer as one bool per scene item, which the
+    // snapshot already carried before this stage existed. Switching the
+    // selected body therefore rebuilds nothing and re-uploads nothing, and the
+    // strongest available statement of that is a real scene snapshotted either
+    // side of a real selection change.
+    {
+        ConstructionScene scene;
+        SceneObject& bodyA = scene.bodyAt(0);
+        SceneObject& bodyB = scene.addBody();
+        publishSceneObject(bodyA);
+        publishSceneObject(bodyB);
+        const ObjectId first = bodyA.objectId();
+        const ObjectId second = bodyB.objectId();
+        const bool twoBodies = second != kNoObject && second != first && scene.bodyCount() == 2;
+
+        scene.setActiveBody(first);
+        const SceneSnapshot before = scene.snapshot();
+        scene.setActiveBody(second);
+        const SceneSnapshot after = scene.snapshot();
+        scene.setActiveBody(first);
+        const SceneSnapshot back = scene.snapshot();
+
+        bool sameShape = before.size() == after.size() && after.size() == back.size();
+        bool sameMeshes = sameShape;
+        bool sameRevisions = sameShape;
+        bool selectionMoved = sameShape;
+        if (sameShape) {
+            for (size_t i = 0; i < before.size(); ++i) {
+                // The very same published RuntimeMesh object, not merely an
+                // equal one: a rebuild would have produced a different pointer
+                // and a different revision.
+                if (before[i].mesh != after[i].mesh || after[i].mesh != back[i].mesh) {
+                    sameMeshes = false;
+                }
+                if (before[i].mesh && after[i].mesh &&
+                    before[i].mesh->revision() != after[i].mesh->revision()) {
+                    sameRevisions = false;
+                }
+                if (before[i].selected == after[i].selected) {
+                    selectionMoved = false;  // nothing actually changed: a bad test
+                }
+                if (before[i].selected != back[i].selected) {
+                    selectionMoved = false;  // and it came back to where it was
+                }
+            }
+        }
+        r.check("seloutr1_08_the_two_body_fixture_built", twoBodies);
+        r.check("seloutr1_08_a_selection_change_actually_moves_the_flag", selectionMoved);
+        r.check("seloutr1_08_a_selection_change_republishes_no_mesh", sameMeshes);
+        r.check("seloutr1_09_a_selection_change_mints_no_mesh_revision", sameRevisions);
+    }
+}
+
 }  // namespace
 
 int runRenderMeshSelfTests(RenderMeshSelfTestResult* out, int max) {
@@ -2418,6 +2915,15 @@ int runRenderMeshSelfTests(RenderMeshSelfTestResult* out, int max) {
     checkGridPalette(r);
     checkGridIsInertAgainstTheModel(r);
     checkGridAgainstPlaneAndProjection(r);
+
+    // SEL-OUT-R1: the selection outline. Here for the third time for the same
+    // reason — it is PRESENTATION. The width policy, the per-ground colours
+    // with their measured contrast, the edge-extraction rule outline.frag
+    // mirrors, and the promise that none of it can reach geometry truth.
+    checkSelectionOutlineWidth(r);
+    checkSelectionOutlineColour(r);
+    checkSelectionOutlineKernel(r);
+    checkSelectionOutlineIsPresentationOnly(r);
 
     return r.n;
 }

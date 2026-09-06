@@ -1,8 +1,92 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.65.0
+**Status Version:** 0.66.0
 **Updated:** 2026-09-06
-**Result:** **TEST-RUNTIME-R1 — COMPLETE (`PASS-TEST-RUNTIME-R1`).** A
+**Result:** **SEL-OUT-R1 — COMPLETE, OWNER RETEST READY.** The selected body now
+carries a **true renderer-derived silhouette outline**, and the persistent
+whole-object glow UI-OWNER-10 prohibited is gone: `kSelectionRestingAlpha` is
+**0**, so the 220 ms acknowledgement pulse is the only thing that ever tints a
+surface and what stays afterwards is a band about **3 px** wide around the
+selected body.
+
+**How it is drawn.** Two steps per frame, and only while a drawable body is
+selected. A **mask pass**, recorded before the frame's own pass, rasterises
+*every* scene body through a position-only pipeline into an `R8_UNORM` image
+with its own depth attachment — unselected bodies write 0 and their depth, the
+selected one writes 1 — so what survives is exactly the part of the selected
+body that is **visible**. Then a **composite** full-screen triangle, recorded
+inside the main pass after the grid and before the gizmo, paints the band where
+a pixel is outside that coverage and something within the band's width is
+inside. Occlusion is therefore settled by the mask pass's depth test and by
+nothing else, which is why an x-ray outline is not something this path could
+draw: `artifacts/sel-out-r1/frames/06_occluded_selected.png` shows the band
+tracing the visible arc of a sphere and stopping dead at the slab in front of
+it.
+
+**It is representation-neutral without a single branch.** The mask pass binds
+each body's *own* device-local buffers — the ones its shaded draw binds — so
+Construction, Imported Mesh, Sculpt and CAD are correct for free, and a
+selection change costs one push-constant float per body. Measured over forty
+selection changes: **0** outline allocations, **0** mesh republications (mesh
+revision 25 → 25), the fingerprint unmoved, and with the toggle off **0**
+composite draws recorded — off costs one boolean per frame, not a pass that
+paints nothing (`artifacts/sel-out-r1/PERFORMANCE.md`).
+
+**The width and colour are policy, not preference.** The band is a fraction of
+the viewport's short side clamped to `[2, 5]` px, so the camera is not an input
+and zoom cannot change it; the colour is authored per ground FAMILY through
+`viewportBackgroundIsLight` and measured against every one of the five grounds
+at **6.14:1 or better** (7.84 / 8.56 / 6.14 dark, 6.25 / 6.25 light). There is
+no outline width or colour control anywhere.
+
+**The toggle is the grid's in every respect.** `Selection Outline` sits beside
+`Grid` in the Display popover's View group, lives in the process-scoped
+`DisplaySettingsStore`, is session-only and native-owned, survives rotation and
+HOME/resume, and is **not** an `AppPreferences` field.
+
+**Evidence:** `artifacts/sel-out-r1/INDEX.md` — the twenty native tokens with
+`FORGESHAPE_RENDER_SHADING_SELFTEST_OK` at **412 checks** (71 of them new),
+`SelectionOutlineTest` 19/19 focused cases, a twelve-frame visual journey whose
+band thickness, colour and bounding box are **measured out of each bitmap**
+(median run 3 px in every frame with the outline on, 0 pixels with it off, and
+0 pixels of the other ground family's colour anywhere), the JVM suite, release
+builds for both ABIs with no self-test symbol or check name in them, the device
+guards over 19 surfaces, and the twenty-eight-fixture `.forge` corpus verified
+byte-identical — this stage touched no project-state code.
+
+**The aggregate did NOT pass, and the reason is not this stage.** The first-ever
+real five-shard `-FullSharded` run returned shards 1–4 **PASS (448/448)** —
+including shard 4, which carries `SelectionOutlineTest` — and shard 5
+`ASSERTION_FAILURE` on two `SpatialSketchTest` cases, both of the form *a tap
+aimed at a CAD face landed somewhere else*. A nine-step bisection reduced it to
+`GlbImportPreviewTest,SpatialSketchTest` and then reproduced it **identically at
+the clean baseline `538623c2` with all of this stage's work stashed and the APKs
+rebuilt from it** (`artifacts/sel-out-r1/PREEXISTING_SHARD5_FAILURE.md`). The
+defect is `SpatialSketchTest` inheriting a populated scene — `setUp` resets the
+active body but does not remove bodies an earlier class left — and this stage's
+diff contains no CAD, sketch, picking, chooser, scene or construction file.
+`FULL_SHARDED_SUITE_PASS` is therefore **not claimed and is not obtainable by
+this stage**: it requires every shard, and shard 5 fails without this stage's
+code. Nothing was concatenated into a PASS and no result criterion was weakened.
+**TEST-RUNTIME-R1 never ran a real five-shard aggregate**, which is why this was
+never seen before; the repair belongs to a `CAD-A3` follow-up or to an explicit
+owner waiver, and is the coordinator's call.
+
+**That call was made: the OWNER WAIVED it.** Further SEL-OUT closeout testing
+was cancelled and feature work directed to continue, so no additional SEL-OUT
+test was run and the candidate was committed as measured. The waiver excuses the
+gate and does not manufacture the marker: `FULL_SHARDED_SUITE_PASS` is still not
+claimed for SEL-OUT-R1. The `SpatialSketchTest` isolation defect is **retained as
+known test debt** for a later test-hardening batch.
+
+**What stays pending:** the Delete → Undo → Redo owner check of `IMPORT-01B` /
+`UI-OWNER-45`. This stage's Delete cases are automated **non-collision**
+evidence — Delete, Undo and Redo behave exactly as before and the outline
+renders whatever selection actually is — and are explicitly **not** that
+verdict. No owner aesthetic approval of the outline is claimed either. The
+deferred audit debt (F-06, F-07, F-09, F-10, F-13, F-14) is unchanged.
+
+**Previous result:** **TEST-RUNTIME-R1 — COMPLETE (`PASS-TEST-RUNTIME-R1`).** A
 test-tooling stage: no product source was touched and no five-shard aggregate
 was run. The instrumented runner can now be driven a shard at a time and
 resumed, without weakening what its PASS means. It fingerprints the tested
@@ -1605,10 +1689,21 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 | ForgeShape holds no network permission and cannot make a request | VERIFIED |
 | Editing A rebuilds and uploads nothing for B | VERIFIED |
 | Only the selected body is highlighted | VERIFIED |
-| Becoming selected gives a short acknowledgement pulse that decays to a much lower resting tint | VERIFIED |
+| Becoming selected gives a short acknowledgement pulse that decays to NOTHING; persistent selection is the Objects capsule plus a silhouette outline | VERIFIED |
 | A tap on an already-selected body does not re-pulse; only a change in selection truth does | VERIFIED |
 | Selection feedback mints no revision, rebuilds no render mesh and uploads nothing, in either appearance | VERIFIED |
 | Two bodies' pulse states are independent; deselecting one does not disturb the other | VERIFIED |
+| A TRUE renderer-derived selection outline: a depth-resolved mask pass over the body's OWN GPU buffers, then a screen-space edge composite | VERIFIED |
+| The outline is correct for a Construction Body, an Imported Mesh, a sculpted body and a CAD Body, with no per-representation branch | VERIFIED |
+| The outline follows the body's own model transform, in both projections, under rotation and non-uniform scale | VERIFIED |
+| The outline obeys depth: only the VISIBLE contour is drawn, and nothing shows through a foreground object | VERIFIED |
+| The band is screen-space stable under zoom, ~3 px on a 1080-wide phone, bounded to [2, 5] px | VERIFIED |
+| The outline clears 4.5:1 against all five viewport grounds (measured 7.84 / 8.56 / 6.14 dark, 6.25 / 6.25 light) | VERIFIED |
+| `Selection Outline` in the Display popover's View group, ON by default, surviving rotation, recreation and HOME/resume | VERIFIED |
+| With the outline off the renderer records neither the mask pass nor the composite: off costs one boolean per frame | VERIFIED |
+| A selection change rebuilds no mesh, uploads no buffer, regenerates no CAD body and moves no fingerprint | VERIFIED |
+| Outline GPU resources are bounded: allocated on an extent change or a device rebuild, and on nothing else | VERIFIED |
+| Delete, Undo and Redo are unchanged, and the outline renders whatever selection actually is | VERIFIED |
 | The selected body stays obvious and the model's form stays readable in every appearance | VERIFIED |
 | A world reference grid on the XZ plane at y = 0, switchable from the Display popover's View group | VERIFIED |
 | The grid is ON by default and its choice survives rotation, Activity recreation and HOME/resume | VERIFIED |
@@ -1626,7 +1721,7 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 | Row tap, viewport pick and creation stay in sync from whichever surface Objects is on, and the capsule names the same body | VERIFIED |
 | ~20 bodies stay listed, scrollable in the column's own container, and selectable | VERIFIED |
 | The SurfaceView is the whole window in every layout mode; docking never resizes the render target | VERIFIED |
-| Reduced motion goes straight to the resting tint and runs no pulse at all | VERIFIED |
+| Reduced motion runs no pulse at all and lands on the resting state at once; since `SEL-OUT-R1` that state is no tint, and the outline is what says which body is selected | VERIFIED |
 | Chrome hide/restore and every context surface are short, interruptible and always settle at a legitimate resting state | VERIFIED |
 | A chrome transition never resizes the viewport or rebuilds the swapchain | VERIFIED |
 | A viewport gesture outranks chrome motion: a detent change during a real stroke is instant | VERIFIED |
@@ -1826,9 +1921,11 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 ## Self-test suite
 
 Twenty debug-only native suites run once from `NativeViewport.start()` —
-never per frame — and total **3019 checks, zero failures** (UI-PREF-R1 added
-16 render-shading checks for the two light grounds and the stroke weight, and
-22 gizmo checks for the visual size and the stroke recipes):
+never per frame — and total **3086 checks, zero failures**. `SEL-OUT-R1` moved
+the render-shading suite from 345 to 412: it added 71 selection-outline checks
+(the band width policy, the five measured per-ground contrast ratios, the
+edge-extraction kernel and the toggle's inertness) and rewrote the four that
+asserted a resting selection tint, which is now zero.
 
 | suite token | checks |
 | --- | --- |
@@ -1841,7 +1938,7 @@ never per frame — and total **3019 checks, zero failures** (UI-PREF-R1 added
 | `FORGESHAPE_CONSTRUCTION_SPHERE_SELFTEST_OK` | 105 |
 | `FORGESHAPE_CONE_CAPSULE_SELFTEST_OK` | 163 |
 | `FORGESHAPE_SCULPT_BRUSH_KERNEL_SELFTEST_OK` | 494 |
-| `FORGESHAPE_RENDER_SHADING_SELFTEST_OK` | 345 |
+| `FORGESHAPE_RENDER_SHADING_SELFTEST_OK` | 412 |
 | `FORGESHAPE_SCENE_SELFTEST_OK` | 79 |
 | `FORGESHAPE_CONSTRUCTION_HISTORY_SELFTEST_OK` | 147 |
 | `FORGESHAPE_GIZMO_SELFTEST_OK` | 167 |
@@ -1988,9 +2085,10 @@ eviction, Sculpt separation both ways, a restored body keeping its Frozen Sculpt
 Mesh, and the publication counts a restore actually incurs.
 
 **Suite ownership is by module, and it decides where a check lives.** The
-render-shading suite owns PRESENTATION — selection feedback (`r1c1_*`) and the
-world grid (`r1c2_*`) live there rather than in picking or selection, which own
-*which* object is selected and what is in the scene. It also covers the crease
+render-shading suite owns PRESENTATION — selection feedback (`r1c1_*`), the
+world grid (`r1c2_*`) and the selection outline (`seloutr1_*`) live there rather
+than in picking or selection, which own *which* object is selected and what is
+in the scene. It also covers the crease
 policy, all six primitives' Smooth contracts, the capsule equality case, Faceted,
 NaN/Inf and fail-closed behaviour, determinism, the render-data rebuild policy,
 the generated MatCap, the display settings, the proof that building render data
@@ -2072,6 +2170,8 @@ device. `README.md` documents how to read them.
 | `EditorWorkspaceThemeTest` | the five-palette control on the Settings page, the switch through it, light grounds light and dark grounds dark with the system bars following, state preservation across the recreation, the material tiers, selection-vs-commit and hierarchy stated as contrast, contrast | 19 |
 | `SettingsPreferencesTest` | `UIPREFR1-01..40` on the device: Settings from Home and from the Project surface with Back one step; one store whose defaults reproduce the product and the UI-LAYOUT-R2 frame; preferences surviving `recreate()` and a fresh read from disk; planted unknown names, NaN and out-of-range values landing on the fallbacks; identical project bytes, fingerprint, dirty flag, history depths and native snapshot after every preference changed; the left rail 8 dp off the left edge with the accepted width and top and the right frame restored exactly; a side-placed Exact opening inward of a left rail and re-seated live; the tool, gizmo mode, selection, camera and handle pixels unchanged by a switch; the four sizes and three weights reaching native with the out-of-range refused; every handle pickable at 0.9, 1.5 and 1.0 in every mode; no handle moved by a weight; the two light palettes light, readable and flipping the system bars; exactly the approved rows and no handle style | 15 |
 | `UiPrefVisualEvidenceTest` | `E2E-UIPREFR1-VIS`: the twenty-frame Settings → five palettes (Home and editor) → right/left-handed with Exact → gizmo default / smallest-thin / largest-bold journey, captured through the composed display with measured facts per frame, for `OWNER_CONTACT_SHEET_UI_PREF_R1.png` / `VISUAL_EVIDENCE.md` | 1 |
+| `SelectionOutlineTest` | `SELOUTR1-01..36` on the device: the Selection Outline control, its touch floor, its content descriptions and its read-back from native truth; the outline choice outliving an Activity recreation exactly as the grid's does; the renderer actually recording the mask pass AND the composite draw for a Construction Body, an Imported Mesh, a sculpted body (across a real stroke and back over the retained mesh) and a CAD Body; a transformed body in both projections; sixteen selection switches moving the outline and allocating nothing; the preview having no selected object and drawing none; the toggle stopping and restoring the whole path; identical `.forge` bytes, fingerprint, dirty flag, history depths and native snapshot after four toggles and eight selection changes; the outline surviving an injected device rebuild and its allocations driven only by the extent; the measured forty-change performance line; Home drawing no outline; Delete/Undo/Redo unchanged with the outline following the existing selection fallback; and two journeys driven the way a user drives them - a real viewport tap resolved by picking, and a click on the body's Objects row | 19 |
+| `SelectionOutlineVisualEvidenceTest` | `E2E-SELOUTR1-VIS`: the twelve-frame Construction → outline off → Imported → Sculpt → CAD → occluded → two bodies A/B → Warm Light → Cool Light → left-handed View/Overlay → Delete-fallback journey, captured through the composed display. It MEASURES the band out of each bitmap — thickness, colour and bounding box — and asserts a band is present where one should be, absent where it should not be, and never drawn in the other ground family's colour | 1 |
 | `EditorWorkspaceMotionTest` | popover preserved, inspector interruptibility, chrome hide/restore, viewport stability, reduced motion, gesture priority | 10 |
 | `PointerSemanticsTest` (JVM) | the Android tool-type mapping and its Unknown fallback | 6 |
 | `EditorWorkspacePointerTest` | synthetic stylus transport, per-pointer association, and that tap / navigation / sculpt arbitration are unchanged | 13 |
@@ -3198,6 +3298,7 @@ regenerated per stage.
 | `app/src/main/java/.../AnchoredSurfaceView.java` | The one implementation of "a surface grows out of the control that opened it", shared by all four: pivot, staging an open that has no size yet, cancel-first, reduced motion, and the open/closed state the invoking control reads |
 | `app/src/main/res/values/attrs.xml`, `themes.xml` | The semantic roles, and the one place each is given a value per theme — five themes on two bases (dark, and the light base that states dark system-bar icons). Adding a theme touches these two files and `colors.xml` and nothing else |
 | `scripts/collect-ui-pref-evidence.ps1` | Runs `UiPrefVisualEvidenceTest` through the one supported runner, pulls the twenty frames and composes the UI-PREF-R1 contact sheet and `VISUAL_EVIDENCE.md` |
+| `scripts/collect-sel-out-evidence.ps1` | Runs `SelectionOutlineVisualEvidenceTest` through the one supported runner, pulls the twelve frames and composes the SEL-OUT-R1 contact sheet and `VISUAL_EVIDENCE.md` |
 | `app/src/main/res/drawable/*` | 21 icon vector drawables on one 24 dp grid, plus the `bg_*` background state lists every control's look comes from, all written in `?attr/fs*` — including the `bg_capsule_*` set, whose only difference from the ordinary controls is a corner concentric with the capsule they sit in |
 | `app/src/main/res/color/*` | `control_content_tint.xml` — the one state list an icon and its label both read, so they cannot disagree |
 | `app/src/test/java/...` | JVM suites: layout arithmetic, UI-owned state, unit conversion |
@@ -3241,17 +3342,20 @@ regenerated per stage.
 | `app/src/main/cpp/forgeshape_mesh.{h,cpp}` | `RuntimeMesh` (immutable revision), `MeshStore`, validation, capacity policy, upload diagnostics including source-vs-render counts |
 | `app/src/main/cpp/forgeshape_render_mesh.{h,cpp}` | Derived render geometry: `RenderVertex` (position + normal + colour), `SurfaceShading`, THE crease policy (`kCreaseAngleDegrees`), per-vertex crease grouping with render-only duplication, and `RenderMeshCache`'s rebuild gate. Presentation only |
 | `app/src/main/cpp/forgeshape_matcap.{h,cpp}` | The one ForgeShape-owned MatCap, computed at device init from the closed-form model in that file. No asset, no decoder, one preset |
-| `app/src/main/cpp/forgeshape_display.{h,cpp}` | `ShadingModel`, `ViewportBackground`, grid visibility, the reduced-motion bool, the process-scoped `DisplaySettingsStore`, and the UI index mapping. Presentation state, never truth |
+| `app/src/main/cpp/forgeshape_display.{h,cpp}` | `ShadingModel`, `ViewportBackground`, grid and selection-outline visibility, the reduced-motion bool, the process-scoped `DisplaySettingsStore`, and the UI index mapping. Presentation state, never truth |
 | `app/src/main/cpp/forgeshape_gizmo.{h,cpp}` | `GizmoSession`: which handle a pointer landed on, the captured pointer, the frozen World or Local drag basis, the Move/Rotate/Scale solvers with their degeneracy fallbacks, and the transaction around ONE drag (over a `ConstructionScene` and `ConstructionHistory` handed in by reference). Also the closed mode/space/handle enums, the canonical reference-unit geometry for all three modes, the screen-constant scale, the axis/highlight/neutral palette, and the placement and quantization seam. Owns no transform of its own |
 | `app/src/main/cpp/forgeshape_grid.{h,cpp}` | The world reference grid's CONTRACT: the XZ plane at y = 0, the 1 m / 5 m / 20 m spacing and extent, `GridLineTier`, one pure vertex generator and the per-appearance palette. No ObjectId, no revision, not in the scene, not pickable |
-| `app/src/main/cpp/forgeshape_selection_pulse.{h,cpp}` | How a SELECTED body is drawn, never which one is: the peak, the resting alpha, the decay, and one pure function over an explicit frame delta. Holds no ObjectId and reads no clock |
-| `app/src/main/cpp/forgeshape_renderer.{h,cpp}` | Vulkan renderer, frame loop, camera snapshot + model transform + selection highlight consumer |
+| `app/src/main/cpp/forgeshape_selection_pulse.{h,cpp}` | How a SELECTED body is ACKNOWLEDGED, never which one is: the peak, the decay, the resting alpha (zero since `SEL-OUT-R1`) and one pure function over an explicit frame delta. Holds no ObjectId and reads no clock |
+| `app/src/main/cpp/forgeshape_selection_outline.{h,cpp}` | How a SELECTED body is OUTLINED: the band width policy (viewport short side, clamped, camera-independent), the two per-ground colours and the WCAG arithmetic that measures them, and `selectionOutlineCoverage` — the CPU REFERENCE implementation of the edge rule `shaders/outline.frag` mirrors. No Vulkan, no ObjectId, no geometry |
+| `app/src/main/cpp/forgeshape_renderer.{h,cpp}` | Vulkan renderer, frame loop, camera snapshot + model transform + selection consumer. Owns the selection outline's mask pass, composite draw and their resource lifetimes; owns no geometry, no identity and no presentation preference |
 | `app/src/main/cpp/forgeshape_math.h` | Minimal self-owned vec3/mat4. No GLM |
 | `app/src/main/cpp/forgeshape_demo_mesh.{h,cpp}` | Baseline cube numbers; source data for the baseline debug fixture only |
 | `app/src/main/cpp/forgeshape_mesh_fixtures.{h,cpp}` | DEBUG test fixtures (baseline / same-topology / larger / stress step) |
 | `app/src/main/cpp/forgeshape_*_selftest.{h,cpp}` | The thirteen debug-only deterministic suites: camera, picking, mesh, construction (box), transform, primitive, sphere, cone/capsule, sculpt brush kernel, render shading, scene, Construction history, gizmo |
 | `app/src/main/cpp/shaders/surface.{vert,frag}` | GLSL source for the surface pipeline: view-space normals, Studio Solid, the MatCap lookup and the debug colour path. AOT compiled to SPIR-V by `glslc` in CMake |
 | `app/src/main/cpp/shaders/grid.{vert,frag}` | GLSL source for the grid pipeline: world→clip with no model matrix, the tier→colour choice, the depth nudge that settles the coplanar Plane, and the PER-FRAGMENT radial fade |
+| `app/src/main/cpp/shaders/outline_mask.{vert,frag}` | GLSL source for the selection outline MASK pass: position only, one push-constant float per body saying whether it is the selected one. No normal, no light, no sampler |
+| `app/src/main/cpp/shaders/outline.{vert,frag}` | GLSL source for the selection outline COMPOSITE: a full-screen triangle from `gl_VertexIndex` with no vertex buffer, and the 12-tap two-ring edge rule mirrored from `forgeshape_selection_outline.h` |
 | `app/src/main/cpp/CMakeLists.txt` | Native build + glslc shader step |
 | `artifacts/` | Runtime evidence screenshots from accepted stages, plus `stage015c_shading_comparison.md`, the Stage 015C comparison sheet |
 | `docs/ui/wireframes/*.svg` | Stage 015A-R proposal sketches, kept as reference only. They are **not** the shipped shell and WF-3 draws a Sketch/Extrude flow that does not exist |
@@ -3282,13 +3386,31 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Exactly one next step: return this status to the ForgeShape coordinator.**
-TEST-RUNTIME-R1 is closed; the runner is the supported way to run, resume and
-budget an aggregate, and the first real aggregate under it will be the first to
-exercise its summary and failure-guidance blocks end to end (the one gap the
-evidence names). What remains open is unchanged by it: the **Delete → Undo →
-Redo owner verdict** of `IMPORT-01B` / `UI-OWNER-45`, and the combined OWNER
+**Exactly one next step: return this status to the ForgeShape coordinator for a
+combined OWNER review.** SEL-OUT-R1 is closed on the technical side: the
+outline is a true renderer-derived silhouette, it is depth-correct, it is
+representation-neutral, it costs no rebuild and no upload, and its control lives
+in the View group on the grid's terms. What no emulator settles is whether the
+band reads as the right weight under a real thumb on a real panel, on a dark
+studio ground and on the two light papers — that is the OWNER's, and no
+aesthetic approval is claimed here. It joins the still-pending **Delete → Undo →
+Redo owner verdict** of `IMPORT-01B` / `UI-OWNER-45` and the combined OWNER
 retest of UI-PREF-R1, whose aggregate the OWNER waived.
+
+TEST-RUNTIME-R1 is closed; the runner is the supported way to run, resume and
+budget an aggregate, and this stage is the first feature stage to exercise its
+real aggregate path. **The runner behaved correctly**: it discovered 44 classes
+and 560 tests with an exactly-once union, fingerprinted the installed bytes,
+stopped on the failing shard rather than restarting, classified it
+`PRODUCT_TEST_FAILURE` on attributable assertion evidence, printed the rerun and
+resume commands, and refused `FULL_SHARDED_SUITE_PASS`. What it surfaced is a
+real, pre-existing suite-isolation defect in `SpatialSketchTest` — see
+`artifacts/sel-out-r1/PREEXISTING_SHARD5_FAILURE.md`. **A second open item for
+the coordinator:** either a small `CAD-A3` follow-up that isolates that suite's
+scene the way `SEL-OUT-R1` isolated its own tap test, or an explicit waiver of
+the aggregate gate for a failure proven to pre-date the work. No fix was made
+here, because repairing an OWNER-ACCEPTED stage's evidence suite is scope this
+stage was not given.
 
 **On UI-PREF-R1, unchanged by this stage:** UI-PREF-R1 is closed under an OWNER waiver of
 the aggregate gate (`PASS-UI-PREF-R1-OWNER-WAIVER-CLOSEOUT`): the Settings hub,
@@ -3306,9 +3428,11 @@ either is invented here. The OWNER's real-device CAD-A3-C2 / SKETCH-UX-R1
 review is CLOSED with PASS (2026-09-05), so nothing about the start page, the
 first-sketch flow, the navigator, the dimension or the curves is waiting on an
 owner. Not this stage and not started: a gizmo handle style (deferred by the
-renderer contract), Selection Outline, Body Dimensions, relative or
-directional scale, custom workspace layouts, cloud/account, per-project
-preferences. POST-AUDIT-HARDEN-R1 closed F-08, F-16, F-11, F-15
+renderer contract), Body Dimensions, relative or directional scale, custom
+workspace layouts, cloud/account, per-project preferences. Selection Outline is
+no longer on that list: `SEL-OUT-R1` implemented it, and what it deliberately
+did NOT add is an x-ray or hidden-object reveal, multi-select, a second
+selection mode, or any user setting for the band. POST-AUDIT-HARDEN-R1 closed F-08, F-16, F-11, F-15
 and F-18 and nothing else; the remaining P2/P3 debt (F-06, F-07, F-09, F-10,
 F-13, F-14) is recorded above for the coordinator to schedule. No
 product stage may begin here: booleans, fillets, chamfers, a constraint solver,

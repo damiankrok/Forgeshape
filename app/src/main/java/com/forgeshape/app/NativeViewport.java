@@ -1549,6 +1549,74 @@ final class NativeViewport {
     static native boolean gridVisible();
 
     /**
+     * Shows or hides the <b>selection outline</b>: the persistent silhouette
+     * the renderer draws around the selected body ({@code SEL-OUT-R1},
+     * UI-OWNER-10 / UI-OWNER-11).
+     *
+     * <p>A true geometry-derived outline, not an approximation. Native code
+     * rasterises the selected body's own device-local vertex and index buffers
+     * — the same ones its shaded draw binds — into a coverage mask with a depth
+     * attachment, then extracts the edge in screen space. So it is correct for
+     * every representation without asking which one a body is, it follows the
+     * exact model transform the body is drawn with, and it obeys depth: the
+     * part of a selected body hidden behind another body is not in the mask and
+     * therefore grows no outline.
+     *
+     * <p><b>Presentation only.</b> Toggling this publishes no mesh, mints no
+     * {@code MeshRevision}, rebuilds no render mesh, re-uploads no vertex or
+     * index buffer, regenerates no CAD body, records no Construction or Sculpt
+     * history step, dirties no project and reaches no {@code .forge} byte. With
+     * it off the renderer records neither the mask pass nor the composite draw,
+     * so "off" costs one boolean per frame.
+     *
+     * <p>Its lifecycle is the <b>grid's</b>, deliberately: native-owned,
+     * process-scoped and session-only, so the choice survives rotation, an
+     * Activity recreation and a HOME/resume with no save/restore code up here,
+     * and a process kill returns it to the default, which is <b>on</b>. It is
+     * <em>not</em> an {@link AppPreferences} field — the persistent preferences
+     * are the ones the Settings page owns, and a transient viewport overlay
+     * belongs with the other transient viewport overlays.
+     *
+     * @return whether the outline is drawn afterwards
+     */
+    static native boolean setSelectionOutlineVisible(boolean visible);
+
+    /** @return whether the selected body's outline is currently drawn */
+    static native boolean selectionOutlineVisible();
+
+    /** Slots in the array {@link #selectionOutlineStats} fills. */
+    static final int OUTLINE_STATS_SIZE = 7;
+    /** Mask + depth image allocations for the life of the process. */
+    static final int OUTLINE_STAT_MASK_ALLOCATIONS = 0;
+    /** Frames in which the mask pass was recorded. */
+    static final int OUTLINE_STAT_MASK_PASS_FRAMES = 1;
+    /** Composite draws recorded. */
+    static final int OUTLINE_STAT_COMPOSITE_DRAWS = 2;
+    /** Mask width in pixels. */
+    static final int OUTLINE_STAT_MASK_WIDTH = 3;
+    /** Mask height in pixels. */
+    static final int OUTLINE_STAT_MASK_HEIGHT = 4;
+    /** The band's half-width in screen pixels the last composite used. */
+    static final int OUTLINE_STAT_WIDTH_PIXELS = 5;
+    /** 1 when the outline is currently enabled. */
+    static final int OUTLINE_STAT_ENABLED = 6;
+
+    /**
+     * Reads the renderer's bounded selection-outline counters.
+     *
+     * <p>A diagnostic seam and nothing else, on {@link
+     * #debugRendererDeviceRebuilds}'s terms: it carries a count, an extent and
+     * a width, and no {@code ObjectId}, geometry, dimension or {@code .forge}
+     * byte. It exists so the two performance promises can be <em>asserted</em>
+     * rather than inferred — that repeated selection switches allocate no GPU
+     * resource, and that turning the outline off stops the work.
+     *
+     * <p>Read without the render thread's cooperation, so a momentarily stale
+     * count is possible and is corrected on the next read.
+     */
+    static native void selectionOutlineStats(double[] out);
+
+    /**
      * Tells the viewport whether the user has asked the system for reduced
      * motion.
      *

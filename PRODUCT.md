@@ -89,12 +89,21 @@ An edge pointing away from you still looks shortened in Orthographic. That is
 foreshortening from *orientation*, which both projections have and which is
 correct: what Orthographic removes is foreshortening from *distance*.
 
-*View* picks what the viewport draws besides the model. Today that is one thing:
+*View* picks what the viewport draws besides the model. Today that is two
+things:
 
 - **Grid — On** (the default) or **Off**. The reference floor described above.
   Turning it off leaves the bare model; turning it back on costs nothing and
   changes nothing about what you are building. The grid is correct in both
   projections.
+- **Selection Outline — On** (the default) or **Off**. The thin outline drawn
+  around the selected body's silhouette — see *Selection*. Turning it off leaves
+  the model unmarked, and the Objects capsule still names the selected body;
+  turning it back on costs nothing and changes nothing about what you are
+  building. It is correct in both projections and for every kind of body.
+
+Both choices last as long as the app is running and survive rotating the phone
+and leaving the app, and neither is written into your project.
 
 Switching between Studio and MatCap changes nothing but the picture: the object,
 its dimensions, its placement and any sculpting are untouched, and so is what you
@@ -110,10 +119,10 @@ the depth of the point the camera is looking at.
 The panel stays open while you try several options, and the choices survive
 leaving the app and coming back.
 
-A selected object is tinted, and stays readable as a shape while tinted, in both
-shading modes and in every appearance — the resting tint is deliberately light
-enough that the object's own light and shade still carry its form. See
-*Selection*.
+A selected object is marked by an OUTLINE around its silhouette rather than by a
+tint, in both shading modes and in every appearance, so its own light and shade
+carry its form unmodified while it is selected. Only the brief acknowledgement
+at the moment of selection tints it at all. See *Selection*.
 
 While sculpting, the lighting follows the surface as it moves: a stroke that
 pulls a lobe out of a sphere lights that lobe immediately, with no stale shading
@@ -384,8 +393,10 @@ first.
 
 **If you have asked Android to remove animations, ForgeShape removes them.** Every
 panel lands on its final state immediately instead of running a shortened
-version, and a newly selected body goes straight to its resting tint with no
-flash — so selection is still just as easy to see, it simply takes no time.
+version, and a newly selected body is simply outlined at once, with no flash —
+so selection is still just as easy to see, it simply takes no time. That works
+because the outline is not an animation: it appears on the frame the selection
+changes and stays.
 
 The workspace re-arranges itself for the window it is in — a phone in portrait, a
 phone in landscape, a split-screen half, a tablet — and the arrangement is
@@ -1283,18 +1294,38 @@ it without moving the camera and leaves no stale movement behind.
 
 ## Selection
 
-The Construction Body can be selected. Selection is a highlight only: it changes
-nothing about the model, and there is nothing yet that acts on the selected
-object.
+The Construction Body can be selected. Selection is presentation only: it
+changes nothing about the model, and there is nothing yet that acts on the
+selected object.
 
 A short single-finger tap on the object selects it. **Selection announces itself
-and then gets out of the way**: the moment a body becomes selected it flushes to
-a strong warm orange, and over about a fifth of a second that settles to a much
-lighter warm tint it then keeps for as long as it stays selected. The
-acknowledgement is what tells you the tap landed; the resting tint is what tells
-you which body you are editing, and it is light enough that the object's own
-light and shade still read — a face that was brighter than its neighbour still
-is, in every appearance. Tapping a body that is already selected does not flash
+and then gets out of the way.** The moment a body becomes selected it flushes to
+a strong warm orange, and over about a fifth of a second that flush fades away
+completely. What is left behind is a thin warm **outline** drawn around the
+body's silhouette, and that is what tells you which body you are editing for as
+long as it stays selected.
+
+The object itself is never tinted while it rests. That is the point of the
+outline: the surface you are judging is shown in its own light and shade,
+unmodified, with only its edge marked — so a face that was brighter than its
+neighbour still is, exactly as much as it was, in every appearance.
+
+The outline is a true silhouette of the body as it is actually drawn. It follows
+the shape, whatever the body is — a shape you set by numbers, a mesh you
+imported, something you have sculpted, or a solid you extruded from a sketch —
+and it follows the body's position, rotation and scale. It stays the same
+thickness however far you zoom in or out, a few pixels wide, thin enough not to
+swallow small details. And it obeys what is in front of it: where another object
+covers part of the selected one, the outline traces only the part you can
+actually see and stops at the edge of whatever is covering it. It never shows
+you a ghost of the hidden part.
+
+If you would rather see the bare model, **Selection Outline** can be turned off
+in the Display control beside Grid, and the Objects capsule still names the
+selected body. Like Grid, that choice lasts for the session and survives
+rotating the phone and leaving the app.
+
+Tapping a body that is already selected does not flash
 again: the acknowledgement marks a change of selection, not a touch. A short
 single-finger tap that misses clears the selection, and the object returns to
 exactly its unselected appearance. In Sculpt Mode

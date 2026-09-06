@@ -80,6 +80,9 @@ forgeshape_jni.cpp            render thread, ANativeWindow, MotionEvent ->
         v        v                                  v
       Renderer  (Vulkan, frame loop, upload; owns no geometry truth)
         |            ^-- forgeshape_grid: world reference floor, NOT in the scene
+        |            ^-- forgeshape_selection_outline: band width and colour
+        |                policy. The mask pass rasterises the bodies' OWN
+        |                buffers, so the outline needs no geometry of its own
         |
    ANativeWindow -> VkSurfaceKHR -> swapchain
 ```
@@ -111,6 +114,8 @@ forgeshape_jni.cpp            render thread, ANativeWindow, MotionEvent ->
 | What the viewport is cleared to | `ViewportBackground` in `forgeshape_display.{h,cpp}` | native owns the colours; no Android theme or RGB crosses JNI |
 | The world reference grid's plane, spacing, extent, tiers and palette | `forgeshape_grid.{h,cpp}` | it is not a `SceneObject`, has no `ObjectId` or revision, is not pickable, and is not a snap target |
 | Whether the grid is drawn | `DisplaySettingsStore` | the renderer owns no presentation preference; the grid module owns no visibility |
+| The selected body OUTLINE: its band width, its per-ground colour and the edge-extraction rule | `forgeshape_selection_outline.{h,cpp}` | policy only, and no Vulkan: it holds no `ObjectId`, no geometry and no visibility. Width and colour are policy, not preference, so no control for either exists |
+| Whether the selection outline is drawn | `DisplaySettingsStore` | the grid's lifecycle exactly: session-only, process-scoped and native-owned, never an `AppPreferences` field |
 | Whether Objects has a dedicated column for a given window | `WorkspaceLayoutMode.objectsDocked(widthDp)` | arithmetic on window dp; it reads neither theme, mode nor domain state. The trailing host has one fixed top/right placement in every window and therefore has no docked-state flag |
 | Which surface currently hosts the Objects list | `EditorWorkspaceView` | there is exactly ONE `ObjectsSectionView`, re-parented; no second list and no Java-side selection truth |
 | Each primitive's exact parameters and its deterministic **local**-space mesh | `ConstructionBox` (W/H/D), `ConstructionCylinder` and `ConstructionSphere` (diameter…), `ConstructionCone` (bottom diameter, height), `ConstructionCapsule` (diameter, **total** height) | no JNI/Android/Vulkan/renderer/UI types. Tessellation counts are fixed, not parameters. A radius, and the capsule's cylindrical middle, are derived and never stored. The cone's apex radius is zero by definition: no top diameter, no frustum. The mesh, the GPU and the picker own no parameter |
@@ -3348,15 +3353,33 @@ would make normals silently wrong on scaled objects**; it is one of exactly two
 places that shortcut is taken, the other being picking's "local distance is world
 distance".
 
-### The one descriptor set
+### The two descriptor sets
 
-The MatCap sampler is the only sampled image in ForgeShape and therefore the only
-reason a descriptor set exists — everything else travels as push constants, and
-the grid pipeline declares no set at all. One `COMBINED_IMAGE_SAMPLER` at set 0
-binding 0, allocated once and never updated again because the image is immutable
-for the life of the device. It is bound unconditionally even in Studio Solid,
-since leaving a declared binding unbound is invalid usage whichever branch runs.
+Everything else in the renderer travels as push constants — the grid, the gizmo
+and the outline's mask pass all declare `setLayoutCount = 0` — so a descriptor
+set exists only where something is genuinely *sampled*, and there are exactly
+two places.
+
+**The MatCap sampler.** One `COMBINED_IMAGE_SAMPLER` at set 0 binding 0,
+allocated once and never updated again because the image is immutable for the
+life of the device. It is bound unconditionally even in Studio Solid, since
+leaving a declared binding unbound is invalid usage whichever branch runs.
 Image, view, sampler and set are device-scoped.
+
+**The selection outline's mask** (`SEL-OUT-R1`). Also one
+`COMBINED_IMAGE_SAMPLER` at set 0 binding 0, and deliberately its **own** layout,
+pool and set rather than a second binding on the MatCap's. The MatCap set is
+written once and shared by every body draw; this one names an image whose only
+reason to change is the render extent, so it is **rewritten** on a resize.
+Folding them together would mean re-writing the MatCap binding on every rotation
+for no reason. Its sampler clamps to an opaque-black border rather than to the
+edge — see the outline section for why that is load-bearing. Layout, pool, set
+and sampler are device-scoped; only the image the set points at is
+swapchain-scoped.
+
+Binding the outline's set at set 0 disturbs the MatCap's binding, which is
+harmless and intended: the composite is recorded after every body draw in the
+pass, and the next frame rebinds from the top.
 
 ### Surface orientation convention
 
@@ -3422,9 +3445,11 @@ four tier colours ride in a second 128-byte push block, so switching appearance
 re-uploads nothing.
 
 It has **its own pipeline and layout with `setLayoutCount = 0`**, because it
-consults no sampler — no normal, no light, no shading model — and it is the **one
-blended pipeline** in the renderer, which is not an invitation to reuse it as a
-general overlay path. Depth is **tested, not written**, and it draws after every
+consults no sampler — no normal, no light, no shading model. It was the one
+blended pipeline in the renderer until `SEL-OUT-R1` added the selection
+outline's composite; that there are now two is not an invitation to grow a
+general overlay path, and each still states its own blend rather than sharing
+one. Depth is **tested, not written**, and it draws after every
 body, so the model occludes it and it contributes nothing a later draw could be
 occluded by. Three non-obvious constraints are documented at their sites in
 `forgeshape_renderer.cpp` and `shaders/grid.{vert,frag}`: `polygonMode` must be
@@ -3449,7 +3474,8 @@ back out.
 
 **Selection feedback is renderer-owned and per body.**
 `forgeshape_selection_pulse.{h,cpp}` owns the peak alpha (**0.55**), the decay
-(**220 ms**, smoothstep, monotone and bounded), the resting alpha (**0.20**) and
+(**220 ms**, smoothstep, monotone and bounded), the resting alpha (**0**, since
+`SEL-OUT-R1` — see below) and
 one pure function over an explicit frame delta; a delta over 100 ms is a resume or
 a stall and is clamped. A pulse acknowledges a **change in selection truth**, not
 a tap, and the tint hue is unchanged by it. It holds no `ObjectId`,
@@ -3463,6 +3489,90 @@ keys that body's GPU buffers by stable `ObjectId`. That keying is what makes A's
 pulse structurally unable to reach B's. The renderer is still never told *which*
 object is selected: `SceneDrawItem` carries a plain bool per item and identity
 stays with `SelectionController`.
+
+### The selection outline (`SEL-OUT-R1`, UI-OWNER-10 / UI-OWNER-11)
+
+**The pulse is now the whole tint.** UI-R1C1 cut the legacy 0.55 flood to a 0.20
+resting tint; `SEL-OUT-R1` takes it to **zero**, because a whole-object wash is a
+whole-object wash at any strength. Persistent selection is the Objects capsule
+plus an outline, and the tint's only remaining job is the 220 ms
+acknowledgement.
+
+**The outline is a true silhouette, and it is derived from the geometry the GPU
+already holds.** Two steps per frame, and only while a drawable body is
+selected:
+
+1. **the mask pass** — a render pass of its own, recorded *before* the frame's
+   pass begins, over an `R8_UNORM` colour attachment and its own depth image at
+   the render extent. Every scene body is drawn through a position-only pipeline
+   with the *same* cull mode, winding and `proj·view·model` the surface pipeline
+   uses; the fragment stage writes one push-constant float — 1 for the selected
+   body, 0 for every other. Occlusion is therefore resolved by the depth test:
+   what survives is exactly the part of the selected body that is **visible**;
+2. **the composite** — a full-screen triangle from `gl_VertexIndex` (no vertex
+   buffer), recorded *inside* the main pass after the grid and before the gizmo,
+   depth test and write **off**, one blended draw. It discards where the mask is
+   inside, and otherwise paints where any of 12 ring taps within the band radius
+   is inside.
+
+The pass's `finalLayout` is `SHADER_READ_ONLY_OPTIMAL` and two subpass
+dependencies order it against the frame either side, so **no manual barrier
+exists anywhere in this path**. The `EXTERNAL -> subpass 0` dependency is what
+also settles the frames-in-flight hazard: it orders the previous frame's
+composite reads before this frame's mask writes, so one shared mask image is
+correct with two frames in flight.
+
+**Why a mask and not a shell.** A normal-extruded shell was the other candidate
+and is wrong for this product: `RenderMeshCache` splits normals at every hard
+edge, so a Faceted box has no shared corner normal to extrude along and the
+shell opens a gap at every corner of the primitive the product is most used on.
+A screen-space mask has no such failure mode.
+
+**Representation neutrality is structural, not a branch.** The mask pass binds
+each body's own device-local vertex and index buffers — the ones `recordBodyDraw`
+binds a few instructions later — so Construction, Imported Mesh, Sculpt and CAD
+are correct without the renderer asking what a body is. A selection change is one
+push-constant float per body: no rebuild, no upload, no regeneration.
+
+`forgeshape_selection_outline.{h,cpp}` is the platform-neutral policy, and holds
+no Vulkan: the width (a fraction of the viewport's short side clamped to
+`[2, 5]` px — the **camera is not an input**, which is what makes the band stable
+under zoom), the per-ground colours chosen by `viewportBackgroundIsLight` alone,
+the WCAG arithmetic the self-test measures them with, and
+`selectionOutlineCoverage` — the CPU **reference** implementation of the edge
+rule that `shaders/outline.frag` mirrors, exactly as `grid.vert` mirrors
+`kGridDepthNudge`. Width and colour are **policy, not preference**: no control
+for either exists.
+
+**The band is drawn outside the silhouette**, never inside. An inner band sits on
+the body's own pixels and, on a small or thin body, covers all of them — the
+full-object fill this stage exists to remove. The cost is that a selected body
+reads a few pixels larger, which is what every tool that draws one accepts.
+
+**Lifetime.** Shaders, sampler, descriptor set layout, pool, the one descriptor
+set and both pipeline layouts are **device-scoped**; the two images, the render
+pass, the framebuffer and both pipelines are **swapchain-scoped**. The descriptor
+set is rewritten, not reallocated, on an extent change, so the descriptor
+allocation count is fixed for the life of the device. The mask pass carries its
+own depth image rather than sharing the main pass's: sharing would put a
+write-after-write hazard between the mask's depth writes and the main pass's
+depth clear, which the main render pass's existing external dependency does not
+cover, and widening a dependency in the pass every frame depends on to save an
+image freed with the swapchain is the wrong trade.
+
+**The toggle is the grid's.** `DisplaySettingsStore::selectionOutlineVisible` is
+process-scoped, session-only, native-owned and rides in the same
+`ViewportDisplaySettings` snapshot, so the render thread reads it once at a known
+point and cannot record half an outline. It is **not** an `AppPreferences`
+field — the Settings page owns persistent preferences, and a transient viewport
+overlay belongs with the other transient viewport overlays. With it off the
+renderer records neither pass; `selectionOutlineActive()` is one boolean, asked
+before any pass is begun.
+
+`Renderer::selectionOutlineStats` is a bounded diagnostic seam carrying a count,
+an extent and a width — no `ObjectId`, no geometry, no dimension — mirrored out
+of the render thread beside the device-rebuild count. It exists so "repeated
+selection switches allocate nothing" is asserted rather than inferred.
 
 **Motion is a shared helper, not a system.** `ChromeMotion` (Java) owns the
 decisions and nothing may be added to it that describes motion as data: the fade
@@ -3503,8 +3613,9 @@ same per-frame snapshot as the shading model — the same seam shape as
 value. It deliberately does not advance the store's `changeCount_`, which exists
 to prove a display transition the user chose. `ChromeMotion.duration` returns
 **0** rather than a small number, and every caller branches on that zero to land
-directly on the final state; in the viewport, reduced motion goes straight to the
-resting tint and runs no pulse.
+directly on the final state; in the viewport, reduced motion runs no pulse at
+all and lands on the resting state at once — which since `SEL-OUT-R1` is no tint,
+because the outline already says what is selected without taking any time.
 
 ## Threading
 
@@ -4115,8 +4226,11 @@ own, and naming them is what stops one arriving by accident.
   derived from it. The sketch grid is a different contract that does exist —
   `SketchSession::snap` quantises sketch points to an adaptive 1/2/5·10^k step
   and to existing endpoints (`CAD-R0-A1A2`, `CAD-A3`) — and it is not grown out
-  of `forgeshape_grid.h`. Nor is there a Selection Outline, View Cube, camera
-  focus, named views, blur/glass or any post-processing framework.
+  of `forgeshape_grid.h`. The View group also holds a Selection Outline since
+  `SEL-OUT-R1`, and it is an overlay on the grid's terms and nothing more. There
+  is still no View Cube, camera focus, named views, blur/glass or any
+  post-processing framework: the outline is one mask pass and one blended
+  full-screen draw, not the first stage of one.
 - **No Mirror, no shear, no custom pivot, no hierarchy.** `ConstructionTransform`
   is translation, rotation and a strictly positive per-axis scale, and nothing
   else. A negative factor would be a Mirror — inverted winding, wrong normals,

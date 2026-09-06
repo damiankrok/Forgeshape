@@ -257,6 +257,26 @@ Settings → five palettes → handedness → gizmo journey;
 frames and builds `artifacts\ui-pref-r1\OWNER_CONTACT_SHEET_UI_PREF_R1.png`
 and `VISUAL_EVIDENCE.md`.
 
+`SelectionOutlineTest` covers `SEL-OUT-R1` (`SELOUTR1-01..36`): the Selection
+Outline control in the Display popover's View group and its read-back from
+native truth, the renderer actually recording the mask pass and the composite
+draw for a selected Construction Body, Imported Mesh, sculpted body and CAD
+Body, the outline stopping entirely when the toggle is off or nothing is
+selected, identical `.forge` bytes and an unmoved fingerprint across four
+toggles and eight selection changes, bounded resources across a selection loop
+and an injected device rebuild, and Delete → Undo → Redo behaving exactly as
+before with the outline following whatever selection actually is. It asserts no
+pixel: the band's legibility on each ground is measured by the native
+render-shading suite and by the evidence frames.
+`SelectionOutlineVisualEvidenceTest` captures the twelve-frame journey and
+**measures the band out of each captured bitmap** — its thickness, its colour
+and its bounding box — asserting that a band is present where one should be,
+absent where it should not, and never drawn in the other ground family's
+colour; `scripts\collect-sel-out-evidence.ps1 -Serial <serial>` runs it, pulls
+the frames and builds
+`artifacts\sel-out-r1\OWNER_CONTACT_SHEET_SEL_OUT_R1.png`, `VISUAL_EVIDENCE.md`
+and the numbers quoted in `PERFORMANCE.md`.
+
 For the widened external-GLB subset (`GLB-IMPORT-R1`) use:
 
 ```

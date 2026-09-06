@@ -146,6 +146,24 @@ std::atomic<int> g_rendererLifecycle{0};
 // renderer that never noticed the loss would also report.
 std::atomic<int> g_rendererDeviceRebuilds{0};
 
+// The selection outline's bounded diagnostics (`SEL-OUT-R1` §12/§13), mirrored
+// out of the render thread beside the two above and for the same reason.
+//
+// They are what lets a test ASSERT the two performance promises rather than
+// infer them: that a selection switch allocates no GPU resource
+// (g_outlineMaskAllocations does not move) and that turning the outline off
+// costs nothing at all (g_outlineCompositeDraws stops rising). They carry no
+// ObjectId, no geometry and no dimension — a count, an extent and a width.
+std::atomic<long long> g_outlineMaskAllocations{0};
+std::atomic<long long> g_outlineMaskPassFrames{0};
+std::atomic<long long> g_outlineCompositeDraws{0};
+std::atomic<int> g_outlineMaskWidth{0};
+std::atomic<int> g_outlineMaskHeight{0};
+// Scaled by 100 and carried as an integer so the whole mirror is lock-free
+// integers; the JNI accessor divides it back. A band is never wider than
+// kSelectionOutlineMaxPixels, so this cannot overflow.
+std::atomic<int> g_outlineWidthPixelsCentis{0};
+
 // ---------------------------------------------------------------------------
 // Camera and selection ownership.
 //
@@ -1461,6 +1479,26 @@ void renderThreadMain() {
                                       std::memory_order_relaxed);
             g_rendererDeviceRebuilds.store(renderer.deviceRebuildsCompleted(),
                                            std::memory_order_relaxed);
+            // The outline counters, mirrored on the same terms: relaxed stores
+            // every frame, so the UI thread's answer is never more than one
+            // frame stale whichever path the renderer took.
+            {
+                const forgeshape::Renderer::SelectionOutlineStats outline =
+                    renderer.selectionOutlineStats();
+                g_outlineMaskAllocations.store(static_cast<long long>(outline.maskAllocations),
+                                               std::memory_order_relaxed);
+                g_outlineMaskPassFrames.store(static_cast<long long>(outline.maskPassFrames),
+                                              std::memory_order_relaxed);
+                g_outlineCompositeDraws.store(static_cast<long long>(outline.compositeDraws),
+                                              std::memory_order_relaxed);
+                g_outlineMaskWidth.store(static_cast<int>(outline.maskWidth),
+                                         std::memory_order_relaxed);
+                g_outlineMaskHeight.store(static_cast<int>(outline.maskHeight),
+                                          std::memory_order_relaxed);
+                g_outlineWidthPixelsCentis.store(
+                    static_cast<int>(outline.widthPixels * 100.0f + 0.5f),
+                    std::memory_order_relaxed);
+            }
             if (!drew) {
                 // The renderer has stopped for good. CPU project truth is
                 // untouched by any of this — the scene, every published mesh and
@@ -4903,6 +4941,43 @@ Java_com_forgeshape_app_NativeViewport_debugRendererDeviceRebuilds(JNIEnv*, jcla
     return g_rendererDeviceRebuilds.load(std::memory_order_relaxed);
 }
 
+// The selection outline's renderer diagnostics (`SEL-OUT-R1` §12/§13).
+//
+// Read without the render thread's cooperation, exactly as the lifecycle above
+// is and for the same reason: a diagnostic must not block the UI thread on a
+// render thread that may be mid-rebuild, and a momentarily stale count is
+// corrected on the next read.
+//
+//   [0] mask + depth image ALLOCATIONS for the life of the process. Moves on a
+//       swapchain extent change or a device rebuild and on NOTHING else — a
+//       selection switch that moved it would be the leak this reports on.
+//   [1] frames in which the mask pass was recorded
+//   [2] composite draws recorded
+//   [3] mask width in pixels    [4] mask height in pixels
+//   [5] the band's half-width in screen pixels the last composite used
+//   [6] 1 when the outline is currently enabled
+JNIEXPORT void JNICALL
+Java_com_forgeshape_app_NativeViewport_selectionOutlineStats(JNIEnv* env, jclass,
+                                                             jdoubleArray out) {
+    if (out == nullptr) {
+        return;
+    }
+    const jsize length = env->GetArrayLength(out);
+    if (length < 7) {
+        return;
+    }
+    jdouble values[7];
+    values[0] = static_cast<jdouble>(g_outlineMaskAllocations.load(std::memory_order_relaxed));
+    values[1] = static_cast<jdouble>(g_outlineMaskPassFrames.load(std::memory_order_relaxed));
+    values[2] = static_cast<jdouble>(g_outlineCompositeDraws.load(std::memory_order_relaxed));
+    values[3] = static_cast<jdouble>(g_outlineMaskWidth.load(std::memory_order_relaxed));
+    values[4] = static_cast<jdouble>(g_outlineMaskHeight.load(std::memory_order_relaxed));
+    values[5] =
+        static_cast<jdouble>(g_outlineWidthPixelsCentis.load(std::memory_order_relaxed)) / 100.0;
+    values[6] = forgeshape::displaySettings().selectionOutlineVisible() ? 1.0 : 0.0;
+    env->SetDoubleArrayRegion(out, 0, 7, values);
+}
+
 #ifndef NDEBUG
 // DEBUG-ONLY: makes the next frame behave exactly as though the GPU device had
 // been lost.
@@ -5144,6 +5219,35 @@ Java_com_forgeshape_app_NativeViewport_setGridVisible(JNIEnv*, jclass, jboolean 
 JNIEXPORT jboolean JNICALL
 Java_com_forgeshape_app_NativeViewport_gridVisible(JNIEnv*, jclass) {
     return forgeshape::displaySettings().gridVisible() ? JNI_TRUE : JNI_FALSE;
+}
+
+// The selected body's persistent outline (`SEL-OUT-R1`, UI-OWNER-11).
+//
+// The grid's shape exactly, and deliberately so: a plain bool because "on" and
+// "off" exhaust the answers, returning what is actually in effect afterwards
+// because the Android chip repaints from the answer and never from what was
+// tapped, and living in the same process-scoped display store so it survives a
+// HOME/resume with no save/restore code above JNI.
+//
+// Presentation and only presentation. It publishes no mesh, mints no
+// MeshRevision, changes no Construction or CAD parameter, moves no sculpt
+// vertex, records no history step, dirties no project and reaches no `.forge`
+// byte. It cannot even reach a body's GPU buffers: with it on, the renderer
+// rasterises the buffers that were already there for that body's own draw.
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_setSelectionOutlineVisible(JNIEnv*, jclass,
+                                                                 jboolean visible) {
+    forgeshape::DisplaySettingsStore& settings = forgeshape::displaySettings();
+    const bool wanted = (visible == JNI_TRUE);
+    const bool changed = settings.setSelectionOutlineVisible(wanted);
+    FS_LOGI("FORGESHAPE_VIEWPORT_SELECTION_OUTLINE:%d changed=%d",
+            settings.selectionOutlineVisible() ? 1 : 0, changed ? 1 : 0);
+    return settings.selectionOutlineVisible() ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_selectionOutlineVisible(JNIEnv*, jclass) {
+    return forgeshape::displaySettings().selectionOutlineVisible() ? JNI_TRUE : JNI_FALSE;
 }
 
 // Reduced motion: the whole of the accessibility seam, and deliberately one
