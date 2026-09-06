@@ -50,7 +50,8 @@ import java.io.InputStream;
  * <h2>Scope that must stay absent</h2>
  *
  * <p>`UI-OWNER-45` is Delete and nothing else. Rename, visibility, lock,
- * duplicate and grouping are Stage 018A's and are asserted absent here.
+ * duplicate arrived in Stage 018A behind the row overflow; grouping, nesting,
+ * reorder and multi-select are still out and are asserted absent here.
  */
 @RunWith(AndroidJUnit4.class)
 public final class ObjectsDeleteTest {
@@ -447,21 +448,28 @@ public final class ObjectsDeleteTest {
     // IMP01B-24: the forbidden scope stays absent
     // -----------------------------------------------------------------------
 
+    /**
+     * The forbidden scope, as it stands after Stage 018A.
+     *
+     * <p>Rename, Show/Hide, Lock/Unlock and Duplicate are no longer absent —
+     * Stage 018A implemented them, behind the row's own overflow. What this
+     * case now asserts is the scope that is STILL out, and that Delete itself
+     * did not change shape: the list is rows plus Add body, with no grouping,
+     * no nesting, no reorder handle and no multi-select checkbox.
+     */
     @Test
-    public void imp01b24_theObjectsListGainedDeleteAndNothingElse() {
+    public void imp01b24_theObjectsListStillHasNoGroupingNestingOrReorder() {
         addBodies(2);
         openObjects();
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             final StringBuilder text = new StringBuilder();
             collectVisibleText(objectsSection(workspace), text);
             final String surface = text.toString().toLowerCase(java.util.Locale.US);
-            for (String absent : new String[]{"rename", "duplicate", "hide", "lock", "group"}) {
+            for (String absent : new String[]{"group", "nest", "reorder", "select all"}) {
                 assertFalse("IMP01B-24: no " + absent + " control is drawn: " + surface,
                         surface.contains(absent));
             }
-            // The list is still rows plus Add body plus, now, one Delete per
-            // row -- no reorder handle, no nesting and no chevron.
-            assertTrue("Add body is still the only other control",
+            assertTrue("Add body is still offered",
                     objectsSection(workspace).creationAvailable());
             return null;
         });

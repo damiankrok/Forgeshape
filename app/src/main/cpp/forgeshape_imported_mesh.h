@@ -208,4 +208,20 @@ std::string fallbackImportedMeshName(uint32_t ordinal);
 // dropped, so the unit count is always what a reader expects.
 std::vector<uint16_t> utf8ToUtf16(const std::string& utf8);
 
+// UTF-16 code units to UTF-8, for the one place a name crosses OUT of a Java
+// `String` (Rename, Stage 018A).
+//
+// The exact inverse of the function above and it exists for the same reason,
+// read in the other direction: JNI's `GetStringUTFChars` hands back MODIFIED
+// UTF-8, in which a supplementary character is TWO 3-byte surrogate encodings
+// rather than one 4-byte sequence. That is not well-formed UTF-8, so
+// `sanitizeImportedMeshName` would correctly drop it as malformed and a user
+// who typed an emoji into Rename would watch it disappear. Taking the UTF-16
+// units and encoding them here is what makes the round trip exact.
+//
+// An unpaired surrogate -- which a Java `String` can legally hold -- becomes
+// U+FFFD rather than being dropped, so the result is always well-formed UTF-8
+// and the sanitizer that follows judges a real string.
+std::string utf16ToUtf8(const uint16_t* units, size_t count);
+
 }  // namespace forgeshape

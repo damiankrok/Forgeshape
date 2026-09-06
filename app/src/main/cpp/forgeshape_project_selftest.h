@@ -64,6 +64,10 @@ const char* canonicalCadFaceChainFixtureSha256();
 const char* canonicalMixedCadFaceFixtureSha256();
 const char* canonicalCadBadFaceRefFixtureSha256();
 const char* canonicalCadDependencyCycleFixtureSha256();
+// The two Stage 018A fixtures, which pin SCNE v2: per-body visibility, lock
+// and the name it owns for a non-imported body.
+const char* canonicalObjectStateFixtureSha256();
+const char* canonicalObjectStateBadFlagsFixtureSha256();
 
 // The SHA-256 of an arbitrary byte sequence, lowercase hex.
 //

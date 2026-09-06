@@ -410,6 +410,27 @@
          separate targets and neither can be reached by mistake. It carries the
          same ObjectId tag the label does. -->
     <item name="object_row_delete" type="id" />
+    <!-- Stage 018A object commands. Every one of them carries the same
+         ObjectId tag the row label does, and each names the ACT the code
+         performs rather than the label it wears: `object_row_visibility` is
+         one control whose glyph and content description say Show or Hide, so
+         copy can never rename an id.
+
+         `object_row_more` opens the row's own command strip INLINE, beneath
+         the row, rather than adding four more targets to a 220 dp row. The
+         strip is the compact contextual surface this product already speaks
+         in; Delete deliberately stays on the row itself, exactly where
+         `UI-OWNER-45` put it. -->
+    <item name="object_row_more" type="id" />
+    <item name="object_row_commands" type="id" />
+    <item name="object_row_rename" type="id" />
+    <item name="object_row_visibility" type="id" />
+    <item name="object_row_lock" type="id" />
+    <item name="object_row_duplicate" type="id" />
+    <!-- The inline rename editor: the field the user types in and the control
+         that commits it. IME Done commits too; System Back cancels. -->
+    <item name="object_rename_field" type="id" />
+    <item name="object_rename_commit" type="id" />
     <!-- The column host's own creation affordance. The same act as the
          capsule's `+`: it opens Add Primitive, and never creates a body by
          itself. -->

@@ -164,8 +164,15 @@ function New-ForgeFile {
 
 # SCNE v1: bodyCount, nextObjectId, activeObjectId, then per body an ObjectId
 # and nine binary64 placement values (position XYZ, rotation XYZ, scale XYZ).
+#
+# SCNE v2 (Stage 018A) appends, per body, a FLAGS byte (bit0 hidden, bit1
+# locked; every other bit reserved and zero) and a length-prefixed UTF-8 NAME.
+# It is written ONLY when `-V2` is passed, which mirrors the C++ encoder's rule:
+# a project of visible, unlocked, unnamed bodies stays at v1 and byte-identical,
+# so every fixture written before Stage 018A is unchanged. An imported body's
+# name stays IMPT's and is written EMPTY here -- one owner per representation.
 function New-ScenePayload {
-    param($Bodies, [uint64] $NextObjectId, [uint64] $ActiveObjectId)
+    param($Bodies, [uint64] $NextObjectId, [uint64] $ActiveObjectId, [switch] $V2)
     $p = New-ByteBuffer
     Add-U32 $p ([uint32] $Bodies.Count)
     Add-U64 $p $NextObjectId
@@ -173,6 +180,17 @@ function New-ScenePayload {
     foreach ($body in $Bodies) {
         Add-U64 $p ([uint64] $body.ObjectId)
         foreach ($value in $body.Transform) { Add-F64 $p $value }
+        if ($V2) {
+            $flags = 0
+            if ($body.PSObject.Properties['Hidden'] -and $body.Hidden) { $flags = $flags -bor 0x01 }
+            if ($body.PSObject.Properties['Locked'] -and $body.Locked) { $flags = $flags -bor 0x02 }
+            Add-U8 $p ([byte] $flags)
+            $name = ''
+            if ($body.PSObject.Properties['Name'] -and $body.Name) { $name = [string] $body.Name }
+            $nameBytes = [System.Text.Encoding]::UTF8.GetBytes($name)
+            Add-U16 $p ([uint16] $nameBytes.Length)
+            if ($nameBytes.Length -gt 0) { Add-Bytes $p $nameBytes }
+        }
     }
     return $p.ToArray()
 }
@@ -1200,6 +1218,88 @@ $construction = New-CanonicalConstructionFile
 $sculpt = New-CanonicalSculptFile
 $cadRectangle = New-CadRectangleFile
 
+# ---------------------------------------------------------------------------
+# Stage 018A: the two SCNE v2 fixtures
+# ---------------------------------------------------------------------------
+
+# OBJECT STATE: three Construction Bodies carrying, between them, every piece of
+# per-body state SCNE v2 adds -- a stored NAME, a HIDDEN body and a LOCKED one.
+# The first body is named and locked, the second is hidden, the third is a plain
+# default so the file also proves a v2 section still writes an unmarked body.
+#
+# This is the compatibility fixture for the version bump: a reader that
+# understands v2 must come back with exactly these three states, and a reader
+# that does not must refuse the file rather than open it with everything visible
+# and unlocked.
+function New-ObjectStateFile {
+    $sceneBodies = @(
+        [pscustomobject]@{ ObjectId = 1; Transform = $script:IdentityPlacement
+                           Name = 'housing'; Locked = $true },
+        [pscustomobject]@{ ObjectId = 2
+                           Transform = @(2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0)
+                           Hidden = $true },
+        [pscustomobject]@{ ObjectId = 3
+                           Transform = @(-2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0) }
+    )
+    $sourceBodies = @(
+        [pscustomobject]@{ ObjectId = 1; PrimitiveCode = 1
+                           Parameters = $script:CanonicalSharedParameters
+                           Features = New-PrimitiveSourceFeature },
+        [pscustomobject]@{ ObjectId = 2; PrimitiveCode = 1
+                           Parameters = $script:CanonicalSharedParameters
+                           Features = New-PrimitiveSourceFeature },
+        [pscustomobject]@{ ObjectId = 3; PrimitiveCode = 1
+                           Parameters = $script:CanonicalSharedParameters
+                           Features = New-PrimitiveSourceFeature }
+    )
+    $scne = New-Section 'SCNE' 2 $true (New-ScenePayload $sceneBodies 4 1 -V2)
+    $cons = New-Section 'CONS' 1 $true (New-ConstructionPayload $sourceBodies)
+    return New-ForgeFile 1 @($scne, $cons) 1
+}
+
+# OBJECT STATE, BAD FLAGS: the same shape with a RESERVED flag bit set on the
+# first body. CONSTRUCTED with the bad value in place rather than generated and
+# then mutated, exactly as the four corrupt v2/v3 CAD fixtures are, so the file
+# is a deliberate statement about the format and not a patched byte.
+#
+# The decoder must refuse it (`BadPayload`): a future flag this build cannot
+# honour must never be silently masked off, because that would open a project
+# with a state the writer meant and the reader dropped.
+function New-ObjectStateBadFlagsFile {
+    $sceneBodies = @(
+        [pscustomobject]@{ ObjectId = 1; Transform = $script:IdentityPlacement },
+        [pscustomobject]@{ ObjectId = 2
+                           Transform = @(2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0) }
+    )
+    $sourceBodies = @(
+        [pscustomobject]@{ ObjectId = 1; PrimitiveCode = 1
+                           Parameters = $script:CanonicalSharedParameters
+                           Features = New-PrimitiveSourceFeature },
+        [pscustomobject]@{ ObjectId = 2; PrimitiveCode = 1
+                           Parameters = $script:CanonicalSharedParameters
+                           Features = New-PrimitiveSourceFeature }
+    )
+    # The payload is written here rather than through New-ScenePayload, because
+    # that function can only produce LEGAL flag bytes -- which is the right
+    # shape for it and the reason this one is spelled out.
+    $p = New-ByteBuffer
+    Add-U32 $p ([uint32] $sceneBodies.Count)
+    Add-U64 $p ([uint64] 3)
+    Add-U64 $p ([uint64] 1)
+    $first = $true
+    foreach ($body in $sceneBodies) {
+        Add-U64 $p ([uint64] $body.ObjectId)
+        foreach ($value in $body.Transform) { Add-F64 $p $value }
+        # 0x04 is reserved in v2. Set on the first body only.
+        if ($first) { Add-U8 $p ([byte] 0x04) } else { Add-U8 $p ([byte] 0x00) }
+        Add-U16 $p ([uint16] 0)
+        $first = $false
+    }
+    $scne = New-Section 'SCNE' 2 $true $p.ToArray()
+    $cons = New-Section 'CONS' 1 $true (New-ConstructionPayload $sourceBodies)
+    return New-ForgeFile 1 @($scne, $cons) 1
+}
+
 $fixtures = [ordered]@{
     'construction_multibody_v1.forge' = $construction
     'sculpt_mixed_v1.forge'           = $sculpt
@@ -1229,6 +1329,8 @@ $fixtures = [ordered]@{
     'cad_face_curve_v3.forge'         = (New-CadFaceCurveFile)
     'cad_bad_arc_v3.forge'            = (New-CadBadArcFile)
     'cad_bad_spline_v3.forge'         = (New-CadBadSplineFile)
+    'object_state_v2.forge'           = (New-ObjectStateFile)
+    'object_state_bad_flags_v2.forge' = (New-ObjectStateBadFlagsFile)
 }
 
 $rows = New-Object System.Collections.Generic.List[object]
@@ -1276,3 +1378,6 @@ Write-Host ("  cad_mixed_curve:       {0}" -f ($rows | Where-Object Fixture -eq 
 Write-Host ("  cad_face_curve:        {0}" -f ($rows | Where-Object Fixture -eq 'cad_face_curve_v3.forge').Sha256)
 Write-Host ("  cad_bad_arc:           {0}" -f ($rows | Where-Object Fixture -eq 'cad_bad_arc_v3.forge').Sha256)
 Write-Host ("  cad_bad_spline:        {0}" -f ($rows | Where-Object Fixture -eq 'cad_bad_spline_v3.forge').Sha256)
+Write-Host 'Digests the C++ self-test (OBJ018A-15/16) must assert:'
+Write-Host ("  object_state:          {0}" -f ($rows | Where-Object Fixture -eq 'object_state_v2.forge').Sha256)
+Write-Host ("  object_state_bad_flags:{0}" -f ($rows | Where-Object Fixture -eq 'object_state_bad_flags_v2.forge').Sha256)

@@ -262,6 +262,20 @@ SceneSnapshot ConstructionScene::snapshot() const {
     SceneSnapshot items;
     items.reserve(bodies_.size());
     for (const auto& body : bodies_) {
+        if (!body->visible()) {
+            // Stage 018A. THE one place hidden is enforced, and it is one place
+            // on purpose: this snapshot is what the renderer draws AND what CPU
+            // picking casts against, so leaving the body out here makes "not
+            // rendered" and "not pickable" the same fact rather than two
+            // predicates that could drift apart. The selection outline follows
+            // for free -- the mask pass rasterises what is in the snapshot, so
+            // a hidden body cannot leave a stale silhouette behind.
+            //
+            // The body itself is untouched: it keeps its published revision,
+            // its geometry, its sculpt mesh and its place in the Objects list,
+            // and showing it again costs no republication.
+            continue;
+        }
         RuntimeMeshPtr mesh = body->meshStore().current();
         if (!mesh) {
             continue;  // nothing published for this body yet: not drawable, not pickable

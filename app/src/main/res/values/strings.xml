@@ -564,6 +564,32 @@
     -->
     <string name="status_body_delete_refused_last">This is the only object — a project always has one. Nothing was deleted.</string>
     <string name="status_body_delete_failed">Could not delete that object. Nothing was changed.</string>
+
+    <!-- Stage 018A object commands (UI-OWNER-40).
+
+         Every content description names the ACT and the body it acts on, so a
+         screen reader hears "Rename Body #3" rather than "Rename". The
+         visibility and lock entries have two forms each because one control
+         does both, and the glyph changes with it: state is carried by the
+         SHAPE and by the words, never by colour alone. -->
+    <string name="object_commands">More commands for %1$s</string>
+    <string name="rename_body">Rename %1$s</string>
+    <string name="hide_body">Hide %1$s</string>
+    <string name="show_body">Show %1$s</string>
+    <string name="lock_body">Lock %1$s</string>
+    <string name="unlock_body">Unlock %1$s</string>
+    <string name="duplicate_body">Duplicate %1$s</string>
+    <string name="object_rename_field">New name for %1$s</string>
+    <string name="object_rename_commit">Apply the new name</string>
+    <string name="status_body_renamed">Renamed to %1$s — Undo restores the old name.</string>
+    <string name="status_body_rename_refused_empty">A name cannot be empty. Nothing was changed.</string>
+    <string name="status_body_hidden">Hid %1$s — it is still in the project.</string>
+    <string name="status_body_shown">Showing %1$s again.</string>
+    <string name="status_body_locked">Locked %1$s — it cannot be moved until you unlock it.</string>
+    <string name="status_body_unlocked">Unlocked %1$s.</string>
+    <string name="status_body_duplicated">Duplicated %1$s — Undo removes the copy.</string>
+    <string name="status_body_duplicate_refused_face">%1$s sits on another object’s face, so a copy could never be moved off it. Nothing was created.</string>
+    <string name="status_body_command_failed">Could not do that to the object. Nothing was changed.</string>
     <string name="apply_shape">Apply Shape</string>
     <string name="apply_transform">Apply Transform</string>
     <string name="label_width">Width</string>

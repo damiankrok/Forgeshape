@@ -57,6 +57,7 @@ set(FORGESHAPE_PRODUCT_SOURCES
     forgeshape_sketch_session.cpp
     forgeshape_support_chooser.cpp
     forgeshape_workplane.cpp
+    forgeshape_body_commands.cpp
     forgeshape_body_delete.cpp
     forgeshape_construction.cpp
     forgeshape_demo_mesh.cpp

@@ -352,6 +352,56 @@ std::vector<uint16_t> utf8ToUtf16(const std::string& utf8) {
     return out;
 }
 
+std::string utf16ToUtf8(const uint16_t* units, size_t count) {
+    std::string out;
+    out.reserve(count);
+    constexpr uint32_t kReplacement = 0xFFFDu;
+    const auto append = [&out](uint32_t code) {
+        if (code < 0x80u) {
+            out.push_back(static_cast<char>(code));
+        } else if (code < 0x800u) {
+            out.push_back(static_cast<char>(0xC0u | (code >> 6)));
+            out.push_back(static_cast<char>(0x80u | (code & 0x3Fu)));
+        } else if (code < 0x10000u) {
+            out.push_back(static_cast<char>(0xE0u | (code >> 12)));
+            out.push_back(static_cast<char>(0x80u | ((code >> 6) & 0x3Fu)));
+            out.push_back(static_cast<char>(0x80u | (code & 0x3Fu)));
+        } else {
+            out.push_back(static_cast<char>(0xF0u | (code >> 18)));
+            out.push_back(static_cast<char>(0x80u | ((code >> 12) & 0x3Fu)));
+            out.push_back(static_cast<char>(0x80u | ((code >> 6) & 0x3Fu)));
+            out.push_back(static_cast<char>(0x80u | (code & 0x3Fu)));
+        }
+    };
+    if (units == nullptr) {
+        return out;
+    }
+    for (size_t i = 0; i < count;) {
+        const uint32_t unit = units[i];
+        if (unit >= 0xD800u && unit <= 0xDBFFu) {
+            // A high surrogate. Only a following LOW surrogate completes it;
+            // anything else is unpaired and becomes U+FFFD, so the result is
+            // always well-formed UTF-8 and never a half-encoded character.
+            if (i + 1 < count && units[i + 1] >= 0xDC00u && units[i + 1] <= 0xDFFFu) {
+                append(0x10000u + ((unit - 0xD800u) << 10) + (units[i + 1] - 0xDC00u));
+                i += 2;
+                continue;
+            }
+            append(kReplacement);
+            ++i;
+            continue;
+        }
+        if (unit >= 0xDC00u && unit <= 0xDFFFu) {
+            append(kReplacement);  // a low surrogate with no high before it
+            ++i;
+            continue;
+        }
+        append(unit);
+        ++i;
+    }
+    return out;
+}
+
 bool importedMeshNameIsStorable(const std::string& name) {
     // Stated as "this is what the sanitizer would produce for it" rather than
     // as a second list of rules, so the `.forge` decoder and the importer can

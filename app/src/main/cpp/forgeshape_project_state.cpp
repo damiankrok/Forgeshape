@@ -116,6 +116,16 @@ ProjectDocument captureProjectDocument(const ConstructionScene& scene, ProjectKi
         ProjectBodyPlacement placement;
         placement.objectId = body.objectId();
         placement.transform = body.transform().values();
+        // Stage 018A. Visibility and lock are project truth for every body, so
+        // they are written for every body; the NAME is written here only for a
+        // body whose name SCNE owns. An Imported Mesh's name is `IMPT`'s and is
+        // written there, and duplicating it would be two answers to what one
+        // body is called -- `validateProjectDocument` refuses a file that does.
+        placement.visible = body.visible();
+        placement.locked = body.locked();
+        if (!body.isImported()) {
+            placement.name = body.name();
+        }
         document.scene.bodies.push_back(placement);
 
         // WHICH branch a body is written to is its representation, and each
@@ -262,6 +272,17 @@ ProjectCodecStatus loadProjectDocument(const ProjectDocument& document, Construc
         // The placement is the BODY's, whichever representation it has, and
         // SCNE is where it came from.
         body->transform().setValues(placement.transform);
+        // Stage 018A, on the same terms. A v1 file states neither flag and its
+        // decoded record carries the defaults, so this restores "visible and
+        // unlocked" for an older project without a migration branch. The name
+        // is taken from SCNE only where SCNE owns it -- an Imported Mesh was
+        // already constructed with `imported->name` above, and overwriting it
+        // with SCNE's (validated) empty string would erase it.
+        body->setVisible(placement.visible);
+        body->setLocked(placement.locked);
+        if (imported == nullptr) {
+            body->setName(placement.name);
+        }
 
         // ONE dispatch point: a Construction Body regenerates from its
         // parameters, an Imported Mesh republishes the geometry it owns.
@@ -516,6 +537,17 @@ uint64_t projectSemanticFingerprint(const ConstructionScene& scene, ProjectKind 
             mixCad(hash, cad->state());
         }
         mixTransform(hash, body.transform().values());
+        // Stage 018A. All three are project truth -- they reach `.forge` bytes
+        // -- so a Rename, a Show/Hide and a Lock/Unlock must each move the
+        // fingerprint and earn a checkpoint, exactly as a placement edit does.
+        // The name is mixed for EVERY representation here, not only for the
+        // imported branch above: the fingerprint hashes what the document
+        // carries, and which SECTION carries it is the codec's business.
+        // Hashing it twice for an imported body is harmless and keeps this one
+        // statement rather than two conditional ones.
+        mixBytes(hash, body.name().data(), body.name().size());
+        mixU64(hash, body.visible() ? 1u : 0u);
+        mixU64(hash, body.locked() ? 1u : 0u);
 
         const FrozenSculpt& frozen = body.frozenSculpt();
         mixU64(hash, frozen.mesh.frozen() ? 1u : 0u);

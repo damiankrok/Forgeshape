@@ -33,6 +33,7 @@
 #include <cstdio>
 #include <vector>
 
+#include "forgeshape_body_commands.h"
 #include "forgeshape_body_delete.h"
 #include "forgeshape_camera.h"
 #include "forgeshape_camera_selftest.h"
@@ -101,6 +102,33 @@ jstring newJavaString(JNIEnv* env, const std::string& utf8) {
     }
     return env->NewString(reinterpret_cast<const jchar*>(units.data()),
                           static_cast<jsize>(units.size()));
+}
+
+// The ONE way a Java `String` reaches a domain string, and the exact mirror of
+// the function above.
+//
+// `GetStringUTFChars` is deliberately NOT used: it returns MODIFIED UTF-8, in
+// which a supplementary character (an emoji a user can type into Rename) is two
+// 3-byte surrogate encodings rather than one 4-byte sequence. That is not
+// well-formed UTF-8, so `sanitizeImportedMeshName` would drop it as malformed
+// and the character would silently vanish. Reading the UTF-16 units and
+// encoding them ourselves is what makes the round trip exact.
+std::string readJavaString(JNIEnv* env, jstring value) {
+    if (value == nullptr) {
+        return std::string();
+    }
+    const jsize length = env->GetStringLength(value);
+    if (length <= 0) {
+        return std::string();
+    }
+    const jchar* units = env->GetStringCritical(value, nullptr);
+    if (units == nullptr) {
+        return std::string();
+    }
+    std::string utf8 = forgeshape::utf16ToUtf8(reinterpret_cast<const uint16_t*>(units),
+                                               static_cast<size_t>(length));
+    env->ReleaseStringCritical(value, units);
+    return utf8;
 }
 
 using forgeshape::Renderer;
@@ -606,6 +634,13 @@ void runProjectSelfTestsAndLog() {
             forgeshape::canonicalMixedCadFaceFixtureSha256(),
             forgeshape::canonicalCadBadFaceRefFixtureSha256(),
             forgeshape::canonicalCadDependencyCycleFixtureSha256());
+    // Stage 018A: the two SCNE v2 fixtures, printed on the same terms as every
+    // other golden digest -- so drift from the committed corpus is a value that
+    // can be READ rather than only an assertion that failed.
+    FS_LOGI("FORGESHAPE_PROJECT_GOLDEN_SHA256_OBJECT_STATE object_state=%s "
+            "object_state_bad_flags=%s",
+            forgeshape::canonicalObjectStateFixtureSha256(),
+            forgeshape::canonicalObjectStateBadFlagsFixtureSha256());
     if (failed == 0) {
         FS_LOGI("FORGESHAPE_PROJECT_SELFTEST_OK (%d checks)", count);
     } else {
@@ -1056,6 +1091,10 @@ constexpr jint kApplyPublishFailed = 5;
 // Every value is a length, but the primitive's own rule relating two of them is
 // broken — today only a capsule whose total height is under its diameter.
 constexpr jint kApplyRejectedRelation = 6;
+// Stage 018A: the body is LOCKED. Its own code because a lock is not a
+// statement about a value -- every number the caller passed may be good -- and a
+// status line that blamed a coordinate would be describing the wrong problem.
+constexpr jint kApplyRejectedLocked = 8;
 
 // Applies an authoritative transform through the one Construction transform
 // entry point and reports what happened.
@@ -1065,8 +1104,12 @@ constexpr jint kApplyRejectedRelation = 6;
 // moving or rotating it changes only the derived matrix the renderer and the
 // picker read.
 forgeshape::TransformApplyResult applyBoxTransform(const char* label,
-                                                   const forgeshape::TransformValues& requested) {
+                                                   const forgeshape::TransformValues& requested,
+                                                   bool* outRefusedLocked = nullptr) {
     forgeshape::TransformApplyResult result;
+    if (outRefusedLocked != nullptr) {
+        *outRefusedLocked = false;
+    }
     {
         // Same lock as the camera and the selection: the render thread reads the
         // derived model matrix under it once per frame, and a tap resolves its
@@ -1081,6 +1124,31 @@ forgeshape::TransformApplyResult applyBoxTransform(const char* label,
             // No project, no placement to write. The unbound identity the
             // global answers with belongs to no body and must not be edited.
             FS_LOGE("FORGESHAPE_CONSTRUCTION_TRANSFORM_REJECTED:%s:NoProject", label);
+            result.status = forgeshape::TransformUpdateStatus::Rejected;
+            result.values = forgeshape::constructionTransform().values();
+            return result;
+        }
+        if (forgeshape::constructionScene().activeBody().locked()) {
+            // Stage 018A. The FIRST of lock's two guards, and the one that
+            // covers every exact-value route into a placement: the precision
+            // surface, the unit chips and anything else that types a number.
+            // The second is `setGizmoActive`, which covers direct manipulation.
+            //
+            // Rejected rather than clamped or ignored: the body keeps the
+            // placement it has, nothing is published and no history step is
+            // opened, so a refused write costs the project nothing. The control
+            // is withdrawn above JNI as well -- removing a control is not
+            // removing a guard.
+            FS_LOGE("FORGESHAPE_CONSTRUCTION_TRANSFORM_REJECTED:%s:BodyLocked", label);
+            // Reported through its own out-parameter rather than through
+            // `TransformValidation`, because a lock is not a statement about a
+            // VALUE: every number the caller passed may be perfectly good. The
+            // JNI wrapper turns this into its own APPLY_REJECTED_LOCKED code,
+            // so the status line can say what actually happened instead of
+            // blaming a coordinate.
+            if (outRefusedLocked != nullptr) {
+                *outRefusedLocked = true;
+            }
             result.status = forgeshape::TransformUpdateStatus::Rejected;
             result.values = forgeshape::constructionTransform().values();
             return result;
@@ -1999,7 +2067,9 @@ Java_com_forgeshape_app_NativeViewport_applyBoxTransform(JNIEnv*, jclass, jdoubl
     requested.scaleX = scaleX;
     requested.scaleY = scaleY;
     requested.scaleZ = scaleZ;
-    return transformResultToJni(applyBoxTransform("ui", requested));
+    bool refusedLocked = false;
+    const jint status = transformResultToJni(applyBoxTransform("ui", requested, &refusedLocked));
+    return refusedLocked ? kApplyRejectedLocked : status;
 }
 
 // ---------------------------------------------------------------------------
@@ -2418,6 +2488,227 @@ Java_com_forgeshape_app_NativeViewport_sceneDeleteBody(JNIEnv*, jclass, jlong ob
 }
 
 // ---------------------------------------------------------------------------
+// The object commands: Rename, Show/Hide, Lock/Unlock, Duplicate (Stage 018A)
+// ---------------------------------------------------------------------------
+//
+// The whole decision for each -- the transaction, the sanitizer, the refusals,
+// what a duplicate copies -- is `forgeshape_body_commands.{h,cpp}`'s, in
+// platform-neutral code. What is here is the lock, the mode guard, the string
+// boundary and the log line, exactly as `sceneDeleteBody` is.
+//
+// REFUSED WHILE SCULPTING AND WHILE SKETCHING, on the same terms body
+// switching, Delete and Undo/Redo already are: the Sculpt target is fixed for
+// the duration of the mode and the scene holds still while a sketch is open. As
+// everywhere else in this product the control is withdrawn there too, and
+// removing a control is not removing a guard.
+//
+// A refusal changes nothing at all: no name moves, no flag moves, no ObjectId
+// is minted, no step is recorded and the project fingerprint does not shift.
+
+// Status codes handed back to the Android UI, in step with NativeViewport's
+// OBJCMD_* fields. A JNI transport detail, never a domain enum's ABI value.
+constexpr jint kObjCmdOk = 0;
+constexpr jint kObjCmdUnknownBody = 1;
+constexpr jint kObjCmdRefusedEditInProgress = 2;
+constexpr jint kObjCmdRefusedInvalidName = 3;
+constexpr jint kObjCmdRefusedFaceSupportedCad = 4;
+constexpr jint kObjCmdRefusedNotDuplicable = 5;
+constexpr jint kObjCmdRefusedInSculpt = 6;
+
+jint objCmdStatusToJni(forgeshape::BodyCommandStatus status) {
+    switch (status) {
+        case forgeshape::BodyCommandStatus::Ok: return kObjCmdOk;
+        case forgeshape::BodyCommandStatus::UnknownBody: return kObjCmdUnknownBody;
+        case forgeshape::BodyCommandStatus::RefusedEditInProgress:
+            return kObjCmdRefusedEditInProgress;
+        case forgeshape::BodyCommandStatus::RefusedInvalidName:
+            return kObjCmdRefusedInvalidName;
+        case forgeshape::BodyCommandStatus::RefusedFaceSupportedCad:
+            return kObjCmdRefusedFaceSupportedCad;
+        case forgeshape::BodyCommandStatus::RefusedNotDuplicable:
+            return kObjCmdRefusedNotDuplicable;
+    }
+    return kObjCmdUnknownBody;
+}
+
+// Whether an object command may run at all right now. One answer for all four,
+// because all four hold the scene still for the same reason.
+bool objectCommandsBlockedByMode() {
+    return forgeshape::sculptSession().inSculptMode() || forgeshape::sketchSession().active();
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sceneRenameBody(JNIEnv* env, jclass, jlong objectId,
+                                                       jstring name) {
+    if (name == nullptr) {
+        return kObjCmdRefusedInvalidName;
+    }
+    // The string is copied out of the JVM BEFORE the state mutex is taken: a
+    // JNI call that can allocate must never run while the render thread is
+    // waiting on that lock.
+    const std::string requested = readJavaString(env, name);
+    forgeshape::BodyCommandStatus status = forgeshape::BodyCommandStatus::Ok;
+    bool refusedInSculpt = false;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        if (objectCommandsBlockedByMode()) {
+            refusedInSculpt = true;
+        } else {
+            status = forgeshape::renameSceneBody(static_cast<forgeshape::ObjectId>(objectId),
+                                                 requested, forgeshape::constructionScene(),
+                                                 forgeshape::constructionHistory());
+        }
+    }
+    if (refusedInSculpt) {
+        FS_LOGI("FORGESHAPE_SCENE_RENAME_REFUSED:in_sculpt_mode:%lld", (long long)objectId);
+        return kObjCmdRefusedInSculpt;
+    }
+    if (status != forgeshape::BodyCommandStatus::Ok) {
+        FS_LOGI("FORGESHAPE_SCENE_RENAME_REFUSED:%s:%lld",
+                forgeshape::bodyCommandStatusName(status), (long long)objectId);
+        return objCmdStatusToJni(status);
+    }
+    // Deliberately no publish: a name is truth about IDENTITY, and nothing
+    // about the geometry, the mesh revision or the GPU changed.
+    FS_LOGI("FORGESHAPE_SCENE_BODY_RENAMED:%lld", (long long)objectId);
+    return kObjCmdOk;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_sceneBodyVisible(JNIEnv*, jclass, jlong objectId) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    const forgeshape::SceneObject* body =
+        forgeshape::constructionScene().findBody(static_cast<forgeshape::ObjectId>(objectId));
+    // An unknown body answers "visible": the Objects list only ever asks about
+    // rows it just read from this same scene, and the visible answer is the one
+    // that cannot make a row draw a Show control for something that is not
+    // there.
+    return (body == nullptr || body->visible()) ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sceneSetBodyVisible(JNIEnv*, jclass, jlong objectId,
+                                                           jboolean visible) {
+    forgeshape::BodyCommandStatus status = forgeshape::BodyCommandStatus::Ok;
+    bool refusedInSculpt = false;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        if (objectCommandsBlockedByMode()) {
+            refusedInSculpt = true;
+        } else {
+            status = forgeshape::setSceneBodyVisible(
+                static_cast<forgeshape::ObjectId>(objectId), visible == JNI_TRUE,
+                forgeshape::constructionScene(), forgeshape::constructionHistory());
+        }
+    }
+    if (refusedInSculpt) {
+        FS_LOGI("FORGESHAPE_SCENE_VISIBILITY_REFUSED:in_sculpt_mode:%lld", (long long)objectId);
+        return kObjCmdRefusedInSculpt;
+    }
+    if (status != forgeshape::BodyCommandStatus::Ok) {
+        FS_LOGI("FORGESHAPE_SCENE_VISIBILITY_REFUSED:%s:%lld",
+                forgeshape::bodyCommandStatusName(status), (long long)objectId);
+        return objCmdStatusToJni(status);
+    }
+    // Nothing is published and nothing is uploaded. A hidden body simply is not
+    // in the next snapshot, which is the one list the renderer and CPU picking
+    // both read.
+    FS_LOGI("FORGESHAPE_SCENE_BODY_VISIBILITY:%lld visible=%d", (long long)objectId,
+            visible == JNI_TRUE ? 1 : 0);
+    return kObjCmdOk;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_sceneBodyLocked(JNIEnv*, jclass, jlong objectId) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    const forgeshape::SceneObject* body =
+        forgeshape::constructionScene().findBody(static_cast<forgeshape::ObjectId>(objectId));
+    return (body != nullptr && body->locked()) ? JNI_TRUE : JNI_FALSE;
+}
+
+// Whether the body the editors currently act on is locked.
+//
+// Asked by the workspace so it can withdraw the transform controls, and asked
+// by the two guards below so a locked body cannot be moved even if a control
+// were somehow reached. Answers false while no project is open, which is the
+// same shape every other active-body accessor uses at Home.
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_sceneActiveBodyIsLocked(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    const forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
+    return scene.hasProject() && scene.activeBody().locked() ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sceneSetBodyLocked(JNIEnv*, jclass, jlong objectId,
+                                                          jboolean locked) {
+    forgeshape::BodyCommandStatus status = forgeshape::BodyCommandStatus::Ok;
+    bool refusedInSculpt = false;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        if (objectCommandsBlockedByMode()) {
+            refusedInSculpt = true;
+        } else {
+            status = forgeshape::setSceneBodyLocked(
+                static_cast<forgeshape::ObjectId>(objectId), locked == JNI_TRUE,
+                forgeshape::constructionScene(), forgeshape::constructionHistory());
+            const forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
+            if (status == forgeshape::BodyCommandStatus::Ok && scene.hasProject()
+                && scene.activeBody().locked()) {
+                // A gizmo standing over a body that has just been locked would
+                // be a control that cannot succeed. Taken down here rather than
+                // left to the next refresh, because `setActive(false)` also
+                // cancels a captured handle -- and a finger already on one must
+                // not keep dragging a body the user just locked.
+                forgeshape::gizmoSession().setActive(false);
+            }
+        }
+    }
+    if (refusedInSculpt) {
+        FS_LOGI("FORGESHAPE_SCENE_LOCK_REFUSED:in_sculpt_mode:%lld", (long long)objectId);
+        return kObjCmdRefusedInSculpt;
+    }
+    if (status != forgeshape::BodyCommandStatus::Ok) {
+        FS_LOGI("FORGESHAPE_SCENE_LOCK_REFUSED:%s:%lld",
+                forgeshape::bodyCommandStatusName(status), (long long)objectId);
+        return objCmdStatusToJni(status);
+    }
+    FS_LOGI("FORGESHAPE_SCENE_BODY_LOCK:%lld locked=%d", (long long)objectId,
+            locked == JNI_TRUE ? 1 : 0);
+    return kObjCmdOk;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sceneDuplicateBody(JNIEnv*, jclass, jlong objectId) {
+    forgeshape::BodyCommandStatus status = forgeshape::BodyCommandStatus::Ok;
+    forgeshape::DuplicateBodyReport report;
+    bool refusedInSculpt = false;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        if (objectCommandsBlockedByMode()) {
+            refusedInSculpt = true;
+        } else {
+            status = forgeshape::duplicateSceneBody(static_cast<forgeshape::ObjectId>(objectId),
+                                                    forgeshape::constructionScene(),
+                                                    forgeshape::constructionHistory(), &report);
+        }
+    }
+    if (refusedInSculpt) {
+        FS_LOGI("FORGESHAPE_SCENE_DUPLICATE_REFUSED:in_sculpt_mode:%lld", (long long)objectId);
+        return kObjCmdRefusedInSculpt;
+    }
+    if (status != forgeshape::BodyCommandStatus::Ok) {
+        FS_LOGI("FORGESHAPE_SCENE_DUPLICATE_REFUSED:%s:%lld",
+                forgeshape::bodyCommandStatusName(status), (long long)objectId);
+        return objCmdStatusToJni(status);
+    }
+    FS_LOGI("FORGESHAPE_SCENE_BODY_DUPLICATED:%llu from=%llu index=%d bodies=%d sculpt=%d",
+            (unsigned long long)report.newBodyId, (unsigned long long)report.sourceBodyId,
+            (int)report.newIndex, (int)report.bodyCount, report.clonedSculptMesh ? 1 : 0);
+    return kObjCmdOk;
+}
+
+// ---------------------------------------------------------------------------
 // Construction history
 // ---------------------------------------------------------------------------
 //
@@ -2575,13 +2866,25 @@ Java_com_forgeshape_app_NativeViewport_constructionMeshRevision(JNIEnv*, jclass)
 JNIEXPORT void JNICALL Java_com_forgeshape_app_NativeViewport_setGizmoActive(JNIEnv*, jclass,
                                                                             jboolean active) {
     bool refusedInSculpt = false;
+    bool refusedLocked = false;
     bool nowActive = false;
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
+        const forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
+        const bool activeIsLocked = scene.hasProject() && scene.activeBody().locked();
         if (active == JNI_TRUE && forgeshape::sculptSession().inSculptMode()) {
             refusedInSculpt = true;
             // Still turned OFF, so entering Sculpt with a gizmo up cannot leave
             // one standing — and a captured handle is cancelled by setActive.
+            forgeshape::gizmoSession().setActive(false);
+        } else if (active == JNI_TRUE && activeIsLocked) {
+            // Stage 018A. The SECOND of lock's two guards, covering direct
+            // manipulation the way the transform entry point covers typed
+            // values. Turned OFF rather than merely not turned on, on exactly
+            // the Sculpt branch's terms: a gizmo left standing over a locked
+            // body would be a control that cannot succeed, and `setActive(false)`
+            // also cancels a captured handle so a finger already on one stops.
+            refusedLocked = true;
             forgeshape::gizmoSession().setActive(false);
         } else {
             forgeshape::gizmoSession().setActive(active == JNI_TRUE);
@@ -2590,6 +2893,10 @@ JNIEXPORT void JNICALL Java_com_forgeshape_app_NativeViewport_setGizmoActive(JNI
     }
     if (refusedInSculpt) {
         FS_LOGI("FORGESHAPE_GIZMO_REFUSED:in_sculpt_mode");
+        return;
+    }
+    if (refusedLocked) {
+        FS_LOGI("FORGESHAPE_GIZMO_REFUSED:body_locked");
         return;
     }
     FS_LOGI("FORGESHAPE_GIZMO_ACTIVE:%d", nowActive ? 1 : 0);

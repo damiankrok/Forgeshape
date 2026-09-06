@@ -151,14 +151,59 @@ public:
         return representation_ == BodyRepresentation::Imported ? &imported_ : nullptr;
     }
 
-    // The body's stored name, empty for a Construction Body.
+    // The body's stored name, empty when it has none.
     //
-    // Only an Imported Mesh carries one: it arrives named by the file it came
-    // from, and losing that would leave the user with a list of anonymous rows
-    // they could not tell apart. A Construction Body is still labelled from its
-    // ObjectId by the UI, exactly as before, and this product still has no
-    // Rename.
+    // An Imported Mesh arrives with one, named by the file it came from. Since
+    // Stage 018A EVERY representation may carry one, because Rename is
+    // representation-neutral: a body has a name because it is a body, exactly
+    // as it has a placement because it is a body. Empty is still the SIGNAL for
+    // the UI's ObjectId-derived fallback label and is never itself a name.
     const std::string& name() const { return name_; }
+
+    // Renames the body. The caller has already sanitized and accepted the
+    // string (see `renameSceneBody`, the one entry point) -- this only stores
+    // it. Publishes nothing, mints no MeshRevision and moves no vertex: a name
+    // is project truth about identity, not about geometry.
+    void setName(std::string name) { name_ = std::move(name); }
+
+    // -----------------------------------------------------------------------
+    // Visibility and lock (Stage 018A)
+    // -----------------------------------------------------------------------
+    //
+    // Both are DURABLE project truth and both are representation-neutral: a
+    // body is hidden or locked because the user said so about that body, and no
+    // rule here asks what generates its geometry. Both are carried by a
+    // Construction history step and both reach the `.forge` file, which is the
+    // difference between them and every presentation flag in the product.
+    //
+    // Neither is geometry. Toggling one publishes nothing, mints no
+    // MeshRevision, rebuilds no CAD mesh, uploads nothing and moves no sculpt
+    // vertex; what changes is whether `ConstructionScene::snapshot` offers the
+    // body at all, and whether the transform entry points accept a write.
+
+    // Hidden is NOT DRAWN and NOT PICKED, and it is one fact rather than two:
+    // `snapshot()` is the single list the renderer and CPU picking both
+    // consume, so leaving a hidden body out of it makes both true at once with
+    // no renderer branch and no second predicate that could drift. A hidden
+    // body is still in the scene, still in the Objects list, still selectable
+    // from its row, still saved and still exported -- hiding is not deleting.
+    bool visible() const { return visible_; }
+    void setVisible(bool visible) { visible_ = visible; }
+
+    // Locked stays VISIBLE and stays PICKABLE, deliberately.
+    //
+    // What lock removes is the ability to MOVE the body: the gizmo is refused
+    // over one and every transform write is refused by name. It is not removed
+    // from the viewport, because a body you can see and select but not move is
+    // exactly what a lock means to a user, and a body that silently stopped
+    // responding to taps would read as a rendering fault rather than as a
+    // state. Reaching Unlock therefore needs no special path -- the ordinary
+    // row is still there and so is the ordinary tap.
+    //
+    // This is not permission or security: it is one boolean the user sets and
+    // clears, and every guard it drives is local to this process.
+    bool locked() const { return locked_; }
+    void setLocked(bool locked) { locked_ = locked; }
 
     // THE body's placement, whichever representation it has.
     //
@@ -196,6 +241,12 @@ private:
     // this one stays immutable source truth whatever is sculpted from it.
     ImportedMesh imported_;
     std::string name_;
+    // Both default to the state a body has always been in, which is what makes
+    // a `.forge` file written before Stage 018A load correctly: no flags in the
+    // file means visible and unlocked, and that is these two initializers
+    // rather than a migration.
+    bool visible_ = true;
+    bool locked_ = false;
 };
 
 // ---------------------------------------------------------------------------
@@ -362,7 +413,9 @@ public:
     // ConstructionHistory and by `deleteSceneBody`, both of which HOLD a
     // detached body rather than destroying it, so an undo or a redo returns the
     // same object with its Frozen Sculpt Mesh intact rather than a fresh one
-    // that merely looks the same. There is deliberately still no Duplicate.
+    // that merely looks the same. Stage 018A's Duplicate is built on the same
+    // two calls: it creates through the ordinary `add*Body` entry points rather
+    // than here, because a copy is minted a fresh id like any other creation.
 
     // Takes a body out of the scene and hands over ownership. Returns null when
     // no body carries that id. If the detached body was active, the selection

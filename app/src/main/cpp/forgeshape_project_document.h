@@ -110,6 +110,30 @@ constexpr char kSectionTagImported[4] = {'I', 'M', 'P', 'T'};
 constexpr char kSectionTagCad[4] = {'C', 'A', 'D', 'B'};
 
 constexpr uint16_t kSceneSectionVersion = 1;
+// Stage 018A: version 2 adds, per body, a FLAGS byte and a NAME.
+//
+// Written only when at least one body needs it -- one that is hidden, locked,
+// or carries a stored name SCNE is the owner of. A project of visible,
+// unlocked, unnamed bodies stays at v1 and byte-identical, which is why the
+// whole existing fixture corpus is unchanged; that is the same rule CADB v2 and
+// v3 follow, and for the same reason.
+//
+// SCNE is a REQUIRED section, so an older build refuses a v2 file outright
+// (`UnsupportedSectionVersion`) rather than opening a project with every body
+// visible and unlocked when the user hid or locked some. Fail-closed is the
+// right side to err on: silently ignoring a lock is worse than declining.
+//
+// A v1 file loads as the default a body has always had -- visible, unlocked,
+// and named only where its own section already named it. That is the
+// SceneObject's member initializers, not a migration.
+constexpr uint16_t kSceneSectionVersionV2 = 2;
+
+// SCNE v2 per-body flag bits. FILE-owned, and every other bit is reserved and
+// must be zero -- a set reserved bit is refused as malformed rather than
+// ignored, so a future flag cannot be silently dropped by this build.
+constexpr uint8_t kSceneBodyFlagHidden = 0x01u;
+constexpr uint8_t kSceneBodyFlagLocked = 0x02u;
+constexpr uint8_t kSceneBodyFlagMask = 0x03u;
 constexpr uint16_t kConstructionSectionVersion = 1;
 constexpr uint16_t kSculptSectionVersion = 1;
 constexpr uint16_t kImportedSectionVersion = 1;
@@ -220,6 +244,20 @@ struct ProjectFeatureRecord {
 struct ProjectBodyPlacement {
     ObjectId objectId = kNoObject;
     TransformValues transform{};
+    // Stage 018A, SCNE v2. Both default to what a body has always been, so a v1
+    // file decodes into exactly these values without a migration step.
+    bool visible = true;
+    bool locked = false;
+    // The body's display name, owned HERE for a Construction Body and a CAD
+    // Body, and left EMPTY for an Imported Mesh.
+    //
+    // The name has exactly one owner per representation and is never written
+    // twice. `IMPT` has carried an imported object's name since `IMPORT-01A` --
+    // it came from the file the geometry came from -- and Rename simply writes
+    // that same field, so an imported body needs nothing here and a v2 file
+    // that put a name here for one is REFUSED as malformed. A Construction Body
+    // and a CAD Body had nowhere to store one, so this is where theirs lives.
+    std::string name;
 };
 
 struct ProjectSceneRecord {

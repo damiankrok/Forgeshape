@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "forgeshape_body_commands.h"
 #include "forgeshape_cad_body.h"
 #include "forgeshape_cad_face.h"
 #include "forgeshape_camera.h"
@@ -828,6 +829,81 @@ int runCadA3SelfTests(CadA3SelfTestResult* out, int maxOut) {
         }
     }
 
+
+    // -----------------------------------------------------------------------
+    // OBJ018A-11: what Duplicate does about a CAD dependency (Stage 018A)
+    // -----------------------------------------------------------------------
+    //
+    // A world-plane CAD Body duplicates like anything else. A FACE-SUPPORTED
+    // one is refused BY NAME, because its world placement is derived from its
+    // producer's face frame and is not stored: the copy would stand exactly
+    // where the original stands, permanently, and `isFaceSupportedCad` is the
+    // very predicate that refuses to let the user move it apart. Nothing is
+    // retargeted, nothing is detached from its TopoRef, and no dependency is
+    // rewritten — the refusal is the whole behaviour.
+    {
+        ConstructionScene scene(NoProjectTag{});
+        ConstructionHistory history(scene);
+        const CadBodyState producerState = rectBody(Workplane::XY, 2.0, 1.0, 1.5);
+        SceneObject* producer = scene.addCadBody(producerState);
+        r.check("obj018a_11_a_world_plane_cad_producer_exists",
+                producer != nullptr && producer->isCad() && !producer->isFaceSupportedCad());
+
+        const ObjectId producerId = producer->objectId();
+        DuplicateBodyReport report;
+        r.check("obj018a_11_a_world_plane_cad_body_duplicates",
+                duplicateSceneBody(producerId, scene, history, &report)
+                        == BodyCommandStatus::Ok
+                    && scene.bodyCount() == 2
+                    && report.newBodyId != producerId
+                    && scene.findBody(report.newBodyId) != nullptr
+                    && scene.findBody(report.newBodyId)->isCad());
+        r.check("obj018a_11_the_cad_copy_carries_the_authored_sketch",
+                sameCadBodyState(scene.findBody(report.newBodyId)->cadOrNull()->state(),
+                                 producerState));
+        r.check("obj018a_11_the_cad_copy_regenerated_its_own_mesh",
+                scene.findBody(report.newBodyId)->meshStore().currentRevision()
+                    != kNoMeshRevision);
+
+        // Now a dependent standing on one of the producer's caps.
+        const CadFaceToken token = tokenFor(producerState, CadFaceKind::CapFar);
+        SceneObject* follower =
+            scene.addCadBody(childOn(producerState, producerId, token, 0.4, 0.4, 0.3));
+        r.check("obj018a_11_a_face_supported_dependent_exists",
+                follower != nullptr && follower->isFaceSupportedCad());
+        if (follower != nullptr) {
+            const ObjectId followerId = follower->objectId();
+            const size_t bodiesBefore = scene.bodyCount();
+            const ObjectId allocatorBefore = scene.nextObjectId();
+            const size_t depthBefore = history.undoDepth();
+
+            DuplicateBodyReport refused;
+            r.check("obj018a_11_a_face_supported_cad_body_is_refused_by_name",
+                    duplicateSceneBody(followerId, scene, history, &refused)
+                        == BodyCommandStatus::RefusedFaceSupportedCad);
+            // A refusal changes NOTHING: no body, no minted id, no step.
+            r.check("obj018a_11_the_refusal_created_nothing",
+                    scene.bodyCount() == bodiesBefore
+                        && scene.nextObjectId() == allocatorBefore
+                        && history.undoDepth() == depthBefore
+                        && refused.newBodyId == kNoObject);
+            // And the dependency it declined to copy is exactly as it was.
+            r.check("obj018a_11_the_dependency_graph_is_intact",
+                    scene.validateCadFaceSupport(*scene.findBody(followerId)
+                                                      ->cadFaceSupportOrNull())
+                            == CadStatus::Ok
+                        && scene.cadDependentsOf(producerId).size() == 1);
+            // Duplicating the PRODUCER is still allowed while it has a
+            // dependent: a single-object Duplicate copies one body and never a
+            // graph, so the copy is simply a producer of its own with none.
+            DuplicateBodyReport producerCopy;
+            r.check("obj018a_11_a_producer_with_dependents_still_duplicates",
+                    duplicateSceneBody(producerId, scene, history, &producerCopy)
+                            == BodyCommandStatus::Ok
+                        && scene.cadDependentsOf(producerId).size() == 1
+                        && scene.cadDependentsOf(producerCopy.newBodyId).empty());
+        }
+    }
     return r.n;
 }
 

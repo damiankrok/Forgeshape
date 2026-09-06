@@ -799,6 +799,7 @@ final class EditorWorkspaceView extends FrameLayout
     boolean hasDismissibleSurface() {
         return unsavedPromptVisible() || settingsVisible() || newProjectChooserVisible()
                 || NativeViewport.supportChooserActive() || bootstrapVisible()
+                || objectsSection.expandedRow() != null
                 || topmostOpenSurface() != null;
     }
 
@@ -866,6 +867,13 @@ final class EditorWorkspaceView extends FrameLayout
             NativeViewport.supportChooserCancel();
             onNativeStateChanged();
             showStatus("", R.attr.fsTextSecondary);
+            return true;
+        }
+        // An open Objects row command strip is INSIDE whichever surface hosts
+        // the list, so it is closed before that surface is (Stage 018A). Back
+        // stays one step: the strip, then the panel, then the phase. Closing it
+        // changes no model fact -- an uncommitted rename simply never happened.
+        if (objectsSection.dismissRowCommands()) {
             return true;
         }
         final AnchoredSurfaceView surface = topmostOpenSurface();
@@ -2355,6 +2363,12 @@ final class EditorWorkspaceView extends FrameLayout
         // the answer, that the last body cannot go, is the list's own and comes
         // from the scene's size.
         objectsSection.showDeletionAvailable(!sculpting && !sketching);
+        // Stage 018A: Rename, Show/Hide, Lock/Unlock and Duplicate on exactly
+        // the same terms, and for the same reason -- all four are refused below
+        // JNI while sculpting and while a sketch is open, because the scene
+        // holds still there. Withdrawing the overflow also closes any strip
+        // standing open under it.
+        objectsSection.showObjectCommandsAvailable(!sculpting && !sketching);
         if (sculpting || sketching) {
             // The palette is anchored to a control that has just gone. Left open
             // it would stand on the model attached to nothing, and choosing a
@@ -2461,8 +2475,14 @@ final class EditorWorkspaceView extends FrameLayout
         NativeViewport.setGizmoPixelScale(getResources().getDisplayMetrics().density);
         // Not while sketching: the viewport is the sketch plane, and a handle
         // over it would be pointing at a body the sketch is not about.
+        //
+        // And not over a LOCKED body (Stage 018A): every transform write
+        // against one is rejected below JNI, so a handle there could only be
+        // grabbed and then refused. The domain guard stays regardless —
+        // removing a control is not removing a guard.
         final boolean offered = !sculpting && !isSketching()
                 && uiState.constructionTool() == EditorUiState.CONSTRUCTION_TOOL_TRANSFORM
+                && !NativeViewport.sceneActiveBodyIsLocked()
                 && NativeViewport.sceneActiveBodyId() != NativeViewport.NO_OBJECT;
         NativeViewport.setGizmoActive(offered);
         if (offered) {
@@ -2478,6 +2498,7 @@ final class EditorWorkspaceView extends FrameLayout
         final boolean sketching = sketchState != NativeViewport.SKETCH_INACTIVE;
         final boolean transformOffered = !sculpting && !sketching
                 && uiState.constructionTool() == EditorUiState.CONSTRUCTION_TOOL_TRANSFORM
+                && !NativeViewport.sceneActiveBodyIsLocked()
                 && NativeViewport.sceneActiveBodyId() != NativeViewport.NO_OBJECT;
         if (transformOffered) {
             NativeViewport.gizmoState(nativeGizmo);

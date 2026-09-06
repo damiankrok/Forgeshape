@@ -168,6 +168,16 @@ final class NativeViewport {
      * reason is {@link #cadLastStatus()} and is in the log.
      */
     static final int APPLY_REJECTED_CAD = 7;
+    /**
+     * Refused: the body is LOCKED (Stage 018A).
+     *
+     * <p>Its own code because a lock is not a statement about a value — every
+     * number passed may be perfectly good — so a status line that blamed a
+     * coordinate would be describing the wrong problem. The transform controls
+     * are withdrawn over a locked body as well; this is the guard that stays
+     * regardless, because removing a control is not removing a guard.
+     */
+    static final int APPLY_REJECTED_LOCKED = 8;
 
     /** The active primitive is a box. */
     static final int PRIMITIVE_BOX = 0;
@@ -548,6 +558,114 @@ final class NativeViewport {
      * @return one of the {@code DELETE_*} constants
      */
     static native int sceneDeleteBody(long objectId);
+
+    // -----------------------------------------------------------------------
+    // The object commands: Rename, Show/Hide, Lock/Unlock, Duplicate
+    // (Stage 018A, UI-OWNER-40)
+    // -----------------------------------------------------------------------
+    //
+    // Status codes in step with the native kObjCmd* constants. They are a JNI
+    // transport detail; the domain's own vocabulary is BodyCommandStatus.
+    //
+    // All four are representation-neutral, all four are exactly one history
+    // transaction, and all four refuse while sculpting and while sketching on
+    // the same terms Delete and body switching already do. A refusal changes
+    // nothing at all.
+
+    /** The command ran, as exactly one history transaction. */
+    static final int OBJCMD_OK = 0;
+    /** No body in the scene carries that id. */
+    static final int OBJCMD_UNKNOWN_BODY = 1;
+    /** A Construction edit is open; its captured pre-state names this body. */
+    static final int OBJCMD_REFUSED_EDIT_IN_PROGRESS = 2;
+    /**
+     * The requested name is empty, or empty once sanitized.
+     *
+     * <p>Refused rather than replaced by the ObjectId fallback label: the
+     * fallback is what a body with NO name gets, and a user must not be able to
+     * reach it by typing.
+     */
+    static final int OBJCMD_REFUSED_INVALID_NAME = 3;
+    /**
+     * Duplicate only: the body is a face-supported CAD Body.
+     *
+     * <p>Its world placement is derived from its producer's face frame, so a
+     * copy would stand exactly where the original stands with no way to move it
+     * apart. Refused by name rather than created; nothing is retargeted and no
+     * dependency is rewritten.
+     */
+    static final int OBJCMD_REFUSED_FACE_SUPPORTED_CAD = 4;
+    /** Duplicate only: the copy did not build or did not regenerate. */
+    static final int OBJCMD_REFUSED_NOT_DUPLICABLE = 5;
+    /** The product is in Sculpt mode, or a sketch is open. */
+    static final int OBJCMD_REFUSED_IN_SCULPT = 6;
+
+    /**
+     * Renames one body, as exactly one history transaction.
+     *
+     * <p>The string is put through the domain's own name rule — the same one an
+     * imported object's name goes through — so there is one bound, one
+     * sanitizer and one storability predicate rather than a second policy for
+     * Rename. Unicode survives exactly: the boundary reads UTF-16 units and
+     * encodes real UTF-8, never JNI's modified UTF-8, so an emoji typed here
+     * comes back byte for byte.
+     *
+     * <p>Publishes nothing and mints no revision: a name is truth about
+     * identity, not about geometry.
+     *
+     * @return one of the {@code OBJCMD_*} constants
+     */
+    static native int sceneRenameBody(long objectId, String name);
+
+    /** Whether this body is drawn and pickable. Unknown bodies answer true. */
+    static native boolean sceneBodyVisible(long objectId);
+
+    /**
+     * Shows or hides one body, as exactly one history transaction.
+     *
+     * <p>Hidden means not drawn AND not pickable, which is one fact rather than
+     * two: both read the same native scene snapshot, and a hidden body is
+     * simply not in it. It is not deleted — the row stays, the body stays
+     * selectable from it, and it stays saved in the project.
+     *
+     * @return one of the {@code OBJCMD_*} constants
+     */
+    static native int sceneSetBodyVisible(long objectId, boolean visible);
+
+    /** Whether this body refuses to be moved. */
+    static native boolean sceneBodyLocked(long objectId);
+
+    /**
+     * Whether the body the editors currently act on is locked.
+     *
+     * <p>Asked so the workspace can withdraw the transform controls. The guards
+     * below JNI stay regardless: removing a control is not removing a guard.
+     */
+    static native boolean sceneActiveBodyIsLocked();
+
+    /**
+     * Locks or unlocks one body, as exactly one history transaction.
+     *
+     * <p>A locked body stays visible and stays pickable; what it refuses is
+     * being moved. Rename, Show/Hide, Duplicate and Unlock all remain
+     * available, and Delete is deliberately unchanged by lock.
+     *
+     * @return one of the {@code OBJCMD_*} constants
+     */
+    static native int sceneSetBodyLocked(long objectId, boolean locked);
+
+    /**
+     * Duplicates one body, as exactly one history transaction.
+     *
+     * <p>The copy gets a fresh ObjectId, the source's own representation truth,
+     * its placement, its visibility, its lock, a deterministic copy name and —
+     * when the source has one — a clone of its sculpt mesh. It does NOT get the
+     * source's sculpt Undo stack, which describes strokes made on the original.
+     * The copy becomes the active body.
+     *
+     * @return one of the {@code OBJCMD_*} constants
+     */
+    static native int sceneDuplicateBody(long objectId);
 
     // -----------------------------------------------------------------------
     // Construction history

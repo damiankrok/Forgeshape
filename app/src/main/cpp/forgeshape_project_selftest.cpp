@@ -1112,6 +1112,130 @@ std::vector<uint8_t> canonicalCadDependencyCycleBytes(const std::vector<uint8_t>
     return bytes;
 }
 
+// OBJECT STATE (Stage 018A): three Construction Bodies carrying, between them,
+// every piece of per-body state SCNE v2 adds -- a stored NAME, a HIDDEN body
+// and a LOCKED one. The compatibility fixture for the version bump, and the
+// proof that the PowerShell builder and this encoder still agree byte for byte
+// about a section neither had before.
+ProjectDocument canonicalObjectStateDocument() {
+    ProjectDocument document;
+    document.kind = ProjectKind::Construction;
+    document.hasConstruction = true;
+    document.scene.nextObjectId = 4;
+    document.scene.activeObjectId = 1;
+
+    ConstructionObjectState shared;
+    shared.box = BoxDimensionsMeters{2.0, 1.0, 0.5};
+    shared.cylinder = CylinderDimensionsMeters{1.0, 2.0};
+    shared.sphere = SphereDimensionsMeters{1.5};
+    shared.cone = ConeDimensionsMeters{1.0, 2.0};
+    shared.capsule = CapsuleDimensionsMeters{1.0, 2.0};
+    shared.plane = PlaneDimensionsMeters{2.0, 2.0};
+
+    // Named and LOCKED.
+    ProjectBodyPlacement first;
+    first.objectId = 1;
+    first.transform = placement(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0);
+    first.name = "housing";
+    first.locked = true;
+    document.scene.bodies.push_back(first);
+
+    // HIDDEN.
+    ProjectBodyPlacement second;
+    second.objectId = 2;
+    second.transform = placement(2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0);
+    second.visible = false;
+    document.scene.bodies.push_back(second);
+
+    // Plain, so the file also proves a v2 section still writes an unmarked
+    // body -- flags zero and a zero-length name.
+    ProjectBodyPlacement third;
+    third.objectId = 3;
+    third.transform = placement(-2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0);
+    document.scene.bodies.push_back(third);
+
+    for (ObjectId id = 1; id <= 3; ++id) {
+        ProjectConstructionBody construction;
+        construction.objectId = id;
+        construction.shape = shared;
+        construction.features.push_back(ProjectFeatureRecord{});
+        document.construction.bodies.push_back(construction);
+    }
+    return document;
+}
+
+// OBJECT STATE, BAD FLAGS: two plain bodies written at SCNE v2, with a RESERVED
+// flag bit set on the first. Derived from encoded bytes rather than from a
+// document, because the encoder refuses to write an illegal flag -- the same
+// reason `canonicalCadBadPlaneBytes` is derived. The PowerShell builder
+// CONSTRUCTS it with the bad value in place, and the two must still agree.
+//
+// The decoder must refuse it: a future flag this build cannot honour must never
+// be silently masked off.
+ProjectDocument canonicalObjectStateBadFlagsDocument() {
+    ProjectDocument document;
+    document.kind = ProjectKind::Construction;
+    document.hasConstruction = true;
+    document.scene.nextObjectId = 3;
+    document.scene.activeObjectId = 1;
+
+    ConstructionObjectState shared;
+    shared.box = BoxDimensionsMeters{2.0, 1.0, 0.5};
+    shared.cylinder = CylinderDimensionsMeters{1.0, 2.0};
+    shared.sphere = SphereDimensionsMeters{1.5};
+    shared.cone = ConeDimensionsMeters{1.0, 2.0};
+    shared.capsule = CapsuleDimensionsMeters{1.0, 2.0};
+    shared.plane = PlaneDimensionsMeters{2.0, 2.0};
+
+    ProjectBodyPlacement first;
+    first.objectId = 1;
+    first.transform = placement(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0);
+    // Marked only so the encoder is forced to v2; the flag byte is overwritten
+    // below with the reserved bit and nothing else.
+    first.locked = true;
+    document.scene.bodies.push_back(first);
+
+    ProjectBodyPlacement second;
+    second.objectId = 2;
+    second.transform = placement(2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0);
+    document.scene.bodies.push_back(second);
+
+    for (ObjectId id = 1; id <= 2; ++id) {
+        ProjectConstructionBody construction;
+        construction.objectId = id;
+        construction.shape = shared;
+        construction.features.push_back(ProjectFeatureRecord{});
+        document.construction.bodies.push_back(construction);
+    }
+    return document;
+}
+
+// The flags byte of the FIRST body in a v2 SCNE payload: 4 (bodyCount) + 8
+// (nextObjectId) + 8 (activeObjectId) + 8 (objectId) + 72 (nine binary64
+// placement values).
+constexpr size_t kSceneV2FirstBodyFlagsOffset = 4u + 8u + 8u + 8u + 72u;
+
+std::vector<uint8_t> canonicalObjectStateBadFlagsBytes(const std::vector<uint8_t>& good) {
+    std::vector<uint8_t> bytes = good;
+    // SCNE is written FIRST in canonical order, so its payload begins
+    // immediately after the file header and its own section header.
+    const size_t payload = kForgeHeaderBytes + kForgeSectionHeaderBytes;
+    size_t length = 0;
+    for (int i = 0; i < 8; ++i) {
+        length |= static_cast<size_t>(bytes[kForgeHeaderBytes + 8 + i]) << (8 * i);
+    }
+    if (payload + kSceneV2FirstBodyFlagsOffset >= bytes.size()) {
+        return bytes;
+    }
+    // 0x04 is reserved in v2. Written INSTEAD of the lock bit, so the only
+    // thing wrong with the file is the reserved bit itself.
+    bytes[payload + kSceneV2FirstBodyFlagsOffset] = 0x04u;
+    // Every length and checksum stays right, so only the reserved bit can
+    // refuse it -- the rule every corrupt fixture in this corpus follows.
+    refreshCadCrc(&bytes, payload, length);
+    return bytes;
+}
+
 // CAD BAD PLANE: the rectangle fixture with its workplane code set to 9 and
 // the CADB payload's CRC recomputed, so every length and checksum is right
 // and only the semantic check can refuse it. Derived from the encoded bytes
@@ -1150,6 +1274,8 @@ std::string g_cadFaceSideSha;
 std::string g_cadFaceChainSha;
 std::string g_cadBadFaceRefSha;
 std::string g_cadDependencyCycleSha;
+std::string g_objectStateSha;
+std::string g_objectStateBadFlagsSha;
 std::string g_mixedCadFaceSha;
 
 }  // namespace
@@ -1181,6 +1307,11 @@ const char* canonicalCadFaceChainFixtureSha256() { return g_cadFaceChainSha.c_st
 const char* canonicalCadBadFaceRefFixtureSha256() { return g_cadBadFaceRefSha.c_str(); }
 const char* canonicalCadDependencyCycleFixtureSha256() {
     return g_cadDependencyCycleSha.c_str();
+}
+
+const char* canonicalObjectStateFixtureSha256() { return g_objectStateSha.c_str(); }
+const char* canonicalObjectStateBadFlagsFixtureSha256() {
+    return g_objectStateBadFlagsSha.c_str();
 }
 const char* canonicalMixedCadFaceFixtureSha256() { return g_mixedCadFaceSha.c_str(); }
 const char* canonicalMixedImportedSculptFixtureSha256() {
@@ -1344,6 +1475,15 @@ int runProjectSelfTests(ProjectSelfTestResult* out, int maxOut) {
     g_mixedCadFaceSha = sha256Hex(mixedCadFaceBytes);
     g_cadBadFaceRefSha = sha256Hex(cadBadFaceRefBytes);
     g_cadDependencyCycleSha = sha256Hex(cadDependencyCycleBytes);
+    // Stage 018A: the two SCNE v2 fixtures. The good one exercises a name, a
+    // hidden body and a locked one; the bad one is the same shape with a
+    // RESERVED flag bit, which the decoder must refuse rather than mask off.
+    const std::vector<uint8_t> objectStateBytes =
+            encodeProjectV1(canonicalObjectStateDocument(), &why);
+    const std::vector<uint8_t> objectStateBadFlagsBytes = canonicalObjectStateBadFlagsBytes(
+            encodeProjectV1(canonicalObjectStateBadFlagsDocument(), &why));
+    g_objectStateSha = sha256Hex(objectStateBytes);
+    g_objectStateBadFlagsSha = sha256Hex(objectStateBadFlagsBytes);
     {
         // The CADB section's version word, read off the file: a face-supported
         // project writes v2, and the v1 corpus is untouched at v1.
@@ -1796,8 +1936,13 @@ int runProjectSelfTests(ProjectSelfTestResult* out, int maxOut) {
                         == ProjectCodecStatus::Ok);
 
         // ...but only while every REQUIRED section version is understood.
+        //
+        // The probe version must be one this build genuinely cannot read. SCNE
+        // v2 became a KNOWN version at Stage 018A (per-body visibility, lock
+        // and name), so this reaches past it rather than asserting that a
+        // version the reader now understands is refused.
         std::vector<uint8_t> newerRequiredSection = newerMinor;
-        newerRequiredSection[kForgeHeaderBytes + 4] = 2;  // SCNE sectionVersion
+        newerRequiredSection[kForgeHeaderBytes + 4] = 99;  // SCNE sectionVersion
         r.check("FSR1A_09_a_newer_required_section_version_is_refused",
                 decodeProject(newerRequiredSection.data(), newerRequiredSection.size(), &decoded)
                         == ProjectCodecStatus::UnsupportedSectionVersion);
@@ -2253,6 +2398,46 @@ int runProjectSelfTests(ProjectSelfTestResult* out, int maxOut) {
         r.check("CADA3_51_cad_dependency_cycle_fixture_matches_the_committed_digest",
                 g_cadDependencyCycleSha
                         == "88072d355efa54f95e6d68c10d15c81a9cfebc0e2ed1f231255ebe5a42b117f0");
+        // The two Stage 018A fixtures, which pin SCNE v2: the per-body flags
+        // byte, the name it owns for a non-imported body, and the refusal of a
+        // reserved flag bit. The PowerShell builder CONSTRUCTS the corrupt one
+        // with the bad value in place; this derives it from good bytes, because
+        // the encoder refuses to write an illegal flag -- and the two must
+        // still agree byte for byte.
+        r.check("OBJ018A_15_object_state_fixture_matches_the_committed_digest",
+                g_objectStateSha
+                        == "3c9bcd6305bcdc26ac2f6ad5db72d0f8a163acb26236a4e48f2afe12905ba608");
+        r.check("OBJ018A_16_object_state_bad_flags_fixture_matches_the_committed_digest",
+                g_objectStateBadFlagsSha
+                        == "b2cc2bf2eac579361111565cd9de24e535387928e1cbe916cc4aec1f118fd159");
+        {
+            // And the two round-trip claims the digests alone do not make: the
+            // good file decodes with exactly the state it carries, and the bad
+            // one is REFUSED rather than opened with the reserved bit dropped.
+            ProjectDocument stateDoc;
+            const ProjectDocument expected = canonicalObjectStateDocument();
+            ProjectCodecStatus stateWhy = ProjectCodecStatus::Ok;
+            const std::vector<uint8_t> stateBytes = encodeProjectV1(expected, &stateWhy);
+            r.check("OBJ018A_15_object_state_decodes_to_the_same_document",
+                    decodeProject(stateBytes.data(), stateBytes.size(), &stateDoc)
+                                == ProjectCodecStatus::Ok
+                        && sameProjectDocument(expected, stateDoc));
+            r.check("OBJ018A_15_object_state_carries_the_name_the_lock_and_the_hide",
+                    stateDoc.scene.bodies.size() == 3
+                        && stateDoc.scene.bodies[0].name == "housing"
+                        && stateDoc.scene.bodies[0].locked
+                        && stateDoc.scene.bodies[0].visible
+                        && !stateDoc.scene.bodies[1].visible
+                        && !stateDoc.scene.bodies[1].locked
+                        && stateDoc.scene.bodies[2].visible
+                        && stateDoc.scene.bodies[2].name.empty());
+            const std::vector<uint8_t> badBytes = canonicalObjectStateBadFlagsBytes(
+                    encodeProjectV1(canonicalObjectStateBadFlagsDocument(), &stateWhy));
+            ProjectDocument refusedDoc;
+            r.check("OBJ018A_16_a_reserved_scene_flag_bit_is_refused_not_masked",
+                    decodeProject(badBytes.data(), badBytes.size(), &refusedDoc)
+                        == ProjectCodecStatus::BadPayload);
+        }
         // The dispatch seam exists and answers for exactly one version. There
         // has never been a production format before v1, so there is nothing to
         // migrate FROM and no v0 branch is claimed.

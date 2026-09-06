@@ -34,6 +34,16 @@ bool sameSceneConstructionState(const SceneConstructionState& a,
         if (!sameConstructionPlacement(a.bodies[i].transform, b.bodies[i].transform)) {
             return false;
         }
+        // Stage 018A. Compared for EVERY body and compared exactly, so a
+        // Rename, a Show/Hide and a Lock/Unlock each record one step on the
+        // same terms a placement Apply does -- and so re-applying the value a
+        // body already has records nothing at all, which is the same no-op rule
+        // every other field here follows.
+        if (a.bodies[i].name != b.bodies[i].name
+            || a.bodies[i].visible != b.bodies[i].visible
+            || a.bodies[i].locked != b.bodies[i].locked) {
+            return false;
+        }
         // Shape is compared only where there is one. An Imported Mesh's
         // geometry cannot change without a new import, and an import creates a
         // body rather than reshaping one, so identity plus placement is the
@@ -61,6 +71,9 @@ SceneConstructionState captureSceneConstructionState(const ConstructionScene& sc
         captured.objectId = body.objectId();
         captured.representation = body.representation();
         captured.transform = body.transform().values();
+        captured.name = body.name();
+        captured.visible = body.visible();
+        captured.locked = body.locked();
         if (const ConstructionObject* source = body.constructionOrNull()) {
             captured.construction = source->captureState();
         } else if (const CadBody* cad = body.cadOrNull()) {
@@ -284,6 +297,16 @@ void ConstructionHistory::applyState(const SceneConstructionState& target,
             // point of hoisting it out of the Construction Source.
             body->transform().setValues(wanted.transform);
         }
+        // Stage 018A. Restored unconditionally rather than behind a "differs"
+        // test, because all three are plain assignments with no derived work
+        // behind them: there is no mesh to republish, no adjacency to rebuild
+        // and no revision to mint, so a comparison would cost more than the
+        // write it guarded. Restoring them here is the whole of their Undo and
+        // Redo -- an undone Rename gets its previous name back, an undone Hide
+        // returns to the snapshot, and an undone Lock accepts the gizmo again.
+        body->setName(wanted.name);
+        body->setVisible(wanted.visible);
+        body->setLocked(wanted.locked);
         if (shapeDiffers) {
             // The same stale-source bookkeeping an ordinary Construction edit
             // performs, and for the same reason: a Frozen Sculpt Mesh is never

@@ -282,6 +282,22 @@ bool cadFaceKindFromFileCode(uint8_t code, CadFaceKind* out) {
 // Whether any CAD body needs the v2 section: the presence of a face support is
 // the ONLY thing v2 records that v1 cannot, so a world-only CAD project stays
 // v1 and byte-identical to what CAD-R0 wrote.
+// Whether any body needs the v2 SCNE section: a hidden one, a locked one, or
+// one carrying a name SCNE owns (Stage 018A).
+//
+// An IMPORTED body's name is `IMPT`'s and is never written here, so an import
+// alone never promotes the section -- which is what keeps every `IMPT` fixture
+// byte-identical. A project of visible, unlocked, unnamed bodies stays at v1 for
+// the same reason a curveless CAD project stays at v1.
+bool sceneDocumentNeedsV2(const ProjectDocument& document) {
+    for (const ProjectBodyPlacement& body : document.scene.bodies) {
+        if (!body.visible || body.locked || !body.name.empty()) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool cadDocumentNeedsV2(const ProjectDocument& document) {
     for (const ProjectCadBody& body : document.cad.bodies) {
         if (body.state.sketch.hasFaceSupport) {
@@ -358,6 +374,9 @@ bool sameProjectDocument(const ProjectDocument& a, const ProjectDocument& b) {
     }
     for (size_t i = 0; i < a.scene.bodies.size(); ++i) {
         if (a.scene.bodies[i].objectId != b.scene.bodies[i].objectId
+            || a.scene.bodies[i].visible != b.scene.bodies[i].visible
+            || a.scene.bodies[i].locked != b.scene.bodies[i].locked
+            || a.scene.bodies[i].name != b.scene.bodies[i].name
             || !sameTransform(a.scene.bodies[i].transform, b.scene.bodies[i].transform)) {
             return false;
         }
@@ -696,6 +715,32 @@ ProjectCodecStatus validateProjectDocument(const ProjectDocument& document) {
         }
     }
 
+    // Stage 018A: the SCNE name has ONE owner per representation.
+    //
+    // `IMPT` has carried an imported object's name since `IMPORT-01A`, and
+    // Rename writes that same field rather than a second one, so an imported
+    // body's SCNE name is required to be EMPTY. A file that stated both would
+    // be two answers to what one body is called, and the next writer would have
+    // to pick one; refusing is the only reading that cannot drift.
+    //
+    // Asked after coverage is known, because "is this body imported" is what
+    // `covered` records. A body no branch claimed is skipped for the same
+    // reason the next paragraph gives: this build may simply not be able to
+    // evaluate its section, and that is not a statement about its name.
+    for (size_t i = 0; i < bodies.size(); ++i) {
+        if (bodies[i].name.empty()) {
+            continue;
+        }
+        if (covered[i] == 2) {
+            return ProjectCodecStatus::InvalidSemanticValue;  // IMPT already owns this name
+        }
+        // Held to the DOMAIN's own storability rule, exactly as IMPT's name is,
+        // so a file cannot carry a name Rename could not have produced.
+        if (!importedMeshNameIsStorable(bodies[i].name)) {
+            return ProjectCodecStatus::InvalidSemanticValue;
+        }
+    }
+
     // A body named by NEITHER branch is deliberately not refused here.
     //
     // It is a legal document: an optional section at a version this reader
@@ -805,6 +850,7 @@ std::vector<uint8_t> encodeProjectV1(const ProjectDocument& document,
         return {};
     }
 
+    const bool sceneV2 = sceneDocumentNeedsV2(document);
     std::vector<uint8_t> scenePayload;
     {
         ByteWriter out(scenePayload);
@@ -814,6 +860,17 @@ std::vector<uint8_t> encodeProjectV1(const ProjectDocument& document,
         for (const ProjectBodyPlacement& body : document.scene.bodies) {
             out.u64(body.objectId);
             writeTransform(out, body.transform);
+            if (sceneV2) {
+                // The flags byte, then the name -- length-prefixed exactly as
+                // IMPT's is, so there is one string encoding in this format and
+                // not two. A body whose name IMPT owns writes zero here.
+                out.u8(static_cast<uint8_t>((body.visible ? 0u : kSceneBodyFlagHidden)
+                                            | (body.locked ? kSceneBodyFlagLocked : 0u)));
+                out.u16(static_cast<uint16_t>(body.name.size()));
+                if (!body.name.empty()) {
+                    out.bytes(body.name.data(), body.name.size());
+                }
+            }
         }
     }
 
@@ -1007,7 +1064,9 @@ std::vector<uint8_t> encodeProjectV1(const ProjectDocument& document,
     // Canonical order, and it is part of the format rather than an accident of
     // this function: SCNE is what both project kinds share, CONS is the
     // Construction branch, SCUL the sculpt one.
-    appendSection(file, kSectionTagScene, kSceneSectionVersion, /*required=*/true, scenePayload);
+    appendSection(file, kSectionTagScene,
+                  sceneV2 ? kSceneSectionVersionV2 : kSceneSectionVersion,
+                  /*required=*/true, scenePayload);
     if (document.hasConstruction) {
         appendSection(file, kSectionTagConstruction, kConstructionSectionVersion,
                       /*required=*/document.kind == ProjectKind::Construction, constructionPayload);
@@ -1040,7 +1099,9 @@ std::vector<uint8_t> encodeProjectV1(const ProjectDocument& document,
 
 namespace {
 
-ProjectCodecStatus decodeScenePayload(ByteReader& in, ProjectSceneRecord* scene) {
+ProjectCodecStatus decodeScenePayload(ByteReader& in, ProjectSceneRecord* scene,
+                                      uint16_t sectionVersion) {
+    const bool v2 = sectionVersion >= kSceneSectionVersionV2;
     uint32_t bodyCount = 0;
     if (!in.u32(&bodyCount)) {
         return ProjectCodecStatus::Truncated;
@@ -1053,15 +1114,50 @@ ProjectCodecStatus decodeScenePayload(ByteReader& in, ProjectSceneRecord* scene)
     if (!in.u64(&scene->nextObjectId) || !in.u64(&scene->activeObjectId)) {
         return ProjectCodecStatus::Truncated;
     }
-    // 8 bytes of identity plus nine binary64 placement values per body.
-    const uint64_t needed = static_cast<uint64_t>(bodyCount) * (8ull + 9ull * 8ull);
+    // 8 bytes of identity plus nine binary64 placement values per body, and in
+    // v2 a flags byte and a name length as well. The name BYTES are not in this
+    // bound because they are variable; each one is length-checked against the
+    // remaining payload before it is read, exactly as IMPT's is.
+    const uint64_t perBody = 8ull + 9ull * 8ull + (v2 ? 3ull : 0ull);
+    const uint64_t needed = static_cast<uint64_t>(bodyCount) * perBody;
     if (needed > in.remaining()) {
         return ProjectCodecStatus::Truncated;
     }
     scene->bodies.resize(bodyCount);
     for (uint32_t i = 0; i < bodyCount; ++i) {
-        if (!in.u64(&scene->bodies[i].objectId)
-            || !readTransform(in, &scene->bodies[i].transform)) {
+        ProjectBodyPlacement& body = scene->bodies[i];
+        if (!in.u64(&body.objectId) || !readTransform(in, &body.transform)) {
+            return ProjectCodecStatus::Truncated;
+        }
+        if (!v2) {
+            // A v1 file states neither, and the DTO's own defaults are the
+            // answer: visible, unlocked, and named only where IMPT names it.
+            // That is the whole of backward compatibility -- there is no
+            // migration step and nothing is rewritten.
+            continue;
+        }
+        uint8_t flags = 0;
+        uint16_t nameBytes = 0;
+        if (!in.u8(&flags) || !in.u16(&nameBytes)) {
+            return ProjectCodecStatus::Truncated;
+        }
+        if ((flags & ~kSceneBodyFlagMask) != 0u) {
+            // A reserved bit is set. Refused rather than masked off: a future
+            // flag this build cannot honour must not be silently dropped.
+            return ProjectCodecStatus::BadPayload;
+        }
+        body.visible = (flags & kSceneBodyFlagHidden) == 0u;
+        body.locked = (flags & kSceneBodyFlagLocked) != 0u;
+        // Bounded before it is read, by the DOMAIN's own ceiling rather than a
+        // second number, so a fabricated length cannot make this allocate.
+        if (nameBytes > kMaxImportedMeshNameBytes) {
+            return ProjectCodecStatus::ImpossibleCount;
+        }
+        if (static_cast<uint64_t>(nameBytes) > in.remaining()) {
+            return ProjectCodecStatus::Truncated;
+        }
+        body.name.resize(nameBytes);
+        if (nameBytes > 0 && !in.raw(&body.name[0], nameBytes)) {
             return ProjectCodecStatus::Truncated;
         }
     }
@@ -1532,12 +1628,17 @@ ProjectCodecStatus decodeProjectV1(ByteReader& file, ProjectKind kind, uint8_t h
             versionOk = sectionVersion == kCadSectionVersion
                         || sectionVersion == kCadSectionVersionV2
                         || sectionVersion == kCadSectionVersionV3;
+        } else if (isScene) {
+            // SCNE became the second multi-version section at Stage 018A: v1 as
+            // every build before it wrote, and v2 carrying per-body visibility,
+            // lock and name.
+            versionOk = sectionVersion == kSceneSectionVersion
+                        || sectionVersion == kSceneSectionVersionV2;
         } else {
             const uint16_t known =
-                    isScene ? kSceneSectionVersion
-                            : (isConstruction ? kConstructionSectionVersion
-                                              : (isSculpt ? kSculptSectionVersion
-                                                          : kImportedSectionVersion));
+                    isConstruction ? kConstructionSectionVersion
+                                   : (isSculpt ? kSculptSectionVersion
+                                               : kImportedSectionVersion);
             versionOk = sectionVersion == known;
         }
         if (!versionOk) {
@@ -1557,7 +1658,7 @@ ProjectCodecStatus decodeProjectV1(ByteReader& file, ProjectKind kind, uint8_t h
 
         ProjectCodecStatus status = ProjectCodecStatus::Ok;
         if (isScene) {
-            status = decodeScenePayload(payload, &document.scene);
+            status = decodeScenePayload(payload, &document.scene, sectionVersion);
         } else if (isConstruction) {
             status = decodeConstructionPayload(payload, &document.construction);
             document.hasConstruction = (status == ProjectCodecStatus::Ok);

@@ -1,15 +1,24 @@
 #include "forgeshape_scene_selftest.h"
 
 #include <cmath>
+#include <cstring>
+#include <string>
 #include <vector>
 
+#include "forgeshape_body_commands.h"
+#include "forgeshape_body_delete.h"
 #include "forgeshape_camera.h"
 #include "forgeshape_construction.h"
+#include "forgeshape_history.h"
+#include "forgeshape_imported_mesh.h"
 #include "forgeshape_math.h"
 #include "forgeshape_mesh.h"
+#include "forgeshape_project_document.h"
+#include "forgeshape_project_state.h"
 #include "forgeshape_render_mesh.h"
 #include "forgeshape_scene.h"
 #include "forgeshape_sculpt.h"
+#include "forgeshape_sculpt_history.h"
 #include "forgeshape_selection.h"
 #include "forgeshape_transform.h"
 
@@ -29,6 +38,24 @@ struct Recorder {
         }
     }
 };
+
+// The version the SCNE section of an encoded project declares.
+//
+// Read straight out of the bytes rather than inferred, because "did this
+// project stay at v1" is precisely the promise that keeps the whole existing
+// fixture corpus byte-identical, and inferring it from the document would prove
+// nothing about what was written. The header is 28 bytes and every section
+// header begins with a 4-byte tag followed by its u16 version; SCNE is written
+// first, in canonical order.
+uint16_t sceneSectionVersionOf(const std::vector<uint8_t>& bytes) {
+    constexpr size_t kTagOffset = kForgeHeaderBytes;
+    if (bytes.size() < kTagOffset + 6u
+        || std::memcmp(bytes.data() + kTagOffset, kSectionTagScene, 4) != 0) {
+        return 0;
+    }
+    return static_cast<uint16_t>(bytes[kTagOffset + 4]
+                                 | (static_cast<uint16_t>(bytes[kTagOffset + 5]) << 8));
+}
 
 constexpr int kViewportWidth = 1080;
 constexpr int kViewportHeight = 2400;
@@ -553,6 +580,479 @@ int runSceneSelfTests(SceneSelfTestResult* out, int max) {
                 bodyA.frozenSculpt().sourceStale && !bodyB.frozenSculpt().sourceStale);
     }
 
+
+    // -----------------------------------------------------------------------
+    // OBJ018A: Rename, Show/Hide, Lock/Unlock and Duplicate (Stage 018A)
+    // -----------------------------------------------------------------------
+    //
+    // Every case builds its OWN scene and its OWN history, for the reason the
+    // file comment already gives: a suite that reads process-scoped state
+    // passes or fails on what something else left behind.
+
+    // OBJ018A-01: rename is one step, and Undo/Redo are exact.
+    {
+        ConstructionScene scene;
+        ConstructionHistory history(scene);
+        SceneObject& body = scene.bodyAt(0);
+        const std::string before = body.name();
+
+        const BodyCommandStatus ok =
+            renameSceneBody(body.objectId(), "gearbox", scene, history);
+        r.check("obj018a_01_rename_succeeds",
+                ok == BodyCommandStatus::Ok && body.name() == "gearbox");
+        r.check("obj018a_01_rename_is_exactly_one_step", history.undoDepth() == 1);
+
+        r.check("obj018a_01_undo_restores_the_previous_name",
+                history.undo() && scene.bodyAt(0).name() == before);
+        r.check("obj018a_01_redo_reapplies_the_new_name",
+                history.redo() && scene.bodyAt(0).name() == "gearbox");
+        r.check("obj018a_01_selection_stayed_on_the_same_object",
+                scene.activeBodyId() == body.objectId());
+
+        // Renaming to the name it already has is a no-op: `commitEdit` finds
+        // nothing different, so no second step is recorded.
+        const size_t depthBefore = history.undoDepth();
+        renameSceneBody(body.objectId(), "gearbox", scene, history);
+        r.check("obj018a_01_renaming_to_the_same_name_records_nothing",
+                history.undoDepth() == depthBefore);
+
+        // An empty name is refused rather than replaced by the fallback label.
+        r.check("obj018a_01_empty_name_is_refused",
+                renameSceneBody(body.objectId(), "   ", scene, history)
+                        == BodyCommandStatus::RefusedInvalidName
+                    && scene.bodyAt(0).name() == "gearbox"
+                    && history.undoDepth() == depthBefore);
+        r.check("obj018a_01_unknown_body_is_refused",
+                renameSceneBody(99999u, "x", scene, history)
+                    == BodyCommandStatus::UnknownBody);
+    }
+
+    // OBJ018A-02: a Unicode name survives the rename and the `.forge` round
+    // trip byte for byte, including a supplementary character.
+    {
+        ConstructionScene scene;
+        ConstructionHistory history(scene);
+        // A 4-byte sequence (U+1F9F2) beside accented Latin and CJK: exactly
+        // the shapes JNI's modified UTF-8 would have mangled.
+        const std::string name = "\xC3\xA9t\xC3\xA9-\xE9\x83\xA8\xE5\x93\x81-\xF0\x9F\xA7\xB2";
+        r.check("obj018a_02_unicode_name_is_accepted",
+                renameSceneBody(scene.bodyAt(0).objectId(), name, scene, history)
+                        == BodyCommandStatus::Ok
+                    && scene.bodyAt(0).name() == name);
+        // The UTF-16 boundary is the half a device cannot prove cheaply, so it
+        // is proven here: out and back must be the identical byte string.
+        const std::vector<uint16_t> units = utf8ToUtf16(name);
+        r.check("obj018a_02_utf16_round_trip_is_exact",
+                utf16ToUtf8(units.data(), units.size()) == name);
+
+        const ProjectDocument document =
+            captureProjectDocument(scene, ProjectKind::Construction);
+        ProjectCodecStatus why = ProjectCodecStatus::Ok;
+        const std::vector<uint8_t> bytes = encodeProjectV1(document, &why);
+        ProjectDocument decoded;
+        r.check("obj018a_02_unicode_name_survives_the_forge_round_trip",
+                why == ProjectCodecStatus::Ok && !bytes.empty()
+                    && decodeProject(bytes.data(), bytes.size(), &decoded)
+                           == ProjectCodecStatus::Ok
+                    && decoded.scene.bodies.size() == 1
+                    && decoded.scene.bodies[0].name == name);
+    }
+
+    // OBJ018A-03: a hidden body is in neither the renderer's list nor the
+    // picker's, because they are the same list.
+    {
+        ConstructionScene scene;
+        ConstructionHistory history(scene);
+        SceneObject& second = scene.addBody();
+        publishSceneObject(scene.bodyAt(0));
+        publishSceneObject(second);
+        const ObjectId hiddenId = second.objectId();
+
+        r.check("obj018a_03_both_bodies_are_in_the_snapshot_to_begin_with",
+                scene.snapshot().size() == 2);
+        r.check("obj018a_03_hide_succeeds",
+                setSceneBodyVisible(hiddenId, false, scene, history)
+                        == BodyCommandStatus::Ok
+                    && !scene.findBody(hiddenId)->visible());
+
+        const SceneSnapshot afterHide = scene.snapshot();
+        bool hiddenPresent = false;
+        for (const SceneDrawItem& item : afterHide) {
+            hiddenPresent = hiddenPresent || item.objectId == hiddenId;
+        }
+        r.check("obj018a_03_hidden_body_is_not_in_the_snapshot",
+                afterHide.size() == 1 && !hiddenPresent);
+        // The snapshot IS what CPU picking casts against, so this one fact is
+        // both halves of the contract. Nothing was destroyed to achieve it.
+        r.check("obj018a_03_hidden_body_is_still_in_the_scene",
+                scene.bodyCount() == 2 && scene.findBody(hiddenId) != nullptr);
+        r.check("obj018a_03_hidden_body_kept_its_published_revision",
+                scene.findBody(hiddenId)->meshStore().currentRevision() != kNoMeshRevision);
+        r.check("obj018a_03_showing_it_again_costs_no_republication",
+                setSceneBodyVisible(hiddenId, true, scene, history) == BodyCommandStatus::Ok
+                    && scene.snapshot().size() == 2);
+    }
+
+    // OBJ018A-04: visibility Undo/Redo, and hiding the ACTIVE body.
+    {
+        ConstructionScene scene;
+        ConstructionHistory history(scene);
+        SceneObject& second = scene.addBody();
+        publishSceneObject(scene.bodyAt(0));
+        publishSceneObject(second);
+        const ObjectId activeId = scene.activeBodyId();
+        r.check("obj018a_04_the_second_body_is_the_active_one",
+                activeId == second.objectId());
+
+        setSceneBodyVisible(activeId, false, scene, history);
+        r.check("obj018a_04_hide_is_exactly_one_step", history.undoDepth() == 1);
+        // The selection deliberately does NOT move: the row stays selected so
+        // Show is one tap away.
+        r.check("obj018a_04_hiding_the_active_body_does_not_move_the_selection",
+                scene.activeBodyId() == activeId);
+        r.check("obj018a_04_undo_shows_it_again",
+                history.undo() && scene.findBody(activeId)->visible()
+                    && scene.snapshot().size() == 2);
+        r.check("obj018a_04_redo_hides_it_again",
+                history.redo() && !scene.findBody(activeId)->visible()
+                    && scene.snapshot().size() == 1);
+        const size_t depth = history.undoDepth();
+        setSceneBodyVisible(activeId, false, scene, history);
+        r.check("obj018a_04_hiding_an_already_hidden_body_records_nothing",
+                history.undoDepth() == depth);
+    }
+
+    // OBJ018A-05: lock blocks the transform, and blocks nothing else.
+    {
+        ConstructionScene scene;
+        ConstructionHistory history(scene);
+        SceneObject& body = scene.bodyAt(0);
+        publishSceneObject(body);
+        const ObjectId id = body.objectId();
+
+        TransformValues moved = body.transform().values();
+        moved.positionX = 1.25;
+        body.transform().setValues(moved);
+        const TransformValues placed = body.transform().values();
+
+        r.check("obj018a_05_lock_succeeds",
+                setSceneBodyLocked(id, true, scene, history) == BodyCommandStatus::Ok
+                    && scene.findBody(id)->locked());
+        // Locked stays VISIBLE and stays in the snapshot: what lock removes is
+        // the ability to move, not the ability to see or select.
+        r.check("obj018a_05_a_locked_body_is_still_drawn_and_picked",
+                scene.snapshot().size() == 1);
+        r.check("obj018a_05_a_locked_body_keeps_its_placement",
+                sameConstructionPlacement(scene.findBody(id)->transform().values(), placed));
+        // The domain guard the JNI transform entry point asks. The refusal
+        // itself lives at that boundary; what is proven here is that the fact
+        // it reads is the one the command wrote.
+        r.check("obj018a_05_the_lock_is_readable_where_the_guard_asks_it",
+                scene.activeBody().locked());
+        r.check("obj018a_05_rename_still_works_on_a_locked_body",
+                renameSceneBody(id, "fixture", scene, history) == BodyCommandStatus::Ok
+                    && scene.findBody(id)->name() == "fixture");
+        r.check("obj018a_05_hide_still_works_on_a_locked_body",
+                setSceneBodyVisible(id, false, scene, history) == BodyCommandStatus::Ok);
+        r.check("obj018a_05_unlock_restores_the_transformable_state",
+                setSceneBodyLocked(id, false, scene, history) == BodyCommandStatus::Ok
+                    && !scene.findBody(id)->locked());
+    }
+
+    // OBJ018A-06: lock Undo/Redo.
+    {
+        ConstructionScene scene;
+        ConstructionHistory history(scene);
+        const ObjectId id = scene.bodyAt(0).objectId();
+        setSceneBodyLocked(id, true, scene, history);
+        r.check("obj018a_06_lock_is_exactly_one_step",
+                history.undoDepth() == 1 && scene.findBody(id)->locked());
+        r.check("obj018a_06_undo_unlocks", history.undo() && !scene.findBody(id)->locked());
+        r.check("obj018a_06_redo_locks_again", history.redo() && scene.findBody(id)->locked());
+        const size_t depth = history.undoDepth();
+        setSceneBodyLocked(id, true, scene, history);
+        r.check("obj018a_06_locking_an_already_locked_body_records_nothing",
+                history.undoDepth() == depth);
+    }
+
+    // OBJ018A-07/08: a duplicate gets a FRESH id and an exact copy of the
+    // source's own truth.
+    {
+        ConstructionScene scene;
+        ConstructionHistory history(scene);
+        SceneObject& source = scene.bodyAt(0);
+        source.construction().setPrimitive(PrimitiveSpec::forCylinder(0.4, 0.9));
+        TransformValues placement = source.transform().values();
+        placement.positionX = 0.5;
+        placement.rotationY = 37.0;
+        placement.scaleZ = 2.5;
+        source.transform().setValues(placement);
+        publishSceneObject(source);
+        const ObjectId sourceId = source.objectId();
+        renameSceneBody(sourceId, "bracket", scene, history);
+        setSceneBodyLocked(sourceId, true, scene, history);
+        const ObjectId allocatorBefore = scene.nextObjectId();
+
+        DuplicateBodyReport report;
+        r.check("obj018a_07_duplicate_succeeds",
+                duplicateSceneBody(sourceId, scene, history, &report)
+                        == BodyCommandStatus::Ok
+                    && scene.bodyCount() == 2);
+        r.check("obj018a_07_the_copy_has_a_fresh_object_id",
+                report.newBodyId != sourceId && report.newBodyId != kNoObject
+                    && report.newBodyId >= allocatorBefore);
+        r.check("obj018a_07_the_allocator_only_moved_forward",
+                scene.nextObjectId() > allocatorBefore);
+        r.check("obj018a_07_the_copy_is_the_active_body",
+                scene.activeBodyId() == report.newBodyId);
+
+        const SceneObject* copy = scene.findBody(report.newBodyId);
+        r.check("obj018a_08_the_copy_has_the_same_representation",
+                copy != nullptr && copy->representation() == source.representation());
+        r.check("obj018a_08_the_copy_has_the_same_shape",
+                copy != nullptr
+                    && sameConstructionShape(copy->construction().captureState(),
+                                             scene.findBody(sourceId)
+                                                 ->construction().captureState()));
+        r.check("obj018a_08_the_copy_has_the_same_placement",
+                copy != nullptr
+                    && sameConstructionPlacement(copy->transform().values(), placement));
+        r.check("obj018a_08_the_copy_carries_the_lock",
+                copy != nullptr && copy->locked());
+        r.check("obj018a_08_the_copy_has_a_deterministic_copy_name",
+                copy != nullptr && copy->name() == "bracket copy");
+        r.check("obj018a_08_the_copy_published_its_own_geometry",
+                copy != nullptr && copy->meshStore().currentRevision() != kNoMeshRevision);
+        r.check("obj018a_08_the_source_is_untouched",
+                scene.findBody(sourceId)->name() == "bracket"
+                    && sameConstructionPlacement(
+                           scene.findBody(sourceId)->transform().values(), placement));
+        // A second copy disambiguates rather than colliding.
+        DuplicateBodyReport second;
+        duplicateSceneBody(sourceId, scene, history, &second);
+        r.check("obj018a_08_a_second_copy_gets_the_next_ordinal",
+                scene.findBody(second.newBodyId) != nullptr
+                    && scene.findBody(second.newBodyId)->name() == "bracket copy 2");
+    }
+
+    // OBJ018A-09: Duplicate is one step; Undo removes ONLY the copy and Redo
+    // brings back the SAME identity.
+    {
+        ConstructionScene scene;
+        ConstructionHistory history(scene);
+        publishSceneObject(scene.bodyAt(0));
+        const ObjectId sourceId = scene.bodyAt(0).objectId();
+
+        DuplicateBodyReport report;
+        duplicateSceneBody(sourceId, scene, history, &report);
+        r.check("obj018a_09_duplicate_is_exactly_one_step",
+                history.undoDepth() == 1 && scene.bodyCount() == 2);
+        r.check("obj018a_09_undo_removes_only_the_copy",
+                history.undo() && scene.bodyCount() == 1
+                    && scene.findBody(sourceId) != nullptr
+                    && scene.findBody(report.newBodyId) == nullptr);
+        r.check("obj018a_09_redo_restores_the_same_identity",
+                history.redo() && scene.bodyCount() == 2
+                    && scene.findBody(report.newBodyId) != nullptr);
+        // The id allocator is never rolled back: the undone creation's id is
+        // restored BY NAME and a later creation mints a fresh one.
+        const ObjectId afterRedo = scene.nextObjectId();
+        scene.addBody();
+        r.check("obj018a_09_the_next_creation_does_not_reuse_the_copys_id",
+                scene.bodyAt(2).objectId() != report.newBodyId
+                    && scene.bodyAt(2).objectId() >= afterRedo);
+    }
+
+    // OBJ018A-10: a duplicate carries the retained sculpt GEOMETRY and does not
+    // carry the source's sculpt Undo stack.
+    {
+        ConstructionScene scene;
+        ConstructionHistory history(scene);
+        SceneObject& source = scene.bodyAt(0);
+        publishSceneObject(source);
+        ConstructionMesh seed;
+        r.check("obj018a_10_the_source_can_be_frozen",
+                buildSculptSourceMesh(source, &seed)
+                    && source.frozenSculpt().mesh.freezeFrom(seed, source.objectId()));
+
+        // A real deformation, so the copy has something distinctive to carry.
+        SculptMesh& sourceMesh = source.frozenSculpt().mesh;
+        const Vec3 moved = vec3Add(sourceMesh.vertexPosition(0), Vec3{0.0f, 0.37f, 0.0f});
+        sourceMesh.setVertexPosition(0, moved);
+        sourceMesh.advanceRevision();
+        // One entry on the source's own stack, which the copy must NOT inherit.
+        SculptStrokeDelta stroke;
+        stroke.vertexIndices = {0u};
+        stroke.beforePositions = {Vec3{moved.x, moved.y - 0.37f, moved.z}};
+        stroke.afterPositions = {moved};
+        stroke.beforeHasEdits = false;
+        stroke.afterHasEdits = true;
+        source.frozenSculpt().history.record(stroke);
+        const uint32_t sourceVertices = sourceMesh.vertexCount();
+
+        DuplicateBodyReport report;
+        duplicateSceneBody(source.objectId(), scene, history, &report);
+        const SceneObject* copy = scene.findBody(report.newBodyId);
+        r.check("obj018a_10_the_copy_owns_a_frozen_sculpt_mesh",
+                report.clonedSculptMesh && copy != nullptr
+                    && copy->frozenSculpt().mesh.frozen());
+        r.check("obj018a_10_the_copy_carries_the_deformed_geometry",
+                copy != nullptr && copy->frozenSculpt().mesh.vertexCount() == sourceVertices
+                    && std::fabs(copy->frozenSculpt().mesh.vertexPosition(0).y - moved.y) < 1e-5f);
+        r.check("obj018a_10_the_copys_mesh_wears_the_copys_identity",
+                copy != nullptr && copy->frozenSculpt().mesh.objectId() == report.newBodyId);
+        r.check("obj018a_10_the_copy_reports_the_edited_fact",
+                copy != nullptr && copy->frozenSculpt().mesh.hasEdits());
+        // The whole point of this case: geometry came over, the STACK did not.
+        r.check("obj018a_10_the_copy_has_an_empty_sculpt_history",
+                copy != nullptr && copy->frozenSculpt().history.undoDepth() == 0
+                    && copy->frozenSculpt().history.redoDepth() == 0);
+        r.check("obj018a_10_the_sources_sculpt_history_is_untouched",
+                source.frozenSculpt().history.undoDepth() == 1);
+    }
+
+    // OBJ018A-12: a `.forge` file written before Stage 018A loads visible and
+    // unlocked, and stays BYTE-IDENTICAL because it never reaches v2.
+    {
+        ConstructionScene scene;
+        publishSceneObject(scene.bodyAt(0));
+        scene.addBody();
+        publishSceneObject(scene.bodyAt(1));
+        const ProjectDocument plain =
+            captureProjectDocument(scene, ProjectKind::Construction);
+        ProjectCodecStatus why = ProjectCodecStatus::Ok;
+        const std::vector<uint8_t> bytes = encodeProjectV1(plain, &why);
+        r.check("obj018a_12_a_plain_project_still_encodes",
+                why == ProjectCodecStatus::Ok && !bytes.empty());
+        // The section version is the fact: an unhidden, unlocked, unnamed
+        // project must stay at SCNE v1, which is what keeps the whole existing
+        // fixture corpus byte-identical.
+        r.check("obj018a_12_a_plain_project_stays_at_scne_v1",
+                sceneSectionVersionOf(bytes) == kSceneSectionVersion);
+
+        ProjectDocument decoded;
+        r.check("obj018a_12_a_v1_file_decodes",
+                decodeProject(bytes.data(), bytes.size(), &decoded) == ProjectCodecStatus::Ok
+                    && decoded.scene.bodies.size() == 2);
+        bool allDefault = true;
+        for (const ProjectBodyPlacement& body : decoded.scene.bodies) {
+            allDefault = allDefault && body.visible && !body.locked && body.name.empty();
+        }
+        r.check("obj018a_12_a_v1_file_loads_visible_and_unlocked", allDefault);
+
+        // And applying it to a live scene really does leave both defaults.
+        ConstructionScene target(NoProjectTag{});
+        ConstructionHistory targetHistory(target);
+        SculptSession session;
+        r.check("obj018a_12_a_v1_file_applies_with_the_defaults",
+                loadProjectDocument(decoded, target, session, targetHistory)
+                        == ProjectCodecStatus::Ok
+                    && target.bodyCount() == 2 && target.bodyAt(0).visible()
+                    && !target.bodyAt(0).locked() && target.bodyAt(1).visible()
+                    && !target.bodyAt(1).locked());
+    }
+
+    // OBJ018A-13: visibility, lock and name round-trip through `.forge`, and
+    // the section is promoted to v2 only when one of them needs it.
+    {
+        ConstructionScene scene;
+        ConstructionHistory history(scene);
+        publishSceneObject(scene.bodyAt(0));
+        SceneObject& second = scene.addBody();
+        publishSceneObject(second);
+        const ObjectId firstId = scene.bodyAt(0).objectId();
+        const ObjectId secondId = second.objectId();
+        renameSceneBody(firstId, "housing", scene, history);
+        setSceneBodyVisible(secondId, false, scene, history);
+        setSceneBodyLocked(firstId, true, scene, history);
+
+        const ProjectDocument document =
+            captureProjectDocument(scene, ProjectKind::Construction);
+        ProjectCodecStatus why = ProjectCodecStatus::Ok;
+        const std::vector<uint8_t> bytes = encodeProjectV1(document, &why);
+        r.check("obj018a_13_a_project_with_state_encodes",
+                why == ProjectCodecStatus::Ok && !bytes.empty());
+        r.check("obj018a_13_it_is_promoted_to_scne_v2",
+                sceneSectionVersionOf(bytes) == kSceneSectionVersionV2);
+
+        ProjectDocument decoded;
+        r.check("obj018a_13_it_decodes",
+                decodeProject(bytes.data(), bytes.size(), &decoded) == ProjectCodecStatus::Ok);
+        r.check("obj018a_13_the_document_round_trips_exactly",
+                sameProjectDocument(document, decoded));
+
+        ConstructionScene target(NoProjectTag{});
+        ConstructionHistory targetHistory(target);
+        SculptSession session;
+        r.check("obj018a_13_the_state_reaches_the_live_scene",
+                loadProjectDocument(decoded, target, session, targetHistory)
+                        == ProjectCodecStatus::Ok
+                    && target.bodyCount() == 2
+                    && target.bodyAt(0).name() == "housing"
+                    && target.bodyAt(0).locked() && target.bodyAt(0).visible()
+                    && !target.bodyAt(1).visible() && !target.bodyAt(1).locked());
+        // A load starts a fresh history, exactly as it always did.
+        r.check("obj018a_13_a_load_starts_a_fresh_history",
+                targetHistory.undoDepth() == 0 && targetHistory.redoDepth() == 0);
+        // Re-encoding what came back must reproduce the same bytes: the writer
+        // is deterministic and v2 does not break that.
+        const std::vector<uint8_t> again =
+            encodeProjectV1(captureProjectDocument(target, ProjectKind::Construction), &why);
+        r.check("obj018a_13_the_writer_is_still_deterministic",
+                why == ProjectCodecStatus::Ok && again == bytes);
+
+        // The fingerprint moves for each of the three, because all three are
+        // project truth and each must earn its own checkpoint.
+        ConstructionScene fp;
+        ConstructionHistory fpHistory(fp);
+        publishSceneObject(fp.bodyAt(0));
+        const uint64_t base = projectSemanticFingerprint(fp, ProjectKind::Construction);
+        renameSceneBody(fp.bodyAt(0).objectId(), "named", fp, fpHistory);
+        const uint64_t named = projectSemanticFingerprint(fp, ProjectKind::Construction);
+        setSceneBodyVisible(fp.bodyAt(0).objectId(), false, fp, fpHistory);
+        const uint64_t hidden = projectSemanticFingerprint(fp, ProjectKind::Construction);
+        setSceneBodyLocked(fp.bodyAt(0).objectId(), true, fp, fpHistory);
+        const uint64_t locked = projectSemanticFingerprint(fp, ProjectKind::Construction);
+        r.check("obj018a_13_each_command_moves_the_fingerprint",
+                named != base && hidden != named && locked != hidden);
+    }
+
+    // OBJ018A-14: Delete is not changed by any of this.
+    {
+        ConstructionScene scene;
+        ConstructionHistory history(scene);
+        publishSceneObject(scene.bodyAt(0));
+        SceneObject& second = scene.addBody();
+        publishSceneObject(second);
+        const ObjectId firstId = scene.bodyAt(0).objectId();
+        const ObjectId secondId = second.objectId();
+
+        // A hidden and a locked body delete exactly as an ordinary one does:
+        // lock is about MOVING, and this stage does not redefine Delete.
+        setSceneBodyVisible(secondId, false, scene, history);
+        setSceneBodyLocked(secondId, true, scene, history);
+        const size_t depthBefore = history.undoDepth();
+        DeleteBodyReport report;
+        r.check("obj018a_14_a_hidden_locked_body_still_deletes",
+                deleteSceneBody(secondId, scene, history, &report) == DeleteBodyStatus::Ok
+                    && scene.bodyCount() == 1);
+        r.check("obj018a_14_delete_is_still_exactly_one_step",
+                history.undoDepth() == depthBefore + 1);
+        r.check("obj018a_14_undo_restores_the_same_object_with_its_state",
+                history.undo() && scene.bodyCount() == 2
+                    && scene.findBody(secondId) != nullptr
+                    && !scene.findBody(secondId)->visible()
+                    && scene.findBody(secondId)->locked());
+        r.check("obj018a_14_redo_removes_it_again",
+                history.redo() && scene.bodyCount() == 1
+                    && scene.findBody(secondId) == nullptr);
+        // And the last-body refusal is untouched.
+        r.check("obj018a_14_the_last_body_is_still_refused",
+                deleteSceneBody(firstId, scene, history) == DeleteBodyStatus::RefusedLastBody
+                    && scene.bodyCount() == 1);
+        r.check("obj018a_14_the_selection_fallback_is_unchanged",
+                scene.activeBodyId() == firstId);
+    }
     return r.n;
 }
 

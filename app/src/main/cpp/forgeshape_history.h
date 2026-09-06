@@ -46,6 +46,7 @@
 #include <cstddef>
 #include <deque>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "forgeshape_construction.h"
@@ -84,6 +85,21 @@ struct BodyConstructionState {
     // exactly this, so a step holds the truth and not a product of it.
     CadBodyState cad{};
     TransformValues transform{};
+    // Stage 018A: the three representation-neutral facts about a body that are
+    // project truth and are not geometry.
+    //
+    // They are here for EVERY body, on exactly the terms `transform` is: a body
+    // has a name, a visibility and a lock because it is a body, whatever
+    // generates its geometry. Carrying them in the step is the whole of their
+    // Undo/Redo -- there is no per-command inverse, because the history is a
+    // snapshot and a snapshot that includes them restores them.
+    //
+    // Bounded like the rest of a step: a name is capped by the domain's own
+    // name rule (kMaxImportedMeshNameBytes) and the two flags are one byte
+    // each, so a step stays proportional to the scene and holds no geometry.
+    std::string name;
+    bool visible = true;
+    bool locked = false;
 };
 
 // The whole scene's Construction-domain state: which bodies exist, in what
