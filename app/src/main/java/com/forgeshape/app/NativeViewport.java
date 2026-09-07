@@ -2181,6 +2181,7 @@ final class NativeViewport {
     static final int CAD_INVALID_SPLINE = 27;
     static final int CAD_SKETCH_NOT_EMPTY = 28;
     static final int CAD_DEPENDENT_FACE_LOST = 29;
+    static final int CAD_INVALID_EXTRUDE_EXTENT = 30;
 
     /** The three principal workplanes, as the native Workplane index. */
     static final int WORKPLANE_XY = 0;
@@ -2258,9 +2259,10 @@ final class NativeViewport {
      * land between two of them. Every slot is DERIVED below JNI on every read —
      * the shell stores no depth, no direction and no anchor.
      */
-    static final int CAD_EXTRUDE_SIZE = 12;
+    static final int CAD_EXTRUDE_SIZE = 21;
     /** 1 when the canvas manipulator is live; 0 is the whole reason it is absent. */
     static final int CAD_EXTRUDE_ACTIVE = 0;
+    /** The PRIMARY side's distance: the whole depth of a One Side extrusion. */
     static final int CAD_EXTRUDE_DEPTH = 1;
     static final int CAD_EXTRUDE_DIRECTION = 2;
     static final int CAD_EXTRUDE_PROFILE = 3;
@@ -2278,6 +2280,32 @@ final class NativeViewport {
     static final int CAD_EXTRUDE_CLAMP_NONE = 0;
     static final int CAD_EXTRUDE_CLAMP_LOW = 1;
     static final int CAD_EXTRUDE_CLAMP_HIGH = 2;
+
+    // `CAD-EXT-R1`. The slots above describe the PRIMARY side — the only one a
+    // One Side extrusion has — so nothing that read them before had to change.
+    /** The extent mode: {@link #EXTENT_ONE_SIDE}, {@code _SYMMETRIC}, {@code _TWO_SIDES}. */
+    static final int CAD_EXTRUDE_EXTENT = 12;
+    /** The +N distance, in metres. */
+    static final int CAD_EXTRUDE_POSITIVE = 13;
+    /** The -N distance, in metres. */
+    static final int CAD_EXTRUDE_NEGATIVE = 14;
+    /** 1 when the SECOND side exists and its anchor projects. 0 means HIDE. */
+    static final int CAD_EXTRUDE_SECOND_ON_SCREEN = 15;
+    static final int CAD_EXTRUDE_SECOND_LABEL_X = 16;
+    static final int CAD_EXTRUDE_SECOND_LABEL_Y = 17;
+    static final int CAD_EXTRUDE_SECOND_TIP_X = 18;
+    static final int CAD_EXTRUDE_SECOND_TIP_Y = 19;
+    /** Which side a live drag captured: 0 none, 1 the +N side, 2 the -N side. */
+    static final int CAD_EXTRUDE_DRAG_SIDE = 20;
+
+    /** Extent modes, in the native enum's own order. */
+    static final int EXTENT_ONE_SIDE = 0;
+    static final int EXTENT_SYMMETRIC = 1;
+    static final int EXTENT_TWO_SIDES = 2;
+
+    /** Side selectors for {@link #sketchSetExtrudeSide}. */
+    static final int EXTRUDE_SIDE_POSITIVE = 1;
+    static final int EXTRUDE_SIDE_NEGATIVE = 2;
 
     /** Slots of {@link #sketchProfileInfo}. */
     static final int SKETCH_PROFILE_INFO_SIZE = 3;
@@ -2404,6 +2432,27 @@ final class NativeViewport {
     static native int sketchFlipExtrudeDirection();
 
     /**
+     * Changes the extent mode (`CAD-EXT-R1`): {@link #EXTENT_ONE_SIDE},
+     * {@link #EXTENT_SYMMETRIC} or {@link #EXTENT_TWO_SIDES}.
+     *
+     * <p>The distances carry across by the deterministic transition policy
+     * below JNI; the shell holds no draft extent and no draft distance, and a
+     * refusal changes nothing at all.
+     */
+    static native int sketchSetExtrudeExtent(int mode);
+
+    /**
+     * Writes ONE side's distance in metres — {@link #EXTRUDE_SIDE_POSITIVE}
+     * along the support normal, {@link #EXTRUDE_SIDE_NEGATIVE} against it.
+     *
+     * <p>The same door an arrow drag lands through below JNI, so a typed value
+     * and a dragged one pass exactly the same validation. In Symmetric either
+     * side writes the one shared distance; in One Side a write to the empty
+     * side is refused by name.
+     */
+    static native int sketchSetExtrudeSide(int side, double meters);
+
+    /**
      * Where a committed CAD Body's retained sketch is on screen — {@code out[0]}
      * and {@code out[1]} in view-local pixels, {@code out[2]} the same
      * camera-attached multiplier the manipulator cluster is drawn at
@@ -2485,8 +2534,9 @@ final class NativeViewport {
     static native boolean sceneActiveBodyIsFaceSupportedCad();
 
     /** Slots of {@link #cadState}. */
-    static final int CAD_STATE_SIZE = 8;
+    static final int CAD_STATE_SIZE = 9;
     static final int CAD_PLANE = 0;
+    /** The PRIMARY authored distance: One Side's depth, Symmetric's per side. */
     static final int CAD_DEPTH = 1;
     static final int CAD_DIRECTION = 2;
     static final int CAD_PROFILE_KIND = 3;
@@ -2496,6 +2546,8 @@ final class NativeViewport {
     static final int CAD_SECONDARY_SIZE = 5;
     static final int CAD_ENTITY_COUNT = 6;
     static final int CAD_PROFILE_VERTICES = 7;
+    /** The body's extent mode (`CAD-EXT-R1`), one of the EXTENT_* values. */
+    static final int CAD_STATE_EXTENT = 8;
     static final int CAD_PROFILE_NONE = 0;
     static final int CAD_PROFILE_RECTANGLE = 1;
     static final int CAD_PROFILE_CIRCLE = 2;

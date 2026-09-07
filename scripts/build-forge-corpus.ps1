@@ -767,6 +767,200 @@ function New-CadBadSplineFile {
     return New-ForgeFile 1 @($scne, $cadb) 8
 }
 
+
+# ---------------------------------------------------------------------------
+# CADB v4 (CAD-EXT-R1): the extrusion's extent
+# ---------------------------------------------------------------------------
+#
+# The v4 record is the v3 record with two fields: an extentCode BEFORE the
+# direction it qualifies, and the -N distance AFTER the depth. v4 ALWAYS writes
+# the v2 support block and understands the v3 entity kinds, because a version is
+# a superset of the one below it -- see DATA_PACKAGE_SPEC.md 7e.
+#
+#   extentCode  1 One Side, 2 Symmetric, 3 Two Sides
+#   Depth       the PRIMARY distance: One Side's length on the direction's side,
+#               Symmetric's length on EACH side, Two Sides' +N distance (A)
+#   Second      the -N distance (B), Two Sides only; exactly 0.0 otherwise
+#
+# One Side is exactly the direction + depth pair every version since v1 has
+# carried, which is what lets a One Side project keep the bytes it always had.
+function New-CadPayloadV4 {
+    param($Bodies)
+    $p = New-ByteBuffer
+    Add-U32 $p ([uint32] $Bodies.Count)
+    foreach ($body in $Bodies) {
+        Add-U64 $p ([uint64] $body.ObjectId)
+        Add-U8  $p $body.PlaneCode
+        if ($null -ne $body.Support) {
+            Add-U8  $p 1
+            Add-U64 $p ([uint64] $body.Support.ProducerObjectId)
+            Add-U32 $p ([uint32] $body.Support.FeatureId)
+            Add-U8  $p $body.Support.FaceKindCode
+            Add-U32 $p ([uint32] $body.Support.EdgeEntityId)
+            Add-U32 $p ([uint32] $body.Support.EdgeLocalIndex)
+            Add-U64 $p ([uint64] $body.Support.LineageToken)
+        } else {
+            Add-U8  $p 0
+        }
+        Add-U32 $p ([uint32] $body.NextEntityId)
+        Add-U32 $p ([uint32] $body.ProfileEntityId)
+        Add-U8  $p $(if ($null -ne $body.ExtentCode) { $body.ExtentCode } else { 1 })
+        Add-U8  $p $body.DirectionCode
+        Add-F64 $p $body.Depth
+        Add-F64 $p $(if ($null -ne $body.Second) { $body.Second } else { 0.0 })
+        $entities = @($body.Entities)
+        Add-U32 $p ([uint32] $entities.Count)
+        foreach ($entity in $entities) {
+            Add-U32 $p ([uint32] $entity.Id)
+            Add-U8  $p $entity.KindCode
+            switch ($entity.KindCode) {
+                1 { foreach ($value in $entity.Values) { Add-F64 $p $value } }
+                2 {
+                    Add-U8  $p $(if ($entity.Closed) { 1 } else { 0 })
+                    Add-U32 $p ([uint32] ($entity.Values.Count / 2))
+                    foreach ($value in $entity.Values) { Add-F64 $p $value }
+                }
+                3 { foreach ($value in $entity.Values) { Add-F64 $p $value } }
+                4 { foreach ($value in $entity.Values) { Add-F64 $p $value } }
+                5 { foreach ($value in $entity.Values) { Add-F64 $p $value } }
+                6 {
+                    Add-U32 $p ([uint32] ($entity.Values.Count / 2))
+                    foreach ($value in $entity.Values) { Add-F64 $p $value }
+                }
+            }
+        }
+    }
+    return $p.ToArray()
+}
+
+# A circle body, centred at the origin. The v4 corpus uses one so the new
+# extent is pinned over a curved profile as well as a straight one.
+function New-CircleBody {
+    param([int] $ObjectId, [int] $PlaneCode, [double] $Radius, [double] $Depth,
+          [int] $DirectionCode)
+    return [pscustomobject]@{
+        ObjectId = $ObjectId; PlaneCode = $PlaneCode; Support = $null
+        NextEntityId = 2; ProfileEntityId = 1; DirectionCode = $DirectionCode; Depth = $Depth
+        ExtentCode = 1; Second = 0.0
+        Entities = @([pscustomobject]@{ Id = 1; KindCode = 4; Values = @(0.0, 0.0, $Radius) })
+    }
+}
+
+# The two extent shapes, applied to a body built by any of the helpers above.
+# Symmetric and Two Sides both canonicalise the direction to 1, because a mode
+# that names both sides has no side left for a direction to choose.
+function Set-SymmetricExtent {
+    param($Body, [double] $PerSide)
+    $Body.ExtentCode = 2
+    $Body.DirectionCode = 1
+    $Body.Depth = $PerSide
+    $Body.Second = 0.0
+    return $Body
+}
+
+function Set-TwoSidesExtent {
+    param($Body, [double] $A, [double] $B)
+    $Body.ExtentCode = 3
+    $Body.DirectionCode = 1
+    $Body.Depth = $A
+    $Body.Second = $B
+    return $Body
+}
+
+# A rectangle body carrying the v4 extent fields, so the extent helpers above
+# have somewhere to write. Identical to New-RectangleBody otherwise.
+function New-ExtentRectangleBody {
+    param([int] $ObjectId, [int] $PlaneCode, [double] $Width, [double] $Height,
+          [double] $Depth, [int] $DirectionCode)
+    $body = New-RectangleBody $ObjectId $PlaneCode 0.0 0.0 $Width $Height $Depth $DirectionCode
+    return ($body | Add-Member -NotePropertyName ExtentCode -NotePropertyValue 1 -PassThru |
+        Add-Member -NotePropertyName Second -NotePropertyValue 0.0 -PassThru)
+}
+
+# CAD SYMMETRIC: one rectangle body reaching 0.75 m each side of its XY sketch
+# plane. The smallest v4 file there is.
+function New-CadSymmetricFile {
+    $sceneBodies = @([pscustomobject]@{ ObjectId = 1; Transform = $script:IdentityPlacement })
+    $body = Set-SymmetricExtent (New-ExtentRectangleBody 1 1 2.0 1.0 1.0 1) 0.75
+    $scne = New-Section 'SCNE' 1 $true (New-ScenePayload $sceneBodies 2 1)
+    $cadb = New-Section 'CADB' 4 $true (New-CadPayloadV4 @($body))
+    return New-ForgeFile 1 @($scne, $cadb) 8
+}
+
+# CAD TWO SIDES: one circle body on XZ with two UNEQUAL distances -- 1.25 m
+# along the normal and 0.5 m against it.
+function New-CadTwoSidesFile {
+    $sceneBodies = @([pscustomobject]@{ ObjectId = 1; Transform = $script:IdentityPlacement })
+    $body = Set-TwoSidesExtent (New-CircleBody 1 2 0.5 1.0 1) 1.25 0.5
+    $scne = New-Section 'SCNE' 1 $true (New-ScenePayload $sceneBodies 2 1)
+    $cadb = New-Section 'CADB' 4 $true (New-CadPayloadV4 @($body))
+    return New-ForgeFile 1 @($scne, $cadb) 8
+}
+
+# CAD FACE EXTENT: a One Side producer with a SYMMETRIC dependent on its far cap
+# and a TWO SIDES dependent on one of its sides -- v4 carrying a v2 support
+# block, which is the whole point of a version being a superset.
+function New-CadFaceExtentFile {
+    $sceneBodies = @(
+        [pscustomobject]@{ ObjectId = 1; Transform = $script:IdentityPlacement },
+        [pscustomobject]@{ ObjectId = 2; Transform = $script:IdentityPlacement },
+        [pscustomobject]@{ ObjectId = 3; Transform = $script:IdentityPlacement }
+    )
+    $producer = New-ExtentRectangleBody 1 1 4.0 4.0 1.0 1
+    $onCap = Set-SymmetricExtent (New-ExtentRectangleBody 2 1 1.0 1.0 1.0 1) 0.25
+    $onCap.Support = New-RectangleFaceSupport 1 2 0 0
+    $onSide = Set-TwoSidesExtent (New-ExtentRectangleBody 3 1 0.5 0.5 1.0 1) 0.375 0.125
+    $onSide.Support = New-RectangleFaceSupport 1 3 1 1
+    $scne = New-Section 'SCNE' 1 $true (New-ScenePayload $sceneBodies 4 1)
+    $cadb = New-Section 'CADB' 4 $true (New-CadPayloadV4 @($producer, $onCap, $onSide))
+    return New-ForgeFile 1 @($scne, $cadb) 8
+}
+
+# MIXED CAD EXTENT: a legacy ONE SIDE body beside a Symmetric and a Two Sides
+# one, on the three world planes, with a sparse CONS next to them. The fixture
+# that proves a v4 section still carries the One Side pair unchanged.
+function New-MixedCadExtentFile {
+    $sceneBodies = @(
+        [pscustomobject]@{ ObjectId = 1; Transform = $script:IdentityPlacement },
+        [pscustomobject]@{ ObjectId = 2; Transform = @(2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0) },
+        [pscustomobject]@{ ObjectId = 3; Transform = @(-2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0) },
+        [pscustomobject]@{ ObjectId = 4; Transform = @(0.0, 3.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0) }
+    )
+    $sourceBodies = @(
+        [pscustomobject]@{ ObjectId = 1; PrimitiveCode = 1
+                           Parameters = $script:CanonicalSharedParameters
+                           Features = New-PrimitiveSourceFeature }
+    )
+    $oneSide = New-ExtentRectangleBody 2 1 1.5 1.5 1.0 2
+    $symmetric = Set-SymmetricExtent (New-ExtentRectangleBody 3 2 1.0 2.0 1.0 1) 0.625
+    $twoSides = Set-TwoSidesExtent (New-CircleBody 4 3 0.75 1.0 1) 1.0 0.25
+    $scne = New-Section 'SCNE' 1 $true (New-ScenePayload $sceneBodies 5 2)
+    $cons = New-Section 'CONS' 1 $true (New-ConstructionPayload $sourceBodies)
+    $cadb = New-Section 'CADB' 4 $true (New-CadPayloadV4 @($oneSide, $symmetric, $twoSides))
+    return New-ForgeFile 1 @($scne, $cons, $cadb) 9
+}
+
+# CAD BAD EXTENT: the symmetric fixture with an extentCode of 9, CONSTRUCTED
+# that way rather than generated and then mutated. Every length, count and CRC
+# is correct, so only the semantic check can refuse it.
+function New-CadBadExtentFile {
+    $sceneBodies = @([pscustomobject]@{ ObjectId = 1; Transform = $script:IdentityPlacement })
+    $body = Set-SymmetricExtent (New-ExtentRectangleBody 1 1 2.0 1.0 1.0 1) 0.75
+    $body.ExtentCode = 9
+    $scne = New-Section 'SCNE' 1 $true (New-ScenePayload $sceneBodies 2 1)
+    $cadb = New-Section 'CADB' 4 $true (New-CadPayloadV4 @($body))
+    return New-ForgeFile 1 @($scne, $cadb) 8
+}
+
+# CAD BAD TWO SIDES: a Two Sides body whose BOTH distances are zero -- an
+# extrusion with no extent at all, which the domain refuses rather than clamps.
+function New-CadBadTwoSidesFile {
+    $sceneBodies = @([pscustomobject]@{ ObjectId = 1; Transform = $script:IdentityPlacement })
+    $body = Set-TwoSidesExtent (New-CircleBody 1 2 0.5 1.0 1) 0.0 0.0
+    $scne = New-Section 'SCNE' 1 $true (New-ScenePayload $sceneBodies 2 1)
+    $cadb = New-Section 'CADB' 4 $true (New-CadPayloadV4 @($body))
+    return New-ForgeFile 1 @($scne, $cadb) 8
+}
 # The one Imported Mesh every imported fixture carries.
 #
 # Four vertices, two submeshes with DIFFERENT doubleSided answers, and every
@@ -1329,6 +1523,12 @@ $fixtures = [ordered]@{
     'cad_face_curve_v3.forge'         = (New-CadFaceCurveFile)
     'cad_bad_arc_v3.forge'            = (New-CadBadArcFile)
     'cad_bad_spline_v3.forge'         = (New-CadBadSplineFile)
+    'cad_symmetric_v4.forge'          = (New-CadSymmetricFile)
+    'cad_two_sides_v4.forge'          = (New-CadTwoSidesFile)
+    'cad_face_extent_v4.forge'        = (New-CadFaceExtentFile)
+    'mixed_cad_extent_v4.forge'       = (New-MixedCadExtentFile)
+    'cad_bad_extent_v4.forge'         = (New-CadBadExtentFile)
+    'cad_bad_two_sides_v4.forge'      = (New-CadBadTwoSidesFile)
     'object_state_v2.forge'           = (New-ObjectStateFile)
     'object_state_bad_flags_v2.forge' = (New-ObjectStateBadFlagsFile)
 }
@@ -1378,6 +1578,13 @@ Write-Host ("  cad_mixed_curve:       {0}" -f ($rows | Where-Object Fixture -eq 
 Write-Host ("  cad_face_curve:        {0}" -f ($rows | Where-Object Fixture -eq 'cad_face_curve_v3.forge').Sha256)
 Write-Host ("  cad_bad_arc:           {0}" -f ($rows | Where-Object Fixture -eq 'cad_bad_arc_v3.forge').Sha256)
 Write-Host ("  cad_bad_spline:        {0}" -f ($rows | Where-Object Fixture -eq 'cad_bad_spline_v3.forge').Sha256)
+Write-Host 'Digests the C++ self-test (CADEXT-10 c..h) must assert:'
+Write-Host ("  cad_symmetric:         {0}" -f ($rows | Where-Object Fixture -eq 'cad_symmetric_v4.forge').Sha256)
+Write-Host ("  cad_two_sides:         {0}" -f ($rows | Where-Object Fixture -eq 'cad_two_sides_v4.forge').Sha256)
+Write-Host ("  cad_face_extent:       {0}" -f ($rows | Where-Object Fixture -eq 'cad_face_extent_v4.forge').Sha256)
+Write-Host ("  mixed_cad_extent:      {0}" -f ($rows | Where-Object Fixture -eq 'mixed_cad_extent_v4.forge').Sha256)
+Write-Host ("  cad_bad_extent:        {0}" -f ($rows | Where-Object Fixture -eq 'cad_bad_extent_v4.forge').Sha256)
+Write-Host ("  cad_bad_two_sides:     {0}" -f ($rows | Where-Object Fixture -eq 'cad_bad_two_sides_v4.forge').Sha256)
 Write-Host 'Digests the C++ self-test (OBJ018A-15/16) must assert:'
 Write-Host ("  object_state:          {0}" -f ($rows | Where-Object Fixture -eq 'object_state_v2.forge').Sha256)
 Write-Host ("  object_state_bad_flags:{0}" -f ($rows | Where-Object Fixture -eq 'object_state_bad_flags_v2.forge').Sha256)

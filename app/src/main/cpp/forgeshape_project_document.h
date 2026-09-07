@@ -150,6 +150,14 @@ constexpr uint16_t kCadSectionVersionV2 = 2;
 // unknown version -- rather than opening a body with a curve silently missing
 // or, worse, replaced by the straight edge between its ends.
 constexpr uint16_t kCadSectionVersionV3 = 3;
+// CAD-EXT-R1: version 4 adds the extrusion's EXTENT -- the mode, and the second
+// side's distance. Written only when a body actually reaches both sides of its
+// sketch plane; a project whose every extrusion is One Side keeps whichever of
+// v1, v2 or v3 it already used and stays byte-identical, because a One Side
+// extrusion is exactly `directionCode` + `depth` and always was. An older build
+// refuses v4 -- a required section at an unknown version -- rather than opening
+// a body with half its extent silently missing.
+constexpr uint16_t kCadSectionVersionV4 = 4;
 
 // CADB v1 file codes. FILE-owned, 1-based, and deliberately not a cast of any
 // C++ enum, on the same terms as the primitive codes.
@@ -157,6 +165,9 @@ uint8_t workplaneFileCode(Workplane plane);
 bool workplaneFromFileCode(uint8_t code, Workplane* out);
 uint8_t extrudeDirectionFileCode(ExtrudeDirection direction);
 bool extrudeDirectionFromFileCode(uint8_t code, ExtrudeDirection* out);
+// CADB v4 extent codes (`CAD-EXT-R1`), file-owned and 1-based like the rest.
+uint8_t extrudeExtentFileCode(ExtrudeExtentMode mode);
+bool extrudeExtentFromFileCode(uint8_t code, ExtrudeExtentMode* out);
 uint8_t sketchEntityKindFileCode(SketchEntityKind kind);
 bool sketchEntityKindFromFileCode(uint8_t code, SketchEntityKind* out);
 

@@ -3277,19 +3277,56 @@ final class EditorWorkspaceView extends FrameLayout
      * from a drag — a drag has no moment at which the user submitted zero.
      */
     @Override
-    public void onExtrudeDepthEntered(double depthMeters) {
+    public void onExtrudeSideEntered(int side, double meters) {
         final Context context = getContext();
         NativeViewport.cadExtrudeToolState(nativeExtrude);
-        final int direction = (int) nativeExtrude[NativeViewport.CAD_EXTRUDE_DIRECTION];
-        final int status = NativeViewport.sketchSetExtrude(depthMeters, direction);
+        final int extent = (int) nativeExtrude[NativeViewport.CAD_EXTRUDE_EXTENT];
+        // In One Side there is one handle and one value, and it is on whichever
+        // side the solid grows: the canvas says "the primary side", and the
+        // direction native reports is what turns that into a real side. In
+        // Symmetric and Two Sides the selector's own sides are literal.
+        int target = side;
+        if (extent == NativeViewport.EXTENT_ONE_SIDE) {
+            target = nativeExtrude[NativeViewport.CAD_EXTRUDE_DIRECTION]
+                                     == NativeViewport.EXTRUDE_ALONG_NORMAL
+                             ? NativeViewport.EXTRUDE_SIDE_POSITIVE
+                             : NativeViewport.EXTRUDE_SIDE_NEGATIVE;
+        }
+        final int status = NativeViewport.sketchSetExtrudeSide(target, meters);
         if (status != NativeViewport.CAD_OK) {
             showStatus(CadStatusMessages.describe(context, status), R.attr.fsTextError);
             return;
         }
         cadExtrudeCanvas.closeEditor();
+        cadExtrudeCanvas.closeSecondEditor();
         syncFromNative();
         showStatus(context.getString(R.string.status_extrude_depth_applied),
                 R.attr.fsTextSuccess);
+    }
+
+    /**
+     * One Side, Symmetric or Two Sides (`CAD-EXT-R1`).
+     *
+     * <p>The distances carry across by the deterministic transition policy
+     * below JNI. The shell holds no draft extent and computes no distance: it
+     * sends the mode and re-reads what came of it.
+     */
+    @Override
+    public void onExtrudeExtentRequested(int mode) {
+        final Context context = getContext();
+        final int status = NativeViewport.sketchSetExtrudeExtent(mode);
+        if (status != NativeViewport.CAD_OK) {
+            showStatus(CadStatusMessages.describe(context, status), R.attr.fsTextError);
+            return;
+        }
+        syncFromNative();
+        showStatus(context.getString(R.string.status_extent_changed,
+                        context.getString(mode == NativeViewport.EXTENT_SYMMETRIC
+                                                  ? R.string.extent_symmetric
+                                                  : mode == NativeViewport.EXTENT_TWO_SIDES
+                                                          ? R.string.extent_two_sides
+                                                          : R.string.extent_one_side)),
+                R.attr.fsTextSecondary);
     }
 
     /**

@@ -647,15 +647,40 @@ choice is drawn in the viewport, together with a preview of the extrusion.
 
 **The extrusion is now controlled at the geometry itself.** An **arrow** is
 drawn along the direction the solid will grow, standing in the middle of the
-chosen profile, and its length is the depth. Beside it, anchored to that same
-place, sit three things: the **exact depth** — tap it to type one — a direct
-**Flip**, which moves the solid to the other side of the sketch without changing
-the depth by a hair, and a small badge reading **New Body**, because that is
-what this extrusion does. The cluster belongs to the work rather than to the
-screen: it gets smaller as you pull the camera back and larger as you come in,
-within limits, so it never becomes unreadable and never covers the profile it
-measures. A depth typed here and the same number typed in the panel are the same
-thing; there is one depth, and both places show it.
+chosen profile, and its length is the distance it grows. Beside it, anchored to
+that same place, sit the **extent selector**, the **exact distance** — tap it to
+type one — and a small badge reading **New Body**, because that is what this
+extrusion does. The cluster belongs to the work rather than to the screen: it
+gets smaller as you pull the camera back and larger as you come in, within
+limits, so it never becomes unreadable and never covers the profile it measures.
+A distance typed here and the same number typed in the panel are the same thing;
+there is one extrusion, and both places show it.
+
+**Three ways for a solid to reach out of its sketch.** The extent selector
+offers exactly three:
+
+* **One Side** grows the solid out of one side of the sketch. This is what an
+  extrusion has always done. A **Flip** beside the value moves it to the other
+  side without changing the distance by a hair.
+* **Symmetric** grows it the same distance out of *both* sides. There are two
+  arrows and **one** number, because there is one distance — and the number is
+  the distance on **each side**, not the total thickness, so a symmetric
+  extrusion of 0.75 m is 1.5 m thick. Dragging either arrow moves both. Flip is
+  not offered here: both sides are reached already, so there is no side left to
+  choose.
+* **Two Sides** grows it a different distance out of each side. There are two
+  arrows and two numbers, **Side A** along the sketch's normal and **Side B**
+  against it, and each moves only its own side — dragging one never disturbs the
+  other. Flip is not offered here either; both sides are stated outright.
+
+Switching between the three never loses a number and never invents one. Going
+to Symmetric or Two Sides carries the distance you had onto both sides; coming
+back to One Side keeps the side you last chose and its distance, and the
+distance is always a positive length on a real side rather than a negative
+number. One side of a Two Sides extrusion may be zero — the other one carries
+it — and the value stays there to be typed back up. Zero on both sides, a
+negative number and anything that is not a number are refused, the field stays
+open so you can correct it, and nothing moves.
 
 **Finish Sketch also turns the view.** While you are drawing, the view looks
 straight down onto the plane you are drawing on, so a square you draw is a
@@ -670,9 +695,12 @@ depth and a typed one are the same depth. Going *Back to Sketch* — or reopenin
 a sketch with **Edit Sketch** — puts the straight-on drawing view back, and
 finishing again returns to a view you can drag in.
 
-The depth and direction are also still in the panel: type the **depth**, choose
-**Along normal** or **Against normal**, and press
-**Extrude** — from the toolbar or from the panel; they are the same act. The
+The distance and, for a One Side extrusion, the side are also still in the
+panel: type the **depth**, choose **Along normal** or **Against normal**, and
+press **Extrude** — from the toolbar or from the panel; they are the same act.
+The side chips are absent for a Symmetric or Two Sides extrusion, because there
+is no side to choose there; the extent itself is set at the geometry, where both
+arrows can be seen. The
 sketch becomes one new **CAD Body**: an ordinary object in the Objects list,
 selected, with the ordinary Move, Rotate and Scale handles, and one Undo takes
 the whole of it back. **Cancel Sketch**, under the rail, discards the sketch and
@@ -681,7 +709,8 @@ extrude it.
 
 **A CAD Body stays editable.** Its *Shape* panel shows the plane it was
 sketched on, the profile's sizes — a rectangle's width and height, or a
-circle's radius — the depth and the direction; *Apply* regenerates the body
+circle's radius — the distance and, where there is a side to choose, the
+direction; *Apply* regenerates the body
 from the new values as one Undo step and leaves its placement exactly where it
 was. A polygon profile shows its point count and is not numerically editable
 yet. Saving, reopening and recovery keep all of this: a reopened CAD Body is

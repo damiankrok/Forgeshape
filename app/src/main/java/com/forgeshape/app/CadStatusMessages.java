@@ -43,6 +43,8 @@ final class CadStatusMessages {
                 return context.getString(R.string.status_sketch_plane_fixed);
             case NativeViewport.CAD_DEPENDENT_FACE_LOST:
                 return context.getString(R.string.status_cad_dependent_face_lost);
+            case NativeViewport.CAD_INVALID_EXTRUDE_EXTENT:
+                return context.getString(R.string.status_cad_invalid_extent);
             case NativeViewport.CAD_ZERO_LENGTH_LINE:
                 return context.getString(R.string.status_cad_zero_length);
             default:

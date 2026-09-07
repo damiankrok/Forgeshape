@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "forgeshape_cad_body.h"
+#include "forgeshape_cad_face.h"
 #include "forgeshape_camera.h"
 #include "forgeshape_gizmo.h"
 #include "forgeshape_gltf_export.h"
@@ -17,6 +18,7 @@
 #include "forgeshape_picking.h"
 #include "forgeshape_project_bytes.h"
 #include "forgeshape_project_document.h"
+#include "forgeshape_project_selftest.h"
 #include "forgeshape_project_state.h"
 #include "forgeshape_scene.h"
 #include "forgeshape_sculpt.h"
@@ -250,12 +252,805 @@ double microseconds(std::chrono::steady_clock::time_point start) {
             .count();
 }
 
+// ---------------------------------------------------------------------------
+// The extrusion's EXTENT (`CAD-EXT-R1`, CADEXT-02..05, 08..11)
+// ---------------------------------------------------------------------------
+//
+// One Side, Symmetric and Two Sides are three ways of authoring the SAME two
+// distances -- one along `+N`, one along `-N` -- so almost every case below is
+// written in those two numbers and never in the mode. What the mode decides is
+// which of them the controls write, and the transition policy is the one place
+// that is stated.
+
+
+CadBodyState extentBody(ExtrudeExtentMode mode, double primary, double second,
+                        ExtrudeDirection direction = ExtrudeDirection::AlongNormal,
+                        Workplane plane = Workplane::XY) {
+    CadBodyState state = bodyState(rectangleSketch(plane), 1, primary, direction);
+    state.extrude.extent = mode;
+    state.extrude.secondDistance = second;
+    return state;
+}
+
+// The two offsets a mesh actually spans along the plane normal, measured off
+// the generated vertices rather than read back out of the parameters -- the
+// point being that the GEOMETRY is what the extent means.
+bool meshSpan(const ConstructionMesh& mesh, Workplane plane, double* outNear, double* outFar) {
+    if (mesh.vertices.empty()) {
+        return false;
+    }
+    const WorkplaneFrame frame = workplaneFrame(plane);
+    double lo = 1.0e30;
+    double hi = -1.0e30;
+    for (const MeshVertex& v : mesh.vertices) {
+        const double d = static_cast<double>(v.position[0]) * frame.normal.x
+                         + static_cast<double>(v.position[1]) * frame.normal.y
+                         + static_cast<double>(v.position[2]) * frame.normal.z;
+        lo = d < lo ? d : lo;
+        hi = d > hi ? d : hi;
+    }
+    *outNear = lo;
+    *outFar = hi;
+    return true;
+}
+
+ProjectDocument extentDocumentFor(const CadBodyState& state) {
+    ConstructionScene scene((NoProjectTag()));
+    CadStatus why = CadStatus::Ok;
+    SceneObject* object = scene.addCadBody(state, &why);
+    if (object == nullptr) {
+        return ProjectDocument{};
+    }
+    publishSceneObject(*object);
+    return captureProjectDocument(scene, ProjectKind::Construction);
+}
+
+bool cadbSectionVersion(const std::vector<uint8_t>& bytes, uint16_t* out) {
+    for (size_t i = 0; i + 8 <= bytes.size(); ++i) {
+        if (bytes[i] == 'C' && bytes[i + 1] == 'A' && bytes[i + 2] == 'D' && bytes[i + 3] == 'B') {
+            *out = static_cast<uint16_t>(bytes[i + 4] | (bytes[i + 5] << 8));
+            return true;
+        }
+    }
+    return false;
+}
+
+// The project fingerprint of a scene holding exactly this one CAD body, so a
+// case can say that a real extent change moves it without building a scene by
+// hand each time.
+uint64_t cadStateFingerprintProbe(const CadBodyState& state) {
+    ConstructionScene scene((NoProjectTag()));
+    CadStatus why = CadStatus::Ok;
+    SceneObject* object = scene.addCadBody(state, &why);
+    if (object == nullptr) {
+        return 0;
+    }
+    publishSceneObject(*object);
+    return projectSemanticFingerprint(scene, ProjectKind::Construction);
+}
+
+// Where the `CADB` payload starts inside a file, and the CRC repair that makes
+// a byte-patched fixture a well-formed file again -- so only the SEMANTIC check
+// can refuse it, which is the whole point of a corrupt fixture.
+size_t cadPayloadOffset(const std::vector<uint8_t>& bytes) {
+    size_t offset = kForgeHeaderBytes;
+    while (offset + kForgeSectionHeaderBytes <= bytes.size()) {
+        uint64_t payloadBytes = 0;
+        std::memcpy(&payloadBytes, &bytes[offset + 8], 8);
+        if (std::memcmp(&bytes[offset], kSectionTagCad, 4) == 0) {
+            return offset + kForgeSectionHeaderBytes;
+        }
+        offset += kForgeSectionHeaderBytes + static_cast<size_t>(payloadBytes);
+    }
+    return 0;
+}
+
+void repairCadPayloadCrc(std::vector<uint8_t>* bytes) {
+    size_t offset = kForgeHeaderBytes;
+    while (offset + kForgeSectionHeaderBytes <= bytes->size()) {
+        uint64_t payloadBytes = 0;
+        std::memcpy(&payloadBytes, &(*bytes)[offset + 8], 8);
+        if (std::memcmp(&(*bytes)[offset], kSectionTagCad, 4) == 0) {
+            const uint32_t crc = crc32IsoHdlc(&(*bytes)[offset + kForgeSectionHeaderBytes],
+                                              static_cast<size_t>(payloadBytes));
+            std::memcpy(&(*bytes)[offset + 16], &crc, 4);
+            return;
+        }
+        offset += kForgeSectionHeaderBytes + static_cast<size_t>(payloadBytes);
+    }
+}
+
+void testExtent(Recorder& r) {
+    // CADEXT-02: a default state, and every state built before this stage, is
+    // One Side and reduces to exactly the depth and direction it always had.
+    {
+        const CadBodyState along = extentBody(ExtrudeExtentMode::OneSide, 1.5, 0.0);
+        const CadBodyState against = extentBody(ExtrudeExtentMode::OneSide, 1.5, 0.0,
+                                                ExtrudeDirection::AgainstNormal);
+        ExtrudeFeature fresh;
+        r.check("CADEXT_02_a_the_default_extent_is_one_side_and_reduces_to_the_legacy_pair",
+                fresh.extent == ExtrudeExtentMode::OneSide
+                        && near(extrudePositiveDistance(along.extrude), 1.5)
+                        && near(extrudeNegativeDistance(along.extrude), 0.0)
+                        && near(extrudePositiveDistance(against.extrude), 0.0)
+                        && near(extrudeNegativeDistance(against.extrude), 1.5));
+        ConstructionMesh alongMesh;
+        ConstructionMesh againstMesh;
+        double n0 = 0.0;
+        double f0 = 0.0;
+        double n1 = 0.0;
+        double f1 = 0.0;
+        const bool built = generateCadMesh(along, &alongMesh) == CadStatus::Ok
+                           && generateCadMesh(against, &againstMesh) == CadStatus::Ok
+                           && meshSpan(alongMesh, Workplane::XY, &n0, &f0)
+                           && meshSpan(againstMesh, Workplane::XY, &n1, &f1);
+        r.check("CADEXT_02_b_one_side_still_spans_zero_to_depth_on_the_chosen_side",
+                built && near(n0, 0.0) && near(f0, 1.5) && near(n1, -1.5) && near(f1, 0.0)
+                        && watertight(alongMesh) && watertight(againstMesh));
+    }
+
+    // CADEXT-03/04: the geometry of the two new modes, on all three world
+    // planes. There is no per-axis special case and no sign inversion: the
+    // solid spans exactly `-negative .. +positive` every time.
+    {
+        const Workplane planes[3] = {Workplane::XY, Workplane::XZ, Workplane::YZ};
+        bool symmetricOk = true;
+        bool twoSidesOk = true;
+        for (const Workplane plane : planes) {
+            ConstructionMesh mesh;
+            double lo = 0.0;
+            double hi = 0.0;
+            const CadBodyState sym = extentBody(ExtrudeExtentMode::Symmetric, 0.75, 0.0,
+                                                ExtrudeDirection::AlongNormal, plane);
+            symmetricOk &= generateCadMesh(sym, &mesh) == CadStatus::Ok
+                           && meshSpan(mesh, plane, &lo, &hi) && near(lo, -0.75)
+                           && near(hi, 0.75) && watertight(mesh)
+                           && near(extrudePositiveDistance(sym.extrude),
+                                   extrudeNegativeDistance(sym.extrude));
+            ConstructionMesh two;
+            const CadBodyState pair = extentBody(ExtrudeExtentMode::TwoSides, 1.25, 0.5,
+                                                 ExtrudeDirection::AlongNormal, plane);
+            twoSidesOk &= generateCadMesh(pair, &two) == CadStatus::Ok
+                          && meshSpan(two, plane, &lo, &hi) && near(lo, -0.5) && near(hi, 1.25)
+                          && watertight(two);
+        }
+        r.check("CADEXT_03_symmetric_spans_minus_d_to_plus_d_on_every_plane", symmetricOk);
+        r.check("CADEXT_04_a_two_sides_spans_minus_b_to_plus_a_on_every_plane", twoSidesOk);
+    }
+
+    // CADEXT-04 b: A and B are independent. Editing one leaves the other bit
+    // for bit where it was.
+    {
+        const CadBodyState base = extentBody(ExtrudeExtentMode::TwoSides, 1.25, 0.5);
+        const ExtrudeFeature movedA = extrudeFeatureWithSide(base.extrude, true, 2.0);
+        const ExtrudeFeature movedB = extrudeFeatureWithSide(base.extrude, false, 0.125);
+        r.check("CADEXT_04_b_editing_one_side_does_not_move_the_other",
+                near(extrudePositiveDistance(movedA), 2.0)
+                        && near(extrudeNegativeDistance(movedA), 0.5)
+                        && near(extrudePositiveDistance(movedB), 1.25)
+                        && near(extrudeNegativeDistance(movedB), 0.125));
+    }
+
+    // Symmetric: EITHER side writes the one shared distance, so a drag on one
+    // arrow keeps the two equal without a second rule saying so.
+    {
+        const CadBodyState base = extentBody(ExtrudeExtentMode::Symmetric, 0.75, 0.0);
+        const ExtrudeFeature viaPositive = extrudeFeatureWithSide(base.extrude, true, 1.5);
+        const ExtrudeFeature viaNegative = extrudeFeatureWithSide(base.extrude, false, 1.5);
+        r.check("CADEXT_03_b_either_symmetric_handle_writes_the_one_shared_distance",
+                near(extrudePositiveDistance(viaPositive), 1.5)
+                        && near(extrudeNegativeDistance(viaPositive), 1.5)
+                        && near(extrudePositiveDistance(viaNegative), 1.5)
+                        && near(extrudeNegativeDistance(viaNegative), 1.5));
+    }
+
+    // CADEXT-05: every transition of the policy, including that no transition
+    // can produce a negative depth and that the side choice is deterministic.
+    {
+        const ExtrudeFeature oneAlong = extentBody(ExtrudeExtentMode::OneSide, 1.5, 0.0).extrude;
+        const ExtrudeFeature oneAgainst =
+                extentBody(ExtrudeExtentMode::OneSide, 1.5, 0.0, ExtrudeDirection::AgainstNormal)
+                        .extrude;
+        const ExtrudeFeature symmetric = extentBody(ExtrudeExtentMode::Symmetric, 0.75, 0.0).extrude;
+        const ExtrudeFeature twoSides = extentBody(ExtrudeExtentMode::TwoSides, 1.25, 0.5).extrude;
+
+        const ExtrudeFeature a = extrudeFeatureWithExtent(oneAlong, ExtrudeExtentMode::Symmetric,
+                                                          ExtrudeDirection::AlongNormal);
+        const ExtrudeFeature b = extrudeFeatureWithExtent(oneAlong, ExtrudeExtentMode::TwoSides,
+                                                          ExtrudeDirection::AlongNormal);
+        r.check("CADEXT_05_a_one_side_carries_its_depth_onto_both_sides",
+                near(extrudePositiveDistance(a), 1.5) && near(extrudeNegativeDistance(a), 1.5)
+                        && near(extrudePositiveDistance(b), 1.5)
+                        && near(extrudeNegativeDistance(b), 1.5));
+
+        const ExtrudeFeature c = extrudeFeatureWithExtent(symmetric, ExtrudeExtentMode::OneSide,
+                                                          ExtrudeDirection::AgainstNormal);
+        const ExtrudeFeature d = extrudeFeatureWithExtent(symmetric, ExtrudeExtentMode::TwoSides,
+                                                          ExtrudeDirection::AlongNormal);
+        r.check("CADEXT_05_b_symmetric_leaves_on_the_preferred_side_with_a_positive_depth",
+                c.extent == ExtrudeExtentMode::OneSide
+                        && c.direction == ExtrudeDirection::AgainstNormal && near(c.depth, 0.75)
+                        && c.depth > 0.0 && near(extrudeNegativeDistance(c), 0.75)
+                        && near(extrudePositiveDistance(c), 0.0)
+                        && near(extrudePositiveDistance(d), 0.75)
+                        && near(extrudeNegativeDistance(d), 0.75));
+
+        const ExtrudeFeature e = extrudeFeatureWithExtent(twoSides, ExtrudeExtentMode::Symmetric,
+                                                          ExtrudeDirection::AlongNormal);
+        const ExtrudeFeature f = extrudeFeatureWithExtent(twoSides, ExtrudeExtentMode::Symmetric,
+                                                          ExtrudeDirection::AgainstNormal);
+        // The PREFERRED side's own value, on both sides -- never the average of
+        // A and B, which is a number the user never typed.
+        r.check("CADEXT_05_c_two_sides_to_symmetric_takes_a_side_and_never_an_average",
+                near(e.depth, 1.25) && near(f.depth, 0.5)
+                        && !near(e.depth, 0.5 * (1.25 + 0.5)));
+
+        const ExtrudeFeature g = extrudeFeatureWithExtent(twoSides, ExtrudeExtentMode::OneSide,
+                                                          ExtrudeDirection::AlongNormal);
+        const ExtrudeFeature h = extrudeFeatureWithExtent(twoSides, ExtrudeExtentMode::OneSide,
+                                                          ExtrudeDirection::AgainstNormal);
+        r.check("CADEXT_05_d_two_sides_to_one_side_keeps_the_chosen_side_and_zeroes_the_other",
+                near(extrudePositiveDistance(g), 1.25) && near(extrudeNegativeDistance(g), 0.0)
+                        && near(extrudeNegativeDistance(h), 0.5)
+                        && near(extrudePositiveDistance(h), 0.0) && g.depth > 0.0 && h.depth > 0.0);
+
+        // A round trip through a two-sided mode gives the SIDE back, which is
+        // the whole reason the preferred side is an argument.
+        const ExtrudeFeature back = extrudeFeatureWithExtent(
+                extrudeFeatureWithExtent(oneAgainst, ExtrudeExtentMode::Symmetric,
+                                         ExtrudeDirection::AgainstNormal),
+                ExtrudeExtentMode::OneSide, ExtrudeDirection::AgainstNormal);
+        r.check("CADEXT_05_e_a_mode_round_trip_restores_the_one_side_state_bit_for_bit",
+                back.extent == oneAgainst.extent && back.direction == oneAgainst.direction
+                        && back.depth == oneAgainst.depth
+                        && back.secondDistance == oneAgainst.secondDistance);
+
+        // A transition to the mode already held changes nothing at all.
+        const ExtrudeFeature same = extrudeFeatureWithExtent(twoSides, ExtrudeExtentMode::TwoSides,
+                                                             ExtrudeDirection::AlongNormal);
+        r.check("CADEXT_05_f_a_transition_to_the_mode_already_held_changes_nothing",
+                same.depth == twoSides.depth && same.secondDistance == twoSides.secondDistance
+                        && same.extent == twoSides.extent);
+    }
+
+    // The canonical form, and the refusals. One solid has exactly ONE encoding,
+    // so a stated direction where there is no side to choose, and a second
+    // distance where there is no second side, are refused by name.
+    {
+        CadBodyState crooked = extentBody(ExtrudeExtentMode::Symmetric, 0.75, 0.0);
+        crooked.extrude.direction = ExtrudeDirection::AgainstNormal;
+        CadBodyState stray = extentBody(ExtrudeExtentMode::OneSide, 1.5, 0.25);
+        CadBodyState empty = extentBody(ExtrudeExtentMode::TwoSides, 0.0, 0.0);
+        CadBodyState zeroSymmetric = extentBody(ExtrudeExtentMode::Symmetric, 0.0, 0.0);
+        CadBodyState oneZeroSide = extentBody(ExtrudeExtentMode::TwoSides, 0.0, 0.75);
+        r.check("CADEXT_05_g_a_non_canonical_extent_is_refused_by_name",
+                validateCadBodyState(crooked) == CadStatus::InvalidExtrudeExtent
+                        && validateCadBodyState(stray) == CadStatus::InvalidExtrudeExtent);
+        r.check("CADEXT_05_h_an_extrusion_with_no_extent_is_refused_never_clamped",
+                validateCadBodyState(empty) == CadStatus::InvalidExtrudeDepth
+                        && validateCadBodyState(zeroSymmetric) == CadStatus::InvalidExtrudeDepth
+                        && validateCadBodyState(oneZeroSide) == CadStatus::Ok);
+        CadBodyState nan = extentBody(ExtrudeExtentMode::TwoSides, 1.0, 0.5);
+        nan.extrude.secondDistance = std::nan("");
+        CadBodyState negative = extentBody(ExtrudeExtentMode::TwoSides, 1.0, -0.5);
+        r.check("CADEXT_05_i_a_non_finite_or_negative_side_is_refused",
+                validateCadBodyState(nan) == CadStatus::NonFinite
+                        && validateCadBodyState(negative) == CadStatus::InvalidExtrudeDepth);
+    }
+
+    // CADEXT-08: `sameCadBodyState` notices a real extent change and a history
+    // step therefore records one. It notices the MODE as well as the numbers.
+    {
+        const CadBodyState one = extentBody(ExtrudeExtentMode::OneSide, 1.5, 0.0);
+        const CadBodyState sym = extentBody(ExtrudeExtentMode::Symmetric, 1.5, 0.0);
+        const CadBodyState twoA = extentBody(ExtrudeExtentMode::TwoSides, 1.25, 0.5);
+        CadBodyState twoB = twoA;
+        twoB.extrude.secondDistance = 0.25;
+        r.check("CADEXT_08_a_state_equality_notices_the_mode_and_the_second_distance",
+                !sameCadBodyState(one, sym) && !sameCadBodyState(twoA, twoB)
+                        && sameCadBodyState(twoA, twoA));
+        const uint64_t oneHash = cadStateFingerprintProbe(one);
+        const uint64_t symHash = cadStateFingerprintProbe(sym);
+        const uint64_t twoHash = cadStateFingerprintProbe(twoB);
+        r.check("CADEXT_08_b_the_project_fingerprint_moves_with_a_real_extent_change",
+                oneHash != symHash && symHash != twoHash);
+    }
+
+    // CADEXT-08 c: Undo/Redo restores the mode, A, B and the direction, through
+    // the Construction history that already stores the whole CAD truth.
+    {
+        ConstructionScene scene((NoProjectTag()));
+        ConstructionHistory history(scene);
+        CadStatus why = CadStatus::Ok;
+        SceneObject* object =
+                scene.addCadBody(extentBody(ExtrudeExtentMode::OneSide, 1.5, 0.0,
+                                            ExtrudeDirection::AgainstNormal),
+                                 &why);
+        bool ok = object != nullptr && why == CadStatus::Ok;
+        CadBodyState before;
+        CadBodyState edited;
+        if (ok) {
+            CadBody* body = object->cadOrNull();
+            ok = body != nullptr;
+            if (ok) {
+                before = body->state();
+                CadBodyState candidate = before;
+                candidate.extrude = extrudeFeatureWithExtent(before.extrude,
+                                                             ExtrudeExtentMode::TwoSides,
+                                                             ExtrudeDirection::AgainstNormal);
+                candidate.extrude = extrudeFeatureWithSide(candidate.extrude, true, 2.5);
+                {
+                    ScopedConstructionEdit edit(history);
+                    ok &= body->applyState(candidate) == CadStatus::Ok;
+                }
+                edited = body->state();
+                ok &= history.undo() && sameCadBodyState(body->state(), before);
+                ok &= history.redo() && sameCadBodyState(body->state(), edited);
+            }
+        }
+        r.check("CADEXT_08_c_undo_and_redo_restore_the_whole_extent",
+                ok && edited.extrude.extent == ExtrudeExtentMode::TwoSides
+                        && near(extrudePositiveDistance(edited.extrude), 2.5)
+                        && near(extrudeNegativeDistance(edited.extrude), 1.5));
+    }
+
+    // CADEXT-11: the semantic face topology is unchanged by an extent edit --
+    // the signature takes no distance and no mode -- while the face FRAMES
+    // legitimately move with the caps, which is what a dependent follows.
+    {
+        const CadBodyState one = extentBody(ExtrudeExtentMode::OneSide, 1.5, 0.0);
+        const CadBodyState sym = extentBody(ExtrudeExtentMode::Symmetric, 0.75, 0.0);
+        const CadBodyState two = extentBody(ExtrudeExtentMode::TwoSides, 1.25, 0.5);
+        std::vector<CadFace> oneFaces;
+        std::vector<CadFace> symFaces;
+        const bool enumerated = enumerateCadFaces(one, &oneFaces) == CadStatus::Ok
+                                && enumerateCadFaces(sym, &symFaces) == CadStatus::Ok;
+        bool sameTokens = enumerated && oneFaces.size() == symFaces.size();
+        for (size_t i = 0; sameTokens && i < oneFaces.size(); ++i) {
+            sameTokens = oneFaces[i].token.kind == symFaces[i].token.kind
+                         && oneFaces[i].token.edgeEntityId == symFaces[i].token.edgeEntityId
+                         && oneFaces[i].token.edgeLocalIndex == symFaces[i].token.edgeLocalIndex
+                         && oneFaces[i].eligible == symFaces[i].eligible;
+        }
+        r.check("CADEXT_11_a_an_extent_edit_keeps_the_face_tokens_and_the_lineage_signature",
+                sameTokens && cadTopologySignature(one) == cadTopologySignature(sym)
+                        && cadTopologySignature(one) == cadTopologySignature(two));
+        // `CapPlane` is the cap the extrusion grows FROM and `CapFar` the one it
+        // grows TO. For One Side that is still the cap ON the plane; for
+        // Symmetric it is the `-N` cap, at exactly `-d`.
+        CadFace planeCap;
+        CadFace farCap;
+        const bool resolved =
+                resolveCadFace(sym, CadFaceToken{CadFaceKind::CapPlane, 0, 0}, &planeCap)
+                        == CadStatus::Ok
+                && resolveCadFace(sym, CadFaceToken{CadFaceKind::CapFar, 0, 0}, &farCap)
+                           == CadStatus::Ok;
+        r.check("CADEXT_11_b_the_caps_sit_at_the_two_authored_distances",
+                resolved && nearf(planeCap.origin.z, -0.75f) && nearf(farCap.origin.z, 0.75f));
+    }
+
+    // CADEXT-09: a One Side project still writes the version it always wrote,
+    // and only a real extent forces v4.
+    {
+        uint16_t version = 0;
+        const std::vector<uint8_t> legacy =
+                encodeProjectV1(extentDocumentFor(extentBody(ExtrudeExtentMode::OneSide, 1.5, 0.0)));
+        const bool legacyV1 = !legacy.empty() && cadbSectionVersion(legacy, &version)
+                              && version == kCadSectionVersion;
+        const std::vector<uint8_t> symmetric = encodeProjectV1(
+                extentDocumentFor(extentBody(ExtrudeExtentMode::Symmetric, 0.75, 0.0)));
+        const bool symmetricV4 = !symmetric.empty() && cadbSectionVersion(symmetric, &version)
+                                 && version == kCadSectionVersionV4;
+        const std::vector<uint8_t> two = encodeProjectV1(
+                extentDocumentFor(extentBody(ExtrudeExtentMode::TwoSides, 1.25, 0.5)));
+        const bool twoV4 = !two.empty() && cadbSectionVersion(two, &version)
+                           && version == kCadSectionVersionV4;
+        r.check("CADEXT_09_a_a_one_side_project_still_writes_the_version_it_always_wrote",
+                legacyV1);
+        r.check("CADEXT_09_b_only_a_real_extent_forces_CADB_v4", symmetricV4 && twoV4);
+    }
+
+    // CADEXT-10: the v4 round trip is bit-exact and the writer deterministic.
+    {
+        bool allOk = true;
+        const CadBodyState states[3] = {
+                extentBody(ExtrudeExtentMode::Symmetric, 0.75, 0.0),
+                extentBody(ExtrudeExtentMode::TwoSides, 1.25, 0.5),
+                extentBody(ExtrudeExtentMode::TwoSides, 0.0, 0.75),
+        };
+        for (const CadBodyState& state : states) {
+            const ProjectDocument original = extentDocumentFor(state);
+            const std::vector<uint8_t> bytes = encodeProjectV1(original);
+            ProjectDocument decoded;
+            const ProjectCodecStatus why = decodeProject(bytes.data(), bytes.size(), &decoded);
+            allOk &= why == ProjectCodecStatus::Ok && sameProjectDocument(original, decoded)
+                     && encodeProjectV1(decoded) == bytes;
+        }
+        r.check("CADEXT_10_a_every_v4_extent_round_trips_bit_exactly", allOk);
+    }
+
+    // CADEXT-10 b: the v4 decoder fails closed, and a refusal writes nothing.
+    // The extent code, the canonical form and the distances are each checked
+    // against a file built with the bad value in place.
+    {
+        std::vector<uint8_t> good = encodeProjectV1(
+                extentDocumentFor(extentBody(ExtrudeExtentMode::TwoSides, 1.25, 0.5)));
+        struct Bad {
+            const char* name;
+            size_t offset;   // within the CADB payload
+            uint8_t byte;    // for a one-byte corruption
+            bool isDouble;
+            double value;
+        };
+        // The v4 one-body record: bodyCount u32, objectId u64, plane u8,
+        // supportKind u8, nextEntityId u32, profileEntityId u32, extentCode u8,
+        // directionCode u8, depth f64, secondDistance f64.
+        const Bad cases[3] = {
+                {"extent code 9", 22, 9, false, 0.0},
+                {"direction 2 under Two Sides", 23, 2, false, 0.0},
+                {"both distances zero", 24, 0, true, 0.0},
+        };
+        bool allRefused = true;
+        for (const Bad& bad : cases) {
+            std::vector<uint8_t> bytes = good;
+            const size_t payload = cadPayloadOffset(bytes);
+            if (payload == 0) {
+                allRefused = false;
+                break;
+            }
+            if (bad.isDouble) {
+                const double zero = 0.0;
+                std::memcpy(&bytes[payload + 24], &zero, sizeof(double));
+                std::memcpy(&bytes[payload + 32], &zero, sizeof(double));
+            } else {
+                bytes[payload + bad.offset] = bad.byte;
+            }
+            repairCadPayloadCrc(&bytes);
+            ProjectDocument decoded;
+            const ProjectCodecStatus why = decodeProject(bytes.data(), bytes.size(), &decoded);
+            allRefused &= why != ProjectCodecStatus::Ok && !decoded.hasCad
+                          && decoded.cad.bodies.empty();
+        }
+        r.check("CADEXT_10_b_a_bad_v4_extent_is_refused_and_nothing_is_written", allRefused);
+    }
+
+    // A v1/v2/v3 record decodes to One Side with a second distance of exactly
+    // zero -- the legacy pair, meaning what it always meant.
+    {
+        const std::vector<uint8_t> legacy = encodeProjectV1(extentDocumentFor(
+                extentBody(ExtrudeExtentMode::OneSide, 1.5, 0.0, ExtrudeDirection::AgainstNormal)));
+        ProjectDocument decoded;
+        const ProjectCodecStatus why = decodeProject(legacy.data(), legacy.size(), &decoded);
+        const bool oneBody = why == ProjectCodecStatus::Ok && decoded.cad.bodies.size() == 1;
+        r.check("CADEXT_09_c_a_legacy_record_decodes_to_one_side_with_no_second_distance",
+                oneBody
+                        && decoded.cad.bodies[0].state.extrude.extent
+                                   == ExtrudeExtentMode::OneSide
+                        && decoded.cad.bodies[0].state.extrude.secondDistance == 0.0
+                        && decoded.cad.bodies[0].state.extrude.direction
+                                   == ExtrudeDirection::AgainstNormal);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The independent corpus: `CADB` v4 (`CADEXT-10`)
+// ---------------------------------------------------------------------------
+//
+// These six documents are the C++ side of the six `CADB` v4 fixtures
+// `scripts/build-forge-corpus.ps1` writes from `DATA_PACKAGE_SPEC.md` §7e. The
+// PowerShell builder shares no line with the codec, so a digest agreeing here
+// is the format being a SPECIFICATION rather than whatever this encoder happens
+// to emit. Every number is an exact binary fraction, so the two implementations
+// agree byte for byte or not at all.
+
+
+std::string g_symmetricDigest = "not measured";
+std::string g_twoSidesDigest = "not measured";
+std::string g_faceExtentDigest = "not measured";
+std::string g_mixedExtentDigest = "not measured";
+std::string g_badExtentDigest = "not measured";
+std::string g_badTwoSidesDigest = "not measured";
+
+TransformValues corpusPlacementAt(double tx, double ty, double tz) {
+    TransformValues t;
+    t.positionX = tx;
+    t.positionY = ty;
+    t.positionZ = tz;
+    return t;
+}
+
+ProjectBodyPlacement corpusSceneBody(ObjectId id, const TransformValues& transform) {
+    ProjectBodyPlacement body;
+    body.objectId = id;
+    body.transform = transform;
+    return body;
+}
+
+CadBodyState corpusRectangleState(double w, double h, Workplane plane) {
+    CadBodyState state;
+    state.sketch.plane = plane;
+    SketchRectangle rect;
+    rect.center = SketchPoint{0.0, 0.0};
+    rect.width = w;
+    rect.height = h;
+    addSketchEntity(&state.sketch, rect);
+    state.extrude.profileEntityId = 1;
+    state.extrude.depth = 1.0;
+    return state;
+}
+
+CadBodyState corpusCircleState(double radius, Workplane plane) {
+    CadBodyState state;
+    state.sketch.plane = plane;
+    SketchCircle circle;
+    circle.center = SketchPoint{0.0, 0.0};
+    circle.radius = radius;
+    addSketchEntity(&state.sketch, circle);
+    state.extrude.profileEntityId = 1;
+    state.extrude.depth = 1.0;
+    return state;
+}
+
+CadBodyState withSymmetric(CadBodyState state, double perSide) {
+    state.extrude.extent = ExtrudeExtentMode::Symmetric;
+    state.extrude.direction = ExtrudeDirection::AlongNormal;
+    state.extrude.depth = perSide;
+    state.extrude.secondDistance = 0.0;
+    return state;
+}
+
+CadBodyState withTwoSides(CadBodyState state, double a, double b) {
+    state.extrude.extent = ExtrudeExtentMode::TwoSides;
+    state.extrude.direction = ExtrudeDirection::AlongNormal;
+    state.extrude.depth = a;
+    state.extrude.secondDistance = b;
+    return state;
+}
+
+ProjectCadBody corpusCadBody(ObjectId id, const CadBodyState& state) {
+    ProjectCadBody body;
+    body.objectId = id;
+    body.state = state;
+    return body;
+}
+
+// The smallest v4 file there is: one Symmetric body on a world plane.
+ProjectDocument cadSymmetricDocument() {
+    ProjectDocument document;
+    document.kind = ProjectKind::Construction;
+    document.scene.nextObjectId = 2;
+    document.scene.activeObjectId = 1;
+    document.scene.bodies.push_back(corpusSceneBody(1, TransformValues{}));
+    document.hasCad = true;
+    document.cad.bodies.push_back(
+        corpusCadBody(1, withSymmetric(corpusRectangleState(2.0, 1.0, Workplane::XY), 0.75)));
+    return document;
+}
+
+// Two independent distances, deliberately UNEQUAL, on a circle profile so the
+// fixture also pins a curved-side body carrying the new extent.
+ProjectDocument cadTwoSidesDocument() {
+    ProjectDocument document;
+    document.kind = ProjectKind::Construction;
+    document.scene.nextObjectId = 2;
+    document.scene.activeObjectId = 1;
+    document.scene.bodies.push_back(corpusSceneBody(1, TransformValues{}));
+    document.hasCad = true;
+    document.cad.bodies.push_back(
+        corpusCadBody(1, withTwoSides(corpusCircleState(0.5, Workplane::XZ), 1.25, 0.5)));
+    return document;
+}
+
+// v4 carrying a v2 support block, which is what makes a version a SUPERSET
+// rather than a variant: a One Side producer with a Symmetric dependent on its
+// far cap and a Two Sides dependent on one of its sides.
+ProjectDocument cadFaceExtentDocument() {
+    ProjectDocument document;
+    document.kind = ProjectKind::Construction;
+    document.scene.nextObjectId = 4;
+    document.scene.activeObjectId = 1;
+    document.scene.bodies.push_back(corpusSceneBody(1, TransformValues{}));
+    document.scene.bodies.push_back(corpusSceneBody(2, TransformValues{}));
+    document.scene.bodies.push_back(corpusSceneBody(3, TransformValues{}));
+    document.hasCad = true;
+    const CadBodyState producer = corpusRectangleState(4.0, 4.0, Workplane::XY);
+    const uint64_t lineage = cadTopologySignature(producer);
+
+    CadBodyState onCap = withSymmetric(corpusRectangleState(1.0, 1.0, Workplane::XY), 0.25);
+    onCap.sketch.hasFaceSupport = true;
+    onCap.sketch.faceSupport.producerObjectId = 1;
+    onCap.sketch.faceSupport.producerLocalFeatureId = kCadFeatureId;
+    onCap.sketch.faceSupport.face = CadFaceToken{CadFaceKind::CapFar, 0, 0};
+    onCap.sketch.faceSupport.lineageToken = lineage;
+
+    CadBodyState onSide = withTwoSides(corpusRectangleState(0.5, 0.5, Workplane::XY), 0.375, 0.125);
+    onSide.sketch.hasFaceSupport = true;
+    onSide.sketch.faceSupport.producerObjectId = 1;
+    onSide.sketch.faceSupport.producerLocalFeatureId = kCadFeatureId;
+    onSide.sketch.faceSupport.face = CadFaceToken{CadFaceKind::Side, 1, 1};
+    onSide.sketch.faceSupport.lineageToken = lineage;
+
+    document.cad.bodies.push_back(corpusCadBody(1, producer));
+    document.cad.bodies.push_back(corpusCadBody(2, onCap));
+    document.cad.bodies.push_back(corpusCadBody(3, onSide));
+    return document;
+}
+
+// A LEGACY One Side body beside a Symmetric and a Two Sides one, with a sparse
+// `CONS` next to them: the fixture that proves a v4 section still carries the
+// One Side pair unchanged, on the three world planes.
+ProjectDocument cadMixedExtentDocument() {
+    ProjectDocument document;
+    document.kind = ProjectKind::Construction;
+    document.scene.nextObjectId = 5;
+    document.scene.activeObjectId = 2;
+    document.scene.bodies.push_back(corpusSceneBody(1, TransformValues{}));
+    document.scene.bodies.push_back(corpusSceneBody(2, corpusPlacementAt(2.0, 0.0, 0.0)));
+    document.scene.bodies.push_back(corpusSceneBody(3, corpusPlacementAt(-2.0, 0.0, 0.0)));
+    document.scene.bodies.push_back(corpusSceneBody(4, corpusPlacementAt(0.0, 3.0, 0.0)));
+    document.hasConstruction = true;
+    ProjectConstructionBody source;
+    source.objectId = 1;
+    source.shape = canonicalCorpusShape(PrimitiveKind::Box);
+    source.features.push_back(ProjectFeatureRecord{});
+    document.construction.bodies.push_back(source);
+    document.hasCad = true;
+    CadBodyState oneSide = corpusRectangleState(1.5, 1.5, Workplane::XY);
+    oneSide.extrude.direction = ExtrudeDirection::AgainstNormal;
+    document.cad.bodies.push_back(corpusCadBody(2, oneSide));
+    document.cad.bodies.push_back(
+        corpusCadBody(3, withSymmetric(corpusRectangleState(1.0, 2.0, Workplane::XZ), 0.625)));
+    document.cad.bodies.push_back(
+        corpusCadBody(4, withTwoSides(corpusCircleState(0.75, Workplane::YZ), 1.0, 0.25)));
+    return document;
+}
+
 }  // namespace
+
+const char* cadSymmetricFixtureSha256() { return g_symmetricDigest.c_str(); }
+const char* cadTwoSidesFixtureSha256() { return g_twoSidesDigest.c_str(); }
+const char* cadFaceExtentFixtureSha256() { return g_faceExtentDigest.c_str(); }
+const char* cadMixedExtentFixtureSha256() { return g_mixedExtentDigest.c_str(); }
+const char* cadBadExtentFixtureSha256() { return g_badExtentDigest.c_str(); }
+const char* cadBadTwoSidesFixtureSha256() { return g_badTwoSidesDigest.c_str(); }
+
+namespace {
+
+// The two CORRUPT v4 fixtures. Every length, count and CRC in both is correct,
+// so only the SEMANTIC check can refuse them -- which is exactly what makes them
+// worth having. They cannot come out of `encodeProjectV1`, which validates
+// first, so the valid file is encoded and the bad value is written over its own
+// FIXED-WIDTH field and the payload CRC redone. The PowerShell builder reaches
+// the same bytes by CONSTRUCTING them with the bad value in place: two routes,
+// one file.
+//
+// The v4 one-body record, from the start of the payload:
+//   bodyCount u32 | objectId u64 | plane u8 | supportKind u8 | nextEntityId u32
+//   | profileEntityId u32 | extentCode u8 | directionCode u8 | depth f64
+//   | secondDistance f64 | entityCount u32 ...
+constexpr size_t kV4ExtentCodeOffset = 4 + 8 + 1 + 1 + 4 + 4;
+constexpr size_t kV4DepthOffset = kV4ExtentCodeOffset + 1 + 1;
+constexpr size_t kV4SecondDistanceOffset = kV4DepthOffset + 8;
+
+std::vector<uint8_t> cadBadExtentBytes() {
+    std::vector<uint8_t> bytes = encodeProjectV1(cadSymmetricDocument());
+    const size_t payload = cadPayloadOffset(bytes);
+    if (payload == 0) {
+        return std::vector<uint8_t>();
+    }
+    bytes[payload + kV4ExtentCodeOffset] = 9;  // no such extent
+    repairCadPayloadCrc(&bytes);
+    return bytes;
+}
+
+std::vector<uint8_t> cadBadTwoSidesBytes() {
+    std::vector<uint8_t> bytes = encodeProjectV1(cadTwoSidesDocument());
+    const size_t payload = cadPayloadOffset(bytes);
+    if (payload == 0) {
+        return std::vector<uint8_t>();
+    }
+    const double zero = 0.0;
+    std::memcpy(&bytes[payload + kV4DepthOffset], &zero, sizeof(double));
+    std::memcpy(&bytes[payload + kV4SecondDistanceOffset], &zero, sizeof(double));
+    repairCadPayloadCrc(&bytes);
+    return bytes;
+}
+
+}  // namespace
+
+void testExtentCorpus(Recorder& r) {
+    ProjectCodecStatus why = ProjectCodecStatus::Ok;
+    const std::vector<uint8_t> symmetric = encodeProjectV1(cadSymmetricDocument(), &why);
+    g_symmetricDigest = projectFixtureSha256Hex(symmetric);
+    r.check("CADEXT_10_c_cad_symmetric_fixture_matches_the_committed_digest",
+            why == ProjectCodecStatus::Ok
+                    && g_symmetricDigest
+                               == "6674e7225933ee2195292b6e43a091d3e327b7189ebd35fa1519191ecf92ab5a");
+    const std::vector<uint8_t> twoSides = encodeProjectV1(cadTwoSidesDocument(), &why);
+    g_twoSidesDigest = projectFixtureSha256Hex(twoSides);
+    r.check("CADEXT_10_d_cad_two_sides_fixture_matches_the_committed_digest",
+            why == ProjectCodecStatus::Ok
+                    && g_twoSidesDigest
+                               == "8c49e09cca8133b81ef9bbfab75549ed111dc08b4057777ed077191cf25cab47");
+    const std::vector<uint8_t> faceExtent = encodeProjectV1(cadFaceExtentDocument(), &why);
+    g_faceExtentDigest = projectFixtureSha256Hex(faceExtent);
+    r.check("CADEXT_10_e_cad_face_extent_fixture_matches_the_committed_digest",
+            why == ProjectCodecStatus::Ok
+                    && g_faceExtentDigest
+                               == "73739a226a30f8d015fe19663cd06062eeab7dab541f90795282ab5660510673");
+    const std::vector<uint8_t> mixed = encodeProjectV1(cadMixedExtentDocument(), &why);
+    g_mixedExtentDigest = projectFixtureSha256Hex(mixed);
+    r.check("CADEXT_10_f_mixed_cad_extent_fixture_matches_the_committed_digest",
+            why == ProjectCodecStatus::Ok
+                    && g_mixedExtentDigest
+                               == "32ee99fccc5be71ed15003dc5b6856f7ed9c57b764c1032394b2c0b2f814f076");
+    const std::vector<uint8_t> badExtent = cadBadExtentBytes();
+    g_badExtentDigest = projectFixtureSha256Hex(badExtent);
+    r.check("CADEXT_10_g_cad_bad_extent_fixture_matches_the_committed_digest",
+            !badExtent.empty()
+                    && g_badExtentDigest
+                               == "15f1cecae31287643467d4b127e92918aca9677c5a1016b1def41a30d493b995");
+    const std::vector<uint8_t> badTwoSides = cadBadTwoSidesBytes();
+    g_badTwoSidesDigest = projectFixtureSha256Hex(badTwoSides);
+    r.check("CADEXT_10_h_cad_bad_two_sides_fixture_matches_the_committed_digest",
+            !badTwoSides.empty()
+                    && g_badTwoSidesDigest
+                               == "aeb1b6784c546dde05a8e3227227aa19f2b396bee5d0f40981ad1e115414ea39");
+
+    // Every VALID one opens, at the version it declares, with the extent it was
+    // written with; and both corrupt ones are REFUSED, changing nothing.
+    {
+        ProjectDocument decoded;
+        uint16_t version = 0;
+        const bool symmetricOpens =
+                decodeProject(symmetric.data(), symmetric.size(), &decoded) == ProjectCodecStatus::Ok
+                && decoded.cad.bodies.size() == 1
+                && decoded.cad.bodies[0].state.extrude.extent == ExtrudeExtentMode::Symmetric
+                && cadbSectionVersion(symmetric, &version) && version == kCadSectionVersionV4;
+        ProjectDocument twoDecoded;
+        const bool twoOpens =
+                decodeProject(twoSides.data(), twoSides.size(), &twoDecoded)
+                        == ProjectCodecStatus::Ok
+                && twoDecoded.cad.bodies.size() == 1
+                && near(extrudePositiveDistance(twoDecoded.cad.bodies[0].state.extrude), 1.25)
+                && near(extrudeNegativeDistance(twoDecoded.cad.bodies[0].state.extrude), 0.5);
+        ProjectDocument faceDecoded;
+        const bool faceOpens =
+                decodeProject(faceExtent.data(), faceExtent.size(), &faceDecoded)
+                        == ProjectCodecStatus::Ok
+                && faceDecoded.cad.bodies.size() == 3
+                && faceDecoded.cad.bodies[1].state.sketch.hasFaceSupport
+                && faceDecoded.cad.bodies[2].state.sketch.hasFaceSupport;
+        ProjectDocument mixedDecoded;
+        const bool mixedOpens =
+                decodeProject(mixed.data(), mixed.size(), &mixedDecoded) == ProjectCodecStatus::Ok
+                && mixedDecoded.cad.bodies.size() == 3
+                && mixedDecoded.cad.bodies[0].state.extrude.extent == ExtrudeExtentMode::OneSide
+                && mixedDecoded.cad.bodies[0].state.extrude.direction
+                           == ExtrudeDirection::AgainstNormal;
+        r.check("CADEXT_10_i_every_valid_v4_fixture_opens_with_the_extent_it_was_written_with",
+                symmetricOpens && twoOpens && faceOpens && mixedOpens);
+
+        ProjectDocument refusedA;
+        ProjectDocument refusedB;
+        const ProjectCodecStatus whyA =
+                decodeProject(badExtent.data(), badExtent.size(), &refusedA);
+        const ProjectCodecStatus whyB =
+                decodeProject(badTwoSides.data(), badTwoSides.size(), &refusedB);
+        r.check("CADEXT_10_j_both_corrupt_v4_fixtures_are_refused_and_change_nothing",
+                whyA == ProjectCodecStatus::InvalidSemanticValue && !refusedA.hasCad
+                        && refusedA.cad.bodies.empty()
+                        && whyB == ProjectCodecStatus::InvalidSemanticValue && !refusedB.hasCad
+                        && refusedB.cad.bodies.empty());
+    }
+}
 
 const char* cadPerformanceReport() { return g_performance.c_str(); }
 
 int runCadSelfTests(CadSelfTestResult* out, int maxOut) {
     Recorder r{out, maxOut};
+    testExtent(r);
+    testExtentCorpus(r);
 
     // -----------------------------------------------------------------------
     // CADR0-01..03: the three workplane mappings

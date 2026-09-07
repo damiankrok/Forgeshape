@@ -58,7 +58,16 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
     private final NumericPropertyRow depthField;
     private final TextView directionAlong;
     private final TextView directionAgainst;
+    /**
+     * The side chips' row, WITHDRAWN when the extent names both sides
+     * (`CAD-EXT-R1`). The extent itself is authored ON THE CANVAS, where both
+     * arrows are visible; this panel edits the primary distance of whatever
+     * mode the session has and does not offer a side there is none of.
+     */
+    private final LinearLayout directionRow;
     private final TextView extrude;
+    /** The manipulator state, re-read on every refresh; nothing is kept. */
+    private final double[] nativeExtrude = new double[NativeViewport.CAD_EXTRUDE_SIZE];
 
     private final UnitChipsView unitChips;
 
@@ -185,6 +194,7 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
         });
         directions.addView(directionAlong, EditorControlStyles.evenShare(0));
         directions.addView(directionAgainst, EditorControlStyles.evenShare(smallGap));
+        directionRow = directions;
         readySection.addView(directions, EditorControlStyles.rowParams(gap));
         addView(readySection, EditorControlStyles.rowParams(0));
 
@@ -269,6 +279,11 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
         }
         refreshProfiles();
         depthField.setText(unit.format(nativeSketch[NativeViewport.SKETCH_EXTRUDE_DEPTH]));
+        NativeViewport.cadExtrudeToolState(nativeExtrude);
+        directionRow.setVisibility(
+                nativeExtrude[NativeViewport.CAD_EXTRUDE_EXTENT] == NativeViewport.EXTENT_ONE_SIDE
+                        ? VISIBLE
+                        : GONE);
         showDirection();
     }
 

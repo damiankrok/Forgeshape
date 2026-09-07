@@ -157,10 +157,10 @@ forgeshape_jni.cpp            render thread, ANativeWindow, MotionEvent ->
 | Which LOCAL mesh a body is sculpted FROM | `buildSculptSourceMesh` in `forgeshape_scene.{h,cpp}` | the second ONE dispatch point beside `publishSceneObject`: a Construction Body regenerates from its parameters, an Imported Mesh hands over the arrays it owns. Either source is only READ. It copies an imported object's RAW indices, never `buildDrawData`'s reversed duplicates, and collapses per-submesh `doubleSided` into the frozen mesh's one sidedness answer — see *Sculpting an Imported Mesh* |
 | The three principal workplanes and the ONE mapping between sketch `(u, v)` and body-local 3D | `forgeshape_workplane.{h,cpp}` | no camera, no pixel: a workplane is a fact about the body, right-handed by construction, and it reads nothing from the view |
 | What a sketch entity may be, the sketch's per-sketch identities, closed-profile extraction and ear-clipping triangulation | `forgeshape_sketch.{h,cpp}` | truth is the entity list; profiles, polygons and triangles are DERIVED and never stored. It fails closed by name — open, forked, crossing, zero-area, duplicate-edge and nested loops are refused, never repaired — and every refusal is one `CadStatus` |
-| A CAD Body's authored truth (`CadBodyState`: one sketch, one linear extrusion) and the ONE regeneration path from it to a mesh | `forgeshape_cad_body.{h,cpp}` | `applyState` validates and regenerates the whole requested state and writes nothing unless all of it passes; no vertex is truth; no parameter is ever read back out of a mesh |
+| A CAD Body's authored truth (`CadBodyState`: one sketch, one linear extrusion with its EXTENT) and the ONE regeneration path from it to a mesh | `forgeshape_cad_body.{h,cpp}` | the extent is TWO non-negative distances read through `extrudePositiveDistance` / `extrudeNegativeDistance`, and the mode names which the controls author rather than adding a second geometry rule; `extrudeFeatureWithExtent` is the transition policy as a pure function; each mode has ONE canonical form and a non-canonical one is refused by name. `applyState` validates and regenerates the whole requested state and writes nothing unless all of it passes; no vertex is truth; no parameter is ever read back out of a mesh |
 | The sketch edit session: the entity being placed, the selection, snapping, the pointer it owns, the profile choice and the depth BEFORE the one commit | `SketchSession` (`forgeshape_sketch_session.{h,cpp}`) | volatile: nothing in it is project truth, the scene, the history, the fingerprint and the codec never see it, and `commit` is ONE `ScopedConstructionEdit` around ONE `addCadBody`. Java holds no sketch: not an entity, not a profile, not a depth |
 | The sketch overlay the renderer draws: the plane grid, the axes, the entities, the drag and the extrude preview, as world-space lines | `SketchOverlay` (`forgeshape_sketch_overlay.h`), built by `SketchSession::overlay` | presentation on the gizmo's terms: no `ObjectId`, no revision, never published, never picked, never exported, never a `.forge` byte. The renderer re-uploads it only when its revision changes and draws it through the gizmo's line pipeline |
-| Where the extrude manipulator stands in world space, how big it is drawn and grabbed, what a drag along the extrusion axis means, and which view that axis can be dragged in | `forgeshape_cad_extrude_tool.{h,cpp}` (`CadExtrudeAnchors`, `CadExtrudeControlScale`, `CadExtrudeManipulator`, `cadFeatureViewPose`) | **not** a second model of the extrusion: `SketchSession` still owns the profile, the depth and the direction and is still the only writer, and a dragged depth lands through `setExtrude`. The anchors carry no camera; the size rule is a new function BESIDE `gizmoWorldScale` (which holds a constant pixel size) and produces the ONE number drawing and hit testing share; the drag is the gizmo's contract verbatim; the view policy is a pure function over a pose, a frame and the anchors that answers another pose. Nothing here is serialized or reaches a history step |
+| Where the extrude manipulator stands in world space, how big it is drawn and grabbed, what a drag along the extrusion axis means, and which view that axis can be dragged in | `forgeshape_cad_extrude_tool.{h,cpp}` (`CadExtrudeAnchors`, `CadExtrudeControlScale`, `CadExtrudeManipulator`, `cadFeatureViewPose`) | **not** a second model of the extrusion: `SketchSession` still owns the profile, the depth and the direction and is still the only writer, and a dragged distance lands through `setExtrudeSide`, the one door a typed value already used. Since `CAD-EXT-R1` the anchors carry one `CadExtrudeSideAnchor` per side and the manipulator freezes WHICH side at pointer-down with the basis. The anchors carry no camera; the size rule is a new function BESIDE `gizmoWorldScale` (which holds a constant pixel size) and produces the ONE number drawing and hit testing share; the drag is the gizmo's contract verbatim; the view policy is a pure function over a pose, a frame and the anchors that answers another pose. Nothing here is serialized or reaches a history step |
 | The views a sketch borrows — the exact support-normal one it is AUTHORED through, the feature-preview one the staged extrusion is adjusted through, and the user's own pose kept for the way back | `beginSketchView` / `beginExtrudeFeatureView` / `endSketchView` in `forgeshape_jni.cpp` over `CameraController::frameSketchView` / `capturePose` / `restorePose`, with `cadFeatureViewPose` deciding the second | the sketch stores no camera. The authoring view comes from the frame's own axes; the preview is installed on the `finish()` that reaches `Ready` and withdrawn by every path back to Editing; `g_sketchSavedPose` is the pre-sketch view and is restored on commit and on cancel alike, unconsumed by the preview |
 | Whether a one-finger gesture while sketching draws, selects, is swallowed, or navigates — and that two fingers always pan and pinch | the sketch arbitration block in `forgeshape_jni.cpp`, using `SketchSession::onTouch` and `state()` | a single finger never orbits while the sketch is being DRAWN; in `Ready` one that misses the arrow navigates, because the drawing is done and there is no aligned view left to protect. The gizmo and the sculpt arbitration are already out of the picture, because the gizmo is withdrawn at begin and a sketch cannot start in Sculpt |
 | Removing one body from the project | `forgeshape_body_delete.{h,cpp}` | one representation-neutral operation over the scene and the history. One Delete is one transaction; the removed body is HELD by the history rather than destroyed, so an Undo restores that object with its Imported Mesh and its Frozen Sculpt Mesh intact; the replacement selection and the last-body refusal are stated here and nowhere else |
@@ -2350,6 +2350,33 @@ view through `beginSketchView`. In `Ready` the JNI arbitration hands an
 unclaimed single pointer to the camera instead of swallowing it, which is the
 one gesture rule the transition changes and the one state in which there is no
 aligned view to protect.
+
+**The extrusion's EXTENT is two distances (`CAD-EXT-R1`).** `ExtrudeFeature`
+gained an `ExtrudeExtentMode` and a `secondDistance`, and everything downstream
+reads the pair `extrudePositiveDistance` / `extrudeNegativeDistance` rather than
+the mode — so `generateCadMesh` spans `-B .. +A` in one line for all three
+modes, the overlay preview reads the same two numbers, and a fourth mode could
+not silently mean a fourth geometry rule. A mode is not a second model of the
+extrusion: it names which combinations the controls author, and each mode has
+ONE canonical form (a direction only in One Side, a second distance only in Two
+Sides) which `validateCadBodyState` refuses by name rather than repairing, so
+one solid has exactly one encoding in a file, a history step and a live edit
+alike. `extrudeFeatureWithExtent` is the whole transition policy as a pure
+function over values — no camera, no averaging, no heuristic — taking the
+user's last One Side choice as an argument rather than reading a hidden field;
+`SketchSession` holds that choice as volatile intent (`oneSideDirection_`),
+never persisted and never a second answer to which side the solid is on.
+`SketchSession::applyExtrudeFeature` is the ONE writer every typed value, drag
+sample, Flip and mode change lands through. `CadExtrudeAnchors` grew a
+`CadExtrudeSideAnchor` per side and `CadExtrudeManipulator` freezes WHICH side
+at pointer-down with the basis, so a Symmetric extrusion growing under the
+finger cannot move the gesture to the other arrow. `CapPlane` is now the cap
+the extrusion grows FROM and `CapFar` the one it grows TO — for One Side still
+literally the cap on the plane — so the face TOKENS and the §7c lineage
+signature are unchanged and a face-supported dependent stays attached across an
+extent edit while its derived placement follows the cap that moved. `CADB`
+gains section version 4 for the extent; a project whose every extrusion is One
+Side stays byte-identical at v1, v2 or v3.
 
 Nothing above a line reads truth from below it through a mesh. The renderer
 sees a CAD Body exactly as it sees a primitive — a published `RuntimeMesh` —

@@ -553,8 +553,17 @@ public final class CadCanvasExtrudeTest {
     // E2E-CADUXS1-08: no false affordance
     // -----------------------------------------------------------------------
 
+    /**
+     * The OPERATION is still New Body and nothing else.
+     *
+     * <p>`CAD-EXT-R1` superseded half of this case's original premise:
+     * Symmetric and Two Sides are real now, and the selector that offers them
+     * is expected to name them. What has not changed at all is the operation —
+     * an extrusion creates a new body, there is nothing to choose, and Add, Cut
+     * and every boolean stay absent rather than inert.
+     */
     @Test
-    public void e2eCaduxs1_08_addCutSymmetricAndTwoSidesAreNowhereToBeFound() {
+    public void e2eCaduxs1_08_addAndCutAreNowhereToBeFound() {
         beginSketchXy();
         drawRectangle(2.0, 1.0);
         finishSketch();
@@ -567,8 +576,8 @@ public final class CadCanvasExtrudeTest {
                     canvas.findViewById(R.id.cad_extrude_operation)).getText().toString();
             assertEquals("only New Body is named",
                     activity.getString(R.string.extrude_operation_new_body), badge);
-            for (String forbidden : new String[]{"Add", "Cut", "Symmetric", "Two Sides",
-                    "Asymmetric", "Boolean", "Union", "Subtract"}) {
+            for (String forbidden : new String[]{"Add", "Cut", "Join", "Boolean", "Union",
+                    "Subtract", "Intersect", "Revolve"}) {
                 assertFalse("E2E-CADUXS1-08: the cluster never names " + forbidden,
                         containsText(canvas, forbidden));
                 assertFalse("nor does the sketch panel", containsText(workspace.sketchEditor(),
@@ -577,12 +586,18 @@ public final class CadCanvasExtrudeTest {
             return null;
         });
 
-        // And the domain cannot express one either: the direction is two-valued.
+        // And the domain cannot express one either: the direction is two-valued
+        // and the extent is one of exactly three.
         final double[] state = toolState();
         final int direction = (int) state[NativeViewport.CAD_EXTRUDE_DIRECTION];
         assertTrue("the extrusion is one of exactly two directions",
                 direction == NativeViewport.EXTRUDE_ALONG_NORMAL
                         || direction == NativeViewport.EXTRUDE_AGAINST_NORMAL);
+        final int extent = (int) state[NativeViewport.CAD_EXTRUDE_EXTENT];
+        assertTrue("and one of exactly three extents",
+                extent == NativeViewport.EXTENT_ONE_SIDE
+                        || extent == NativeViewport.EXTENT_SYMMETRIC
+                        || extent == NativeViewport.EXTENT_TWO_SIDES);
     }
 
     // -----------------------------------------------------------------------

@@ -349,8 +349,35 @@ public:
     CadStatus selectProfile(SketchEntityId anchorEntityId);
     SketchEntityId selectedProfileId() const { return extrude_.profileEntityId; }
 
+    // Writes the PRIMARY distance, and in One Side alone the side it is on.
+    // The extent MODE is preserved.
     CadStatus setExtrude(Meters depth, ExtrudeDirection direction);
     const ExtrudeFeature& extrude() const { return extrude_; }
+
+    // --- the extent (`CAD-EXT-R1`) ---------------------------------------
+    //
+    // One Side, Symmetric and Two Sides are three ways of authoring the SAME
+    // two distances, and `ExtrudeFeature` is still the only model of them:
+    // nothing below adds a draft extent, a second depth or a copy of either.
+
+    // Changes which combinations the controls author, carrying the distances
+    // across by the deterministic policy in `extrudeFeatureWithExtent`. Refused
+    // (`NotSketching`) outside Ready, and refused by name when the resulting
+    // extrusion is one the domain would not accept.
+    CadStatus setExtrudeExtent(ExtrudeExtentMode extent);
+
+    // Writes ONE side's distance -- what a drag on that side's arrow and its own
+    // exact field both land through. In Symmetric either side writes the one
+    // shared distance; in One Side a write to the empty side is refused
+    // (`InvalidExtrudeExtent`), because there is no handle there to have moved.
+    CadStatus setExtrudeSide(bool positiveSide, Meters distance);
+
+    // The user's last One Side choice, held as VOLATILE intent so a mode round
+    // trip gives the side back. Never persisted, never in a history step, never
+    // in the fingerprint and never a second answer to which side the solid is
+    // on -- `extrude_.direction` remains that, and this is only what a
+    // transition out of a two-sided mode consults.
+    ExtrudeDirection preferredOneSideDirection() const { return oneSideDirection_; }
 
     // --- the canvas extrude manipulator (`CAD-UX-S1`) --------------------
     //
@@ -364,7 +391,10 @@ public:
     bool extrudeAnchors(CadExtrudeAnchors* out) const;
 
     // Reverses which side of the sketch plane the solid grows on, keeping the
-    // exact depth and the same profile.
+    // exact depth and the same profile. A One Side control ALONE: Symmetric
+    // reaches both sides already, and Two Sides states both explicitly, so in
+    // either it is refused by name (`InvalidExtrudeExtent`) and withdrawn above
+    // JNI rather than shown and then refused.
     //
     // Flip is a DIRECTION change and never a negative depth: an extrusion
     // stores a positive length and a two-valued direction, and encoding the
@@ -439,6 +469,13 @@ private:
                         int count, const CameraSnapshot& camera, int viewportWidth,
                         int viewportHeight);
 
+    // THE one writer of `extrude_`: every typed value, drag sample, Flip and
+    // extent change lands here and passes one validation.
+    CadStatus applyExtrudeFeature(const ExtrudeFeature& requested);
+
+    // Puts a cancelled drag's own SIDE back to the distance it started from.
+    bool restoreCancelledExtrudeDrag();
+
     bool pointerToSketch(const CameraSnapshot& camera, float x, float y, int viewportWidth,
                          int viewportHeight, SnapResult* out);
     SnapResult snap(const SketchPoint& raw, double snapWorld) const;
@@ -462,6 +499,8 @@ private:
 
     ProfileExtraction profiles_;
     ExtrudeFeature extrude_;
+    // Volatile transition intent (`CAD-EXT-R1`). See the accessor.
+    ExtrudeDirection oneSideDirection_ = ExtrudeDirection::AlongNormal;
     // The canvas manipulator (`CAD-UX-S1`). Volatile like everything else here,
     // and alive only in Ready: while the sketch is being DRAWN the single
     // finger belongs to the drawing, and an arrow that competed with it would

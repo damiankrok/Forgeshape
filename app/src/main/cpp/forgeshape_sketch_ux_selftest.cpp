@@ -1362,7 +1362,7 @@ void testCanvasExtrudeDrag(Recorder& r) {
                                         vec3Add(anchors.tip, vec3Scale(anchors.axis, 1.0f)), w, h,
                                         &endX, &endY);
         Meters depth = 0.0;
-        const bool began = drag.beginDrag(7, anchors, camera, startX, startY, w, h);
+        const bool began = drag.beginDrag(7, anchors, anchors.primaryIsPositive, camera, startX, startY, w, h);
         const bool moved = drag.updateDrag(7, camera, endX, endY, w, h, &depth);
         r.check("CADUXS1_04_a_a_one_metre_axial_drag_adds_one_metre_of_depth",
                 projected && began && moved && near2(depth, 2.0, 1e-3));
@@ -1388,7 +1388,7 @@ void testCanvasExtrudeDrag(Recorder& r) {
                                         vec3Add(anchors.tip, vec3Scale(anchors.axis, 1.0f)), w, h,
                                         &endX, &endY);
         Meters depth = 0.0;
-        drag.beginDrag(7, anchors, camera, startX, startY, w, h);
+        drag.beginDrag(7, anchors, anchors.primaryIsPositive, camera, startX, startY, w, h);
         const bool moved = drag.updateDrag(7, camera, endX, endY, w, h, &depth);
         r.check("CADUXS1_04_b_zoom_does_not_change_what_a_world_displacement_means",
                 projected && moved && near2(depth, 2.0, 1e-3));
@@ -1423,7 +1423,7 @@ void testCanvasExtrudeDrag(Recorder& r) {
                                         &x2, &y2);
         Meters first = 0.0;
         Meters second = 0.0;
-        drag.beginDrag(7, anchors, camera, x0, y0, w, h);
+        drag.beginDrag(7, anchors, anchors.primaryIsPositive, camera, x0, y0, w, h);
         drag.updateDrag(7, camera, x1, y1, w, h, &first);
         drag.updateDrag(7, camera, x2, y2, w, h, &second);
         r.check("CADUXS1_04_c_the_drag_basis_is_frozen_at_pointer_down",
@@ -1442,7 +1442,7 @@ void testCanvasExtrudeDrag(Recorder& r) {
         const CameraSnapshot camera =
                 uxPerspectiveCamera(Vec3{0.0f, 0.0f, 9.0f}, Vec3{0.0f, 0.0f, 0.0f}, w, h);
         CadExtrudeManipulator drag;
-        const bool began = drag.beginDrag(7, anchors, camera, 540.0f, 1000.0f, w, h);
+        const bool began = drag.beginDrag(7, anchors, anchors.primaryIsPositive, camera, 540.0f, 1000.0f, w, h);
         Meters depth = 0.0;
         bool held = true;
         if (began) {
@@ -1477,7 +1477,7 @@ void testCanvasExtrudeDrag(Recorder& r) {
                                         vec3Add(anchors.tip, vec3Scale(anchors.axis, -8.0f)), w, h,
                                         &xBack, &yBack);
         Meters depth = 0.0;
-        drag.beginDrag(7, anchors, camera, x0, y0, w, h);
+        drag.beginDrag(7, anchors, anchors.primaryIsPositive, camera, x0, y0, w, h);
         const bool moved = drag.updateDrag(7, camera, xBack, yBack, w, h, &depth);
         const CadStatus typedZero = session.setExtrude(0.0, ExtrudeDirection::AlongNormal);
         const CadStatus typedNegative = session.setExtrude(-1.0, ExtrudeDirection::AlongNormal);
@@ -1502,7 +1502,7 @@ void testCanvasExtrudeDrag(Recorder& r) {
         float x0 = 0.0f;
         float y0 = 0.0f;
         projectWorldToScreen(camera, anchors.tip, w, h, &x0, &y0);
-        drag.beginDrag(7, anchors, camera, x0, y0, w, h);
+        drag.beginDrag(7, anchors, anchors.primaryIsPositive, camera, x0, y0, w, h);
         Meters depth = 0.0;
         const bool otherPointerIgnored = !drag.updateDrag(9, camera, x0, y0 - 200.0f, w, h, &depth);
         r.check("CADUXS1_04_f_a_second_pointer_id_cannot_steer_the_drag",
@@ -1523,7 +1523,7 @@ void testCanvasExtrudeDrag(Recorder& r) {
         float x0 = 0.0f;
         float y0 = 0.0f;
         projectWorldToScreen(camera, anchors.tip, w, h, &x0, &y0);
-        drag.beginDrag(11, anchors, camera, x0, y0, w, h);
+        drag.beginDrag(11, anchors, anchors.primaryIsPositive, camera, x0, y0, w, h);
         Meters restore = 0.0;
         const bool cancelled = drag.cancelDrag(&restore);
         const bool secondCancelDoesNothing = !drag.cancelDrag(&restore);
@@ -1698,7 +1698,7 @@ void testCanvasExtrudeParityAndPurity(Recorder& r) {
         projectWorldToScreen(camera, vec3Add(anchors.tip, vec3Scale(anchors.axis, 1.0f)), w, h,
                              &x1, &y1);
         CadExtrudeManipulator drag;
-        drag.beginDrag(1, anchors, camera, x0, y0, w, h);
+        drag.beginDrag(1, anchors, anchors.primaryIsPositive, camera, x0, y0, w, h);
         Meters depth = 0.0;
         drag.updateDrag(1, camera, x1, y1, w, h, &depth);
         // The drag lands within a pixel of 2.0; the exact value is then typed,
@@ -1775,6 +1775,15 @@ void testCanvasExtrudeParityAndPurity(Recorder& r) {
         anchors.tip = Vec3{0.0f, 0.0f, 2.0f};
         anchors.label = Vec3{0.0f, 0.0f, 1.0f};
         anchors.depth = 2.0;
+        // The `+N` side IS the primary one here, so the two describe one arrow
+        // (`CAD-EXT-R1`): a One Side extrusion draws exactly what it always did.
+        anchors.primaryIsPositive = true;
+        anchors.positive.present = true;
+        anchors.positive.axis = anchors.axis;
+        anchors.positive.tip = anchors.tip;
+        anchors.positive.label = anchors.label;
+        anchors.positive.distance = 2.0;
+        anchors.negative.axis = Vec3{0.0f, 0.0f, -1.0f};
         std::vector<GizmoVertex> small;
         std::vector<GizmoVertex> large;
         appendCadExtrudeArrow(&small, anchors, 0.10, false);
@@ -2174,7 +2183,7 @@ void testFeaturePreviewView(Recorder& r) {
                                             vec3Add(anchors.tip, vec3Scale(anchors.axis, 1.0f)),
                                             w, h, &ex, &ey);
             Meters depth = 0.0;
-            ok = ok && drag.beginDrag(3, anchors, camera, tx, ty, w, h)
+            ok = ok && drag.beginDrag(3, anchors, anchors.primaryIsPositive, camera, tx, ty, w, h)
                  && drag.updateDrag(3, camera, ex, ey, w, h, &depth)
                  && near2(depth, 2.0, 1e-2);
             ok = ok && drag.lastSolve() != AxisSolveStatus::Unresolvable;
@@ -2205,7 +2214,7 @@ void testFeaturePreviewView(Recorder& r) {
         projectWorldToScreen(camera, vec3Add(anchors.tip, vec3Scale(anchors.axis, 1.0f)), w, h,
                              &ex, &ey);
         CadExtrudeManipulator drag;
-        drag.beginDrag(4, anchors, camera, tx, ty, w, h);
+        drag.beginDrag(4, anchors, anchors.primaryIsPositive, camera, tx, ty, w, h);
         Meters depth = 0.0;
         const bool moved = drag.updateDrag(4, camera, ex, ey, w, h, &depth);
         // Through the ONE writer, exactly as the session's own gesture does.

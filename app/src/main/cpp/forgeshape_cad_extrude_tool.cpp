@@ -119,7 +119,10 @@ bool cadExtrudeAnchors(const SketchFrame& frame, const ClosedProfile& profile,
     if (out == nullptr) {
         return false;
     }
-    if (!std::isfinite(extrude.depth) || extrude.depth <= 0.0) {
+    const Meters positive = extrudePositiveDistance(extrude);
+    const Meters negative = extrudeNegativeDistance(extrude);
+    if (!std::isfinite(positive) || !std::isfinite(negative) || positive < 0.0 || negative < 0.0
+        || positive + negative <= 0.0) {
         return false;
     }
     if (!vec3Finite(frame.origin) || !vec3Finite(frame.u) || !vec3Finite(frame.v)
@@ -141,15 +144,36 @@ bool cadExtrudeAnchors(const SketchFrame& frame, const ClosedProfile& profile,
     built.base = vec3Add(frame.origin,
                          vec3Add(vec3Scale(frame.u, static_cast<float>(centroid.u)),
                                  vec3Scale(frame.v, static_cast<float>(centroid.v))));
-    built.axis = extrude.direction == ExtrudeDirection::AlongNormal ? normal
-                                                                   : vec3Scale(normal, -1.0f);
-    built.depth = extrude.depth;
-    built.tip = vec3Add(built.base, vec3Scale(built.axis, static_cast<float>(extrude.depth)));
-    built.label = vec3Add(built.base,
-                          vec3Scale(built.axis, static_cast<float>(extrude.depth * 0.5)));
-    if (!vec3Finite(built.base) || !vec3Finite(built.tip) || !vec3Finite(built.label)) {
+    if (!vec3Finite(built.base)) {
         return false;
     }
+    const Vec3 against = vec3Scale(normal, -1.0f);
+    built.positive.axis = normal;
+    built.positive.distance = positive;
+    built.positive.present = positive > 0.0;
+    built.positive.tip = vec3Add(built.base, vec3Scale(normal, static_cast<float>(positive)));
+    built.positive.label =
+            vec3Add(built.base, vec3Scale(normal, static_cast<float>(positive * 0.5)));
+    built.negative.axis = against;
+    built.negative.distance = negative;
+    built.negative.present = negative > 0.0;
+    built.negative.tip = vec3Add(built.base, vec3Scale(against, static_cast<float>(negative)));
+    built.negative.label =
+            vec3Add(built.base, vec3Scale(against, static_cast<float>(negative * 0.5)));
+    if (!vec3Finite(built.positive.tip) || !vec3Finite(built.positive.label)
+        || !vec3Finite(built.negative.tip) || !vec3Finite(built.negative.label)) {
+        return false;
+    }
+    // The PRIMARY mirror: the side the mode's primary distance is on. For a One
+    // Side extrusion that is the solid's own side, which is exactly what the
+    // single-arrow fields meant before `CAD-EXT-R1`.
+    built.primaryIsPositive = extrude.extent != ExtrudeExtentMode::OneSide
+                              || extrude.direction == ExtrudeDirection::AlongNormal;
+    const CadExtrudeSideAnchor& primary = built.side(built.primaryIsPositive);
+    built.axis = primary.axis;
+    built.tip = primary.tip;
+    built.label = primary.label;
+    built.depth = primary.distance;
     built.valid = true;
     *out = built;
     return true;
@@ -202,10 +226,35 @@ bool cadExtrudeControlScale(const CameraSnapshot& camera, const Vec3& anchor, in
 // ---------------------------------------------------------------------------
 
 bool CadExtrudeManipulator::hitTest(const CadExtrudeAnchors& anchors, const CameraSnapshot& camera,
-                                    float x, float y, int viewportWidth,
-                                    int viewportHeight) const {
+                                    float x, float y, int viewportWidth, int viewportHeight,
+                                    bool* outPositiveSide) const {
+    if (!anchors.valid) {
+        return false;
+    }
+    // The PRIMARY side first, deterministically: a Symmetric extrusion seen
+    // almost edge-on projects two arrows into overlapping corridors, and a
+    // stated preference is better than whichever the loop happened to reach.
+    const bool order[2] = {anchors.primaryIsPositive, !anchors.primaryIsPositive};
+    for (const bool positiveSide : order) {
+        if (hitTestSide(anchors, positiveSide, camera, x, y, viewportWidth, viewportHeight)) {
+            if (outPositiveSide != nullptr) {
+                *outPositiveSide = positiveSide;
+            }
+            return true;
+        }
+    }
+    return false;
+}
+
+bool CadExtrudeManipulator::hitTestSide(const CadExtrudeAnchors& anchors, bool positiveSide,
+                                        const CameraSnapshot& camera, float x, float y,
+                                        int viewportWidth, int viewportHeight) const {
     if (!anchors.valid || viewportWidth <= 0 || viewportHeight <= 0) {
         return false;
+    }
+    const CadExtrudeSideAnchor& side = anchors.side(positiveSide);
+    if (!side.present) {
+        return false;  // a side with no extent has no arrow to have been hit
     }
     CadExtrudeControlScale scale;
     if (!cadExtrudeControlScale(camera, anchors.base, viewportHeight, &scale)) {
@@ -214,8 +263,8 @@ bool CadExtrudeManipulator::hitTest(const CadExtrudeAnchors& anchors, const Came
     // The head is drawn past the tip at the SHARED scale, so the grabbable
     // extent past the tip is exactly what was drawn there.
     const Vec3 headEnd = vec3Add(
-            anchors.tip,
-            vec3Scale(anchors.axis,
+            side.tip,
+            vec3Scale(side.axis,
                       static_cast<float>(scale.world * kCadExtrudeArrowHeadLengthFraction)));
     float baseX = 0.0f;
     float baseY = 0.0f;
@@ -239,9 +288,13 @@ bool CadExtrudeManipulator::hitTest(const CadExtrudeAnchors& anchors, const Came
 }
 
 bool CadExtrudeManipulator::beginDrag(int32_t pointerId, const CadExtrudeAnchors& anchors,
-                                      const CameraSnapshot& camera, float x, float y,
-                                      int viewportWidth, int viewportHeight) {
+                                      bool positiveSide, const CameraSnapshot& camera, float x,
+                                      float y, int viewportWidth, int viewportHeight) {
     if (!anchors.valid || viewportWidth <= 0 || viewportHeight <= 0) {
+        return false;
+    }
+    const CadExtrudeSideAnchor& side = anchors.side(positiveSide);
+    if (!side.present) {
         return false;
     }
     Ray ray;
@@ -249,7 +302,7 @@ bool CadExtrudeManipulator::beginDrag(int32_t pointerId, const CadExtrudeAnchors
         return false;
     }
     float t = 0.0f;
-    const AxisSolveStatus status = solveAxisParameter(ray, anchors.base, anchors.axis, &t);
+    const AxisSolveStatus status = solveAxisParameter(ray, anchors.base, side.axis, &t);
     if (status == AxisSolveStatus::Unresolvable || !std::isfinite(t)) {
         // Nothing is captured: a drag whose very first sample cannot be solved
         // has no basis to freeze, and inventing one is the jump this refuses.
@@ -257,10 +310,11 @@ bool CadExtrudeManipulator::beginDrag(int32_t pointerId, const CadExtrudeAnchors
     }
     pointerId_ = pointerId;
     base_ = anchors.base;
-    axis_ = anchors.axis;
-    depthAtDown_ = anchors.depth;
+    axis_ = side.axis;
+    positiveSide_ = positiveSide;
+    depthAtDown_ = side.distance;
     axisAtDown_ = t;
-    lastGoodDepth_ = anchors.depth;
+    lastGoodDepth_ = side.distance;
     lastSolve_ = status;
     ++dragCount_;
     return true;
@@ -268,8 +322,8 @@ bool CadExtrudeManipulator::beginDrag(int32_t pointerId, const CadExtrudeAnchors
 
 bool CadExtrudeManipulator::updateDrag(int32_t pointerId, const CameraSnapshot& camera, float x,
                                        float y, int viewportWidth, int viewportHeight,
-                                       Meters* outDepth) {
-    if (pointerId_ < 0 || pointerId != pointerId_ || outDepth == nullptr || viewportWidth <= 0
+                                       Meters* outDistance) {
+    if (pointerId_ < 0 || pointerId != pointerId_ || outDistance == nullptr || viewportWidth <= 0
         || viewportHeight <= 0) {
         return false;
     }
@@ -296,19 +350,19 @@ bool CadExtrudeManipulator::updateDrag(int32_t pointerId, const CameraSnapshot& 
         depth = kCadExtrudeMinDragDepthMeters;
     }
     lastGoodDepth_ = depth;
-    *outDepth = depth;
+    *outDistance = depth;
     return true;
 }
 
 void CadExtrudeManipulator::endDrag() { pointerId_ = -1; }
 
-bool CadExtrudeManipulator::cancelDrag(Meters* outRestoreDepth) {
+bool CadExtrudeManipulator::cancelDrag(Meters* outRestoreDistance) {
     if (pointerId_ < 0) {
         return false;
     }
     pointerId_ = -1;
-    if (outRestoreDepth != nullptr) {
-        *outRestoreDepth = depthAtDown_;
+    if (outRestoreDistance != nullptr) {
+        *outRestoreDistance = depthAtDown_;
     }
     return true;
 }
@@ -317,33 +371,36 @@ bool CadExtrudeManipulator::cancelDrag(Meters* outRestoreDepth) {
 // The arrow
 // ---------------------------------------------------------------------------
 
-void appendCadExtrudeArrow(std::vector<GizmoVertex>* out, const CadExtrudeAnchors& anchors,
-                           double controlWorld, bool grabbed) {
-    if (out == nullptr || !anchors.valid || !std::isfinite(controlWorld) || controlWorld <= 0.0) {
+namespace {
+
+// One side's shaft and head. The base tick belongs to the BASE rather than to a
+// side and is drawn once by the caller, so a two-sided extrusion does not stack
+// two ticks on one point.
+void appendOneArrow(std::vector<GizmoVertex>* out, const Vec3& base,
+                    const CadExtrudeSideAnchor& side, double controlWorld, float handle) {
+    if (!side.present) {
         return;
     }
-    const float handle = grabbed ? 1.0f : 0.0f;
     const double headLength = controlWorld * kCadExtrudeArrowHeadLengthFraction;
     const double headHalf = controlWorld * kCadExtrudeArrowHeadHalfWidthFraction;
-    const double tick = controlWorld * kCadExtrudeArrowBaseTickFraction;
 
-    // The shaft IS the extrusion: base to tip, and its length is the depth. It
-    // is the one part of this drawing that does not scale with the camera.
-    pushLine(out, anchors.base, anchors.tip, handle);
+    // The shaft IS the extrusion: base to tip, and its length is this side's
+    // distance. It is the one part of this drawing that does not scale with the
+    // camera.
+    pushLine(out, base, side.tip, handle);
 
     Vec3 p;
     Vec3 q;
-    perpendicularBasis(anchors.axis, &p, &q);
+    perpendicularBasis(side.axis, &p, &q);
     if (!vec3Finite(p) || !vec3Finite(q)) {
         return;
     }
 
     // The head: barbs from a ring behind the tip forward to the point, plus the
     // ring itself, so it reads as a cone rather than as a flat chevron.
-    const Vec3 headBase = vec3Add(anchors.tip, vec3Scale(anchors.axis,
-                                                         -static_cast<float>(headLength)));
-    const Vec3 point = vec3Add(anchors.tip,
-                               vec3Scale(anchors.axis, static_cast<float>(headLength)));
+    const Vec3 headBase =
+            vec3Add(side.tip, vec3Scale(side.axis, -static_cast<float>(headLength)));
+    const Vec3 point = vec3Add(side.tip, vec3Scale(side.axis, static_cast<float>(headLength)));
     Vec3 previous{};
     Vec3 first{};
     for (int i = 0; i < kCadExtrudeArrowBarbs; ++i) {
@@ -361,9 +418,31 @@ void appendCadExtrudeArrow(std::vector<GizmoVertex>* out, const CadExtrudeAnchor
         previous = ring;
     }
     pushLine(out, previous, first, handle);
+}
 
-    // The base tick, across the axis in the drawing convention the dimension
-    // annotations use: it says the measurement starts here.
+}  // namespace
+
+void appendCadExtrudeArrow(std::vector<GizmoVertex>* out, const CadExtrudeAnchors& anchors,
+                           double controlWorld, bool grabbed, bool grabbedSide) {
+    if (out == nullptr || !anchors.valid || !std::isfinite(controlWorld) || controlWorld <= 0.0) {
+        return;
+    }
+    const float positiveHandle = (grabbed && grabbedSide) ? 1.0f : 0.0f;
+    const float negativeHandle = (grabbed && !grabbedSide) ? 1.0f : 0.0f;
+    appendOneArrow(out, anchors.base, anchors.positive, controlWorld, positiveHandle);
+    appendOneArrow(out, anchors.base, anchors.negative, controlWorld, negativeHandle);
+
+    // The base tick, across the plane normal in the drawing convention the
+    // dimension annotations use: it says the measurement starts here. ONE tick,
+    // on the sketch plane, because both sides measure from the same place.
+    const double tick = controlWorld * kCadExtrudeArrowBaseTickFraction;
+    Vec3 p;
+    Vec3 q;
+    perpendicularBasis(anchors.normal, &p, &q);
+    if (!vec3Finite(p) || !vec3Finite(q)) {
+        return;
+    }
+    const float handle = grabbed ? 1.0f : 0.0f;
     pushLine(out, vec3Add(anchors.base, vec3Scale(p, -static_cast<float>(tick))),
              vec3Add(anchors.base, vec3Scale(p, static_cast<float>(tick))), handle);
     pushLine(out, vec3Add(anchors.base, vec3Scale(q, -static_cast<float>(tick))),

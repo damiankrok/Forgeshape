@@ -22,4 +22,18 @@ int runCadSelfTests(CadSelfTestResult* out, int maxOut);
 // runCadSelfTests; storage owned by the implementation.
 const char* cadPerformanceReport();
 
+// The digests of the six `CADB` v4 corpus fixtures as THIS build encodes them
+// (`CAD-EXT-R1`), valid after runCadSelfTests.
+//
+// Printed on every debug launch beside the suite's own result, exactly as the
+// project suite prints its golden digests, so drift from the committed corpus
+// is a value that can be READ rather than only an assertion that failed.
+// Storage owned by the implementation.
+const char* cadSymmetricFixtureSha256();
+const char* cadTwoSidesFixtureSha256();
+const char* cadFaceExtentFixtureSha256();
+const char* cadMixedExtentFixtureSha256();
+const char* cadBadExtentFixtureSha256();
+const char* cadBadTwoSidesFixtureSha256();
+
 }  // namespace forgeshape

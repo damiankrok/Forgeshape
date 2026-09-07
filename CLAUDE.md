@@ -392,11 +392,61 @@ curve-profile timings.
   step moves for a camera.
   **The sketch panel holds no draft direction any more**: it shows what native
   says on every refresh, so the canvas Flip and the panel chips cannot become
-  two answers. **Not this stage:** `Add`, `Cut`, any boolean, `Symmetric`,
-  `Two Sides / Asymmetric A+B`, a feature list, `CADB` v4 or v5, `Revolve`,
-  `Intersect`, a Hole feature, a constraint solver, and multi-feature reuse of
-  one sketch — the retained-sketch access delivered here is RE-EDIT and is not
-  that.
+  two answers. **Not this stage:** `Add`, `Cut`, any boolean, a feature list,
+  `CADB` v5, `Revolve`, `Intersect`, a Hole feature, a constraint solver, and
+  multi-feature reuse of one sketch — the retained-sketch access delivered here
+  is RE-EDIT and is not that.
+- **An extrusion's EXTENT is TWO non-negative DISTANCES, and a mode names which
+  of them the controls author** (`CAD-EXT-R1`). The durable truth is how far
+  the solid reaches along `+N` and along `-N`, of which at least one is
+  positive; every consumer — `generateCadMesh`, the face frames, the overlay
+  preview, the anchors — reads that pair through `extrudePositiveDistance` /
+  `extrudeNegativeDistance` and never the mode, so the mesh spans `-B .. +A` in
+  ONE line for all three and a fourth mode could not silently mean a fourth
+  geometry rule. **A signed depth is never how a side is stored**: a side and a
+  length are two different facts. `ExtrudeExtentMode` is `OneSide` (one
+  distance, on `direction`'s side, the other exactly 0 — what every extrusion
+  before this stage was), `Symmetric` (the same distance on both sides, stored
+  PER SIDE and never as a total thickness, so the file does not depend on a
+  presentation preference a later UI might change) and `TwoSides` (`depth` is A
+  along `+N`, `secondDistance` is B along `-N`, independent, and one of them
+  may be zero because the other carries the extent). **Each mode has ONE
+  canonical form** — a meaningful `direction` in One Side alone, a non-zero
+  `secondDistance` in Two Sides alone — and a non-canonical feature is
+  **refused by name** (`InvalidExtrudeExtent`), never masked and never
+  repaired, in the live domain and in the codec alike, so one solid has exactly
+  one encoding. **Flip is a One Side control**: Symmetric reaches both sides
+  already and Two Sides states both outright, so there is no side left to
+  choose, and it is refused below JNI and ABSENT above it rather than shown and
+  then refused; it is never an A/B swap. `extrudeFeatureWithExtent` is the
+  WHOLE transition policy as a pure function over values — into a two-sided
+  mode both sides take what the previous mode reached, out of one the preferred
+  side's value is kept and the other becomes 0, no transition can produce a
+  negative depth, and **nothing is ever averaged**, because an average is a
+  number the user never typed. The preferred side is an ARGUMENT and not a
+  hidden field: `SketchSession` holds the user's last One Side choice as
+  volatile intent, never persisted, never in a history step, never in the
+  fingerprint. `SketchSession::applyExtrudeFeature` is the ONE writer every
+  typed value, drag sample, Flip and mode change lands through, so all of them
+  pass one validation. A drag freezes WHICH side at pointer-down with the
+  basis, on the gizmo's own contract, so a Symmetric extrusion growing under
+  the finger cannot move the gesture to the other arrow. **`CapPlane` is the
+  cap the extrusion grows FROM and `CapFar` the one it grows TO** — for One
+  Side still literally the cap on the sketch plane — so the face TOKENS and the
+  `CAD-A3` lineage signature are unchanged by any extent edit and a
+  face-supported dependent stays attached, while its DERIVED placement follows
+  the cap that moved. **`CADB` gains version 4** carrying the extent code and
+  the second distance, written only when a body is Symmetric or Two Sides; a
+  project whose every extrusion is One Side stays byte-identical at v1, v2 or
+  v3, and the twenty-eight older `CADB` fixtures prove it. `CAD-EXT-R1` added
+  the six v4 fixtures (`cad_symmetric`, `cad_two_sides`, `cad_face_extent`,
+  `mixed_cad_extent`, and the two the decoder must refuse, `cad_bad_extent` and
+  `cad_bad_two_sides`) — a **thirty-six**-fixture corpus in which every older
+  fixture is byte-for-byte unchanged. **Not this stage:** `Add`, `Cut`, `Join`,
+  `Intersect`, any boolean or kernel, `CADB` v5, a feature-list body evaluator,
+  `Revolve`, `To Object`, `Through All`, taper or draft, a Hole feature, and a
+  total-length presentation of Symmetric — the durable value stays the distance
+  per side whatever a later UI chooses to show.
 - **Preferences are application state, never project truth** (`UI-PREF-R1`,
   UI-OWNER-37, UI-OWNER-32, UI-OWNER-42). `AppPreferences` is ONE versioned,
   immutable value — palette, handedness, gizmo visual scale, gizmo stroke
@@ -573,10 +623,13 @@ curve-profile timings.
   `cad_bad_face_ref` and `cad_dependency_cycle`); `SKETCH-UX-R1` added the six
   **`CADB` v3** fixtures (`cad_arc_profile`, `cad_spline_profile`,
   `cad_mixed_curve_profile`, `cad_face_curve`, and the two the decoder must
-  refuse, `cad_bad_arc` and `cad_bad_spline`); Stage 018A added the two
+  refuse, `cad_bad_arc` and `cad_bad_spline`); `CAD-EXT-R1` added the six
+  **`CADB` v4** fixtures (`cad_symmetric`, `cad_two_sides`, `cad_face_extent`,
+  `mixed_cad_extent`, and the two the decoder must refuse, `cad_bad_extent`
+  and `cad_bad_two_sides`); Stage 018A added the two
   **`SCNE` v2** fixtures (`object_state`, and the one the decoder must refuse,
-  `object_state_bad_flags`) — a **thirty**-fixture corpus in which every older
-  fixture is byte-for-byte unchanged. The five corrupt fixtures are CONSTRUCTED
+  `object_state_bad_flags`) — a **thirty-six**-fixture corpus in which every older
+  fixture is byte-for-byte unchanged. The seven corrupt fixtures are CONSTRUCTED
   by the PowerShell builder with the bad value in place, never generated and
   then mutated.
   `DATA_PACKAGE_SPEC.md` owns the layout, and `scripts/build-forge-corpus.ps1`
@@ -1021,9 +1074,16 @@ curve-profile timings.
   *extrude arrow* (the world-space arrow along the extrusion normal, its shaft
   the depth; never a "gizmo", which is the transform instrument and scales the
   opposite way), *canvas extrude cluster* (the camera-attached group anchored to
-  that arrow: the exact depth, *Flip* and the *New Body* badge),
-  *Flip* (reversing which side of the sketch the solid grows on; a direction and
-  never a negative depth), *New Body* (what an extrusion does — the only
+  that arrow: the *extent selector*, the exact distance, *Flip* and the
+  *New Body* badge), *extent selector* (the three chips *One Side*, *Symmetric*
+  and *Two Sides*), *One Side* (the solid grows out of one side of the sketch),
+  *Symmetric* (the same distance out of both; its one value is *Each side* and
+  never a total thickness), *Two Sides* (a different distance out of each, read
+  as *Side A* along the sketch normal and *Side B* against it; never
+  "Asymmetric"),
+  *Flip* (reversing which side of the sketch the solid grows on; a One Side
+  control, a direction and never a negative depth, and never an A/B swap),
+  *New Body* (what an extrusion does — the only
   operation there is, and never drawn beside an Add or a Cut that do not exist), *start page* (the full-window
   opaque Home and New Project screens, `StartPageView`), *Settings page* (the
   full-window persistent-preferences page, `SettingsPageView`, reached from

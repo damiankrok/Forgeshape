@@ -231,6 +231,25 @@ bool extrudeDirectionFromFileCode(uint8_t code, ExtrudeDirection* out) {
     }
 }
 
+uint8_t extrudeExtentFileCode(ExtrudeExtentMode mode) {
+    switch (mode) {
+        case ExtrudeExtentMode::OneSide: return 1;
+        case ExtrudeExtentMode::Symmetric: return 2;
+        case ExtrudeExtentMode::TwoSides: return 3;
+    }
+    return 0;
+}
+
+bool extrudeExtentFromFileCode(uint8_t code, ExtrudeExtentMode* out) {
+    if (out == nullptr) return false;
+    switch (code) {
+        case 1: *out = ExtrudeExtentMode::OneSide; return true;
+        case 2: *out = ExtrudeExtentMode::Symmetric; return true;
+        case 3: *out = ExtrudeExtentMode::TwoSides; return true;
+        default: return false;
+    }
+}
+
 uint8_t sketchEntityKindFileCode(SketchEntityKind kind) {
     switch (kind) {
         case SketchEntityKind::Line: return 1;
@@ -318,6 +337,19 @@ bool cadDocumentNeedsV3(const ProjectDocument& document) {
                 || entity.kind() == SketchEntityKind::Spline) {
                 return true;
             }
+        }
+    }
+    return false;
+}
+
+// Whether any CAD body needs the v4 section: an extent mode other than One Side
+// is the ONLY thing v4 records that v3 cannot. A One Side extrusion IS a
+// direction and a positive depth, which every version since v1 has carried, so
+// a project of One Side bodies keeps its bytes exactly (`CAD-EXT-R1`).
+bool cadDocumentNeedsV4(const ProjectDocument& document) {
+    for (const ProjectCadBody& body : document.cad.bodies) {
+        if (body.state.extrude.extent != ExtrudeExtentMode::OneSide) {
+            return true;
         }
     }
     return false;
@@ -946,7 +978,8 @@ std::vector<uint8_t> encodeProjectV1(const ProjectDocument& document,
 
     // The section is written at the LOWEST version that can carry it, so every
     // project that predates a feature keeps the bytes it always had.
-    const bool cadV3 = document.hasCad && cadDocumentNeedsV3(document);
+    const bool cadV4 = document.hasCad && cadDocumentNeedsV4(document);
+    const bool cadV3 = document.hasCad && (cadV4 || cadDocumentNeedsV3(document));
     const bool cadV2 = document.hasCad && (cadV3 || cadDocumentNeedsV2(document));
     std::vector<uint8_t> cadPayload;
     if (document.hasCad) {
@@ -971,8 +1004,22 @@ std::vector<uint8_t> encodeProjectV1(const ProjectDocument& document,
             }
             out.u32(state.sketch.nextEntityId);
             out.u32(state.extrude.profileEntityId);
+            if (cadV4) {
+                // The extent code BEFORE the direction it qualifies: in every
+                // mode but One Side the direction is canonically 1 and carries
+                // no information, and a reader that met it first would have to
+                // read backwards to know that.
+                out.u8(extrudeExtentFileCode(state.extrude.extent));
+            }
             out.u8(extrudeDirectionFileCode(state.extrude.direction));
             out.f64(state.extrude.depth);
+            if (cadV4) {
+                // The `-N` distance, ALWAYS written at v4 and exactly 0.0
+                // outside Two Sides, so a v4 body record is one fixed size and
+                // a decoder can refuse a non-zero value where the mode has no
+                // second side rather than quietly ignoring it.
+                out.f64(state.extrude.secondDistance);
+            }
             out.u32(static_cast<uint32_t>(state.sketch.entities.size()));
             for (const SketchEntity& entity : state.sketch.entities) {
                 out.u32(entity.id());
@@ -1090,8 +1137,9 @@ std::vector<uint8_t> encodeProjectV1(const ProjectDocument& document,
         // describing it, and a reader that skipped this would open the
         // project with objects silently missing.
         appendSection(file, kSectionTagCad,
-                      cadV3 ? kCadSectionVersionV3
-                            : (cadV2 ? kCadSectionVersionV2 : kCadSectionVersion),
+                      cadV4 ? kCadSectionVersionV4
+                            : (cadV3 ? kCadSectionVersionV3
+                                     : (cadV2 ? kCadSectionVersionV2 : kCadSectionVersion)),
                       /*required=*/true, cadPayload);
     }
     return file;
@@ -1371,6 +1419,7 @@ ProjectCodecStatus decodeImportedPayload(ByteReader& in, ProjectImportedRecord* 
 ProjectCodecStatus decodeCadPayload(ByteReader& in, ProjectCadRecord* record, uint16_t version) {
     const bool v2 = version >= kCadSectionVersionV2;
     const bool v3 = version >= kCadSectionVersionV3;
+    const bool v4 = version >= kCadSectionVersionV4;
     uint32_t bodyCount = 0;
     if (!in.u32(&bodyCount)) {
         return ProjectCodecStatus::Truncated;
@@ -1379,8 +1428,10 @@ ProjectCodecStatus decodeCadPayload(ByteReader& in, ProjectCadRecord* record, ui
         return ProjectCodecStatus::ImpossibleCount;
     }
     // Smallest possible CAD body record: identity, plane, the two ids, the
-    // direction, the depth and an entity count.
-    if (static_cast<uint64_t>(bodyCount) * (8ull + 1ull + 4ull + 4ull + 1ull + 8ull + 4ull)
+    // direction, the depth and an entity count, plus at v4 the extent code and
+    // the second distance.
+    if (static_cast<uint64_t>(bodyCount)
+                * (8ull + 1ull + 4ull + 4ull + 1ull + 8ull + 4ull + (v4 ? 9ull : 0ull))
         > in.remaining()) {
         return ProjectCodecStatus::Truncated;
     }
@@ -1416,12 +1467,38 @@ ProjectCodecStatus decodeCadPayload(ByteReader& in, ProjectCadRecord* record, ui
                 return ProjectCodecStatus::InvalidSemanticValue;
             }
         }
-        if (!in.u32(&state.sketch.nextEntityId) || !in.u32(&state.extrude.profileEntityId)
-            || !in.u8(&directionCode) || !in.f64(&state.extrude.depth) || !in.u32(&entityCount)) {
+        uint8_t extentCode = extrudeExtentFileCode(ExtrudeExtentMode::OneSide);
+        if (!in.u32(&state.sketch.nextEntityId) || !in.u32(&state.extrude.profileEntityId)) {
+            return ProjectCodecStatus::Truncated;
+        }
+        // v4 only: the extent code, then -- after the depth -- the `-N`
+        // distance. A v1/v2/v3 record decodes to One Side with a second
+        // distance of exactly 0.0, which is what the fields it does carry mean
+        // and always meant.
+        if (v4 && !in.u8(&extentCode)) {
+            return ProjectCodecStatus::Truncated;
+        }
+        if (!in.u8(&directionCode) || !in.f64(&state.extrude.depth)) {
+            return ProjectCodecStatus::Truncated;
+        }
+        if (v4 && !in.f64(&state.extrude.secondDistance)) {
+            return ProjectCodecStatus::Truncated;
+        }
+        if (!in.u32(&entityCount)) {
             return ProjectCodecStatus::Truncated;
         }
         if (!workplaneFromFileCode(planeCode, &state.sketch.plane)
-            || !extrudeDirectionFromFileCode(directionCode, &state.extrude.direction)) {
+            || !extrudeDirectionFromFileCode(directionCode, &state.extrude.direction)
+            || !extrudeExtentFromFileCode(extentCode, &state.extrude.extent)) {
+            return ProjectCodecStatus::InvalidSemanticValue;
+        }
+        // The ONE canonical form, checked HERE as well as in the domain
+        // validator, because a file is the one place a non-canonical encoding
+        // could arrive from: a direction stated for a mode with no side to
+        // choose, or a second distance stored by a mode that has none. Refused,
+        // never masked and never repaired -- the reserved-bit rule, applied to
+        // a pair of fields instead of a byte.
+        if (!extrudeFeatureCanonical(state.extrude)) {
             return ProjectCodecStatus::InvalidSemanticValue;
         }
         if (entityCount == 0 || entityCount > kMaxSketchEntities) {
@@ -1620,14 +1697,17 @@ ProjectCodecStatus decodeProjectV1(ByteReader& file, ProjectKind kind, uint8_t h
         sawImportedTag = sawImportedTag || isImported;
         sawCadTag = sawCadTag || isCad;
 
-        // CADB is the one section with more than one readable version: v1 (a
-        // world-plane CAD project, as CAD-R0 wrote) and v2 (CAD-A3, which adds a
-        // face support). Every other section has exactly one.
+        // CADB is the section with the most readable versions: v1 (a
+        // world-plane CAD project, as CAD-R0 wrote), v2 (CAD-A3, a face
+        // support), v3 (SKETCH-UX-R1, the curve entities) and v4 (CAD-EXT-R1,
+        // the extrusion's extent). Each is a SUPERSET of the one below it, so
+        // one flag per version is all the payload reader needs.
         bool versionOk;
         if (isCad) {
             versionOk = sectionVersion == kCadSectionVersion
                         || sectionVersion == kCadSectionVersionV2
-                        || sectionVersion == kCadSectionVersionV3;
+                        || sectionVersion == kCadSectionVersionV3
+                        || sectionVersion == kCadSectionVersionV4;
         } else if (isScene) {
             // SCNE became the second multi-version section at Stage 018A: v1 as
             // every build before it wrote, and v2 carrying per-body visibility,

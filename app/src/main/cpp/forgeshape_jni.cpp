@@ -578,6 +578,16 @@ void runCadSelfTestsAndLog() {
     // a regression in extraction, triangulation or regeneration time is a
     // number in the log rather than a feeling.
     FS_LOGI("FORGESHAPE_CAD_PERFORMANCE %s", forgeshape::cadPerformanceReport());
+    // The six `CADB` v4 golden digests as this build encodes them
+    // (`CAD-EXT-R1`), on the project suite's own terms: drift from the
+    // committed corpus is then a value a human can READ out of logcat and
+    // reconcile with DATA_PACKAGE_SPEC.md, rather than only a failed assertion.
+    FS_LOGI("FORGESHAPE_CAD_GOLDEN_SHA256_V4 cad_symmetric=%s cad_two_sides=%s "
+            "cad_face_extent=%s mixed_cad_extent=%s cad_bad_extent=%s cad_bad_two_sides=%s",
+            forgeshape::cadSymmetricFixtureSha256(), forgeshape::cadTwoSidesFixtureSha256(),
+            forgeshape::cadFaceExtentFixtureSha256(), forgeshape::cadMixedExtentFixtureSha256(),
+            forgeshape::cadBadExtentFixtureSha256(),
+            forgeshape::cadBadTwoSidesFixtureSha256());
     if (failed == 0) {
         FS_LOGI("FORGESHAPE_CAD_SELFTEST_OK (%d checks)", count);
     } else {
@@ -4346,23 +4356,45 @@ bool resolveCadSketchWorldFrame(forgeshape::ConstructionScene& scene, forgeshape
 //   [11] 0 unclamped, 1 clamped at the minimum, 2 clamped at the maximum --
 //        diagnostics, so a test can assert the clamp engaged rather than
 //        inferring it from a rounded number
+//
+// `CAD-EXT-R1` added the extent, and with it a SECOND side. Slots 5..9 describe
+// the PRIMARY side -- the one the mode's primary distance is on, which for a One
+// Side extrusion is the only one there is -- so every reader written before this
+// stage still reads what it always read.
+//
+//   [12] the extent mode (0 One Side, 1 Symmetric, 2 Two Sides)
+//   [13] the +N distance, in metres
+//   [14] the -N distance, in metres
+//   [15] 1 when the SECOND side exists and its label anchor projects on screen;
+//        slots 16..19 are meaningless otherwise and the shell HIDES
+//   [16] second-side label anchor x   [17] y
+//   [18] second-side arrow tip x      [19] y
+//   [20] which side a live drag captured: 0 none, 1 the +N side, 2 the -N side
 JNIEXPORT void JNICALL
 Java_com_forgeshape_app_NativeViewport_cadExtrudeToolState(JNIEnv* env, jclass,
                                                            jdoubleArray out) {
-    if (out == nullptr || env->GetArrayLength(out) < 12) {
+    constexpr jsize kSlots = 21;
+    if (out == nullptr || env->GetArrayLength(out) < kSlots) {
         return;
     }
-    double values[12] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    double values[kSlots] = {0};
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
         const forgeshape::SketchSession& session = forgeshape::sketchSession();
         forgeshape::CadExtrudeAnchors anchors;
         if (session.extrudeAnchors(&anchors)) {
+            const forgeshape::ExtrudeFeature& extrude = session.extrude();
             values[0] = 1.0;
-            values[1] = session.extrude().depth;
-            values[2] = forgeshape::extrudeDirectionIndex(session.extrude().direction);
-            values[3] = static_cast<double>(session.extrude().profileEntityId);
+            values[1] = anchors.depth;
+            values[2] = forgeshape::extrudeDirectionIndex(extrude.direction);
+            values[3] = static_cast<double>(extrude.profileEntityId);
             values[4] = session.extrudeManipulator().capturing() ? 1.0 : 0.0;
+            values[12] = forgeshape::extrudeExtentModeIndex(extrude.extent);
+            values[13] = forgeshape::extrudePositiveDistance(extrude);
+            values[14] = forgeshape::extrudeNegativeDistance(extrude);
+            values[20] = session.extrudeManipulator().capturing()
+                                 ? (session.extrudeManipulator().capturedPositiveSide() ? 1.0 : 2.0)
+                                 : 0.0;
             const int w = g_camera.viewportWidth();
             const int h = g_camera.viewportHeight();
             forgeshape::CadExtrudeControlScale scale;
@@ -4370,23 +4402,83 @@ Java_com_forgeshape_app_NativeViewport_cadExtrudeToolState(JNIEnv* env, jclass,
                 values[10] = scale.scale;
                 values[11] = scale.clampedLow ? 1.0 : (scale.clampedHigh ? 2.0 : 0.0);
             }
-            float lx = 0.0f;
-            float ly = 0.0f;
-            float tx = 0.0f;
-            float ty = 0.0f;
-            if (forgeshape::projectWorldToScreen(g_camera.snapshot(), anchors.label, w, h, &lx,
-                                                 &ly)
-                && forgeshape::projectWorldToScreen(g_camera.snapshot(), anchors.tip, w, h, &tx,
-                                                    &ty)) {
-                values[5] = 1.0;
-                values[6] = lx;
-                values[7] = ly;
-                values[8] = tx;
-                values[9] = ty;
+            // The two sides, projected through the same camera and by the same
+            // rule, so neither cluster can be placed by a different arithmetic
+            // than the other.
+            const forgeshape::CadExtrudeSideAnchor* sides[2] = {
+                &anchors.side(anchors.primaryIsPositive),
+                &anchors.side(!anchors.primaryIsPositive)};
+            const int base[2] = {5, 15};
+            for (int s = 0; s < 2; ++s) {
+                // Deliberately NOT gated on `present`. A Two Sides side may
+                // legitimately be zero, and its value is then still authored
+                // truth the user must be able to read and type back up; its
+                // label simply coincides with the base. `present` gates the
+                // ARROW -- what is drawn and what can be grabbed -- and a
+                // number with nowhere to grab is not a number with nowhere to
+                // stand.
+                float lx = 0.0f;
+                float ly = 0.0f;
+                float tx = 0.0f;
+                float ty = 0.0f;
+                if (forgeshape::projectWorldToScreen(g_camera.snapshot(), sides[s]->label, w, h,
+                                                     &lx, &ly)
+                    && forgeshape::projectWorldToScreen(g_camera.snapshot(), sides[s]->tip, w, h,
+                                                        &tx, &ty)) {
+                    values[base[s] + 0] = 1.0;
+                    values[base[s] + 1] = lx;
+                    values[base[s] + 2] = ly;
+                    values[base[s] + 3] = tx;
+                    values[base[s] + 4] = ty;
+                }
             }
         }
     }
-    env->SetDoubleArrayRegion(out, 0, 12, values);
+    env->SetDoubleArrayRegion(out, 0, kSlots, values);
+}
+
+// The extent mode: One Side, Symmetric or Two Sides. One door, taking the
+// deterministic transition policy with it, so a mode change can never lose or
+// invent a distance.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchSetExtrudeExtent(JNIEnv*, jclass, jint modeIndex) {
+    forgeshape::ExtrudeExtentMode mode;
+    if (!forgeshape::extrudeExtentModeFromIndex(static_cast<int>(modeIndex), &mode)) {
+        return cadCode(forgeshape::CadStatus::InvalidExtrudeExtent);
+    }
+    forgeshape::CadStatus status;
+    double positive = 0.0;
+    double negative = 0.0;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        forgeshape::SketchSession& session = forgeshape::sketchSession();
+        status = session.setExtrudeExtent(mode);
+        positive = forgeshape::extrudePositiveDistance(session.extrude());
+        negative = forgeshape::extrudeNegativeDistance(session.extrude());
+    }
+    FS_LOGI("FORGESHAPE_EXTRUDE_EXTENT mode=%s positive=%.6f negative=%.6f %s",
+            forgeshape::extrudeExtentModeName(mode), positive, negative,
+            forgeshape::cadStatusName(status));
+    return cadCode(status);
+}
+
+// ONE side's distance, in metres. What a typed A or B lands through, and what
+// the arrow drag already lands through below JNI, so the two pass exactly the
+// same validation. `side` is 1 for the `+N` side and 2 for `-N`.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchSetExtrudeSide(JNIEnv*, jclass, jint side,
+                                                            jdouble meters) {
+    if (side != 1 && side != 2) {
+        return cadCode(forgeshape::CadStatus::InvalidExtrudeExtent);
+    }
+    forgeshape::CadStatus status;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        status = forgeshape::sketchSession().setExtrudeSide(side == 1, meters);
+    }
+    FS_LOGI("FORGESHAPE_EXTRUDE_SIDE side=%s meters=%.6f %s", side == 1 ? "positive" : "negative",
+            (double)meters, forgeshape::cadStatusName(status));
+    return cadCode(status);
 }
 
 // Reverses which side of the sketch plane the solid grows on, keeping the exact
@@ -4780,14 +4872,16 @@ Java_com_forgeshape_app_NativeViewport_sceneActiveBodyIsFaceSupportedCad(JNIEnv*
 //   [3] profile kind (0 none, 1 rectangle, 2 circle, 3 polygon)
 //   [4] rectangle width or circle radius   [5] rectangle height
 //   [6] sketch entity count                [7] profile vertex count
+//   [8] extent mode (0 One Side, 1 Symmetric, 2 Two Sides) -- `CAD-EXT-R1`, so
+//       the panel can withdraw Flip where there is no side left to choose
 // Returns false, writing nothing, when the active body is not a CAD Body.
 JNIEXPORT jboolean JNICALL
 Java_com_forgeshape_app_NativeViewport_cadState(JNIEnv* env, jclass, jdoubleArray out) {
-    constexpr jsize kSize = 8;
+    constexpr jsize kSize = 9;
     if (out == nullptr || env->GetArrayLength(out) < kSize) {
         return JNI_FALSE;
     }
-    jdouble values[kSize] = {0, 0, 0, 0, 0, 0, 0, 0};
+    jdouble values[kSize] = {0, 0, 0, 0, 0, 0, 0, 0, 0};
     bool found = false;
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
@@ -4811,6 +4905,8 @@ Java_com_forgeshape_app_NativeViewport_cadState(JNIEnv* env, jclass, jdoubleArra
                 values[4] = anchor->circle()->radius;
             }
             values[6] = static_cast<double>(state.sketch.entities.size());
+            values[8] = static_cast<double>(
+                forgeshape::extrudeExtentModeIndex(state.extrude.extent));
             forgeshape::ProfileExtraction extraction;
             if (forgeshape::validateCadBodyState(state, &extraction) == forgeshape::CadStatus::Ok) {
                 const forgeshape::ClosedProfile* profile =
@@ -4897,10 +4993,13 @@ static jint applyCadCandidate(const char* label,
 static forgeshape::CadBodyState buildExtrudeCandidate(const forgeshape::CadBodyState& current,
                                                       const double* values, int direction) {
     forgeshape::CadBodyState candidate = current;
-    candidate.extrude.depth = values[0];
     forgeshape::ExtrudeDirection dir = current.extrude.direction;
     forgeshape::extrudeDirectionFromIndex(direction, &dir);
-    candidate.extrude.direction = dir;
+    // The PRIMARY distance, and the side only where a side is a choice: the
+    // panel edits a Symmetric body's per-side length without turning it into a
+    // One Side body, and its Flip is withdrawn there rather than ignored.
+    candidate.extrude =
+        forgeshape::extrudeFeatureWithPrimary(current.extrude, values[0], dir);
     return candidate;
 }
 

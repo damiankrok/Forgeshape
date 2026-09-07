@@ -67,6 +67,27 @@ struct SketchFrame;
 // the fallback is a guard rather than a behaviour.
 bool sketchPolygonCentroid(const std::vector<SketchPoint>& polygon, SketchPoint* out);
 
+// One side's manipulator, in WORLD space. `CAD-EXT-R1` made the extrusion two
+// sides, so the arrow, the tip and the label became per side; everything else
+// about them is what it always was.
+struct CadExtrudeSideAnchor {
+    // Whether this side has any extent, and therefore an arrow to draw and
+    // grab. A One Side extrusion has exactly one present side; Symmetric has
+    // two of equal length; Two Sides has two independent ones, of which one
+    // may legitimately be zero and is then absent.
+    bool present = false;
+    // Unit, pointing away from the sketch plane on this side.
+    Vec3 axis{};
+    // `base + axis * distance`: the cap centre this side reaches, and the
+    // arrow point.
+    Vec3 tip{};
+    // Where the numeric chrome belongs: the middle of the shaft. Deliberately
+    // not the tip -- a value pinned to the tip chases the finger during a drag,
+    // and a value at the base sits on the drawing it measures.
+    Vec3 label{};
+    Meters distance = 0.0;
+};
+
 // Everything the presentation layer needs about the extrusion, in WORLD space.
 //
 // Derived on every read from the frame, the profile and the extrusion. Nothing
@@ -74,27 +95,37 @@ bool sketchPolygonCentroid(const std::vector<SketchPoint>& polygon, SketchPoint*
 // different cameras looking at one sketch produce identical anchors.
 struct CadExtrudeAnchors {
     bool valid = false;
-    // The profile centroid ON the support plane. `generateCadMesh` always puts
-    // one cap on the sketch plane -- direction decides only which -- so this is
-    // where the arrow starts whichever way the solid grows.
+    // The profile centroid ON the support plane -- the sketch's own plane, not
+    // a cap, so it is the one point both sides grow from and it does not move
+    // when either distance changes.
     Vec3 base{};
-    // The frame unit normal. NOT flipped by the direction: it is what the plane
-    // means, and a caller that needs the growth direction wants `axis`.
+    // The frame unit normal. NOT flipped by anything: it is what the plane
+    // means, and `positive`/`negative` are named against it.
     Vec3 normal{};
-    // The direction the solid actually grows: `+normal` along, `-normal`
-    // against. Unit.
+    // The `+N` and `-N` sides. THE two-sided truth, and what a hit test, a
+    // drag and the drawing all read.
+    CadExtrudeSideAnchor positive{};
+    CadExtrudeSideAnchor negative{};
+
+    // The PRIMARY side: the one the mode's primary distance is on -- the solid's
+    // own side in One Side, and `+N` in Symmetric and Two Sides. The fields
+    // below mirror it, because the chrome cluster and every caller that
+    // predates `CAD-EXT-R1` speak of one arrow and are still right about a One
+    // Side extrusion.
     Vec3 axis{};
-    // `base + axis * depth`: the free cap centre, and the arrow point.
     Vec3 tip{};
-    // Where the numeric chrome belongs: the middle of the shaft. Deliberately
-    // not the tip -- a value pinned to the tip chases the finger during a drag,
-    // and a value at the base sits on the drawing it measures.
     Vec3 label{};
     Meters depth = 0.0;
+    // True when `axis`/`tip`/`label` describe the `+N` side.
+    bool primaryIsPositive = true;
+
+    const CadExtrudeSideAnchor& side(bool positiveSide) const {
+        return positiveSide ? positive : negative;
+    }
 };
 
-// False, writing nothing, for a degenerate frame, an empty polygon or a
-// non-finite depth.
+// False, writing nothing, for a degenerate frame, an empty polygon, a
+// non-finite distance or an extrusion with no extent at all.
 bool cadExtrudeAnchors(const SketchFrame& frame, const ClosedProfile& profile,
                        const ExtrudeFeature& extrude, CadExtrudeAnchors* out);
 
@@ -216,35 +247,50 @@ class CadExtrudeManipulator {
 public:
     bool capturing() const { return pointerId_ >= 0; }
     int32_t capturedPointerId() const { return pointerId_; }
+    // Which side the captured drag belongs to. Meaningful only while
+    // `capturing()`; frozen at pointer-down with the basis, so a Symmetric
+    // extrusion growing under the finger cannot move the gesture to the other
+    // arrow half way through.
+    bool capturedPositiveSide() const { return positiveSide_; }
 
-    // Whether (x, y) lands on the arrow drawn for `anchors` under `camera`.
+    // Whether (x, y) lands on ONE side's arrow, drawn for `anchors` under
+    // `camera`.
     //
     // Measured in SCREEN space against the same projected segment the renderer
     // drew, extended past the tip by the head that was drawn at the shared
     // scale, and widened by the reference-unit corridor above.
-    bool hitTest(const CadExtrudeAnchors& anchors, const CameraSnapshot& camera, float x, float y,
-                 int viewportWidth, int viewportHeight) const;
+    bool hitTestSide(const CadExtrudeAnchors& anchors, bool positiveSide,
+                     const CameraSnapshot& camera, float x, float y, int viewportWidth,
+                     int viewportHeight) const;
 
-    // Captures the pointer and freezes the basis. False when the geometry
-    // cannot produce one, in which case nothing is captured.
-    bool beginDrag(int32_t pointerId, const CadExtrudeAnchors& anchors,
+    // Which side (x, y) takes, preferring the PRIMARY one when both corridors
+    // contain the point -- a Symmetric extrusion seen almost edge-on can
+    // overlap both, and a deterministic answer beats a nearest-pixel race.
+    // False when neither side takes it.
+    bool hitTest(const CadExtrudeAnchors& anchors, const CameraSnapshot& camera, float x, float y,
+                 int viewportWidth, int viewportHeight, bool* outPositiveSide = nullptr) const;
+
+    // Captures the pointer on one side and freezes the basis. False when the
+    // geometry cannot produce one, in which case nothing is captured.
+    bool beginDrag(int32_t pointerId, const CadExtrudeAnchors& anchors, bool positiveSide,
                    const CameraSnapshot& camera, float x, float y, int viewportWidth,
                    int viewportHeight);
 
-    // The depth this sample indicates, from the frozen basis.
+    // The captured side's distance this sample indicates, from the frozen
+    // basis.
     //
     // False, writing nothing, when the axis cannot be solved -- the caller then
-    // holds the depth it already has, which is what keeps a degenerate
+    // holds the distance it already has, which is what keeps a degenerate
     // viewpoint from producing a jump or a NaN.
     bool updateDrag(int32_t pointerId, const CameraSnapshot& camera, float x, float y,
-                    int viewportWidth, int viewportHeight, Meters* outDepth);
+                    int viewportWidth, int viewportHeight, Meters* outDistance);
 
-    // Ends the drag, keeping whatever depth was last written.
+    // Ends the drag, keeping whatever distance was last written.
     void endDrag();
 
-    // Ends the drag and reports the depth the gesture started from, so the
+    // Ends the drag and reports the distance the gesture started from, so the
     // caller can put it back. False when nothing was captured.
-    bool cancelDrag(Meters* outRestoreDepth);
+    bool cancelDrag(Meters* outRestoreDistance);
 
     Meters depthAtDown() const { return depthAtDown_; }
     AxisSolveStatus lastSolve() const { return lastSolve_; }
@@ -256,6 +302,7 @@ private:
     // The basis, frozen at pointer-down and untouched for the life of the drag.
     Vec3 base_{};
     Vec3 axis_{};
+    bool positiveSide_ = true;
     Meters depthAtDown_ = 0.0;
     float axisAtDown_ = 0.0f;
     Meters lastGoodDepth_ = 0.0;
@@ -367,13 +414,17 @@ CadFeatureViewSource cadFeatureViewPose(const CameraController::Pose& current,
 // The drawable arrow
 // ---------------------------------------------------------------------------
 
-// Appends the WORLD-space line list of the manipulator to `out`.
+// Appends the WORLD-space line list of the manipulator to `out` -- ONE arrow
+// per side that has extent, so a Symmetric or Two Sides extrusion is two arrows
+// out of one call and a One Side extrusion is exactly the one it always was.
 //
 // `controlWorld` is `CadExtrudeControlScale::world`, the same number the hit
 // test head extension uses. `grabbed` tags the vertices so the renderer draws
 // them in the highlight colour -- the emphasis tag the sketch overlay already
-// carries, so this needs no renderer change and no new overlay style.
+// carries, so this needs no renderer change and no new overlay style; it is
+// applied to `grabbedSide` alone, so the side under the finger is the side that
+// lights up.
 void appendCadExtrudeArrow(std::vector<GizmoVertex>* out, const CadExtrudeAnchors& anchors,
-                           double controlWorld, bool grabbed);
+                           double controlWorld, bool grabbed, bool grabbedSide = true);
 
 }  // namespace forgeshape

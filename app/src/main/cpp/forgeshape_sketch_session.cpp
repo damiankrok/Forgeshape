@@ -154,6 +154,7 @@ CadStatus SketchSession::begin(Workplane plane) {
     selectedEntityId_ = kNoSketchEntity;
     profiles_ = ProfileExtraction{};
     extrude_ = ExtrudeFeature{};
+    oneSideDirection_ = ExtrudeDirection::AlongNormal;
     tool_ = SketchTool::Rectangle;
     resetGesture();
     polylineInProgress_ = false;
@@ -218,6 +219,12 @@ CadStatus SketchSession::beginEdit(ObjectId bodyId, const CadBodyState& state,
     // rather than a sketch with a guessed depth.
     sketch_ = state.sketch;
     extrude_ = state.extrude;
+    // The staged extent comes back with the body, and so does the One Side
+    // memory a mode round trip needs: for a One Side body it is the side the
+    // solid is on, and for a two-sided one the canonical `AlongNormal`.
+    oneSideDirection_ = extrude_.extent == ExtrudeExtentMode::OneSide
+                                ? extrude_.direction
+                                : ExtrudeDirection::AlongNormal;
     frame_ = worldFrame;
     editingBodyId_ = bodyId;
     touchOverlay();
@@ -508,15 +515,11 @@ void SketchSession::resetGesture() {
     travelled_ = false;
     dragValid_ = false;
     // A manipulator drag in flight is CANCELLED rather than merely dropped: the
-    // depth it was moving goes back to what the finger found, exactly as a
+    // SIDE it was moving goes back to what the finger found, exactly as a
     // cancelled gizmo drag restores the placement. Nothing was recorded either
     // way -- an uncommitted sketch is volatile -- so this is about what the user
     // sees, not about the project.
-    Meters restore = 0.0;
-    if (extrudeDrag_.cancelDrag(&restore)) {
-        extrude_.depth = restore;
-        touchOverlay();
-    }
+    restoreCancelledExtrudeDrag();
 }
 
 // ---------------------------------------------------------------------------
@@ -686,16 +689,31 @@ SketchEntityId SketchSession::hitTest(const SketchPoint& point, double tolerance
 // half way through. A pointer that goes down anywhere else navigates exactly as
 // it always has, and a second pointer CANCELS -- putting the depth back where
 // the first finger found it -- rather than trying to drag and pinch at once.
+// Puts the dragged SIDE back where the finger found it and reports whether a
+// drag was in fact captured. One place, because a cancel arrives four ways --
+// a second pointer, a pointer-down, the wrong finger lifting and an explicit
+// Cancel -- and four copies of a restore is how one of them comes to restore
+// the wrong side.
+bool SketchSession::restoreCancelledExtrudeDrag() {
+    const bool positiveSide = extrudeDrag_.capturedPositiveSide();
+    Meters restore = 0.0;
+    if (!extrudeDrag_.cancelDrag(&restore)) {
+        return false;
+    }
+    // Written directly rather than through the validating door: this is the
+    // value the extrusion HAD a moment ago, so it needs no re-validation, and
+    // routing it through one would let a refusal strand the gesture's undo.
+    extrude_ = extrudeFeatureWithSide(extrude_, positiveSide, restore);
+    touchOverlay();
+    return true;
+}
+
 bool SketchSession::onExtrudeTouch(TouchAction action, int32_t actionPointerId,
                                    const TouchPointer* pointers, int count,
                                    const CameraSnapshot& camera, int viewportWidth,
                                    int viewportHeight) {
     if (count > 1 || action == TouchAction::PointerDown) {
-        Meters restore = 0.0;
-        if (extrudeDrag_.cancelDrag(&restore)) {
-            extrude_.depth = restore;
-            touchOverlay();
-        }
+        restoreCancelledExtrudeDrag();
         return false;  // the gesture belongs to the camera
     }
     switch (action) {
@@ -707,12 +725,17 @@ bool SketchSession::onExtrudeTouch(TouchAction action, int32_t actionPointerId,
             if (!extrudeAnchors(&anchors)) {
                 return false;
             }
+            // WHICH side is decided once, on Down, exactly as whether the arrow
+            // was hit at all is: a Symmetric drag cannot change sides half way
+            // through any more than it can become an orbit.
+            bool positiveSide = true;
             if (!extrudeDrag_.hitTest(anchors, camera, pointers[0].x, pointers[0].y, viewportWidth,
-                                      viewportHeight)) {
+                                      viewportHeight, &positiveSide)) {
                 return false;  // off the arrow: orbit, pan and tap are untouched
             }
-            if (!extrudeDrag_.beginDrag(pointers[0].id, anchors, camera, pointers[0].x,
-                                        pointers[0].y, viewportWidth, viewportHeight)) {
+            if (!extrudeDrag_.beginDrag(pointers[0].id, anchors, positiveSide, camera,
+                                        pointers[0].x, pointers[0].y, viewportWidth,
+                                        viewportHeight)) {
                 return false;
             }
             touchOverlay();
@@ -723,14 +746,14 @@ bool SketchSession::onExtrudeTouch(TouchAction action, int32_t actionPointerId,
                 || pointers[0].id != extrudeDrag_.capturedPointerId()) {
                 return extrudeDrag_.capturing();
             }
-            Meters depth = 0.0;
+            Meters distance = 0.0;
             if (extrudeDrag_.updateDrag(pointers[0].id, camera, pointers[0].x, pointers[0].y,
-                                        viewportWidth, viewportHeight, &depth)) {
-                // Through the ONE writer, so a dragged depth passes exactly the
-                // validation a typed one does. A refusal leaves the depth alone,
-                // which is the same "hold the last good value" a degenerate
-                // viewpoint produces.
-                setExtrude(depth, extrude_.direction);
+                                        viewportWidth, viewportHeight, &distance)) {
+                // Through the ONE writer, so a dragged distance passes exactly
+                // the validation a typed one does. A refusal leaves the extent
+                // alone, which is the same "hold the last good value" a
+                // degenerate viewpoint produces.
+                setExtrudeSide(extrudeDrag_.capturedPositiveSide(), distance);
             }
             return true;
         }
@@ -740,11 +763,7 @@ bool SketchSession::onExtrudeTouch(TouchAction action, int32_t actionPointerId,
                 return false;
             }
             if (actionPointerId >= 0 && actionPointerId != extrudeDrag_.capturedPointerId()) {
-                Meters restore = 0.0;
-                if (extrudeDrag_.cancelDrag(&restore)) {
-                    extrude_.depth = restore;
-                    touchOverlay();
-                }
+                restoreCancelledExtrudeDrag();
                 return false;
             }
             extrudeDrag_.endDrag();
@@ -752,13 +771,7 @@ bool SketchSession::onExtrudeTouch(TouchAction action, int32_t actionPointerId,
             return true;
         }
         case TouchAction::Cancel: {
-            Meters restore = 0.0;
-            if (extrudeDrag_.cancelDrag(&restore)) {
-                extrude_.depth = restore;
-                touchOverlay();
-                return true;
-            }
-            return false;
+            return restoreCancelledExtrudeDrag();
         }
         default:
             return extrudeDrag_.capturing();
@@ -1145,25 +1158,83 @@ CadStatus SketchSession::selectProfile(SketchEntityId anchorEntityId) {
     return fail(CadStatus::Ok);
 }
 
+// THE one writer of the extrusion. Every typed value, every drag sample, every
+// Flip and every extent change lands here, so all of them pass exactly the same
+// validation and none of them can write a state the body would later refuse.
+CadStatus SketchSession::applyExtrudeFeature(const ExtrudeFeature& requested) {
+    if (!active()) {
+        return fail(CadStatus::NotSketching);
+    }
+    if (!std::isfinite(requested.depth) || !std::isfinite(requested.secondDistance)) {
+        return fail(CadStatus::NonFinite);
+    }
+    if (extrudeDirectionIndex(requested.direction) < 0
+        || extrudeDirectionIndex(requested.direction) >= kExtrudeDirectionCount) {
+        return fail(CadStatus::InvalidExtrudeDirection);
+    }
+    if (extrudeExtentModeIndex(requested.extent) < 0
+        || extrudeExtentModeIndex(requested.extent) >= kExtrudeExtentModeCount
+        || !extrudeFeatureCanonical(requested)) {
+        return fail(CadStatus::InvalidExtrudeExtent);
+    }
+    // The DISTANCES, by the same rule `validateCadBodyState` applies, so a
+    // value the session accepts is one the commit will accept too. A side may
+    // be zero only in Two Sides, and the span always states a real length.
+    const Meters positive = extrudePositiveDistance(requested);
+    const Meters negative = extrudeNegativeDistance(requested);
+    const bool sidesOk =
+            positive >= 0.0 && negative >= 0.0 && positive <= kMaxSketchCoordinateMeters
+            && negative <= kMaxSketchCoordinateMeters
+            && (positive == 0.0 || validateDimensionMeters(positive) == DimensionValidation::Ok)
+            && (negative == 0.0 || validateDimensionMeters(negative) == DimensionValidation::Ok)
+            && (requested.extent == ExtrudeExtentMode::TwoSides
+                || validateDimensionMeters(requested.depth) == DimensionValidation::Ok)
+            && validateDimensionMeters(positive + negative) == DimensionValidation::Ok
+            && positive + negative <= kMaxSketchCoordinateMeters;
+    if (!sidesOk) {
+        return fail(CadStatus::InvalidExtrudeDepth);
+    }
+    const SketchEntityId profile = extrude_.profileEntityId;
+    extrude_ = requested;
+    extrude_.profileEntityId = profile;  // the profile is chosen elsewhere, never here
+    if (extrude_.extent == ExtrudeExtentMode::OneSide) {
+        // The user's live One Side choice IS the transition memory; nothing
+        // else writes it, so the two can never disagree.
+        oneSideDirection_ = extrude_.direction;
+    }
+    touchOverlay();
+    return fail(CadStatus::Ok);
+}
+
 CadStatus SketchSession::setExtrude(Meters depth, ExtrudeDirection direction) {
     if (!active()) {
         return fail(CadStatus::NotSketching);
     }
-    if (!std::isfinite(depth)) {
-        return fail(CadStatus::NonFinite);
+    return applyExtrudeFeature(extrudeFeatureWithPrimary(extrude_, depth, direction));
+}
+
+CadStatus SketchSession::setExtrudeExtent(ExtrudeExtentMode extent) {
+    if (state_ != SketchSessionState::Ready) {
+        return fail(CadStatus::NotSketching);
     }
-    if (validateDimensionMeters(depth) != DimensionValidation::Ok
-        || depth > kMaxSketchCoordinateMeters) {
-        return fail(CadStatus::InvalidExtrudeDepth);
+    if (extrudeExtentModeIndex(extent) < 0
+        || extrudeExtentModeIndex(extent) >= kExtrudeExtentModeCount) {
+        return fail(CadStatus::InvalidExtrudeExtent);
     }
-    if (extrudeDirectionIndex(direction) < 0
-        || extrudeDirectionIndex(direction) >= kExtrudeDirectionCount) {
-        return fail(CadStatus::InvalidExtrudeDirection);
+    return applyExtrudeFeature(extrudeFeatureWithExtent(extrude_, extent, oneSideDirection_));
+}
+
+CadStatus SketchSession::setExtrudeSide(bool positiveSide, Meters distance) {
+    if (state_ != SketchSessionState::Ready) {
+        return fail(CadStatus::NotSketching);
     }
-    extrude_.depth = depth;
-    extrude_.direction = direction;
-    touchOverlay();
-    return fail(CadStatus::Ok);
+    // In One Side there is a handle on exactly one side, and a write to the
+    // other is a refusal by name rather than a silent no-op.
+    if (extrude_.extent == ExtrudeExtentMode::OneSide
+        && positiveSide != (extrude_.direction == ExtrudeDirection::AlongNormal)) {
+        return fail(CadStatus::InvalidExtrudeExtent);
+    }
+    return applyExtrudeFeature(extrudeFeatureWithSide(extrude_, positiveSide, distance));
 }
 
 // ---------------------------------------------------------------------------
@@ -1184,6 +1255,13 @@ bool SketchSession::extrudeAnchors(CadExtrudeAnchors* out) const {
 CadStatus SketchSession::flipExtrudeDirection() {
     if (state_ != SketchSessionState::Ready) {
         return fail(CadStatus::NotSketching);
+    }
+    // A One Side control alone. Symmetric already reaches both sides and Two
+    // Sides states both explicitly, so there is no side left for a Flip to
+    // choose; using it to swap A and B would be a second, hidden meaning for
+    // one control.
+    if (extrude_.extent != ExtrudeExtentMode::OneSide) {
+        return fail(CadStatus::InvalidExtrudeExtent);
     }
     // Straight through the one writer, so the flip passes exactly the
     // validation a typed direction does and the overlay is touched once.
@@ -1453,10 +1531,11 @@ void SketchSession::buildOverlay(float worldPerUnit) {
     }
     // The extrude preview: the chosen profile's far cap and its edges.
     if (chosen != nullptr) {
-        const double nearOffset = (extrude_.direction == ExtrudeDirection::AlongNormal)
-                                      ? 0.0
-                                      : -extrude_.depth;
-        const double farOffset = nearOffset + extrude_.depth;
+        // The SAME two offsets `generateCadMesh` extrudes between, so the
+        // preview and the solid it previews cannot disagree about where the
+        // caps are in any extent mode.
+        const double nearOffset = -extrudeNegativeDistance(extrude_);
+        const double farOffset = extrudePositiveDistance(extrude_);
         const size_t n = chosen->polygon.size();
         for (size_t i = 0; i < n; ++i) {
             const SketchPoint& a = chosen->polygon[i];
@@ -1479,7 +1558,8 @@ void SketchSession::buildOverlay(float worldPerUnit) {
         if (extrudeAnchors(&anchors)
             && cadExtrudeControlScaleFor(perPixel > 0.0 ? static_cast<float>(perPixel) : 0.0f,
                                          &controlScale)) {
-            appendCadExtrudeArrow(&v, anchors, controlScale.world, extrudeDrag_.capturing());
+            appendCadExtrudeArrow(&v, anchors, controlScale.world, extrudeDrag_.capturing(),
+                                  extrudeDrag_.capturedPositiveSide());
         }
     }
     entities.vertexCount = static_cast<uint32_t>(v.size()) - entities.firstVertex;

@@ -447,6 +447,12 @@ void mixCad(uint64_t& hash, const CadBodyState& state) {
     mixU64(hash, state.extrude.profileEntityId);
     mixDouble(hash, state.extrude.depth);
     mixU64(hash, static_cast<uint64_t>(extrudeDirectionIndex(state.extrude.direction)));
+    // `CAD-EXT-R1`: the extent is authored truth and reaches `.forge` bytes, so
+    // it moves the fingerprint. Mixed AFTER the fields that came before it, so
+    // a One Side project's fingerprint is exactly what it was: the mode index
+    // is 0 and the second distance 0.0 for every state built before this stage.
+    mixU64(hash, static_cast<uint64_t>(extrudeExtentModeIndex(state.extrude.extent)));
+    mixDouble(hash, state.extrude.secondDistance);
     mixU64(hash, state.sketch.entities.size());
     for (const SketchEntity& entity : state.sketch.entities) {
         mixU64(hash, entity.id());

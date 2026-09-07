@@ -95,6 +95,14 @@
     <item name="cad_extrude_flip" type="id" />
     <item name="cad_extrude_operation" type="id" />
     <item name="cad_canvas_edit_sketch" type="id" />
+    <!-- CAD-EXT-R1: the extent selector, and the second side's own value. -->
+    <item name="cad_extrude_extent_one_side" type="id" />
+    <item name="cad_extrude_extent_symmetric" type="id" />
+    <item name="cad_extrude_extent_two_sides" type="id" />
+    <item name="cad_extrude_second_value" type="id" />
+    <item name="cad_extrude_second_editor" type="id" />
+    <item name="field_cad_extrude_second" type="id" />
+    <item name="apply_cad_extrude_second" type="id" />
     <!--
       The unsaved-changes question, asked when New Project or Open File would
       leave a project whose changes nobody saved. Save persists then continues,

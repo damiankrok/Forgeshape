@@ -166,14 +166,17 @@ powershell -ExecutionPolicy Bypass -File scripts\build-forge-corpus.ps1 -VerifyO
 That script is a second, independent implementation of the `.forge` v1 encoder,
 written from `DATA_PACKAGE_SPEC.md`. It needs no device and no Android tooling.
 Its digests must match the ones the native `FSR1A-12`, `IMP01A-19`,
-`IMP01B-11`/`IMP01B-12`, `CADR0-33`/`34`/`36` and `CADA3-46..51` cases assert
-and the ones a debug launch prints as `FORGESHAPE_PROJECT_GOLDEN_SHA256`,
-`..._IMPORTED`, `..._IMPORTED_SCULPT`, `..._CAD` and `..._CAD_V2`; a mismatch
+`IMP01B-11`/`IMP01B-12`, `CADR0-33`/`34`/`36`, `CADA3-46..51` and
+`CADEXT-10 c..h` cases assert and the ones a debug launch prints as
+`FORGESHAPE_PROJECT_GOLDEN_SHA256`, `..._IMPORTED`, `..._IMPORTED_SCULPT`,
+`..._CAD`, `..._CAD_V2`, `FORGESHAPE_CAD_GOLDEN_SHA256_V4` and
+`..._OBJECT_STATE`; a mismatch
 means the encoder and the specification have parted company. The six `CADB` v2
 fixtures include the lineage token, which the script computes from the rule
 `DATA_PACKAGE_SPEC.md` §7c states rather than from the C++ — that parity is
 what found the mistyped FNV basis in `CAD-A3-C1`. The six `CADB` v3 curve
-fixtures are pinned the same way, by `CADUXR1-38`. Seven of the twenty-eight
+fixtures and the six `CADB` v4 extent fixtures are pinned the same way, by
+`CADUXR1-38` and `CADEXT-10`. Seven of the thirty-six
 fixtures are packaged into the test APK's assets as well, so
 `ImportedMeshDurableTest` can prove the independent encoder's bytes actually LOAD
 on a device rather than only hashing the same.

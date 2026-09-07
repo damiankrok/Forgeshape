@@ -26,6 +26,57 @@ bool extrudeDirectionFromIndex(int index, ExtrudeDirection* out) {
 
 int extrudeDirectionIndex(ExtrudeDirection direction) { return static_cast<int>(direction); }
 
+const char* extrudeExtentModeName(ExtrudeExtentMode mode) {
+    switch (mode) {
+        case ExtrudeExtentMode::OneSide: return "OneSide";
+        case ExtrudeExtentMode::Symmetric: return "Symmetric";
+        case ExtrudeExtentMode::TwoSides: return "TwoSides";
+    }
+    return "unknown";
+}
+
+bool extrudeExtentModeFromIndex(int index, ExtrudeExtentMode* out) {
+    if (out == nullptr) {
+        return false;
+    }
+    switch (index) {
+        case 0: *out = ExtrudeExtentMode::OneSide; return true;
+        case 1: *out = ExtrudeExtentMode::Symmetric; return true;
+        case 2: *out = ExtrudeExtentMode::TwoSides; return true;
+        default: return false;
+    }
+}
+
+int extrudeExtentModeIndex(ExtrudeExtentMode mode) { return static_cast<int>(mode); }
+
+// ---------------------------------------------------------------------------
+// The two durable distances
+// ---------------------------------------------------------------------------
+
+Meters extrudePositiveDistance(const ExtrudeFeature& extrude) {
+    switch (extrude.extent) {
+        case ExtrudeExtentMode::OneSide:
+            return extrude.direction == ExtrudeDirection::AlongNormal ? extrude.depth : 0.0;
+        case ExtrudeExtentMode::Symmetric:
+            return extrude.depth;
+        case ExtrudeExtentMode::TwoSides:
+            return extrude.depth;
+    }
+    return 0.0;
+}
+
+Meters extrudeNegativeDistance(const ExtrudeFeature& extrude) {
+    switch (extrude.extent) {
+        case ExtrudeExtentMode::OneSide:
+            return extrude.direction == ExtrudeDirection::AgainstNormal ? extrude.depth : 0.0;
+        case ExtrudeExtentMode::Symmetric:
+            return extrude.depth;
+        case ExtrudeExtentMode::TwoSides:
+            return extrude.secondDistance;
+    }
+    return 0.0;
+}
+
 namespace {
 
 bool sameBits(double a, double b) {
@@ -41,13 +92,135 @@ bool directionValid(ExtrudeDirection direction) {
     return index >= 0 && index < kExtrudeDirectionCount;
 }
 
+bool extentValid(ExtrudeExtentMode mode) {
+    const int index = extrudeExtentModeIndex(mode);
+    return index >= 0 && index < kExtrudeExtentModeCount;
+}
+
+// One SIDE distance: finite, non-negative, within the sketch bound, and -- when
+// it is not exactly zero -- a length the Construction domain would accept. Zero
+// is legitimate on one side of a Two Sides extrusion and nowhere else; the
+// caller checks the mode's own rule.
+bool sideDistanceValid(Meters d) {
+    if (!std::isfinite(d) || d < 0.0 || d > kMaxSketchCoordinateMeters) {
+        return false;
+    }
+    return d == 0.0 || validateDimensionMeters(d) == DimensionValidation::Ok;
+}
+
 }  // namespace
+
+bool extrudeFeatureCanonical(const ExtrudeFeature& extrude) {
+    if (!extentValid(extrude.extent) || !directionValid(extrude.direction)) {
+        return false;
+    }
+    if (extrude.extent != ExtrudeExtentMode::OneSide
+        && extrude.direction != ExtrudeDirection::AlongNormal) {
+        return false;
+    }
+    if (extrude.extent != ExtrudeExtentMode::TwoSides && !sameBits(extrude.secondDistance, 0.0)) {
+        return false;
+    }
+    return true;
+}
+
+// The side whose value a transition keeps. `preferredSide` is honoured unless
+// its distance is zero, in which case the other side carries the extent and
+// taking the preferred one would produce a solid with none.
+namespace {
+bool transitionKeepsPositive(const ExtrudeFeature& from, ExtrudeDirection preferredSide) {
+    const bool wantPositive = preferredSide != ExtrudeDirection::AgainstNormal;
+    const Meters chosen = wantPositive ? extrudePositiveDistance(from) : extrudeNegativeDistance(from);
+    if (chosen > 0.0) {
+        return wantPositive;
+    }
+    const Meters other = wantPositive ? extrudeNegativeDistance(from) : extrudePositiveDistance(from);
+    return other > 0.0 ? !wantPositive : wantPositive;
+}
+}  // namespace
+
+ExtrudeFeature extrudeFeatureWithExtent(const ExtrudeFeature& from, ExtrudeExtentMode to,
+                                        ExtrudeDirection preferredSide) {
+    if (!extentValid(to) || to == from.extent) {
+        return from;
+    }
+    ExtrudeFeature out = from;
+    out.extent = to;
+    const bool keepPositive = transitionKeepsPositive(from, preferredSide);
+    const Meters kept = keepPositive ? extrudePositiveDistance(from) : extrudeNegativeDistance(from);
+    switch (to) {
+        case ExtrudeExtentMode::OneSide:
+            // The kept side's value, on the kept side. Never a negative depth.
+            out.depth = kept;
+            out.direction = keepPositive ? ExtrudeDirection::AlongNormal
+                                         : ExtrudeDirection::AgainstNormal;
+            out.secondDistance = 0.0;
+            break;
+        case ExtrudeExtentMode::Symmetric:
+            // The kept side's value on BOTH sides. Deliberately not an average
+            // of A and B: an average is a number the user never typed.
+            out.depth = kept;
+            out.direction = ExtrudeDirection::AlongNormal;
+            out.secondDistance = 0.0;
+            break;
+        case ExtrudeExtentMode::TwoSides:
+            // Both sides start from what the previous mode reached, so the
+            // solid does not jump and the second side is a readable, editable
+            // starting point rather than zero.
+            out.depth = extrudePositiveDistance(from) > 0.0 ? extrudePositiveDistance(from) : kept;
+            out.secondDistance =
+                    extrudeNegativeDistance(from) > 0.0 ? extrudeNegativeDistance(from) : kept;
+            out.direction = ExtrudeDirection::AlongNormal;
+            break;
+    }
+    return out;
+}
+
+ExtrudeFeature extrudeFeatureWithSide(const ExtrudeFeature& from, bool positiveSide,
+                                      Meters distance) {
+    ExtrudeFeature out = from;
+    switch (from.extent) {
+        case ExtrudeExtentMode::OneSide: {
+            const bool solidIsPositive = from.direction == ExtrudeDirection::AlongNormal;
+            if (positiveSide != solidIsPositive) {
+                return from;  // there is no handle on that side to have moved
+            }
+            out.depth = distance;
+            break;
+        }
+        case ExtrudeExtentMode::Symmetric:
+            // Either handle writes the ONE distance, which is what keeps the
+            // two sides equal through a drag as well as through a typed value.
+            out.depth = distance;
+            break;
+        case ExtrudeExtentMode::TwoSides:
+            if (positiveSide) {
+                out.depth = distance;
+            } else {
+                out.secondDistance = distance;
+            }
+            break;
+    }
+    return out;
+}
+
+ExtrudeFeature extrudeFeatureWithPrimary(const ExtrudeFeature& from, Meters distance,
+                                         ExtrudeDirection direction) {
+    ExtrudeFeature out = from;
+    out.depth = distance;
+    if (from.extent == ExtrudeExtentMode::OneSide) {
+        out.direction = direction;
+    }
+    return out;
+}
 
 bool sameCadBodyState(const CadBodyState& a, const CadBodyState& b) {
     return sameCadSketch(a.sketch, b.sketch)
            && a.extrude.profileEntityId == b.extrude.profileEntityId
            && sameBits(a.extrude.depth, b.extrude.depth)
-           && a.extrude.direction == b.extrude.direction;
+           && a.extrude.direction == b.extrude.direction
+           && a.extrude.extent == b.extrude.extent
+           && sameBits(a.extrude.secondDistance, b.extrude.secondDistance);
 }
 
 CadStatus validateCadBodyState(const CadBodyState& state, ProfileExtraction* outProfiles) {
@@ -55,17 +228,37 @@ CadStatus validateCadBodyState(const CadBodyState& state, ProfileExtraction* out
     if (sketchWhy != CadStatus::Ok) {
         return sketchWhy;
     }
-    if (!std::isfinite(state.extrude.depth)) {
+    if (!std::isfinite(state.extrude.depth) || !std::isfinite(state.extrude.secondDistance)) {
         return CadStatus::NonFinite;
-    }
-    // The SAME rule every primitive dimension passes: finite, positive, and
-    // resolvable as a float, plus the sketch's own bound.
-    if (validateDimensionMeters(state.extrude.depth) != DimensionValidation::Ok
-        || state.extrude.depth > kMaxSketchCoordinateMeters) {
-        return CadStatus::InvalidExtrudeDepth;
     }
     if (!directionValid(state.extrude.direction)) {
         return CadStatus::InvalidExtrudeDirection;
+    }
+    // The extent mode, and the ONE canonical form it allows. Refused by name
+    // rather than repaired, so a file, a history step and a live edit can never
+    // disagree about which of two encodings of one solid is the real one.
+    if (!extentValid(state.extrude.extent) || !extrudeFeatureCanonical(state.extrude)) {
+        return CadStatus::InvalidExtrudeExtent;
+    }
+    const Meters positive = extrudePositiveDistance(state.extrude);
+    const Meters negative = extrudeNegativeDistance(state.extrude);
+    if (!sideDistanceValid(positive) || !sideDistanceValid(negative)) {
+        return CadStatus::InvalidExtrudeDepth;
+    }
+    // A side may be zero only in Two Sides, where the other side carries the
+    // extent. One Side and Symmetric both state a length, and a length of zero
+    // is refused exactly as it always was -- never clamped.
+    if (state.extrude.extent != ExtrudeExtentMode::TwoSides
+        && validateDimensionMeters(state.extrude.depth) != DimensionValidation::Ok) {
+        return CadStatus::InvalidExtrudeDepth;
+    }
+    // The SOLID's own rule: whatever the mode, the total span is a usable
+    // Construction length within the sketch's bound. This is what refuses a
+    // Two Sides body whose two sides are both zero.
+    const Meters span = positive + negative;
+    if (validateDimensionMeters(span) != DimensionValidation::Ok
+        || span > kMaxSketchCoordinateMeters) {
+        return CadStatus::InvalidExtrudeDepth;
     }
     ProfileExtraction extraction = extractClosedProfiles(state.sketch);
     if (extraction.profiles.empty()) {
@@ -102,13 +295,14 @@ CadStatus generateCadMesh(const CadBodyState& state, ConstructionMesh* out) {
 
     const uint32_t n = static_cast<uint32_t>(profile->polygon.size());
     const Workplane plane = state.sketch.plane;
-    // The solid always spans from its -N face to its +N face; which of the two
-    // sits ON the sketch plane is the direction. Building it this way means
-    // the winding rule below never has to ask which way the user chose.
-    const double nearOffset = (state.extrude.direction == ExtrudeDirection::AlongNormal)
-                                  ? 0.0
-                                  : -state.extrude.depth;
-    const double farOffset = nearOffset + state.extrude.depth;
+    // The solid always spans from its -N face to its +N face, and the two
+    // DISTANCES say how far each reaches. Building it this way means the
+    // winding rule below never has to ask which mode or which side the user
+    // chose: One Side puts one of them at zero, Symmetric makes them equal, and
+    // Two Sides makes them independent, and the arithmetic here is one line for
+    // all three.
+    const double nearOffset = -extrudeNegativeDistance(state.extrude);
+    const double farOffset = extrudePositiveDistance(state.extrude);
 
     ConstructionMesh mesh;
     mesh.vertices.resize(static_cast<size_t>(cadExtrusionVertexCount(n)));
@@ -201,8 +395,7 @@ CadStatus applyCadExtrude(CadBody& body, Meters depth, ExtrudeDirection directio
         *outChanged = false;
     }
     CadBodyState candidate = body.state();
-    candidate.extrude.depth = depth;
-    candidate.extrude.direction = direction;
+    candidate.extrude = extrudeFeatureWithPrimary(candidate.extrude, depth, direction);
     return body.applyState(candidate, outChanged);
 }
 

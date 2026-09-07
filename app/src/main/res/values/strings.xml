@@ -505,6 +505,23 @@
     <string name="extrude_depth_description">Depth %1$s. Drag the arrow, or tap to type an exact depth.</string>
     <string name="label_depth_canvas">Depth</string>
     <string name="status_extrude_flipped">Extruding %1$s. The depth is unchanged.</string>
+    <!-- CAD-EXT-R1: the extent. "Each side" is deliberate — a Symmetric
+         extrusion stores the distance PER SIDE, and a user who read it as the
+         total would type half the solid they wanted. -->
+    <string name="extent_one_side">One Side</string>
+    <string name="extent_symmetric">Symmetric</string>
+    <string name="extent_two_sides">Two Sides</string>
+    <string name="extent_one_side_description">Grow the solid out of one side of the sketch.</string>
+    <string name="extent_symmetric_description">Grow the solid the same distance out of both sides of the sketch.</string>
+    <string name="extent_two_sides_description">Grow the solid a different distance out of each side of the sketch.</string>
+    <string name="extrude_each_side_description">Each side %1$s. Drag either arrow, or tap to type an exact distance.</string>
+    <string name="extrude_side_a_description">Side A, along the sketch normal, %1$s. Drag the arrow, or tap to type an exact distance.</string>
+    <string name="extrude_side_b_description">Side B, against the sketch normal, %1$s. Drag the arrow, or tap to type an exact distance.</string>
+    <string name="label_each_side_canvas">Each side</string>
+    <string name="label_side_a_canvas">Side A</string>
+    <string name="label_side_b_canvas">Side B</string>
+    <string name="status_extent_changed">Extruding %1$s.</string>
+    <string name="status_cad_invalid_extent">That extent is not one this build can carry.</string>
     <string name="status_extrude_depth_applied">Depth applied.</string>
     <string name="edit_sketch_canvas_description">Edit the sketch of %1$s. It is still this body\'s truth, and nothing changes until you finish.</string>
     <string name="status_sketch_cancelled">Sketch discarded. Nothing was changed.</string>

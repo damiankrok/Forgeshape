@@ -632,6 +632,81 @@ answer a circle's cylindrical side already gets — while a straight line's side
 in the same profile stays eligible. Eligibility is decided per polygon edge for
 exactly this reason: one profile may mix both.
 
+## 7e. `CADB` v4 — the extrusion's extent (`CAD-EXT-R1`)
+
+An extrusion reaches a stated distance on each side of its sketch plane. The
+durable truth is **two non-negative distances** — one along `+N`, one along
+`-N` — of which at least one is positive, plus the **mode** naming which
+combinations the controls author. That is stored as a **section version 4** of
+`CADB`, written **only** when at least one CAD body's extent is not One Side.
+
+A One Side extrusion **is** a direction and a positive depth, which every
+version since v1 has carried, so a project whose every extrusion is One Side
+still writes v1, v2 or v3 and is **byte-identical** to what the earlier stage
+wrote; the twenty-eight `CADB` fixtures that predate this stage prove it. An
+older build refuses a required `CADB` at an unknown version rather than opening
+a body with half its extent silently missing — which for a Symmetric body would
+be a solid of the wrong size and in the wrong place.
+
+v4 is v3's record with two fields. **v4 always writes the v2 support block and
+understands the v3 entity kinds**, because a version is a superset of the one
+below it.
+
+```
+u64  objectId
+u8   workplaneCode
+u8   supportKind                (+ the TopoRef for a face support)   ← v2
+u32  nextEntityId
+u32  profileEntityId
+u8   extentCode                 1 One Side, 2 Symmetric, 3 Two Sides ← v4 only
+u8   directionCode              1 along the normal, 2 against it
+f64  depth                      the PRIMARY distance, metres
+f64  secondDistance             the -N distance, metres              ← v4 only
+u32  entityCount  … then the entities, exactly as §7b and §7d.
+```
+
+The **extent code comes BEFORE the direction it qualifies**: in every mode but
+One Side the direction carries no information, and a reader that met it first
+would have to read backwards to learn that. The **second distance is written
+always at v4**, exactly `0.0` outside Two Sides, so a v4 body record is one
+fixed size and a decoder can refuse a non-zero value where the mode has no
+second side rather than quietly ignoring it.
+
+What `depth` means, per mode — and it is a **distance and never a signed
+offset**, because a side and a length are two different facts:
+
+| extentCode | `+N` distance | `-N` distance | `directionCode` | `secondDistance` |
+| --- | --- | --- | --- | --- |
+| 1 One Side | `depth` if along, else 0 | `depth` if against, else 0 | 1 or 2 | exactly `0.0` |
+| 2 Symmetric | `depth` (per side) | `depth` (per side) | exactly 1 | exactly `0.0` |
+| 3 Two Sides | `depth` (A) | `secondDistance` (B) | exactly 1 | B |
+
+A Symmetric body stores the distance **per side** and never a total thickness,
+so the file does not depend on a presentation preference the UI might later
+change its mind about.
+
+**One solid has exactly one encoding**, and the decoder enforces it: a
+`directionCode` of 2 under Symmetric or Two Sides, and a non-zero
+`secondDistance` outside Two Sides, are **refused** (`InvalidSemanticValue`) —
+never masked and never repaired, on the reserved-flag-bit rule of §5c applied to
+a pair of fields. An `extentCode` outside 1..3 is refused the same way. The
+distances are then held to the **domain's own rule**, `validateCadBodyState`,
+and to nothing restated: each side finite, non-negative and within the sketch
+bound; a side may be zero **only** in Two Sides, where the other side carries
+the extent; and the total span `A + B` is always a usable Construction length.
+A file whose extrusion reaches nowhere at all is refused rather than opened as a
+body with no volume.
+
+The mesh spans exactly `-B .. +A` along the plane normal, which reduces to
+`0 .. +depth` and `-depth .. 0` for the two One Side cases — the offsets
+`generateCadMesh` always produced. **`CapPlane` is the cap the extrusion grows
+FROM and `CapFar` the one it grows TO.** For One Side that is still literally
+the cap lying ON the sketch plane; for Symmetric and Two Sides neither cap is on
+the plane and the start cap is the `-N` one. The face TOKENS are unchanged by
+any of this, so the §7c lineage signature is unchanged too, and a
+face-supported dependent stays attached across an extent edit — while its
+derived world placement follows the cap that moved, which is correct.
+
 ## 8. Validation and compatibility
 
 Decoding happens entirely into temporary document structures. **No live project

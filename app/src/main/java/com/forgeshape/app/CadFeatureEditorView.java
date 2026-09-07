@@ -40,6 +40,14 @@ final class CadFeatureEditorView extends LinearLayout
     private final NumericPropertyRow depthField;
     private final TextView directionAlong;
     private final TextView directionAgainst;
+    /**
+     * The side chips' row, WITHDRAWN for a body whose extent names both sides
+     * (`CAD-EXT-R1`). Symmetric already reaches both and Two Sides states both
+     * explicitly, so there is no side left to choose; native refuses a
+     * direction change there too, and this is the control not being drawn where
+     * it could not succeed.
+     */
+    private final LinearLayout directionRow;
     private final UnitChipsView unitChips;
     private final TextView apply;
     /** Reopens the body's sketch for editing (`SKETCH-UX-R1` F1). */
@@ -98,6 +106,7 @@ final class CadFeatureEditorView extends LinearLayout
         });
         directions.addView(directionAlong, EditorControlStyles.evenShare(0));
         directions.addView(directionAgainst, EditorControlStyles.evenShare(smallGap));
+        directionRow = directions;
         addView(directions, EditorControlStyles.rowParams(gap));
 
         // Edit Sketch (`SKETCH-UX-R1` F1). The panel above types the sizes this
@@ -191,8 +200,13 @@ final class CadFeatureEditorView extends LinearLayout
                         (int) nativeCad[NativeViewport.CAD_PROFILE_VERTICES]));
                 break;
         }
+        // The extent is authored ON THE CANVAS, where both sides are visible;
+        // this panel edits the PRIMARY distance of whatever mode the body has
+        // and withdraws the side chips where there is no side to choose.
+        final int extent = (int) nativeCad[NativeViewport.CAD_STATE_EXTENT];
         depthField.setText(unit.format(nativeCad[NativeViewport.CAD_DEPTH]));
         draftDirection = (int) nativeCad[NativeViewport.CAD_DIRECTION];
+        directionRow.setVisibility(extent == NativeViewport.EXTENT_ONE_SIDE ? VISIBLE : GONE);
         showDirection();
         unitChips.showSelected(unit);
     }

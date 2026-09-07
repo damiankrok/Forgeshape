@@ -1,9 +1,90 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.73.0
+**Status Version:** 0.74.0
 **Updated:** 2026-09-07
-**Result:** **`CAD-UX-S1` — TECHNICALLY COMPLETE, OWNER LATER READY. Its one
-blocker, `OQ-CAD-UX-01`, is CLOSED by `CAD-UX-S1-C1`.** The extrusion is
+**Result:** **`CAD-EXT-R1` — TECHNICALLY COMPLETE, OWNER LATER READY.** An
+extrusion now reaches a stated distance on **each side** of its sketch plane.
+The canvas cluster `CAD-UX-S1` put at the geometry gained an **extent
+selector** — **One Side**, **Symmetric**, **Two Sides** — and, in Two Sides, a
+second exact value standing at the second arrow. Nothing else about the
+manipulator was rebuilt: the arrow, the camera-attached scale, the frozen-basis
+drag, the feature-preview view and the retained-sketch chip are the ones that
+were already there.
+
+**The durable truth is TWO non-negative DISTANCES, and the mode names which of
+them the controls author.** How far the solid reaches along `+N` and along
+`-N`, of which at least one is positive — and every consumer reads that pair
+through `extrudePositiveDistance` / `extrudeNegativeDistance` and never the
+mode, so `generateCadMesh` spans `-B .. +A` in ONE line for all three and a
+fourth mode could not silently mean a fourth geometry rule. **A signed depth is
+never how a side is stored**: a side and a length are two different facts, and
+folding them into one number would make the mesh generator, the codec, the face
+frames and the panel field each learn about a sign none of them has ever had to
+carry. Symmetric stores the distance **per side** and never a total thickness,
+so the file does not depend on a presentation preference a later UI might
+change its mind about — which is what makes a total-length display a pure UI
+question, listed as such in the owner pack.
+
+**Each mode has ONE canonical form, and a non-canonical one is refused by
+name.** A meaningful direction in One Side alone, a non-zero second distance in
+Two Sides alone; anything else is `InvalidExtrudeExtent`, in the live domain and
+in the codec alike, never masked and never repaired — so one solid has exactly
+one encoding. **Flip is a One Side control**: Symmetric reaches both sides
+already and Two Sides states both outright, so it is refused below JNI and
+**absent** above it in the canvas cluster and in both panels, rather than shown
+and then refused. It is never an A/B swap. `extrudeFeatureWithExtent` is the
+whole transition policy as a pure function over values — into a two-sided mode
+both sides take what the previous mode reached, out of one the preferred side's
+value is kept and the other becomes 0, no transition can produce a negative
+depth, and **nothing is ever averaged**, because an average is a number the
+user never typed. The preferred side is an argument and not a hidden field: the
+session holds the user's last One Side choice as volatile intent that no
+`.forge` byte, history step or fingerprint ever sees.
+
+**`CADB` gains version 4, and every One Side project keeps the bytes it always
+had.** A One Side extrusion *is* a direction and a positive depth, which every
+version since v1 has carried, so v4 is written only when a body is Symmetric or
+Two Sides — and the thirty pre-existing fixtures are byte-for-byte unchanged,
+proved rather than asserted: `-VerifyOnly` reports **36/36 `OnDisk=True`** with
+every older digest identical. The six new v4 fixtures were produced
+**byte-identically on the first run** by `scripts/build-forge-corpus.ps1`, a
+second encoder written from `DATA_PACKAGE_SPEC.md` §7e that shares no line with
+the codec. The decoder fails closed on an unknown extent code, a direction
+stated where there is no side to choose, a second distance where there is no
+second side, and an extrusion with no extent at all — each proved by a fixture
+built with the bad value in place.
+
+**The face topology did not move.** `CapPlane` is now the cap the extrusion
+grows FROM and `CapFar` the one it grows TO — for One Side still literally the
+cap on the sketch plane — so the face TOKENS and the `CAD-A3` lineage signature
+are unchanged by any extent edit and a face-supported dependent stays attached,
+while its DERIVED world placement follows the cap that moved. That is the
+correct answer and it is asserted, not assumed.
+
+**The new device suite found two real defects on its first run**, both fixed
+before the stage closed: a Two Sides side of zero left its value with no screen
+anchor, so the number could not be typed back up (the projection was gated on
+the side's arrow being drawable — `present` now gates only the ARROW); and the
+suite's own expectation that a zero side is refused was wrong against the
+stated contract, and was corrected to assert acceptance plus a negative
+refusal.
+
+**Verified (`CAD-EXT-R1`):** **twenty-two** `*_SELFTEST_OK` tokens (**3582
+checks**, up from 3549) then `FORGESHAPE_NATIVE_VIEWPORT_OK` with zero
+failures — the CAD suite went 122 → **155** checks with `CADEXT_02..11`, and
+every other suite's count is unchanged; the same green on the standalone NDK
+runner; the corpus builder reporting **36/36 fixtures `OnDisk=True`** with all
+thirty older digests identical and the six new v4 digests matching the C++
+encoder byte for byte on the first run; `CadExtrudeExtentTest` **OK (5 tests)**
+in 48.5 s and the `CadCanvasExtrudeTest` regression **OK (9 tests)** in 82.9 s
+on `emulator-5580` (`ForgeShape_Stage006`, confirmed by `emu avd name`);
+`assembleDebug`, `assembleDebugAndroidTest` and `assembleRelease` all
+successful with **0** self-test symbols in the release `.so` on both ABIs; and
+`verify-device-guards.ps1` green over 19 surfaces. Automated elapsed **9.9
+minutes**. Evidence: `artifacts/cad-ext-r1/`.
+
+**Previously:** **`CAD-UX-S1` with its correction `CAD-UX-S1-C1` — TECHNICALLY
+COMPLETE, OWNER LATER READY.** The extrusion is
 controlled at the geometry instead of in a side panel: an **arrow** along the
 extrusion normal standing on the profile's own area centroid, with the **exact
 depth**, a direct **Flip** and a **New Body** badge in a camera-attached cluster
@@ -1995,6 +2076,16 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 | The retained sketch reached in ONE tap from the committed body, edited and finished into the SAME body as one more step with no second body created | VERIFIED |
 | A sketch is AUTHORED through the exact support-normal view, and `Finish Sketch` moves to a feature-preview view in which the extrusion axis has a real screen projection (`CAD-UX-S1-C1`) | VERIFIED |
 | Dragging the extrude arrow through the real viewport actually changes the authored depth, mints no history step, and leaves Flip a direction rather than a negative depth; `Back to Sketch` restores the exact aligned view and the next Finish is usable again | VERIFIED |
+| The extrusion's EXTENT (`CAD-EXT-R1`): One Side, Symmetric and Two Sides authored at the geometry, the mesh spanning exactly `-B .. +A` on all three world planes and on a face support, A and B independent | VERIFIED |
+| Every mode transition of the `CAD-EXT-R1` policy: no negative depth, a deterministic side, nothing averaged, and a mode round trip restoring the One Side state bit for bit | VERIFIED |
+| A non-canonical extent (a direction where there is no side, a second distance where there is no second side) refused by name in the domain AND in the codec; an extrusion with no extent refused, never clamped | VERIFIED |
+| Flip absent and refused for Symmetric and Two Sides, in the canvas cluster and in both panels | VERIFIED |
+| An extent edit keeps every face token and the `CAD-A3` lineage signature, so a face-supported dependent stays attached | VERIFIED |
+| `CADB` v4 written ONLY for a real extent; a One Side project still writes v1/v2/v3 byte-identically, with all thirty older corpus digests unchanged | VERIFIED |
+| The six `CADB` v4 fixtures produced byte-identically by an independent PowerShell encoder written from the spec; both corrupt v4 fixtures refused with nothing written | VERIFIED |
+| Dragging either arrow through the real viewport moves the side it started on and leaves the other exactly alone; a Symmetric drag keeps the two sides equal | VERIFIED |
+| Edit Sketch returns a committed body's extent and both distances, and a trip back through the drawing does not reset it to One Side | VERIFIED |
+| Save / Open of a project carrying a Symmetric and a Two Sides body is byte-identical and restores the exact extent | VERIFIED |
 | `CADB` `.forge` section: Save / Open / Save Copy / autosave / recovery / fingerprint carry the sketch and the extrusion; a reopened CAD Body is still editable truth; corrupt CAD records refused fail-closed; the twelve older fixtures unchanged | VERIFIED |
 | A cancelled sketch changes nothing: bytes, fingerprint and history identical | VERIFIED |
 | Import, Sculpt and Sculpt Undo/Redo unaffected beside a CAD Body; CAD → Sculpt deliberately refused by name | VERIFIED |
@@ -3902,21 +3993,35 @@ was added and no marketing claim is made.
 ## Next Stage
 
 **Exactly one next step: return this status to the ForgeShape coordinator for a
-combined OWNER review.** `CAD-UX-S1` with its correction `CAD-UX-S1-C1` is
-technical/repository complete and carries no open blocker; what is left is the
-owner's own visual acceptance of the provisional constants and of the
-Sketch → preview transition, listed in
-`artifacts/cad-ux-s1/OWNER_LATER_TEST_PACK.md`.
+combined OWNER review.** `CAD-EXT-R1` is technical/repository complete and
+carries no open blocker; what is left is the owner's own reading of the extent
+selector's wording, of `Each side`, and of two arrows sharing one profile,
+listed in `artifacts/cad-ext-r1/OWNER_LATER_TEST_PACK.md`.
 
-`CAD-UX-S1` is closed on the technical side. The extrusion is controlled at the
+`CAD-EXT-R1` is closed on the technical side. An extrusion now reaches a stated
+distance on each side of its sketch plane, authored as **One Side**,
+**Symmetric** or **Two Sides** at the geometry, through the canvas cluster
+`CAD-UX-S1` already put there. Nothing about the arrow, the camera-attached
+scale, the drag contract, the feature-preview view or the retained-sketch chip
+was rebuilt: the cluster gained a selector and, in Two Sides, a second value,
+and the manipulator gained a side.
+
+**Do not start `GATE-KERNEL`, Stage024, `CAD-A4` or Stage 026.** Do not
+implement Add, Cut, Join, Intersect, any boolean, a feature list, `CADB` v5,
+Revolve, To Object, Through All, taper/draft or a Hole feature. The visual
+constants named in `artifacts/cad-ext-r1/OWNER_LATER_TEST_PACK.md` are
+provisional and none is approved.
+
+---
+
+**Previously closed and still pending the same review:** `CAD-UX-S1` with its
+correction `CAD-UX-S1-C1`. The extrusion is controlled at the
 geometry: an arrow along the extrusion normal on the profile's own area
 centroid, the exact depth and a direct Flip in a camera-attached cluster
 anchored to it, a `New Body` badge that names what the act does without
 suggesting an Add or a Cut that do not exist, and the retained sketch reachable
-in one tap from the committed body instead of three. Nothing it does is
-persisted — proved, not asserted, by a bit-exact `CadBodyState` comparison
-across a drag, a cancel and two flips, and by a 30/30 corpus verification whose
-digests are unchanged. The camera-attached size rule is a new function beside
+in one tap from the committed body instead of three. The camera-attached size
+rule is a new function beside
 `gizmoWorldScale`, never a change to it, and its 0.80 floor is the arithmetic
 that keeps the smallest live control at exactly 48 dp.
 
@@ -3932,7 +4037,7 @@ frame's own `(u, v)` so the world-up gimbal case never arises. `Unavailable`
 installs nothing. The device suite drags the real viewport and reads the depth
 change back.
 
-**Two findings landed beside the stage and neither was fixed**, both recorded
+**Two findings landed beside `CAD-UX-S1` and neither is fixed**, both recorded
 under *Known Issues* with file and line: `SketchOverlayStyle::Dimension` renders
 fully transparent because the renderer's overlay switch has no case for it,
 which silently affects the `SKETCH-UX-R1` E line annotation and Stage 020M's
@@ -3940,14 +4045,6 @@ active-axis leader; and `beginSketchView` reads the sketch's **authoring** frame
 rather than its view frame, so the orientation navigator's flip and roll may not
 move the camera. Both are one-file repairs that change how shipped features look
 or behave, which is an owner call rather than a bounded UI stage's.
-
-**Do not start `CAD-EXT-R1`, `GATE-KERNEL`, Stage024, `CAD-A4` or Stage 026.**
-Do not implement Add, Cut, Symmetric, Two Sides, any boolean, a feature list or
-`CADB` v4/v5. The visual constants named in
-`artifacts/cad-ux-s1/OWNER_LATER_TEST_PACK.md` are provisional and none is
-approved.
-
----
 
 **Previously closed and still pending the same review:** Stage 025
 (`SCULPT-FCM-R1`) is closed on the technical

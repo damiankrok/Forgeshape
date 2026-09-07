@@ -52,15 +52,24 @@ CadStatus buildContext(const CadBodyState& state, ExtrudeContext* ctx) {
     }
     ctx->plane = state.sketch.plane;
     ctx->frame = workplaneFrame(ctx->plane);
-    // The plane cap is always at offset 0; the far cap is at the extrusion tip.
-    // AlongNormal grows to +depth, AgainstNormal to -depth. See generateCadMesh.
+    // `CapPlane` is the cap the extrusion grows FROM and `CapFar` the one it
+    // grows TO, measured along `direction`. For One Side -- every extrusion
+    // before `CAD-EXT-R1`, and every v1/v2/v3 record after it -- the start cap
+    // is the one lying ON the sketch plane and these offsets are the ones this
+    // function always produced. For Symmetric and Two Sides NEITHER cap is on
+    // the plane, and `direction` is canonically AlongNormal there, so the start
+    // cap is the `-N` one: a generalization of the same sentence rather than a
+    // second rule, which is what keeps the face TOKENS -- and with them every
+    // stored lineage signature -- exactly as they were.
+    const double positive = extrudePositiveDistance(state.extrude);
+    const double negative = extrudeNegativeDistance(state.extrude);
     if (state.extrude.direction == ExtrudeDirection::AlongNormal) {
-        ctx->planeCapOffset = 0.0;
-        ctx->farCapOffset = state.extrude.depth;
+        ctx->planeCapOffset = -negative;
+        ctx->farCapOffset = positive;
         ctx->extrudeSign = 1.0;
     } else {
-        ctx->planeCapOffset = 0.0;
-        ctx->farCapOffset = -state.extrude.depth;
+        ctx->planeCapOffset = positive;
+        ctx->farCapOffset = -negative;
         ctx->extrudeSign = -1.0;
     }
     return CadStatus::Ok;
@@ -104,8 +113,11 @@ CadFace makeSide(const ExtrudeContext& ctx, uint32_t k) {
     const uint32_t n = static_cast<uint32_t>(profile.polygon.size());
     const SketchPoint a2 = profile.polygon[k];
     const SketchPoint b2 = profile.polygon[(k + 1u) % n];
-    const Vec3 nearA = workplaneToLocalAtOffset(ctx.plane, a2, 0.0);
-    const Vec3 nearB = workplaneToLocalAtOffset(ctx.plane, b2, 0.0);
+    // The quad's START-cap corners. Offset 0 until `CAD-EXT-R1`, because the
+    // start cap was always on the sketch plane; the start cap's own offset now,
+    // so a Symmetric or Two Sides side face is centred on the quad it really is.
+    const Vec3 nearA = workplaneToLocalAtOffset(ctx.plane, a2, ctx.planeCapOffset);
+    const Vec3 nearB = workplaneToLocalAtOffset(ctx.plane, b2, ctx.planeCapOffset);
     const Vec3 edge = vec3Sub(nearB, nearA);
     const Vec3 edgeDir = normalizedOr(edge, ctx.frame.uAxis);
     // Outward normal of a CCW edge is edge x planeNormal (verified for XY).

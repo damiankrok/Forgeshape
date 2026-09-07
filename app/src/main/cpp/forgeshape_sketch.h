@@ -123,8 +123,16 @@ enum class CadStatus : uint8_t {
     // (`RefusedHasDependents`): the dependency is never cascaded, never
     // retargeted to the nearest surviving face, and never silently broken.
     DependentFaceLost,
+    // The extrusion's extent is not one this build can carry: an extent code
+    // outside the three, or a feature outside the ONE canonical form its mode
+    // allows -- a direction stated for a mode that names both sides, or a
+    // second distance stored by a mode that has only one. Refused rather than
+    // masked or repaired, so one solid has exactly one encoding (`CAD-EXT-R1`).
+    InvalidExtrudeExtent,
 };
 
+// The count is the number of enumerators, so `cadStatusFromCode` accepts
+// exactly the codes that exist.
 constexpr int kCadStatusCount = 31;
 
 const char* cadStatusName(CadStatus status);

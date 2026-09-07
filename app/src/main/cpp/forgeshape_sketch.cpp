@@ -42,6 +42,7 @@ const char* cadStatusName(CadStatus status) {
         case CadStatus::InvalidSpline: return "InvalidSpline";
         case CadStatus::SketchNotEmpty: return "SketchNotEmpty";
         case CadStatus::DependentFaceLost: return "DependentFaceLost";
+        case CadStatus::InvalidExtrudeExtent: return "InvalidExtrudeExtent";
     }
     return "unknown";
 }
