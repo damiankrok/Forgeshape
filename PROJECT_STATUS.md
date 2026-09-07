@@ -3866,3 +3866,24 @@ stable tree rather than a resume. Stage 025 changed the shared `MeshVertex` and
 kind of change an aggregate is for — the focused evidence here covers the
 sculpt, render-shading, project and import suites that touch those paths, but it
 is not the exhaustive gate and does not claim to be.
+
+**One audit landed beside this status and changed nothing in the product**
+(`CAD-UX-AUDIT-R1`, 2026-09-07). A source-backed map of the CAD/Sketch/Extrude
+flow and a staging proposal for the owner's canvas-first CAD UX target now live
+in `artifacts/cad-ux-audit-r1/`. It is an audit and a spike: **no runtime, test,
+schema, fixture or corpus byte moved**, and nothing in it is an authorized stage
+or an implemented capability. Its three load-bearing findings are that the
+**retained sketch is already domain truth** — `CadBodyState` is a sketch plus an
+extrusion that references a profile by id and copies no geometry, so the gap is
+UI access and not the model; that **Symmetric and Two Sides A/B need a `CADB`
+version but no boolean kernel**, because `generateCadMesh` already spans two
+independent offsets and direction only decides which is zero; and that
+**same-body Add/Cut is a feature-list change before it is a boolean change**,
+since `CadBodyState` is deliberately a struct and turning it into an ordered list
+touches the domain, the history's boundedness, the codec, `DATA_PACKAGE_SPEC.md`
+and `scripts/build-forge-corpus.ps1`. The audit also records the trap that a
+face-supported sketch produces a SECOND body that follows its producer and must
+never be presented as Add. Extrude Add and Cut remain exactly what `UI-OWNER-04`
+already said they were: **required integration after boolean infrastructure
+exists**, and still not implemented. The next step for the audit is the
+coordinator's, not this repository's.
