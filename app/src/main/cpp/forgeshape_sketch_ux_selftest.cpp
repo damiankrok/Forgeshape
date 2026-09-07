@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -997,6 +998,893 @@ ProjectDocument cadBadSplineBaseDocument() {
     return document;
 }
 
+
+// -------------------------------------------------------------------------
+// The canvas extrude manipulator (`CADUXS1-02..07`, `CADUXS1-09`)
+// -------------------------------------------------------------------------
+
+// A camera built here rather than driven through CameraController, so a case is
+// a statement about the TOOL and not about how a gesture reached a pose.
+CameraSnapshot uxPerspectiveCamera(const Vec3& eye, const Vec3& target, int width, int height) {
+    CameraSnapshot camera{};
+    Vec3 up{0.0f, 1.0f, 0.0f};
+    const Vec3 direction = vec3Normalize(vec3Sub(target, eye));
+    if (std::fabs(vec3Dot(direction, up)) > 0.95f) {
+        up = Vec3{0.0f, 0.0f, 1.0f};
+    }
+    camera.view = mat4LookAt(eye, target, up);
+    const float aspect = static_cast<float>(width) / static_cast<float>(height);
+    camera.proj = mat4Perspective(60.0f * 3.14159265358979323846f / 180.0f, aspect, 0.05f, 400.0f);
+    camera.eye = eye;
+    camera.target = target;
+    camera.projection = ProjectionMode::Perspective;
+    camera.orthoHalfHeightMeters = 1.0f;
+    return camera;
+}
+
+// One profile out of a sketch, so a case can talk about anchors without going
+// through a session.
+bool firstProfileOf(const CadSketch& sketch, SketchEntityId anchor, ClosedProfile* out) {
+    const ProfileExtraction extraction = extractClosedProfiles(sketch);
+    const ClosedProfile* found = findClosedProfile(extraction, anchor);
+    if (found == nullptr) {
+        return false;
+    }
+    *out = *found;
+    return true;
+}
+
+// Drives a session all the way to Ready over a rectangle on one world plane.
+//
+// Seeded through `beginEdit`, which is the public seam for handing a session a
+// known sketch; going through the drawing tools instead would make every case
+// below a statement about the Rectangle tool as well as about the manipulator.
+void readyRectangleSession(SketchSession* session, Workplane plane, double w, double h,
+                           double depth, double centreU = 0.0, double centreV = 0.0) {
+    CadBodyState state;
+    state.sketch.plane = plane;
+    SketchRectangle rect;
+    rect.center = SketchPoint{centreU, centreV};
+    rect.width = w;
+    rect.height = h;
+    addSketchEntity(&state.sketch, rect);
+    state.extrude.profileEntityId = 1;
+    state.extrude.depth = depth;
+    state.extrude.direction = ExtrudeDirection::AlongNormal;
+    session->beginEdit(1, state, planeFrameOf(plane));
+    session->finish();
+    session->selectProfile(1);
+    session->setExtrude(depth, ExtrudeDirection::AlongNormal);
+}
+
+void testCanvasExtrudeAnchors(Recorder& r) {
+    // CADUXS1-02: the arrow axis is the SUPPORT normal on every world plane,
+    // and it comes from the frame rather than from any triangle.
+    {
+        const Workplane planes[3] = {Workplane::XY, Workplane::XZ, Workplane::YZ};
+        bool allCorrect = true;
+        for (int i = 0; i < 3; ++i) {
+            SketchSession session;
+            readyRectangleSession(&session, planes[i], 2.0, 1.0, 1.5);
+            CadExtrudeAnchors anchors;
+            const WorkplaneFrame wf = workplaneFrame(planes[i]);
+            allCorrect = allCorrect && session.extrudeAnchors(&anchors) && anchors.valid
+                         && nearVec(anchors.normal, wf.normal.x, wf.normal.y, wf.normal.z)
+                         && nearVec(anchors.axis, wf.normal.x, wf.normal.y, wf.normal.z);
+        }
+        r.check("CADUXS1_02_a_arrow_axis_is_the_support_normal_on_all_three_world_planes",
+                allCorrect);
+    }
+    // The base is the profile's AREA centroid on the plane, and the tip is one
+    // depth along the axis. A rectangle centred on the origin puts both on the
+    // frame origin and its normal, which is checkable exactly.
+    {
+        SketchSession session;
+        readyRectangleSession(&session, Workplane::XY, 2.0, 1.0, 1.5);
+        CadExtrudeAnchors anchors;
+        const bool got = session.extrudeAnchors(&anchors);
+        r.check("CADUXS1_02_b_base_is_the_profile_centroid_and_tip_is_one_depth_along",
+                got && nearVec(anchors.base, 0.0f, 0.0f, 0.0f)
+                        && nearVec(anchors.tip, 0.0f, 0.0f, 1.5f)
+                        && nearVec(anchors.label, 0.0f, 0.0f, 0.75f)
+                        && near2(anchors.depth, 1.5));
+    }
+    // An off-centre profile moves the anchor with it: the arrow stands on the
+    // shape it extrudes, not on the sketch origin.
+    {
+        SketchSession session;
+        readyRectangleSession(&session, Workplane::XY, 1.0, 1.0, 1.0, 3.0, -2.0);
+        CadExtrudeAnchors anchors;
+        r.check("CADUXS1_02_c_anchor_follows_an_off_centre_profile",
+                session.extrudeAnchors(&anchors)
+                        && nearVec(anchors.base, 3.0f, -2.0f, 0.0f));
+    }
+    // A FACE-supported sketch anchors on the face frame it was opened on, and
+    // its axis is that face's normal -- semantic, never a render triangle.
+    {
+        // A face frame standing a metre up the world Y axis, looking outward
+        // along +Y -- a plane that is NOT one of the three world planes, so a
+        // pass here cannot come from a workplane lookup.
+        SketchFrame face;
+        face.origin = Vec3{0.0f, 1.0f, 0.0f};
+        face.u = Vec3{1.0f, 0.0f, 0.0f};
+        face.v = Vec3{0.0f, 0.0f, -1.0f};
+        face.n = Vec3{0.0f, 1.0f, 0.0f};
+        CadBodyState state;
+        state.sketch.plane = Workplane::XY;  // a face sketch canonical basis
+        SketchRectangle rect;
+        rect.center = SketchPoint{0.0, 0.0};
+        rect.width = 1.0;
+        rect.height = 1.0;
+        addSketchEntity(&state.sketch, rect);
+        state.extrude.profileEntityId = 1;
+        state.extrude.depth = 2.0;
+        state.extrude.direction = ExtrudeDirection::AlongNormal;
+        SketchSession session;
+        session.beginEdit(1, state, face);
+        session.finish();
+        session.selectProfile(1);
+        CadExtrudeAnchors anchors;
+        r.check("CADUXS1_02_d_face_supported_sketch_anchors_on_the_face_frame",
+                session.extrudeAnchors(&anchors)
+                        && nearVec(anchors.normal, 0.0f, 1.0f, 0.0f)
+                        && nearVec(anchors.base, 0.0f, 1.0f, 0.0f)
+                        && nearVec(anchors.tip, 0.0f, 3.0f, 0.0f));
+    }
+    // A2/A1: the anchors carry NO camera. Two very different cameras looking at
+    // one sketch produce identical anchors, because no camera reaches them.
+    {
+        SketchSession session;
+        readyRectangleSession(&session, Workplane::XY, 2.0, 1.0, 1.5);
+        CadExtrudeAnchors first;
+        CadExtrudeAnchors second;
+        const bool a = session.extrudeAnchors(&first);
+        // Nothing between the two reads but a camera that the tool never sees.
+        const bool b = session.extrudeAnchors(&second);
+        r.check("CADUXS1_02_e_anchors_are_camera_free_and_reproducible",
+                a && b && nearVec(first.base, second.base.x, second.base.y, second.base.z)
+                        && nearVec(first.tip, second.tip.x, second.tip.y, second.tip.z));
+    }
+    // Not Ready: no anchor, so no arrow. While the sketch is being DRAWN the
+    // single finger belongs to the drawing.
+    {
+        SketchSession session;
+        readyRectangleSession(&session, Workplane::XY, 1.0, 1.0, 1.0);
+        CadExtrudeAnchors anchors;
+        const bool readyHasOne = session.extrudeAnchors(&anchors);
+        session.backToEditing();
+        const bool editingHasNone = !session.extrudeAnchors(&anchors);
+        r.check("CADUXS1_02_f_the_arrow_exists_only_in_ready",
+                readyHasOne && editingHasNone);
+    }
+    // The area centroid, not the vertex mean. A square with one edge densely
+    // subdivided would drag a vertex mean toward that edge; the area centroid
+    // stays put, which is why it is the rule.
+    {
+        std::vector<SketchPoint> polygon;
+        polygon.push_back(SketchPoint{-1.0, -1.0});
+        for (int i = 1; i < 8; ++i) {
+            polygon.push_back(SketchPoint{-1.0 + 2.0 * i / 8.0, -1.0});
+        }
+        polygon.push_back(SketchPoint{1.0, -1.0});
+        polygon.push_back(SketchPoint{1.0, 1.0});
+        polygon.push_back(SketchPoint{-1.0, 1.0});
+        SketchPoint centroid;
+        r.check("CADUXS1_02_g_area_centroid_ignores_uneven_vertex_density",
+                sketchPolygonCentroid(polygon, &centroid) && nearPoint(centroid, 0.0, 0.0, 1e-9));
+    }
+}
+
+void testCanvasExtrudeFlip(Recorder& r) {
+    // CADUXS1-03: Flip changes the SIDE, keeps the exact positive depth and the
+    // same profile reference, and reverses the axis.
+    {
+        SketchSession session;
+        readyRectangleSession(&session, Workplane::XY, 2.0, 1.0, 1.25);
+        CadExtrudeAnchors before;
+        session.extrudeAnchors(&before);
+        const SketchEntityId profileBefore = session.selectedProfileId();
+        const CadStatus flipped = session.flipExtrudeDirection();
+        CadExtrudeAnchors after;
+        const bool got = session.extrudeAnchors(&after);
+        r.check("CADUXS1_03_a_flip_reverses_the_side_and_keeps_the_depth_and_profile",
+                flipped == CadStatus::Ok && got
+                        && session.extrude().direction == ExtrudeDirection::AgainstNormal
+                        && near2(session.extrude().depth, 1.25)
+                        && session.selectedProfileId() == profileBefore
+                        && nearVec(after.axis, -before.axis.x, -before.axis.y, -before.axis.z)
+                        && nearVec(after.tip, 0.0f, 0.0f, -1.25f)
+                        && nearVec(after.normal, before.normal.x, before.normal.y,
+                                   before.normal.z));
+    }
+    // Twice is the identity: the direction is two-valued and the depth never
+    // acquires a sign.
+    {
+        SketchSession session;
+        readyRectangleSession(&session, Workplane::XY, 2.0, 1.0, 1.25);
+        session.flipExtrudeDirection();
+        session.flipExtrudeDirection();
+        r.check("CADUXS1_03_b_two_flips_are_the_identity_and_the_depth_is_never_negative",
+                session.extrude().direction == ExtrudeDirection::AlongNormal
+                        && near2(session.extrude().depth, 1.25)
+                        && session.extrude().depth > 0.0);
+    }
+    // Refused outside Ready, by name, changing nothing.
+    {
+        SketchSession session;
+        const CadStatus inactive = session.flipExtrudeDirection();
+        session.begin(Workplane::XY);
+        const CadStatus editing = session.flipExtrudeDirection();
+        r.check("CADUXS1_03_c_flip_is_refused_by_name_outside_ready",
+                inactive == CadStatus::NotSketching && editing == CadStatus::NotSketching
+                        && session.extrude().direction == ExtrudeDirection::AlongNormal);
+    }
+    // A flipped extrusion generates the mirrored solid: one cap still lies on
+    // the sketch plane, and the other is on the other side.
+    {
+        CadBodyState state = rectBody(2.0, 1.0, 1.0);
+        state.extrude.direction = ExtrudeDirection::AgainstNormal;
+        ConstructionMesh mesh;
+        const CadStatus made = generateCadMesh(state, &mesh);
+        double minZ = 1.0e9;
+        double maxZ = -1.0e9;
+        for (const MeshVertex& v : mesh.vertices) {
+            if (v.position[2] < minZ) minZ = v.position[2];
+            if (v.position[2] > maxZ) maxZ = v.position[2];
+        }
+        r.check("CADUXS1_03_d_a_flipped_extrusion_grows_on_the_other_side",
+                made == CadStatus::Ok && near2(maxZ, 0.0, 1e-6) && near2(minZ, -1.0, 1e-6));
+    }
+}
+
+void testCanvasExtrudeScale(Recorder& r) {
+    // CADUXS1-09: inside the band the control is a rigid WORLD object -- the
+    // multiplier is strictly monotonic in the camera distance, which is the
+    // whole difference from the gizmo's constant screen size.
+    {
+        CadExtrudeControlScale near;
+        CadExtrudeControlScale far;
+        // 0.45 m over 120 px is 0.00375 m/px at scale exactly 1.
+        const bool a = cadExtrudeControlScaleFor(0.00375f, &near);
+        const bool b = cadExtrudeControlScaleFor(0.00500f, &far);
+        r.check("CADUXS1_09_a_scale_is_one_at_the_reference_distance_and_falls_with_it",
+                a && b && near.valid && far.valid && near2(near.scale, 1.0, 1e-4)
+                        && far.scale < near.scale && !near.clampedLow && !near.clampedHigh);
+    }
+    // Monotonic across the whole unclamped band, swept rather than sampled at
+    // two points: a rule that is right at the ends and wrong in between is the
+    // failure a sweep exists to catch.
+    {
+        bool monotonic = true;
+        float previous = 1.0e9f;
+        for (int i = 0; i < 40; ++i) {
+            const float perPixel = 0.0030f + 0.0000125f * static_cast<float>(i);
+            CadExtrudeControlScale s;
+            if (!cadExtrudeControlScaleFor(perPixel, &s)) {
+                monotonic = false;
+                break;
+            }
+            if (!s.clampedLow && !s.clampedHigh) {
+                if (s.scale >= previous) {
+                    monotonic = false;
+                    break;
+                }
+                previous = s.scale;
+            }
+        }
+        r.check("CADUXS1_09_b_scale_is_strictly_monotonic_inside_the_band", monotonic);
+    }
+    // Both clamps engage and are reported by name, and NOTHING leaves the band.
+    {
+        CadExtrudeControlScale veryFar;
+        CadExtrudeControlScale veryNear;
+        const bool a = cadExtrudeControlScaleFor(1.0f, &veryFar);        // 0.45 px unclamped
+        const bool b = cadExtrudeControlScaleFor(0.00001f, &veryNear);   // 45000 px unclamped
+        r.check("CADUXS1_09_c_both_clamps_engage_and_the_band_is_never_left",
+                a && b && veryFar.clampedLow && !veryFar.clampedHigh
+                        && near2(veryFar.scale, kCadExtrudeControlMinScale, 1e-6)
+                        && veryNear.clampedHigh && !veryNear.clampedLow
+                        && near2(veryNear.scale, kCadExtrudeControlMaxScale, 1e-6)
+                        && veryFar.unclampedScale < kCadExtrudeControlMinScale
+                        && veryNear.unclampedScale > kCadExtrudeControlMaxScale);
+    }
+    // The 48 dp floor is ARITHMETIC and this asserts the arithmetic, so a later
+    // change to either number cannot quietly put a live control under it.
+    {
+        r.check("CADUXS1_09_d_the_minimum_scale_keeps_a_60dp_control_at_the_48dp_floor",
+                near2(60.0 * kCadExtrudeControlMinScale, 48.0, 1e-6)
+                        && kCadExtrudeControlMaxScale > kCadExtrudeControlMinScale);
+    }
+    // A degenerate camera quantity produces nothing rather than a guess.
+    {
+        CadExtrudeControlScale s;
+        const bool zero = cadExtrudeControlScaleFor(0.0f, &s);
+        const bool negative = cadExtrudeControlScaleFor(-1.0f, &s);
+        const bool nan = cadExtrudeControlScaleFor(
+                std::numeric_limits<float>::quiet_NaN(), &s);
+        r.check("CADUXS1_09_e_a_degenerate_camera_produces_no_scale_at_all",
+                !zero && !negative && !nan);
+    }
+    // Draw and hit test consume ONE number: the world size is the clamped pixel
+    // size carried back through the same metres-per-pixel it came from.
+    {
+        CadExtrudeControlScale s;
+        const bool got = cadExtrudeControlScaleFor(0.00375f, &s);
+        r.check("CADUXS1_09_f_drawing_and_hit_testing_share_one_derived_size",
+                got && near2(s.pixels, s.scale * kCadExtrudeControlReferencePixels, 1e-4)
+                        && near2(s.world, s.pixels * s.metersPerPixel, 1e-6));
+    }
+    // The same anchor under two cameras at different distances gives different
+    // scales, which is the request; the ANCHOR itself does not move.
+    {
+        SketchSession session;
+        readyRectangleSession(&session, Workplane::XY, 2.0, 1.0, 1.0);
+        CadExtrudeAnchors anchors;
+        session.extrudeAnchors(&anchors);
+        const CameraSnapshot close =
+                uxPerspectiveCamera(Vec3{2.0f, 2.0f, 4.0f}, Vec3{0.0f, 0.0f, 0.0f}, 1080, 2000);
+        const CameraSnapshot distant =
+                uxPerspectiveCamera(Vec3{20.0f, 20.0f, 40.0f}, Vec3{0.0f, 0.0f, 0.0f}, 1080, 2000);
+        CadExtrudeControlScale a;
+        CadExtrudeControlScale b;
+        const bool gotA = cadExtrudeControlScale(close, anchors.base, 2000, &a);
+        const bool gotB = cadExtrudeControlScale(distant, anchors.base, 2000, &b);
+        r.check("CADUXS1_09_g_a_farther_camera_draws_a_smaller_control",
+                gotA && gotB && b.scale < a.scale);
+    }
+}
+
+void testCanvasExtrudeDrag(Recorder& r) {
+    // CADUXS1-04: a drag along the axis changes the depth deterministically,
+    // and the SAME world displacement is the same depth change under two very
+    // different cameras -- the semantic result does not depend on zoom.
+    {
+        SketchSession session;
+        readyRectangleSession(&session, Workplane::XY, 2.0, 2.0, 1.0);
+        CadExtrudeAnchors anchors;
+        session.extrudeAnchors(&anchors);
+        const int w = 1080;
+        const int h = 2000;
+        // A camera looking across the extrusion axis, so the axis solve is well
+        // conditioned and a screen drag maps onto it.
+        const CameraSnapshot camera =
+                uxPerspectiveCamera(Vec3{8.0f, 0.0f, 1.0f}, Vec3{0.0f, 0.0f, 1.0f}, w, h);
+        CadExtrudeManipulator drag;
+        float startX = 0.0f;
+        float startY = 0.0f;
+        float endX = 0.0f;
+        float endY = 0.0f;
+        // Two world points a known distance apart ALONG the axis, projected:
+        // dragging from the first pixel to the second is a one-metre move.
+        const bool projected =
+                projectWorldToScreen(camera, anchors.tip, w, h, &startX, &startY)
+                && projectWorldToScreen(camera,
+                                        vec3Add(anchors.tip, vec3Scale(anchors.axis, 1.0f)), w, h,
+                                        &endX, &endY);
+        Meters depth = 0.0;
+        const bool began = drag.beginDrag(7, anchors, camera, startX, startY, w, h);
+        const bool moved = drag.updateDrag(7, camera, endX, endY, w, h, &depth);
+        r.check("CADUXS1_04_a_a_one_metre_axial_drag_adds_one_metre_of_depth",
+                projected && began && moved && near2(depth, 2.0, 1e-3));
+    }
+    // The same world displacement under a camera five times as far away.
+    {
+        SketchSession session;
+        readyRectangleSession(&session, Workplane::XY, 2.0, 2.0, 1.0);
+        CadExtrudeAnchors anchors;
+        session.extrudeAnchors(&anchors);
+        const int w = 1080;
+        const int h = 2000;
+        const CameraSnapshot camera =
+                uxPerspectiveCamera(Vec3{40.0f, 0.0f, 1.0f}, Vec3{0.0f, 0.0f, 1.0f}, w, h);
+        CadExtrudeManipulator drag;
+        float startX = 0.0f;
+        float startY = 0.0f;
+        float endX = 0.0f;
+        float endY = 0.0f;
+        const bool projected =
+                projectWorldToScreen(camera, anchors.tip, w, h, &startX, &startY)
+                && projectWorldToScreen(camera,
+                                        vec3Add(anchors.tip, vec3Scale(anchors.axis, 1.0f)), w, h,
+                                        &endX, &endY);
+        Meters depth = 0.0;
+        drag.beginDrag(7, anchors, camera, startX, startY, w, h);
+        const bool moved = drag.updateDrag(7, camera, endX, endY, w, h, &depth);
+        r.check("CADUXS1_04_b_zoom_does_not_change_what_a_world_displacement_means",
+                projected && moved && near2(depth, 2.0, 1e-3));
+    }
+    // A4: the basis is FROZEN. The preview grows under the finger, and the same
+    // pixel delta still means the same depth delta at the end of a long drag as
+    // at its start -- the drag is solved against the pointer-down anchor, never
+    // against the moved tip.
+    {
+        SketchSession session;
+        readyRectangleSession(&session, Workplane::XY, 2.0, 2.0, 1.0);
+        CadExtrudeAnchors anchors;
+        session.extrudeAnchors(&anchors);
+        const int w = 1080;
+        const int h = 2000;
+        const CameraSnapshot camera =
+                uxPerspectiveCamera(Vec3{8.0f, 0.0f, 1.0f}, Vec3{0.0f, 0.0f, 1.0f}, w, h);
+        CadExtrudeManipulator drag;
+        float x0 = 0.0f;
+        float y0 = 0.0f;
+        float x1 = 0.0f;
+        float y1 = 0.0f;
+        float x2 = 0.0f;
+        float y2 = 0.0f;
+        const bool projected =
+                projectWorldToScreen(camera, anchors.tip, w, h, &x0, &y0)
+                && projectWorldToScreen(camera,
+                                        vec3Add(anchors.tip, vec3Scale(anchors.axis, 1.0f)), w, h,
+                                        &x1, &y1)
+                && projectWorldToScreen(camera,
+                                        vec3Add(anchors.tip, vec3Scale(anchors.axis, 2.0f)), w, h,
+                                        &x2, &y2);
+        Meters first = 0.0;
+        Meters second = 0.0;
+        drag.beginDrag(7, anchors, camera, x0, y0, w, h);
+        drag.updateDrag(7, camera, x1, y1, w, h, &first);
+        drag.updateDrag(7, camera, x2, y2, w, h, &second);
+        r.check("CADUXS1_04_c_the_drag_basis_is_frozen_at_pointer_down",
+                projected && near2(first, 2.0, 1e-3) && near2(second, 3.0, 1e-3));
+    }
+    // A degenerate viewpoint -- looking straight DOWN the extrusion axis -- is
+    // named and holds the last good value rather than guessing.
+    {
+        SketchSession session;
+        readyRectangleSession(&session, Workplane::XY, 2.0, 2.0, 1.0);
+        CadExtrudeAnchors anchors;
+        session.extrudeAnchors(&anchors);
+        const int w = 1080;
+        const int h = 2000;
+        // Straight down +Z, which is exactly the extrusion axis.
+        const CameraSnapshot camera =
+                uxPerspectiveCamera(Vec3{0.0f, 0.0f, 9.0f}, Vec3{0.0f, 0.0f, 0.0f}, w, h);
+        CadExtrudeManipulator drag;
+        const bool began = drag.beginDrag(7, anchors, camera, 540.0f, 1000.0f, w, h);
+        Meters depth = 0.0;
+        bool held = true;
+        if (began) {
+            held = !drag.updateDrag(7, camera, 540.0f, 400.0f, w, h, &depth)
+                   || drag.lastSolve() != AxisSolveStatus::Unresolvable;
+        }
+        // Either the drag never starts (nothing to freeze) or every sample is
+        // solved by the fallback plane; what must NEVER happen is an
+        // Unresolvable that still wrote a depth.
+        r.check("CADUXS1_04_d_a_degenerate_viewpoint_never_writes_a_guessed_depth", held);
+    }
+    // A drag is CLAMPED at the floor rather than producing a zero or negative
+    // depth, and the body stays valid throughout. A typed value is refused
+    // instead -- the two are deliberately different, and both are asserted.
+    {
+        SketchSession session;
+        readyRectangleSession(&session, Workplane::XY, 2.0, 2.0, 1.0);
+        CadExtrudeAnchors anchors;
+        session.extrudeAnchors(&anchors);
+        const int w = 1080;
+        const int h = 2000;
+        const CameraSnapshot camera =
+                uxPerspectiveCamera(Vec3{8.0f, 0.0f, 1.0f}, Vec3{0.0f, 0.0f, 1.0f}, w, h);
+        CadExtrudeManipulator drag;
+        float x0 = 0.0f;
+        float y0 = 0.0f;
+        float xBack = 0.0f;
+        float yBack = 0.0f;
+        const bool projected =
+                projectWorldToScreen(camera, anchors.tip, w, h, &x0, &y0)
+                && projectWorldToScreen(camera,
+                                        vec3Add(anchors.tip, vec3Scale(anchors.axis, -8.0f)), w, h,
+                                        &xBack, &yBack);
+        Meters depth = 0.0;
+        drag.beginDrag(7, anchors, camera, x0, y0, w, h);
+        const bool moved = drag.updateDrag(7, camera, xBack, yBack, w, h, &depth);
+        const CadStatus typedZero = session.setExtrude(0.0, ExtrudeDirection::AlongNormal);
+        const CadStatus typedNegative = session.setExtrude(-1.0, ExtrudeDirection::AlongNormal);
+        r.check("CADUXS1_04_e_a_drag_is_clamped_at_the_floor_and_a_typed_value_is_refused",
+                projected && moved && near2(depth, kCadExtrudeMinDragDepthMeters, 1e-9)
+                        && typedZero == CadStatus::InvalidExtrudeDepth
+                        && typedNegative == CadStatus::InvalidExtrudeDepth
+                        && near2(session.extrude().depth, 1.0));
+    }
+    // ONE pointer for the life of the drag: a sample from a different id writes
+    // nothing at all.
+    {
+        SketchSession session;
+        readyRectangleSession(&session, Workplane::XY, 2.0, 2.0, 1.0);
+        CadExtrudeAnchors anchors;
+        session.extrudeAnchors(&anchors);
+        const int w = 1080;
+        const int h = 2000;
+        const CameraSnapshot camera =
+                uxPerspectiveCamera(Vec3{8.0f, 0.0f, 1.0f}, Vec3{0.0f, 0.0f, 1.0f}, w, h);
+        CadExtrudeManipulator drag;
+        float x0 = 0.0f;
+        float y0 = 0.0f;
+        projectWorldToScreen(camera, anchors.tip, w, h, &x0, &y0);
+        drag.beginDrag(7, anchors, camera, x0, y0, w, h);
+        Meters depth = 0.0;
+        const bool otherPointerIgnored = !drag.updateDrag(9, camera, x0, y0 - 200.0f, w, h, &depth);
+        r.check("CADUXS1_04_f_a_second_pointer_id_cannot_steer_the_drag",
+                otherPointerIgnored && drag.capturedPointerId() == 7);
+    }
+    // Cancel reports the depth the gesture started from, which is what the
+    // session puts back.
+    {
+        SketchSession session;
+        readyRectangleSession(&session, Workplane::XY, 2.0, 2.0, 1.75);
+        CadExtrudeAnchors anchors;
+        session.extrudeAnchors(&anchors);
+        const int w = 1080;
+        const int h = 2000;
+        const CameraSnapshot camera =
+                uxPerspectiveCamera(Vec3{8.0f, 0.0f, 1.0f}, Vec3{0.0f, 0.0f, 1.0f}, w, h);
+        CadExtrudeManipulator drag;
+        float x0 = 0.0f;
+        float y0 = 0.0f;
+        projectWorldToScreen(camera, anchors.tip, w, h, &x0, &y0);
+        drag.beginDrag(11, anchors, camera, x0, y0, w, h);
+        Meters restore = 0.0;
+        const bool cancelled = drag.cancelDrag(&restore);
+        const bool secondCancelDoesNothing = !drag.cancelDrag(&restore);
+        r.check("CADUXS1_06_a_cancel_reports_the_pre_drag_depth_and_releases_the_pointer",
+                cancelled && near2(restore, 1.75) && secondCancelDoesNothing
+                        && !drag.capturing());
+    }
+    // The hit test takes the arrow and refuses what is well clear of it, at the
+    // same scale the drawing used.
+    {
+        SketchSession session;
+        readyRectangleSession(&session, Workplane::XY, 2.0, 2.0, 2.0);
+        CadExtrudeAnchors anchors;
+        session.extrudeAnchors(&anchors);
+        const int w = 1080;
+        const int h = 2000;
+        const CameraSnapshot camera =
+                uxPerspectiveCamera(Vec3{8.0f, 0.0f, 1.0f}, Vec3{0.0f, 0.0f, 1.0f}, w, h);
+        CadExtrudeManipulator drag;
+        float midX = 0.0f;
+        float midY = 0.0f;
+        const bool projected =
+                projectWorldToScreen(camera, anchors.label, w, h, &midX, &midY);
+        const bool onShaft = drag.hitTest(anchors, camera, midX, midY, w, h);
+        const bool wellClear = !drag.hitTest(anchors, camera, midX + 600.0f, midY, w, h);
+        r.check("CADUXS1_04_g_the_hit_test_takes_the_arrow_and_refuses_what_is_clear_of_it",
+                projected && onShaft && wellClear);
+    }
+}
+
+void testCanvasExtrudeSessionGesture(Recorder& r) {
+    // The session routes a Ready-state pointer to the manipulator, writes the
+    // depth through its ONE writer, and a Cancel puts the pre-drag depth back.
+    // CADUXS1-06 at the session level: nothing here is project truth in the
+    // first place, so "changes nothing" is structural.
+    SketchSession session;
+    readyRectangleSession(&session, Workplane::XY, 2.0, 2.0, 1.0);
+    CadExtrudeAnchors anchors;
+    session.extrudeAnchors(&anchors);
+    const int w = 1080;
+    const int h = 2000;
+    const CameraSnapshot camera =
+            uxPerspectiveCamera(Vec3{8.0f, 0.0f, 1.0f}, Vec3{0.0f, 0.0f, 1.0f}, w, h);
+    float x0 = 0.0f;
+    float y0 = 0.0f;
+    float x1 = 0.0f;
+    float y1 = 0.0f;
+    const bool projected =
+            projectWorldToScreen(camera, anchors.tip, w, h, &x0, &y0)
+            && projectWorldToScreen(camera,
+                                    vec3Add(anchors.tip, vec3Scale(anchors.axis, 1.0f)), w, h, &x1,
+                                    &y1);
+    TouchPointer down{};
+    down.id = 3;
+    down.x = x0;
+    down.y = y0;
+    const bool consumedDown =
+            session.onTouch(TouchAction::Down, -1, &down, 1, camera, w, h);
+    TouchPointer move = down;
+    move.x = x1;
+    move.y = y1;
+    const bool consumedMove =
+            session.onTouch(TouchAction::Move, -1, &move, 1, camera, w, h);
+    const double dragged = session.extrude().depth;
+    session.onTouch(TouchAction::Up, 3, &move, 1, camera, w, h);
+    r.check("CADUXS1_04_h_a_ready_state_drag_writes_the_depth_through_the_session",
+            projected && consumedDown && consumedMove && near2(dragged, 2.0, 1e-3)
+                    && !session.extrudeManipulator().capturing());
+
+    // A pointer that goes down CLEAR of the arrow is not consumed: orbit, pan
+    // and tap are untouched everywhere except on the arrow itself.
+    {
+        SketchSession other;
+        readyRectangleSession(&other, Workplane::XY, 2.0, 2.0, 1.0);
+        TouchPointer away{};
+        away.id = 4;
+        away.x = 20.0f;
+        away.y = 20.0f;
+        r.check("CADUXS1_04_i_a_pointer_clear_of_the_arrow_still_navigates",
+                !other.onTouch(TouchAction::Down, -1, &away, 1, camera, w, h));
+    }
+    // A SECOND pointer cancels the drag and hands the gesture to the camera,
+    // putting the depth back exactly where the first finger found it.
+    {
+        SketchSession two;
+        readyRectangleSession(&two, Workplane::XY, 2.0, 2.0, 1.0);
+        CadExtrudeAnchors a2;
+        two.extrudeAnchors(&a2);
+        TouchPointer p0{};
+        p0.id = 5;
+        p0.x = x0;
+        p0.y = y0;
+        two.onTouch(TouchAction::Down, -1, &p0, 1, camera, w, h);
+        TouchPointer m0 = p0;
+        m0.x = x1;
+        m0.y = y1;
+        two.onTouch(TouchAction::Move, -1, &m0, 1, camera, w, h);
+        const double moved = two.extrude().depth;
+        TouchPointer pair[2];
+        pair[0] = m0;
+        pair[1] = TouchPointer{};
+        pair[1].id = 6;
+        pair[1].x = 300.0f;
+        pair[1].y = 300.0f;
+        const bool handedOn =
+                !two.onTouch(TouchAction::PointerDown, 6, pair, 2, camera, w, h);
+        r.check("CADUXS1_06_b_a_second_pointer_cancels_the_drag_and_restores_the_depth",
+                moved > 1.5 && handedOn && near2(two.extrude().depth, 1.0)
+                        && !two.extrudeManipulator().capturing());
+    }
+    // A Cancel action restores the pre-drag depth too.
+    {
+        SketchSession three;
+        readyRectangleSession(&three, Workplane::XY, 2.0, 2.0, 1.0);
+        TouchPointer p0{};
+        p0.id = 8;
+        p0.x = x0;
+        p0.y = y0;
+        three.onTouch(TouchAction::Down, -1, &p0, 1, camera, w, h);
+        TouchPointer m0 = p0;
+        m0.x = x1;
+        m0.y = y1;
+        three.onTouch(TouchAction::Move, -1, &m0, 1, camera, w, h);
+        three.onTouch(TouchAction::Cancel, -1, &m0, 1, camera, w, h);
+        r.check("CADUXS1_06_c_a_cancelled_drag_restores_the_pre_drag_depth",
+                near2(three.extrude().depth, 1.0));
+    }
+    // The manipulator is inert while the sketch is being DRAWN: in Editing the
+    // single finger belongs to the drawing tool, unchanged.
+    {
+        SketchSession editing;
+        editing.begin(Workplane::XY);
+        editing.setTool(SketchTool::Rectangle);
+        // A camera that actually LOOKS at the XY plane: the one above solves the
+        // extrusion axis well and is edge-on to the sketch, so a drawing tool
+        // there would miss the plane for a reason that has nothing to do with
+        // the manipulator.
+        const CameraSnapshot overPlane =
+                uxPerspectiveCamera(Vec3{3.0f, 3.0f, 9.0f}, Vec3{0.0f, 0.0f, 0.0f}, w, h);
+        TouchPointer p0{};
+        p0.id = 12;
+        p0.x = 540.0f;
+        p0.y = 1000.0f;
+        const bool consumed = editing.onTouch(TouchAction::Down, -1, &p0, 1, overPlane, w, h);
+        r.check("CADUXS1_04_j_editing_state_still_belongs_to_the_drawing_tool",
+                consumed && !editing.extrudeManipulator().capturing()
+                        && editing.gestureActive());
+    }
+}
+
+void testCanvasExtrudeParityAndPurity(Recorder& r) {
+    // CADUXS1-05: an exact typed depth and an equivalent drag reach the SAME
+    // authored state, byte for byte, and generate the same mesh.
+    {
+        SketchSession typed;
+        readyRectangleSession(&typed, Workplane::XY, 2.0, 2.0, 1.0);
+        typed.setExtrude(2.0, ExtrudeDirection::AlongNormal);
+
+        SketchSession dragged;
+        readyRectangleSession(&dragged, Workplane::XY, 2.0, 2.0, 1.0);
+        CadExtrudeAnchors anchors;
+        dragged.extrudeAnchors(&anchors);
+        const int w = 1080;
+        const int h = 2000;
+        const CameraSnapshot camera =
+                uxPerspectiveCamera(Vec3{8.0f, 0.0f, 1.0f}, Vec3{0.0f, 0.0f, 1.0f}, w, h);
+        float x0 = 0.0f;
+        float y0 = 0.0f;
+        float x1 = 0.0f;
+        float y1 = 0.0f;
+        projectWorldToScreen(camera, anchors.tip, w, h, &x0, &y0);
+        projectWorldToScreen(camera, vec3Add(anchors.tip, vec3Scale(anchors.axis, 1.0f)), w, h,
+                             &x1, &y1);
+        CadExtrudeManipulator drag;
+        drag.beginDrag(1, anchors, camera, x0, y0, w, h);
+        Meters depth = 0.0;
+        drag.updateDrag(1, camera, x1, y1, w, h, &depth);
+        // The drag lands within a pixel of 2.0; the exact value is then typed,
+        // which is the workflow: the arrow gets close and the field is exact.
+        dragged.setExtrude(2.0, ExtrudeDirection::AlongNormal);
+
+        const CadBodyState a = typed.candidateState();
+        const CadBodyState b = dragged.candidateState();
+        ConstructionMesh meshA;
+        ConstructionMesh meshB;
+        const bool madeA = generateCadMesh(a, &meshA) == CadStatus::Ok;
+        const bool madeB = generateCadMesh(b, &meshB) == CadStatus::Ok;
+        bool sameMesh = madeA && madeB && meshA.vertices.size() == meshB.vertices.size()
+                        && meshA.indices.size() == meshB.indices.size();
+        if (sameMesh) {
+            for (size_t i = 0; i < meshA.vertices.size() && sameMesh; ++i) {
+                for (int k = 0; k < 3; ++k) {
+                    if (meshA.vertices[i].position[k] != meshB.vertices[i].position[k]) {
+                        sameMesh = false;
+                    }
+                }
+            }
+        }
+        r.check("CADUXS1_05_a_a_typed_depth_and_a_drag_reach_the_same_authored_state",
+                sameCadBodyState(a, b) && depth > 1.9 && depth < 2.1 && sameMesh);
+    }
+    // CADUXS1-11 in the domain: nothing the canvas tool does can reach a
+    // `.forge` byte, because none of it is in the state that is encoded. The
+    // proof is direct -- a session driven through a drag, a flip and a flip back
+    // produces a state bit-identical to one never touched by the manipulator.
+    {
+        SketchSession untouched;
+        readyRectangleSession(&untouched, Workplane::XY, 2.0, 2.0, 1.0);
+
+        SketchSession worked;
+        readyRectangleSession(&worked, Workplane::XY, 2.0, 2.0, 1.0);
+        CadExtrudeAnchors anchors;
+        worked.extrudeAnchors(&anchors);
+        const int w = 1080;
+        const int h = 2000;
+        const CameraSnapshot camera =
+                uxPerspectiveCamera(Vec3{8.0f, 0.0f, 1.0f}, Vec3{0.0f, 0.0f, 1.0f}, w, h);
+        float x0 = 0.0f;
+        float y0 = 0.0f;
+        float x1 = 0.0f;
+        float y1 = 0.0f;
+        projectWorldToScreen(camera, anchors.tip, w, h, &x0, &y0);
+        projectWorldToScreen(camera, vec3Add(anchors.tip, vec3Scale(anchors.axis, 1.0f)), w, h,
+                             &x1, &y1);
+        TouchPointer p{};
+        p.id = 2;
+        p.x = x0;
+        p.y = y0;
+        worked.onTouch(TouchAction::Down, -1, &p, 1, camera, w, h);
+        TouchPointer m = p;
+        m.x = x1;
+        m.y = y1;
+        worked.onTouch(TouchAction::Move, -1, &m, 1, camera, w, h);
+        worked.onTouch(TouchAction::Cancel, -1, &m, 1, camera, w, h);
+        worked.flipExtrudeDirection();
+        worked.flipExtrudeDirection();
+        r.check("CADUXS1_11_a_a_drag_a_cancel_and_two_flips_leave_the_state_bit_identical",
+                sameCadBodyState(untouched.candidateState(), worked.candidateState()));
+    }
+    // The arrow is DRAWN, and it is drawn into the overlay the renderer already
+    // knows how to weight -- no new style, no new range kind, and the shaft is
+    // the extrusion while only the head takes the control scale.
+    {
+        CadExtrudeAnchors anchors;
+        anchors.valid = true;
+        anchors.base = Vec3{0.0f, 0.0f, 0.0f};
+        anchors.normal = Vec3{0.0f, 0.0f, 1.0f};
+        anchors.axis = Vec3{0.0f, 0.0f, 1.0f};
+        anchors.tip = Vec3{0.0f, 0.0f, 2.0f};
+        anchors.label = Vec3{0.0f, 0.0f, 1.0f};
+        anchors.depth = 2.0;
+        std::vector<GizmoVertex> small;
+        std::vector<GizmoVertex> large;
+        appendCadExtrudeArrow(&small, anchors, 0.10, false);
+        appendCadExtrudeArrow(&large, anchors, 0.40, false);
+        // The same number of lines at both sizes -- the head is the same shape,
+        // drawn larger -- and the shaft still runs base to tip at both.
+        const bool sameTopology = !small.empty() && small.size() == large.size();
+        const bool shaftIsTheDepth =
+                sameTopology && small[0].position[2] == 0.0f && small[1].position[2] == 2.0f
+                && large[0].position[2] == 0.0f && large[1].position[2] == 2.0f;
+        // The head reaches further past the tip at the larger control size.
+        float smallMax = -1.0e9f;
+        float largeMax = -1.0e9f;
+        for (const GizmoVertex& v : small) smallMax = std::fmax(smallMax, v.position[2]);
+        for (const GizmoVertex& v : large) largeMax = std::fmax(largeMax, v.position[2]);
+        r.check("CADUXS1_09_h_only_the_head_takes_the_control_scale_and_the_shaft_is_the_depth",
+                sameTopology && shaftIsTheDepth && largeMax > smallMax
+                        && smallMax > 2.0f);
+        // A grabbed arrow carries the emphasis tag the overlay already has.
+        std::vector<GizmoVertex> held;
+        appendCadExtrudeArrow(&held, anchors, 0.10, true);
+        bool allEmphasised = !held.empty();
+        for (const GizmoVertex& v : held) {
+            if (v.handle != 1.0f) allEmphasised = false;
+        }
+        r.check("CADUXS1_09_i_a_held_arrow_uses_the_overlay_existing_emphasis_tag",
+                allEmphasised);
+    }
+    // Degenerate inputs draw nothing rather than something wrong.
+    {
+        std::vector<GizmoVertex> out;
+        CadExtrudeAnchors invalid;
+        appendCadExtrudeArrow(&out, invalid, 0.1, false);
+        CadExtrudeAnchors valid;
+        valid.valid = true;
+        valid.base = Vec3{0.0f, 0.0f, 0.0f};
+        valid.normal = Vec3{0.0f, 0.0f, 1.0f};
+        valid.axis = Vec3{0.0f, 0.0f, 1.0f};
+        valid.tip = Vec3{0.0f, 0.0f, 1.0f};
+        valid.label = Vec3{0.0f, 0.0f, 0.5f};
+        valid.depth = 1.0;
+        appendCadExtrudeArrow(&out, valid, 0.0, false);
+        appendCadExtrudeArrow(&out, valid, -1.0, false);
+        r.check("CADUXS1_09_j_a_degenerate_arrow_draws_nothing", out.empty());
+    }
+    // CADUXS1-10: the operation is New Body because the domain can express no
+    // other. The extrusion is two-valued and a third code is refused, so
+    // nothing can smuggle a Symmetric or a Two Sides through the same field
+    // this stage drives -- which is what makes the absent controls honest
+    // rather than merely undrawn.
+    {
+        ExtrudeDirection parsed = ExtrudeDirection::AlongNormal;
+        const bool along = extrudeDirectionFromIndex(0, &parsed)
+                           && parsed == ExtrudeDirection::AlongNormal;
+        const bool against = extrudeDirectionFromIndex(1, &parsed)
+                             && parsed == ExtrudeDirection::AgainstNormal;
+        const bool noThird = !extrudeDirectionFromIndex(2, &parsed)
+                             && !extrudeDirectionFromIndex(-1, &parsed);
+        r.check("CADUXS1_10_a_an_extrusion_is_two_valued_and_a_third_code_is_refused",
+                kExtrudeDirectionCount == 2 && along && against && noThird);
+    }
+    // And a committed body reached through the canvas is an ORDINARY CAD body:
+    // one `CadBodyState`, one sketch, one extrusion. No second body was created
+    // and nothing about the manipulator is stored in it.
+    {
+        ConstructionScene scene((NoProjectTag()));
+        ConstructionHistory history(scene);
+        CadStatus why = CadStatus::Ok;
+        const size_t before = scene.bodyCount();
+        SceneObject* object = scene.addCadBody(rectBody(2.0, 1.0, 1.5), &why);
+        r.check("CADUXS1_07_a_one_extrude_creates_exactly_one_new_body",
+                object != nullptr && why == CadStatus::Ok
+                        && scene.bodyCount() == before + 1
+                        && object->representation() == BodyRepresentation::Cad);
+    }
+}
+
+void testCanvasExtrudeRetainedSketch(Recorder& r) {
+    // CADUXS1-08 in the domain: Extrude CONSUMES NOTHING. A committed body's
+    // sketch is bit-identical to the one that was drawn, and the anchor the
+    // canvas chip stands on is derived from that retained sketch.
+    ConstructionScene scene((NoProjectTag()));
+    ConstructionHistory history(scene);
+    const CadBodyState authored = rectBody(2.0, 1.0, 1.5);
+    CadStatus why = CadStatus::Ok;
+    SceneObject* body = nullptr;
+    {
+        ScopedConstructionEdit edit(history);
+        body = scene.addCadBody(authored, &why);
+    }
+    const CadBody* cad = body != nullptr ? body->cadOrNull() : nullptr;
+    r.check("CADUXS1_08_a_extrude_consumes_nothing_the_sketch_is_still_the_body_truth",
+            cad != nullptr && sameCadBodyState(cad->state(), authored));
+
+    // And the retained sketch still produces an anchor, so the chip that
+    // reopens it has somewhere honest to stand.
+    if (cad != nullptr) {
+        ClosedProfile profile;
+        const bool extracted =
+                firstProfileOf(cad->sketch(), cad->extrude().profileEntityId, &profile);
+        const WorkplaneFrame wf = workplaneFrame(cad->sketch().plane);
+        SketchFrame frame{Vec3{0.0f, 0.0f, 0.0f}, wf.uAxis, wf.vAxis, wf.normal};
+        CadExtrudeAnchors anchors;
+        r.check("CADUXS1_08_b_a_committed_body_retained_sketch_still_yields_an_anchor",
+                extracted && cadExtrudeAnchors(frame, profile, cad->extrude(), &anchors)
+                        && anchors.valid && nearVec(anchors.base, 0.0f, 0.0f, 0.0f));
+    } else {
+        r.check("CADUXS1_08_b_a_committed_body_retained_sketch_still_yields_an_anchor", false);
+    }
+}
 void testDataContract(Recorder& r) {
     // A project of straight geometry stays at v1: no existing file moves.
     {
@@ -1188,6 +2076,17 @@ int runSketchUxSelfTests(SketchUxSelfTestResult* out, int maxOut) {
     testLineDimension(r);
     testOrientationNavigator(r);
     testEditSketch(r);
+    // CAD-UX-S1: the canvas extrude manipulator. Widened into this suite rather
+    // than opened beside it, because the arrow, the exact depth at it and the
+    // retained-sketch access are sketch UX in exactly the sense the rest of this
+    // file already is.
+    testCanvasExtrudeAnchors(r);
+    testCanvasExtrudeFlip(r);
+    testCanvasExtrudeScale(r);
+    testCanvasExtrudeDrag(r);
+    testCanvasExtrudeSessionGesture(r);
+    testCanvasExtrudeParityAndPurity(r);
+    testCanvasExtrudeRetainedSketch(r);
     testFingerprintCoversCurves(r);
     testDataContract(r);
     measurePerformance();

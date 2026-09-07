@@ -110,6 +110,14 @@ final class ForgeShapeSurfaceView extends SurfaceView implements SurfaceHolder.C
             if (gestureSettled != null) {
                 gestureSettled.onViewportGestureSettled();
             }
+        } else if (action == MotionEvent.ACTION_MOVE && gestureSettled != null) {
+            // World-anchored chrome that must track a LIVE gesture, and only
+            // that (`CAD-UX-S1`): the extrude arrow's exact depth changes under
+            // the finger, so a value refreshed only when the gesture settles
+            // would read the pre-drag number for the whole drag. Nothing about
+            // the gesture is interpreted here — the listener re-reads native and
+            // decides for itself whether it has anything to move.
+            gestureSettled.onViewportGestureMoved();
         }
         return true;
     }
@@ -156,6 +164,14 @@ final class ForgeShapeSurfaceView extends SurfaceView implements SurfaceHolder.C
      *  state may have moved. */
     interface OnViewportGestureSettled {
         void onViewportGestureStarted();
+
+        /**
+         * A pointer moved. Deliberately the ONLY per-sample callback, and it
+         * exists for exactly one class of listener: world-anchored chrome whose
+         * displayed value changes under the finger. It must stay cheap — a full
+         * chrome sync here would rewrite panels a user is still typing into.
+         */
+        void onViewportGestureMoved();
 
         void onViewportGestureSettled();
     }

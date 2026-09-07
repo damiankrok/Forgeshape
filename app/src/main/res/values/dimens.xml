@@ -325,4 +325,14 @@
     <!-- The dimension label's field: wide enough for a signed length in
          millimetres without becoming a panel over the drawing. -->
     <dimen name="sketch_dimension_field">96dp</dimen>
+
+    <!-- The canvas extrude cluster (`CAD-UX-S1`).
+
+         `cad_canvas_control` is 60dp and that number is ARITHMETIC, not taste:
+         the cluster is drawn at the camera-attached multiplier, whose floor is
+         kCadExtrudeControlMinScale (0.80), and 60 x 0.80 is exactly the 48dp
+         interactive floor. Lowering this dimension, or lowering that floor
+         without raising this, would put a live control under the floor. -->
+    <dimen name="cad_canvas_control">60dp</dimen>
+    <dimen name="cad_canvas_field">88dp</dimen>
 </resources>

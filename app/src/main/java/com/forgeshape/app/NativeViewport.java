@@ -2250,6 +2250,35 @@ final class NativeViewport {
     static final int SKETCH_DIMENSION_ANCHOR_U = 2;
     static final int SKETCH_DIMENSION_ANCHOR_V = 3;
 
+    /**
+     * Slots of {@link #cadExtrudeToolState} (`CAD-UX-S1`).
+     *
+     * <p>Read as ONE call because the arrow, the value beside it and the badge
+     * have to describe one instant; reading them separately would let a drag
+     * land between two of them. Every slot is DERIVED below JNI on every read —
+     * the shell stores no depth, no direction and no anchor.
+     */
+    static final int CAD_EXTRUDE_SIZE = 12;
+    /** 1 when the canvas manipulator is live; 0 is the whole reason it is absent. */
+    static final int CAD_EXTRUDE_ACTIVE = 0;
+    static final int CAD_EXTRUDE_DEPTH = 1;
+    static final int CAD_EXTRUDE_DIRECTION = 2;
+    static final int CAD_EXTRUDE_PROFILE = 3;
+    static final int CAD_EXTRUDE_DRAGGING = 4;
+    /** 1 when the anchor projects on screen. 0 means HIDE, never guess a spot. */
+    static final int CAD_EXTRUDE_ON_SCREEN = 5;
+    static final int CAD_EXTRUDE_LABEL_X = 6;
+    static final int CAD_EXTRUDE_LABEL_Y = 7;
+    static final int CAD_EXTRUDE_TIP_X = 8;
+    static final int CAD_EXTRUDE_TIP_Y = 9;
+    /** The camera-attached visual multiplier the cluster is drawn at. */
+    static final int CAD_EXTRUDE_SCALE = 10;
+    /** 0 unclamped, 1 clamped at the minimum, 2 at the maximum. */
+    static final int CAD_EXTRUDE_CLAMP = 11;
+    static final int CAD_EXTRUDE_CLAMP_NONE = 0;
+    static final int CAD_EXTRUDE_CLAMP_LOW = 1;
+    static final int CAD_EXTRUDE_CLAMP_HIGH = 2;
+
     /** Slots of {@link #sketchProfileInfo}. */
     static final int SKETCH_PROFILE_INFO_SIZE = 3;
     static final int SKETCH_PROFILE_KIND_RECTANGLE = 1;
@@ -2357,6 +2386,35 @@ final class NativeViewport {
     /** The current adaptive sketch grid step in metres (`CAD-A3`): what a grid
      *  snap rounds to at the zoom the last drag started under. */
     static native double sketchGridStep();
+
+    // --- the canvas extrude manipulator (`CAD-UX-S1`) --------------------
+    //
+    // The arrow, the exact length beside it and the Flip that reverses it are
+    // three views of the ONE extrusion the session already owned. Java holds
+    // none of it: it reads the state below on every refresh and sends acts back.
+
+    /** The whole manipulator state, in the CAD_EXTRUDE_* slots, in one read. */
+    static native void cadExtrudeToolState(double[] out);
+
+    /**
+     * Reverses which side of the sketch plane the solid grows on, keeping the
+     * exact depth and the same profile. A DIRECTION change and never a negative
+     * depth. Refused by name outside the sketch Ready state.
+     */
+    static native int sketchFlipExtrudeDirection();
+
+    /**
+     * Where a committed CAD Body's retained sketch is on screen — {@code out[0]}
+     * and {@code out[1]} in view-local pixels, {@code out[2]} the same
+     * camera-attached multiplier the manipulator cluster is drawn at
+     * (`CAD-UX-S1`).
+     *
+     * <p>A read: no session is begun, nothing is regenerated and no revision is
+     * minted. False — so the control is ABSENT rather than shown and refused —
+     * for a body that is not a CAD Body, one that is hidden, and one whose
+     * anchor does not project on screen.
+     */
+    static native boolean cadBodySketchAnchor(long bodyId, float[] out);
 
     // --- the orientation navigator (`SKETCH-UX-R1` C) --------------------
     //

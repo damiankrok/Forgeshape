@@ -65,8 +65,14 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
     /** The one pinned commit; its content is swapped with the state. */
     private final FrameLayout commit;
 
-    /** The direction chip the user last chose, submitted with Extrude. */
-    private int draftDirection = NativeViewport.EXTRUDE_ALONG_NORMAL;
+    // There is deliberately NO draft direction here (`CAD-UX-S1` 4.8).
+    //
+    // A direction chip submits at once, so the field that used to mirror it was
+    // a second copy of a value the session already owned — harmless at one
+    // field, and exactly the wrong seed for an operation, a target and a second
+    // distance later. The chips now show what native says on every refresh and
+    // the depth submission reads the direction back from the same state, so the
+    // canvas Flip and the panel chips cannot become two answers.
 
     /** Told to act; the workspace owns what the act means. */
     interface OnSketchAction {
@@ -263,7 +269,6 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
         }
         refreshProfiles();
         depthField.setText(unit.format(nativeSketch[NativeViewport.SKETCH_EXTRUDE_DEPTH]));
-        draftDirection = (int) nativeSketch[NativeViewport.SKETCH_EXTRUDE_DIRECTION];
         showDirection();
     }
 
@@ -356,11 +361,18 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
         }
     }
 
+    /** Shows the direction the SESSION holds. The panel remembers none. */
     private void showDirection() {
+        final int direction = currentDirection();
         EditorControlStyles.setChipActive(directionAlong,
-                draftDirection == NativeViewport.EXTRUDE_ALONG_NORMAL);
+                direction == NativeViewport.EXTRUDE_ALONG_NORMAL);
         EditorControlStyles.setChipActive(directionAgainst,
-                draftDirection == NativeViewport.EXTRUDE_AGAINST_NORMAL);
+                direction == NativeViewport.EXTRUDE_AGAINST_NORMAL);
+    }
+
+    /** The direction native currently holds, read on every use rather than kept. */
+    private int currentDirection() {
+        return (int) nativeSketch[NativeViewport.SKETCH_EXTRUDE_DIRECTION];
     }
 
     // -----------------------------------------------------------------------
@@ -377,21 +389,28 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
     }
 
     private void onDirectionChosen(int direction) {
-        draftDirection = direction;
-        showDirection();
-        // Submitted at once, so the extrude preview in the viewport turns with
-        // the chip rather than only when Extrude is pressed.
-        submitDepth();
+        // Submitted at once, so the extrude preview and the canvas arrow turn
+        // with the chip rather than only when Extrude is pressed. The chosen
+        // value goes STRAIGHT to native and the chips are then redrawn from what
+        // native accepted, so a refused direction leaves the panel showing the
+        // truth rather than the tap.
+        submitDepth(direction);
+        refreshFromNative();
     }
 
-    /** Submits the depth field and the drafted direction. False on a refusal. */
+    /** Submits the depth field with the session's own direction. */
     private boolean submitDepth() {
+        return submitDepth(currentDirection());
+    }
+
+    /** Submits the depth field and one direction. False on a refusal. */
+    private boolean submitDepth(int direction) {
         final BigDecimal depth = readField(depthField);
         if (depth == null) {
             return false;
         }
         final int status = NativeViewport.sketchSetExtrude(
-                host.uiState().displayUnit().toMeters(depth).doubleValue(), draftDirection);
+                host.uiState().displayUnit().toMeters(depth).doubleValue(), direction);
         if (status != NativeViewport.CAD_OK) {
             host.showStatus(CadStatusMessages.describe(getContext(), status), R.attr.fsTextError);
             depthField.focusForCorrection();

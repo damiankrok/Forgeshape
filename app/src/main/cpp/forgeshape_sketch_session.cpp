@@ -507,6 +507,16 @@ void SketchSession::resetGesture() {
     pointerId_ = -1;
     travelled_ = false;
     dragValid_ = false;
+    // A manipulator drag in flight is CANCELLED rather than merely dropped: the
+    // depth it was moving goes back to what the finger found, exactly as a
+    // cancelled gizmo drag restores the placement. Nothing was recorded either
+    // way -- an uncommitted sketch is volatile -- so this is about what the user
+    // sees, not about the project.
+    Meters restore = 0.0;
+    if (extrudeDrag_.cancelDrag(&restore)) {
+        extrude_.depth = restore;
+        touchOverlay();
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -668,10 +678,111 @@ SketchEntityId SketchSession::hitTest(const SketchPoint& point, double tolerance
 // Touch
 // ---------------------------------------------------------------------------
 
+// The Ready-state gesture: one pointer on the extrude arrow (`CAD-UX-S1`).
+//
+// The contract is the gizmo one and is deliberately identical to it: whether
+// the touch landed on the arrow is decided ONCE, on Down, against the same
+// projected geometry the renderer drew, so a drag cannot turn into an orbit
+// half way through. A pointer that goes down anywhere else navigates exactly as
+// it always has, and a second pointer CANCELS -- putting the depth back where
+// the first finger found it -- rather than trying to drag and pinch at once.
+bool SketchSession::onExtrudeTouch(TouchAction action, int32_t actionPointerId,
+                                   const TouchPointer* pointers, int count,
+                                   const CameraSnapshot& camera, int viewportWidth,
+                                   int viewportHeight) {
+    if (count > 1 || action == TouchAction::PointerDown) {
+        Meters restore = 0.0;
+        if (extrudeDrag_.cancelDrag(&restore)) {
+            extrude_.depth = restore;
+            touchOverlay();
+        }
+        return false;  // the gesture belongs to the camera
+    }
+    switch (action) {
+        case TouchAction::Down: {
+            if (count != 1 || pointers == nullptr) {
+                return false;
+            }
+            CadExtrudeAnchors anchors;
+            if (!extrudeAnchors(&anchors)) {
+                return false;
+            }
+            if (!extrudeDrag_.hitTest(anchors, camera, pointers[0].x, pointers[0].y, viewportWidth,
+                                      viewportHeight)) {
+                return false;  // off the arrow: orbit, pan and tap are untouched
+            }
+            if (!extrudeDrag_.beginDrag(pointers[0].id, anchors, camera, pointers[0].x,
+                                        pointers[0].y, viewportWidth, viewportHeight)) {
+                return false;
+            }
+            touchOverlay();
+            return true;
+        }
+        case TouchAction::Move: {
+            if (!extrudeDrag_.capturing() || count != 1 || pointers == nullptr
+                || pointers[0].id != extrudeDrag_.capturedPointerId()) {
+                return extrudeDrag_.capturing();
+            }
+            Meters depth = 0.0;
+            if (extrudeDrag_.updateDrag(pointers[0].id, camera, pointers[0].x, pointers[0].y,
+                                        viewportWidth, viewportHeight, &depth)) {
+                // Through the ONE writer, so a dragged depth passes exactly the
+                // validation a typed one does. A refusal leaves the depth alone,
+                // which is the same "hold the last good value" a degenerate
+                // viewpoint produces.
+                setExtrude(depth, extrude_.direction);
+            }
+            return true;
+        }
+        case TouchAction::Up:
+        case TouchAction::PointerUp: {
+            if (!extrudeDrag_.capturing()) {
+                return false;
+            }
+            if (actionPointerId >= 0 && actionPointerId != extrudeDrag_.capturedPointerId()) {
+                Meters restore = 0.0;
+                if (extrudeDrag_.cancelDrag(&restore)) {
+                    extrude_.depth = restore;
+                    touchOverlay();
+                }
+                return false;
+            }
+            extrudeDrag_.endDrag();
+            touchOverlay();
+            return true;
+        }
+        case TouchAction::Cancel: {
+            Meters restore = 0.0;
+            if (extrudeDrag_.cancelDrag(&restore)) {
+                extrude_.depth = restore;
+                touchOverlay();
+                return true;
+            }
+            return false;
+        }
+        default:
+            return extrudeDrag_.capturing();
+    }
+}
+
 bool SketchSession::onTouch(TouchAction action, int32_t actionPointerId,
                             const TouchPointer* pointers, int count, const CameraSnapshot& camera,
                             int viewportWidth, int viewportHeight) {
-    if (state_ != SketchSessionState::Editing || viewportWidth <= 0 || viewportHeight <= 0) {
+    if (viewportWidth <= 0 || viewportHeight <= 0) {
+        return false;
+    }
+    // READY is the manipulator home, and it is the only one (`CAD-UX-S1`).
+    //
+    // While the sketch is being DRAWN the single finger belongs to the drawing;
+    // an arrow competing for it would give one gesture two meanings. Once
+    // Finish Sketch has been taken the drawing is done and the finger is free,
+    // which is exactly when the extrusion becomes the thing being adjusted. Two
+    // fingers still pan and pinch in both states, unchanged.
+    if (state_ == SketchSessionState::Ready) {
+        return onExtrudeTouch(action, actionPointerId, pointers, count, camera, viewportWidth,
+                              viewportHeight);
+    }
+    if (state_ != SketchSessionState::Editing) {
         return false;
     }
 
@@ -1055,6 +1166,33 @@ CadStatus SketchSession::setExtrude(Meters depth, ExtrudeDirection direction) {
     return fail(CadStatus::Ok);
 }
 
+// ---------------------------------------------------------------------------
+// The canvas extrude manipulator (`CAD-UX-S1`)
+// ---------------------------------------------------------------------------
+
+bool SketchSession::extrudeAnchors(CadExtrudeAnchors* out) const {
+    if (out == nullptr || state_ != SketchSessionState::Ready) {
+        return false;
+    }
+    const ClosedProfile* chosen = findClosedProfile(profiles_, extrude_.profileEntityId);
+    if (chosen == nullptr) {
+        return false;  // several profiles and none chosen yet: nothing to point at
+    }
+    return cadExtrudeAnchors(frame_, *chosen, extrude_, out);
+}
+
+CadStatus SketchSession::flipExtrudeDirection() {
+    if (state_ != SketchSessionState::Ready) {
+        return fail(CadStatus::NotSketching);
+    }
+    // Straight through the one writer, so the flip passes exactly the
+    // validation a typed direction does and the overlay is touched once.
+    return setExtrude(extrude_.depth,
+                      extrude_.direction == ExtrudeDirection::AlongNormal
+                              ? ExtrudeDirection::AgainstNormal
+                              : ExtrudeDirection::AlongNormal);
+}
+
 CadBodyState SketchSession::candidateState() const {
     CadBodyState state;
     state.sketch = sketch_;
@@ -1328,6 +1466,20 @@ void SketchSession::buildOverlay(float worldPerUnit) {
             if (nearOffset != 0.0) {
                 pushLine(&v, localAt(a, nearOffset), localAt(b, nearOffset), 0.0f, 1.0f);
             }
+        }
+        // The canvas manipulator (`CAD-UX-S1`): one arrow along the extrusion
+        // axis, in the SAME range and at the same weight as the preview it
+        // belongs to, so the renderer needed no new style and no new case. Its
+        // shaft is the depth; only its head and base tick take the camera-
+        // attached control scale, and that scale is derived from the caller
+        // worldPerUnit rather than from a second camera read, so what is drawn
+        // and what is hit-tested are one number.
+        CadExtrudeAnchors anchors;
+        CadExtrudeControlScale controlScale;
+        if (extrudeAnchors(&anchors)
+            && cadExtrudeControlScaleFor(perPixel > 0.0 ? static_cast<float>(perPixel) : 0.0f,
+                                         &controlScale)) {
+            appendCadExtrudeArrow(&v, anchors, controlScale.world, extrudeDrag_.capturing());
         }
     }
     entities.vertexCount = static_cast<uint32_t>(v.size()) - entities.firstVertex;

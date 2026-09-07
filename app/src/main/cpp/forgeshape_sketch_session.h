@@ -47,6 +47,7 @@
 #include <vector>
 
 #include "forgeshape_cad_body.h"
+#include "forgeshape_cad_extrude_tool.h"
 #include "forgeshape_camera.h"
 #include "forgeshape_history.h"
 #include "forgeshape_input.h"
@@ -351,6 +352,31 @@ public:
     CadStatus setExtrude(Meters depth, ExtrudeDirection direction);
     const ExtrudeFeature& extrude() const { return extrude_; }
 
+    // --- the canvas extrude manipulator (`CAD-UX-S1`) --------------------
+    //
+    // The arrow, the exact length beside it and the Flip that reverses it are
+    // three views of the ONE `extrude_` this session already owned. Nothing
+    // below adds a second copy of the profile, the depth or the direction.
+
+    // Where the manipulator stands in WORLD space, for the drawing, the hit
+    // test and the chrome anchor alike. False in any state but Ready, without a
+    // chosen profile, or when the geometry cannot produce anchors.
+    bool extrudeAnchors(CadExtrudeAnchors* out) const;
+
+    // Reverses which side of the sketch plane the solid grows on, keeping the
+    // exact depth and the same profile.
+    //
+    // Flip is a DIRECTION change and never a negative depth: an extrusion
+    // stores a positive length and a two-valued direction, and encoding the
+    // other side as a negative number would make every consumer of the depth
+    // -- the mesh generator, the codec, the panel field -- learn about a sign
+    // it has never had to carry. Refused (`NotSketching`) outside Ready.
+    CadStatus flipExtrudeDirection();
+
+    // The live drag, for the shell diagnostics and the tests. The session owns
+    // it because the session owns what it writes.
+    const CadExtrudeManipulator& extrudeManipulator() const { return extrudeDrag_; }
+
     // THE commit. Ready -> Inactive on success, with the new body's id in
     // `outId`. One transaction; a refusal changes nothing and stays in Ready.
     CadStatus commit(ConstructionScene& scene, ConstructionHistory& history, ObjectId* outId);
@@ -407,6 +433,12 @@ private:
         SketchSnapKind kind = SketchSnapKind::None;
     };
 
+    // The Ready-state half of onTouch: the extrude arrow, on the gizmo one-
+    // pointer contract. Returns true when the manipulator consumed the event.
+    bool onExtrudeTouch(TouchAction action, int32_t actionPointerId, const TouchPointer* pointers,
+                        int count, const CameraSnapshot& camera, int viewportWidth,
+                        int viewportHeight);
+
     bool pointerToSketch(const CameraSnapshot& camera, float x, float y, int viewportWidth,
                          int viewportHeight, SnapResult* out);
     SnapResult snap(const SketchPoint& raw, double snapWorld) const;
@@ -430,6 +462,11 @@ private:
 
     ProfileExtraction profiles_;
     ExtrudeFeature extrude_;
+    // The canvas manipulator (`CAD-UX-S1`). Volatile like everything else here,
+    // and alive only in Ready: while the sketch is being DRAWN the single
+    // finger belongs to the drawing, and an arrow that competed with it would
+    // be a second meaning for one gesture.
+    CadExtrudeManipulator extrudeDrag_;
 
     // The one captured pointer, or -1.
     int32_t pointerId_ = -1;

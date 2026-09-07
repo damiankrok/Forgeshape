@@ -80,6 +80,21 @@
     <item name="sketch_dimension_editor" type="id" />
     <item name="field_sketch_line_length" type="id" />
     <item name="apply_sketch_line_length" type="id" />
+
+    <!--
+      The canvas extrude cluster (`CAD-UX-S1`): the exact length, the Flip that
+      reverses which side the solid grows on, the operation badge, and the chip
+      that reopens a committed body's retained sketch. Each id names the ACT,
+      not the label, so copy never renames one.
+    -->
+    <item name="cad_extrude_canvas" type="id" />
+    <item name="cad_extrude_depth_value" type="id" />
+    <item name="cad_extrude_depth_editor" type="id" />
+    <item name="field_cad_extrude_depth" type="id" />
+    <item name="apply_cad_extrude_depth" type="id" />
+    <item name="cad_extrude_flip" type="id" />
+    <item name="cad_extrude_operation" type="id" />
+    <item name="cad_canvas_edit_sketch" type="id" />
     <!--
       The unsaved-changes question, asked when New Project or Open File would
       leave a project whose changes nobody saved. Save persists then continues,

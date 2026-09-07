@@ -314,6 +314,69 @@ curve-profile timings.
   edit that would strip a planar face another body's sketch stands on is
   REFUSED by name (`DependentFaceLost`) on exactly the terms deleting such a
   producer is: never cascaded, never retargeted, never silently broken.
+- **The extrusion is controlled AT THE GEOMETRY, and the tool holds no truth of
+  its own** (`CAD-UX-S1`). `forgeshape_cad_extrude_tool.{h,cpp}` adds three
+  things and deliberately not a fourth: WHERE the manipulator stands
+  (`CadExtrudeAnchors` — the profile's AREA centroid on the support plane, the
+  frame normal, the growth axis and the tip, derived on every read from the
+  frame, the chosen profile and the extrusion, with **no camera, no viewport
+  and no zoom in it**), HOW BIG it is drawn and grabbed
+  (`CadExtrudeControlScale`), and WHAT A DRAG MEANS (`CadExtrudeManipulator`).
+  It does **not** add a second model of the extrusion: `SketchSession` still
+  owns the profile, the depth and the direction and is still the only writer,
+  and a drag lands through `setExtrude` — the one door a typed value already
+  used, so a dragged depth passes exactly the validation a typed one does.
+  Nothing here is serialized, reaches a `.forge` byte, a checkpoint, the
+  fingerprint or a history step, so **no format, section, version or corpus
+  fixture changed** and a project reached by dragging the arrow encodes
+  byte-identically to one reached by typing the same number.
+  **The camera-attached scale is a new rule BESIDE the gizmo's, never a change
+  to it**: `gizmoWorldScale` holds a constant number of PIXELS at every
+  distance, which is right for a placement instrument and the opposite of a
+  control that belongs to the work. The cluster is a world object of reference
+  size `W` whose screen size is clamped into a band —
+  `scale = clamp(W / metersPerPixel / S_ref, 0.80, 1.60)` — so it shrinks as
+  the camera pulls back and saturates at both ends, and that ONE `scale` sizes
+  the drawn arrowhead and the Android cluster alike. The `0.80` floor is
+  ARITHMETIC: the cluster's controls are authored at 60 dp and 60 × 0.80 is
+  exactly the 48 dp interactive floor, which a native case asserts so the pair
+  cannot drift. The hit CORRIDOR is 24 reference units and is deliberately NOT
+  scaled, for the reason the gizmo's own corridors are not scaled by its visual
+  size preference. **The drag is the gizmo's contract restated**: one captured
+  `pointerId`, a basis FROZEN at pointer-down so the growing preview cannot
+  move the control out from under the finger, a second pointer or a Cancel
+  restoring the pre-drag depth and recording nothing, and a degenerate
+  viewpoint holding the last good value rather than guessing. A DRAG is clamped
+  at a millimetre floor where a TYPED value is refused, and that difference is
+  deliberate: a typed value is a statement the user made, and a drag has no
+  moment at which the user submitted zero. **Flip is a direction change and
+  never a negative depth.** The arrow is one more `SketchOverlay` producer in
+  the range the extrude preview already uses, so the renderer needed no change,
+  no new style and no new pipeline; its SHAFT is the depth and only its head
+  takes the control scale. The exact value, Flip, the `New Body` badge and the
+  retained-sketch `Edit Sketch` chip are Android chrome positioned from a
+  projected native anchor — the `bodyDimensionLabelPoint` pattern a third time
+  — and an anchor that does not project is HIDDEN, never placed at a guess.
+  **The DRAG is implemented, tested and currently unreachable from the sketch
+  view, and that is recorded rather than worked around** (`OQ-CAD-UX-01`). The
+  sketch camera is locked normal to its plane — `CameraController::applyOrbit`
+  returns early while `sketchView_` is true, and `frameSketchView` aims exactly
+  along the support normal — and that normal IS the extrusion axis, so from the
+  only view a sketch ever has, the arrow points straight at the eye and an axial
+  drag has no answer. The manipulator therefore does the one honest thing a
+  degenerate viewpoint allows: it holds the last good value. Unlocking the
+  sketch view is a CAMERA decision this stage was told not to take, and it
+  carries a real consequence — an XZ sketch's normal is world +Y, which orbit
+  cannot express without hitting its own pitch clamp. Until that is decided the
+  arrow is an ANNOTATION of direction and depth, and Flip and the exact value
+  are how the extrusion is changed.
+  **The sketch panel holds no draft direction any more**: it shows what native
+  says on every refresh, so the canvas Flip and the panel chips cannot become
+  two answers. **Not this stage:** `Add`, `Cut`, any boolean, `Symmetric`,
+  `Two Sides / Asymmetric A+B`, a feature list, `CADB` v4 or v5, `Revolve`,
+  `Intersect`, a Hole feature, a constraint solver, and multi-feature reuse of
+  one sketch — the retained-sketch access delivered here is RE-EDIT and is not
+  that.
 - **Preferences are application state, never project truth** (`UI-PREF-R1`,
   UI-OWNER-37, UI-OWNER-32, UI-OWNER-42). `AppPreferences` is ONE versioned,
   immutable value — palette, handedness, gizmo visual scale, gizmo stroke
@@ -934,7 +997,14 @@ curve-profile timings.
   *Sketch* (the editing context between New Sketch and Extrude, on a
   *workplane* XY, XZ or YZ, with the seven sketch tools Select, Line, Polyline,
   Rectangle, Circle, Arc and Spline on the Tool Rail and *Finish Sketch* /
-  *Extrude* as its two toolbar transitions), *start page* (the full-window
+  *Extrude* as its two toolbar transitions),
+  *extrude arrow* (the world-space arrow along the extrusion normal, its shaft
+  the depth; never a "gizmo", which is the transform instrument and scales the
+  opposite way), *canvas extrude cluster* (the camera-attached group anchored to
+  that arrow: the exact depth, *Flip* and the *New Body* badge),
+  *Flip* (reversing which side of the sketch the solid grows on; a direction and
+  never a negative depth), *New Body* (what an extrusion does — the only
+  operation there is, and never drawn beside an Add or a Cut that do not exist), *start page* (the full-window
   opaque Home and New Project screens, `StartPageView`), *Settings page* (the
   full-window persistent-preferences page, `SettingsPageView`, reached from
   Home and from the Project surface), *palette* (one of the five appearances:

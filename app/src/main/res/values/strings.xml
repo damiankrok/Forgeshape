@@ -494,6 +494,19 @@
     <string name="status_sketch_edit_cancelled">Sketch edit cancelled. Nothing changed.</string>
     <string name="edit_sketch">Edit Sketch</string>
     <string name="edit_sketch_description">Reopen the sketch this body was made from. Nothing changes until you finish.</string>
+
+    <!-- The canvas extrude cluster (`CAD-UX-S1`). "New Body" names what this
+         extrusion DOES; Add and Cut do not exist and are not drawn, because a
+         control that cannot succeed is not drawn. -->
+    <string name="extrude_operation_new_body">New Body</string>
+    <string name="extrude_operation_new_body_description">This extrusion creates a new body.</string>
+    <string name="extrude_flip">Flip</string>
+    <string name="extrude_flip_description">Grow the solid out of the other side of the sketch. The depth is unchanged.</string>
+    <string name="extrude_depth_description">Depth %1$s. Drag the arrow, or tap to type an exact depth.</string>
+    <string name="label_depth_canvas">Depth</string>
+    <string name="status_extrude_flipped">Extruding %1$s. The depth is unchanged.</string>
+    <string name="status_extrude_depth_applied">Depth applied.</string>
+    <string name="edit_sketch_canvas_description">Edit the sketch of %1$s. It is still this body\'s truth, and nothing changes until you finish.</string>
     <string name="status_sketch_cancelled">Sketch discarded. Nothing was changed.</string>
     <string name="status_sketch_extruded">Extruded %1$s — it is now selected.</string>
     <string name="status_sketch_entity_applied">Entity updated.</string>

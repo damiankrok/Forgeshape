@@ -573,7 +573,10 @@ void runCadSelfTestsAndLog() {
     // orientation navigator's presentation state, support-plane switching, the
     // staged Edit Sketch session and the CADB v3 round trip. Its own suite,
     // building its own sketches, scenes, histories and documents.
-    constexpr int kMaxSketchUxChecks = 128;
+    // CAD-UX-S1 widened this suite past 128. The recorder silently DROPS checks
+    // past its ceiling, which would read as a smaller passing suite rather than
+    // as a failure, so this stays well ahead of it.
+    constexpr int kMaxSketchUxChecks = 256;
     static forgeshape::SketchUxSelfTestResult ux[kMaxSketchUxChecks];
     const int uxCount = forgeshape::runSketchUxSelfTests(ux, kMaxSketchUxChecks);
     int uxFailed = 0;
@@ -4228,6 +4231,196 @@ JNIEXPORT jdouble JNICALL
 Java_com_forgeshape_app_NativeViewport_sketchGridStep(JNIEnv*, jclass) {
     std::lock_guard<std::mutex> lock(g_stateMutex);
     return forgeshape::sketchSession().gridStep();
+}
+
+// ---------------------------------------------------------------------------
+// The canvas extrude manipulator (`CAD-UX-S1`)
+// ---------------------------------------------------------------------------
+//
+// Three entry points, and none of them carries a semantic the Android layer
+// could hold instead: the state read is DERIVED on every call from the session
+// own extrusion and the current camera, the flip is a native act, and the
+// retained-sketch anchor is a projection of a committed body own sketch. The
+// shell learns two pixel coordinates and a multiplier, which is presentation,
+// and nothing else.
+
+namespace {
+
+// The WORLD authoring frame of a committed CAD body sketch.
+//
+// A face-supported body frame is its producer resolved face frame composed
+// with the producer world model, which is exactly what `resolveWorldModel`
+// already computes; a world-plane body frame is the plane at its own placement
+// origin. Factored out of `sketchBeginEdit` so the canvas anchor and the edit
+// session cannot disagree about where a sketch lives.
+bool resolveCadSketchWorldFrame(forgeshape::ConstructionScene& scene, forgeshape::ObjectId id,
+                                const forgeshape::CadBody& body, forgeshape::SketchFrame* out) {
+    if (out == nullptr) {
+        return false;
+    }
+    const forgeshape::WorkplaneFrame wf = forgeshape::workplaneFrame(body.sketch().plane);
+    forgeshape::Mat4 model;
+    if (scene.resolveWorldModel(id, &model)) {
+        out->origin = forgeshape::mat4TransformPoint(model, forgeshape::Vec3{0, 0, 0});
+        out->u = forgeshape::vec3Normalize(forgeshape::mat4TransformDirection(model, wf.uAxis));
+        out->v = forgeshape::vec3Normalize(forgeshape::mat4TransformDirection(model, wf.vAxis));
+        out->n = forgeshape::vec3Normalize(forgeshape::mat4TransformDirection(model, wf.normal));
+        return true;
+    }
+    *out = forgeshape::SketchFrame{forgeshape::Vec3{0, 0, 0}, wf.uAxis, wf.vAxis, wf.normal};
+    return true;
+}
+
+}  // namespace
+
+// The canvas manipulator whole state, in one locked read, into
+// NativeViewport CAD_EXTRUDE_* slots. One call because the arrow, the value
+// beside it and the badge must describe ONE instant: reading them separately
+// would let a drag land between two of them.
+//
+//   [0]  1 when the manipulator is live (Ready, one profile chosen, anchors
+//        resolvable), 0 otherwise -- and 0 is the whole condition for the
+//        cluster being absent rather than disabled
+//   [1]  the exact depth, in metres
+//   [2]  the direction code (0 along the normal, 1 against)
+//   [3]  the chosen profile entity id
+//   [4]  1 while a drag is captured
+//   [5]  1 when the label anchor projects on screen; slots 6..9 are meaningless
+//        otherwise, and the shell HIDES rather than guessing a position
+//   [6]  label anchor x, in view-local pixels
+//   [7]  label anchor y
+//   [8]  arrow tip x
+//   [9]  arrow tip y
+//   [10] the camera-attached visual scale multiplier (see CadExtrudeControlScale)
+//   [11] 0 unclamped, 1 clamped at the minimum, 2 clamped at the maximum --
+//        diagnostics, so a test can assert the clamp engaged rather than
+//        inferring it from a rounded number
+JNIEXPORT void JNICALL
+Java_com_forgeshape_app_NativeViewport_cadExtrudeToolState(JNIEnv* env, jclass,
+                                                           jdoubleArray out) {
+    if (out == nullptr || env->GetArrayLength(out) < 12) {
+        return;
+    }
+    double values[12] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const forgeshape::SketchSession& session = forgeshape::sketchSession();
+        forgeshape::CadExtrudeAnchors anchors;
+        if (session.extrudeAnchors(&anchors)) {
+            values[0] = 1.0;
+            values[1] = session.extrude().depth;
+            values[2] = forgeshape::extrudeDirectionIndex(session.extrude().direction);
+            values[3] = static_cast<double>(session.extrude().profileEntityId);
+            values[4] = session.extrudeManipulator().capturing() ? 1.0 : 0.0;
+            const int w = g_camera.viewportWidth();
+            const int h = g_camera.viewportHeight();
+            forgeshape::CadExtrudeControlScale scale;
+            if (forgeshape::cadExtrudeControlScale(g_camera.snapshot(), anchors.base, h, &scale)) {
+                values[10] = scale.scale;
+                values[11] = scale.clampedLow ? 1.0 : (scale.clampedHigh ? 2.0 : 0.0);
+            }
+            float lx = 0.0f;
+            float ly = 0.0f;
+            float tx = 0.0f;
+            float ty = 0.0f;
+            if (forgeshape::projectWorldToScreen(g_camera.snapshot(), anchors.label, w, h, &lx,
+                                                 &ly)
+                && forgeshape::projectWorldToScreen(g_camera.snapshot(), anchors.tip, w, h, &tx,
+                                                    &ty)) {
+                values[5] = 1.0;
+                values[6] = lx;
+                values[7] = ly;
+                values[8] = tx;
+                values[9] = ty;
+            }
+        }
+    }
+    env->SetDoubleArrayRegion(out, 0, 12, values);
+}
+
+// Reverses which side of the sketch plane the solid grows on, keeping the exact
+// depth and the same profile. A DIRECTION change and never a negative depth.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchFlipExtrudeDirection(JNIEnv*, jclass) {
+    forgeshape::CadStatus status;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        status = forgeshape::sketchSession().flipExtrudeDirection();
+    }
+    if (status != forgeshape::CadStatus::Ok) {
+        FS_LOGI("FORGESHAPE_EXTRUDE_FLIP_REFUSED:%s", forgeshape::cadStatusName(status));
+    } else {
+        FS_LOGI("FORGESHAPE_EXTRUDE_FLIP_OK");
+    }
+    return cadCode(status);
+}
+
+// Where a COMMITTED CAD body retained sketch is, on screen (`CAD-UX-S1` 4.7).
+//
+// The whole point of the retained-sketch access: a body made from a sketch
+// still HAS that sketch, and this is the anchor the canvas chip that reopens it
+// stands on. It is a read -- no session is begun, nothing is regenerated, no
+// revision is minted -- and it refuses for every body that is not a CAD body,
+// so the control cannot be drawn where it could not succeed.
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_cadBodySketchAnchor(JNIEnv* env, jclass, jlong bodyId,
+                                                           jfloatArray out) {
+    if (out == nullptr || env->GetArrayLength(out) < 3) {
+        return JNI_FALSE;
+    }
+    // x, y and the same camera-attached multiplier the manipulator cluster is
+    // drawn at, so the chip that reopens a sketch belongs to the work in
+    // exactly the way the arrow that made it did.
+    float point[3] = {0.0f, 0.0f, 1.0f};
+    bool found = false;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
+        // Exactly the conditions `sketchBeginEdit` refuses, asked HERE so the
+        // chip is absent where it could not succeed rather than shown and then
+        // refused. The guard below JNI stays regardless: removing a control is
+        // not removing a guard.
+        const bool available = scene.hasProject()
+                               && !forgeshape::sketchSession().active()
+                               && !forgeshape::sculptSession().inSculptMode()
+                               && !forgeshape::constructionHistory().editInProgress();
+        if (available) {
+            const forgeshape::ObjectId id = static_cast<forgeshape::ObjectId>(bodyId);
+            forgeshape::SceneObject* object = scene.findBody(id);
+            const forgeshape::CadBody* body =
+                object != nullptr ? object->cadOrNull() : nullptr;
+            if (body != nullptr && object->visible()) {
+                forgeshape::SketchFrame frame;
+                forgeshape::ProfileExtraction profiles =
+                    forgeshape::extractClosedProfiles(body->sketch());
+                const forgeshape::ClosedProfile* chosen =
+                    forgeshape::findClosedProfile(profiles, body->extrude().profileEntityId);
+                forgeshape::CadExtrudeAnchors anchors;
+                if (chosen != nullptr
+                    && resolveCadSketchWorldFrame(scene, id, *body, &frame)
+                    && forgeshape::cadExtrudeAnchors(frame, *chosen, body->extrude(), &anchors)) {
+                    // The BASE, not the label: the chip belongs on the sketch
+                    // the body was made from, which is the cap lying on the
+                    // support plane, rather than halfway up the solid.
+                    found = forgeshape::projectWorldToScreen(g_camera.snapshot(), anchors.base,
+                                                             g_camera.viewportWidth(),
+                                                             g_camera.viewportHeight(),
+                                                             &point[0], &point[1]);
+                    forgeshape::CadExtrudeControlScale scale;
+                    if (found
+                        && forgeshape::cadExtrudeControlScale(g_camera.snapshot(), anchors.base,
+                                                              g_camera.viewportHeight(), &scale)) {
+                        point[2] = scale.scale;
+                    }
+                }
+            }
+        }
+    }
+    if (!found) {
+        return JNI_FALSE;
+    }
+    env->SetFloatArrayRegion(out, 0, 3, point);
+    return JNI_TRUE;
 }
 
 // ---------------------------------------------------------------------------

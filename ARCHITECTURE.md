@@ -160,6 +160,7 @@ forgeshape_jni.cpp            render thread, ANativeWindow, MotionEvent ->
 | A CAD Body's authored truth (`CadBodyState`: one sketch, one linear extrusion) and the ONE regeneration path from it to a mesh | `forgeshape_cad_body.{h,cpp}` | `applyState` validates and regenerates the whole requested state and writes nothing unless all of it passes; no vertex is truth; no parameter is ever read back out of a mesh |
 | The sketch edit session: the entity being placed, the selection, snapping, the pointer it owns, the profile choice and the depth BEFORE the one commit | `SketchSession` (`forgeshape_sketch_session.{h,cpp}`) | volatile: nothing in it is project truth, the scene, the history, the fingerprint and the codec never see it, and `commit` is ONE `ScopedConstructionEdit` around ONE `addCadBody`. Java holds no sketch: not an entity, not a profile, not a depth |
 | The sketch overlay the renderer draws: the plane grid, the axes, the entities, the drag and the extrude preview, as world-space lines | `SketchOverlay` (`forgeshape_sketch_overlay.h`), built by `SketchSession::overlay` | presentation on the gizmo's terms: no `ObjectId`, no revision, never published, never picked, never exported, never a `.forge` byte. The renderer re-uploads it only when its revision changes and draws it through the gizmo's line pipeline |
+| Where the extrude manipulator stands in world space, how big it is drawn and grabbed, and what a drag along the extrusion axis means | `forgeshape_cad_extrude_tool.{h,cpp}` (`CadExtrudeAnchors`, `CadExtrudeControlScale`, `CadExtrudeManipulator`) | **not** a second model of the extrusion: `SketchSession` still owns the profile, the depth and the direction and is still the only writer, and a dragged depth lands through `setExtrude`. The anchors carry no camera; the size rule is a new function BESIDE `gizmoWorldScale` (which holds a constant pixel size) and produces the ONE number drawing and hit testing share; the drag is the gizmo's contract verbatim. Nothing here is serialized or reaches a history step |
 | The view a sketch borrows — the orbit angles that look along a plane's normal, the orthographic projection, and the user's own pose kept for the way back | `beginSketchView` / `endSketchView` in `forgeshape_jni.cpp` over `CameraController::frameWorkplane` / `capturePose` / `restorePose` | the sketch stores no camera; the angles come from the plane's fixed frame, and the pose is restored on commit and on cancel alike |
 | Whether a one-finger gesture while sketching draws, selects, or is swallowed — and that two fingers still pan and pinch | the sketch arbitration block in `forgeshape_jni.cpp`, using `SketchSession::onTouch` | a single finger never orbits while a sketch is open; the gizmo and the sculpt arbitration are already out of the picture, because the gizmo is withdrawn at begin and a sketch cannot start in Sculpt |
 | Removing one body from the project | `forgeshape_body_delete.{h,cpp}` | one representation-neutral operation over the scene and the history. One Delete is one transaction; the removed body is HELD by the history rather than destroyed, so an Undo restores that object with its Imported Mesh and its Frozen Sculpt Mesh intact; the replacement selection and the last-body refusal are stated here and nowhere else |
@@ -2310,9 +2311,18 @@ forgeshape_project_*      CADB record <-> CadBodyState; regenerate on load
 forgeshape_gltf_export    re-evaluates generateCadMesh, never a buffer
         ^
 forgeshape_sketch_session the volatile edit session; touch -> entities; overlay
+        ^                 owns ONE CadExtrudeManipulator and is the ONE writer
+        |                 of the profile, the depth and the direction
+forgeshape_cad_extrude_tool  anchors (no camera), the screen-scale rule,
+                             the axial drag, the arrow's line list
         ^
 forgeshape_jni            the acts, the touch arbitration, the borrowed view
 ```
+
+`forgeshape_cad_extrude_tool` sits BELOW the session in this chain and is
+included by it, not the other way round: the manipulator is a part the session
+owns. It names `SketchFrame` by forward declaration and dereferences it only in
+its implementation, which is what keeps the include acyclic.
 
 Nothing above a line reads truth from below it through a mesh. The renderer
 sees a CAD Body exactly as it sees a primitive — a published `RuntimeMesh` —

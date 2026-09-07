@@ -71,6 +71,7 @@ final class EditorWorkspaceView extends FrameLayout
         SketchEditorView.OnSketchAction,
         SketchOrientationNavigatorView.OnOrientationAction,
         SketchDimensionLabelView.OnDimensionAction,
+        CadExtrudeCanvasView.OnCanvasExtrudeAction,
         BodyDimensionLabelsView.OnDimensionAction,
         SculptHistoryNavigatorView.OnHistoryStateChosen,
         AnchoredSurfaceView.OnOpenStateChanged {
@@ -320,6 +321,15 @@ final class EditorWorkspaceView extends FrameLayout
     private final SketchOrientationNavigatorView sketchNavigator;
     private final SketchDimensionLabelView sketchDimension;
     /**
+     * The canvas extrude cluster and the retained-sketch chip (`CAD-UX-S1`).
+     *
+     * <p>Unlike the two surfaces above it is NOT a sketch-only control: it
+     * carries the extrude manipulator while a sketch is Ready and the
+     * <i>Edit Sketch</i> chip over a committed CAD Body when none is open, so
+     * it decides for itself which of the two it is showing from native truth.
+     */
+    private final CadExtrudeCanvasView cadExtrudeCanvas;
+    /**
      * The three overall-dimension labels over the viewport (Stage 020M).
      *
      * <p>Chrome, like the sketch's own dimension label beside it: the leaders
@@ -330,6 +340,8 @@ final class EditorWorkspaceView extends FrameLayout
     private final BodyDimensionLabelsView bodyDimensionLabels;
     /** Reused across reads; native fills this with the sketch session's state. */
     private final double[] nativeSketch = new double[NativeViewport.SKETCH_STATE_SIZE];
+    /** The canvas extrude manipulator's state (`CAD-UX-S1`), read whole. */
+    private final double[] nativeExtrude = new double[NativeViewport.CAD_EXTRUDE_SIZE];
     /** The last sketch refusal the status line reported, so a gesture that
      *  repeats the same refusal does not repeat the sentence. */
     private int lastReportedSketchStatus = NativeViewport.CAD_OK;
@@ -449,6 +461,18 @@ final class EditorWorkspaceView extends FrameLayout
                             // every panel transition is instant. Only whether
                             // a PANEL animates is decided here.
                             setChromeMotionAllowed(false);
+                        }
+
+                        @Override
+                        public void onViewportGestureMoved() {
+                            // Exactly one surface follows a live gesture, and
+                            // it re-reads native rather than being told
+                            // anything: the extrude arrow's depth changes under
+                            // the finger, and the anchor moves with an orbit.
+                            // Everything else waits for the gesture to settle,
+                            // because a full sync here would discard a
+                            // half-typed draft on every pointer sample.
+                            cadExtrudeCanvas.refreshFromNative();
                         }
 
                         @Override
@@ -738,6 +762,8 @@ final class EditorWorkspaceView extends FrameLayout
                 SketchOrientationNavigatorView.anchoredParams(context));
         sketchDimension = new SketchDimensionLabelView(context, this, this);
         overlayRoot.addView(sketchDimension, SketchDimensionLabelView.anchoredParams());
+        cadExtrudeCanvas = new CadExtrudeCanvasView(context, this, this);
+        overlayRoot.addView(cadExtrudeCanvas, CadExtrudeCanvasView.anchoredParams());
 
         // Stage 020M's three overall-dimension labels, on exactly those terms
         // and in the same overlay. It fills the chrome area rather than wrapping
@@ -3162,6 +3188,12 @@ final class EditorWorkspaceView extends FrameLayout
             sketchDimension.closeEditor();
             sketchDimension.setVisibility(GONE);
         }
+        // The canvas extrude cluster is deliberately refreshed in BOTH cases:
+        // inside a sketch it carries the manipulator, and outside one it carries
+        // the retained-sketch chip over a committed CAD Body. It decides which
+        // — or neither — from native truth, so there is no shell predicate here
+        // that could disagree with the session.
+        cadExtrudeCanvas.refreshFromNative();
         // Stage 020M's body-dimension labels follow the same rule from the
         // other side: they belong to Dimensions mode and to nothing else, and
         // a sketch and that mode can never both be open. The view withdraws
@@ -3225,6 +3257,81 @@ final class EditorWorkspaceView extends FrameLayout
         syncFromNative();
         showStatus(context.getString(R.string.status_sketch_length_applied),
                 R.attr.fsTextSuccess);
+    }
+
+    // -----------------------------------------------------------------------
+    // The canvas extrude cluster (`CAD-UX-S1`)
+    // -----------------------------------------------------------------------
+    //
+    // Three acts, and each one goes straight to the same native door the
+    // precision panel already used. Nothing here is a second answer to the
+    // depth or the direction: the panel and the canvas are two views of the ONE
+    // extrusion the session owns, and both re-read it afterwards.
+
+    /**
+     * An exact depth was typed at the arrow.
+     *
+     * <p>The same value typed into the precision panel reaches the same native
+     * call, so the two routes cannot produce different authored truth. A typed
+     * value is refused rather than clamped, which is the one place it differs
+     * from a drag — a drag has no moment at which the user submitted zero.
+     */
+    @Override
+    public void onExtrudeDepthEntered(double depthMeters) {
+        final Context context = getContext();
+        NativeViewport.cadExtrudeToolState(nativeExtrude);
+        final int direction = (int) nativeExtrude[NativeViewport.CAD_EXTRUDE_DIRECTION];
+        final int status = NativeViewport.sketchSetExtrude(depthMeters, direction);
+        if (status != NativeViewport.CAD_OK) {
+            showStatus(CadStatusMessages.describe(context, status), R.attr.fsTextError);
+            return;
+        }
+        cadExtrudeCanvas.closeEditor();
+        syncFromNative();
+        showStatus(context.getString(R.string.status_extrude_depth_applied),
+                R.attr.fsTextSuccess);
+    }
+
+    /**
+     * Flip: the solid grows out of the other side of the sketch.
+     *
+     * <p>A DIRECTION change and never a negative depth, decided below JNI from
+     * the direction the session already has — the shell does not compute the
+     * opposite of a value it holds, because it holds none.
+     */
+    @Override
+    public void onExtrudeFlipRequested() {
+        final Context context = getContext();
+        final int status = NativeViewport.sketchFlipExtrudeDirection();
+        if (status != NativeViewport.CAD_OK) {
+            showStatus(CadStatusMessages.describe(context, status), R.attr.fsTextError);
+            return;
+        }
+        syncFromNative();
+        NativeViewport.cadExtrudeToolState(nativeExtrude);
+        final boolean along = nativeExtrude[NativeViewport.CAD_EXTRUDE_DIRECTION]
+                == NativeViewport.EXTRUDE_ALONG_NORMAL;
+        showStatus(context.getString(R.string.status_extrude_flipped,
+                        context.getString(along ? R.string.extrude_direction_along
+                                                : R.string.extrude_direction_against)),
+                R.attr.fsTextSecondary);
+    }
+
+    /**
+     * The retained sketch, reopened from the body itself.
+     *
+     * <p>Exactly the staged Edit Sketch the precision surface already offered;
+     * this is a shorter route to it and not a second one, which is why it calls
+     * the same handler rather than a second native path.
+     */
+    @Override
+    public void onCanvasEditSketchRequested(long bodyId) {
+        onEditCadSketchRequested();
+    }
+
+    /** The canvas extrude cluster, for verification. */
+    CadExtrudeCanvasView cadExtrudeCanvas() {
+        return cadExtrudeCanvas;
     }
 
     /** A sketch gesture ended: the entity list, the selection or a refusal. */

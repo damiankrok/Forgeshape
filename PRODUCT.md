@@ -643,8 +643,28 @@ A profile that lies inside another is refused too — holes are not supported ye
 Once a profile is ready the toolbar reads **Extrude**, *Sketch values* opens on
 the profile and the depth, and *Back to Sketch* under the rail returns to
 drawing. If the sketch closed several profiles, choose the one to extrude; the
-choice is drawn in the viewport, together with a preview of the extrusion. Type
-the **depth**, choose **Along normal** or **Against normal**, and press
+choice is drawn in the viewport, together with a preview of the extrusion.
+
+**The extrusion is now controlled at the geometry itself.** An **arrow** is
+drawn along the direction the solid will grow, standing in the middle of the
+chosen profile, and its length is the depth. Beside it, anchored to that same
+place, sit three things: the **exact depth** — tap it to type one — a direct
+**Flip**, which moves the solid to the other side of the sketch without changing
+the depth by a hair, and a small badge reading **New Body**, because that is
+what this extrusion does. The cluster belongs to the work rather than to the
+screen: it gets smaller as you pull the camera back and larger as you come in,
+within limits, so it never becomes unreadable and never covers the profile it
+measures. A depth typed here and the same number typed in the panel are the same
+thing; there is one depth, and both places show it.
+
+The arrow itself cannot be dragged yet. Inside a sketch the view always looks
+straight down onto the plane you are drawing on — which is exactly the direction
+the solid grows — so the arrow points at you and there is no direction to pull
+it along. Rather than guess, ForgeShape leaves the depth where it is. Flip and
+the exact value are how the extrusion is changed for now.
+
+The depth and direction are also still in the panel: type the **depth**, choose
+**Along normal** or **Against normal**, and press
 **Extrude** — from the toolbar or from the panel; they are the same act. The
 sketch becomes one new **CAD Body**: an ordinary object in the Objects list,
 selected, with the ordinary Move, Rotate and Scale handles, and one Undo takes
@@ -661,8 +681,15 @@ yet. Saving, reopening and recovery keep all of this: a reopened CAD Body is
 still its sketch and its extrusion, not a frozen mesh. Exporting a GLB writes
 the body as it currently is.
 
-**Edit Sketch** is beside those fields, and it reopens the sketch the body was
-made from. Everything the sketch tools do applies — move a point, add a curve,
+**The sketch is still there after you extrude it, and the body says so.** A
+single **Edit Sketch** chip stands on the body's own sketch in the viewport
+whenever that body is selected — one tap, rather than opening a panel and
+scrolling past the fields. It scales with the camera the same way the extrude
+cluster does, and it is absent for anything that is not a CAD Body.
+
+**Edit Sketch** is also beside those fields in the panel, and either route
+reopens the sketch the body was made from. Everything the sketch tools do
+applies — move a point, add a curve,
 select a line and type an exact length — on the plane or face the body was
 sketched on, with the navigator in the corner as always. **Nothing changes
 until you finish**: the body on screen is still the body you had, and *Cancel

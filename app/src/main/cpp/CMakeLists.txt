@@ -53,6 +53,7 @@ set(FORGESHAPE_PRODUCT_SOURCES
     forgeshape_camera.cpp
     forgeshape_cad_body.cpp
     forgeshape_cad_face.cpp
+    forgeshape_cad_extrude_tool.cpp
     forgeshape_sketch.cpp
     forgeshape_sketch_session.cpp
     forgeshape_support_chooser.cpp
