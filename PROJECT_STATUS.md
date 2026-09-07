@@ -3093,6 +3093,21 @@ duration scale skips them outright rather than shortening them.
 
 ## Known Issues / Blockers
 
+- **`STYLUS-G1` cannot be closed without physical stylus hardware attached, and
+  it is UNVERIFIED.** The gate was attempted at `6c09c7c` and returned
+  `BLOCKED-ENV-STYLUS-G1`: it may rest only on a physical device, a physical
+  stylus and real events through the live input path, and a finger,
+  `adb shell input`, an instrumentation-built `MotionEvent` and any emulator are
+  each ruled out as substitutes. Only emulator targets were attached
+  (`ro.kernel.qemu=1`), so **nothing was measured**: pressure is not classified
+  in any direction, hover is not classified in either direction, and no real
+  `ACTION_CANCEL` was obtained. The owner-supplied Samsung Galaxy S25 Ultra
+  (`SM-S938B`) recorded under *Android runtime targets* would qualify — its
+  S Pen is a compatible stylus — so this is a device-availability matter, not a
+  code one. `artifacts/stylus-g1/` holds the source-backed input-path map, the
+  binding Sculpt cancel contract the gate must assert against (a cancelled
+  stroke STANDS and is undoable — it is not a rollback), and the exact rerun
+  conditions. No product code was changed by the attempt.
 - **An instrumented run leaves a project in the app's slot.** The process-death
   suite has to: its two halves communicate through the saved file, which is the
   whole point. `EditorWorkspaceProjectActionsTest` deletes the slot after every
