@@ -31,6 +31,21 @@ inline Vec3 faceNormalWeighted(const Vec3& a, const Vec3& b, const Vec3& c) {
     return vec3Finite(n) ? n : Vec3{0.0f, 0.0f, 0.0f};
 }
 
+// The Sculpt Mask weight a render vertex inherits from its source vertex.
+//
+// Clamped HERE, once, because this is the last CPU stage before the vertex
+// buffer: the domain already refuses a non-finite or out-of-range mask
+// (SculptMesh::setMaskWeight), and every other producer leaves the field at
+// zero, so this exists to make the shader's input provably in [0, 1] without
+// the shader having to defend against a value that cannot legitimately reach
+// it. A non-finite value is 0 — no mask — rather than an invented one.
+inline float sanitizedMask(const MeshVertex& v) {
+    if (!std::isfinite(v.mask) || v.mask <= 0.0f) {
+        return 0.0f;
+    }
+    return (v.mask >= 1.0f) ? 1.0f : v.mask;
+}
+
 // A tiny union-find over the corners meeting at ONE vertex.
 //
 // It is local and stack-sized on purpose: the sets being merged are a single
@@ -96,6 +111,7 @@ bool buildFaceted(const MeshVertex* vertices, const uint32_t* indices, uint32_t 
             const MeshVertex& sv = vertices[src[corner]];
             std::memcpy(rv.position, sv.position, sizeof(rv.position));
             std::memcpy(rv.color, sv.color, sizeof(rv.color));
+            rv.mask = sanitizedMask(sv);
             writeVec3(rv.normal, n);
             out->indices[slot] = slot;
         }
@@ -163,6 +179,7 @@ bool buildSmooth(const MeshVertex* vertices, uint32_t vertexCount, const uint32_
             RenderVertex rv{};
             std::memcpy(rv.position, vertices[v].position, sizeof(rv.position));
             std::memcpy(rv.color, vertices[v].color, sizeof(rv.color));
+            rv.mask = sanitizedMask(vertices[v]);
             rv.normal[0] = rv.normal[1] = rv.normal[2] = 0.0f;
             out->vertices.push_back(rv);
             continue;
@@ -201,6 +218,7 @@ bool buildSmooth(const MeshVertex* vertices, uint32_t vertexCount, const uint32_
                 RenderVertex rv{};
                 std::memcpy(rv.position, vertices[v].position, sizeof(rv.position));
                 std::memcpy(rv.color, vertices[v].color, sizeof(rv.color));
+                rv.mask = sanitizedMask(vertices[v]);
                 rv.normal[0] = rv.normal[1] = rv.normal[2] = 0.0f;
                 out->vertices.push_back(rv);
             }

@@ -62,10 +62,26 @@ namespace forgeshape {
 // producer (`SculptMesh`'s normal cache, recomputed on the next read after any
 // accepted position write), so storing them would be storing an answer the mesh
 // regenerates for free and could disagree with.
+// The MASK side (`SCULPT-FCM-R1`) is the same shape and follows the same rules:
+// three parallel vectors over a sorted, unique index list, holding the weight
+// before and after. It is a SECOND SIDE of one entry, not a second entry and
+// not a second history — one completed act is still exactly one entry, whether
+// that act moved vertices, painted a mask, or (structurally possible, though no
+// tool does it today) both.
+//
+// An entry with an empty geometry side leaves positions, the revision and the
+// edited flag alone; an entry with an empty mask side leaves the mask alone.
+// That is what keeps a mask act out of the project fingerprint: `hasEdits` and
+// the SculptRevision are geometry facts, and a mask-only entry touches neither.
+// See SculptSession::applyHistorySide.
 struct SculptStrokeDelta {
     std::vector<uint32_t> vertexIndices;
     std::vector<Vec3> beforePositions;
     std::vector<Vec3> afterPositions;
+
+    std::vector<uint32_t> maskIndices;
+    std::vector<float> beforeMask;
+    std::vector<float> afterMask;
 
     // The user-semantic edited flag on both sides of the stroke.
     //
@@ -80,7 +96,17 @@ struct SculptStrokeDelta {
     bool beforeHasEdits = false;
     bool afterHasEdits = true;
 
+    // How many vertices each side names. Two counts rather than one, because
+    // the two sides are independent and a diagnostic that reported a single
+    // number could not say which kind of act an entry describes.
     size_t vertexCount() const { return vertexIndices.size(); }
+    size_t maskCount() const { return maskIndices.size(); }
+
+    // Whether this entry carries a geometry side and whether it carries a mask
+    // side. Asked rather than inferred from a count at each use, so "an entry
+    // may carry either side or both" is stated once.
+    bool movesGeometry() const { return !vertexIndices.empty(); }
+    bool movesMask() const { return !maskIndices.empty(); }
 
     // A conservative estimate of what this entry costs, used to enforce the
     // byte budget. Deliberately an over-estimate: it charges the payload plus a
@@ -89,11 +115,18 @@ struct SculptStrokeDelta {
     // rather than after.
     size_t payloadBytes() const;
 
-    // Well-formed: three parallel vectors, at least one vertex, indices sorted
-    // and unique, every position finite. A malformed delta is refused by
-    // `SculptHistory::record` rather than stored and applied later.
+    // Well-formed: each side's three vectors parallel, at least one side
+    // non-empty, each side's indices sorted and unique, every position finite
+    // and every mask weight finite and inside [0, 1]. A malformed delta is
+    // refused by `SculptHistory::record` rather than stored and applied later.
     bool valid() const;
 };
+
+// What one MASK entry costs per touched vertex: a uint32 index plus two floats.
+// Stated here rather than inline in payloadBytes() so the geometry side's own
+// 28 bytes and this side's 12 sit next to each other and neither can drift out
+// of the budget arithmetic.
+constexpr size_t kSculptMaskDeltaBytesPerVertex = sizeof(uint32_t) + 2u * sizeof(float);
 
 // Bytes charged for one entry beyond its payload: three `std::vector` headers
 // (24 bytes each on a 64-bit target), the two flags, and allocator slack. It

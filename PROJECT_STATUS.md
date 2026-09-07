@@ -1,8 +1,118 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.70.0
+**Status Version:** 0.71.0
 **Updated:** 2026-09-07
-**Result:** **SCULPT-H1 — COMPLETE, OWNER LATER READY, HOVER PREVIEW DEFERRED.**
+**Result:** **STAGE 025 (`SCULPT-FCM-R1`) — COMPLETE, OWNER LATER READY.**
+Sculpt has the **seven brushes** the MVP set asks for: Grab, Clay, Smooth,
+**Flatten**, Inflate, **Crease** and **Mask**. The three new ones were added to
+the existing kernel, not beside it — the stroke lifecycle, the hit test, the
+affected set, the falloff, the Radius/Strength contract, the publication path
+and the history are the ones that were already there.
+
+**Flatten is Smooth's rule with a plane as the target.** One plane is fitted
+ONCE, at pointer-down, from the footprint's weighted centroid and its weighted
+average normal, in WORLD space — no camera, no zoom and no viewport enters it,
+so the extruded result cannot depend on how the sculpt was looked at. Each pass
+then writes `d' = d · (1 - λ)` with `λ ≤ 0.9`, so a vertex's signed distance to
+that plane can neither grow nor change sign: convergence is an arithmetic
+property per vertex, not an average. A fit whose normals cancel — a saddle, a
+fold — is refused and Flatten moves nothing rather than inventing a plane.
+
+**Crease is one displacement with two components**, and their RATIO is the tool:
+inward along the normal the surface had at stroke start
+(`kCreaseInwardFraction` 0.75) plus a tangential pinch toward the brush centre
+(`kCreasePinchFraction` 0.45), both fractions of the same `amount` every
+path-driven brush computes. Gathering the surface ALONG the groove rather than
+pushing it through is what makes the channel narrower than the brush that cut
+it. A vertex with no usable normal is skipped and one whose tangent degenerates
+gets the inward component alone, so no degenerate local configuration produces a
+NaN.
+
+**The Sculpt Mask is runtime-local editing state and NOT project truth.** A
+per-vertex weight in `[0, 1]` that holds the six geometry brushes off an area,
+scaling every one of them by `1 - w` with **exact ends** — `w = 0` is the full
+effect and `w = 1` is exactly zero, by an equality rather than by arithmetic
+that happens to land there. It lives inside the Frozen Sculpt Mesh's own vertex
+records (`MeshVertex::mask`), a derived presentation channel on exactly the
+terms the colour beside it is, so **no publication signature between
+`SculptMesh` and the vertex buffer had to learn that masking exists**.
+
+**No `.forge` field, section, version or fixture changed**, and that is proved
+rather than asserted: a mask write mints no `SculptRevision`, sets no
+`hasEdits`, moves no project fingerprint and earns no autosave checkpoint —
+`FCM-14` encodes a masked project and compares it byte-for-byte against one
+encoded before the mask existed, and `E2E-FCM-10` repeats that on the device
+against both the document and the checkpoint. Reopening a project restores the
+geometry with an EMPTY mask, exactly as it restores an empty history. Back to
+Construction and Resume Sculpt keep it, because it lives on the body; a Freeze
+or a destructive Reset clears it, on the boundary the history cannot cross
+either; and one body's mask is incapable of reaching another's because one
+body's mesh is.
+
+**Mask paint and Clear Mask land in the ONE `SculptHistory`.** A delta gained a
+second SIDE — sorted unique indices plus the weight before and after, **12
+bytes per touched vertex** — never a second stack. An entry may carry a geometry
+side, a mask side or both, and `applyHistorySide` moves the revision and the
+edited flag only for one that carries geometry, which is what keeps an Undo over
+a mask act out of the project fingerprint. **The caps are exactly the numbers
+they were**: `kMaxSculptHistoryEntries` (32), `kMaxSculptHistoryBytes` (4 MiB)
+and `kMaxSculptHistoryEntryBytes` (1 MiB) are untouched, and the one per-entry
+overhead allowance already covered the three extra vector headers. A navigator
+jump across mask entries is still repeated Undo and repeated Redo, proved
+bit-exactly against both reference paths over a mixed branch.
+
+**Clear Mask REFUSES an over-cap entry rather than applying it**
+(`EntryTooLarge`), deliberately NOT the brush's `NotRetained` policy. The
+difference is which act is being asked about: a brush stroke is bounded by the
+brush and its deformation is what the user is doing, so refusing to sculpt
+because the history is full would be the tail wagging the dog; Clear Mask is
+bounded by the MESH, is a discrete command rather than a gesture, and its whole
+value is that it can be taken back.
+
+**The overlay costs one vertex attribute and two shader lines.** A fourth float
+on `RenderVertex` (`VK_FORMAT_R32_SFLOAT` at location 3, clamped once on the CPU
+in `buildRenderMesh`) and one fragment-stage mix toward a cool low value, after
+shading and before the selection tint. A mix rather than a multiply, because a
+multiply vanishes exactly where a mask most needs to be visible — the shadow
+side of a form. **No second pass, no second pipeline and no push-constant slot**;
+the surface block was already at the guaranteed 128-byte minimum.
+
+**Stage 020R3's world/display metric held with no new code.** The metric block's
+own assertions loop over `kSculptToolCount`, so Flatten, Crease and Mask are
+held to the round-footprint-under-non-uniform-Scale claim by the SAME checks the
+original four are — which is the strongest form it can take, because there is no
+second footprint rule for a new brush to get wrong.
+
+**Verified:** **twenty-two** `*_SELFTEST_OK` tokens (**3496 checks**, up from
+3374) then `FORGESHAPE_NATIVE_VIEWPORT_OK` with zero failures — the sculpt suite
+went 533 → **655** checks with `FCM-01..20` and the widened parameterized
+blocks, and every other suite's count is unchanged; the same 655 green on the
+standalone NDK runner; `SculptBrushStage025Test` **OK (8 tests)** in 55.3 s; and
+the regression quad `SculptUndoTest` + `SculptHistoryNavigatorTest` +
+`ImportedMeshSculptTest` + `EditorWorkspaceControlsTest` **OK (51 tests)**.
+`assembleDebug` and `assembleRelease` both successful with **0** self-test
+symbols in the release `.so` on both ABIs, and `verify-device-guards.ps1` green
+over 19 surfaces. Evidence: `artifacts/stage-025/`.
+
+**Run under TEST POLICY v3, the reduced-testing policy.** `-FullSharded` was
+**NOT run** and no `FULL_SHARDED_SUITE_PASS` is claimed for Stage 025. This is
+focused evidence and cannot stand in for the exhaustive gate.
+
+**One existing scope guard moved, deliberately.** `ImportedMeshSculptTest`'s
+`IMP01B-24` asserted "the brush set is still exactly four tools"; it now asserts
+seven, and says in as many words that the number moving is what a stage costs.
+Nothing else in the existing suites needed a line.
+
+**What stays pending:** the owner's own review of all three tools (see
+`artifacts/stage-025/OWNER_LATER_TEST_PACK.md`) — whether Flatten planes rather
+than smooths, whether Crease has a usable width and depth range, whether the
+mask overlay is readable without hiding the form in all five palettes, whether
+Clear Mask is discoverable in the Sculpt inspector, whether a seven-entry rail
+still works one-handed in portrait and landscape, and the three new glyphs,
+whose **exact visual design is OWNER LATER and is not approved here**.
+
+**Previous result:** **SCULPT-H1 — COMPLETE, OWNER LATER READY, HOVER PREVIEW
+DEFERRED.**
 Sculpt now has a **History navigator**: a compact, scrolling list of the states
 the active body's strokes have taken it through, opened from a third control in
 the bottom-trailing history capsule, with one tap to stand the body on any of
@@ -1910,12 +2020,17 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 | Transform-only edit publishes no revision and triggers no GPU upload | VERIFIED |
 | Start Sculpting / Back to Construction / Resume Sculpt without re-freezing | VERIFIED |
 | Stale-source policy: Construction change never touches the sculpt mesh | VERIFIED |
-| Four sculpt tools (Grab, Clay, Smooth, Inflate) on one shared kernel | VERIFIED |
+| Seven sculpt tools (Grab, Clay, Smooth, Flatten, Inflate, Crease, Mask) on one shared kernel; six write a position and Mask writes a weight | VERIFIED (Stage 025) |
+| Flatten converges on one plane fitted at pointer-down: no vertex's distance to it ever grows or changes sign, and a degenerate fit moves nothing | VERIFIED (Stage 025) |
+| Crease displaces inward along the start normal AND pinches tangentially toward the brush centre, staying finite on a fully degenerate mesh | VERIFIED (Stage 025) |
+| The Sculpt Mask holds every one of the six geometry brushes off a fully masked vertex EXACTLY, and reduces a partial one by `1 - w` | VERIFIED (Stage 025) |
+| A mask is runtime-local: no `.forge` byte, no fingerprint move, no checkpoint, no revision, no edited flag; kept across Back/Resume and per body, empty after a reopen | VERIFIED (Stage 025) |
+| Mask paint and Clear Mask are each one entry in the ONE Sculpt history, with the 32 / 4 MiB / 1 MiB caps unmoved and the navigator jump still repeated Undo/Redo | VERIFIED (Stage 025) |
 | Shared Radius and Strength, clamped, unchanged by tool switching | VERIFIED |
 | Clay ≠ Inflate, measured (start-normal vs current-normal) | VERIFIED |
 | Pending-then-promote: multi-touch navigation cannot mutate the sculpt mesh | VERIFIED |
 | Sculpt topology fixed; buffers reused, never reallocated during a stroke | VERIFIED |
-| Construction Source bit-identical after sculpting with all four tools | VERIFIED |
+| Construction Source bit-identical after sculpting with every tool | VERIFIED |
 | Lifecycle: shape, placement, identity, unit, mode, tool, sculpt, camera and selection survive home/resume with no re-upload | VERIFIED |
 | Five explicit approved appearances — Warm Graphite, Neutral Charcoal, Light Charcoal, Warm Light, Cool Light — chosen from a named list on the Settings page's Appearance group (UI-OWNER-42; moved out of the Display popover in UI-PREF-R1 because the choice is persistent) | VERIFIED |
 | The Settings page: one full-window start page reached from Home and from the Project surface's `Settings…`, holding Appearance, Workspace (Handedness) and Gizmo (Visual size, Thickness); every row a real saved preference, chosen in more than colour; Back one step in every phase; the viewport not reachable through it | VERIFIED (UI-PREF-R1) |
@@ -1989,7 +2104,7 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 | A compact window reaches the scene in one tap and gives the viewport back in one more; closed, the panel costs the model nothing | VERIFIED (UI-R2) |
 | Opening the scene panel, selecting a body and collapsing the inspector publish no mesh and mint no revision | VERIFIED (UI-R2) |
 | Tool type, pressure and tilt cross MotionEvent → SurfaceView → JNI → native intact, and stay with the right pointer in a multi-pointer event | VERIFIED (INPUT-R1) |
-| Carrying stylus data changes no brush result: same stroke, opposite pressure and tilt, bit-identical vertices for all four tools | VERIFIED (INPUT-R1) |
+| Carrying stylus data changes no brush result: same stroke, opposite pressure and tilt, bit-identical vertices for every tool | VERIFIED (INPUT-R1, widened to seven in Stage 025) |
 | One native-owned Construction history: Java holds no mirror scene, no snapshot list and no depth counter | VERIFIED (Stage 019) |
 | Exact Shape Apply is one atomic undo step whatever it changed; a rejected or identical Apply is none | VERIFIED (Stage 019) |
 | Exact Position+Rotation+Scale Apply is one atomic step; all nine values move together, 370° survives un-canonicalized, and a refused scale leaves the position untouched and records nothing | VERIFIED (Stage 019, extended Stage 020R2) |
@@ -3640,35 +3755,40 @@ was added and no marketing claim is made.
 ## Next Stage
 
 **Exactly one next step: return this status to the ForgeShape coordinator for a
-combined OWNER review.** `SCULPT-H1` is closed on the technical side: the Sculpt
-History navigator lists one row per retained STATE, a tap stands the body on
-that state, and the jump is repeated Undo and repeated Redo because it is
-*implemented* as them — proved bit-exactly against both reference paths in the
-same session, and again on the device against `.forge` `SCUL` bytes. It adds no
-storage, no capacity and no budget; the no-op and the out-of-range ordinal are
-refused by name rather than clamped; the abandoned future is dropped by the rule
-that already dropped it; and a navigator round trip encodes byte-identically
-with the Construction history unmoved. What no emulator settles is whether the
-third capsule control reads as part of one capsule, whether five visible rows is
-the right number, how scrolling a long branch feels, whether `Start` and
-`Stroke N` are the right words, and whether the current/past/undone markers are
-distinguishable at a glance — that is the OWNER's, and **no aesthetic approval
-is claimed here; the exact navigator glyph is explicitly OWNER LATER**. The full
-list is `artifacts/sculpt-h1/OWNER_LATER_TEST_PACK.md`.
+combined OWNER review.** Stage 025 (`SCULPT-FCM-R1`) is closed on the technical
+side: Sculpt carries the seven MVP brushes, Flatten converges on a plane fitted
+once from the surface under the brush, Crease cuts a groove narrower than the
+brush that made it, and the Sculpt Mask holds all six geometry brushes off an
+area with exact ends. The mask is runtime-local by construction rather than by
+convention — it mints no revision, sets no edited flag, moves no fingerprint and
+reaches no `.forge` byte, proved byte-for-byte against a document and an
+autosave checkpoint encoded before it existed — and it lands in the ONE Sculpt
+history as a second SIDE of the existing delta, with the 32 / 4 MiB / 1 MiB caps
+exactly the numbers they were. What no emulator settles is whether Flatten
+planes rather than smooths, whether Crease has a usable width and depth range,
+whether the mask overlay is readable without hiding the form across all five
+palettes and both shading models, whether Clear Mask is discoverable in the
+Sculpt inspector, and whether a seven-entry rail still works one-handed — that
+is the OWNER's, and **no aesthetic approval is claimed here; the three new Tool
+Rail glyphs and the mask overlay's colour and strength are explicitly OWNER
+LATER**. The full list is `artifacts/stage-025/OWNER_LATER_TEST_PACK.md`.
 
-**One decision is put to the OWNER rather than taken here.** The real-stylus
-**hover preview was deferred, not faked**.
-`AutosaveController.performCheckpoint()` reads the project fingerprint on its
-own worker thread **at the moment the task runs**, by deliberate design, so a
-preview that moved sculpt vertices and moved them back could be captured by a
-checkpoint firing mid-preview and the recovery candidate would then hold a state
-the user never committed. Making it safe needs an autosave-suspend concept
-threaded through the controller and the workspace, or a shadow render path so
-the preview never touches the live mesh — both broad, and neither is in scope
-here. Independently, the authoritative emulator delivers no real stylus hover,
-so the restore-exactly claim could not have been verified on this hardware
-anyway. **Is a non-destructive hover preview worth an autosave-suspend concept,
-or does tap-to-jump stand alone?**
+**Two constants are put to the OWNER rather than settled here.** `kMaskGain`
+(1.0) means one brush-radius of travel at full Strength fully masks the centre,
+so painting is a matter of working over an area rather than one tap — that is
+the same travel rule Clay follows, and it is a FEEL decision, not a correctness
+one. `kCreaseInwardFraction` / `kCreasePinchFraction` (0.75 / 0.45) set how
+narrow the groove is relative to the brush; the tests assert the DIRECTION and
+the monotonicity of both components, never a look. Both are one-line changes if
+the OWNER wants a different feel.
+
+**The real-stylus hover preview is still DEFERRED**, on exactly the blocker
+`SCULPT-H1` recorded and for exactly the same reason: `AutosaveController.
+performCheckpoint()` reads the project fingerprint on its own worker thread at
+the moment the task runs, so a preview that moved sculpt vertices and moved them
+back could be captured mid-preview. Nothing in this stage changed that, and
+nothing here was built toward it. **Is a non-destructive hover preview worth an
+autosave-suspend concept, or does tap-to-jump stand alone?**
 
 **Two open questions stay open, and neither was answered here.** **OQ-01** still
 blocks Stage 020D (Directional Scale): no handle, mode or UI for it exists.
@@ -3676,42 +3796,49 @@ blocks Stage 020D (Directional Scale): no handle, mode or UI for it exists.
 ownership of a body-level dimension edit made while Sculpt is active is
 unresolved. Neither is decided on the OWNER's behalf.
 
-**Do not start Stage 025.** Do not start Stage 020D, Stage 018B or 018C, do not
-extend Mirror to Imported Mesh, CAD, Sculpt, an arbitrary plane or a live
-symmetry modifier, and do not grow the navigator into thumbnails, named states,
-a branching tree or a Construction-history panel.
+**Do not start Stage 026.** Do not start symmetry or stylus pressure, do not
+start `STYLUS-G1`, do not build the hover preview, do not add mask Invert, Grow,
+Shrink, Blur or mask-by-topology, do not make a mask persist across a reopen, do
+not add subdivide, remesh or dynamic topology, do not start Stage 027's
+isolate/hide, and do not start Stage 020D, Stage 018B or 018C.
 
-**Previously closed and still pending the same review:** `MIRROR-01`, whose
-technical side reads: a
-Construction Body reflects across XY, XZ or YZ into one new body as one
+**Previously closed and still pending the same review:** `SCULPT-H1`, whose
+technical side reads: the Sculpt History navigator lists one row per retained
+STATE, a tap stands the body on that state, and the jump is repeated Undo and
+repeated Redo because it is *implemented* as them — proved bit-exactly against
+both reference paths in the same session, and again on the device against
+`.forge` `SCUL` bytes. It adds no storage, no capacity and no budget; the no-op
+and the out-of-range ordinal are refused by name rather than clamped; the
+abandoned future is dropped by the rule that already dropped it; and a navigator
+round trip encodes byte-identically with the Construction history unmoved. Its
+open questions are whether the third capsule control reads as part of one
+capsule, whether five visible rows is the right number, how scrolling a long
+branch feels, whether `Start` and `Stroke N` are the right words — a question
+Stage 025 sharpens, since a mask act is now also a "stroke" by that wording —
+and whether the current/past/undone markers are distinguishable at a glance. The
+full list is `artifacts/sculpt-h1/OWNER_LATER_TEST_PACK.md`.
+
+**Also previously closed and still pending:** `MIRROR-01`, whose technical side
+reads: a Construction Body reflects across XY, XZ or YZ into one new body as one
 transaction; the reflection is carried by a proper rotation with the positive
 scale untouched, so the transform contract, the renderer, the picker, the codec
 and the exporter each needed no change; the world-geometry equivalence is proved
 over six primitives, three planes and ten poses rather than argued from a
 determinant; every ineligible representation is refused by name before an id is
 minted; Undo and Redo are exact; and the `.forge` document is untouched — proved
-byte-for-byte, not asserted. What no emulator settles is whether the three plane
+byte-for-byte, not asserted. Its open questions are whether the three plane
 names read the way a user thinks about the act, whether Mirror is findable
 behind the row overflow, whether the two-line strip reads as one strip, how a
 reflection looks beside a rotated non-uniform original through a real camera,
-and whether the glyph says "reflect" — that is the OWNER's, and **no aesthetic
-approval is claimed here; the exact Mirror icon design is explicitly OWNER
-LATER**. The full list is `artifacts/mirror-01/OWNER_LATER_TEST_PACK.md`.
+and whether the glyph says "reflect". The full list is
+`artifacts/mirror-01/OWNER_LATER_TEST_PACK.md`.
 
-**Two open questions stay open, and neither was answered here.** **OQ-01** still
-blocks Stage 020D (Directional Scale): no handle, mode or UI for it exists.
-**OQ-02** still blocks `SCULPT-DIM-01` (Sculpt dimensions), because history
-ownership of a body-level dimension edit made while Sculpt is active is
-unresolved. Neither is decided on the OWNER's behalf.
-
-It joins the still-pending **Stage 020M** retest of Dimensions and Relative
+These join the still-pending **Stage 020M** retest of Dimensions and Relative
 Scale, the **Delete → Undo → Redo owner verdict** of `IMPORT-01B` /
 `UI-OWNER-45`, the **Stage 018A** retest of Rename, Show/Hide, Lock/Unlock and
 Duplicate, the combined OWNER retest of UI-PREF-R1 (whose aggregate the OWNER
 waived), and the SEL-OUT-R1 outline retest (whose further testing the OWNER
-cancelled). **Do not start Stage 020D, Stage 018B or 018C, and do not extend
-Mirror to Imported Mesh, CAD, Sculpt, an arbitrary plane or a live symmetry
-modifier.**
+cancelled).
 
 **Two items belong to the coordinator, not to this stage.** First, the
 `SpatialSketchTest` suite-isolation defect is still unfixed and is retained as
@@ -3719,4 +3846,8 @@ known test debt: it blocks nothing while `TEST-OWNER-03` forbids an aggregate,
 but it will block the next `-FullSharded` run and belongs in the next
 test-hardening batch. Second, **no aggregate has been run since SEL-OUT-R1**, so
 whenever the exhaustive gate is next wanted, it needs a fresh full run on a
-stable tree rather than a resume.
+stable tree rather than a resume. Stage 025 changed the shared `MeshVertex` and
+`RenderVertex` layouts and one Vulkan pipeline's vertex input, which is the
+kind of change an aggregate is for — the focused evidence here covers the
+sculpt, render-shading, project and import suites that touch those paths, but it
+is not the exhaustive gate and does not claim to be.

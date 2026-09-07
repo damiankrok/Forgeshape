@@ -2401,7 +2401,14 @@ bool Renderer::createPipeline() {
     binding.stride = sizeof(RenderVertex);
     binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-    VkVertexInputAttributeDescription attributes[3]{};
+    // Four attributes since `SCULPT-FCM-R1`. The fourth is the Sculpt Mask
+    // weight, a single float already clamped into [0, 1] on the CPU (see
+    // RenderVertex::mask). It costs four bytes per vertex on every body, is
+    // zero for every representation but a masked Frozen Sculpt Mesh, and the
+    // fragment stage darkens by it — which is why the mask needs no second
+    // pipeline, no second pass and no push-constant slot in a block that is
+    // already at the guaranteed 128-byte minimum.
+    VkVertexInputAttributeDescription attributes[4]{};
     attributes[0].location = 0;
     attributes[0].binding = 0;
     attributes[0].format = VK_FORMAT_R32G32B32_SFLOAT;
@@ -2414,12 +2421,16 @@ bool Renderer::createPipeline() {
     attributes[2].binding = 0;
     attributes[2].format = VK_FORMAT_R32G32B32_SFLOAT;
     attributes[2].offset = offsetof(RenderVertex, color);
+    attributes[3].location = 3;
+    attributes[3].binding = 0;
+    attributes[3].format = VK_FORMAT_R32_SFLOAT;
+    attributes[3].offset = offsetof(RenderVertex, mask);
 
     VkPipelineVertexInputStateCreateInfo vertexInput{};
     vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
     vertexInput.vertexBindingDescriptionCount = 1;
     vertexInput.pVertexBindingDescriptions = &binding;
-    vertexInput.vertexAttributeDescriptionCount = 3;
+    vertexInput.vertexAttributeDescriptionCount = 4;
     vertexInput.pVertexAttributeDescriptions = attributes;
 
     VkPipelineInputAssemblyStateCreateInfo inputAssembly{};

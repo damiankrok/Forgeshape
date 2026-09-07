@@ -103,7 +103,8 @@ forgeshape_jni.cpp            render thread, ANativeWindow, MotionEvent ->
 | 1-ring adjacency and incident triangles of the frozen mesh | `SculptTopology` | built once per Freeze, never per move; it is not a half-edge mesh and cannot change topology |
 | Area-weighted vertex normals from current positions | `computeVertexNormals` + `SculptMesh`'s dirty-flagged cache | derived data, not truth; no brush computes its own |
 | The stroke kernel: hit, affected set, falloff, radius resolution, lifecycle | `SculptStroke` | it restates no FOV or aspect — it reads the `CameraSnapshot`'s own matrices |
-| What each tool does to the vertices it captured | one `SculptStroke::apply*` per `SculptTool` | there is no brush base class, registry or plugin surface |
+| What each tool does to the vertices it captured | one `SculptStroke::apply*` per `SculptTool` (seven of them since `SCULPT-FCM-R1`) | there is no brush base class, registry or plugin surface |
+| The Sculpt Mask weight of every vertex, and the `1 - w` factor over the six geometry brushes | `SculptMesh`'s mask accessors + `sculptMaskFactor` | runtime-local, per body by ownership, never project truth, never a `.forge` byte |
 | Whether a one-finger Down becomes a stroke or a navigation | `g_strokePending` in `forgeshape_jni.cpp`, using `SculptSession::hitsSculptMesh` | Java decides none of it; the probe cannot mutate the mesh |
 | mm/cm/m ↔ meter conversion and number formatting | `LengthUnit` | the domain never sees a display unit |
 | The ordered collection of Construction Bodies, ObjectId minting, and which body is active | `ConstructionScene` (`forgeshape_scene.{h,cpp}`) | a flat list, not a scene graph or a hierarchy; ids are never a collection index |
@@ -1112,7 +1113,8 @@ test can observe what actually crossed; it is compiled out of a release build.
 **Scene**: `sceneBodyCount`, `sceneBodyIds`, `sceneActiveBodyId`,
 `sceneSelectBody`, `sceneAddBody`. **Sculpt**: `productMode`, `freezeToSculpt`,
 `enterConstructionMode`, `enterSculptMode` (resume WITHOUT re-freezing),
-`sculptState`, `setSculptBrush`, `setSculptTool`, `sculptTool`.
+`sculptState`, `setSculptBrush`, `setSculptTool`, `sculptTool`, `sculptClearMask`
+and `sculptCanClearMask`.
 **Presentation**: `setShadingModel`, `setSurfaceShading`, `setProjectionMode`,
 `setViewportBackground`, `setGridVisible`, `setReducedMotion` and their readers —
 every one of which requests a value, refuses an index it does not recognise, and
@@ -2564,7 +2566,7 @@ are not drawn anywhere.
 
 ## Sculpt domain
 
-`forgeshape_sculpt.{h,cpp}` owns each body's second representation and the four
+`forgeshape_sculpt.{h,cpp}` owns each body's second representation and the seven
 tools that edit it. Like the Construction domain it contains no JNI, Android,
 Vulkan, renderer or UI type, and it holds no GPU resource.
 
@@ -2574,8 +2576,8 @@ Vulkan, renderer or UI type, and it holds no GPU resource.
 | --- | --- |
 | the Frozen Sculpt Mesh (`SculptMesh`) | the product mode (Construction / Sculpt) |
 | its stale-source flag | the held tool |
-| — | brush radius and strength |
-| — | the stroke in progress, and the session-lifetime stroke count |
+| its `SculptHistory` (`ARCH-OWNER-12`) | brush radius and strength |
+| its Sculpt Mask, inside the mesh's own vertices (`SCULPT-FCM-R1`) | the stroke in progress, and the session-lifetime stroke count |
 
 `sculptSession()` re-points the one session at the **active body's**
 `FrozenSculpt` on every access — a single pointer write, and rebinding every time
@@ -2723,7 +2725,7 @@ nothing else**, selected by a closed enum and a switch — no brush base class,
 registry, plugin surface or reflection, because a framework would have to be
 persisted, versioned and validated like real authored state.
 
-Deliberate properties of the kernel, shared by all four tools:
+Deliberate properties of the kernel, shared by all seven tools:
 
 - The **radius is authored in screen pixels** and resolved to **world meters** at
   the depth of the hit point, so the brush feels the same size at any zoom. It is
@@ -2789,8 +2791,8 @@ there is one conversion rather than one per tool:
 
 | helper | used by | what it converts |
 | --- | --- | --- |
-| `brushWorldDistance(model, localDelta)` | the shared capture, so all four tools | a local offset to its displayed length |
-| `brushLocalStepAlongNormal(inverseModel, localNormal, worldMeters)` | Clay, Inflate | a world deposition to the local step that produces it |
+| `brushWorldDistance(model, localDelta)` | the shared capture, so all seven tools | a local offset to its displayed length |
+| `brushLocalStepAlongNormal(inverseModel, localNormal, worldMeters)` | Clay, Inflate, Crease | a world deposition to the local step that produces it |
 
 `brushLocalStepAlongNormal` needs the **normal matrix**, and takes no third
 argument for it: the inverse transpose of the model's upper-left 3×3 is exactly
@@ -2815,28 +2817,41 @@ What this does **not** do is equally load-bearing:
 - At `S = (1,1,1)` every formula reduces to what it was, so unscaled sculpting is
   unchanged.
 
-### The four tools
+### The seven tools
 
 | | driven by | direction | accumulates |
 | --- | --- | --- | --- |
 | Grab | where the finger **is** | camera plane | no — `base + delta × weight` |
 | Clay | pointer **path length** | each vertex's normal **at stroke start** | yes |
 | Smooth | pointer **path length** | toward the 1-ring neighbour mean | yes |
+| Flatten | pointer **path length** | toward one plane fitted at stroke start | yes |
 | Inflate | pointer **path length** | each vertex's normal **right now** | yes |
+| Crease | pointer **path length** | inward along the start normal **plus** a tangential pinch | yes |
+| Mask | pointer **path length** | — it writes a WEIGHT, never a position | yes |
 
-Clay's and Inflate's direction is that normal **as displayed** — carried through
-`R · S⁻¹` — so on a stretched body they deposit along the surface the user can
-see rather than along a local direction that points somewhere else. On an
-unscaled body the two are the same vector.
+Clay's, Inflate's and Crease's direction is that normal **as displayed** —
+carried through `R · S⁻¹` — so on a stretched body they deposit along the
+surface the user can see rather than along a local direction that points
+somewhere else. On an unscaled body the two are the same vector.
+
+`SCULPT-FCM-R1` APPENDED Flatten, Crease and Mask to the enum, so the four that
+had already crossed JNI as an index keep theirs; the RAIL presents the seven in
+the product's reading order above, which is a separate decision made in
+`WorkspaceTrailingHostView`. **Six write a POSITION and Mask writes a WEIGHT** —
+`sculptToolMovesGeometry` is the one place that division is stated, and the mask
+factor, the revision rule and the history's two sides all ask it rather than
+each testing for `SculptTool::Mask`.
 
 **Grab** is position-driven, so its result depends only on where the finger *is*,
-never on how many events it took to get there. The other three are
+never on how many events it took to get there. The other six are
 **path-driven**. Per move,
 `travelFraction = pointer travel this move / brush radius` (both in pixels), and
 
 ```
-amount = strength * worldRadius * kNormalBrushGain * travelFraction   (Clay, Inflate)
+amount = strength * worldRadius * kNormalBrushGain * travelFraction   (Clay, Inflate, Crease)
 lambda = strength * weight * kSmoothGain * travelFraction             (Smooth)
+lambda = strength * weight * kFlattenGain * travelFraction            (Flatten)
+delta  = strength * weight * kMaskGain * travelFraction               (Mask)
 ```
 
 `amount` is **world meters** — the same metric that chose the affected set — so a
@@ -2846,10 +2861,14 @@ Measuring path length rather than counting events makes them independent of the
 event rate: the same finger path deposits the same amount whether Android
 delivered it in five events or fifty, a stationary finger does nothing, and there
 is no timer and no per-event dab. `amount` is clamped to one brush radius per
-move, so a teleporting pointer cannot produce an unbounded displacement.
-`kNormalBrushGain` (0.35), `kSmoothGain` (1.0) and `kMaxSmoothLambda` (0.9) are
-chosen defaults, not derived constants; the low gain is why a short stroke with a
-large brush reads as doing very little.
+move, so a teleporting pointer cannot produce an unbounded displacement; `delta`
+is clamped to `kMaxMaskStep` for the same reason. `kNormalBrushGain` (0.35),
+`kSmoothGain` (1.0), `kMaxSmoothLambda` (0.9), `kFlattenGain` (1.0),
+`kMaxFlattenLambda` (0.9), `kCreaseInwardFraction` (0.75),
+`kCreasePinchFraction` (0.45), `kMaskGain` (1.0) and `kMaxMaskStep` (0.5) are
+chosen defaults, not derived constants; the low deposition gain is why a short
+stroke with a large brush reads as doing very little, and the same arithmetic is
+why painting a mask is a matter of working over an area rather than one tap.
 
 **Clay is deposition and Inflate is expansion**, and the difference is the
 formula, not a constant. Clay reads `baseNormal`, captured once on Down and held
@@ -2869,6 +2888,106 @@ result is needed. Targets are computed from a coherent snapshot **before**
 anything is written (Jacobi, not Gauss-Seidel), so the outcome cannot depend on
 the affected set's order; only affected vertices are written. Inflate snapshots
 its normals the same way and for the same reason.
+
+**Flatten is Smooth's rule with a plane as the target.** `fitFlattenPlane` runs
+ONCE, at pointer-down, from the captured set: the weighted centroid of the base
+positions and the weighted average of the base normals, both in WORLD space,
+both weighted by the same falloff the brush deforms with. No camera, no zoom and
+no viewport enters it — which is what makes a flattened result independent of
+how the sculpt was looked at — and a fit whose normals cancel (a saddle, a fold)
+is refused, leaving Flatten to move nothing rather than invent a plane. Each
+move then measures the signed WORLD distance `d = dot(P - C, N)` and writes
+`d' = d · (1 - lambda)`, so `|d|` shrinks by a bounded factor on every pass and
+can never change sign. That is the whole convergence claim, and it holds per
+vertex rather than on average.
+
+**Crease is one displacement with two components**, and the split between them
+is the whole character of the tool: inward alone digs a round dent, pinch alone
+gathers the surface without deepening it. Both are fractions of the SAME shared
+`amount`, so Crease answers to Radius, Strength and travel exactly as Clay does:
+
+```
+inward = -n * amount * weight * kCreaseInwardFraction
+pinch  =  t * amount * weight * kCreasePinchFraction
+```
+
+where `n` is that vertex's base normal in world space and `t` is the unit part of
+"toward the brush centre" perpendicular to `n`. Gathering the surface ALONG the
+groove rather than pushing it through is what makes the channel narrower than
+the brush. The two fractions live together because their RATIO is the tool; a
+vertex with no usable normal is skipped and one whose tangent degenerates (it
+sits under the centre) gets the inward component alone, so no small or
+degenerate local configuration can produce a NaN.
+
+### The Sculpt Mask (`SCULPT-FCM-R1`)
+
+**Runtime-local editing state, and never project truth.** A per-vertex weight in
+`[0, 1]`, default 0, saying how much a vertex is HELD against the six geometry
+brushes.
+
+**Where it lives, and why there.** In the Frozen Sculpt Mesh's own vertex
+records — `MeshVertex::mask`, a fourth float beside the position and the colour.
+That is a DERIVED PRESENTATION CHANNEL on exactly the terms the colour already
+is, and putting it there rather than in a parallel array means no publication
+signature between `SculptMesh` and the vertex buffer had to learn that masking
+exists: `publishSculptMesh`, `MeshStore::publish`, `createRuntimeMesh` and
+`RuntimeMesh` are unchanged. It is sized and zeroed by `freezeFrom`, nothing can
+resize it (topology is fixed for a frozen mesh's life), and it is per body by
+OWNERSHIP — one body's mask is as incapable of reaching another's as one body's
+mesh is.
+
+**What it does to a brush.** `sculptMaskFactor(w) = 1 - w`, with **exact ends**:
+`w = 0` is the full effect and `w = 1` is exactly zero, by an equality rather
+than by arithmetic that happens to land there — a residual `1e-8` would still
+write a position, mint a revision and put an entry in the history. The factor is
+captured at pointer-down into `SculptStrokeVertex::maskFactor` with everything
+else the stroke holds fixed, and every geometry brush multiplies by
+`effectiveWeight() = weight * maskFactor`. The falloff weight is left untouched
+beside it, so the brush's own footprint stays introspectable independently of
+what the mask allowed. **The Mask brush is deliberately not held off by the mask
+it paints**: a brush that masked itself could never reach 1.0.
+
+**It is not geometry, and the plumbing says so.** A mask write mints no
+`SculptRevision` and sets no `hasEdits`, because the project fingerprint mixes
+the revision and `.forge` stores the flag — advancing either would make a
+runtime annotation dirty the project and earn a recovery checkpoint. What a mask
+change does need is a re-publication, and `MeshStore::publish` mints its own
+`MeshRevision` on every call regardless of the sculpt counter, so the viewport
+updates without the geometry's own number moving at all.
+
+**The persistence boundary**, stated once:
+
+| | survives |
+| --- | --- |
+| Back to Construction, then Resume Sculpt | **yes** — it lives on the body, and leaving Sculpt is navigation |
+| body switching | **yes**, per body — the session rebinds and finds that body's own |
+| Save, autosave checkpoint, Export | **no byte of it exists to save** |
+| reopening a project | **no** — the mesh comes back, the mask starts empty |
+| Freeze / destructive Reset from source | **no** — cleared, on the boundary the history cannot cross either |
+
+**Viewport feedback.** One fragment-stage mix toward a cool, low value
+(`kMaskTint`, `kMaskMaxMix` in `surface.frag`), driven by a fourth vertex
+attribute (`RenderVertex::mask`, `VK_FORMAT_R32_SFLOAT` at location 3). It is a
+mix rather than a multiply because a multiply vanishes wherever the surface is
+already dark — the shadow side of a form is exactly where a mask most needs to
+be visible — and it is applied AFTER shading and BEFORE the selection tint, so
+one rule works in Studio Solid, in MatCap and in the debug mode alike and a
+selection the user just made still reads over a masked body. The value is
+clamped into `[0, 1]` on the CPU, once, in `buildRenderMesh`, so no shader has
+to defend against a value the domain says cannot exist. **No second pass, no
+second pipeline and no push-constant slot** — the surface block is already at
+the guaranteed 128-byte minimum.
+
+**Clear Mask** is `SculptSession::clearMask()`: one act, one history entry, one
+Undo. It refuses `NothingToDo` for an empty mask and `EntryTooLarge` for one
+whose single entry would exceed `kMaxSculptHistoryEntryBytes` — deliberately NOT
+the brush's own `NotRetained` policy, and the difference is which act is being
+asked about. A brush stroke is bounded by the brush and its deformation is what
+the user is doing, so refusing to sculpt because the history is full would be
+the tail wagging the dog; Clear Mask is bounded by the MESH, is a discrete
+command rather than a gesture, and its whole value is that it can be taken back.
+`canClearMask()` answers the same conditions minus the size test, so the control
+is ABSENT rather than drawn and refused.
 
 ### Sculpt Undo and Redo — `SculptHistory` (`ARCH-OWNER-12`)
 
@@ -2891,7 +3010,7 @@ Sculpt is navigation and takes nothing off the body.
 
 **One completed stroke is exactly one entry.** The transaction boundary is the
 stroke's, not the pointer event's. `SculptStroke::begin` already captures the
-affected set with each vertex's base position — the four tools need it — so the
+affected set with each vertex's base position — the tools need it — so the
 BEFORE side costs nothing extra; `SculptStroke::buildDelta` reads the AFTER side
 off the mesh at close, keeping only vertices that actually moved.
 `SculptSession::recordActiveStroke` is the ONE caller, reached from both

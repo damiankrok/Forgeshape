@@ -1207,8 +1207,9 @@ body in Sculpt Mode — the mesh being worked on has to stay the one that is bei
 worked on — so the `+` is simply not there. The scene itself stays one tap away:
 the Objects control still names the body being sculpted and still opens the list.
 
-In Sculpt Mode the Tool Rail carries the four tools — **Grab**, **Clay**,
-**Smooth** and **Inflate** — and a **Radius** and a **Strength** sit directly at
+In Sculpt Mode the Tool Rail carries the seven tools — **Grab**, **Clay**,
+**Smooth**, **Flatten**, **Inflate**, **Crease** and **Mask** — and a **Radius**
+and a **Strength** sit directly at
 the opposite edge, always on screen, adjustable without opening anything. Each of
 those two reads as one thing: its name, the value it currently has directly under
 the name, and the slider under both. The value follows the finger exactly, with
@@ -1252,7 +1253,7 @@ false claim about what is being lost.
 An object that came from a `.glb` can be sculpted too, and it works exactly the
 way sculpting a constructed body works: **Start Sculpting** takes the object's
 geometry as it stands, makes a sculptable mesh from it, and switches to Sculpt
-Mode. The same four tools, the same Radius and Strength, the same one-finger
+Mode. The same seven tools, the same Radius and Strength, the same one-finger
 rule.
 
 **The imported mesh itself is never changed.** It is what the file gave you, and
@@ -1306,12 +1307,12 @@ to nothing at the edge of the brush, so a stroke leaves a smooth result rather
 than a crease. What a stroke has hold of is fixed when the finger lands, so the
 deformation stays one coherent shape however far the finger travels.
 
-### The four tools
+### The seven tools
 
 **Grab** drags the surface with the finger. The result depends only on where the
 finger ends up, not on how fast it got there or how far it wandered on the way.
 
-The other three work as you **drag over** the surface, and how much they do
+The other six work as you **drag over** the surface, and how much they do
 depends on how far the finger has travelled — not on how long you held it there.
 A finger that stops moving does nothing at all, and the same path always does the
 same amount whether you draw it quickly or slowly. Keep dragging over the same
@@ -1323,9 +1324,18 @@ place and the effect keeps building.
   neighbours. It can only ever move part of the way there, so repeated smoothing
   settles down instead of overshooting. A sharp spike pulled out with Grab is
   flattened back into the surface by a couple of Smooth strokes.
+- **Flatten** presses the area under the brush toward a single flat plane —
+  the one the surface was already closest to when the finger landed. It can only
+  ever move part of the way there, so repeated passes settle onto the plane
+  instead of pushing through it and raising a ridge on the far side. It is the
+  tool for a facet, a flat spot or a clean bearing surface.
 - **Inflate** expands the surface outward, following the shape as the shape
   changes — so a bulge it makes widens and rounds rather than stretching further
   in the direction it started.
+- **Crease** cuts a narrow groove. It pushes inward and gathers the surface in
+  toward the line you are drawing at the same time, which is what makes the
+  channel narrower than the brush that cut it — a wrinkle, a seam, a panel line.
+- **Mask** paints nothing into the shape at all. See *Protecting an area* below.
 
 Clay and Inflate are not the same brush with different names. Clay pushes along
 the directions the surface faced when the stroke began, so it lays down one
@@ -1333,13 +1343,41 @@ coherent slab; Inflate re-reads the surface as it goes. Side by side on the same
 sphere, with the same brush and the same stroke, Clay leaves an angular
 protrusion and Inflate a broader, rounder swell.
 
-Because these three work by travel rather than by time, a **short** drag with a
+Because these six work by travel rather than by time, a **short** drag with a
 **large** brush does very little. If a stroke seems to do nothing, either drag
 further or make the brush smaller.
 
+### Protecting an area — the Mask
+
+**Mask** is the one tool that changes nothing about the shape. It paints over
+the surface, and everywhere it has painted the other six tools are held off. The
+painted area darkens so you can see exactly what is protected.
+
+It builds up as you drag, like the tools that deposit: one short pass protects a
+little, working over the same area protects it completely. Where the mask is
+full, a brush stroke does **nothing at all** — not a small amount, nothing — and
+there is nothing to undo afterwards because nothing happened. Where it is
+partial, a brush does proportionally less. That is what lets you work right up
+against an edge you have already finished without spoiling it.
+
+**Clear Mask** removes it. It appears in the Sculpt panel only while there is a
+mask to clear, it does not ask first, and one **Undo** puts the whole mask back —
+which is why it does not need to ask.
+
+**The mask is not part of your project.** Save, reopen, autosave and recovery all
+keep your sculpting exactly; none of them keeps the mask, and a reopened project
+starts with a clean surface. It is a working aid for the session you are in, like
+where the camera is pointing. It does survive going **Back to Construction** and
+coming back with **Resume Sculpt**, and each body keeps its own — masking one
+body never touches another.
+
+Painting a mask and clearing it are both ordinary steps in the sculpt history:
+each one is a single Undo, they sit in the same list as your strokes, and the
+history list you can scroll through shows them alongside everything else.
+
 ### Radius and Strength
 
-Radius and Strength are shared by all four tools, so switching tool never changes
+Radius and Strength are shared by all seven tools, so switching tool never changes
 how big or how strong the brush is.
 
 **Radius** is measured on screen, in pixels, so the brush covers the same amount
@@ -1349,8 +1387,9 @@ Clay from 51 affected points to 11 and Inflate from 29 to 8.
 
 **Strength** is how much each tool does. For Grab it is how much of the finger's
 travel the grabbed surface follows: at the maximum the surface keeps up with the
-finger, at the minimum it barely moves. For the other three it scales how much is
-deposited, relaxed or expanded, roughly linearly across the slider. Neither
+finger, at the minimum it barely moves. For the other six it scales how much is
+deposited, relaxed, flattened, cut or painted, roughly linearly across the
+slider. Neither
 setting can be given a useless value: both stop at the ends of their range.
 
 ### Switching back and forth
@@ -1379,7 +1418,7 @@ shape by itself, and does not throw sculpting away without being asked.
 Sculpting moves the surface and never adds or removes any of it: the sculpt mesh
 always has exactly as many points and faces as the shape it was built from,
 through every stroke of every tool. It changes only the sculpted copy — after
-working over an object with all four tools, going back to Construction shows the
+working over an object with all seven tools, going back to Construction shows the
 constructed shape at exactly its original dimensions in exactly its original
 place, the picture identical and the numbers in the inspector unchanged.
 
@@ -1768,9 +1807,12 @@ body as well as stretching it changes nothing about this. Scaling a body never
 alters its sculpt mesh, and starting, leaving or resuming sculpting never alters
 its scale.
 
-Sculpting has exactly the four tools above — other
-brushes (Flatten, Crease, Pinch and the rest), remesh, symmetry, masking, layers,
-brush presets and stylus pressure are not implemented. Sculpt Undo IS
+Sculpting has exactly the seven tools above — other
+brushes (Pinch, Scrape, Snake Hook and the rest), remesh, symmetry, layers,
+brush presets and stylus pressure are not implemented. Masking IS implemented,
+as the Mask tool and Clear Mask above; inverting, growing, shrinking or blurring
+a mask, masking by topology, and keeping a mask across a reopen are not.
+Sculpt Undo IS
 implemented, over whole strokes, and so is the *Sculpt History* list described
 above; both are Sculpt's alone. The Construction history has no such panel,
 neither history has named or thumbnailed steps, there is no branching tree, and

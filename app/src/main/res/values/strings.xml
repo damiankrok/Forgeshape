@@ -365,6 +365,18 @@
     <string name="tool_clay">Clay</string>
     <string name="tool_smooth">Smooth</string>
     <string name="tool_inflate">Inflate</string>
+    <!--
+      SCULPT-FCM-R1. Three more brushes, in the same vocabulary as the four
+      above: one noun naming what the finger does to the surface.
+
+      "Mask" is the one that names a state rather than a deformation, because
+      that is what it is: it paints the weight that HOLDS the other six off a
+      vertex. The user never reads "weight" or "factor" — what they see is an
+      area they have protected.
+    -->
+    <string name="tool_flatten">Flatten</string>
+    <string name="tool_crease">Crease</string>
+    <string name="tool_mask">Mask</string>
     <string name="tool_shape">Shape</string>
     <!--
       "Transform", not "Place", and deliberately not a promise of a gizmo.
@@ -682,6 +694,21 @@
     -->
     <string name="reset_sculpt_from_imported_mesh">Reset Sculpt from Imported Mesh…</string>
     <string name="reset_sculpt_confirm_message_imported">Resetting rebuilds the sculpt mesh from the imported mesh. The sculpting already made on this mesh will be discarded. This cannot be undone.</string>
+    <!--
+      Clear Mask (SCULPT-FCM-R1).
+
+      NO ellipsis, deliberately: it asks nothing, because it takes nothing away
+      that one Undo does not put back. The destructive act above earns its
+      ellipsis by being the one thing in the product that cannot be undone.
+
+      "Mask" is the user's word for the painted area, and the summary line below
+      says how much of it there is so the button is never a guess about what it
+      will affect.
+    -->
+    <string name="clear_mask">Clear Mask</string>
+    <string name="sculpt_mask_summary">Mask: %1$d vertices protected from the other brushes.</string>
+    <string name="status_mask_cleared">Mask cleared — Undo puts it back.</string>
+    <string name="status_mask_clear_failed">Could not clear the mask. Nothing changed.</string>
     <string name="sculpt_mesh_summary">Sculpt mesh: %1$d vertices · %2$s</string>
     <string name="sculpt_gesture_rule">One finger on the model — %1$s; elsewhere it orbits.</string>
     <string name="stale_source_warning">The Construction shape changed after you started sculpting. Your sculpt is kept as it is — Reset Sculpt from Shape to start again from the new shape.</string>
@@ -742,6 +769,9 @@
     <string name="hint_clay">deposit material outward as you drag</string>
     <string name="hint_smooth">even out roughness as you drag</string>
     <string name="hint_inflate">expand the surface outward as you drag</string>
+    <string name="hint_flatten">draw the surface toward one plane as you drag</string>
+    <string name="hint_crease">cut a narrow groove as you drag</string>
+    <string name="hint_mask">paint over the areas the other brushes must not move</string>
 
     <!--
       Body Dimensions and Relative Scale (Stage 020M).

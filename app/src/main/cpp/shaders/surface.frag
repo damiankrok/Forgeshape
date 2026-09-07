@@ -24,6 +24,7 @@ layout(set = 0, binding = 0) uniform sampler2D matcapTexture;
 
 layout(location = 0) in vec3 fragViewNormal;
 layout(location = 1) in vec3 fragColor;
+layout(location = 2) in float fragMask;
 
 layout(location = 0) out vec4 outColor;
 
@@ -93,6 +94,29 @@ const float kStudioRimIntensity = 0.08;
 const float kStudioRimExponent = 3.0;
 const vec3 kStudioRimColor = vec3(0.78, 0.84, 0.95);
 
+// ---------------------------------------------------------------------------
+// The Sculpt Mask overlay
+// ---------------------------------------------------------------------------
+//
+// A masked vertex is one the geometry brushes cannot move, and the viewport has
+// to say so. It is drawn as a mix of the SHADED colour toward one cool, low
+// value — relative to the body's own shading rather than to the viewport
+// ground, which is why one pair of constants reads correctly on all five
+// palettes without any per-palette branch: the surface is lit the same way in
+// every one of them, and only the ground behind it changes.
+//
+// It is deliberately a mix and not a multiply. A multiply vanishes wherever the
+// surface is already dark (the shadow side of a sphere is exactly where a mask
+// most needs to be visible), while a mix toward a fixed value lifts a dark
+// region and lowers a bright one — so the masked area separates from its
+// neighbours everywhere on the form.
+//
+// It is nowhere near opaque: kMaskMaxMix leaves better than a quarter of the
+// original shading, so the FORM stays readable through the mask. Hiding the
+// shape under the annotation would defeat the point of painting one.
+const vec3 kMaskTint = vec3(0.30, 0.34, 0.41);
+const float kMaskMaxMix = 0.72;
+
 // Safe normalization.
 //
 // A zero-length normal is a legitimate, documented value: it is what the render
@@ -154,6 +178,14 @@ void main() {
     } else {
         shaded = studioSolid(n);
     }
+
+    // The mask goes on AFTER shading and BEFORE the selection tint. After
+    // shading, for the same reason the selection tint is: one rule that works
+    // in Studio Solid, in MatCap and in the debug mode alike. Before the
+    // selection tint, because the acknowledgement pulse must still be visible
+    // over a masked body — a selection the user just made is more urgent than
+    // an annotation that was already there.
+    shaded = mix(shaded, kMaskTint, clamp(fragMask, 0.0, 1.0) * kMaskMaxMix);
 
     // Selection stays a whole-object tint rather than an outline, unchanged
     // from before this stage. Mixing AFTER shading rather than tinting the

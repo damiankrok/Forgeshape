@@ -290,6 +290,30 @@ scroll over the rest with no row below 48 dp; and System Back closes it. Run it
 with the focused runner above -- it needs no evidence script and captures no
 frames.
 
+`SculptBrushStage025Test` covers `SCULPT-FCM-R1` (`E2E-FCM-01..11`): Flatten,
+Crease and the Sculpt Mask. All seven brushes are on the rail and selectable,
+each pairing its rail entry with the native tool index; a real Flatten stroke
+and a real Crease stroke each undo and redo to bit-exact `.forge` `SCUL` bytes;
+a painted mask holds a geometry brush completely off — the same gesture moves
+nothing and records no entry — and Clear Mask releases it as one Undo of its
+own; the History navigator lists a mixed geometry/mask branch as one line of
+states and a tap jumps across a mask entry, with a new stroke afterwards
+dropping the abandoned future; an Imported Mesh gets the same brushes and the
+same mask with its `IMPT` section untouched; Back and Resume keep the runtime
+mask while a save and reopen keeps the mesh and starts unmasked, with the
+document and the autosave checkpoint byte-identical across painting one; and the
+three new brushes work on a body carrying a non-uniform Scale without baking
+anything into its placement. Run it with the focused runner above -- it needs no
+evidence script and captures no frames.
+
+**The mask cases paint over MANY passes on purpose.** Painting is travel-driven
+like every other path-driven brush, so the shared stroke gesture paints roughly a
+tenth of a full mask through a 600 px brush; the suite therefore paints the area
+the way a user does, with a mask brush several times the geometry brush's radius,
+and proves the geometry brush's precondition by running and undoing it first. A
+"the mask protected it" that passed because the brush was too small to capture a
+vertex would be worthless.
+
 For the widened external-GLB subset (`GLB-IMPORT-R1`) use:
 
 ```
@@ -506,12 +530,19 @@ must open that surface before looking for a field in it.
 **Start Sculpting** in the Global Toolbar (id `freeze_to_sculpt` — the ids are
 the implementation's and did not change with the wording) copies the object's
 current Construction mesh into a Frozen Sculpt Mesh and switches to Sculpt Mode,
-where the rail carries **Grab**, **Clay**, **Smooth** and **Inflate**, and Radius
+where the rail carries **Grab**, **Clay**, **Smooth**, **Flatten**, **Inflate**,
+**Crease** and **Mask** (ids `tool_rail_grab` … `tool_rail_mask`), and Radius
 and Strength are edge sliders at the opposite side. Once a mesh exists that
 toolbar button reads **Resume Sculpt**, which returns to it without re-freezing;
 only **Reset Sculpt from Shape…** (id `freeze_again`) discards prior deformation,
 and it confirms first when there is deformation to lose. Radius and Strength are
-shared by all four tools.
+shared by all seven tools.
+
+**Mask** paints a runtime-local per-vertex weight that holds the other six
+brushes off; it reaches no `.forge` byte, moves no project fingerprint and comes
+back empty after a reopen. **Clear Mask** (id `clear_mask`, in the Sculpt
+Property Inspector) is present only while a mask exists and is one Undo. Both
+land in the ordinary Sculpt history beside the strokes.
 
 **Neither `+` exists in Sculpt Mode.** `sceneAddBody()` refuses while sculpting,
 so `objects_capsule_add` and `add_body` are `GONE` there and will not appear in a

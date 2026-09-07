@@ -3215,6 +3215,10 @@ constexpr jint kHistoryEntryNotRetained = 5;
 // A History navigator jump named a state that is not on the retained branch
 // (`SCULPT-H1`). Only the jump entry point returns it.
 constexpr jint kHistoryOutOfRange = 6;
+// Clear Mask on a mask whose single entry would exceed the per-entry byte cap
+// (`SCULPT-FCM-R1`). REFUSED: nothing was cleared. Only sculptClearMask
+// returns it.
+constexpr jint kHistoryEntryTooLarge = 7;
 
 // Turns a domain refusal into the transport code for it. One mapping, so a new
 // domain status cannot quietly arrive as a generic failure.
@@ -3229,6 +3233,8 @@ static jint sculptHistoryStatusCode(forgeshape::SculptSession::SculptHistoryStat
             return kHistoryStrokeActive;
         case Status::OutOfRange:
             return kHistoryOutOfRange;
+        case Status::EntryTooLarge:
+            return kHistoryEntryTooLarge;
         case Status::NotSculpting:
         case Status::NoSculptMesh:
             return kHistoryUnavailable;
@@ -5003,6 +5009,50 @@ Java_com_forgeshape_app_NativeViewport_sculptJumpToHistoryCursor(JNIEnv*, jclass
     return kHistoryOk;
 }
 
+// Clears the active body's Sculpt Mask, as ONE history entry (`SCULPT-FCM-R1`).
+//
+// Publishes through `publishSculptRepresentation` exactly as a stroke does,
+// because the mask is a per-vertex channel of the same published mesh and this
+// is how it reaches a frame. It mints no SculptRevision and sets no edited
+// flag, so the project fingerprint does not move and no checkpoint is earned
+// for it — a mask is runtime state, not project truth.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sculptClearMask(JNIEnv*, jclass) {
+    forgeshape::SculptSession::SculptHistoryStatus status;
+    forgeshape::MeshRevision meshRevision = forgeshape::kNoMeshRevision;
+    uint32_t maskedAfter = 0;
+    size_t undoDepth = 0;
+    size_t redoDepth = 0;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        forgeshape::SculptSession& session = forgeshape::sculptSession();
+        status = session.clearMask();
+        if (status == forgeshape::SculptSession::SculptHistoryStatus::Ok) {
+            meshRevision = publishSculptRepresentation(session, "clear_mask");
+        }
+        maskedAfter = session.mesh().maskedVertexCount();
+        undoDepth = session.history().undoDepth();
+        redoDepth = session.history().redoDepth();
+    }
+    if (status != forgeshape::SculptSession::SculptHistoryStatus::Ok) {
+        FS_LOGI("FORGESHAPE_SCULPT_MASK_REFUSED:clear:%s",
+                forgeshape::SculptSession::sculptHistoryStatusName(status));
+        return sculptHistoryStatusCode(status);
+    }
+    FS_LOGI("FORGESHAPE_SCULPT_MASK:cleared meshRevision=%llu masked=%u undo=%d redo=%d",
+            (unsigned long long)meshRevision, maskedAfter, (int)undoDepth, (int)redoDepth);
+    return kHistoryOk;
+}
+
+// Whether Clear Mask has anything to do right now, so the control can be ABSENT
+// rather than drawn and then refused. Native decides; the Java layer holds no
+// copy of the rule.
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_sculptCanClearMask(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    return forgeshape::sculptSession().canClearMask() ? JNI_TRUE : JNI_FALSE;
+}
+
 JNIEXPORT jint JNICALL
 Java_com_forgeshape_app_NativeViewport_sculptUndo(JNIEnv*, jclass) {
     return runSculptHistoryStep("undo", false);
@@ -5861,14 +5911,19 @@ Java_com_forgeshape_app_NativeViewport_debugInjectDeviceLoss(JNIEnv*, jclass) {
 //       strokes on frozen meshes that no longer exist, so it can never say
 //       whether re-freezing would destroy anything the user still has.
 //   [9] ObjectId
-//  [10] active tool (0 grab, 1 clay, 2 smooth, 3 inflate)
+//  [10] active tool (0 grab, 1 clay, 2 smooth, 3 inflate, 4 flatten, 5 crease,
+//       6 mask)
 //  [11] 1 when the CURRENT Frozen Sculpt Mesh has user edits. This is the one
 //       the re-Freeze guard asks, so the Java layer decides nothing about what
 //       counts as an edit and holds no copy of the rule — see
 //       SculptMesh::hasEdits().
+//  [12] how many vertices carry a non-zero Sculpt Mask (`SCULPT-FCM-R1`).
+//       Runtime state, never project truth: it is what decides whether the
+//       Clear Mask control is drawn, and the Java layer holds no mask of its
+//       own to derive it from.
 JNIEXPORT void JNICALL
 Java_com_forgeshape_app_NativeViewport_sculptState(JNIEnv* env, jclass, jdoubleArray outState) {
-    constexpr jsize kSculptStateSize = 12;
+    constexpr jsize kSculptStateSize = 13;
     if (outState == nullptr || env->GetArrayLength(outState) < kSculptStateSize) {
         return;
     }
@@ -5892,6 +5947,7 @@ Java_com_forgeshape_app_NativeViewport_sculptState(JNIEnv* env, jclass, jdoubleA
             static_cast<jdouble>(mesh.objectId()),
             static_cast<jdouble>(forgeshape::sculptToolIndex(session.tool())),
             mesh.hasEdits() ? 1.0 : 0.0,
+            static_cast<jdouble>(mesh.maskedVertexCount()),
         };
         std::copy(read, read + kSculptStateSize, values);
     }

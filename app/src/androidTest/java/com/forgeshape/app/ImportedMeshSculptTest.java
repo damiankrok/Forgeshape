@@ -497,15 +497,18 @@ public final class ImportedMeshSculptTest {
             return null;
         });
 
-        // IMP01B-24: the forbidden scope stays absent. No second brush, no OBJ
-        // or FBX route, and no second way to open a `.glb`.
+        // IMP01B-24: the forbidden scope stays absent. A BOUNDED brush set, no
+        // OBJ or FBX route, and no second way to open a `.glb`.
         //
         // The brush set is asked of the DOMAIN, not of the rail: the rail draws
-        // the four entries only while sculpting, and what "no new brush" means
-        // is that the closed enum below JNI still has exactly four members and
-        // refuses a fifth index rather than clamping into a neighbour.
-        assertEquals("IMP01B-24: the brush set is still exactly four tools",
-                4, sculptToolsTheDomainAccepts());
+        // its entries only while sculpting, and what this guards is that the
+        // closed enum below JNI has exactly the approved number of members and
+        // refuses the next index rather than clamping into a neighbour. It was
+        // four through `IMPORT-01B`; `SCULPT-FCM-R1` approved Flatten, Crease
+        // and Mask, which is why the number moved — and it must keep taking a
+        // stage to move it.
+        assertEquals("IMP01B-24: the brush set is still exactly the approved seven tools",
+                7, sculptToolsTheDomainAccepts());
         openProjectSurface();
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             final StringBuilder text = new StringBuilder();

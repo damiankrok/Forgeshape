@@ -84,8 +84,10 @@ final class EditorWorkspaceView extends FrameLayout
             R.string.dimension_anchor_negative, R.string.dimension_anchor_center,
             R.string.dimension_anchor_positive
     };
+    /** The seven sculpt tools by gesture rule, indexed by {@code TOOL_*}. */
     private static final int[] SCULPT_TOOL_HINTS = {
-            R.string.hint_grab, R.string.hint_clay, R.string.hint_smooth, R.string.hint_inflate
+            R.string.hint_grab, R.string.hint_clay, R.string.hint_smooth, R.string.hint_inflate,
+            R.string.hint_flatten, R.string.hint_crease, R.string.hint_mask
     };
     /** The seven sketch tools by name and by gesture rule, indexed by
      *  {@code SKETCH_TOOL_*}. */
@@ -99,8 +101,10 @@ final class EditorWorkspaceView extends FrameLayout
             R.string.hint_rectangle, R.string.hint_circle, R.string.hint_arc,
             R.string.hint_spline
     };
+    /** The seven sculpt tools by name, indexed by {@code TOOL_*}. */
     private static final int[] SCULPT_TOOL_NAMES = {
-            R.string.tool_grab, R.string.tool_clay, R.string.tool_smooth, R.string.tool_inflate
+            R.string.tool_grab, R.string.tool_clay, R.string.tool_smooth, R.string.tool_inflate,
+            R.string.tool_flatten, R.string.tool_crease, R.string.tool_mask
     };
 
     /** The six primitives by name, indexed by {@code PRIMITIVE_*}, for the one

@@ -98,7 +98,56 @@ curve-profile timings.
 - **One brush kernel, no brush framework.** A sculpt tool is a deformation rule
   inside `SculptStroke`, selected by a closed enum and a switch. Do not add a
   brush base class, registry, plugin surface or reflection: brushes are code, not
-  data, until a stage pays for making them data.
+  data, until a stage pays for making them data. There are **SEVEN** tools
+  (`SCULPT-FCM-R1`): Grab, Clay, Smooth, Flatten, Inflate, Crease and Mask, in
+  the rail's reading order; the enum APPENDED the last three so the four that
+  crossed JNI as an index before keep theirs, and the rail's order is a separate
+  decision from the enum's. **Six write a POSITION and Mask writes a WEIGHT** —
+  `sculptToolMovesGeometry` is the one place that division is stated. Flatten
+  and Crease measure in the Stage 020R3 world/display metric like every other
+  brush: Flatten fits ONE plane at pointer-down from the footprint's weighted
+  centroid and weighted normal (no camera, no zoom, no viewport in it) and then
+  INTERPOLATES toward it — `d' = d·(1-λ)`, `λ ≤ kMaxFlattenLambda` — so `|d|`
+  can neither grow nor change sign and repeated passes converge; Crease is one
+  displacement with TWO components from the shared `amount`, inward along the
+  captured normal (`kCreaseInwardFraction`) plus a tangential pinch toward the
+  brush centre (`kCreasePinchFraction`), both held in one place because their
+  RATIO is what makes the groove narrow. A degenerate fit, a degenerate normal
+  or a degenerate tangent moves nothing rather than inventing a direction.
+- **The Sculpt Mask is runtime-local editing state, never project truth**
+  (`SCULPT-FCM-R1`). A per-vertex weight in `[0, 1]`, default 0, living in the
+  Frozen Sculpt Mesh's own vertex records (`MeshVertex::mask`) — a DERIVED
+  PRESENTATION CHANNEL on exactly the terms the colour beside it is, so no
+  publication signature between `SculptMesh` and the vertex buffer had to learn
+  about masking. It scales every geometry brush's displacement by `1 - w` with
+  **exact ends** (`sculptMaskFactor`: 0 is the full effect, 1 is exactly zero,
+  by an equality and not by arithmetic that lands there), captured at
+  pointer-down with the affected set and held fixed for the stroke. The Mask
+  brush is deliberately NOT held off by the mask it paints. **It is not
+  geometry**: a mask write mints no `SculptRevision`, sets no `hasEdits`, moves
+  no project fingerprint, earns no checkpoint and reaches no `.forge` byte — so
+  **no format, section, version or corpus fixture changed** and reopening a
+  project restores the geometry with an EMPTY mask, exactly as it restores an
+  empty history. It survives Back to Construction and Resume Sculpt because it
+  lives on the body; a Freeze or a destructive Reset clears it, on the same
+  boundary the history cannot cross. It is per body by OWNERSHIP, so one body's
+  mask is structurally incapable of reaching another's. **Mask paint and Clear
+  Mask each land in the ONE `SculptHistory`** as one entry: a delta gained a
+  second SIDE (`maskIndices`/`beforeMask`/`afterMask`, 12 bytes per touched
+  vertex), never a second stack, and an entry may carry either side or both —
+  `applyHistorySide` moves the revision and the edited flag only for one that
+  carries geometry. The caps are exactly the numbers they were (32 entries,
+  4 MiB per body, 1 MiB per entry) and a navigator jump across mask entries is
+  still repeated Undo/Redo. **Clear Mask REFUSES an entry over the per-entry
+  cap** (`EntryTooLarge`) rather than applying it — deliberately not the
+  brush's `NotRetained` policy, because a stroke's deformation is what the user
+  is doing while Clear Mask's whole value is that it can be taken back. The
+  viewport feedback is one fragment-stage mix toward a cool low value, driven
+  by a fourth vertex attribute (`RenderVertex::mask`, a single float clamped on
+  the CPU) — no second pass, no second pipeline, no push-constant slot. **Not
+  this stage:** mask Invert/Grow/Shrink/Blur, mask by topology, mask
+  persistence, vertex-colour or texture painting, symmetry, pressure, and any
+  topology mutation.
 - **A gesture that becomes multi-touch navigation must never mutate the sculpt
   mesh.** No vertex written, no `SculptRevision` minted, no stroke committed.
 - **A CAD Body's truth is its sketch and its extrusion, never its mesh**
@@ -351,7 +400,8 @@ curve-profile timings.
   records nothing, and a cancelled stroke whose positions stand records them too,
   because the deformation the user can see must be one they can take back. An
   entry is a DELTA (sorted unique indices, before and after positions, and the
-  edited flag on both sides), never normals, never a document, never a
+  edited flag on both sides — plus, since `SCULPT-FCM-R1`, a second SIDE for the
+  mask), never normals, never a document, never a
   Construction parameter, never a transform. Both caps are enforced —
   `kMaxSculptHistoryEntries` and `kMaxSculptHistoryBytes`, with
   `kMaxSculptHistoryEntryBytes` for one stroke — evicting oldest-first and never
@@ -895,6 +945,12 @@ curve-profile timings.
   editable length), *Edit Sketch* (reopening a committed CAD Body's sketch,
   staged until Finish), *Frozen Sculpt Mesh* (the
   polygon mesh `SculptMesh::freezeFrom` creates, from EITHER source),
+  *sculpt brush* (one of the seven Tool Rail entries in Sculpt: Grab, Clay,
+  Smooth, Flatten, Inflate, Crease, Mask; never "brush preset" and never
+  "brush type", because a brush is code and not data), *Sculpt Mask* (the
+  runtime-local per-vertex weight that holds the six geometry brushes off an
+  area — the user reads "mask" and "protected", never "weight" or "factor"),
+  *Clear Mask* (the one contextual act that empties it, as one Undo),
   *selection outline* (the persistent silhouette band around the selected body;
   never "selection highlight", which is what the tint it replaced was),
   *Dimensions* (the mode that reads and types a Construction Body's overall

@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Flatten: the surface is drawn toward one plane.
+
+  A bumpy profile above and the flat plane it is being pressed onto below, with
+  two short arrows between them. Smooth's glyph says "evened out"; this one says
+  "pressed down onto something", which is the difference between relaxing toward
+  a neighbour average and converging on a plane.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M3,7 C6,2 9,10 12,5.5 C15,1.5 18,9 21,5" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M3,19 L21,19" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M8,11.5 L8,15.5 M6.4,14 L8,15.6 L9.6,14 M16,11.5 L16,15.5 M14.4,14 L16,15.6 L17.6,14" />
+</vector>

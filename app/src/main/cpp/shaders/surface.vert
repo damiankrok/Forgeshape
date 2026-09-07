@@ -28,9 +28,13 @@ layout(push_constant) uniform PushConstants {
 layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec3 inNormal;
 layout(location = 2) in vec3 inColor;
+// The Sculpt Mask weight, already clamped into [0, 1] on the CPU. Zero for
+// every representation but a masked Frozen Sculpt Mesh.
+layout(location = 3) in float inMask;
 
 layout(location = 0) out vec3 fragViewNormal;
 layout(location = 1) out vec3 fragColor;
+layout(location = 2) out float fragMask;
 
 void main() {
     gl_Position = pc.mvp * vec4(inPosition, 1.0);
@@ -54,4 +58,8 @@ void main() {
     // Carried through for the debug-only source-colour mode. Studio Solid and
     // MatCap both ignore it.
     fragColor = inColor;
+
+    // Interpolated across the triangle, which is what makes a mask painted with
+    // a smooth falloff read as a soft edge rather than a per-vertex stipple.
+    fragMask = inMask;
 }

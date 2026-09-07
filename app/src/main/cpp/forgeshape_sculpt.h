@@ -1,5 +1,6 @@
 // ForgeShape Sculpt domain — the Frozen Sculpt Mesh, the product mode, and the
-// one brush kernel that carries Grab, Clay, Smooth and Inflate.
+// one brush kernel that carries Grab, Clay, Smooth, Flatten, Inflate, Crease and
+// Mask.
 //
 // Platform-independent: no JNI, no Android, no Vulkan, no renderer and no UI
 // type appears here, and nothing here holds a GPU resource.
@@ -31,10 +32,12 @@
 // either mode.
 //
 // Scope: one Frozen Sculpt Mesh PER BODY (owned by `SceneObject`, borrowed by
-// the one process-scoped `SculptSession`), FOUR tools sharing ONE stroke
+// the one process-scoped `SculptSession`), SEVEN tools sharing ONE stroke
 // kernel, and a bounded per-body stroke Undo/Redo (forgeshape_sculpt_history.h).
-// No brush plugin surface or registry, no symmetry, no mask, no remesh and no
-// topology mutation of any kind.
+// No brush plugin surface or registry, no symmetry, no remesh and no
+// topology mutation of any kind. The Sculpt Mask (`SCULPT-FCM-R1`) is a
+// runtime-local per-vertex weight that HOLDS the geometry brushes off a vertex;
+// it is not project truth and reaches no `.forge` byte.
 #pragma once
 
 #include <cstdint>
@@ -63,22 +66,35 @@ const char* productModeName(ProductMode mode);
 // The tools
 // ---------------------------------------------------------------------------
 //
-// Four tools, one kernel. A tool is a DEFORMATION RULE and nothing else: the
+// Seven tools, one kernel. A tool is a DEFORMATION RULE and nothing else: the
 // stroke lifecycle, the hit test, the affected set, the falloff weights, the
 // radius/strength contract and the publication path are shared and implemented
 // exactly once, in SculptStroke.
 //
 // This is deliberately a closed enum and a switch, not a registry, a base class
-// or a plugin surface. Four tools do not justify a framework, and a framework
+// or a plugin surface. Seven tools do not justify a framework, and a framework
 // would have to be persisted, versioned and validated like real authored state.
+//
+// SIX OF THE SEVEN ARE GEOMETRY BRUSHES and one is not: Mask writes a per-vertex
+// weight and never a position. That is the only structural division in the set,
+// and `sculptToolMovesGeometry` is the one place it is stated.
+//
+// The three added by `SCULPT-FCM-R1` are APPENDED rather than interleaved into
+// the product's reading order (Grab, Clay, Smooth, Flatten, Inflate, Crease,
+// Mask), on exactly the terms `SKETCH-UX-R1` appended Arc and Spline: the four
+// that were here keep their indices, so nothing that already crossed JNI as an
+// index has to be renumbered, and the rail decides the order it presents.
 enum class SculptTool {
     Grab,     // drag the surface with the finger, in the camera plane
     Clay,     // deposit material along the normals the surface had at stroke start
     Smooth,   // relax each vertex toward its 1-ring neighbour average
     Inflate,  // expand along the normals the surface has RIGHT NOW
+    Flatten,  // draw the surface toward one plane fitted to the brush footprint
+    Crease,   // cut a narrow groove: inward along the normal, pinched radially
+    Mask,     // paint the weight that holds the other six off a vertex
 };
 
-constexpr int kSculptToolCount = 4;
+constexpr int kSculptToolCount = 7;
 
 const char* sculptToolName(SculptTool tool);
 
@@ -87,9 +103,17 @@ const char* sculptToolName(SculptTool tool);
 bool sculptToolFromIndex(int index, SculptTool* out);
 int sculptToolIndex(SculptTool tool);
 
-// Whether the tool displaces along surface normals. Grab (camera plane) and
-// Smooth (toward a neighbour average) do not.
+// Whether the tool displaces along surface normals. Grab (camera plane), Smooth
+// (toward a neighbour average) and Mask (which moves nothing) do not.
 bool sculptToolUsesNormals(SculptTool tool);
+
+// Whether the tool writes a vertex POSITION. True for the six geometry brushes
+// and false for Mask alone.
+//
+// The one predicate the mask factor, the revision rule and the history's two
+// sides all ask, so "which tool can move a vertex" has a single answer that a
+// new tool has to declare rather than inherit by accident.
+bool sculptToolMovesGeometry(SculptTool tool);
 
 // The SculptRevision — the Frozen Sculpt Mesh's own revision counter.
 //
@@ -130,8 +154,9 @@ constexpr float kMaxBrushRadiusPixels = 600.0f;
 constexpr float kDefaultBrushRadiusPixels = 120.0f;
 
 // Strength scales what each tool does. For Grab, 1.0 means the grabbed centre
-// follows the finger exactly; for the other three it scales the amount deposited
-// or relaxed per unit of pointer travel. The range is closed and documented, so
+// follows the finger exactly; for the path-driven tools it scales the amount
+// deposited, relaxed, flattened, creased or painted per unit of pointer travel.
+// The range is closed and documented, so
 // a strength can never be zero (a brush that does nothing) or unbounded (a brush
 // that throws vertices to infinity).
 constexpr float kMinBrushStrength = 0.05f;
@@ -146,7 +171,7 @@ float clampBrushRadiusPixels(float requested);
 float clampBrushStrength(float requested);
 
 // Smooth radial falloff, evaluated once per affected vertex at stroke start and
-// shared by all four tools.
+// shared by all seven tools.
 //
 //     w(d) = (1 - (d/r)^2)^2
 //
@@ -233,6 +258,75 @@ constexpr float kNormalBrushGain = 0.35f;
 // oscillating.
 constexpr float kSmoothGain = 1.0f;
 constexpr float kMaxSmoothLambda = 0.9f;
+
+// ---------------------------------------------------------------------------
+// Flatten (`SCULPT-FCM-R1`)
+// ---------------------------------------------------------------------------
+//
+// Flatten is INTERPOLATION toward a plane, on exactly Smooth's terms and for
+// exactly Smooth's reason: a vertex may only ever move part of the way toward a
+// target it is already near, so repeated passes converge and can never
+// overshoot into a ridge on the far side of the plane.
+//
+//     d      = signed WORLD distance from the vertex to the plane
+//     lambda = strength * weight * kFlattenGain * travelFraction, <= kMaxFlattenLambda
+//     d'     = d * (1 - lambda)
+//
+// so |d| shrinks by a factor in [1 - kMaxFlattenLambda, 1) on every pass and
+// never changes sign. That is the whole monotonicity claim, and it holds per
+// vertex rather than only on average.
+constexpr float kFlattenGain = 1.0f;
+constexpr float kMaxFlattenLambda = 0.9f;
+
+// ---------------------------------------------------------------------------
+// Crease (`SCULPT-FCM-R1`)
+// ---------------------------------------------------------------------------
+//
+// One displacement with TWO components, and the split between them is the whole
+// character of the tool. Inward alone digs a round dent; pinch alone gathers the
+// surface without deepening it. Together they cut a groove that is narrower than
+// the brush that made it.
+//
+//   inward   along -n, the normal the surface had at stroke start, so a pass
+//            deepens the same channel instead of chasing a normal that the
+//            previous pass just tilted.
+//   pinch    along the TANGENTIAL direction toward the brush centre — the part
+//            of (centre - p) perpendicular to that vertex's normal — so the
+//            surface is gathered along the groove rather than pushed through it.
+//
+// Both fractions are of the ONE shared `amount` every path-driven brush
+// computes, so Crease answers to Radius, Strength and travel exactly as Clay
+// does. They are held here, together, because their RATIO is what makes the
+// groove narrow, and two constants in two files would drift.
+constexpr float kCreaseInwardFraction = 0.75f;
+constexpr float kCreasePinchFraction = 0.45f;
+
+// ---------------------------------------------------------------------------
+// Mask (`SCULPT-FCM-R1`)
+// ---------------------------------------------------------------------------
+//
+// Painting is accumulation into [0, 1], by the same travel-driven rule the
+// geometry brushes deposit with, so a mask is built up by working over an area
+// rather than by one instantaneous toggle:
+//
+//     delta = strength * weight * kMaskGain * travelFraction
+//
+// clamped per move to kMaxMaskStep so one enormous pointer jump cannot paint a
+// full mask in a single event, and clamped in total to [0, 1] by
+// SculptMesh::setMaskWeight.
+constexpr float kMaskGain = 1.0f;
+constexpr float kMaxMaskStep = 0.5f;
+
+// How a mask weight scales a geometry brush's displacement.
+//
+//     factor = 1 - w
+//
+// Linear, with EXACT ends: w = 0 is the full effect and w = 1 is exactly zero,
+// which is what makes "a fully masked vertex does not move" an identity rather
+// than a tolerance. Returns 1 for a non-finite weight — an unmasked vertex —
+// because refusing to sculpt over a value the domain says cannot exist would be
+// the tail wagging the dog.
+float sculptMaskFactor(float maskWeight);
 
 // ---------------------------------------------------------------------------
 // Fixed-topology adjacency
@@ -382,10 +476,60 @@ public:
     // all, and no counts can change.
     bool setVertexPosition(uint32_t index, const Vec3& position);
 
+    // -----------------------------------------------------------------------
+    // The Sculpt Mask (`SCULPT-FCM-R1`)
+    // -----------------------------------------------------------------------
+    //
+    // A per-vertex weight in [0, 1] saying how much this vertex is HELD against
+    // the six geometry brushes. It lives here, on the mesh, because it is
+    // per-vertex data indexed exactly as the positions are: a Freeze sizes it
+    // and zeroes it, nothing can resize it afterwards (topology is fixed for the
+    // life of a frozen mesh), and one body's mask is structurally incapable of
+    // reaching another's because one body's mesh is.
+    //
+    // IT IS RUNTIME-LOCAL AND IT IS NOT PROJECT TRUTH. No `.forge` byte carries
+    // it, no encoder can see it, it moves no project fingerprint, and reopening
+    // a project restores the geometry with an empty mask — exactly as it
+    // restores the geometry with an empty history. It survives Back to
+    // Construction and Resume Sculpt for the same reason the history does: it
+    // lives on the body, and leaving Sculpt is navigation.
+    //
+    // The weights are stored INSIDE the vertex records (MeshVertex::mask)
+    // rather than in a parallel array, so the whole publication path from here
+    // to the vertex buffer carries the mask with no signature anywhere having
+    // to learn about masking. That is a presentation channel exactly as the
+    // colour beside it is; see MeshVertex.
+    float maskWeight(uint32_t index) const;
+
+    // Writes one vertex's mask weight, CLAMPED into [0, 1]. Refuses an
+    // out-of-range index and a non-finite weight; returns true only when the
+    // stored value actually changed, so a paint that lands on an already-full
+    // mask costs no publication.
+    //
+    // Clamped rather than refused, unlike a position: a weight is a fraction
+    // with two hard ends, and a brush that accumulates past 1.0 is asking for
+    // "fully masked", not making an error.
+    bool setMaskWeight(uint32_t index, float weight);
+
+    // How many vertices carry a non-zero mask right now.
+    //
+    // Tracked incrementally rather than scanned, because the chrome asks it on
+    // every refresh and the answer decides whether Clear Mask is drawn at all.
+    uint32_t maskedVertexCount() const { return maskedCount_; }
+    bool hasMask() const { return maskedCount_ > 0; }
+
     // Mints the next SculptRevision, and marks this mesh edited.
     //
     // Called once after a coherent batch of position writes, so a revision
     // always describes a complete edit.
+    //
+    // A MASK write deliberately does NOT come through here. The revision and
+    // the edited flag are both statements about GEOMETRY — the project
+    // fingerprint mixes the revision, and `.forge` stores the flag — so
+    // advancing either for a mask would make a runtime annotation dirty the
+    // project and earn a recovery checkpoint. What a mask change does need is a
+    // re-publication, and a publication mints its own MeshRevision on every
+    // call regardless of this counter.
     SculptRevision advanceRevision();
 
     // Restores the edited flag to a value a Sculpt history entry captured.
@@ -417,6 +561,10 @@ private:
     std::vector<uint32_t> indices_;
     SculptTopology topology_;
     uint64_t freezeCount_ = 0;
+
+    // How many of `vertices_` carry a non-zero mask. Maintained by
+    // setMaskWeight and reset by every freezeFrom; see maskedVertexCount().
+    uint32_t maskedCount_ = 0;
 
     // The normal cache is derived data, not truth: it is `mutable` so that
     // reading normals off a const mesh is possible, exactly as reading a
@@ -450,9 +598,26 @@ struct SculptStrokeVertex {
     float weight = 0.0f;
     Vec3 basePosition{0.0f, 0.0f, 0.0f};
     Vec3 baseNormal{0.0f, 0.0f, 0.0f};
+
+    // The mask as it stood when the finger landed (`SCULPT-FCM-R1`), and the
+    // `1 - w` factor derived from it.
+    //
+    // CAPTURED, like everything else here, because the affected set, the
+    // weights, the base positions and the base normals are all fixed for the
+    // stroke's life and the mask has to be fixed with them: a brush whose
+    // effect changed mid-stroke because something re-read the mask would be a
+    // second definition of what one stroke is. Nothing can paint a mask while a
+    // geometry stroke is running anyway — one stroke holds one tool.
+    float baseMask = 0.0f;
+    float maskFactor = 1.0f;
+
+    // What a geometry brush actually multiplies its displacement by. The
+    // falloff weight is left untouched beside it so the brush's own footprint
+    // stays introspectable independently of what the mask allowed.
+    float effectiveWeight() const { return weight * maskFactor; }
 };
 
-// A single one-finger stroke, for ANY of the four tools.
+// A single one-finger stroke, for ANY of the seven tools.
 //
 // Everything the stroke needs is captured on DOWN and then held fixed: the
 // active tool, the affected vertex set, their falloff weights, their starting
@@ -467,7 +632,7 @@ public:
     // Returns false — leaving the stroke inactive and the mesh untouched — when
     // the ray misses the sculpt mesh, when the mesh is not frozen, when the hit
     // lies behind the camera, or when no vertex falls inside the brush. That is
-    // the same rule for all four tools: a miss starts NO stroke.
+    // the same rule for all seven tools: a miss starts NO stroke.
     bool begin(SculptTool tool, const SculptMesh& mesh, const CameraSnapshot& camera,
                float screenX, float screenY, int viewportWidth, int viewportHeight,
                const Mat4& model, const Mat4& inverseModel, float radiusPixels);
@@ -500,7 +665,7 @@ public:
     // — which is the no-op stroke the history must not record.
     //
     // The BEFORE positions cost nothing to keep: `begin` already captured every
-    // affected vertex's base position, because the four tools need it. The
+    // affected vertex's base position, because the tools need it. The
     // AFTER positions are read from the mesh here, which is why this must run
     // BEFORE end() or cancel() clears the affected set.
     //
@@ -526,12 +691,35 @@ public:
     // vertex is outside the brush.
     float weightOfVertex(uint32_t meshVertexIndex) const;
 
+    // The Flatten plane this stroke fitted at pointer-down, in WORLD space, and
+    // whether the fit produced a usable one. Introspection for the self-tests,
+    // which assert convergence against the plane the stroke actually used
+    // rather than against one they refitted themselves.
+    bool hasFlattenPlane() const { return flattenPlaneValid_; }
+    Vec3 flattenPlanePoint() const { return flattenPoint_; }
+    Vec3 flattenPlaneNormal() const { return flattenNormal_; }
+
 private:
-    // The four deformation rules. Everything above them is shared.
+    // The seven deformation rules. Everything above them is shared.
     bool applyGrab(SculptMesh& mesh, float screenX, float screenY, float strength);
     bool applyClay(SculptMesh& mesh, float amount);
     bool applySmooth(SculptMesh& mesh, float strength, float travelFraction);
     bool applyInflate(SculptMesh& mesh, float amount);
+    bool applyFlatten(SculptMesh& mesh, float strength, float travelFraction);
+    bool applyCrease(SculptMesh& mesh, float amount);
+    bool applyMask(SculptMesh& mesh, float strength, float travelFraction);
+
+    // Fits the Flatten plane from the affected set, once, at pointer-down.
+    //
+    // WORLD space, from the weighted centroid of the captured base positions
+    // and the weighted average of their base normals — so the plane is a
+    // property of the SURFACE under the brush and of the body's placement, and
+    // of nothing else. No camera, no zoom and no viewport enters it, which is
+    // what makes a flattened result independent of how the sculpt was looked
+    // at. Leaves flattenPlaneValid_ false for a degenerate fit (no usable
+    // averaged normal), and Flatten then moves nothing rather than inventing a
+    // direction.
+    void fitFlattenPlane(const Mat4& model);
 
     bool active_ = false;
     SculptTool tool_ = kDefaultSculptTool;
@@ -556,6 +744,16 @@ private:
     Vec3 cameraRight_{1.0f, 0.0f, 0.0f};  // world-space camera plane, fixed for the stroke
     Vec3 cameraUp_{0.0f, 1.0f, 0.0f};
     Mat4 inverseModel_ = mat4Identity();  // world displacement -> local displacement
+    // The forward transform, captured beside the inverse because Flatten and
+    // Crease both have to measure in WORLD space — the metric the affected set
+    // was chosen with — and a local position has to be carried out to get
+    // there. Grab, Clay, Smooth and Inflate never needed it and still do not.
+    Mat4 model_ = mat4Identity();
+
+    // The Flatten plane, WORLD space, fitted once by fitFlattenPlane().
+    bool flattenPlaneValid_ = false;
+    Vec3 flattenPoint_{0.0f, 0.0f, 0.0f};
+    Vec3 flattenNormal_{0.0f, 1.0f, 0.0f};
 
     Vec3 lastLocalDisplacement_{0.0f, 0.0f, 0.0f};
     float lastAmount_ = 0.0f;
@@ -748,6 +946,20 @@ public:
         // reading a branch that has since moved, and silently landing it
         // somewhere else would take the user to a state they did not tap.
         OutOfRange,
+        // Clear Mask on a mask so large that its single history entry would
+        // exceed `kMaxSculptHistoryEntryBytes` (`SCULPT-FCM-R1`). REFUSED, and
+        // nothing is cleared.
+        //
+        // This is deliberately NOT the brush's own `NotRetained` policy, and
+        // the difference is which act is being asked about. A brush stroke is
+        // bounded by the brush and its deformation is what the user is doing;
+        // refusing to sculpt because the history is full would be the tail
+        // wagging the dog, so an over-large stroke applies and says so. Clear
+        // Mask is bounded by the MESH, is a discrete command rather than a
+        // gesture, and its whole value is that it can be taken back — so an
+        // unretainable one is refused instead of leaving the user with a
+        // destroyed mask and no way home.
+        EntryTooLarge,
     };
 
     static const char* sculptHistoryStatusName(SculptHistoryStatus status);
@@ -792,6 +1004,28 @@ public:
     // and the act cannot disagree.
     bool canNavigateSculptHistory() const;
 
+    // -----------------------------------------------------------------------
+    // Clear Mask (`SCULPT-FCM-R1`)
+    // -----------------------------------------------------------------------
+    //
+    // Sets every masked vertex back to zero, as ONE history entry, so it is
+    // taken back by one Undo exactly as a stroke is. It is not a stroke: it
+    // mints no SculptRevision, sets no edited flag and moves not one vertex —
+    // it is one act on the runtime annotation, recorded in the same history for
+    // the same reason the strokes are, because "one act, one Undo" cannot have
+    // two answers.
+    //
+    // Refusals, all of which change nothing: the three a step already asks
+    // (`NotSculpting`, `StrokeActive`, `NoSculptMesh`), `NothingToDo` for a
+    // mask that is already empty, and `EntryTooLarge` — see the enum.
+    SculptHistoryStatus clearMask();
+
+    // Whether Clear Mask has anything to do right now. Exactly the conditions
+    // clearMask() checks minus the size test, asked without performing one, so
+    // the control and the act cannot disagree. The control is ABSENT when this
+    // is false: a control that cannot succeed is not drawn.
+    bool canClearMask() const;
+
     // The active body's history, for depth and byte-budget introspection.
     const SculptHistory& history() const { return target().history; }
 
@@ -805,11 +1039,18 @@ private:
     // before-positions live.
     void recordActiveStroke();
 
-    // Writes one side of a history entry into the mesh, then advances the
-    // revision and restores the entry's edited flag. Shared by undo and redo,
-    // which differ only in which side of the delta they hand it.
-    void applyHistorySide(const std::vector<uint32_t>& indices,
-                          const std::vector<Vec3>& positions, bool edited);
+    // Writes one direction of a history entry into the mesh: the geometry side
+    // if the entry has one, the mask side if it has one, or both. Shared by
+    // undo and redo, which differ only in which direction of the delta they
+    // hand it.
+    //
+    // The revision and the edited flag move ONLY for an entry that carries
+    // geometry. A mask-only entry leaves both exactly where they were, which is
+    // what keeps Undo over a mask act out of the project fingerprint — see
+    // SculptMesh::advanceRevision.
+    void applyHistorySide(const SculptStrokeDelta& entry,
+                          const std::vector<Vec3>& positions,
+                          const std::vector<float>& mask, bool edited);
 
     // GLOBAL, because they describe the editing session rather than any one
     // body: which mode the product is in, the stroke in progress, the held

@@ -37,11 +37,14 @@ final class SculptContextView extends LinearLayout {
 
     /** One line per tool saying what the finger will do. */
     private static final int[] TOOL_HINTS = {
-            R.string.hint_grab, R.string.hint_clay, R.string.hint_smooth, R.string.hint_inflate
+            R.string.hint_grab, R.string.hint_clay, R.string.hint_smooth, R.string.hint_inflate,
+            R.string.hint_flatten, R.string.hint_crease, R.string.hint_mask
     };
 
     private final InspectorHost host;
     private final TextView meshSummary;
+    private final TextView maskSummary;
+    private final TextView clearMask;
     private final TextView staleWarning;
     private final TextView resetSculpt;
 
@@ -72,6 +75,30 @@ final class SculptContextView extends LinearLayout {
         meshSummary.setLineSpacing(
                 EditorControlStyles.dimen(context, R.dimen.text_line_spacing), 1.0f);
         addView(meshSummary, EditorControlStyles.rowParams(0));
+
+        // The Sculpt Mask (`SCULPT-FCM-R1`), as a caption and one action.
+        //
+        // CONTEXTUAL, not a new panel: both are GONE unless the active body
+        // actually carries a mask, because a control that cannot succeed is not
+        // drawn and native code is the one that answers whether this one can
+        // (`sculptCanClearMask`). The caption sits above the action for the
+        // same reason the stale-source warning does — it says what the button
+        // is about to affect.
+        maskSummary = EditorControlStyles.captionText(context, R.id.sculpt_mask_summary, "");
+        maskSummary.setTextColor(EditorControlStyles.themeColor(context, R.attr.fsTextSecondary));
+        addView(maskSummary, EditorControlStyles.rowParams(gap));
+
+        clearMask = EditorControlStyles.actionChip(context, R.id.clear_mask,
+                context.getString(R.string.clear_mask));
+        clearMask.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                onClearMaskRequested();
+            }
+        });
+        final LinearLayout.LayoutParams clearParams = EditorControlStyles.rowParams(gap);
+        clearParams.width = ViewGroup.LayoutParams.MATCH_PARENT;
+        addView(clearMask, clearParams);
 
         // The stale-source warning gets a bordered block of its own rather than
         // a line of status text. It reports a state that persists until the
@@ -112,6 +139,19 @@ final class SculptContextView extends LinearLayout {
                 context.getString(R.string.sculpt_gesture_rule,
                         context.getString(TOOL_HINTS[tool]))));
         meshSummary.setContentDescription(meshSummary.getText());
+
+        // The mask row. Native code owns BOTH answers: how many vertices carry
+        // a mask, and whether Clear Mask could succeed right now. This layer
+        // holds no mask of its own and derives nothing.
+        final int masked = (int) nativeState[NativeViewport.SCULPT_MASKED_VERTEX_COUNT];
+        final boolean canClear = NativeViewport.sculptCanClearMask();
+        maskSummary.setVisibility(canClear ? VISIBLE : GONE);
+        clearMask.setVisibility(canClear ? VISIBLE : GONE);
+        if (canClear) {
+            maskSummary.setText(context.getString(R.string.sculpt_mask_summary, masked));
+            maskSummary.setContentDescription(maskSummary.getText());
+        }
+
         // The stale-source warning is about a CONSTRUCTION Source that moved on
         // after the freeze. An Imported Mesh cannot: it is immutable for the
         // life of its body, there is no edit path to one, so the flag is never
@@ -195,6 +235,29 @@ final class SculptContextView extends LinearLayout {
                 .setNegativeButton(R.string.cancel, null)
                 .create();
         confirmation.show();
+    }
+
+    /**
+     * Clears the mask, as one Sculpt history entry.
+     *
+     * <p><b>No confirmation.</b> The one guarded act in this view is guarded
+     * because it cannot be undone; this one can, by the Undo control that is
+     * already on screen, so asking would be teaching the user to dismiss the
+     * dialog that matters.
+     *
+     * <p>A refusal changes nothing at all, and says so rather than leaving the
+     * user to infer it from a mask that is still there.
+     */
+    private void onClearMaskRequested() {
+        final int status = NativeViewport.sculptClearMask();
+        if (status != NativeViewport.HISTORY_OK) {
+            host.showStatus(getContext().getString(R.string.status_mask_clear_failed),
+                    R.attr.fsTextError);
+            return;
+        }
+        host.onNativeStateChanged();
+        host.showStatus(getContext().getString(R.string.status_mask_cleared),
+                R.attr.fsTextSuccess);
     }
 
     private void rebuildSculptMeshFromShape() {

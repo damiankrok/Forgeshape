@@ -296,6 +296,12 @@
     <item name="tool_rail_clay" type="id" />
     <item name="tool_rail_smooth" type="id" />
     <item name="tool_rail_inflate" type="id" />
+    <!-- SCULPT-FCM-R1. Appended to the enum, but presented on the rail in the
+         product reading order: Grab, Clay, Smooth, Flatten, Inflate, Crease,
+         Mask. An id names the ACT, so the rail order is free to differ. -->
+    <item name="tool_rail_flatten" type="id" />
+    <item name="tool_rail_crease" type="id" />
+    <item name="tool_rail_mask" type="id" />
     <item name="tool_rail_shape" type="id" />
     <item name="tool_rail_place" type="id" />
     <!-- The five sketch tools (CAD-R0-A1A2). Select is a tool so that a tap in
@@ -409,6 +415,11 @@
     <item name="sculpt_mesh_summary" type="id" />
     <item name="stale_source_warning" type="id" />
     <item name="freeze_again" type="id" />
+    <!-- Clear Mask (SCULPT-FCM-R1). Contextual: present only while the active
+         body actually carries a mask, because a control that cannot succeed is
+         not drawn. -->
+    <item name="sculpt_mask_summary" type="id" />
+    <item name="clear_mask" type="id" />
 
     <!-- Objects: the scene's Construction Bodies. Every row carries the same
          `object_row` id and identifies WHICH body by its tag (the ObjectId),

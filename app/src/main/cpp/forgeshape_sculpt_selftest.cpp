@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <vector>
 
 #include "forgeshape_camera.h"
@@ -12,6 +13,8 @@
 #include "forgeshape_history.h"
 #include "forgeshape_imported_mesh.h"
 #include "forgeshape_picking.h"
+#include "forgeshape_project_document.h"
+#include "forgeshape_project_state.h"
 #include "forgeshape_render_mesh.h"
 #include "forgeshape_scene.h"
 #include "forgeshape_sculpt.h"
@@ -613,6 +616,815 @@ SculptStrokeDelta syntheticDelta(uint32_t vertices, float offset) {
     return delta;
 }
 
+
+// ---------------------------------------------------------------------------
+// FCM-01..20 — Flatten, Crease and the Sculpt Mask (`SCULPT-FCM-R1`)
+// ---------------------------------------------------------------------------
+//
+// Local sessions and local scenes throughout, like every other block here, so
+// nothing can disturb the live product state it runs beside.
+//
+// FCM-20 is deliberately absent from this function: the Stage 020R3 metric
+// block above loops over kSculptToolCount, so the three new tools are held to
+// the world/display metric by the SAME assertions the original four are. A
+// separate copy for them would be a second answer to a question that already
+// has one.
+
+// Runs one complete stroke with an explicit tool, and reports whether anything
+// changed. The tool is set on the session, not passed to the stroke, because
+// that is how a tool actually reaches a stroke in the product.
+bool runOneStrokeWithTool(SculptSession& session, const CameraSnapshot& camera, const Mat4& model,
+                          SculptTool tool, float offsetX) {
+    session.setTool(tool);
+    return runOneStroke(session, camera, model, offsetX);
+}
+
+// Every mask weight, so "the mask came back exactly" is a bit-exact comparison.
+std::vector<float> allMask(const SculptMesh& mesh) {
+    std::vector<float> out;
+    out.reserve(mesh.vertexCount());
+    for (uint32_t v = 0; v < mesh.vertexCount(); ++v) {
+        out.push_back(mesh.maskWeight(v));
+    }
+    return out;
+}
+
+bool sameMask(const std::vector<float>& a, const std::vector<float>& b) {
+    if (a.size() != b.size()) {
+        return false;
+    }
+    for (size_t i = 0; i < a.size(); ++i) {
+        // Bit-exact, for the same reason positions are: a history entry
+        // restores stored floats verbatim rather than recomputing them.
+        if (a[i] != b[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Paints a full mask over every vertex, without going through a stroke.
+//
+// Deliberately direct: the cases that use it are about what the GEOMETRY
+// brushes do over a mask, and driving a mask stroke first would make them
+// depend on how much the mask brush happened to deposit.
+void paintFullMask(SculptMesh& mesh) {
+    for (uint32_t v = 0; v < mesh.vertexCount(); ++v) {
+        mesh.setMaskWeight(v, 1.0f);
+    }
+}
+
+void paintUniformMask(SculptMesh& mesh, float weight) {
+    for (uint32_t v = 0; v < mesh.vertexCount(); ++v) {
+        mesh.setMaskWeight(v, weight);
+    }
+}
+
+// The largest distance any vertex moved during one stroke, in local units.
+float largestDisplacement(const std::vector<Vec3>& before, const SculptMesh& mesh) {
+    float worst = 0.0f;
+    for (uint32_t v = 0; v < mesh.vertexCount() && v < before.size(); ++v) {
+        const float d = lengthOf(vec3Sub(mesh.vertexPosition(v), before[v]));
+        if (d > worst) {
+            worst = d;
+        }
+    }
+    return worst;
+}
+
+void runFlattenCreaseMaskChecks(Recorder& r) {
+    const CameraSnapshot camera = defaultCamera();
+    const Mat4 identity = mat4Identity();
+
+    // =======================================================================
+    // FCM-01..04 — Flatten
+    // =======================================================================
+    {
+        ConstructionObject object = makeSphereObject();
+
+        // FCM-01: the two no-ops that are actually reachable.
+        //
+        // A zero STRENGTH is not one of them, and saying so is part of the
+        // check: the product's brush strength is a closed range that clamps
+        // rather than refuses, so a slider can never deliver zero. What CAN
+        // deliver "do nothing" is zero pointer TRAVEL, and it must — Flatten is
+        // path-driven, so a stationary finger has to cost nothing.
+        r.check("FCM_01_a_zero_strength_is_clamped_to_the_documented_floor",
+                clampBrushStrength(0.0f) == kMinBrushStrength
+                    && kMinBrushStrength > 0.0f);
+        {
+            SculptSession session;
+            prepareSession(&session, object, SculptTool::Flatten, 160.0f, kMinBrushStrength);
+            const std::vector<Vec3> seed = allPositions(session.mesh());
+            const SculptRevision before = session.mesh().revision();
+            r.check("FCM_01_a_flatten_stroke_starts",
+                    session.beginStroke(camera, kCentreX, kCentreY, kViewportWidth,
+                                        kViewportHeight, identity, identity));
+            // Four moves that never leave the pixel the finger went down on.
+            bool anyApplied = false;
+            for (int i = 0; i < 4; ++i) {
+                if (session.updateStroke(kCentreX, kCentreY)) {
+                    anyApplied = true;
+                }
+            }
+            session.endStroke();
+            r.check("FCM_01_flatten_with_no_pointer_travel_moves_nothing",
+                    !anyApplied && samePositions(allPositions(session.mesh()), seed)
+                        && session.mesh().revision() == before
+                        && !session.mesh().hasEdits());
+            r.check("FCM_01_and_records_no_history_entry",
+                    session.history().undoDepth() == 0);
+        }
+
+        // FCM-02/03/04: a real stroke.
+        {
+            SculptSession session;
+            prepareSession(&session, object, SculptTool::Flatten, 160.0f, 0.9f);
+            const std::vector<Vec3> seed = allPositions(session.mesh());
+
+            const bool began = session.beginStroke(camera, kCentreX, kCentreY, kViewportWidth,
+                                                   kViewportHeight, identity, identity);
+            r.check("FCM_03_a_flatten_stroke_fits_a_plane_at_pointer_down",
+                    began && session.stroke().hasFlattenPlane());
+
+            // The plane, and the affected set, read while the stroke is live.
+            const Vec3 planePoint = session.stroke().flattenPlanePoint();
+            const Vec3 planeNormal = session.stroke().flattenPlaneNormal();
+            std::vector<uint32_t> affected;
+            std::vector<float> distanceBefore;
+            for (int i = 0; i < session.stroke().affectedVertexCount(); ++i) {
+                const SculptStrokeVertex& v = session.stroke().affectedVertex(i);
+                affected.push_back(v.index);
+                distanceBefore.push_back(
+                    vec3Dot(vec3Sub(v.basePosition, planePoint), planeNormal));
+            }
+            r.check("FCM_02_the_flatten_footprint_is_not_empty", affected.size() > 4);
+
+            // FCM-03: three passes, each measured. The claim is per vertex and
+            // per pass: |d| never grows and never changes sign.
+            bool monotone = true;
+            bool converging = false;
+            std::vector<float> previous = distanceBefore;
+            for (int pass = 0; pass < 3; ++pass) {
+                driveTravel(session, kCentreX, kCentreY, 4, 22.0f);
+                float worstBefore = 0.0f;
+                float worstAfter = 0.0f;
+                for (size_t i = 0; i < affected.size(); ++i) {
+                    const float now = vec3Dot(
+                        vec3Sub(session.mesh().vertexPosition(affected[i]), planePoint),
+                        planeNormal);
+                    // A tiny float tolerance, because the step is built in world
+                    // space and carried back through the inverse model: the
+                    // arithmetic is exact in intent and rounds in practice.
+                    if (std::fabs(now) > std::fabs(previous[i]) + 1e-5f) {
+                        monotone = false;
+                    }
+                    if (previous[i] != 0.0f && now != 0.0f
+                        && ((previous[i] > 0.0f) != (now > 0.0f))) {
+                        monotone = false;  // crossed the plane: an overshoot
+                    }
+                    worstBefore = std::fabs(previous[i]) > worstBefore
+                        ? std::fabs(previous[i]) : worstBefore;
+                    worstAfter =
+                        std::fabs(now) > worstAfter ? std::fabs(now) : worstAfter;
+                    previous[i] = now;
+                }
+                if (worstAfter < worstBefore) {
+                    converging = true;
+                }
+            }
+            r.check("FCM_03_flatten_never_increases_a_vertexs_distance_to_the_plane",
+                    monotone);
+            r.check("FCM_03_and_the_worst_distance_actually_falls", converging);
+
+            // FCM-02: nothing outside the captured footprint moved. The
+            // affected set is what `begin` chose in the world metric, so this
+            // is the region bound stated exactly.
+            bool outsideUntouched = true;
+            for (uint32_t v = 0; v < session.mesh().vertexCount(); ++v) {
+                const bool inside =
+                    std::find(affected.begin(), affected.end(), v) != affected.end();
+                if (inside) {
+                    continue;
+                }
+                const Vec3 now = session.mesh().vertexPosition(v);
+                if (now.x != seed[v].x || now.y != seed[v].y || now.z != seed[v].z) {
+                    outsideUntouched = false;
+                }
+            }
+            r.check("FCM_02_flatten_moves_no_vertex_outside_its_affected_region",
+                    outsideUntouched);
+            r.check("FCM_04_flatten_leaves_every_position_finite",
+                    allPositionsFinite(session.mesh()));
+            session.endStroke();
+            r.check("FCM_04_and_one_flatten_stroke_is_one_history_entry",
+                    session.history().undoDepth() == 1);
+        }
+    }
+
+    // =======================================================================
+    // FCM-05..08 — Crease
+    // =======================================================================
+    {
+        ConstructionObject object = makeSphereObject();
+
+        // FCM-05: zero pointer travel, again the reachable no-op.
+        {
+            SculptSession session;
+            prepareSession(&session, object, SculptTool::Crease, 160.0f, kMinBrushStrength);
+            const std::vector<Vec3> seed = allPositions(session.mesh());
+            session.beginStroke(camera, kCentreX, kCentreY, kViewportWidth, kViewportHeight,
+                                identity, identity);
+            bool anyApplied = false;
+            for (int i = 0; i < 4; ++i) {
+                if (session.updateStroke(kCentreX, kCentreY)) {
+                    anyApplied = true;
+                }
+            }
+            session.endStroke();
+            r.check("FCM_05_crease_with_no_pointer_travel_moves_nothing",
+                    !anyApplied && samePositions(allPositions(session.mesh()), seed)
+                        && session.history().undoDepth() == 0);
+        }
+
+        // FCM-06/07/08: the two components, measured separately.
+        {
+            SculptSession session;
+            prepareSession(&session, object, SculptTool::Crease, 160.0f, 0.9f);
+            const std::vector<Vec3> seed = allPositions(session.mesh());
+            const bool began = session.beginStroke(camera, kCentreX, kCentreY, kViewportWidth,
+                                                   kViewportHeight, identity, identity);
+            r.check("FCM_06_a_crease_stroke_starts", began);
+
+            // The vertex nearest the brush centre, for the inward component,
+            // and one well off it, for the pinch. Both are read while the
+            // stroke is live, from the set the stroke actually captured.
+            const int centreSlot = slotOfHighestWeight(session.stroke());
+            int flankSlot = centreSlot;
+            float bestFlank = -1.0f;
+            const Vec3 localCentre = session.stroke().localCenter();
+            for (int i = 0; i < session.stroke().affectedVertexCount(); ++i) {
+                const SculptStrokeVertex& v = session.stroke().affectedVertex(i);
+                const float d = lengthOf(vec3Sub(v.basePosition, localCentre));
+                // Off-centre, but well inside the falloff so it still moves.
+                if (v.weight > 0.15f && d > bestFlank) {
+                    bestFlank = d;
+                    flankSlot = i;
+                }
+            }
+            const SculptStrokeVertex centre = session.stroke().affectedVertex(centreSlot);
+            const SculptStrokeVertex flank = session.stroke().affectedVertex(flankSlot);
+            const float flankRadiusBefore =
+                offAxisDistance(vec3Sub(flank.basePosition, localCentre), centre.baseNormal);
+
+            driveTravel(session, kCentreX, kCentreY, 6, 20.0f);
+
+            // FCM-06: INWARD. The centre vertex's total displacement has a
+            // negative component along the normal it started with — the sign
+            // that separates a groove from Clay's deposit.
+            const Vec3 centreTotal =
+                vec3Sub(session.mesh().vertexPosition(centre.index), centre.basePosition);
+            r.check("FCM_06_crease_displaces_the_centre_inward_along_its_own_normal",
+                    vec3Dot(centreTotal, centre.baseNormal) < -1e-6f);
+
+            // FCM-07: PINCH. The flank vertex ends nearer the groove's axis --
+            // the line through the brush centre along the centre normal --
+            // than it began, which is the gathering that makes the channel
+            // narrower than the brush.
+            const float flankRadiusAfter = offAxisDistance(
+                vec3Sub(session.mesh().vertexPosition(flank.index), localCentre),
+                centre.baseNormal);
+            r.check("FCM_07_crease_pinches_a_flank_vertex_toward_the_groove_axis",
+                    bestFlank > 0.0f && flankRadiusAfter < flankRadiusBefore - 1e-6f);
+
+            // FCM-08: the region bound and finiteness, on the same terms
+            // Flatten is held to.
+            bool outsideUntouched = true;
+            for (uint32_t v = 0; v < session.mesh().vertexCount(); ++v) {
+                if (session.stroke().weightOfVertex(v) > 0.0f) {
+                    continue;
+                }
+                const Vec3 now = session.mesh().vertexPosition(v);
+                if (now.x != seed[v].x || now.y != seed[v].y || now.z != seed[v].z) {
+                    outsideUntouched = false;
+                }
+            }
+            r.check("FCM_08_crease_moves_no_vertex_outside_its_affected_region",
+                    outsideUntouched);
+            r.check("FCM_08_crease_leaves_every_position_finite",
+                    allPositionsFinite(session.mesh()));
+            session.endStroke();
+        }
+
+        // FCM-08: a degenerate local configuration -- a mesh whose normals are
+        // all zero because every triangle is degenerate -- must fail closed
+        // rather than produce unstable geometry.
+        {
+            ConstructionMesh flat;
+            flat.vertices.resize(4);
+            for (int i = 0; i < 4; ++i) {
+                // Four coincident vertices: every triangle has zero area, so
+                // computeVertexNormals writes the honest zero vector.
+                flat.vertices[i].position[0] = 0.0f;
+                flat.vertices[i].position[1] = 0.0f;
+                flat.vertices[i].position[2] = 0.0f;
+            }
+            flat.indices = {0, 1, 2, 0, 2, 3};
+            SculptMesh mesh;
+            const bool frozen = mesh.freezeFrom(flat, 7);
+            SculptStroke stroke;
+            // The ray cannot hit a zero-area triangle, so no stroke begins at
+            // all -- which is itself the fail-closed answer. Whichever way it
+            // goes, nothing may become non-finite.
+            stroke.begin(SculptTool::Crease, mesh, camera, kCentreX, kCentreY, kViewportWidth,
+                         kViewportHeight, identity, identity, 160.0f);
+            stroke.update(mesh, kCentreX + 40.0f, kCentreY, 1.0f);
+            stroke.end();
+            r.check("FCM_08_crease_on_a_fully_degenerate_mesh_stays_finite",
+                    frozen && allPositionsFinite(mesh));
+        }
+    }
+
+    // =======================================================================
+    // FCM-09/10/11 — the mask and the six geometry brushes
+    // =======================================================================
+    {
+        ConstructionObject object = makeSphereObject();
+
+        // FCM-09: painting adds and clamps, and the ends are exact.
+        {
+            SculptMesh mesh;
+            mesh.freezeFrom(object.generateMesh(), object.objectId());
+            r.check("FCM_09_a_fresh_freeze_carries_no_mask",
+                    !mesh.hasMask() && mesh.maskedVertexCount() == 0
+                        && mesh.maskWeight(0) == 0.0f);
+            r.check("FCM_09_a_weight_is_written_and_counted",
+                    mesh.setMaskWeight(0, 0.4f) && mesh.maskWeight(0) == 0.4f
+                        && mesh.maskedVertexCount() == 1 && mesh.hasMask());
+            r.check("FCM_09_an_unchanged_weight_reports_no_change",
+                    !mesh.setMaskWeight(0, 0.4f) && mesh.maskedVertexCount() == 1);
+            r.check("FCM_09_a_weight_above_one_is_clamped_to_exactly_one",
+                    mesh.setMaskWeight(0, 3.5f) && mesh.maskWeight(0) == 1.0f);
+            r.check("FCM_09_a_negative_weight_is_clamped_to_exactly_zero",
+                    mesh.setMaskWeight(0, -2.0f) && mesh.maskWeight(0) == 0.0f
+                        && mesh.maskedVertexCount() == 0);
+            r.check("FCM_09_a_non_finite_weight_is_refused",
+                    !mesh.setMaskWeight(0, std::nanf("")) && mesh.maskWeight(0) == 0.0f);
+            r.check("FCM_09_an_out_of_range_index_is_refused",
+                    !mesh.setMaskWeight(mesh.vertexCount(), 1.0f));
+            r.check("FCM_09_the_factor_has_exact_ends",
+                    sculptMaskFactor(0.0f) == 1.0f && sculptMaskFactor(1.0f) == 0.0f
+                        && nearly(sculptMaskFactor(0.25f), 0.75f));
+
+            // And through a real Mask stroke: repeated passes saturate at 1.0
+            // and never exceed it.
+            SculptSession session;
+            prepareSession(&session, object, SculptTool::Mask, 160.0f, 1.0f);
+            r.check("FCM_09_a_mask_stroke_paints",
+                    runOneStrokeWithTool(session, camera, identity, SculptTool::Mask, 24.0f)
+                        && session.mesh().hasMask());
+            for (int pass = 0; pass < 12; ++pass) {
+                runOneStrokeWithTool(session, camera, identity, SculptTool::Mask, 24.0f);
+            }
+            bool inRange = true;
+            bool sawFull = false;
+            for (uint32_t v = 0; v < session.mesh().vertexCount(); ++v) {
+                const float w = session.mesh().maskWeight(v);
+                if (!(w >= 0.0f && w <= 1.0f)) {
+                    inRange = false;
+                }
+                if (w == 1.0f) {
+                    sawFull = true;
+                }
+            }
+            r.check("FCM_09_repeated_mask_passes_saturate_inside_zero_to_one",
+                    inRange && sawFull);
+            r.check("FCM_09_a_mask_stroke_moves_no_vertex_and_mints_no_revision",
+                    session.mesh().revision() == kFrozenSculptRevision
+                        && !session.mesh().hasEdits());
+        }
+
+        // FCM-10: a FULLY masked vertex does not move, for every one of the six
+        // geometry brushes. Parameterized over the tool set for the same reason
+        // the metric block is: six independent guards is what the mask factor
+        // exists to avoid.
+        {
+            static const char* const kNames[kSculptToolCount] = {
+                "FCM_10_grab_moves_nothing_through_a_full_mask",
+                "FCM_10_clay_moves_nothing_through_a_full_mask",
+                "FCM_10_smooth_moves_nothing_through_a_full_mask",
+                "FCM_10_inflate_moves_nothing_through_a_full_mask",
+                "FCM_10_flatten_moves_nothing_through_a_full_mask",
+                "FCM_10_crease_moves_nothing_through_a_full_mask",
+                "FCM_10_mask_itself_is_not_held_off_by_a_full_mask"};
+
+            for (int toolIndex = 0; toolIndex < kSculptToolCount; ++toolIndex) {
+                SculptTool tool = SculptTool::Grab;
+                sculptToolFromIndex(toolIndex, &tool);
+
+                SculptSession session;
+                prepareSession(&session, object, tool, 160.0f, 1.0f);
+                paintFullMask(session.mesh());
+                const std::vector<Vec3> seed = allPositions(session.mesh());
+                const SculptRevision before = session.mesh().revision();
+                const bool began = session.beginStroke(camera, kCentreX, kCentreY,
+                                                       kViewportWidth, kViewportHeight,
+                                                       identity, identity);
+                driveTravel(session, kCentreX, kCentreY, 6, 22.0f);
+                session.endStroke();
+
+                if (sculptToolMovesGeometry(tool)) {
+                    // Not one position, not one revision, not one entry. A
+                    // stroke over a full mask is a stroke that did nothing, and
+                    // the existing no-op rule then records nothing.
+                    r.check(kNames[toolIndex],
+                            began && samePositions(allPositions(session.mesh()), seed)
+                                && session.mesh().revision() == before
+                                && !session.mesh().hasEdits()
+                                && session.history().undoDepth() == 0);
+                } else {
+                    // Mask is deliberately NOT held off by the mask: a brush
+                    // that masked itself could never reach 1.0. Every vertex is
+                    // already at 1.0 here, so nothing changes -- which is the
+                    // clamp, not the factor.
+                    r.check(kNames[toolIndex],
+                            began && samePositions(allPositions(session.mesh()), seed)
+                                && session.mesh().maskedVertexCount()
+                                        == session.mesh().vertexCount());
+                }
+            }
+        }
+
+        // FCM-11: a PARTIAL mask reduces the displacement monotonically, with
+        // the two ends exact.
+        {
+            const float weights[4] = {0.0f, 0.25f, 0.75f, 1.0f};
+            float displacement[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+            for (int i = 0; i < 4; ++i) {
+                SculptSession session;
+                prepareSession(&session, object, SculptTool::Clay, 160.0f, 0.9f);
+                paintUniformMask(session.mesh(), weights[i]);
+                const std::vector<Vec3> seed = allPositions(session.mesh());
+                session.beginStroke(camera, kCentreX, kCentreY, kViewportWidth, kViewportHeight,
+                                    identity, identity);
+                driveTravel(session, kCentreX, kCentreY, 5, 20.0f);
+                session.endStroke();
+                displacement[i] = largestDisplacement(seed, session.mesh());
+            }
+            r.check("FCM_11_a_partial_mask_reduces_the_displacement_monotonically",
+                    displacement[0] > displacement[1] && displacement[1] > displacement[2]
+                        && displacement[2] > displacement[3]);
+            r.check("FCM_11_mask_zero_is_the_full_effect_and_mask_one_is_exactly_none",
+                    displacement[0] > 0.0f && displacement[3] == 0.0f);
+            // The rule is (1 - w), so a quarter mask leaves three quarters. The
+            // brush is linear in its weight, so this is an arithmetic identity
+            // and not a tuned approximation.
+            r.check("FCM_11_and_the_reduction_is_the_documented_one_minus_w",
+                    std::fabs(displacement[1] - displacement[0] * 0.75f)
+                            < displacement[0] * 0.02f
+                        && std::fabs(displacement[2] - displacement[0] * 0.25f)
+                            < displacement[0] * 0.02f);
+        }
+    }
+
+    // =======================================================================
+    // FCM-12/13/14 — ownership and lifetime
+    // =======================================================================
+    {
+        // FCM-12: the mask is per BODY, and ownership is the whole mechanism.
+        ConstructionScene scene;
+        SceneObject& a = scene.activeBody();
+        a.construction().setPrimitive(PrimitiveSpec::forSphere(2.0));
+        SceneObject& b = scene.addBody();
+        b.construction().setPrimitive(PrimitiveSpec::forSphere(2.0));
+
+        SculptSession session;
+        session.bindTarget(&a.frozenSculpt());
+        session.freezeToSculpt(a.construction().generateMesh(), a.objectId());
+        session.setRadiusPixels(160.0f);
+        session.setStrength(1.0f);
+        runOneStrokeWithTool(session, camera, identity, SculptTool::Mask, 24.0f);
+        const uint32_t maskedA = session.mesh().maskedVertexCount();
+        r.check("FCM_12_body_a_carries_a_mask", maskedA > 0);
+
+        session.bindTarget(&b.frozenSculpt());
+        session.freezeToSculpt(b.construction().generateMesh(), b.objectId());
+        r.check("FCM_12_body_b_starts_unmasked_and_cannot_see_a_s_mask",
+                !session.mesh().hasMask() && session.mesh().maskedVertexCount() == 0);
+        runOneStrokeWithTool(session, camera, identity, SculptTool::Mask, -24.0f);
+        r.check("FCM_12_painting_b_does_not_change_a",
+                session.mesh().hasMask()
+                    && a.frozenSculpt().mesh.maskedVertexCount() == maskedA);
+
+        session.bindTarget(&a.frozenSculpt());
+        r.check("FCM_12_switching_back_finds_a_s_own_mask",
+                session.mesh().maskedVertexCount() == maskedA);
+
+        // FCM-13: Back to Construction and Resume Sculpt keep it, for the same
+        // reason they keep the history -- both live on the body, and leaving
+        // Sculpt is navigation.
+        const std::vector<float> maskBefore = allMask(session.mesh());
+        session.enterConstruction();
+        r.check("FCM_13_leaving_sculpt_takes_the_mask_nowhere",
+                a.frozenSculpt().mesh.maskedVertexCount() == maskedA);
+        r.check("FCM_13_resume_comes_back_to_the_same_mask",
+                session.enterSculpt() && sameMask(allMask(session.mesh()), maskBefore));
+    }
+
+    // FCM-14: the reset and reopen boundary. A Freeze clears the mask; a
+    // project round trip restores the geometry and starts unmasked.
+    {
+        ConstructionObject object = makeSphereObject();
+        SculptSession session;
+        prepareSession(&session, object, SculptTool::Mask, 160.0f, 1.0f);
+        runOneStrokeWithTool(session, camera, identity, SculptTool::Mask, 24.0f);
+        r.check("FCM_14_a_mask_exists_before_the_reset", session.mesh().hasMask());
+        const std::vector<Vec3> positionsBefore = allPositions(session.mesh());
+        r.check("FCM_14_a_reset_from_source_clears_the_mask",
+                session.freezeToSculpt(object.generateMesh(), object.objectId())
+                    && !session.mesh().hasMask()
+                    && session.mesh().maskedVertexCount() == 0);
+
+        // The reopen path, through the real codec: encode a scene whose body
+        // carries a sculpted, masked mesh, decode it, and read the result.
+        ConstructionScene scene;
+        SceneObject& body = scene.activeBody();
+        body.construction().setPrimitive(PrimitiveSpec::forSphere(2.0));
+        SculptSession live;
+        live.bindTarget(&body.frozenSculpt());
+        live.freezeToSculpt(body.construction().generateMesh(), body.objectId());
+        live.setRadiusPixels(160.0f);
+        live.setStrength(0.9f);
+        runOneStrokeWithTool(live, camera, identity, SculptTool::Clay, 26.0f);
+        const uint64_t fingerprintUnmasked =
+            projectSemanticFingerprint(scene, ProjectKind::Construction);
+        const std::vector<Vec3> sculpted = allPositions(live.mesh());
+        runOneStrokeWithTool(live, camera, identity, SculptTool::Mask, 24.0f);
+        r.check("FCM_14_the_live_body_carries_both_edits_and_a_mask",
+                live.mesh().hasMask() && live.mesh().hasEdits());
+
+        // The mask reaches NO project byte and moves NO fingerprint.
+        r.check("FCM_14_a_mask_does_not_move_the_project_fingerprint",
+                projectSemanticFingerprint(scene, ProjectKind::Construction)
+                    == fingerprintUnmasked);
+
+        const ProjectDocument document =
+            captureProjectDocument(scene, ProjectKind::Construction);
+        ProjectCodecStatus encodeWhy = ProjectCodecStatus::Ok;
+        const std::vector<uint8_t> bytes = encodeProjectV1(document, &encodeWhy);
+        r.check("FCM_14_the_masked_project_encodes",
+                encodeWhy == ProjectCodecStatus::Ok && !bytes.empty());
+
+        ConstructionScene restored;
+        SculptSession restoredSession;
+        ConstructionHistory restoredHistory(restored);
+        ProjectDocument decoded;
+        const bool decodedOk =
+            !bytes.empty()
+            && decodeProject(bytes.data(), bytes.size(), &decoded) == ProjectCodecStatus::Ok;
+        const bool loaded =
+            decodedOk
+            && loadProjectDocument(decoded, restored, restoredSession, restoredHistory)
+                == ProjectCodecStatus::Ok;
+        r.check("FCM_14_and_decodes_back", loaded);
+        if (loaded) {
+            SceneObject& restoredBody = restored.activeBody();
+            restoredSession.bindTarget(&restoredBody.frozenSculpt());
+            r.check("FCM_14_the_reopened_mesh_holds_the_same_geometry",
+                    samePositions(allPositions(restoredBody.frozenSculpt().mesh), sculpted));
+            r.check("FCM_14_but_the_reopened_mask_is_empty",
+                    !restoredBody.frozenSculpt().mesh.hasMask()
+                        && restoredBody.frozenSculpt().mesh.maskedVertexCount() == 0);
+            r.check("FCM_14_and_the_reopened_history_is_empty",
+                    restoredBody.frozenSculpt().history.undoDepth() == 0
+                        && restoredBody.frozenSculpt().history.redoDepth() == 0);
+        }
+    }
+
+    // =======================================================================
+    // FCM-15..19 — the mask inside the ONE Sculpt history
+    // =======================================================================
+    {
+        ConstructionObject object = makeSphereObject();
+        SculptSession session;
+        prepareSession(&session, object, SculptTool::Mask, 160.0f, 1.0f);
+        const std::vector<float> unmasked = allMask(session.mesh());
+
+        // FCM-15: a Mask stroke is ONE entry, and Undo/Redo restore the mask
+        // exactly -- with the geometry, the revision and the edited flag all
+        // standing still, because a mask act is not a geometry act.
+        r.check("FCM_15_a_mask_stroke_lands",
+                runOneStrokeWithTool(session, camera, identity, SculptTool::Mask, 24.0f));
+        const std::vector<float> afterPaint = allMask(session.mesh());
+        const std::vector<Vec3> geometry = allPositions(session.mesh());
+        const SculptRevision revisionAfterPaint = session.mesh().revision();
+        r.check("FCM_15_one_mask_stroke_is_one_entry",
+                session.history().undoDepth() == 1 && session.history().redoDepth() == 0);
+        r.check("FCM_15_and_the_entry_carries_a_mask_side_and_no_geometry_side",
+                session.history().undoTop().movesMask()
+                    && !session.history().undoTop().movesGeometry());
+
+        r.check("FCM_15_undo_reports_ok",
+                session.undoStroke() == SculptSession::SculptHistoryStatus::Ok);
+        r.check("FCM_15_and_restores_the_exact_pre_stroke_mask",
+                sameMask(allMask(session.mesh()), unmasked));
+        r.check("FCM_15_leaving_the_geometry_the_revision_and_the_flag_untouched",
+                samePositions(allPositions(session.mesh()), geometry)
+                    && session.mesh().revision() == revisionAfterPaint
+                    && !session.mesh().hasEdits());
+        r.check("FCM_15_redo_restores_the_exact_post_stroke_mask",
+                session.redoStroke() == SculptSession::SculptHistoryStatus::Ok
+                    && sameMask(allMask(session.mesh()), afterPaint)
+                    && session.mesh().revision() == revisionAfterPaint);
+
+        // FCM-16: Clear Mask is ONE entry on the same terms.
+        r.check("FCM_16_clear_mask_is_offered_while_a_mask_exists", session.canClearMask());
+        r.check("FCM_16_clear_mask_reports_ok",
+                session.clearMask() == SculptSession::SculptHistoryStatus::Ok);
+        r.check("FCM_16_and_empties_the_mask",
+                !session.mesh().hasMask() && sameMask(allMask(session.mesh()), unmasked));
+        r.check("FCM_16_as_exactly_one_more_entry", session.history().undoDepth() == 2);
+        r.check("FCM_16_the_control_is_then_withdrawn", !session.canClearMask());
+        r.check("FCM_16_a_second_clear_finds_nothing_to_do",
+                session.clearMask() == SculptSession::SculptHistoryStatus::NothingToDo
+                    && session.history().undoDepth() == 2);
+        r.check("FCM_16_undo_puts_the_whole_mask_back",
+                session.undoStroke() == SculptSession::SculptHistoryStatus::Ok
+                    && sameMask(allMask(session.mesh()), afterPaint));
+        r.check("FCM_16_and_redo_clears_it_again",
+                session.redoStroke() == SculptSession::SculptHistoryStatus::Ok
+                    && sameMask(allMask(session.mesh()), unmasked));
+        r.check("FCM_16_clear_mask_moved_no_geometry_and_no_revision",
+                samePositions(allPositions(session.mesh()), geometry)
+                    && session.mesh().revision() == revisionAfterPaint
+                    && !session.mesh().hasEdits());
+        r.check("FCM_16_clear_mask_is_refused_outside_sculpt", [&] {
+            session.enterConstruction();
+            const bool refused =
+                session.clearMask() == SculptSession::SculptHistoryStatus::NotSculpting
+                && !session.canClearMask();
+            session.enterSculpt();
+            return refused;
+        }());
+    }
+
+    // FCM-17: a navigator jump across a MIXED branch of geometry and mask
+    // entries lands bit-exactly where repeated Undo and Redo land -- geometry
+    // AND mask. It has to, because the jump IS those two calls in a loop.
+    {
+        ConstructionObject object = makeSphereObject();
+
+        auto buildMixedBranch = [&](SculptSession& session) {
+            prepareSession(&session, object, SculptTool::Clay, 160.0f, 0.9f);
+            runOneStrokeWithTool(session, camera, identity, SculptTool::Clay, 24.0f);
+            runOneStrokeWithTool(session, camera, identity, SculptTool::Mask, -22.0f);
+            runOneStrokeWithTool(session, camera, identity, SculptTool::Flatten, 26.0f);
+            runOneStrokeWithTool(session, camera, identity, SculptTool::Mask, 20.0f);
+        };
+
+        SculptSession stepwise;
+        buildMixedBranch(stepwise);
+        r.check("FCM_17_a_mixed_branch_holds_four_entries",
+                stepwise.history().undoDepth() == 4
+                    && stepwise.history().cursor().stateCount == 5);
+        stepwise.undoStroke();
+        stepwise.undoStroke();
+        stepwise.undoStroke();
+        const std::vector<Vec3> byRepeatedUndo = allPositions(stepwise.mesh());
+        const std::vector<float> maskByRepeatedUndo = allMask(stepwise.mesh());
+
+        SculptSession jumped;
+        buildMixedBranch(jumped);
+        r.check("FCM_17_a_backward_jump_across_mask_entries_reports_ok",
+                jumped.jumpToHistoryCursor(1) == SculptSession::SculptHistoryStatus::Ok);
+        r.check("FCM_17_and_lands_on_exactly_what_repeated_undo_produced",
+                samePositions(allPositions(jumped.mesh()), byRepeatedUndo)
+                    && sameMask(allMask(jumped.mesh()), maskByRepeatedUndo));
+
+        stepwise.redoStroke();
+        stepwise.redoStroke();
+        const std::vector<Vec3> byRepeatedRedo = allPositions(stepwise.mesh());
+        const std::vector<float> maskByRepeatedRedo = allMask(stepwise.mesh());
+        r.check("FCM_17_a_forward_jump_across_mask_entries_reports_ok",
+                jumped.jumpToHistoryCursor(3) == SculptSession::SculptHistoryStatus::Ok);
+        r.check("FCM_17_and_lands_on_exactly_what_repeated_redo_produced",
+                samePositions(allPositions(jumped.mesh()), byRepeatedRedo)
+                    && sameMask(allMask(jumped.mesh()), maskByRepeatedRedo));
+        r.check("FCM_17_a_jump_across_mask_entries_mints_nothing",
+                jumped.history().undoDepth() + jumped.history().redoDepth() == 4
+                    && jumped.history().evictedEntries() == 0
+                    && jumped.history().notRetainedStrokes() == 0);
+    }
+
+    // FCM-18: the redo branch is invalidated by the EXISTING rule, whichever
+    // kind of act comes next.
+    {
+        ConstructionObject object = makeSphereObject();
+        {
+            SculptSession session;
+            prepareSession(&session, object, SculptTool::Clay, 160.0f, 0.9f);
+            runOneStrokeWithTool(session, camera, identity, SculptTool::Mask, 24.0f);
+            runOneStrokeWithTool(session, camera, identity, SculptTool::Clay, 22.0f);
+            session.undoStroke();
+            r.check("FCM_18_precondition_a_redo_exists_after_a_mixed_branch",
+                    session.history().redoDepth() == 1);
+            r.check("FCM_18_a_new_geometry_stroke_drops_the_abandoned_future",
+                    runOneStrokeWithTool(session, camera, identity, SculptTool::Crease, 28.0f)
+                        && session.history().redoDepth() == 0);
+        }
+        {
+            SculptSession session;
+            prepareSession(&session, object, SculptTool::Clay, 160.0f, 0.9f);
+            runOneStrokeWithTool(session, camera, identity, SculptTool::Clay, 24.0f);
+            runOneStrokeWithTool(session, camera, identity, SculptTool::Clay, 22.0f);
+            session.undoStroke();
+            r.check("FCM_18_precondition_a_redo_exists_after_two_geometry_strokes",
+                    session.history().redoDepth() == 1);
+            r.check("FCM_18_a_new_mask_stroke_drops_the_abandoned_future_too",
+                    runOneStrokeWithTool(session, camera, identity, SculptTool::Mask, 26.0f)
+                        && session.history().redoDepth() == 0);
+        }
+        {
+            SculptSession session;
+            prepareSession(&session, object, SculptTool::Mask, 160.0f, 1.0f);
+            runOneStrokeWithTool(session, camera, identity, SculptTool::Mask, 24.0f);
+            runOneStrokeWithTool(session, camera, identity, SculptTool::Mask, -24.0f);
+            session.undoStroke();
+            r.check("FCM_18_precondition_a_redo_exists_before_clear_mask",
+                    session.history().redoDepth() == 1);
+            r.check("FCM_18_clear_mask_drops_the_abandoned_future_as_well",
+                    session.clearMask() == SculptSession::SculptHistoryStatus::Ok
+                        && session.history().redoDepth() == 0);
+        }
+    }
+
+    // FCM-19: the caps are exactly the numbers they were, the mask side is
+    // charged, and navigation moves no counter.
+    {
+        r.check("FCM_19_the_entry_cap_is_unchanged", kMaxSculptHistoryEntries == 32);
+        r.check("FCM_19_the_per_body_byte_cap_is_unchanged",
+                kMaxSculptHistoryBytes == 4u * 1024u * 1024u);
+        r.check("FCM_19_the_per_entry_byte_cap_is_unchanged",
+                kMaxSculptHistoryEntryBytes == 1u * 1024u * 1024u);
+        r.check("FCM_19_a_mask_delta_costs_twelve_bytes_per_touched_vertex",
+                kSculptMaskDeltaBytesPerVertex == 12);
+
+        // Charged, and by exactly that much: two deltas differing only in how
+        // many mask vertices they name differ by 12 bytes each.
+        SculptStrokeDelta small;
+        SculptStrokeDelta large;
+        for (uint32_t i = 0; i < 10; ++i) {
+            small.maskIndices.push_back(i);
+            small.beforeMask.push_back(0.0f);
+            small.afterMask.push_back(1.0f);
+        }
+        for (uint32_t i = 0; i < 110; ++i) {
+            large.maskIndices.push_back(i);
+            large.beforeMask.push_back(0.0f);
+            large.afterMask.push_back(1.0f);
+        }
+        r.check("FCM_19_the_mask_side_is_charged_to_the_byte_budget",
+                small.valid() && large.valid()
+                    && large.payloadBytes() - small.payloadBytes()
+                        == 100u * kSculptMaskDeltaBytesPerVertex);
+
+        // Malformed mask sides are refused rather than stored.
+        SculptStrokeDelta unsorted;
+        unsorted.maskIndices = {3, 1};
+        unsorted.beforeMask = {0.0f, 0.0f};
+        unsorted.afterMask = {1.0f, 1.0f};
+        r.check("FCM_19_an_out_of_order_mask_index_is_refused", !unsorted.valid());
+        SculptStrokeDelta ragged;
+        ragged.maskIndices = {1, 2};
+        ragged.beforeMask = {0.0f};
+        ragged.afterMask = {1.0f, 1.0f};
+        r.check("FCM_19_a_ragged_mask_side_is_refused", !ragged.valid());
+        SculptStrokeDelta outOfRange;
+        outOfRange.maskIndices = {1};
+        outOfRange.beforeMask = {0.0f};
+        outOfRange.afterMask = {1.5f};
+        r.check("FCM_19_a_mask_weight_outside_zero_to_one_is_refused", !outOfRange.valid());
+        SculptStrokeDelta empty;
+        r.check("FCM_19_an_entry_with_neither_side_is_refused", !empty.valid());
+
+        // And navigating a mixed branch moves no counter and no budget.
+        ConstructionObject object = makeSphereObject();
+        SculptSession session;
+        prepareSession(&session, object, SculptTool::Clay, 160.0f, 0.9f);
+        runOneStrokeWithTool(session, camera, identity, SculptTool::Clay, 24.0f);
+        runOneStrokeWithTool(session, camera, identity, SculptTool::Mask, -22.0f);
+        runOneStrokeWithTool(session, camera, identity, SculptTool::Clay, 26.0f);
+        const size_t bytesBefore = session.history().payloadBytes();
+        const uint64_t evictedBefore = session.history().evictedEntries();
+        session.jumpToHistoryCursor(0);
+        session.jumpToHistoryCursor(3);
+        session.jumpToHistoryCursor(1);
+        r.check("FCM_19_navigation_moves_no_counter_and_no_budget",
+                session.history().payloadBytes() == bytesBefore
+                    && session.history().evictedEntries() == evictedBefore
+                    && session.history().undoDepth() + session.history().redoDepth() == 3);
+    }
+}
 void runSculptUndoChecks(Recorder& r) {
     const CameraSnapshot camera = defaultCamera();
     const Mat4 identity = mat4Identity();
@@ -1907,7 +2719,7 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
     // The tool set
     // =======================================================================
     {
-        r.check("tool_count_is_four", kSculptToolCount == 4);
+        r.check("tool_count_is_seven", kSculptToolCount == 7);
         SculptTool decoded = SculptTool::Smooth;
         r.check("tool_index_0_is_grab",
                 sculptToolFromIndex(0, &decoded) && decoded == SculptTool::Grab);
@@ -1917,19 +2729,55 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
                 sculptToolFromIndex(2, &decoded) && decoded == SculptTool::Smooth);
         r.check("tool_index_3_is_inflate",
                 sculptToolFromIndex(3, &decoded) && decoded == SculptTool::Inflate);
+        // `SCULPT-FCM-R1` APPENDED its three, so the four above keep the
+        // indices they crossed JNI with before this stage existed.
+        r.check("tool_index_4_is_flatten",
+                sculptToolFromIndex(4, &decoded) && decoded == SculptTool::Flatten);
+        r.check("tool_index_5_is_crease",
+                sculptToolFromIndex(5, &decoded) && decoded == SculptTool::Crease);
+        r.check("tool_index_6_is_mask",
+                sculptToolFromIndex(6, &decoded) && decoded == SculptTool::Mask);
         // Refused, not clamped: an unknown tool is a caller bug, and repairing
         // it into a neighbouring tool would silently sculpt with something the
         // user did not choose.
         r.check("tool_index_negative_is_refused", !sculptToolFromIndex(-1, &decoded));
-        r.check("tool_index_past_end_is_refused", !sculptToolFromIndex(4, &decoded));
+        r.check("tool_index_past_end_is_refused", !sculptToolFromIndex(7, &decoded));
         r.check("tool_index_round_trips",
                 sculptToolIndex(SculptTool::Inflate) == 3 &&
-                    sculptToolIndex(SculptTool::Grab) == 0);
-        r.check("only_clay_and_inflate_use_normals",
+                    sculptToolIndex(SculptTool::Grab) == 0 &&
+                    sculptToolIndex(SculptTool::Mask) == 6);
+        r.check("only_the_normal_driven_tools_use_normals",
                 sculptToolUsesNormals(SculptTool::Clay) &&
                     sculptToolUsesNormals(SculptTool::Inflate) &&
+                    sculptToolUsesNormals(SculptTool::Flatten) &&
+                    sculptToolUsesNormals(SculptTool::Crease) &&
                     !sculptToolUsesNormals(SculptTool::Grab) &&
-                    !sculptToolUsesNormals(SculptTool::Smooth));
+                    !sculptToolUsesNormals(SculptTool::Smooth) &&
+                    !sculptToolUsesNormals(SculptTool::Mask));
+        r.check("mask_is_the_one_tool_that_moves_no_geometry",
+                !sculptToolMovesGeometry(SculptTool::Mask)
+                    && sculptToolMovesGeometry(SculptTool::Grab)
+                    && sculptToolMovesGeometry(SculptTool::Clay)
+                    && sculptToolMovesGeometry(SculptTool::Smooth)
+                    && sculptToolMovesGeometry(SculptTool::Inflate)
+                    && sculptToolMovesGeometry(SculptTool::Flatten)
+                    && sculptToolMovesGeometry(SculptTool::Crease));
+        r.check("every_tool_has_its_own_name", [] {
+            for (int a = 0; a < kSculptToolCount; ++a) {
+                SculptTool toolA = SculptTool::Grab;
+                if (!sculptToolFromIndex(a, &toolA)) return false;
+                if (std::strcmp(sculptToolName(toolA), "unknown") == 0) return false;
+                for (int b = a + 1; b < kSculptToolCount; ++b) {
+                    SculptTool toolB = SculptTool::Grab;
+                    if (!sculptToolFromIndex(b, &toolB)) return false;
+                    if (std::strcmp(sculptToolName(toolA),
+                                    sculptToolName(toolB)) == 0) {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }());
 
         SculptSession session;
         r.check("default_tool_is_grab", session.tool() == kDefaultSculptTool &&
@@ -2160,8 +3008,9 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
         // Source. This suite drives a standalone source, so it pairs one here.
         ConstructionTransform placement_;
         const ConstructionMesh source = object.generateMesh();
-        const SculptTool tools[kSculptToolCount] = {SculptTool::Grab, SculptTool::Clay,
-                                                    SculptTool::Smooth, SculptTool::Inflate};
+        const SculptTool tools[kSculptToolCount] = {
+            SculptTool::Grab,    SculptTool::Clay,   SculptTool::Smooth, SculptTool::Inflate,
+            SculptTool::Flatten, SculptTool::Crease, SculptTool::Mask};
 
         bool everyToolBegins = true;
         bool everyToolMissesOffMesh = true;
@@ -2979,15 +3828,22 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
         // One name per tool per assertion, so a failure says which tool broke.
         static const char* const kVertexNames[kSculptToolCount] = {
             "grab_result_is_pressure_independent", "clay_result_is_pressure_independent",
-            "smooth_result_is_pressure_independent", "inflate_result_is_pressure_independent"};
+            "smooth_result_is_pressure_independent", "inflate_result_is_pressure_independent",
+            "flatten_result_is_pressure_independent", "crease_result_is_pressure_independent",
+            "mask_result_is_pressure_independent"};
         static const char* const kRevisionNames[kSculptToolCount] = {
             "grab_revision_is_pressure_independent", "clay_revision_is_pressure_independent",
-            "smooth_revision_is_pressure_independent", "inflate_revision_is_pressure_independent"};
+            "smooth_revision_is_pressure_independent", "inflate_revision_is_pressure_independent",
+            "flatten_revision_is_pressure_independent", "crease_revision_is_pressure_independent",
+            "mask_revision_is_pressure_independent_and_does_not_move"};
         static const char* const kAffectedNames[kSculptToolCount] = {
             "grab_affected_set_is_pressure_independent",
             "clay_affected_set_is_pressure_independent",
             "smooth_affected_set_is_pressure_independent",
-            "inflate_affected_set_is_pressure_independent"};
+            "inflate_affected_set_is_pressure_independent",
+            "flatten_affected_set_is_pressure_independent",
+            "crease_affected_set_is_pressure_independent",
+            "mask_affected_set_is_pressure_independent"};
 
         for (int toolIndex = 0; toolIndex < kSculptToolCount; ++toolIndex) {
             SculptTool tool = SculptTool::Grab;
@@ -3021,9 +3877,16 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
 
             r.check(kVertexNames[toolIndex],
                     sameVertices(lightRun.mesh().vertices(), heavyRun.mesh().vertices()));
+            // The two runs must agree, whatever the tool. Whether the revision
+            // MOVED is a second, tool-dependent fact: a Mask stroke writes no
+            // position, so it deliberately does not advance the geometry's own
+            // counter — that is what keeps a mask out of the project
+            // fingerprint. See SculptSession::updateStroke.
             r.check(kRevisionNames[toolIndex],
-                    lightRun.mesh().revision() == heavyRun.mesh().revision() &&
-                        lightRun.mesh().revision() > kFrozenSculptRevision);
+                    lightRun.mesh().revision() == heavyRun.mesh().revision()
+                        && (sculptToolMovesGeometry(tool)
+                                ? lightRun.mesh().revision() > kFrozenSculptRevision
+                                : lightRun.mesh().revision() == kFrozenSculptRevision));
             r.check(kAffectedNames[toolIndex],
                     lightAffected == heavyAffected && lightAffected > 0);
         }
@@ -3294,27 +4157,46 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
                                      120.0f * scaledStroke.worldPerPixel()) < 1e-4f);
         }
 
-        // --- S020R3-05..08: every shipped brush uses the shared metric -----
+        // --- S020R3-05..08 + FCM-20: every shipped brush uses the metric ---
         //
         // Parameterized, because the affected set and its weights are captured
         // by ONE shared path: four independent corrections is exactly what this
         // stage refused to write, so the test is written the same way.
+        //
+        // `SCULPT-FCM-R1` needed nothing here but three more names: the loop
+        // runs over kSculptToolCount, so Flatten, Crease and Mask are held to
+        // the Stage 020R3 world/display metric by the SAME assertions the
+        // original four are, which is the strongest form the claim can take —
+        // there is no second footprint rule for a new brush to get wrong.
         {
             static const char* const kSetNames[kSculptToolCount] = {
                 "s020r3_05_grab_affected_set_is_scale_correct",
                 "s020r3_06_clay_affected_set_is_scale_correct",
                 "s020r3_07_smooth_affected_set_is_scale_correct",
-                "s020r3_08_inflate_affected_set_is_scale_correct"};
+                "s020r3_08_inflate_affected_set_is_scale_correct",
+                "fcm_20_flatten_affected_set_is_scale_correct",
+                "fcm_20_crease_affected_set_is_scale_correct",
+                "fcm_20_mask_affected_set_is_scale_correct"};
             static const char* const kWeightNames[kSculptToolCount] = {
                 "s020r3_05_grab_weights_follow_the_world_distance",
                 "s020r3_06_clay_weights_follow_the_world_distance",
                 "s020r3_07_smooth_weights_follow_the_world_distance",
-                "s020r3_08_inflate_weights_follow_the_world_distance"};
+                "s020r3_08_inflate_weights_follow_the_world_distance",
+                "fcm_20_flatten_weights_follow_the_world_distance",
+                "fcm_20_crease_weights_follow_the_world_distance",
+                "fcm_20_mask_weights_follow_the_world_distance"};
             static const char* const kMoveNames[kSculptToolCount] = {
                 "s020r3_05_grab_still_deforms_a_scaled_body",
                 "s020r3_06_clay_still_deforms_a_scaled_body",
                 "s020r3_07_smooth_still_deforms_a_scaled_body",
-                "s020r3_08_inflate_still_deforms_a_scaled_body"};
+                "s020r3_08_inflate_still_deforms_a_scaled_body",
+                "fcm_20_flatten_still_deforms_a_scaled_body",
+                "fcm_20_crease_still_deforms_a_scaled_body",
+                // Mask writes weights and not positions, so what this asserts
+                // for it is that the stroke did something, left every position
+                // finite, and changed no count -- which is exactly what the
+                // other six are asserted to do beyond deforming.
+                "fcm_20_mask_paints_a_scaled_body_and_moves_no_count"};
 
             const Placement p = placementOf(3.0, 1.0, 1.0, 18.0, 42.0, -9.0);
 
@@ -3624,12 +4506,18 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
                 "s020r3_12_grab_unscaled_set_is_the_plain_local_ball",
                 "s020r3_12_clay_unscaled_set_is_the_plain_local_ball",
                 "s020r3_12_smooth_unscaled_set_is_the_plain_local_ball",
-                "s020r3_12_inflate_unscaled_set_is_the_plain_local_ball"};
+                "s020r3_12_inflate_unscaled_set_is_the_plain_local_ball",
+                "fcm_20_flatten_unscaled_set_is_the_plain_local_ball",
+                "fcm_20_crease_unscaled_set_is_the_plain_local_ball",
+                "fcm_20_mask_unscaled_set_is_the_plain_local_ball"};
             static const char* const kRunNames[kSculptToolCount] = {
                 "s020r3_12_grab_unscaled_stroke_still_deforms",
                 "s020r3_12_clay_unscaled_stroke_still_deforms",
                 "s020r3_12_smooth_unscaled_stroke_still_deforms",
-                "s020r3_12_inflate_unscaled_stroke_still_deforms"};
+                "s020r3_12_inflate_unscaled_stroke_still_deforms",
+                "fcm_20_flatten_unscaled_stroke_still_deforms",
+                "fcm_20_crease_unscaled_stroke_still_deforms",
+                "fcm_20_mask_unscaled_stroke_still_paints"};
 
             for (int toolIndex = 0; toolIndex < kSculptToolCount; ++toolIndex) {
                 SculptTool tool = SculptTool::Grab;
@@ -3681,10 +4569,16 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
 
                 const bool clayStaysOnAxis = tool != SculptTool::Clay ||
                                              offAxisDistance(total, baseNormal) < 1e-5f;
+                // Mask paints rather than deforms, so what it owes here is the
+                // same "the stroke did work and left the mesh finite" claim
+                // minus the two that are statements about GEOMETRY: it moves no
+                // position and therefore mints no revision.
+                const bool revisionRule = sculptToolMovesGeometry(tool)
+                    ? session.mesh().revision() > kFrozenSculptRevision
+                    : session.mesh().revision() == kFrozenSculptRevision;
                 r.check(kRunNames[toolIndex],
                         began && applied > 0 && clayStaysOnAxis &&
-                            allPositionsFinite(session.mesh()) &&
-                            session.mesh().revision() > kFrozenSculptRevision);
+                            allPositionsFinite(session.mesh()) && revisionRule);
             }
         }
     }
@@ -3895,6 +4789,7 @@ int runSculptSelfTests(SculptSelfTestResult* out, int max) {
     }
 
     runSculptUndoChecks(r);
+    runFlattenCreaseMaskChecks(r);
 
     return r.n;
 }

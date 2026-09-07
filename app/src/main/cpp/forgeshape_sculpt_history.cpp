@@ -14,15 +14,26 @@ bool finite(const Vec3& v) {
 
 size_t SculptStrokeDelta::payloadBytes() const {
     const size_t n = vertexIndices.size();
-    return n * (sizeof(uint32_t) + 2 * sizeof(Vec3)) + kSculptHistoryEntryOverheadBytes;
+    const size_t m = maskIndices.size();
+    // Both sides are charged, and the ONE per-entry overhead allowance covers
+    // the extra three vector headers too: it was already a deliberate
+    // over-estimate (128 bytes for three 24-byte headers plus slack), and six
+    // headers still fit inside it with room to spare. The caps therefore stay
+    // exactly the numbers they were.
+    return n * (sizeof(uint32_t) + 2 * sizeof(Vec3)) + m * kSculptMaskDeltaBytesPerVertex
+        + kSculptHistoryEntryOverheadBytes;
 }
 
 bool SculptStrokeDelta::valid() const {
     const size_t n = vertexIndices.size();
-    if (n == 0) {
-        return false;
+    const size_t m = maskIndices.size();
+    if (n == 0 && m == 0) {
+        return false;  // an entry that names nothing undoes to itself
     }
     if (beforePositions.size() != n || afterPositions.size() != n) {
+        return false;
+    }
+    if (beforeMask.size() != m || afterMask.size() != m) {
         return false;
     }
     for (size_t i = 0; i < n; ++i) {
@@ -33,6 +44,21 @@ bool SculptStrokeDelta::valid() const {
             return false;
         }
         if (!finite(beforePositions[i]) || !finite(afterPositions[i])) {
+            return false;
+        }
+    }
+    for (size_t i = 0; i < m; ++i) {
+        if (i > 0 && maskIndices[i] <= maskIndices[i - 1]) {
+            return false;
+        }
+        // A mask weight outside [0, 1] is refused rather than clamped: the
+        // domain's one writer already clamps, so a value out of range here
+        // means the delta was not built by it.
+        if (!std::isfinite(beforeMask[i]) || !std::isfinite(afterMask[i])) {
+            return false;
+        }
+        if (beforeMask[i] < 0.0f || beforeMask[i] > 1.0f || afterMask[i] < 0.0f
+            || afterMask[i] > 1.0f) {
             return false;
         }
     }

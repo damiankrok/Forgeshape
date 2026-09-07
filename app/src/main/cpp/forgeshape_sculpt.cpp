@@ -70,6 +70,45 @@ bool worldPerPixelAtDepth(const CameraSnapshot& camera, float depth, int viewpor
 
 Vec3 positionOf(const MeshVertex& v) { return Vec3{v.position[0], v.position[1], v.position[2]}; }
 
+// The WORLD direction a LOCAL surface normal actually points, UNNORMALIZED.
+//
+// The normal matrix, without taking a third argument that could fall out of
+// step: for M = T * R * S the inverse transpose of the upper-left 3x3 is
+// exactly the TRANSPOSE of the inverse model's upper-left 3x3, which is
+// R * S^-1 — the same matrix the renderer shades a scaled body with.
+// Column-major indexing means the transpose reads along rows.
+//
+// One implementation, because three callers now need it: the shared
+// normal-step helper, and Flatten's and Crease's world-space arithmetic. A
+// second copy is exactly how a stretched body would end up creased along one
+// direction and flattened along another.
+Vec3 worldNormalDirection(const Mat4& inverseModel, const Vec3& localNormal) {
+    return Vec3{
+        inverseModel.m[0] * localNormal.x + inverseModel.m[1] * localNormal.y +
+            inverseModel.m[2] * localNormal.z,
+        inverseModel.m[4] * localNormal.x + inverseModel.m[5] * localNormal.y +
+            inverseModel.m[6] * localNormal.z,
+        inverseModel.m[8] * localNormal.x + inverseModel.m[9] * localNormal.y +
+            inverseModel.m[10] * localNormal.z,
+    };
+}
+
+// `v` scaled to unit length, or false when it has none. Written as a predicate
+// so a degenerate direction is a case the caller must handle rather than a
+// value it might use.
+bool normalizeOrFail(const Vec3& v, Vec3* out) {
+    const float lengthSquared = vec3Dot(v, v);
+    if (!std::isfinite(lengthSquared) || lengthSquared <= 0.0f) {
+        return false;
+    }
+    const float length = std::sqrt(lengthSquared);
+    if (!std::isfinite(length) || length <= 0.0f) {
+        return false;
+    }
+    *out = vec3Scale(v, 1.0f / length);
+    return vec3Finite(*out);
+}
+
 }  // namespace
 
 const char* productModeName(ProductMode mode) {
@@ -90,6 +129,9 @@ const char* sculptToolName(SculptTool tool) {
         case SculptTool::Clay: return "clay";
         case SculptTool::Smooth: return "smooth";
         case SculptTool::Inflate: return "inflate";
+        case SculptTool::Flatten: return "flatten";
+        case SculptTool::Crease: return "crease";
+        case SculptTool::Mask: return "mask";
     }
     return "unknown";
 }
@@ -105,8 +147,16 @@ bool sculptToolFromIndex(int index, SculptTool* out) {
 }
 
 bool sculptToolUsesNormals(SculptTool tool) {
-    return tool == SculptTool::Clay || tool == SculptTool::Inflate;
+    // Flatten reads normals to FIT its plane and then displaces along that one
+    // plane normal rather than along each vertex's own; Crease displaces along
+    // the captured per-vertex normal exactly as Clay does. Both answer yes: the
+    // question is whether the surface's own direction is an input, and for both
+    // of them it is.
+    return tool == SculptTool::Clay || tool == SculptTool::Inflate
+        || tool == SculptTool::Flatten || tool == SculptTool::Crease;
 }
+
+bool sculptToolMovesGeometry(SculptTool tool) { return tool != SculptTool::Mask; }
 
 // ---------------------------------------------------------------------------
 // Brush parameters
@@ -128,6 +178,20 @@ float clampBrushStrength(float requested) {
     if (requested < kMinBrushStrength) return kMinBrushStrength;
     if (requested > kMaxBrushStrength) return kMaxBrushStrength;
     return requested;
+}
+
+float sculptMaskFactor(float maskWeight) {
+    if (!std::isfinite(maskWeight) || maskWeight <= 0.0f) {
+        return 1.0f;  // unmasked: the full effect
+    }
+    if (maskWeight >= 1.0f) {
+        // EXACTLY zero, by an equality rather than by arithmetic that happens
+        // to land there. "A fully masked vertex does not move" has to be an
+        // identity: a residual 1e-8 would still write a position, mint a
+        // revision and put an entry in the history.
+        return 0.0f;
+    }
+    return 1.0f - maskWeight;
 }
 
 float sculptFalloff(float distance, float radius) {
@@ -162,19 +226,9 @@ Vec3 brushLocalStepAlongNormal(const Mat4& inverseModel, const Vec3& localNormal
         return kNoStep;
     }
 
-    // The normal matrix, without taking a third argument that could fall out of
-    // step: for M = T * R * S the inverse transpose of the upper-left 3x3 is
-    // exactly the TRANSPOSE of the inverse model's upper-left 3x3, which is
-    // R * S^-1 — the same matrix the renderer shades a scaled body with.
-    // Column-major indexing means the transpose reads along rows.
-    const Vec3 worldNormal{
-        inverseModel.m[0] * localNormal.x + inverseModel.m[1] * localNormal.y +
-            inverseModel.m[2] * localNormal.z,
-        inverseModel.m[4] * localNormal.x + inverseModel.m[5] * localNormal.y +
-            inverseModel.m[6] * localNormal.z,
-        inverseModel.m[8] * localNormal.x + inverseModel.m[9] * localNormal.y +
-            inverseModel.m[10] * localNormal.z,
-    };
+    // See worldNormalDirection: the inverse transpose of the model's linear
+    // part, read off the inverse the rest of the stroke already uses.
+    const Vec3 worldNormal = worldNormalDirection(inverseModel, localNormal);
     const float length = std::sqrt(vec3Dot(worldNormal, worldNormal));
     if (!std::isfinite(length) || length <= 0.0f) {
         return kNoStep;  // a degenerate normal deposits nothing
@@ -430,6 +484,17 @@ bool SculptMesh::freezeFrom(const ConstructionMesh& source, ObjectId objectId,
     vertices_ = source.vertices;
     indices_ = source.indices;
     objectId_ = objectId;
+    // Every Freeze starts with an EMPTY mask, whatever the source vertices
+    // happened to carry in that field. A mask describes work on the mesh that
+    // exists right now, so a Freeze — including a destructive Reset from
+    // source, and the freeze that rebuilds a loaded project's sculpt geometry —
+    // is exactly the boundary it must not cross, on the same terms the history
+    // does not cross one. This is also why a reopened project starts unmasked
+    // without the codec ever having to know that a mask exists.
+    for (MeshVertex& v : vertices_) {
+        v.mask = 0.0f;
+    }
+    maskedCount_ = 0;
     // Sidedness is part of what is being frozen, not a property of whatever the
     // Construction Source is at some later moment. Copying it here is what keeps
     // a stale frozen solid single-sided after the Source has been changed to a
@@ -490,6 +555,37 @@ bool SculptMesh::setVertexPosition(uint32_t index, const Vec3& position) {
     return true;
 }
 
+float SculptMesh::maskWeight(uint32_t index) const {
+    if (index >= vertices_.size()) {
+        return 0.0f;
+    }
+    return vertices_[index].mask;
+}
+
+bool SculptMesh::setMaskWeight(uint32_t index, float weight) {
+    if (index >= vertices_.size() || !std::isfinite(weight)) {
+        return false;
+    }
+    float clamped = weight;
+    if (clamped < 0.0f) clamped = 0.0f;
+    if (clamped > 1.0f) clamped = 1.0f;
+    MeshVertex& v = vertices_[index];
+    if (v.mask == clamped) {
+        return false;  // an unchanged weight costs no publication
+    }
+    // The count is kept in step here and only here, so "does this body carry a
+    // mask" never has to scan the mesh — the chrome asks it on every refresh.
+    if (v.mask == 0.0f && clamped != 0.0f) {
+        ++maskedCount_;
+    } else if (v.mask != 0.0f && clamped == 0.0f) {
+        --maskedCount_;
+    }
+    v.mask = clamped;
+    // Deliberately NOT invalidating the normal cache: a mask moves no position,
+    // so every derived normal is still exactly right.
+    return true;
+}
+
 SculptRevision SculptMesh::advanceRevision() {
     if (!frozen()) {
         return kNoSculptRevision;
@@ -538,6 +634,7 @@ bool SculptStroke::begin(SculptTool tool, const SculptMesh& mesh, const CameraSn
     lastLocalDisplacement_ = Vec3{0.0f, 0.0f, 0.0f};
     lastAmount_ = 0.0f;
     travelPixels_ = 0.0f;
+    flattenPlaneValid_ = false;
 
     if (!mesh.frozen() || viewportWidth <= 0 || viewportHeight <= 0) {
         return false;
@@ -630,6 +727,9 @@ bool SculptStroke::begin(SculptTool tool, const SculptMesh& mesh, const CameraSn
         captured.weight = weight;
         captured.basePosition = p;
         captured.baseNormal = (i < normals.size()) ? normals[i] : Vec3{0.0f, 0.0f, 0.0f};
+        // The mask, captured with everything else. See SculptStrokeVertex.
+        captured.baseMask = mesh.maskWeight(i);
+        captured.maskFactor = sculptMaskFactor(captured.baseMask);
         affected_.push_back(captured);
     }
     if (affected_.empty()) {
@@ -656,7 +756,12 @@ bool SculptStroke::begin(SculptTool tool, const SculptMesh& mesh, const CameraSn
     cameraRight_ = viewRight(camera);
     cameraUp_ = viewUp(camera);
     inverseModel_ = inverseModel;
+    model_ = model;
     scratchTargets_.clear();
+    // Fitted once, here, from the set that was just captured — so Flatten's
+    // target is a property of the surface the finger landed on and cannot drift
+    // as the surface moves under it. Every other tool ignores it.
+    fitFlattenPlane(model);
     // The pre-stroke answer, and the only moment it is still available: by the
     // time this stroke ends the mesh will report edits whatever it reported
     // now. See buildDelta().
@@ -706,6 +811,17 @@ bool SculptStroke::update(SculptMesh& mesh, float screenX, float screenY, float 
     if (tool_ == SculptTool::Smooth) {
         return applySmooth(mesh, clampedStrength, travelFraction);
     }
+    if (tool_ == SculptTool::Flatten) {
+        // Interpolation toward a plane, exactly as Smooth interpolates toward a
+        // neighbour average: the target is a distance already measured in world
+        // meters, so no deposition amount is computed for it.
+        return applyFlatten(mesh, clampedStrength, travelFraction);
+    }
+    if (tool_ == SculptTool::Mask) {
+        // Moves no vertex at all. It shares the affected set, the falloff and
+        // the travel rule, and diverges only in what it writes.
+        return applyMask(mesh, clampedStrength, travelFraction);
+    }
 
     // WORLD meters, because worldRadius_ is: what Clay and Inflate deposit is
     // measured in the same metric that chose the affected set, so a stretched
@@ -722,6 +838,9 @@ bool SculptStroke::update(SculptMesh& mesh, float screenX, float screenY, float 
     }
     lastAmount_ = amount;
 
+    if (tool_ == SculptTool::Crease) {
+        return applyCrease(mesh, amount);
+    }
     return (tool_ == SculptTool::Clay) ? applyClay(mesh, amount) : applyInflate(mesh, amount);
 }
 
@@ -759,7 +878,7 @@ bool SculptStroke::applyGrab(SculptMesh& mesh, float screenX, float screenY, flo
     // it took to get there.
     bool changed = false;
     for (const SculptStrokeVertex& v : affected_) {
-        const Vec3 target = vec3Add(v.basePosition, vec3Scale(localDelta, v.weight));
+        const Vec3 target = vec3Add(v.basePosition, vec3Scale(localDelta, v.effectiveWeight()));
         if (!vec3Finite(target)) {
             continue;
         }
@@ -795,7 +914,7 @@ bool SculptStroke::applyClay(SculptMesh& mesh, float amount) {
         // shared helper. On an unscaled body with a unit normal that is the
         // captured local normal times the amount, exactly as before.
         const Vec3 step =
-            brushLocalStepAlongNormal(inverseModel_, v.baseNormal, amount * v.weight);
+            brushLocalStepAlongNormal(inverseModel_, v.baseNormal, amount * v.effectiveWeight());
         if (!vec3Finite(step)) {
             continue;
         }
@@ -849,7 +968,7 @@ bool SculptStroke::applyInflate(SculptMesh& mesh, float amount) {
         // The same shared conversion Clay uses; only the normal differs, which
         // is the whole difference between the two brushes.
         const Vec3 step =
-            brushLocalStepAlongNormal(inverseModel_, scratchTargets_[i], amount * v.weight);
+            brushLocalStepAlongNormal(inverseModel_, scratchTargets_[i], amount * v.effectiveWeight());
         if (!vec3Finite(step)) {
             continue;
         }
@@ -930,7 +1049,7 @@ bool SculptStroke::applySmooth(SculptMesh& mesh, float strength, float travelFra
             continue;
         }
         const SculptStrokeVertex& v = affected_[i];
-        float lambda = strength * v.weight * kSmoothGain * travelFraction;
+        float lambda = strength * v.effectiveWeight() * kSmoothGain * travelFraction;
         if (!std::isfinite(lambda) || lambda <= 0.0f) {
             continue;
         }
@@ -958,6 +1077,250 @@ bool SculptStroke::applySmooth(SculptMesh& mesh, float strength, float travelFra
     return changed;
 }
 
+// --- Flatten: draw the surface toward one plane fitted to the footprint -----
+//
+// The plane is fitted ONCE, at pointer-down, in WORLD space (see
+// fitFlattenPlane), and then held fixed for the whole stroke exactly as the
+// affected set and the falloff weights are. That is what makes repeated passes
+// converge on one surface rather than chase a plane that each pass has just
+// moved.
+//
+// The step is INTERPOLATION toward that plane, never a push through it:
+//
+//     d      = dot(P - C, N)                          signed WORLD distance
+//     lambda = strength * weight * kFlattenGain * travelFraction  (<= kMaxFlattenLambda)
+//     P'     = P - N * (d * lambda)
+//
+// so |d| is multiplied by (1 - lambda) on every application and can neither
+// grow nor change sign. Both facts are what "flattening converges" means, and
+// both are per vertex rather than on average.
+//
+// Every quantity is measured in the WORLD metric the affected set was chosen
+// with: the distance is a world length, the step is built in world space and
+// carried back through the inverse model, so a body carrying a non-uniform
+// Scale is flattened onto a real plane rather than onto a sheared one.
+bool SculptStroke::applyFlatten(SculptMesh& mesh, float strength, float travelFraction) {
+    if (!flattenPlaneValid_) {
+        // A degenerate fit: the footprint's normals cancelled, so there is no
+        // plane to flatten onto. Nothing moves, and nothing is invented.
+        return false;
+    }
+
+    bool changed = false;
+    for (size_t i = 0; i < affected_.size(); ++i) {
+        const SculptStrokeVertex& v = affected_[i];
+        float lambda = strength * v.effectiveWeight() * kFlattenGain * travelFraction;
+        if (!std::isfinite(lambda) || lambda <= 0.0f) {
+            continue;  // outside the brush, or fully masked
+        }
+        if (lambda > kMaxFlattenLambda) {
+            lambda = kMaxFlattenLambda;
+        }
+
+        // The CURRENT position, not the base one: Flatten accumulates over the
+        // stroke, so each pass has to measure the distance that is left.
+        const Vec3 current = mesh.vertexPosition(v.index);
+        const Vec3 world = mat4TransformPoint(model_, current);
+        if (!vec3Finite(world)) {
+            continue;
+        }
+        const float distance = vec3Dot(vec3Sub(world, flattenPoint_), flattenNormal_);
+        if (!std::isfinite(distance) || distance == 0.0f) {
+            continue;  // already on the plane
+        }
+        const Vec3 worldStep = vec3Scale(flattenNormal_, -distance * lambda);
+        const Vec3 localStep = mat4TransformDirection(inverseModel_, worldStep);
+        if (!vec3Finite(localStep)) {
+            continue;
+        }
+        const Vec3 target = vec3Add(current, localStep);
+        if (!vec3Finite(target)) {
+            continue;
+        }
+        if (i == centreSlot_) {
+            lastLocalDisplacement_ = localStep;
+        }
+        if (target.x == current.x && target.y == current.y && target.z == current.z) {
+            continue;
+        }
+        if (mesh.setVertexPosition(v.index, target)) {
+            changed = true;
+        }
+    }
+    lastAmount_ = 0.0f;
+    return changed;
+}
+
+void SculptStroke::fitFlattenPlane(const Mat4& model) {
+    flattenPlaneValid_ = false;
+    flattenPoint_ = Vec3{0.0f, 0.0f, 0.0f};
+    flattenNormal_ = Vec3{0.0f, 1.0f, 0.0f};
+    if (affected_.empty()) {
+        return;
+    }
+
+    // Weighted by the SAME falloff the brush deforms with, so the plane is
+    // anchored where the brush is strongest rather than pulled around by the
+    // rim vertices that will barely move. Both sums are over the captured base
+    // values, which is what makes the fit deterministic: the same footprint
+    // always produces the same plane, with no camera, zoom or viewport in it.
+    float totalWeight = 0.0f;
+    Vec3 centroid{0.0f, 0.0f, 0.0f};
+    Vec3 normalSum{0.0f, 0.0f, 0.0f};
+    for (const SculptStrokeVertex& v : affected_) {
+        const Vec3 world = mat4TransformPoint(model, v.basePosition);
+        if (!vec3Finite(world)) {
+            continue;
+        }
+        const Vec3 worldNormal = worldNormalDirection(inverseModel_, v.baseNormal);
+        Vec3 unitNormal{0.0f, 0.0f, 0.0f};
+        if (!normalizeOrFail(worldNormal, &unitNormal)) {
+            // A vertex with no defined direction contributes no direction. It
+            // still contributes its POSITION, because where the surface is is
+            // not in doubt just because which way it faces is.
+            unitNormal = Vec3{0.0f, 0.0f, 0.0f};
+        }
+        centroid = vec3Add(centroid, vec3Scale(world, v.weight));
+        normalSum = vec3Add(normalSum, vec3Scale(unitNormal, v.weight));
+        totalWeight += v.weight;
+    }
+    if (!(totalWeight > 0.0f) || !std::isfinite(totalWeight)) {
+        return;
+    }
+
+    const Vec3 point = vec3Scale(centroid, 1.0f / totalWeight);
+    Vec3 normal{0.0f, 0.0f, 0.0f};
+    if (!vec3Finite(point) || !normalizeOrFail(normalSum, &normal)) {
+        // A saddle or a fold whose normals cancel has no single plane, and
+        // choosing one arbitrarily would flatten the surface onto something the
+        // user cannot see. Flatten simply does nothing there.
+        return;
+    }
+    flattenPoint_ = point;
+    flattenNormal_ = normal;
+    flattenPlaneValid_ = true;
+}
+
+// --- Crease: cut a narrow groove, inward and pinched -------------------------
+//
+// One displacement with two components, both scaled from the SAME `amount`
+// every path-driven brush computes, so Crease answers to Radius, Strength and
+// pointer travel exactly as Clay does:
+//
+//   inward   -n * amount * weight * kCreaseInwardFraction
+//            along the normal the surface had at stroke start, so successive
+//            passes deepen ONE channel rather than following a normal the
+//            previous pass just tilted. This is the Clay rule with the sign
+//            reversed, and it goes through the same shared conversion.
+//
+//   pinch    t_hat * amount * weight * kCreasePinchFraction
+//            where t is the part of (centre - P) perpendicular to that vertex's
+//            own normal. Gathering the surface ALONG the groove is what makes
+//            it narrower than the brush; a pinch that ignored the normal would
+//            just be a second inward push near the centre.
+//
+// Both are built in WORLD space and carried back through the inverse model, so
+// a body under a non-uniform Scale gets a groove of even depth and even width
+// rather than one that is deeper along whichever axis is scaled up.
+//
+// A vertex with no usable normal is skipped entirely, and one whose tangential
+// direction degenerates — the vertex sitting exactly under the brush centre —
+// gets the inward component alone. Neither case invents a direction, so no
+// small or degenerate local configuration can produce a NaN.
+bool SculptStroke::applyCrease(SculptMesh& mesh, float amount) {
+    bool changed = false;
+    for (size_t i = 0; i < affected_.size(); ++i) {
+        const SculptStrokeVertex& v = affected_[i];
+        const float weight = v.effectiveWeight();
+        if (!(weight > 0.0f)) {
+            continue;  // outside the brush, or fully masked
+        }
+
+        Vec3 unitNormal{0.0f, 0.0f, 0.0f};
+        if (!normalizeOrFail(worldNormalDirection(inverseModel_, v.baseNormal), &unitNormal)) {
+            continue;
+        }
+        const Vec3 current = mesh.vertexPosition(v.index);
+        const Vec3 world = mat4TransformPoint(model_, current);
+        if (!vec3Finite(world)) {
+            continue;
+        }
+
+        Vec3 worldStep = vec3Scale(unitNormal, -amount * weight * kCreaseInwardFraction);
+
+        // The brush centre in world space. Recomputed from the captured local
+        // centre rather than stored, so it cannot fall out of step with the
+        // model the stroke actually holds.
+        const Vec3 worldCentre = mat4TransformPoint(model_, localCenter_);
+        if (vec3Finite(worldCentre)) {
+            const Vec3 toCentre = vec3Sub(worldCentre, world);
+            const Vec3 tangential =
+                vec3Sub(toCentre, vec3Scale(unitNormal, vec3Dot(toCentre, unitNormal)));
+            Vec3 pinchDirection{0.0f, 0.0f, 0.0f};
+            if (normalizeOrFail(tangential, &pinchDirection)) {
+                worldStep = vec3Add(worldStep,
+                                    vec3Scale(pinchDirection,
+                                              amount * weight * kCreasePinchFraction));
+            }
+        }
+        if (!vec3Finite(worldStep)) {
+            continue;
+        }
+
+        const Vec3 localStep = mat4TransformDirection(inverseModel_, worldStep);
+        if (!vec3Finite(localStep)) {
+            continue;
+        }
+        const Vec3 target = vec3Add(current, localStep);
+        if (!vec3Finite(target)) {
+            continue;
+        }
+        if (i == centreSlot_) {
+            lastLocalDisplacement_ = localStep;
+        }
+        if (target.x == current.x && target.y == current.y && target.z == current.z) {
+            continue;
+        }
+        if (mesh.setVertexPosition(v.index, target)) {
+            changed = true;
+        }
+    }
+    return changed;
+}
+
+// --- Mask: paint the weight that holds the other six off a vertex ------------
+//
+// The one tool that writes no position. It shares everything above it — the hit
+// test, the affected set, the falloff, the travel rule — and diverges only in
+// what it writes, which is the whole reason it is a tool in this kernel rather
+// than a mode beside it.
+//
+// It is deliberately NOT scaled by the mask it is painting: a mask brush that
+// held itself off an already-masked vertex could never reach 1.0.
+bool SculptStroke::applyMask(SculptMesh& mesh, float strength, float travelFraction) {
+    bool changed = false;
+    for (const SculptStrokeVertex& v : affected_) {
+        float delta = strength * v.weight * kMaskGain * travelFraction;
+        if (!std::isfinite(delta) || delta <= 0.0f) {
+            continue;
+        }
+        // Bounded per move, so one teleporting pointer event cannot paint a
+        // full mask in a single step — the same reason a deposition amount is
+        // clamped to one brush radius.
+        if (delta > kMaxMaskStep) {
+            delta = kMaxMaskStep;
+        }
+        // setMaskWeight clamps into [0, 1] and reports whether the stored value
+        // actually moved, so an already-full vertex costs no publication.
+        if (mesh.setMaskWeight(v.index, mesh.maskWeight(v.index) + delta)) {
+            changed = true;
+        }
+    }
+    lastAmount_ = 0.0f;
+    lastLocalDisplacement_ = Vec3{0.0f, 0.0f, 0.0f};
+    return changed;
+}
+
 bool SculptStroke::buildDelta(const SculptMesh& mesh, SculptStrokeDelta* out) const {
     if (out == nullptr || !active_ || !mesh.frozen() || affected_.empty()) {
         return false;
@@ -978,9 +1341,9 @@ bool SculptStroke::buildDelta(const SculptMesh& mesh, SculptStrokeDelta* out) co
         const Vec3 after = mesh.vertexPosition(v.index);
         // Only the vertices that actually MOVED. A brush captures everything
         // inside its falloff, but a low-weight rim vertex, an isolated vertex
-        // Smooth could not average, and every vertex of a stroke that never got
-        // a Move are all unchanged — and an entry that restored them would be
-        // storing bytes that undo to themselves.
+        // Smooth could not average, a fully masked vertex, and every vertex of a
+        // stroke that never got a Move are all unchanged — and an entry that
+        // restored them would be storing bytes that undo to themselves.
         if (after.x == v.basePosition.x && after.y == v.basePosition.y
             && after.z == v.basePosition.z) {
             continue;
@@ -993,15 +1356,43 @@ bool SculptStroke::buildDelta(const SculptMesh& mesh, SculptStrokeDelta* out) co
         delta.afterPositions.push_back(after);
     }
 
-    if (delta.vertexIndices.empty()) {
-        return false;  // the no-op stroke: nothing moved, so there is no entry
+    // The MASK side, on exactly the same terms (`SCULPT-FCM-R1`): only the
+    // vertices whose weight actually moved, in the same ascending order, with
+    // the value captured at pointer-down as the "before". A geometry stroke
+    // paints no mask and a Mask stroke moves no vertex, so in practice one side
+    // is always empty — but the entry is built from both, once, so nothing here
+    // has to ask which tool made it.
+    delta.maskIndices.reserve(affected_.size());
+    delta.beforeMask.reserve(affected_.size());
+    delta.afterMask.reserve(affected_.size());
+    for (const SculptStrokeVertex& v : affected_) {
+        const float after = mesh.maskWeight(v.index);
+        if (after == v.baseMask) {
+            continue;
+        }
+        if (!delta.maskIndices.empty() && v.index <= delta.maskIndices.back()) {
+            return false;
+        }
+        delta.maskIndices.push_back(v.index);
+        delta.beforeMask.push_back(v.baseMask);
+        delta.afterMask.push_back(after);
+    }
+
+    if (delta.vertexIndices.empty() && delta.maskIndices.empty()) {
+        return false;  // the no-op stroke: nothing changed, so there is no entry
     }
 
     delta.beforeHasEdits = beganWithEdits_;
     // A stroke that moved a vertex leaves the mesh edited, by definition. Stored
     // rather than assumed at apply time, so redo restores a fact rather than
     // re-deriving one.
-    delta.afterHasEdits = true;
+    //
+    // A MASK-only entry carries both flags equal to what the mesh reported at
+    // pointer-down, because it changed nothing about whether the mesh has
+    // sculpt edits — and applyHistorySide ignores the flags for such an entry
+    // anyway. Two defences rather than one, because a mask act that quietly
+    // marked a mesh edited would put a runtime annotation into `.forge`.
+    delta.afterHasEdits = delta.vertexIndices.empty() ? beganWithEdits_ : true;
     *out = std::move(delta);
     return true;
 }
@@ -1017,6 +1408,7 @@ void SculptStroke::cancel() {
     lastLocalDisplacement_ = Vec3{0.0f, 0.0f, 0.0f};
     lastAmount_ = 0.0f;
     travelPixels_ = 0.0f;
+    flattenPlaneValid_ = false;
 }
 
 float SculptStroke::weightOfVertex(uint32_t meshVertexIndex) const {
@@ -1120,8 +1512,15 @@ bool SculptSession::updateStroke(float screenX, float screenY) {
     if (!stroke_.update(target().mesh, screenX, screenY, strength_)) {
         return false;
     }
-    // One revision per coherent batch of position writes.
-    target().mesh.advanceRevision();
+    // One revision per coherent batch of POSITION writes — and a Mask stroke
+    // makes none. Advancing the revision for a mask would move the project
+    // fingerprint and earn a recovery checkpoint for a runtime annotation that
+    // never reaches a `.forge` byte. The caller still republishes on a true
+    // return, and a publication mints its own MeshRevision, so the viewport
+    // updates without the geometry's own counter moving at all.
+    if (sculptToolMovesGeometry(stroke_.tool())) {
+        target().mesh.advanceRevision();
+    }
     return true;
 }
 
@@ -1174,6 +1573,8 @@ const char* SculptSession::sculptHistoryStatusName(SculptHistoryStatus status) {
             return "nothing_to_do";
         case SculptHistoryStatus::OutOfRange:
             return "out_of_range";
+        case SculptHistoryStatus::EntryTooLarge:
+            return "entry_too_large";
     }
     return "unknown";
 }
@@ -1188,14 +1589,32 @@ bool SculptSession::canRedoSculpt() const {
         && target().history.canRedo();
 }
 
-void SculptSession::applyHistorySide(const std::vector<uint32_t>& indices,
-                                     const std::vector<Vec3>& positions, bool edited) {
+void SculptSession::applyHistorySide(const SculptStrokeDelta& entry,
+                                     const std::vector<Vec3>& positions,
+                                     const std::vector<float>& mask, bool edited) {
     SculptMesh& mesh = target().mesh;
-    for (size_t i = 0; i < indices.size() && i < positions.size(); ++i) {
+
+    // The MASK side first, and unconditionally on its own terms: it moves no
+    // position, mints no revision and touches no flag, so its order relative to
+    // the geometry side cannot matter and it is written where it reads best.
+    for (size_t i = 0; i < entry.maskIndices.size() && i < mask.size(); ++i) {
+        mesh.setMaskWeight(entry.maskIndices[i], mask[i]);
+    }
+
+    if (!entry.movesGeometry()) {
+        // A mask-only entry. The revision and the edited flag are GEOMETRY
+        // facts — the project fingerprint mixes one and `.forge` stores the
+        // other — so undoing or redoing a mask act must leave both exactly
+        // where they stand. The caller still republishes, which is how the
+        // viewport learns.
+        return;
+    }
+
+    for (size_t i = 0; i < entry.vertexIndices.size() && i < positions.size(); ++i) {
         // An out-of-range index cannot happen — a frozen mesh's vertex count is
         // fixed for its life and clearing the history is part of every Freeze —
         // and setVertexPosition refuses one anyway rather than trusting that.
-        mesh.setVertexPosition(indices[i], positions[i]);
+        mesh.setVertexPosition(entry.vertexIndices[i], positions[i]);
     }
     // Forwards, always. The renderer, the picker and the autosave fingerprint
     // all notice a sculpt change by this number, so a step that moved geometry
@@ -1223,7 +1642,7 @@ SculptSession::SculptHistoryStatus SculptSession::undoStroke() {
         return SculptHistoryStatus::NothingToDo;
     }
     const SculptStrokeDelta& entry = history.undoTop();
-    applyHistorySide(entry.vertexIndices, entry.beforePositions, entry.beforeHasEdits);
+    applyHistorySide(entry, entry.beforePositions, entry.beforeMask, entry.beforeHasEdits);
     // Committed AFTER the apply, so a history that could not be applied would
     // still be sitting where it was. Read-then-apply-then-commit is why this
     // class, and not SculptHistory, is the only thing that writes a vertex.
@@ -1246,8 +1665,82 @@ SculptSession::SculptHistoryStatus SculptSession::redoStroke() {
         return SculptHistoryStatus::NothingToDo;
     }
     const SculptStrokeDelta& entry = history.redoTop();
-    applyHistorySide(entry.vertexIndices, entry.afterPositions, entry.afterHasEdits);
+    applyHistorySide(entry, entry.afterPositions, entry.afterMask, entry.afterHasEdits);
     history.commitRedo();
+    return SculptHistoryStatus::Ok;
+}
+
+// ---------------------------------------------------------------------------
+// Clear Mask (`SCULPT-FCM-R1`)
+// ---------------------------------------------------------------------------
+
+bool SculptSession::canClearMask() const {
+    return inSculptMode() && !stroke_.active() && target().mesh.frozen()
+        && target().mesh.hasMask();
+}
+
+SculptSession::SculptHistoryStatus SculptSession::clearMask() {
+    // The same three refusals a history step asks, in the same order, because
+    // Clear Mask lands in the same history and must be refused wherever a step
+    // into it is.
+    if (mode_ != ProductMode::Sculpt) {
+        return SculptHistoryStatus::NotSculpting;
+    }
+    if (stroke_.active()) {
+        return SculptHistoryStatus::StrokeActive;
+    }
+    SculptMesh& mesh = target().mesh;
+    if (!mesh.frozen()) {
+        return SculptHistoryStatus::NoSculptMesh;
+    }
+    if (!mesh.hasMask()) {
+        // Nothing to clear. Applies nothing and records nothing, exactly as a
+        // stroke that moved nothing does.
+        return SculptHistoryStatus::NothingToDo;
+    }
+
+    // Built entirely BEFORE anything is written, so the size test below is
+    // asked about the entry that would actually be retained and a refusal
+    // leaves the mask exactly as it was.
+    SculptStrokeDelta delta;
+    const uint32_t vertexCount = mesh.vertexCount();
+    for (uint32_t v = 0; v < vertexCount; ++v) {
+        const float weight = mesh.maskWeight(v);
+        if (weight == 0.0f) {
+            continue;
+        }
+        delta.maskIndices.push_back(v);
+        delta.beforeMask.push_back(weight);
+        delta.afterMask.push_back(0.0f);
+    }
+    if (delta.maskIndices.empty()) {
+        // Unreachable while hasMask() holds, and handled anyway rather than
+        // reasoned about.
+        return SculptHistoryStatus::NothingToDo;
+    }
+    // Both flags equal to the mesh's own answer: clearing a mask changes
+    // nothing about whether the mesh carries sculpt edits.
+    delta.beforeHasEdits = mesh.hasEdits();
+    delta.afterHasEdits = mesh.hasEdits();
+
+    if (delta.payloadBytes() > kMaxSculptHistoryEntryBytes) {
+        // REFUSED, and nothing is cleared. See SculptHistoryStatus for why this
+        // is not the brush's own `NotRetained` policy: a brush stroke's
+        // deformation is what the user is doing and must land whatever the
+        // history can hold, while Clear Mask's whole value is that it can be
+        // taken back.
+        return SculptHistoryStatus::EntryTooLarge;
+    }
+
+    for (size_t i = 0; i < delta.maskIndices.size(); ++i) {
+        mesh.setMaskWeight(delta.maskIndices[i], 0.0f);
+    }
+    // ONE entry, so one Undo puts the whole mask back — the same transaction
+    // rule one completed stroke has. Recording clears the redo stack by the
+    // EXISTING rule, because the mask has moved on and every redo entry
+    // describes a future that no longer follows.
+    target().history.record(std::move(delta));
+    // No advanceRevision and no restoreEditedFlag: see updateStroke.
     return SculptHistoryStatus::Ok;
 }
 

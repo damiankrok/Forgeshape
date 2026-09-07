@@ -499,13 +499,18 @@ final class NativeViewport {
     static final int SCULPT_REFUSED_CAD_BODY = 3;
 
     // -----------------------------------------------------------------------
-    // The four sculpt tools.
+    // The seven sculpt tools.
     //
-    // One brush kernel carries all four: they share the stroke lifecycle, the
+    // One brush kernel carries all seven: they share the stroke lifecycle, the
     // hit test, the affected set, the falloff and the Radius/Strength contract,
-    // and differ only in how they displace the vertices they captured. Native
-    // code owns which one is active; Java may request one and is told which is
-    // actually active.
+    // and differ only in what they write for the vertices they captured — six
+    // write a position and Mask writes a weight. Native code owns which one is
+    // active; Java may request one and is told which is actually active.
+    //
+    // The last three were APPENDED by `SCULPT-FCM-R1`, so the four before them
+    // keep the indices they always had. The RAIL presents them in the product's
+    // reading order, which is a separate decision — see
+    // WorkspaceTrailingHostView.
     // -----------------------------------------------------------------------
 
     /** Drag the surface with the finger, in the camera plane. */
@@ -516,9 +521,15 @@ final class NativeViewport {
     static final int TOOL_SMOOTH = 2;
     /** Expand along the normals the surface has right now. */
     static final int TOOL_INFLATE = 3;
+    /** Draw the surface toward one plane fitted to the brush footprint. */
+    static final int TOOL_FLATTEN = 4;
+    /** Cut a narrow groove: inward along the normal, pinched radially. */
+    static final int TOOL_CREASE = 5;
+    /** Paint the weight that holds the other six off a vertex. */
+    static final int TOOL_MASK = 6;
 
     /** Length of the array {@link #sculptState} fills. */
-    static final int SCULPT_STATE_SIZE = 12;
+    static final int SCULPT_STATE_SIZE = 13;
 
     /** {@link #MODE_CONSTRUCTION} or {@link #MODE_SCULPT}. */
     static final int SCULPT_MODE = 0;
@@ -556,6 +567,16 @@ final class NativeViewport {
      * was abandoned to navigation without moving a vertex.
      */
     static final int SCULPT_HAS_EDITS = 11;
+    /**
+     * How many vertices carry a non-zero Sculpt Mask (`SCULPT-FCM-R1`).
+     *
+     * <p><b>Runtime state, never project truth.</b> It reaches no {@code .forge}
+     * byte, moves no project fingerprint and comes back zero after a reopen.
+     * This layer holds no mask of its own: what it uses this for is deciding
+     * whether Clear Mask is drawn at all, and native code answers that through
+     * {@link #sculptCanClearMask()} anyway.
+     */
+    static final int SCULPT_MASKED_VERTEX_COUNT = 12;
 
     // -----------------------------------------------------------------------
     // The scene: several Construction Bodies
@@ -898,6 +919,17 @@ final class NativeViewport {
      * than a refusal they can see.
      */
     static final int HISTORY_OUT_OF_RANGE = 6;
+    /**
+     * Clear Mask on a mask whose single history entry would exceed the
+     * per-entry byte cap ({@code SCULPT-FCM-R1}).
+     *
+     * <p>Only {@link #sculptClearMask} returns it, and it means <b>nothing was
+     * cleared</b>. It is deliberately not the brush's own "applied but not
+     * retained" policy: a brush stroke's deformation is what the user is doing
+     * and lands whatever the history can hold, while Clear Mask's whole value
+     * is that it can be taken back.
+     */
+    static final int HISTORY_ENTRY_TOO_LARGE = 7;
 
     /** @return whether a Construction step can be undone right now */
     static native boolean constructionUndoAvailable();
@@ -1548,6 +1580,35 @@ final class NativeViewport {
      *     inside its step and byte caps.
      */
     static native long sculptHistoryEvictedCount();
+
+    // -----------------------------------------------------------------------
+    // The Sculpt Mask (SCULPT-FCM-R1)
+    // -----------------------------------------------------------------------
+    //
+    // Runtime-local per-vertex state that holds the six geometry brushes off a
+    // vertex. It lives on the body's Frozen Sculpt Mesh, survives Back and
+    // Resume, reaches no {@code .forge} byte, moves no project fingerprint and
+    // comes back empty after a reopen. This layer holds none of it.
+
+    /**
+     * Clears the active body's Sculpt Mask, as ONE Sculpt history entry.
+     *
+     * <p>One Undo puts the whole mask back. It mints no {@code SCULPT_REVISION}
+     * and sets no {@code SCULPT_HAS_EDITS}, because a mask is not geometry, so
+     * clearing one earns no autosave checkpoint.
+     *
+     * @return one of the {@code HISTORY_*} constants;
+     *     {@link #HISTORY_NOTHING_TO_DO} when there is no mask,
+     *     {@link #HISTORY_ENTRY_TOO_LARGE} when the entry would not fit — and
+     *     in both of those, and every other refusal, nothing was cleared
+     */
+    static native int sculptClearMask();
+
+    /**
+     * @return whether Clear Mask could succeed right now — in Sculpt, with a
+     *     frozen mesh, no live stroke, and a mask actually painted
+     */
+    static native boolean sculptCanClearMask();
 
     /** @return one of the {@code HISTORY_*} constants */
     static native int sculptUndo();

@@ -35,12 +35,23 @@
 
 namespace forgeshape {
 
-// Interleaved position + colour: exactly the layout the cube pipeline's vertex
-// input description expects, so a published mesh can be memcpy'd into staging
-// memory without any repacking.
+// Interleaved position + colour + sculpt mask: exactly the layout the cube
+// pipeline's vertex input description expects, so a published mesh can be
+// memcpy'd into staging memory without any repacking.
+//
+// `mask` is the Sculpt Mask's per-vertex weight in [0, 1], and it is a DERIVED
+// PRESENTATION CHANNEL on exactly the terms `color` already is: nothing reads a
+// dimension, a parameter or a topology back out of it, no `.forge` byte carries
+// it, and no encoder can see it. It is zero for every vertex of every
+// representation except a Frozen Sculpt Mesh the user has painted a mask onto,
+// and the only thing downstream of it is one fragment-stage darkening in the
+// surface shader (`SCULPT-FCM-R1`). It rides here rather than in a parallel
+// array so no publication signature between `SculptMesh` and the vertex buffer
+// has to learn about masking at all.
 struct MeshVertex {
     float position[3];
     float color[3];
+    float mask;
 };
 
 using MeshRevision = uint64_t;

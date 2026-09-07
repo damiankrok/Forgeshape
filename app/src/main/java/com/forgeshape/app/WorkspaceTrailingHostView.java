@@ -529,6 +529,17 @@ final class WorkspaceTrailingHostView extends FrameLayout
             return;
         }
         if (sculpting) {
+            // The seven sculpt brushes (`SCULPT-FCM-R1`), in the product's
+            // reading order rather than in the enum's: the two that ADD
+            // material sit either side of the two that take it away or even it
+            // out, and Mask ends the list because it is the one entry that is
+            // not a deformation at all.
+            //
+            // The rail order and the native index are deliberately independent.
+            // Flatten, Crease and Mask were APPENDED to the enum so nothing
+            // that already crossed JNI as an index had to be renumbered, and
+            // each entry carries its own index here — so presenting them in a
+            // different order costs nothing and renames nothing.
             toolRail.setEntries(new ToolRailView.Entry[]{
                     new ToolRailView.Entry(R.id.tool_rail_grab, R.drawable.ic_tool_grab,
                             context.getString(R.string.tool_grab), NativeViewport.TOOL_GRAB),
@@ -536,9 +547,17 @@ final class WorkspaceTrailingHostView extends FrameLayout
                             context.getString(R.string.tool_clay), NativeViewport.TOOL_CLAY),
                     new ToolRailView.Entry(R.id.tool_rail_smooth, R.drawable.ic_tool_smooth,
                             context.getString(R.string.tool_smooth), NativeViewport.TOOL_SMOOTH),
+                    new ToolRailView.Entry(R.id.tool_rail_flatten, R.drawable.ic_tool_flatten,
+                            context.getString(R.string.tool_flatten),
+                            NativeViewport.TOOL_FLATTEN),
                     new ToolRailView.Entry(R.id.tool_rail_inflate, R.drawable.ic_tool_inflate,
                             context.getString(R.string.tool_inflate),
                             NativeViewport.TOOL_INFLATE),
+                    new ToolRailView.Entry(R.id.tool_rail_crease, R.drawable.ic_tool_crease,
+                            context.getString(R.string.tool_crease),
+                            NativeViewport.TOOL_CREASE),
+                    new ToolRailView.Entry(R.id.tool_rail_mask, R.drawable.ic_tool_mask,
+                            context.getString(R.string.tool_mask), NativeViewport.TOOL_MASK),
             });
             return;
         }

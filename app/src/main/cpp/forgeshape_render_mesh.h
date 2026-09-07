@@ -59,14 +59,21 @@ namespace forgeshape {
 
 // One vertex as the graphics pipeline consumes it.
 //
-// Position and colour are copied verbatim from the source vertex; the normal is
-// the only thing this module computes. Colour is retained solely so the
-// debug-only source-colour display mode still has something to draw — Studio
-// Solid and MatCap both ignore it.
+// Position, colour and the sculpt mask are copied verbatim from the source
+// vertex; the normal is the only thing this module computes. Colour is retained
+// solely so the debug-only source-colour display mode still has something to
+// draw — Studio Solid and MatCap both ignore it.
+//
+// `mask` is the Sculpt Mask weight (see MeshVertex::mask), CLAMPED into [0, 1]
+// here and nowhere else: this is the last CPU stage before the vertex buffer,
+// so sanitizing it here means no shader has to defend against a value the
+// domain says cannot exist. A vertex that splits at a crease carries its
+// source vertex's mask into every copy, exactly as it carries its colour.
 struct RenderVertex {
     float position[3];
     float normal[3];
     float color[3];
+    float mask;
 };
 
 // How the surface is shaded. This is a PRESENTATION choice and changes only
