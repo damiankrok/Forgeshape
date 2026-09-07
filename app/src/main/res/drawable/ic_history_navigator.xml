@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Open the Sculpt History navigator (SCULPT-H1).
+
+  A vertical line of states with the middle one filled: the LIST, drawn as what
+  it is. Deliberately not a clock, which is the usual "history" glyph and would
+  say "recent" rather than "a branch you can stand anywhere on"; and
+  deliberately not another curved arrow, which is what Undo and Redo already
+  are — a third arrow beside them would read as a third step control rather
+  than as the surface that shows what the two of them are stepping through.
+
+  The filled middle node is the cursor, which is the one thing the surface
+  exists to let the user move.
+
+  Drawn white and tinted at use; see EditorControlStyles.icon(). It reads as
+  disabled through the same tint list every other control uses, so nothing here
+  encodes a state.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- The spine the states sit on. -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:pathData="M6,5 L6,19" />
+    <!-- Three states: hollow, filled (the cursor), hollow. -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:pathData="M6,6.5 m-2.5,0 a2.5,2.5 0 1,0 5,0 a2.5,2.5 0 1,0 -5,0" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M6,12 m-3.25,0 a3.25,3.25 0 1,0 6.5,0 a3.25,3.25 0 1,0 -6.5,0" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:pathData="M6,17.5 m-2.5,0 a2.5,2.5 0 1,0 5,0 a2.5,2.5 0 1,0 -5,0" />
+    <!-- The rows each state names, as three short rules. -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:pathData="M12,6.5 L19,6.5 M12,12 L20,12 M12,17.5 L19,17.5" />
+</vector>

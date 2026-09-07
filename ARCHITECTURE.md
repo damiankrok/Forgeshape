@@ -2946,6 +2946,38 @@ it. Undoing the Delete restores the SAME object, so the stacks come back with it
 `holdDetachedBody` holds the object rather than destroying it. When no step names
 the body any more it is released, and the history dies with it.
 
+**The History navigator is a VIEW of this branch** (`SCULPT-H1`). It adds no
+storage, no capacity, no budget and no second stack, because the retained branch
+was always a line and the cursor was always a position on it —
+`SculptHistory::cursor()` derives `{cursor, undoCount, redoCount, stateCount}`
+from the two deques on every read and stores none of it. A ROW is a STATE, not
+an entry: `u` undo entries and `r` redo entries are `u + r + 1` states, the
+cursor stands at `u`, and state 0 is the OLDEST RETAINED state rather than
+necessarily the Freeze, because eviction drops from that end and what it dropped
+cannot be jumped to.
+
+`SculptSession::jumpToHistoryCursor` is the one act. It is **implemented as**
+repeated `undoStroke()` and repeated `redoStroke()` rather than described that
+way, so "jumping back three is the same as tapping Undo three times" is a
+structural fact rather than a property two implementations have to keep
+agreeing on — there is no second delta path, no batched apply and no snapshot
+restore. It asks the same three refusals a single step does, adds
+`OutOfRange` for an ordinal that is not on the branch (**refused, never
+clamped** — landing the user somewhere they did not tap is worse than a refusal
+they can see), and answers `NothingToDo` for the row already stood on, applying
+nothing and minting no revision. It records nothing: no entry, no Construction
+step, no `.forge` byte. The **abandoned future is not dropped here** — jumping
+backward leaves it walkable exactly as an Undo does, and the existing rule
+(`record` clears the redo stack) drops it when the next stroke makes it describe
+a future that no longer follows.
+
+Above JNI, `sculptHistoryState` returns the whole model in ONE locked read —
+five values that must describe one body's branch at one instant — and
+`sculptJumpToHistoryCursor` publishes through `publishSculptRepresentation`
+once for the whole jump rather than once per intermediate step. Body switching
+needs no rebinding code: the model is per body below JNI, so a refresh after a
+switch reads the new body's branch and `SculptHistoryNavigatorView` rebuilds.
+
 **The apply is not in this class.** `SculptHistory` includes `forgeshape_math.h`
 and nothing else from the domain: it is a bounded stack that decides what is
 retained and never writes a vertex. `SculptSession::undoStroke`/`redoStroke`

@@ -1172,6 +1172,8 @@ const char* SculptSession::sculptHistoryStatusName(SculptHistoryStatus status) {
             return "no_sculpt_mesh";
         case SculptHistoryStatus::NothingToDo:
             return "nothing_to_do";
+        case SculptHistoryStatus::OutOfRange:
+            return "out_of_range";
     }
     return "unknown";
 }
@@ -1246,6 +1248,73 @@ SculptSession::SculptHistoryStatus SculptSession::redoStroke() {
     const SculptStrokeDelta& entry = history.redoTop();
     applyHistorySide(entry.vertexIndices, entry.afterPositions, entry.afterHasEdits);
     history.commitRedo();
+    return SculptHistoryStatus::Ok;
+}
+
+// ---------------------------------------------------------------------------
+// The History navigator's jump (`SCULPT-H1`)
+// ---------------------------------------------------------------------------
+
+bool SculptSession::canNavigateSculptHistory() const {
+    // Deliberately NOT "canUndoSculpt() || canRedoSculpt()". The navigator is
+    // available over a frozen mesh with an EMPTY history too: it then shows the
+    // one state there is, which is an honest answer to "what can I go back to"
+    // and better than a control that vanishes exactly when a new user first
+    // looks for it.
+    return inSculptMode() && !stroke_.active() && target().mesh.frozen();
+}
+
+SculptSession::SculptHistoryStatus SculptSession::jumpToHistoryCursor(size_t targetCursor) {
+    // The same three refusals Undo and Redo ask, in the same order, because a
+    // jump is those two acts and must be refused wherever they are.
+    if (mode_ != ProductMode::Sculpt) {
+        return SculptHistoryStatus::NotSculpting;
+    }
+    if (stroke_.active()) {
+        return SculptHistoryStatus::StrokeActive;
+    }
+    if (!target().mesh.frozen()) {
+        return SculptHistoryStatus::NoSculptMesh;
+    }
+    const SculptHistoryCursor at = target().history.cursor();
+    if (!at.addresses(targetCursor)) {
+        // Range-checked rather than trusted: the caller read the branch a
+        // moment ago and a stroke may have truncated or evicted part of it
+        // since. Refusing is the whole handling — nothing has moved yet.
+        return SculptHistoryStatus::OutOfRange;
+    }
+    if (targetCursor == at.cursor) {
+        // Tapping the row the mesh already shows. Not an error and not a
+        // silent success: nothing is applied, no revision is minted, and the
+        // caller is told there was nothing to do so it publishes nothing.
+        return SculptHistoryStatus::NothingToDo;
+    }
+
+    // Backward, then forward. Only one loop can ever run, but both are written
+    // rather than branched on, because the exit condition — the cursor reaching
+    // the target — is the same statement in both directions.
+    //
+    // Each iteration goes through the ordinary step, so every one of them
+    // applies exactly one stored delta, advances the revision forwards and
+    // restores that entry's own edited flag. The flag the user is left with is
+    // therefore the target state's own, which is the only value that could be
+    // right: it is what `.forge` would have stored had they stopped there.
+    while (target().history.undoDepth() > targetCursor) {
+        const SculptHistoryStatus step = undoStroke();
+        if (step != SculptHistoryStatus::Ok) {
+            // Unreachable while the guards above hold, and handled anyway: a
+            // loop that cannot make progress must stop at a real state rather
+            // than spin. Everything applied so far stands, which is a state on
+            // this branch and never a half-applied entry.
+            return step;
+        }
+    }
+    while (target().history.undoDepth() < targetCursor) {
+        const SculptHistoryStatus step = redoStroke();
+        if (step != SculptHistoryStatus::Ok) {
+            return step;
+        }
+    }
     return SculptHistoryStatus::Ok;
 }
 

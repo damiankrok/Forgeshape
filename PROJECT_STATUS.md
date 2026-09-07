@@ -1,8 +1,104 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.69.0
+**Status Version:** 0.70.0
 **Updated:** 2026-09-07
-**Result:** **MIRROR-01 — COMPLETE, OWNER LATER READY, CONSTRUCTION-ONLY.** A
+**Result:** **SCULPT-H1 — COMPLETE, OWNER LATER READY, HOVER PREVIEW DEFERRED.**
+Sculpt now has a **History navigator**: a compact, scrolling list of the states
+the active body's strokes have taken it through, opened from a third control in
+the bottom-trailing history capsule, with one tap to stand the body on any of
+them.
+
+**It adds no history — it is a VIEW of the one that already existed.** No second
+stack, no new capacity, no new budget, and nothing new that is stored.
+`kMaxSculptHistoryEntries` (32), `kMaxSculptHistoryBytes` (4 MiB) and
+`kMaxSculptHistoryEntryBytes` (1 MiB) are untouched, and
+`SculptHistory::cursor()` derives `{cursor, undoCount, redoCount, stateCount}`
+from the two deques it already had, on every read, storing none of it. The
+retained branch was always a line and the cursor was always a position on it;
+this stage only names them.
+
+**A ROW is a STATE, not an entry.** `u` undo entries and `r` redo entries are
+`u + r + 1` states, the cursor stands at `u`, and two strokes make three rows —
+where the mesh started and where each stroke left it. State 0 is the **oldest
+RETAINED** state rather than necessarily the Freeze, because eviction drops from
+that end and what it dropped cannot be jumped to; the surface says so with a
+caption instead of a row label that would quietly become untrue.
+
+**A jump IS repeated Undo and repeated Redo — implemented as them, not described
+as them.** `SculptSession::jumpToHistoryCursor` calls `undoStroke()` and
+`redoStroke()` in a loop, so there is no second delta path, no batched apply and
+no snapshot restore, and "tapping three rows back equals tapping Undo three
+times" is a structural fact. `SCHNAV-04/05` prove it the only way worth proving:
+both paths are run in the same session and the resulting positions compared
+**bit-exactly**, and `E2E-SCHNAV-02/03` repeat that on the device through the
+real controls against `.forge` `SCUL` bytes.
+
+**Refused by name, never clamped.** A jump asks the same three refusals a single
+step does (`NotSculpting`, `StrokeActive`, `NoSculptMesh`), answers
+`NothingToDo` for the row already stood on — applying nothing and minting no
+revision — and refuses an ordinal off the branch with the new `OutOfRange`
+rather than landing the user on a state they did not tap.
+
+**The abandoned future is not dropped by the jump.** Jumping backward leaves the
+states ahead walkable exactly as an Undo does; the **existing** rule
+(`SculptHistory::record` clears the redo stack) drops them when the next stroke
+makes them describe a future that no longer follows.
+
+**Nothing here is truth.** A jump mints no history entry, records no Construction
+step, writes no `.forge` byte and reaches no checkpoint of its own.
+`E2E-SCHNAV-07` proves it byte-for-byte: a round trip back to the state the
+project started on encodes **byte-identically**, and the Construction history's
+depth is unmoved on both sides. **No `.forge` field, section or version changed,
+and all thirty corpus fixtures are untouched.**
+
+**The control is Sculpt's alone**, absent in Construction rather than shown and
+refused, because there is no Construction branch to list — while the guard below
+JNI stays regardless. **Five visible rows is a VIEWPORT target, not a history
+bound**: the list scrolls over everything `SculptHistory` kept, and no row is
+shrunk below the 48 dp floor to fit more in. The current row is marked by
+**shape** (`●` current, `○` past, `◌` undone) and by its accessible label, never
+by colour alone. Body switching needed no rebinding code — the model is per body
+below JNI, so a refresh reads the new body's branch.
+
+**The real-stylus hover preview is DEFERRED, and nothing fake was substituted.**
+The blocker is concrete, not aesthetic: `AutosaveController.performCheckpoint()`
+runs on its own `HandlerThread` and reads `projectFingerprint()` **at the moment
+the task runs**, by deliberate design, so a preview that moved sculpt vertices
+and moved them back could be read by a checkpoint firing mid-preview and the
+recovery candidate would then hold a state the user never committed. Making it
+safe needs an **autosave-suspend concept** or a **shadow render path** — both
+broad, both out of scope here. Independently, the authoritative emulator does not
+deliver real stylus hover, so the restore-exactly claim could not be verified on
+this hardware. Recorded as an owner decision, not as debt.
+
+**Verified:** **twenty-two** `*_SELFTEST_OK` tokens (**3374 checks**, up from
+3335) then `FORGESHAPE_NATIVE_VIEWPORT_OK` with zero failures — the sculpt suite
+went 494 → **533 checks** with the new `SCHNAV-01..12` (39 checks) and every
+other suite's count unchanged; the same 39 green on the standalone NDK runner;
+`SculptHistoryNavigatorTest` **OK (9 tests)** in 48.2 s; and the regression
+triple `SculptUndoTest` + `EditorWorkspaceHistoryTest` +
+`EditorWorkspaceChromeCompositionTest` **OK (42 tests)** in 130.4 s.
+`assembleDebug` and `assembleRelease` both successful with **0** self-test
+symbols in the release `.so` on both ABIs, and `verify-device-guards.ps1` green
+over 19 surfaces. Automated verification took **≈ 14 minutes**, inside the
+TEST POLICY v3 20-minute target. **No `-FullSharded`**, by policy. Evidence:
+`artifacts/sculpt-h1/`.
+
+**Run under TEST POLICY v3, the reduced-testing policy.** `-FullSharded` was
+**NOT run** and no `FULL_SHARDED_SUITE_PASS` is claimed for `SCULPT-H1`. This is
+focused evidence and cannot stand in for the exhaustive gate.
+
+**What stays pending:** the owner's own review of the navigator (see
+`artifacts/sculpt-h1/OWNER_LATER_TEST_PACK.md`) — its placement and readability,
+whether five visible rows feels right, scrolling with a longer history,
+tap-to-jump feel, current/undone visual clarity, the Imported-Mesh navigator,
+Back→Resume feel, handedness and the five palettes, the navigator glyph whose
+**exact visual design is OWNER LATER and is not approved here**, and the
+standing decision on whether a hover preview is worth an autosave-suspend
+concept.
+
+**Previous result:** **MIRROR-01 — COMPLETE, OWNER LATER READY,
+CONSTRUCTION-ONLY.** A
 Construction Body can now be **mirrored across one principal world plane** — XY
 reflects Z, XZ reflects Y, YZ reflects X — producing **one new body** as one
 history transaction. The source is not touched: this is a discrete creation act
@@ -483,7 +579,8 @@ Both work for a Construction-derived and an Imported-Mesh-derived sculpt, throug
 the same one implementation.
 
 The owner's boundary — *project/object history never stores a sculpt vertex* —
-did not move. What arrived beside it is a second history:
+did not move. What arrived beside it is a second history — and, since
+`SCULPT-H1`, a **navigator over it that adds no storage of its own**:
 
 - **`SculptHistory`** in `forgeshape_sculpt_history.{h,cpp}` — a bounded,
   volatile, **per-body** Undo/Redo, living inside `FrozenSculpt` beside the mesh
@@ -531,8 +628,28 @@ did not move. What arrived beside it is a second history:
   pair, `historyUndo`/`historyRedo`, which choose on the product mode below JNI,
   because the layer that holds no state must not make that choice.
 
-Sculpt still has no history panel, no named steps and no keyboard shortcut, and
-brushes are still code rather than data: nothing here became a framework.
+**`SCULPT-H1` added a navigator over that branch, and nothing else.** It is a
+VIEW: `SculptHistory::cursor()` derives `{cursor, undoCount, redoCount,
+stateCount}` from the two deques on every read and stores none of it, so there
+is no second stack, no new capacity and no new budget — the three caps above are
+untouched. A ROW is a STATE and not an entry (`u + r + 1` states, cursor at
+`u`), and state 0 is the oldest RETAINED state rather than necessarily the
+Freeze. `SculptSession::jumpToHistoryCursor` is **implemented as** repeated
+`undoStroke()`/`redoStroke()`, so there is no second delta path; it answers
+`NothingToDo` for the row already stood on and refuses an off-branch ordinal by
+name (`OutOfRange`) rather than clamping; and it records nothing — no entry, no
+Construction step, no `.forge` byte, proved byte-for-byte by `E2E-SCHNAV-07`.
+The abandoned future is still dropped by the EXISTING `record` rule when the next
+stroke lands, never by the jump. `sculptHistoryState` reads the whole model in
+one locked call, and body switching needed no rebinding code because the model
+is per body below JNI.
+
+Sculpt has a history navigator since `SCULPT-H1`, and still no named or
+thumbnailed steps, no branching tree, no Construction-history panel and no
+keyboard shortcut; brushes are still code rather than data, and nothing here
+became a framework. A real-stylus **hover preview is deliberately absent** —
+see the Next Stage section for the autosave-fingerprint blocker and the owner
+decision it is waiting on.
 
 Verified: 17/17 native suites, **2712 checks, zero failures** (84 new `SCUNDO_*`,
 green on the first run); JVM 70/70; both supported ABIs debug and release; device
@@ -1974,7 +2091,10 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 ## Self-test suite
 
 Twenty-two debug-only native suites run once from `NativeViewport.start()` —
-never per frame — and total **3335 checks, zero failures**. `MIRROR-01` added
+never per frame — and total **3374 checks, zero failures**. `SCULPT-H1` moved
+the sculpt suite from 494 to 533: thirty-nine `SCHNAV-01..12` checks over the
+History navigator's cursor model and its jump, which adds no storage of its own
+and so re-tests neither capacity nor either budget. `MIRROR-01` added
 the 62-check mirror suite. Stage 018A moved the
 scene suite from 130 to 155 and the project suite from 251 to 256: twenty-five
 `OBJ018A-*` checks over the four object commands and their history, and five
@@ -1994,7 +2114,7 @@ asserted a resting selection tint, which is now zero.
 | `FORGESHAPE_CONSTRUCTION_PRIMITIVE_SELFTEST_OK` | 126 |
 | `FORGESHAPE_CONSTRUCTION_SPHERE_SELFTEST_OK` | 105 |
 | `FORGESHAPE_CONE_CAPSULE_SELFTEST_OK` | 163 |
-| `FORGESHAPE_SCULPT_BRUSH_KERNEL_SELFTEST_OK` | 494 |
+| `FORGESHAPE_SCULPT_BRUSH_KERNEL_SELFTEST_OK` | 533 |
 | `FORGESHAPE_RENDER_SHADING_SELFTEST_OK` | 412 |
 | `FORGESHAPE_SCENE_SELFTEST_OK` | 155 |
 | `FORGESHAPE_CONSTRUCTION_HISTORY_SELFTEST_OK` | 147 |
@@ -2281,6 +2401,7 @@ device. `README.md` documents how to read them.
 | `ObjectCommandsTest` | `E2E-OBJ018A-01`: the one device journey for the four object commands. A two-body project, driven through the real controls found by semantic id and ObjectId tag: the row overflow opens the inline command strip; Rename opens the inline field, commits, reaches the domain as one history step and is read back by the row label; Hide removes the body and leaves the row, Show brings it back; the transform gizmo is confirmed offered, then Lock withdraws it AND a transform write reached directly below JNI returns `APPLY_REJECTED_LOCKED`, and Unlock restores it; Duplicate adds exactly one body as one history step with a NEW ObjectId, makes the copy active, names it deterministically and gives it a row of its own. Every control asserts its 48 dp hit area and a content description naming the act and the body | 1 |
 | `BodyDimensionsSmokeTest` | `E2E-DIM020M-01`: the one device journey for Stage 020M. Transform offers Dimensions and Relative scale, both at the 48 dp floor and both with a content description; the transform gizmo is up before, and is WITHDRAWN once Dimensions opens; the anchor selector arrives with the mode and opens on centre; typing an exact X dimension through the viewport label sets it exactly, moves no position and is one history step; switching to the negative-side anchor and typing again sets it exactly, DOES move the position, and is one more step; opening Relative scale closes the mode and shows 1/1/1; applying a x2 multiplier doubles the stored Absolute Scale in one step; and reopening shows 1/1/1 again. Every control is reached by semantic id, never by a screen coordinate | 1 |
 | `MirrorSmokeTest` | `E2E-MIRROR01-01`: the one device journey for `MIRROR-01`. A body is placed at `(2.5, −1.5, 0.75)` turned `31/−47.5/118.25` with a non-uniform scale; the row overflow offers Mirror; pressing it opens the compact plane chooser, whose three chips each meet the 48 dp floor and each name the axis they reflect — and opening it creates nothing and records no step; choosing YZ adds exactly one body in exactly one history step, with a fresh ObjectId, the SOURCE's nine values bit-identical, world X negated with Y and Z untouched, the Absolute Scale carried across and strictly positive, a new row, and the chooser closed; Undo removes only the reflection and restores the previous selection; Redo restores the SAME ObjectId, placement and selection. Every control is reached by semantic id, never by a screen coordinate | 1 |
+| `SculptHistoryNavigatorTest` | `E2E-SCHNAV-01..09`: the Sculpt History navigator on a device, every act driven by `performClick` on the control a user presses. The trigger is GONE in Construction and VISIBLE in Sculpt, and the surface lists one row per retained STATE -- an empty history is one row, three strokes are four, and the drawn rows agree with the branch below JNI (`-01`); tapping an older row lands on bit-exactly the `SCUL` bytes three taps on the real Undo produce, and a newer row on what three Redos produce, both measured by running the reference path first in the same session (`-02`, `-03`); tapping the row already stood on moves no geometry, no revision, no edited flag, no row and no cursor (`-04`); a backward jump leaves the future walkable and the NEXT stroke drops it (`-05`); leaving Sculpt, adding a second body and sculpting it rebinds the navigator to that body’s own two-state branch, jumping there leaves the first body’s branch and cursor exactly where sculpting left them, and walking the second body forward again makes the whole `SCUL` section bit-identical -- which can only hold if the first body never moved (`-06`); a round trip over three rows re-encodes the project BYTE-IDENTICALLY, records no Construction step and mints no sculpt entry (`-07`); eight states cap the list at five visible rows, the content overflows the scroller, the list can actually be scrolled, and no row is below the 48 dp floor (`-08`); and System Back closes the navigator and un-lights its control (`-09`) | 9 |
 | `ProjectTransferTest` | `FSR1B-10..13`, `FSR1B-18`: Save Copy writes canonical bytes the decoder accepts and TRUNCATES a longer existing document rather than overwriting its front; Open File applies a valid document and starts a fresh history; a damaged one, an unreadable one and a cancel each change nothing below JNI; a cancelled copy cannot be written by a later pick; neither direction touches the internal manual slot; a project opened from a distinctively named file re-encodes to the ORIGINAL bytes exactly, and carries no filename, scheme, authority or path; the two native project entry points take bytes and structurally cannot take a `Uri`; and the project surface offers no GLB, glTF, OBJ, FBX or import/export entry | 13 |
 | `DiagnosticsAndRendererLossTest` | `FSR1B-14..17`, `E2ER1B-07/08`: a report is written locally, is bounded, names the build and the device and never a project dimension, `.forge` magic or vertex data, and stays bounded after a flood; ForgeShape requests no INTERNET permission and the platform agrees it holds none, so nothing can be sent anywhere; sharing is a document-creation intent that writes where the user chose; an injected device loss leaves every project value and the encoded document bit-identical and either rebuilds the device or reports restart-required with the work checkpointed; the project stays editable and publishing after a rebuild; and all six project controls plus both recovery answers clear 48 x 48 dp without moving the accepted R2 right host | 9 |
 | `DiagnosticLogTest` (JVM) | `FSR1B-14` core: the ring never grows past its bound, drops the oldest and says how many, caps its rendered output, truncates a detail far below anything worth hiding, and cannot be made to forge a second record from one record's contents | 11 |
@@ -2391,9 +2512,24 @@ precondition. Runtime evidence separately shows the real keyboard.
 
 ## Current evidence summary
 
-Latest run (**MIRROR-01**), on the isolated `ForgeShape_Stage006` /
+Latest run (**SCULPT-H1**), on the isolated `ForgeShape_Stage006` /
 `emulator-5580` AVD, confirmed by `adb -s emulator-5580 emu avd name` before
 anything was installed:
+[`artifacts/sculpt-h1/`](artifacts/sculpt-h1/) — `INDEX.md`,
+`OWNER_LATER_TEST_PACK.md`, `STARTUP_SELFTEST_LOG.txt`,
+`FOCUSED_NAVIGATOR_RUN.txt` and `FOCUSED_REGRESSION_RUN.txt`. Twenty-two
+`*_SELFTEST_OK` tokens (**3374 checks**) then `FORGESHAPE_NATIVE_VIEWPORT_OK`
+with zero failures, on a 64 MiB ring buffer confirmed by `logcat -g`; the same
+39 `SCHNAV` checks green on the standalone NDK runner;
+`SculptHistoryNavigatorTest` **OK (9 tests)** in 48.2 s; the regression triple
+`SculptUndoTest` + `EditorWorkspaceHistoryTest` +
+`EditorWorkspaceChromeCompositionTest` **OK (42 tests)** in 130.4 s;
+`assembleDebug` and `assembleRelease` successful with 0 self-test symbols in the
+release `.so` on both `x86_64` and `arm64-v8a`; `verify-device-guards.ps1` green
+over 19 surfaces. **Run under TEST POLICY v3: no `-FullSharded`, no aggregate,
+no screenshot matrix.** `emulator-5554` was never contacted.
+
+Previous run (**MIRROR-01**), on the same isolated AVD:
 [`artifacts/mirror-01/`](artifacts/mirror-01/) — `INDEX.md`,
 `FOCUSED_RESULTS.md` and `OWNER_LATER_TEST_PACK.md`. Twenty-two
 `*_SELFTEST_OK` tokens (3335 checks) then `FORGESHAPE_NATIVE_VIEWPORT_OK` with
@@ -3440,6 +3576,7 @@ regenerated per stage.
 | `app/src/main/cpp/forgeshape_body_dimensions_selftest.{h,cpp}` | `DIM020M-01..16`, over its own scene and history |
 | `app/src/main/cpp/forgeshape_body_mirror.{h,cpp}` | `MIRROR-01`: the ONE mirror arithmetic, a pure function over values (no scene, no history, no body, no camera, no renderer), plus `mirrorEligibilityOf`. `R' = F·R·Qx` with `det = +1` and the positive scale untouched, so no transform, codec, renderer or exporter contract moved |
 | `app/src/main/cpp/forgeshape_mirror_selftest.{h,cpp}` | `MIRROR01-01..12`, over its own scene and history |
+| `app/src/main/java/.../SculptHistoryNavigatorView.java` | `SCULPT-H1`: the compact scrolling list of the active body’s retained sculpt STATES. Holds no model and makes no native call -- it is handed a freshly read one on every refresh and rebuilds. Owns the row wording, the shape-based current/past/undone markers and the five-row viewport cap, which is a cap on what is VISIBLE and never on what is kept |
 | `app/src/main/java/.../BodyDimensionLabelsView.java` | Stage 020M: the three overall-dimension labels over the viewport, each anchored to the projected midpoint of its own real dimension line, with one compact editor at a time. Holds no dimension |
 | `app/src/main/java/.../RelativeScaleEditorView.java` | Stage 020M: the Relative Scale precision-surface body — three multipliers reset to 1 on every open, one Apply. The only thing in the product that ever holds a multiplier |
 | `app/src/main/cpp/forgeshape_glb_import_fixture.{h,cpp}` | GLB-IMPORT-R1: the deterministic Nomad-like external-GLB compatibility fixture. Every coordinate an integer over a power of two, so its bytes are identical on every platform. A debug test seam; no product path calls it, and it is not any owner asset |
@@ -3503,7 +3640,49 @@ was added and no marketing claim is made.
 ## Next Stage
 
 **Exactly one next step: return this status to the ForgeShape coordinator for a
-combined OWNER review.** `MIRROR-01` is closed on the technical side: a
+combined OWNER review.** `SCULPT-H1` is closed on the technical side: the Sculpt
+History navigator lists one row per retained STATE, a tap stands the body on
+that state, and the jump is repeated Undo and repeated Redo because it is
+*implemented* as them — proved bit-exactly against both reference paths in the
+same session, and again on the device against `.forge` `SCUL` bytes. It adds no
+storage, no capacity and no budget; the no-op and the out-of-range ordinal are
+refused by name rather than clamped; the abandoned future is dropped by the rule
+that already dropped it; and a navigator round trip encodes byte-identically
+with the Construction history unmoved. What no emulator settles is whether the
+third capsule control reads as part of one capsule, whether five visible rows is
+the right number, how scrolling a long branch feels, whether `Start` and
+`Stroke N` are the right words, and whether the current/past/undone markers are
+distinguishable at a glance — that is the OWNER's, and **no aesthetic approval
+is claimed here; the exact navigator glyph is explicitly OWNER LATER**. The full
+list is `artifacts/sculpt-h1/OWNER_LATER_TEST_PACK.md`.
+
+**One decision is put to the OWNER rather than taken here.** The real-stylus
+**hover preview was deferred, not faked**.
+`AutosaveController.performCheckpoint()` reads the project fingerprint on its
+own worker thread **at the moment the task runs**, by deliberate design, so a
+preview that moved sculpt vertices and moved them back could be captured by a
+checkpoint firing mid-preview and the recovery candidate would then hold a state
+the user never committed. Making it safe needs an autosave-suspend concept
+threaded through the controller and the workspace, or a shadow render path so
+the preview never touches the live mesh — both broad, and neither is in scope
+here. Independently, the authoritative emulator delivers no real stylus hover,
+so the restore-exactly claim could not have been verified on this hardware
+anyway. **Is a non-destructive hover preview worth an autosave-suspend concept,
+or does tap-to-jump stand alone?**
+
+**Two open questions stay open, and neither was answered here.** **OQ-01** still
+blocks Stage 020D (Directional Scale): no handle, mode or UI for it exists.
+**OQ-02** still blocks `SCULPT-DIM-01` (Sculpt dimensions), because history
+ownership of a body-level dimension edit made while Sculpt is active is
+unresolved. Neither is decided on the OWNER's behalf.
+
+**Do not start Stage 025.** Do not start Stage 020D, Stage 018B or 018C, do not
+extend Mirror to Imported Mesh, CAD, Sculpt, an arbitrary plane or a live
+symmetry modifier, and do not grow the navigator into thumbnails, named states,
+a branching tree or a Construction-history panel.
+
+**Previously closed and still pending the same review:** `MIRROR-01`, whose
+technical side reads: a
 Construction Body reflects across XY, XZ or YZ into one new body as one
 transaction; the reflection is carried by a proper rotation with the positive
 scale untouched, so the transform contract, the renderer, the picker, the codec

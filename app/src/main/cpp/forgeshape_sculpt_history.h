@@ -135,6 +135,55 @@ constexpr size_t kMaxSculptHistoryBytes = 4u * 1024u * 1024u;  // 4 MiB
 constexpr size_t kMaxSculptHistoryEntryBytes = 1u * 1024u * 1024u;  // 1 MiB
 
 // ---------------------------------------------------------------------------
+// Where the cursor stands (`SCULPT-H1`)
+// ---------------------------------------------------------------------------
+//
+// The read-only model the History navigator draws, DERIVED on every read and
+// stored nowhere. This is the whole of what the navigator adds to the history:
+// no second stack, no cursor member, no capacity and no budget of its own —
+// because the retained branch was always a line and the cursor was always a
+// position on it. `SculptHistory` already knows both; nothing here is new
+// state, and that is what makes a second answer to "what can be undone"
+// structurally impossible rather than merely avoided.
+//
+// The line, for a history holding `u` undo entries and `r` redo entries:
+//
+//     entries, oldest first:  undo_[0..u-1]  then  redo_[r-1..0]
+//     states, oldest first:   0 .. u+r       (one more state than entries)
+//     state 0                 the OLDEST RETAINED state, before entry 0
+//     state k                 the state after entry k-1 was applied
+//     cursor == u             the state the mesh shows right now
+//
+// `redo_` is walked BACKWARDS because it is a stack whose `back()` is the next
+// entry a Redo applies, so the entry nearest the cursor is its last element.
+//
+// STATE 0 IS NOT NECESSARILY THE FREEZE. Eviction drops from the oldest end, so
+// on a body that has overflowed `kMaxSculptHistoryEntries` state 0 is simply
+// the oldest state still retained — the earlier ones are gone and cannot be
+// jumped to. The navigator says so rather than implying the whole session is
+// reachable, because a row that cannot be reached is worse than an absent one.
+//
+// ORDINALS ARE ADDRESSES WITHIN ONE READ. A jump names a state by its ordinal
+// in the branch as the caller just read it; recording a new stroke can both
+// truncate the future and evict the oldest state, which renumbers what is left.
+// That is why the navigator re-reads the whole model on every refresh and why
+// `jumpToHistoryCursor` range-checks rather than trusting the number it is
+// handed.
+struct SculptHistoryCursor {
+    // The state the mesh currently shows. Always equals `undoDepth()`.
+    size_t cursor = 0;
+    // How many states lie behind the cursor, and how many ahead of it.
+    size_t undoCount = 0;
+    size_t redoCount = 0;
+    // The rows the navigator draws: `undoCount + redoCount + 1`. Never zero —
+    // a history with no entries at all is still ONE state, the one on screen.
+    size_t stateCount = 1;
+
+    // Whether `ordinal` names a state on this branch.
+    bool addresses(size_t ordinal) const { return ordinal < stateCount; }
+};
+
+// ---------------------------------------------------------------------------
 // The history
 // ---------------------------------------------------------------------------
 //
@@ -207,6 +256,21 @@ public:
 
     size_t undoDepth() const { return undo_.size(); }
     size_t redoDepth() const { return redo_.size(); }
+
+    // Where the cursor stands on the retained branch (`SCULPT-H1`).
+    //
+    // Derived here and nowhere else, so the navigator, the two chrome controls
+    // and a jump all read one arithmetic. Costs two `size()` calls: it is meant
+    // to be re-read on every refresh rather than cached, because a cached copy
+    // would be the second answer this whole file exists to prevent.
+    SculptHistoryCursor cursor() const {
+        SculptHistoryCursor out;
+        out.cursor = undo_.size();
+        out.undoCount = undo_.size();
+        out.redoCount = redo_.size();
+        out.stateCount = undo_.size() + redo_.size() + 1;
+        return out;
+    }
 
     // What the retained entries cost right now, by the same conservative
     // measure the cap is enforced with.

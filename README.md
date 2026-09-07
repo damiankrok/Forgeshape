@@ -277,6 +277,19 @@ the frames and builds
 `artifacts\sel-out-r1\OWNER_CONTACT_SHEET_SEL_OUT_R1.png`, `VISUAL_EVIDENCE.md`
 and the numbers quoted in `PERFORMANCE.md`.
 
+`SculptHistoryNavigatorTest` covers `SCULPT-H1` (`E2E-SCHNAV-01..09`): the
+Sculpt History navigator. The trigger is absent in Construction and present in
+Sculpt; the surface lists one row per retained STATE; tapping an older row lands
+on bit-exactly the `.forge` `SCUL` bytes that many taps on the real Undo
+produce, and a newer row on what Redo produces; tapping the current row moves
+nothing; a backward jump leaves the future walkable and the next stroke drops
+it; switching bodies rebinds to that body’s own branch and leaves the other
+untouched; a round trip re-encodes the project byte-identically with the
+Construction history unmoved; eight states cap the list at five visible rows and
+scroll over the rest with no row below 48 dp; and System Back closes it. Run it
+with the focused runner above -- it needs no evidence script and captures no
+frames.
+
 For the widened external-GLB subset (`GLB-IMPORT-R1`) use:
 
 ```

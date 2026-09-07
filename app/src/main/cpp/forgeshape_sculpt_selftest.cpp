@@ -1004,6 +1004,240 @@ void runSculptUndoChecks(Recorder& r) {
     }
 
     // -----------------------------------------------------------------------
+    // SCHNAV-01..12 — the History navigator's cursor model and jump
+    // (`SCULPT-H1`)
+    // -----------------------------------------------------------------------
+    //
+    // The navigator adds no storage, so nothing here re-tests capacity or the
+    // budgets: SCUNDO-22/23 above own those and are unchanged. What is proved
+    // here is that the cursor model describes the branch SCUNDO already built,
+    // and that a jump is exactly repeated Undo and repeated Redo — asserted by
+    // running both paths on the same session and comparing bit-exact positions,
+    // rather than by reading the implementation and agreeing with it.
+    {
+        ConstructionObject object = makeSphereObject();
+        SculptSession session;
+        session.freezeToSculpt(object.generateMesh(), object.objectId());
+
+        // SCHNAV-01: an empty history is still ONE state — the one on screen —
+        // and the navigator is available over it.
+        {
+            const SculptHistoryCursor at = session.history().cursor();
+            r.check("SCHNAV_01_an_empty_history_is_one_state_at_cursor_zero",
+                    at.cursor == 0 && at.undoCount == 0 && at.redoCount == 0
+                        && at.stateCount == 1);
+            r.check("SCHNAV_01_and_the_navigator_is_available_over_a_frozen_mesh",
+                    session.canNavigateSculptHistory());
+            r.check("SCHNAV_01_state_zero_is_addressable_and_state_one_is_not",
+                    at.addresses(0) && !at.addresses(1));
+        }
+
+        const std::vector<Vec3> seed = allPositions(session.mesh());
+        r.check("SCHNAV_02_three_strokes_land",
+                runOneStroke(session, camera, identity, 24.0f)
+                    && runOneStroke(session, camera, identity, -26.0f)
+                    && runOneStroke(session, camera, identity, 30.0f));
+        const std::vector<Vec3> afterThree = allPositions(session.mesh());
+
+        // SCHNAV-02: three strokes are three entries and four states, with the
+        // cursor at the newest.
+        {
+            const SculptHistoryCursor at = session.history().cursor();
+            r.check("SCHNAV_02_three_strokes_are_four_states_with_the_cursor_at_the_newest",
+                    at.cursor == 3 && at.undoCount == 3 && at.redoCount == 0
+                        && at.stateCount == 4);
+        }
+
+        // SCHNAV-03: walking back moves the cursor and NOT the number of rows.
+        // The branch is the same line; the user is standing somewhere else on
+        // it, which is the whole distinction the navigator draws.
+        session.undoStroke();
+        session.undoStroke();
+        {
+            const SculptHistoryCursor at = session.history().cursor();
+            r.check("SCHNAV_03_two_undos_move_the_cursor_and_keep_the_row_count",
+                    at.cursor == 1 && at.undoCount == 1 && at.redoCount == 2
+                        && at.stateCount == 4);
+        }
+
+        // The reference path: repeated Undo all the way to the oldest retained
+        // state, captured bit-exact.
+        session.undoStroke();
+        const std::vector<Vec3> byRepeatedUndo = allPositions(session.mesh());
+        const bool undoFlag = session.mesh().hasEdits();
+        r.check("SCHNAV_04_repeated_undo_reaches_state_zero",
+                session.history().cursor().cursor == 0
+                    && samePositions(byRepeatedUndo, seed));
+
+        // And the reference path forward, from there.
+        session.redoStroke();
+        session.redoStroke();
+        session.redoStroke();
+        const std::vector<Vec3> byRepeatedRedo = allPositions(session.mesh());
+        const bool redoFlag = session.mesh().hasEdits();
+        r.check("SCHNAV_05_repeated_redo_reaches_the_newest_state",
+                session.history().cursor().cursor == 3
+                    && samePositions(byRepeatedRedo, afterThree));
+
+        // SCHNAV-04: one backward jump equals those three Undos exactly —
+        // geometry, cursor and the edited flag.
+        {
+            const SculptRevision before = session.mesh().revision();
+            r.check("SCHNAV_04_a_backward_jump_reports_ok",
+                    session.jumpToHistoryCursor(0) == SculptSession::SculptHistoryStatus::Ok);
+            r.check("SCHNAV_04_and_lands_on_exactly_what_repeated_undo_produced",
+                    samePositions(allPositions(session.mesh()), byRepeatedUndo));
+            r.check("SCHNAV_04_with_the_same_cursor_model",
+                    session.history().cursor().cursor == 0
+                        && session.history().cursor().redoCount == 3
+                        && session.history().cursor().stateCount == 4);
+            r.check("SCHNAV_04_and_the_same_edited_flag",
+                    session.mesh().hasEdits() == undoFlag);
+            r.check("SCHNAV_04_the_revision_still_went_forwards",
+                    session.mesh().revision() > before);
+        }
+
+        // SCHNAV-05: and one forward jump equals those three Redos exactly.
+        {
+            const SculptRevision before = session.mesh().revision();
+            r.check("SCHNAV_05_a_forward_jump_reports_ok",
+                    session.jumpToHistoryCursor(3) == SculptSession::SculptHistoryStatus::Ok);
+            r.check("SCHNAV_05_and_lands_on_exactly_what_repeated_redo_produced",
+                    samePositions(allPositions(session.mesh()), byRepeatedRedo));
+            r.check("SCHNAV_05_with_the_same_cursor_model",
+                    session.history().cursor().cursor == 3
+                        && session.history().cursor().redoCount == 0);
+            r.check("SCHNAV_05_and_the_same_edited_flag",
+                    session.mesh().hasEdits() == redoFlag);
+            r.check("SCHNAV_05_the_revision_still_went_forwards",
+                    session.mesh().revision() > before);
+        }
+
+        // SCHNAV-06: tapping the row the mesh already shows changes NOTHING —
+        // not a vertex, not the revision, not the stacks, not the flag.
+        {
+            const SculptRevision before = session.mesh().revision();
+            const bool flagBefore = session.mesh().hasEdits();
+            r.check("SCHNAV_06_a_jump_to_the_current_cursor_reports_nothing_to_do",
+                    session.jumpToHistoryCursor(3)
+                        == SculptSession::SculptHistoryStatus::NothingToDo);
+            r.check("SCHNAV_06_and_mutates_nothing_at_all",
+                    samePositions(allPositions(session.mesh()), byRepeatedRedo)
+                        && session.mesh().revision() == before
+                        && session.mesh().hasEdits() == flagBefore
+                        && session.history().undoDepth() == 3
+                        && session.history().redoDepth() == 0);
+        }
+
+        // SCHNAV-07: an ordinal off the end of the branch is refused BY NAME
+        // and moves nothing. Not clamped to the newest state, which would take
+        // the user somewhere they did not tap.
+        {
+            const SculptRevision before = session.mesh().revision();
+            r.check("SCHNAV_07_an_ordinal_past_the_branch_is_refused_by_name",
+                    session.jumpToHistoryCursor(4)
+                        == SculptSession::SculptHistoryStatus::OutOfRange);
+            r.check("SCHNAV_07_and_a_far_larger_one_too",
+                    session.jumpToHistoryCursor(9999)
+                        == SculptSession::SculptHistoryStatus::OutOfRange);
+            r.check("SCHNAV_07_a_refused_jump_moves_nothing",
+                    samePositions(allPositions(session.mesh()), byRepeatedRedo)
+                        && session.mesh().revision() == before
+                        && session.history().undoDepth() == 3);
+        }
+
+        // SCHNAV-08: navigation records NOTHING. The retained branch holds the
+        // same three entries after all of the above as it did before any of it.
+        r.check("SCHNAV_08_jumping_never_mints_an_entry",
+                session.history().undoDepth() + session.history().redoDepth() == 3);
+        r.check("SCHNAV_08_and_never_evicts_or_rejects_one",
+                session.history().evictedEntries() == 0
+                    && session.history().notRetainedStrokes() == 0);
+
+        // SCHNAV-09: the abandoned future goes by the EXISTING rule. Jumping
+        // back leaves it walkable; the next stroke is what drops it.
+        {
+            r.check("SCHNAV_09_a_backward_jump_leaves_the_future_walkable",
+                    session.jumpToHistoryCursor(1) == SculptSession::SculptHistoryStatus::Ok
+                        && session.history().cursor().redoCount == 2
+                        && session.history().cursor().stateCount == 4);
+            r.check("SCHNAV_09_a_new_stroke_lands",
+                    runOneStroke(session, camera, identity, 18.0f));
+            const SculptHistoryCursor at = session.history().cursor();
+            r.check("SCHNAV_09_and_the_abandoned_future_is_gone",
+                    at.redoCount == 0 && at.cursor == 2 && at.stateCount == 3);
+            r.check("SCHNAV_09_the_old_future_is_no_longer_addressable",
+                    session.jumpToHistoryCursor(3)
+                        == SculptSession::SculptHistoryStatus::OutOfRange);
+        }
+
+        // SCHNAV-11: the refusals a jump shares with a single step.
+        {
+            session.beginStroke(camera, kCentreX, kCentreY, kViewportWidth, kViewportHeight,
+                                identity, identity);
+            r.check("SCHNAV_11_a_jump_under_a_live_stroke_is_refused",
+                    session.jumpToHistoryCursor(0)
+                        == SculptSession::SculptHistoryStatus::StrokeActive);
+            r.check("SCHNAV_11_and_the_navigator_reports_itself_unavailable",
+                    !session.canNavigateSculptHistory());
+            session.cancelStroke();
+
+            session.enterConstruction();
+            r.check("SCHNAV_11_a_jump_outside_sculpt_is_refused",
+                    session.jumpToHistoryCursor(0)
+                        == SculptSession::SculptHistoryStatus::NotSculpting);
+            r.check("SCHNAV_11_and_the_navigator_is_unavailable_in_construction",
+                    !session.canNavigateSculptHistory());
+            session.enterSculpt();
+            r.check("SCHNAV_11_resuming_sculpt_restores_the_branch_and_the_cursor",
+                    session.canNavigateSculptHistory()
+                        && session.history().cursor().stateCount == 3);
+        }
+    }
+
+    // SCHNAV-12: a jump on one body cannot address or move another body's
+    // branch. Ownership is the mechanism, exactly as it is for a single Undo.
+    {
+        ConstructionScene scene;
+        SceneObject& a = scene.activeBody();
+        a.construction().setPrimitive(PrimitiveSpec::forSphere(2.0));
+        SceneObject& b = scene.addBody();
+        b.construction().setPrimitive(PrimitiveSpec::forSphere(2.0));
+
+        SculptSession session;
+        session.bindTarget(&a.frozenSculpt());
+        session.freezeToSculpt(a.construction().generateMesh(), a.objectId());
+        runOneStroke(session, camera, identity, 24.0f);
+        runOneStroke(session, camera, identity, -24.0f);
+        runOneStroke(session, camera, identity, 28.0f);
+        const std::vector<Vec3> afterA = allPositions(session.mesh());
+        r.check("SCHNAV_12_body_a_has_a_four_state_branch",
+                session.history().cursor().stateCount == 4);
+
+        session.bindTarget(&b.frozenSculpt());
+        session.freezeToSculpt(b.construction().generateMesh(), b.objectId());
+        const std::vector<Vec3> seedB = allPositions(session.mesh());
+        runOneStroke(session, camera, identity, 30.0f);
+        r.check("SCHNAV_12_switching_bodies_switches_the_branch",
+                session.history().cursor().stateCount == 2
+                    && session.history().cursor().cursor == 1);
+
+        // Body A's ordinal 3 is a perfectly good state — on A. Asked on B it is
+        // off the end, and B's own jump to 0 must reach B's seed and nothing of
+        // A's.
+        r.check("SCHNAV_12_a_s_ordinal_is_out_of_range_on_b",
+                session.jumpToHistoryCursor(3)
+                    == SculptSession::SculptHistoryStatus::OutOfRange);
+        r.check("SCHNAV_12_b_jumps_within_its_own_branch",
+                session.jumpToHistoryCursor(0) == SculptSession::SculptHistoryStatus::Ok
+                    && samePositions(allPositions(session.mesh()), seedB));
+        r.check("SCHNAV_12_and_body_a_was_never_touched",
+                samePositions(allPositions(a.frozenSculpt().mesh), afterA)
+                    && a.frozenSculpt().history.undoDepth() == 3
+                    && a.frozenSculpt().history.redoDepth() == 0);
+    }
+
+    // -----------------------------------------------------------------------
     // Measured entry sizes, for the memory-bounds evidence
     // -----------------------------------------------------------------------
     //

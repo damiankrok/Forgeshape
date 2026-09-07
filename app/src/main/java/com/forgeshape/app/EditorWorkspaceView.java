@@ -72,6 +72,7 @@ final class EditorWorkspaceView extends FrameLayout
         SketchOrientationNavigatorView.OnOrientationAction,
         SketchDimensionLabelView.OnDimensionAction,
         BodyDimensionLabelsView.OnDimensionAction,
+        SculptHistoryNavigatorView.OnHistoryStateChosen,
         AnchoredSurfaceView.OnOpenStateChanged {
 
     /** The three body axes by name, for a status line (Stage 020M). */
@@ -150,6 +151,26 @@ final class EditorWorkspaceView extends FrameLayout
     private final LinearLayout historyGroup;
     private final ImageView undoAction;
     private final ImageView redoAction;
+    /**
+     * Opens the Sculpt History navigator ({@code SCULPT-H1}).
+     *
+     * <p>The third member of the history capsule and the only one that is
+     * Sculpt's alone: Undo and Redo are drawn in both modes because native code
+     * decides which history a tap means, but there is no Construction branch to
+     * list, so this is ABSENT in Construction rather than shown and refused.
+     */
+    private final ImageView historyNavigatorAction;
+    private final SculptHistoryNavigatorView historyNavigator;
+    /**
+     * The model backing the open navigator, re-read on every refresh.
+     *
+     * <p>Not a cache. It is a scratch buffer for one native read, held as a
+     * field only so the refresh path does not allocate a five-element array on
+     * every pass; nothing outside {@link #refreshHistoryControls} reads it, and
+     * nothing derives an enabled state or a tap's meaning from it.
+     */
+    private final double[] nativeSculptHistory =
+            new double[NativeViewport.SCULPT_HISTORY_STATE_SIZE];
     private final FrameLayout overlayRoot;
 
     private final GlobalToolbarView toolbar;
@@ -608,6 +629,21 @@ final class EditorWorkspaceView extends FrameLayout
         });
         historyGroup.addView(redoAction, EditorControlStyles.iconButtonParams(context,
                 EditorControlStyles.dimen(context, R.dimen.toolbar_gap)));
+        // The navigator's trigger, third in the capsule and after the pair it
+        // lists. Undo and Redo are the steps; this is the branch they step
+        // along, so it reads left to right as "back, forward, show me where I
+        // am" rather than as a third step control.
+        historyNavigatorAction = EditorControlStyles.iconButton(context,
+                R.id.history_navigator_action, R.drawable.ic_history_navigator,
+                context.getString(R.string.sculpt_history));
+        historyNavigatorAction.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                setHistoryNavigatorOpen(!historyNavigator.isOpen());
+            }
+        });
+        historyGroup.addView(historyNavigatorAction, EditorControlStyles.iconButtonParams(context,
+                EditorControlStyles.dimen(context, R.dimen.toolbar_gap)));
         bottomRow.addView(historyGroup, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
@@ -652,6 +688,17 @@ final class EditorWorkspaceView extends FrameLayout
         projectPopover = new ProjectActionsPopoverView(context, this);
         overlayRoot.addView(projectPopover, ProjectActionsPopoverView.anchoredParams(context,
                 EditorControlStyles.dimen(context, R.dimen.toolbar_height)));
+
+        // The Sculpt History navigator, anchored to the BOTTOM trailing corner
+        // because its control is in the bottom row rather than the toolbar. It
+        // stands off the capsule by one control height plus the shared anchor
+        // gap, so it clears the row it grew out of instead of covering it —
+        // a surface may stand on the model, never on another live control.
+        historyNavigator = new SculptHistoryNavigatorView(context, this);
+        overlayRoot.addView(historyNavigator, SculptHistoryNavigatorView.anchoredParams(context,
+                EditorControlStyles.dimen(context, R.dimen.control_height)
+                        + EditorControlStyles.dimen(context, R.dimen.row_gap)
+                        + EditorControlStyles.dimen(context, R.dimen.overlay_anchor_gap)));
 
         // Built before the editors that used to own it, and parented by the
         // layout decision rather than here: until applyLayoutForWindow runs it
@@ -949,6 +996,8 @@ final class EditorWorkspaceView extends FrameLayout
         } else if (surface == projectPopover) {
             projectPopover.setOpen(false);
             toolbar.showProjectActionsOpen(false);
+        } else if (surface == historyNavigator) {
+            setHistoryNavigatorOpen(false);
         } else {
             surface.setOpen(false);
         }
@@ -1663,6 +1712,8 @@ final class EditorWorkspaceView extends FrameLayout
             objectsCapsule.showObjectsOpen(false);
             addPrimitivePalette.closeImmediately();
             objectsCapsule.showAddOpen(false);
+            historyNavigator.closeImmediately();
+            EditorControlStyles.setIconButtonActive(historyNavigatorAction, false);
             setPrecisionOpen(false);
         }
     }
@@ -2670,6 +2721,103 @@ final class EditorWorkspaceView extends FrameLayout
         historyGroup.setVisibility(isSketching() ? GONE : VISIBLE);
         undoAction.setEnabled(NativeViewport.historyUndoAvailable());
         redoAction.setEnabled(NativeViewport.historyRedoAvailable());
+        refreshHistoryNavigator();
+    }
+
+    /**
+     * Makes the Sculpt History navigator say what native code actually reports.
+     *
+     * <p><b>One read, on every refresh, and nothing remembered.</b> The model
+     * comes back from a single locked native call, so the row count and the
+     * cursor always describe one body at one instant; a second call for the
+     * cursor could be answered after a stroke the first one did not see.
+     *
+     * <p><b>Absent rather than disabled in Construction.</b> There is no
+     * Construction branch to list, and a control that cannot succeed is not
+     * drawn. It is also withdrawn under a live stroke, where a jump is refused
+     * below JNI — the guard stays regardless; removing a control is not
+     * removing a guard. An open navigator is CLOSED when availability goes
+     * away, because a surface hanging off a control that is no longer there
+     * belongs to nothing.
+     *
+     * <p>Body switching needs no code of its own: the model is per body below
+     * JNI, so a refresh after a switch reads the new body's branch and the list
+     * rebuilds. That is the whole rebinding.
+     */
+    private void refreshHistoryNavigator() {
+        NativeViewport.sculptHistoryState(nativeSculptHistory);
+        final boolean available = !isSketching()
+                && nativeSculptHistory[NativeViewport.SCULPT_HISTORY_AVAILABLE] != 0.0;
+        historyNavigatorAction.setVisibility(available ? View.VISIBLE : View.GONE);
+        if (!available) {
+            if (historyNavigator.isOpen()) {
+                setHistoryNavigatorOpen(false);
+            }
+            return;
+        }
+        if (!historyNavigator.isOpen()) {
+            return;
+        }
+        historyNavigator.showHistory(
+                (int) nativeSculptHistory[NativeViewport.SCULPT_HISTORY_STATE_COUNT],
+                (int) nativeSculptHistory[NativeViewport.SCULPT_HISTORY_CURSOR],
+                NativeViewport.sculptHistoryEvictedCount() > 0L);
+    }
+
+    /**
+     * Opens or closes the navigator, lighting its control to match.
+     *
+     * <p>Through one method rather than at each call site, because Back, the
+     * control itself and a loss of availability must all leave the workspace in
+     * the same state — an unlit control over an open surface is exactly the
+     * drift that a single close path prevents.
+     */
+    private void setHistoryNavigatorOpen(boolean open) {
+        if (open) {
+            dismissPrimarySurfacesExcept(historyNavigator);
+            // Filled before it grows, so the first frame of the growth already
+            // carries the rows rather than expanding an empty box and then
+            // populating it.
+            historyNavigator.showHistory(
+                    (int) nativeSculptHistory[NativeViewport.SCULPT_HISTORY_STATE_COUNT],
+                    (int) nativeSculptHistory[NativeViewport.SCULPT_HISTORY_CURSOR],
+                    NativeViewport.sculptHistoryEvictedCount() > 0L);
+        }
+        historyNavigator.setOpen(open);
+        EditorControlStyles.setIconButtonActive(historyNavigatorAction, open);
+    }
+
+    /**
+     * Stands the sculpt mesh on the state the user tapped.
+     *
+     * <p>Backward is repeated Undo and forward is repeated Redo, below JNI, so
+     * this method chooses nothing: it asks for an ordinal and reports what came
+     * back. The navigator STAYS OPEN afterwards — walking a branch means trying
+     * several states, and a surface that dismissed itself on the first tap
+     * would make comparing two of them two gestures instead of one.
+     *
+     * <p>A jump mints no sculpt history entry and records no Construction step,
+     * so nothing here opens an edit or touches the project history. It does
+     * move geometry, which is why it ends in the ordinary re-read that notes
+     * the project may be dirty — the same path a single Undo takes.
+     */
+    @Override
+    public void onSculptHistoryStateChosen(int ordinal) {
+        final int status = NativeViewport.sculptJumpToHistoryCursor(ordinal);
+        onNativeStateChanged();
+        if (status == NativeViewport.HISTORY_OUT_OF_RANGE) {
+            // The branch moved between the read that drew the row and the tap.
+            // Nothing was applied; the refresh above has already redrawn the
+            // list, so what the user sees now is the branch that actually
+            // exists.
+            showStatus(getContext().getString(R.string.status_history_state_unavailable),
+                    R.attr.fsTextError);
+        } else if (status == NativeViewport.HISTORY_STROKE_ACTIVE) {
+            showStatus(getContext().getString(R.string.status_history_stroke_active),
+                    R.attr.fsTextError);
+        }
+        // HISTORY_NOTHING_TO_DO is the user tapping the row they are already
+        // on. Silent on purpose: nothing changed and nothing went wrong.
     }
 
     /**
@@ -3516,6 +3664,7 @@ final class EditorWorkspaceView extends FrameLayout
         addPrimitivePalette.setMotionAllowed(allowed);
         displayPopover.setMotionAllowed(allowed);
         projectPopover.setMotionAllowed(allowed);
+        historyNavigator.setMotionAllowed(allowed);
     }
 
     // -----------------------------------------------------------------------
@@ -4452,6 +4601,9 @@ final class EditorWorkspaceView extends FrameLayout
             projectPopover.setOpen(false);
             toolbar.showProjectActionsOpen(false);
         }
+        if (keeper != historyNavigator && historyNavigator.isOpen()) {
+            setHistoryNavigatorOpen(false);
+        }
     }
 
     @Override
@@ -4724,7 +4876,8 @@ final class EditorWorkspaceView extends FrameLayout
      */
     AnchoredSurfaceView[] anchoredSurfaces() {
         return new AnchoredSurfaceView[]{
-                objectsPopover, addPrimitivePalette, inspector, displayPopover, projectPopover};
+                objectsPopover, addPrimitivePalette, inspector, displayPopover, projectPopover,
+                historyNavigator};
     }
 
     /** The direct brush controls, so a test can read the values beside them. */
@@ -4751,6 +4904,17 @@ final class EditorWorkspaceView extends FrameLayout
     /** Redo, the same way. */
     ImageView redoAction() {
         return redoAction;
+    }
+
+    /** The Sculpt History navigator's trigger, so a test drives the control a
+     *  user would press rather than calling the open path directly. */
+    ImageView historyNavigatorAction() {
+        return historyNavigatorAction;
+    }
+
+    /** The navigator surface itself, so a test reads its real rows. */
+    SculptHistoryNavigatorView historyNavigator() {
+        return historyNavigator;
     }
 
     /** The Global Toolbar, so a test can reach a global control by id. */

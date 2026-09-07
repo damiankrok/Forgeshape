@@ -885,6 +885,19 @@ final class NativeViewport {
      * Read through {@link #sculptHistoryNotRetainedCount}.
      */
     static final int HISTORY_ENTRY_NOT_RETAINED = 5;
+    /**
+     * A History navigator jump named a state that is not on the retained
+     * branch ({@code SCULPT-H1}).
+     *
+     * <p>Only {@link #sculptJumpToHistoryCursor} returns it, and it means the
+     * branch moved between the read that drew the rows and the tap: a stroke
+     * truncated the future, or an eviction dropped the oldest state. Nothing
+     * was applied. The correct handling is to re-read the model and redraw,
+     * never to retry with a different ordinal — native code deliberately does
+     * not clamp, because landing the user on a state they did not tap is worse
+     * than a refusal they can see.
+     */
+    static final int HISTORY_OUT_OF_RANGE = 6;
 
     /** @return whether a Construction step can be undone right now */
     static native boolean constructionUndoAvailable();
@@ -1541,6 +1554,86 @@ final class NativeViewport {
 
     /** @return one of the {@code HISTORY_*} constants */
     static native int sculptRedo();
+
+    // -----------------------------------------------------------------------
+    // The History navigator (SCULPT-H1)
+    // -----------------------------------------------------------------------
+    //
+    // The compact list of the active body's retained sculpt states, and the one
+    // act that moves between them.
+    //
+    // <b>It is a VIEW of the history that already existed.</b> There is no
+    // second stack, no new capacity, no new budget and nothing new that is
+    // stored: the retained branch was always a line and the cursor was always a
+    // position on it, so the navigator only names them. This layer holds
+    // neither — the model is re-read on every refresh, exactly as the two
+    // control's enabled states are, because a cached copy would be the second
+    // answer the one-history rule exists to prevent.
+    //
+    // A jump is repeated Undo and repeated Redo below JNI. It mints no history
+    // entry, records no Construction step, writes no {@code .forge} byte and
+    // reaches no checkpoint of its own.
+
+    /** Length of the array {@link #sculptHistoryState} fills. */
+    static final int SCULPT_HISTORY_STATE_SIZE = 5;
+
+    /**
+     * 1 when the navigator has a branch to offer: in Sculpt, no stroke in
+     * flight, and the active body has a sculpt mesh.
+     *
+     * <p>Deliberately true for an EMPTY history too — there is still one state,
+     * the one on screen — so the control does not vanish exactly when a new
+     * user first looks for it.
+     */
+    static final int SCULPT_HISTORY_AVAILABLE = 0;
+    /** Which state the mesh currently shows, as an ordinal on the branch. */
+    static final int SCULPT_HISTORY_CURSOR = 1;
+    /** How many states lie behind the cursor. Equals {@link #sculptUndoDepth}. */
+    static final int SCULPT_HISTORY_UNDO_COUNT = 2;
+    /** How many lie ahead of it. Equals {@link #sculptRedoDepth}. */
+    static final int SCULPT_HISTORY_REDO_COUNT = 3;
+    /**
+     * How many rows the navigator draws: undo + redo + 1.
+     *
+     * <p>Never zero. A body with no strokes at all still has one state, and
+     * ordinal 0 is the oldest state still RETAINED rather than necessarily the
+     * Freeze — eviction drops from the oldest end, and what it dropped cannot
+     * be jumped to.
+     */
+    static final int SCULPT_HISTORY_STATE_COUNT = 4;
+
+    /**
+     * Reads the navigator's whole model in one locked native read.
+     *
+     * <p>One call rather than five, for the reason {@link #sculptState} is one
+     * call: the five values must describe ONE body's branch at ONE instant, and
+     * reading them separately would let a body switch or a stroke land between
+     * two of them.
+     *
+     * @param out at least {@link #SCULPT_HISTORY_STATE_SIZE} doubles, indexed
+     *     by the {@code SCULPT_HISTORY_*} constants
+     */
+    static native void sculptHistoryState(double[] out);
+
+    /**
+     * Moves the active body's sculpt mesh to one state on its retained branch.
+     *
+     * <p>Backward is repeated Undo and forward is repeated Redo — not merely
+     * equivalent to them, but implemented as them — so one jump lands on
+     * bit-exactly the geometry the taps would have produced. A jump to the
+     * state already shown applies nothing and answers
+     * {@link #HISTORY_NOTHING_TO_DO}; an ordinal off the branch is refused with
+     * {@link #HISTORY_OUT_OF_RANGE} and moves nothing at all.
+     *
+     * <p>The abandoned future is NOT dropped here. Jumping backward leaves the
+     * states ahead walkable, exactly as Undo does; they go by the existing rule
+     * when the next stroke makes them describe a future that no longer follows.
+     *
+     * @param targetCursor the state's ordinal, {@code 0} to
+     *     {@code stateCount - 1}
+     * @return one of the {@code HISTORY_*} constants
+     */
+    static native int sculptJumpToHistoryCursor(int targetCursor);
 
     // -----------------------------------------------------------------------
     // What the two chrome controls mean

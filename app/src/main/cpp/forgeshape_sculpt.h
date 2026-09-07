@@ -742,6 +742,12 @@ public:
         NoSculptMesh,
         // The stack in that direction is empty.
         NothingToDo,
+        // A jump named a state that is not on the retained branch
+        // (`SCULPT-H1`). Refused by name rather than clamped to the nearest
+        // reachable state: an ordinal the caller cannot address is a caller
+        // reading a branch that has since moved, and silently landing it
+        // somewhere else would take the user to a state they did not tap.
+        OutOfRange,
     };
 
     static const char* sculptHistoryStatusName(SculptHistoryStatus status);
@@ -754,6 +760,37 @@ public:
 
     SculptHistoryStatus undoStroke();
     SculptHistoryStatus redoStroke();
+
+    // -----------------------------------------------------------------------
+    // The History navigator's one act (`SCULPT-H1`)
+    // -----------------------------------------------------------------------
+    //
+    // Moves the mesh to the state at `targetCursor` on the retained branch —
+    // see `SculptHistoryCursor` for what an ordinal addresses.
+    //
+    // IT IS REPEATED UNDO AND REPEATED REDO, and it is written that way rather
+    // than described that way: the loop below calls `undoStroke()` and
+    // `redoStroke()` themselves, so "jumping back three is the same as tapping
+    // Undo three times" is a structural fact about this function and not a
+    // property two implementations have to keep agreeing on. There is no second
+    // delta path, no batched apply and no snapshot restore.
+    //
+    // It records NOTHING. A jump is navigation over entries that already exist,
+    // so no entry is minted, the retained set is unchanged, and the caps are
+    // untouched. It is not a Construction step either: the project's own
+    // history never hears about it.
+    //
+    // The ABANDONED FUTURE is not discarded here. Jumping backward leaves the
+    // states ahead of the cursor on the redo stack exactly as an Undo does, so
+    // the user can walk forward again; they are dropped by the EXISTING rule —
+    // `SculptHistory::record` clears the redo stack — when the next stroke
+    // makes them describe a future that no longer follows from the present.
+    SculptHistoryStatus jumpToHistoryCursor(size_t targetCursor);
+
+    // Whether the navigator has a branch to offer right now. Exactly the
+    // conditions a jump checks, asked without performing one, so the control
+    // and the act cannot disagree.
+    bool canNavigateSculptHistory() const;
 
     // The active body's history, for depth and byte-budget introspection.
     const SculptHistory& history() const { return target().history; }

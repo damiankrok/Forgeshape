@@ -252,6 +252,21 @@
     <dimen name="objects_popover_width">220dp</dimen>
 
     <!--
+      The Sculpt History navigator (SCULPT-H1).
+
+      Narrower than the Objects panel because its rows carry far less: "Stroke
+      12" and a marker, where an Objects row carries a body name and an
+      overflow. 184 dp fits the longest row this list can produce at the
+      largest supported system font without buying whitespace with viewport.
+
+      How many rows are VISIBLE at once is not a dimension and is not here: see
+      SculptHistoryNavigatorView.VISIBLE_ROWS, which is a viewport target and
+      not a history bound — the retained branch is whatever SculptHistory kept,
+      and the list scrolls over all of it.
+    -->
+    <dimen name="history_navigator_width">184dp</dimen>
+
+    <!--
       The Add Primitive palette: six shape tiles, two to a row.
 
       Fixed rather than proportional for the same reason the Objects panel is —

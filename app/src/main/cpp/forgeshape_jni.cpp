@@ -3212,6 +3212,9 @@ constexpr jint kHistoryUnavailable = 4;
 // `kMaxSculptHistoryEntryBytes` applied but was not retained, so it cannot be
 // taken back. Surfaced through sculptHistoryNotRetainedCount().
 constexpr jint kHistoryEntryNotRetained = 5;
+// A History navigator jump named a state that is not on the retained branch
+// (`SCULPT-H1`). Only the jump entry point returns it.
+constexpr jint kHistoryOutOfRange = 6;
 
 // Turns a domain refusal into the transport code for it. One mapping, so a new
 // domain status cannot quietly arrive as a generic failure.
@@ -3224,6 +3227,8 @@ static jint sculptHistoryStatusCode(forgeshape::SculptSession::SculptHistoryStat
             return kHistoryNothingToDo;
         case Status::StrokeActive:
             return kHistoryStrokeActive;
+        case Status::OutOfRange:
+            return kHistoryOutOfRange;
         case Status::NotSculpting:
         case Status::NoSculptMesh:
             return kHistoryUnavailable;
@@ -4917,6 +4922,85 @@ JNIEXPORT jlong JNICALL
 Java_com_forgeshape_app_NativeViewport_sculptHistoryEvictedCount(JNIEnv*, jclass) {
     std::lock_guard<std::mutex> lock(g_stateMutex);
     return static_cast<jlong>(forgeshape::sculptSession().history().evictedEntries());
+}
+
+// --- the History navigator (`SCULPT-H1`) ------------------------------------
+
+// The navigator's whole read-only model, in one locked read.
+//
+// One call rather than five, for the reason `sculptState` is one call: the five
+// values describe ONE body's branch at ONE instant, and reading them separately
+// would let a body switch or a stroke land between two of them and hand the
+// navigator a row count that does not go with its cursor.
+JNIEXPORT void JNICALL
+Java_com_forgeshape_app_NativeViewport_sculptHistoryState(JNIEnv* env, jclass,
+                                                          jdoubleArray out) {
+    constexpr jsize kSculptHistoryStateSize = 5;
+    if (out == nullptr || env->GetArrayLength(out) < kSculptHistoryStateSize) {
+        return;
+    }
+    jdouble values[kSculptHistoryStateSize];
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const forgeshape::SculptSession& session = forgeshape::sculptSession();
+        const forgeshape::SculptHistoryCursor at = session.history().cursor();
+        const jdouble read[kSculptHistoryStateSize] = {
+            session.canNavigateSculptHistory() ? 1.0 : 0.0,
+            static_cast<jdouble>(at.cursor),
+            static_cast<jdouble>(at.undoCount),
+            static_cast<jdouble>(at.redoCount),
+            static_cast<jdouble>(at.stateCount),
+        };
+        std::copy(read, read + kSculptHistoryStateSize, values);
+    }
+    env->SetDoubleArrayRegion(out, 0, kSculptHistoryStateSize, values);
+}
+
+// Moves the active body's sculpt mesh to one state on its retained branch.
+//
+// Publishes through `publishSculptRepresentation` exactly as a single Undo
+// does, and for the same reason: a jump reaches the renderer the way every
+// other sculpt geometry change does, so there is no second way for sculpt
+// geometry to become a frame. ONE publication for the whole jump, not one per
+// step — the intermediate states are arithmetic on the way to the state the
+// user tapped, and drawing them would be showing frames nobody asked for.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sculptJumpToHistoryCursor(JNIEnv*, jclass,
+                                                                 jint targetCursor) {
+    if (targetCursor < 0) {
+        // A negative ordinal cannot address a state, and it must not be widened
+        // into a huge `size_t` on the way to a range check that would then be
+        // asking about the wrong number.
+        return kHistoryOutOfRange;
+    }
+    forgeshape::SculptSession::SculptHistoryStatus status;
+    forgeshape::SculptRevision revision = 0;
+    forgeshape::MeshRevision meshRevision = forgeshape::kNoMeshRevision;
+    size_t undoDepth = 0;
+    size_t redoDepth = 0;
+    bool edits = false;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        forgeshape::SculptSession& session = forgeshape::sculptSession();
+        status = session.jumpToHistoryCursor(static_cast<size_t>(targetCursor));
+        if (status == forgeshape::SculptSession::SculptHistoryStatus::Ok) {
+            meshRevision = publishSculptRepresentation(session, "history_jump");
+            revision = session.mesh().revision();
+            edits = session.mesh().hasEdits();
+        }
+        undoDepth = session.history().undoDepth();
+        redoDepth = session.history().redoDepth();
+    }
+    if (status != forgeshape::SculptSession::SculptHistoryStatus::Ok) {
+        FS_LOGI("FORGESHAPE_SCULPT_HISTORY_REFUSED:jump:%s target=%d",
+                forgeshape::SculptSession::sculptHistoryStatusName(status), (int)targetCursor);
+        return sculptHistoryStatusCode(status);
+    }
+    FS_LOGI("FORGESHAPE_SCULPT_HISTORY:jump target=%d sculptRevision=%llu meshRevision=%llu "
+            "edits=%d undo=%d redo=%d",
+            (int)targetCursor, (unsigned long long)revision, (unsigned long long)meshRevision,
+            edits ? 1 : 0, (int)undoDepth, (int)redoDepth);
+    return kHistoryOk;
 }
 
 JNIEXPORT jint JNICALL

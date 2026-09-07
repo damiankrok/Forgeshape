@@ -1125,6 +1125,25 @@ during it, and Redo puts it back. They walk only the body you are sculpting —
 another sculpted body keeps its own strokes, untouched, and coming back to it
 finds them where you left them.
 
+**And while you sculpt there is a third control beside them: Sculpt History.**
+It opens a compact list of the states your strokes have taken the body through —
+*Start*, then one row per stroke — with the state you are looking at marked, and
+tapping any row stands the body on it. Tapping an older row does exactly what
+pressing Undo that many times does, and tapping a newer one exactly what Redo
+does; tapping the row you are already on does nothing at all. The list shows
+five rows at a time and scrolls over the rest, so a long session is all still
+reachable — five is how many fit at once, not how many are kept.
+
+Jumping back does **not** throw away the strokes ahead of you: they stay in the
+list and you can walk forward to them again. What ends that branch is the same
+thing that always ended it — making a **new** stroke from where you are standing,
+after which the ones you had walked away from are gone.
+
+The control is Sculpt's alone: it is not on screen in Construction, because the
+Construction history has no such branch to show. It closes with System Back, and
+it moves nothing but the mesh — jumping saves nothing, changes no name, position
+or shape parameter, and puts nothing into the Construction Undo history.
+
 The stroke history is separate from the Construction history in both directions.
 Undoing strokes never takes back a Construction change, and Construction Undo
 never touches a single sculpted vertex. Leaving to *Back to Construction* or
@@ -1752,9 +1771,10 @@ its scale.
 Sculpting has exactly the four tools above — other
 brushes (Flatten, Crease, Pinch and the rest), remesh, symmetry, masking, layers,
 brush presets and stylus pressure are not implemented. Sculpt Undo IS
-implemented, over whole strokes, and is described above; there is no undo
-*history panel* for either history, no named steps and no keyboard shortcut for
-either control.
+implemented, over whole strokes, and so is the *Sculpt History* list described
+above; both are Sculpt's alone. The Construction history has no such panel,
+neither history has named or thumbnailed steps, there is no branching tree, and
+there is no keyboard shortcut for any of the three controls.
 
 **There is a grid, but there is no snapping of any kind.** Nothing you drag,
 type or place is quantised to it, no value is ever measured off it, and there is

@@ -368,6 +368,40 @@ curve-profile timings.
   which history a tap means, from the product mode; the CONSTRUCTION entry
   points still refuse in Sculpt, because removing a control is not removing a
   guard.
+- **The History navigator is a VIEW of that branch, and a jump IS repeated
+  Undo** (`SCULPT-H1`). It adds no storage, no capacity, no budget and no
+  second stack: `SculptHistory::cursor()` derives
+  `{cursor, undoCount, redoCount, stateCount}` from the two deques on every
+  read and stores none of it. A ROW is a STATE and not an entry — `u` undo and
+  `r` redo entries are `u + r + 1` states, the cursor stands at `u`, and state
+  0 is the OLDEST RETAINED state rather than necessarily the Freeze, because
+  eviction drops from that end and what it dropped cannot be jumped to.
+  `SculptSession::jumpToHistoryCursor` is **implemented as** repeated
+  `undoStroke()`/`redoStroke()` rather than described that way, so there is no
+  second delta path, no batched apply and no snapshot restore; it asks the same
+  three refusals a single step does, answers `NothingToDo` for the row already
+  stood on (applying nothing, minting no revision), and refuses an ordinal off
+  the branch by name (`OutOfRange`) — **never clamped**, because landing the
+  user on a state they did not tap is worse than a refusal they can see. It
+  records NOTHING: no entry, no Construction step, no `.forge` byte, no
+  checkpoint of its own, and a round trip encodes byte-identically. The
+  **abandoned future is not dropped by the jump** — jumping backward leaves it
+  walkable exactly as an Undo does, and the EXISTING rule (`record` clears the
+  redo stack) drops it when the next stroke lands. `sculptHistoryState` reads
+  the whole model in ONE locked call, because five values must describe one
+  body's branch at one instant, and one jump publishes ONCE rather than once
+  per intermediate step. Body switching needs no rebinding code: the model is
+  per body below JNI. The control is Sculpt's alone and ABSENT in Construction
+  — there is no Construction branch to list — and **five visible rows is a
+  VIEWPORT target, not a history bound**: the list scrolls over everything
+  `SculptHistory` kept, and no row is shrunk below the 48 dp floor to fit more
+  in. The current row is marked by SHAPE and by its accessible label, never by
+  colour alone. **Not this stage:** a real-stylus hover preview (deferred —
+  `AutosaveController.performCheckpoint` reads the fingerprint on its own
+  worker thread at RUN time, so previewed geometry could reach the recovery
+  checkpoint, and making that safe needs an autosave-suspend concept or a
+  shadow render path), thumbnails, named states, a branching tree, a
+  Construction navigator, and any keyboard shortcut.
 - **A `.forge` project file is a semantic document, and loading one is
   all-or-nothing.** The format is ForgeShape's own, versioned, and portable
   between compatible installations: every field is a file-owned fixed-width
@@ -871,7 +905,11 @@ curve-profile timings.
   multiplier on the size a body already has, opening at 1/1/1 every time; never
   "World Scale"), *Absolute Scale* (the stored, authoritative, unitless scale
   vector the transform has always had), *history
-  capsule* (the bottom trailing capsule holding Undo and Redo), *transform mode selector* (Move /
+  capsule* (the bottom trailing capsule holding Undo and Redo, and in Sculpt the
+  History navigator beside them), *History navigator* (the compact scrolling
+  list of the active body's retained sculpt STATES, and the tap that stands the
+  body on one; never a "history panel", and its rows are states rather than
+  entries), *transform mode selector* (Move /
   Rotate / Scale) and *coordinate-space selector* (World / Local, where it
   applies — Scale omits it, because a world-axis scale of a turned body is a
   shear). Both are contextual **vertical groups inside the single right

@@ -244,6 +244,33 @@
     -->
     <string name="undo">Undo</string>
     <string name="redo">Redo</string>
+
+    <!--
+      The History navigator (SCULPT-H1). Sculpt only.
+
+      "Sculpt History" rather than "History": the word has to say WHICH history,
+      because the two controls beside it mean the Construction one everywhere
+      outside Sculpt and the user is entitled to know which line they are
+      walking. It never says "Freeze" or "frozen" — see the two-vocabularies
+      rule; to the user these are strokes on a sculpt mesh.
+
+      A row is a STATE, not an entry, which is why row zero has a name of its
+      own: it is the state before the oldest stroke still kept, and there is
+      nothing to call it after. "Start" is that name. It is deliberately not
+      "Original" — after an eviction the oldest kept state is not the original
+      one, and the dropped notice below is what says so rather than a label
+      that would quietly become untrue.
+    -->
+    <string name="sculpt_history">Sculpt History</string>
+    <string name="sculpt_history_start">Start</string>
+    <string name="sculpt_history_stroke">Stroke %1$d</string>
+    <!-- Content descriptions. The marker glyph carries the same three states
+         visually; these carry them to a screen reader, which cannot see it. -->
+    <string name="sculpt_history_row_current">%1$s, current state</string>
+    <string name="sculpt_history_row_undone">%1$s, undone</string>
+    <string name="sculpt_history_dropped">Older strokes were dropped to stay in budget.</string>
+    <string name="status_history_state_unavailable">That sculpt state is no longer available.</string>
+
     <string name="hide_ui">Hide UI</string>
     <string name="show_ui">Show UI</string>
 

@@ -222,17 +222,28 @@
     <item name="objects_capsule_add" type="id" />
 
     <!--
-      Construction history. Two icon controls in one capsule at the trailing end
-      of the bottom row, opposite the Objects capsule: what the project IS on the
-      leading side, what just happened to it on the trailing one.
+      History. Icon controls in one capsule at the trailing end of the bottom
+      row, opposite the Objects capsule: what the project IS on the leading
+      side, what just happened to it on the trailing one.
 
-      They are Construction's, not the shell's: they are withdrawn entirely in
-      Sculpt, because a control that reads as Undo while a sculpt stroke is the
-      last thing the user did would be claiming to undo the stroke.
+      Undo and Redo are drawn in BOTH modes and native code alone decides which
+      history a tap means, from the product mode (ARCH-OWNER-12). The ids name
+      the ACT the code performs — step the history back, step it forward — which
+      is why neither carries the word Construction.
+
+      The navigator (SCULPT-H1) is the third member and is Sculpt's alone: it
+      opens the compact list of the active body's retained sculpt states. It is
+      absent in Construction rather than shown and refused, because the
+      Construction history has no equivalent branch to offer and a control that
+      cannot succeed is not drawn.
     -->
     <item name="history_group" type="id" />
     <item name="undo_action" type="id" />
     <item name="redo_action" type="id" />
+    <item name="history_navigator_action" type="id" />
+    <item name="history_navigator" type="id" />
+    <item name="history_navigator_list" type="id" />
+    <item name="history_navigator_row" type="id" />
 
     <!--
       Add Primitive: the creation surface a `+` opens, in either Objects host.
