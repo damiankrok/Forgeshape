@@ -26,6 +26,12 @@ its deliberate constant screen size.
 
 ## What does not work yet, and exactly why
 
+> **SUPERSEDED by `CAD-UX-S1-C1`.** This section records `CAD-UX-S1` as it was
+> delivered. `OQ-CAD-UX-01` is now closed: `Finish Sketch` moves to a
+> feature-preview view in which the extrusion axis has a real screen projection,
+> and the arrow **is** draggable on the device. The sketch authoring camera was
+> not unlocked — see `EVIDENCE_C1.md`.
+
 **The arrow cannot be dragged from inside a sketch (`OQ-CAD-UX-01`).** This is
 recorded as a blocker rather than worked around, and it is not a defect in the
 manipulator — the drag arithmetic is implemented and proved by eight native

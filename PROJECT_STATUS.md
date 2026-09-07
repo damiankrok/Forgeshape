@@ -1,14 +1,44 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.72.0
+**Status Version:** 0.73.0
 **Updated:** 2026-09-07
-**Result:** **`CAD-UX-S1` — COMPLETE WITH ONE RECORDED BLOCKER, OWNER LATER
-READY.** The extrusion is now controlled at the geometry instead of in a side
-panel: an **arrow** along the extrusion normal standing on the profile's own
-area centroid, with the **exact depth**, a direct **Flip** and a **New Body**
-badge in a camera-attached cluster anchored to it, and — after Extrude — one
-**Edit Sketch** chip standing on the committed body, because the sketch survives
-its extrusion and the UI now says so in one tap instead of three.
+**Result:** **`CAD-UX-S1` — TECHNICALLY COMPLETE, OWNER LATER READY. Its one
+blocker, `OQ-CAD-UX-01`, is CLOSED by `CAD-UX-S1-C1`.** The extrusion is
+controlled at the geometry instead of in a side panel: an **arrow** along the
+extrusion normal standing on the profile's own area centroid, with the **exact
+depth**, a direct **Flip** and a **New Body** badge in a camera-attached cluster
+anchored to it, and — after Extrude — one **Edit Sketch** chip standing on the
+committed body, because the sketch survives its extrusion and the UI now says so
+in one tap instead of three. **And the arrow can now be dragged.**
+
+**`CAD-UX-S1-C1`: the sketch's view and the extrusion's are TWO views of one
+authored truth.** The blocker was never that the sketch camera is locked normal
+to its plane — that lock is what makes authoring exact, and it is untouched:
+`frameSketchView` still aims along the support normal and `applyOrbit` still
+returns early while `sketchView_` is true. The blocker was that the SAME view
+was being asked to do a second job. `Finish Sketch` now installs a
+**feature-preview** pose, so the extrusion axis has a real screen projection and
+the axial drag that was implemented and natively proved all along is reachable
+through the real viewport. `cadFeatureViewPose` is the whole policy and is a
+pure function over values: the user's own pre-sketch 3D view when it already
+sees the axis (re-centred on the work anchor), otherwise a deterministic
+**oblique** view leaning 35.5° off the support normal **in the sketch frame's
+own `(u, v)`** — so no world up enters its construction and an XZ sketch's world
+`+Y` normal, the gimbal case, produces a pitch of about 54° rather than a
+special case. Because the orbit pose clamps pitch, the candidate is re-derived
+from the CLAMPED angles and re-measured, with a bounded four-attempt azimuth
+step behind it; nothing it can work from is **`Unavailable`** and installs no
+view at all. Every path back to the authored sketch — `Back to Sketch` and
+`Edit Sketch` — restores the exact aligned view, and the pre-sketch pose is not
+consumed, so Cancel and Apply still return the user where they were.
+
+**No `.forge` byte, section, version, fixture or corpus digest moved for a
+camera**, and that is proved rather than asserted: `-VerifyOnly` reports 30/30
+fixtures `OnDisk=True` with every digest identical, and `CADUXS1C1_09_a`
+compares a `CadBodyState` across the transition. The one gesture rule that
+changed is stated once: in `Ready`, a single finger that misses the arrow
+navigates, because the drawing is done and there is no aligned view left to
+protect.
 
 **No `.forge` byte, section, version, fixture or corpus digest moved**, and that
 is proved rather than asserted: `build-forge-corpus.ps1 -VerifyOnly` reports
@@ -23,23 +53,6 @@ used. The **camera-attached scale is a new rule beside the gizmo's**, never a
 change to it: the cluster is a world object clamped into a screen band, so it
 shrinks as the camera pulls back, where `gizmoWorldScale` deliberately holds a
 constant pixel size.
-
-**The one blocker, `OQ-CAD-UX-01`: the arrow cannot be DRAGGED from inside a
-sketch, and this is recorded rather than worked around.** The sketch camera is
-locked normal to its plane — `frameSketchView` aims exactly along the support
-normal and `applyOrbit` returns early while `sketchView_` is true — and that
-normal **is** the extrusion axis, so the arrow points straight at the eye, its
-shaft has zero screen extent, and an axial drag has no direction to resolve
-against. The manipulator does the one honest thing the repo's own rule allows
-and **holds the last good value**; `e2eCaduxs1_03` asserts exactly that on the
-device, including that the projected tip and mid-shaft label coincide. The drag
-arithmetic itself is implemented and proved by eight native cases under cameras
-that can see the axis. Making it reachable means **unlocking the sketch view**,
-which is a camera decision this stage was told not to take and which carries a
-real consequence — an XZ sketch's normal is world +Y, the gimbal case
-`frameSketchView` exists to bypass. **Returned to the coordinator, not decided
-here.** Everything else in the stage works from the locked view and is proved on
-the device.
 
 **Previously:** **STAGE 025 (`SCULPT-FCM-R1`) — COMPLETE, OWNER LATER READY.**
 Sculpt has the **seven brushes** the MVP set asks for: Grab, Clay, Smooth,
@@ -1980,7 +1993,8 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 | The canvas cluster shrinks with camera distance inside a bounded band, with both clamps engaging, drawing and hit testing sharing one derived size, and the smallest live control still at the 48 dp floor | VERIFIED |
 | A canvas depth edit, a Flip and a Cancel change no `.forge` byte, no fingerprint, no body count and no history depth; a typed depth and an equivalent drag reach a bit-identical `CadBodyState` | VERIFIED |
 | The retained sketch reached in ONE tap from the committed body, edited and finished into the SAME body as one more step with no second body created | VERIFIED |
-| Dragging the extrude arrow from inside a sketch — the sketch camera is locked normal to its plane, which IS the extrusion axis, so the manipulator holds its last good value; the drag arithmetic itself is proved natively (`OQ-CAD-UX-01`) | **BLOCKED — camera decision returned to the coordinator** |
+| A sketch is AUTHORED through the exact support-normal view, and `Finish Sketch` moves to a feature-preview view in which the extrusion axis has a real screen projection (`CAD-UX-S1-C1`) | VERIFIED |
+| Dragging the extrude arrow through the real viewport actually changes the authored depth, mints no history step, and leaves Flip a direction rather than a negative depth; `Back to Sketch` restores the exact aligned view and the next Finish is usable again | VERIFIED |
 | `CADB` `.forge` section: Save / Open / Save Copy / autosave / recovery / fingerprint carry the sketch and the extrusion; a reopened CAD Body is still editable truth; corrupt CAD records refused fail-closed; the twelve older fixtures unchanged | VERIFIED |
 | A cancelled sketch changes nothing: bytes, fingerprint and history identical | VERIFIED |
 | Import, Sculpt and Sculpt Undo/Redo unaffected beside a CAD Body; CAD → Sculpt deliberately refused by name | VERIFIED |
@@ -2551,7 +2565,7 @@ device. `README.md` documents how to read them.
 | `EditorWorkspacePointerTest` | synthetic stylus transport, per-pointer association, and that tap / navigation / sculpt arbitration are unchanged | 13 |
 | `EditorWorkspaceCompositionTest` | the UI-R2 role split: viewport dominance, the scene panel, one list with one owner, inspector-names-its-body, and that composition rebuilds no geometry | 10 |
 | `SketchExtrudeTest` | `E2E-CADR0-01..16`: New Sketch and the plane chooser; a real dragged rectangle, circle and tapped polyline; Finish Sketch; a typed depth and Extrude; the Objects row and the CAD context; Undo/Redo of the creation; later rectangle and depth edits as one step each; save/reopen as editable truth; an open polyline refused by name and Cancel leaving the project byte-identical; a gizmo drag surviving a depth edit; Imported Mesh Sculpt Undo/Redo beside a CAD Body | 9 |
-| `CadCanvasExtrudeTest` | `E2E-CADUXS1-01..09`: the canvas cluster absent while drawing and present in Ready with the 48 dp floor held; Flip reversing the side, keeping the exact positive depth and the same profile, with the precision panel's chips agreeing because the panel holds no draft any more; the arrow's axis facing the eye so a drag HOLDS rather than guesses, asserted rather than skipped (`OQ-CAD-UX-01`); an exact typed depth at the arrow, a refused zero, and panel/canvas parity; drag + Flip + type + Cancel leaving the document byte-identical with the fingerprint, body count and undo depth unmoved; Apply as one body and one history step, then the retained sketch reopened in one tap, edited and finished into the same body as one more step; `Add`/`Cut`/`Symmetric`/`Two Sides` absent from cluster and panel; and the camera-attached scale staying inside its band under a real pinch while no authored value moves | 8 |
+| `CadCanvasExtrudeTest` | `E2E-CADUXS1-01..09` and `E2E-CADUXS1C1-03..06`: the canvas cluster absent while drawing and present in Ready with the 48 dp floor held; Flip reversing the side, keeping the exact positive depth and the same profile, with the precision panel's chips agreeing because the panel holds no draft any more; the sketch still AUTHORED through the exact aligned view (a sketch axis stays on a screen axis) and `Finish Sketch` opening a preview in which the shaft has real screen extent, so a real viewport drag from native's own projected tip actually changes the depth, records nothing, and leaves Flip a direction; `Back to Sketch` restoring the aligned view with the next Finish usable again; an exact typed depth at the arrow, a refused zero, and panel/canvas parity; drag + Flip + type + Cancel leaving the document byte-identical with the fingerprint, body count and undo depth unmoved; Apply as one body and one history step, then the retained sketch reopened in one tap, edited and finished into the same body as one more step; `Add`/`Cut`/`Symmetric`/`Two Sides` absent from cluster and panel; and the camera-attached scale staying inside its band under a real pinch while no authored value moves | 9 |
 | `EditorWorkspaceMobileTest` | the UI-R4A structural claim: nothing owns the bottom edge in either mode (`UIR4A-01`, `-11`), the Objects capsule (`-02`), Add Primitive anchored to its `+` and offering exactly the six real primitives (`-03`, `-04`), Sphere and Plane routed through native truth (`-05`, `-06`), closing leaves one Objects control (`-07`), exact Shape and Transform one action away (`-08`, `-09`), the rail's icons and touch floor (`-10`), context surfaces rebuild no geometry (`-14`), the new surfaces leak no gesture (`-15`), one vocabulary in every window (`-17`) | 15 |
 | `EditorWorkspaceSculptRetentionTest` | `UIR4A-12` / `UIR4B-20`: Start Sculpting → real stroke → Back → Resume returns the same revision, counts, stroke history and ObjectId, with the Construction Source untouched; and that a stale source is readable from the resting workspace | 2 |
 | `EditorWorkspaceCorrectionTest` | the UI-R4B corrections: no Sculpt creation path and the scene still reachable (`UIR4B-01`), Construction's six-primitive path intact (`-02`), the rail's active state across a rebuild in both modes and cleared on a mode change (`-03`), the status lifecycle, the longer hold for a rejection, the empty resting line and the standing fault (`-04`), brush values beside their sliders and nowhere else and publishing nothing (`-05`), no mid-row cut in Shape or Transform with scrolling and fields intact (`-06`, `-07`), one shared anchored contract (`-08`), a correct first-open pivot for all four surfaces (`-09`), instant reduced motion and interruptibility (`-10`), zero geometry from chrome and motion (`-11`), inset floating surfaces on an expanded window (`-12`), Radius/Strength off the model in expanded Sculpt (`-13`), concentric active geometry and a fill-led selection with no stroke (`-14`), no user-facing *Freeze* over every `R.string` (`-15`), Start Sculpting with Back/Resume/confirmation intact (`-16`), the 48 dp floor in both modes and the toolbar still fitting (`-17`), five appearances on the Settings page and no geometry (`-18`), grid and selection feedback unchanged (`-19`) | 36 |
@@ -3176,24 +3190,21 @@ duration scale skips them outright rather than shortening them.
 
 ## Known Issues / Blockers
 
-- **`OQ-CAD-UX-01` — the extrude arrow cannot be dragged from inside a sketch,
-  because the sketch camera is locked normal to its plane.** The lock is
-  deliberate and documented (`CAD-A3` B3: the sketch view frames EXACTLY along
-  the support normal, with no pitch-clamp approximation and no gimbal) and it is
-  enforced in two places: `CameraController::frameSketchView` aims the camera
-  along the normal (`forgeshape_camera.cpp:161`), and
-  `CameraController::applyOrbit` returns early while `sketchView_` is true
-  (`forgeshape_camera.cpp:350`). That normal **is** the extrusion axis, so from
-  the only view a sketch ever has the arrow points at the eye and an axial drag
-  has nothing to resolve against; the manipulator holds its last good value,
-  which `e2eCaduxs1_03` asserts on the device. **The decision is the owner's:**
-  should the sketch view unlock once the sketch reaches `Ready` (the drawing is
-  finished, and today a single finger there does nothing at all), or should the
-  arrow stay an annotation with Flip and the exact value as the way the
-  extrusion is changed? Unlocking has a real consequence to accept — an XZ
-  sketch's normal is world **+Y**, which the orbit cannot express without hitting
-  its own pitch clamp, which is the gimbal case the sketch view exists to
-  bypass. Nothing about the camera was changed by `CAD-UX-S1`.
+- ~~**`OQ-CAD-UX-01` — the extrude arrow cannot be dragged from inside a
+  sketch.**~~ **CLOSED by `CAD-UX-S1-C1`.** The sketch camera lock was never the
+  thing to remove: authoring needs the exact support-normal view, and that view
+  is exactly the one an axial drag cannot be resolved from. The two are now two
+  views of one authored truth. `frameSketchView` and `applyOrbit` are untouched;
+  what changed is that `Finish Sketch` installs a feature-preview pose
+  (`cadFeatureViewPose`), so the extrusion axis has a real screen projection and
+  a pointer drag along the shaft moves the depth — asserted on the device by
+  `e2eCaduxs1c1_03`, which drags the real viewport from native's own projected
+  tip and reads the depth back. The gimbal consequence was answered rather than
+  accepted: the oblique fallback is built in the sketch frame's own `(u, v)`
+  with no world up in it, so an XZ sketch's world `+Y` normal produces a pitch
+  of about 54° and never approaches the clamp, and the candidate is re-measured
+  after the clamp with a bounded azimuth retry behind it. Every path back to the
+  authored sketch restores the exact aligned view.
 - **`SketchOverlayStyle::Dimension` renders fully transparent, and it is
   UNFIXED.** Found while placing the extrude arrow, not caused by it. The
   renderer's overlay switch (`forgeshape_renderer.cpp:1720-1741`) has cases for
@@ -3891,8 +3902,11 @@ was added and no marketing claim is made.
 ## Next Stage
 
 **Exactly one next step: return this status to the ForgeShape coordinator for a
-combined OWNER review, carrying one decision that must be made before the CAD
-canvas can be finished.**
+combined OWNER review.** `CAD-UX-S1` with its correction `CAD-UX-S1-C1` is
+technical/repository complete and carries no open blocker; what is left is the
+owner's own visual acceptance of the provisional constants and of the
+Sketch → preview transition, listed in
+`artifacts/cad-ux-s1/OWNER_LATER_TEST_PACK.md`.
 
 `CAD-UX-S1` is closed on the technical side. The extrusion is controlled at the
 geometry: an arrow along the extrusion normal on the profile's own area
@@ -3906,18 +3920,17 @@ digests are unchanged. The camera-attached size rule is a new function beside
 `gizmoWorldScale`, never a change to it, and its 0.80 floor is the arithmetic
 that keeps the smallest live control at exactly 48 dp.
 
-**The decision, `OQ-CAD-UX-01`: should the sketch view unlock in `Ready`?** The
-sketch camera is locked exactly normal to its plane, and that normal is the
-extrusion axis — so the arrow points at the eye, its shaft has no screen extent,
-and dragging it has nothing to resolve against. The manipulator holds its last
-good value, which is what the repo's own degenerate-viewpoint rule requires, and
-the device suite asserts that rather than skipping it. The drag arithmetic is
-implemented and proved by eight native cases. Unlocking the view once the sketch
-reaches `Ready` would make it reachable and costs the drawing nothing — a single
-finger there does nothing at all today — but it is a camera change this stage was
-told not to make, and it has a consequence to accept: an XZ sketch's normal is
-world **+Y**, which the orbit cannot express without hitting its own pitch clamp,
-which is the gimbal case the sketch view exists to bypass. **Not decided here.**
+**`OQ-CAD-UX-01` is CLOSED by `CAD-UX-S1-C1`, and the answer was not to unlock
+the sketch view.** A sketch is AUTHORED through the exact support-normal view
+and that stays exactly as it was; what Finish Sketch now does is move to a
+second view the staged extrusion can be adjusted through, so the arrow's shaft
+has real screen extent and the drag that was always implemented is finally
+reachable. `cadFeatureViewPose` is the whole policy — a pure function over
+values, with the user's own pre-sketch view preferred when it already sees the
+axis and a deterministic oblique fallback otherwise, built in the sketch
+frame's own `(u, v)` so the world-up gimbal case never arises. `Unavailable`
+installs nothing. The device suite drags the real viewport and reads the depth
+change back.
 
 **Two findings landed beside the stage and neither was fixed**, both recorded
 under *Known Issues* with file and line: `SketchOverlayStyle::Dimension` renders

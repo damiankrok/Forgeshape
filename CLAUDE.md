@@ -181,10 +181,15 @@ curve-profile timings.
   **CAD → Sculpt is deliberately NOT this stage**: `buildSculptSourceMesh`
   returns false for a CAD Body, the freeze refuses by name
   (`CadBodyNotSculptable`), the control is absent for one, and a `SCUL` entry
-  over a `CADB` body is refused by the codec. While a sketch is open the
-  single-finger gesture belongs to the sketch and never orbits, two fingers
+  over a `CADB` body is refused by the codec. While a sketch is being DRAWN the
+  single-finger gesture belongs to the sketch and never orbits — an orbit would
+  take the aligned view away under the finger placing a point — two fingers
   still pan and pinch, and creation, deletion, body switching, freeze and
-  Construction Undo/Redo are refused below JNI and withdrawn above it.
+  Construction Undo/Redo are refused below JNI and withdrawn above it. In
+  `Ready`, after Finish Sketch, a single finger that misses the extrude arrow
+  NAVIGATES like anywhere else in the product (`CAD-UX-S1-C1`): the drawing is
+  done, there is no aligned view left to protect, and the staged extrusion is
+  looked at rather than drawn on.
 - **A CAD sketch may be supported by a world plane OR a planar CAD face, and a
   face's identity is SEMANTIC** (`CAD-A3`, `ARCH-OWNER-13`). An extrusion
   exposes a bounded set of planar faces — two caps and one side per profile
@@ -357,19 +362,34 @@ curve-profile timings.
   retained-sketch `Edit Sketch` chip are Android chrome positioned from a
   projected native anchor — the `bodyDimensionLabelPoint` pattern a third time
   — and an anchor that does not project is HIDDEN, never placed at a guess.
-  **The DRAG is implemented, tested and currently unreachable from the sketch
-  view, and that is recorded rather than worked around** (`OQ-CAD-UX-01`). The
-  sketch camera is locked normal to its plane — `CameraController::applyOrbit`
-  returns early while `sketchView_` is true, and `frameSketchView` aims exactly
-  along the support normal — and that normal IS the extrusion axis, so from the
-  only view a sketch ever has, the arrow points straight at the eye and an axial
-  drag has no answer. The manipulator therefore does the one honest thing a
-  degenerate viewpoint allows: it holds the last good value. Unlocking the
-  sketch view is a CAMERA decision this stage was told not to take, and it
-  carries a real consequence — an XZ sketch's normal is world +Y, which orbit
-  cannot express without hitting its own pitch clamp. Until that is decided the
-  arrow is an ANNOTATION of direction and depth, and Flip and the exact value
-  are how the extrusion is changed.
+  **The sketch's view and the extrusion's are TWO views of one authored truth,
+  and Finish Sketch is where the second begins** (`CAD-UX-S1-C1`, closing
+  `OQ-CAD-UX-01`). A sketch is AUTHORED through the exact support-normal view —
+  `frameSketchView` aims along the normal and `applyOrbit` returns early while
+  `sketchView_` is true, both unchanged — and that normal IS the extrusion axis,
+  so from it the arrow points at the eye and no axial drag can be resolved. The
+  answer is a bounded VIEW transition and deliberately not a second gesture
+  model: a raw screen delta would give the drag a meaning the world axis does
+  not have. `cadFeatureViewPose` is the whole policy, a pure function over
+  values with two paths — the user's pre-sketch 3D view when it already sees the
+  axis, re-centred on the work anchor; otherwise a deterministic OBLIQUE view
+  leaning `kCadFeatureViewObliqueRadians` off the support normal in the frame's
+  own `(u, v)`, so no world up enters its construction and an XZ sketch's world
+  `+Y` normal needs no special case. "Usable" is one stated number,
+  `kCadFeatureViewMinAxisSine` (0.35, about 20.5°), measured as the SINE between
+  the view direction and the axis and chosen clear of `solveAxisParameter`'s own
+  0.02 limit. Because the orbit pose CLAMPS pitch, the candidate is re-derived
+  from the clamped angles and re-measured, and a failure steps the azimuth a
+  quarter turn — a bounded four attempts, because at most one quadrant can aim
+  the tilt up the meridian. Nothing it can work from is refused as
+  `Unavailable` and NO view is installed, on the manipulator's own fail-closed
+  terms. The transition keeps the sketch's projection and span, so it is a TILT
+  and not a reframe; it consumes nothing, so `endSketchView` still returns the
+  user's pre-sketch view on cancel and on commit; and every path back to the
+  authored sketch — `backToEditing` and `Edit Sketch` — reinstalls the exact
+  aligned view. **None of it is truth**: no `CadBodyState`, no `.forge` byte, no
+  section, no version, no fixture, no checkpoint, no fingerprint and no history
+  step moves for a camera.
   **The sketch panel holds no draft direction any more**: it shows what native
   says on every refresh, so the canvas Flip and the panel chips cannot become
   two answers. **Not this stage:** `Add`, `Cut`, any boolean, `Symmetric`,

@@ -1885,6 +1885,396 @@ void testCanvasExtrudeRetainedSketch(Recorder& r) {
         r.check("CADUXS1_08_b_a_committed_body_retained_sketch_still_yields_an_anchor", false);
     }
 }
+
+// -------------------------------------------------------------------------
+// The feature-preview camera (`CADUXS1C1-02`, `-03`, `-05`, `-09`)
+// -------------------------------------------------------------------------
+
+// The pose the sketch itself is looked through: what `frameSketchView` leaves
+// behind, captured. Built through a real CameraController rather than by hand,
+// so a case is a statement about the product's own camera.
+CameraController::Pose sketchPoseOf(const SketchFrame& frame) {
+    CameraController camera;
+    camera.setViewport(1080, 2000);
+    camera.frameSketchView(frame.origin, frame.u, frame.v, frame.n);
+    return camera.capturePose();
+}
+
+// The pose a general 3D view would have, from its orbit angles.
+CameraController::Pose orbitPoseOf(float yaw, float pitch) {
+    CameraController camera;
+    camera.setViewport(1080, 2000);
+    camera.setPose(yaw, pitch, 8.2f);
+    return camera.capturePose();
+}
+
+// Installs a pose the way the JNI transition does and hands back the snapshot
+// the manipulator would actually be given.
+CameraSnapshot snapshotOfPose(const CameraController::Pose& pose, int w, int h) {
+    CameraController camera;
+    camera.setViewport(w, h);
+    camera.restorePose(pose);
+    return camera.snapshot();
+}
+
+// A face-supported frame: an arbitrary world orientation with no world up
+// anywhere in its construction, which is what a `CAD-A3` face frame is.
+SketchFrame tiltedFaceFrame(float tiltRadians, float aboutRadians) {
+    // A normal `tiltRadians` off world +Y, swung `aboutRadians` around it.
+    const Vec3 n = vec3Normalize(Vec3{std::sin(tiltRadians) * std::cos(aboutRadians),
+                                      std::cos(tiltRadians),
+                                      std::sin(tiltRadians) * std::sin(aboutRadians)});
+    Vec3 seed{1.0f, 0.0f, 0.0f};
+    if (std::fabs(vec3Dot(n, seed)) > 0.9f) {
+        seed = Vec3{0.0f, 0.0f, 1.0f};
+    }
+    const Vec3 u = vec3Normalize(vec3Cross(seed, n));
+    const Vec3 v = vec3Normalize(vec3Cross(n, u));
+    return SketchFrame{Vec3{0.4f, 1.3f, -0.7f}, u, v, n};
+}
+
+void testFeaturePreviewView(Recorder& r) {
+    // CADUXS1C1-03 a: the tool's copy of the orbit convention IS the camera's.
+    // The direction the policy measures and the direction the camera installs
+    // have to be one function; a case rather than a comment, because the
+    // camera's own `orbitDirection` is private and could drift under this.
+    {
+        bool agree = true;
+        const float yaws[4] = {0.0f, 0.7f, 2.4f, -1.9f};
+        const float pitches[4] = {0.0f, 0.5f, -1.1f, 1.4f};
+        for (int i = 0; i < 4 && agree; ++i) {
+            CameraController camera;
+            camera.setViewport(1080, 2000);
+            camera.setPose(yaws[i], pitches[i], 8.2f);
+            const CameraSnapshot snap = camera.snapshot();
+            // target -> eye, which is what the policy is written in.
+            const Vec3 fromCamera = vec3Normalize(vec3Sub(snap.eye, snap.target));
+            const Vec3 fromTool = cadFeatureViewDirection(yaws[i], pitches[i]);
+            agree = nearVec(fromTool, fromCamera.x, fromCamera.y, fromCamera.z, 1e-4f);
+        }
+        r.check("CADUXS1C1_03_a_the_tool_orbit_direction_is_the_camera_one", agree);
+    }
+
+    // CADUXS1C1-02: the SKETCH view is unchanged, and it is exactly the view a
+    // drag cannot be resolved from. Both halves of `OQ-CAD-UX-01` in one case,
+    // over all three world planes -- this is the state the fix must not touch.
+    {
+        bool exact = true;
+        bool unusable = true;
+        const Workplane planes[3] = {Workplane::XY, Workplane::XZ, Workplane::YZ};
+        for (int i = 0; i < 3; ++i) {
+            const SketchFrame frame = planeFrameOf(planes[i]);
+            CameraController camera;
+            camera.setViewport(1080, 2000);
+            camera.frameSketchView(frame.origin, frame.u, frame.v, frame.n);
+            const CameraSnapshot snap = camera.snapshot();
+            const Vec3 direction = vec3Normalize(vec3Sub(snap.eye, snap.target));
+            // Exactly along the support normal, and orthographic, as before.
+            exact = exact && camera.sketchViewActive()
+                    && camera.projectionMode() == ProjectionMode::Orthographic
+                    && nearVec(direction, frame.n.x, frame.n.y, frame.n.z, 1e-5f);
+            // And therefore the extrusion axis has no screen extent at all.
+            unusable = unusable && !cadFeatureViewUsable(direction, frame.n)
+                       && cadFeatureViewAxisSine(direction, frame.n) < 1e-4f;
+        }
+        r.check("CADUXS1C1_02_a_the_sketch_view_is_still_exactly_along_the_support_normal",
+                exact);
+        r.check("CADUXS1C1_02_b_and_that_is_precisely_why_the_axis_cannot_be_dragged_from_it",
+                unusable);
+    }
+
+    // CADUXS1C1-03 b: the FALLBACK gives every world plane a usable axis, from
+    // the first-project bootstrap where there is no prior view at all.
+    {
+        bool ok = true;
+        const Workplane planes[3] = {Workplane::XY, Workplane::XZ, Workplane::YZ};
+        for (int i = 0; i < 3; ++i) {
+            const SketchFrame frame = planeFrameOf(planes[i]);
+            SketchSession session;
+            readyRectangleSession(&session, planes[i], 2.0, 2.0, 1.0);
+            CadExtrudeAnchors anchors;
+            ok = ok && session.extrudeAnchors(&anchors);
+            CameraController::Pose preview;
+            // A null `prior` IS the bootstrap: one volatile sketch over an
+            // empty scene, opened before any 3D view of a project existed.
+            const CadFeatureViewSource source = cadFeatureViewPose(
+                sketchPoseOf(frame), nullptr, frame, anchors, &preview);
+            ok = ok && source == CadFeatureViewSource::ObliqueFallback;
+            const Vec3 installed = cadFeatureViewDirection(preview.yaw, preview.pitch);
+            ok = ok && cadFeatureViewUsable(installed, anchors.axis);
+            // Inside the orbit's own clamp, so what was measured is what the
+            // camera will actually install.
+            ok = ok && std::fabs(preview.pitch) <= kPitchLimitRadians;
+            // Centred on the work, so the arrow is in frame wherever the
+            // sketch was drawn.
+            ok = ok && nearVec(preview.target, anchors.base.x, anchors.base.y, anchors.base.z,
+                               1e-5f);
+        }
+        r.check("CADUXS1C1_03_b_the_fallback_makes_the_axis_usable_on_every_world_plane", ok);
+    }
+
+    // CADUXS1C1-03 c: XZ is the world-up case. Its support normal is world +Y,
+    // which is the gimbal `frameSketchView` exists to bypass, and the fallback
+    // has to answer it without one.
+    {
+        const SketchFrame frame = planeFrameOf(Workplane::XZ);
+        const bool normalIsWorldUp = std::fabs(std::fabs(frame.n.y) - 1.0f) < 1e-6f;
+        SketchSession session;
+        readyRectangleSession(&session, Workplane::XZ, 2.0, 2.0, 1.0);
+        CadExtrudeAnchors anchors;
+        session.extrudeAnchors(&anchors);
+        CameraController::Pose preview;
+        const CadFeatureViewSource source =
+            cadFeatureViewPose(sketchPoseOf(frame), nullptr, frame, anchors, &preview);
+        const Vec3 installed = cadFeatureViewDirection(preview.yaw, preview.pitch);
+        // The tilt is the whole answer: 35.5 degrees off vertical is a pitch of
+        // about 54.5, nowhere near the clamp.
+        r.check("CADUXS1C1_03_c_a_world_up_support_normal_needs_no_special_case",
+                normalIsWorldUp && source == CadFeatureViewSource::ObliqueFallback
+                        && cadFeatureViewUsable(installed, anchors.axis)
+                        && std::fabs(preview.pitch) < kPitchLimitRadians - 0.2f);
+    }
+
+    // CADUXS1C1-03 d: a supported planar FACE, swept right through the band of
+    // orientations in which one azimuth's candidate can aim up the meridian and
+    // land inside the pitch clamp. The bounded azimuth retry is what carries
+    // those, and the proof is that the direction rebuilt from the CLAMPED
+    // angles still clears the threshold.
+    {
+        bool ok = true;
+        for (int deg = 0; deg <= 90; deg += 5) {
+            const float tilt = static_cast<float>(deg) * 3.14159265358979323846f / 180.0f;
+            for (int about = 0; about < 360; about += 45) {
+                const float swing =
+                    static_cast<float>(about) * 3.14159265358979323846f / 180.0f;
+                const SketchFrame frame = tiltedFaceFrame(tilt, swing);
+                CadSketch sketch;
+                sketch.plane = Workplane::XY;
+                SketchRectangle rect;
+                rect.center = SketchPoint{0.0, 0.0};
+                rect.width = 2.0;
+                rect.height = 2.0;
+                addSketchEntity(&sketch, rect);
+                ClosedProfile profile;
+                if (!firstProfileOf(sketch, 1, &profile)) {
+                    ok = false;
+                    continue;
+                }
+                ExtrudeFeature extrude;
+                extrude.profileEntityId = 1;
+                extrude.depth = 1.0;
+                extrude.direction = ExtrudeDirection::AlongNormal;
+                CadExtrudeAnchors anchors;
+                if (!cadExtrudeAnchors(frame, profile, extrude, &anchors)) {
+                    ok = false;
+                    continue;
+                }
+                CameraController::Pose preview;
+                const CadFeatureViewSource source =
+                    cadFeatureViewPose(sketchPoseOf(frame), nullptr, frame, anchors, &preview);
+                if (source != CadFeatureViewSource::ObliqueFallback) {
+                    ok = false;
+                    continue;
+                }
+                const Vec3 installed = cadFeatureViewDirection(preview.yaw, preview.pitch);
+                ok = ok && cadFeatureViewUsable(installed, anchors.axis)
+                     && std::fabs(preview.pitch) <= kPitchLimitRadians;
+            }
+        }
+        r.check("CADUXS1C1_03_d_a_face_frame_at_any_orientation_gets_a_usable_view", ok);
+    }
+
+    // CADUXS1C1-03 e: the PRIOR view is preferred when it already sees the
+    // axis, and REFUSED when it looks down it -- both paths, in one case.
+    {
+        const SketchFrame frame = planeFrameOf(Workplane::XY);
+        SketchSession session;
+        readyRectangleSession(&session, Workplane::XY, 2.0, 2.0, 1.0);
+        CadExtrudeAnchors anchors;
+        session.extrudeAnchors(&anchors);
+
+        // An ordinary 3D view of the model: the product's own initial pose.
+        const CameraController::Pose good = orbitPoseOf(kInitialYaw, kInitialPitch);
+        CameraController::Pose fromGood;
+        const CadFeatureViewSource keptIt =
+            cadFeatureViewPose(sketchPoseOf(frame), &good, frame, anchors, &fromGood);
+
+        // A view already looking straight down the XY normal, which is exactly
+        // what the sketch view was: giving it back would give back the problem.
+        const CameraController::Pose headOn = orbitPoseOf(0.0f, 0.0f);
+        CameraController::Pose fromHeadOn;
+        const CadFeatureViewSource refusedIt =
+            cadFeatureViewPose(sketchPoseOf(frame), &headOn, frame, anchors, &fromHeadOn);
+
+        const bool keptTheDirection = near2(fromGood.yaw, good.yaw, 1e-6)
+                                      && near2(fromGood.pitch, good.pitch, 1e-6)
+                                      && near2(fromGood.distance, good.distance, 1e-6);
+        const bool movedTheCentre = nearVec(fromGood.target, anchors.base.x, anchors.base.y,
+                                            anchors.base.z, 1e-5f);
+        const Vec3 fallbackDirection =
+            cadFeatureViewDirection(fromHeadOn.yaw, fromHeadOn.pitch);
+        r.check("CADUXS1C1_03_e_a_usable_prior_view_is_given_back_re_centred_on_the_work",
+                keptIt == CadFeatureViewSource::PriorView && keptTheDirection && movedTheCentre);
+        r.check("CADUXS1C1_03_f_a_head_on_prior_view_is_refused_for_the_deterministic_fallback",
+                refusedIt == CadFeatureViewSource::ObliqueFallback
+                        && cadFeatureViewUsable(fallbackDirection, anchors.axis));
+    }
+
+    // CADUXS1C1-03 g: the policy is DETERMINISTIC. One sketch produces one
+    // view, every time, because nothing random and no accumulated state enters
+    // it.
+    {
+        const SketchFrame frame = planeFrameOf(Workplane::YZ);
+        SketchSession session;
+        readyRectangleSession(&session, Workplane::YZ, 3.0, 1.0, 0.5);
+        CadExtrudeAnchors anchors;
+        session.extrudeAnchors(&anchors);
+        CameraController::Pose a;
+        CameraController::Pose b;
+        cadFeatureViewPose(sketchPoseOf(frame), nullptr, frame, anchors, &a);
+        cadFeatureViewPose(sketchPoseOf(frame), nullptr, frame, anchors, &b);
+        r.check("CADUXS1C1_03_g_the_fallback_is_deterministic",
+                near2(a.yaw, b.yaw, 0.0) && near2(a.pitch, b.pitch, 0.0)
+                        && near2(a.distance, b.distance, 0.0));
+    }
+
+    // CADUXS1C1-05 a: the drag WORKS from the view the policy installs, and it
+    // means the same thing there as everywhere else -- one metre along the axis
+    // is one metre of depth. This is the case `OQ-CAD-UX-01` could not have.
+    {
+        bool ok = true;
+        const Workplane planes[3] = {Workplane::XY, Workplane::XZ, Workplane::YZ};
+        for (int i = 0; i < 3; ++i) {
+            const SketchFrame frame = planeFrameOf(planes[i]);
+            SketchSession session;
+            readyRectangleSession(&session, planes[i], 2.0, 2.0, 1.0);
+            CadExtrudeAnchors anchors;
+            session.extrudeAnchors(&anchors);
+            CameraController::Pose preview;
+            cadFeatureViewPose(sketchPoseOf(frame), nullptr, frame, anchors, &preview);
+            const int w = 1080;
+            const int h = 2000;
+            const CameraSnapshot camera = snapshotOfPose(preview, w, h);
+            // The shaft has real screen extent now: the base and the tip are
+            // separated pixels, which is what a hit test needs.
+            float bx = 0.0f;
+            float by = 0.0f;
+            float tx = 0.0f;
+            float ty = 0.0f;
+            ok = ok && projectWorldToScreen(camera, anchors.base, w, h, &bx, &by)
+                 && projectWorldToScreen(camera, anchors.tip, w, h, &tx, &ty);
+            ok = ok && std::hypot(tx - bx, ty - by) > 20.0f;
+            // The arrow can be taken, and a one-metre axial displacement is one
+            // metre of depth.
+            CadExtrudeManipulator drag;
+            ok = ok && drag.hitTest(anchors, camera, tx, ty, w, h);
+            float ex = 0.0f;
+            float ey = 0.0f;
+            ok = ok && projectWorldToScreen(camera,
+                                            vec3Add(anchors.tip, vec3Scale(anchors.axis, 1.0f)),
+                                            w, h, &ex, &ey);
+            Meters depth = 0.0;
+            ok = ok && drag.beginDrag(3, anchors, camera, tx, ty, w, h)
+                 && drag.updateDrag(3, camera, ex, ey, w, h, &depth)
+                 && near2(depth, 2.0, 1e-2);
+            ok = ok && drag.lastSolve() != AxisSolveStatus::Unresolvable;
+        }
+        r.check("CADUXS1C1_05_a_the_arrow_is_grabbable_and_a_drag_resolves_from_the_preview",
+                ok);
+    }
+
+    // CADUXS1C1-05 b: a drag from the preview and a typed value reach the same
+    // authored state, and Flip is still a DIRECTION -- the depth stays positive
+    // through it.
+    {
+        const SketchFrame frame = planeFrameOf(Workplane::XY);
+        SketchSession dragged;
+        readyRectangleSession(&dragged, Workplane::XY, 2.0, 2.0, 1.0);
+        CadExtrudeAnchors anchors;
+        dragged.extrudeAnchors(&anchors);
+        CameraController::Pose preview;
+        cadFeatureViewPose(sketchPoseOf(frame), nullptr, frame, anchors, &preview);
+        const int w = 1080;
+        const int h = 2000;
+        const CameraSnapshot camera = snapshotOfPose(preview, w, h);
+        float tx = 0.0f;
+        float ty = 0.0f;
+        float ex = 0.0f;
+        float ey = 0.0f;
+        projectWorldToScreen(camera, anchors.tip, w, h, &tx, &ty);
+        projectWorldToScreen(camera, vec3Add(anchors.tip, vec3Scale(anchors.axis, 1.0f)), w, h,
+                             &ex, &ey);
+        CadExtrudeManipulator drag;
+        drag.beginDrag(4, anchors, camera, tx, ty, w, h);
+        Meters depth = 0.0;
+        const bool moved = drag.updateDrag(4, camera, ex, ey, w, h, &depth);
+        // Through the ONE writer, exactly as the session's own gesture does.
+        dragged.setExtrude(depth, dragged.extrude().direction);
+        SketchSession typed;
+        readyRectangleSession(&typed, Workplane::XY, 2.0, 2.0, 1.0);
+        typed.setExtrude(depth, ExtrudeDirection::AlongNormal);
+        const bool parity = sameCadBodyState(dragged.candidateState(), typed.candidateState());
+
+        dragged.setExtrude(dragged.extrude().depth, ExtrudeDirection::AgainstNormal);
+        const bool flipStillADirection =
+            dragged.extrude().direction == ExtrudeDirection::AgainstNormal
+            && dragged.extrude().depth > 0.0;
+        r.check("CADUXS1C1_05_b_a_preview_drag_and_a_typed_value_are_the_same_authored_state",
+                moved && parity && flipStillADirection);
+    }
+
+    // CADUXS1C1-09 a: the camera transition is PRESENTATION. The policy writes
+    // nothing into the session, and the anchors it was derived from do not
+    // depend on it, because no camera enters `cadExtrudeAnchors`.
+    {
+        const SketchFrame frame = planeFrameOf(Workplane::XY);
+        SketchSession untouched;
+        readyRectangleSession(&untouched, Workplane::XY, 2.0, 2.0, 1.0);
+        const CadBodyState before = untouched.candidateState();
+
+        SketchSession viewed;
+        readyRectangleSession(&viewed, Workplane::XY, 2.0, 2.0, 1.0);
+        CadExtrudeAnchors anchors;
+        viewed.extrudeAnchors(&anchors);
+        CameraController::Pose preview;
+        const CadFeatureViewSource source =
+            cadFeatureViewPose(sketchPoseOf(frame), nullptr, frame, anchors, &preview);
+        const bool unchanged = sameCadBodyState(viewed.candidateState(), before);
+
+        CadExtrudeAnchors again;
+        viewed.extrudeAnchors(&again);
+        const bool anchorsStable =
+            nearVec(again.base, anchors.base.x, anchors.base.y, anchors.base.z, 0.0f)
+            && nearVec(again.tip, anchors.tip.x, anchors.tip.y, anchors.tip.z, 0.0f);
+        r.check("CADUXS1C1_09_a_the_camera_transition_writes_no_authored_value",
+                source == CadFeatureViewSource::ObliqueFallback && unchanged && anchorsStable);
+    }
+
+    // CADUXS1C1-09 b: it FAILS CLOSED. Given nothing it can work from, the
+    // policy installs no view and says so rather than guessing one -- the
+    // manipulator's own hold-the-last-good-value rule, one level up.
+    {
+        const SketchFrame frame = planeFrameOf(Workplane::XY);
+        CadExtrudeAnchors invalid;  // valid == false
+        CameraController::Pose out;
+        const CadFeatureViewSource none =
+            cadFeatureViewPose(sketchPoseOf(frame), nullptr, frame, invalid, &out);
+
+        SketchSession session;
+        readyRectangleSession(&session, Workplane::XY, 2.0, 2.0, 1.0);
+        CadExtrudeAnchors anchors;
+        session.extrudeAnchors(&anchors);
+        SketchFrame degenerate = frame;
+        degenerate.n = Vec3{0.0f, 0.0f, 0.0f};
+        CameraController::Pose out2;
+        const CadFeatureViewSource alsoNone =
+            cadFeatureViewPose(sketchPoseOf(frame), nullptr, degenerate, anchors, &out2);
+        r.check("CADUXS1C1_09_b_an_unanswerable_view_is_refused_rather_than_guessed",
+                none == CadFeatureViewSource::Unavailable
+                        && alsoNone == CadFeatureViewSource::Unavailable);
+    }
+}
+
 void testDataContract(Recorder& r) {
     // A project of straight geometry stays at v1: no existing file moves.
     {
@@ -2087,6 +2477,10 @@ int runSketchUxSelfTests(SketchUxSelfTestResult* out, int maxOut) {
     testCanvasExtrudeSessionGesture(r);
     testCanvasExtrudeParityAndPurity(r);
     testCanvasExtrudeRetainedSketch(r);
+    // CAD-UX-S1-C1: the view the staged extrusion is adjusted through. Beside
+    // the manipulator cases rather than in a suite of its own, because the
+    // question it answers -- can the arrow be reached -- is theirs.
+    testFeaturePreviewView(r);
     testFingerprintCoversCurves(r);
     testDataContract(r);
     measurePerformance();

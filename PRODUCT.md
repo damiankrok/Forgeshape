@@ -657,11 +657,18 @@ within limits, so it never becomes unreadable and never covers the profile it
 measures. A depth typed here and the same number typed in the panel are the same
 thing; there is one depth, and both places show it.
 
-The arrow itself cannot be dragged yet. Inside a sketch the view always looks
-straight down onto the plane you are drawing on — which is exactly the direction
-the solid grows — so the arrow points at you and there is no direction to pull
-it along. Rather than guess, ForgeShape leaves the depth where it is. Flip and
-the exact value are how the extrusion is changed for now.
+**Finish Sketch also turns the view.** While you are drawing, the view looks
+straight down onto the plane you are drawing on, so a square you draw is a
+square on screen. That is exactly the direction the solid grows, though, so from
+it the arrow would point straight at you with no direction to pull it along. The
+moment you finish the sketch, ForgeShape moves to a view that can see the
+extrusion: your own earlier view of the model if it already looks at the solid
+from an angle, and otherwise a fixed three-quarter view of the profile you just
+drew. From there you can **drag the arrow** to set the depth directly, and orbit,
+pan and zoom behave exactly as they do anywhere else in the viewport. A dragged
+depth and a typed one are the same depth. Going *Back to Sketch* — or reopening
+a sketch with **Edit Sketch** — puts the straight-on drawing view back, and
+finishing again returns to a view you can drag in.
 
 The depth and direction are also still in the panel: type the **depth**, choose
 **Along normal** or **Against normal**, and press

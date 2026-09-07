@@ -160,9 +160,9 @@ forgeshape_jni.cpp            render thread, ANativeWindow, MotionEvent ->
 | A CAD Body's authored truth (`CadBodyState`: one sketch, one linear extrusion) and the ONE regeneration path from it to a mesh | `forgeshape_cad_body.{h,cpp}` | `applyState` validates and regenerates the whole requested state and writes nothing unless all of it passes; no vertex is truth; no parameter is ever read back out of a mesh |
 | The sketch edit session: the entity being placed, the selection, snapping, the pointer it owns, the profile choice and the depth BEFORE the one commit | `SketchSession` (`forgeshape_sketch_session.{h,cpp}`) | volatile: nothing in it is project truth, the scene, the history, the fingerprint and the codec never see it, and `commit` is ONE `ScopedConstructionEdit` around ONE `addCadBody`. Java holds no sketch: not an entity, not a profile, not a depth |
 | The sketch overlay the renderer draws: the plane grid, the axes, the entities, the drag and the extrude preview, as world-space lines | `SketchOverlay` (`forgeshape_sketch_overlay.h`), built by `SketchSession::overlay` | presentation on the gizmo's terms: no `ObjectId`, no revision, never published, never picked, never exported, never a `.forge` byte. The renderer re-uploads it only when its revision changes and draws it through the gizmo's line pipeline |
-| Where the extrude manipulator stands in world space, how big it is drawn and grabbed, and what a drag along the extrusion axis means | `forgeshape_cad_extrude_tool.{h,cpp}` (`CadExtrudeAnchors`, `CadExtrudeControlScale`, `CadExtrudeManipulator`) | **not** a second model of the extrusion: `SketchSession` still owns the profile, the depth and the direction and is still the only writer, and a dragged depth lands through `setExtrude`. The anchors carry no camera; the size rule is a new function BESIDE `gizmoWorldScale` (which holds a constant pixel size) and produces the ONE number drawing and hit testing share; the drag is the gizmo's contract verbatim. Nothing here is serialized or reaches a history step |
-| The view a sketch borrows — the orbit angles that look along a plane's normal, the orthographic projection, and the user's own pose kept for the way back | `beginSketchView` / `endSketchView` in `forgeshape_jni.cpp` over `CameraController::frameWorkplane` / `capturePose` / `restorePose` | the sketch stores no camera; the angles come from the plane's fixed frame, and the pose is restored on commit and on cancel alike |
-| Whether a one-finger gesture while sketching draws, selects, or is swallowed — and that two fingers still pan and pinch | the sketch arbitration block in `forgeshape_jni.cpp`, using `SketchSession::onTouch` | a single finger never orbits while a sketch is open; the gizmo and the sculpt arbitration are already out of the picture, because the gizmo is withdrawn at begin and a sketch cannot start in Sculpt |
+| Where the extrude manipulator stands in world space, how big it is drawn and grabbed, what a drag along the extrusion axis means, and which view that axis can be dragged in | `forgeshape_cad_extrude_tool.{h,cpp}` (`CadExtrudeAnchors`, `CadExtrudeControlScale`, `CadExtrudeManipulator`, `cadFeatureViewPose`) | **not** a second model of the extrusion: `SketchSession` still owns the profile, the depth and the direction and is still the only writer, and a dragged depth lands through `setExtrude`. The anchors carry no camera; the size rule is a new function BESIDE `gizmoWorldScale` (which holds a constant pixel size) and produces the ONE number drawing and hit testing share; the drag is the gizmo's contract verbatim; the view policy is a pure function over a pose, a frame and the anchors that answers another pose. Nothing here is serialized or reaches a history step |
+| The views a sketch borrows — the exact support-normal one it is AUTHORED through, the feature-preview one the staged extrusion is adjusted through, and the user's own pose kept for the way back | `beginSketchView` / `beginExtrudeFeatureView` / `endSketchView` in `forgeshape_jni.cpp` over `CameraController::frameSketchView` / `capturePose` / `restorePose`, with `cadFeatureViewPose` deciding the second | the sketch stores no camera. The authoring view comes from the frame's own axes; the preview is installed on the `finish()` that reaches `Ready` and withdrawn by every path back to Editing; `g_sketchSavedPose` is the pre-sketch view and is restored on commit and on cancel alike, unconsumed by the preview |
+| Whether a one-finger gesture while sketching draws, selects, is swallowed, or navigates — and that two fingers always pan and pinch | the sketch arbitration block in `forgeshape_jni.cpp`, using `SketchSession::onTouch` and `state()` | a single finger never orbits while the sketch is being DRAWN; in `Ready` one that misses the arrow navigates, because the drawing is done and there is no aligned view left to protect. The gizmo and the sculpt arbitration are already out of the picture, because the gizmo is withdrawn at begin and a sketch cannot start in Sculpt |
 | Removing one body from the project | `forgeshape_body_delete.{h,cpp}` | one representation-neutral operation over the scene and the history. One Delete is one transaction; the removed body is HELD by the history rather than destroyed, so an Undo restores that object with its Imported Mesh and its Frozen Sculpt Mesh intact; the replacement selection and the last-body refusal are stated here and nowhere else |
 | The object commands — Rename, Show/Hide, Lock/Unlock, Duplicate, Mirror | `forgeshape_body_commands.{h,cpp}` | one module over the scene and the history, on `forgeshape_body_delete`'s terms and for the same reason: each is a decision ABOUT the project that needs both collaborators and neither owns the other. Each act is one transaction; the name rule is the domain's existing one rather than a second policy, and one `derivedBodyName` serves Duplicate and Mirror alike; Duplicate is the only entry point that dispatches on representation, because it has to COPY one, and Mirror is the only one that REFUSES on representation |
 | Reflecting a body across a principal world plane | `forgeshape_body_mirror.{h,cpp}` | the ONE mirror arithmetic (`MIRROR-01`), a pure function over values — no scene, no history, no body, no camera, no renderer — plus the eligibility predicate. The reflection is carried by a PROPER rotation `R' = F·R·Qx` with the positive scale untouched, so nothing about the transform contract or the `.forge` format moved; `mirrorSceneBody` beside the other object commands owns identity and the transaction |
@@ -2314,15 +2314,42 @@ forgeshape_sketch_session the volatile edit session; touch -> entities; overlay
         ^                 owns ONE CadExtrudeManipulator and is the ONE writer
         |                 of the profile, the depth and the direction
 forgeshape_cad_extrude_tool  anchors (no camera), the screen-scale rule,
-                             the axial drag, the arrow's line list
+                             the axial drag, the arrow's line list, and the
+                             feature-preview view policy
         ^
-forgeshape_jni            the acts, the touch arbitration, the borrowed view
+forgeshape_jni            the acts, the touch arbitration, the borrowed views
 ```
 
 `forgeshape_cad_extrude_tool` sits BELOW the session in this chain and is
 included by it, not the other way round: the manipulator is a part the session
 owns. It names `SketchFrame` by forward declaration and dereferences it only in
 its implementation, which is what keeps the include acyclic.
+
+**Two views, one authored truth (`CAD-UX-S1-C1`).** A sketch is AUTHORED
+through the exact support-normal view, and the support normal IS the extrusion
+axis, so the arrow drawn in it has no screen extent and no axial drag can be
+resolved from it. `cadFeatureViewPose` is the whole policy and is a pure
+function over values — a current pose, an optional prior pose, the sketch frame
+and the anchors in, one `CameraController::Pose` and a `CadFeatureViewSource`
+out — with no scene, no session, no renderer and no Android type in it. Two
+paths: `PriorView` gives back the user's own pre-sketch view, re-centred on the
+work anchor, when `cadFeatureViewAxisSine` already clears
+`kCadFeatureViewMinAxisSine`; otherwise `ObliqueFallback` leans
+`kCadFeatureViewObliqueRadians` off the normal in the frame's own `(u, v)`, so
+no world up enters its construction. Because the orbit pose clamps pitch, the
+candidate is re-derived from the CLAMPED angles and re-measured, and a failure
+steps the azimuth a quarter turn for a bounded
+`kCadFeatureViewAzimuthAttempts`; a degenerate frame or anchors are
+`Unavailable` and install nothing. `forgeshape_jni`'s `beginExtrudeFeatureView`
+is the adapter — it reads the camera, hands the values over and installs the
+answer through `restorePose`, inside the same lock as the `finish()` that
+reached `Ready` — and it deliberately does NOT consume `g_sketchSavedPose`, so
+`endSketchView` still returns the pre-sketch view on cancel and on commit.
+`sketchBackToEditing` and `sketchBeginEdit` both reinstall the exact aligned
+view through `beginSketchView`. In `Ready` the JNI arbitration hands an
+unclaimed single pointer to the camera instead of swallowing it, which is the
+one gesture rule the transition changes and the one state in which there is no
+aligned view to protect.
 
 Nothing above a line reads truth from below it through a mesh. The renderer
 sees a CAD Body exactly as it sees a primitive — a published `RuntimeMesh` —

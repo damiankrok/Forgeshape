@@ -27,7 +27,8 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 
 /**
- * `E2E-CADUXS1-01..09`: the canvas-first control of the extrusion, on a device.
+ * `E2E-CADUXS1-01..09` and `E2E-CADUXS1C1-03..06`: the canvas-first control of
+ * the extrusion, on a device.
  *
  * <h2>What this suite is for</h2>
  *
@@ -43,10 +44,11 @@ import org.junit.runner.RunWith;
  * ONE tap from the body itself, and that Add, Cut, Symmetric and Two Sides are
  * nowhere to be found.
  *
- * <p>It also pins, on the device, the one thing that does <b>not</b> work yet
- * and why — see
- * {@link #e2eCaduxs1_03_theArrowAxisFacesTheEyeSoADragHoldsRatherThanGuesses}
- * and `OQ-CAD-UX-01`.
+ * <p>Since `CAD-UX-S1-C1` it also covers the two views a sketch is seen
+ * through — the exact support-normal one it is AUTHORED in, and the feature
+ * preview Finish Sketch opens, in which the arrow can actually be dragged. See
+ * {@link #e2eCaduxs1c1_03_finishSketchGivesAViewTheArrowCanActuallyBeDraggedIn}
+ * and {@link #e2eCaduxs1c1_06_theSketchCameraReturnsAndTheNextPreviewIsUsableAgain}.
  *
  * <h2>Rules</h2>
  *
@@ -206,88 +208,164 @@ public final class CadCanvasExtrudeTest {
     }
 
     // -----------------------------------------------------------------------
-    // E2E-CADUXS1-03: dragging the arrow
+    // E2E-CADUXS1C1-03/04/05: the arrow is reachable, and dragging it works
     // -----------------------------------------------------------------------
 
     /**
-     * The arrow's axis points straight at the eye from the only view a sketch
-     * has, so a drag holds rather than guesses — `OQ-CAD-UX-01`.
+     * The sketch's view and the extrusion's are two views, and Finish Sketch is
+     * where the second begins — `CAD-UX-S1-C1`, closing `OQ-CAD-UX-01`.
      *
-     * <p>This is not a disabled case. It asserts, on the device, the exact
-     * situation that makes the in-viewport drag currently unreachable, so the
-     * blocker is evidence rather than a claim: the sketch camera is locked
-     * normal to its plane ({@code CameraController::applyOrbit} returns early
-     * while {@code sketchView_} is true, and {@code frameSketchView} aims
-     * exactly along the support normal), and that normal <b>is</b> the
-     * extrusion axis. Looking down an axis, the arrow's tip and its mid-shaft
-     * label project to the same pixel — there is no screen direction to drag
-     * along — and the manipulator does the one honest thing the repo's rule
-     * allows: it holds the last good value rather than inventing one.
+     * <p>This case is the one the earlier pass could not have. It asserts both
+     * halves on the device: while the sketch is being AUTHORED the camera is
+     * still aimed exactly along the support normal (a sketch axis stays on a
+     * screen axis), and after Finish Sketch the extrusion axis has a real
+     * screen projection — where before, the arrow's tip and its mid-shaft label
+     * landed on the same pixel — so a pointer drag along the shaft actually
+     * changes the authored depth.
      *
-     * <p>The drag arithmetic itself is proved by the native
-     * {@code CADUXS1_04_*} cases under cameras that can see the axis.
+     * <p>Both drag pixels are asked for from native's own projection through
+     * {@code cadExtrudeToolState}; no coordinate is written down here.
      */
     @Test
-    public void e2eCaduxs1_03_theArrowAxisFacesTheEyeSoADragHoldsRatherThanGuesses() {
+    public void e2eCaduxs1c1_03_finishSketchGivesAViewTheArrowCanActuallyBeDraggedIn() {
         beginSketchXy();
+
+        // While the sketch is being AUTHORED the view is still exactly along the
+        // support normal — `CAD-UX-S1-C1` changes nothing about that. Proved
+        // here by the sketch's own geometry: a horizontal sketch span projects
+        // to a horizontal screen span, which only an aligned view produces.
+        final float[] left = new float[2];
+        final float[] right = new float[2];
+        assertTrue(NativeViewport.sketchScreenPoint(-1.0, 0.0, left));
+        assertTrue(NativeViewport.sketchScreenPoint(1.0, 0.0, right));
+        assertTrue("the sketch spans real pixels", Math.abs(right[0] - left[0]) > 40f);
+        assertEquals("and the aligned view keeps a sketch axis on a screen axis",
+                left[1], right[1], 2.0f);
+
         drawRectangle(2.0, 2.0);
         finishSketch();
 
+        // Finish Sketch leaves that view for one the extrusion can be adjusted
+        // through: the shaft now has real screen extent, where before C1 the
+        // projected tip and the mid-shaft label coincided to within a pixel.
         final double[] before = toolState();
         assertEquals("the manipulator is live", 1.0,
                 before[NativeViewport.CAD_EXTRUDE_ACTIVE], 0.0);
         assertTrue("and its anchor is on screen",
                 before[NativeViewport.CAD_EXTRUDE_ON_SCREEN] != 0.0);
-
-        // The shaft has no screen extent: the view looks straight down it.
-        final double separation = Math.hypot(
+        final double shaft = Math.hypot(
                 before[NativeViewport.CAD_EXTRUDE_TIP_X]
                         - before[NativeViewport.CAD_EXTRUDE_LABEL_X],
                 before[NativeViewport.CAD_EXTRUDE_TIP_Y]
                         - before[NativeViewport.CAD_EXTRUDE_LABEL_Y]);
-        assertEquals("OQ-CAD-UX-01: the sketch view looks exactly along the extrusion axis",
-                0.0, separation, 1.0);
+        assertTrue("CADUXS1C1-03: the extrusion axis now has a usable screen "
+                        + "projection (half-shaft pixels = " + shaft + ")",
+                shaft > 20.0);
 
-        // Attempting the drag anyway changes NOTHING — no guessed depth, no
-        // NaN, no jump, and nothing recorded.
+        // CADUXS1C1-04: the drag itself, through real MotionEvents on the real
+        // viewport, from the arrow's own projected tip along its own projected
+        // direction. Both pixels come from native's projection, never written
+        // down here.
         final double depthBefore = before[NativeViewport.CAD_EXTRUDE_DEPTH];
         final float tipX = (float) before[NativeViewport.CAD_EXTRUDE_TIP_X];
         final float tipY = (float) before[NativeViewport.CAD_EXTRUDE_TIP_Y];
-        dragViewport(tipX, tipY, tipX, tipY - 220f);
+        final float labelX = (float) before[NativeViewport.CAD_EXTRUDE_LABEL_X];
+        final float labelY = (float) before[NativeViewport.CAD_EXTRUDE_LABEL_Y];
+        // base -> tip on screen is +axis; the label is the mid-shaft, so
+        // (tip - label) is half the shaft and doubling it is one more depth.
+        final float toX = tipX + (tipX - labelX) * 2f;
+        final float toY = tipY + (tipY - labelY) * 2f;
+        dragViewport(tipX, tipY, toX, toY);
 
         final double[] after = toolState();
         assertEquals("the manipulator is still live", 1.0,
                 after[NativeViewport.CAD_EXTRUDE_ACTIVE], 0.0);
-        assertEquals("a drag down the axis holds the last good depth", depthBefore,
-                after[NativeViewport.CAD_EXTRUDE_DEPTH], 0.0);
-        assertTrue("which is still a positive length",
-                after[NativeViewport.CAD_EXTRUDE_DEPTH] > 0.0);
-        assertFalse("and never a NaN",
-                Double.isNaN(after[NativeViewport.CAD_EXTRUDE_DEPTH]));
-        assertEquals("the direction is untouched",
+        final double depthAfter = after[NativeViewport.CAD_EXTRUDE_DEPTH];
+        assertFalse("never a NaN", Double.isNaN(depthAfter));
+        assertTrue("still a positive length", depthAfter > 0.0);
+        assertTrue("CADUXS1C1-04: the drag actually changed the depth (" + depthBefore
+                        + " -> " + depthAfter + ")",
+                Math.abs(depthAfter - depthBefore) > 0.05);
+        assertTrue("and it grew, because the drag ran along +axis",
+                depthAfter > depthBefore);
+        assertEquals("the direction is untouched: a drag is not a flip",
                 (int) before[NativeViewport.CAD_EXTRUDE_DIRECTION],
                 (int) after[NativeViewport.CAD_EXTRUDE_DIRECTION]);
-        assertEquals("nothing was recorded: an uncommitted sketch is volatile", 0,
-                NativeViewport.constructionUndoDepth());
+        assertEquals("CADUXS1C1-08: nothing was recorded — an uncommitted sketch "
+                        + "is volatile", 0, NativeViewport.constructionUndoDepth());
 
+        // CADUXS1C1-05: Flip and the exact value still work from this view, and
+        // the exact value is what the drag left behind.
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             final android.widget.TextView value = workspace.cadExtrudeCanvas()
                     .findViewById(R.id.cad_extrude_depth_value);
             assertNotNull("the value chip is present", value);
             assertFalse("and it is showing something", value.getText().toString().isEmpty());
-            return null;
-        });
-
-        // Flip and the exact value are how the extrusion is changed meanwhile,
-        // and both work from this very view.
-        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             workspace.cadExtrudeCanvas().findViewById(R.id.cad_extrude_flip).performClick();
             return null;
         });
         settleLayout();
-        assertEquals("Flip works from the locked sketch view",
+        final double[] flipped = toolState();
+        assertEquals("Flip works from the preview view",
                 NativeViewport.EXTRUDE_AGAINST_NORMAL,
-                (int) toolState()[NativeViewport.CAD_EXTRUDE_DIRECTION]);
+                (int) flipped[NativeViewport.CAD_EXTRUDE_DIRECTION]);
+        assertEquals("and Flip is a DIRECTION, never a negative depth", depthAfter,
+                flipped[NativeViewport.CAD_EXTRUDE_DEPTH], 1e-9);
+        assertTrue("which is still positive", flipped[NativeViewport.CAD_EXTRUDE_DEPTH] > 0.0);
+    }
+
+    // -----------------------------------------------------------------------
+    // E2E-CADUXS1C1-06: back to the sketch is back to the EXACT view
+    // -----------------------------------------------------------------------
+
+    @Test
+    public void e2eCaduxs1c1_06_theSketchCameraReturnsAndTheNextPreviewIsUsableAgain() {
+        beginSketchXy();
+        drawRectangle(2.0, 1.0);
+        finishSketch();
+
+        final double previewShaft = shaftPixels();
+        assertTrue("the preview view sees the axis", previewShaft > 20.0);
+
+        // Back to Editing: the authored sketch is drawn through the aligned
+        // view again, and the axis collapses to a point exactly as it should.
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            workspace.findViewById(R.id.back_to_sketch).performClick();
+            return null;
+        });
+        settleLayout();
+        assertEquals("the sketch is editable again", NativeViewport.SKETCH_EDITING,
+                sketchState());
+        final float[] a = new float[2];
+        final float[] b = new float[2];
+        assertTrue(NativeViewport.sketchScreenPoint(-1.0, 0.0, a));
+        assertTrue(NativeViewport.sketchScreenPoint(1.0, 0.0, b));
+        assertEquals("CADUXS1C1-06: the exact support-normal view is back",
+                a[1], b[1], 2.0f);
+        assertTrue("with the sketch at a real size", Math.abs(b[0] - a[0]) > 40f);
+        assertEquals("and nothing was recorded by changing view mode", 0,
+                NativeViewport.constructionUndoDepth());
+
+        // Finish again: the preview is usable again, every time.
+        finishSketch();
+        assertTrue("the preview is usable on the second pass too", shaftPixels() > 20.0);
+    }
+
+    /**
+     * Half the extrusion arrow's shaft, in screen pixels: the distance between
+     * the projected tip and the projected mid-shaft label anchor. Zero from the
+     * aligned sketch view, and a real length from the feature preview.
+     */
+    private double shaftPixels() {
+        final double[] state = toolState();
+        assertEquals("the manipulator is live", 1.0,
+                state[NativeViewport.CAD_EXTRUDE_ACTIVE], 0.0);
+        assertTrue("and on screen", state[NativeViewport.CAD_EXTRUDE_ON_SCREEN] != 0.0);
+        return Math.hypot(
+                state[NativeViewport.CAD_EXTRUDE_TIP_X]
+                        - state[NativeViewport.CAD_EXTRUDE_LABEL_X],
+                state[NativeViewport.CAD_EXTRUDE_TIP_Y]
+                        - state[NativeViewport.CAD_EXTRUDE_LABEL_Y]);
     }
 
     // -----------------------------------------------------------------------

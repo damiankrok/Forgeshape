@@ -57,6 +57,18 @@ float distanceToSegment(float px, float py, float ax, float ay, float bx, float 
     return std::sqrt((px - cx) * (px - cx) + (py - cy) * (py - cy));
 }
 
+
+// Bounded to a range. Named as `forgeshape_camera.cpp`'s own file-local helper
+// is, and kept file-local for the same reason: a two-line clamp is not a math
+// module's business.
+float clampToRange(float v, float lo, float hi) { return v < lo ? lo : (v > hi ? hi : v); }
+
+// Whether a vector came back from vec3Normalize as a real unit vector. The
+// normalizer answers the zero vector for a zero input rather than failing, so
+// this is how a degenerate frame axis is told from a good one.
+bool unitLength(const Vec3& v) {
+    return vec3Finite(v) && std::fabs(vec3Dot(v, v) - 1.0f) < 1.0e-3f;
+}
 }  // namespace
 
 // ---------------------------------------------------------------------------
@@ -356,6 +368,142 @@ void appendCadExtrudeArrow(std::vector<GizmoVertex>* out, const CadExtrudeAnchor
              vec3Add(anchors.base, vec3Scale(p, static_cast<float>(tick))), handle);
     pushLine(out, vec3Add(anchors.base, vec3Scale(q, -static_cast<float>(tick))),
              vec3Add(anchors.base, vec3Scale(q, static_cast<float>(tick))), handle);
+}
+
+
+// ---------------------------------------------------------------------------
+// Where the extrusion can be seen from (`CAD-UX-S1-C1`)
+// ---------------------------------------------------------------------------
+
+const char* cadFeatureViewSourceName(CadFeatureViewSource source) {
+    switch (source) {
+        case CadFeatureViewSource::PriorView: return "PriorView";
+        case CadFeatureViewSource::ObliqueFallback: return "ObliqueFallback";
+        case CadFeatureViewSource::Unavailable: return "Unavailable";
+    }
+    return "Unavailable";
+}
+
+Vec3 cadFeatureViewDirection(float yaw, float pitch) {
+    // The orbit convention verbatim: x = cos(pitch)sin(yaw), y = sin(pitch),
+    // z = cos(pitch)cos(yaw), pointing target -> eye.
+    const float cp = std::cos(pitch);
+    return Vec3{cp * std::sin(yaw), std::sin(pitch), cp * std::cos(yaw)};
+}
+
+bool cadFeatureViewYawPitch(const Vec3& direction, float* outYaw, float* outPitch) {
+    if (outYaw == nullptr || outPitch == nullptr) {
+        return false;
+    }
+    const Vec3 d = vec3Normalize(direction);
+    if (!vec3Finite(d)) {
+        return false;
+    }
+    const float horizontal = std::sqrt(d.x * d.x + d.z * d.z);
+    if (horizontal < 1.0e-4f) {
+        // Straight up or straight down: yaw is the gimbal singularity the orbit
+        // pose cannot express, and guessing one is what `frameSketchView` was
+        // written to avoid. Refused rather than defaulted to zero.
+        return false;
+    }
+    *outPitch = std::asin(clampToRange(d.y, -1.0f, 1.0f));
+    *outYaw = std::atan2(d.x, d.z);
+    return true;
+}
+
+float cadFeatureViewAxisSine(const Vec3& viewDirection, const Vec3& axis) {
+    const Vec3 v = vec3Normalize(viewDirection);
+    const Vec3 a = vec3Normalize(axis);
+    if (!vec3Finite(v) || !vec3Finite(a)) {
+        return 0.0f;
+    }
+    const float c = clampToRange(std::fabs(vec3Dot(v, a)), 0.0f, 1.0f);
+    return std::sqrt(std::fmax(0.0f, 1.0f - c * c));
+}
+
+bool cadFeatureViewUsable(const Vec3& viewDirection, const Vec3& axis) {
+    return cadFeatureViewAxisSine(viewDirection, axis) >= kCadFeatureViewMinAxisSine;
+}
+
+CadFeatureViewSource cadFeatureViewPose(const CameraController::Pose& current,
+                                        const CameraController::Pose* prior,
+                                        const SketchFrame& frame,
+                                        const CadExtrudeAnchors& anchors,
+                                        CameraController::Pose* out) {
+    if (out == nullptr || !anchors.valid) {
+        return CadFeatureViewSource::Unavailable;
+    }
+    const Vec3 axis = vec3Normalize(anchors.axis);
+    if (!vec3Finite(axis) || !vec3Finite(anchors.base)) {
+        return CadFeatureViewSource::Unavailable;
+    }
+
+    // 1. The user's own view, if it can already see the axis.
+    //
+    // Given back whole -- its direction, its distance, its projection and its
+    // span are the user's and are not second-guessed -- with the target moved
+    // onto the work so the arrow is certainly in frame.
+    if (prior != nullptr && std::isfinite(prior->yaw) && std::isfinite(prior->pitch)) {
+        const Vec3 priorDirection = cadFeatureViewDirection(prior->yaw, prior->pitch);
+        if (cadFeatureViewUsable(priorDirection, axis)) {
+            *out = *prior;
+            out->target = anchors.base;
+            return CadFeatureViewSource::PriorView;
+        }
+    }
+
+    // 2. The deterministic oblique fallback, derived from the support frame
+    //    alone.
+    //
+    // The eye stays on the `+n` side the sketch was seen from -- crossing the
+    // plane would put the drawing behind the solid and read as a flip rather
+    // than as a tilt -- and leans by a fixed angle in the frame's own (u, v).
+    // No world up enters the construction, so a support normal that IS world
+    // up is not a special case here; it becomes one only in the orbit pose
+    // below, which is why the result is re-measured after the clamp.
+    const Vec3 n = vec3Normalize(frame.n);
+    const Vec3 u = vec3Normalize(frame.u);
+    const Vec3 v = vec3Normalize(frame.v);
+    // A zero-length axis normalizes to zero rather than failing, so a
+    // degenerate frame would otherwise build its lean out of u and v alone and
+    // hand back a view perpendicular to the axis -- a confident answer to a
+    // question with no answer. Refused instead.
+    if (!unitLength(n) || !unitLength(u) || !unitLength(v)) {
+        return CadFeatureViewSource::Unavailable;
+    }
+    const float cosTheta = std::cos(kCadFeatureViewObliqueRadians);
+    const float sinTheta = std::sin(kCadFeatureViewObliqueRadians);
+    const float quarterTurn = 1.57079632679489661923f;
+    for (int attempt = 0; attempt < kCadFeatureViewAzimuthAttempts; ++attempt) {
+        const float psi = kCadFeatureViewAzimuthRadians + static_cast<float>(attempt) * quarterTurn;
+        const Vec3 lean = vec3Add(vec3Scale(u, sinTheta * std::cos(psi)),
+                                  vec3Scale(v, sinTheta * std::sin(psi)));
+        const Vec3 candidate = vec3Normalize(vec3Add(vec3Scale(n, cosTheta), lean));
+        float yaw = 0.0f;
+        float pitch = 0.0f;
+        if (!cadFeatureViewYawPitch(candidate, &yaw, &pitch)) {
+            continue;
+        }
+        // The orbit pose clamps pitch, so what the camera will ACTUALLY look
+        // along is the direction rebuilt from the clamped angles -- never the
+        // candidate that went in. Measuring the candidate instead is how a
+        // near-vertical support normal would produce a view that passed the
+        // test and then did not exist.
+        pitch = clampToRange(pitch, -kPitchLimitRadians, kPitchLimitRadians);
+        const Vec3 installed = cadFeatureViewDirection(yaw, pitch);
+        if (!cadFeatureViewUsable(installed, axis)) {
+            continue;
+        }
+        *out = current;
+        out->target = anchors.base;
+        out->yaw = yaw;
+        out->pitch = pitch;
+        // The projection and the span are the sketch's own, so the profile is
+        // the size it was a moment ago and only the DIRECTION changed. The
+        // transition is a tilt, not a reframe.
+        return CadFeatureViewSource::ObliqueFallback;
+    }
+    return CadFeatureViewSource::Unavailable;
 }
 
 }  // namespace forgeshape

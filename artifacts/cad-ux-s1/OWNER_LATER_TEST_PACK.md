@@ -6,6 +6,14 @@ the corpus verification; everything below is a look-and-feel judgement no
 emulator can make, and every number named as *provisional* is a one-line change
 if a different feel is wanted.
 
+> **`CAD-UX-S1-C1` added one thing to judge and it has its own pack:**
+> `OWNER_LATER_C1_ADDENDUM.md` covers the **Sketch → feature-preview** view
+> transition that makes the arrow draggable, its four new provisional
+> constants, and the one gesture rule it changed. Everything below still
+> stands. The only correction to §1 below is step 3: after **Finish Sketch**
+> the view now turns to one in which the extrusion axis is visible, and the
+> arrow **can** be dragged.
+
 ---
 
 ## 1. What to open, and where the controls are

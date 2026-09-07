@@ -264,6 +264,106 @@ private:
 };
 
 // ---------------------------------------------------------------------------
+// 4. Where the extrusion can be SEEN from (`CAD-UX-S1-C1`)
+// ---------------------------------------------------------------------------
+//
+// `OQ-CAD-UX-01`, stated as arithmetic. A sketch is drawn through a view aimed
+// EXACTLY along its support normal, and that normal IS the extrusion axis, so
+// while the sketch is being authored the arrow points straight at the eye, its
+// shaft has no screen extent and `solveAxisParameter` has nothing to resolve
+// against. The fix is not a second gesture model reading a raw screen delta --
+// that would give the drag a meaning the world axis does not have. The fix is
+// that the sketch's exact view and the extrusion's preview are two DIFFERENT
+// presentations of one authored truth, and Finish Sketch is the moment the
+// second one begins.
+//
+// Everything here is presentation. It reads a camera pose and a frame and it
+// answers with another camera pose; no value below becomes a `CadBodyState`,
+// reaches a `.forge` byte, a checkpoint, the project fingerprint or a history
+// step, and no authored coordinate can be moved by any of it.
+
+// Which of the two policies produced the preview pose, so a caller can log the
+// path actually taken and a case can assert it rather than infer it.
+enum class CadFeatureViewSource : uint8_t {
+    // The user's own pre-sketch 3D view already sees the axis usefully; it is
+    // given back, re-centred on the work.
+    PriorView,
+    // No prior view, or one that looks down the axis: a deterministic oblique
+    // view derived from the support frame alone.
+    ObliqueFallback,
+    // Neither could produce a usable view. Nothing is installed and the caller
+    // keeps the view it has -- fail closed, on the manipulator's own terms.
+    Unavailable,
+};
+
+const char* cadFeatureViewSourceName(CadFeatureViewSource source);
+
+// PROVISIONAL VALUES, with stated arithmetic. Not owner visual acceptance.
+//
+// `solveAxisParameter` falls back to its plane method below a closest-approach
+// denominator of `kGizmoAxisParallelDenominator` (0.02), which is exactly
+// sin^2 between the ray and the axis -- an angle of about 8.1 degrees. A view
+// that merely cleared that would be resolvable and still unusable, because the
+// shaft would be a few pixels long. 0.35 is about 20.5 degrees, comfortably
+// clear of the solver's own limit, and it is measured as a SINE so it is
+// symmetric about edge-on and needs no direction convention.
+constexpr float kCadFeatureViewMinAxisSine = 0.35f;
+
+// How far off the support normal the fallback stands. 0.62 rad is about 35.5
+// degrees: far enough that the axis projects to a real segment (sin = 0.58,
+// well past the threshold above), near enough that the profile is still read
+// as the shape that was just drawn rather than edge-on.
+constexpr float kCadFeatureViewObliqueRadians = 0.62f;
+
+// Where around the normal it stands, in the frame's own (u, v). Any azimuth
+// gives the same axis projection; this one is a fixed choice so that one
+// sketch always produces one view.
+constexpr float kCadFeatureViewAzimuthRadians = 0.90f;
+
+// A candidate direction is turned into the orbit yaw/pitch the general 3D
+// camera speaks, and pitch is CLAMPED there. For a support normal roughly
+// `kCadFeatureViewObliqueRadians` off world up, one azimuth can aim the tilt
+// along the meridian and land inside that clamp, which would silently change
+// the direction and with it the projection. So the candidate is re-derived
+// from the clamped angles and re-measured, and a failure steps the azimuth by
+// a quarter turn: at most one quadrant can point up the meridian, so a bounded
+// four attempts is a proof rather than a hope.
+constexpr int kCadFeatureViewAzimuthAttempts = 4;
+
+// The orbit convention's direction, target -> eye. Identical by construction to
+// `CameraController::orbitDirection`, which is private; a case asserts the two
+// agree so the copy cannot drift.
+Vec3 cadFeatureViewDirection(float yaw, float pitch);
+
+// The inverse. False when the direction is non-finite or so nearly vertical
+// that yaw carries no information.
+bool cadFeatureViewYawPitch(const Vec3& direction, float* outYaw, float* outPitch);
+
+// |sin| of the angle between a target->eye direction and the extrusion axis:
+// 0 when the axis points at the eye, 1 when it lies across the view. The one
+// number the policy below is written in.
+float cadFeatureViewAxisSine(const Vec3& viewDirection, const Vec3& axis);
+
+bool cadFeatureViewUsable(const Vec3& viewDirection, const Vec3& axis);
+
+// The whole policy, as a pure function over values.
+//
+// `current` is the pose the sketch is being looked through (its orthographic
+// span is the framing to keep). `prior` is the user's pre-sketch pose, or null
+// when there was none -- the first-project bootstrap opens a sketch over an
+// empty scene and has no earlier view at all. `out` is written only when the
+// result is not `Unavailable`.
+//
+// Both paths re-centre the target on the work anchor: the direction is the
+// user's, the centre is the extrusion's, which is what keeps the arrow in
+// frame when the sketch is nowhere near where the camera was last pointed.
+CadFeatureViewSource cadFeatureViewPose(const CameraController::Pose& current,
+                                        const CameraController::Pose* prior,
+                                        const SketchFrame& frame,
+                                        const CadExtrudeAnchors& anchors,
+                                        CameraController::Pose* out);
+
+// ---------------------------------------------------------------------------
 // The drawable arrow
 // ---------------------------------------------------------------------------
 

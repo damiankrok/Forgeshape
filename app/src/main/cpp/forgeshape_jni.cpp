@@ -310,6 +310,41 @@ void endSketchView() {
     }
 }
 
+// Leaves the exact sketch view for the one the staged extrusion can be
+// adjusted through (`CAD-UX-S1-C1`).
+//
+// The sketch's view and the extrusion's are two presentations of one authored
+// truth, and Finish Sketch is where the second begins: the first is aimed
+// EXACTLY along the support normal, which is the extrusion axis, so from it
+// the arrow has no screen extent and no axial drag can be resolved
+// (`OQ-CAD-UX-01`). The policy itself is platform-neutral arithmetic in
+// `cadFeatureViewPose`; this is the adapter that reads the camera, hands it
+// over and installs the answer.
+//
+// `g_sketchSavedPose` is deliberately NOT consumed here. It is the view the
+// user had BEFORE the sketch, and it stays the view a cancel or a commit
+// gives back; the preview is a view the sketch borrows on top, exactly as the
+// aligned one was. Nothing installed here is project truth: no `CadBodyState`,
+// no `.forge` byte, no checkpoint, no fingerprint and no history step moves.
+// The caller holds g_stateMutex.
+forgeshape::CadFeatureViewSource beginExtrudeFeatureView() {
+    forgeshape::CadExtrudeAnchors anchors;
+    if (!forgeshape::sketchSession().extrudeAnchors(&anchors)) {
+        return forgeshape::CadFeatureViewSource::Unavailable;
+    }
+    forgeshape::CameraController::Pose preview;
+    const forgeshape::CadFeatureViewSource source = forgeshape::cadFeatureViewPose(
+        g_camera.capturePose(), g_sketchPoseSaved ? &g_sketchSavedPose : nullptr,
+        forgeshape::sketchSession().frame(), anchors, &preview);
+    if (source != forgeshape::CadFeatureViewSource::Unavailable) {
+        // restorePose is the one clamped installer, and it leaves the sketch
+        // view: from here the camera is an ordinary 3D one and orbit, pan and
+        // pinch mean what they mean everywhere else.
+        g_camera.restorePose(preview);
+    }
+    return source;
+}
+
 // The last touch event's platform-neutral pointer data, kept for the DEBUG-ONLY
 // read-back hook further down. It is a diagnostic mirror and never a source of
 // truth: nothing in the product reads it, and it does not exist at all in a
@@ -3867,16 +3902,27 @@ JNIEXPORT jint JNICALL Java_com_forgeshape_app_NativeViewport_sketchFinish(JNIEn
     forgeshape::CadStatus status;
     size_t profiles = 0;
     forgeshape::SketchEntityId chosen = forgeshape::kNoSketchEntity;
+    forgeshape::CadFeatureViewSource view = forgeshape::CadFeatureViewSource::Unavailable;
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
         status = forgeshape::sketchSession().finish();
         profiles = forgeshape::sketchSession().profiles().profiles.size();
         chosen = forgeshape::sketchSession().selectedProfileId();
+        if (status == forgeshape::CadStatus::Ok) {
+            // Inside the same lock as the transition it belongs to: the
+            // session reaches Ready and the view it is adjusted through are
+            // one moment, and a frame taken between the two would draw an
+            // arrow nobody could grab.
+            view = beginExtrudeFeatureView();
+        }
     }
     if (status != forgeshape::CadStatus::Ok) {
         FS_LOGI("FORGESHAPE_SKETCH_FINISH_REFUSED:%s", forgeshape::cadStatusName(status));
     } else {
         FS_LOGI("FORGESHAPE_SKETCH_FINISH profiles=%d chosen=%u", (int)profiles, chosen);
+    }
+    if (status == forgeshape::CadStatus::Ok) {
+        FS_LOGI("FORGESHAPE_SKETCH_FEATURE_VIEW:%s", forgeshape::cadFeatureViewSourceName(view));
     }
     return cadCode(status);
 }
@@ -3885,6 +3931,11 @@ JNIEXPORT void JNICALL
 Java_com_forgeshape_app_NativeViewport_sketchBackToEditing(JNIEnv*, jclass) {
     std::lock_guard<std::mutex> lock(g_stateMutex);
     forgeshape::sketchSession().backToEditing();
+    // Back to the authored sketch is back to the EXACT support-normal view
+    // (`CAD-UX-S1-C1`). The feature preview belongs to the staged
+    // extrusion; the drawing is authored through the aligned one, where a
+    // sketch length on screen is the length it is.
+    beginSketchView();
 }
 
 JNIEXPORT jint JNICALL
@@ -6663,9 +6714,10 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
         // view away under the finger placing a point -- and TWO pointers pan
         // and pinch exactly as they always have, because the camera's own
         // two-finger gesture cannot orbit. The session decides what a single
-        // pointer means; anything it does not consume with one pointer down is
-        // swallowed rather than handed to the camera, and anything with two is
-        // navigation.
+        // pointer means; while the sketch is being DRAWN anything it does not
+        // consume with one pointer down is swallowed rather than handed to the
+        // camera, and anything with two is navigation. In READY the drawing is
+        // done and an unclaimed single pointer navigates -- see below.
         //
         // The gizmo is inactive for the whole sketch (setActive(false) at
         // begin) and the product is in Construction, so the two arbitrations
@@ -6736,7 +6788,19 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
                                                      static_cast<int32_t>(actionPointerId),
                                                      pointers, count, g_camera.snapshot(),
                                                      viewWidth, viewHeight);
-                if (consumed || count <= 1) {
+                // READY is the one state where an unclaimed single finger
+                // NAVIGATES (`CAD-UX-S1-C1`). While the sketch is being drawn a
+                // single pointer belongs to the drawing whether or not the
+                // session took it, because an orbit would take the aligned view
+                // away under the finger placing a point -- that rule is
+                // unchanged. Once Finish Sketch has been taken there is no
+                // aligned view left to protect and no point being placed: the
+                // camera is an ordinary 3D one and the user is looking at a
+                // staged solid, so a finger that misses the arrow does what a
+                // finger does everywhere else in the product.
+                const bool navigable =
+                    sketch.state() == forgeshape::SketchSessionState::Ready;
+                if (consumed || (count <= 1 && !navigable)) {
                     g_camera.resetGesture();
                     g_selection.resetGesture();
                 } else {
