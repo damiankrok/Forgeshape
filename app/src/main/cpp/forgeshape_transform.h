@@ -30,9 +30,12 @@
 // a primitive parameter, so the Construction Source is untouched by it.
 //
 // Scope: exactly one transform for exactly one body. No shear, no parent, no
-// hierarchy, no scene graph, and NO MIRROR: scale is strictly positive, so a
-// zero or negative factor is refused rather than silently inverting winding
-// order and making every normal and every front-face test wrong.
+// hierarchy and no scene graph, and NO REFLECTION CARRIED BY THE SCALE: scale is
+// strictly positive, so a zero or negative factor is refused rather than
+// silently inverting winding order and making every normal and every front-face
+// test wrong. `MIRROR-01` does mirror a body, and it does so by composing a
+// PROPER rotation (`forgeshape_body_mirror.h`) that leaves this contract exactly
+// as it stands -- which is why it needed no change here.
 #pragma once
 
 #include <cstdint>

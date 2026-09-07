@@ -18,8 +18,8 @@ adb -s <serial> logcat -s ForgeShape:V
 
 APK: `app/build/outputs/apk/debug/app-debug.apk`
 
-A clean debug launch emits **twenty-one** `*_SELFTEST_OK` tokens, then
-`FORGESHAPE_NATIVE_VIEWPORT_OK`. All twenty-one, in emission order:
+A clean debug launch emits **twenty-two** `*_SELFTEST_OK` tokens, then
+`FORGESHAPE_NATIVE_VIEWPORT_OK`. All twenty-two, in emission order:
 
 ```
 FORGESHAPE_CAMERA_SELFTEST_OK
@@ -43,6 +43,7 @@ FORGESHAPE_CAD_SELFTEST_OK
 FORGESHAPE_CAD_A3_SELFTEST_OK
 FORGESHAPE_SKETCH_UX_SELFTEST_OK
 FORGESHAPE_BODY_DIMENSIONS_SELFTEST_OK
+FORGESHAPE_MIRROR_SELFTEST_OK
 ```
 
 Failures: `FORGESHAPE_NATIVE_VIEWPORT_FAIL:*` and the matching `*_SELFTEST_FAIL`.
@@ -58,12 +59,13 @@ with no `chatty` marker and no FAIL line to give it away. Confirm the size with
 dropped capture until a larger buffer proves otherwise.
 
 Camera, picking, dynamic-mesh, Construction-box, sculpt, render-shading,
-Construction-history, gizmo, project-format, render-recovery and CAD self-tests
-are debug-only and run once from `NativeViewport.start()`. They must never run
-per frame. Each builds the domain objects it needs — the scene, history, gizmo
-and CAD suites build their own `ConstructionScene` and their own camera —
-rather than reading process-scoped state, so a suite's result never depends on
-what a live session left behind. The project suite also prints
+Construction-history, gizmo, project-format, render-recovery, CAD and mirror
+self-tests are debug-only and run once from `NativeViewport.start()`. They must
+never run per frame. Each builds the domain objects it needs — the scene,
+history, gizmo, CAD and mirror suites build their own `ConstructionScene` and
+their own camera — rather than reading process-scoped state, so a suite's
+result never depends on what a live session left behind. The project suite
+also prints
 `FORGESHAPE_PROJECT_GOLDEN_SHA256`, `..._IMPORTED`, `..._IMPORTED_SCULPT`,
 `..._CAD` and `..._CAD_V2` — the digests of the canonical `.forge` fixtures as
 this build encodes them — so drift from the committed corpus is a value that
@@ -533,8 +535,9 @@ curve-profile timings.
   correct rotation on a mixed orientation legitimately moves more than one Euler
   field, so a test asserts an ORIENTATION and never "one ring, one field".
 - **Scale is a transform multiplier, never a dimension.** It is unitless, has no
-  display unit, is strictly positive (zero is singular and negative is a Mirror
-  this product does not have — both are refused, never clamped), and it is
+  display unit, is strictly positive (zero is singular and a negative factor is
+  a reflection the transform will not carry — both are refused, never clamped;
+  `MIRROR-01` mirrors through the ORIENTATION instead), and it is
   LOCAL-only, because a world-axis scale of a turned body is a shear no diagonal
   `S` can express. `Model = T·Rz·Ry·Rx·S`; it writes no primitive parameter and
   publishes no `MeshRevision`. Anything consuming the transform must be
@@ -579,8 +582,8 @@ curve-profile timings.
   020D, blocked by OQ-01), Sculpt dimensions (`SCULPT-DIM-01`, blocked by
   OQ-02), Imported Mesh and CAD Body dimensions, CAD FEATURE dimensions (a
   sketch length, a radius, an extrusion depth — those stay CAD authored truth),
-  multi-select and group scale, hierarchy, snapping, Mirror and a new unit
-  system.
+  multi-select and group scale, hierarchy, snapping and a new unit system
+  (`MIRROR-01` is its own creation act, never a dimension edit).
 - **Selection is the Objects capsule plus an OUTLINE, and the outline is a
   true silhouette of the body's own rendered geometry** (`SEL-OUT-R1`,
   UI-OWNER-10 / UI-OWNER-11). There is no persistent whole-object glow:
@@ -679,9 +682,11 @@ curve-profile timings.
   nothing is merged. `det(L) = sx·sy·sz > 0` in this product's domain, so
   winding survives untouched — a zero or negative determinant is REFUSED
   (`SingularTransform` / `MirroredTransform`), never compensated by reversing
-  triangles, which would be implementing the Mirror the domain says cannot
-  exist. `.forge` still stores the nine authored values: baking is an
-  interchange decision and lives only in `forgeshape_gltf_export.cpp`.
+  triangles, which would be implementing through winding the reflection the
+  transform refuses to carry — `MIRROR-01` mirrors through the orientation and
+  therefore exports as an ordinary body. `.forge` still stores the nine authored
+  values: baking is an interchange decision and lives only in
+  `forgeshape_gltf_export.cpp`.
 - **Every UI control has a stable semantic id, and verification uses it.** Ids
   live in `res/values/ids.xml` and name what a control *does*. No test and no
   evidence script may locate a control by screen coordinate: the workspace
@@ -760,6 +765,45 @@ curve-profile timings.
   desktop shape this product does not have. **Not this stage:** multi-select,
   hierarchy, nesting, reorder, drag and drop, a group command bar, and bulk
   rename.
+- **Mirror is a proper ROTATION, never a negative scale, and it creates one new
+  body** (`MIRROR-01`). Reflecting a Construction Body across one principal
+  WORLD plane — `XY` reflects Z, `XZ` reflects Y, `YZ` reflects X — is a
+  discrete CREATION act and not a live symmetry modifier: the source is not
+  touched, nothing links the two afterwards, and no second Mirror is implied by
+  the first. Scale stays strictly positive, because a negative factor inverts
+  winding and every normal with it and would make the exporter's own
+  `MirroredTransform` refusal a lie. The reflection is carried by the
+  orientation instead: with `Qx = diag(-1, +1, +1)` and `F` the world
+  reflection, `p' = F·p`, `R' = F·R·Qx`, `S' = S`, and `det(R') = +1`. The
+  determinant is not the proof — the claim is the identity
+  `Model_mirror(q) = F · Model_source(Qx·q)`, which holds for ANY local `q`
+  because `Qx` and `S` are both diagonal, and which becomes world-geometry
+  equivalence because every Construction primitive's generated vertex set is
+  closed under `Qx` (all six are origin-centred and their rings carry
+  `kPrimitiveRadialSegments`, 32, divisible by four). `Qx` is algebra: it is
+  never persisted and never appears in a history step. The arithmetic lives in
+  `forgeshape_body_mirror.{h,cpp}` as a pure function over values — no scene, no
+  history, no body, no camera — and `mirrorSceneBody` beside the other object
+  commands owns the eligibility, the identity and the transaction. **It is the
+  one object command that is deliberately NOT representation-neutral**: an
+  Imported Mesh, a CAD Body and a body carrying a Frozen Sculpt Mesh are each
+  refused BY NAME, because only a Construction primitive's own geometry is
+  symmetric enough for a rotation to be an exact reflection; the control is
+  absent for one and the guard below JNI stays regardless. One Mirror is ONE
+  `ScopedConstructionEdit` (one Undo); Undo removes only the reflection and
+  restores the previous selection, and Redo restores the SAME `ObjectId`. The
+  reflection gets a fresh id, the source's own parameters, the mirrored
+  placement, Stage 018A's Duplicate policy for visibility and lock, and a
+  `<name> Mirror` name from the ONE `derivedBodyName` collision rule Duplicate
+  also uses. **No `.forge` field, section or version changes** — a mirrored body
+  is an ordinary Construction body wearing an ordinary transform, so nothing
+  stores which plane made it, and a mirrored project encodes byte-identically to
+  one placed by hand. The plane chooser grows INLINE in place of the row command
+  strip and is a CHOICE and not yet an act: System Back closes it and mutates
+  nothing. **Not this stage:** Imported Mesh, CAD and Sculpt mirror, sketch
+  entity mirror, Sculpt stroke X symmetry, an arbitrary or face plane, a custom
+  workplane, hierarchy subtree and multi-select mirror, a live symmetry
+  modifier, a linked instance, and any boolean.
 - **A control that cannot succeed is not drawn.** Where the domain refuses an act
   in some state — creation or Delete while sculpting, Delete of the last body,
   `Shape` on an Imported Mesh — the control is absent there rather than shown and
@@ -791,8 +835,12 @@ curve-profile timings.
   *Global Toolbar* (mode-independent top/global controls), *Tool Rail* (the edge
   tool selector), *Objects capsule* (the resting scene control: the active body's
   name plus creation), *row command strip* (the inline group of Rename,
-  Show/Hide, Lock/Unlock and Duplicate an Objects row's overflow grows out
-  beneath itself), *Add Primitive* (the six-shape creation surface),
+  Show/Hide, Lock/Unlock, Duplicate and Mirror an Objects row's overflow grows
+  out beneath itself, on two lines because five 48 dp targets do not fit one),
+  *mirror plane chooser* (the three-chip XY/XZ/YZ surface Mirror grows in place
+  of that strip), *Mirror* (creating one new body reflected across a principal
+  world plane; never a live symmetry modifier and never a negative scale),
+  *Add Primitive* (the six-shape creation surface),
   *precision surface* (the on-demand exact-value panel, implemented by
   *Property Inspector*), *anchored surface* (any panel that grows out of the
   control that opened it; `AnchoredSurfaceView` owns the growth for all of them),

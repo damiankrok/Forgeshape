@@ -89,6 +89,8 @@ const char* bodyCommandStatusName(BodyCommandStatus status) {
         case BodyCommandStatus::RefusedInvalidName: return "RefusedInvalidName";
         case BodyCommandStatus::RefusedFaceSupportedCad: return "RefusedFaceSupportedCad";
         case BodyCommandStatus::RefusedNotDuplicable: return "RefusedNotDuplicable";
+        case BodyCommandStatus::RefusedNotMirrorable: return "RefusedNotMirrorable";
+        case BodyCommandStatus::RefusedNotRepresentable: return "RefusedNotRepresentable";
     }
     return "unknown";
 }
@@ -149,15 +151,17 @@ BodyCommandStatus setSceneBodyLocked(ObjectId id, bool locked, ConstructionScene
     return BodyCommandStatus::Ok;
 }
 
-std::string duplicateBodyName(const std::string& sourceName, const ConstructionScene& scene) {
+std::string derivedBodyName(const std::string& sourceName, const std::string& suffix,
+                            const ConstructionScene& scene) {
     if (sourceName.empty()) {
         // A body with no stored name has a DERIVED label, and deriving a stored
         // name from a derived label would turn presentation into project truth.
-        // The copy gets no name and falls back to its own id, exactly as the
-        // source does.
+        // The new body gets no name and falls back to its own id, exactly as
+        // the source does.
         return std::string();
     }
-    const std::string first = sanitizeImportedMeshName(sourceName + " copy");
+    const std::string base = sourceName + " " + suffix;
+    const std::string first = sanitizeImportedMeshName(base);
     if (importedMeshNameIsStorable(first) && !nameIsTaken(scene, first)) {
         return first;
     }
@@ -165,15 +169,19 @@ std::string duplicateBodyName(const std::string& sourceName, const ConstructionS
     // taken, so an ordinal one past the body count is always free.
     for (size_t ordinal = 2; ordinal <= scene.bodyCount() + 2; ++ordinal) {
         const std::string candidate =
-            sanitizeImportedMeshName(sourceName + " copy " + std::to_string(ordinal));
+            sanitizeImportedMeshName(base + " " + std::to_string(ordinal));
         if (importedMeshNameIsStorable(candidate) && !nameIsTaken(scene, candidate)) {
             return candidate;
         }
     }
     // Unreachable for any scene this product can build. Falling back to no name
-    // keeps the copy legal (it wears its id) rather than failing the duplicate
-    // over a label.
+    // keeps the new body legal (it wears its id) rather than failing the whole
+    // command over a label.
     return std::string();
+}
+
+std::string duplicateBodyName(const std::string& sourceName, const ConstructionScene& scene) {
+    return derivedBodyName(sourceName, "copy", scene);
 }
 
 BodyCommandStatus duplicateSceneBody(ObjectId id, ConstructionScene& scene,
@@ -280,6 +288,84 @@ BodyCommandStatus duplicateSceneBody(ObjectId id, ConstructionScene& scene,
         // The copy is what the user is about to work on. `addBody`,
         // `addImportedBody` and `addCadBody` each already made it active; this
         // states it once so the rule does not depend on three of them agreeing.
+        scene.setActiveBody(newId);
+    }
+
+    report.newBodyId = newId;
+    report.newIndex = scene.indexOfBody(newId);
+    report.bodyCount = scene.bodyCount();
+    return finish(BodyCommandStatus::Ok);
+}
+
+BodyCommandStatus mirrorSceneBody(ObjectId id, MirrorPlane plane, ConstructionScene& scene,
+                                  ConstructionHistory& history, MirrorBodyReport* outReport) {
+    MirrorBodyReport report;
+    report.sourceBodyId = id;
+    report.bodyCount = scene.bodyCount();
+    const auto finish = [&](BodyCommandStatus status) {
+        if (outReport != nullptr) {
+            *outReport = report;
+        }
+        return status;
+    };
+
+    SceneObject* source = nullptr;
+    const BodyCommandStatus resolved = resolveTarget(id, scene, history, &source);
+    if (resolved != BodyCommandStatus::Ok) {
+        return finish(resolved);
+    }
+    // Eligibility is asked BEFORE anything is minted or opened, so an ineligible
+    // body costs no ObjectId and leaves no empty transaction behind.
+    report.eligibility = mirrorEligibilityOf(*source);
+    if (report.eligibility != MirrorEligibility::Eligible) {
+        return finish(BodyCommandStatus::RefusedNotMirrorable);
+    }
+
+    // The reflection is solved from VALUES before the scene is touched. A
+    // refusal here therefore changes nothing at all, exactly as an ineligible
+    // body does -- and the source's own transform is read, never written.
+    TransformValues mirrored{};
+    if (mirrorPlacement(source->transform().values(), plane, &mirrored) != MirrorStatus::Ok) {
+        return finish(BodyCommandStatus::RefusedNotRepresentable);
+    }
+    report.placement = mirrored;
+
+    // Everything the reflection needs is read from the source BEFORE the scene
+    // is mutated, because appending a body can reallocate the body list and the
+    // source pointer with it.
+    const ConstructionObjectState constructionState = source->construction().captureState();
+    const std::string mirrorName = derivedBodyName(source->name(), "Mirror", scene);
+    // Stage 018A's Duplicate policy, unchanged and deliberately not re-decided
+    // here: a hidden source produces a hidden reflection and a locked source a
+    // locked one, and the SOURCE keeps both, because Mirror creates a body and
+    // mutates none.
+    const bool visible = source->visible();
+    const bool locked = source->locked();
+
+    // ONE transaction, and always this scope's own: an open edit was refused
+    // above. One Mirror is therefore exactly one step -- and one Undo removes
+    // exactly the reflection, because the step's BEFORE state is the scene
+    // without it.
+    ObjectId newId = kNoObject;
+    {
+        ScopedConstructionEdit edit(history);
+        SceneObject& reflection = scene.addBody();
+        newId = reflection.objectId();
+        // restoreState rather than the edit entry points, exactly as Duplicate
+        // does: these parameters were authoritative, and therefore already
+        // validated, on the source.
+        reflection.construction().restoreState(constructionState);
+        reflection.transform().setValues(mirrored);
+        reflection.setName(mirrorName);
+        reflection.setVisible(visible);
+        reflection.setLocked(locked);
+        // Published once, for the new body only. The SOURCE is not republished
+        // and not re-tessellated: its mesh is untouched by a reflection that
+        // read nothing but nine numbers off its transform.
+        publishSceneObject(reflection);
+        // The reflection is what the user is about to work on. `addBody` has
+        // already made it active; this states it once so the rule does not
+        // depend on that.
         scene.setActiveBody(newId);
     }
 

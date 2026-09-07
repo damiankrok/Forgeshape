@@ -39,6 +39,7 @@
 #include "forgeshape_body_dimensions.h"
 #include "forgeshape_camera.h"
 #include "forgeshape_body_dimensions_selftest.h"
+#include "forgeshape_body_mirror.h"
 #include "forgeshape_camera_selftest.h"
 #include "forgeshape_construction.h"
 #include "forgeshape_construction_selftest.h"
@@ -65,6 +66,7 @@
 #include "forgeshape_mesh.h"
 #include "forgeshape_mesh_fixtures.h"
 #include "forgeshape_mesh_selftest.h"
+#include "forgeshape_mirror_selftest.h"
 #include "forgeshape_picking_selftest.h"
 #include "forgeshape_primitive_selftest.h"
 #include "forgeshape_project_bootstrap.h"
@@ -478,6 +480,29 @@ void runBodyDimensionsSelfTestsAndLog() {
     }
 #endif
 }
+
+void runMirrorSelfTestsAndLog() {
+#ifndef NDEBUG
+    constexpr int kMaxMirrorChecks = 128;
+    static forgeshape::MirrorSelfTestResult results[kMaxMirrorChecks];
+    const int count = forgeshape::runMirrorSelfTests(results, kMaxMirrorChecks);
+    int failed = 0;
+    for (int i = 0; i < count; ++i) {
+        if (!results[i].passed) {
+            ++failed;
+            FS_LOGE("FORGESHAPE_MIRROR_SELFTEST_CASE_FAIL:%s", results[i].name);
+        } else {
+            FS_LOGI("mirror selftest pass: %s", results[i].name);
+        }
+    }
+    if (failed == 0) {
+        FS_LOGI("FORGESHAPE_MIRROR_SELFTEST_OK (%d checks)", count);
+    } else {
+        FS_LOGE("FORGESHAPE_MIRROR_SELFTEST_FAIL (%d of %d checks failed)", failed, count);
+    }
+#endif
+}
+
 void runGltfExportSelfTestsAndLog() {
 #ifndef NDEBUG
     constexpr int kMaxGltfChecks = 128;
@@ -1704,6 +1729,7 @@ Java_com_forgeshape_app_NativeViewport_start(JNIEnv*, jclass) {
     runGltfImportSelfTestsAndLog();
     runCadSelfTestsAndLog();
     runBodyDimensionsSelfTestsAndLog();
+    runMirrorSelfTestsAndLog();
     // The mesh and construction self-tests publish revisions of their own into
     // the store, so republish the ACTIVE representation: the app must always
     // come up showing what the current product mode says it is showing. At a
@@ -2831,6 +2857,7 @@ Java_com_forgeshape_app_NativeViewport_sceneDeleteBody(JNIEnv*, jclass, jlong ob
 
 // ---------------------------------------------------------------------------
 // The object commands: Rename, Show/Hide, Lock/Unlock, Duplicate (Stage 018A)
+// and Mirror (`MIRROR-01`, below)
 // ---------------------------------------------------------------------------
 //
 // The whole decision for each -- the transaction, the sanitizer, the refusals,
@@ -2856,6 +2883,8 @@ constexpr jint kObjCmdRefusedInvalidName = 3;
 constexpr jint kObjCmdRefusedFaceSupportedCad = 4;
 constexpr jint kObjCmdRefusedNotDuplicable = 5;
 constexpr jint kObjCmdRefusedInSculpt = 6;
+constexpr jint kObjCmdRefusedNotMirrorable = 7;
+constexpr jint kObjCmdRefusedNotRepresentable = 8;
 
 jint objCmdStatusToJni(forgeshape::BodyCommandStatus status) {
     switch (status) {
@@ -2869,12 +2898,16 @@ jint objCmdStatusToJni(forgeshape::BodyCommandStatus status) {
             return kObjCmdRefusedFaceSupportedCad;
         case forgeshape::BodyCommandStatus::RefusedNotDuplicable:
             return kObjCmdRefusedNotDuplicable;
+        case forgeshape::BodyCommandStatus::RefusedNotMirrorable:
+            return kObjCmdRefusedNotMirrorable;
+        case forgeshape::BodyCommandStatus::RefusedNotRepresentable:
+            return kObjCmdRefusedNotRepresentable;
     }
     return kObjCmdUnknownBody;
 }
 
-// Whether an object command may run at all right now. One answer for all four,
-// because all four hold the scene still for the same reason.
+// Whether an object command may run at all right now. One answer for all of
+// them, because they all hold the scene still for the same reason.
 bool objectCommandsBlockedByMode() {
     return forgeshape::sculptSession().inSculptMode() || forgeshape::sketchSession().active();
 }
@@ -3047,6 +3080,84 @@ Java_com_forgeshape_app_NativeViewport_sceneDuplicateBody(JNIEnv*, jclass, jlong
     FS_LOGI("FORGESHAPE_SCENE_BODY_DUPLICATED:%llu from=%llu index=%d bodies=%d sculpt=%d",
             (unsigned long long)report.newBodyId, (unsigned long long)report.sourceBodyId,
             (int)report.newIndex, (int)report.bodyCount, report.clonedSculptMesh ? 1 : 0);
+    return kObjCmdOk;
+}
+
+// ---------------------------------------------------------------------------
+// Mirror (`MIRROR-01`)
+// ---------------------------------------------------------------------------
+//
+// The whole decision -- the eligibility, the reflection arithmetic, the
+// transaction and what the new body carries -- belongs to
+// `forgeshape_body_mirror.{h,cpp}` and `mirrorSceneBody`. What is here is the
+// lock, the mode guard, the plane transport and the log line, exactly as every
+// other object command is.
+//
+// REFUSED WHILE SCULPTING AND WHILE SKETCHING on the same terms as the other
+// four, and the UI withdraws the control there too -- removing a control is not
+// removing a guard.
+
+// Whether this body is one Mirror could actually reflect right now.
+//
+// Asked per row so the control is ABSENT for an Imported Mesh, a CAD Body and a
+// body carrying a sculpt mesh, rather than shown and then refused. The domain
+// guard below stays regardless. Answers false for an unknown body and while the
+// mode holds the scene still, which is the same shape every other row query
+// uses.
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_sceneBodyCanMirror(JNIEnv*, jclass, jlong objectId) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    if (objectCommandsBlockedByMode()) {
+        return JNI_FALSE;
+    }
+    const forgeshape::SceneObject* body =
+        forgeshape::constructionScene().findBody(static_cast<forgeshape::ObjectId>(objectId));
+    if (body == nullptr) {
+        return JNI_FALSE;
+    }
+    return forgeshape::mirrorEligibilityOf(*body) == forgeshape::MirrorEligibility::Eligible
+               ? JNI_TRUE
+               : JNI_FALSE;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sceneMirrorBody(JNIEnv*, jclass, jlong objectId,
+                                                       jint planeIndex) {
+    forgeshape::MirrorPlane plane = forgeshape::MirrorPlane::Xy;
+    if (!forgeshape::mirrorPlaneFromIndex(static_cast<int>(planeIndex), &plane)) {
+        // A transport value the UI never sends. Refused as unrepresentable
+        // rather than defaulted to a plane the user did not choose.
+        FS_LOGI("FORGESHAPE_SCENE_MIRROR_REFUSED:invalid_plane:%d", (int)planeIndex);
+        return kObjCmdRefusedNotRepresentable;
+    }
+    forgeshape::BodyCommandStatus status = forgeshape::BodyCommandStatus::Ok;
+    forgeshape::MirrorBodyReport report;
+    bool refusedInSculpt = false;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        if (objectCommandsBlockedByMode()) {
+            refusedInSculpt = true;
+        } else {
+            status = forgeshape::mirrorSceneBody(static_cast<forgeshape::ObjectId>(objectId),
+                                                 plane, forgeshape::constructionScene(),
+                                                 forgeshape::constructionHistory(), &report);
+        }
+    }
+    if (refusedInSculpt) {
+        FS_LOGI("FORGESHAPE_SCENE_MIRROR_REFUSED:in_sculpt_mode:%lld", (long long)objectId);
+        return kObjCmdRefusedInSculpt;
+    }
+    if (status != forgeshape::BodyCommandStatus::Ok) {
+        // The eligibility is named beside the status, because one status covers
+        // three different reasons a body cannot be reflected.
+        FS_LOGI("FORGESHAPE_SCENE_MIRROR_REFUSED:%s:%s:%lld",
+                forgeshape::bodyCommandStatusName(status),
+                forgeshape::mirrorEligibilityName(report.eligibility), (long long)objectId);
+        return objCmdStatusToJni(status);
+    }
+    FS_LOGI("FORGESHAPE_SCENE_BODY_MIRRORED:%llu from=%llu plane=%s index=%d bodies=%d",
+            (unsigned long long)report.newBodyId, (unsigned long long)report.sourceBodyId,
+            forgeshape::mirrorPlaneName(plane), (int)report.newIndex, (int)report.bodyCount);
     return kObjCmdOk;
 }
 

@@ -162,7 +162,8 @@ forgeshape_jni.cpp            render thread, ANativeWindow, MotionEvent ->
 | The view a sketch borrows — the orbit angles that look along a plane's normal, the orthographic projection, and the user's own pose kept for the way back | `beginSketchView` / `endSketchView` in `forgeshape_jni.cpp` over `CameraController::frameWorkplane` / `capturePose` / `restorePose` | the sketch stores no camera; the angles come from the plane's fixed frame, and the pose is restored on commit and on cancel alike |
 | Whether a one-finger gesture while sketching draws, selects, or is swallowed — and that two fingers still pan and pinch | the sketch arbitration block in `forgeshape_jni.cpp`, using `SketchSession::onTouch` | a single finger never orbits while a sketch is open; the gizmo and the sculpt arbitration are already out of the picture, because the gizmo is withdrawn at begin and a sketch cannot start in Sculpt |
 | Removing one body from the project | `forgeshape_body_delete.{h,cpp}` | one representation-neutral operation over the scene and the history. One Delete is one transaction; the removed body is HELD by the history rather than destroyed, so an Undo restores that object with its Imported Mesh and its Frozen Sculpt Mesh intact; the replacement selection and the last-body refusal are stated here and nowhere else |
-| The four object commands — Rename, Show/Hide, Lock/Unlock, Duplicate | `forgeshape_body_commands.{h,cpp}` | one representation-neutral module over the scene and the history, on `forgeshape_body_delete`'s terms and for the same reason: each is a decision ABOUT the project that needs both collaborators and neither owns the other. Each act is one transaction; the name rule is the domain's existing one rather than a second policy; Duplicate is the only entry point that dispatches on representation, because it has to COPY one |
+| The object commands — Rename, Show/Hide, Lock/Unlock, Duplicate, Mirror | `forgeshape_body_commands.{h,cpp}` | one module over the scene and the history, on `forgeshape_body_delete`'s terms and for the same reason: each is a decision ABOUT the project that needs both collaborators and neither owns the other. Each act is one transaction; the name rule is the domain's existing one rather than a second policy, and one `derivedBodyName` serves Duplicate and Mirror alike; Duplicate is the only entry point that dispatches on representation, because it has to COPY one, and Mirror is the only one that REFUSES on representation |
+| Reflecting a body across a principal world plane | `forgeshape_body_mirror.{h,cpp}` | the ONE mirror arithmetic (`MIRROR-01`), a pure function over values — no scene, no history, no body, no camera, no renderer — plus the eligibility predicate. The reflection is carried by a PROPER rotation `R' = F·R·Qx` with the positive scale untouched, so nothing about the transform contract or the `.forge` format moved; `mirrorSceneBody` beside the other object commands owns identity and the transaction |
 | A body's overall DIMENSIONS, and every resize about an anchor | `forgeshape_body_dimensions.{h,cpp}` | the ONE resize/anchor solver (`UI-OWNER-33B`, Stage 020M), deliberately a pure function over values — no scene, no history, no body, no camera, no renderer — so Stage 020D's Directional Scale drives the same arithmetic rather than a second copy of it. It also owns the exact local bounds of the six Construction primitives, read from their PARAMETERS, and the two product acts over the scene and the history |
 | The dimension leaders, and the Dimensions interaction state | `forgeshape_body_dimension_overlay.{h,cpp}` | presentation on the sketch overlay's terms: a world-space line list in the SketchOverlay's own structure and ranges, fed through the renderer's existing line path so no renderer change was needed. Also the session-only mode, active axis and anchor, which no Java flag mirrors |
 | The deterministic external-GLB compatibility fixture | `forgeshape_glb_import_fixture.{h,cpp}` | a synthetic file with the structural feature set of an external low-poly export; every coordinate an integer over a power of two, so its bytes are the same everywhere. A debug test seam, reachable from no product path |
@@ -4067,29 +4068,32 @@ never tears down. On anything but success the release leaves every entry residen
 and asks again next frame. A capacity GROW keeps the unbounded wait, because it
 must complete before it reallocates.
 
-## The four object commands: Rename, Show/Hide, Lock/Unlock, Duplicate
+## The object commands: Rename, Show/Hide, Lock/Unlock, Duplicate, Mirror
 
-`UI-OWNER-40`, Stage 018A. `forgeshape_body_commands.{h,cpp}` owns all four, as
-its own module on exactly `forgeshape_body_delete`'s terms and for the same
-reason: each is a decision ABOUT the project that needs both the scene and the
-history, and neither of those owns the other. Delete stays where it is and was
-not touched.
+`UI-OWNER-40`, Stage 018A, and `MIRROR-01`. `forgeshape_body_commands.{h,cpp}`
+owns all five, as its own module on exactly `forgeshape_body_delete`'s terms and
+for the same reason: each is a decision ABOUT the project that needs both the
+scene and the history, and neither of those owns the other. Delete stays where
+it is and was not touched. Mirror's ARITHMETIC is not here either -- it is a
+pure function over values in `forgeshape_body_mirror.{h,cpp}`, the same split
+`forgeshape_body_dimensions` uses.
 
-**Three of the four are representation-neutral by construction.** Nothing in
+**Three of the five are representation-neutral by construction.** Nothing in
 Rename, Show/Hide or Lock/Unlock asks what a body is, because a body has a name,
 a visibility and a lock *because it is a body* — exactly as it has a placement
 because it is a body. `SceneObject` carries all three beside `transform_`, and
 that is the whole of it. Duplicate is the one that dispatches on
 `BodyRepresentation`, because it has to COPY a representation; it dispatches
-through the existing enum rather than through a new boolean.
+through the existing enum rather than through a new boolean. Mirror is the one
+that REFUSES on representation, and deliberately -- see below.
 
 **Each act is one transaction**, through the ordinary `ScopedConstructionEdit`
 and always as the scope that OWNS the edit: an edit already in progress is
 refused (`RefusedEditInProgress`), the rule `deleteSceneBody` and
-`loadProjectDocument` already apply. One Rename is one Undo; so is one toggle
-and one Duplicate. An act that changes nothing records nothing and leaves the
-redo stack alone — that is `commitEdit`'s existing comparison, and none of these
-restates it.
+`loadProjectDocument` already apply. One Rename is one Undo; so is one toggle,
+one Duplicate and one Mirror. An act that changes nothing records nothing and
+leaves the redo stack alone — that is `commitEdit`'s existing comparison, and
+none of these restates it.
 
 **Undo and Redo needed no per-command inverse.** The Construction history is a
 scene SNAPSHOT, so adding `name`, `visible` and `locked` to
@@ -4167,7 +4171,8 @@ two directions.
 Copied: the source representation's own truth (a Construction Source's active
 kind and all six remembered parameter sets, an Imported Mesh's positions,
 normals, indices and submesh batches, or a CAD Body's sketch and extrusion), the
-placement, a deterministic `name copy` / `name copy 2` suffix, the visibility,
+placement, a deterministic `name copy` / `name copy 2` suffix from the shared
+`derivedBodyName` rule Mirror also uses, the visibility,
 the lock, and the Frozen Sculpt Mesh's CURRENT positions and topology.
 
 Not copied, and each for its own reason:
@@ -4201,9 +4206,89 @@ world-plane CAD Body duplicates normally, and so does a PRODUCER that has
 dependents: one Duplicate copies one body and never a graph, so the copy is
 simply a producer of its own with none.
 
+### Mirror is a proper rotation, and that is the whole design
+
+`MIRROR-01`. Reflecting a Construction Body across one principal WORLD plane —
+`XY` reflects Z, `XZ` reflects Y, `YZ` reflects X — creates ONE new body. The
+source is not touched: this is a discrete CREATION act and not a live symmetry
+modifier, so nothing links the two afterwards, moving one does not move the
+other, and no second Mirror is implied by the first.
+
+**A negative scale was never an option.** Scale in this product is strictly
+positive by contract (`forgeshape_transform.h`); a negative factor inverts
+winding, flips every normal and every front-face test, and would make the glTF
+exporter's own `MirroredTransform` refusal a lie. So the reflection is carried
+by the ORIENTATION instead. With `Qx = diag(-1, +1, +1)` — the primitive's own
+local-X symmetry — and `F` the world reflection:
+
+```
+p' = F · p          R' = F · R · Qx          S' = S
+```
+
+`det(R') = det(F)·det(R)·det(Qx) = (-1)(+1)(-1) = +1`, so `R'` is a proper
+rotation and comes back through `eulerFromRotationMatrix`, the one bridge
+between the matrix form and the authoritative Euler degrees, with the source's
+own angles as the branch hint. No second Euler convention was introduced.
+
+**The determinant is not the proof.** It only says the result is a legal
+orientation. The geometric claim is the identity
+
+```
+Model_mirror(q)  ==  F · Model_source(Qx · q)      for every local q
+```
+
+which follows because `Qx` and `S` are both diagonal and therefore commute:
+`T' + R'·S·q = F·T + F·R·Qx·S·q = F·(T + R·S·(Qx·q))`. It holds for ANY `q`
+with no symmetry assumed at all, and `MIRROR01-06` asserts it over probe points
+no primitive generates. What the symmetry then adds is that `Qx` maps each
+generated local vertex SET onto itself — all six primitives are origin-centred
+and their rings carry `kPrimitiveRadialSegments` (32, divisible by four) — so
+`WorldGeometry(mirror) == F · WorldGeometry(source)` as a set.
+`MIRROR01-07/08` assert both halves over six primitives × three planes × ten
+poses, including a body on the plane, a body crossing it, a non-uniform scale
+and an angle past a whole turn.
+
+`Qx` is ALGEBRA. It is never persisted, never reaches a `.forge` byte and never
+appears in a history step.
+
+**It is the one object command that is deliberately not
+representation-neutral.** `mirrorEligibilityOf` refuses an Imported Mesh
+(`NotConstruction`), a CAD Body (`NotCad`) and a body carrying a Frozen Sculpt
+Mesh (`HasSculptTruth`) BY NAME. The reason is the same in all three: the
+reflection is exact only because the body's own geometry is symmetric under
+`Qx`, and none of those three is. An imported mesh's triangles would come out
+inside-out; a CAD Body's truth is a sketch, and mirroring one would mean
+mirroring authored sketch geometry, which this stage does not do; sculpt
+vertices are arbitrary. The eligibility is asked BEFORE anything is minted or an
+edit is opened, so a refusal costs no `ObjectId` and leaves no empty
+transaction, and the reason is reported in `MirrorBodyReport::eligibility`
+beside a single `RefusedNotMirrorable` status — one status per OUTCOME, the
+reason still named in the log. The row simply has no Mirror control for such a
+body (`sceneBodyCanMirror`), and the domain guard stays regardless.
+
+**What the reflection carries**: a fresh `ObjectId`, the source's Construction
+Source truth through the same `captureState`/`restoreState` pair Duplicate uses,
+the mirrored placement, Stage 018A's Duplicate policy for visibility and lock
+(a hidden source produces a hidden reflection, a locked source a locked one, and
+the source keeps both), and a `<name> Mirror` name from `derivedBodyName` — the
+ONE collision rule, which `duplicateBodyName` now calls with `"copy"` so the two
+commands cannot drift into two policies. It publishes exactly once, for itself;
+the source is not republished and not re-tessellated, because the reflection
+read nothing but nine numbers off its transform.
+
+**One Mirror is one Undo.** Undo removes only the reflection and restores the
+previous active body; Redo restores the SAME `ObjectId` with the same placement,
+source, name and flags, because the allocator is never rolled back.
+
+**No format change.** A mirrored body is an ordinary Construction body wearing
+an ordinary transform, so nothing stores which plane made it and no `.forge`
+field, section or version moved. `MIRROR01-12` proves it the only way worth
+proving: a project reached by mirroring encodes byte-identically to one whose
+second body was placed at the same numbers by hand.
+
 ### The row keeps two targets plus one overflow
 
-The Objects panel is 220 dp wide. Four more 48 dp targets beside the label would
+The Objects panel is 220 dp wide. More 48 dp targets beside the label would
 leave the label nothing, and a persistent command column is the desktop shape
 this product does not have. So the row stays a pair — the label, which selects,
 and Delete, which removes, exactly where `UI-OWNER-45` put them — plus one
@@ -4215,10 +4300,21 @@ System Back cancels, costing the project nothing because nothing is a
 transaction until it is committed. System Back closes the strip before the panel
 that hosts it, innermost outward, so Back stays one step in every phase.
 
+The strip itself wraps to TWO lines — Rename, Show/Hide and Lock on the first,
+Duplicate and Mirror on the second. Five 48 dp targets in a row are 256 dp and
+the panel offers 192 dp of content width, so wrapping is what keeps every target
+at the floor; the alternative is shrinking the drawn boxes, which the floor
+exists to prevent. Mirror replaces the strip with a **mirror plane chooser** of
+three equal-width `XY` / `XZ` / `YZ` chips, each naming the world axis it
+reflects in its content description because two letters read aloud say nothing
+on their own. Opening it is a CHOICE and not yet an act: nothing is created, no
+step is recorded and no `ObjectId` is minted until a plane is picked, and System
+Back closes it exactly as it closes the rename editor.
+
 Both toggles change their GLYPH with the state as well as their words, so what
 is hidden and what is locked reads without relying on colour. The overflow and
-the strip are withdrawn in Sculpt and while sketching, where all four commands
-are refused below JNI — and, as everywhere else, the guard stays.
+the strip are withdrawn in Sculpt and while sketching, where every one of the
+commands is refused below JNI — and, as everywhere else, the guard stays.
 
 ## Body dimensions, the shared resize/anchor solver, and Relative Scale
 

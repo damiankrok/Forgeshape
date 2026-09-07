@@ -1,25 +1,34 @@
-// The four object commands of Stage 018A: Rename, Show/Hide, Lock/Unlock and
-// Duplicate (`UI-OWNER-40`).
+// The object commands reached from an Objects row: Rename, Show/Hide,
+// Lock/Unlock and Duplicate (Stage 018A, `UI-OWNER-40`), and Mirror
+// (`MIRROR-01`).
 //
 // Its own module rather than methods on either collaborator, for exactly the
 // reason `forgeshape_body_delete.h` is one: each of these is a decision ABOUT
 // the project that needs both the scene (which holds the bodies) and the
 // history (which records the transaction), and neither owns the other. Delete
-// stays where it is and is not touched here.
+// stays where it is and is not touched here. The MIRROR ARITHMETIC is not here
+// either: it is a pure function over values in `forgeshape_body_mirror.h`, the
+// same split `forgeshape_body_dimensions.h` uses, so the reflection has one
+// implementation and this file only decides eligibility, identity and the
+// transaction.
 //
-// Invariants shared by all four:
+// Invariants shared by all of them:
 //
-//   * REPRESENTATION-NEUTRAL. Nothing here asks what a body is in order to
-//     decide WHETHER it can be renamed, hidden or locked -- a Construction
-//     Body, an Imported Mesh and a CAD Body answer identically, and any of them
-//     carrying a Frozen Sculpt Mesh answers identically again. Duplicate is the
-//     one that must dispatch, because it has to COPY the representation, and it
-//     dispatches through the existing `BodyRepresentation` rather than through
-//     a new boolean.
+//   * REPRESENTATION-NEUTRAL WHERE IT CAN BE. Nothing here asks what a body is
+//     in order to decide WHETHER it can be renamed, hidden or locked -- a
+//     Construction Body, an Imported Mesh and a CAD Body answer identically,
+//     and any of them carrying a Frozen Sculpt Mesh answers identically again.
+//     Duplicate must dispatch, because it has to COPY the representation, and
+//     it dispatches through the existing `BodyRepresentation` rather than
+//     through a new boolean. Mirror is the one command that is deliberately
+//     NOT neutral: `MIRROR-01` reflects a Construction primitive and refuses
+//     every other representation by name, because the reflection is carried by
+//     an ORIENTATION and only a Construction primitive's own geometry is
+//     symmetric enough for that to be exact.
 //   * ONE ACT IS ONE TRANSACTION. Each opens ONE `ScopedConstructionEdit` that
 //     OWNS the edit; an edit already open is refused (`RefusedEditInProgress`)
 //     on the same terms `deleteSceneBody` and `loadProjectDocument` refuse one.
-//     One Rename is one Undo; so is one toggle and one Duplicate.
+//     One Rename is one Undo; so is one toggle, one Duplicate and one Mirror.
 //   * A COMMIT THAT FINDS NOTHING DIFFERENT RECORDS NOTHING. Renaming a body to
 //     the name it already has, or hiding one that is already hidden, is a no-op
 //     and leaves the redo stack alone -- that is `commitEdit`'s existing rule
@@ -27,9 +36,11 @@
 //   * A REFUSAL CHANGES NOTHING AT ALL. No body is renamed, no flag moves, no
 //     ObjectId is minted, no step is recorded and the project fingerprint does
 //     not shift.
-//   * NO GEOMETRY WORK. Rename, Show/Hide and Lock/Unlock publish nothing, mint
-//     no MeshRevision, rebuild no CAD mesh, upload nothing and move no sculpt
-//     vertex. Duplicate publishes exactly once, for the body it created.
+//   * NO GEOMETRY WORK BEYOND A CREATION. Rename, Show/Hide and Lock/Unlock
+//     publish nothing, mint no MeshRevision, rebuild no CAD mesh, upload
+//     nothing and move no sculpt vertex. Duplicate and Mirror each publish
+//     exactly once, for the one body they created, and neither re-tessellates
+//     the source or touches one byte of it.
 //
 // Platform-neutral C++17: no Android, no JNI, no Vulkan, no renderer, no
 // filesystem.
@@ -37,16 +48,18 @@
 
 #include <string>
 
+#include "forgeshape_body_mirror.h"
 #include "forgeshape_history.h"
 #include "forgeshape_object_id.h"
 #include "forgeshape_scene.h"
+#include "forgeshape_transform.h"
 
 namespace forgeshape {
 
 // Why an object command did not happen.
 //
-// One enum for all four rather than one per command: the first three refusals
-// are shared word for word, and a caller that had to translate four nearly
+// One enum for all five rather than one per command: the first three refusals
+// are shared word for word, and a caller that had to translate five nearly
 // identical enums into one status line would be the place they drifted apart.
 enum class BodyCommandStatus {
     Ok,
@@ -79,6 +92,15 @@ enum class BodyCommandStatus {
     // is re-validated by the scene's own `addCadBody` before an id is minted,
     // so a refusal here costs no ObjectId either.
     RefusedNotDuplicable,
+    // Mirror only: the body is not one `MIRROR-01` can reflect -- an Imported
+    // Mesh, a CAD Body, or a body carrying a Frozen Sculpt Mesh. WHICH of those
+    // is reported by `MirrorBodyReport::eligibility`, so the enum stays one
+    // status per OUTCOME while the refusal is still named in the log.
+    RefusedNotMirrorable,
+    // Mirror only: the reflected placement is not representable -- a non-finite
+    // source transform, or a value the transform itself would reject. Refused
+    // by name rather than applied and then rejected one layer down.
+    RefusedNotRepresentable,
 };
 
 const char* bodyCommandStatusName(BodyCommandStatus status);
@@ -179,17 +201,86 @@ BodyCommandStatus duplicateSceneBody(ObjectId id, ConstructionScene& scene,
 
 // The name a duplicate of `sourceName` gets, given the names already in `scene`.
 //
-// Deterministic and exposed so it can be proven directly: `name` becomes
-// `name copy`, and if that is taken, `name copy 2`, `name copy 3` and so on.
-// A body with no stored name produces no stored name -- the copy falls back to
-// its own ObjectId label exactly as the source does, because fabricating
-// "Body #3 copy" would freeze a label that is DERIVED, not authored, into
-// project truth.
-//
-// The suffix is applied and then sanitized, so a name already at the byte cap
-// is truncated on a UTF-8 boundary by `sanitizeImportedMeshName` rather than
-// being rejected. A truncated copy name that collides is then disambiguated by
-// the same loop, so the result is always storable.
+// Exactly `derivedBodyName(sourceName, "copy", scene)` and kept as its own
+// entry point because Duplicate's suffix is a decision about Duplicate. Every
+// rule about how the name is built, sanitized and disambiguated lives once,
+// below.
 std::string duplicateBodyName(const std::string& sourceName, const ConstructionScene& scene);
+
+// The name a DERIVED body gets: `<source> <suffix>`, disambiguated against the
+// names already in `scene`.
+//
+// One algorithm for every command that creates a body from another one, so
+// Duplicate and Mirror cannot drift into two collision policies. `name` becomes
+// `name copy` / `name Mirror`, and if that is taken, `name copy 2`,
+// `name Mirror 2` and so on.
+//
+// A body with no stored name produces no stored name -- the derived body falls
+// back to its own ObjectId label exactly as the source does, because freezing a
+// DERIVED label like "Body #3" into project truth would make presentation into
+// truth.
+//
+// The suffix is applied and then sanitized, so a name already at the byte cap is
+// truncated on a UTF-8 boundary by `sanitizeImportedMeshName` rather than being
+// rejected. A truncated name that collides is then disambiguated by the same
+// loop, so the result is always storable.
+std::string derivedBodyName(const std::string& sourceName, const std::string& suffix,
+                            const ConstructionScene& scene);
+
+// ---------------------------------------------------------------------------
+// Mirror (`MIRROR-01`)
+// ---------------------------------------------------------------------------
+
+// What a mirror produced, so a caller can log it and a test can assert against
+// it rather than against a bare boolean.
+struct MirrorBodyReport {
+    ObjectId sourceBodyId = kNoObject;
+    // Freshly minted, never reused and never derived from the source's.
+    ObjectId newBodyId = kNoObject;
+    // Where the reflection landed: the END of scene order, like every other
+    // creation in this product.
+    size_t newIndex = 0;
+    size_t bodyCount = 0;
+    // Why a `RefusedNotMirrorable` was refused. `Eligible` for every other
+    // status, including success.
+    MirrorEligibility eligibility = MirrorEligibility::Eligible;
+    // The placement the reflection was given. Meaningful on `Ok` only.
+    TransformValues placement{};
+};
+
+// Reflects one Construction Body across one principal WORLD plane, as one
+// history transaction, creating ONE new body.
+//
+// The SOURCE IS NOT TOUCHED. This is a discrete creation act and not a live
+// symmetry modifier: nothing links the two bodies afterwards, moving one does
+// not move the other, and no second Mirror is implied by the first.
+//
+// WHAT THE REFLECTION CARRIES: the source Construction Source's own truth (its
+// six remembered parameter sets and its active kind, copied through
+// `captureState`/`restoreState` exactly as Duplicate copies them), the MIRRORED
+// placement from `mirrorPlacement`, the visibility, the lock, and a derived
+// name. Visibility and lock follow Stage 018A's Duplicate policy unchanged: a
+// hidden source produces a hidden reflection, a locked source a locked one, and
+// the source keeps both.
+//
+// WHAT IT DELIBERATELY DOES NOT CARRY: the ObjectId (a fresh one is minted),
+// the Construction history, any SculptHistory or Frozen Sculpt Mesh (a body
+// with one is refused outright -- see `mirrorEligibilityOf`), every renderer
+// resource and published revision, and the selection pulse and outline, which
+// are per-frame presentation and hold nothing.
+//
+// The reflection becomes the ACTIVE body, because a creation the user asked for
+// is one they are about to work on -- the same answer Add Primitive, Import and
+// Duplicate already give.
+//
+// ONE Mirror is ONE Undo. Undo removes the reflection and restores the previous
+// active body; Redo restores the SAME ObjectId with the same placement, source,
+// name and flags, because the ObjectId allocator is never rolled back.
+//
+// No `.forge` field, section or version changes: the result is an ordinary
+// Construction body wearing an ordinary transform.
+BodyCommandStatus mirrorSceneBody(ObjectId id, MirrorPlane plane, ConstructionScene& scene,
+                                  ConstructionHistory& history,
+                                  MirrorBodyReport* outReport = nullptr);
 
 }  // namespace forgeshape

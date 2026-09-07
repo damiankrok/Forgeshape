@@ -678,16 +678,17 @@ final class NativeViewport {
 
     // -----------------------------------------------------------------------
     // The object commands: Rename, Show/Hide, Lock/Unlock, Duplicate
-    // (Stage 018A, UI-OWNER-40)
+    // (Stage 018A, UI-OWNER-40) and Mirror (MIRROR-01)
     // -----------------------------------------------------------------------
     //
     // Status codes in step with the native kObjCmd* constants. They are a JNI
     // transport detail; the domain's own vocabulary is BodyCommandStatus.
     //
-    // All four are representation-neutral, all four are exactly one history
-    // transaction, and all four refuse while sculpting and while sketching on
-    // the same terms Delete and body switching already do. A refusal changes
-    // nothing at all.
+    // Each is exactly one history transaction, and each refuses while sculpting
+    // and while sketching on the same terms Delete and body switching already
+    // do. A refusal changes nothing at all. The first four are
+    // representation-neutral; Mirror deliberately is not, and reflects a
+    // Construction primitive alone.
 
     /** The command ran, as exactly one history transaction. */
     static final int OBJCMD_OK = 0;
@@ -716,6 +717,35 @@ final class NativeViewport {
     static final int OBJCMD_REFUSED_NOT_DUPLICABLE = 5;
     /** The product is in Sculpt mode, or a sketch is open. */
     static final int OBJCMD_REFUSED_IN_SCULPT = 6;
+    /**
+     * Mirror only: the body is not one Mirror can reflect.
+     *
+     * <p>An Imported Mesh, a CAD Body, or a body carrying a sculpt mesh.
+     * {@code MIRROR-01} reflects a Construction primitive, and it carries the
+     * reflection in the body's ORIENTATION rather than in a negative scale —
+     * only a Construction primitive's own geometry is symmetric enough for that
+     * to be exact.
+     */
+    static final int OBJCMD_REFUSED_NOT_MIRRORABLE = 7;
+    /**
+     * Mirror only: the reflected placement is not representable.
+     *
+     * <p>A non-finite source transform, or a value the transform itself would
+     * reject. Refused by name rather than applied and then rejected one layer
+     * down.
+     */
+    static final int OBJCMD_REFUSED_NOT_REPRESENTABLE = 8;
+
+    // The three principal world mirror planes, as a transport index. A JNI
+    // transport detail, never an enum ABI value and never anything the `.forge`
+    // file stores — a mirrored body is an ordinary body wearing an ordinary
+    // transform, so nothing persists which plane made it.
+    /** Reflects world Z. */
+    static final int MIRROR_PLANE_XY = 0;
+    /** Reflects world Y. */
+    static final int MIRROR_PLANE_XZ = 1;
+    /** Reflects world X. */
+    static final int MIRROR_PLANE_YZ = 2;
 
     /**
      * Renames one body, as exactly one history transaction.
@@ -783,6 +813,35 @@ final class NativeViewport {
      * @return one of the {@code OBJCMD_*} constants
      */
     static native int sceneDuplicateBody(long objectId);
+
+    /**
+     * Whether this body is one Mirror could actually reflect right now.
+     *
+     * <p>Asked per row so the control is ABSENT for an Imported Mesh, a CAD
+     * Body and a body carrying a sculpt mesh, rather than shown and then
+     * refused. Answers false for an unknown body and while sculpting or
+     * sketching. The guard below JNI stays regardless.
+     */
+    static native boolean sceneBodyCanMirror(long objectId);
+
+    /**
+     * Reflects one Construction Body across one principal world plane, as
+     * exactly one history transaction, creating one new body.
+     *
+     * <p>The source is not touched: this is a discrete creation act and not a
+     * live symmetry modifier, so nothing links the two bodies afterwards. The
+     * reflection gets a fresh ObjectId, the source's own Construction
+     * parameters, the mirrored placement, the source's visibility and lock, and
+     * a deterministic {@code Mirror} name. It becomes the active body.
+     *
+     * <p>The reflection is carried by the body's rotation, never by a negative
+     * scale — scale in this product is strictly positive, and a negative factor
+     * would invert winding and every normal with it.
+     *
+     * @param planeIndex one of the {@code MIRROR_PLANE_*} constants
+     * @return one of the {@code OBJCMD_*} constants
+     */
+    static native int sceneMirrorBody(long objectId, int planeIndex);
 
     // -----------------------------------------------------------------------
     // Construction history

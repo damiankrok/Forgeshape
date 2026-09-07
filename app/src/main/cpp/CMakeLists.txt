@@ -60,6 +60,7 @@ set(FORGESHAPE_PRODUCT_SOURCES
     forgeshape_body_dimension_overlay.cpp
     forgeshape_body_dimensions.cpp
     forgeshape_body_commands.cpp
+    forgeshape_body_mirror.cpp
     forgeshape_body_delete.cpp
     forgeshape_construction.cpp
     forgeshape_demo_mesh.cpp
@@ -101,6 +102,7 @@ set(FORGESHAPE_PRODUCT_SOURCES
 # leaves NDEBUG undefined, and it is the only one that compiles them.
 set(FORGESHAPE_SELFTEST_SOURCES
     forgeshape_body_dimensions_selftest.cpp
+    forgeshape_mirror_selftest.cpp
     forgeshape_camera_selftest.cpp
     forgeshape_cad_selftest.cpp
     forgeshape_cad_a3_selftest.cpp

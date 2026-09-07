@@ -498,7 +498,8 @@ commands, just underneath the row, pushing the rows below it down rather than
 covering them. One row is open at a time, a second press closes it, and System
 Back closes it before it closes anything else.
 
-The strip holds four things:
+The strip holds five things, on two lines so every one of them stays a full-size
+target:
 
 **Rename.** The row turns into a field holding the object's current name. Type,
 and either press the keyboard's **Done** or the control beside the field. The
@@ -538,13 +539,34 @@ off — ForgeShape says so and creates nothing rather than leaving you a copy yo
 cannot separate. A CAD body on a world plane duplicates normally, and so does a
 body that other sketches are standing on.
 
-**Each of the four is one Undo.** Undo puts the old name back, shows a hidden
-object again, unlocks a locked one, or removes a duplicate; Redo does it again.
-All four are saved with the project and come back when you reopen it. A project
-saved by an older version of ForgeShape opens with everything visible and
-unlocked, which is what it was.
+**Mirror.** You get a second object that is the **reflection** of the first
+across one of the three world planes. Choosing **Mirror** replaces the strip
+with three buttons — **XY**, **XZ** and **YZ** — and picking one is the whole
+act. XY reflects up-down front-back (the Z direction), XZ reflects up and down
+(Y), and YZ reflects left and right (X); each button says which in full to a
+screen reader. Nothing happens until you pick one, so Back closes the chooser
+and costs you nothing.
 
-**None of the four is offered while sculpting or while a sketch is open**, for
+The reflection is a real, separate object: same shape, same size, mirrored
+position and orientation, the same visibility and lock, named *Bracket Mirror* —
+then *Bracket Mirror 2*, and so on. It becomes the selected object, and you can
+move it, resize it or delete it independently from then on. Mirroring is a
+one-off act and not a live link: changing the original afterwards does not
+change the reflection.
+
+**Only a shape object can be mirrored, and only one without sculpting on it.**
+An imported mesh, a CAD body and an object you have sculpted have no Mirror in
+their strip at all, because reflecting them exactly is not something this
+version does — and an object turned inside out would be worse than no answer.
+
+**Each of the five is one Undo.** Undo puts the old name back, shows a hidden
+object again, unlocks a locked one, or removes a duplicate or a reflection; Redo
+does it again. Names, visibility and lock are saved with the project and come
+back when you reopen it, and so is a reflection — it is an ordinary object from
+the moment it exists. A project saved by an older version of ForgeShape opens
+with everything visible and unlocked, which is what it was.
+
+**None of the five is offered while sculpting or while a sketch is open**, for
 the same reason the **+** and Delete are not: the scene holds still there. Leave
 Sculpt, or finish or cancel the sketch, and the **⋯** is back.
 

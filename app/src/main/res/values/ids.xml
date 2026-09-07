@@ -427,6 +427,15 @@
     <item name="object_row_visibility" type="id" />
     <item name="object_row_lock" type="id" />
     <item name="object_row_duplicate" type="id" />
+    <!-- Mirror (`MIRROR-01`): the row command, and the compact plane chooser it
+         grows in place of the strip. The chooser is a CHOICE and not yet an
+         act: System Back closes it and mutates nothing, exactly as the rename
+         editor's Back does. -->
+    <item name="object_row_mirror" type="id" />
+    <item name="object_mirror_planes" type="id" />
+    <item name="object_mirror_plane_xy" type="id" />
+    <item name="object_mirror_plane_xz" type="id" />
+    <item name="object_mirror_plane_yz" type="id" />
     <!-- The inline rename editor: the field the user types in and the control
          that commits it. IME Done commits too; System Back cancels. -->
     <item name="object_rename_field" type="id" />

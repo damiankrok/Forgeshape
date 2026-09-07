@@ -31,21 +31,22 @@ import android.widget.TextView;
  *
  * <p>Scope: root-level bodies only, with add, select, delete (`UI-OWNER-45`)
  * and — since Stage 018A (`UI-OWNER-40`) — rename, show/hide, lock/unlock and
- * duplicate. There is deliberately still no group, nesting, reorder,
- * multi-select or drag and drop, and no speculative parent field anywhere.
+ * duplicate, plus mirror (`MIRROR-01`). There is deliberately still no group,
+ * nesting, reorder, multi-select or drag and drop, and no speculative parent
+ * field anywhere.
  *
  * <p><b>Delete is a second target, never a second meaning for the first.</b> A
  * row is a pair: the label selects, and the control beside it removes. The two
  * never share a gesture, so choosing a body cannot destroy it. See
  * {@link #onBodyDeleted} for why it is not confirmed.
  *
- * <p><b>The other four commands live behind one overflow, inline.</b> The panel
- * is 220 dp wide, so four more targets on the row would leave the label
- * nothing, and a persistent command column is the desktop shape this product
- * does not have. The overflow grows a strip out BENEATH its row — pushing the
- * rows below rather than standing over them, so it never partially covers
- * another live control — and at most one row is open at a time. Delete stays
- * exactly where {@code UI-OWNER-45} put it and its path is untouched.
+ * <p><b>The other commands live behind one overflow, inline.</b> The panel is
+ * 220 dp wide, so more targets on the row would leave the label nothing, and a
+ * persistent command column is the desktop shape this product does not have.
+ * The overflow grows a strip out BENEATH its row — pushing the rows below
+ * rather than standing over them, so it never partially covers another live
+ * control — and at most one row is open at a time. Delete stays exactly where
+ * {@code UI-OWNER-45} put it and its path is untouched.
  *
  * <p><b>Its {@code +} creates nothing by itself.</b> It opens the Add Primitive
  * palette, and a body exists only once a shape has been chosen there — a
@@ -245,8 +246,14 @@ final class ObjectsSectionView extends LinearLayout {
             // the row rather than a surface over it, so the rows below move
             // down and nothing is covered.
             if (expandedBodyId == objectId && commandsAvailable) {
-                final View expansion = renaming ? buildRenameEditor(objectId, bodyLabel)
-                                                : buildCommandStrip(objectId, bodyLabel);
+                final View expansion;
+                if (renaming) {
+                    expansion = buildRenameEditor(objectId, bodyLabel);
+                } else if (mirrorChoosing) {
+                    expansion = buildMirrorPlaneChooser(objectId, bodyLabel);
+                } else {
+                    expansion = buildCommandStrip(objectId, bodyLabel);
+                }
                 final LinearLayout.LayoutParams expansionParams =
                         EditorControlStyles.rowParams(gap);
                 expansionParams.width = ViewGroup.LayoutParams.MATCH_PARENT;
@@ -258,6 +265,7 @@ final class ObjectsSectionView extends LinearLayout {
             // may stay open over a body that is not in the list.
             expandedBodyId = NO_BODY;
             renaming = false;
+            mirrorChoosing = false;
         }
     }
 
@@ -322,6 +330,7 @@ final class ObjectsSectionView extends LinearLayout {
         if (!available) {
             expandedBodyId = NO_BODY;
             renaming = false;
+            mirrorChoosing = false;
         }
         refreshFromNative();
     }
@@ -445,33 +454,60 @@ final class ObjectsSectionView extends LinearLayout {
     /** Whether the open strip has been replaced by the inline rename editor. */
     private boolean renaming;
 
+    /**
+     * Whether the open strip has been replaced by the mirror plane chooser.
+     *
+     * <p>View state and nothing else: no plane is remembered anywhere, no
+     * default is pre-selected, and closing the chooser changes no model fact.
+     * Mutually exclusive with {@link #renaming} because both REPLACE the same
+     * one strip, and two surfaces in one row is exactly the partial covering
+     * this product forbids.
+     */
+    private boolean mirrorChoosing;
+
     private static final long NO_BODY = Long.MIN_VALUE;
 
     /**
      * Builds one row's inline command strip.
      *
-     * <p><b>Why inline and not a fourth icon on the row.</b> The Objects panel
-     * is 220 dp wide. Four more 48 dp targets beside the label would leave the
-     * label nothing, and a persistent command column is the desktop shape this
+     * <p><b>Why inline and not more icons on the row.</b> The Objects panel is
+     * 220 dp wide. More 48 dp targets beside the label would leave the label
+     * nothing, and a persistent command column is the desktop shape this
      * product does not have. So the row keeps two targets — the label, which
      * selects, and Delete, which removes, exactly as {@code UI-OWNER-45} left
      * them — plus one overflow that grows the rest out beneath it. The strip
      * pushes the rows below it rather than standing over them, so it never
      * partially covers another live control.
      *
+     * <p><b>Why TWO lines.</b> Five 48 dp targets in a row are 256 dp and the
+     * panel offers 192 dp of content width, so the strip wraps: Rename,
+     * Show/Hide and Lock on the first line, Duplicate and Mirror on the second.
+     * Wrapping is what keeps every target at the 48 dp floor — the alternative
+     * is shrinking the drawn boxes, which the floor exists to prevent.
+     *
      * <p>Every control in it is a 48 dp hit area with a content description
      * naming the act and the body. The two toggles change their GLYPH with the
      * state as well as their words, so what is hidden and what is locked is
      * readable without relying on colour.
+     *
+     * <p><b>Mirror is absent for a body it could not reflect.</b> Native code
+     * answers per row, so an Imported Mesh, a CAD Body and a body carrying a
+     * sculpt mesh simply have no Mirror control — a control that must fail is
+     * worse than an absent one. The domain guard below JNI stays regardless.
      */
     private View buildCommandStrip(final long objectId, final String label) {
         final Context context = getContext();
+        final int gap = EditorControlStyles.dimen(context, R.dimen.row_gap_small);
+
         final LinearLayout strip = new LinearLayout(context);
         strip.setId(R.id.object_row_commands);
-        strip.setOrientation(HORIZONTAL);
-        strip.setGravity(Gravity.CENTER_VERTICAL);
+        strip.setOrientation(VERTICAL);
         strip.setTag(Long.valueOf(objectId));
-        final int gap = EditorControlStyles.dimen(context, R.dimen.row_gap_small);
+
+        final LinearLayout first = commandLine(context);
+        final LinearLayout second = commandLine(context);
+        strip.addView(first, EditorControlStyles.rowParams(0));
+        strip.addView(second, EditorControlStyles.rowParams(gap));
 
         final ImageView rename = EditorControlStyles.iconButton(context, R.id.object_row_rename,
                 R.drawable.ic_object_rename, context.getString(R.string.rename_body, label));
@@ -480,10 +516,11 @@ final class ObjectsSectionView extends LinearLayout {
             @Override
             public void onClick(View v) {
                 renaming = true;
+                mirrorChoosing = false;
                 refreshFromNative();
             }
         });
-        strip.addView(rename, EditorControlStyles.iconButtonParams(context, 0));
+        first.addView(rename, EditorControlStyles.iconButtonParams(context, 0));
 
         final boolean visible = NativeViewport.sceneBodyVisible(objectId);
         final ImageView visibility = EditorControlStyles.iconButton(context,
@@ -497,7 +534,7 @@ final class ObjectsSectionView extends LinearLayout {
                 onVisibilityToggled(objectId, label);
             }
         });
-        strip.addView(visibility, EditorControlStyles.iconButtonParams(context, gap));
+        first.addView(visibility, EditorControlStyles.iconButtonParams(context, gap));
 
         final boolean locked = NativeViewport.sceneBodyLocked(objectId);
         final ImageView lock = EditorControlStyles.iconButton(context, R.id.object_row_lock,
@@ -510,7 +547,7 @@ final class ObjectsSectionView extends LinearLayout {
                 onLockToggled(objectId, label);
             }
         });
-        strip.addView(lock, EditorControlStyles.iconButtonParams(context, gap));
+        first.addView(lock, EditorControlStyles.iconButtonParams(context, gap));
 
         final ImageView duplicate = EditorControlStyles.iconButton(context,
                 R.id.object_row_duplicate, R.drawable.ic_object_duplicate,
@@ -522,8 +559,86 @@ final class ObjectsSectionView extends LinearLayout {
                 onDuplicated(objectId, label);
             }
         });
-        strip.addView(duplicate, EditorControlStyles.iconButtonParams(context, gap));
+        second.addView(duplicate, EditorControlStyles.iconButtonParams(context, 0));
+
+        if (NativeViewport.sceneBodyCanMirror(objectId)) {
+            final ImageView mirror = EditorControlStyles.iconButton(context,
+                    R.id.object_row_mirror, R.drawable.ic_object_mirror,
+                    context.getString(R.string.mirror_body, label));
+            mirror.setTag(Long.valueOf(objectId));
+            mirror.setOnClickListener(new OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    // Opening the chooser is not the act. Nothing is created,
+                    // no history step is recorded and no ObjectId is minted
+                    // until a plane is picked.
+                    mirrorChoosing = true;
+                    renaming = false;
+                    refreshFromNative();
+                }
+            });
+            second.addView(mirror, EditorControlStyles.iconButtonParams(context, gap));
+        }
         return strip;
+    }
+
+    /** One horizontal line of the command strip. */
+    private LinearLayout commandLine(Context context) {
+        final LinearLayout line = new LinearLayout(context);
+        line.setOrientation(HORIZONTAL);
+        line.setGravity(Gravity.CENTER_VERTICAL);
+        return line;
+    }
+
+    /**
+     * Builds the compact mirror plane chooser that REPLACES the command strip.
+     *
+     * <p>Three chips — {@code XY}, {@code XZ}, {@code YZ} — sharing the strip's
+     * width, each 48 dp tall and each carrying a content description naming the
+     * world axis it reflects, because two letters read aloud say nothing on
+     * their own. The labels are the product's existing workplane vocabulary and
+     * are not a second naming of the same three planes.
+     *
+     * <p><b>Choosing a plane is the whole act.</b> There is no preview and no
+     * confirmation: the command commits, the chooser closes and the reflection
+     * becomes the selected object. Before that, nothing has happened at all —
+     * System Back closes the chooser and mutates nothing, exactly as it does
+     * over the rename editor, so there is no half-finished Mirror to abandon.
+     */
+    private View buildMirrorPlaneChooser(final long objectId, final String label) {
+        final Context context = getContext();
+        final LinearLayout chooser = new LinearLayout(context);
+        chooser.setId(R.id.object_mirror_planes);
+        chooser.setOrientation(HORIZONTAL);
+        chooser.setGravity(Gravity.CENTER_VERTICAL);
+        chooser.setTag(Long.valueOf(objectId));
+        final int gap = EditorControlStyles.dimen(context, R.dimen.row_gap_small);
+
+        final int[] ids = {R.id.object_mirror_plane_xy, R.id.object_mirror_plane_xz,
+                           R.id.object_mirror_plane_yz};
+        final int[] labels = {R.string.mirror_plane_xy, R.string.mirror_plane_xz,
+                              R.string.mirror_plane_yz};
+        final int[] descriptions = {R.string.mirror_plane_xy_description,
+                                    R.string.mirror_plane_xz_description,
+                                    R.string.mirror_plane_yz_description};
+        final int[] planes = {NativeViewport.MIRROR_PLANE_XY, NativeViewport.MIRROR_PLANE_XZ,
+                              NativeViewport.MIRROR_PLANE_YZ};
+        for (int i = 0; i < ids.length; i++) {
+            final int plane = planes[i];
+            final String planeLabel = context.getString(labels[i]);
+            final TextView chip =
+                    EditorControlStyles.actionChip(context, ids[i], planeLabel);
+            chip.setContentDescription(context.getString(descriptions[i]));
+            chip.setTag(Long.valueOf(objectId));
+            chip.setOnClickListener(new OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    onMirrored(objectId, label, plane, planeLabel);
+                }
+            });
+            chooser.addView(chip, EditorControlStyles.evenShare(i == 0 ? 0 : gap));
+        }
+        return chooser;
     }
 
     /**
@@ -605,6 +720,7 @@ final class ObjectsSectionView extends LinearLayout {
         }
         expandedBodyId = NO_BODY;
         renaming = false;
+        mirrorChoosing = false;
         refreshFromNative();
         return true;
     }
@@ -661,8 +777,41 @@ final class ObjectsSectionView extends LinearLayout {
         // still be open over.
         expandedBodyId = NO_BODY;
         renaming = false;
+        mirrorChoosing = false;
         host.onNativeStateChanged();
         host.showStatus(context.getString(R.string.status_body_duplicated, label),
+                R.attr.fsTextSecondary);
+    }
+
+    /**
+     * Reflects one object across one principal world plane.
+     *
+     * <p><b>Unconfirmed, deliberately</b>, on exactly Duplicate's terms: it
+     * destroys nothing, it is one Undo away, and the history capsule is on the
+     * same screen.
+     *
+     * <p>The reflection becomes the active body, so the strip must not stay
+     * open over the row it was started from — the same rule Duplicate follows.
+     */
+    private void onMirrored(long objectId, String label, int plane, String planeLabel) {
+        final Context context = getContext();
+        final int status = NativeViewport.sceneMirrorBody(objectId, plane);
+        if (status != NativeViewport.OBJCMD_OK) {
+            // The representation refusal gets its own words because it is the
+            // only one a user can reason about: this object is not a shape the
+            // reflection could be carried by.
+            host.showStatus(status == NativeViewport.OBJCMD_REFUSED_NOT_MIRRORABLE
+                            ? context.getString(
+                                    R.string.status_body_mirror_refused_representation)
+                            : context.getString(R.string.status_body_command_failed),
+                    R.attr.fsTextError);
+            return;
+        }
+        expandedBodyId = NO_BODY;
+        renaming = false;
+        mirrorChoosing = false;
+        host.onNativeStateChanged();
+        host.showStatus(context.getString(R.string.status_body_mirrored, label, planeLabel),
                 R.attr.fsTextSecondary);
     }
 
@@ -681,6 +830,7 @@ final class ObjectsSectionView extends LinearLayout {
         }
         expandedBodyId = NO_BODY;
         renaming = false;
+        mirrorChoosing = false;
         host.onNativeStateChanged();
         host.showStatus(context.getString(R.string.status_body_renamed,
                 BodyLabels.of(context, objectId)), R.attr.fsTextSecondary);

@@ -1,98 +1,113 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.68.0
+**Status Version:** 0.69.0
 **Updated:** 2026-09-07
-**Result:** **STAGE 020M — COMPLETE, OWNER RETEST READY, CONSTRUCTION-ONLY.** A
-Construction Body can now be given an **exact overall dimension** on each of its
-own three axes, about a chosen **anchor**, and can be resized by a temporary
-**Relative Scale** multiplier (`UI-OWNER-33B`). Neither introduces new project
-truth: both write the Position and Scale the transform has always had, so **no
-`.forge` field, section or version changed** and every one of the thirty corpus
-fixtures is byte-for-byte unchanged.
+**Result:** **MIRROR-01 — COMPLETE, OWNER LATER READY, CONSTRUCTION-ONLY.** A
+Construction Body can now be **mirrored across one principal world plane** — XY
+reflects Z, XZ reflects Y, YZ reflects X — producing **one new body** as one
+history transaction. The source is not touched: this is a discrete creation act
+and not a live symmetry modifier, so nothing links the two afterwards and
+changing one does not change the other.
 
-**A dimension is DERIVED and is never stored.** For a body's own axis `a` it is
-`unscaledLocalExtent[a] * absoluteScale[a]`, with the extent read from the
-Construction Source's PARAMETERS — a box's width, a cylinder's diameter, a
-capsule's TOTAL height, a plane's exactly-zero thickness — and never measured
-off a generated vertex, and never a world axis-aligned box. So **rotating,
-moving or looking at a body cannot change what it measures**, which is what a
-dimension has to mean if it is a fact about the body rather than about the hull
-around it.
+**The reflection is carried by a PROPER ROTATION, never by a negative scale.**
+Scale in this product is strictly positive by contract, and a negative factor
+would invert winding, flip every normal and every front-face test and make the
+glTF exporter's own `MirroredTransform` refusal a lie. So with
+`Qx = diag(-1, +1, +1)` — the primitive's own local-X symmetry — and `F` the
+world reflection: `p' = F·p`, `R' = F·R·Qx`, `S' = S`, and
+`det(R') = (-1)(+1)(-1) = +1`.
 
-**One solver owns every resize, and it is deliberately a pure function over
-values.** `forgeshape_body_dimensions.{h,cpp}` takes a placement, local bounds,
-an axis, a target and an anchor, and takes no scene, no history, no body, no
-camera and no renderer — precisely so Stage 020D's Directional Scale handles can
-drive the SAME arithmetic from a drag rather than a second copy of it, which is
-what `UI-OWNER-33B` asks for. The anchor correction is
-`T_new = T_old + (R·e_a)·(S_old[a] − S_new[a])·b`, composed through the body's
-own rotation matrix, so it is exact for a body turned in all three axes and
-would not be if it had been written along a world axis. **Centre writes no
-position at all** — that is the OWNER's stated rule, not an inference from
-centred bounds — and `LocalBounds` carries min AND max rather than a half-extent
-so the solver never assumes the primitives it happens to serve today.
+**The determinant is not the proof.** It only says the result is a legal
+orientation. The claim proved is the identity
+`Model_mirror(q) == F · Model_source(Qx·q)`, which holds for ANY local `q`
+because `Qx` and `S` are both diagonal and therefore commute — asserted over
+probe points no primitive generates — and which becomes world-geometry
+equivalence because `Qx` maps each generated local vertex set onto itself. That
+second half was **verified, not assumed**: `MIRROR01-07/08` assert the local
+symmetry and the world equivalence over **six primitives × three planes × ten
+poses**, the poses including a body standing exactly on the plane, one crossing
+it, a non-uniform scale, an extreme valid scale and an angle past a whole turn.
+`Qx` is algebra: it is never persisted, never reaches a `.forge` byte and never
+appears in a history step.
 
-**Refusals are by name and nothing is clamped.** Zero, negative, non-finite, an
-out-of-range axis and a DEGENERATE axis — a plane's zero-thickness local Y — each
-have their own status, and no thickness is fabricated for one. A LOCKED body is
-refused on Stage 018A's own terms, because a resize MOVES one; a HIDDEN body is
-refused because the leaders are read off geometry that is not drawn, and the
-refusal does not touch the visibility the user set. An Imported Mesh, a CAD Body
-and Sculpt are all refused by representation, and the controls are absent for
-each — removing a control is not removing a guard.
+**No `.forge` field, section or version changed.** A mirrored body is an
+ordinary Construction body wearing an ordinary transform, so nothing stores
+which plane made it — and `MIRROR01-12` proves it the only way worth proving: a
+project reached by mirroring encodes **byte-identically** to one whose second
+body was hand-placed at the same numbers, then decodes and reloads through the
+ordinary fail-closed path with a fresh, empty history. All thirty corpus
+fixtures are byte-for-byte unchanged.
 
-**Relative Scale is a temporary multiplier, not a second scale vector.** It
-opens at `(1, 1, 1)` on every activation for the strongest reason available:
-nothing anywhere stores one. It commits as
-`newAbsolute = oldAbsolute ⊙ multiplier` with the position untouched, and never
-reaches a `.forge` byte, a history step, a checkpoint or the fingerprint. It is
-not called World Scale.
+**It is the one object command that is deliberately NOT
+representation-neutral.** An Imported Mesh (`NotConstruction`), a CAD Body
+(`NotCad`) and a body carrying a Frozen Sculpt Mesh (`HasSculptTruth`) are each
+refused BY NAME, for one reason: the reflection is exact only because the body's
+own geometry is symmetric under `Qx`, and none of those three is. The control is
+absent for such a body and the guard below JNI stays regardless. Every refusal
+is asked before an `ObjectId` is minted or an edit opened, so none creates a
+body, records a step or moves the fingerprint.
 
-**One exact dimension edit is one Undo; one Relative Scale Apply is another.**
-Undo restores the Position and the Absolute Scale exactly and Redo reapplies
-both; a commit that finds nothing different records nothing.
+**One Mirror is one Undo.** Undo removes only the reflection and restores the
+previous active body; Redo restores the SAME `ObjectId` with the same placement,
+source, name and flags. The reflection gets a fresh id, the source's own
+parameters, Stage 018A's Duplicate policy for visibility and lock, and a
+`<name> Mirror` name from the ONE `derivedBodyName` collision rule
+`duplicateBodyName` now calls with `"copy"` — so the two commands cannot drift
+into two naming policies.
 
-**The renderer needed no change.** The dimension leaders are a world-space line
-list in the SKETCH overlay's own structure and ranges, fed through the one
-overlay slot the frame loop already fills — the active axis in the `Dimension`
-weight, the other two in `Entities`. The numeric labels are chrome, each centred
-on the projected midpoint of its own real dimension line, exactly as the sketch's
-own dimension label is. Entering Dimensions withdraws the transform gizmo below
-JNI as well as above it, and the mode closes itself the moment what it measures
-stops being measurable.
+**The arithmetic is a pure function over values.**
+`forgeshape_body_mirror.{h,cpp}` takes no scene, no history, no body, no camera
+and no renderer, the same split `forgeshape_body_dimensions` uses;
+`mirrorSceneBody`, beside the other object commands, owns eligibility, identity
+and the transaction. The renderer, the picker, the transform contract, the
+codec and the exporter each needed no change at all.
 
-**Verified:** **twenty-one** `*_SELFTEST_OK` tokens (3273 checks) then
+**The UI is the row command strip, and the strip now wraps.** Five 48 dp targets
+are 256 dp and the Objects panel offers 192 dp of content, so the strip is two
+lines — Rename, Show/Hide, Lock on the first, Duplicate and Mirror on the second
+— which keeps every target at the interactive floor instead of shrinking a drawn
+box. Mirror replaces the strip with a compact `XY` / `XZ` / `YZ` chooser;
+opening it is a CHOICE and not yet an act, and System Back closes it exactly as
+it closes the rename editor.
+
+**Verified:** **twenty-two** `*_SELFTEST_OK` tokens (3335 checks) then
 `FORGESHAPE_NATIVE_VIEWPORT_OK` with zero failures, including the new
-`FORGESHAPE_BODY_DIMENSIONS_SELFTEST_OK (97 checks)` covering `DIM020M-01..16`;
-the same 97 checks green on the standalone NDK runner; the one device journey
-`BodyDimensionsSmokeTest` **OK (1 test)** in 5.8 s; `assembleDebug` and
+`FORGESHAPE_MIRROR_SELFTEST_OK (62 checks)` covering `MIRROR01-01..12`; the same
+62 checks green on the standalone NDK runner; the one device journey
+`MirrorSmokeTest` **OK (1 test)** in 5.2 s; Stage 018A's own `ObjectCommandsTest`
+still **OK (1 test)** over the reflowed strip; `assembleDebug` and
 `assembleRelease` both successful with 0 self-test symbols in the release `.so`;
-all thirty `.forge` fixtures byte-identical; and `verify-device-guards.ps1`
-green over 19 surfaces. Automated verification took
-**≈ 16 minutes**, inside the `TEST-OWNER-03` 20-minute target. **No
-`-FullSharded`**, by policy. Evidence: `artifacts/stage-020m/`.
+and `verify-device-guards.ps1` green over 19 surfaces. Automated verification
+took **≈ 18 minutes**, inside the `TEST-OWNER-03` 20-minute target. **No
+`-FullSharded`**, by policy. Evidence: `artifacts/mirror-01/`.
 
 **Run under `TEST-OWNER-03`, the reduced-testing policy.** `-FullSharded` was
-**NOT run** and no `FULL_SHARDED_SUITE_PASS` is claimed for Stage 020M. This is
+**NOT run** and no `FULL_SHARDED_SUITE_PASS` is claimed for `MIRROR-01`. This is
 focused evidence and cannot stand in for the exhaustive gate.
 
-**What stays pending:** the owner's own retest of Dimensions and Relative Scale
-(see `artifacts/stage-020m/OWNER_LATER_TEST_PACK.md`) — the leaders' visual
-readability, the label placement on real hardware, the three anchor pictograms,
-whose **exact visual design is OWNER LATER and is not approved here**, the feel
-of the ergonomics and the Undo, and the two under a left-handed rail and the
-five palettes. That joins the still-outstanding Delete → Undo → Redo owner
-verdict of `IMPORT-01B` / `UI-OWNER-45`, the combined UI-PREF-R1 retest, and the
-Stage 018A retest. **Known test debt retained:** the `SpatialSketchTest` suite
-isolation defect, bisected during SEL-OUT-R1 and deliberately not fixed here
-either. The deferred audit debt (F-06, F-07, F-09, F-10, F-13, F-14) is
-unchanged.
+**What stays pending:** the owner's own review of Mirror (see
+`artifacts/mirror-01/OWNER_LATER_TEST_PACK.md`) — plane-choice clarity, the
+command's discoverability behind the row overflow, whether the two-line strip
+reads as one strip, visual correctness on rotated and non-uniform bodies, all
+three planes and several primitives by hand, how a hidden or locked source's
+reflection feels, the naming, the Undo/Redo feel, the outline and gizmo
+afterwards, handedness and the five palettes, and the Mirror glyph itself, whose
+**exact visual design is OWNER LATER and is not approved here**.
 
-**Two open questions were NOT answered on the OWNER's behalf.** OQ-01 still
-blocks Stage 020D (Directional Scale) and OQ-02 still blocks `SCULPT-DIM-01`
-(Sculpt dimensions). The shared resize/anchor solver was built now only because
-`UI-OWNER-33B` explicitly requires Dimensions and a future Directional Scale to
-share it; no Directional Scale UI, handle or mode exists.
+**Previous result:** **STAGE 020M — COMPLETE, OWNER RETEST READY,
+CONSTRUCTION-ONLY.** A Construction Body can be given an **exact overall
+dimension** on each of its own three axes about a chosen **anchor**, and resized
+by a temporary **Relative Scale** multiplier (`UI-OWNER-33B`). A dimension is
+DERIVED (`unscaledLocalExtent[a] * absoluteScale[a]`, read from the
+Construction Source's PARAMETERS) and is never stored, so rotating or moving a
+body cannot change what it measures; one pure solver in
+`forgeshape_body_dimensions.{h,cpp}` owns every resize so Stage 020D's
+Directional Scale can drive the same arithmetic; the anchor correction
+`T_new = T_old + (R·e_a)·(S_old[a] − S_new[a])·b` is exact on a body turned in
+all three axes; Centre writes no position; refusals are by name and nothing is
+clamped; and **no `.forge` field, section or version changed**. Twenty-one
+tokens (3273 checks), `BodyDimensionsSmokeTest` **OK (1 test)**, no aggregate.
+Evidence: `artifacts/stage-020m/`.
 
 **Previous result:** **STAGE 018A — COMPLETE, OWNER RETEST READY, WITH A NAMED
 CAD DUPLICATE REFUSAL.** The Objects list gained **Rename**, **Show/Hide**,
@@ -1943,6 +1958,12 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 | **Delete's selection is deterministic**: unchanged when the deleted body was not active, the next row when it was, the previous row when it was last | VERIFIED (UI-OWNER-45) |
 | **The last body is refused by name** (`RefusedLastBody`) and Delete is refused while sculpting; both controls are withdrawn there, both guards stay below JNI, and no replacement primitive is ever invented | VERIFIED (UI-OWNER-45) |
 | **The renderer releases a body that left the snapshot**, so repeated add/delete cannot grow `Renderer::bodies_` without bound; an Undo re-uploads through the path a body already takes when first drawn | VERIFIED (UI-OWNER-45) |
+| **Mirror reflects a Construction Body across one principal world plane** (`MIRROR-01`), producing one new body as exactly one history transaction, with the source untouched in placement, shape and mesh revision | VERIFIED |
+| **The reflection is a PROPER rotation, never a negative scale**: `R' = F·R·Qx`, `det(R') = +1`, and the Absolute Scale is carried across unchanged and strictly positive on every plane and pose | VERIFIED |
+| **The mirrored world geometry IS the reflection of the source's** — asserted as the algebraic identity over arbitrary probe points AND as world point-set equality for all six primitives × three planes × ten poses | VERIFIED |
+| **Mirror refuses an Imported Mesh, a CAD Body and any body with a Frozen Sculpt Mesh, by name**, before an ObjectId is minted; the row control is absent for one and the guard below JNI stays | VERIFIED |
+| **One Mirror is one Undo**: Undo removes only the reflection and restores the previous selection, Redo restores the SAME ObjectId, and an undone mirror's id is never reused | VERIFIED |
+| **Mirror changed no `.forge` field, section or version**: a mirrored project encodes byte-identically to a hand-placed one and reloads through the ordinary decoder | VERIFIED |
 | **The owner's own `1 lowpoly.glb` opens and imports** | **UNVERIFIED** — `OWNER_SAMPLE_RUNTIME_TEST_PENDING` / `OWNER_REAL_FILE_01A_RETEST_PENDING`. The binary is external to this coding environment; every structural feature the coordinator listed for it is covered by the synthetic fixture, but the file itself was never in reach. The owner's manual step |
 | **The preview is not project truth**: no scene `ObjectId`, no body added, no active body changed, no revision published, no history step, no `.forge` byte, no autosave fingerprint move, no checkpoint written; a refused load leaves an existing preview whole; Clear releases everything and restores the workspace | VERIFIED (GLB-IMPORT-R0) |
 | **Preview mode draws no control that cannot succeed**: the trailing host, Undo/Redo, the Objects capsule, the Property Inspector and the mode transitions are all withdrawn, a tap selects nothing and the gizmo is absent — and switching back restores the accepted workspace exactly | VERIFIED (GLB-IMPORT-R0) |
@@ -1952,8 +1973,9 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 
 ## Self-test suite
 
-Twenty debug-only native suites run once from `NativeViewport.start()` —
-never per frame — and total **3176 checks, zero failures**. Stage 018A moved the
+Twenty-two debug-only native suites run once from `NativeViewport.start()` —
+never per frame — and total **3335 checks, zero failures**. `MIRROR-01` added
+the 62-check mirror suite. Stage 018A moved the
 scene suite from 130 to 155 and the project suite from 251 to 256: twenty-five
 `OBJ018A-*` checks over the four object commands and their history, and five
 over the two `SCNE` v2 fixtures. `SEL-OUT-R1` moved
@@ -1974,10 +1996,10 @@ asserted a resting selection tint, which is now zero.
 | `FORGESHAPE_CONE_CAPSULE_SELFTEST_OK` | 163 |
 | `FORGESHAPE_SCULPT_BRUSH_KERNEL_SELFTEST_OK` | 494 |
 | `FORGESHAPE_RENDER_SHADING_SELFTEST_OK` | 412 |
-| `FORGESHAPE_SCENE_SELFTEST_OK` | 79 |
+| `FORGESHAPE_SCENE_SELFTEST_OK` | 155 |
 | `FORGESHAPE_CONSTRUCTION_HISTORY_SELFTEST_OK` | 147 |
 | `FORGESHAPE_GIZMO_SELFTEST_OK` | 167 |
-| `FORGESHAPE_PROJECT_SELFTEST_OK` | 251 |
+| `FORGESHAPE_PROJECT_SELFTEST_OK` | 256 |
 | `FORGESHAPE_RENDER_RECOVERY_SELFTEST_OK` | 24 |
 | `FORGESHAPE_GLTF_EXPORT_SELFTEST_OK` | 93 |
 | `FORGESHAPE_GLTF_IMPORT_SELFTEST_OK` | 189 |
@@ -1985,6 +2007,7 @@ asserted a resting selection tint, which is now zero.
 | `FORGESHAPE_CAD_A3_SELFTEST_OK` | 66 |
 | `FORGESHAPE_SKETCH_UX_SELFTEST_OK` | 52 |
 | `FORGESHAPE_BODY_DIMENSIONS_SELFTEST_OK` | 97 |
+| `FORGESHAPE_MIRROR_SELFTEST_OK` | 62 |
 
 The body-dimension suite (`forgeshape_body_dimensions_selftest.cpp`,
 `DIM020M-01..16`) builds its own scene and history, and covers the derived
@@ -1996,6 +2019,21 @@ identity and reset, and the byte-identical `.forge` proof. It states its
 tolerances: 1e-12 for the pure-double scale and dimension arithmetic, 1e-5 m for
 a world point recomposed through `rotationMatrixFromEuler`, whose matrix is
 float by renderer contract.
+
+The mirror suite (`forgeshape_mirror_selftest.cpp`, `MIRROR01-01..12`) builds
+its own scene and history, and covers each plane's exact axis reflection
+(including `+0.0` for a body standing on the plane), `det(R') = +1` and an
+unchanged positive Absolute Scale over three planes and ten poses, the algebraic
+identity `Model_mirror(q) = F·Model_source(Qx·q)` over probe points no primitive
+generates, the local `Qx` symmetry and the world-geometry reflection equivalence
+for **all six** Construction primitives on every plane and pose, the fresh
+`ObjectId` with an untouched source (placement, shape and mesh revision), the
+inherited visibility and lock and the derived name, one-step Undo/Redo with the
+same restored id, every named refusal, and the byte-identical `.forge` proof. It
+states its tolerance: 1e-4 relative for a world point recomposed through
+`rotationMatrixFromEuler`, whose matrix is float by renderer contract, while the
+position reflection and the scale carry are asserted EXACTLY because they are
+sign flips and copies.
 
 The CAD suite (`forgeshape_cad_selftest.cpp`, `CADR0-*`) builds its own sketches,
 scenes, histories and camera, drives the sketch session through real
@@ -2242,6 +2280,7 @@ device. `README.md` documents how to read them.
 | `ObjectsDeleteTest` | `IMP01B-15..24`, `E2E-IMP01B-08..11`: Delete on a device. The row's Delete is a SIBLING of the label with its own semantic id, its ObjectId tag, a content description naming the body, and 48 dp in both dimensions with the label still reachable beside it (`-23`); pressing it removes the body, records exactly one history step, leaves the selection on a body that still exists and takes the row with it (`-15`, `E2E-08`); Undo restores the project byte-for-byte and the row with it, Redo removes both again (`-18`, `-19`, `E2E-09`); an imported body carrying retained sculpt work deletes and returns whole, with no orphan `IMPT` and no orphan `SCUL` surviving (`-16`, `-17`); deleting the ACTIVE body selects the next row and the chrome follows, leaving no stale *Resume Sculpt* from the deleted body, and deleting the last row falls back to the one before it while deleting an inactive body moves nothing (`-20`, `E2E-10`); the only body's row draws no Delete and the domain refuses it as `DELETE_REFUSED_LAST_BODY` with no project byte and no history step moving, and no replacement body is invented (`-21`); Delete is withdrawn on every row while sculpting, refused as `DELETE_REFUSED_IN_SCULPT`, and back the moment Sculpt is left (`-21`); a deleted body cannot be picked and is absent from the saved document, the checkpoint and the exported GLB, with Undo restoring it to all of them and Redo omitting it again (`-22`, `E2E-11`); and the list still has no grouping, nesting, reorder or multi-select (`-24`, rewritten at Stage 018A, which implemented rename, hide, lock and duplicate behind the row overflow) | 8 |
 | `ObjectCommandsTest` | `E2E-OBJ018A-01`: the one device journey for the four object commands. A two-body project, driven through the real controls found by semantic id and ObjectId tag: the row overflow opens the inline command strip; Rename opens the inline field, commits, reaches the domain as one history step and is read back by the row label; Hide removes the body and leaves the row, Show brings it back; the transform gizmo is confirmed offered, then Lock withdraws it AND a transform write reached directly below JNI returns `APPLY_REJECTED_LOCKED`, and Unlock restores it; Duplicate adds exactly one body as one history step with a NEW ObjectId, makes the copy active, names it deterministically and gives it a row of its own. Every control asserts its 48 dp hit area and a content description naming the act and the body | 1 |
 | `BodyDimensionsSmokeTest` | `E2E-DIM020M-01`: the one device journey for Stage 020M. Transform offers Dimensions and Relative scale, both at the 48 dp floor and both with a content description; the transform gizmo is up before, and is WITHDRAWN once Dimensions opens; the anchor selector arrives with the mode and opens on centre; typing an exact X dimension through the viewport label sets it exactly, moves no position and is one history step; switching to the negative-side anchor and typing again sets it exactly, DOES move the position, and is one more step; opening Relative scale closes the mode and shows 1/1/1; applying a x2 multiplier doubles the stored Absolute Scale in one step; and reopening shows 1/1/1 again. Every control is reached by semantic id, never by a screen coordinate | 1 |
+| `MirrorSmokeTest` | `E2E-MIRROR01-01`: the one device journey for `MIRROR-01`. A body is placed at `(2.5, −1.5, 0.75)` turned `31/−47.5/118.25` with a non-uniform scale; the row overflow offers Mirror; pressing it opens the compact plane chooser, whose three chips each meet the 48 dp floor and each name the axis they reflect — and opening it creates nothing and records no step; choosing YZ adds exactly one body in exactly one history step, with a fresh ObjectId, the SOURCE's nine values bit-identical, world X negated with Y and Z untouched, the Absolute Scale carried across and strictly positive, a new row, and the chooser closed; Undo removes only the reflection and restores the previous selection; Redo restores the SAME ObjectId, placement and selection. Every control is reached by semantic id, never by a screen coordinate | 1 |
 | `ProjectTransferTest` | `FSR1B-10..13`, `FSR1B-18`: Save Copy writes canonical bytes the decoder accepts and TRUNCATES a longer existing document rather than overwriting its front; Open File applies a valid document and starts a fresh history; a damaged one, an unreadable one and a cancel each change nothing below JNI; a cancelled copy cannot be written by a later pick; neither direction touches the internal manual slot; a project opened from a distinctively named file re-encodes to the ORIGINAL bytes exactly, and carries no filename, scheme, authority or path; the two native project entry points take bytes and structurally cannot take a `Uri`; and the project surface offers no GLB, glTF, OBJ, FBX or import/export entry | 13 |
 | `DiagnosticsAndRendererLossTest` | `FSR1B-14..17`, `E2ER1B-07/08`: a report is written locally, is bounded, names the build and the device and never a project dimension, `.forge` magic or vertex data, and stays bounded after a flood; ForgeShape requests no INTERNET permission and the platform agrees it holds none, so nothing can be sent anywhere; sharing is a document-creation intent that writes where the user chose; an injected device loss leaves every project value and the encoded document bit-identical and either rebuilds the device or reports restart-required with the work checkpointed; the project stays editable and publishing after a rebuild; and all six project controls plus both recovery answers clear 48 x 48 dp without moving the accepted R2 right host | 9 |
 | `DiagnosticLogTest` (JVM) | `FSR1B-14` core: the ring never grows past its bound, drops the oldest and says how many, caps its rendered output, truncates a detail far below anything worth hiding, and cannot be made to forge a second record from one record's contents | 11 |
@@ -2352,7 +2391,28 @@ precondition. Runtime evidence separately shows the real keyboard.
 
 ## Current evidence summary
 
-Latest run (**UI-PREF-R1**), on the isolated `ForgeShape_Stage006` /
+Latest run (**MIRROR-01**), on the isolated `ForgeShape_Stage006` /
+`emulator-5580` AVD, confirmed by `adb -s emulator-5580 emu avd name` before
+anything was installed:
+[`artifacts/mirror-01/`](artifacts/mirror-01/) — `INDEX.md`,
+`FOCUSED_RESULTS.md` and `OWNER_LATER_TEST_PACK.md`. Twenty-two
+`*_SELFTEST_OK` tokens (3335 checks) then `FORGESHAPE_NATIVE_VIEWPORT_OK` with
+zero failures, on a 64 MiB ring buffer confirmed by `logcat -g`; the same 62
+mirror checks green on the standalone NDK runner; `MirrorSmokeTest` **OK (1
+test)**; `ObjectCommandsTest` still **OK (1 test)** over the reflowed strip;
+`assembleDebug` and `assembleRelease` successful with 0 self-test symbols in the
+release `.so`; `verify-device-guards.ps1` green over 19 surfaces. **Run under
+`TEST-OWNER-03`: no `-FullSharded`, no aggregate, no screenshot matrix.** A
+second, foreign target (`emulator-5560`, `CarPassport_API_36`) was attached
+throughout; every `adb`, Gradle and runner invocation was explicitly scoped to
+`emulator-5580`, and `emulator-5554` was never contacted.
+
+Previous run (**Stage 020M**): [`artifacts/stage-020m/`](artifacts/stage-020m/)
+— `INDEX.md`, `FOCUSED_RESULTS.md`, `OWNER_LATER_TEST_PACK.md`. Twenty-one
+tokens (3273 checks), `BodyDimensionsSmokeTest` **OK (1 test)**, no aggregate,
+under the same reduced-testing policy.
+
+Previous run (**UI-PREF-R1**), on the isolated `ForgeShape_Stage006` /
 `emulator-5580` AVD, on the final runtime/test tree:
 [`artifacts/ui-pref-r1/`](artifacts/ui-pref-r1/) — `INDEX.md`,
 `PREFERENCES.md`, `HANDEDNESS.md`, `GIZMO_APPEARANCE.md`, `CONTRAST.md`,
@@ -3378,6 +3438,8 @@ regenerated per stage.
 | `app/src/main/cpp/forgeshape_body_dimensions.{h,cpp}` | Stage 020M / `UI-OWNER-33B`: the ONE resize/anchor solver, deliberately a pure function over values so Stage 020D can reuse it; the exact local bounds of the six Construction primitives read from their PARAMETERS; the derived dimension; Relative Scale; and the two product acts over the scene and the history, each one transaction |
 | `app/src/main/cpp/forgeshape_body_dimension_overlay.{h,cpp}` | Stage 020M: the dimension leaders as a world-space line list in the SKETCH overlay's own structure and ranges — so the renderer needed no change — plus the session-only Dimensions mode, active axis and anchor that no Java flag mirrors |
 | `app/src/main/cpp/forgeshape_body_dimensions_selftest.{h,cpp}` | `DIM020M-01..16`, over its own scene and history |
+| `app/src/main/cpp/forgeshape_body_mirror.{h,cpp}` | `MIRROR-01`: the ONE mirror arithmetic, a pure function over values (no scene, no history, no body, no camera, no renderer), plus `mirrorEligibilityOf`. `R' = F·R·Qx` with `det = +1` and the positive scale untouched, so no transform, codec, renderer or exporter contract moved |
+| `app/src/main/cpp/forgeshape_mirror_selftest.{h,cpp}` | `MIRROR01-01..12`, over its own scene and history |
 | `app/src/main/java/.../BodyDimensionLabelsView.java` | Stage 020M: the three overall-dimension labels over the viewport, each anchored to the projected midpoint of its own real dimension line, with one compact editor at a time. Holds no dimension |
 | `app/src/main/java/.../RelativeScaleEditorView.java` | Stage 020M: the Relative Scale precision-surface body — three multipliers reset to 1 on every open, one Apply. The only thing in the product that ever holds a multiplier |
 | `app/src/main/cpp/forgeshape_glb_import_fixture.{h,cpp}` | GLB-IMPORT-R1: the deterministic Nomad-like external-GLB compatibility fixture. Every coordinate an integer over a power of two, so its bytes are identical on every platform. A debug test seam; no product path calls it, and it is not any owner asset |
@@ -3441,34 +3503,36 @@ was added and no marketing claim is made.
 ## Next Stage
 
 **Exactly one next step: return this status to the ForgeShape coordinator for a
-combined OWNER review.** Stage 020M is closed on the technical side: a body's
-dimensions are derived from its own local bounds and its Absolute Scale and
-cannot be moved by a rotation, one solver owns every resize and is shaped so
-Stage 020D can reuse it unchanged, the three anchors are exact on a turned body
-and on non-centred bounds, Relative Scale opens at 1/1/1 because nothing stores
-one, both acts are one exact Undo each, and the `.forge` document is untouched —
-proved byte-for-byte, not asserted. What no emulator settles is whether the
-leaders read at a real zoom, where the three labels land on real hardware,
-whether the anchor pictograms say which side is held, and how the whole thing
-feels under a thumb — that is the OWNER's, and **no aesthetic approval is
-claimed here; the exact anchor icon design is explicitly OWNER LATER**. The full
-list is `artifacts/stage-020m/OWNER_LATER_TEST_PACK.md`.
+combined OWNER review.** `MIRROR-01` is closed on the technical side: a
+Construction Body reflects across XY, XZ or YZ into one new body as one
+transaction; the reflection is carried by a proper rotation with the positive
+scale untouched, so the transform contract, the renderer, the picker, the codec
+and the exporter each needed no change; the world-geometry equivalence is proved
+over six primitives, three planes and ten poses rather than argued from a
+determinant; every ineligible representation is refused by name before an id is
+minted; Undo and Redo are exact; and the `.forge` document is untouched — proved
+byte-for-byte, not asserted. What no emulator settles is whether the three plane
+names read the way a user thinks about the act, whether Mirror is findable
+behind the row overflow, whether the two-line strip reads as one strip, how a
+reflection looks beside a rotated non-uniform original through a real camera,
+and whether the glyph says "reflect" — that is the OWNER's, and **no aesthetic
+approval is claimed here; the exact Mirror icon design is explicitly OWNER
+LATER**. The full list is `artifacts/mirror-01/OWNER_LATER_TEST_PACK.md`.
 
 **Two open questions stay open, and neither was answered here.** **OQ-01** still
-blocks Stage 020D (Directional Scale): no handle, mode or UI for it exists, and
-the shared solver was built now only because `UI-OWNER-33B` explicitly requires
-Dimensions and a future Directional Scale to share one. **OQ-02** still blocks
-`SCULPT-DIM-01` (Sculpt dimensions), because history ownership of a body-level
-dimension edit made while Sculpt is active is unresolved; Dimensions is refused
-in Sculpt below JNI and its controls are absent there. Neither is decided on the
-OWNER's behalf.
+blocks Stage 020D (Directional Scale): no handle, mode or UI for it exists.
+**OQ-02** still blocks `SCULPT-DIM-01` (Sculpt dimensions), because history
+ownership of a body-level dimension edit made while Sculpt is active is
+unresolved. Neither is decided on the OWNER's behalf.
 
-It joins the still-pending **Delete → Undo → Redo owner verdict** of
-`IMPORT-01B` / `UI-OWNER-45`, the **Stage 018A** retest of Rename, Show/Hide,
-Lock/Unlock and Duplicate, the combined OWNER retest of UI-PREF-R1 (whose
-aggregate the OWNER waived), and the SEL-OUT-R1 outline retest (whose further
-testing the OWNER cancelled). **Do not start Stage 020D, MIRROR-01, Stage 018B
-or 018C.**
+It joins the still-pending **Stage 020M** retest of Dimensions and Relative
+Scale, the **Delete → Undo → Redo owner verdict** of `IMPORT-01B` /
+`UI-OWNER-45`, the **Stage 018A** retest of Rename, Show/Hide, Lock/Unlock and
+Duplicate, the combined OWNER retest of UI-PREF-R1 (whose aggregate the OWNER
+waived), and the SEL-OUT-R1 outline retest (whose further testing the OWNER
+cancelled). **Do not start Stage 020D, Stage 018B or 018C, and do not extend
+Mirror to Imported Mesh, CAD, Sculpt, an arbitrary plane or a live symmetry
+modifier.**
 
 **Two items belong to the coordinator, not to this stage.** First, the
 `SpatialSketchTest` suite-isolation defect is still unfixed and is retained as
@@ -3477,228 +3541,3 @@ but it will block the next `-FullSharded` run and belongs in the next
 test-hardening batch. Second, **no aggregate has been run since SEL-OUT-R1**, so
 whenever the exhaustive gate is next wanted, it needs a fresh full run on a
 stable tree rather than a resume.
-
-**On Stage 018A, unchanged by this stage:** the four object commands are project
-truth, each is one history transaction, hidden is enforced in the one list the
-renderer and the picker share, lock is two named guards rather than a missing
-control, Duplicate clones the source's truth without its sculpt Undo stack, and
-the `SCNE` v2 bump leaves every older file byte-identical. What no emulator
-settles is whether the row overflow is discoverable, whether a
-locked-but-still-selectable object reads as locked rather than as broken, and
-whether the copy naming and placement are right. The full list is
-`artifacts/stage-018a/OWNER_LATER_TEST_PACK.md`.
-
-**On SEL-OUT-R1, closed by waiver:** the outline is a true renderer-derived
-silhouette, depth-correct, representation-neutral, costing no rebuild and no
-upload, with its control in the View group on the grid's terms. Its aggregate
-was refused by a pre-existing shard-5 failure, the OWNER waived the gate and
-cancelled further SEL-OUT testing, and the candidate was committed as measured.
-
-TEST-RUNTIME-R1 is closed; the runner is the supported way to run, resume and
-budget an aggregate, and this stage is the first feature stage to exercise its
-real aggregate path. **The runner behaved correctly**: it discovered 44 classes
-and 560 tests with an exactly-once union, fingerprinted the installed bytes,
-stopped on the failing shard rather than restarting, classified it
-`PRODUCT_TEST_FAILURE` on attributable assertion evidence, printed the rerun and
-resume commands, and refused `FULL_SHARDED_SUITE_PASS`. What it surfaced is a
-real, pre-existing suite-isolation defect in `SpatialSketchTest` — see
-`artifacts/sel-out-r1/PREEXISTING_SHARD5_FAILURE.md`. **A second open item for
-the coordinator:** either a small `CAD-A3` follow-up that isolates that suite's
-scene the way `SEL-OUT-R1` isolated its own tap test, or an explicit waiver of
-the aggregate gate for a failure proven to pre-date the work. No fix was made
-here, because repairing an OWNER-ACCEPTED stage's evidence suite is scope this
-stage was not given.
-
-**On UI-PREF-R1, unchanged by this stage:** UI-PREF-R1 is closed under an OWNER waiver of
-the aggregate gate (`PASS-UI-PREF-R1-OWNER-WAIVER-CLOSEOUT`): the Settings hub,
-the persisted preferences, the left-handed rail, the five palettes and the
-gizmo's visual size and thickness work through the real chrome and survive
-recreation, resume and a fresh process, with the project untouched by every
-one of them — and what no emulator settles is whether the two light papers,
-the mirrored rail under a real left thumb and the smallest and boldest gizmo
-under a real stylus read as the product they should. That is the OWNER's
-retest, combined with the still-pending **Delete → Undo → Redo owner verdict**
-of `IMPORT-01B` / `UI-OWNER-45`, whose files this stage did not touch
-(`artifacts/ui-pref-r1/DELETE_HOLD.md`); the pre-stage owner-verdict prompt is
-tied to `565d400` and must be regenerated on the new HEAD. No verdict for
-either is invented here. The OWNER's real-device CAD-A3-C2 / SKETCH-UX-R1
-review is CLOSED with PASS (2026-09-05), so nothing about the start page, the
-first-sketch flow, the navigator, the dimension or the curves is waiting on an
-owner. Not this stage and not started: a gizmo handle style (deferred by the
-renderer contract), DIRECTIONAL scale, custom workspace layouts, cloud/account
-and per-project preferences. Body Dimensions and RELATIVE scale are no longer on
-that list: Stage 020M implemented both, Construction-only, and what it
-deliberately did NOT add is Directional Scale (still blocked by OQ-01), Sculpt
-dimensions (still blocked by OQ-02), Imported Mesh and CAD Body dimensions, CAD
-feature dimensions, multi-select, snapping and Mirror. Selection Outline is not
-on it either: `SEL-OUT-R1` implemented it, and what it deliberately did NOT add
-is an x-ray or hidden-object reveal, multi-select, a second selection mode, or
-any user setting for the band. POST-AUDIT-HARDEN-R1 closed F-08, F-16, F-11, F-15
-and F-18 and nothing else; the remaining P2/P3 debt (F-06, F-07, F-09, F-10,
-F-13, F-14) is recorded above for the coordinator to schedule. No
-product stage may begin here: booleans, fillets, chamfers, a constraint solver,
-custom construction planes, curved-face and imported/sculpted-surface sketches,
-projected edges, a feature-tree redesign, an independently movable dependent
-and the face-first contextual shortcut are **not started**; CAD → Sculpt is
-**not started** (refused by name and recorded as the three decisions it needs);
-`BRIDGE-R1` remains **future**; Stage 018A still owns rename, visibility, lock,
-duplicate and grouping — Delete is the ONLY object command that exists — and
-Stage 033's full exporter, OBJ and FBX are **not started**. None may be begun
-without the coordinator opening it. GATE-E2E remains the owner's and is not
-opened here.
-
-CAD-A3-C2 / SKETCH-UX-R1 is closed on both sides. `Launch →
-full-screen Home → New Project → CAD → an immediate flat XY sketch → choose a
-plane and a view from the navigator → draw a Line, an Arc, a Spline → select a
-Line, read its dimension, type an exact length → Extrude = the first body and
-the project → Edit Sketch → Finish = one Undo` works through the real chrome
-and real MotionEvents, with the later face-picking New Sketch, New Sculpt and
-the unsaved-changes guard unchanged beside it — and the OWNER has confirmed
-on a real device that the start page, the navigator and the dimension read as
-the product they should (`OWNER_CAD_A3_C2_VERDICT = PASS`, 2026-09-05). That
-verdict covers the flow as shipped at `5cf981a9`; it is not a claim about any
-capability the pass did not implement.
-
-CAD-A3 + APP-H1 is closed on the technical side. `Home → New Project → CAD →
-tap a plane in the viewport → sketch → Extrude = the first body and the
-project → New Sketch → tap a face → Extrude = a face-supported dependent → Save
-→ Home → Open File` works through the real chrome and real MotionEvents, with
-New Sculpt, the unsaved-changes guard and a one-step Back beside it; the CADB
-v2 corpus is independently encoded and its lineage token is a stated format
-field. What the owner's retest is for is what no emulator settles: whether
-choosing a plane, a face and a depth with a real finger or stylus — and a real
-stylus hover, which only hardware can show — reads as the product it should
-be.
-
-CAD-R0-A1A2 is closed on the technical side. `New Sketch → plane → Rectangle /
-Circle / Line / Polyline → Finish Sketch → depth → Extrude` works through the
-real chrome and real MotionEvents; a CAD Body is a third representation whose
-truth is its sketch and its extrusion; its sizes and depth are editable later
-as one Undo each with the placement untouched; the `CADB` branch survives Save,
-Open, Save Copy, autosave, recovery and export; a cancelled sketch changes
-nothing; the profile engine refuses by name; and the twelve older corpus
-fixtures are byte-for-byte unchanged beside four new ones pinned by two
-encoders. What the owner's retest is for is what no emulator settles: whether
-drawing a profile with a real finger or stylus on real hardware, snapping to a
-corner, typing a depth and taking the whole thing back reads as the product it
-should be. The two standing `OWNER_REAL_FILE_*_RETEST_PENDING` items are
-unchanged by this stage.
-
-SCULPT-UNDO-R0 is closed on the technical side. `Start/Resume Sculpt → stroke A →
-stroke B → Undo B → Undo A → Redo A → Redo B` works through the real controls for
-both a Construction-derived and an Imported-Mesh-derived sculpt; one completed
-stroke is one entry however many events it took; the project history is untouched
-and still refuses its own entry points in Sculpt; source meshes, placements and
-`ObjectId`s are immutable throughout; both memory caps are enforced with
-deterministic oldest-first eviction; and nothing reaches a `.forge` byte, so all
-seven corpus digests are unchanged.
-
-What the owner's retest is for is the part no emulator can settle: whether taking
-a stroke back on real hardware, with a real finger and a real file, feels like
-the product it should be. The named gaps it may also close are the two standing
-`OWNER_REAL_FILE_*_RETEST_PENDING` items, which this stage did not change.
-
-IMPORT-01B is closed on the technical side. An imported body enters the ordinary
-reversible Sculpt workflow, a real stroke moves sculpt truth while the imported
-arrays stay bit-identical, Back to Imported Mesh and Resume Sculpt both work,
-`IMPT`+`SCUL` survives Save, autosave, recovery and reload, and export follows
-the same effective-state rule every sculpted body already followed. The Objects
-list deletes a real `SceneObject` — of either representation, with or without
-retained sculpt work — as exactly one Undo, with a deterministic replacement
-selection and a named refusal for the last body.
-
-The two things it cannot claim are the owner's own binaries. `E2E-IMP01B-12` is
-`OWNER_REAL_FILE_01B_RETEST_PENDING`: the owner's `1 lowpoly.glb` is not in this
-environment, no user folder was searched for it, and closing it is a tap on
-**Import GLB…** followed by **Start Sculpting**. `E2E-IMP01A-12` remains
-`OWNER_REAL_FILE_01A_RETEST_PENDING` on the same terms.
-
-GLB-IMPORT-R1 is closed. The preview reads the class of static external file the
-owner's character belongs to, proved against the same synthetic fixture. It is
-now a diagnostic with no user-facing control, and the R0/R1 suites are what
-drive it.
-
-GLB-IMPORT-R0 is closed. Its finding is the useful one: the file and the scene
-describe the same world geometry to **exactly 0.0 m**, so the discrepancy the
-owner is chasing is not a ForgeShape exporter or parser defect. What it cannot
-say is what the discrepancy IS instead, because no external tool was run.
-
-E2E-R1C is closed, with `ARCH-OWNER-07` applied. Export ships as an early
-vertical slice: one `.glb`, whole scene, metres, +Y up, zero conversion, each
-body's rotation and scale baked into its geometry with only its translation on
-the node, per-body representation honoured, and a read that changes nothing. The
-native suites (17, 2528 checks), the JVM suite, `GlbExportTest`,
-`GlbImportPreviewTest`, the E2E-R1A/R1B regression suites and the authoritative
-exhaustive-sharded instrumented aggregate are all green, and both supported ABIs
-build debug and release.
-
-**The one thing GATE-E2E still needs is the external-importer check**, which was
-deliberately not performed: no Godot, Blender or `gltf-validator` run is claimed
-anywhere. `artifacts/e2er1c/GATE_E2E_GODOT_CHECK.md` holds the two **corrected**
-sentinel `.glb` files, the new "rotation 0,0,0 and scale 1,1,1 on every object"
-check that `ARCH-OWNER-07` adds, what to look for in each file, and an empty
-verdict for the owner. The pre-bake files it first offered are recorded there as
-superseded history with their own digests, so neither pair can be mistaken for
-the other.
-
-A **UI moratorium remains active**, with one owner-directed exception:
-CAD-R0-A1A2's brief named the sketch surfaces it needed, and they were added
-inside the accepted structure rather than beside it — New Sketch and the plane
-chooser as a second group INSIDE the creation palette, the sketch tools (five at
-R0, seven since `SKETCH-UX-R1`) as entries on the SAME Tool Rail, Cancel Sketch and Back to Sketch as a vertical
-group inside the SAME trailing host (on the transform selector's terms),
-*Finish Sketch* and *Extrude* as the one toolbar transition per sketch state
-with no abbreviated form, and two more bodies for the SAME precision surface.
-No region was added and the resting workspace is unchanged when no sketch is
-open. The corrected edge-host arrangement is the
-accepted baseline; E2E-R1C changed one existing control from reserved to working,
-and GLB-IMPORT-R0 added one group of three rows to the existing Project surface
-and moved nothing else. GLB-IMPORT-R1 changed only the WORDING of those three
-rows. IMPORT-01A **removed** two of them — the preview's Show and Clear — leaving
-the group as *Import a mesh* with the one action *Import GLB…*, and withdraws the
-Tool Rail's *Shape* entry and the toolbar's *Start Sculpting* while an Imported
-Mesh is selected. Nothing was added anywhere and the accepted R2 right host does
-not move in any of them. The one carried visual item is Sculpt Radius/Strength,
-which stays deferred P2.
-
-`CAD-R0-DATA` remains a COORDINATOR-owned decision/research gate that Claude Code
-does not execute.
-
-The evidence stands where it was made: `artifacts/uilayoutr2-correction/` holds
-the 66-row matrix, 36 raw screenshots, 36 mechanical overlays and the derived
-analysis, and `artifacts/uilayoutr2-owner-review/` holds the six representative
-pairs the coordinator reviewed. Both are historical and are not to be rewritten.
-
-The one feature the repo still records as a candidate is **Selection Outline** —
-the expensive half of selection feedback, needing either a second geometry pass
-or a screen-space edge filter. It is a *candidate awaiting owner decision*, not
-an approved stage: today's whole-object tint is the shipped behaviour, and the
-readability enhancement was deferred because both candidates start the
-post-processing framework the shading stage was told not to build.
-
-**Still out** and unchanged: snap-to-grid for the transform handles (the sketch
-grid and its snapping arrived with CAD-R0-A1A2 and are a different contract from
-the world reference grid, which is still not a snap target); a View Cube, camera
-focus or named views; blur or glass of any kind; a post-processing framework; an
-automatic system theme; hierarchy, and every object command but Delete — rename,
-visibility, lock, duplicate, grouping, reorder and multi-select; every CAD
-feature beyond sketch-and-extrude with curves and face support — holes,
-booleans, fillets, chamfers, shells, revolves, sweeps, lofts, patterns, mirrors,
-offsets, trims, constraints, custom construction planes, curved-face and
-imported-surface sketches, rotated rectangles, editing a polygon profile's or a
-spline's points in place, and CAD → Sculpt; Mirror, Subdivide and Remesh; materials,
-textures, UVs, animation and rigging in either direction; the one-way
-Construction-to-Sculpt project derivation (`BRIDGE-R1`); and pressure-driven
-sculpting.
-
-Persistence is no longer on that list, in the shape E2E-R1A and E2E-R1B shipped:
-one app-private manual slot, one recovery checkpoint, and transfer of that same
-document through Scoped Storage. Save As, project naming, a recent list,
-thumbnails, a project browser, a version history, cloud and accounts are all
-still out.
-
-Export is no longer on it either, in the shape E2E-R1C shipped: one `.glb`, one
-direction, one default material. GLB import is no longer on it in the shape
-IMPORT-01A shipped: the bounded STATIC subset, into non-parametric objects. UVs,
-textures, chosen materials, hierarchy, merge and unit options, compression, OBJ
-and FBX are all still out in both directions.

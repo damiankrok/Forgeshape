@@ -590,6 +590,20 @@
     <string name="status_body_duplicated">Duplicated %1$s — Undo removes the copy.</string>
     <string name="status_body_duplicate_refused_face">%1$s sits on another object’s face, so a copy could never be moved off it. Nothing was created.</string>
     <string name="status_body_command_failed">Could not do that to the object. Nothing was changed.</string>
+
+    <!-- Mirror (`MIRROR-01`). The plane labels use the axis vocabulary the rest
+         of the product already speaks (XY, XZ, YZ are the workplane names), and
+         each carries a content description naming the world axis it reflects,
+         because two letters read aloud say nothing on their own. -->
+    <string name="mirror_body">Mirror %1$s</string>
+    <string name="mirror_plane_xy">XY</string>
+    <string name="mirror_plane_xz">XZ</string>
+    <string name="mirror_plane_yz">YZ</string>
+    <string name="mirror_plane_xy_description">Mirror across the XY plane, reflecting Z</string>
+    <string name="mirror_plane_xz_description">Mirror across the XZ plane, reflecting Y</string>
+    <string name="mirror_plane_yz_description">Mirror across the YZ plane, reflecting X</string>
+    <string name="status_body_mirrored">Mirrored %1$s across %2$s — Undo removes the new object.</string>
+    <string name="status_body_mirror_refused_representation">Only a shape object with no sculpting can be mirrored. Nothing was created.</string>
     <string name="apply_shape">Apply Shape</string>
     <string name="apply_transform">Apply Transform</string>
     <string name="label_width">Width</string>
