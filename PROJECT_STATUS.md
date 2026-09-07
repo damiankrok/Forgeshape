@@ -1,8 +1,23 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.74.0
-**Updated:** 2026-09-07
-**Result:** **`CAD-EXT-R1` — TECHNICALLY COMPLETE, OWNER LATER READY.** An
+**Status Version:** 0.74.1
+**Updated:** 2026-09-08
+**Result:** **`CAD-EXT-R1` — TECHNICALLY COMPLETE, OWNER LATER READY**, and
+**`UI-3D-STATE-AUDIT-R1` — COMPLETE WITH FINDINGS** beside it (2026-09-08). The
+audit changed **no product code**: it added one instrumented suite, its ledgers
+and its evidence, and it found **seven** presentation defects in three
+root-cause families, none of them P0 and none of them touching project truth.
+The OWNER's reported concern is CONFIRMED and named: every world- and
+feature-anchored viewport surface stands one system-bar inset (48.8 dp) below
+the anchor native reports, because the placing views are children of the
+inset-padded `overlayRoot` while the anchors are in viewport pixels; and the
+Construction dimension labels then go stale in four ways, because
+world-anchored chrome has no refresh driver tied to the frame. The CAD canvas
+surfaces are the exception and are correct, because `onViewportGestureMoved`
+refreshes them on every pointer sample. Full record in
+`artifacts/ui-3d-state-audit-r1/`; see *Known Issues* for the seven findings.
+
+An
 extrusion now reaches a stated distance on **each side** of its sketch plane.
 The canvas cluster `CAD-UX-S1` put at the geometry gained an **extent
 selector** — **One Side**, **Symmetric**, **Two Sides** — and, in Two Sides, a
@@ -1520,7 +1535,11 @@ or rig crosses in either direction. There is no OBJ and no FBX.
 `ARCHITECTURE.md` owns the ownership map and every invariant;
 `PRODUCT.md` owns the user-visible description; `README.md` owns build/run/verify.
 
-**Blockers: none.** Every native, JVM, instrumented and guard suite is green,
+**Blockers: none** — but not "no known defects": `UI-3D-STATE-AUDIT-R1` recorded
+seven presentation findings on 2026-09-08, four of them P1, all in *Known
+Issues* and none fixed. They block nothing, because nothing depends on them and
+no project truth is involved; they are the coordinator's to group.
+Every native, JVM, instrumented and guard suite is green,
 including the authoritative exhaustive-sharded instrumented aggregate. The
 measured anchor comparison against the OWNER-accepted `UI-SPEC-R0 Revision 1`
 still passes 66/66 and the accepted right host did not move for E2E-R1A. The expected side of every anchor comparison came
@@ -2676,6 +2695,7 @@ device. `README.md` documents how to read them.
 | `ObjectCommandsTest` | `E2E-OBJ018A-01`: the one device journey for the four object commands. A two-body project, driven through the real controls found by semantic id and ObjectId tag: the row overflow opens the inline command strip; Rename opens the inline field, commits, reaches the domain as one history step and is read back by the row label; Hide removes the body and leaves the row, Show brings it back; the transform gizmo is confirmed offered, then Lock withdraws it AND a transform write reached directly below JNI returns `APPLY_REJECTED_LOCKED`, and Unlock restores it; Duplicate adds exactly one body as one history step with a NEW ObjectId, makes the copy active, names it deterministically and gives it a row of its own. Every control asserts its 48 dp hit area and a content description naming the act and the body | 1 |
 | `BodyDimensionsSmokeTest` | `E2E-DIM020M-01`: the one device journey for Stage 020M. Transform offers Dimensions and Relative scale, both at the 48 dp floor and both with a content description; the transform gizmo is up before, and is WITHDRAWN once Dimensions opens; the anchor selector arrives with the mode and opens on centre; typing an exact X dimension through the viewport label sets it exactly, moves no position and is one history step; switching to the negative-side anchor and typing again sets it exactly, DOES move the position, and is one more step; opening Relative scale closes the mode and shows 1/1/1; applying a x2 multiplier doubles the stored Absolute Scale in one step; and reopening shows 1/1/1 again. Every control is reached by semantic id, never by a screen coordinate | 1 |
 | `MirrorSmokeTest` | `E2E-MIRROR01-01`: the one device journey for `MIRROR-01`. A body is placed at `(2.5, −1.5, 0.75)` turned `31/−47.5/118.25` with a non-uniform scale; the row overflow offers Mirror; pressing it opens the compact plane chooser, whose three chips each meet the 48 dp floor and each name the axis they reflect — and opening it creates nothing and records no step; choosing YZ adds exactly one body in exactly one history step, with a fresh ObjectId, the SOURCE's nine values bit-identical, world X negated with Y and Z untouched, the Absolute Scale carried across and strictly positive, a new row, and the chooser closed; Undo removes only the reflection and restores the previous selection; Redo restores the SAME ObjectId, placement and selection. Every control is reached by semantic id, never by a screen coordinate | 1 |
+| `Ui3dStateAuditTest` | **`UI-3D-STATE-AUDIT-R1`, an AUDIT rather than a gate.** Nine journeys drive the shipped controls and the real viewport through the audit's state matrix and RECORD every result — a visibility mismatch or a stale anchor is a row with a verdict, never a thrown assertion, because an audit that stopped at the first defect would deliver a truncated matrix. Two ledgers come off the device: 117 show/hide assertions against `MUST_SHOW`/`MUST_HIDE`/`MAY_SHOW`, and 72 spatial-attachment measurements comparing each anchored surface's centre with the anchor native reports for it AFTER the action, in px and dp. Home and the CAD bootstrap; the staged extrusion under a real arrow drag, an orbit and a pinch; all three extent modes; the retained sketch through Move/Rotate/Scale, a real gizmo drag and camera motion; the selected-Line dimension; Dimensions under a body transform and under orbit/pan/zoom; body switch, hide, lock, Delete/Undo/Redo; Sculpt leakage with a real stroke, a real Mask stroke and the History navigator; primary-surface exclusivity and System Back. It adds NO observability seam — every anchor comes from a debug read the repository already ships — and it asserts only its own journey steps | 9 |
 | `SculptHistoryNavigatorTest` | `E2E-SCHNAV-01..09`: the Sculpt History navigator on a device, every act driven by `performClick` on the control a user presses. The trigger is GONE in Construction and VISIBLE in Sculpt, and the surface lists one row per retained STATE -- an empty history is one row, three strokes are four, and the drawn rows agree with the branch below JNI (`-01`); tapping an older row lands on bit-exactly the `SCUL` bytes three taps on the real Undo produce, and a newer row on what three Redos produce, both measured by running the reference path first in the same session (`-02`, `-03`); tapping the row already stood on moves no geometry, no revision, no edited flag, no row and no cursor (`-04`); a backward jump leaves the future walkable and the NEXT stroke drops it (`-05`); leaving Sculpt, adding a second body and sculpting it rebinds the navigator to that body’s own two-state branch, jumping there leaves the first body’s branch and cursor exactly where sculpting left them, and walking the second body forward again makes the whole `SCUL` section bit-identical -- which can only hold if the first body never moved (`-06`); a round trip over three rows re-encodes the project BYTE-IDENTICALLY, records no Construction step and mints no sculpt entry (`-07`); eight states cap the list at five visible rows, the content overflows the scroller, the list can actually be scrolled, and no row is below the 48 dp floor (`-08`); and System Back closes the navigator and un-lights its control (`-09`) | 9 |
 | `ProjectTransferTest` | `FSR1B-10..13`, `FSR1B-18`: Save Copy writes canonical bytes the decoder accepts and TRUNCATES a longer existing document rather than overwriting its front; Open File applies a valid document and starts a fresh history; a damaged one, an unreadable one and a cancel each change nothing below JNI; a cancelled copy cannot be written by a later pick; neither direction touches the internal manual slot; a project opened from a distinctively named file re-encodes to the ORIGINAL bytes exactly, and carries no filename, scheme, authority or path; the two native project entry points take bytes and structurally cannot take a `Uri`; and the project surface offers no GLB, glTF, OBJ, FBX or import/export entry | 13 |
 | `DiagnosticsAndRendererLossTest` | `FSR1B-14..17`, `E2ER1B-07/08`: a report is written locally, is bounded, names the build and the device and never a project dimension, `.forge` magic or vertex data, and stays bounded after a flood; ForgeShape requests no INTERNET permission and the platform agrees it holds none, so nothing can be sent anywhere; sharing is a document-creation intent that writes where the user chose; an injected device loss leaves every project value and the encoded document bit-identical and either rebuilds the device or reports restart-required with the work checkpointed; the project stays editable and publishing after a rebuild; and all six project controls plus both recovery answers clear 48 x 48 dp without moving the accepted R2 right host | 9 |
@@ -3281,6 +3301,65 @@ duration scale skips them outright rather than shortening them.
 
 ## Known Issues / Blockers
 
+**`UI-3D-STATE-AUDIT-R1` (2026-09-08) — seven findings, no fix made.** One
+whole-app interactive UI/3D-state audit ran on `ForgeShape_Stage006` /
+`emulator-5580` at `dfcab1afd1361d37b6dfe4607772a5597f31d043`: 43 dynamic
+surfaces classified, 117 show/hide assertions (111 pass), 72 spatial-attachment
+measurements (median error 48.90 dp), 59 annotated frames. Every finding is
+PRESENTATION — no `.forge` byte, section, version, fixture, revision, history
+step or fingerprint is involved in any of them. Full record, with the exact
+action sequence and evidence path for each, in
+`artifacts/ui-3d-state-audit-r1/FINDINGS.md`.
+
+- **`UI3D-F-001` (P1, `ANDROID_LAYOUT`) — every world-/feature-anchored surface
+  stands one system-bar inset below its anchor.** The dimension labels, the
+  sketch line dimension label, the canvas extrude cluster, the Side B value,
+  both distance editors and the retained `Edit Sketch` chip are all children of
+  `overlayRoot`, which carries the chrome's window-inset padding
+  (`EditorWorkspaceView.java:1090`), while the anchors native reports are in
+  full-window VIEWPORT pixels. Measured `overlayPadding=0,128,0,63` and a
+  constant +128 px / +0 px error; 30 of the 60 measured rows carry exactly that
+  and nothing else. The X half is 0 only because this window has no left inset.
+  **`UI3D-F-006` (P3)** is its consequence: `CadExtrudeCanvasView.placeAt`
+  clamps into the PADDED box rather than the viewport, so the cluster clamps
+  earlier than the window requires (errors to 105 dp).
+- **`UI3D-F-002` (P1, `CAMERA_PROJECTION`) — the Construction dimension labels
+  are never re-placed for camera motion.** After an orbit, a pan or a zoom they
+  stand at the pre-gesture anchor (to 119 dp). `onViewportGestureMoved` refreshes
+  only the CAD extrude canvas, and `onViewportGestureSettled` calls
+  `onNativeStateChanged()` only when the sketch state, the active `ObjectId`,
+  the sculpt undo depth or the gizmo committed-drag count changed — a camera
+  change is none of those. Any later chrome act repairs the placement exactly,
+  which is what makes this a missing driver rather than a wrong projection.
+- **`UI3D-F-007` (P1, `STALE_OWNER_OBJECT`) — after a body switch the labels
+  stand at the PREVIOUS body's anchors** (to 282.53 dp, the largest error in the
+  run). `BodyDimensionSession::labelAnchors()` still holds the old body's
+  anchors, and reports them valid, at the moment the shell's one refresh reads
+  them.
+- **`UI3D-F-004` (P1, `STATE_VISIBILITY` / `CROSS_REPRESENTATION_LEAK`) — a
+  dimension label survives as ghost UI into Sculpt and over a hidden body.** The
+  session closes ITSELF on the render thread when its body stops being
+  measurable (`forgeshape_jni.cpp:1650-1656`), after the shell's one post-
+  transition refresh has already run. One frame shows the whole divergence: the
+  renderer has dropped the leaders and all three numbers are still drawn, one on
+  top of the sphere being sculpted.
+- **`UI3D-F-003` (P2, `STATE_VISIBILITY`) — the labels are absent on the frame
+  Dimensions opens.** `bodyDimensionLabelPoint` answers false until the render
+  thread has built the overlay; the shell reads it once and never again, so the
+  numbers appear only on the next unrelated chrome act. A race: 4 of 5 places in
+  the authoritative run, 3 of 5 in the first.
+- **`UI3D-F-005` (P2, `OVERLAY_RENDER_STYLE`)** is the `SketchOverlayStyle::
+  Dimension` transparency recorded below, now ADJUDICATED at runtime rather than
+  argued from source — see that entry, whose provenance is unchanged.
+
+Four of the seven (`F-002`, `F-003`, `F-004`, `F-007`) are ONE root cause and
+one fix: world-anchored chrome has no refresh driver tied to the frame, while
+the domain state it mirrors is decided on the render thread. Whether that
+refresh should be per-frame or event-driven is an architecture question put to
+the OWNER in `artifacts/ui-3d-state-audit-r1/OWNER_LATER_TEST_PACK.md`, not
+decided here. **Not audited:** Activity recreation
+(`LIFECYCLE_RECREATE`), and any window but compact portrait.
+
 - ~~**`OQ-CAD-UX-01` — the extrude arrow cannot be dragged from inside a
   sketch.**~~ **CLOSED by `CAD-UX-S1-C1`.** The sketch camera lock was never the
   thing to remove: authoring needs the exact support-normal view, and that view
@@ -3297,7 +3376,14 @@ duration scale skips them outright rather than shortening them.
   after the clamp with a bounded azimuth retry behind it. Every path back to the
   authored sketch restores the exact aligned view.
 - **`SketchOverlayStyle::Dimension` renders fully transparent, and it is
-  UNFIXED.** Found while placing the extrude arrow, not caused by it. The
+  UNFIXED.** Found while placing the extrude arrow, not caused by it, and
+  **confirmed at runtime by `UI-3D-STATE-AUDIT-R1` as `UI3D-F-005`**:
+  `artifacts/ui-3d-state-audit-r1/screenshots/ui3d07_01_line_selected.png` shows
+  a selected straight Line whose dimension native reports (1.6 m) with its
+  numeric chip drawn and **no extension lines, dimension line or ticks anywhere
+  in the frame**. Stage 020M's other two leaders draw normally, because only the
+  ACTIVE-axis range takes this style — so the invisibility bites exactly on the
+  axis being edited. The
   renderer's overlay switch (`forgeshape_renderer.cpp:1720-1741`) has cases for
   `GridMinor`, `GridMajor`, `Axes` and `Entities` and none for `Dimension`, with
   no `default:`. `GizmoPush push{}` is zero-initialised inside the loop and
@@ -3992,8 +4078,29 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Exactly one next step: return this status to the ForgeShape coordinator for a
-combined OWNER review.** `CAD-EXT-R1` is technical/repository complete and
+**Exactly one next step: return this status to the ForgeShape coordinator, which
+now carries two things — the combined OWNER review, and the seven
+`UI-3D-STATE-AUDIT-R1` findings to group into exactly one correction prompt.**
+
+`UI-3D-STATE-AUDIT-R1` closed on 2026-09-08 as
+`PASS-UI-3D-STATE-AUDIT-R1-WITH-FINDINGS`. It implemented no feature, fixed no
+defect and touched no production file: what it added is one instrumented suite
+(`Ui3dStateAuditTest`, `Ui3dAuditRecorder`), its two ledgers and 59 annotated
+frames under `artifacts/ui-3d-state-audit-r1/`. **Do not start a correction
+from this repository.** The findings are recorded under *Known Issues* with the
+exact action sequence, the verified cause and the evidence path for each; four
+of the seven are one root cause and one fix, and whether that fix is a per-frame
+reprojection or a native-side event is an architecture question put to the OWNER
+in `artifacts/ui-3d-state-audit-r1/OWNER_LATER_TEST_PACK.md` rather than decided
+here.
+
+Two coverage gaps the audit states rather than papers over: **Activity
+recreation was not exercised** (`LIFECYCLE_RECREATE` is unaudited), and only
+**compact portrait** was measured — a landscape or cutout window would very
+likely make `UI3D-F-001`'s horizontal half visible too, which is an expectation
+and not a result.
+
+`CAD-EXT-R1` is technical/repository complete and
 carries no open blocker; what is left is the owner's own reading of the extent
 selector's wording, of `Each side`, and of two arrows sharing one profile,
 listed in `artifacts/cad-ext-r1/OWNER_LATER_TEST_PACK.md`.

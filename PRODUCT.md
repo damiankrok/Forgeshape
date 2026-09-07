@@ -620,9 +620,14 @@ point will land. What you type is never snapped: select a rectangle, type
 width.
 
 **A selected line shows its length, and you can type one.** Select a straight
-line and it is dimensioned the way a technical drawing dimensions it —
-extension lines out from each end, a dimension line between them with a tick at
-each end, and the length written beside it in your chosen unit. Tap the number
+line and the length is written beside it in your chosen unit. It is meant to be
+dimensioned the way a technical drawing dimensions it — extension lines out from
+each end, a dimension line between them with a tick at each end — and **that
+annotation is not visible today**: the drawing is produced but the renderer has
+no case for its style, so it comes out fully transparent. Runtime-confirmed by
+`UI-3D-STATE-AUDIT-R1` as `UI3D-F-005`, recorded in `PROJECT_STATUS.md` →
+*Known Issues*, and unfixed. The number itself is drawn, is correct, and stands
+about 48 dp below where it belongs (`UI3D-F-001`). Tap the number
 and a small field opens right there: type an exact length, press *Apply*, and
 the line takes it. **The first end stays where it is and the direction does not
 change** — only the far end moves, along the line it was already on. Nothing
@@ -655,6 +660,12 @@ gets smaller as you pull the camera back and larger as you come in, within
 limits, so it never becomes unreadable and never covers the profile it measures.
 A distance typed here and the same number typed in the panel are the same thing;
 there is one extrusion, and both places show it.
+
+> The cluster **follows** the arrow correctly through a drag, an orbit and a
+> zoom, and so does the **Edit Sketch** chip below — measured on the device by
+> `UI-3D-STATE-AUDIT-R1`. What both get wrong is the same constant every
+> viewport-anchored label in the product gets wrong: they stand about 48 dp
+> below the point they are anchored to (`UI3D-F-001`, unfixed).
 
 **Three ways for a solid to reach out of its sketch.** The extent selector
 offers exactly three:
@@ -1091,7 +1102,19 @@ Apply resizes the body along that axis to exactly that size.
 The size shown is the body's own size along its own axes: the object's local
 width, height and depth multiplied by the scale it carries. **Turning the body
 does not change the numbers**, and neither does moving it or looking at it from
-somewhere else. A **plane** truthfully reports zero thickness, and asking to
+somewhere else.
+
+> **Where those numbers STAND is defective today, and the audit that measured it
+> is `UI-3D-STATE-AUDIT-R1` (2026-09-08).** They are drawn about 48 dp below the
+> dimension line they belong to; they are missing for a moment when the mode
+> opens, until the next thing you touch; they stay behind when you orbit, pan or
+> zoom; they stay on the previous body when you select another one; and they are
+> still drawn after Start Sculpting or after hiding the body. The SIZES are
+> correct throughout — nothing here is wrong with the measurement, the resize or
+> the project — and no fix has been made. `PROJECT_STATUS.md` → *Known Issues*
+> holds `UI3D-F-001` through `UI3D-F-007`.
+
+A **plane** truthfully reports zero thickness, and asking to
 resize that axis is refused by name rather than answered by inventing a
 thickness for it.
 

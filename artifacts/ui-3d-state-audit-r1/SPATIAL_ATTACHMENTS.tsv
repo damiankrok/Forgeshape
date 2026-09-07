@@ -1,0 +1,73 @@
+case	action	surface	anchor_kind	expect_x	expect_y	actual_x	actual_y	error_px	error_dp	verdict	note
+UI3D-04	dimensions_open	S19 body_dimension_label_x	WORLD_ANCHORED	-	-	-	-	-	-	NOT_MEASURED	the anchor projects but the label is not on screen
+UI3D-04	dimensions_open	S19 body_dimension_label_y	WORLD_ANCHORED	-	-	-	-	-	-	NOT_MEASURED	the anchor projects but the label is not on screen
+UI3D-04	dimensions_open	S19 body_dimension_label_z	WORLD_ANCHORED	-	-	-	-	-	-	NOT_MEASURED	the anchor projects but the label is not on screen
+UI3D-04	after_move	S19 body_dimension_label_x	WORLD_ANCHORED	1024.13	1208.72	611.00	1436.00	471.52	179.63	CLAMPED	
+UI3D-04	after_move	S19 body_dimension_label_y	WORLD_ANCHORED	782.92	968.31	783.00	1096.00	127.69	48.64	FAIL	
+UI3D-04	after_move	S19 body_dimension_label_z	WORLD_ANCHORED	710.30	1159.83	710.50	1288.00	128.17	48.83	FAIL	
+UI3D-04	after_rotate	S19 body_dimension_label_x	WORLD_ANCHORED	965.97	1141.31	1023.00	1337.00	203.83	77.65	FAIL	
+UI3D-04	after_rotate	S19 body_dimension_label_y	WORLD_ANCHORED	647.91	1065.99	783.00	1096.00	138.38	52.72	FAIL	
+UI3D-04	after_rotate	S19 body_dimension_label_z	WORLD_ANCHORED	687.42	1275.57	710.50	1288.00	26.22	9.99	FAIL	
+UI3D-04	after_scale	S19 body_dimension_label_x	WORLD_ANCHORED	948.85	1067.35	965.50	1269.00	202.34	77.08	FAIL	
+UI3D-04	after_scale	S19 body_dimension_label_y	WORLD_ANCHORED	446.45	1055.34	647.50	1194.00	244.23	93.04	FAIL	
+UI3D-04	after_scale	S19 body_dimension_label_z	WORLD_ANCHORED	484.26	1285.84	687.50	1404.00	235.09	89.56	FAIL	
+UI3D-04	after_typed_dimension	S19 body_dimension_label_x	WORLD_ANCHORED	936.91	1069.58	948.50	1195.00	125.96	47.98	FAIL	
+UI3D-04	after_typed_dimension	S19 body_dimension_label_y	WORLD_ANCHORED	446.45	1055.34	446.50	1183.00	127.66	48.63	FAIL	
+UI3D-04	after_typed_dimension	S19 body_dimension_label_z	WORLD_ANCHORED	484.26	1285.84	484.50	1414.00	128.16	48.82	FAIL	
+UI3D-04	after_undo	S19 body_dimension_label_x	WORLD_ANCHORED	948.85	1067.35	948.50	1195.00	127.65	48.63	FAIL	
+UI3D-04	after_undo	S19 body_dimension_label_y	WORLD_ANCHORED	446.45	1055.34	446.50	1183.00	127.66	48.63	FAIL	
+UI3D-04	after_undo	S19 body_dimension_label_z	WORLD_ANCHORED	484.26	1285.84	484.50	1414.00	128.16	48.82	FAIL	
+UI3D-08	one_side_staged	S35 cad_extrude cluster	FEATURE_ANCHORED	454.87	1248.46	410.28	1376.55	135.63	51.67	CLAMPED	scale=0.9505158066749573 extent=0.0
+UI3D-08	after_arrow_drag	S35 cad_extrude cluster	FEATURE_ANCHORED	408.25	1274.99	513.28	1505.68	253.47	96.56	CLAMPED	scale=0.9505158066749573 extent=0.0
+UI3D-08	after_orbit	S35 cad_extrude cluster	FEATURE_ANCHORED	635.48	1355.77	513.28	1586.68	261.25	99.53	CLAMPED	scale=0.9505156874656677 extent=0.0
+UI3D-08	after_zoom_out	S35 cad_extrude cluster	FEATURE_ANCHORED	559.87	1232.42	432.00	1446.80	249.62	95.09	FAIL	scale=0.800000011920929 extent=0.0
+UI3D-08	after_zoom_in	S35 cad_extrude cluster	FEATURE_ANCHORED	635.48	1355.77	513.28	1586.68	261.25	99.53	CLAMPED	scale=0.9505161046981812 extent=0.0
+UI3D-09	symmetric	S35 cad_extrude cluster	FEATURE_ANCHORED	635.48	1355.77	513.28	1586.68	261.25	99.53	CLAMPED	scale=0.9505161046981812 extent=1.0
+UI3D-09	two_sides	S35 cad_extrude cluster	FEATURE_ANCHORED	635.48	1355.77	513.28	1586.68	261.25	99.53	CLAMPED	scale=0.9505161046981812 extent=2.0
+UI3D-09	two_sides	S36 cad_extrude_second_value	FEATURE_ANCHORED	451.28	1055.27	451.07	1183.55	128.27	48.87	FAIL	negative=1.5137381553649902
+UI3D-09	two_sides_after_side_a_drag	S35 cad_extrude cluster	FEATURE_ANCHORED	664.15	1402.53	513.28	1633.68	276.03	105.15	CLAMPED	scale=0.9505161046981812 extent=2.0
+UI3D-09	two_sides_after_side_a_drag	S36 cad_extrude_second_value	FEATURE_ANCHORED	451.28	1055.27	451.07	1183.55	128.27	48.87	FAIL	negative=1.5137381553649902
+UI3D-09	two_sides_after_side_b_drag	S35 cad_extrude cluster	FEATURE_ANCHORED	664.15	1402.53	513.28	1633.68	276.03	105.15	CLAMPED	scale=0.9505161046981812 extent=2.0
+UI3D-09	two_sides_after_side_b_drag	S36 cad_extrude_second_value	FEATURE_ANCHORED	417.22	999.71	417.09	1127.55	127.84	48.70	FAIL	negative=2.124888300895691
+UI3D-09	side_b_zeroed	S36 cad_extrude_second_value	FEATURE_ANCHORED	540.00	1200.00	539.64	1327.55	127.55	48.59	FAIL	negative=0.0
+UI3D-07	line_selected	S31 sketch_dimension_label	WORLD_ANCHORED	540.00	1222.64	540.50	1351.00	128.36	48.90	FAIL	length=1.6m
+UI3D-07	length_applied	S31 sketch_dimension_label	WORLD_ANCHORED	463.96	1222.64	464.00	1351.00	128.36	48.90	FAIL	length=1.0m
+UI3D-07	after_pan	S31 sketch_dimension_label	WORLD_ANCHORED	559.96	1286.64	560.00	1415.00	128.36	48.90	FAIL	length=1.0m
+UI3D-05	before_camera	S19 body_dimension_label_x	WORLD_ANCHORED	-	-	-	-	-	-	NOT_MEASURED	the anchor projects but the label is not on screen
+UI3D-05	before_camera	S19 body_dimension_label_y	WORLD_ANCHORED	-	-	-	-	-	-	NOT_MEASURED	the anchor projects but the label is not on screen
+UI3D-05	before_camera	S19 body_dimension_label_z	WORLD_ANCHORED	-	-	-	-	-	-	NOT_MEASURED	the anchor projects but the label is not on screen
+UI3D-05	after_orbit	S19 body_dimension_label_x	WORLD_ANCHORED	-	-	-	-	-	-	NOT_MEASURED	the anchor projects but the label is not on screen
+UI3D-05	after_orbit	S19 body_dimension_label_y	WORLD_ANCHORED	-	-	-	-	-	-	NOT_MEASURED	the anchor projects but the label is not on screen
+UI3D-05	after_orbit	S19 body_dimension_label_z	WORLD_ANCHORED	-	-	-	-	-	-	NOT_MEASURED	the anchor projects but the label is not on screen
+UI3D-05	after_orbit_then_chrome_sync	S19 body_dimension_label_x	WORLD_ANCHORED	488.16	1190.58	488.00	1319.00	128.42	48.92	FAIL	
+UI3D-05	after_orbit_then_chrome_sync	S19 body_dimension_label_y	WORLD_ANCHORED	208.45	1239.36	208.00	1367.00	127.64	48.63	FAIL	
+UI3D-05	after_orbit_then_chrome_sync	S19 body_dimension_label_z	WORLD_ANCHORED	280.59	1405.41	280.50	1533.00	127.59	48.60	FAIL	
+UI3D-05	after_pan	S19 body_dimension_label_x	WORLD_ANCHORED	575.35	1248.71	488.00	1319.00	112.12	42.71	FAIL	
+UI3D-05	after_pan	S19 body_dimension_label_y	WORLD_ANCHORED	305.37	1303.97	208.00	1367.00	115.99	44.19	FAIL	
+UI3D-05	after_pan	S19 body_dimension_label_z	WORLD_ANCHORED	372.38	1466.61	280.50	1533.00	113.36	43.18	FAIL	
+UI3D-05	after_pan_then_chrome_sync	S19 body_dimension_label_x	WORLD_ANCHORED	575.35	1248.71	575.00	1377.00	128.29	48.87	FAIL	
+UI3D-05	after_pan_then_chrome_sync	S19 body_dimension_label_y	WORLD_ANCHORED	305.37	1303.97	305.00	1432.00	128.03	48.77	FAIL	
+UI3D-05	after_pan_then_chrome_sync	S19 body_dimension_label_z	WORLD_ANCHORED	372.38	1466.61	372.50	1595.00	128.39	48.91	FAIL	
+UI3D-05	after_zoom_out	S19 body_dimension_label_x	WORLD_ANCHORED	527.96	1197.26	575.00	1377.00	185.79	70.78	FAIL	
+UI3D-05	after_zoom_out	S19 body_dimension_label_y	WORLD_ANCHORED	431.01	1206.54	305.00	1432.00	258.28	98.39	FAIL	
+UI3D-05	after_zoom_out	S19 body_dimension_label_z	WORLD_ANCHORED	465.81	1296.01	372.50	1595.00	313.21	119.32	FAIL	
+UI3D-05	after_zoom_in	S19 body_dimension_label_x	WORLD_ANCHORED	575.35	1248.71	528.00	1325.00	89.79	34.21	FAIL	
+UI3D-05	after_zoom_in	S19 body_dimension_label_y	WORLD_ANCHORED	305.37	1303.97	431.00	1335.00	129.40	49.30	FAIL	
+UI3D-05	after_zoom_in	S19 body_dimension_label_z	WORLD_ANCHORED	372.38	1466.61	465.50	1424.00	102.41	39.01	FAIL	
+UI3D-05	after_zoom_then_chrome_sync	S19 body_dimension_label_x	WORLD_ANCHORED	575.35	1248.71	575.00	1377.00	128.29	48.87	FAIL	
+UI3D-05	after_zoom_then_chrome_sync	S19 body_dimension_label_y	WORLD_ANCHORED	305.37	1303.97	305.00	1432.00	128.03	48.77	FAIL	
+UI3D-05	after_zoom_then_chrome_sync	S19 body_dimension_label_z	WORLD_ANCHORED	372.38	1466.61	372.50	1595.00	128.39	48.91	FAIL	
+UI3D-10	committed	S38 cad_canvas_edit_sketch	FEATURE_ANCHORED	520.86	1281.53	520.81	1409.20	127.68	48.64	FAIL	scale=0.98992413
+UI3D-10	after_move	S38 cad_canvas_edit_sketch	FEATURE_ANCHORED	876.70	1211.28	877.14	1339.77	128.49	48.95	FAIL	scale=1.0351243
+UI3D-10	after_rotate	S38 cad_canvas_edit_sketch	FEATURE_ANCHORED	876.70	1211.28	877.14	1339.77	128.49	48.95	FAIL	scale=1.0351243
+UI3D-10	after_scale	S38 cad_canvas_edit_sketch	FEATURE_ANCHORED	876.70	1211.28	877.14	1339.77	128.49	48.95	FAIL	scale=1.0351243
+UI3D-10	after_gizmo_drag	S38 cad_canvas_edit_sketch	FEATURE_ANCHORED	937.03	1233.25	937.48	1361.34	128.09	48.80	FAIL	scale=1.0549573
+UI3D-10	after_orbit	S38 cad_canvas_edit_sketch	FEATURE_ANCHORED	843.33	939.84	843.28	1068.17	128.32	48.88	FAIL	scale=0.9261394
+UI3D-10	after_zoom_out	S38 cad_canvas_edit_sketch	FEATURE_ANCHORED	606.37	1143.08	606.40	1271.20	128.12	48.81	FAIL	scale=0.8
+UI3D-10	finish_again	S35 cad_extrude cluster	FEATURE_ANCHORED	596.14	1229.13	513.28	1373.23	166.23	63.32	CLAMPED	scale=0.9505161046981812 extent=0.0
+UI3D-06	dimensions_on_body_B	S19 body_dimension_label_x	WORLD_ANCHORED	-	-	-	-	-	-	NOT_MEASURED	the anchor projects but the label is not on screen
+UI3D-06	dimensions_on_body_B	S19 body_dimension_label_y	WORLD_ANCHORED	-	-	-	-	-	-	NOT_MEASURED	the anchor projects but the label is not on screen
+UI3D-06	dimensions_on_body_B	S19 body_dimension_label_z	WORLD_ANCHORED	-	-	-	-	-	-	NOT_MEASURED	the anchor projects but the label is not on screen
+UI3D-06	switched_to_body_A	S19 body_dimension_label_x	WORLD_ANCHORED	594.73	1386.23	1023.00	1740.00	555.49	211.61	FAIL	
+UI3D-06	switched_to_body_A	S19 body_dimension_label_y	WORLD_ANCHORED	375.52	1145.11	1023.00	1498.00	737.40	280.91	FAIL	
+UI3D-06	switched_to_body_A	S19 body_dimension_label_z	WORLD_ANCHORED	306.75	1330.50	913.50	1757.00	741.65	282.53	FAIL	
