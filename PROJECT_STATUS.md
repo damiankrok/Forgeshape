@@ -1,12 +1,32 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.75.0
+**Status Version:** 0.76.0
 **Updated:** 2026-09-08
-**Result:** **`UI-3D-STATE-C1` — TECHNICALLY COMPLETE, OWNER LATER READY**
-(2026-09-08), with **`CAD-EXT-R1`** still technically complete beside it. The
-correction closes **six of the seven** findings `UI-3D-STATE-AUDIT-R1` recorded;
-`UI3D-F-005` is a renderer root cause in another layer, was deliberately not
-touched, and stays open below.
+**Result:** **`UI-3D-STATE-C2` — TECHNICALLY COMPLETE, OWNER LATER READY**
+(2026-09-08), with **`UI-3D-STATE-C1`** and **`CAD-EXT-R1`** still technically
+complete beside it. **All seven** findings `UI-3D-STATE-AUDIT-R1` recorded are
+now closed: C1 took the six shell and read-path ones, and C2 takes the last,
+`UI3D-F-005`, in the renderer.
+
+**`UI3D-F-005` is closed, and the annotation is drawn.**
+`SketchOverlayStyle::Dimension` had no case in the renderer's overlay switch and
+no `default:`, so `push.highlight[3]` — the base alpha `gizmo.vert` multiplies
+every vertex by — stayed `0.0f` and every vertex of such a range was invisible.
+Both producers had always emitted it and still do. The repair is one case, and
+the guard against a repeat is that the per-style weights left the renderer:
+`sketchOverlayStyleWeights` (`forgeshape_sketch_overlay.{h,cpp}`) is a pure
+function over values, so "is this style drawn at all" is now a self-test rather
+than a screenshot — nine new checks walk **every** value of the enum on **every**
+one of the five grounds, and the four older styles are held to their exact
+previous weights. The mapping's own switch has no `default:`, so a value added
+later is a compile diagnostic as well as a failed case; both halves were proved
+by temporarily adding a sixth value. **Measured on the device rather than looked
+at**: along the dimension line native reports for a selected 1.6 m Line, the
+annotation's colour goes from **0 pixels deselected to 270 selected**; on the
+Stage 020M leaders — three leaders standing in geometrically identical frames,
+the same 183 979 ink pixels in both — making X the active axis takes the same
+colour from **0 to 86** sampled pixels. The colour, the weight and the contrast
+stay OWNER LATER. Full record in `artifacts/ui-3d-state-c2/`.
 
 **The OWNER's reported concern is answered.** World- and feature-anchored chrome
 now stands ON the geometry it names and follows it: the original 117-assertion
@@ -2710,6 +2730,7 @@ device. `README.md` documents how to read them.
 | `BodyDimensionsSmokeTest` | `E2E-DIM020M-01`: the one device journey for Stage 020M. Transform offers Dimensions and Relative scale, both at the 48 dp floor and both with a content description; the transform gizmo is up before, and is WITHDRAWN once Dimensions opens; the anchor selector arrives with the mode and opens on centre; typing an exact X dimension through the viewport label sets it exactly, moves no position and is one history step; switching to the negative-side anchor and typing again sets it exactly, DOES move the position, and is one more step; opening Relative scale closes the mode and shows 1/1/1; applying a x2 multiplier doubles the stored Absolute Scale in one step; and reopening shows 1/1/1 again. Every control is reached by semantic id, never by a screen coordinate | 1 |
 | `MirrorSmokeTest` | `E2E-MIRROR01-01`: the one device journey for `MIRROR-01`. A body is placed at `(2.5, −1.5, 0.75)` turned `31/−47.5/118.25` with a non-uniform scale; the row overflow offers Mirror; pressing it opens the compact plane chooser, whose three chips each meet the 48 dp floor and each name the axis they reflect — and opening it creates nothing and records no step; choosing YZ adds exactly one body in exactly one history step, with a fresh ObjectId, the SOURCE's nine values bit-identical, world X negated with Y and Z untouched, the Absolute Scale carried across and strictly positive, a new row, and the chooser closed; Undo removes only the reflection and restores the previous selection; Redo restores the SAME ObjectId, placement and selection. Every control is reached by semantic id, never by a screen coordinate | 1 |
 | `Ui3dStateAuditTest` | **`UI-3D-STATE-AUDIT-R1`, an AUDIT rather than a gate.** Nine journeys drive the shipped controls and the real viewport through the audit's state matrix and RECORD every result — a visibility mismatch or a stale anchor is a row with a verdict, never a thrown assertion, because an audit that stopped at the first defect would deliver a truncated matrix. Two ledgers come off the device: 117 show/hide assertions against `MUST_SHOW`/`MUST_HIDE`/`MAY_SHOW`, and 72 spatial-attachment measurements comparing each anchored surface's centre with the anchor native reports for it AFTER the action, in px and dp. Home and the CAD bootstrap; the staged extrusion under a real arrow drag, an orbit and a pinch; all three extent modes; the retained sketch through Move/Rotate/Scale, a real gizmo drag and camera motion; the selected-Line dimension; Dimensions under a body transform and under orbit/pan/zoom; body switch, hide, lock, Delete/Undo/Redo; Sculpt leakage with a real stroke, a real Mask stroke and the History navigator; primary-surface exclusivity and System Back. It adds NO observability seam — every anchor comes from a debug read the repository already ships — and it asserts only its own journey steps | 9 |
+| `Ui3dDimensionVisibilityTest` | `UI3DC2-04`/`-05`: the runtime half of closing `UI3D-F-005`, and the one suite in the product that measures a RENDERED overlay range rather than a view's bounds. It captures the composed display through `UiAutomation.takeScreenshot()`, which carries the Vulkan viewport, and counts the pixels drawn in the annotation's own colour inside a region derived entirely from what native reports — the dimension line the seams place for a selected 1.6 m Line, and the whole viewport for the Stage 020M leaders. **Both measurements are differential**, so the number that moves is attributable to the style and to nothing else: the sketch frames differ only in whether the Line is selected and the scanned strip stands 78.75 px clear of the stroke, and the Dimensions frames are geometrically identical with all three leaders standing in both. The selection outline — the one other amber the viewport draws — is switched off for every frame and restored afterwards, and no aesthetic claim is made by any of it | 2 |
 | `SculptHistoryNavigatorTest` | `E2E-SCHNAV-01..09`: the Sculpt History navigator on a device, every act driven by `performClick` on the control a user presses. The trigger is GONE in Construction and VISIBLE in Sculpt, and the surface lists one row per retained STATE -- an empty history is one row, three strokes are four, and the drawn rows agree with the branch below JNI (`-01`); tapping an older row lands on bit-exactly the `SCUL` bytes three taps on the real Undo produce, and a newer row on what three Redos produce, both measured by running the reference path first in the same session (`-02`, `-03`); tapping the row already stood on moves no geometry, no revision, no edited flag, no row and no cursor (`-04`); a backward jump leaves the future walkable and the NEXT stroke drops it (`-05`); leaving Sculpt, adding a second body and sculpting it rebinds the navigator to that body’s own two-state branch, jumping there leaves the first body’s branch and cursor exactly where sculpting left them, and walking the second body forward again makes the whole `SCUL` section bit-identical -- which can only hold if the first body never moved (`-06`); a round trip over three rows re-encodes the project BYTE-IDENTICALLY, records no Construction step and mints no sculpt entry (`-07`); eight states cap the list at five visible rows, the content overflows the scroller, the list can actually be scrolled, and no row is below the 48 dp floor (`-08`); and System Back closes the navigator and un-lights its control (`-09`) | 9 |
 | `ProjectTransferTest` | `FSR1B-10..13`, `FSR1B-18`: Save Copy writes canonical bytes the decoder accepts and TRUNCATES a longer existing document rather than overwriting its front; Open File applies a valid document and starts a fresh history; a damaged one, an unreadable one and a cancel each change nothing below JNI; a cancelled copy cannot be written by a later pick; neither direction touches the internal manual slot; a project opened from a distinctively named file re-encodes to the ORIGINAL bytes exactly, and carries no filename, scheme, authority or path; the two native project entry points take bytes and structurally cannot take a `Uri`; and the project surface offers no GLB, glTF, OBJ, FBX or import/export entry | 13 |
 | `DiagnosticsAndRendererLossTest` | `FSR1B-14..17`, `E2ER1B-07/08`: a report is written locally, is bounded, names the build and the device and never a project dimension, `.forge` magic or vertex data, and stays bounded after a flood; ForgeShape requests no INTERNET permission and the platform agrees it holds none, so nothing can be sent anywhere; sharing is a document-creation intent that writes where the user chose; an injected device loss leaves every project value and the encoded document bit-identical and either rebuilds the device or reports restart-required with the work checkpointed; the project stays editable and publishing after a rebuild; and all six project controls plus both recovery answers clear 48 x 48 dp without moving the accepted R2 right host | 9 |
@@ -3361,12 +3382,13 @@ had already run. `activeBodyDimensionsEditable` is that rule named once and aske
 by the frame and every chrome read alike, and `settledBodyDimensionSession()`
 applies the self-closing rule at every observation rather than only on a frame.
 
-**OPEN — `UI3D-F-005` (P2, `OVERLAY_RENDER_STYLE`)** is the `SketchOverlayStyle::
-Dimension` transparency recorded below. It is a renderer root cause in a
-different layer, was explicitly out of scope for the correction, and
-`forgeshape_renderer.cpp`, `forgeshape_gizmo.cpp`, `forgeshape_sketch_overlay.h`
-and every shader are byte unchanged by it — see that entry, whose provenance is
-unchanged.
+**CLOSED — `UI3D-F-005` (P2), `OVERLAY_RENDER_STYLE`, by `UI-3D-STATE-C2` and
+not by C1.** C1 left `forgeshape_renderer.cpp`, `forgeshape_gizmo.cpp`,
+`forgeshape_sketch_overlay.h` and every shader byte unchanged, because a renderer
+root cause is a different layer. C2 then added the one missing case and moved the
+per-style weights out of the renderer into `sketchOverlayStyleWeights`, so the
+question can be asked without a device; no shader changed there either. See the
+entry above.
 
 **Still not covered:** Activity recreation (`LIFECYCLE_RECREATE` is unaudited and
 uncorrected), and any window but compact portrait. The conversion is written to
@@ -3388,26 +3410,18 @@ or cutout window has not been measured.
   of about 54° and never approaches the clamp, and the candidate is re-measured
   after the clamp with a bounded azimuth retry behind it. Every path back to the
   authored sketch restores the exact aligned view.
-- **`SketchOverlayStyle::Dimension` renders fully transparent, and it is
-  UNFIXED.** Found while placing the extrude arrow, not caused by it, and
-  **confirmed at runtime by `UI-3D-STATE-AUDIT-R1` as `UI3D-F-005`**:
-  `artifacts/ui-3d-state-audit-r1/screenshots/ui3d07_01_line_selected.png` shows
-  a selected straight Line whose dimension native reports (1.6 m) with its
-  numeric chip drawn and **no extension lines, dimension line or ticks anywhere
-  in the frame**. Stage 020M's other two leaders draw normally, because only the
-  ACTIVE-axis range takes this style — so the invisibility bites exactly on the
-  axis being edited. The
-  renderer's overlay switch (`forgeshape_renderer.cpp:1720-1741`) has cases for
-  `GridMinor`, `GridMajor`, `Axes` and `Entities` and none for `Dimension`, with
-  no `default:`. `GizmoPush push{}` is zero-initialised inside the loop and
-  `gizmoHighlightColor` writes only rgb, so `push.highlight[3]` — the base alpha
-  `gizmo.vert` multiplies every vertex by — stays `0.0f`, and the gizmo pipeline
-  blends with `SRC_ALPHA`. Every vertex in a `Dimension` range is therefore
-  invisible, which affects the `SKETCH-UX-R1` E line annotation and Stage 020M's
-  active-axis leader. **Not fixed here**: the four-line repair changes how two
-  shipped features look, which is an owner-visible change outside a bounded UI
-  stage. `CAD-UX-S1` used the `Entities` range for its arrow, so it needed no
-  renderer change and is definitely drawn.
+- ~~**`SketchOverlayStyle::Dimension` renders fully transparent.**~~ **FIXED by
+  `UI-3D-STATE-C2` (2026-09-08)**, closing `UI3D-F-005`. It was real for the
+  reason recorded: the renderer's overlay switch had cases for `GridMinor`,
+  `GridMajor`, `Axes` and `Entities`, none for `Dimension` and no `default:`, so
+  the zero-initialised `push.highlight[3]` — the base alpha `gizmo.vert`
+  multiplies every vertex by — stayed `0.0f` and the whole range blended away.
+  The per-style weights now live in `sketchOverlayStyleWeights`
+  (`forgeshape_sketch_overlay.{h,cpp}`) as a pure function the gizmo suite walks
+  exhaustively, the four older styles keep their exact values, and the two
+  affected surfaces — the `SKETCH-UX-R1` E line annotation and Stage 020M's
+  active-axis leader — are measured drawn on `emulator-5580`. `CAD-UX-S1` used
+  the `Entities` range for its arrow and is unaffected either way.
 - **The orientation navigator's flip and roll may not move the camera —
   OBSERVED, NOT INVESTIGATED.** `beginSketchView` (`forgeshape_jni.cpp:302`)
   reads `sketchSession().frame()`, the **authoring** frame, rather than
@@ -3982,6 +3996,7 @@ regenerated per stage.
 | `app/src/main/cpp/forgeshape_sketch.{h,cpp}` | Sketch entities and per-sketch ids, validation, closed-profile extraction (chaining, loop rules, nesting), bounded ear clipping, and the one `CadStatus` vocabulary |
 | `app/src/main/cpp/forgeshape_cad_body.{h,cpp}` | `CadBodyState` (one sketch, one linear extrusion), `generateCadMesh` (the one regeneration path), `CadBody::applyState` (atomic) and the typed rectangle / circle / extrude edits |
 | `app/src/main/cpp/forgeshape_sketch_session.{h,cpp}`, `forgeshape_sketch_overlay.h` | The volatile sketch edit session: tools, the one owned pointer, snapping, placement, selection, finish, profile choice, depth, the one-transaction commit, and the world-space overlay the renderer draws |
+| `app/src/main/cpp/forgeshape_sketch_overlay.cpp` | `UI-3D-STATE-C2`: the ONE mapping from a `SketchOverlayStyle` to the two scalars that differ between styles — the grey a hue-less vertex takes and the alpha the whole range draws at. A pure function over values with no renderer, no device and no frame in it, so an unmapped style is a self-test failure instead of an invisible range; its switch has no `default:`, and a code outside the enum is refused rather than given a weight |
 | `app/src/main/cpp/forgeshape_cad_selftest.{h,cpp}` | The `CADR0-*` suite and its performance report |
 | `app/src/main/java/.../ConstructionShapeEditorView.java` | Primitive chooser, that primitive's exact fields, unit chips, Apply Shape. Owns field text and a DRAFT kind only |
 | `app/src/main/java/.../ConstructionPlacementEditorView.java` | Position/rotation fields, unit chips, Apply Transform. Owns field text only |
@@ -4032,6 +4047,7 @@ regenerated per stage.
 | `app/src/main/java/.../BodyDimensionLabelsView.java` | Stage 020M: the three overall-dimension labels over the viewport, each anchored to the projected midpoint of its own real dimension line, with one compact editor at a time. Holds no dimension. Since `UI-3D-STATE-C1` it also tracks its owner `ObjectId`, so a change of body closes the open editor and no number is placed from a body it no longer describes |
 | `app/src/main/java/.../ViewportAnchorSpace.java` | `UI-3D-STATE-C1`: the ONE conversion between a projected viewport-content anchor and the Android translation that stands a view on it, and the ONE clamp bound — the real viewport, carried into the same space. Pure runtime geometry with no inset, status-bar or density constant in it; used by all three placing views so the arithmetic exists once. Also owns the two placement details that arithmetic implies: measuring under the constraint the parent will impose, and reporting when a pass had to read a layout that had not run yet |
 | `app/src/androidTest/java/.../Ui3dStateCorrectionTest.java` | `UI3DC1-02..11`: the correction gate for six of the audit's seven findings. Asserts where `Ui3dStateAuditTest` records, reuses that harness's own `centreOf`/`wouldClamp`/`placedAncestor`, drives real viewport orbit, pan and pinch gestures, and refuses to pass vacuously |
+| `app/src/androidTest/java/.../Ui3dDimensionVisibilityTest.java` | `UI3DC2-04`/`-05`: the runtime half of closing `UI3D-F-005`, and the one suite in the product that measures a RENDERED overlay range rather than a view's bounds. Captures the composed display and counts the annotation's own colour in a region derived only from what native reports — the dimension line the seams place for a selected Line, and the whole viewport for the Stage 020M leaders. Both measurements are differential, so the number that moves is attributable to the style and to nothing else; the selection outline, the one other amber the viewport draws, is switched off for every frame and restored afterwards |
 | `app/src/main/java/.../RelativeScaleEditorView.java` | Stage 020M: the Relative Scale precision-surface body — three multipliers reset to 1 on every open, one Apply. The only thing in the product that ever holds a multiplier |
 | `app/src/main/cpp/forgeshape_glb_import_fixture.{h,cpp}` | GLB-IMPORT-R1: the deterministic Nomad-like external-GLB compatibility fixture. Every coordinate an integer over a power of two, so its bytes are identical on every platform. A debug test seam; no product path calls it, and it is not any owner asset |
 | `app/src/main/cpp/forgeshape_json.{h,cpp}` | A bounded read-only JSON parser that knows nothing about glTF. Its own number grammar, because `strtod` accepts `nan` and `inf` and a non-finite value reaching geometry is what the reader exists to prevent |
@@ -4094,16 +4110,18 @@ was added and no marketing claim is made.
 ## Next Stage
 
 **Exactly one next step: return this status to the ForgeShape coordinator, which
-now carries two things — the combined OWNER review, and the seven
-`UI-3D-STATE-AUDIT-R1` findings to group into exactly one correction prompt.**
+now carries the combined OWNER review. Every `UI-3D-STATE-AUDIT-R1` finding is
+closed; there is no correction backlog left to group.**
 
 `UI-3D-STATE-C1` closed on 2026-09-08 as `PASS-UI-3D-STATE-C1-OWNER-LATER`. It
 implemented no feature: it corrected six of the seven findings
 `UI-3D-STATE-AUDIT-R1` recorded, in the Android shell and in two read paths below
-JNI, and changed no domain semantic, no format and no contract. **Do not start a
-second correction family, and do not fix `UI3D-F-005`** — it is a renderer root
-cause whose four-line repair changes how two shipped features look, which is the
-owner's call and not a correction task's.
+JNI, and changed no domain semantic, no format and no contract.
+`UI-3D-STATE-C2` closed the seventh the same day as
+`PASS-UI-3D-STATE-C2-OWNER-LATER`: one renderer style mapping, no feature, no
+format and no contract. **Do not start a third correction family** — the exact
+colour, weight and contrast of the dimension annotation are an OWNER LATER
+question and not a correction task's.
 
 What the correction is, in one sentence each. **One coordinate contract**:
 `ViewportAnchorSpace` converts a viewport-content anchor into an Android
@@ -4175,14 +4193,13 @@ frame's own `(u, v)` so the world-up gimbal case never arises. `Unavailable`
 installs nothing. The device suite drags the real viewport and reads the depth
 change back.
 
-**Two findings landed beside `CAD-UX-S1` and neither is fixed**, both recorded
-under *Known Issues* with file and line: `SketchOverlayStyle::Dimension` renders
-fully transparent because the renderer's overlay switch has no case for it,
-which silently affects the `SKETCH-UX-R1` E line annotation and Stage 020M's
-active-axis leader; and `beginSketchView` reads the sketch's **authoring** frame
-rather than its view frame, so the orientation navigator's flip and roll may not
-move the camera. Both are one-file repairs that change how shipped features look
-or behave, which is an owner call rather than a bounded UI stage's.
+**Two findings landed beside `CAD-UX-S1`**, both recorded under *Known Issues*
+with file and line. The first — `SketchOverlayStyle::Dimension` rendering fully
+transparent, silently affecting the `SKETCH-UX-R1` E line annotation and Stage
+020M's active-axis leader — became `UI3D-F-005` and is **fixed by
+`UI-3D-STATE-C2`**. The second is still open: `beginSketchView` reads the
+sketch's **authoring** frame rather than its view frame, so the orientation
+navigator's flip and roll may not move the camera.
 
 **Previously closed and still pending the same review:** Stage 025
 (`SCULPT-FCM-R1`) is closed on the technical

@@ -623,11 +623,11 @@ width.
 line and the length is written beside it in your chosen unit. It is meant to be
 dimensioned the way a technical drawing dimensions it — extension lines out from
 each end, a dimension line between them with a tick at each end — and **that
-annotation is not visible today**: the drawing is produced but the renderer has
-no case for its style, so it comes out fully transparent. Runtime-confirmed by
-`UI-3D-STATE-AUDIT-R1` as `UI3D-F-005`, recorded in `PROJECT_STATUS.md` →
-*Known Issues*, and unfixed. The number itself is drawn, is correct, and stands
-on the annotation it belongs to since `UI-3D-STATE-C1` corrected where every
+annotation is drawn**, in the same warm colour a held gizmo handle takes, since
+`UI-3D-STATE-C2` (2026-09-08). It was invisible until then, because the renderer
+had no case for its drawing style; that was `UI3D-F-005`, and it is closed. The
+number itself is drawn, is correct, and stands on the annotation it belongs to
+since `UI-3D-STATE-C1` corrected where every
 viewport-anchored label in the product sits. Tap the number
 and a small field opens right there: type an exact length, press *Apply*, and
 the line takes it. **The first end stays where it is and the direction does not
@@ -1118,12 +1118,12 @@ defects `UI-3D-STATE-AUDIT-R1` had measured; the same conversion carries the
 sketch line's dimension label and the extrude cluster, so those stand on their
 geometry too.
 
-> **One related defect is still open.** The technical-drawing annotation itself —
-> the extension lines, the dimension line and its end ticks — is invisible on the
-> axis you are currently editing, because the renderer has no case for that
-> drawing style. The other two axes draw normally, and the numbers, the sizes,
-> the resize and the project are all correct. `PROJECT_STATUS.md` → *Known
-> Issues* holds it as `UI3D-F-005`.
+**The axis you are editing is drawn in a warmer colour than the other two**, so
+which measurement the field belongs to is stated by the drawing as well as by
+the field. That leader used to be invisible while it was the active one — the
+renderer had no case for its drawing style — which was `UI3D-F-005`; it is
+closed by `UI-3D-STATE-C2` (2026-09-08) and all three leaders now draw in every
+state.
 
 A **plane** truthfully reports zero thickness, and asking to
 resize that axis is refused by name rather than answered by inventing a

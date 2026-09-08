@@ -1,0 +1,5 @@
+UI3DC2-04 selected entity id=1 length=1.6 anchor=(0.0, -0.08931339099071922)
+UI3DC2-04 dimension line px a=(337.22333, 1222.6383) b=(742.7767, 1222.6383) stand-off from the stroke=78.75 px
+ui3dc2_04_after_line_selected.png written, 1080x2400
+ui3dc2_04_before_nothing_selected.png written, 1080x2400
+UI3DC2-04 amber along the dimension line: selected=270 deselected=0; overlay ink in the deselected frame=192583

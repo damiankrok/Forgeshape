@@ -1,0 +1,4 @@
+ui3dc2_05_before_no_active_axis.png written, 1080x2400
+ui3dc2_05_product_path_x_editor_open.png written, 1080x2400
+ui3dc2_05_after_x_axis_active.png written, 1080x2400
+UI3DC2-05 amber in the viewport: no active axis=0 X active=86; overlay ink 183979 -> 183979; X anchor=(610.98016, 1307.757)

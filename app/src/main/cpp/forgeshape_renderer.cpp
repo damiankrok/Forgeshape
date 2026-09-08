@@ -1711,32 +1711,21 @@ void Renderer::recordSketchOverlayDraw(VkCommandBuffer cmd) {
         gizmoAxisColor(display_.background, GizmoAxis::Y, push.axisYColor);
         gizmoAxisColor(display_.background, GizmoAxis::Z, push.axisZColor);
         gizmoHighlightColor(display_.background, push.highlight);
-        const float neutral = gizmoNeutralLevel(display_.background);
         // Nothing in the overlay is dimmed relative to its neighbours: the
         // held-handle mechanism is reused only to pick the highlight colour
         // for an emphasised line (handle tag 1), never to fade the rest.
         push.axisZColor[3] = 1.0f;
         push.axisYColor[3] = 1.0f;
-        switch (range.style) {
-            case SketchOverlayStyle::GridMinor:
-                push.axisXColor[3] = neutral;
-                push.highlight[3] = kGizmoAxisAlpha * 0.22f;
-                break;
-            case SketchOverlayStyle::GridMajor:
-                push.axisXColor[3] = neutral;
-                push.highlight[3] = kGizmoAxisAlpha * 0.45f;
-                break;
-            case SketchOverlayStyle::Axes:
-                push.axisXColor[3] = neutral;
-                push.highlight[3] = kGizmoAxisAlpha * 0.9f;
-                break;
-            case SketchOverlayStyle::Entities:
-                // Entities read at full weight in a level that stands off the
-                // grid: the neutral pulled toward the highlight's own level.
-                push.axisXColor[3] = neutral * 0.35f + push.highlight[0] * 0.65f;
-                push.highlight[3] = kGizmoAxisAlpha;
-                break;
+        // The two scalars that differ between styles come from the one pure
+        // mapping (forgeshape_sketch_overlay.cpp), so "how is this style drawn"
+        // is answerable without a device -- which is what a style rendering at
+        // alpha 0 with every test green cost once already.
+        SketchOverlayStyleWeights weights;
+        if (!sketchOverlayStyleWeights(range.style, display_.background, &weights)) {
+            continue;
         }
+        push.axisXColor[3] = weights.neutralLevel;
+        push.highlight[3] = weights.alpha;
         vkCmdPushConstants(cmd, gizmoPipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0,
                            sizeof(GizmoPush), &push);
         vkCmdDraw(cmd, range.vertexCount, 1, range.firstVertex, 0);

@@ -1,0 +1,31 @@
+UI-3D-STATE-C2 -- the exhaustive-mapping guard, proved in both layers.
+
+A sixth value (`ProbeStyleTemporary`) was added to `SketchOverlayStyle`
+temporarily, with `kSketchOverlayStyleCount` moved to 6, and then removed. Both
+guards fired.
+
+--- compile time: the mapping's switch has no `default:` ------------------
+
+$ x86_64-linux-android26-clang++ -std=c++17 -Iapp/src/main/cpp \
+      -c app/src/main/cpp/forgeshape_sketch_overlay.cpp
+app/src/main/cpp/forgeshape_sketch_overlay.cpp:24:13: warning: enumeration value
+    'ProbeStyleTemporary' not handled in switch [-Wswitch]
+   24 |     switch (style) {
+      |             ^~~~~
+1 warning generated.
+
+--- test time: the gizmo suite, on the standalone NDK runner --------------
+
+WITH the sixth value present:
+
+  FAIL: overlay_the_style_count_states_the_whole_enum
+  FAIL: overlay_every_style_has_a_mapping_on_every_ground
+  gizmo checks=176 failed=2
+
+WITHOUT it, on the final tree:
+
+  gizmo checks=176 failed=0
+
+Device: emulator-5580 / ForgeShape_Stage006, x86_64, run from
+/data/local/tmp/fs_probe_runner and /data/local/tmp/fs_gizmo_runner. Both
+binaries were removed from the device afterwards.

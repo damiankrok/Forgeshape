@@ -38,6 +38,40 @@ enum class SketchOverlayStyle : uint8_t {
     Dimension,
 };
 
+// How many values SketchOverlayStyle has, stated beside the enum on purpose.
+//
+// A style with no mapping is not a compile error and not a crash: it draws at
+// alpha 0, which is INVISIBLE with every test still green. That is exactly what
+// happened to `Dimension` between `SKETCH-UX-R1` and `UI-3D-STATE-C2`, so the
+// count is here for the exhaustive case in the gizmo self-test to walk, and a
+// value added above without moving it is caught by the mapping's own switch,
+// which has no `default:`.
+constexpr int kSketchOverlayStyleCount = 5;
+
+// The per-style half of what the renderer pushes to draw ONE overlay range: the
+// two scalars that differ between styles. Everything else in the push -- the
+// view-projection, the three axis hues, the highlight colour, the emphasis tag
+// -- is the same for every range and stays in the renderer.
+//
+// Extracted from the renderer's switch so every value the enum can take is
+// reachable without a Vulkan device, which is the only way "this style is
+// drawn at all" can be a test rather than a screenshot.
+struct SketchOverlayStyleWeights {
+    // Packed into `axisX.w`: the grey a vertex with no hue tag is drawn in.
+    float neutralLevel = 0.0f;
+    // Packed into `highlight.w`: the base alpha `gizmo.vert` multiplies every
+    // vertex of the range by. Never 0 for a style the renderer draws.
+    float alpha = 0.0f;
+};
+
+// The mapping. A pure function over values: no renderer, no device, no frame.
+//
+// Returns false, writing nothing, for a style code outside the enum -- the
+// renderer skips such a range rather than recording a draw that could not be
+// seen.
+bool sketchOverlayStyleWeights(SketchOverlayStyle style, ViewportBackground background,
+                               SketchOverlayStyleWeights* out);
+
 struct SketchOverlayRange {
     uint32_t firstVertex = 0;
     uint32_t vertexCount = 0;

@@ -9,6 +9,7 @@
 #include "forgeshape_history.h"
 #include "forgeshape_mesh.h"
 #include "forgeshape_scene.h"
+#include "forgeshape_sketch_overlay.h"
 #include "forgeshape_transform.h"
 
 namespace forgeshape {
@@ -607,6 +608,124 @@ int runGizmoSelfTests(GizmoSelfTestResult* out, int maxOut) {
         r.check("and_the_handles_that_are_not_held_drop_away",
                 kGizmoIdleAxisAlphaScale < kGizmoHeldAxisAlphaScale &&
                     kGizmoIdleAxisAlphaScale > 0.0f);
+    }
+
+    // -----------------------------------------------------------------------
+    // The sketch-overlay style mapping, EXHAUSTIVELY (`UI-3D-STATE-C2`)
+    // -----------------------------------------------------------------------
+    //
+    // The overlay borrows this instrument's pipeline, palette and vertex
+    // layout, so its per-style weights are checked here rather than in a suite
+    // of their own. Exhaustive by construction: a style with no mapping draws at
+    // alpha 0, which is invisible with nothing failing -- `UI3D-F-005`, where
+    // `Dimension` went unmapped through two shipped features.
+    {
+        const ViewportBackground grounds[kViewportBackgroundCount] = {
+            ViewportBackground::WarmGraphite, ViewportBackground::NeutralCharcoal,
+            ViewportBackground::LightCharcoal, ViewportBackground::WarmLight,
+            ViewportBackground::CoolLight};
+
+        // A deliberate tripwire: it names the LAST value of the enum, so adding
+        // one lands a reader in this block, where the exhaustive walk below is
+        // what actually proves the new style is drawn. Verified by adding a
+        // sixth value: this check and the walk both fail, and the mapping's own
+        // switch warns at compile time.
+        r.check("overlay_the_style_count_states_the_whole_enum",
+                static_cast<int>(SketchOverlayStyle::Dimension) + 1 == kSketchOverlayStyleCount);
+
+        // EVERY value the enum can take, on EVERY ground: mapped, finite, and
+        // drawn at an alpha something can actually be seen at.
+        bool allMapped = true;
+        bool allVisible = true;
+        bool allFinite = true;
+        for (int s = 0; s < kSketchOverlayStyleCount; ++s) {
+            const SketchOverlayStyle style = static_cast<SketchOverlayStyle>(s);
+            for (int g = 0; g < kViewportBackgroundCount; ++g) {
+                SketchOverlayStyleWeights w;
+                if (!sketchOverlayStyleWeights(style, grounds[g], &w)) {
+                    allMapped = false;
+                    continue;
+                }
+                allVisible = allVisible && w.alpha > 0.05f && w.alpha <= 1.0f;
+                allFinite = allFinite && std::isfinite(w.alpha) &&
+                            std::isfinite(w.neutralLevel) && w.neutralLevel >= 0.0f &&
+                            w.neutralLevel <= 1.0f;
+            }
+        }
+        r.check("overlay_every_style_has_a_mapping_on_every_ground", allMapped);
+        r.check("overlay_no_style_is_drawn_at_an_invisible_alpha", allVisible);
+        r.check("overlay_every_style_weight_is_finite_and_in_range", allFinite);
+
+        // The finding itself, named: the annotation both the selected-Line
+        // dimension and the Stage 020M active-axis leader are drawn in.
+        bool dimensionVisible = true;
+        for (int g = 0; g < kViewportBackgroundCount; ++g) {
+            SketchOverlayStyleWeights w;
+            dimensionVisible =
+                dimensionVisible &&
+                sketchOverlayStyleWeights(SketchOverlayStyle::Dimension, grounds[g], &w) &&
+                w.alpha > 0.5f;
+        }
+        r.check("overlay_the_dimension_annotation_is_not_transparent", dimensionVisible);
+
+        // The four styles that already had a mapping keep it to the value, on
+        // every ground: this correction is one case added, not a re-weighting.
+        bool legacyUnchanged = true;
+        for (int g = 0; g < kViewportBackgroundCount; ++g) {
+            const float neutral = gizmoNeutralLevel(grounds[g]);
+            float highlightRgb[3] = {0.0f, 0.0f, 0.0f};
+            gizmoHighlightColor(grounds[g], highlightRgb);
+            const float entityLevel = neutral * 0.35f + highlightRgb[0] * 0.65f;
+            const SketchOverlayStyle styles[4] = {
+                SketchOverlayStyle::GridMinor, SketchOverlayStyle::GridMajor,
+                SketchOverlayStyle::Axes, SketchOverlayStyle::Entities};
+            const float alphas[4] = {kGizmoAxisAlpha * 0.22f, kGizmoAxisAlpha * 0.45f,
+                                     kGizmoAxisAlpha * 0.9f, kGizmoAxisAlpha};
+            const float levels[4] = {neutral, neutral, neutral, entityLevel};
+            for (int i = 0; i < 4; ++i) {
+                SketchOverlayStyleWeights w;
+                legacyUnchanged = legacyUnchanged &&
+                                  sketchOverlayStyleWeights(styles[i], grounds[g], &w) &&
+                                  w.alpha == alphas[i] && w.neutralLevel == levels[i];
+            }
+        }
+        r.check("overlay_the_four_older_styles_keep_their_exact_weights", legacyUnchanged);
+
+        // An annotation is read AGAINST the geometry it measures, so it stands
+        // clear of the grid and under the entities. Stated as an ordering
+        // rather than as a number, because the number is a look and the
+        // ordering is the rule.
+        bool ordered = true;
+        for (int g = 0; g < kViewportBackgroundCount; ++g) {
+            SketchOverlayStyleWeights minor, major, dimension, entities;
+            ordered = ordered &&
+                      sketchOverlayStyleWeights(SketchOverlayStyle::GridMinor, grounds[g], &minor) &&
+                      sketchOverlayStyleWeights(SketchOverlayStyle::GridMajor, grounds[g], &major) &&
+                      sketchOverlayStyleWeights(SketchOverlayStyle::Dimension, grounds[g],
+                                                &dimension) &&
+                      sketchOverlayStyleWeights(SketchOverlayStyle::Entities, grounds[g],
+                                                &entities) &&
+                      minor.alpha < major.alpha && major.alpha < dimension.alpha &&
+                      dimension.alpha < entities.alpha &&
+                      dimension.neutralLevel == entities.neutralLevel;
+        }
+        r.check("overlay_an_annotation_stands_off_the_grid_and_under_the_entities", ordered);
+
+        // A code that is not a style at all is refused, writing nothing -- the
+        // renderer skips such a range rather than recording an unseeable draw.
+        SketchOverlayStyleWeights untouched;
+        untouched.neutralLevel = 0.125f;
+        untouched.alpha = 0.375f;
+        const bool refusedOutOfEnum =
+            !sketchOverlayStyleWeights(static_cast<SketchOverlayStyle>(kSketchOverlayStyleCount),
+                                       ViewportBackground::WarmGraphite, &untouched) &&
+            !sketchOverlayStyleWeights(static_cast<SketchOverlayStyle>(200),
+                                       ViewportBackground::WarmGraphite, &untouched) &&
+            untouched.neutralLevel == 0.125f && untouched.alpha == 0.375f;
+        r.check("overlay_a_code_outside_the_enum_is_refused_and_writes_nothing", refusedOutOfEnum);
+        r.check("overlay_a_null_destination_is_refused",
+                !sketchOverlayStyleWeights(SketchOverlayStyle::Dimension,
+                                           ViewportBackground::WarmGraphite, nullptr));
     }
 
     // -----------------------------------------------------------------------
