@@ -59,8 +59,21 @@ final class BodyDimensionLabelsView extends FrameLayout {
 
     private final InspectorHost host;
     private final OnDimensionAction actions;
+    /** The ONE viewport-anchor conversion; see {@link ViewportAnchorSpace}. */
+    private final ViewportAnchorSpace anchorSpace;
     private final double[] state = new double[NativeViewport.BODY_DIM_SIZE];
     private final float[] screen = new float[2];
+
+    /**
+     * The body these three numbers describe, or {@link NativeViewport#NO_OBJECT}.
+     *
+     * <p>Held so a change of owner is NOTICED rather than survived
+     * ({@code UI3D-F-007}): an editor left open over the previous body would
+     * submit a size to the wrong one, and a label placed from the previous
+     * body's anchor is ghost UI whatever the number on it says. Cleared
+     * whenever the surface withdraws, so no later refresh can resurrect it.
+     */
+    private long ownerBodyId = NativeViewport.NO_OBJECT;
 
     private final TextView[] readings = new TextView[3];
     private final LinearLayout editor;
@@ -69,9 +82,11 @@ final class BodyDimensionLabelsView extends FrameLayout {
     /** The axis the editor is open on, or {@link NativeViewport#BODY_DIM_AXIS_NONE}. */
     private int editingAxis = NativeViewport.BODY_DIM_AXIS_NONE;
 
-    BodyDimensionLabelsView(Context context, InspectorHost host, OnDimensionAction actions) {
+    BodyDimensionLabelsView(Context context, InspectorHost host, ViewportAnchorSpace anchorSpace,
+                            OnDimensionAction actions) {
         super(context);
         this.host = host;
+        this.anchorSpace = anchorSpace;
         this.actions = actions;
         setId(R.id.body_dimension_labels);
         setVisibility(GONE);
@@ -162,6 +177,16 @@ final class BodyDimensionLabelsView extends FrameLayout {
             close();
             return;
         }
+        // The owner is read back rather than assumed. Native closes the mode
+        // itself the moment its body stops being measurable, so reaching here
+        // means SOME body is being measured; which one is the question, and a
+        // different answer than last time invalidates the open editor before
+        // anything is placed from the new body's anchors.
+        final long body = NativeViewport.sceneActiveBodyId();
+        if (body != ownerBodyId) {
+            closeEditor();
+            ownerBodyId = body;
+        }
         setVisibility(VISIBLE);
         final LengthUnit unit = host.uiState().displayUnit();
         for (int axis = 0; axis < 3; axis++) {
@@ -189,22 +214,16 @@ final class BodyDimensionLabelsView extends FrameLayout {
         return editingAxis;
     }
 
-    /** Centres a chip on its anchor, kept inside the window. */
+    /**
+     * Centres a chip on its anchor, kept inside the VIEWPORT.
+     *
+     * <p>The anchor native reports is in viewport-content pixels and this view
+     * stands in the inset-padded overlay, so the conversion between the two is
+     * {@link ViewportAnchorSpace}'s and never arithmetic written here: one
+     * contract for every anchored surface rather than three that can drift.
+     */
     private void placeAt(View shown, float x, float y) {
-        shown.measure(MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED),
-                MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED));
-        final int width = shown.getMeasuredWidth();
-        final int height = shown.getMeasuredHeight();
-        float left = x - width * 0.5f;
-        float top = y - height * 0.5f;
-        // Clamped into this view rather than allowed off-screen: a label half
-        // outside the window is a value the user can neither read nor tap.
-        if (getWidth() > 0 && getHeight() > 0) {
-            left = Math.max(0.0f, Math.min(left, getWidth() - width));
-            top = Math.max(0.0f, Math.min(top, getHeight() - height));
-        }
-        shown.setTranslationX(left);
-        shown.setTranslationY(top);
+        anchorSpace.measureAndPlace(shown, x, y, 1.0f);
     }
 
     /**
@@ -257,6 +276,11 @@ final class BodyDimensionLabelsView extends FrameLayout {
 
     private void close() {
         closeEditor();
+        // The cached owner goes with the surface. Kept, it would let a later
+        // unrelated refresh place three numbers from a body that is no longer
+        // the one being measured, which is exactly the ghost UI `UI-OWNER-50`
+        // forbids.
+        ownerBodyId = NativeViewport.NO_OBJECT;
         setVisibility(GONE);
     }
 

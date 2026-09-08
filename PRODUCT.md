@@ -627,7 +627,8 @@ annotation is not visible today**: the drawing is produced but the renderer has
 no case for its style, so it comes out fully transparent. Runtime-confirmed by
 `UI-3D-STATE-AUDIT-R1` as `UI3D-F-005`, recorded in `PROJECT_STATUS.md` →
 *Known Issues*, and unfixed. The number itself is drawn, is correct, and stands
-about 48 dp below where it belongs (`UI3D-F-001`). Tap the number
+on the annotation it belongs to since `UI-3D-STATE-C1` corrected where every
+viewport-anchored label in the product sits. Tap the number
 and a small field opens right there: type an exact length, press *Apply*, and
 the line takes it. **The first end stays where it is and the direction does not
 change** — only the far end moves, along the line it was already on. Nothing
@@ -661,11 +662,12 @@ limits, so it never becomes unreadable and never covers the profile it measures.
 A distance typed here and the same number typed in the panel are the same thing;
 there is one extrusion, and both places show it.
 
-> The cluster **follows** the arrow correctly through a drag, an orbit and a
-> zoom, and so does the **Edit Sketch** chip below — measured on the device by
-> `UI-3D-STATE-AUDIT-R1`. What both get wrong is the same constant every
-> viewport-anchored label in the product gets wrong: they stand about 48 dp
-> below the point they are anchored to (`UI3D-F-001`, unfixed).
+The cluster **follows** the arrow through a drag, an orbit and a zoom, and so
+does the **Edit Sketch** chip below — measured on the device by
+`UI-3D-STATE-AUDIT-R1` and, since `UI-3D-STATE-C1` corrected where anchored
+chrome stands, sitting on the point it is anchored to. Near a window edge the
+cluster is held inside the viewport so it stays readable and tappable, and it
+reaches that edge where the window requires rather than an inset early.
 
 **Three ways for a solid to reach out of its sketch.** The extent selector
 offers exactly three:
@@ -1104,15 +1106,24 @@ width, height and depth multiplied by the scale it carries. **Turning the body
 does not change the numbers**, and neither does moving it or looking at it from
 somewhere else.
 
-> **Where those numbers STAND is defective today, and the audit that measured it
-> is `UI-3D-STATE-AUDIT-R1` (2026-09-08).** They are drawn about 48 dp below the
-> dimension line they belong to; they are missing for a moment when the mode
-> opens, until the next thing you touch; they stay behind when you orbit, pan or
-> zoom; they stay on the previous body when you select another one; and they are
-> still drawn after Start Sculpting or after hiding the body. The SIZES are
-> correct throughout — nothing here is wrong with the measurement, the resize or
-> the project — and no fix has been made. `PROJECT_STATUS.md` → *Known Issues*
-> holds `UI3D-F-001` through `UI3D-F-007`.
+Each number stands **on the dimension line it belongs to**, and it stays there:
+it is present on the frame the mode opens rather than after the next thing you
+touch, it follows an orbit, a pan and a zoom, it follows the body through a move,
+a turn and a resize, it moves to the body you select instead of staying on the
+one you left, and it goes away when you Start Sculpting or hide the body. A
+number whose anchor falls outside the viewport is held at the nearest edge so it
+stays readable, rather than being drawn off screen. Verified at runtime by
+`UI-3D-STATE-C1` (2026-09-08), which corrected the six placement and staleness
+defects `UI-3D-STATE-AUDIT-R1` had measured; the same conversion carries the
+sketch line's dimension label and the extrude cluster, so those stand on their
+geometry too.
+
+> **One related defect is still open.** The technical-drawing annotation itself —
+> the extension lines, the dimension line and its end ticks — is invisible on the
+> axis you are currently editing, because the renderer has no case for that
+> drawing style. The other two axes draw normally, and the numbers, the sizes,
+> the resize and the project are all correct. `PROJECT_STATUS.md` → *Known
+> Issues* holds it as `UI3D-F-005`.
 
 A **plane** truthfully reports zero thickness, and asking to
 resize that axis is refused by name rather than answered by inventing a

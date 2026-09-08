@@ -1494,6 +1494,75 @@ void runMeshStress() {
     g_stressRunning.store(false);
 }
 
+// Whether the ACTIVE body can be measured at all, and its bounds. Called under
+// the state lock by everything below.
+bool activeBodyDimensions(forgeshape::LocalBounds* outBounds,
+                          forgeshape::BodyDimensions* outDimensions) {
+    const forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
+    if (!scene.hasProject()) {
+        return false;
+    }
+    return forgeshape::sceneBodyDimensions(scene.activeBodyId(), scene, outBounds, outDimensions);
+}
+
+// Whether the ACTIVE body is one Dimensions mode may stand on, right now.
+//
+// The ONE predicate, named once and asked from both threads: the render thread
+// closes the session with it when what it measures stops being measurable, and
+// every chrome read below asks it before answering. Two copies of this rule is
+// how the shell came to draw three numbers over a body that had been hidden,
+// or over a sculpt session -- native had already shut the mode on a frame the
+// shell never looked at again.
+//
+// Called under g_stateMutex, like everything else that reads the scene.
+bool activeBodyDimensionsEditable(forgeshape::LocalBounds* outBounds,
+                                  forgeshape::BodyDimensions* outDimensions) {
+    const forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
+    return activeBodyDimensions(outBounds, outDimensions) && scene.hasProject()
+        && forgeshape::bodySizeEditable(scene.activeBody())
+        && !forgeshape::sculptSession().inSculptMode();
+}
+
+// The Dimensions session, having first shut itself if its body left.
+//
+// The mode CLOSES itself the moment what it measures stops being measurable --
+// another body selected, this one locked, hidden or deleted, Sculpt entered,
+// the project closed. That rule was the render thread's alone, so it was true
+// only once a frame had been drawn and the shell's own refresh, which happens
+// at the instant of the transition, saw a mode still open (UI3D-F-004). It is
+// asked HERE too, so every observation of the session agrees with every other.
+forgeshape::BodyDimensionSession& settledBodyDimensionSession() {
+    forgeshape::BodyDimensionSession& session = forgeshape::bodyDimensionSession();
+    if (session.active() && !activeBodyDimensionsEditable(nullptr, nullptr)) {
+        session.close();
+    }
+    return session;
+}
+
+// Where the three numeric labels belong in WORLD space, for this instant.
+//
+// Derived from the active body's CURRENT bounds, placement and camera scale
+// rather than read out of whatever the render thread last cached. The cache is
+// a frame behind by construction, which showed as no labels at all on the frame
+// the mode opened (UI3D-F-003) and as the PREVIOUS body's anchors after a switch
+// (UI3D-F-007) -- the same race with its two outcomes.
+//
+// Called under g_stateMutex.
+bool activeBodyDimensionAnchors(forgeshape::BodyDimensionLabelAnchors* out) {
+    forgeshape::LocalBounds bounds;
+    if (!settledBodyDimensionSession().active() || !activeBodyDimensionsEditable(&bounds, nullptr)) {
+        return false;
+    }
+    // The same camera-derived world-per-unit the frame builds the leaders with,
+    // so the label stands at the midpoint of the line actually drawn.
+    float worldPerUnit = 0.0f;
+    forgeshape::gizmoWorldScale(g_camera.snapshot(), forgeshape::Vec3{0.0f, 0.0f, 0.0f},
+                                g_camera.viewportHeight(), &worldPerUnit);
+    const forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
+    return forgeshape::bodyDimensionLabelAnchors(
+        bounds, scene.activeBody().transform().values(), worldPerUnit, out);
+}
+
 void renderThreadMain() {
     Renderer renderer;
     if (!renderer.createInstance()) {
@@ -1636,12 +1705,10 @@ void renderThreadMain() {
                         forgeshape::LocalBounds bounds;
                         const forgeshape::ConstructionScene& scene =
                             forgeshape::constructionScene();
-                        const bool measurable =
-                            scene.hasProject()
-                            && forgeshape::sceneBodyDimensions(scene.activeBodyId(), scene,
-                                                               &bounds, nullptr)
-                            && forgeshape::bodySizeEditable(scene.activeBody())
-                            && !forgeshape::sculptSession().inSculptMode();
+                        // The ONE predicate, asked here and by every chrome
+                        // read, so a frame and a refresh can never disagree
+                        // about whether the mode still has a body.
+                        const bool measurable = activeBodyDimensionsEditable(&bounds, nullptr);
                         if (measurable) {
                             renderer.setSketchOverlay(forgeshape::bodyDimensionSession().overlay(
                                 bounds, scene.activeBody().transform().values(), worldPerUnit));
@@ -2256,17 +2323,6 @@ jint bodySizeResultToJni(const forgeshape::BodySizeResult& result) {
     return kApplyRejectedNotFinite;
 }
 
-// Whether the ACTIVE body can be measured at all, and its bounds. Called under
-// the state lock by everything below.
-bool activeBodyDimensions(forgeshape::LocalBounds* outBounds,
-                          forgeshape::BodyDimensions* outDimensions) {
-    const forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
-    if (!scene.hasProject()) {
-        return false;
-    }
-    return forgeshape::sceneBodyDimensions(scene.activeBodyId(), scene, outBounds, outDimensions);
-}
-
 // The whole Dimensions state, in NativeViewport's BODY_DIM_* slots.
 JNIEXPORT void JNICALL
 Java_com_forgeshape_app_NativeViewport_bodyDimensionsState(JNIEnv* env, jclass, jdoubleArray out) {
@@ -2283,10 +2339,12 @@ Java_com_forgeshape_app_NativeViewport_bodyDimensionsState(JNIEnv* env, jclass, 
         const forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
         // "Supported" is what decides whether the CONTROLS are drawn, and it is
         // the domain's own predicate rather than a second rule written here.
-        const bool editable = measurable && scene.hasProject()
-                           && forgeshape::bodySizeEditable(scene.activeBody())
-                           && !forgeshape::sculptSession().inSculptMode();
-        const forgeshape::BodyDimensionSession& session = forgeshape::bodyDimensionSession();
+        const bool editable = activeBodyDimensionsEditable(nullptr, nullptr);
+        // Asked through the settling accessor, so a session whose body has been
+        // hidden, locked, deleted or handed to Sculpt reads as CLOSED here even
+        // if no frame has been drawn since. The shell refreshes at the instant
+        // of such a transition, and it must not be told the mode is still open.
+        const forgeshape::BodyDimensionSession& session = settledBodyDimensionSession();
         values[0] = editable ? 1.0 : 0.0;
         values[1] = session.active() ? 1.0 : 0.0;
         values[2] = static_cast<double>(session.activeAxis());
@@ -2323,11 +2381,9 @@ Java_com_forgeshape_app_NativeViewport_setBodyDimensionsMode(JNIEnv*, jclass, jb
         std::lock_guard<std::mutex> lock(g_stateMutex);
         forgeshape::BodyDimensionSession& session = forgeshape::bodyDimensionSession();
         if (on == JNI_TRUE) {
-            forgeshape::LocalBounds bounds;
-            const forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
-            const bool editable = activeBodyDimensions(&bounds, nullptr) && scene.hasProject()
-                               && forgeshape::bodySizeEditable(scene.activeBody())
-                               && !forgeshape::sculptSession().inSculptMode();
+            // The same one predicate every other reader asks, so what may OPEN
+            // the mode and what keeps it open cannot come apart.
+            const bool editable = activeBodyDimensionsEditable(nullptr, nullptr);
             if (!editable) {
                 // A locked, hidden, imported, CAD or sculpted body, or no
                 // project at all. Refused by name; the mode is left CLOSED
@@ -2472,9 +2528,11 @@ Java_com_forgeshape_app_NativeViewport_bodyDimensionLabelPoint(JNIEnv* env, jcla
     bool found = false;
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
-        const forgeshape::BodyDimensionSession& session = forgeshape::bodyDimensionSession();
-        const forgeshape::BodyDimensionLabelAnchors& anchors = session.labelAnchors();
-        if (session.active() && anchors.valid) {
+        // Derived for THIS instant rather than read out of the last frame's
+        // cache: the anchors belong to whichever body the mode measures now, and
+        // they exist before a frame has ever drawn the leaders.
+        forgeshape::BodyDimensionLabelAnchors anchors;
+        if (activeBodyDimensionAnchors(&anchors)) {
             found = forgeshape::projectWorldToScreen(g_camera.snapshot(), anchors.axis[index],
                                                      g_camera.viewportWidth(),
                                                      g_camera.viewportHeight(), &point[0],

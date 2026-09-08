@@ -171,6 +171,20 @@ SketchOverlayPtr buildBodyDimensionOverlay(const LocalBounds& bounds,
     return built;
 }
 
+bool bodyDimensionLabelAnchors(const LocalBounds& bounds, const TransformValues& placement,
+                               float worldPerUnit, BodyDimensionLabelAnchors* out) {
+    if (out == nullptr) {
+        return false;
+    }
+    // Deliberately the SAME builder rather than a second copy of the midpoint
+    // arithmetic: two implementations of where a label belongs is exactly how a
+    // number drifts off the line it is measuring. The vertex list it also
+    // produces is thrown away, which costs 24 vertices on a chrome read and
+    // buys one implementation.
+    buildBodyDimensionOverlay(bounds, placement, kNoDimensionAxis, worldPerUnit, 0, out);
+    return out->valid;
+}
+
 void BodyDimensionSession::open() {
     active_ = true;
     activeAxis_ = kNoDimensionAxis;
@@ -183,7 +197,6 @@ void BodyDimensionSession::close() {
     activeAxis_ = kNoDimensionAxis;
     anchor_ = ResizeAnchor::Center;
     overlay_.reset();
-    labelAnchors_ = BodyDimensionLabelAnchors{};
     built_ = false;
 }
 
@@ -205,7 +218,6 @@ SketchOverlayPtr BodyDimensionSession::overlay(const LocalBounds& bounds,
                                                float worldPerUnit) {
     if (!active_) {
         overlay_.reset();
-        labelAnchors_ = BodyDimensionLabelAnchors{};
         built_ = false;
         return overlay_;
     }
@@ -218,8 +230,7 @@ SketchOverlayPtr BodyDimensionSession::overlay(const LocalBounds& bounds,
         return overlay_;
     }
     ++revision_;
-    overlay_ = buildBodyDimensionOverlay(bounds, placement, activeAxis_, worldPerUnit, revision_,
-                                         &labelAnchors_);
+    overlay_ = buildBodyDimensionOverlay(bounds, placement, activeAxis_, worldPerUnit, revision_);
     builtBounds_ = bounds;
     builtPlacement_ = placement;
     builtWorldPerUnit_ = worldPerUnit;

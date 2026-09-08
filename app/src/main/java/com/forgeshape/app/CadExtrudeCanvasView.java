@@ -82,6 +82,8 @@ final class CadExtrudeCanvasView extends FrameLayout {
 
     private final InspectorHost host;
     private final OnCanvasExtrudeAction actions;
+    /** The ONE viewport-anchor conversion; see {@link ViewportAnchorSpace}. */
+    private final ViewportAnchorSpace anchorSpace;
     private final double[] tool = new double[NativeViewport.CAD_EXTRUDE_SIZE];
     private final float[] bodyAnchor = new float[3];
 
@@ -122,9 +124,11 @@ final class CadExtrudeCanvasView extends FrameLayout {
     private float secondAnchorX;
     private float secondAnchorY;
 
-    CadExtrudeCanvasView(Context context, InspectorHost host, OnCanvasExtrudeAction actions) {
+    CadExtrudeCanvasView(Context context, InspectorHost host, ViewportAnchorSpace anchorSpace,
+                         OnCanvasExtrudeAction actions) {
         super(context);
         this.host = host;
+        this.anchorSpace = anchorSpace;
         this.actions = actions;
         setId(R.id.cad_extrude_canvas);
         setVisibility(GONE);
@@ -493,18 +497,13 @@ final class CadExtrudeCanvasView extends FrameLayout {
         shown.setPivotY(0.0f);
         shown.setScaleX(k);
         shown.setScaleY(k);
-        shown.measure(MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED),
-                MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED));
-        final float width = shown.getMeasuredWidth() * k;
-        final float height = shown.getMeasuredHeight() * k;
-        float left = x - width * 0.5f;
-        float top = y - height * 0.5f;
-        if (getWidth() > 0 && getHeight() > 0) {
-            left = Math.max(0.0f, Math.min(left, getWidth() - width));
-            top = Math.max(0.0f, Math.min(top, getHeight() - height));
-        }
-        shown.setTranslationX(left);
-        shown.setTranslationY(top);
+        // The camera-attached multiplier is `CAD-UX-S1`'s and is untouched here:
+        // it decides how BIG the cluster is drawn, and this decides only WHERE
+        // that box is centred. The conversion from the viewport pixels native
+        // reports into this container's own translation space, and the clamp
+        // against the real viewport rather than this padded container
+        // (`UI3D-F-006`), are the shared contract in ViewportAnchorSpace.
+        anchorSpace.measureAndPlace(shown, x, y, k);
     }
 
     /** Whether the numeric editor is open, for verification. */

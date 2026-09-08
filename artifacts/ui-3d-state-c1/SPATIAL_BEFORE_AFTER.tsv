@@ -1,0 +1,73 @@
+﻿case	action	surface	anchor_kind	before_error_dp	before_verdict	after_error_dp	after_verdict
+UI3D-04	dimensions_open	S19 body_dimension_label_x	WORLD_ANCHORED	-	NOT_MEASURED	0.09	PASS
+UI3D-04	dimensions_open	S19 body_dimension_label_y	WORLD_ANCHORED	-	NOT_MEASURED	0.12	PASS
+UI3D-04	dimensions_open	S19 body_dimension_label_z	WORLD_ANCHORED	-	NOT_MEASURED	0.23	PASS
+UI3D-04	after_move	S19 body_dimension_label_x	WORLD_ANCHORED	179.63	CLAMPED	0.44	CLAMPED
+UI3D-04	after_move	S19 body_dimension_label_y	WORLD_ANCHORED	48.64	FAIL	0.12	PASS
+UI3D-04	after_move	S19 body_dimension_label_z	WORLD_ANCHORED	48.83	FAIL	0.10	PASS
+UI3D-04	after_rotate	S19 body_dimension_label_x	WORLD_ANCHORED	77.65	FAIL	0.12	PASS
+UI3D-04	after_rotate	S19 body_dimension_label_y	WORLD_ANCHORED	52.72	FAIL	0.03	PASS
+UI3D-04	after_rotate	S19 body_dimension_label_z	WORLD_ANCHORED	9.99	FAIL	0.17	PASS
+UI3D-04	after_scale	S19 body_dimension_label_x	WORLD_ANCHORED	77.08	FAIL	0.19	PASS
+UI3D-04	after_scale	S19 body_dimension_label_y	WORLD_ANCHORED	93.04	FAIL	0.13	PASS
+UI3D-04	after_scale	S19 body_dimension_label_z	WORLD_ANCHORED	89.56	FAIL	0.11	PASS
+UI3D-04	after_typed_dimension	S19 body_dimension_label_x	WORLD_ANCHORED	47.98	FAIL	0.23	PASS
+UI3D-04	after_typed_dimension	S19 body_dimension_label_y	WORLD_ANCHORED	48.63	FAIL	0.13	PASS
+UI3D-04	after_typed_dimension	S19 body_dimension_label_z	WORLD_ANCHORED	48.82	FAIL	0.11	PASS
+UI3D-04	after_undo	S19 body_dimension_label_x	WORLD_ANCHORED	48.63	FAIL	0.19	PASS
+UI3D-04	after_undo	S19 body_dimension_label_y	WORLD_ANCHORED	48.63	FAIL	0.13	PASS
+UI3D-04	after_undo	S19 body_dimension_label_z	WORLD_ANCHORED	48.82	FAIL	0.11	PASS
+UI3D-08	one_side_staged	S35 cad_extrude cluster	FEATURE_ANCHORED	51.67	CLAMPED	22.25	CLAMPED
+UI3D-08	after_arrow_drag	S35 cad_extrude cluster	FEATURE_ANCHORED	96.56	CLAMPED	40.01	CLAMPED
+UI3D-08	after_orbit	S35 cad_extrude cluster	FEATURE_ANCHORED	99.53	CLAMPED	26.36	CLAMPED
+UI3D-08	after_zoom_out	S35 cad_extrude cluster	FEATURE_ANCHORED	95.09	FAIL	0.15	PASS
+UI3D-08	after_zoom_in	S35 cad_extrude cluster	FEATURE_ANCHORED	99.53	CLAMPED	26.36	CLAMPED
+UI3D-09	symmetric	S35 cad_extrude cluster	FEATURE_ANCHORED	99.53	CLAMPED	26.36	CLAMPED
+UI3D-09	two_sides	S35 cad_extrude cluster	FEATURE_ANCHORED	99.53	CLAMPED	26.36	CLAMPED
+UI3D-09	two_sides	S36 cad_extrude_second_value	FEATURE_ANCHORED	48.87	FAIL	0.13	PASS
+UI3D-09	two_sides_after_side_a_drag	S35 cad_extrude cluster	FEATURE_ANCHORED	105.15	CLAMPED	37.28	CLAMPED
+UI3D-09	two_sides_after_side_a_drag	S36 cad_extrude_second_value	FEATURE_ANCHORED	48.87	FAIL	0.13	PASS
+UI3D-09	two_sides_after_side_b_drag	S35 cad_extrude cluster	FEATURE_ANCHORED	105.15	CLAMPED	37.28	CLAMPED
+UI3D-09	two_sides_after_side_b_drag	S36 cad_extrude_second_value	FEATURE_ANCHORED	48.70	FAIL	0.08	PASS
+UI3D-09	side_b_zeroed	S36 cad_extrude_second_value	FEATURE_ANCHORED	48.59	FAIL	0.22	PASS
+UI3D-07	line_selected	S31 sketch_dimension_label	WORLD_ANCHORED	48.90	FAIL	0.24	PASS
+UI3D-07	length_applied	S31 sketch_dimension_label	WORLD_ANCHORED	48.90	FAIL	0.14	PASS
+UI3D-07	after_pan	S31 sketch_dimension_label	WORLD_ANCHORED	48.90	FAIL	0.14	PASS
+UI3D-05	before_camera	S19 body_dimension_label_x	WORLD_ANCHORED	-	NOT_MEASURED	0.09	PASS
+UI3D-05	before_camera	S19 body_dimension_label_y	WORLD_ANCHORED	-	NOT_MEASURED	0.12	PASS
+UI3D-05	before_camera	S19 body_dimension_label_z	WORLD_ANCHORED	-	NOT_MEASURED	0.23	PASS
+UI3D-05	after_orbit	S19 body_dimension_label_x	WORLD_ANCHORED	-	NOT_MEASURED	0.17	PASS
+UI3D-05	after_orbit	S19 body_dimension_label_y	WORLD_ANCHORED	-	NOT_MEASURED	0.22	PASS
+UI3D-05	after_orbit	S19 body_dimension_label_z	WORLD_ANCHORED	-	NOT_MEASURED	0.16	PASS
+UI3D-05	after_orbit_then_chrome_sync	S19 body_dimension_label_x	WORLD_ANCHORED	48.92	FAIL	0.17	PASS
+UI3D-05	after_orbit_then_chrome_sync	S19 body_dimension_label_y	WORLD_ANCHORED	48.63	FAIL	0.22	PASS
+UI3D-05	after_orbit_then_chrome_sync	S19 body_dimension_label_z	WORLD_ANCHORED	48.60	FAIL	0.16	PASS
+UI3D-05	after_pan	S19 body_dimension_label_x	WORLD_ANCHORED	42.71	FAIL	0.17	PASS
+UI3D-05	after_pan	S19 body_dimension_label_y	WORLD_ANCHORED	44.19	FAIL	0.14	PASS
+UI3D-05	after_pan	S19 body_dimension_label_z	WORLD_ANCHORED	43.18	FAIL	0.16	PASS
+UI3D-05	after_pan_then_chrome_sync	S19 body_dimension_label_x	WORLD_ANCHORED	48.87	FAIL	0.17	PASS
+UI3D-05	after_pan_then_chrome_sync	S19 body_dimension_label_y	WORLD_ANCHORED	48.77	FAIL	0.14	PASS
+UI3D-05	after_pan_then_chrome_sync	S19 body_dimension_label_z	WORLD_ANCHORED	48.91	FAIL	0.16	PASS
+UI3D-05	after_zoom_out	S19 body_dimension_label_x	WORLD_ANCHORED	70.78	FAIL	0.10	PASS
+UI3D-05	after_zoom_out	S19 body_dimension_label_y	WORLD_ANCHORED	98.39	FAIL	0.17	PASS
+UI3D-05	after_zoom_out	S19 body_dimension_label_z	WORLD_ANCHORED	119.32	FAIL	0.12	PASS
+UI3D-05	after_zoom_in	S19 body_dimension_label_x	WORLD_ANCHORED	34.21	FAIL	0.17	PASS
+UI3D-05	after_zoom_in	S19 body_dimension_label_y	WORLD_ANCHORED	49.30	FAIL	0.14	PASS
+UI3D-05	after_zoom_in	S19 body_dimension_label_z	WORLD_ANCHORED	39.01	FAIL	0.16	PASS
+UI3D-05	after_zoom_then_chrome_sync	S19 body_dimension_label_x	WORLD_ANCHORED	48.87	FAIL	0.17	PASS
+UI3D-05	after_zoom_then_chrome_sync	S19 body_dimension_label_y	WORLD_ANCHORED	48.77	FAIL	0.14	PASS
+UI3D-05	after_zoom_then_chrome_sync	S19 body_dimension_label_z	WORLD_ANCHORED	48.91	FAIL	0.16	PASS
+UI3D-10	committed	S38 cad_canvas_edit_sketch	FEATURE_ANCHORED	48.64	FAIL	0.12	PASS
+UI3D-10	after_move	S38 cad_canvas_edit_sketch	FEATURE_ANCHORED	48.95	FAIL	0.25	PASS
+UI3D-10	after_rotate	S38 cad_canvas_edit_sketch	FEATURE_ANCHORED	48.95	FAIL	0.25	PASS
+UI3D-10	after_scale	S38 cad_canvas_edit_sketch	FEATURE_ANCHORED	48.95	FAIL	0.25	PASS
+UI3D-10	after_gizmo_drag	S38 cad_canvas_edit_sketch	FEATURE_ANCHORED	48.80	FAIL	0.18	PASS
+UI3D-10	after_orbit	S38 cad_canvas_edit_sketch	FEATURE_ANCHORED	48.88	FAIL	0.12	PASS
+UI3D-10	after_zoom_out	S38 cad_canvas_edit_sketch	FEATURE_ANCHORED	48.81	FAIL	0.05	PASS
+UI3D-10	finish_again	S35 cad_extrude cluster	FEATURE_ANCHORED	63.32	CLAMPED	11.38	CLAMPED
+UI3D-06	dimensions_on_body_B	S19 body_dimension_label_x	WORLD_ANCHORED	-	NOT_MEASURED	65.96	CLAMPED
+UI3D-06	dimensions_on_body_B	S19 body_dimension_label_y	WORLD_ANCHORED	-	NOT_MEASURED	5.21	CLAMPED
+UI3D-06	dimensions_on_body_B	S19 body_dimension_label_z	WORLD_ANCHORED	-	NOT_MEASURED	0.16	PASS
+UI3D-06	switched_to_body_A	S19 body_dimension_label_x	WORLD_ANCHORED	211.61	FAIL	0.13	PASS
+UI3D-06	switched_to_body_A	S19 body_dimension_label_y	WORLD_ANCHORED	280.91	FAIL	0.19	PASS
+UI3D-06	switched_to_body_A	S19 body_dimension_label_z	WORLD_ANCHORED	282.53	FAIL	0.21	PASS

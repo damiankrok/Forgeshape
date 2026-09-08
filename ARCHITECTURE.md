@@ -658,6 +658,44 @@ insets, pads or resizes the `SurfaceView`; window insets are applied to
 `chromeRoot` and `overlayRoot` only. Nothing in the Android layer can therefore
 cause a swapchain rebuild, and renderer ownership of the surface is untouched.
 
+**That full-bleed rule is exactly why anchored chrome needs a conversion.** A
+projected anchor is in VIEWPORT-CONTENT pixels — origin at the rendered surface,
+which is the window — while every anchored surface is a child of the
+inset-padded `overlayRoot`, and a view's translation is measured from its own
+layout position inside its parent. `ViewportAnchorSpace` is the ONE bridge
+(`UI-3D-STATE-C1`), used by `BodyDimensionLabelsView`, `SketchDimensionLabelView`
+and `CadExtrudeCanvasView` alike rather than written three times:
+
+```
+translation = anchor + (viewportOriginInWindow
+                        - parentOriginInWindow
+                        - placedLayoutPositionInParent)
+```
+
+There is no constant in it — no status-bar height, no navigation-bar height, no
+density correction, and no assumption that the horizontal inset is zero — so a
+landscape navigation bar or a display cutout is absorbed by the same arithmetic.
+The **clamp bound is the real viewport** carried through that same offset, never
+the padded content box of whichever container holds the view: a control is held
+inside the window, not inside the chrome's margin. A surface is measured under
+the constraint its parent will impose, so the box centred on the anchor is the
+box drawn. And a surface placed in the very pass that first lays it out is
+re-placed once afterwards — a `GONE` view is skipped by its parent's layout and
+still reports position 0, so there is nothing better to read at that instant;
+the repeat is capped and reset by any settled pass, which is what keeps it layout
+readiness rather than a poll.
+
+**One refresh path owns every world-anchored surface.**
+`EditorWorkspaceView.refreshWorldAnchoredUi()` recomputes ownership AND placement
+for the sketch orientation navigator, the selected Line's dimension label, the
+CAD extrude cluster with its retained-sketch chip, and the three body-dimension
+labels. Each re-reads native truth and decides for itself whether it is shown, so
+no shell predicate can disagree with the session. It is deliberately cheaper than
+`syncFromNative()` and rewrites no exact-value editor, which is what makes it safe
+on every pointer sample of a viewport gesture — and a camera move must reach it,
+because an orbit, a pan and a zoom change where every anchor projects while
+changing nothing the heavy sync watches for.
+
 Which surfaces exist is decided by **native state**: `syncFromNative()` reads
 `NativeViewport.productMode()`, the sculpt state and the active tool, and builds
 from that — never from what was last tapped. In Sculpt Mode the shape and
@@ -4642,9 +4680,26 @@ leaders and the transform handles are two instruments for one placement, and a
 mode whose whole point is an exact typed value must not also invite a drag. The
 session turns the gizmo off when it opens; the frame loop answers again every
 frame, so a mode entered mid-drag cannot leave one standing. The mode also
-CLOSES ITSELF, in one place and every frame, the moment what it measures stops
-being measurable — another body selected, this one locked, hidden or deleted,
-Sculpt entered, the project closed — so no caller has to remember to unwind it.
+CLOSES ITSELF the moment what it measures stops being measurable — another body
+selected, this one locked, hidden or deleted, Sculpt entered, the project closed.
+`activeBodyDimensionsEditable` is that rule, named ONCE, and it is asked by the
+frame loop and by every chrome read alike through `settledBodyDimensionSession()`
+(`UI-3D-STATE-C1`). Stating it in one place is what makes "the shell's next
+refresh finds the mode shut" true: while the render thread owned the rule alone,
+a refresh taken at the instant of the transition — which is exactly when the
+shell refreshes — still saw the mode open, and drew three numbers over a sculpt
+session.
+
+**The label anchors are DERIVED when asked, never cached.**
+`bodyDimensionLabelAnchors` is a pure read over bounds, placement and camera
+scale, implemented through the same builder that draws the leaders so there is no
+second copy of the midpoint arithmetic, and the session holds no anchor field at
+all. A cache filled by the render thread is a frame behind by construction, which
+is a defect twice over: on the frame the mode opens there is nothing in it yet, and
+on the frame after a body switch what is in it belongs to the previous body. An
+anchor does not depend on the active axis — that decides which range a leader is
+emitted in, not where its midpoint is — and `DIM020M-17` pins that, because the
+anchors-only read is sound only while it holds.
 
 **The numbers are chrome.** `BodyDimensionLabelsView` draws three labels over
 the viewport, each centred on the projected midpoint of its own real dimension

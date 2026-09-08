@@ -4,6 +4,7 @@
 #include <limits>
 #include <vector>
 
+#include "forgeshape_body_dimension_overlay.h"
 #include "forgeshape_body_dimensions.h"
 #include "forgeshape_construction.h"
 #include "forgeshape_history.h"
@@ -779,6 +780,74 @@ int runBodyDimensionsSelfTests(BodyDimensionsSelfTestResult* out, int maxOut) {
                 decodeProject(a.data(), a.size(), &decoded) == ProjectCodecStatus::Ok);
         r.check("DIM020M-16 the decoded project is a Construction project with no CAD or import",
                 !decoded.hasCad && !decoded.hasImported && decoded.hasConstruction);
+    }
+
+    // -----------------------------------------------------------------------
+    // DIM020M-17  the label anchor is a property of the BODY, not of the frame
+    // -----------------------------------------------------------------------
+    //
+    // `UI-3D-STATE-C1`. The chrome that positions the three numbers asks
+    // `bodyDimensionLabelAnchors` for the instant it is refreshing, instead of
+    // reading what a frame last cached -- which is what left the labels absent
+    // on the frame the mode opened and standing on the PREVIOUS body after a
+    // switch. That read is only sound while two things hold, so both are pinned
+    // here rather than assumed.
+    {
+        LocalBounds bounds;
+        bounds.minX = -1.0;
+        bounds.maxX = 1.5;
+        bounds.minY = -0.25;
+        bounds.maxY = 0.75;
+        bounds.minZ = -2.0;
+        bounds.maxZ = 0.5;
+        TransformValues placement = turned(23.0, -41.0, 12.0);
+        placement.positionX = -0.75;
+        placement.positionY = 2.5;
+        placement.positionZ = 1.25;
+        placement.scaleX = 1.75;
+        placement.scaleY = 0.5;
+        placement.scaleZ = 2.25;
+        const float worldPerUnit = 0.0042f;
+
+        // ONE: an anchor does not depend on which axis is active. The active
+        // axis decides which RANGE a leader is emitted in -- how it is drawn --
+        // and the anchors-only read passes no axis at all, so if that were ever
+        // to move a midpoint the number would drift off the line it measures
+        // the moment the user tapped it.
+        BodyDimensionLabelAnchors read;
+        r.check("DIM020M-17 the anchors-only read succeeds for a valid body",
+                bodyDimensionLabelAnchors(bounds, placement, worldPerUnit, &read) && read.valid);
+        bool matchesEveryActiveAxis = true;
+        for (int active = -1; active < kBodyAxisCount; ++active) {
+            BodyDimensionLabelAnchors built;
+            buildBodyDimensionOverlay(bounds, placement, active, worldPerUnit, 7, &built);
+            if (!built.valid) {
+                matchesEveryActiveAxis = false;
+                break;
+            }
+            for (int a = 0; a < kBodyAxisCount; ++a) {
+                matchesEveryActiveAxis = matchesEveryActiveAxis
+                                      && std::fabs(built.axis[a].x - read.axis[a].x) <= kWorldEpsilon
+                                      && std::fabs(built.axis[a].y - read.axis[a].y) <= kWorldEpsilon
+                                      && std::fabs(built.axis[a].z - read.axis[a].z) <= kWorldEpsilon;
+            }
+        }
+        r.check("DIM020M-17 the anchors are the drawn midpoints for every active axis",
+                matchesEveryActiveAxis);
+
+        // TWO: it fails closed on exactly the builder's terms, so a chrome read
+        // can never place a label from a derivation that did not happen.
+        BodyDimensionLabelAnchors refused;
+        r.check("DIM020M-17 a non-positive camera scale is refused, not guessed",
+                !bodyDimensionLabelAnchors(bounds, placement, 0.0f, &refused) && !refused.valid);
+        LocalBounds inverted = bounds;
+        inverted.maxY = inverted.minY - 1.0;
+        r.check("DIM020M-17 invalid bounds are refused",
+                !bodyDimensionLabelAnchors(inverted, placement, worldPerUnit, &refused));
+        TransformValues broken = placement;
+        broken.rotationX = std::numeric_limits<double>::quiet_NaN();
+        r.check("DIM020M-17 a non-finite placement is refused",
+                !bodyDimensionLabelAnchors(bounds, broken, worldPerUnit, &refused));
     }
 
     return r.n;

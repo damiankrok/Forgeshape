@@ -58,6 +58,8 @@ final class SketchDimensionLabelView extends FrameLayout {
 
     private final OnDimensionAction actions;
     private final InspectorHost host;
+    /** The ONE viewport-anchor conversion; see {@link ViewportAnchorSpace}. */
+    private final ViewportAnchorSpace anchorSpace;
     private final double[] dimension = new double[NativeViewport.SKETCH_DIMENSION_SIZE];
     private final float[] screen = new float[2];
 
@@ -68,9 +70,11 @@ final class SketchDimensionLabelView extends FrameLayout {
     /** The entity the label currently describes, or 0 when it is not shown. */
     private long entityId;
 
-    SketchDimensionLabelView(Context context, InspectorHost host, OnDimensionAction actions) {
+    SketchDimensionLabelView(Context context, InspectorHost host, ViewportAnchorSpace anchorSpace,
+                             OnDimensionAction actions) {
         super(context);
         this.host = host;
+        this.anchorSpace = anchorSpace;
         this.actions = actions;
         setId(R.id.sketch_dimension_label);
         setVisibility(GONE);
@@ -176,24 +180,21 @@ final class SketchDimensionLabelView extends FrameLayout {
         placeAt(screen[0], screen[1]);
     }
 
-    /** Centres the label on the annotation's anchor, kept inside the window. */
+    /**
+     * Centres the label on the annotation's anchor, kept inside the VIEWPORT.
+     *
+     * <p>The anchor is in viewport-content pixels and this view stands in the
+     * inset-padded overlay, so the conversion and the clamp bound are
+     * {@link ViewportAnchorSpace}'s: one contract shared with the body-dimension
+     * labels and the extrude cluster rather than three that can drift apart.
+     * The box measured is the one actually SHOWN, because the editor is wider
+     * than the reading it replaces.
+     */
     private void placeAt(float x, float y) {
-        final View shown = editor.getVisibility() == VISIBLE ? editor : reading;
-        shown.measure(MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED),
-                MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED));
-        final int width = shown.getMeasuredWidth();
-        final int height = shown.getMeasuredHeight();
-        final ViewGroup parent = (ViewGroup) getParent();
-        float left = x - width * 0.5f;
-        float top = y - height * 0.5f;
-        if (parent != null) {
-            // Clamped into the parent rather than allowed off-screen: a label
-            // half outside the window is a value the user cannot read or tap.
-            left = Math.max(0.0f, Math.min(left, parent.getWidth() - width));
-            top = Math.max(0.0f, Math.min(top, parent.getHeight() - height));
-        }
-        setTranslationX(left);
-        setTranslationY(top);
+        // This view wraps whichever of the two is shown, so measuring IT is
+        // measuring the visible box; the shared helper prefers the laid-out size
+        // when there is a settled one and asks to be repeated when there is not.
+        anchorSpace.measureAndPlace(this, x, y, 1.0f);
     }
 
     /** Whether the numeric editor is open, for verification. */

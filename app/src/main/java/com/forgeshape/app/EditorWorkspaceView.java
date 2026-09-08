@@ -121,6 +121,36 @@ final class EditorWorkspaceView extends FrameLayout
 
     private final View viewport;
 
+    /**
+     * The ONE conversion between a projected viewport anchor and an Android
+     * translation (UI-3D-STATE-C1). Built from the viewport itself, so every
+     * anchored surface measures from the same origin and clamps against the
+     * same rectangle instead of each deriving an offset of its own.
+     */
+    private final ViewportAnchorSpace anchorSpace;
+
+    /**
+     * Whether one bounded wait for layout readiness is already pending.
+     *
+     * <p>A surface opened before the first layout pass has nowhere to stand, so
+     * the refresh is repeated once geometry exists. Guarded so that is ONE post
+     * and never a self-feeding loop: this is layout readiness, not a poll.
+     */
+    private boolean anchoredRefreshPending;
+
+    /**
+     * How many times in a row a pass has asked to be repeated after layout.
+     *
+     * <p>The repeat exists for ONE situation — a surface placed in the same pass
+     * that first lays it out — so it is capped and reset the moment a pass reads
+     * a settled layout. That cap is what keeps this layout readiness rather than
+     * a perpetual poll.
+     */
+    private int anchoredRefreshRetries;
+
+    /** Visibility, then layout, then the corrected placement: three is slack. */
+    private static final int MAX_ANCHORED_LAYOUT_RETRIES = 3;
+
     /** Last active body this chrome refreshed for; see the gesture listener. */
     private long lastKnownActiveBodyId = NativeViewport.sceneActiveBodyId();
     /** Tracks sketch mode so a sketch STARTED in native (by the spatial
@@ -441,6 +471,9 @@ final class EditorWorkspaceView extends FrameLayout
     EditorWorkspaceView(Context context, View viewport) {
         super(context);
         this.viewport = viewport;
+        // Built before any anchored surface, because each is handed this one
+        // instance rather than deriving an offset of its own.
+        this.anchorSpace = new ViewportAnchorSpace(viewport);
         setId(R.id.editor_workspace);
 
         // Child 0: the viewport, at the whole window size, under everything.
@@ -465,19 +498,28 @@ final class EditorWorkspaceView extends FrameLayout
 
                         @Override
                         public void onViewportGestureMoved() {
-                            // Exactly one surface follows a live gesture, and
-                            // it re-reads native rather than being told
-                            // anything: the extrude arrow's depth changes under
-                            // the finger, and the anchor moves with an orbit.
-                            // Everything else waits for the gesture to settle,
-                            // because a full sync here would discard a
-                            // half-typed draft on every pointer sample.
-                            cadExtrudeCanvas.refreshFromNative();
+                            // EVERY world-anchored surface follows a live
+                            // gesture, and each re-reads native rather than
+                            // being told anything: the extrude arrow's depth
+                            // changes under the finger, and every anchor moves
+                            // with an orbit, a pan and a zoom. This was the
+                            // extrude cluster alone, which is why only it
+                            // tracked the camera (UI3D-F-002); the refresh is
+                            // deliberately the CHEAP one, so it still discards
+                            // no half-typed draft on a pointer sample.
+                            refreshWorldAnchoredUi();
                         }
 
                         @Override
                         public void onViewportGestureSettled() {
                             setChromeMotionAllowed(true);
+                            // Unconditionally, and before any of the "did
+                            // something commit" questions below: a gesture that
+                            // committed nothing still MOVED the camera, and the
+                            // final sample of a fling or a lifted pinch can land
+                            // after the last move callback. Cheap enough to be
+                            // owed on every settle.
+                            refreshWorldAnchoredUi();
                             // Unconditionally and first: a sculpt stroke never
                             // passes through Java, so this edge is the only
                             // moment the Android layer learns one may have
@@ -760,9 +802,9 @@ final class EditorWorkspaceView extends FrameLayout
         sketchNavigator.setVisibility(GONE);
         overlayRoot.addView(sketchNavigator,
                 SketchOrientationNavigatorView.anchoredParams(context));
-        sketchDimension = new SketchDimensionLabelView(context, this, this);
+        sketchDimension = new SketchDimensionLabelView(context, this, anchorSpace, this);
         overlayRoot.addView(sketchDimension, SketchDimensionLabelView.anchoredParams());
-        cadExtrudeCanvas = new CadExtrudeCanvasView(context, this, this);
+        cadExtrudeCanvas = new CadExtrudeCanvasView(context, this, anchorSpace, this);
         overlayRoot.addView(cadExtrudeCanvas, CadExtrudeCanvasView.anchoredParams());
 
         // Stage 020M's three overall-dimension labels, on exactly those terms
@@ -771,7 +813,7 @@ final class EditorWorkspaceView extends FrameLayout
         // land and has to clamp them into the window; it is not clickable
         // itself, so a touch that misses a label falls straight through to the
         // viewport underneath.
-        bodyDimensionLabels = new BodyDimensionLabelsView(context, this, this);
+        bodyDimensionLabels = new BodyDimensionLabelsView(context, this, anchorSpace, this);
         overlayRoot.addView(bodyDimensionLabels, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
@@ -3178,6 +3220,8 @@ final class EditorWorkspaceView extends FrameLayout
      * straight Line.
      */
     private void refreshSketchViewportSurfaces(boolean sketching) {
+        anchoredRefreshPending = false;
+        anchorSpace.beginPass();
         // The navigator is a sketch control; while the chrome is hidden the
         // whole overlay is gone anyway, so this is only about the sketch.
         sketchNavigator.setVisibility(sketching ? VISIBLE : GONE);
@@ -3200,6 +3244,60 @@ final class EditorWorkspaceView extends FrameLayout
         // itself when native says the mode is closed or the body cannot be
         // measured, so this needs no second predicate here.
         bodyDimensionLabels.refreshFromNative();
+
+        // UI3D-F-003's second half, and the reason it read as a RACE in the
+        // audit rather than as a constant.
+        //
+        // A surface the refresh has just made visible is placed in the very pass
+        // that will first lay it out, and until that layout runs its container
+        // reports position 0 and a stale measured size -- so the placement is
+        // short by the container's own layout position, which in this product is
+        // one window inset. There is nothing to read at that instant that would
+        // give a better answer, so the pass places what it can and asks to be
+        // repeated once layout has run.
+        //
+        // Bounded, and self-terminating: a settled pass resets the counter, and
+        // the cap means a container that somehow never settles costs three
+        // refreshes rather than a permanent poll.
+        final boolean needsSettledLayout = !anchorSpace.ready() || anchorSpace.layoutWasPending();
+        if (!needsSettledLayout) {
+            anchoredRefreshRetries = 0;
+            return;
+        }
+        if (anchoredRefreshPending || anchoredRefreshRetries >= MAX_ANCHORED_LAYOUT_RETRIES) {
+            return;
+        }
+        anchoredRefreshPending = true;
+        anchoredRefreshRetries++;
+        post(new Runnable() {
+            @Override
+            public void run() {
+                refreshWorldAnchoredUi();
+            }
+        });
+    }
+
+    /**
+     * Recomputes ownership AND placement for every world-anchored surface.
+     *
+     * <p><b>The one refresh path</b> for the chrome that stands on the model
+     * (`UI-OWNER-50`, `UI-3D-STATE-C1`): the sketch orientation navigator, the
+     * selected Line's dimension label, the CAD extrude cluster with its
+     * retained-sketch chip, and Stage 020M's three body-dimension labels. Each
+     * re-reads native truth and decides for ITSELF whether it is shown, so
+     * there is no shell predicate here that could disagree with the session,
+     * and each is re-placed from the CURRENT projection rather than from the
+     * screen coordinate it last stood at.
+     *
+     * <p>Deliberately cheaper than {@link #syncFromNative()} and deliberately
+     * separate from it: this rewrites no exact-value editor, so it is safe on
+     * every pointer sample of a viewport gesture — which is exactly what an
+     * orbit, a pan and a zoom need, and what only the extrude cluster used to
+     * get. The heavy sync calls it too, so a chrome act and a camera move end
+     * in the same place rather than in two paths that can drift.
+     */
+    private void refreshWorldAnchoredUi() {
+        refreshSketchViewportSurfaces(isSketching());
     }
 
     /**

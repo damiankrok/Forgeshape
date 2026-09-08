@@ -64,6 +64,25 @@ SketchOverlayPtr buildBodyDimensionOverlay(const LocalBounds& bounds,
                                            float worldPerUnit, uint64_t revision,
                                            BodyDimensionLabelAnchors* outAnchors = nullptr);
 
+// The three label anchors alone, for the chrome that positions the numbers.
+//
+// A READ, and that is the whole point of it existing beside the builder: it
+// derives the anchors for the body, the placement and the camera scale it is
+// GIVEN, touching no session, no cached overlay and no revision. The chrome can
+// therefore ask where a label belongs at any instant without waiting for a
+// frame to have cached an answer -- which is what left the labels absent on the
+// frame Dimensions opened, and standing on the PREVIOUS body after a switch.
+//
+// The active axis is not a parameter because an anchor does not depend on one:
+// it is the midpoint of that axis's dimension line, and which range the line is
+// emitted in changes how it is DRAWN and not where it is. A self-test pins that,
+// because this function is only sound while it stays true.
+//
+// False for invalid bounds, a non-finite placement or a non-positive scale, on
+// exactly the builder's terms; `out` is cleared either way.
+bool bodyDimensionLabelAnchors(const LocalBounds& bounds, const TransformValues& placement,
+                               float worldPerUnit, BodyDimensionLabelAnchors* out);
+
 // The Dimensions INTERACTION state: whether the mode is open, which axis is
 // being read or edited, and which side a resize holds.
 //
@@ -100,8 +119,10 @@ public:
     SketchOverlayPtr overlay(const LocalBounds& bounds, const TransformValues& placement,
                              float worldPerUnit);
 
-    // The label anchors from the last built overlay.
-    const BodyDimensionLabelAnchors& labelAnchors() const { return labelAnchors_; }
+    // There is deliberately NO cached label anchor here. The chrome asks
+    // `bodyDimensionLabelAnchors` for the instant it is refreshing, so a
+    // session cannot hold an anchor belonging to a body it no longer measures
+    // or to a camera that has since moved (`UI3D-F-003`, `UI3D-F-007`).
 
 private:
     bool active_ = false;
@@ -109,7 +130,6 @@ private:
     ResizeAnchor anchor_ = ResizeAnchor::Center;
 
     SketchOverlayPtr overlay_;
-    BodyDimensionLabelAnchors labelAnchors_{};
     LocalBounds builtBounds_{};
     TransformValues builtPlacement_{};
     float builtWorldPerUnit_ = 0.0f;

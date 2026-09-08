@@ -1,21 +1,35 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.74.1
+**Status Version:** 0.75.0
 **Updated:** 2026-09-08
-**Result:** **`CAD-EXT-R1` — TECHNICALLY COMPLETE, OWNER LATER READY**, and
-**`UI-3D-STATE-AUDIT-R1` — COMPLETE WITH FINDINGS** beside it (2026-09-08). The
-audit changed **no product code**: it added one instrumented suite, its ledgers
-and its evidence, and it found **seven** presentation defects in three
-root-cause families, none of them P0 and none of them touching project truth.
-The OWNER's reported concern is CONFIRMED and named: every world- and
-feature-anchored viewport surface stands one system-bar inset (48.8 dp) below
-the anchor native reports, because the placing views are children of the
-inset-padded `overlayRoot` while the anchors are in viewport pixels; and the
-Construction dimension labels then go stale in four ways, because
-world-anchored chrome has no refresh driver tied to the frame. The CAD canvas
-surfaces are the exception and are correct, because `onViewportGestureMoved`
-refreshes them on every pointer sample. Full record in
-`artifacts/ui-3d-state-audit-r1/`; see *Known Issues* for the seven findings.
+**Result:** **`UI-3D-STATE-C1` — TECHNICALLY COMPLETE, OWNER LATER READY**
+(2026-09-08), with **`CAD-EXT-R1`** still technically complete beside it. The
+correction closes **six of the seven** findings `UI-3D-STATE-AUDIT-R1` recorded;
+`UI3D-F-005` is a renderer root cause in another layer, was deliberately not
+touched, and stays open below.
+
+**The OWNER's reported concern is answered.** World- and feature-anchored chrome
+now stands ON the geometry it names and follows it: the original 117-assertion
+lifecycle matrix re-runs **117 PASS / 0 FAIL** (was 111/6), and the 72 spatial
+attachments measure **60 PASS / 0 FAIL / 0 stale anchors**, median **0.16 dp**
+and max **0.25 dp** against the audit's 48.90 dp median and 282.53 dp max.
+
+Two root causes, two answers. **The coordinate space**: a projected anchor is in
+viewport-content pixels while the placing views are children of the inset-padded
+`overlayRoot`, so a translation written straight from one was drawn a whole inset
+low. `ViewportAnchorSpace` is now the ONE conversion — pure runtime geometry,
+`translation = anchor + (viewportOrigin − parentOrigin − placedLayoutPosition)`,
+with no status-bar, navigation-bar or density constant anywhere in it — and the
+clamp bound is the real viewport carried through the same offset rather than a
+padded content box. **The refresh**: `refreshWorldAnchoredUi()` is the one path
+for every anchored surface and both viewport-gesture callbacks drive it, not only
+the extrude cluster; and native stopped answering out of the render thread's
+cache — the label anchors are derived for the instant the chrome asks, the stale
+`labelAnchors_` field is deleted, and "is this mode still measurable" is one named
+predicate the frame and every chrome read share. **No product contract, `.forge`
+byte, section, version, fixture, revision, history step or fingerprint moved.**
+Full record in `artifacts/ui-3d-state-c1/`; the audit's own evidence under
+`artifacts/ui-3d-state-audit-r1/` is unchanged and is the "before" half of it.
 
 An
 extrusion now reaches a stated distance on **each side** of its sketch plane.
@@ -3301,64 +3315,63 @@ duration scale skips them outright rather than shortening them.
 
 ## Known Issues / Blockers
 
-**`UI-3D-STATE-AUDIT-R1` (2026-09-08) — seven findings, no fix made.** One
-whole-app interactive UI/3D-state audit ran on `ForgeShape_Stage006` /
-`emulator-5580` at `dfcab1afd1361d37b6dfe4607772a5597f31d043`: 43 dynamic
-surfaces classified, 117 show/hide assertions (111 pass), 72 spatial-attachment
-measurements (median error 48.90 dp), 59 annotated frames. Every finding is
-PRESENTATION — no `.forge` byte, section, version, fixture, revision, history
-step or fingerprint is involved in any of them. Full record, with the exact
-action sequence and evidence path for each, in
-`artifacts/ui-3d-state-audit-r1/FINDINGS.md`.
+**`UI-3D-STATE-AUDIT-R1` (2026-09-08) — seven findings. Six are CLOSED by
+`UI-3D-STATE-C1` (2026-09-08); one remains open.** The audit ran on
+`ForgeShape_Stage006` / `emulator-5580`: 43 dynamic surfaces classified, 117
+show/hide assertions (111 pass), 72 spatial-attachment measurements (median error
+48.90 dp), 59 annotated frames. Every finding is PRESENTATION — no `.forge` byte,
+section, version, fixture, revision, history step or fingerprint is involved in
+any of them, and the correction moved none of those either. The audit's record
+stands unchanged in `artifacts/ui-3d-state-audit-r1/FINDINGS.md`; the closure,
+with before/after evidence per finding, is
+`artifacts/ui-3d-state-c1/FINDING_CLOSURE.md`.
 
-- **`UI3D-F-001` (P1, `ANDROID_LAYOUT`) — every world-/feature-anchored surface
-  stands one system-bar inset below its anchor.** The dimension labels, the
-  sketch line dimension label, the canvas extrude cluster, the Side B value,
-  both distance editors and the retained `Edit Sketch` chip are all children of
-  `overlayRoot`, which carries the chrome's window-inset padding
-  (`EditorWorkspaceView.java:1090`), while the anchors native reports are in
-  full-window VIEWPORT pixels. Measured `overlayPadding=0,128,0,63` and a
-  constant +128 px / +0 px error; 30 of the 60 measured rows carry exactly that
-  and nothing else. The X half is 0 only because this window has no left inset.
-  **`UI3D-F-006` (P3)** is its consequence: `CadExtrudeCanvasView.placeAt`
-  clamps into the PADDED box rather than the viewport, so the cluster clamps
-  earlier than the window requires (errors to 105 dp).
-- **`UI3D-F-002` (P1, `CAMERA_PROJECTION`) — the Construction dimension labels
-  are never re-placed for camera motion.** After an orbit, a pan or a zoom they
-  stand at the pre-gesture anchor (to 119 dp). `onViewportGestureMoved` refreshes
-  only the CAD extrude canvas, and `onViewportGestureSettled` calls
-  `onNativeStateChanged()` only when the sketch state, the active `ObjectId`,
-  the sculpt undo depth or the gizmo committed-drag count changed — a camera
-  change is none of those. Any later chrome act repairs the placement exactly,
-  which is what makes this a missing driver rather than a wrong projection.
-- **`UI3D-F-007` (P1, `STALE_OWNER_OBJECT`) — after a body switch the labels
-  stand at the PREVIOUS body's anchors** (to 282.53 dp, the largest error in the
-  run). `BodyDimensionSession::labelAnchors()` still holds the old body's
-  anchors, and reports them valid, at the moment the shell's one refresh reads
-  them.
-- **`UI3D-F-004` (P1, `STATE_VISIBILITY` / `CROSS_REPRESENTATION_LEAK`) — a
-  dimension label survives as ghost UI into Sculpt and over a hidden body.** The
-  session closes ITSELF on the render thread when its body stops being
-  measurable (`forgeshape_jni.cpp:1650-1656`), after the shell's one post-
-  transition refresh has already run. One frame shows the whole divergence: the
-  renderer has dropped the leaders and all three numbers are still drawn, one on
-  top of the sphere being sculpted.
-- **`UI3D-F-003` (P2, `STATE_VISIBILITY`) — the labels are absent on the frame
-  Dimensions opens.** `bodyDimensionLabelPoint` answers false until the render
-  thread has built the overlay; the shell reads it once and never again, so the
-  numbers appear only on the next unrelated chrome act. A race: 4 of 5 places in
-  the authoritative run, 3 of 5 in the first.
-- **`UI3D-F-005` (P2, `OVERLAY_RENDER_STYLE`)** is the `SketchOverlayStyle::
-  Dimension` transparency recorded below, now ADJUDICATED at runtime rather than
-  argued from source — see that entry, whose provenance is unchanged.
+**CLOSED — `UI3D-F-001` (P1), `UI3D-F-006` (P3), `ANDROID_LAYOUT`.** Every
+anchored surface stood one system-bar inset below its anchor (a constant +128 px
+on this device, 30 of 60 measured rows), and the extrude cluster clamped into the
+padded container rather than the viewport. `ViewportAnchorSpace` is now the one
+conversion for all three placing views, derived entirely from runtime geometry
+with no inset constant, and the clamp bound is the real viewport carried through
+the same offset. Median measured error 48.87 → **0.16 dp**; every CAD clamped
+residual fell 60–75 %.
 
-Four of the seven (`F-002`, `F-003`, `F-004`, `F-007`) are ONE root cause and
-one fix: world-anchored chrome has no refresh driver tied to the frame, while
-the domain state it mirrors is decided on the render thread. Whether that
-refresh should be per-frame or event-driven is an architecture question put to
-the OWNER in `artifacts/ui-3d-state-audit-r1/OWNER_LATER_TEST_PACK.md`, not
-decided here. **Not audited:** Activity recreation
-(`LIFECYCLE_RECREATE`), and any window but compact portrait.
+**CLOSED — `UI3D-F-002` (P1), `CAMERA_PROJECTION`.** An orbit, a pan or a zoom
+left the dimension labels at the pre-gesture anchor (to 119 dp), because
+`onViewportGestureMoved` refreshed the CAD extrude canvas alone.
+`refreshWorldAnchoredUi()` is now the one path and both gesture callbacks drive
+it; it is deliberately cheaper than `syncFromNative()` and rewrites no
+exact-value editor, so it is safe on every pointer sample.
+
+**CLOSED — `UI3D-F-003` (P2) and `UI3D-F-007` (P1), one race with two outcomes.**
+The labels were absent on the frame the mode opened, and after a body switch they
+stood at the PREVIOUS body's anchors (282.53 dp, the audit's largest error), both
+because `bodyDimensionLabelPoint` answered out of anchors the render thread had
+cached a frame earlier. `bodyDimensionLabelAnchors` now derives them for the
+instant the chrome asks, through the same builder so there is no second copy of
+the arithmetic, and the cached `labelAnchors_` is **deleted** — a session can no
+longer hold an anchor for a body it does not measure. Above JNI the labels track
+their owner `ObjectId` and close an open editor when it changes. The Android half
+of F-003 is closed with it: a surface placed in the pass that first lays it out is
+re-placed once afterwards, capped and reset by any settled pass.
+
+**CLOSED — `UI3D-F-004` (P1), `STATE_VISIBILITY` / `CROSS_REPRESENTATION_LEAK`.**
+A dimension label survived into Sculpt and over a hidden body because the session
+closed itself on the render thread, after the shell's one post-transition refresh
+had already run. `activeBodyDimensionsEditable` is that rule named once and asked
+by the frame and every chrome read alike, and `settledBodyDimensionSession()`
+applies the self-closing rule at every observation rather than only on a frame.
+
+**OPEN — `UI3D-F-005` (P2, `OVERLAY_RENDER_STYLE`)** is the `SketchOverlayStyle::
+Dimension` transparency recorded below. It is a renderer root cause in a
+different layer, was explicitly out of scope for the correction, and
+`forgeshape_renderer.cpp`, `forgeshape_gizmo.cpp`, `forgeshape_sketch_overlay.h`
+and every shader are byte unchanged by it — see that entry, whose provenance is
+unchanged.
+
+**Still not covered:** Activity recreation (`LIFECYCLE_RECREATE` is unaudited and
+uncorrected), and any window but compact portrait. The conversion is written to
+absorb an arbitrary left or right inset and carries no constant, but a landscape
+or cutout window has not been measured.
 
 - ~~**`OQ-CAD-UX-01` — the extrude arrow cannot be dragged from inside a
   sketch.**~~ **CLOSED by `CAD-UX-S1-C1`.** The sketch camera lock was never the
@@ -4016,7 +4029,9 @@ regenerated per stage.
 | `app/src/main/cpp/forgeshape_body_mirror.{h,cpp}` | `MIRROR-01`: the ONE mirror arithmetic, a pure function over values (no scene, no history, no body, no camera, no renderer), plus `mirrorEligibilityOf`. `R' = F·R·Qx` with `det = +1` and the positive scale untouched, so no transform, codec, renderer or exporter contract moved |
 | `app/src/main/cpp/forgeshape_mirror_selftest.{h,cpp}` | `MIRROR01-01..12`, over its own scene and history |
 | `app/src/main/java/.../SculptHistoryNavigatorView.java` | `SCULPT-H1`: the compact scrolling list of the active body’s retained sculpt STATES. Holds no model and makes no native call -- it is handed a freshly read one on every refresh and rebuilds. Owns the row wording, the shape-based current/past/undone markers and the five-row viewport cap, which is a cap on what is VISIBLE and never on what is kept |
-| `app/src/main/java/.../BodyDimensionLabelsView.java` | Stage 020M: the three overall-dimension labels over the viewport, each anchored to the projected midpoint of its own real dimension line, with one compact editor at a time. Holds no dimension |
+| `app/src/main/java/.../BodyDimensionLabelsView.java` | Stage 020M: the three overall-dimension labels over the viewport, each anchored to the projected midpoint of its own real dimension line, with one compact editor at a time. Holds no dimension. Since `UI-3D-STATE-C1` it also tracks its owner `ObjectId`, so a change of body closes the open editor and no number is placed from a body it no longer describes |
+| `app/src/main/java/.../ViewportAnchorSpace.java` | `UI-3D-STATE-C1`: the ONE conversion between a projected viewport-content anchor and the Android translation that stands a view on it, and the ONE clamp bound — the real viewport, carried into the same space. Pure runtime geometry with no inset, status-bar or density constant in it; used by all three placing views so the arithmetic exists once. Also owns the two placement details that arithmetic implies: measuring under the constraint the parent will impose, and reporting when a pass had to read a layout that had not run yet |
+| `app/src/androidTest/java/.../Ui3dStateCorrectionTest.java` | `UI3DC1-02..11`: the correction gate for six of the audit's seven findings. Asserts where `Ui3dStateAuditTest` records, reuses that harness's own `centreOf`/`wouldClamp`/`placedAncestor`, drives real viewport orbit, pan and pinch gestures, and refuses to pass vacuously |
 | `app/src/main/java/.../RelativeScaleEditorView.java` | Stage 020M: the Relative Scale precision-surface body — three multipliers reset to 1 on every open, one Apply. The only thing in the product that ever holds a multiplier |
 | `app/src/main/cpp/forgeshape_glb_import_fixture.{h,cpp}` | GLB-IMPORT-R1: the deterministic Nomad-like external-GLB compatibility fixture. Every coordinate an integer over a power of two, so its bytes are identical on every platform. A debug test seam; no product path calls it, and it is not any owner asset |
 | `app/src/main/cpp/forgeshape_json.{h,cpp}` | A bounded read-only JSON parser that knows nothing about glTF. Its own number grammar, because `strtod` accepts `nan` and `inf` and a non-finite value reaching geometry is what the reader exists to prevent |
@@ -4082,23 +4097,39 @@ was added and no marketing claim is made.
 now carries two things — the combined OWNER review, and the seven
 `UI-3D-STATE-AUDIT-R1` findings to group into exactly one correction prompt.**
 
-`UI-3D-STATE-AUDIT-R1` closed on 2026-09-08 as
-`PASS-UI-3D-STATE-AUDIT-R1-WITH-FINDINGS`. It implemented no feature, fixed no
-defect and touched no production file: what it added is one instrumented suite
-(`Ui3dStateAuditTest`, `Ui3dAuditRecorder`), its two ledgers and 59 annotated
-frames under `artifacts/ui-3d-state-audit-r1/`. **Do not start a correction
-from this repository.** The findings are recorded under *Known Issues* with the
-exact action sequence, the verified cause and the evidence path for each; four
-of the seven are one root cause and one fix, and whether that fix is a per-frame
-reprojection or a native-side event is an architecture question put to the OWNER
-in `artifacts/ui-3d-state-audit-r1/OWNER_LATER_TEST_PACK.md` rather than decided
-here.
+`UI-3D-STATE-C1` closed on 2026-09-08 as `PASS-UI-3D-STATE-C1-OWNER-LATER`. It
+implemented no feature: it corrected six of the seven findings
+`UI-3D-STATE-AUDIT-R1` recorded, in the Android shell and in two read paths below
+JNI, and changed no domain semantic, no format and no contract. **Do not start a
+second correction family, and do not fix `UI3D-F-005`** — it is a renderer root
+cause whose four-line repair changes how two shipped features look, which is the
+owner's call and not a correction task's.
 
-Two coverage gaps the audit states rather than papers over: **Activity
-recreation was not exercised** (`LIFECYCLE_RECREATE` is unaudited), and only
-**compact portrait** was measured — a landscape or cutout window would very
-likely make `UI3D-F-001`'s horizontal half visible too, which is an expectation
-and not a result.
+What the correction is, in one sentence each. **One coordinate contract**:
+`ViewportAnchorSpace` converts a viewport-content anchor into an Android
+translation from runtime geometry alone and clamps against the real viewport, and
+all three placing views use it rather than each writing the arithmetic.
+**One refresh path**: `refreshWorldAnchoredUi()` recomputes ownership and
+placement for every anchored surface, driven by both viewport-gesture callbacks
+as well as by the existing chrome events, and deliberately cheaper than
+`syncFromNative()` so a pointer sample discards no draft. **One truth for the
+anchors**: they are derived when asked instead of read from a frame-old cache,
+that cache is deleted, and the measurability predicate is named once and shared
+by the render thread and every reader.
+
+Two coverage gaps stated rather than papered over, unchanged from the audit:
+**Activity recreation was not exercised** (`LIFECYCLE_RECREATE` is unaudited and
+uncorrected), and only **compact portrait** was measured. The conversion carries
+no constant and is written to absorb an arbitrary left or right inset, but that
+is a property of the code and not a measurement.
+
+One implementation detail worth knowing before touching this area: a surface made
+visible in the same pass that first lays it out cannot know its container's
+position, because a `GONE` view is skipped by its parent's layout and still
+reports position 0. The refresh places the best answer available and repeats once
+after layout, capped at three and reset by any settled pass. That is layout
+readiness, not a poll, and it is the one place the correction depends on Android
+layout timing.
 
 `CAD-EXT-R1` is technical/repository complete and
 carries no open blocker; what is left is the owner's own reading of the extent

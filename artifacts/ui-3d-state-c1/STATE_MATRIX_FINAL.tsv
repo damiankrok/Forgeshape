@@ -1,0 +1,118 @@
+case	state	surface	expected	actual	verdict
+UI3D-13	objects_open	S11 objects_popover	MAY_SHOW	SHOWN	PASS
+UI3D-13	precision_open	S13 property_inspector	MUST_SHOW	SHOWN	PASS
+UI3D-13	precision_open	S11 objects_popover	MUST_HIDE	HIDDEN	PASS
+UI3D-13	display_open	S14 display_settings_popover	MUST_SHOW	SHOWN	PASS
+UI3D-13	display_open	S13 property_inspector	MUST_HIDE	HIDDEN	PASS
+UI3D-13	after_system_back	S14 display_settings_popover	MUST_HIDE	HIDDEN	PASS
+UI3D-13	dimensions_open	S13 property_inspector	MUST_HIDE	HIDDEN	PASS
+UI3D-13	dimensions_open	S19 body_dimension_label_x	MUST_SHOW	SHOWN	PASS
+UI3D-13	relative_scale_open	S19 body_dimension_label_x	MUST_HIDE	HIDDEN	PASS
+UI3D-13	relative_scale_open	S22 dimension_anchor_group	MUST_HIDE	HIDDEN	PASS
+UI3D-13	relative_scale_open	S23 relative_scale_editor	MUST_SHOW	SHOWN	PASS
+UI3D-13	shape_tool	S25 transform_mode_group	MUST_HIDE	HIDDEN	PASS
+UI3D-13	shape_tool	S22 body_dimensions entry	MUST_HIDE	HIDDEN	PASS
+UI3D-13	shape_tool	S24 transform gizmo (native)	MUST_HIDE	HIDDEN	PASS
+UI3D-11	sculpt_entered	S19 body_dimension_label_x	MUST_HIDE	HIDDEN	PASS
+UI3D-11	sculpt_entered	S22 dimension_anchor_group	MUST_HIDE	HIDDEN	PASS
+UI3D-11	sculpt_entered	S24 transform gizmo (native)	MUST_HIDE	HIDDEN	PASS
+UI3D-11	sculpt_entered	S25 transform_mode_group	MUST_HIDE	HIDDEN	PASS
+UI3D-11	sculpt_entered	S12 add_primitive_palette	MUST_HIDE	HIDDEN	PASS
+UI3D-11	sculpt_entered	S35 cad_extrude cluster	MUST_HIDE	HIDDEN	PASS
+UI3D-11	sculpt_entered	S38 cad_canvas_edit_sketch	MUST_HIDE	HIDDEN	PASS
+UI3D-11	sculpt_entered	S40 brush_edge_controls	MUST_SHOW	SHOWN	PASS
+UI3D-11	sculpt_entered	S07 tool_rail_grab	MUST_SHOW	SHOWN	PASS
+UI3D-11	sculpt_entered	S07 tool_rail_mask	MUST_SHOW	SHOWN	PASS
+UI3D-11	after_stroke	S09 history_navigator_action	MUST_SHOW	SHOWN	PASS
+UI3D-11	navigator_open	S42 history_navigator	MUST_SHOW	SHOWN	PASS
+UI3D-11	navigator_closed	S42 history_navigator	MUST_HIDE	HIDDEN	PASS
+UI3D-11	before_mask	S41 clear_mask	MAY_SHOW	HIDDEN	PASS
+UI3D-11	after_mask_paint+precision_open	S41 clear_mask	MUST_SHOW	SHOWN	PASS
+UI3D-11	after_clear_mask+precision_open	S41 clear_mask	MUST_HIDE	HIDDEN	PASS
+UI3D-11	back_to_construction	S40 brush_edge_controls	MUST_HIDE	HIDDEN	PASS
+UI3D-11	back_to_construction	S42 history_navigator	MUST_HIDE	HIDDEN	PASS
+UI3D-11	back_to_construction	S19 body_dimension_label_x	MUST_HIDE	HIDDEN	PASS
+UI3D-11	back_to_construction	S41 clear_mask	MUST_HIDE	HIDDEN	PASS
+UI3D-11	resume_sculpt	S40 brush_edge_controls	MUST_SHOW	SHOWN	PASS
+UI3D-11	resume_sculpt	S19 body_dimension_label_x	MUST_HIDE	HIDDEN	PASS
+UI3D-11	resume_sculpt	S24 transform gizmo (native)	MUST_HIDE	HIDDEN	PASS
+UI3D-04	dimensions_open	S19 body_dimension_label_x	MUST_SHOW	SHOWN	PASS
+UI3D-04	dimensions_open	S22 dimension_anchor_group	MUST_SHOW	SHOWN	PASS
+UI3D-04	dimensions_open	S24 transform gizmo (native)	MUST_HIDE	HIDDEN	PASS
+UI3D-04	after_move	S19 body_dimension_label_x	MUST_SHOW	SHOWN	PASS
+UI3D-04	after_typed_dimension	S19 body_dimension_label_x	MUST_SHOW	SHOWN	PASS
+UI3D-04	dimensions_closed	S19 body_dimension_label_x	MUST_HIDE	HIDDEN	PASS
+UI3D-04	dimensions_closed	S22 dimension_anchor_group	MUST_HIDE	HIDDEN	PASS
+UI3D-04	dimensions_closed	S24 transform gizmo (native)	MUST_SHOW	SHOWN	PASS
+UI3D-09	symmetric	S36 cad_extrude_second_value	MUST_HIDE	HIDDEN	PASS
+UI3D-09	two_sides	S36 cad_extrude_second_value	MUST_SHOW	SHOWN	PASS
+UI3D-09	side_b_zeroed	S36 cad_extrude_second_value	MAY_SHOW	SHOWN	PASS
+UI3D-09	back_to_one_side	S36 cad_extrude_second_value	MUST_HIDE	HIDDEN	PASS
+UI3D-09	back_to_one_side	S37 cad_extrude_second_editor	MUST_HIDE	HIDDEN	PASS
+UI3D-07	line_drawn	S31 sketch_dimension_label	MAY_SHOW	SHOWN	PASS
+UI3D-07	line_selected	S31 sketch_dimension_label	MUST_SHOW	SHOWN	PASS
+UI3D-07	length_applied	S31 sketch_dimension_label	MUST_SHOW	SHOWN	PASS
+UI3D-07	tool_changed	S31 sketch_dimension_label	MAY_SHOW	SHOWN	PASS
+UI3D-07	sketch_cancelled	S31 sketch_dimension_label	MUST_HIDE	HIDDEN	PASS
+UI3D-03	home_no_project	S01 home_surface	MUST_SHOW	SHOWN	PASS
+UI3D-03	home_no_project	S06 global_toolbar	MUST_HIDE	HIDDEN	PASS
+UI3D-03	home_no_project	S07 tool_rail	MUST_HIDE	HIDDEN	PASS
+UI3D-03	home_no_project	S08 objects_capsule	MUST_HIDE	HIDDEN	PASS
+UI3D-03	home_no_project	S19 body_dimension_label_x	MUST_HIDE	HIDDEN	PASS
+UI3D-03	home_no_project	S35 cad_extrude cluster	MUST_HIDE	HIDDEN	PASS
+UI3D-03	home_no_project	S38 cad_canvas_edit_sketch	MUST_HIDE	HIDDEN	PASS
+UI3D-03	home_no_project	S13 property_inspector	MUST_HIDE	HIDDEN	PASS
+UI3D-03	new_project_chooser	S02 new_project_chooser	MUST_SHOW	SHOWN	PASS
+UI3D-03	new_project_chooser	S01 home_surface	MAY_SHOW	HIDDEN	PASS
+UI3D-03	new_cad_sketch+precision_open	S28 sketch_editor	MUST_SHOW	SHOWN	PASS
+UI3D-03	new_cad_sketch	S30 sketch_orientation_navigator	MUST_SHOW	SHOWN	PASS
+UI3D-03	new_cad_sketch	S02 new_project_chooser	MUST_HIDE	HIDDEN	PASS
+UI3D-03	new_cad_sketch	S01 home_surface	MUST_HIDE	HIDDEN	PASS
+UI3D-03	new_cad_sketch	S12 add_primitive_palette	MUST_HIDE	HIDDEN	PASS
+UI3D-03	new_cad_sketch	S16 object_row_commands	MUST_HIDE	HIDDEN	PASS
+UI3D-03	new_cad_sketch	S35 cad_extrude cluster	MUST_HIDE	HIDDEN	PASS
+UI3D-03	new_cad_sketch	S19 body_dimension_label_x	MUST_HIDE	HIDDEN	PASS
+UI3D-03	sketch_ready	S35 cad_extrude cluster	MUST_SHOW	SHOWN	PASS
+UI3D-03	sketch_ready	S35 extent_one_side	MUST_SHOW	SHOWN	PASS
+UI3D-03	sketch_ready	S35 cad_extrude_flip	MUST_SHOW	SHOWN	PASS
+UI3D-03	sketch_ready	S36 cad_extrude_second_value	MUST_HIDE	HIDDEN	PASS
+UI3D-03	sketch_ready	S38 cad_canvas_edit_sketch	MUST_HIDE	HIDDEN	PASS
+UI3D-03	sketch_ready	S29 sketch_profile_chooser	MAY_SHOW	SHOWN	PASS
+UI3D-03	extent_symmetric	S35 cad_extrude_flip	MUST_HIDE	HIDDEN	PASS
+UI3D-03	extent_symmetric	S36 cad_extrude_second_value	MUST_HIDE	HIDDEN	PASS
+UI3D-03	extent_two_sides	S36 cad_extrude_second_value	MUST_SHOW	SHOWN	PASS
+UI3D-03	extent_two_sides	S35 cad_extrude_flip	MUST_HIDE	HIDDEN	PASS
+UI3D-03	extent_back_to_one_side	S36 cad_extrude_second_value	MUST_HIDE	HIDDEN	PASS
+UI3D-03	extent_back_to_one_side	S35 cad_extrude_flip	MUST_SHOW	SHOWN	PASS
+UI3D-03	extrude_committed	S35 cad_extrude cluster	MUST_HIDE	HIDDEN	PASS
+UI3D-03	extrude_committed	S36 cad_extrude_second_value	MUST_HIDE	HIDDEN	PASS
+UI3D-03	extrude_committed	S28 sketch_editor	MUST_HIDE	HIDDEN	PASS
+UI3D-03	extrude_committed	S30 sketch_orientation_navigator	MUST_HIDE	HIDDEN	PASS
+UI3D-03	extrude_committed	S31 sketch_dimension_label	MUST_HIDE	HIDDEN	PASS
+UI3D-03	extrude_committed	S38 cad_canvas_edit_sketch	MUST_SHOW	SHOWN	PASS
+UI3D-03	edit_sketch+precision_open	S28 sketch_editor	MUST_SHOW	SHOWN	PASS
+UI3D-03	edit_sketch	S38 cad_canvas_edit_sketch	MUST_HIDE	HIDDEN	PASS
+UI3D-03	edit_sketch	S16 object_row_commands	MUST_HIDE	HIDDEN	PASS
+UI3D-03	edit_sketch_cancelled	S28 sketch_editor	MUST_HIDE	HIDDEN	PASS
+UI3D-03	edit_sketch_cancelled	S30 sketch_orientation_navigator	MUST_HIDE	HIDDEN	PASS
+UI3D-03	edit_sketch_cancelled	S31 sketch_dimension_label	MUST_HIDE	HIDDEN	PASS
+UI3D-03	edit_sketch_cancelled	S35 cad_extrude cluster	MUST_HIDE	HIDDEN	PASS
+UI3D-03	edit_sketch_cancelled	S38 cad_canvas_edit_sketch	MUST_SHOW	SHOWN	PASS
+UI3D-05	after_orbit	S19 body_dimension_label_x	MUST_SHOW	SHOWN	PASS
+UI3D-10	committed	S35 cad_extrude cluster	MUST_HIDE	HIDDEN	PASS
+UI3D-10	committed	S38 cad_canvas_edit_sketch	MUST_SHOW	SHOWN	PASS
+UI3D-10	edit_sketch+precision_open	S28 sketch_editor	MUST_SHOW	SHOWN	PASS
+UI3D-10	edit_sketch	S38 cad_canvas_edit_sketch	MUST_HIDE	HIDDEN	PASS
+UI3D-10	edit_sketch	S39 cad_editor	MUST_HIDE	HIDDEN	PASS
+UI3D-10	edit_sketch	S24 transform gizmo (native)	MUST_HIDE	HIDDEN	PASS
+UI3D-10	finish_again	S35 cad_extrude cluster	MUST_SHOW	SHOWN	PASS
+UI3D-10	cancelled_edit	S38 cad_canvas_edit_sketch	MUST_SHOW	SHOWN	PASS
+UI3D-10	cancelled_edit	S35 cad_extrude cluster	MUST_HIDE	HIDDEN	PASS
+UI3D-06	dimensions_on_body_B	S19 body_dimension_label_x	MUST_SHOW	SHOWN	PASS
+UI3D-06	switched_to_body_A	S19 body_dimension_label_x	MAY_SHOW	SHOWN	PASS
+UI3D-06	active_body_hidden	S19 body_dimension_label_x	MUST_HIDE	HIDDEN	PASS
+UI3D-06	active_body_locked	S24 transform gizmo (native)	MUST_HIDE	HIDDEN	PASS
+UI3D-06	active_body_locked	S19 body_dimension_label_x	MUST_HIDE	HIDDEN	PASS
+UI3D-06	after_delete	S19 body_dimension_label_x	MUST_HIDE	HIDDEN	PASS
+UI3D-06	after_undo_of_delete	S08 objects_capsule	MUST_SHOW	SHOWN	PASS
+UI3D-06	after_redo_of_delete	S19 body_dimension_label_x	MUST_HIDE	HIDDEN	PASS

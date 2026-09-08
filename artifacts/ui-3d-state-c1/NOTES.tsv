@@ -1,0 +1,29 @@
+case	note
+UI3D-11	Dimensions mode before entering Sculpt: true
+UI3D-11	sculpt_entered: modeActive=0.0 measurable=1.0 anchorProjectsXYZ=000 container=GONE containerShown=false labelX=VISIBLE overlayPadding=0,128,0,63
+UI3D-11	native says Clear Mask is available: true
+UI3D-04	dimensions_open: modeActive=1.0 measurable=1.0 anchorProjectsXYZ=111 container=VISIBLE containerShown=true labelX=VISIBLE overlayPadding=0,128,0,63
+UI3D-04	after_move: modeActive=1.0 measurable=1.0 anchorProjectsXYZ=111 container=VISIBLE containerShown=true labelX=VISIBLE overlayPadding=0,128,0,63
+UI3D-04	after_rotate: modeActive=1.0 measurable=1.0 anchorProjectsXYZ=111 container=VISIBLE containerShown=true labelX=VISIBLE overlayPadding=0,128,0,63
+UI3D-04	after_scale: modeActive=1.0 measurable=1.0 anchorProjectsXYZ=111 container=VISIBLE containerShown=true labelX=VISIBLE overlayPadding=0,128,0,63
+UI3D-04	after_typed_dimension: modeActive=1.0 measurable=1.0 anchorProjectsXYZ=111 container=VISIBLE containerShown=true labelX=VISIBLE overlayPadding=0,128,0,63
+UI3D-04	after_undo: modeActive=1.0 measurable=1.0 anchorProjectsXYZ=111 container=VISIBLE containerShown=true labelX=VISIBLE overlayPadding=0,128,0,63
+UI3D-08	arrow drag moved the depth from 1.0 to 1.5137381553649902
+UI3D-08	camera-attached scale far=0.800000011920929 near=0.9505161046981812 (it must shrink as the camera pulls back and saturate in [0.80, 1.60])
+UI3D-09	after typing 0 into Side B: positive=1.9467040300369263 negative=0.0 extent=2.0
+UI3D-07	native reports a line dimension: true
+UI3D-05	before_camera: modeActive=1.0 measurable=1.0 anchorProjectsXYZ=111 container=VISIBLE containerShown=true labelX=VISIBLE overlayPadding=0,128,0,63
+UI3D-05	orbit moved the X anchor from (610.98016, 1307.757) to (488.16016, 1190.5844)
+UI3D-05	after_orbit: modeActive=1.0 measurable=1.0 anchorProjectsXYZ=111 container=VISIBLE containerShown=true labelX=VISIBLE overlayPadding=0,128,0,63
+UI3D-05	after_orbit_then_chrome_sync: modeActive=1.0 measurable=1.0 anchorProjectsXYZ=111 container=VISIBLE containerShown=true labelX=VISIBLE overlayPadding=0,128,0,63
+UI3D-05	after_pan: modeActive=1.0 measurable=1.0 anchorProjectsXYZ=111 container=VISIBLE containerShown=true labelX=VISIBLE overlayPadding=0,128,0,63
+UI3D-05	after_pan_then_chrome_sync: modeActive=1.0 measurable=1.0 anchorProjectsXYZ=111 container=VISIBLE containerShown=true labelX=VISIBLE overlayPadding=0,128,0,63
+UI3D-05	after_zoom_out: modeActive=1.0 measurable=1.0 anchorProjectsXYZ=111 container=VISIBLE containerShown=true labelX=VISIBLE overlayPadding=0,128,0,63
+UI3D-05	after_zoom_in: modeActive=1.0 measurable=1.0 anchorProjectsXYZ=111 container=VISIBLE containerShown=true labelX=VISIBLE overlayPadding=0,128,0,63
+UI3D-05	after_zoom_then_chrome_sync: modeActive=1.0 measurable=1.0 anchorProjectsXYZ=111 container=VISIBLE containerShown=true labelX=VISIBLE overlayPadding=0,128,0,63
+UI3D-10	the sketch being edited belongs to body 4
+UI3D-06	dimensions_on_body_B: modeActive=1.0 measurable=1.0 anchorProjectsXYZ=111 container=VISIBLE containerShown=true labelX=VISIBLE overlayPadding=0,128,0,63
+UI3D-06	after switching to body A the Dimensions mode is still open
+UI3D-06	switched_to_body_A: modeActive=1.0 measurable=1.0 anchorProjectsXYZ=111 container=VISIBLE containerShown=true labelX=VISIBLE overlayPadding=0,128,0,63
+UI3D-06	hidden body: Dimensions mode is closed
+UI3D-06	labels were shown before the Delete
