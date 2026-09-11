@@ -4319,3 +4319,52 @@ never be presented as Add. Extrude Add and Cut remain exactly what `UI-OWNER-04`
 already said they were: **required integration after boolean infrastructure
 exists**, and still not implemented. The next step for the audit is the
 coordinator's, not this repository's.
+
+**A second audit landed beside this status and changed nothing in the product**
+(`STAGE027-R0`, 2026-09-11). A source-backed resolution of the historical
+Stage027 phrase — *"Isolate/hide, mesh preview, and remaining non-history Sculpt
+workflow completion"* — now lives in `artifacts/stage-027-r0/`. It is an audit:
+**no runtime, test, schema, fixture or corpus byte moved**, nothing was built,
+nothing was run on a device, and nothing in it is an authorized stage or an
+implemented capability. Its findings are that **hide is already delivered** —
+durable, representation-neutral, enforced in the single place `snapshot()`,
+one Undo, persisted as `SCNE` v2 bit0 — so Stage027 must build no second
+visibility truth; that **isolate is the only genuinely new thing in the phrase**,
+and its reason is mechanical rather than aesthetic, because
+`SculptSession::hitsSculptMesh` casts the brush ray against the active body's own
+triangles alone while Sculpt draws the whole scene, so an occluding body hides
+the sculpt target from the eye WITHOUT blocking the brush; and that **"mesh
+preview" is undefined by any source** — one reading is already delivered as
+MatCap and Flat shading, and the other two need renderer work the OWNER should
+choose deliberately, since `VkDeviceCreateInfo` enables no device features at
+all (so a polygon-mode wireframe needs `fillModeNonSolid`, a feature query and a
+fallback) and the existing line path is capped at `kMaxSketchOverlayVertices`
+(65 536), which a four-million-vertex Imported Mesh exceeds by three orders of
+magnitude. The audit recommends a transient, session-only, native-owned isolate
+filtered INSIDE `ConstructionScene::snapshot()`, so that drawn and picked stay
+one fact rather than becoming two predicates, and rejects the
+durable-visibility alternative on source grounds. Six forks are left explicitly
+to the OWNER and none is resolved by preference.
+
+**That audit also reports two UNVERIFIED source-level findings about the CURRENT
+build, and the coordinator should treat both as open.** Neither was reproduced
+on a device in that run, and neither is fixed. First, the rule that the Sculpt
+target is fixed for the duration of Sculpt Mode is enforced on the Objects-row
+path (`sceneSelectBody` refuses `in_sculpt_mode`) but appears NOT to be enforced
+on the viewport-tap path, which resolves a tap into
+`constructionScene().setActiveBody(hit.objectId)` directly; because
+`sculptSession()` re-binds to the active body on every access, the session would
+follow. Second, neither `freezeToSculpt` nor `enterSculptMode` consults
+`SceneObject::visible()`, and above JNI visibility is read in exactly two places,
+both in the Objects row — so Start Sculpting over a HIDDEN body appears to be
+reachable, with strokes landing and the fingerprint moving while nothing is
+drawn. Both are recorded as `FINDING-A` and `FINDING-B` in
+`artifacts/stage-027-r0/CURRENT_TRUTH.md`, and the first step of any Stage027
+work is to REPRODUCE them rather than to fix them: if either does not reproduce,
+there is a guard the audit did not find and its analysis must be corrected first.
+The audit additionally notes that `PRODUCT.md` is stale where it still says
+selection is a tint with no outline (`SEL-OUT-R1` delivered it); that correction
+was deliberately NOT made there, because the audit's docs mandate was narrow and
+the staleness did not prevent truthful reporting. The next step is the
+coordinator's, not this repository's, and **Stage027 implementation is not
+started.**
