@@ -40,7 +40,7 @@ build, and its checksum is validated first.
   symbols and 0 self-test token/check-name strings on both ABIs — and, as the
   control, more than 0 of both in the debug APK.
 - **`.forge` corpus parity**: `scripts/build-forge-corpus.ps1` (the independent
-  encoder) regenerates all 36 fixtures into a scratch directory under `pwsh`,
+  encoder) regenerates all 44 fixtures into a scratch directory under `pwsh`,
   and every committed fixture must be byte-identical.
 - `scripts/test-instrumented-runtime.ps1`, `scripts/test-instrumented-sharding.ps1`
   and `scripts/verify-device-guards.ps1` (the latter through a CI-only
@@ -66,7 +66,7 @@ build, and its checksum is validated first.
    carries `-s`.
 4. Sets the log buffer to 64M, installs the debug APK, lets the freshly booted
    system settle (1-minute load below 2.5, at most 180 s), launches it, and
-   requires ONE capture holding all **22** `*_SELFTEST_OK` tokens in order,
+   requires ONE capture holding all **23** `*_SELFTEST_OK` tokens in order,
    `FORGESHAPE_NATIVE_VIEWPORT_OK`, and zero `_SELFTEST_FAIL` / `_FAIL:` lines —
    read from `ForgeShape`-tagged lines only, so a system line containing
    `_FAIL:` is never mistaken for one of ours.
@@ -108,8 +108,11 @@ Each run's page → **Artifacts** (kept 14 days):
   build, system image, KVM, GPU mode, Vulkan features, ForgeShape's own Vulkan
   lines), `emulator-command.txt`, `emulator-boot.log`, `startup-logcat.txt`,
   `selftest-tokens-found.txt`, `instrumentation-raw.txt`,
-  `instrumentation-junit.xml`, `test-logcat.txt`, and startup/post-test
-  screenshots. `ci-device-gradle-reports` on failure.
+  `instrumentation-junit.xml`, `test-logcat.txt`, startup/post-test
+  screenshots, and `test-evidence/` — whatever the focused instrumented class
+  wrote under the app's own external `files/evidence` directory (captured
+  frames and measured facts; pulled with an explicit `-s`, and absent when the
+  class wrote none). `ci-device-gradle-reports` on failure.
 
 The job summary on the run page repeats the key numbers.
 

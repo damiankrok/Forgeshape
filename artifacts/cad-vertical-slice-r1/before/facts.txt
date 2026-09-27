@@ -1,0 +1,92 @@
+one_side.viewport=[0,0][1080,2400] area_px=2592000 density=2.625
+one_side.extrude_cluster=[0,1163][1027,1334] drawn_px=1027x171 scale=0.9505158066749573 viewport_pct=6.78
+one_side.extent_one_side=[10,1173][208,1331] drawn_px=198x158 scale=1.0 viewport_pct=1.21
+one_side.extent_symmetric=[209,1173][438,1331] drawn_px=229x158 scale=1.0 viewport_pct=1.40
+one_side.extent_two_sides=[437,1173][659,1331] drawn_px=222x158 scale=1.0 viewport_pct=1.35
+one_side.exact_value=[659,1173][773,1331] drawn_px=114x158 scale=1.0 viewport_pct=0.69
+one_side.operation_label=[938,1179][1020,1324] drawn_px=82x145 scale=1.0 viewport_pct=0.46
+one_side.flip=[778,1173][936,1331] drawn_px=158x158 scale=1.0 viewport_pct=0.96
+one_side.second_value=absent
+one_side.second_cluster=absent
+one_side.orientation_navigator=[442,336][859,691] drawn_px=417x355 scale=1.0 viewport_pct=5.71
+one_side.sketch_tool_rail=[880,231][1059,1576] drawn_px=179x1345 scale=1.0 viewport_pct=9.29
+one_side.trailing_host=[880,231][1059,1576] drawn_px=179x1345 scale=1.0 viewport_pct=9.29
+one_side.precision_panel=[21,1597][1059,2316] drawn_px=1038x719 scale=1.0 viewport_pct=28.79
+one_side.control_scale=0.9505158066749573
+one_side.label_anchor_px=454.87078857421875,1248.4552001953125
+one_side.exact_value_to_shaft_anchor_dp=99.48696017053499
+capture.01_ready_one_side=01_ready_one_side.png 1080x2400
+symmetric.viewport=[0,0][1080,2400] area_px=2592000 density=2.625
+symmetric.extrude_cluster=[0,1163][955,1334] drawn_px=955x171 scale=0.9505158066749573 viewport_pct=6.31
+symmetric.extent_one_side=[10,1173][208,1331] drawn_px=198x158 scale=1.0 viewport_pct=1.21
+symmetric.extent_symmetric=[209,1173][438,1331] drawn_px=229x158 scale=1.0 viewport_pct=1.40
+symmetric.extent_two_sides=[437,1173][659,1331] drawn_px=222x158 scale=1.0 viewport_pct=1.35
+symmetric.exact_value=[659,1173][773,1331] drawn_px=114x158 scale=1.0 viewport_pct=0.69
+symmetric.operation_label=[778,1223][954,1276] drawn_px=176x53 scale=1.0 viewport_pct=0.36
+symmetric.flip=absent
+symmetric.second_value=absent
+symmetric.second_cluster=absent
+symmetric.orientation_navigator=[442,336][859,691] drawn_px=417x355 scale=1.0 viewport_pct=5.71
+symmetric.sketch_tool_rail=[880,231][1059,1407] drawn_px=179x1176 scale=1.0 viewport_pct=8.12
+symmetric.trailing_host=[880,231][1059,1407] drawn_px=179x1176 scale=1.0 viewport_pct=8.12
+symmetric.precision_panel=[21,1597][1059,2316] drawn_px=1038x719 scale=1.0 viewport_pct=28.79
+symmetric.control_scale=0.9505158066749573
+symmetric.label_anchor_px=454.87078857421875,1248.4552001953125
+symmetric.exact_value_to_shaft_anchor_dp=99.48696017053499
+capture.02_ready_symmetric=02_ready_symmetric.png 1080x2400
+two_sides.viewport=[0,0][1080,2400] area_px=2592000 density=2.625
+two_sides.extrude_cluster=[0,1163][955,1334] drawn_px=955x171 scale=0.9505158066749573 viewport_pct=6.31
+two_sides.extent_one_side=[10,1173][208,1331] drawn_px=198x158 scale=1.0 viewport_pct=1.21
+two_sides.extent_symmetric=[209,1173][438,1331] drawn_px=229x158 scale=1.0 viewport_pct=1.40
+two_sides.extent_two_sides=[437,1173][659,1331] drawn_px=222x158 scale=1.0 viewport_pct=1.35
+two_sides.exact_value=[659,1173][773,1331] drawn_px=114x158 scale=1.0 viewport_pct=0.69
+two_sides.operation_label=[778,1223][954,1276] drawn_px=176x53 scale=1.0 viewport_pct=0.36
+two_sides.flip=absent
+two_sides.second_value=[564,1080][678,1238] drawn_px=114x158 scale=1.0 viewport_pct=0.69
+two_sides.second_cluster=[554,1070][683,1241] drawn_px=129x171 scale=0.9505158066749573 viewport_pct=0.85
+two_sides.orientation_navigator=[442,336][859,691] drawn_px=417x355 scale=1.0 viewport_pct=5.71
+two_sides.sketch_tool_rail=[880,231][1059,1407] drawn_px=179x1176 scale=1.0 viewport_pct=8.12
+two_sides.trailing_host=[880,231][1059,1407] drawn_px=179x1176 scale=1.0 viewport_pct=8.12
+two_sides.precision_panel=[21,1597][1059,2316] drawn_px=1038x719 scale=1.0 viewport_pct=28.79
+two_sides.control_scale=0.9505158066749573
+two_sides.label_anchor_px=454.87078857421875,1248.4552001953125
+two_sides.exact_value_to_shaft_anchor_dp=99.48696017053499
+capture.03_ready_two_sides=03_ready_two_sides.png 1080x2400
+extent_chip_visual_height_dp=60.190475
+world_sketch_ready.operation_badge=New Body
+world_sketch_ready.operation_badge_clickable=false
+world_sketch_ready.add_or_cut_control_present=false
+bodies_before=1
+bodies_after_base=2
+base_id=2
+chooser_selected_kind=3
+face_sketch_ready.operation_badge=New Body
+face_sketch_ready.operation_badge_clickable=false
+face_sketch_ready.add_or_cut_control_present=false
+capture.05_face_sketch_ready=05_face_sketch_ready.png 1080x2400
+second_id=3
+bodies_after_second=3
+capture.06_after_second_extrude=06_after_second_extrude.png 1080x2400
+entities=2.0
+capture.04_rectangle_circle_after_finish=04_rectangle_circle_after_finish.png 1080x2400
+profile_count=1.0
+chosen_profile_anchor=2
+chosen_profile_kind=2.0
+chosen_profile_area_m2=1.9977248974451536
+rect_circle_ready.viewport=[0,0][1080,2400] area_px=2592000 density=2.625
+rect_circle_ready.extrude_cluster=[0,1163][1027,1334] drawn_px=1027x171 scale=0.9505158066749573 viewport_pct=6.78
+rect_circle_ready.extent_one_side=[10,1173][208,1331] drawn_px=198x158 scale=1.0 viewport_pct=1.21
+rect_circle_ready.extent_symmetric=[209,1173][438,1331] drawn_px=229x158 scale=1.0 viewport_pct=1.40
+rect_circle_ready.extent_two_sides=[437,1173][659,1331] drawn_px=222x158 scale=1.0 viewport_pct=1.35
+rect_circle_ready.exact_value=[659,1173][773,1331] drawn_px=114x158 scale=1.0 viewport_pct=0.69
+rect_circle_ready.operation_label=[938,1179][1020,1324] drawn_px=82x145 scale=1.0 viewport_pct=0.46
+rect_circle_ready.flip=[778,1173][936,1331] drawn_px=158x158 scale=1.0 viewport_pct=0.96
+rect_circle_ready.second_value=absent
+rect_circle_ready.second_cluster=absent
+rect_circle_ready.orientation_navigator=[442,336][859,691] drawn_px=417x355 scale=1.0 viewport_pct=5.71
+rect_circle_ready.sketch_tool_rail=[880,231][1059,1576] drawn_px=179x1345 scale=1.0 viewport_pct=9.29
+rect_circle_ready.trailing_host=[880,231][1059,1576] drawn_px=179x1345 scale=1.0 viewport_pct=9.29
+rect_circle_ready.precision_panel=[21,1597][1059,2316] drawn_px=1038x719 scale=1.0 viewport_pct=28.79
+rect_circle_ready.control_scale=0.9505158066749573
+rect_circle_ready.label_anchor_px=454.87078857421875,1248.4552001953125
+rect_circle_ready.exact_value_to_shaft_anchor_dp=99.48696017053499

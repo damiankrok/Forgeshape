@@ -177,11 +177,29 @@ final class ViewportAnchorSpace {
      * Measures a view at its natural size and places it, scale folded in.
      *
      * <p>The shared shape of all three placing views: measure unconstrained,
-     * take the scaled box, centre it on the anchor. The scale is the caller's.
-     * Only the CAD cluster has one, and it is the camera-attached value
-     * {@code CAD-UX-S1} authored, which this must not touch.
+     * take the scaled box, centre it on the anchor. The scale is the caller's,
+     * and every current caller passes 1.0: the CAD extrude HUD used to scale
+     * its whole cluster by the camera-attached multiplier, and since
+     * `CAD-VERTICAL-SLICE-R1` it sizes only its GLYPHS by it, because scaling
+     * the view scaled its hit area down with it.
      */
     boolean measureAndPlace(View placed, float anchorX, float anchorY, float scale) {
+        measureUnderParent(placed);
+        return place(placed, anchorX, anchorY, placed.getMeasuredWidth() * scale,
+                placed.getMeasuredHeight() * scale);
+    }
+
+    /**
+     * Measures a view exactly as {@link #measureAndPlace} does, without placing
+     * it.
+     *
+     * <p>For a caller that has to know the measured box BEFORE it chooses the
+     * anchor it hands over — the CAD extrude HUD centres its VALUE, not its
+     * whole cluster, on the arrow, and hangs a palette from the box the cluster
+     * was given. One measuring rule, so the box it reasons about is the box
+     * drawn.
+     */
+    void measureUnderParent(View placed) {
         // Measured under the CONSTRAINT its parent will impose, not
         // unconstrained. A wrap-content child of a full-window container is laid
         // out at most as wide as that container, so an unconstrained measure of a
@@ -207,8 +225,6 @@ final class ViewportAnchorSpace {
             }
         }
         placed.measure(widthSpec, heightSpec);
-        return place(placed, anchorX, anchorY, placed.getMeasuredWidth() * scale,
-                placed.getMeasuredHeight() * scale);
     }
 
     /**

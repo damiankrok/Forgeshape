@@ -53,8 +53,11 @@ set(FORGESHAPE_PRODUCT_SOURCES
     forgeshape_camera.cpp
     forgeshape_cad_body.cpp
     forgeshape_cad_face.cpp
+    forgeshape_cad_feature.cpp
+    forgeshape_cad_kernel.cpp
     forgeshape_cad_extrude_tool.cpp
     forgeshape_sketch.cpp
+    forgeshape_sketch_region.cpp
     forgeshape_sketch_overlay.cpp
     forgeshape_sketch_session.cpp
     forgeshape_support_chooser.cpp
@@ -108,6 +111,7 @@ set(FORGESHAPE_SELFTEST_SOURCES
     forgeshape_camera_selftest.cpp
     forgeshape_cad_selftest.cpp
     forgeshape_cad_a3_selftest.cpp
+    forgeshape_cad_feature_selftest.cpp
     forgeshape_sketch_ux_selftest.cpp
     forgeshape_construction_selftest.cpp
     forgeshape_cone_capsule_selftest.cpp
@@ -125,6 +129,29 @@ set(FORGESHAPE_SELFTEST_SOURCES
     forgeshape_sculpt_selftest.cpp
     forgeshape_sphere_selftest.cpp
     forgeshape_transform_selftest.cpp)
+
+# ---------------------------------------------------------------------------
+# The CAD boolean kernel (`CAD-VERTICAL-SLICE-R1`, GATE-KERNEL)
+# ---------------------------------------------------------------------------
+# Manifold 3.5.4 (Apache-2.0), vendored unmodified under third_party/manifold
+# and reproducible with scripts/vendor-manifold.sh. A STATIC library linked into
+# the one shared object, so there is no second .so whose availability could
+# differ between Android and a future desktop build. Only
+# forgeshape_cad_kernel.cpp includes its headers.
+#   MANIFOLD_PAR=-1          single-threaded, no TBB: deterministic and small
+#   MANIFOLD_NO_IOSTREAM     no OBJ reader/writer, no filesystem
+#   (no MANIFOLD_DEBUG)      no exceptions thrown, no debug dumps
+# Always optimised, in every configuration: it is third-party arithmetic that
+# is never stepped through, and a debug build's self-tests run it on device.
+file(GLOB FORGESHAPE_MANIFOLD_SOURCES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/manifold/src/*.cpp")
+add_library(forgeshape_manifold STATIC ${FORGESHAPE_MANIFOLD_SOURCES})
+target_include_directories(forgeshape_manifold PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/manifold/include")
+target_compile_definitions(forgeshape_manifold PUBLIC
+    MANIFOLD_PAR=-1 MANIFOLD_NO_IOSTREAM MANIFOLD_NO_FILESYSTEM)
+target_compile_options(forgeshape_manifold PRIVATE -O2 -w)
+set_target_properties(forgeshape_manifold PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 add_library(forgeshape_native SHARED ${FORGESHAPE_PRODUCT_SOURCES})
 
@@ -146,6 +173,7 @@ find_library(LOG_LIB log)
 find_library(VULKAN_LIB vulkan)
 
 target_link_libraries(forgeshape_native
+    forgeshape_manifold
     ${VULKAN_LIB}
     ${ANDROID_LIB}
     ${LOG_LIB})

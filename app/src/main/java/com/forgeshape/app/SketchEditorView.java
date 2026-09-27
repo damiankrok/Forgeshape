@@ -38,7 +38,7 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
     private final InspectorHost host;
     private final double[] nativeSketch = new double[NativeViewport.SKETCH_STATE_SIZE];
     private final double[] nativeEntity = new double[NativeViewport.SKETCH_ENTITY_SIZE];
-    private final double[] profileInfo = new double[NativeViewport.SKETCH_PROFILE_INFO_SIZE];
+    private final double[] profileInfo = new double[NativeViewport.SKETCH_REGION_INFO_SIZE];
 
     // --- Editing ---
     private final LinearLayout editingSection;
@@ -55,6 +55,16 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
     // --- Ready ---
     private final LinearLayout readySection;
     private final LinearLayout profileChooser;
+    /**
+     * New Body, Add and Cut (`CAD-VERTICAL-SLICE-R1`), with their section
+     * label: the group is withdrawn whole when it holds one choice. Only the operations
+     * native says can be chosen now are drawn: a sketch on a world plane has
+     * no body to add to or cut, so there the row carries New Body alone.
+     */
+    private final LinearLayout operationRow;
+    private final TextView operationNewBody;
+    private final TextView operationAdd;
+    private final TextView operationCut;
     private final NumericPropertyRow depthField;
     private final TextView directionAlong;
     private final TextView directionAgainst;
@@ -86,6 +96,12 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
     /** Told to act; the workspace owns what the act means. */
     interface OnSketchAction {
         void onExtrudeRequested();
+
+        /**
+         * New Body, Add or Cut (`CAD-VERTICAL-SLICE-R1`) — the same act the
+         * canvas operation badge sends, so the two cannot become two answers.
+         */
+        void onExtrudeOperationRequested(int operation);
     }
 
     private final OnSketchAction actions;
@@ -168,6 +184,25 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
         profileChooser.setId(R.id.sketch_profile_chooser);
         profileChooser.setOrientation(VERTICAL);
         readySection.addView(profileChooser, EditorControlStyles.rowParams(smallGap));
+        operationRow = new LinearLayout(context);
+        operationRow.setId(R.id.sketch_operation_row);
+        operationRow.setOrientation(VERTICAL);
+        operationRow.addView(EditorControlStyles.sectionLabel(context,
+                context.getString(R.string.sketch_operation_section)),
+                EditorControlStyles.rowParams(0));
+        final LinearLayout operationChips = new LinearLayout(context);
+        operationChips.setOrientation(HORIZONTAL);
+        operationNewBody = operationChip(context, R.id.sketch_operation_new_body,
+                R.string.sketch_operation_new_body, NativeViewport.OPERATION_NEW_BODY);
+        operationAdd = operationChip(context, R.id.sketch_operation_add,
+                R.string.sketch_operation_add, NativeViewport.OPERATION_ADD);
+        operationCut = operationChip(context, R.id.sketch_operation_cut,
+                R.string.sketch_operation_cut, NativeViewport.OPERATION_CUT);
+        operationChips.addView(operationNewBody, EditorControlStyles.evenShare(0));
+        operationChips.addView(operationAdd, EditorControlStyles.evenShare(smallGap));
+        operationChips.addView(operationCut, EditorControlStyles.evenShare(smallGap));
+        operationRow.addView(operationChips, EditorControlStyles.rowParams(smallGap));
+        readySection.addView(operationRow, EditorControlStyles.rowParams(sectionGap));
         readySection.addView(EditorControlStyles.sectionLabel(context,
                 context.getString(R.string.sketch_extrude_section)),
                 EditorControlStyles.rowParams(sectionGap));
@@ -225,6 +260,17 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
         refreshFromNative();
     }
 
+    private TextView operationChip(Context context, int id, int labelRes, final int operation) {
+        final TextView chip = EditorControlStyles.chip(context, id, context.getString(labelRes));
+        chip.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                actions.onExtrudeOperationRequested(operation);
+            }
+        });
+        return chip;
+    }
+
     private LinearLayout buildRow(Context context, int rowId, NumericPropertyRow[] out,
                                   int[] fieldIds, int[] labelRes) {
         final LinearLayout row = new LinearLayout(context);
@@ -280,6 +326,13 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
         refreshProfiles();
         depthField.setText(unit.format(nativeSketch[NativeViewport.SKETCH_EXTRUDE_DEPTH]));
         NativeViewport.cadExtrudeToolState(nativeExtrude);
+        refreshOperations();
+        // The pinned Extrude follows the preview's verdict, on the toolbar's
+        // terms: disabled while the candidate is not one a commit may make.
+        final boolean committable = nativeExtrude[NativeViewport.CAD_EXTRUDE_CANDIDATE_STATUS]
+                == NativeViewport.CAD_OK;
+        extrude.setEnabled(committable);
+        extrude.setAlpha(committable ? 1f : 0.45f);
         directionRow.setVisibility(
                 nativeExtrude[NativeViewport.CAD_EXTRUDE_EXTENT] == NativeViewport.EXTENT_ONE_SIDE
                         ? VISIBLE
@@ -333,6 +386,15 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
         }
     }
 
+    /**
+     * The REGIONS the sketch offers (`CAD-VERTICAL-SLICE-R1`): an outer loop
+     * minus the loops cleanly inside it, so a rectangle around a circle lists
+     * the rectangle-with-a-hole and the disk as two rows. A row is ACTIVE when
+     * native says its region is part of the extrusion — every selected region,
+     * not one "chosen" id — and tapping a row makes it the one region, which is
+     * what a list of choices means. Adding a second region to the extrusion is
+     * a tap on it in the viewport, where the regions are seen.
+     */
     private void refreshProfiles() {
         final Context context = getContext();
         profileChooser.removeAllViews();
@@ -344,7 +406,9 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
         for (int i = 0; i < written; i++) {
             final long anchor = anchors[i];
             String label = context.getString(R.string.tool_polyline);
+            boolean selected = anchor == chosen;
             if (NativeViewport.sketchProfileInfo(anchor, profileInfo)) {
+                selected = profileInfo[NativeViewport.SKETCH_REGION_SELECTED] != 0.0;
                 final String area = LengthUnit.formatArea(
                         host.uiState().displayUnit(), profileInfo[2]);
                 switch ((int) profileInfo[0]) {
@@ -359,11 +423,20 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
                                 (int) profileInfo[1], area);
                         break;
                 }
+                final int holes = (int) profileInfo[NativeViewport.SKETCH_REGION_HOLES];
+                if (holes == 1) {
+                    label = context.getString(R.string.sketch_region_one_hole, label);
+                } else if (holes > 1) {
+                    label = context.getString(R.string.sketch_region_holes, label, holes);
+                }
             }
             final TextView chip = EditorControlStyles.listRow(context,
                     R.id.sketch_profile_option, label);
             chip.setTag(Long.valueOf(anchor));
-            EditorControlStyles.setListRowActive(chip, anchor == chosen);
+            chip.setContentDescription(context.getString(selected
+                    ? R.string.sketch_region_selected_description
+                    : R.string.sketch_region_description, label));
+            EditorControlStyles.setListRowActive(chip, selected);
             chip.setOnClickListener(new OnClickListener() {
                 @Override
                 public void onClick(View v) {
@@ -374,6 +447,26 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
             params.width = LayoutParams.MATCH_PARENT;
             profileChooser.addView(chip, params);
         }
+    }
+
+    /** Shows the operations native offers and marks the one it holds. */
+    private void refreshOperations() {
+        final int available = (int) nativeExtrude[NativeViewport.CAD_EXTRUDE_OPERATIONS_AVAILABLE];
+        final int operation = (int) nativeExtrude[NativeViewport.CAD_EXTRUDE_OPERATION];
+        operationNewBody.setVisibility(
+                (available & NativeViewport.OPERATION_BIT_NEW_BODY) != 0 ? VISIBLE : GONE);
+        operationAdd.setVisibility(
+                (available & NativeViewport.OPERATION_BIT_ADD) != 0 ? VISIBLE : GONE);
+        operationCut.setVisibility(
+                (available & NativeViewport.OPERATION_BIT_CUT) != 0 ? VISIBLE : GONE);
+        // A row with one choice is not a choice; the canvas badge still says
+        // what the extrusion does.
+        final int offered = Integer.bitCount(available & 7);
+        operationRow.setVisibility(offered > 1 ? VISIBLE : GONE);
+        EditorControlStyles.setChipActive(operationNewBody,
+                operation == NativeViewport.OPERATION_NEW_BODY);
+        EditorControlStyles.setChipActive(operationAdd, operation == NativeViewport.OPERATION_ADD);
+        EditorControlStyles.setChipActive(operationCut, operation == NativeViewport.OPERATION_CUT);
     }
 
     /** Shows the direction the SESSION holds. The panel remembers none. */

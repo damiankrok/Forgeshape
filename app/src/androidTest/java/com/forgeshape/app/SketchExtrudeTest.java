@@ -213,7 +213,13 @@ public final class SketchExtrudeTest {
                     workspace.findViewById(R.id.finish_sketch).getVisibility());
             assertEquals("Back to Sketch is offered", View.VISIBLE,
                     workspace.findViewById(R.id.back_to_sketch).getVisibility());
-            assertTrue("the precision surface opened on the profile and the depth",
+            // `CAD-VERTICAL-SLICE-R1`: Ready is authored at the geometry, so the
+            // precision surface stays COLLAPSED until asked for, and the one
+            // toggle opens it on the region and the depth.
+            assertFalse("the precision surface is collapsed by default",
+                    workspace.propertyInspector().isOpen());
+            WorkspaceTestSupport.openPrecision(workspace);
+            assertTrue("the precision surface opens on the region and the depth",
                     workspace.propertyInspector().isOpen());
             assertNotNull("with the one profile listed",
                     workspace.sketchEditor().findViewById(R.id.sketch_profile_option));

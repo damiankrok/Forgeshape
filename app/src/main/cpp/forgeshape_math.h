@@ -290,4 +290,44 @@ inline Mat4 mat4Orthographic(float halfHeightMeters, float aspect, float zNear, 
     return r;
 }
 
+// ---------------------------------------------------------------------------
+// Binary64 geometry (`CAD-VERTICAL-SLICE-R1`)
+// ---------------------------------------------------------------------------
+//
+// Authored CAD truth is binary64 metres, and a boolean between two solids is
+// only as exact as the coordinates it is handed: a tool sketched on a body's
+// cap must lie EXACTLY in that cap's plane, which a float frame cannot promise.
+// The CAD feature chain therefore places and builds its solids in double and
+// rounds to float once, at the render mesh. Deliberately minimal: a vector and
+// the handful of operations the placement needs.
+struct DVec3 {
+    double x, y, z;
+};
+
+inline DVec3 dvec3(double x, double y, double z) { return DVec3{x, y, z}; }
+inline DVec3 dvec3FromVec3(const Vec3& v) { return DVec3{v.x, v.y, v.z}; }
+inline Vec3 vec3FromDVec3(const DVec3& v) {
+    return Vec3{static_cast<float>(v.x), static_cast<float>(v.y), static_cast<float>(v.z)};
+}
+inline DVec3 dvec3Add(const DVec3& a, const DVec3& b) { return DVec3{a.x + b.x, a.y + b.y, a.z + b.z}; }
+inline DVec3 dvec3Sub(const DVec3& a, const DVec3& b) { return DVec3{a.x - b.x, a.y - b.y, a.z - b.z}; }
+inline DVec3 dvec3Scale(const DVec3& v, double s) { return DVec3{v.x * s, v.y * s, v.z * s}; }
+inline double dvec3Dot(const DVec3& a, const DVec3& b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+inline DVec3 dvec3Cross(const DVec3& a, const DVec3& b) {
+    return DVec3{a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
+}
+inline bool dvec3Finite(const DVec3& v) {
+    return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
+}
+// Unit length, or false (writing nothing) for a vector too short to have a
+// direction.
+inline bool dvec3Normalized(const DVec3& v, DVec3* out) {
+    const double len = std::sqrt(dvec3Dot(v, v));
+    if (!(len > 1.0e-12) || !std::isfinite(len)) {
+        return false;
+    }
+    *out = dvec3Scale(v, 1.0 / len);
+    return true;
+}
+
 }  // namespace forgeshape

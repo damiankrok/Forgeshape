@@ -288,6 +288,24 @@ uint8_t cadFaceKindFileCode(CadFaceKind kind) {
     return 0;
 }
 
+uint8_t cadFeatureOperationFileCode(CadFeatureOperation operation) {
+    switch (operation) {
+        case CadFeatureOperation::NewBody: return 1;
+        case CadFeatureOperation::Add: return 2;
+        case CadFeatureOperation::Cut: return 3;
+    }
+    return 0;
+}
+
+bool cadFeatureOperationFromFileCode(uint8_t code, CadFeatureOperation* out) {
+    switch (code) {
+        case 1: *out = CadFeatureOperation::NewBody; return true;
+        case 2: *out = CadFeatureOperation::Add; return true;
+        case 3: *out = CadFeatureOperation::Cut; return true;
+        default: return false;
+    }
+}
+
 bool cadFaceKindFromFileCode(uint8_t code, CadFaceKind* out) {
     if (out == nullptr) return false;
     switch (code) {
@@ -337,6 +355,19 @@ bool cadDocumentNeedsV3(const ProjectDocument& document) {
                 || entity.kind() == SketchEntityKind::Spline) {
                 return true;
             }
+        }
+    }
+    return false;
+}
+
+// Whether any CAD body needs the v5 section (`CAD-VERTICAL-SLICE-R1`): a
+// region selection that is not exactly one region without holes, or a later
+// feature. Everything else keeps whichever of v1..v4 it already used.
+bool cadDocumentNeedsV5(const ProjectDocument& document) {
+    for (const ProjectCadBody& body : document.cad.bodies) {
+        if (!body.state.laterFeatures.empty()
+            || !extrudeSelectsSingleSimpleProfile(body.state.extrude)) {
+            return true;
         }
     }
     return false;
@@ -692,6 +723,17 @@ ProjectCodecStatus validateProjectDocument(const ProjectDocument& document) {
             if (validateCadBodyState(body.state) != CadStatus::Ok) {
                 return ProjectCodecStatus::InvalidSemanticValue;
             }
+            // A retained feature chain is only valid if it REGENERATES: an Add
+            // that would not touch its body, a Cut that misses or removes
+            // everything, a support face an earlier Cut carved away. The
+            // kernel runs as part of the check (DATA_PACKAGE_SPEC.md §7f), and
+            // nothing it produces is kept.
+            if (!body.state.laterFeatures.empty()) {
+                ConstructionMesh regenerated;
+                if (generateCadMesh(body.state, &regenerated) != CadStatus::Ok) {
+                    return ProjectCodecStatus::InvalidSemanticValue;
+                }
+            }
         }
 
         // CAD-A3 dependency graph. A face-supported body's producer must be
@@ -720,11 +762,12 @@ ProjectCodecStatus validateProjectDocument(const ProjectDocument& document) {
             if (producer == nullptr) {
                 return ProjectCodecStatus::UnresolvedReference;
             }
-            if (cadTopologySignature(*producer) != ref.lineageToken) {
+            if (cadFeatureTopologySignature(*producer, ref.producerLocalFeatureId) != ref.lineageToken) {
                 return ProjectCodecStatus::InvalidSemanticValue;
             }
             CadFace face;
-            if (resolveCadFace(*producer, ref.face, &face) != CadStatus::Ok || !face.eligible) {
+            if (resolveCadFeatureFace(*producer, ref.producerLocalFeatureId, ref.face, &face) != CadStatus::Ok
+                || !face.eligible) {
                 return ProjectCodecStatus::InvalidSemanticValue;
             }
             // Walk the producer chain; a chain longer than the body count must
@@ -872,6 +915,79 @@ ProjectCodecStatus validateProjectDocument(const ProjectDocument& document) {
     return ProjectCodecStatus::Ok;
 }
 
+namespace {
+
+// The entity list, exactly as §7b and §7d write it. One writer for a first
+// feature's sketch and a later feature's alike, so the two can never drift.
+void writeCadEntities(ByteWriter& out, const CadSketch& sketch) {
+    out.u32(static_cast<uint32_t>(sketch.entities.size()));
+    for (const SketchEntity& entity : sketch.entities) {
+        out.u32(entity.id());
+        out.u8(sketchEntityKindFileCode(entity.kind()));
+        if (const SketchLine* line = entity.line()) {
+            out.f64(line->start.u);
+            out.f64(line->start.v);
+            out.f64(line->end.u);
+            out.f64(line->end.v);
+        } else if (const SketchPolyline* polyline = entity.polyline()) {
+            out.u8(polyline->closed ? 0x01u : 0x00u);
+            out.u32(static_cast<uint32_t>(polyline->vertices.size()));
+            for (const SketchPoint& p : polyline->vertices) {
+                out.f64(p.u);
+                out.f64(p.v);
+            }
+        } else if (const SketchRectangle* rectangle = entity.rectangle()) {
+            out.f64(rectangle->center.u);
+            out.f64(rectangle->center.v);
+            out.f64(rectangle->width);
+            out.f64(rectangle->height);
+        } else if (const SketchCircle* circle = entity.circle()) {
+            out.f64(circle->center.u);
+            out.f64(circle->center.v);
+            out.f64(circle->radius);
+        } else if (const SketchArc* arc = entity.arc()) {
+            // The three AUTHORED points, in start/mid/end order. No
+            // centre, no radius and no sweep: all three are derived,
+            // and a file that stored them would be storing a product
+            // of the truth beside the truth.
+            out.f64(arc->start.u);
+            out.f64(arc->start.v);
+            out.f64(arc->mid.u);
+            out.f64(arc->mid.v);
+            out.f64(arc->end.u);
+            out.f64(arc->end.v);
+        } else if (const SketchSpline* spline = entity.spline()) {
+            // The authored points only. Never the tessellation: it is
+            // regenerated by `tessellateSketchCurve` exactly as a
+            // circle's polygon is regenerated from its radius.
+            out.u32(static_cast<uint32_t>(spline->points.size()));
+            for (const SketchPoint& p : spline->points) {
+                out.f64(p.u);
+                out.f64(p.v);
+            }
+        }
+    }
+}
+
+// A feature's region selection (§7f `REGIONS`): the first region's holes,
+// then every further region with its own.
+void writeCadRegions(ByteWriter& out, const ExtrudeFeature& extrude) {
+    out.u32(static_cast<uint32_t>(extrude.profileHoleIds.size()));
+    for (SketchEntityId hole : extrude.profileHoleIds) {
+        out.u32(hole);
+    }
+    out.u32(static_cast<uint32_t>(extrude.additionalRegions.size()));
+    for (const ProfileRegionRef& region : extrude.additionalRegions) {
+        out.u32(region.outerAnchorId);
+        out.u32(static_cast<uint32_t>(region.holeAnchorIds.size()));
+        for (SketchEntityId hole : region.holeAnchorIds) {
+            out.u32(hole);
+        }
+    }
+}
+
+}  // namespace
+
 std::vector<uint8_t> encodeProjectV1(const ProjectDocument& document,
                                      ProjectCodecStatus* outWhy) {
     const ProjectCodecStatus why = validateProjectDocument(document);
@@ -978,7 +1094,8 @@ std::vector<uint8_t> encodeProjectV1(const ProjectDocument& document,
 
     // The section is written at the LOWEST version that can carry it, so every
     // project that predates a feature keeps the bytes it always had.
-    const bool cadV4 = document.hasCad && cadDocumentNeedsV4(document);
+    const bool cadV5 = document.hasCad && cadDocumentNeedsV5(document);
+    const bool cadV4 = document.hasCad && (cadV5 || cadDocumentNeedsV4(document));
     const bool cadV3 = document.hasCad && (cadV4 || cadDocumentNeedsV3(document));
     const bool cadV2 = document.hasCad && (cadV3 || cadDocumentNeedsV2(document));
     std::vector<uint8_t> cadPayload;
@@ -1020,51 +1137,28 @@ std::vector<uint8_t> encodeProjectV1(const ProjectDocument& document,
                 // second side rather than quietly ignoring it.
                 out.f64(state.extrude.secondDistance);
             }
-            out.u32(static_cast<uint32_t>(state.sketch.entities.size()));
-            for (const SketchEntity& entity : state.sketch.entities) {
-                out.u32(entity.id());
-                out.u8(sketchEntityKindFileCode(entity.kind()));
-                if (const SketchLine* line = entity.line()) {
-                    out.f64(line->start.u);
-                    out.f64(line->start.v);
-                    out.f64(line->end.u);
-                    out.f64(line->end.v);
-                } else if (const SketchPolyline* polyline = entity.polyline()) {
-                    out.u8(polyline->closed ? 0x01u : 0x00u);
-                    out.u32(static_cast<uint32_t>(polyline->vertices.size()));
-                    for (const SketchPoint& p : polyline->vertices) {
-                        out.f64(p.u);
-                        out.f64(p.v);
-                    }
-                } else if (const SketchRectangle* rectangle = entity.rectangle()) {
-                    out.f64(rectangle->center.u);
-                    out.f64(rectangle->center.v);
-                    out.f64(rectangle->width);
-                    out.f64(rectangle->height);
-                } else if (const SketchCircle* circle = entity.circle()) {
-                    out.f64(circle->center.u);
-                    out.f64(circle->center.v);
-                    out.f64(circle->radius);
-                } else if (const SketchArc* arc = entity.arc()) {
-                    // The three AUTHORED points, in start/mid/end order. No
-                    // centre, no radius and no sweep: all three are derived,
-                    // and a file that stored them would be storing a product
-                    // of the truth beside the truth.
-                    out.f64(arc->start.u);
-                    out.f64(arc->start.v);
-                    out.f64(arc->mid.u);
-                    out.f64(arc->mid.v);
-                    out.f64(arc->end.u);
-                    out.f64(arc->end.v);
-                } else if (const SketchSpline* spline = entity.spline()) {
-                    // The authored points only. Never the tessellation: it is
-                    // regenerated by `tessellateSketchCurve` exactly as a
-                    // circle's polygon is regenerated from its radius.
-                    out.u32(static_cast<uint32_t>(spline->points.size()));
-                    for (const SketchPoint& p : spline->points) {
-                        out.f64(p.u);
-                        out.f64(p.v);
-                    }
+            writeCadEntities(out, state.sketch);
+            if (cadV5) {
+                // The v5 tail (§7f): the first feature's regions, then the
+                // later features in chain order, each carrying its own.
+                writeCadRegions(out, state.extrude);
+                out.u32(static_cast<uint32_t>(state.laterFeatures.size()));
+                for (const CadFeature& feature : state.laterFeatures) {
+                    out.u32(feature.featureId);
+                    out.u8(cadFeatureOperationFileCode(feature.operation));
+                    out.u32(feature.support.featureId);
+                    out.u8(cadFaceKindFileCode(feature.support.face.kind));
+                    out.u32(feature.support.face.edgeEntityId);
+                    out.u32(feature.support.face.edgeLocalIndex);
+                    out.u64(feature.support.lineageToken);
+                    out.u32(feature.sketch.nextEntityId);
+                    out.u32(feature.extrude.profileEntityId);
+                    out.u8(extrudeExtentFileCode(feature.extrude.extent));
+                    out.u8(extrudeDirectionFileCode(feature.extrude.direction));
+                    out.f64(feature.extrude.depth);
+                    out.f64(feature.extrude.secondDistance);
+                    writeCadEntities(out, feature.sketch);
+                    writeCadRegions(out, feature.extrude);
                 }
             }
         }
@@ -1137,9 +1231,11 @@ std::vector<uint8_t> encodeProjectV1(const ProjectDocument& document,
         // describing it, and a reader that skipped this would open the
         // project with objects silently missing.
         appendSection(file, kSectionTagCad,
-                      cadV4 ? kCadSectionVersionV4
-                            : (cadV3 ? kCadSectionVersionV3
-                                     : (cadV2 ? kCadSectionVersionV2 : kCadSectionVersion)),
+                      cadV5 ? kCadSectionVersionV5
+                            : (cadV4 ? kCadSectionVersionV4
+                                     : (cadV3 ? kCadSectionVersionV3
+                                              : (cadV2 ? kCadSectionVersionV2
+                                                       : kCadSectionVersion))),
                       /*required=*/true, cadPayload);
     }
     return file;
@@ -1416,10 +1512,180 @@ ProjectCodecStatus decodeImportedPayload(ByteReader& in, ProjectImportedRecord* 
     return ProjectCodecStatus::Ok;
 }
 
+// The entity list after its count (§7b, §7d). One reader for a first
+// feature's sketch and a later feature's alike.
+ProjectCodecStatus readCadEntities(ByteReader& in, uint32_t entityCount, CadSketch* sketch,
+                                   bool allowCurves) {
+    if (entityCount == 0 || entityCount > kMaxSketchEntities) {
+        return ProjectCodecStatus::ImpossibleCount;
+    }
+    // Smallest entity: an id, a kind, and a circle's three values.
+    if (static_cast<uint64_t>(entityCount) * (4ull + 1ull + 24ull) > in.remaining()) {
+        return ProjectCodecStatus::Truncated;
+    }
+    sketch->entities.reserve(entityCount);
+    for (uint32_t e = 0; e < entityCount; ++e) {
+        uint32_t id = 0;
+        uint8_t kindCode = 0;
+        if (!in.u32(&id) || !in.u8(&kindCode)) {
+            return ProjectCodecStatus::Truncated;
+        }
+        SketchEntityKind kind;
+        if (!sketchEntityKindFromFileCode(kindCode, &kind)) {
+            return ProjectCodecStatus::InvalidSemanticValue;
+        }
+        // A curve kind is a v3 field. Meeting one inside a section that
+        // declared itself v1 or v2 is a malformed file, not a newer one:
+        // the version says what the payload may contain, and a payload
+        // that contradicts its own version is refused.
+        if (!allowCurves && (kind == SketchEntityKind::Arc || kind == SketchEntityKind::Spline)) {
+            return ProjectCodecStatus::InvalidSemanticValue;
+        }
+        switch (kind) {
+            case SketchEntityKind::Line: {
+                SketchLine line;
+                if (!in.f64(&line.start.u) || !in.f64(&line.start.v) || !in.f64(&line.end.u)
+                    || !in.f64(&line.end.v)) {
+                    return ProjectCodecStatus::Truncated;
+                }
+                sketch->entities.emplace_back(id, line);
+                break;
+            }
+            case SketchEntityKind::Polyline: {
+                SketchPolyline polyline;
+                uint8_t flags = 0;
+                uint32_t vertexCount = 0;
+                if (!in.u8(&flags) || !in.u32(&vertexCount)) {
+                    return ProjectCodecStatus::Truncated;
+                }
+                if ((flags & ~0x01u) != 0u) {
+                    return ProjectCodecStatus::BadPayload;
+                }
+                if (vertexCount == 0 || vertexCount > kMaxPolylineVertices) {
+                    return ProjectCodecStatus::ImpossibleCount;
+                }
+                if (static_cast<uint64_t>(vertexCount) * 16ull > in.remaining()) {
+                    return ProjectCodecStatus::Truncated;
+                }
+                polyline.closed = (flags & 0x01u) != 0u;
+                polyline.vertices.resize(vertexCount);
+                for (SketchPoint& p : polyline.vertices) {
+                    if (!in.f64(&p.u) || !in.f64(&p.v)) {
+                        return ProjectCodecStatus::Truncated;
+                    }
+                }
+                sketch->entities.emplace_back(id, std::move(polyline));
+                break;
+            }
+            case SketchEntityKind::Rectangle: {
+                SketchRectangle rectangle;
+                if (!in.f64(&rectangle.center.u) || !in.f64(&rectangle.center.v)
+                    || !in.f64(&rectangle.width) || !in.f64(&rectangle.height)) {
+                    return ProjectCodecStatus::Truncated;
+                }
+                sketch->entities.emplace_back(id, rectangle);
+                break;
+            }
+            case SketchEntityKind::Circle: {
+                SketchCircle circle;
+                if (!in.f64(&circle.center.u) || !in.f64(&circle.center.v)
+                    || !in.f64(&circle.radius)) {
+                    return ProjectCodecStatus::Truncated;
+                }
+                sketch->entities.emplace_back(id, circle);
+                break;
+            }
+            case SketchEntityKind::Arc: {
+                SketchArc arc;
+                if (!in.f64(&arc.start.u) || !in.f64(&arc.start.v) || !in.f64(&arc.mid.u)
+                    || !in.f64(&arc.mid.v) || !in.f64(&arc.end.u) || !in.f64(&arc.end.v)) {
+                    return ProjectCodecStatus::Truncated;
+                }
+                sketch->entities.emplace_back(id, arc);
+                break;
+            }
+            case SketchEntityKind::Spline: {
+                SketchSpline spline;
+                uint32_t pointCount = 0;
+                if (!in.u32(&pointCount)) {
+                    return ProjectCodecStatus::Truncated;
+                }
+                // Refused BEFORE a single byte is allocated for it, on the
+                // same terms every other count in this file is.
+                if (pointCount < 2 || pointCount > kMaxSplinePoints) {
+                    return ProjectCodecStatus::ImpossibleCount;
+                }
+                if (static_cast<uint64_t>(pointCount) * 16ull > in.remaining()) {
+                    return ProjectCodecStatus::Truncated;
+                }
+                spline.points.resize(pointCount);
+                for (SketchPoint& p : spline.points) {
+                    if (!in.f64(&p.u) || !in.f64(&p.v)) {
+                        return ProjectCodecStatus::Truncated;
+                    }
+                }
+                sketch->entities.emplace_back(id, std::move(spline));
+                break;
+            }
+        }
+    }
+    return ProjectCodecStatus::Ok;
+}
+
+// A feature's region selection (§7f `REGIONS`). Counts are refused before a
+// byte is allocated; the ORDER and the hole sets are the domain's to judge.
+ProjectCodecStatus readCadRegions(ByteReader& in, ExtrudeFeature* extrude) {
+    auto readIds = [&in](std::vector<SketchEntityId>* ids) {
+        uint32_t count = 0;
+        if (!in.u32(&count)) {
+            return ProjectCodecStatus::Truncated;
+        }
+        if (count > kMaxRegionHoles) {
+            return ProjectCodecStatus::ImpossibleCount;
+        }
+        if (static_cast<uint64_t>(count) * 4ull > in.remaining()) {
+            return ProjectCodecStatus::Truncated;
+        }
+        ids->resize(count);
+        for (SketchEntityId& id : *ids) {
+            if (!in.u32(&id)) {
+                return ProjectCodecStatus::Truncated;
+            }
+        }
+        return ProjectCodecStatus::Ok;
+    };
+    ProjectCodecStatus status = readIds(&extrude->profileHoleIds);
+    if (status != ProjectCodecStatus::Ok) {
+        return status;
+    }
+    uint32_t additional = 0;
+    if (!in.u32(&additional)) {
+        return ProjectCodecStatus::Truncated;
+    }
+    if (additional + 1u > kMaxProfileRegions) {
+        return ProjectCodecStatus::ImpossibleCount;
+    }
+    if (static_cast<uint64_t>(additional) * 8ull > in.remaining()) {
+        return ProjectCodecStatus::Truncated;
+    }
+    extrude->additionalRegions.resize(additional);
+    for (ProfileRegionRef& region : extrude->additionalRegions) {
+        if (!in.u32(&region.outerAnchorId)) {
+            return ProjectCodecStatus::Truncated;
+        }
+        status = readIds(&region.holeAnchorIds);
+        if (status != ProjectCodecStatus::Ok) {
+            return status;
+        }
+    }
+    return ProjectCodecStatus::Ok;
+}
+
 ProjectCodecStatus decodeCadPayload(ByteReader& in, ProjectCadRecord* record, uint16_t version) {
     const bool v2 = version >= kCadSectionVersionV2;
     const bool v3 = version >= kCadSectionVersionV3;
     const bool v4 = version >= kCadSectionVersionV4;
+    const bool v5 = version >= kCadSectionVersionV5;
     uint32_t bodyCount = 0;
     if (!in.u32(&bodyCount)) {
         return ProjectCodecStatus::Truncated;
@@ -1501,116 +1767,73 @@ ProjectCodecStatus decodeCadPayload(ByteReader& in, ProjectCadRecord* record, ui
         if (!extrudeFeatureCanonical(state.extrude)) {
             return ProjectCodecStatus::InvalidSemanticValue;
         }
-        if (entityCount == 0 || entityCount > kMaxSketchEntities) {
-            return ProjectCodecStatus::ImpossibleCount;
+        {
+            const ProjectCodecStatus entities =
+                    readCadEntities(in, entityCount, &state.sketch, /*allowCurves=*/v3);
+            if (entities != ProjectCodecStatus::Ok) {
+                return entities;
+            }
         }
-        // Smallest entity: an id, a kind, and a circle's three values.
-        if (static_cast<uint64_t>(entityCount) * (4ull + 1ull + 24ull) > in.remaining()) {
-            return ProjectCodecStatus::Truncated;
-        }
-        state.sketch.entities.reserve(entityCount);
-        for (uint32_t e = 0; e < entityCount; ++e) {
-            uint32_t id = 0;
-            uint8_t kindCode = 0;
-            if (!in.u32(&id) || !in.u8(&kindCode)) {
+        if (v5) {
+            // The v5 tail (§7f). Structure here; the ORDER, the hole sets and
+            // the chain's regeneration are judged by the domain in
+            // `validateProjectDocument`, on the terms every other value is.
+            ProjectCodecStatus tail = readCadRegions(in, &state.extrude);
+            if (tail != ProjectCodecStatus::Ok) {
+                return tail;
+            }
+            uint32_t laterCount = 0;
+            if (!in.u32(&laterCount)) {
                 return ProjectCodecStatus::Truncated;
             }
-            SketchEntityKind kind;
-            if (!sketchEntityKindFromFileCode(kindCode, &kind)) {
-                return ProjectCodecStatus::InvalidSemanticValue;
+            if (laterCount + 1u > kMaxCadFeatures) {
+                return ProjectCodecStatus::ImpossibleCount;
             }
-            // A curve kind is a v3 field. Meeting one inside a section that
-            // declared itself v1 or v2 is a malformed file, not a newer one:
-            // the version says what the payload may contain, and a payload
-            // that contradicts its own version is refused.
-            if (!v3 && (kind == SketchEntityKind::Arc || kind == SketchEntityKind::Spline)) {
-                return ProjectCodecStatus::InvalidSemanticValue;
+            // Smallest later feature: its 56 fixed bytes, an entity and an
+            // empty REGIONS block.
+            if (static_cast<uint64_t>(laterCount) * (56ull + 29ull + 8ull) > in.remaining()) {
+                return ProjectCodecStatus::Truncated;
             }
-            switch (kind) {
-                case SketchEntityKind::Line: {
-                    SketchLine line;
-                    if (!in.f64(&line.start.u) || !in.f64(&line.start.v) || !in.f64(&line.end.u)
-                        || !in.f64(&line.end.v)) {
-                        return ProjectCodecStatus::Truncated;
-                    }
-                    state.sketch.entities.emplace_back(id, line);
-                    break;
+            state.laterFeatures.resize(laterCount);
+            for (CadFeature& feature : state.laterFeatures) {
+                uint8_t operationCode = 0;
+                uint8_t faceKindCode = 0;
+                uint8_t featureExtentCode = 0;
+                uint8_t featureDirectionCode = 0;
+                uint32_t featureEntityCount = 0;
+                if (!in.u32(&feature.featureId) || !in.u8(&operationCode)
+                    || !in.u32(&feature.support.featureId) || !in.u8(&faceKindCode)
+                    || !in.u32(&feature.support.face.edgeEntityId)
+                    || !in.u32(&feature.support.face.edgeLocalIndex)
+                    || !in.u64(&feature.support.lineageToken)
+                    || !in.u32(&feature.sketch.nextEntityId)
+                    || !in.u32(&feature.extrude.profileEntityId) || !in.u8(&featureExtentCode)
+                    || !in.u8(&featureDirectionCode) || !in.f64(&feature.extrude.depth)
+                    || !in.f64(&feature.extrude.secondDistance) || !in.u32(&featureEntityCount)) {
+                    return ProjectCodecStatus::Truncated;
                 }
-                case SketchEntityKind::Polyline: {
-                    SketchPolyline polyline;
-                    uint8_t flags = 0;
-                    uint32_t vertexCount = 0;
-                    if (!in.u8(&flags) || !in.u32(&vertexCount)) {
-                        return ProjectCodecStatus::Truncated;
-                    }
-                    if ((flags & ~0x01u) != 0u) {
-                        return ProjectCodecStatus::BadPayload;
-                    }
-                    if (vertexCount == 0 || vertexCount > kMaxPolylineVertices) {
-                        return ProjectCodecStatus::ImpossibleCount;
-                    }
-                    if (static_cast<uint64_t>(vertexCount) * 16ull > in.remaining()) {
-                        return ProjectCodecStatus::Truncated;
-                    }
-                    polyline.closed = (flags & 0x01u) != 0u;
-                    polyline.vertices.resize(vertexCount);
-                    for (SketchPoint& p : polyline.vertices) {
-                        if (!in.f64(&p.u) || !in.f64(&p.v)) {
-                            return ProjectCodecStatus::Truncated;
-                        }
-                    }
-                    state.sketch.entities.emplace_back(id, std::move(polyline));
-                    break;
+                // A later feature is Add or Cut and nothing else: New Body is
+                // the first feature, and an unknown code is not repaired.
+                if (!cadFeatureOperationFromFileCode(operationCode, &feature.operation)
+                    || feature.operation == CadFeatureOperation::NewBody
+                    || !cadFaceKindFromFileCode(faceKindCode, &feature.support.face.kind)
+                    || !extrudeExtentFromFileCode(featureExtentCode, &feature.extrude.extent)
+                    || !extrudeDirectionFromFileCode(featureDirectionCode,
+                                                     &feature.extrude.direction)
+                    || !extrudeFeatureCanonical(feature.extrude)) {
+                    return ProjectCodecStatus::InvalidSemanticValue;
                 }
-                case SketchEntityKind::Rectangle: {
-                    SketchRectangle rectangle;
-                    if (!in.f64(&rectangle.center.u) || !in.f64(&rectangle.center.v)
-                        || !in.f64(&rectangle.width) || !in.f64(&rectangle.height)) {
-                        return ProjectCodecStatus::Truncated;
-                    }
-                    state.sketch.entities.emplace_back(id, rectangle);
-                    break;
+                // The sketch of a later feature is on its canonical local XY
+                // with no support of its own; the feature's support places it.
+                feature.sketch.plane = Workplane::XY;
+                const ProjectCodecStatus entities = readCadEntities(
+                        in, featureEntityCount, &feature.sketch, /*allowCurves=*/true);
+                if (entities != ProjectCodecStatus::Ok) {
+                    return entities;
                 }
-                case SketchEntityKind::Circle: {
-                    SketchCircle circle;
-                    if (!in.f64(&circle.center.u) || !in.f64(&circle.center.v)
-                        || !in.f64(&circle.radius)) {
-                        return ProjectCodecStatus::Truncated;
-                    }
-                    state.sketch.entities.emplace_back(id, circle);
-                    break;
-                }
-                case SketchEntityKind::Arc: {
-                    SketchArc arc;
-                    if (!in.f64(&arc.start.u) || !in.f64(&arc.start.v) || !in.f64(&arc.mid.u)
-                        || !in.f64(&arc.mid.v) || !in.f64(&arc.end.u) || !in.f64(&arc.end.v)) {
-                        return ProjectCodecStatus::Truncated;
-                    }
-                    state.sketch.entities.emplace_back(id, arc);
-                    break;
-                }
-                case SketchEntityKind::Spline: {
-                    SketchSpline spline;
-                    uint32_t pointCount = 0;
-                    if (!in.u32(&pointCount)) {
-                        return ProjectCodecStatus::Truncated;
-                    }
-                    // Refused BEFORE a single byte is allocated for it, on the
-                    // same terms every other count in this file is.
-                    if (pointCount < 2 || pointCount > kMaxSplinePoints) {
-                        return ProjectCodecStatus::ImpossibleCount;
-                    }
-                    if (static_cast<uint64_t>(pointCount) * 16ull > in.remaining()) {
-                        return ProjectCodecStatus::Truncated;
-                    }
-                    spline.points.resize(pointCount);
-                    for (SketchPoint& p : spline.points) {
-                        if (!in.f64(&p.u) || !in.f64(&p.v)) {
-                            return ProjectCodecStatus::Truncated;
-                        }
-                    }
-                    state.sketch.entities.emplace_back(id, std::move(spline));
-                    break;
+                tail = readCadRegions(in, &feature.extrude);
+                if (tail != ProjectCodecStatus::Ok) {
+                    return tail;
                 }
             }
         }
@@ -1707,7 +1930,8 @@ ProjectCodecStatus decodeProjectV1(ByteReader& file, ProjectKind kind, uint8_t h
             versionOk = sectionVersion == kCadSectionVersion
                         || sectionVersion == kCadSectionVersionV2
                         || sectionVersion == kCadSectionVersionV3
-                        || sectionVersion == kCadSectionVersionV4;
+                        || sectionVersion == kCadSectionVersionV4
+                        || sectionVersion == kCadSectionVersionV5;
         } else if (isScene) {
             // SCNE became the second multi-version section at Stage 018A: v1 as
             // every build before it wrote, and v2 carrying per-body visibility,

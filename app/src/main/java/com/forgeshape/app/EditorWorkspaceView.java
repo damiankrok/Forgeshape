@@ -841,6 +841,9 @@ final class EditorWorkspaceView extends FrameLayout
         // stands in front of the workspace exactly as New Project does, and the
         // viewport is not reachable through it.
         settingsPage = new SettingsPageView(context, this);
+        // Tool Labels (`CAD-VERTICAL-SLICE-R1`) is application state read once
+        // here and again on every change; the canvas holds only the flag.
+        cadExtrudeCanvas.setToolLabelsVisible(currentPreferences().toolLabels());
         settingsPage.setVisibility(GONE);
         addView(settingsPage, new LayoutParams(
                 LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
@@ -2011,6 +2014,21 @@ final class EditorWorkspaceView extends FrameLayout
         settingsPage.showPreferences(currentPreferences());
     }
 
+    /**
+     * Tool Labels (`CAD-VERTICAL-SLICE-R1`): short captions beside the canvas
+     * icons. Application state, never project truth — no `.forge` byte, no
+     * fingerprint and no history step move for it.
+     */
+    @Override
+    public void onToolLabelsChosen(boolean visible) {
+        final AppPreferences before = currentPreferences();
+        if (AppPreferencesStore.update(getContext(), before.withToolLabels(visible))) {
+            cadExtrudeCanvas.setToolLabelsVisible(visible);
+            refreshWorldAnchoredUi();
+        }
+        settingsPage.showPreferences(currentPreferences());
+    }
+
     /** The preferences in force, read through the one store. */
     AppPreferences currentPreferences() {
         return AppPreferencesStore.current(getContext());
@@ -2504,6 +2522,9 @@ final class EditorWorkspaceView extends FrameLayout
                 && !NativeViewport.sceneBodyVisible(NativeViewport.sceneActiveBodyId());
         toolbar.showContext(sculpting, hasFrozenMesh, imported, cad, sketchState,
                 (int) nativeSketch[NativeViewport.SKETCH_PLANE], activeHidden);
+        if (sketchState == NativeViewport.SKETCH_READY) {
+            refreshExtrudeReadiness();
+        }
         toolbar.showEditingTransitions(true);
         // Display settings are native-owned and process-scoped, so on a resume
         // they are already whatever they were; this only makes the popover's
@@ -3147,6 +3168,12 @@ final class EditorWorkspaceView extends FrameLayout
     }
 
     /** Whether the one native sketch session is open, read fresh every time. */
+    /**
+     * The selected-region count the status line last reported. A change is how
+     * a Ready tap is told apart from an orbit that happened to end in a sketch.
+     */
+    private int lastReportedRegionSelection = -1;
+
     private boolean isSketching() {
         NativeViewport.sketchState(nativeSketch);
         return nativeSketch[NativeViewport.SKETCH_STATE] != NativeViewport.SKETCH_INACTIVE;
@@ -3226,12 +3253,27 @@ final class EditorWorkspaceView extends FrameLayout
     private void refreshSketchViewportSurfaces(boolean sketching) {
         anchoredRefreshPending = false;
         anchorSpace.beginPass();
-        // The navigator is a sketch control; while the chrome is hidden the
-        // whole overlay is gone anyway, so this is only about the sketch.
-        sketchNavigator.setVisibility(sketching ? VISIBLE : GONE);
+        // The navigator is a DRAWING control; while the chrome is hidden the
+        // whole overlay is gone anyway, so this is only about the sketch. In
+        // Ready the drawing is done and the extrusion is looked at from the
+        // feature view (CAD-VERTICAL-SLICE-R1): the navigator's plane, flip and
+        // quarter turns belong to the aligned view Finish Sketch has left, so
+        // it is withdrawn with the rail and comes back with Back to Sketch.
+        boolean drawing = false;
         if (sketching) {
+            NativeViewport.sketchState(nativeSketch);
+            drawing = SketchChromePolicy.orientationNavigatorShown(
+                    (int) nativeSketch[NativeViewport.SKETCH_STATE]);
+        }
+        sketchNavigator.setVisibility(drawing ? VISIBLE : GONE);
+        if (drawing) {
             sketchNavigator.refreshFromNative();
+            // The same state answers the Line dimension (SketchChromePolicy):
+            // both are editing annotations of the authoring view.
             sketchDimension.refreshFromNative();
+        } else if (sketching) {
+            sketchDimension.closeEditor();
+            sketchDimension.setVisibility(GONE);
         } else {
             sketchDimension.closeEditor();
             sketchDimension.setVisibility(GONE);
@@ -3476,6 +3518,23 @@ final class EditorWorkspaceView extends FrameLayout
     /** A sketch gesture ended: the entity list, the selection or a refusal. */
     private void onSketchGestureSettled() {
         sketchEditor.refreshFromNative();
+        NativeViewport.sketchState(nativeSketch);
+        if (nativeSketch[NativeViewport.SKETCH_STATE] == NativeViewport.SKETCH_READY) {
+            // In Ready a tap chooses REGIONS (`CAD-VERTICAL-SLICE-R1`), and a
+            // region choice changes what Extrude would make: the chrome is
+            // re-read whole and the verdict on the new candidate is reported.
+            final int selected = selectedRegionCount();
+            if (selected != lastReportedRegionSelection) {
+                lastReportedRegionSelection = selected;
+                syncFromNative();
+                reportCandidateVerdict(getContext().getString(
+                        R.string.status_regions_selected, selected));
+                return;
+            }
+            // A drag of the arrow changes the candidate too: the commit
+            // control follows its verdict without a full re-read.
+            refreshExtrudeReadiness();
+        }
         // The dimension follows the selection: a gesture that selected a Line
         // brings its annotation up, and one that selected anything else takes
         // the annotation away.
@@ -3497,16 +3556,74 @@ final class EditorWorkspaceView extends FrameLayout
             return;
         }
         finishEditing();
+        // The extrusion is authored AT THE GEOMETRY now (`CAD-VERTICAL-SLICE-R1`):
+        // the canvas carries the extent, the value, the operation and Flip, and
+        // a region is chosen by tapping it. The precision surface stays
+        // collapsed until asked for — it is the exact-value route, not the
+        // place the next act happens — so it no longer opens by itself.
+        if (SketchChromePolicy.precisionOpensOnFinish()) {
+            setPrecisionOpen(true);
+        }
         syncFromNative();
-        // The depth and the profile choice are the next act, so the surface
-        // that holds them opens without being asked for.
-        setPrecisionOpen(true);
         NativeViewport.sketchState(nativeSketch);
-        final int profiles = (int) nativeSketch[NativeViewport.SKETCH_PROFILE_COUNT];
-        showStatus(profiles > 1
-                        ? context.getString(R.string.status_sketch_finished_choose, profiles)
-                        : context.getString(R.string.status_sketch_finished),
+        final int regions = (int) nativeSketch[NativeViewport.SKETCH_PROFILE_COUNT];
+        lastReportedRegionSelection = selectedRegionCount();
+        showStatus(regions > 1 && lastReportedRegionSelection == 0
+                        ? context.getString(R.string.status_sketch_finished_tap_region, regions)
+                        : context.getString(R.string.status_sketch_finished_region),
                 R.attr.fsTextSuccess);
+    }
+
+    /** Enables Extrude only while the preview is a candidate a commit may make. */
+    private void refreshExtrudeReadiness() {
+        NativeViewport.cadExtrudeToolState(nativeExtrude);
+        final int candidate = (int) nativeExtrude[NativeViewport.CAD_EXTRUDE_CANDIDATE_STATUS];
+        toolbar.showExtrudeReadiness(candidate == NativeViewport.CAD_OK,
+                CadStatusMessages.describe(getContext(), candidate));
+    }
+
+    /** How many regions the open session's extrusion holds, read fresh. */
+    private int selectedRegionCount() {
+        NativeViewport.cadExtrudeToolState(nativeExtrude);
+        return (int) nativeExtrude[NativeViewport.CAD_EXTRUDE_SELECTED_REGIONS];
+    }
+
+    /**
+     * New Body, Add or Cut (`CAD-VERTICAL-SLICE-R1`), from the canvas badge's
+     * palette or the precision surface's chips: one native call, then a re-read.
+     * The shell holds no operation; a refused one leaves the chrome showing
+     * what native kept.
+     */
+    @Override
+    public void onExtrudeOperationRequested(int operation) {
+        final Context context = getContext();
+        final int status = NativeViewport.sketchSetOperation(operation);
+        if (status != NativeViewport.CAD_OK) {
+            showStatus(CadStatusMessages.describe(context, status), R.attr.fsTextError);
+            syncFromNative();
+            return;
+        }
+        syncFromNative();
+        reportCandidateVerdict(context.getString(R.string.status_operation_chosen,
+                context.getString(CadFeatureEditorView.operationName(operation))));
+    }
+
+    /**
+     * Says what the staged extrusion WOULD do: the named refusal when the
+     * preview is not something a commit may make (a disjoint Add, a Cut that
+     * misses), otherwise {@code okMessage}. A verdict, never an instruction.
+     */
+    private void reportCandidateVerdict(String okMessage) {
+        NativeViewport.cadExtrudeToolState(nativeExtrude);
+        final int candidate = (int) nativeExtrude[NativeViewport.CAD_EXTRUDE_CANDIDATE_STATUS];
+        final int selected = (int) nativeExtrude[NativeViewport.CAD_EXTRUDE_SELECTED_REGIONS];
+        if (selected > 0 && candidate != NativeViewport.CAD_OK) {
+            showStatus(CadStatusMessages.describe(getContext(), candidate), R.attr.fsTextError);
+            return;
+        }
+        if (okMessage != null) {
+            showStatus(okMessage, R.attr.fsTextSecondary);
+        }
     }
 
     /**
@@ -3530,6 +3647,8 @@ final class EditorWorkspaceView extends FrameLayout
             return;
         }
         final boolean firstProject = !NativeViewport.projectOpen();
+        NativeViewport.cadExtrudeToolState(nativeExtrude);
+        final int operation = (int) nativeExtrude[NativeViewport.CAD_EXTRUDE_OPERATION];
         final long created = NativeViewport.sketchCommit();
         if (created == NativeViewport.NO_OBJECT) {
             showStatus(CadStatusMessages.describe(context, NativeViewport.sketchLastStatus()),
@@ -3547,6 +3666,15 @@ final class EditorWorkspaceView extends FrameLayout
             noteProjectUnpersisted();
         }
         onNativeStateChanged();
+        if (operation != NativeViewport.OPERATION_NEW_BODY) {
+            // An Add or a Cut changed the body the sketch stood on, IN PLACE:
+            // the id native returns is that body's, and no second one exists.
+            showStatus(context.getString(operation == NativeViewport.OPERATION_CUT
+                            ? R.string.status_feature_cut : R.string.status_feature_added,
+                            BodyLabels.of(context, created)),
+                    R.attr.fsTextSuccess);
+            return;
+        }
         showStatus(firstProject
                         ? context.getString(R.string.status_first_project_created,
                                 BodyLabels.of(context, created))
@@ -3585,6 +3713,33 @@ final class EditorWorkspaceView extends FrameLayout
         finishEditing();
         onNativeStateChanged();
         showStatus(context.getString(R.string.status_sketch_edit_begun,
+                        BodyLabels.of(context, bodyId)), R.attr.fsTextSecondary);
+    }
+
+    /**
+     * Reopens ONE feature of the active CAD Body (`CAD-VERTICAL-SLICE-R1`),
+     * from the precision surface's feature list. Feature 1 takes the ordinary
+     * Edit Sketch path; a later Add or Cut opens staged on its own extrusion,
+     * so the value and the operation are what is in front of the user, with
+     * Back to Sketch one step away for its drawing.
+     */
+    @Override
+    public void onEditCadFeatureRequested(long featureId) {
+        if (featureId <= 1) {
+            onEditCadSketchRequested();
+            return;
+        }
+        final Context context = getContext();
+        final long bodyId = NativeViewport.sceneActiveBodyId();
+        final int status = NativeViewport.sketchBeginEditFeature(bodyId, featureId, true);
+        if (status != NativeViewport.CAD_OK) {
+            showStatus(CadStatusMessages.describe(context, status), R.attr.fsTextError);
+            return;
+        }
+        dismissPrimarySurfacesExcept(null);
+        finishEditing();
+        onNativeStateChanged();
+        showStatus(context.getString(R.string.status_feature_edit_begun, featureId,
                         BodyLabels.of(context, bodyId)), R.attr.fsTextSecondary);
     }
 

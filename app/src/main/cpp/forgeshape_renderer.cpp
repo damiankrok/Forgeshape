@@ -3468,6 +3468,12 @@ void Renderer::recordBodyDraw(VkCommandBuffer cmd, const SceneDrawItem& item) {
     // `selectionTint.a` has always been there.
     std::memcpy(push.selectionTint, kSelectionTintRgb, sizeof(kSelectionTintRgb));
     push.selectionTint[3] = body.selectionAlpha;
+    // A CAD operation preview carries its own tint in the same slot
+    // (`CAD-VERTICAL-SLICE-R1`): no byte added to the push block, no new
+    // pipeline, and never set on anything the scene itself listed.
+    if (item.previewTint[3] > 0.0f) {
+        std::memcpy(push.selectionTint, item.previewTint, sizeof(item.previewTint));
+    }
 
     vkCmdPushConstants(cmd, pipelineLayout_,
                        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,

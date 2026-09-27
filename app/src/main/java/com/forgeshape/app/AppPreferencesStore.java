@@ -10,7 +10,7 @@ import android.content.SharedPreferences;
  * <p><b>The smallest Android-native mechanism that survives everything the
  * stage asks for.</b> {@code SharedPreferences} is platform code the app
  * already ships with — no new dependency — and it writes its file atomically
- * (a backup, then a rename), which is enough for a record of four fields. Writes
+ * (a backup, then a rename), which is enough for a record of five fields. Writes
  * are {@code commit()}ed synchronously: a preference changes a handful of times
  * in a session, the file is a few hundred bytes, and a synchronous write is
  * what lets a case assert "on disk" the moment the call returns rather than
@@ -35,6 +35,7 @@ final class AppPreferencesStore {
     static final String KEY_HANDEDNESS = "handedness";
     static final String KEY_GIZMO_VISUAL_SCALE = "gizmo_visual_scale";
     static final String KEY_GIZMO_STROKE_WEIGHT = "gizmo_stroke_weight";
+    static final String KEY_TOOL_LABELS = "tool_labels";
 
     /** The one in-memory copy; null until first read in this process. */
     private static AppPreferences current;
@@ -113,7 +114,9 @@ final class AppPreferencesStore {
         final String handedness = readString(prefs, KEY_HANDEDNESS);
         final float scale = readFloat(prefs, KEY_GIZMO_VISUAL_SCALE);
         final String weight = readString(prefs, KEY_GIZMO_STROKE_WEIGHT);
-        return AppPreferences.fromStored(schema, palette, handedness, scale, weight);
+        final Boolean toolLabels = readBoolean(prefs, KEY_TOOL_LABELS);
+        return AppPreferences.fromStored(schema, palette, handedness, scale, weight,
+                toolLabels);
     }
 
     private static void write(Context context, AppPreferences value) {
@@ -123,6 +126,7 @@ final class AppPreferencesStore {
                 .putString(KEY_HANDEDNESS, value.handedness().name())
                 .putFloat(KEY_GIZMO_VISUAL_SCALE, value.gizmoVisualScale())
                 .putString(KEY_GIZMO_STROKE_WEIGHT, value.gizmoStrokeWeight().name())
+                .putBoolean(KEY_TOOL_LABELS, value.toolLabels())
                 .commit();
     }
 
@@ -137,6 +141,20 @@ final class AppPreferencesStore {
     private static String readString(SharedPreferences prefs, String key) {
         try {
             return prefs.getString(key, null);
+        } catch (ClassCastException wrongType) {
+            return null;
+        }
+    }
+
+    /**
+     * A stored boolean, or {@code null} when the key is absent or holds another
+     * type — both of which the model reads as the product default. Asked with
+     * {@code contains} first because {@code getBoolean} has no "absent" answer
+     * of its own.
+     */
+    private static Boolean readBoolean(SharedPreferences prefs, String key) {
+        try {
+            return prefs.contains(key) ? Boolean.valueOf(prefs.getBoolean(key, false)) : null;
         } catch (ClassCastException wrongType) {
             return null;
         }
@@ -157,13 +175,15 @@ final class AppPreferencesStore {
      */
     static synchronized void plantForVerification(Context context, String palette,
                                                   String handedness, float scale,
-                                                  String weight, int schema) {
+                                                  String weight, boolean toolLabels,
+                                                  int schema) {
         preferences(context).edit()
                 .putInt(KEY_SCHEMA_VERSION, schema)
                 .putString(KEY_PALETTE, palette)
                 .putString(KEY_HANDEDNESS, handedness)
                 .putFloat(KEY_GIZMO_VISUAL_SCALE, scale)
                 .putString(KEY_GIZMO_STROKE_WEIGHT, weight)
+                .putBoolean(KEY_TOOL_LABELS, toolLabels)
                 .commit();
         current = null;
     }

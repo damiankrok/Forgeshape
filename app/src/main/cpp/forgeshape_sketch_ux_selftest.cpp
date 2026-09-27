@@ -1288,12 +1288,16 @@ void testCanvasExtrudeScale(Recorder& r) {
                         && veryFar.unclampedScale < kCadExtrudeControlMinScale
                         && veryNear.unclampedScale > kCadExtrudeControlMaxScale);
     }
-    // The 48 dp floor is ARITHMETIC and this asserts the arithmetic, so a later
-    // change to either number cannot quietly put a live control under it.
+    // The band is pinned by value. Since `CAD-VERTICAL-SLICE-R1` the HUD scales
+    // only its glyphs by it and never its 48 dp hit areas (CadHudPresentationTest
+    // asserts that floor at every scale on the JVM), so what is left to pin here
+    // is the band itself: 0.80 .. 1.60, a factor of exactly two.
     {
-        r.check("CADUXS1_09_d_the_minimum_scale_keeps_a_60dp_control_at_the_48dp_floor",
-                near2(60.0 * kCadExtrudeControlMinScale, 48.0, 1e-6)
-                        && kCadExtrudeControlMaxScale > kCadExtrudeControlMinScale);
+        r.check("CADUXS1_09_d_the_scale_band_is_0_80_to_1_60_a_factor_of_two",
+                near2(kCadExtrudeControlMinScale, 0.80, 1e-6)
+                        && near2(kCadExtrudeControlMaxScale, 1.60, 1e-6)
+                        && near2(kCadExtrudeControlMaxScale / kCadExtrudeControlMinScale, 2.0,
+                                 1e-6));
     }
     // A degenerate camera quantity produces nothing rather than a guess.
     {

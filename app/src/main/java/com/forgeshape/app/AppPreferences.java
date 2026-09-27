@@ -6,18 +6,20 @@ package com.forgeshape.app;
  *
  * <p><b>App-level truth, never project truth.</b> A preference describes how
  * ForgeShape presents itself to this user on this device — which palette, which
- * edge the rail stands on, how the gizmo is drawn. It enters no {@code .forge}
- * byte, changes no project fingerprint, dirties no project, records no
- * Construction or Sculpt history step, touches no {@code ObjectId} and never
- * reaches the checkpoint or the recovery document. {@code SettingsPreferencesTest}
+ * edge the rail stands on, how the gizmo is drawn, whether canvas icons carry
+ * captions. It enters no {@code .forge} byte, changes no project fingerprint,
+ * dirties no project, records no Construction or Sculpt history step, touches
+ * no {@code ObjectId} and never reaches the checkpoint or the recovery
+ * document. {@code SettingsPreferencesTest}
  * serialises a project before and after changing every field here and asserts
  * the bytes are identical.
  *
  * <p><b>Versioned and forgiving.</b> {@link #SCHEMA_VERSION} names the shape of
  * what is stored. Reading follows one documented rule per field: an unknown
  * enum name is the default; a non-finite number is the default; a finite number
- * outside its range is CLAMPED to the nearer bound; a missing key is the exact
- * product default; and a key this reader does not know is ignored, so a newer
+ * outside its range is CLAMPED to the nearer bound; a missing key, or one
+ * holding the wrong type, is the exact product default; and a key this reader
+ * does not know is ignored, so a newer
  * build's file never crashes an older reader. There is no migration framework:
  * every field has a default, and that is the whole migration.
  *
@@ -50,19 +52,31 @@ final class AppPreferences {
     private final Handedness handedness;
     private final float gizmoVisualScale;
     private final GizmoStrokeWeight gizmoStrokeWeight;
+    /**
+     * Whether the canvas's icon controls also draw a one-word caption (Tool
+     * Labels, `CAD-VERTICAL-SLICE-R1`). Off by default: the icons carry their
+     * meaning by shape and by accessible name, and a caption is an aid the
+     * user asks for, not a cost every user pays in canvas width.
+     */
+    private final boolean toolLabels;
+
+    /** Tool Labels' product default: icons only. */
+    static final boolean TOOL_LABELS_DEFAULT = false;
 
     private AppPreferences(AppTheme palette, Handedness handedness, float gizmoVisualScale,
-                           GizmoStrokeWeight gizmoStrokeWeight) {
+                           GizmoStrokeWeight gizmoStrokeWeight, boolean toolLabels) {
         this.palette = palette;
         this.handedness = handedness;
         this.gizmoVisualScale = gizmoVisualScale;
         this.gizmoStrokeWeight = gizmoStrokeWeight;
+        this.toolLabels = toolLabels;
     }
 
     /** Exactly the product as it shipped before preferences existed. */
     static AppPreferences defaults() {
         return new AppPreferences(AppTheme.defaultTheme(), Handedness.defaultHandedness(),
-                GIZMO_VISUAL_SCALE_DEFAULT, GizmoStrokeWeight.defaultWeight());
+                GIZMO_VISUAL_SCALE_DEFAULT, GizmoStrokeWeight.defaultWeight(),
+                TOOL_LABELS_DEFAULT);
     }
 
     /**
@@ -73,14 +87,21 @@ final class AppPreferences {
      * through the same path. The schema version is accepted for any value: a
      * newer schema is read with this build's rules, and a field this build
      * does not know is simply not asked for.
+     *
+     * <p>{@code toolLabels} is a {@code Boolean} for the same reason the names
+     * are strings: {@code null} is "the key was absent or held the wrong type",
+     * and that is the product default — which is also why adding the field
+     * needed no schema bump. A record written before it existed simply has no
+     * such key.
      */
     static AppPreferences fromStored(int schemaVersion, String paletteName,
                                      String handednessName, float gizmoVisualScale,
-                                     String gizmoStrokeWeightName) {
+                                     String gizmoStrokeWeightName, Boolean toolLabels) {
         return new AppPreferences(AppTheme.fromStoredName(paletteName),
                 Handedness.fromStoredName(handednessName),
                 clampGizmoVisualScale(gizmoVisualScale),
-                GizmoStrokeWeight.fromStoredName(gizmoStrokeWeightName));
+                GizmoStrokeWeight.fromStoredName(gizmoStrokeWeightName),
+                toolLabels == null ? TOOL_LABELS_DEFAULT : toolLabels.booleanValue());
     }
 
     /**
@@ -121,26 +142,35 @@ final class AppPreferences {
         return gizmoStrokeWeight;
     }
 
+    boolean toolLabels() {
+        return toolLabels;
+    }
+
     AppPreferences withPalette(AppTheme value) {
         return new AppPreferences(value == null ? AppTheme.defaultTheme() : value, handedness,
-                gizmoVisualScale, gizmoStrokeWeight);
+                gizmoVisualScale, gizmoStrokeWeight, toolLabels);
     }
 
     AppPreferences withHandedness(Handedness value) {
         return new AppPreferences(palette,
                 value == null ? Handedness.defaultHandedness() : value, gizmoVisualScale,
-                gizmoStrokeWeight);
+                gizmoStrokeWeight, toolLabels);
     }
 
     /** Applies the numeric rule, so no value outside the range can be held. */
     AppPreferences withGizmoVisualScale(float value) {
         return new AppPreferences(palette, handedness, clampGizmoVisualScale(value),
-                gizmoStrokeWeight);
+                gizmoStrokeWeight, toolLabels);
     }
 
     AppPreferences withGizmoStrokeWeight(GizmoStrokeWeight value) {
         return new AppPreferences(palette, handedness, gizmoVisualScale,
-                value == null ? GizmoStrokeWeight.defaultWeight() : value);
+                value == null ? GizmoStrokeWeight.defaultWeight() : value, toolLabels);
+    }
+
+    AppPreferences withToolLabels(boolean value) {
+        return new AppPreferences(palette, handedness, gizmoVisualScale, gizmoStrokeWeight,
+                value);
     }
 
     @Override
@@ -151,7 +181,8 @@ final class AppPreferences {
         final AppPreferences that = (AppPreferences) other;
         return palette == that.palette && handedness == that.handedness
                 && Float.compare(gizmoVisualScale, that.gizmoVisualScale) == 0
-                && gizmoStrokeWeight == that.gizmoStrokeWeight;
+                && gizmoStrokeWeight == that.gizmoStrokeWeight
+                && toolLabels == that.toolLabels;
     }
 
     @Override
@@ -160,6 +191,7 @@ final class AppPreferences {
         hash = 31 * hash + handedness.hashCode();
         hash = 31 * hash + Float.floatToIntBits(gizmoVisualScale);
         hash = 31 * hash + gizmoStrokeWeight.hashCode();
+        hash = 31 * hash + (toolLabels ? 1 : 0);
         return hash;
     }
 
@@ -167,6 +199,6 @@ final class AppPreferences {
     public String toString() {
         return "AppPreferences{palette=" + palette + ", handedness=" + handedness
                 + ", gizmoVisualScale=" + gizmoVisualScale + ", gizmoStrokeWeight="
-                + gizmoStrokeWeight + "}";
+                + gizmoStrokeWeight + ", toolLabels=" + toolLabels + "}";
     }
 }

@@ -16,7 +16,7 @@ import org.junit.Test;
  * business and a device proves it — but the rules the model itself has to
  * obey: the defaults reproduce the product exactly, an unknown name is the
  * default, a non-finite number is the default, an out-of-range number is
- * clamped, and the model carries exactly the four approved preferences.
+ * clamped, and the model carries exactly the five approved preferences.
  */
 public final class AppPreferencesTest {
 
@@ -27,20 +27,21 @@ public final class AppPreferencesTest {
         assertSame(Handedness.RIGHT, defaults.handedness());
         assertEquals(1.0f, defaults.gizmoVisualScale(), 0.0f);
         assertSame(GizmoStrokeWeight.REGULAR, defaults.gizmoStrokeWeight());
+        assertFalse("Tool Labels is off: icons only", defaults.toolLabels());
         assertEquals(1, AppPreferences.SCHEMA_VERSION);
     }
 
     @Test
     public void missingKeysAreTheExactDefaults() {
         final AppPreferences read = AppPreferences.fromStored(
-                AppPreferences.SCHEMA_VERSION, null, null, Float.NaN, null);
+                AppPreferences.SCHEMA_VERSION, null, null, Float.NaN, null, null);
         assertEquals(AppPreferences.defaults(), read);
     }
 
     @Test
     public void anUnknownEnumNameFallsBackToItsDefault() {
         final AppPreferences read = AppPreferences.fromStored(AppPreferences.SCHEMA_VERSION,
-                "NEON_PINK", "AMBIDEXTROUS", 1.25f, "HAIRLINE");
+                "NEON_PINK", "AMBIDEXTROUS", 1.25f, "HAIRLINE", null);
         assertSame(AppTheme.WARM_GRAPHITE, read.palette());
         assertSame(Handedness.RIGHT, read.handedness());
         assertSame(GizmoStrokeWeight.REGULAR, read.gizmoStrokeWeight());
@@ -113,12 +114,14 @@ public final class AppPreferencesTest {
     public void changingOneFieldLeavesTheOthersAlone() {
         final AppPreferences base = AppPreferences.defaults()
                 .withPalette(AppTheme.COOL_LIGHT).withHandedness(Handedness.LEFT)
-                .withGizmoVisualScale(1.25f).withGizmoStrokeWeight(GizmoStrokeWeight.BOLD);
+                .withGizmoVisualScale(1.25f).withGizmoStrokeWeight(GizmoStrokeWeight.BOLD)
+                .withToolLabels(true);
         final AppPreferences changed = base.withPalette(AppTheme.WARM_LIGHT);
         assertSame(AppTheme.WARM_LIGHT, changed.palette());
         assertSame(Handedness.LEFT, changed.handedness());
         assertEquals(1.25f, changed.gizmoVisualScale(), 0.0f);
         assertSame(GizmoStrokeWeight.BOLD, changed.gizmoStrokeWeight());
+        assertTrue("and Tool Labels survives a palette change", changed.toolLabels());
         assertNotEquals(base, changed);
         assertEquals(base, changed.withPalette(AppTheme.COOL_LIGHT));
         assertEquals(base.hashCode(), changed.withPalette(AppTheme.COOL_LIGHT).hashCode());
@@ -129,17 +132,19 @@ public final class AppPreferencesTest {
         // A newer build may write a higher version and keys this one does not
         // know. The known fields are read by their own rules and nothing throws.
         final AppPreferences read = AppPreferences.fromStored(99, "COOL_LIGHT", "LEFT", 1.5f,
-                "THIN");
+                "THIN", Boolean.TRUE);
         assertSame(AppTheme.COOL_LIGHT, read.palette());
         assertSame(Handedness.LEFT, read.handedness());
         assertEquals(1.5f, read.gizmoVisualScale(), 0.0f);
         assertSame(GizmoStrokeWeight.THIN, read.gizmoStrokeWeight());
+        assertTrue(read.toolLabels());
     }
 
     @Test
     public void thereAreExactlyTheApprovedPreferencesAndNoOthers() {
         // UIPREFR1-40: five palettes, two handednesses, three weights, one
-        // bounded size. A handle style is deliberately NOT here: the gizmo's
+        // bounded size — and since CAD-VERTICAL-SLICE-R1 one boolean, Tool
+        // Labels. A handle style is deliberately NOT here: the gizmo's
         // renderer contract draws one-pixel line lists and no second style
         // exists that shares its hit semantics, so the stage's deviation
         // GIZMO_STYLE_DEFERRED_BY_RENDERER_CONTRACT stands instead of a fake row.
@@ -147,5 +152,57 @@ public final class AppPreferencesTest {
         assertEquals(2, Handedness.values().length);
         assertEquals(3, GizmoStrokeWeight.values().length);
         assertFalse(AppPreferences.defaults().toString().contains("handleStyle"));
+        // The field set, stated by the value's own description: exactly these
+        // five and no sixth.
+        assertEquals("AppPreferences{palette=WARM_GRAPHITE, handedness=RIGHT,"
+                        + " gizmoVisualScale=1.0, gizmoStrokeWeight=REGULAR, toolLabels=false}",
+                AppPreferences.defaults().toString());
+    }
+
+    // -----------------------------------------------------------------------
+    // Tool Labels (CAD-VERTICAL-SLICE-R1)
+    // -----------------------------------------------------------------------
+
+    @Test
+    public void toolLabelsDefaultsToOffAndAMissingKeyIsThatDefault() {
+        assertFalse(AppPreferences.TOOL_LABELS_DEFAULT);
+        assertFalse(AppPreferences.defaults().toolLabels());
+        // A record written before the field existed has no such key; the store
+        // reads that (and a key of the wrong type) as null.
+        assertFalse(AppPreferences.fromStored(AppPreferences.SCHEMA_VERSION, "COOL_LIGHT",
+                "LEFT", 1.25f, "BOLD", null).toolLabels());
+        assertEquals("adding the field needed no schema bump", 1, AppPreferences.SCHEMA_VERSION);
+    }
+
+    @Test
+    public void toolLabelsRoundTripsThroughTheStoredForm() {
+        for (boolean stored : new boolean[]{false, true}) {
+            final AppPreferences written = AppPreferences.defaults().withToolLabels(stored);
+            // What the store writes for each field, read back through the one
+            // reading path.
+            final AppPreferences read = AppPreferences.fromStored(AppPreferences.SCHEMA_VERSION,
+                    written.palette().name(), written.handedness().name(),
+                    written.gizmoVisualScale(), written.gizmoStrokeWeight().name(),
+                    Boolean.valueOf(written.toolLabels()));
+            assertEquals(written, read);
+            assertEquals(stored, read.toolLabels());
+        }
+    }
+
+    @Test
+    public void withToolLabelsChangesThatFieldAndNothingElse() {
+        final AppPreferences base = AppPreferences.defaults()
+                .withPalette(AppTheme.NEUTRAL_CHARCOAL).withHandedness(Handedness.LEFT)
+                .withGizmoVisualScale(1.5f).withGizmoStrokeWeight(GizmoStrokeWeight.THIN);
+        final AppPreferences on = base.withToolLabels(true);
+        assertTrue(on.toolLabels());
+        assertSame(AppTheme.NEUTRAL_CHARCOAL, on.palette());
+        assertSame(Handedness.LEFT, on.handedness());
+        assertEquals(1.5f, on.gizmoVisualScale(), 0.0f);
+        assertSame(GizmoStrokeWeight.THIN, on.gizmoStrokeWeight());
+        assertNotEquals("the field takes part in equality", base, on);
+        assertEquals(base, on.withToolLabels(false));
+        assertEquals(base.hashCode(), on.withToolLabels(false).hashCode());
+        assertEquals("setting what is already held is the same value", on, on.withToolLabels(true));
     }
 }

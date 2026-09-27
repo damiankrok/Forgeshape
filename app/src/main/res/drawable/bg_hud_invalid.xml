@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The operation badge while the candidate would be REFUSED.
+
+  An error-coloured outline, because the badge's own glyph already carries the
+  operation's colour and a second fill would fight it. Never the only carrier:
+  the badge's accessible description names the reason, and the status line
+  names it again when the user commits. Concentric with the capsule the badge
+  stands in, at cad_hud_member_radius.
+-->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_pressed="true">
+        <shape android:shape="rectangle">
+            <solid android:color="?attr/fsControlSurfacePressed" />
+            <corners android:radius="@dimen/cad_hud_member_radius" />
+            <stroke
+                android:width="@dimen/control_border_active_width"
+                android:color="?attr/fsTextError" />
+        </shape>
+    </item>
+    <item android:state_activated="true">
+        <shape android:shape="rectangle">
+            <solid android:color="?attr/fsAccentFill" />
+            <corners android:radius="@dimen/cad_hud_member_radius" />
+            <stroke
+                android:width="@dimen/control_border_active_width"
+                android:color="?attr/fsTextError" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@android:color/transparent" />
+            <corners android:radius="@dimen/cad_hud_member_radius" />
+            <stroke
+                android:width="@dimen/control_border_active_width"
+                android:color="?attr/fsTextError" />
+        </shape>
+    </item>
+</selector>

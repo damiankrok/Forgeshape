@@ -1,170 +1,75 @@
 #include "forgeshape_cad_face.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
+
+#include "forgeshape_cad_feature.h"
 
 namespace forgeshape {
 namespace {
 
-// FNV-1a over 64 bits: the offset basis 0xCBF29CE484222325 and the prime
-// 0x100000001B3. These two constants ARE the lineage-token format (see
-// DATA_PACKAGE_SPEC.md §7c): a `.forge` reader recomputes the producer's
-// signature and compares it to the stored token, so a second implementation
-// has to produce the same value from the same rule. `CAD-A3-C1`'s independent
-// PowerShell encoder found the basis here was mistyped one digit short
-// (1469598103934665603); it is now the FNV basis the comment always named.
-constexpr uint64_t kFnvOffset = 14695981039346656037ull;
-constexpr uint64_t kFnvPrime = 1099511628211ull;
-
-void mixU64(uint64_t& h, uint64_t v) {
-    for (int i = 0; i < 8; ++i) {
-        h ^= (v >> (i * 8)) & 0xFFu;
-        h *= kFnvPrime;
-    }
-}
-
-Vec3 normalizedOr(const Vec3& v, const Vec3& fallback) {
-    const Vec3 n = vec3Normalize(v);
-    return vec3Finite(n) && vec3Dot(n, n) > 0.5f ? n : fallback;
-}
-
-// The chosen profile and the extrusion offsets, shared by every entry point.
-struct ExtrudeContext {
-    const ClosedProfile* profile = nullptr;
-    ProfileExtraction extraction;
-    Workplane plane = Workplane::XY;
-    WorkplaneFrame frame;
-    double planeCapOffset = 0.0;  // offset of the cap ON the sketch plane
-    double farCapOffset = 0.0;    // offset of the cap at the extrusion tip
-    // The direction, as a signed unit along the plane normal, that points from
-    // the plane cap toward the solid (i.e. the extrusion direction).
-    double extrudeSign = 1.0;
-};
-
-CadStatus buildContext(const CadBodyState& state, ExtrudeContext* ctx) {
-    const CadStatus why = validateCadBodyState(state, &ctx->extraction);
-    if (why != CadStatus::Ok) {
-        return why;
-    }
-    ctx->profile = findClosedProfile(ctx->extraction, state.extrude.profileEntityId);
-    if (ctx->profile == nullptr) {
-        return CadStatus::ProfileNotFound;
-    }
-    ctx->plane = state.sketch.plane;
-    ctx->frame = workplaneFrame(ctx->plane);
-    // `CapPlane` is the cap the extrusion grows FROM and `CapFar` the one it
-    // grows TO, measured along `direction`. For One Side -- every extrusion
-    // before `CAD-EXT-R1`, and every v1/v2/v3 record after it -- the start cap
-    // is the one lying ON the sketch plane and these offsets are the ones this
-    // function always produced. For Symmetric and Two Sides NEITHER cap is on
-    // the plane, and `direction` is canonically AlongNormal there, so the start
-    // cap is the `-N` one: a generalization of the same sentence rather than a
-    // second rule, which is what keeps the face TOKENS -- and with them every
-    // stored lineage signature -- exactly as they were.
-    const double positive = extrudePositiveDistance(state.extrude);
-    const double negative = extrudeNegativeDistance(state.extrude);
-    if (state.extrude.direction == ExtrudeDirection::AlongNormal) {
-        ctx->planeCapOffset = -negative;
-        ctx->farCapOffset = positive;
-        ctx->extrudeSign = 1.0;
-    } else {
-        ctx->planeCapOffset = positive;
-        ctx->farCapOffset = -negative;
-        ctx->extrudeSign = -1.0;
-    }
-    return CadStatus::Ok;
-}
-
-SketchPoint profileCentroid(const ClosedProfile& profile) {
-    double u = 0.0;
-    double v = 0.0;
-    for (const SketchPoint& p : profile.polygon) {
-        u += p.u;
-        v += p.v;
-    }
-    const double inv = 1.0 / static_cast<double>(profile.polygon.size());
-    return SketchPoint{u * inv, v * inv};
-}
-
-// Builds a cap face. `onPlane` selects the cap lying on the sketch plane;
-// otherwise the far cap.
-CadFace makeCap(const ExtrudeContext& ctx, bool onPlane) {
-    CadFace face;
-    face.token.kind = onPlane ? CadFaceKind::CapPlane : CadFaceKind::CapFar;
-    face.eligible = true;
-    const double offset = onPlane ? ctx.planeCapOffset : ctx.farCapOffset;
-    const SketchPoint centroid = profileCentroid(*ctx.profile);
-    face.origin = workplaneToLocalAtOffset(ctx.plane, centroid, offset);
-    // Outward normal points away from the solid. The solid lies on the
-    // +extrudeSign side of the plane cap; the far cap's outward is +extrudeSign.
-    const float sign = onPlane ? -static_cast<float>(ctx.extrudeSign)
-                               : static_cast<float>(ctx.extrudeSign);
-    face.n = vec3Scale(ctx.frame.normal, sign);
-    face.u = ctx.frame.uAxis;
-    // Choose V so that u x v = n: flip the plane's V when the outward normal is
-    // the plane normal reversed.
-    face.v = (sign > 0.0f) ? ctx.frame.vAxis : vec3Scale(ctx.frame.vAxis, -1.0f);
-    return face;
-}
-
-// Builds the side face for profile edge k (polygon[k] -> polygon[k+1]).
-CadFace makeSide(const ExtrudeContext& ctx, uint32_t k) {
-    const ClosedProfile& profile = *ctx.profile;
-    const uint32_t n = static_cast<uint32_t>(profile.polygon.size());
-    const SketchPoint a2 = profile.polygon[k];
-    const SketchPoint b2 = profile.polygon[(k + 1u) % n];
-    // The quad's START-cap corners. Offset 0 until `CAD-EXT-R1`, because the
-    // start cap was always on the sketch plane; the start cap's own offset now,
-    // so a Symmetric or Two Sides side face is centred on the quad it really is.
-    const Vec3 nearA = workplaneToLocalAtOffset(ctx.plane, a2, ctx.planeCapOffset);
-    const Vec3 nearB = workplaneToLocalAtOffset(ctx.plane, b2, ctx.planeCapOffset);
-    const Vec3 edge = vec3Sub(nearB, nearA);
-    const Vec3 edgeDir = normalizedOr(edge, ctx.frame.uAxis);
-    // Outward normal of a CCW edge is edge x planeNormal (verified for XY).
-    const Vec3 outward = normalizedOr(vec3Cross(edgeDir, ctx.frame.normal), ctx.frame.normal);
-
-    CadFace face;
-    face.token.kind = CadFaceKind::Side;
-    face.token.edgeEntityId = profile.edgeEntityId.size() == n ? profile.edgeEntityId[k]
-                                                               : profile.anchorEntityId;
-    face.token.edgeLocalIndex = profile.edgeLocalIndex.size() == n ? profile.edgeLocalIndex[k] : k;
-    // A curved side is reported so a tap resolves, but never carries a sketch.
-    // Two ways an edge is curved: the whole profile is a circle's tessellation,
-    // or -- since `SKETCH-UX-R1` -- this one edge belongs to an Arc or a Spline
-    // in a profile that may also contain exact straight lines. The per-edge
-    // answer is the one that matters now, because one profile can mix both.
-    const bool curvedEdge = profile.edgeCurved.size() == n && profile.edgeCurved[k] != 0u;
-    face.eligible = !profile.fromCircle && !curvedEdge;
-    face.n = outward;
-    face.u = edgeDir;
-    face.v = normalizedOr(vec3Cross(outward, edgeDir), ctx.frame.vAxis);
-    // Origin at the centre of the quad: the four corners averaged.
-    const Vec3 farA = workplaneToLocalAtOffset(ctx.plane, a2, ctx.farCapOffset);
-    const Vec3 farB = workplaneToLocalAtOffset(ctx.plane, b2, ctx.farCapOffset);
-    Vec3 sum = vec3Add(vec3Add(nearA, nearB), vec3Add(farA, farB));
-    face.origin = vec3Scale(sum, 0.25f);
-    return face;
+// Every frame is DERIVED in binary64 by the feature chain
+// (forgeshape_cad_feature.h) and rounded to float here, once, for the callers
+// that compose it into a float world model.
+CadFace toCadFace(const CadFeatureFace& face) {
+    CadFace out;
+    out.token = face.token;
+    out.origin = vec3FromDVec3(face.frame.origin);
+    out.u = vec3FromDVec3(face.frame.u);
+    out.v = vec3FromDVec3(face.frame.v);
+    out.n = vec3FromDVec3(face.frame.n);
+    out.eligible = face.eligible;
+    return out;
 }
 
 }  // namespace
 
-CadStatus enumerateCadFaces(const CadBodyState& state, std::vector<CadFace>* out) {
+CadStatus enumerateCadFeatureFaces(const CadBodyState& state, uint32_t featureId,
+                                   std::vector<CadFace>* out) {
     if (out == nullptr) {
         return CadStatus::RegenerationFailed;
     }
-    ExtrudeContext ctx;
-    const CadStatus why = buildContext(state, &ctx);
+    CadFeatureGeometry geometry;
+    const CadStatus why = buildCadFeatureGeometry(state, featureId, &geometry);
     if (why != CadStatus::Ok) {
         return why;
     }
     std::vector<CadFace> faces;
-    faces.push_back(makeCap(ctx, /*onPlane=*/true));
-    faces.push_back(makeCap(ctx, /*onPlane=*/false));
-    const uint32_t n = static_cast<uint32_t>(ctx.profile->polygon.size());
-    for (uint32_t k = 0; k < n; ++k) {
-        faces.push_back(makeSide(ctx, k));
+    faces.reserve(geometry.faces.size());
+    for (const CadFeatureFace& face : geometry.faces) {
+        faces.push_back(toCadFace(face));
     }
     *out = std::move(faces);
+    return CadStatus::Ok;
+}
+
+CadStatus enumerateCadFaces(const CadBodyState& state, std::vector<CadFace>* out) {
+    return enumerateCadFeatureFaces(state, kCadFeatureId, out);
+}
+
+CadStatus cadFaceRangesFromMesh(const CadBodyMesh& mesh, std::vector<CadFaceRange>* out) {
+    if (out == nullptr) {
+        return CadStatus::RegenerationFailed;
+    }
+    std::vector<CadFaceRange> ranges;
+    const uint32_t triangles = static_cast<uint32_t>(mesh.triangleFace.size());
+    uint32_t t = 0;
+    while (t < triangles) {
+        const uint32_t tag = mesh.triangleFace[t];
+        if (tag >= mesh.faces.size()) {
+            return CadStatus::RegenerationFailed;
+        }
+        uint32_t end = t + 1u;
+        while (end < triangles && mesh.triangleFace[end] == tag) {
+            ++end;
+        }
+        const CadMeshFace& face = mesh.faces[tag];
+        ranges.push_back(CadFaceRange{t * 3u, (end - t) * 3u, face.token, face.eligible,
+                                      face.featureId});
+        t = end;
+    }
+    *out = std::move(ranges);
     return CadStatus::Ok;
 }
 
@@ -172,71 +77,80 @@ CadStatus cadFaceRanges(const CadBodyState& state, std::vector<CadFaceRange>* ou
     if (out == nullptr) {
         return CadStatus::RegenerationFailed;
     }
-    ExtrudeContext ctx;
-    const CadStatus why = buildContext(state, &ctx);
+    CadBodyMesh mesh;
+    const CadStatus why = regenerateCadBody(state, &mesh);
     if (why != CadStatus::Ok) {
         return why;
     }
-    const uint32_t n = static_cast<uint32_t>(ctx.profile->polygon.size());
-    // generateCadMesh emits: far cap (3(n-2)), near cap (3(n-2)), then 6 per
-    // side edge. The "far" set is the mesh's upper vertices; whether the far set
-    // is the plane cap or the far cap depends on the direction.
-    const uint32_t capIndices = 3u * (n - 2u);
-    const bool farSetIsPlaneCap = state.extrude.direction == ExtrudeDirection::AgainstNormal;
-
-    std::vector<CadFaceRange> ranges;
-    // Range 0: the mesh's far/upper cap.
-    ranges.push_back(CadFaceRange{
-        0u, capIndices,
-        CadFaceToken{farSetIsPlaneCap ? CadFaceKind::CapPlane : CadFaceKind::CapFar, 0u, 0u}, true});
-    // Range 1: the mesh's near/lower cap.
-    ranges.push_back(CadFaceRange{
-        capIndices, capIndices,
-        CadFaceToken{farSetIsPlaneCap ? CadFaceKind::CapFar : CadFaceKind::CapPlane, 0u, 0u}, true});
-    // The sides, 6 indices each, in profile-edge order.
-    uint32_t cursor = 2u * capIndices;
-    for (uint32_t k = 0; k < n; ++k) {
-        const CadFace side = makeSide(ctx, k);
-        ranges.push_back(CadFaceRange{cursor, 6u, side.token, side.eligible});
-        cursor += 6u;
-    }
-    *out = std::move(ranges);
-    return CadStatus::Ok;
+    return cadFaceRangesFromMesh(mesh, out);
 }
 
-CadStatus resolveCadFace(const CadBodyState& state, const CadFaceToken& token, CadFace* out) {
+CadStatus resolveCadFeatureFace(const CadBodyState& state, uint32_t featureId,
+                                const CadFaceToken& token, CadFace* out) {
     if (out == nullptr) {
         return CadStatus::RegenerationFailed;
     }
-    std::vector<CadFace> faces;
-    const CadStatus why = enumerateCadFaces(state, &faces);
+    CadFeatureGeometry geometry;
+    const CadStatus why = buildCadFeatureGeometry(state, featureId, &geometry);
     if (why != CadStatus::Ok) {
         return why;
     }
-    for (const CadFace& face : faces) {
+    for (const CadFeatureFace& face : geometry.faces) {
         if (sameCadFaceToken(face.token, token)) {
-            *out = face;
+            *out = toCadFace(face);
             return CadStatus::Ok;
         }
     }
     return CadStatus::ProfileNotFound;
 }
 
-uint64_t cadTopologySignature(const CadBodyState& state) {
-    std::vector<CadFace> faces;
-    if (enumerateCadFaces(state, &faces) != CadStatus::Ok) {
+CadStatus resolveCadFace(const CadBodyState& state, const CadFaceToken& token, CadFace* out) {
+    return resolveCadFeatureFace(state, kCadFeatureId, token, out);
+}
+
+uint64_t cadFeatureTopologySignature(const CadBodyState& state, uint32_t featureId) {
+    CadFeatureGeometry geometry;
+    if (buildCadFeatureGeometry(state, featureId, &geometry) != CadStatus::Ok) {
         return 0;
     }
-    uint64_t h = kFnvOffset;
-    // The chosen profile identity and the eligible-set shape, then every token.
-    mixU64(h, static_cast<uint64_t>(state.extrude.profileEntityId));
-    mixU64(h, faces.size());
-    for (const CadFace& face : faces) {
-        mixU64(h, cadFaceTokenCode(face.token));
-        mixU64(h, face.eligible ? 1u : 0u);
+    return geometry.signature;
+}
+
+bool cadMeshCarriesFace(const CadBodyMesh& mesh, const CadFace& face) {
+    const std::vector<MeshVertex>& v = mesh.mesh.vertices;
+    const std::vector<uint32_t>& idx = mesh.mesh.indices;
+    float scale = 1.0f;
+    for (const MeshVertex& vertex : v) {
+        for (float c : vertex.position) {
+            scale = std::max(scale, std::fabs(c));
+        }
     }
-    // Never zero: zero is the "no topology" answer buildContext failures give.
-    return h == 0 ? 1 : h;
+    // Float tolerances: the render mesh is rounded once from binary64.
+    const float planeTolerance = 1.0e-5f * scale;
+    const Vec3 n = vec3Normalize(face.n);
+    for (size_t t = 0; t + 2 < idx.size(); t += 3) {
+        const Vec3 p0{v[idx[t]].position[0], v[idx[t]].position[1], v[idx[t]].position[2]};
+        const Vec3 p1{v[idx[t + 1]].position[0], v[idx[t + 1]].position[1], v[idx[t + 1]].position[2]};
+        const Vec3 p2{v[idx[t + 2]].position[0], v[idx[t + 2]].position[1], v[idx[t + 2]].position[2]};
+        const Vec3 cross = vec3Cross(vec3Sub(p1, p0), vec3Sub(p2, p0));
+        const float len = std::sqrt(vec3Dot(cross, cross));
+        if (!(len > 0.0f)) {
+            continue;
+        }
+        if (vec3Dot(vec3Scale(cross, 1.0f / len), n) < 0.9999f) {
+            continue;
+        }
+        if (std::fabs(vec3Dot(vec3Sub(p0, face.origin), n)) <= planeTolerance
+            && std::fabs(vec3Dot(vec3Sub(p1, face.origin), n)) <= planeTolerance
+            && std::fabs(vec3Dot(vec3Sub(p2, face.origin), n)) <= planeTolerance) {
+            return true;
+        }
+    }
+    return false;
+}
+
+uint64_t cadTopologySignature(const CadBodyState& state) {
+    return cadFeatureTopologySignature(state, kCadFeatureId);
 }
 
 }  // namespace forgeshape

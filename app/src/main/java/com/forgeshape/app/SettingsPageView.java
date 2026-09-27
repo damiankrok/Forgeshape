@@ -14,12 +14,13 @@ import android.widget.TextView;
  * and on a wider window it is the same information architecture with more
  * room. The viewport behind it is not reachable while it stands.
  *
- * <p>Three groups, because the stage approved three kinds of preference and
- * no more: <b>Appearance</b> (the five palettes), <b>Workspace</b> (which edge
- * the rail stands on) and <b>Gizmo</b> (visual size and thickness). Nothing
- * here is transient viewport state — Grid, Shading, Projection stay in the
- * Display popover — and nothing here is a fake row: every option is a real,
- * saved preference. Handle Style is deliberately ABSENT rather than inert; see
+ * <p>Four groups, one per approved kind of preference: <b>Appearance</b> (the
+ * five palettes), <b>Workspace</b> (which edge the rail stands on), <b>Gizmo</b>
+ * (visual size and thickness) and <b>Interface</b> (whether the canvas's icon
+ * controls carry captions, `CAD-VERTICAL-SLICE-R1`). Nothing here is transient
+ * viewport state — Grid, Shading, Projection stay in the Display popover — and
+ * nothing here is a fake row: every option is a real, saved preference. Handle
+ * Style is deliberately ABSENT rather than inert; see
  * {@code artifacts/ui-pref-r1/INDEX.md} for why.
  *
  * <p><b>Selection is never colour alone.</b> The chosen row carries the
@@ -42,6 +43,9 @@ final class SettingsPageView extends StartPageView {
         void onGizmoVisualScaleChosen(float scale);
 
         void onGizmoStrokeWeightChosen(GizmoStrokeWeight weight);
+
+        /** Tool Labels: whether the canvas's icon controls also draw a caption. */
+        void onToolLabelsChosen(boolean visible);
 
         void onSettingsBackRequested();
     }
@@ -67,10 +71,16 @@ final class SettingsPageView extends StartPageView {
     private static final int[] WEIGHT_IDS = {
             R.id.gizmo_weight_thin, R.id.gizmo_weight_regular, R.id.gizmo_weight_bold};
 
+    /** The two Tool Labels rows, indexed by the boolean they choose: Off, then On. */
+    private static final int[] TOOL_LABEL_IDS = {R.id.tool_labels_off, R.id.tool_labels_on};
+    private static final int[] TOOL_LABEL_LABELS = {
+            R.string.tool_labels_off, R.string.tool_labels_on};
+
     private final TextView[] paletteRows = new TextView[PALETTE_IDS.length];
     private final TextView[] handednessRows = new TextView[HANDEDNESS_IDS.length];
     private final TextView[] sizeRows = new TextView[SIZE_IDS.length];
     private final TextView[] weightRows = new TextView[WEIGHT_IDS.length];
+    private final TextView[] toolLabelRows = new TextView[TOOL_LABEL_IDS.length];
 
     SettingsPageView(Context context, final OnSettingsAction listener) {
         super(context, R.id.settings_page, R.id.settings_panel,
@@ -132,6 +142,24 @@ final class SettingsPageView extends StartPageView {
                     });
         }
 
+        // --- Interface ------------------------------------------------------
+        // Two rows rather than a switch, on the page's own grammar: every
+        // preference here is a short list of named, mutually exclusive options,
+        // and a toggle would be the one control on the page that reads its
+        // state from a thumb's position instead of from a marked row.
+        addSectionLabel(context.getString(R.string.settings_interface), false);
+        addCaption(context.getString(R.string.tool_labels_description));
+        for (int i = 0; i < TOOL_LABEL_IDS.length; i++) {
+            final boolean visible = i == 1;
+            toolLabelRows[i] = addOptionRow(TOOL_LABEL_IDS[i],
+                    context.getString(TOOL_LABEL_LABELS[i]), new OnClickListener() {
+                        @Override
+                        public void onClick(View v) {
+                            listener.onToolLabelsChosen(visible);
+                        }
+                    });
+        }
+
         addStatusLine();
         addSecondaryAction(R.id.settings_back, context.getString(R.string.back),
                 new OnClickListener() {
@@ -165,6 +193,9 @@ final class SettingsPageView extends StartPageView {
         final GizmoStrokeWeight[] weights = GizmoStrokeWeight.values();
         for (int i = 0; i < weights.length; i++) {
             markOption(weightRows[i], weights[i] == preferences.gizmoStrokeWeight());
+        }
+        for (int i = 0; i < TOOL_LABEL_IDS.length; i++) {
+            markOption(toolLabelRows[i], (i == 1) == preferences.toolLabels());
         }
     }
 

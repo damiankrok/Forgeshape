@@ -827,6 +827,25 @@ final class GlobalToolbarView extends LinearLayout {
         applyEditingComposition();
     }
 
+    /**
+     * Whether the staged extrusion can be committed (`CAD-VERTICAL-SLICE-R1`).
+     *
+     * <p>The preview is the candidate a commit would make; while it is not a
+     * valid one — no region chosen, a disjoint Add, a Cut that misses — Extrude
+     * is DISABLED rather than left to refuse, and its description carries the
+     * named reason so the verdict is not colour alone. Native refuses the
+     * commit all the same: disabling a control is not removing a guard.
+     */
+    void showExtrudeReadiness(boolean ready, CharSequence reason) {
+        extrudeButton.setEnabled(ready);
+        extrudeButton.setAlpha(ready ? 1f : 0.45f);
+        final CharSequence label = getContext().getString(R.string.extrude);
+        extrudeButton.setContentDescription(ready || reason == null
+                ? label
+                : getContext().getString(R.string.extrude_unavailable_description, label,
+                        reason));
+    }
+
     /** Marks the Display button active while its popover is open. */
     void showDisplaySettingsOpen(boolean open) {
         EditorControlStyles.setIconButtonActive(displaySettingsButton, open);

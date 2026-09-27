@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The chosen or open member of a CAD extrude HUD capsule: the palette choice in
+  force, or the button whose palette is open.
+
+  bg_capsule_control_active's rule — fill-led, the palette's selected-at-rest
+  surface, no hairline — at the HUD's 24 dp concentric corner. In a palette it
+  is the ONE item wearing a shape, so the choice reads without its colour.
+-->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_pressed="true">
+        <shape android:shape="rectangle">
+            <solid android:color="?attr/fsAccentFillPressed" />
+            <corners android:radius="@dimen/cad_hud_member_radius" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="?attr/fsAccentFill" />
+            <corners android:radius="@dimen/cad_hud_member_radius" />
+        </shape>
+    </item>
+</selector>

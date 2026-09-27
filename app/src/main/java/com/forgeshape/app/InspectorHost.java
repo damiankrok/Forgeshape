@@ -72,6 +72,14 @@ interface InspectorHost {
      */
     void onEditCadSketchRequested();
 
+    /**
+     * Asks to reopen ONE feature of the active CAD Body's chain
+     * (`CAD-VERTICAL-SLICE-R1`): feature 1 is the body's first sketch and
+     * extrusion, a later id an Add or a Cut. A mode transition on exactly
+     * {@link #onEditCadSketchRequested()}'s terms, staged until Finish.
+     */
+    void onEditCadFeatureRequested(long featureId);
+
     /** The UI-owned draft, presentation and layout state. */
     EditorUiState uiState();
 }

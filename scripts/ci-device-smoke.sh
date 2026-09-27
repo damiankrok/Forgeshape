@@ -47,7 +47,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APP_APK="$ROOT/app/build/outputs/apk/debug/app-debug.apk"
 TEST_APK="$ROOT/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
 
-# The twenty-two startup suites, in emission order (CLAUDE.md, README.md).
+# The twenty-three startup suites, in emission order (CLAUDE.md, README.md).
 EXPECTED_TOKENS="FORGESHAPE_CAMERA_SELFTEST_OK
 FORGESHAPE_PICKING_SELFTEST_OK
 FORGESHAPE_DYNAMIC_MESH_SELFTEST_OK
@@ -69,7 +69,8 @@ FORGESHAPE_CAD_SELFTEST_OK
 FORGESHAPE_CAD_A3_SELFTEST_OK
 FORGESHAPE_SKETCH_UX_SELFTEST_OK
 FORGESHAPE_BODY_DIMENSIONS_SELFTEST_OK
-FORGESHAPE_MIRROR_SELFTEST_OK"
+FORGESHAPE_MIRROR_SELFTEST_OK
+FORGESHAPE_CAD_FEATURE_SELFTEST_OK"
 # Failure vocabulary. Never a bare FAIL: passing check NAMES contain "fails".
 FAIL_PATTERN='_SELFTEST_FAIL|_FAIL:'
 # Every native and Java log line ForgeShape writes carries the one tag
@@ -117,7 +118,7 @@ write_summary() {
         printf '  "boot_seconds": "%s",\n' "$BOOT_SECONDS"
         printf '  "startup_seconds": "%s",\n' "$STARTUP_SECONDS"
         printf '  "startup_capture_used": "%s",\n' "$STARTUP_CAPTURE_USED"
-        printf '  "selftest_tokens_expected": 22,\n'
+        printf '  "selftest_tokens_expected": 23,\n'
         printf '  "selftest_tokens_found": %s,\n' "$TOKENS_FOUND"
         printf '  "selftest_tokens_in_order": %s,\n' "$TOKENS_IN_ORDER"
         printf '  "native_viewport_ok": %s,\n' "$VIEWPORT_OK"
@@ -289,7 +290,7 @@ echo "settled_seconds=$(( $(date +%s) - settle_start )) load1=${load1:-unknown} 
     | tee "$OUT/settle.txt"
 
 # One launch = one capture. Returns 0 when that capture alone holds all
-# twenty-two tokens in order, NATIVE_VIEWPORT_OK and zero failure lines.
+# twenty-three tokens in order, NATIVE_VIEWPORT_OK and zero failure lines.
 # Anything that is evidence of a real fault ends the run by name at once; the
 # only outcome that may be captured again is an INCOMPLETE capture with zero
 # failure lines, and then only when liblog itself reports dropping lines.
@@ -333,7 +334,7 @@ capture_startup() {
     if grep -q 'FORGESHAPE_NATIVE_VIEWPORT_OK' "$fs"; then VIEWPORT_OK=true; fi
     FAIL_LINES=$(grep -cE "$FAIL_PATTERN" "$fs" || true)
     grep -E "$FAIL_PATTERN" "$fs" > "$OUT/startup-failure-lines-$n.txt" || true
-    echo "capture=$n tokens=$TOKENS_FOUND/22 in_order=$TOKENS_IN_ORDER viewport_ok=$VIEWPORT_OK failure_lines=$FAIL_LINES liblog_dropped=$dropped pid=$pid (${STARTUP_SECONDS}s)" \
+    echo "capture=$n tokens=$TOKENS_FOUND/23 in_order=$TOKENS_IN_ORDER viewport_ok=$VIEWPORT_OK failure_lines=$FAIL_LINES liblog_dropped=$dropped pid=$pid (${STARTUP_SECONDS}s)" \
         | tee -a "$OUT/startup-captures.txt"
 
     if [ "$FAIL_LINES" -gt 0 ] && grep -qE '_SELFTEST_FAIL|_CASE_FAIL:' "$fs"; then
@@ -348,11 +349,11 @@ capture_startup() {
     if [ "$FAIL_LINES" -gt 0 ]; then
         fail_with "FAIL-CI-CLOUD-DEVICE-PRODUCT" "failure token after startup: $(head -n 1 "$OUT/startup-failure-lines-$n.txt")"
     fi
-    if [ "$TOKENS_FOUND" -eq 22 ] && [ "$TOKENS_IN_ORDER" = true ]; then
+    if [ "$TOKENS_FOUND" -eq 23 ] && [ "$TOKENS_IN_ORDER" = true ]; then
         return 0
     fi
     if [ "$dropped" -eq 0 ]; then
-        fail_with "DEVICE_STARTUP_UNRESOLVED" "capture $n: $TOKENS_FOUND/22 tokens with zero failures and NO liblog drop reported — not explainable as a dropped capture"
+        fail_with "DEVICE_STARTUP_UNRESOLVED" "capture $n: $TOKENS_FOUND/23 tokens with zero failures and NO liblog drop reported — not explainable as a dropped capture"
     fi
     return 1
 }
@@ -370,7 +371,7 @@ cp "$OUT/startup-forgeshape-$complete.txt" "$OUT/startup-forgeshape.txt"
 cp "$OUT/selftest-tokens-found-$complete.txt" "$OUT/selftest-tokens-found.txt"
 cp "$OUT/startup-screenshot-$complete.png" "$OUT/startup-screenshot.png" 2>/dev/null || true
 STARTUP_CAPTURE_USED="$complete"
-echo "Startup evidence: capture $complete of $STARTUP_CAPTURES — 22/22 tokens in order, NATIVE_VIEWPORT_OK, 0 failure lines"
+echo "Startup evidence: capture $complete of $STARTUP_CAPTURES — 23/23 tokens in order, NATIVE_VIEWPORT_OK, 0 failure lines"
 
 # Vulkan evidence as ForgeShape itself reports it.
 grep -iE 'Vulkan|Physical device selected|Queue families|swapchain' "$OUT/startup-forgeshape.txt" \
@@ -461,5 +462,5 @@ fi
 
 PHASE="done"
 RESULT="PASS"
-DETAIL="22/22 startup tokens in order, NATIVE_VIEWPORT_OK, 0 failure tokens; $TEST_CLASS OK ($TESTS_RUN tests)"
+DETAIL="23/23 startup tokens in order, NATIVE_VIEWPORT_OK, 0 failure tokens; $TEST_CLASS OK ($TESTS_RUN tests)"
 finish 0

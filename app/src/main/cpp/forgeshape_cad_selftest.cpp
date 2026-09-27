@@ -24,6 +24,7 @@
 #include "forgeshape_sculpt.h"
 #include "forgeshape_sketch.h"
 #include "forgeshape_sketch_session.h"
+#include "forgeshape_sketch_region.h"
 #include "forgeshape_workplane.h"
 
 namespace forgeshape {
@@ -1296,15 +1297,24 @@ int runCadSelfTests(CadSelfTestResult* out, int maxOut) {
             outer.width = 4.0;
             outer.height = 4.0;
             addSketchEntity(&sketch, outer);  // id 3, contains the circle
+            // `CAD-VERTICAL-SLICE-R1` changed this contract ON PURPOSE: a loop
+            // that contains another is no longer refused as a hole R0 would not
+            // fill. It is a loop like any other, and what the two enclose is
+            // the region extraction's answer -- the outer rectangle's region
+            // carries the circle as its hole, and the circle is its own disk.
             const ProfileExtraction n = extractClosedProfiles(sketch);
-            bool outerRejected = false;
+            bool anyNestedRejection = false;
             for (const ProfileRejection& rej : n.rejections) {
-                outerRejected |= rej.anchorEntityId == 3
-                                 && rej.why == CadStatus::NestedProfileUnsupported;
+                anyNestedRejection |= rej.why == CadStatus::NestedProfileUnsupported;
             }
-            r.check("CADR0_21_nested_outer_profile_refused_inner_kept",
-                    outerRejected && n.profiles.size() == 2 && n.profiles[0].anchorEntityId == 1
-                            && n.profiles[1].anchorEntityId == 2);
+            const SketchRegionExtraction regions = extractSketchRegions(sketch);
+            const SketchRegion* outerRegion = findSketchRegion(regions, 3);
+            r.check("CADR0_21_nested_outer_profile_is_a_region_with_the_inner_as_its_hole",
+                    !anyNestedRejection && n.profiles.size() == 3 && n.profiles[0].anchorEntityId == 1
+                            && n.profiles[1].anchorEntityId == 2 && n.profiles[2].anchorEntityId == 3
+                            && outerRegion != nullptr && outerRegion->holeAnchorIds.size() == 1u
+                            && outerRegion->holeAnchorIds[0] == 1u
+                            && validateCadBodyState(bodyState(sketch, 3)) == CadStatus::ProfileRegionMismatch);
             // Two profiles that merely overlap are both kept: each is a solid.
             CadSketch overlap;
             SketchRectangle a;

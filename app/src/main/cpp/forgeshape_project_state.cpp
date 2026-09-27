@@ -430,31 +430,9 @@ void mixPoint(uint64_t& hash, const SketchPoint& p) {
 // Every authored CAD value, because every one is in the file. Small by
 // construction -- the sketch is bounded -- so this is the values themselves
 // and not a proxy.
-void mixCad(uint64_t& hash, const CadBodyState& state) {
-    mixU64(hash, static_cast<uint64_t>(workplaneIndex(state.sketch.plane)));
-    // CAD-A3: the face support is project truth, so it is part of the semantic
-    // fingerprint -- a body re-supported on a different face is a different
-    // project and must trigger a checkpoint.
-    mixU64(hash, state.sketch.hasFaceSupport ? 1u : 0u);
-    if (state.sketch.hasFaceSupport) {
-        const TopoRef& ref = state.sketch.faceSupport;
-        mixU64(hash, static_cast<uint64_t>(ref.producerObjectId));
-        mixU64(hash, ref.producerLocalFeatureId);
-        mixU64(hash, cadFaceTokenCode(ref.face));
-        mixU64(hash, ref.lineageToken);
-    }
-    mixU64(hash, state.sketch.nextEntityId);
-    mixU64(hash, state.extrude.profileEntityId);
-    mixDouble(hash, state.extrude.depth);
-    mixU64(hash, static_cast<uint64_t>(extrudeDirectionIndex(state.extrude.direction)));
-    // `CAD-EXT-R1`: the extent is authored truth and reaches `.forge` bytes, so
-    // it moves the fingerprint. Mixed AFTER the fields that came before it, so
-    // a One Side project's fingerprint is exactly what it was: the mode index
-    // is 0 and the second distance 0.0 for every state built before this stage.
-    mixU64(hash, static_cast<uint64_t>(extrudeExtentModeIndex(state.extrude.extent)));
-    mixDouble(hash, state.extrude.secondDistance);
-    mixU64(hash, state.sketch.entities.size());
-    for (const SketchEntity& entity : state.sketch.entities) {
+void mixCadEntities(uint64_t& hash, const CadSketch& sketch) {
+    mixU64(hash, sketch.entities.size());
+    for (const SketchEntity& entity : sketch.entities) {
         mixU64(hash, entity.id());
         mixU64(hash, static_cast<uint64_t>(entity.kind()));
         if (const SketchLine* line = entity.line()) {
@@ -483,6 +461,88 @@ void mixCad(uint64_t& hash, const CadBodyState& state) {
             mixU64(hash, spline->points.size());
             for (const SketchPoint& p : spline->points) {
                 mixPoint(hash, p);
+            }
+        }
+    }
+}
+
+// `CAD-VERTICAL-SLICE-R1`: a feature's region selection beyond the R0 profile.
+// Mixed only when present, so a one-region-without-holes state keeps exactly
+// the fingerprint it always had.
+void mixCadRegions(uint64_t& hash, const ExtrudeFeature& extrude) {
+    if (extrude.profileHoleIds.empty() && extrude.additionalRegions.empty()) {
+        return;
+    }
+    mixU64(hash, 0x5245474Eull);  // "REGN": a region block follows
+    mixU64(hash, extrude.profileHoleIds.size());
+    for (SketchEntityId hole : extrude.profileHoleIds) {
+        mixU64(hash, hole);
+    }
+    mixU64(hash, extrude.additionalRegions.size());
+    for (const ProfileRegionRef& region : extrude.additionalRegions) {
+        mixU64(hash, region.outerAnchorId);
+        mixU64(hash, region.holeAnchorIds.size());
+        for (SketchEntityId hole : region.holeAnchorIds) {
+            mixU64(hash, hole);
+        }
+    }
+}
+
+void mixCad(uint64_t& hash, const CadBodyState& state) {
+    mixU64(hash, static_cast<uint64_t>(workplaneIndex(state.sketch.plane)));
+    // CAD-A3: the face support is project truth, so it is part of the semantic
+    // fingerprint -- a body re-supported on a different face is a different
+    // project and must trigger a checkpoint.
+    mixU64(hash, state.sketch.hasFaceSupport ? 1u : 0u);
+    if (state.sketch.hasFaceSupport) {
+        const TopoRef& ref = state.sketch.faceSupport;
+        mixU64(hash, static_cast<uint64_t>(ref.producerObjectId));
+        mixU64(hash, ref.producerLocalFeatureId);
+        mixU64(hash, cadFaceTokenCode(ref.face));
+        mixU64(hash, ref.lineageToken);
+    }
+    mixU64(hash, state.sketch.nextEntityId);
+    mixU64(hash, state.extrude.profileEntityId);
+    mixDouble(hash, state.extrude.depth);
+    mixU64(hash, static_cast<uint64_t>(extrudeDirectionIndex(state.extrude.direction)));
+    // `CAD-EXT-R1`: the extent is authored truth and reaches `.forge` bytes, so
+    // it moves the fingerprint. Mixed AFTER the fields that came before it, so
+    // a One Side project's fingerprint is exactly what it was: the mode index
+    // is 0 and the second distance 0.0 for every state built before this stage.
+    mixU64(hash, static_cast<uint64_t>(extrudeExtentModeIndex(state.extrude.extent)));
+    mixDouble(hash, state.extrude.secondDistance);
+    mixCadEntities(hash, state.sketch);
+    mixCadRegions(hash, state.extrude);
+    // The retained feature chain (`CAD-VERTICAL-SLICE-R1`): every later
+    // feature's whole authored truth. Mixed only when there is one.
+    if (!state.laterFeatures.empty()) {
+        mixU64(hash, 0x46454154ull);  // "FEAT"
+        mixU64(hash, state.laterFeatures.size());
+        for (const CadFeature& feature : state.laterFeatures) {
+            mixU64(hash, feature.featureId);
+            mixU64(hash, static_cast<uint64_t>(cadFeatureOperationIndex(feature.operation)));
+            mixU64(hash, feature.support.featureId);
+            mixU64(hash, cadFaceTokenCode(feature.support.face));
+            mixU64(hash, feature.support.lineageToken);
+            mixU64(hash, feature.sketch.nextEntityId);
+            mixU64(hash, feature.extrude.profileEntityId);
+            mixDouble(hash, feature.extrude.depth);
+            mixU64(hash, static_cast<uint64_t>(extrudeDirectionIndex(feature.extrude.direction)));
+            mixU64(hash, static_cast<uint64_t>(extrudeExtentModeIndex(feature.extrude.extent)));
+            mixDouble(hash, feature.extrude.secondDistance);
+            mixCadEntities(hash, feature.sketch);
+            mixU64(hash, 0x5245474Eull);
+            mixU64(hash, feature.extrude.profileHoleIds.size());
+            for (SketchEntityId hole : feature.extrude.profileHoleIds) {
+                mixU64(hash, hole);
+            }
+            mixU64(hash, feature.extrude.additionalRegions.size());
+            for (const ProfileRegionRef& region : feature.extrude.additionalRegions) {
+                mixU64(hash, region.outerAnchorId);
+                mixU64(hash, region.holeAnchorIds.size());
+                for (SketchEntityId hole : region.holeAnchorIds) {
+                    mixU64(hash, hole);
+                }
             }
         }
     }

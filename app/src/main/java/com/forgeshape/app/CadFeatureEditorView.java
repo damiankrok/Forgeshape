@@ -52,6 +52,14 @@ final class CadFeatureEditorView extends LinearLayout
     private final TextView apply;
     /** Reopens the body's sketch for editing (`SKETCH-UX-R1` F1). */
     private final TextView editSketch;
+    /**
+     * The body's features, in chain order (`CAD-VERTICAL-SLICE-R1`): the first
+     * sketch and extrusion, then each Add and Cut. A row is the way back into
+     * that feature's own sketch and extrusion; the list holds no feature of its
+     * own and is rebuilt from native on every refresh.
+     */
+    private final LinearLayout featureList;
+    private final double[] featureInfo = new double[NativeViewport.CAD_FEATURE_INFO_SIZE];
 
     private int draftDirection = NativeViewport.EXTRUDE_ALONG_NORMAL;
     private int profileKind = NativeViewport.CAD_PROFILE_NONE;
@@ -127,6 +135,11 @@ final class CadFeatureEditorView extends LinearLayout
         final LinearLayout.LayoutParams editParams = EditorControlStyles.rowParams(sectionGap);
         editParams.width = LayoutParams.MATCH_PARENT;
         addView(editSketch, editParams);
+
+        featureList = new LinearLayout(context);
+        featureList.setId(R.id.cad_feature_list);
+        featureList.setOrientation(VERTICAL);
+        addView(featureList, EditorControlStyles.rowParams(sectionGap));
 
         addView(EditorControlStyles.sectionLabel(context, context.getString(R.string.unit_selector)),
                 EditorControlStyles.rowParams(sectionGap));
@@ -209,6 +222,58 @@ final class CadFeatureEditorView extends LinearLayout
         directionRow.setVisibility(extent == NativeViewport.EXTENT_ONE_SIDE ? VISIBLE : GONE);
         showDirection();
         unitChips.showSelected(unit);
+        refreshFeatures(context);
+    }
+
+    /**
+     * Rebuilds the feature rows. Withdrawn for a body with ONE feature: its
+     * sketch is what Edit Sketch above already reopens, and a list of one is
+     * not a choice.
+     */
+    private void refreshFeatures(Context context) {
+        featureList.removeAllViews();
+        final long body = NativeViewport.sceneActiveBodyId();
+        final int count = NativeViewport.cadFeatureCount(body);
+        if (count <= 1) {
+            featureList.setVisibility(GONE);
+            return;
+        }
+        featureList.setVisibility(VISIBLE);
+        featureList.addView(EditorControlStyles.sectionLabel(context,
+                context.getString(R.string.cad_features_section)),
+                EditorControlStyles.rowParams(0));
+        final int gap = EditorControlStyles.dimen(context, R.dimen.row_gap_small);
+        for (int i = 0; i < count; i++) {
+            if (!NativeViewport.cadFeatureInfo(body, i, featureInfo)) {
+                break;
+            }
+            final long featureId = (long) featureInfo[NativeViewport.CAD_FEATURE_ID];
+            final int operation = (int) featureInfo[NativeViewport.CAD_FEATURE_OPERATION];
+            final String label = context.getString(R.string.cad_feature_row, i + 1,
+                    context.getString(operationName(operation)));
+            final TextView row = EditorControlStyles.listRow(context, R.id.cad_feature_row,
+                    label);
+            row.setTag(Long.valueOf(featureId));
+            row.setContentDescription(context.getString(R.string.cad_feature_row_description,
+                    label));
+            row.setOnClickListener(new OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    host.onEditCadFeatureRequested(featureId);
+                }
+            });
+            final LinearLayout.LayoutParams params = EditorControlStyles.rowParams(gap);
+            params.width = LayoutParams.MATCH_PARENT;
+            featureList.addView(row, params);
+        }
+    }
+
+    static int operationName(int operation) {
+        switch (operation) {
+            case NativeViewport.OPERATION_ADD: return R.string.sketch_operation_add;
+            case NativeViewport.OPERATION_CUT: return R.string.sketch_operation_cut;
+            default: return R.string.sketch_operation_new_body;
+        }
     }
 
     static int planeName(int plane) {
