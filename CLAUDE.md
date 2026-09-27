@@ -505,7 +505,8 @@ on the host, with no device, and is the fast native loop.
   `kMaxProfileRegions` (16) regions or `kMaxRegionHoles` (64) holes
   (`TooManyRegions`) are refused by name. **Finish Sketch auto-selects ONLY
   when exactly one region is selectable**; with more, nothing is chosen, there
-  is no arrow, Extrude is disabled and refused (`AmbiguousProfile`), and a Ready
+  is no arrow, the toolbar's Extrude is absent and a commit is refused
+  (`AmbiguousProfile`), and a Ready
   tap toggles the region under the finger. A selected region is hatched and a
   hole stays EMPTY. A single simple region still extrudes through the unchanged
   R0 float path, bit-identical to every earlier build.
@@ -550,8 +551,10 @@ on the host, with no device, and is the fast native loop.
   item for a New Body, tinted by operation through the existing selection-tint
   slot — and a commit applies that same evaluation. None of it moves a
   revision of truth, a history step, the fingerprint or the autosave. An
-  invalid candidate is named in the status line and the HUD badge and DISABLES
-  Extrude; native still refuses the commit.
+  invalid candidate is named in the status line and on the HUD's operation
+  badge, and the toolbar's Extrude is WITHDRAWN (a control that cannot succeed
+  is not drawn); the precision surface's pinned Extrude stays, because it
+  submits a typed depth first, and native still refuses an invalid commit.
 - **The canvas CAD HUD is compact and icon-first, and Ready withdraws the
   drawing chrome** (`CAD-VERTICAL-SLICE-R1`). One row at the arrow: the extent
   control (opening a three-icon palette), the exact value whose CENTRE stands on

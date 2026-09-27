@@ -163,7 +163,7 @@ When a later feature is refused, the refusal names that feature's id in
 - **Nothing becomes truth.** None of it moves a revision of truth, a history
   step, the fingerprint or the autosave.
 - **An invalid preview.** It is named in the status line and in the HUD badge,
-  and Extrude is disabled. Native still refuses the commit.
+  and the toolbar's Extrude is withdrawn. Native still refuses the commit.
 - **Timings.** See `PERF_NOTES.md`.
 
 ## 8. Not in this slice

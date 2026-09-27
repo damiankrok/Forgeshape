@@ -2524,6 +2524,13 @@ final class EditorWorkspaceView extends FrameLayout
                 (int) nativeSketch[NativeViewport.SKETCH_PLANE], activeHidden);
         if (sketchState == NativeViewport.SKETCH_READY) {
             refreshExtrudeReadiness();
+            if (lastReportedRegionSelection == null) {
+                // Entering Ready (Finish, Edit Feature, a recreate): what is
+                // selected now is the baseline a later tap is compared with.
+                lastReportedRegionSelection = regionSelectionSignature();
+            }
+        } else {
+            lastReportedRegionSelection = null;
         }
         toolbar.showEditingTransitions(true);
         // Display settings are native-owned and process-scoped, so on a resume
@@ -3169,10 +3176,12 @@ final class EditorWorkspaceView extends FrameLayout
 
     /** Whether the one native sketch session is open, read fresh every time. */
     /**
-     * The selected-region count the status line last reported. A change is how
-     * a Ready tap is told apart from an orbit that happened to end in a sketch.
+     * Which regions the status line last reported ({@link
+     * #regionSelectionSignature}), or null outside Ready. A change is how a
+     * Ready tap is told apart from an orbit that happened to end in a sketch;
+     * entering Ready resets it in {@link #syncFromNative()}.
      */
-    private int lastReportedRegionSelection = -1;
+    private String lastReportedRegionSelection;
 
     private boolean isSketching() {
         NativeViewport.sketchState(nativeSketch);
@@ -3519,16 +3528,21 @@ final class EditorWorkspaceView extends FrameLayout
     private void onSketchGestureSettled() {
         sketchEditor.refreshFromNative();
         NativeViewport.sketchState(nativeSketch);
+        final int lastStatus = (int) nativeSketch[NativeViewport.SKETCH_LAST_STATUS];
         if (nativeSketch[NativeViewport.SKETCH_STATE] == NativeViewport.SKETCH_READY) {
             // In Ready a tap chooses REGIONS (`CAD-VERTICAL-SLICE-R1`), and a
             // region choice changes what Extrude would make: the chrome is
             // re-read whole and the verdict on the new candidate is reported.
-            final int selected = selectedRegionCount();
-            if (selected != lastReportedRegionSelection) {
-                lastReportedRegionSelection = selected;
-                syncFromNative();
+            final String selection = regionSelectionSignature();
+            if (!selection.equals(lastReportedRegionSelection)) {
+                lastReportedRegionSelection = selection;
+                // The region toggle's own status is this report; keep the
+                // refusal bookkeeping in step so a later identical refusal is
+                // still reported.
+                lastReportedSketchStatus = lastStatus;
+                refreshExtrudeReadiness();
                 reportCandidateVerdict(getContext().getString(
-                        R.string.status_regions_selected, selected));
+                        R.string.status_regions_selected, selectedRegionCount()));
                 return;
             }
             // A drag of the arrow changes the candidate too: the commit
@@ -3567,25 +3581,63 @@ final class EditorWorkspaceView extends FrameLayout
         syncFromNative();
         NativeViewport.sketchState(nativeSketch);
         final int regions = (int) nativeSketch[NativeViewport.SKETCH_PROFILE_COUNT];
-        lastReportedRegionSelection = selectedRegionCount();
-        showStatus(regions > 1 && lastReportedRegionSelection == 0
+        lastReportedRegionSelection = regionSelectionSignature();
+        showStatus(regions > 1 && selectedRegionCount() == 0
                         ? context.getString(R.string.status_sketch_finished_tap_region, regions)
                         : context.getString(R.string.status_sketch_finished_region),
                 R.attr.fsTextSuccess);
     }
 
-    /** Enables Extrude only while the preview is a candidate a commit may make. */
+    /** Draws Extrude only while the preview is a candidate a commit may make. */
     private void refreshExtrudeReadiness() {
         NativeViewport.cadExtrudeToolState(nativeExtrude);
-        final int candidate = (int) nativeExtrude[NativeViewport.CAD_EXTRUDE_CANDIDATE_STATUS];
-        toolbar.showExtrudeReadiness(candidate == NativeViewport.CAD_OK,
-                CadStatusMessages.describe(getContext(), candidate));
+        toolbar.showExtrudeReadiness(
+                (int) nativeExtrude[NativeViewport.CAD_EXTRUDE_CANDIDATE_STATUS]
+                        == NativeViewport.CAD_OK);
+    }
+
+    /**
+     * WHICH regions the open session's extrusion holds, as their outer anchors
+     * in native's ascending order — so a tap that swaps one region for another
+     * is a change even though the count is not. Read fresh; bounded by the
+     * sixteen-region cap.
+     */
+    private String regionSelectionSignature() {
+        final int count = NativeViewport.sketchProfiles(null);
+        if (count <= 0) {
+            return "";
+        }
+        final long[] anchors = new long[count];
+        final int written = NativeViewport.sketchProfiles(anchors);
+        final double[] info = new double[NativeViewport.SKETCH_REGION_INFO_SIZE];
+        final StringBuilder signature = new StringBuilder();
+        for (int i = 0; i < written; i++) {
+            if (NativeViewport.sketchProfileInfo(anchors[i], info)
+                    && info[NativeViewport.SKETCH_REGION_SELECTED] != 0.0) {
+                signature.append(anchors[i]).append(',');
+            }
+        }
+        return signature.toString();
     }
 
     /** How many regions the open session's extrusion holds, read fresh. */
     private int selectedRegionCount() {
         NativeViewport.cadExtrudeToolState(nativeExtrude);
         return (int) nativeExtrude[NativeViewport.CAD_EXTRUDE_SELECTED_REGIONS];
+    }
+
+    /**
+     * A precision-surface act changed the staged candidate — a region row, a
+     * side chip (`CAD-VERTICAL-SLICE-R1`). The panel re-read itself; this brings
+     * the toolbar's Extrude and the canvas HUD to the same candidate and reports
+     * its verdict, without the full sync that would rewrite a half-typed field.
+     */
+    @Override
+    public void onSketchCandidateChanged() {
+        refreshExtrudeReadiness();
+        refreshWorldAnchoredUi();
+        lastReportedRegionSelection = regionSelectionSignature();
+        reportCandidateVerdict(null);
     }
 
     /**

@@ -422,7 +422,9 @@ public final class Ui3dStateCorrectionTest {
         pinchViewport(false);
         assertExtrudeClusterAttached("after_zoom_in");
 
-        // Two Sides, so the SECOND value's own anchor is exercised too.
+        // Two Sides, so the SECOND value's own anchor is exercised too. The
+        // three choices stand in the palette the one extent control opens.
+        press(R.id.cad_extrude_extent);
         press(R.id.cad_extrude_extent_two_sides);
         settleLayout();
         assertExtrudeClusterAttached("two_sides");
@@ -519,19 +521,24 @@ public final class Ui3dStateCorrectionTest {
                 return null;
             }
             final View placedView = Ui3dAuditRecorder.placedAncestor(leaf, container);
-            final float[] centre = Ui3dAuditRecorder.centreOf(placedView, viewport);
+            final float[] box = Ui3dAuditRecorder.centreOf(placedView, viewport);
+            // Since `CAD-VERTICAL-SLICE-R1` the HUD stands its VALUE -- not the
+            // whole row -- on the shaft's anchor, so the value's own centre is
+            // what is measured, and the row is where the value's offset inside
+            // it puts it.
+            final float[] centre = Ui3dAuditRecorder.centreOf(leaf, viewport);
             final float w = placedView.getWidth() * placedView.getScaleX();
             final float h = placedView.getHeight() * placedView.getScaleY();
             // Whether the clamp bites is decided from the ANCHOR, exactly as the
             // audit decides it: a box that does not fit at its anchor is held
             // inside the viewport, and the distance that leaves is correct.
-            final boolean clamped =
-                    Ui3dAuditRecorder.wouldClamp(placedView, viewport, expectX, expectY);
+            final boolean clamped = Ui3dAuditRecorder.wouldClamp(placedView, viewport,
+                    expectX - (centre[0] - box[0]), expectY - (centre[1] - box[1]));
             // A clamped control still has to be INSIDE, which is the whole of
             // UI3D-F-006: the bound is the viewport and not a padded container.
-            final boolean inside = centre[0] - w * 0.5f >= -1.0f && centre[1] - h * 0.5f >= -1.0f
-                    && (centre[0] + w * 0.5f <= viewport.getWidth() + 1.0f || w > viewport.getWidth())
-                    && (centre[1] + h * 0.5f <= viewport.getHeight() + 1.0f
+            final boolean inside = box[0] - w * 0.5f >= -1.0f && box[1] - h * 0.5f >= -1.0f
+                    && (box[0] + w * 0.5f <= viewport.getWidth() + 1.0f || w > viewport.getWidth())
+                    && (box[1] + h * 0.5f <= viewport.getHeight() + 1.0f
                             || h > viewport.getHeight());
             return new float[]{centre[0], centre[1], clamped ? 1f : 0f, inside ? 1f : 0f};
         });
@@ -546,7 +553,7 @@ public final class Ui3dStateCorrectionTest {
         final float dx = placed[0] - expectX;
         final float dy = placed[1] - expectY;
         final float dp = (float) Math.sqrt(dx * dx + dy * dy) / density;
-        assertTrue(where + ": the extrude cluster stands " + dp + " dp from its anchor"
+        assertTrue(where + ": the extrude value stands " + dp + " dp from its anchor"
                         + " (expected " + expectX + "," + expectY + " actual " + placed[0] + ","
                         + placed[1] + ")",
                 dp <= TOLERANCE_DP);

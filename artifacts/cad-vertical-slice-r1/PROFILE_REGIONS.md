@@ -81,7 +81,7 @@ Both sit far above anything a finger draws on a phone.
 
 - **Automatic selection.** `SketchSession::finish` selects automatically only
   when the sketch has **exactly one** selectable region. With more than one,
-  nothing is selected, there is no arrow, and Extrude is disabled and refused by
+  nothing is selected, there is no arrow, and the toolbar's Extrude is absent and refused by
   name (`CADVS_SES_02`, `_03`; device: `owner_rectangle_circle_region`).
 - **Choosing by tap.** In Ready a single-finger tap toggles the region under the
   finger (`sketchRegionAt`, innermost by area).

@@ -714,9 +714,14 @@ no touch.
 the orientation navigator and the Line dimension stand; in Ready all three are
 absent (`WorkspaceTrailingHostView.render`,
 `EditorWorkspaceView.refreshSketchViewportSurfaces`), Back to Sketch and Cancel
-stay, and Finish Sketch does not open the precision surface. The toolbar's and
-the precision surface's Extrude are disabled while native's candidate status is
-not `CAD_OK`, with the named reason in the description.
+stay, and Finish Sketch does not open the precision surface. The toolbar's
+Extrude is withdrawn while native's candidate status is not `CAD_OK`
+(`GlobalToolbarView.showExtrudeReadiness`), and the named reason is on the
+canvas operation badge; the precision surface's pinned Extrude stays, because
+it submits a typed depth before it commits. A precision-surface act that
+changes the candidate (a region row, a side chip) ends in
+`InspectorHost.onSketchCandidateChanged`, which brings the toolbar and the HUD
+to the same candidate without a full re-read.
 
 **One refresh path owns every world-anchored surface.**
 `EditorWorkspaceView.refreshWorldAnchoredUi()` recomputes ownership AND placement

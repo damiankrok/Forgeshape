@@ -938,8 +938,13 @@ public final class Ui3dStateAuditTest {
             }
             final View placed = Ui3dAuditRecorder.placedAncestor(leaf,
                     workspace.findViewById(R.id.cad_extrude_canvas));
-            final float[] centre = Ui3dAuditRecorder.centreOf(placed, viewport);
-            final boolean clamp = Ui3dAuditRecorder.wouldClamp(placed, viewport, expectX, expectY);
+            // The HUD stands its VALUE on the anchor (`CAD-VERTICAL-SLICE-R1`),
+            // so the value's centre is what is measured; the row is clamped
+            // where the value's offset inside it puts it.
+            final float[] box = Ui3dAuditRecorder.centreOf(placed, viewport);
+            final float[] centre = Ui3dAuditRecorder.centreOf(leaf, viewport);
+            final boolean clamp = Ui3dAuditRecorder.wouldClamp(placed, viewport,
+                    expectX - (centre[0] - box[0]), expectY - (centre[1] - box[1]));
             return new float[]{centre[0], centre[1], clamp ? 1f : 0f};
         });
         if (measured == null) {

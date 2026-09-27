@@ -119,6 +119,16 @@ public final class CadVerticalSliceTest {
         final int bodiesBefore = NativeViewport.sceneBodyCount();
         beginSketch(R.id.sketch_plane_xy);
         drawRectangle(4.0, 3.0);
+        // The drag snaps to the view-adaptive grid, so the rectangle is whatever
+        // native made of it (4 x 2.8 on the 0.2 m grid of a 2400 px phone); it
+        // is read back rather than assumed. The new entity is the selected one.
+        final double[] drawn = new double[NativeViewport.SKETCH_ENTITY_SIZE];
+        assertTrue(NativeViewport.sketchSelectedEntity(drawn));
+        assertEquals(NativeViewport.SKETCH_ENTITY_KIND_RECTANGLE,
+                (int) drawn[NativeViewport.SKETCH_ENTITY_KIND]);
+        final double rectWidth = drawn[NativeViewport.SKETCH_ENTITY_VALUES + 2];
+        final double rectArea = rectWidth * drawn[NativeViewport.SKETCH_ENTITY_VALUES + 3];
+        fact("rectangle_m", rectWidth + " x " + drawn[NativeViewport.SKETCH_ENTITY_VALUES + 3]);
         selectTool(rule.getScenario(), R.id.tool_rail_circle);
         dragSketch(rule.getScenario(), 0.0, 0.0, 0.8, 0.0);
         assertEquals("a rectangle and a circle", 2.0,
@@ -160,8 +170,8 @@ public final class CadVerticalSliceTest {
         assertTrue("and one is the disk", disk != NativeViewport.NO_OBJECT);
 
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            assertFalse("Extrude is disabled until a region is chosen",
-                    workspace.findViewById(R.id.extrude_sketch).isEnabled());
+            assertFalse("Extrude is absent until a region is chosen: it could not succeed",
+                    workspace.findViewById(R.id.extrude_sketch).isShown());
             return null;
         });
         // Extrude with nothing chosen is refused by name and creates nothing.
@@ -183,10 +193,16 @@ public final class CadVerticalSliceTest {
         assertTrue(NativeViewport.sketchProfileInfo(disk, info));
         assertEquals("the disk is not", 0.0, info[NativeViewport.SKETCH_REGION_SELECTED], 0.0);
         final double diskArea = info[NativeViewport.SKETCH_REGION_AREA];
-        assertEquals("the ring is the rectangle minus the disk", 12.0 - diskArea, ringArea, 1e-6);
+        assertEquals("the ring is the rectangle minus the disk", rectArea - diskArea, ringArea,
+                1e-6);
         assertEquals("one region in the extrusion", 1.0,
                 toolState()[NativeViewport.CAD_EXTRUDE_SELECTED_REGIONS], 0.0);
         assertEquals("the arrow is up", 1.0, toolState()[NativeViewport.CAD_EXTRUDE_ACTIVE], 0.0);
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            assertTrue("and Extrude is drawn now that it can succeed",
+                    workspace.findViewById(R.id.extrude_sketch).isShown());
+            return null;
+        });
         // The PREVIEW is the ring: the candidate the renderer draws measures
         // as the rectangle minus the disk, one shell -- a real hole, not a
         // filled outer loop.
@@ -242,7 +258,7 @@ public final class CadVerticalSliceTest {
         assertEquals("volume = ring area x depth", ringArea * 0.5,
                 m[NativeViewport.CAD_MEASURE_VOLUME], ringArea * 0.5 * VOLUME_TOLERANCE);
         assertEquals("one watertight shell", 1.0, m[NativeViewport.CAD_MEASURE_COMPONENTS], 0.0);
-        assertEquals("the full rectangle's X extent", 4.0,
+        assertEquals("the full rectangle's X extent", rectWidth,
                 m[NativeViewport.CAD_MEASURE_MAX_X] - m[NativeViewport.CAD_MEASURE_MIN_X], 1e-4);
         capture("03_ring_extruded");
     }
@@ -541,11 +557,13 @@ public final class CadVerticalSliceTest {
         assertEquals("the preview names the refusal", NativeViewport.CAD_CUT_NO_INTERSECTION,
                 (int) toolState()[NativeViewport.CAD_EXTRUDE_CANDIDATE_STATUS]);
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            final View commit = workspace.findViewById(R.id.extrude_sketch);
-            assertFalse("Extrude is disabled while the preview is invalid", commit.isEnabled());
-            final CharSequence why = commit.getContentDescription();
-            fact("refusal.extrude_description", why);
-            assertTrue("and says why", why != null && why.toString().contains(
+            assertFalse("Extrude is absent while the preview is invalid",
+                    workspace.findViewById(R.id.extrude_sketch).isShown());
+            // The reason is named where the preview is: on the operation badge.
+            final CharSequence why = workspace.cadExtrudeCanvas()
+                    .findViewById(R.id.cad_extrude_operation).getContentDescription();
+            fact("refusal.badge_description", why);
+            assertTrue("and the badge says why: " + why, why != null && why.toString().contains(
                     CadStatusMessages.describe(activity, NativeViewport.CAD_CUT_NO_INTERSECTION)));
             return null;
         });

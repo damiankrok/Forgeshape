@@ -76,6 +76,13 @@ final class GlobalToolbarView extends LinearLayout {
     /** The sketch's two forward transitions, one per sketch state. */
     private final TextView finishSketchButton;
     private final TextView extrudeButton;
+    /**
+     * Whether the staged extrusion's candidate is one a commit may make, as the
+     * workspace last read it; Extrude is drawn in Ready only while it is.
+     */
+    private boolean extrudeReady = true;
+    /** The sketch state {@link #showContext} last drew. */
+    private int sketchState = NativeViewport.SKETCH_INACTIVE;
     private final TextView exportAction;
     private final ImageView projectActionsButton;
     private final TextView backToHomeButton;
@@ -814,7 +821,9 @@ final class GlobalToolbarView extends LinearLayout {
                 && !activeHidden ? VISIBLE : GONE);
         finishSketchButton.setVisibility(
                 sketchState == NativeViewport.SKETCH_EDITING ? VISIBLE : GONE);
-        extrudeButton.setVisibility(sketchState == NativeViewport.SKETCH_READY ? VISIBLE : GONE);
+        this.sketchState = sketchState;
+        extrudeButton.setVisibility(sketchState == NativeViewport.SKETCH_READY && extrudeReady
+                ? VISIBLE : GONE);
         if (this.imported != imported) {
             // The way out of Sculpt is labelled by the REPRESENTATION as well as
             // by the width the row can spare, and that label is written from the
@@ -830,20 +839,24 @@ final class GlobalToolbarView extends LinearLayout {
     /**
      * Whether the staged extrusion can be committed (`CAD-VERTICAL-SLICE-R1`).
      *
-     * <p>The preview is the candidate a commit would make; while it is not a
-     * valid one — no region chosen, a disjoint Add, a Cut that misses — Extrude
-     * is DISABLED rather than left to refuse, and its description carries the
-     * named reason so the verdict is not colour alone. Native refuses the
-     * commit all the same: disabling a control is not removing a guard.
+     * <p>The preview is the candidate a commit would make. While it is not a
+     * valid one — no region chosen, a disjoint Add, a Cut that misses — the
+     * toolbar's Extrude is ABSENT rather than drawn and then refused: a control
+     * that cannot succeed is not drawn. The named reason is on the canvas
+     * operation badge and in the status line, where the preview is. Native
+     * refuses the commit all the same: withdrawing a control is not removing a
+     * guard.
      */
-    void showExtrudeReadiness(boolean ready, CharSequence reason) {
-        extrudeButton.setEnabled(ready);
-        extrudeButton.setAlpha(ready ? 1f : 0.45f);
-        final CharSequence label = getContext().getString(R.string.extrude);
-        extrudeButton.setContentDescription(ready || reason == null
-                ? label
-                : getContext().getString(R.string.extrude_unavailable_description, label,
-                        reason));
+    void showExtrudeReadiness(boolean ready) {
+        if (extrudeReady == ready) {
+            return;
+        }
+        extrudeReady = ready;
+        if (sketchState == NativeViewport.SKETCH_READY) {
+            extrudeButton.setVisibility(ready ? VISIBLE : GONE);
+            applyEditingComposition();
+            requestLayout();
+        }
     }
 
     /** Marks the Display button active while its popover is open. */

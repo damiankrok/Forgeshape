@@ -80,6 +80,14 @@ interface InspectorHost {
      */
     void onEditCadFeatureRequested(long featureId);
 
+    /**
+     * A precision-surface act changed the open sketch's staged extrusion — a
+     * region row or a side chip (`CAD-VERTICAL-SLICE-R1`). The host brings the
+     * toolbar's Extrude and the canvas HUD to the same candidate the panel now
+     * shows, and reports its verdict.
+     */
+    void onSketchCandidateChanged();
+
     /** The UI-owned draft, presentation and layout state. */
     EditorUiState uiState();
 }

@@ -15,7 +15,7 @@ each part of it.
 | State | What is on screen | What is absent |
 | --- | --- | --- |
 | **Drawing** (Editing) | the drawing tools on the Tool Rail, the orientation navigator, a selected Line's dimension, Finish Sketch, Cancel | the HUD (nothing to extrude yet) |
-| **Extruding** (Ready) | the HUD at the arrow, the region hatch and preview, Extrude (disabled while the preview is invalid), Back to Sketch, Cancel, the precision toggle | the Tool Rail, the orientation navigator, the Line dimension; the precision surface stays collapsed |
+| **Extruding** (Ready) | the HUD at the arrow, the region hatch and preview, Extrude (absent while the preview is invalid), Back to Sketch, Cancel, the precision toggle | the Tool Rail, the orientation navigator, the Line dimension; the precision surface stays collapsed |
 
 - **One rule.** `SketchChromePolicy` is the single statement of the table above.
   `SketchChromePolicyTest` pins it in every state.
@@ -121,8 +121,8 @@ and its description says "selected". Colour is never the only carrier.
 
 Region selection is described in `PROFILE_REGIONS.md` §4–5.
 
-- **Choosing.** With more than one region nothing is chosen and Extrude is
-  disabled. The status line says how many regions were found. A tap toggles
+- **Choosing.** With more than one region nothing is chosen and the toolbar's
+  Extrude is absent. The status line says how many regions were found. A tap toggles
   the region under the finger.
 - **Showing the choice.** The chosen region is hatched, and a hole stays empty.
 - **Previewing.** The preview updates on every change.

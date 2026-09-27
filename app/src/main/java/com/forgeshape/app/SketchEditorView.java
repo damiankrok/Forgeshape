@@ -327,12 +327,10 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
         depthField.setText(unit.format(nativeSketch[NativeViewport.SKETCH_EXTRUDE_DEPTH]));
         NativeViewport.cadExtrudeToolState(nativeExtrude);
         refreshOperations();
-        // The pinned Extrude follows the preview's verdict, on the toolbar's
-        // terms: disabled while the candidate is not one a commit may make.
-        final boolean committable = nativeExtrude[NativeViewport.CAD_EXTRUDE_CANDIDATE_STATUS]
-                == NativeViewport.CAD_OK;
-        extrude.setEnabled(committable);
-        extrude.setAlpha(committable ? 1f : 0.45f);
+        // The pinned Extrude stays live even while the preview is refused,
+        // unlike the toolbar's: it SUBMITS the typed depth first, so it is how
+        // a depth that makes the candidate valid again reaches native. A commit
+        // that is still invalid is refused by name, and changes nothing.
         directionRow.setVisibility(
                 nativeExtrude[NativeViewport.CAD_EXTRUDE_EXTENT] == NativeViewport.EXTENT_ONE_SIDE
                         ? VISIBLE
@@ -407,8 +405,18 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
             final long anchor = anchors[i];
             String label = context.getString(R.string.tool_polyline);
             boolean selected = anchor == chosen;
+            // A region native reports unselectable (its holes overlap, or it
+            // has too many) is listed as a STATEMENT of why, never as a row
+            // that is tapped and then refused.
+            int refusal = NativeViewport.CAD_OK;
             if (NativeViewport.sketchProfileInfo(anchor, profileInfo)) {
                 selected = profileInfo[NativeViewport.SKETCH_REGION_SELECTED] != 0.0;
+                if (profileInfo[NativeViewport.SKETCH_REGION_SELECTABLE] == 0.0) {
+                    refusal = (int) profileInfo[NativeViewport.SKETCH_REGION_STATUS];
+                    if (refusal == NativeViewport.CAD_OK) {
+                        refusal = NativeViewport.CAD_PROFILE_REGION_MISMATCH;
+                    }
+                }
                 final String area = LengthUnit.formatArea(
                         host.uiState().displayUnit(), profileInfo[2]);
                 switch ((int) profileInfo[0]) {
@@ -430,19 +438,29 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
                     label = context.getString(R.string.sketch_region_holes, label, holes);
                 }
             }
+            if (refusal != NativeViewport.CAD_OK) {
+                label = context.getString(R.string.sketch_region_unselectable, label,
+                        CadStatusMessages.describe(context, refusal));
+            }
             final TextView chip = EditorControlStyles.listRow(context,
                     R.id.sketch_profile_option, label);
             chip.setTag(Long.valueOf(anchor));
-            chip.setContentDescription(context.getString(selected
-                    ? R.string.sketch_region_selected_description
-                    : R.string.sketch_region_description, label));
+            chip.setContentDescription(refusal != NativeViewport.CAD_OK ? label
+                    : context.getString(selected
+                            ? R.string.sketch_region_selected_description
+                            : R.string.sketch_region_description, label));
             EditorControlStyles.setListRowActive(chip, selected);
-            chip.setOnClickListener(new OnClickListener() {
-                @Override
-                public void onClick(View v) {
-                    onProfileChosen(anchor);
-                }
-            });
+            if (refusal == NativeViewport.CAD_OK) {
+                chip.setOnClickListener(new OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        onProfileChosen(anchor);
+                    }
+                });
+            } else {
+                chip.setClickable(false);
+                chip.setFocusable(false);
+            }
             final LinearLayout.LayoutParams params = EditorControlStyles.rowParams(i == 0 ? 0 : gap);
             params.width = LayoutParams.MATCH_PARENT;
             profileChooser.addView(chip, params);
@@ -494,6 +512,7 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
             return;
         }
         refreshFromNative();
+        host.onSketchCandidateChanged();
     }
 
     private void onDirectionChosen(int direction) {
@@ -504,6 +523,7 @@ final class SketchEditorView extends LinearLayout implements PropertyInspectorVi
         // truth rather than the tap.
         submitDepth(direction);
         refreshFromNative();
+        host.onSketchCandidateChanged();
     }
 
     /** Submits the depth field with the session's own direction. */

@@ -31,15 +31,13 @@
     <string name="sketch_region_one_hole">%1$s, 1 hole</string>
     <string name="sketch_region_holes">%1$s, %2$d holes</string>
     <string name="sketch_region_description">Region: %1$s. Not selected.</string>
+    <string name="sketch_region_unselectable">%1$s — cannot be extruded: %2$s</string>
     <string name="sketch_region_selected_description">Region: %1$s. Selected.</string>
 
     <!-- The CAD Body's feature list. -->
     <string name="cad_features_section">Features</string>
     <string name="cad_feature_row">%1$d. Extrude — %2$s</string>
     <string name="cad_feature_row_description">%1$s. Edit this feature.</string>
-
-    <!-- Extrude while the preview is not something a commit may make. -->
-    <string name="extrude_unavailable_description">%1$s, unavailable: %2$s</string>
 
     <!-- Status verdicts. -->
     <string name="status_sketch_finished_region">Sketch finished — the region is ready to extrude.</string>
