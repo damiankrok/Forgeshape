@@ -1053,6 +1053,127 @@ int runSceneSelfTests(SceneSelfTestResult* out, int max) {
         r.check("obj018a_14_the_selection_fallback_is_unchanged",
                 scene.activeBodyId() == firstId);
     }
+
+    // -----------------------------------------------------------------------
+    // S027 -- Sculpt Isolate: the restriction a snapshot is GIVEN (Stage027)
+    // -----------------------------------------------------------------------
+    //
+    // The whole domain half of Isolate, with no device and no GPU: the filter
+    // lives in the one loop that already enforces Hide, composes with it, and
+    // writes nothing anywhere.
+    {
+        ConstructionScene scene;
+        ConstructionHistory history(scene);
+        SceneObject& far_ = scene.bodyAt(0);
+        SceneObject& near_ = scene.addBody();
+        SceneObject& other = scene.addBody();
+        // The occluder case Isolate exists for: `near_` stands between the
+        // camera and `far_` on the centre ray.
+        placeBodyAt(far_, 0.0, 0.0, -4.0);
+        placeBodyAt(near_, 0.0, 0.0, 4.0);
+        placeBodyAt(other, 30.0, 0.0, 0.0);
+        publishBody(far_);
+        publishBody(near_);
+        publishBody(other);
+        const ObjectId farId = far_.objectId();
+        const ObjectId nearId = near_.objectId();
+        const ObjectId otherId = other.objectId();
+        const MeshRevision farRevision = far_.meshStore().current()->revision();
+        const size_t depthBefore = history.undoDepth();
+
+        const SceneSnapshot all = scene.snapshot();
+        const SceneSnapshot noRestriction = scene.snapshot(SceneViewRestriction{});
+        r.check("s027_01_no_restriction_is_the_unrestricted_list",
+                all.size() == 3 && noRestriction.size() == 3
+                    && noRestriction[0].objectId == farId && noRestriction[1].objectId == nearId
+                    && noRestriction[2].objectId == otherId);
+
+        SceneViewRestriction onlyFar;
+        onlyFar.isolateTo = farId;
+        const SceneSnapshot isolated = scene.snapshot(onlyFar);
+        r.check("s027_02_isolate_keeps_exactly_the_isolated_body",
+                isolated.size() == 1 && isolated[0].objectId == farId);
+        r.check("s027_03_the_isolated_item_is_the_same_mesh_model_and_selection",
+                isolated.size() == 1 && isolated[0].mesh.get() == all[0].mesh.get()
+                    && std::memcmp(&isolated[0].model, &all[0].model, sizeof(Mat4)) == 0
+                    && isolated[0].selected == all[0].selected);
+
+        // Picking follows because it casts against the same list: un-isolated,
+        // the near body wins the centre ray; isolated to the far body, the ray
+        // reaches it -- the occluder no longer blocks.
+        const CameraSnapshot camera = cameraAt(Vec3{0.0f, 0.0f, 12.0f});
+        const SceneHit before = pickSceneSnapshot(camera, kCentreX, kCentreY, kViewportWidth,
+                                                  kViewportHeight, all);
+        const SceneHit after = pickSceneSnapshot(camera, kCentreX, kCentreY, kViewportWidth,
+                                                 kViewportHeight, isolated);
+        r.check("s027_04_unisolated_the_occluder_takes_the_centre_ray",
+                before.hit && before.objectId == nearId);
+        r.check("s027_05_isolated_the_ray_reaches_the_isolated_body",
+                after.hit && after.objectId == farId);
+
+        // Durable Hide composes: a hidden body stays out, and isolating it
+        // cannot bring it back.
+        setSceneBodyVisible(otherId, false, scene, history);
+        const size_t depthAfterHide = history.undoDepth();
+        r.check("s027_06_a_hidden_body_stays_out_of_the_unrestricted_list",
+                scene.snapshot().size() == 2);
+        SceneViewRestriction onlyHidden;
+        onlyHidden.isolateTo = otherId;
+        r.check("s027_07_isolating_a_hidden_body_does_not_bring_it_back",
+                scene.snapshot(onlyHidden).empty());
+
+        // A target no body carries draws NOTHING rather than a substitute.
+        SceneViewRestriction gone;
+        gone.isolateTo = 987654321u;
+        r.check("s027_08_an_unknown_isolate_target_draws_nothing", scene.snapshot(gone).empty());
+
+        // Neutral: taking restricted snapshots wrote no visibility, recorded no
+        // step and minted no revision.
+        (void)scene.snapshot(onlyFar);
+        r.check("s027_09_isolate_writes_no_visibility",
+                far_.visible() && near_.visible() && !other.visible());
+        r.check("s027_10_isolate_records_no_history_step",
+                history.undoDepth() == depthAfterHide && depthAfterHide == depthBefore + 1);
+        r.check("s027_11_isolate_mints_no_revision",
+                far_.meshStore().current()->revision() == farRevision);
+        r.check("s027_12_isolate_changes_no_identity_or_order",
+                scene.bodyCount() == 3 && scene.bodyAt(0).objectId() == farId
+                    && scene.bodyAt(1).objectId() == nearId
+                    && scene.bodyAt(2).objectId() == otherId);
+    }
+
+    // The session half: where the value lives, and when it is cleared
+    // (OWNER LIFE-1 = clear on every entry into and exit from Sculpt).
+    {
+        ConstructionScene scene;
+        SceneObject& body = scene.bodyAt(0);
+        const ObjectId id = body.objectId();
+        ConstructionMesh source;
+        const bool built = buildSculptSourceMesh(body, &source);
+        SculptSession session;
+        session.bindTarget(&body.frozenSculpt());
+        r.check("s027_13_isolate_is_refused_outside_sculpt",
+                built && !session.setIsolate(id) && session.isolateTarget() == kNoObject);
+        const bool froze = session.freezeToSculpt(source, id);
+        r.check("s027_14_start_sculpting_opens_unisolated",
+                froze && session.inSculptMode() && session.isolateTarget() == kNoObject);
+        r.check("s027_15_isolate_turns_on_in_sculpt",
+                session.setIsolate(id) && session.isolateTarget() == id);
+        const bool reset = session.freezeToSculpt(source, id);
+        r.check("s027_16_a_reset_from_source_keeps_the_view",
+                reset && session.isolateTarget() == id);
+        session.enterConstruction();
+        r.check("s027_17_back_to_construction_clears_it", session.isolateTarget() == kNoObject);
+        const bool resumed = session.enterSculpt();
+        r.check("s027_18_resume_opens_unisolated_nothing_remembered",
+                resumed && session.isolateTarget() == kNoObject);
+        session.setIsolate(id);
+        session.enterSculpt();  // a loaded Sculpt project enters the same way
+        r.check("s027_19_every_entry_opens_unisolated", session.isolateTarget() == kNoObject);
+        session.setIsolate(id);
+        r.check("s027_20_isolate_turns_off_with_no_object",
+                session.setIsolate(kNoObject) && session.isolateTarget() == kNoObject);
+    }
     return r.n;
 }
 

@@ -1435,6 +1435,11 @@ bool SculptSession::freezeToSculpt(const ConstructionMesh& source, ObjectId obje
     if (!target().mesh.freezeFrom(source, objectId, outWhy)) {
         return false;  // mode, the previous frozen mesh and its history all stand
     }
+    // Start Sculpting opens un-isolated; a Reset from source, which is already
+    // in Sculpt, keeps the view it had -- Isolate is not geometry.
+    if (mode_ != ProductMode::Sculpt) {
+        isolateTarget_ = kNoObject;
+    }
     // Undo does not cross a Freeze. Every retained entry names positions in a
     // mesh that no longer exists, and a destructive Reset from source is the
     // user saying the previous sculpt is gone — offering to walk back into it
@@ -1448,6 +1453,9 @@ bool SculptSession::freezeToSculpt(const ConstructionMesh& source, ObjectId obje
 void SculptSession::enterConstruction() {
     cancelStroke();
     mode_ = ProductMode::Construction;
+    // Back to Construction leaves nothing isolated behind, and nothing is
+    // remembered for Resume (OWNER LIFE-1 = clear).
+    isolateTarget_ = kNoObject;
     // The Frozen Sculpt Mesh is deliberately kept, untouched, so returning to
     // Sculpt restores the prior edits without re-freezing. Nothing at all is
     // written back into the Construction Source. The active tool is kept too:
@@ -1465,6 +1473,8 @@ bool SculptSession::enterSculpt() {
     }
     cancelStroke();
     mode_ = ProductMode::Sculpt;
+    // Resume -- and a loaded Sculpt project -- opens un-isolated.
+    isolateTarget_ = kNoObject;
     return true;
 }
 

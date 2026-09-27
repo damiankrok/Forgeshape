@@ -1285,11 +1285,15 @@ to Construction, select another body and sculpt that one too — then come back 
 the first and Resume, and its own sculpting is exactly as it was left. The two do
 not share a mesh, a history or a stale-source warning, and sculpting one can
 never move a vertex of the other. The other bodies stay visible while you sculpt,
-so you can see what you are working against.
+so you can see what you are working against — unless you **Isolate** the body you
+are sculpting (below).
 
 Which body is being sculpted is fixed for as long as Sculpt Mode lasts: to work
 on a different one, go **Back to Construction** — **Back to Imported Mesh** over
-an imported object — select it there, and Start Sculpting or Resume. What is *not* per body is the brush — the tool you are
+an imported object — select it there, and Start Sculpting or Resume. A tap in the
+viewport does not change that either: tapping another body while sculpting
+neither selects it nor moves the sculpting to it, and a tap on empty space
+leaves the selection exactly as it was. What is *not* per body is the brush — the tool you are
 holding and its Radius and Strength stay exactly as you set them when you move
 between bodies, for the same reason they stay put when you switch tools.
 
@@ -1382,6 +1386,25 @@ and Back to Imported Mesh still showing the original.
 **Sending it to another program** follows the same rule every sculpted body
 already follows: exporting while you are sculpting writes the sculpted shape, and
 exporting from the imported view writes the imported shape.
+
+### Isolate
+
+**Isolate** in the Sculpt Property Inspector shows the body you are sculpting and
+nothing else, so a body standing in front of it no longer hides it — the brush
+never touched that body anyway, only your view of the one underneath did. It is
+one control with two states: **Isolate**, then **Exit Isolate**. It is only there
+while sculpting.
+
+It is a way of looking, not an edit. It hides nothing in the project: the other
+bodies keep their Show/Hide state, nothing is saved or checkpointed because of
+it, and Undo never steps through it. It stays on while you sculpt, orbit, pan,
+zoom and turn the device. **Back to Construction turns it off**, and Resume Sculpt
+always starts with every body in view.
+
+A **hidden** body cannot be sculpted: while the selected body is hidden, Start
+Sculpting and Resume Sculpt are not offered. Show it again from its Objects row
+in Construction and they come back. Hide itself stays a Construction act — the
+Objects rows keep their Show/Hide control out of Sculpt, as before.
 
 ### One finger on the model sculpts; anywhere else navigates
 

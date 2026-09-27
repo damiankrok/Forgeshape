@@ -865,6 +865,33 @@ public:
     // entering Sculpt then requires an explicit Freeze.
     bool enterSculpt();
 
+    // Sculpt Isolate (Stage027): the one body the viewport is restricted to
+    // while sculpting, so a body standing between the camera and the target no
+    // longer hides it -- the stroke ray has never consulted other bodies, so an
+    // occluder hid the target from the eye without blocking the brush.
+    //
+    // A VIEW decision and nothing else: session-only, native-owned, never
+    // serialized, never in a history step, a checkpoint or the fingerprint,
+    // never a visibility write and never an AppPreferences field. It holds one
+    // ObjectId at most. Every transition into or out of Sculpt clears it --
+    // Start and Resume open un-isolated and Back leaves nothing isolated behind
+    // (OWNER LIFE-1 = clear) -- while a Reset from source, which stays in
+    // Sculpt, keeps it, because Isolate is not geometry.
+    //
+    // `setIsolate` refuses outside Sculpt (returns false, changes nothing);
+    // `kNoObject` turns it off. `isolateTarget()` answers kNoObject outside
+    // Sculpt, so a stale value can never restrict a Construction view.
+    bool setIsolate(ObjectId objectId) {
+        if (mode_ != ProductMode::Sculpt) {
+            return false;
+        }
+        isolateTarget_ = objectId;
+        return true;
+    }
+    ObjectId isolateTarget() const {
+        return mode_ == ProductMode::Sculpt ? isolateTarget_ : kNoObject;
+    }
+
     // Stale-source policy.
     //
     // When the Construction Source changes while a Frozen Sculpt Mesh exists,
@@ -1063,6 +1090,9 @@ private:
     float radiusPixels_ = kDefaultBrushRadiusPixels;
     float strength_ = kDefaultBrushStrength;
     uint64_t strokeCount_ = 0;
+    // Session-only view state; see setIsolate(). Not per body: there is one
+    // viewport and at most one isolated body in it.
+    ObjectId isolateTarget_ = kNoObject;
 
     // PER BODY, bound to whichever body is active. See bindTarget().
     FrozenSculpt* target_ = nullptr;

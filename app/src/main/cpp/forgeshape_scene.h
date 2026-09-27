@@ -278,6 +278,19 @@ struct SceneDrawItem {
 
 using SceneSnapshot = std::vector<SceneDrawItem>;
 
+// A restriction the CALLER hands `ConstructionScene::snapshot` (Stage027,
+// Sculpt Isolate). The scene never reaches out for one: it is a value it is
+// GIVEN, so the scene learns no presentation concept and reads no session,
+// while the one list the renderer draws and CPU picking casts against is
+// still decided in exactly one loop. It composes with durable visibility --
+// it can only remove bodies from the list, never put a hidden one back.
+struct SceneViewRestriction {
+    // The one body the list is restricted to; `kNoObject` is no restriction.
+    // An id no body carries yields an EMPTY list rather than a guessed
+    // substitute: nothing is drawn in place of a body that is gone.
+    ObjectId isolateTo = kNoObject;
+};
+
 // ---------------------------------------------------------------------------
 // The scene
 // ---------------------------------------------------------------------------
@@ -383,7 +396,11 @@ public:
     // independent body, and the producer's world model composed with the
     // resolved face frame for a face-supported CAD body (`CAD-A3`). A
     // face-supported body whose support cannot resolve is left out.
-    SceneSnapshot snapshot() const;
+    //
+    // `restriction` is a value the caller hands in (see SceneViewRestriction);
+    // the default is no restriction, which is every caller that is not the
+    // viewport's own list.
+    SceneSnapshot snapshot(const SceneViewRestriction& restriction = {}) const;
 
     // The world model matrix a body draws and picks at, resolving a face
     // support against its producer chain. Returns false -- writing nothing --
@@ -534,5 +551,13 @@ bool buildSculptSourceMesh(const SceneObject& body, ConstructionMesh* out);
 // `sculptSession()` and `constructionTransform()` are all defined in terms of
 // this scene's ACTIVE body.
 ConstructionScene& constructionScene();
+
+// THE list the viewport draws and taps pick against: the process scene's
+// snapshot under the restriction the Sculpt session currently holds (Sculpt
+// Isolate, Stage027). The renderer and `pickScene` both call this and nothing
+// else, so "not drawn" and "not picked" stay one fact under an isolate exactly
+// as they are under Hide -- neither consumer carries a predicate of its own.
+// Caller holds the state mutex, as for every other read of the scene.
+SceneSnapshot viewSceneSnapshot();
 
 }  // namespace forgeshape

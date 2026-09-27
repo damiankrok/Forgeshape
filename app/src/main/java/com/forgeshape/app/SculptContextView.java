@@ -43,6 +43,7 @@ final class SculptContextView extends LinearLayout {
 
     private final InspectorHost host;
     private final TextView meshSummary;
+    private final TextView isolate;
     private final TextView maskSummary;
     private final TextView clearMask;
     private final TextView staleWarning;
@@ -75,6 +76,25 @@ final class SculptContextView extends LinearLayout {
         meshSummary.setLineSpacing(
                 EditorControlStyles.dimen(context, R.dimen.text_line_spacing), 1.0f);
         addView(meshSummary, EditorControlStyles.rowParams(0));
+
+        // Sculpt Isolate (Stage027; OWNER UI-1 = b, the Sculpt Property
+        // Inspector). ONE control with two states, placed first because it
+        // decides what the rest of the viewport shows. It holds no state of its
+        // own: the label is read back from native on every refresh, so the
+        // control and the viewport cannot become two answers. This view is the
+        // Sculpt inspector's body, so the control does not exist in
+        // Construction or Sketch at all -- absent, not disabled.
+        isolate = EditorControlStyles.actionChip(context, R.id.sculpt_isolate,
+                context.getString(R.string.sculpt_isolate));
+        isolate.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                onIsolateToggled();
+            }
+        });
+        final LinearLayout.LayoutParams isolateParams = EditorControlStyles.rowParams(gap);
+        isolateParams.width = ViewGroup.LayoutParams.MATCH_PARENT;
+        addView(isolate, isolateParams);
 
         // The Sculpt Mask (`SCULPT-FCM-R1`), as a caption and one action.
         //
@@ -139,6 +159,17 @@ final class SculptContextView extends LinearLayout {
                 context.getString(R.string.sculpt_gesture_rule,
                         context.getString(TOOL_HINTS[tool]))));
         meshSummary.setContentDescription(meshSummary.getText());
+
+        // The isolate control names the act a tap performs next, from native
+        // truth. Drawn only while Sculpt is on; outside it the control is gone.
+        final boolean sculpting = NativeViewport.productMode() == NativeViewport.MODE_SCULPT;
+        isolate.setVisibility(sculpting ? VISIBLE : GONE);
+        final boolean isolated = NativeViewport.sculptIsolated();
+        isolate.setText(context.getString(
+                isolated ? R.string.sculpt_isolate_exit : R.string.sculpt_isolate));
+        isolate.setContentDescription(context.getString(isolated
+                ? R.string.sculpt_isolate_exit_description : R.string.sculpt_isolate_description));
+        isolate.setSelected(isolated);
 
         // The mask row. Native code owns BOTH answers: how many vertices carry
         // a mask, and whether Clear Mask could succeed right now. This layer
@@ -248,6 +279,19 @@ final class SculptContextView extends LinearLayout {
      * <p>A refusal changes nothing at all, and says so rather than leaving the
      * user to infer it from a mask that is still there.
      */
+    /**
+     * Turns the Sculpt Isolate on or off. A view decision: native records no
+     * history step, writes no visibility and moves no fingerprint, so there is
+     * nothing to confirm and nothing to announce in the status line -- the
+     * viewport itself is the verdict. The host refresh re-reads every surface,
+     * including the world-anchored ones, from native.
+     */
+    private void onIsolateToggled() {
+        NativeViewport.setSculptIsolate(!NativeViewport.sculptIsolated());
+        refreshFromNative();
+        host.onNativeStateChanged();
+    }
+
     private void onClearMaskRequested() {
         final int status = NativeViewport.sculptClearMask();
         if (status != NativeViewport.HISTORY_OK) {

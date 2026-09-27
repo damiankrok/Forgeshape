@@ -4,19 +4,25 @@ import static com.forgeshape.app.WorkspaceTestSupport.doOnWorkspace;
 import static com.forgeshape.app.WorkspaceTestSupport.onWorkspace;
 import static com.forgeshape.app.WorkspaceTestSupport.resetToBaselineConstruction;
 import static com.forgeshape.app.WorkspaceTestSupport.settleLayout;
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
+import android.graphics.Bitmap;
+import android.graphics.Color;
 import android.os.SystemClock;
 import android.util.Log;
 import android.view.MotionEvent;
 import android.view.View;
+import android.widget.TextView;
 
 import androidx.test.ext.junit.rules.ActivityScenarioRule;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
+import androidx.test.platform.app.InstrumentationRegistry;
 
 import org.junit.After;
 import org.junit.Before;
@@ -25,25 +31,31 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 
 /**
- * `STAGE027` PHASE 0 — runtime reproduction of the two audit findings on the
- * UNFIXED product, through the real product paths.
+ * `STAGE027-SCULPT-ISOLATE-R1`: the Sculpt workflow's device journey.
  *
- * <p>These cases assert that each defect IS present. They are evidence, not a
- * contract: a green run on a pre-fix build is the proof `STAGE027-R0` asked for
- * before any fix is written, and the fixed class replaces them.
+ * <p>Three things, each through the path a user takes — real MotionEvents on
+ * the viewport surface, the toolbar transitions, the Objects-row Show/Hide
+ * control and the Sculpt Property Inspector's Isolate control, all by semantic
+ * id. Native setters only BUILD the scene a journey starts from.
  *
  * <ul>
- *   <li>{@code FINDING-A}: in Sculpt, a non-stroke viewport tap on another body
- *       moves the active body — and with it the Sculpt target — while the
- *       Objects-row path refuses the same act.</li>
- *   <li>{@code FINDING-B}: Start Sculpting and Resume Sculpt both enter Sculpt
- *       on a body the user has hidden.</li>
+ *   <li><b>GUARD-1</b> ({@code FINDING-A}, OWNER GUARD-1 = a): in Sculpt, a tap
+ *       that starts no stroke changes nothing — not the active body, not the
+ *       Sculpt target and not the viewport selection — while a real stroke on
+ *       the target still lands and a drag off it still navigates.</li>
+ *   <li><b>GUARD-2</b> ({@code FINDING-B}, OWNER GUARD-2 = a): over a hidden
+ *       active body Start Sculpting and Resume Sculpt are ABSENT, the native
+ *       entries refuse by name, and a refusal moves nothing.</li>
+ *   <li><b>Isolate</b> (OWNER UI-1 = b, LIFE-1 = a): one two-state control in
+ *       the Sculpt Property Inspector restricts the viewport's one list to the
+ *       Sculpt target, measured in what the renderer is handed and in the
+ *       captured frame, is not project truth, and clears on Back so Resume
+ *       opens un-isolated.</li>
  * </ul>
  *
- * <p>Every act is driven the way a user drives it: real MotionEvents on the
- * viewport surface, the toolbar transitions and the Objects-row Show/Hide
- * control by their semantic ids. Native setters are used only to BUILD the
- * scene the journey starts from, never to perform the act under test.
+ * <p>Both defects were first REPRODUCED on the unfixed product by this class's
+ * phase-0 form (commit 3de71ee, CI DEVICE run 36318528002) before either
+ * guard was written.
  */
 @RunWith(AndroidJUnit4.class)
 public final class Stage027SculptWorkflowTest {
@@ -81,115 +93,309 @@ public final class Stage027SculptWorkflowTest {
 
     @After
     public void leaveNothingBehind() {
-        // A hidden or sculpting body must not become the next class's baseline.
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            workspace.setChromeHidden(false);
+            return null;
+        });
+        // A hidden, isolated or sculpting body must not become the next
+        // class's baseline.
         freshProject();
     }
 
     // -----------------------------------------------------------------------
-    // FINDING-A
+    // GUARD-1
     // -----------------------------------------------------------------------
 
     @Test
-    public void phase0_findingA_aSculptTapOnAnotherBodyMovesTheSculptTarget() {
+    public void guard1_aNonStrokeSculptTapChangesNothing() {
         startSculptingThroughTheToolbar();
+        final long selectionBefore = NativeViewport.debugViewportSelection();
         final double[] before = sculptState();
-        assertEquals("precondition: Sculpt is on", NativeViewport.MODE_SCULPT,
-                (int) before[NativeViewport.SCULPT_MODE]);
-        assertEquals("precondition: A is the Sculpt target", bodyA,
-                (long) before[NativeViewport.SCULPT_OBJECT_ID]);
-        assertEquals("precondition: A is active", bodyA, NativeViewport.sceneActiveBodyId());
+        assertEquals(bodyA, (long) before[NativeViewport.SCULPT_OBJECT_ID]);
 
-        // The Objects-row path refuses the same act -- the documented rule.
-        assertNotEquals("the row path refuses a body switch in Sculpt", NativeViewport.SCULPT_OK,
-                NativeViewport.sceneSelectBody(bodyB));
-        assertEquals(bodyA, NativeViewport.sceneActiveBodyId());
-
+        // A tap on the OTHER body -- the path that used to switch the target.
         final float[] onB = projected(2.5, 0.0, 0.0);
         final float[] onA = projected(0.0, 0.0, 0.0);
         assertTrue("B's centre is well clear of A's silhouette on screen",
                 Math.hypot(onB[0] - onA[0], onB[1] - onA[1]) > 80.0);
-
         tapViewport(onB[0], onB[1]);
+        assertNothingMoved("a tap on another body", before, selectionBefore);
 
-        final double[] after = sculptState();
-        final long active = NativeViewport.sceneActiveBodyId();
-        Log.i(TAG, "STAGE027_REPRO_FINDING_A tap_on_B active=" + active + " mode="
-                + (int) after[NativeViewport.SCULPT_MODE] + " sculptObject="
-                + (long) after[NativeViewport.SCULPT_OBJECT_ID] + " hasMesh="
-                + (int) after[NativeViewport.SCULPT_HAS_MESH] + " viewportSelection="
-                + NativeViewport.debugViewportSelection() + " A=" + bodyA + " B=" + bodyB);
-        // THE DEFECT: the viewport path bypassed the row guard.
-        assertEquals("FINDING-A reproduced: the tap made B active", bodyB, active);
-        assertEquals("while Sculpt is still on", NativeViewport.MODE_SCULPT,
-                (int) after[NativeViewport.SCULPT_MODE]);
-        assertNotEquals("and the Sculpt target is no longer A", bodyA,
-                (long) after[NativeViewport.SCULPT_OBJECT_ID]);
-        assertEquals("and the viewport selection is B", bodyB,
-                NativeViewport.debugViewportSelection());
-
-        // A non-stroke tap that misses everything clears the selection.
+        // A tap that misses everything.
         final float[] empty = emptyPixel();
         tapViewport(empty[0], empty[1]);
-        final long selectionAfterMiss = NativeViewport.debugViewportSelection();
-        Log.i(TAG, "STAGE027_REPRO_FINDING_A miss viewportSelection=" + selectionAfterMiss
-                + " active=" + NativeViewport.sceneActiveBodyId());
-        assertEquals("a Sculpt miss clears the viewport selection", 0L, selectionAfterMiss);
+        assertNothingMoved("a tap on empty space", before, selectionBefore);
+
+        // The row path still refuses the same act, unchanged.
+        assertNotEquals(NativeViewport.SCULPT_OK, NativeViewport.sceneSelectBody(bodyB));
+        assertEquals(bodyA, NativeViewport.sceneActiveBodyId());
+
+        // Navigation is untouched: a drag that starts off the sculpt mesh still
+        // orbits the camera, and moves no vertex.
+        final float[] poseBefore = cameraPose();
+        dragViewport(empty[0], empty[1], empty[0] + 220f, empty[1] + 60f);
+        final float[] poseAfter = cameraPose();
+        assertTrue("a drag off the sculpt mesh still orbits",
+                poseBefore[0] != poseAfter[0] || poseBefore[1] != poseAfter[1]);
+        assertEquals("and moved no vertex", before[NativeViewport.SCULPT_REVISION],
+                sculptState()[NativeViewport.SCULPT_REVISION], 0.0);
+
+        // A real stroke on the Sculpt target still lands, on the target.
+        final float[] onAAgain = projected(0.0, 0.0, 0.0);
+        dragViewport(onAAgain[0], onAAgain[1], onAAgain[0] + 60f, onAAgain[1] + 40f);
+        final double[] stroked = sculptState();
+        assertTrue("a stroke on the target mints a sculpt revision",
+                stroked[NativeViewport.SCULPT_REVISION] > before[NativeViewport.SCULPT_REVISION]);
+        assertEquals("on the target", bodyA, (long) stroked[NativeViewport.SCULPT_OBJECT_ID]);
+        assertEquals(bodyA, NativeViewport.sceneActiveBodyId());
     }
 
     // -----------------------------------------------------------------------
-    // FINDING-B
+    // GUARD-2
     // -----------------------------------------------------------------------
 
     @Test
-    public void phase0_findingB_startSculptingEntersSculptOnAHiddenBody() {
-        hideThroughTheObjectsRow(bodyA);
+    public void guard2_aHiddenBodyCannotStartSculpting() {
+        assertTrue("precondition: Start Sculpting is offered", isShown(R.id.freeze_to_sculpt));
+        toggleVisibilityThroughTheObjectsRow(bodyA);
         assertFalse("precondition: A is hidden", NativeViewport.sceneBodyVisible(bodyA));
-        assertEquals("precondition: A is still active", bodyA, NativeViewport.sceneActiveBodyId());
-        assertEquals("precondition: nothing frozen yet", 0.0,
-                sculptState()[NativeViewport.SCULPT_HAS_MESH], 0.0);
 
-        final boolean offered = isShown(R.id.freeze_to_sculpt);
-        clickToolbar(R.id.freeze_to_sculpt);
+        assertFalse("Start Sculpting is withdrawn over a hidden body",
+                isShown(R.id.freeze_to_sculpt));
+        assertFalse("and so is Resume", isShown(R.id.resume_sculpt));
 
+        // The native guard stands beneath the withdrawn control.
+        final byte[] bytesBefore = NativeViewport.encodeProject();
+        final long fingerprintBefore = NativeViewport.projectFingerprint();
+        final int status = onWorkspace(rule.getScenario(),
+                (activity, workspace) -> NativeViewport.freezeToSculpt());
         final double[] after = sculptState();
-        Log.i(TAG, "STAGE027_REPRO_FINDING_B start offered=" + offered + " mode="
-                + (int) after[NativeViewport.SCULPT_MODE] + " hasMesh="
-                + (int) after[NativeViewport.SCULPT_HAS_MESH] + " visible="
-                + NativeViewport.sceneBodyVisible(bodyA));
-        assertTrue("Start Sculpting is offered over the hidden body", offered);
-        assertEquals("FINDING-B reproduced: Sculpt was entered", NativeViewport.MODE_SCULPT,
-                (int) after[NativeViewport.SCULPT_MODE]);
-        assertEquals("a Frozen Sculpt Mesh now exists for the hidden body", 1.0,
-                after[NativeViewport.SCULPT_HAS_MESH], 0.0);
-        assertEquals(bodyA, (long) after[NativeViewport.SCULPT_OBJECT_ID]);
-        assertFalse("while the body is still hidden", NativeViewport.sceneBodyVisible(bodyA));
+        assertEquals("refused by name", NativeViewport.SCULPT_REFUSED_HIDDEN_BODY, status);
+        assertEquals("the mode did not change", NativeViewport.MODE_CONSTRUCTION,
+                NativeViewport.productMode());
+        assertEquals("nothing was frozen", 0.0, after[NativeViewport.SCULPT_HAS_MESH], 0.0);
+        assertFalse("the body is still hidden", NativeViewport.sceneBodyVisible(bodyA));
+        assertArrayEquals("the document is byte-identical", bytesBefore,
+                NativeViewport.encodeProject());
+        assertEquals("the fingerprint is unmoved", fingerprintBefore,
+                NativeViewport.projectFingerprint());
+
+        // Showing the body again brings the control back.
+        toggleVisibilityThroughTheObjectsRow(bodyA);
+        assertTrue(NativeViewport.sceneBodyVisible(bodyA));
+        assertTrue("Start Sculpting returns over a visible body", isShown(R.id.freeze_to_sculpt));
     }
 
     @Test
-    public void phase0_findingB_resumeSculptEntersSculptOnAHiddenBody() {
+    public void guard2_aHiddenSculptBodyCannotResume() {
         startSculptingThroughTheToolbar();
         clickToolbar(R.id.back_to_construction);
-        assertEquals("precondition: back in Construction", NativeViewport.MODE_CONSTRUCTION,
+        assertEquals(NativeViewport.MODE_CONSTRUCTION, NativeViewport.productMode());
+        assertTrue("precondition: Resume is offered", isShown(R.id.resume_sculpt));
+        final double revisionBefore = sculptState()[NativeViewport.SCULPT_REVISION];
+
+        toggleVisibilityThroughTheObjectsRow(bodyA);
+        assertFalse(NativeViewport.sceneBodyVisible(bodyA));
+        assertFalse("Resume Sculpt is withdrawn over a hidden body", isShown(R.id.resume_sculpt));
+        assertFalse("and Start Sculpting is not offered in its place",
+                isShown(R.id.freeze_to_sculpt));
+
+        final long fingerprintBefore = NativeViewport.projectFingerprint();
+        final int status = onWorkspace(rule.getScenario(),
+                (activity, workspace) -> NativeViewport.enterSculptMode());
+        assertEquals("refused by name", NativeViewport.SCULPT_REFUSED_HIDDEN_BODY, status);
+        assertEquals("the mode did not change", NativeViewport.MODE_CONSTRUCTION,
                 NativeViewport.productMode());
-        hideThroughTheObjectsRow(bodyA);
-        assertFalse("precondition: A is hidden", NativeViewport.sceneBodyVisible(bodyA));
+        assertEquals("the sculpt mesh is untouched", revisionBefore,
+                sculptState()[NativeViewport.SCULPT_REVISION], 0.0);
+        assertFalse(NativeViewport.sceneBodyVisible(bodyA));
+        assertEquals(fingerprintBefore, NativeViewport.projectFingerprint());
 
-        final boolean offered = isShown(R.id.resume_sculpt);
+        toggleVisibilityThroughTheObjectsRow(bodyA);
+        assertTrue("Resume returns over a visible body", isShown(R.id.resume_sculpt));
+    }
+
+    // -----------------------------------------------------------------------
+    // Isolate
+    // -----------------------------------------------------------------------
+
+    @Test
+    public void isolate_theInspectorControlRestrictsTheViewportAndIsNotTruth() {
+        // Absent outside Sculpt.
+        openPrecision();
+        assertFalse("no Isolate control in Construction", isShown(R.id.sculpt_isolate));
+        closePrecision();
+
+        startSculptingThroughTheToolbar();
+        openPrecision();
+        assertTrue("the Isolate control is in the Sculpt Property Inspector",
+                isShown(R.id.sculpt_isolate));
+        assertIsolateControl(false);
+        assertArrayEquals("un-isolated, the viewport's list is both bodies",
+                new long[] {bodyA, bodyB}, viewSceneIds());
+
+        final byte[] bytesBefore = NativeViewport.encodeProject();
+        final long fingerprintBefore = NativeViewport.projectFingerprint();
+        final int sculptUndoBefore = NativeViewport.sculptUndoDepth();
+        final double revisionBefore = sculptState()[NativeViewport.SCULPT_REVISION];
+
+        // The frame before: B is drawn at its projected centre.
+        final int[] regionB = region(projected(2.5, 0.0, 0.0));
+        final int[] regionA = region(projected(0.0, 0.0, 0.0));
+        final Bitmap off = captureBareViewport();
+
+        clickIsolate();
+        assertTrue("native reports the viewport isolated", NativeViewport.sculptIsolated());
+        assertIsolateControl(true);
+        assertArrayEquals("isolated, the viewport's list is the Sculpt target alone",
+                new long[] {bodyA}, viewSceneIds());
+
+        final Bitmap on = captureBareViewport();
+        final double changedAtB = changedFraction(off, on, regionB);
+        final double changedAtA = changedFraction(off, on, regionA);
+        Log.i(TAG, "STAGE027_ISOLATE_FRAME changedAtB=" + changedAtB + " changedAtA=" + changedAtA);
+        assertTrue("B is no longer drawn where it stood: " + changedAtB, changedAtB > 0.5);
+        assertTrue("A is still drawn where it stood: " + changedAtA, changedAtA < 0.2);
+
+        // A view decision, not truth: no byte, no fingerprint, no step, no
+        // revision, no visibility write.
+        assertArrayEquals("the document is byte-identical", bytesBefore,
+                NativeViewport.encodeProject());
+        assertEquals("the fingerprint is unmoved", fingerprintBefore,
+                NativeViewport.projectFingerprint());
+        assertEquals("no sculpt history entry", sculptUndoBefore, NativeViewport.sculptUndoDepth());
+        assertEquals("no sculpt revision", revisionBefore,
+                sculptState()[NativeViewport.SCULPT_REVISION], 0.0);
+        assertTrue("B is still durably visible", NativeViewport.sceneBodyVisible(bodyB));
+
+        // Ordinary navigation keeps it.
+        final float[] empty = emptyPixel();
+        dragViewport(empty[0], empty[1], empty[0] + 160f, empty[1] + 40f);
+        assertTrue("an orbit does not clear the isolate", NativeViewport.sculptIsolated());
+
+        // No world-anchored chrome is left standing for the excluded body.
+        assertNoAnchoredChromeShown();
+
+        // Off again restores the ordinary multi-body view.
+        clickIsolate();
+        assertFalse(NativeViewport.sculptIsolated());
+        assertIsolateControl(false);
+        assertArrayEquals(new long[] {bodyA, bodyB}, viewSceneIds());
+
+        // LIFE-1 = clear: Back leaves nothing isolated, and Resume opens off.
+        clickIsolate();
+        assertTrue(NativeViewport.sculptIsolated());
+        clickToolbar(R.id.back_to_construction);
+        assertFalse("Back to Construction clears the isolate", NativeViewport.sculptIsolated());
+        assertArrayEquals("Construction is never drawn isolated",
+                new long[] {bodyA, bodyB}, viewSceneIds());
         clickToolbar(R.id.resume_sculpt);
-
-        final double[] after = sculptState();
-        Log.i(TAG, "STAGE027_REPRO_FINDING_B resume offered=" + offered + " mode="
-                + (int) after[NativeViewport.SCULPT_MODE] + " visible="
-                + NativeViewport.sceneBodyVisible(bodyA));
-        assertTrue("Resume Sculpt is offered over the hidden body", offered);
-        assertEquals("FINDING-B reproduced: Sculpt was resumed", NativeViewport.MODE_SCULPT,
-                (int) after[NativeViewport.SCULPT_MODE]);
-        assertFalse("while the body is still hidden", NativeViewport.sceneBodyVisible(bodyA));
+        assertEquals(NativeViewport.MODE_SCULPT, NativeViewport.productMode());
+        assertFalse("Resume opens un-isolated", NativeViewport.sculptIsolated());
+        openPrecision();
+        assertIsolateControl(false);
+        assertArrayEquals(new long[] {bodyA, bodyB}, viewSceneIds());
     }
 
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
+
+    private void assertNothingMoved(String what, double[] before, long selectionBefore) {
+        final double[] after = sculptState();
+        assertEquals(what + " leaves the active body", bodyA, NativeViewport.sceneActiveBodyId());
+        assertEquals(what + " leaves the Sculpt target", bodyA,
+                (long) after[NativeViewport.SCULPT_OBJECT_ID]);
+        assertEquals(what + " leaves Sculpt on", NativeViewport.MODE_SCULPT,
+                (int) after[NativeViewport.SCULPT_MODE]);
+        assertEquals(what + " leaves the viewport selection", selectionBefore,
+                NativeViewport.debugViewportSelection());
+        assertEquals(what + " moves no vertex", before[NativeViewport.SCULPT_REVISION],
+                after[NativeViewport.SCULPT_REVISION], 0.0);
+        assertEquals(what + " records no stroke", before[NativeViewport.SCULPT_STROKE_COUNT],
+                after[NativeViewport.SCULPT_STROKE_COUNT], 0.0);
+    }
+
+    private void assertIsolateControl(final boolean isolated) {
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final TextView control = workspace.findViewById(R.id.sculpt_isolate);
+            assertNotNull("the Isolate control exists", control);
+            assertEquals("the label names the next act",
+                    activity.getString(isolated ? R.string.sculpt_isolate_exit
+                                                : R.string.sculpt_isolate),
+                    control.getText().toString());
+            assertEquals("the description states the state, not colour alone",
+                    activity.getString(isolated ? R.string.sculpt_isolate_exit_description
+                                                : R.string.sculpt_isolate_description),
+                    String.valueOf(control.getContentDescription()));
+            final float density = activity.getResources().getDisplayMetrics().density;
+            final int floor = Math.round(48f * density);
+            assertTrue("the control meets the 48 dp floor: " + control.getHeight(),
+                    control.getHeight() >= floor - 1);
+            return null;
+        });
+    }
+
+    private void assertNoAnchoredChromeShown() {
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final int[] anchored = {R.id.body_dimension_labels, R.id.sketch_dimension_label,
+                    R.id.sketch_orientation_navigator, R.id.cad_extrude_canvas};
+            for (int id : anchored) {
+                final View view = workspace.findViewById(id);
+                assertTrue("no world-anchored chrome stands in Sculpt: " + id,
+                        view == null || !view.isShown());
+            }
+            return null;
+        });
+    }
+
+    private void clickIsolate() {
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final View control = workspace.findViewById(R.id.sculpt_isolate);
+            assertNotNull("the Isolate control exists", control);
+            assertTrue("the Isolate control is on screen", control.isShown());
+            control.performClick();
+            return null;
+        });
+        settleLayout();
+    }
+
+    private void openPrecision() {
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            WorkspaceTestSupport.openPrecision(workspace);
+            return null;
+        });
+        settleLayout();
+    }
+
+    private void closePrecision() {
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            WorkspaceTestSupport.closePrecision(workspace);
+            return null;
+        });
+        settleLayout();
+    }
+
+    /**
+     * The composed frame with the chrome hidden, so nothing but the viewport is
+     * measured. Hiding the chrome closes the precision surface, so it is
+     * reopened afterwards the way a user reopens it.
+     */
+    private Bitmap captureBareViewport() {
+        hideChrome(true);
+        final Bitmap shot = capture();
+        hideChrome(false);
+        openPrecision();
+        return shot;
+    }
+
+    private void hideChrome(final boolean hidden) {
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            workspace.setChromeHidden(hidden);
+            return null;
+        });
+        settleLayout();
+    }
 
     /** A new, unsaved Construction project; closing writes nothing. */
     private void freshProject() {
@@ -221,22 +427,26 @@ public final class Stage027SculptWorkflowTest {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             final View control = workspace.findViewById(id);
             assertNotNull("the control exists in the workspace", control);
+            assertTrue("the control is on screen", control.isShown());
             control.performClick();
             return null;
         });
         settleLayout();
     }
 
-    private void hideThroughTheObjectsRow(final long objectId) {
+    /** Show/Hide through the Objects row's own control, as a user does it. */
+    private void toggleVisibilityThroughTheObjectsRow(final long objectId) {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             WorkspaceTestSupport.openObjectsPanel(workspace);
             return null;
         });
         settleLayout();
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
-            final View more = find(workspace, R.id.object_row_more, objectId);
-            assertNotNull("the row offers its overflow", more);
-            more.performClick();
+            if (!Long.valueOf(objectId).equals(workspace.objectsSection().expandedRow())) {
+                final View more = find(workspace, R.id.object_row_more, objectId);
+                assertNotNull("the row offers its overflow", more);
+                more.performClick();
+            }
             return null;
         });
         settleLayout();
@@ -280,6 +490,20 @@ public final class Stage027SculptWorkflowTest {
         return state;
     }
 
+    private static long[] viewSceneIds() {
+        final long[] ids = new long[16];
+        final int n = NativeViewport.debugViewSceneBodyIds(ids);
+        final long[] out = new long[n];
+        System.arraycopy(ids, 0, out, 0, n);
+        return out;
+    }
+
+    private static float[] cameraPose() {
+        final float[] pose = new float[NativeViewport.CAMERA_POSE_SIZE];
+        NativeViewport.debugCameraPose(pose);
+        return pose;
+    }
+
     private static float[] projected(double x, double y, double z) {
         final float[] out = new float[2];
         assertTrue("the point projects onto the viewport",
@@ -313,6 +537,23 @@ public final class Stage027SculptWorkflowTest {
         settleLayout();
     }
 
+    /** One real single-finger drag on the viewport surface. */
+    private void dragViewport(final float x0, final float y0, final float x1, final float y1) {
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final View viewport = workspace.findViewById(R.id.viewport_surface);
+            final long down = SystemClock.uptimeMillis();
+            send(viewport, down, down, MotionEvent.ACTION_DOWN, x0, y0);
+            for (int step = 1; step <= 10; ++step) {
+                final float t = step / 10f;
+                send(viewport, down, down + step * 12L, MotionEvent.ACTION_MOVE,
+                        x0 + (x1 - x0) * t, y0 + (y1 - y0) * t);
+            }
+            send(viewport, down, down + 132L, MotionEvent.ACTION_UP, x1, y1);
+            return null;
+        });
+        settleLayout();
+    }
+
     private static void send(View target, long downTime, long eventTime, int action,
                              float x, float y) {
         final MotionEvent event = MotionEvent.obtain(downTime, eventTime, action, x, y, 0);
@@ -321,6 +562,49 @@ public final class Stage027SculptWorkflowTest {
         } finally {
             event.recycle();
         }
+    }
+
+    // --- captured-frame measurement -------------------------------------------
+
+    /** A small square around a viewport pixel, in SCREEN pixels. */
+    private int[] region(final float[] viewportPixel) {
+        return onWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final int[] at = new int[2];
+            workspace.findViewById(R.id.viewport_surface).getLocationOnScreen(at);
+            final int half = 10;
+            final int cx = at[0] + Math.round(viewportPixel[0]);
+            final int cy = at[1] + Math.round(viewportPixel[1]);
+            return new int[] {cx - half, cy - half, cx + half, cy + half};
+        });
+    }
+
+    /** The composed display, Vulkan viewport included, after frames settle. */
+    private static Bitmap capture() {
+        SystemClock.sleep(600);
+        final Bitmap shot =
+                InstrumentationRegistry.getInstrumentation().getUiAutomation().takeScreenshot();
+        assertNotNull("the display can be captured", shot);
+        return shot;
+    }
+
+    /** Fraction of the region's pixels that changed by more than a small tolerance. */
+    private static double changedFraction(Bitmap a, Bitmap b, int[] r) {
+        int changed = 0;
+        int total = 0;
+        for (int y = Math.max(0, r[1]); y < Math.min(a.getHeight(), r[3]); ++y) {
+            for (int x = Math.max(0, r[0]); x < Math.min(a.getWidth(), r[2]); ++x) {
+                final int p = a.getPixel(x, y);
+                final int q = b.getPixel(x, y);
+                final int d = Math.abs(Color.red(p) - Color.red(q))
+                        + Math.abs(Color.green(p) - Color.green(q))
+                        + Math.abs(Color.blue(p) - Color.blue(q));
+                if (d > 24) {
+                    changed++;
+                }
+                total++;
+            }
+        }
+        return total == 0 ? 0.0 : (double) changed / total;
     }
 
     private static void assertTransform(int status) {

@@ -1649,7 +1649,12 @@ void renderThreadMain() {
                 if (forgeshape::importedMeshPreview().visible()) {
                     renderer.setScene(forgeshape::importedMeshPreview().snapshot());
                 } else {
-                    renderer.setScene(forgeshape::constructionScene().snapshot());
+                    // The viewport's ONE list: the scene under whatever
+                    // restriction the Sculpt session holds (Sculpt Isolate).
+                    // Taps pick against the same function, so an isolated-out
+                    // body is neither drawn nor pickable, and the selection
+                    // outline's mask pass follows because it draws this list.
+                    renderer.setScene(forgeshape::viewSceneSnapshot());
                 }
                 // Taken under the SAME mutex and from the same instant as the
                 // camera and the scene, so the pivot the handles are drawn
@@ -2562,6 +2567,9 @@ constexpr jint kSculptFailedFreeze = 1;
 constexpr jint kSculptNothingFrozen = 2;
 // The active body is a CAD Body, which `CAD-R0-A1A2` does not sculpt.
 constexpr jint kSculptRefusedCadBody = 3;
+// GUARD-2 (Stage027): Start or Resume Sculpt refused because the active body
+// is hidden. The control is withdrawn above JNI; this is the guard behind it.
+constexpr jint kSculptRefusedHiddenBody = 4;
 
 JNIEXPORT jint JNICALL
 Java_com_forgeshape_app_NativeViewport_productMode(JNIEnv*, jclass) {
@@ -2602,6 +2610,16 @@ Java_com_forgeshape_app_NativeViewport_freezeToSculpt(JNIEnv*, jclass) {
         }
         forgeshape::SceneObject& body = forgeshape::constructionScene().activeBody();
         objectId = body.objectId();
+        // GUARD-2 (Stage027, FINDING-B; OWNER GUARD-2 = a). A hidden body is
+        // not drawn, so strokes would land on geometry nobody can see. Refused
+        // by name before anything is built or frozen: no mode change, no
+        // freeze, no revision, no history, no visibility write. Showing the
+        // body is the user's own act, in Construction, where Hide lives.
+        if (!body.visible()) {
+            FS_LOGE("FORGESHAPE_SCULPT_FREEZE_FAIL:BodyHidden objectId=%llu",
+                    (unsigned long long)objectId);
+            return kSculptRefusedHiddenBody;
+        }
         cadBody = body.cadOrNull() != nullptr;
         sketching = forgeshape::sketchSession().active();
         forgeshape::ConstructionMesh source;
@@ -2698,6 +2716,14 @@ Java_com_forgeshape_app_NativeViewport_enterSculptMode(JNIEnv*, jclass) {
     forgeshape::SculptSession* session = nullptr;
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
+        forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
+        // GUARD-2 (Stage027): Resume on a hidden body is refused on the same
+        // terms as Start -- by name, changing nothing.
+        if (scene.hasProject() && !scene.activeBody().visible()) {
+            FS_LOGI("FORGESHAPE_SCULPT_MODE_REFUSED:body_hidden objectId=%llu",
+                    (unsigned long long)scene.activeBodyId());
+            return kSculptRefusedHiddenBody;
+        }
         session = &forgeshape::sculptSession();
         entered = session->enterSculpt();
         g_grabbing = false;
@@ -2712,6 +2738,78 @@ Java_com_forgeshape_app_NativeViewport_enterSculptMode(JNIEnv*, jclass) {
     FS_LOGI("FORGESHAPE_SCULPT_MODE:sculpt meshRev=%llu", (unsigned long long)revision);
     logSculptState("mode_sculpt");
     return kSculptOk;
+}
+
+// ---------------------------------------------------------------------------
+// Sculpt Isolate (Stage027)
+// ---------------------------------------------------------------------------
+//
+// A transient VIEW restriction to the body being sculpted. Native owns it (the
+// Sculpt session), Java only asks and reads back, and nothing about it is
+// project truth: no `.forge` byte, no fingerprint, no checkpoint, no history
+// step, no visibility write, no AppPreferences field. Turning it on or off
+// publishes nothing and mints no revision -- the next frame is simply handed a
+// shorter list by `viewSceneSnapshot`.
+
+// Turns the isolate on (to the ACTIVE body, which in Sculpt is the Sculpt
+// target: body switching is refused there) or off. Refused outside Sculpt and
+// with no project. Returns true when the request was applied.
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_setSculptIsolate(JNIEnv*, jclass, jboolean on) {
+    bool applied = false;
+    forgeshape::ObjectId target = forgeshape::kNoObject;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        forgeshape::ConstructionScene& scene = forgeshape::constructionScene();
+        if (scene.hasProject()) {
+            forgeshape::SculptSession& session = forgeshape::sculptSession();
+            target = on ? scene.activeBodyId() : forgeshape::kNoObject;
+            applied = session.setIsolate(target);
+        }
+    }
+    if (!applied) {
+        FS_LOGI("FORGESHAPE_SCULPT_ISOLATE_REFUSED:not_sculpting");
+        return JNI_FALSE;
+    }
+    if (target != forgeshape::kNoObject) {
+        FS_LOGI("FORGESHAPE_SCULPT_ISOLATE:on objectId=%llu", (unsigned long long)target);
+    } else {
+        FS_LOGI("FORGESHAPE_SCULPT_ISOLATE:off");
+    }
+    return JNI_TRUE;
+}
+
+// Whether the viewport is currently isolated. Always false outside Sculpt.
+JNIEXPORT jboolean JNICALL
+Java_com_forgeshape_app_NativeViewport_sculptIsolated(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    return forgeshape::sculptSession().isolateTarget() != forgeshape::kNoObject ? JNI_TRUE
+                                                                               : JNI_FALSE;
+}
+
+// Read-only verification seam: the ObjectIds of the list the viewport draws and
+// picks against right now (`viewSceneSnapshot`), in scene order. Returns how
+// many were written. It mutates nothing.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_debugViewSceneBodyIds(JNIEnv* env, jclass,
+                                                            jlongArray outIds) {
+    std::vector<jlong> ids;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        const forgeshape::SceneSnapshot snapshot = forgeshape::viewSceneSnapshot();
+        for (const forgeshape::SceneDrawItem& item : snapshot) {
+            ids.push_back(static_cast<jlong>(item.objectId));
+        }
+    }
+    if (outIds == nullptr) {
+        return 0;
+    }
+    const jsize capacity = env->GetArrayLength(outIds);
+    const jsize written = std::min<jsize>(capacity, static_cast<jsize>(ids.size()));
+    if (written > 0) {
+        env->SetLongArrayRegion(outIds, 0, written, ids.data());
+    }
+    return static_cast<jint>(written);
 }
 
 // ---------------------------------------------------------------------------
@@ -6818,6 +6916,7 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
     bool selectionChanged = false;
     forgeshape::SceneHit hit{};
     forgeshape::ObjectId selectedNow = forgeshape::kNoObject;
+    bool tapRefusedInSculpt = false;
 
     // Gizmo reporting, gathered under the lock and logged outside it. `handled`
     // is the arbitration answer: true means this event belonged to a handle and
@@ -7277,6 +7376,21 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
             if (forgeshape::importedMeshPreview().visible()) {
                 tapResolved = false;
             }
+            // GUARD-1 (Stage027, FINDING-A). In Sculpt a tap that did not start
+            // a stroke changes NOTHING about the selection or the active body
+            // (OWNER GUARD-1 = a). The Sculpt target is fixed for the whole
+            // mode and `sceneSelectBody` already refuses the Objects-row switch;
+            // this path used to reach `setActiveBody` directly, and because the
+            // session re-binds to the active body on every access that moved
+            // the Sculpt target while Sculpt was on. Refused BEFORE the pick, so
+            // neither the selection nor the target is cleared or replaced;
+            // navigation is untouched because the camera already has the event.
+            // Held whatever the Sculpt Isolate says: an isolated view would
+            // only hide this, never fix it.
+            if (tapResolved && sculpt.inSculptMode()) {
+                tapResolved = false;
+                tapRefusedInSculpt = true;
+            }
             if (tapResolved && viewWidth > 0 && viewHeight > 0) {
                 // Picking uses the camera snapshot as it stands at release, so a
                 // tap after any amount of navigation resolves against what is on
@@ -7390,6 +7504,9 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
                 sketch.polylineInProgress() ? 1 : 0);
     }
 
+    if (tapRefusedInSculpt) {
+        FS_LOGI("FORGESHAPE_SCENE_SELECT_REFUSED:in_sculpt_mode:viewport_tap");
+    }
     if (tapResolved) {
         if (hit.hit) {
             FS_LOGI("FORGESHAPE_PICK_HIT:%llu:%d dist=%.4f at=(%.4f,%.4f,%.4f)",

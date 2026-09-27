@@ -258,7 +258,7 @@ bool ConstructionScene::resolveWorldModelDepth(ObjectId id, Mat4* outModel, int 
     return mat4Finite(*outModel);
 }
 
-SceneSnapshot ConstructionScene::snapshot() const {
+SceneSnapshot ConstructionScene::snapshot(const SceneViewRestriction& restriction) const {
     SceneSnapshot items;
     items.reserve(bodies_.size());
     for (const auto& body : bodies_) {
@@ -274,6 +274,14 @@ SceneSnapshot ConstructionScene::snapshot() const {
             // The body itself is untouched: it keeps its published revision,
             // its geometry, its sculpt mesh and its place in the Objects list,
             // and showing it again costs no republication.
+            continue;
+        }
+        if (restriction.isolateTo != kNoObject && body->objectId() != restriction.isolateTo) {
+            // Stage027, Sculpt Isolate: the same loop and the same kind of
+            // skip, so the viewport's list is still decided in ONE place. The
+            // two compose -- a hidden body was left out above and nothing here
+            // can put it back -- and, like Hide, this touches nothing about the
+            // body: no revision, no publish, no visibility write.
             continue;
         }
         RuntimeMeshPtr mesh = body->meshStore().current();
@@ -507,6 +515,15 @@ MeshStore& meshStore() {
 // Rebinding on every call rather than only when the selection changes is one
 // pointer write, and it removes the whole class of bug where the session is
 // left pointing at the body the user just navigated away from.
+SceneSnapshot viewSceneSnapshot() {
+    // The restriction is READ from the session here and HANDED to the scene,
+    // never looked up by it. `isolateTarget()` answers kNoObject outside Sculpt,
+    // so Construction can never be drawn isolated whatever was left behind.
+    SceneViewRestriction restriction;
+    restriction.isolateTo = sculptSession().isolateTarget();
+    return constructionScene().snapshot(restriction);
+}
+
 SculptSession& sculptSession() {
     static SculptSession session;
     ConstructionScene& scene = constructionScene();

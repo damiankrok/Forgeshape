@@ -2498,8 +2498,12 @@ final class EditorWorkspaceView extends FrameLayout
         // bootstrap is open the project and export controls are withdrawn and
         // Back to Home is drawn.
         toolbar.showBootstrap(bootstrap);
+        // Stage027 GUARD-2: whether the ACTIVE body is hidden, read from the
+        // durable visibility itself. Start/Resume Sculpt are withdrawn over one.
+        final boolean activeHidden = projectOpen
+                && !NativeViewport.sceneBodyVisible(NativeViewport.sceneActiveBodyId());
         toolbar.showContext(sculpting, hasFrozenMesh, imported, cad, sketchState,
-                (int) nativeSketch[NativeViewport.SKETCH_PLANE]);
+                (int) nativeSketch[NativeViewport.SKETCH_PLANE], activeHidden);
         toolbar.showEditingTransitions(true);
         // Display settings are native-owned and process-scoped, so on a resume
         // they are already whatever they were; this only makes the popover's
@@ -3945,7 +3949,9 @@ final class EditorWorkspaceView extends FrameLayout
             // deserves the real reason rather than a generic failure.
             showStatus(getContext().getString(status == NativeViewport.SCULPT_REFUSED_CAD_BODY
                             ? R.string.status_cad_no_sculpt
-                            : R.string.status_sculpt_prepare_failed),
+                            : status == NativeViewport.SCULPT_REFUSED_HIDDEN_BODY
+                                    ? R.string.status_sculpt_hidden_body
+                                    : R.string.status_sculpt_prepare_failed),
                     R.attr.fsTextError);
             return;
         }
@@ -3974,8 +3980,11 @@ final class EditorWorkspaceView extends FrameLayout
      */
     @Override
     public void onResumeSculpt() {
-        if (NativeViewport.enterSculptMode() != NativeViewport.SCULPT_OK) {
-            showStatus(getContext().getString(R.string.status_no_sculpt_mesh),
+        final int status = NativeViewport.enterSculptMode();
+        if (status != NativeViewport.SCULPT_OK) {
+            showStatus(getContext().getString(status == NativeViewport.SCULPT_REFUSED_HIDDEN_BODY
+                            ? R.string.status_sculpt_hidden_body
+                            : R.string.status_no_sculpt_mesh),
                     R.attr.fsTextError);
             return;
         }

@@ -1462,6 +1462,38 @@ generation, a GPU upload or a triangle scan. Because each item holds a
 self-consistent even while newer revisions are published, and a body with
 nothing published yet is simply absent rather than a null to guard against.
 
+**What the viewport draws and picks is ONE list, under a restriction the scene
+is GIVEN** (Stage027). `snapshot(const SceneViewRestriction&)` skips a hidden
+body and, in the same loop, any body outside `restriction.isolateTo` — so durable
+Hide and the Sculpt Isolate compose, the second can only remove bodies and never
+bring a hidden one back, and an id no body carries yields an empty list rather
+than a substitute. The scene reads no session: `viewSceneSnapshot()`
+(`forgeshape_scene.cpp`) reads the isolate from the Sculpt session and hands it
+in, and it is the ONLY call the renderer (`forgeshape_jni.cpp`, the frame's
+`setScene`) and `pickScene` make — neither carries an isolate predicate of its
+own, and the selection outline follows because its mask pass rasterises the
+same list. Callers that are not the viewport (the CAD support chooser) take the
+default, unrestricted snapshot.
+
+The isolate value itself (`SculptSession::isolateTarget_`, one `ObjectId`) is
+session-only view state: never serialized, never in a history step, a
+checkpoint or the fingerprint, never a visibility write and never an
+`AppPreferences` field. Every Sculpt entry (`freezeToSculpt` from Construction,
+`enterSculpt`, including a loaded Sculpt project) and exit (`enterConstruction`,
+including Close) clears it, so Construction is never drawn isolated and Resume
+opens un-isolated; a Reset from source keeps it, because it is not geometry.
+The control is the Sculpt Property Inspector's (`SculptContextView`,
+`R.id.sculpt_isolate`), reading `sculptIsolated()` on every refresh.
+
+**Two Sculpt entry guards sit beside it (Stage027).** A viewport tap that starts
+no stroke is refused in Sculpt before the pick
+(`FORGESHAPE_SCENE_SELECT_REFUSED:in_sculpt_mode:viewport_tap`), so neither the
+viewport selection nor the active body — which the Sculpt session re-binds to on
+every access — can move; `sceneSelectBody` already refused the Objects-row
+path. And Start Sculpting / Resume Sculpt refuse a hidden active body by name
+(`SCULPT_REFUSED_HIDDEN_BODY`), with the toolbar withdrawing both controls over
+one.
+
 **Lock order:** the one state mutex, then `MeshStore`'s own mutex inside
 `publish`/`current`. `ConstructionScene` is deliberately *not* internally
 synchronised — a second scene-level lock would add a new ordering to get wrong,

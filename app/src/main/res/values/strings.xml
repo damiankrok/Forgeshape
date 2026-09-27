@@ -736,6 +736,12 @@
       will affect.
     -->
     <string name="clear_mask">Clear Mask</string>
+    <!-- Sculpt Isolate (Stage027): one control, two states. The label names the
+         act a tap performs; the description says what the viewport will show. -->
+    <string name="sculpt_isolate">Isolate</string>
+    <string name="sculpt_isolate_exit">Exit Isolate</string>
+    <string name="sculpt_isolate_description">Isolate: show only the body being sculpted</string>
+    <string name="sculpt_isolate_exit_description">Exit Isolate: show every body again</string>
     <string name="sculpt_mask_summary">Mask: %1$d vertices protected from the other brushes.</string>
     <string name="status_mask_cleared">Mask cleared — Undo puts it back.</string>
     <string name="status_mask_clear_failed">Could not clear the mask. Nothing changed.</string>
@@ -793,6 +799,7 @@
     <string name="status_now_sculpting_imported">Now sculpting — the imported mesh is kept.</string>
     <string name="status_sculpt_prepare_failed">Could not prepare a sculpt mesh from this shape. Object unchanged.</string>
     <string name="status_no_sculpt_mesh">There is no sculpt mesh yet — press Start Sculpting first.</string>
+    <string name="status_sculpt_hidden_body">A hidden body cannot be sculpted. Nothing changed.</string>
     <string name="status_tool_selected">%1$s: %2$s.</string>
 
     <string name="hint_grab">drag the surface with your finger</string>

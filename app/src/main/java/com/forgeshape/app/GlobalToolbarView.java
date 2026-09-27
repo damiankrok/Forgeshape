@@ -763,7 +763,7 @@ final class GlobalToolbarView extends LinearLayout {
      */
     void showContext(boolean sculpting, boolean hasFrozenMesh, boolean imported) {
         showContext(sculpting, hasFrozenMesh, imported, false, NativeViewport.SKETCH_INACTIVE,
-                NativeViewport.WORKPLANE_XY);
+                NativeViewport.WORKPLANE_XY, false);
     }
 
     /**
@@ -774,9 +774,14 @@ final class GlobalToolbarView extends LinearLayout {
      *        open the context is the sketch, the mode transitions are withdrawn
      *        and the one transition drawn is the sketch's own way forward.
      * @param workplane which plane the sketch is on, for the context label.
+     * @param activeHidden whether the ACTIVE body is hidden. Start Sculpting and
+     *        Resume Sculpt are withdrawn over one (Stage027 GUARD-2): a hidden
+     *        body is not drawn, so a sculpt of it could not be seen, and native
+     *        refuses the entry by name. Showing the body brings them back on
+     *        the next refresh.
      */
     void showContext(boolean sculpting, boolean hasFrozenMesh, boolean imported, boolean cad,
-                     int sketchState, int workplane) {
+                     int sketchState, int workplane, boolean activeHidden) {
         final Context context = getContext();
         final boolean sketching = sketchState != NativeViewport.SKETCH_INACTIVE;
         contextLabel.setText(sketching
@@ -802,10 +807,11 @@ final class GlobalToolbarView extends LinearLayout {
         // drawn over a CAD Body or while sketching: a control that cannot
         // succeed is not drawn.
         // And not in the CAD bootstrap either: there is no body to sculpt yet.
+        // And not over a hidden body (GUARD-2): the native entry refuses it.
         freezeButton.setVisibility(!sculpting && !hasFrozenMesh && !cad && !sketching && !bootstrap
-                ? VISIBLE : GONE);
+                && !activeHidden ? VISIBLE : GONE);
         resumeButton.setVisibility(!sculpting && hasFrozenMesh && !sketching && !bootstrap
-                ? VISIBLE : GONE);
+                && !activeHidden ? VISIBLE : GONE);
         finishSketchButton.setVisibility(
                 sketchState == NativeViewport.SKETCH_EDITING ? VISIBLE : GONE);
         extrudeButton.setVisibility(sketchState == NativeViewport.SKETCH_READY ? VISIBLE : GONE);

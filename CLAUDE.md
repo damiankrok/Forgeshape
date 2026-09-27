@@ -596,6 +596,25 @@ curve-profile timings.
   checkpoint, and making that safe needs an autosave-suspend concept or a
   shadow render path), thumbnails, named states, a branching tree, a
   Construction navigator, and any keyboard shortcut.
+- **Sculpt Isolate is a VIEW restriction, and the Sculpt target is fixed
+  against every path** (Stage027; OWNER `UI-1=b, HIDE-1=a, PREVIEW-1=P0,
+  LIFE-1=a, GUARD-1=a, GUARD-2=a`). Isolate is one `ObjectId` in the Sculpt
+  session, handed to `ConstructionScene::snapshot` as a `SceneViewRestriction`
+  the scene is GIVEN; `viewSceneSnapshot()` is the ONE list the renderer draws
+  and `pickScene` casts against, so neither consumer carries an isolate
+  predicate and it composes with Hide in the same loop — it can remove bodies,
+  never bring a hidden one back. It is never serialized, never a history step,
+  a checkpoint, the fingerprint, a visibility write or an `AppPreferences`
+  field; every Sculpt entry and exit clears it (Resume opens un-isolated), and
+  its one control lives in the Sculpt Property Inspector only. Durable
+  Show/Hide stays refused in Sculpt — there is no second, transient Hide. In
+  Sculpt a viewport tap that starts no stroke changes neither the selection nor
+  the active body (refused before the pick, logged
+  `FORGESHAPE_SCENE_SELECT_REFUSED:in_sculpt_mode:viewport_tap`), and Start /
+  Resume Sculpt refuse a hidden active body by name
+  (`SCULPT_REFUSED_HIDDEN_BODY`) with both controls withdrawn over one. **Not
+  this stage:** wireframe or any mesh preview, a Vulkan device feature, Show/Hide
+  inside Sculpt, and body switching in Sculpt.
 - **A `.forge` project file is a semantic document, and loading one is
   all-or-nothing.** The format is ForgeShape's own, versioned, and portable
   between compatible installations: every field is a file-owned fixed-width

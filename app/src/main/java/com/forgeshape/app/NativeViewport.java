@@ -497,6 +497,12 @@ final class NativeViewport {
     static final int SCULPT_NOTHING_FROZEN = 2;
     /** The active body is a CAD Body, which this stage does not sculpt. */
     static final int SCULPT_REFUSED_CAD_BODY = 3;
+    /**
+     * The active body is hidden (Stage027 GUARD-2): Start and Resume Sculpt are
+     * refused, changing nothing. The controls are withdrawn over a hidden body;
+     * this is the guard behind them.
+     */
+    static final int SCULPT_REFUSED_HIDDEN_BODY = 4;
 
     // -----------------------------------------------------------------------
     // The seven sculpt tools.
@@ -1780,6 +1786,27 @@ final class NativeViewport {
      * @return one of the {@code SCULPT_*} status constants
      */
     static native int enterSculptMode();
+
+    /**
+     * Sculpt Isolate (Stage027): restricts the viewport to the body being
+     * sculpted, or lifts the restriction. A native-owned, session-only VIEW
+     * decision -- it reaches no {@code .forge} byte, fingerprint, checkpoint or
+     * history step and writes no visibility. Refused outside Sculpt.
+     *
+     * @return true when the request was applied
+     */
+    static native boolean setSculptIsolate(boolean on);
+
+    /** Whether the viewport is currently isolated; always false outside Sculpt. */
+    static native boolean sculptIsolated();
+
+    /**
+     * Read-only verification seam: the ObjectIds of the list the viewport draws
+     * and picks against right now, in scene order. Mutates nothing.
+     *
+     * @return how many ids were written into {@code outIds}
+     */
+    static native int debugViewSceneBodyIds(long[] outIds);
 
     /**
      * Reads the authoritative sculpt state.

@@ -443,6 +443,10 @@
          not drawn. -->
     <item name="sculpt_mask_summary" type="id" />
     <item name="clear_mask" type="id" />
+    <!-- Sculpt Isolate (Stage027). One two-state control in the Sculpt
+         Property Inspector (OWNER UI-1 = b): restricts the viewport to the body
+         being sculpted. Absent outside Sculpt; the id names the act. -->
+    <item name="sculpt_isolate" type="id" />
 
     <!-- Objects: the scene's Construction Bodies. Every row carries the same
          `object_row` id and identifies WHICH body by its tag (the ObjectId),

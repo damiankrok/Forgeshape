@@ -13,8 +13,11 @@ namespace forgeshape {
 
 SceneHit pickScene(const CameraSnapshot& camera, float screenX, float screenY,
                    int viewportWidth, int viewportHeight) {
+    // The viewport's one list -- the SAME call the renderer draws -- so a body
+    // the Sculpt Isolate leaves out is not pickable either, with no predicate
+    // of its own here.
     return pickSceneSnapshot(camera, screenX, screenY, viewportWidth, viewportHeight,
-                             constructionScene().snapshot());
+                             viewSceneSnapshot());
 }
 
 SceneHit pickSceneSnapshot(const CameraSnapshot& camera, float screenX, float screenY,
