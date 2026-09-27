@@ -36,6 +36,9 @@ OUT="${FORGESHAPE_CI_OUT:-ci-device-evidence}"
 BOOT_TIMEOUT_S="${FORGESHAPE_CI_BOOT_TIMEOUT_S:-900}"
 STARTUP_TIMEOUT_S="${FORGESHAPE_CI_STARTUP_TIMEOUT_S:-600}"
 TEST_TIMEOUT_S="${FORGESHAPE_CI_TEST_TIMEOUT_S:-2700}"
+SETTLE_TIMEOUT_S="${FORGESHAPE_CI_SETTLE_TIMEOUT_S:-180}"
+SETTLE_LOAD="${FORGESHAPE_CI_SETTLE_LOAD:-2.5}"
+STARTUP_CAPTURES="${FORGESHAPE_CI_STARTUP_CAPTURES:-3}"
 
 APP_ID="com.forgeshape.app"
 ACTIVITY="$APP_ID/.ForgeShapeActivity"
@@ -95,6 +98,7 @@ TESTS_RUN=0
 TESTS_FAILED=0
 AVD_NAME_CONFIRMED=""
 EMU_PID=""
+STARTUP_CAPTURE_USED=""
 
 json_escape() { python3 -c 'import json,sys; print(json.dumps(sys.stdin.read().rstrip("\n")))'; }
 
@@ -112,6 +116,7 @@ write_summary() {
         printf '  "gpu_mode": "%s",\n' "$GPU_MODE"
         printf '  "boot_seconds": "%s",\n' "$BOOT_SECONDS"
         printf '  "startup_seconds": "%s",\n' "$STARTUP_SECONDS"
+        printf '  "startup_capture_used": "%s",\n' "$STARTUP_CAPTURE_USED"
         printf '  "selftest_tokens_expected": 22,\n'
         printf '  "selftest_tokens_found": %s,\n' "$TOKENS_FOUND"
         printf '  "selftest_tokens_in_order": %s,\n' "$TOKENS_IN_ORDER"
@@ -199,7 +204,6 @@ EMULATOR_ARGS=(-avd "$AVD" -port "$PORT" -no-window -no-audio -no-boot-anim
 echo "$EMULATOR ${EMULATOR_ARGS[*]}" > "$OUT/emulator-command.txt"
 echo "Emulator command: $(cat "$OUT/emulator-command.txt")"
 "$EMULATOR" -accel-check > "$OUT/accel-check.txt" 2>&1 || true
-"$EMULATOR" -version 2>&1 | head -n 3 > "$OUT/emulator-version.txt" || true
 
 boot_start=$(date +%s)
 nohup "$EMULATOR" "${EMULATOR_ARGS[@]}" > "$OUT/emulator-boot.log" 2>&1 &
@@ -221,6 +225,9 @@ done
 [ "$booted" = "1" ] || fail_with "DEVICE_INFRASTRUCTURE_FAILURE" "sys.boot_completed not reached within ${BOOT_TIMEOUT_S}s"
 BOOT_SECONDS=$(( $(date +%s) - boot_start ))
 echo "Booted in ${BOOT_SECONDS}s"
+# `emulator -version` needs host audio libraries the runner lacks; the boot log
+# states the version the emulator actually ran as.
+grep -m1 -E 'Android emulator version' "$OUT/emulator-boot.log" > "$OUT/emulator-version.txt" || true
 
 # Identity, never the port: the AVD behind the serial must be the one created here.
 AVD_NAME_CONFIRMED=$(adb -s "$SERIAL" emu avd name 2>/dev/null | head -n 1 | tr -d '\r')
@@ -267,26 +274,103 @@ cat "$OUT/environment-manifest.txt"
 PHASE="startup"
 adb -s "$SERIAL" install -r "$APP_APK" > "$OUT/install-app.log" 2>&1 \
     || fail_with "DEVICE_INFRASTRUCTURE_FAILURE" "app install failed: $(tail -n 1 "$OUT/install-app.log")"
-adb -s "$SERIAL" logcat -c > /dev/null 2>&1 || true
-startup_start=$(date +%s)
-adb -s "$SERIAL" shell am start -W -n "$ACTIVITY" > "$OUT/am-start.log" 2>&1 || true
 
-settled=""
-while [ $(( $(date +%s) - startup_start )) -lt "$STARTUP_TIMEOUT_S" ]; do
-    adb -s "$SERIAL" logcat -d -v threadtime > "$OUT/startup-logcat.txt" 2>/dev/null || true
-    grep -E "$TAG_PATTERN" "$OUT/startup-logcat.txt" > "$OUT/startup-forgeshape.txt" || true
-    if grep -q 'FORGESHAPE_NATIVE_VIEWPORT_OK' "$OUT/startup-forgeshape.txt"; then settled="ok"; break; fi
-    if grep -qE 'FORGESHAPE_NATIVE_VIEWPORT_FAIL:' "$OUT/startup-forgeshape.txt"; then settled="viewport_fail"; break; fi
-    if grep -qE "$FAIL_PATTERN" "$OUT/startup-forgeshape.txt" \
-        && ! adb -s "$SERIAL" shell pidof "$APP_ID" > /dev/null 2>&1; then settled="died"; break; fi
+# A freshly booted emulator is still busy. The startup suites write ~3600
+# lines in well under a second, and when logd cannot drain its socket fast
+# enough liblog DROPS lines on the writer side — a 64M ring buffer does not
+# help with that. Let the system settle first (bounded; recorded).
+settle_start=$(date +%s)
+while [ $(( $(date +%s) - settle_start )) -lt "$SETTLE_TIMEOUT_S" ]; do
+    load1=$(adb -s "$SERIAL" shell cat /proc/loadavg 2>/dev/null | awk '{print $1}')
+    awk -v l="${load1:-99}" -v t="$SETTLE_LOAD" 'BEGIN { exit !(l < t) }' && break
     sleep 5
 done
-STARTUP_SECONDS=$(( $(date +%s) - startup_start ))
-# One more read so lines emitted after the verdict line are kept too.
-sleep 3
-adb -s "$SERIAL" logcat -d -v threadtime > "$OUT/startup-logcat.txt" 2>/dev/null || true
-adb -s "$SERIAL" exec-out screencap -p > "$OUT/startup-screenshot.png" 2>/dev/null || true
-grep -E "$TAG_PATTERN" "$OUT/startup-logcat.txt" > "$OUT/startup-forgeshape.txt" || true
+echo "settled_seconds=$(( $(date +%s) - settle_start )) load1=${load1:-unknown} (target < $SETTLE_LOAD)" \
+    | tee "$OUT/settle.txt"
+
+# One launch = one capture. Returns 0 when that capture alone holds all
+# twenty-two tokens in order, NATIVE_VIEWPORT_OK and zero failure lines.
+# Anything that is evidence of a real fault ends the run by name at once; the
+# only outcome that may be captured again is an INCOMPLETE capture with zero
+# failure lines, and then only when liblog itself reports dropping lines.
+capture_startup() {
+    local n=$1
+    local log="$OUT/startup-logcat-$n.txt" fs="$OUT/startup-forgeshape-$n.txt"
+    adb -s "$SERIAL" shell am force-stop "$APP_ID" > /dev/null 2>&1 || true
+    adb -s "$SERIAL" logcat -b all -c > /dev/null 2>&1 || true
+    local start
+    start=$(date +%s)
+    adb -s "$SERIAL" shell am start -W -n "$ACTIVITY" > "$OUT/am-start-$n.log" 2>&1 || true
+    settled=""
+    while [ $(( $(date +%s) - start )) -lt "$STARTUP_TIMEOUT_S" ]; do
+        adb -s "$SERIAL" logcat -d -v threadtime > "$log" 2>/dev/null || true
+        grep -E "$TAG_PATTERN" "$log" > "$fs" || true
+        if grep -q 'FORGESHAPE_NATIVE_VIEWPORT_OK' "$fs"; then settled="ok"; break; fi
+        if grep -qE 'FORGESHAPE_NATIVE_VIEWPORT_FAIL:' "$fs"; then settled="viewport_fail"; break; fi
+        if grep -qE "$FAIL_PATTERN" "$fs" \
+            && ! adb -s "$SERIAL" shell pidof "$APP_ID" > /dev/null 2>&1; then settled="died"; break; fi
+        sleep 5
+    done
+    STARTUP_SECONDS=$(( $(date +%s) - start ))
+    # One more read so lines emitted after the verdict line are kept too.
+    sleep 3
+    adb -s "$SERIAL" logcat -d -v threadtime > "$log" 2>/dev/null || true
+    grep -E "$TAG_PATTERN" "$log" > "$fs" || true
+    adb -s "$SERIAL" logcat -d -b events -v threadtime > "$OUT/startup-events-$n.txt" 2>/dev/null || true
+    adb -s "$SERIAL" exec-out screencap -p > "$OUT/startup-screenshot-$n.png" 2>/dev/null || true
+
+    # liblog's own drop counter: an "I liblog : <count>" event from the app's pid.
+    local pid dropped
+    pid=$(awk 'NR==1 {print $3}' "$fs")
+    dropped=$(awk -v p="$pid" '$3==p && $6 ~ /^liblog/ {gsub(/[^0-9]/, "", $NF); s+=$NF} END {print s+0}' \
+        "$OUT/startup-events-$n.txt")
+
+    grep -oE 'FORGESHAPE_[A-Z0-9_]+_SELFTEST_OK' "$fs" | awk '!seen[$0]++' > "$OUT/selftest-tokens-found-$n.txt"
+    TOKENS_FOUND=$(grep -cxFf <(printf '%s\n' "$EXPECTED_TOKENS") "$OUT/selftest-tokens-found-$n.txt" || true)
+    TOKENS_IN_ORDER=false
+    if [ "$(cat "$OUT/selftest-tokens-found-$n.txt")" = "$EXPECTED_TOKENS" ]; then TOKENS_IN_ORDER=true; fi
+    VIEWPORT_OK=false
+    if grep -q 'FORGESHAPE_NATIVE_VIEWPORT_OK' "$fs"; then VIEWPORT_OK=true; fi
+    FAIL_LINES=$(grep -cE "$FAIL_PATTERN" "$fs" || true)
+    grep -E "$FAIL_PATTERN" "$fs" > "$OUT/startup-failure-lines-$n.txt" || true
+    echo "capture=$n tokens=$TOKENS_FOUND/22 in_order=$TOKENS_IN_ORDER viewport_ok=$VIEWPORT_OK failure_lines=$FAIL_LINES liblog_dropped=$dropped pid=$pid (${STARTUP_SECONDS}s)" \
+        | tee -a "$OUT/startup-captures.txt"
+
+    if [ "$FAIL_LINES" -gt 0 ] && grep -qE '_SELFTEST_FAIL|_CASE_FAIL:' "$fs"; then
+        fail_with "FAIL-CI-CLOUD-DEVICE-PRODUCT" "a startup self-test failed: $(head -n 1 "$OUT/startup-failure-lines-$n.txt")"
+    fi
+    if [ "$VIEWPORT_OK" != true ]; then
+        if [ "$settled" = "viewport_fail" ] || ! grep -q 'android.hardware.vulkan' "$OUT/environment-manifest.txt"; then
+            fail_with "BLOCKED-CI-CLOUD-DEVICE-CAPABILITY" "no usable Vulkan path: $(grep -m1 -oE 'FORGESHAPE_NATIVE_VIEWPORT_FAIL:[^ ]*' "$fs" || echo 'viewport never reported OK')"
+        fi
+        fail_with "DEVICE_STARTUP_UNRESOLVED" "viewport never reported OK within ${STARTUP_TIMEOUT_S}s (settled=$settled); inspect startup-logcat-$n.txt"
+    fi
+    if [ "$FAIL_LINES" -gt 0 ]; then
+        fail_with "FAIL-CI-CLOUD-DEVICE-PRODUCT" "failure token after startup: $(head -n 1 "$OUT/startup-failure-lines-$n.txt")"
+    fi
+    if [ "$TOKENS_FOUND" -eq 22 ] && [ "$TOKENS_IN_ORDER" = true ]; then
+        return 0
+    fi
+    if [ "$dropped" -eq 0 ]; then
+        fail_with "DEVICE_STARTUP_UNRESOLVED" "capture $n: $TOKENS_FOUND/22 tokens with zero failures and NO liblog drop reported — not explainable as a dropped capture"
+    fi
+    return 1
+}
+
+complete=""
+for n in $(seq 1 "$STARTUP_CAPTURES"); do
+    if capture_startup "$n"; then complete="$n"; break; fi
+done
+if [ -z "$complete" ]; then
+    fail_with "DEVICE_STARTUP_UNRESOLVED" "$STARTUP_CAPTURES captures were each incomplete with zero failure lines and liblog-reported drops; see startup-captures.txt"
+fi
+# The complete capture is THE startup evidence.
+cp "$OUT/startup-logcat-$complete.txt" "$OUT/startup-logcat.txt"
+cp "$OUT/startup-forgeshape-$complete.txt" "$OUT/startup-forgeshape.txt"
+cp "$OUT/selftest-tokens-found-$complete.txt" "$OUT/selftest-tokens-found.txt"
+cp "$OUT/startup-screenshot-$complete.png" "$OUT/startup-screenshot.png" 2>/dev/null || true
+STARTUP_CAPTURE_USED="$complete"
+echo "Startup evidence: capture $complete of $STARTUP_CAPTURES — 22/22 tokens in order, NATIVE_VIEWPORT_OK, 0 failure lines"
 
 # Vulkan evidence as ForgeShape itself reports it.
 grep -iE 'Vulkan|Physical device selected|Queue families|swapchain' "$OUT/startup-forgeshape.txt" \
@@ -295,31 +379,6 @@ grep -iE 'Vulkan|Physical device selected|Queue families|swapchain' "$OUT/startu
     echo "vulkan_lines_from_forgeshape:"
     sed 's/^/  /' "$OUT/vulkan-evidence.txt"
 } >> "$OUT/environment-manifest.txt"
-
-# The twenty-two tokens, in order, then the viewport.
-grep -oE 'FORGESHAPE_[A-Z0-9_]+_SELFTEST_OK' "$OUT/startup-forgeshape.txt" | awk '!seen[$0]++' > "$OUT/selftest-tokens-found.txt"
-TOKENS_FOUND=$(grep -cxFf <(printf '%s\n' "$EXPECTED_TOKENS") "$OUT/selftest-tokens-found.txt" || true)
-if [ "$(cat "$OUT/selftest-tokens-found.txt")" = "$EXPECTED_TOKENS" ]; then TOKENS_IN_ORDER=true; fi
-if grep -q 'FORGESHAPE_NATIVE_VIEWPORT_OK' "$OUT/startup-forgeshape.txt"; then VIEWPORT_OK=true; fi
-FAIL_LINES=$(grep -cE "$FAIL_PATTERN" "$OUT/startup-forgeshape.txt" || true)
-grep -E "$FAIL_PATTERN" "$OUT/startup-forgeshape.txt" > "$OUT/startup-failure-lines.txt" || true
-echo "Startup: tokens=$TOKENS_FOUND/22 in_order=$TOKENS_IN_ORDER viewport_ok=$VIEWPORT_OK failure_lines=$FAIL_LINES (${STARTUP_SECONDS}s)"
-
-if [ "$FAIL_LINES" -gt 0 ] && grep -qE '_SELFTEST_FAIL|_CASE_FAIL:' "$OUT/startup-forgeshape.txt"; then
-    fail_with "FAIL-CI-CLOUD-DEVICE-PRODUCT" "a startup self-test failed: $(head -n 1 "$OUT/startup-failure-lines.txt")"
-fi
-if [ "$VIEWPORT_OK" != true ]; then
-    if [ "$settled" = "viewport_fail" ] || ! grep -q 'android.hardware.vulkan' "$OUT/environment-manifest.txt"; then
-        fail_with "BLOCKED-CI-CLOUD-DEVICE-CAPABILITY" "no usable Vulkan path: $(grep -m1 -oE 'FORGESHAPE_NATIVE_VIEWPORT_FAIL:[^ ]*' "$OUT/startup-forgeshape.txt" || echo 'viewport never reported OK')"
-    fi
-    fail_with "DEVICE_STARTUP_UNRESOLVED" "viewport never reported OK within ${STARTUP_TIMEOUT_S}s (settled=$settled); inspect startup-logcat.txt"
-fi
-if [ "$FAIL_LINES" -gt 0 ]; then
-    fail_with "FAIL-CI-CLOUD-DEVICE-PRODUCT" "failure token after startup: $(head -n 1 "$OUT/startup-failure-lines.txt")"
-fi
-if [ "$TOKENS_FOUND" -ne 22 ] || [ "$TOKENS_IN_ORDER" != true ]; then
-    fail_with "DEVICE_STARTUP_UNRESOLVED" "expected 22 self-test tokens in order, found $TOKENS_FOUND (in_order=$TOKENS_IN_ORDER) with zero failures — treat as a dropped capture until proven otherwise"
-fi
 adb -s "$SERIAL" shell am force-stop "$APP_ID" > /dev/null 2>&1 || true
 
 # ---------------------------------------------------------------------------

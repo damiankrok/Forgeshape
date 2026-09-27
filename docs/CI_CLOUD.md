@@ -64,9 +64,21 @@ build, and its checksum is validated first.
    command is kept in the evidence.
 3. Confirms identity with `adb -s emulator-5580 emu avd name`; every adb call
    carries `-s`.
-4. Sets the log buffer to 64M, installs the debug APK, launches it, and requires
-   all **22** `*_SELFTEST_OK` tokens in order, `FORGESHAPE_NATIVE_VIEWPORT_OK`,
-   and zero `_SELFTEST_FAIL` / `_FAIL:` lines.
+4. Sets the log buffer to 64M, installs the debug APK, lets the freshly booted
+   system settle (1-minute load below 2.5, at most 180 s), launches it, and
+   requires ONE capture holding all **22** `*_SELFTEST_OK` tokens in order,
+   `FORGESHAPE_NATIVE_VIEWPORT_OK`, and zero `_SELFTEST_FAIL` / `_FAIL:` lines —
+   read from `ForgeShape`-tagged lines only, so a system line containing
+   `_FAIL:` is never mistaken for one of ours.
+
+   **A dropped capture is proven, not assumed.** The suites write ~3600 lines
+   in under a second; on a busy emulator liblog drops lines on the WRITER side
+   before they reach logd, which no ring-buffer size can fix, and it records
+   how many in the `events` buffer (`liblog : <count>`). A capture with any
+   failure line fails at once. A capture that is short of tokens with zero
+   failure lines is relaunched only when liblog reports a drop for that
+   process — at most three captures, each kept as `startup-logcat-<n>.txt` —
+   and a gap with no reported drop fails as `DEVICE_STARTUP_UNRESOLVED`.
 5. Runs ONE instrumentation class — `com.forgeshape.app.Ui3dStateCorrectionTest`
    by default (12 tests: real `MotionEvent` input, native anchor projection
    through the live camera, Construction / Sculpt / CAD modes) — and requires
