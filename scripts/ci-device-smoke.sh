@@ -69,6 +69,11 @@ FORGESHAPE_BODY_DIMENSIONS_SELFTEST_OK
 FORGESHAPE_MIRROR_SELFTEST_OK"
 # Failure vocabulary. Never a bare FAIL: passing check NAMES contain "fails".
 FAIL_PATTERN='_SELFTEST_FAIL|_FAIL:'
+# Every native and Java log line ForgeShape writes carries the one tag
+# "ForgeShape" (FS_TAG). Tokens and failures are read from those lines only, so
+# an unrelated system line that happens to contain "_FAIL:" is never mistaken
+# for a ForgeShape failure. `-v threadtime` prints "<level> ForgeShape: ...".
+TAG_PATTERN=' [VDIWEF] ForgeShape *:'
 
 mkdir -p "$OUT"
 OUT="$(cd "$OUT" && pwd)"
@@ -170,12 +175,19 @@ AVDMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager"
 # 2. A fresh AVD, created in this job.
 # ---------------------------------------------------------------------------
 PHASE="avd_create"
+# ONE AVD home for both tools. avdmanager honours XDG_CONFIG_HOME (set on
+# GitHub-hosted runners) and would write under ~/.config/.android/avd, while the
+# emulator looks in ~/.android/avd and exits at once with "Unknown AVD name".
+export ANDROID_AVD_HOME="${ANDROID_AVD_HOME:-$HOME/.android/avd}"
+mkdir -p "$ANDROID_AVD_HOME"
 if ! echo no | "$AVDMANAGER" create avd --force -n "$AVD" -k "$SYSTEM_IMAGE" -d "$DEVICE_PROFILE" \
         > "$OUT/avd-create.log" 2>&1; then
     fail_with "DEVICE_INFRASTRUCTURE_FAILURE" "avdmanager could not create $AVD from $SYSTEM_IMAGE ($DEVICE_PROFILE)"
 fi
-AVD_DIR="${ANDROID_AVD_HOME:-$HOME/.android/avd}/$AVD.avd"
-cp "$AVD_DIR/config.ini" "$OUT/avd-config.ini" 2>/dev/null || true
+if [ ! -f "$ANDROID_AVD_HOME/$AVD.ini" ] || [ ! -f "$ANDROID_AVD_HOME/$AVD.avd/config.ini" ]; then
+    fail_with "DEVICE_INFRASTRUCTURE_FAILURE" "avdmanager reported success but $ANDROID_AVD_HOME/$AVD.ini is missing"
+fi
+cp "$ANDROID_AVD_HOME/$AVD.avd/config.ini" "$OUT/avd-config.ini"
 
 # ---------------------------------------------------------------------------
 # 3. Boot headless on the explicit port. No window, no audio, no snapshot.
@@ -187,20 +199,23 @@ EMULATOR_ARGS=(-avd "$AVD" -port "$PORT" -no-window -no-audio -no-boot-anim
 echo "$EMULATOR ${EMULATOR_ARGS[*]}" > "$OUT/emulator-command.txt"
 echo "Emulator command: $(cat "$OUT/emulator-command.txt")"
 "$EMULATOR" -accel-check > "$OUT/accel-check.txt" 2>&1 || true
-"$EMULATOR" -version 2>/dev/null | head -n 3 > "$OUT/emulator-version.txt" || true
+"$EMULATOR" -version 2>&1 | head -n 3 > "$OUT/emulator-version.txt" || true
 
 boot_start=$(date +%s)
 nohup "$EMULATOR" "${EMULATOR_ARGS[@]}" > "$OUT/emulator-boot.log" 2>&1 &
 EMU_PID=$!
 
-if ! timeout "$BOOT_TIMEOUT_S" adb -s "$SERIAL" wait-for-device; then
-    fail_with "DEVICE_INFRASTRUCTURE_FAILURE" "$SERIAL never appeared within ${BOOT_TIMEOUT_S}s"
-fi
+# Poll rather than block, so an emulator that exits is reported at once with
+# its own reason instead of being waited on for the whole budget.
 booted=""
 while [ $(( $(date +%s) - boot_start )) -lt "$BOOT_TIMEOUT_S" ]; do
-    kill -0 "$EMU_PID" 2>/dev/null || fail_with "DEVICE_INFRASTRUCTURE_FAILURE" "emulator process exited during boot"
-    booted=$(adb -s "$SERIAL" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
-    [ "$booted" = "1" ] && break
+    if ! kill -0 "$EMU_PID" 2>/dev/null; then
+        fail_with "DEVICE_INFRASTRUCTURE_FAILURE" "emulator process exited during boot: $(grep -E 'ERROR|FATAL' "$OUT/emulator-boot.log" | head -n 2 | tr '\n' ' ')"
+    fi
+    if [ "$(adb -s "$SERIAL" get-state 2>/dev/null | tr -d '\r')" = "device" ]; then
+        booted=$(adb -s "$SERIAL" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
+        [ "$booted" = "1" ] && break
+    fi
     sleep 5
 done
 [ "$booted" = "1" ] || fail_with "DEVICE_INFRASTRUCTURE_FAILURE" "sys.boot_completed not reached within ${BOOT_TIMEOUT_S}s"
@@ -259,9 +274,10 @@ adb -s "$SERIAL" shell am start -W -n "$ACTIVITY" > "$OUT/am-start.log" 2>&1 || 
 settled=""
 while [ $(( $(date +%s) - startup_start )) -lt "$STARTUP_TIMEOUT_S" ]; do
     adb -s "$SERIAL" logcat -d -v threadtime > "$OUT/startup-logcat.txt" 2>/dev/null || true
-    if grep -q 'FORGESHAPE_NATIVE_VIEWPORT_OK' "$OUT/startup-logcat.txt"; then settled="ok"; break; fi
-    if grep -qE 'FORGESHAPE_NATIVE_VIEWPORT_FAIL:' "$OUT/startup-logcat.txt"; then settled="viewport_fail"; break; fi
-    if grep -qE "$FAIL_PATTERN" "$OUT/startup-logcat.txt" \
+    grep -E "$TAG_PATTERN" "$OUT/startup-logcat.txt" > "$OUT/startup-forgeshape.txt" || true
+    if grep -q 'FORGESHAPE_NATIVE_VIEWPORT_OK' "$OUT/startup-forgeshape.txt"; then settled="ok"; break; fi
+    if grep -qE 'FORGESHAPE_NATIVE_VIEWPORT_FAIL:' "$OUT/startup-forgeshape.txt"; then settled="viewport_fail"; break; fi
+    if grep -qE "$FAIL_PATTERN" "$OUT/startup-forgeshape.txt" \
         && ! adb -s "$SERIAL" shell pidof "$APP_ID" > /dev/null 2>&1; then settled="died"; break; fi
     sleep 5
 done
@@ -270,7 +286,7 @@ STARTUP_SECONDS=$(( $(date +%s) - startup_start ))
 sleep 3
 adb -s "$SERIAL" logcat -d -v threadtime > "$OUT/startup-logcat.txt" 2>/dev/null || true
 adb -s "$SERIAL" exec-out screencap -p > "$OUT/startup-screenshot.png" 2>/dev/null || true
-grep -E ' ForgeShape' "$OUT/startup-logcat.txt" > "$OUT/startup-forgeshape.txt" || true
+grep -E "$TAG_PATTERN" "$OUT/startup-logcat.txt" > "$OUT/startup-forgeshape.txt" || true
 
 # Vulkan evidence as ForgeShape itself reports it.
 grep -iE 'Vulkan|Physical device selected|Queue families|swapchain' "$OUT/startup-forgeshape.txt" \
@@ -281,20 +297,20 @@ grep -iE 'Vulkan|Physical device selected|Queue families|swapchain' "$OUT/startu
 } >> "$OUT/environment-manifest.txt"
 
 # The twenty-two tokens, in order, then the viewport.
-grep -oE 'FORGESHAPE_[A-Z0-9_]+_SELFTEST_OK' "$OUT/startup-logcat.txt" | awk '!seen[$0]++' > "$OUT/selftest-tokens-found.txt"
+grep -oE 'FORGESHAPE_[A-Z0-9_]+_SELFTEST_OK' "$OUT/startup-forgeshape.txt" | awk '!seen[$0]++' > "$OUT/selftest-tokens-found.txt"
 TOKENS_FOUND=$(grep -cxFf <(printf '%s\n' "$EXPECTED_TOKENS") "$OUT/selftest-tokens-found.txt" || true)
 if [ "$(cat "$OUT/selftest-tokens-found.txt")" = "$EXPECTED_TOKENS" ]; then TOKENS_IN_ORDER=true; fi
-if grep -q 'FORGESHAPE_NATIVE_VIEWPORT_OK' "$OUT/startup-logcat.txt"; then VIEWPORT_OK=true; fi
-FAIL_LINES=$(grep -cE "$FAIL_PATTERN" "$OUT/startup-logcat.txt" || true)
-grep -E "$FAIL_PATTERN" "$OUT/startup-logcat.txt" > "$OUT/startup-failure-lines.txt" || true
+if grep -q 'FORGESHAPE_NATIVE_VIEWPORT_OK' "$OUT/startup-forgeshape.txt"; then VIEWPORT_OK=true; fi
+FAIL_LINES=$(grep -cE "$FAIL_PATTERN" "$OUT/startup-forgeshape.txt" || true)
+grep -E "$FAIL_PATTERN" "$OUT/startup-forgeshape.txt" > "$OUT/startup-failure-lines.txt" || true
 echo "Startup: tokens=$TOKENS_FOUND/22 in_order=$TOKENS_IN_ORDER viewport_ok=$VIEWPORT_OK failure_lines=$FAIL_LINES (${STARTUP_SECONDS}s)"
 
-if [ "$FAIL_LINES" -gt 0 ] && grep -qE '_SELFTEST_FAIL|_CASE_FAIL:' "$OUT/startup-logcat.txt"; then
+if [ "$FAIL_LINES" -gt 0 ] && grep -qE '_SELFTEST_FAIL|_CASE_FAIL:' "$OUT/startup-forgeshape.txt"; then
     fail_with "FAIL-CI-CLOUD-DEVICE-PRODUCT" "a startup self-test failed: $(head -n 1 "$OUT/startup-failure-lines.txt")"
 fi
 if [ "$VIEWPORT_OK" != true ]; then
     if [ "$settled" = "viewport_fail" ] || ! grep -q 'android.hardware.vulkan' "$OUT/environment-manifest.txt"; then
-        fail_with "BLOCKED-CI-CLOUD-DEVICE-CAPABILITY" "no usable Vulkan path: $(grep -m1 -oE 'FORGESHAPE_NATIVE_VIEWPORT_FAIL:[^ ]*' "$OUT/startup-logcat.txt" || echo 'viewport never reported OK')"
+        fail_with "BLOCKED-CI-CLOUD-DEVICE-CAPABILITY" "no usable Vulkan path: $(grep -m1 -oE 'FORGESHAPE_NATIVE_VIEWPORT_FAIL:[^ ]*' "$OUT/startup-forgeshape.txt" || echo 'viewport never reported OK')"
     fi
     fail_with "DEVICE_STARTUP_UNRESOLVED" "viewport never reported OK within ${STARTUP_TIMEOUT_S}s (settled=$settled); inspect startup-logcat.txt"
 fi

@@ -191,13 +191,13 @@ jobs:
           {
             echo "## CI FAST"
             echo '```'
-            cat ci-fast-evidence/toolchain-manifest.txt 2>/dev/null
+            cat ci-fast-evidence/toolchain-manifest.txt 2>/dev/null || true
             echo '```'
             echo "### Release self-test guard"
-            cat ci-fast-evidence/release-selftest-guard.md 2>/dev/null
+            cat ci-fast-evidence/release-selftest-guard.md 2>/dev/null || true
             echo "### .forge corpus parity"
             echo '```'
-            cat ci-fast-evidence/forge-corpus-parity.txt 2>/dev/null
+            cat ci-fast-evidence/forge-corpus-parity.txt 2>/dev/null || true
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 

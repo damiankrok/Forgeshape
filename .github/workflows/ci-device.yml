@@ -111,7 +111,7 @@ jobs:
             cat ci-device-evidence/summary.json 2>/dev/null || echo '{"result": "NO_SUMMARY"}'
             echo '```'
             echo '```'
-            cat ci-device-evidence/environment-manifest.txt 2>/dev/null
+            cat ci-device-evidence/environment-manifest.txt 2>/dev/null || echo '(no environment manifest: the run stopped before it)'
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
