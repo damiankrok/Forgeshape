@@ -1,0 +1,229 @@
+# FAST: everything that needs no Android device.
+#
+# Build (debug, androidTest, release), JVM unit tests, the release self-test
+# guard, the `.forge` corpus parity check, the device-free test-runner and
+# device-guard checks, and a whitespace check over the pushed or proposed
+# range. Runs on a GitHub-hosted Ubuntu VM with the pinned toolchain resolved
+# explicitly; nothing relies on whatever NDK the image happens to carry.
+#
+# See docs/CI_CLOUD.md for how this fits the task-branch workflow.
+name: CI FAST
+
+on:
+  push:
+    branches: [main, infra/ci-cloud-r1]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Read-only token. Nothing in this job writes to the repository, and it needs
+# no secret of any kind. `pull_request` (never `pull_request_target`) so a
+# fork's code runs without elevated permissions.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-fast-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Held exactly to app/build.gradle and CLAUDE.md. Do not bump here.
+  ANDROID_PLATFORM: android-36
+  ANDROID_BUILD_TOOLS: 36.1.0
+  ANDROID_NDK_VERSION: 29.0.14206865
+  ANDROID_CMAKE_VERSION: 3.22.1
+
+jobs:
+  fast:
+    name: FAST (build, unit, guards, corpus)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          # Full history so the whitespace check can diff the pushed range.
+          fetch-depth: 0
+
+      - name: Validate the Gradle wrapper checksum
+        uses: gradle/actions/wrapper-validation@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle (cache only; the checked-in wrapper runs the build)
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Install the pinned Android SDK components
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+          "$SDKMANAGER" --install \
+            "platform-tools" \
+            "platforms;$ANDROID_PLATFORM" \
+            "build-tools;$ANDROID_BUILD_TOOLS" \
+            "ndk;$ANDROID_NDK_VERSION" \
+            "cmake;$ANDROID_CMAKE_VERSION" \
+            > "$RUNNER_TEMP/sdkmanager-install.log" 2>&1
+          tr '\r' '\n' < "$RUNNER_TEMP/sdkmanager-install.log" | tail -n 5
+          test -f "$ANDROID_HOME/ndk/$ANDROID_NDK_VERSION/source.properties"
+          test -x "$ANDROID_HOME/cmake/$ANDROID_CMAKE_VERSION/bin/cmake"
+
+      - name: Record the toolchain manifest
+        run: |
+          set -uo pipefail
+          mkdir -p ci-fast-evidence
+          {
+            echo "runner_image=${ImageOS:-unknown} ${ImageVersion:-unknown}"
+            echo "runner_os=$(lsb_release -ds 2>/dev/null)"
+            echo "commit=$GITHUB_SHA"
+            echo "ref=$GITHUB_REF"
+            echo "event=$GITHUB_EVENT_NAME"
+            echo "java=$(java -version 2>&1 | head -n 1)"
+            echo "java_home=$JAVA_HOME"
+            echo "android_home=$ANDROID_HOME"
+            echo "ndk=$(grep Pkg.Revision "$ANDROID_HOME/ndk/$ANDROID_NDK_VERSION/source.properties")"
+            echo "cmake=$("$ANDROID_HOME/cmake/$ANDROID_CMAKE_VERSION/bin/cmake" --version | head -n 1)"
+            echo "build_tools=$(grep Pkg.Revision "$ANDROID_HOME/build-tools/$ANDROID_BUILD_TOOLS/source.properties")"
+            echo "platform=$(grep Pkg.Revision "$ANDROID_HOME/platforms/$ANDROID_PLATFORM/source.properties")"
+            echo "pwsh=$(pwsh -NoProfile -Command '$PSVersionTable.PSVersion.ToString()' 2>&1)"
+            echo "gradle_wrapper=$(grep distributionUrl gradle/wrapper/gradle-wrapper.properties)"
+            bash ./gradlew --version 2>&1 | grep -E '^(Gradle|Kotlin|Groovy|JVM|OS)'
+          } | tee ci-fast-evidence/toolchain-manifest.txt
+
+      - name: Whitespace check over the pushed or proposed range
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          base=""
+          case "$EVENT" in
+            pull_request) base="$PR_BASE" ;;
+            push) base="$PUSH_BEFORE" ;;
+          esac
+          # A new branch (all-zero "before"), a dispatch, or a base that is not
+          # in the clone falls back to where HEAD left origin/main, or HEAD~1.
+          if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ] \
+              || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            base="$(git merge-base HEAD origin/main 2>/dev/null || true)"
+            if [ -z "$base" ] || [ "$base" = "$(git rev-parse HEAD)" ]; then
+              base="$(git rev-parse HEAD~1)"
+            fi
+          fi
+          echo "git diff --check $base HEAD"
+          git diff --check "$base" HEAD
+
+      - name: Build, JVM unit tests, debug + androidTest + release APKs
+        run: |
+          bash ./gradlew --stacktrace \
+            :app:testDebugUnitTest \
+            :app:assembleDebug \
+            :app:assembleDebugAndroidTest \
+            :app:assembleRelease
+
+      - name: Release self-test guard (0 self-test symbols and strings in release)
+        run: bash scripts/ci-release-selftest-guard.sh | tee ci-fast-evidence/release-selftest-guard.md
+
+      - name: .forge corpus parity (independent encoder vs committed fixtures)
+        shell: bash
+        run: |
+          set -euo pipefail
+          regen="$RUNNER_TEMP/forge-corpus"
+          mkdir -p "$regen"
+          # The builder is the second, independent encoder written from
+          # DATA_PACKAGE_SPEC.md. Regenerate into a scratch directory and require
+          # every committed fixture to be byte-identical, with none missing or
+          # extra. (-OutputDirectory is passed explicitly: the script's default
+          # is a Windows-style relative path.)
+          pwsh -NoProfile -File scripts/build-forge-corpus.ps1 -OutputDirectory "$regen" \
+            > ci-fast-evidence/forge-corpus-build.txt
+          pwsh -NoProfile -File scripts/build-forge-corpus.ps1 -VerifyOnly \
+            -OutputDirectory "$GITHUB_WORKSPACE/testdata/forge/v1" \
+            > ci-fast-evidence/forge-corpus-verify.txt
+          committed=$(ls testdata/forge/v1 | wc -l)
+          generated=$(ls "$regen" | wc -l)
+          mismatches=0
+          for f in testdata/forge/v1/*; do
+            cmp -s "$f" "$regen/$(basename "$f")" || { echo "MISMATCH $(basename "$f")"; mismatches=$((mismatches + 1)); }
+          done
+          for f in "$regen"/*; do
+            [ -f "testdata/forge/v1/$(basename "$f")" ] || { echo "UNCOMMITTED $(basename "$f")"; mismatches=$((mismatches + 1)); }
+          done
+          echo "committed=$committed generated=$generated mismatches=$mismatches" \
+            | tee ci-fast-evidence/forge-corpus-parity.txt
+          test "$committed" -eq 36
+          test "$generated" -eq 36
+          test "$mismatches" -eq 0
+          echo "FORGE_CORPUS_PARITY=PASS (36/36 byte-identical)" | tee -a ci-fast-evidence/forge-corpus-parity.txt
+
+      - name: Device-free runner and device-guard checks
+        shell: bash
+        run: |
+          set -uo pipefail
+          # verify-device-guards.ps1 spawns its children as `powershell.exe`
+          # (a real process boundary, for honest exit codes). On Linux that
+          # name is pwsh, so give it a CI-only shim rather than editing the
+          # proven local script.
+          shim="$RUNNER_TEMP/pwsh-shim"
+          mkdir -p "$shim"
+          printf '#!/bin/sh\nexec pwsh "$@"\n' > "$shim/powershell.exe"
+          chmod +x "$shim/powershell.exe"
+          status=0
+          for s in test-instrumented-runtime test-instrumented-sharding verify-device-guards; do
+            echo "::group::$s"
+            PATH="$shim:$PATH" pwsh -NoProfile -File "scripts/$s.ps1" 2>&1 | tee "ci-fast-evidence/$s.txt"
+            rc=${PIPESTATUS[0]}
+            echo "::endgroup::"
+            echo "$s exit=$rc"
+            [ "$rc" -eq 0 ] || status=1
+          done
+          exit $status
+
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "## CI FAST"
+            echo '```'
+            cat ci-fast-evidence/toolchain-manifest.txt 2>/dev/null
+            echo '```'
+            echo "### Release self-test guard"
+            cat ci-fast-evidence/release-selftest-guard.md 2>/dev/null
+            echo "### .forge corpus parity"
+            echo '```'
+            cat ci-fast-evidence/forge-corpus-parity.txt 2>/dev/null
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload FAST evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-fast-evidence
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            ci-fast-evidence/
+            app/build/reports/tests/
+            app/build/test-results/
+            app/build/outputs/apk/debug/app-debug.apk
+            app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+            app/build/outputs/apk/release/app-release-unsigned.apk
+
+      - name: Upload Gradle problem reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-fast-failure-reports
+          retention-days: 14
+          if-no-files-found: ignore
+          path: |
+            build/reports/
+            app/build/reports/
+            app/.cxx/**/*.log

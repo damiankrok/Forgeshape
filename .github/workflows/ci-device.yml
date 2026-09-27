@@ -1,0 +1,136 @@
+# DEVICE: a fresh headless Android API 36 x86_64 emulator on a GitHub-hosted
+# Linux VM, ForgeShape's own startup evidence (22 self-test tokens, then the
+# first presented Vulkan frame), and ONE focused instrumentation class.
+#
+# This is focused evidence, never the full suite: FullSharded stays a
+# deliberate, manual act (docs/CI_CLOUD.md). Emulator evidence closes no
+# physical-device, stylus, hardware or performance gate.
+name: CI DEVICE
+
+on:
+  push:
+    branches: [main, infra/ci-cloud-r1]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      test_class:
+        description: Fully-qualified instrumentation class to run (focused evidence only)
+        required: false
+        default: com.forgeshape.app.Ui3dStateCorrectionTest
+
+# Read-only token; no secret is used. `pull_request`, never
+# `pull_request_target`, so fork code never runs with elevated permissions.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-device-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Held exactly to app/build.gradle and CLAUDE.md. Do not bump here.
+  ANDROID_PLATFORM: android-36
+  ANDROID_BUILD_TOOLS: 36.1.0
+  ANDROID_NDK_VERSION: 29.0.14206865
+  ANDROID_CMAKE_VERSION: 3.22.1
+  # The CI-only AVD. The port is explicit and is never 5554 — the same rule the
+  # local launcher enforces — and every adb call below is `adb -s emulator-5580`.
+  FORGESHAPE_CI_AVD: ForgeShape_CI_API36
+  FORGESHAPE_CI_PORT: '5580'
+  FORGESHAPE_CI_SYSTEM_IMAGE: system-images;android-36;google_apis;x86_64
+  FORGESHAPE_CI_DEVICE_PROFILE: medium_phone
+  FORGESHAPE_CI_GPU: swiftshader_indirect
+
+jobs:
+  device:
+    name: DEVICE (API 36 x86_64 emulator, focused instrumentation)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Validate the Gradle wrapper checksum
+        uses: gradle/actions/wrapper-validation@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle (cache only; the checked-in wrapper runs the build)
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Enable KVM for the emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules > /dev/null
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          ls -l /dev/kvm
+
+      - name: Install the pinned SDK components, the emulator and the API 36 image
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+          "$SDKMANAGER" --install \
+            "platform-tools" \
+            "emulator" \
+            "platforms;$ANDROID_PLATFORM" \
+            "build-tools;$ANDROID_BUILD_TOOLS" \
+            "ndk;$ANDROID_NDK_VERSION" \
+            "cmake;$ANDROID_CMAKE_VERSION" \
+            "$FORGESHAPE_CI_SYSTEM_IMAGE" \
+            > "$RUNNER_TEMP/sdkmanager-install.log" 2>&1
+          tr '\r' '\n' < "$RUNNER_TEMP/sdkmanager-install.log" | tail -n 5
+          # No silent downgrade: the exact API 36 x86_64 image must be present.
+          image_dir="$ANDROID_HOME/system-images/android-36/google_apis/x86_64"
+          test -f "$image_dir/source.properties" || {
+            echo "::error::BLOCKED: $FORGESHAPE_CI_SYSTEM_IMAGE did not install"; exit 1; }
+          grep -E 'Pkg.Revision|AndroidVersion.ApiLevel|SystemImage.Abi|SystemImage.TagId' "$image_dir/source.properties"
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
+
+      - name: Build debug and androidTest APKs
+        run: bash ./gradlew --stacktrace :app:assembleDebug :app:assembleDebugAndroidTest
+
+      - name: Boot the emulator, capture startup evidence, run the focused class
+        env:
+          FORGESHAPE_CI_TEST_CLASS: ${{ github.event.inputs.test_class || 'com.forgeshape.app.Ui3dStateCorrectionTest' }}
+          FORGESHAPE_CI_OUT: ci-device-evidence
+        run: bash scripts/ci-device-smoke.sh
+
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "## CI DEVICE"
+            echo '```json'
+            cat ci-device-evidence/summary.json 2>/dev/null || echo '{"result": "NO_SUMMARY"}'
+            echo '```'
+            echo '```'
+            cat ci-device-evidence/environment-manifest.txt 2>/dev/null
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload DEVICE evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-device-evidence
+          retention-days: 14
+          if-no-files-found: warn
+          path: ci-device-evidence/
+
+      - name: Upload Gradle reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-device-gradle-reports
+          retention-days: 14
+          if-no-files-found: ignore
+          path: |
+            build/reports/
+            app/build/reports/

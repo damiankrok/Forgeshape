@@ -81,10 +81,18 @@ curve-profile timings.
   that owns the viewport or render loop is prohibited in the product.
 - **No third-party runtime, rendering, math or input library.** Math lives in
   `app/src/main/cpp/forgeshape_math.h`. No GLM.
-- **Git is local only.** The root repository exists (initialized in Gate P0 with
-  owner approval). Commits and branches are allowed. **No remote, no push, no
-  GitHub repository, and no global Git config changes** — the committer identity
-  lives in `.git/config` alone. Never commit generated build output.
+- **GitHub is the shared source of truth** (`CI-CLOUD-R1`). `origin` is
+  `https://github.com/damiankrok/Forgeshape` and `origin/main` is the canonical
+  branch. Normal work starts from the current `origin/main` on a task branch;
+  push the task branch and let GitHub Actions test it (`CI FAST` and
+  `CI DEVICE`, `docs/CI_CLOUD.md`). **Never push directly to `main`** unless the
+  task explicitly authorizes integration, and then only as a fast-forward after
+  the required checks are green on the task branch. **No force push, rebase,
+  amend, squash or other history rewrite of a pushed branch** without explicit
+  OWNER recovery authorization. **No global Git config changes.** Never commit
+  generated build output, `local.properties`, a keystore or any secret. A
+  workflow that runs pull-request code uses `pull_request`, never
+  `pull_request_target`, with a read-only token.
 - **The NDK is pinned to `29.0.14206865`** in `app/build.gradle`. Do not bump it,
   do not use an r30 beta, and do not broadly upgrade AGP, Gradle, the JDK or
   CMake as a side effect of anything else.
