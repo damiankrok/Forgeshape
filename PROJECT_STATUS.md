@@ -1,14 +1,16 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.77.0
+**Status Version:** 0.78.0
 **Updated:** 2026-09-27
-**Result:** **`CI-CLOUD-R1` — `BLOCKED-CI-CLOUD-R1-ATTEMPT-LIMIT`** (2026-09-27).
-Infrastructure only; no product behaviour, source, schema or fixture moved.
-GitHub Actions now builds and tests ForgeShape (`CI FAST` is green), and the
-`CI DEVICE` emulator path is proven up to a presented Vulkan frame, but DEVICE
-did not go green within the two attempts the stage allowed, so **`main` was not
-changed** and the stage is not PASS. Details under *Cloud CI (`CI-CLOUD-R1`)* in
-*Environment and toolchain*.
+**Result:** **`CI-CLOUD-R1-C1` — `PASS-CI-CLOUD-R1-C1`** (2026-09-27), closing
+`CI-CLOUD-R1`. Infrastructure only; no product behaviour, source, schema or
+fixture moved. GitHub Actions builds and tests ForgeShape on GitHub-hosted VMs:
+`main` = `fd88db89f0bbf39525561f76d10dbc8138519822` is **green in `CI FAST`
+(run `36313530697`) and `CI DEVICE` (run `36313532238`)** — a fresh API 36
+x86_64 emulator, Vulkan up, 22/22 startup tokens in order,
+`FORGESHAPE_NATIVE_VIEWPORT_OK`, 0 failure lines and `Ui3dStateCorrectionTest`
+**OK (12 tests)**. Emulator CI closes no physical-device gate. Details under
+*Cloud CI (`CI-CLOUD-R1`)* in *Environment and toolchain*.
 
 **Product status, unchanged by `CI-CLOUD-R1`:** **`UI-3D-STATE-C2` — TECHNICALLY
 COMPLETE, OWNER LATER READY** (2026-09-08), with **`UI-3D-STATE-C1`** and **`CAD-EXT-R1`** still technically
@@ -2095,8 +2097,8 @@ surfaces, including the two CI helper scripts; DEV2-02 passes on Linux for a
 different reason than on Windows and proves nothing there); and
 `git diff --check` runs over the pushed range.
 
-**`CI DEVICE` — NOT green; both allowed attempts used.** Neither failure is a
-product failure or a missing capability:
+**`CI DEVICE` under `CI-CLOUD-R1` — two failed attempts, both infrastructure**
+(neither a product failure nor a missing capability):
 
 - Run `36308734047` (`a870463`): **harness defect.** `avdmanager` honours
   `XDG_CONFIG_HOME`, which the runner sets, and wrote the AVD under
@@ -2122,22 +2124,41 @@ product failure or a missing capability:
   (`Ui3dStateCorrectionTest`) was run. **The instrumentation path is therefore
   unverified in the cloud.**
 
-**The correction is committed and NOT run on GitHub:** `fd85f75` makes
-`scripts/ci-device-smoke.sh` let the booted system settle (load < 2.5, at most
-180 s), read liblog's own drop counter from the `events` buffer per capture,
-fail at once on any failure line, and relaunch an incomplete capture only when
-liblog reports a drop (at most three captures, each kept). It was verified
-**only locally, against a mocked `adb`** replaying attempt 2's real logcat.
-It was pushed with `[skip ci]` on the owner's instruction so no third attempt
-ran. Both runs' evidence stays on their run pages (artifacts kept 14 days).
+The correction is `fd85f75`: `scripts/ci-device-smoke.sh` lets the booted
+system settle (load < 2.5, bounded at 180 s), reads liblog's own drop counter
+from the `events` buffer per capture, fails at once on any failure line, and
+relaunches an incomplete capture only when liblog reports a drop (at most three
+captures, each kept); a gap with no reported drop fails as
+`DEVICE_STARTUP_UNRESOLVED`.
 
-**`CI-CLOUD-R1-C1` (device capture closeout) — in progress.** Started
-2026-09-27 from `infra/ci-cloud-r1` = `f31507278baa2b824130097db850f465980fe377`
-with `origin/main` = `43ff3326549d7bb72315f321850473e853b2f57e`. The commit that
-records this line carries no `[skip ci]` and is the trigger for the first C1
-branch run of `fd85f75`'s harness; it changes documentation only (this line and
-`CLAUDE.md`'s physical-device clause). C1 allows at most two fresh `CI DEVICE`
-branch runs.
+**`CI-CLOUD-R1-C1` — `PASS-CI-CLOUD-R1-C1`.** The tested commit is
+`fd88db89f0bbf39525561f76d10dbc8138519822` (documentation over `fd85f75`'s
+harness; no product source, test or workflow changed to get a result). On the
+task branch it went green in `CI FAST` run `36312190881` and `CI DEVICE` run
+`36312192370`; `main` was then fast-forwarded to it without force. The push to
+`main` started no workflow, so `main` was verified by ONE `workflow_dispatch`
+run of each on `main`, both with `head_sha` `fd88db89…` and no retry:
+
+- **`CI FAST` run `36313530697` — success** (job 2 min 42 s): build, JVM unit
+  tests, debug/androidTest/release APKs, the release self-test guard, the
+  36/36 corpus parity and the device-free runner and guard checks all green.
+  Artifact `ci-fast-evidence` (id `10930335006`).
+- **`CI DEVICE` run `36313532238` — success** (job 10 min 5 s). A fresh
+  `ForgeShape_CI_API36` (`system-images;android-36;google_apis;x86_64`, SDK 36,
+  ABI x86_64) booted headless on the explicit **`emulator-5580`** (never 5554)
+  with KVM in 66 s, and `emu avd name` confirmed the identity. Emulator
+  37.1.11.0 (`-gpu swiftshader_indirect`) exposed `android.hardware.vulkan.level=1`
+  and `android.hardware.vulkan.version=4206592`; ForgeShape created its Vulkan
+  instance, a 1080×2400 surface, selected **SwiftShader Device (Subzero),
+  deviceApi 1.3.0**, created a 1080×2400 FIFO swapchain and logged
+  **`FORGESHAPE_NATIVE_VIEWPORT_OK`**. The FIRST capture was complete — **22/22
+  `*_SELFTEST_OK` tokens in the documented order, 3596 checks** (the sculpt
+  suite 655 of 655), **0 failure lines**, `liblog_dropped=0` — so no relaunch
+  was needed. The post-boot settle reached its 180 s bound with load 5.68
+  rather than the 2.5 target; that bound is the harness's stated behaviour, and
+  the capture it led to was complete. `Ui3dStateCorrectionTest` returned
+  **OK (12 tests)**, 0 failed, in 107 s. Artifact `ci-device-evidence`
+  (id `10930042055`), kept 14 days.
 
 Nothing here is physical-device evidence: stylus, hardware GPU, 16 KB-page and
 real-device performance gates are untouched by emulator runs.
@@ -4192,16 +4213,13 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Exactly one next step: the coordinator's correction prompt for `CI-CLOUD-R1`.**
-It decides whether `CI DEVICE` gets a further attempt with the unrun correction
-`fd85f75` on `infra/ci-cloud-r1` and, only when `CI FAST` and `CI DEVICE` are
-both green there, the fast-forward of `main` and the verification runs on
-`main`. No CI is run until that prompt arrives. **Stage027 is not started.**
-
-Before `CI-CLOUD-R1`, the step recorded here was to return this status to the
-ForgeShape coordinator, which carries the combined OWNER review. Every
-`UI-3D-STATE-AUDIT-R1` finding is closed; there is no correction backlog left to
-group.
+**Exactly one next step: return this status to the ForgeShape coordinator, which
+carries the combined OWNER review.** `CI-CLOUD-R1` is closed by
+`PASS-CI-CLOUD-R1-C1`; from here, work starts from `origin/main` on a task branch
+and is tested by `CI FAST` and `CI DEVICE` (`docs/CI_CLOUD.md`). Emulator CI
+closes neither `STYLUS-G1` nor any physical-device or performance gate.
+**Stage027 is not started.** Every `UI-3D-STATE-AUDIT-R1` finding is closed;
+there is no correction backlog left to group.
 
 `UI-3D-STATE-C1` closed on 2026-09-08 as `PASS-UI-3D-STATE-C1-OWNER-LATER`. It
 implemented no feature: it corrected six of the seven findings
