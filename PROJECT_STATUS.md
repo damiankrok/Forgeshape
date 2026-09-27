@@ -2131,6 +2131,14 @@ liblog reports a drop (at most three captures, each kept). It was verified
 It was pushed with `[skip ci]` on the owner's instruction so no third attempt
 ran. Both runs' evidence stays on their run pages (artifacts kept 14 days).
 
+**`CI-CLOUD-R1-C1` (device capture closeout) — in progress.** Started
+2026-09-27 from `infra/ci-cloud-r1` = `f31507278baa2b824130097db850f465980fe377`
+with `origin/main` = `43ff3326549d7bb72315f321850473e853b2f57e`. The commit that
+records this line carries no `[skip ci]` and is the trigger for the first C1
+branch run of `fd85f75`'s harness; it changes documentation only (this line and
+`CLAUDE.md`'s physical-device clause). C1 allows at most two fresh `CI DEVICE`
+branch runs.
+
 Nothing here is physical-device evidence: stylus, hardware GPU, 16 KB-page and
 real-device performance gates are untouched by emulator runs.
 

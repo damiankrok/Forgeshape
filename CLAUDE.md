@@ -92,7 +92,10 @@ curve-profile timings.
   OWNER recovery authorization. **No global Git config changes.** Never commit
   generated build output, `local.properties`, a keystore or any secret. A
   workflow that runs pull-request code uses `pull_request`, never
-  `pull_request_target`, with a read-only token.
+  `pull_request_target`, with a read-only token. **Emulator CI closes no
+  physical-device gate**: stylus, pressure, hover, a hardware GPU, 16 KB-page
+  devices and real-device performance still need a physical device, and a
+  green `CI DEVICE` run is never cited as evidence for any of them.
 - **The NDK is pinned to `29.0.14206865`** in `app/build.gradle`. Do not bump it,
   do not use an r30 beta, and do not broadly upgrade AGP, Gradle, the JDK or
   CMake as a side effect of anything else.
