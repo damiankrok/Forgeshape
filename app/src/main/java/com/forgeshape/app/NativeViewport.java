@@ -2353,6 +2353,14 @@ final class NativeViewport {
      */
     static native boolean debugProjectWorld(double x, double y, double z, float[] out);
 
+    /**
+     * The ObjectId the viewport's tap selection currently holds, 0 for none.
+     * Read-only verification seam on {@link #debugProjectWorld}'s terms: it lets
+     * a test observe what a viewport tap did to the selection, and mutates
+     * nothing.
+     */
+    static native long debugViewportSelection();
+
     /** Begins a sketch on a workplane. Returns a CAD_* code. */
     static native int sketchBegin(int workplane);
 

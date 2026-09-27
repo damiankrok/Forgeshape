@@ -3892,6 +3892,16 @@ JNIEXPORT jboolean JNICALL Java_com_forgeshape_app_NativeViewport_debugProjectWo
     return JNI_TRUE;
 }
 
+// Read-only: the identity the viewport's tap selection currently holds
+// (0 = none). A verification seam on `debugProjectWorld`'s terms -- it lets a
+// test observe what a viewport tap did to the selection without reading the
+// log, and it mutates nothing.
+JNIEXPORT jlong JNICALL Java_com_forgeshape_app_NativeViewport_debugViewportSelection(
+    JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    return static_cast<jlong>(g_selection.selected());
+}
+
 // Drops the sketch. Never a project mutation, and gives the view back.
 JNIEXPORT void JNICALL Java_com_forgeshape_app_NativeViewport_sketchCancel(JNIEnv*, jclass) {
     bool wasActive = false;
