@@ -396,6 +396,12 @@ instrument_exit=$?
 TEST_SECONDS=$(( $(date +%s) - test_start ))
 adb -s "$SERIAL" logcat -d -v threadtime > "$OUT/test-logcat.txt" 2>/dev/null || true
 adb -s "$SERIAL" exec-out screencap -p > "$OUT/post-test-screenshot.png" 2>/dev/null || true
+# Evidence a test chose to keep -- captures and fact files it wrote under the
+# app's own external files directory (`files/evidence/<name>/`). Best effort:
+# most classes write none, and a missing directory is not a failure.
+mkdir -p "$OUT/test-evidence"
+adb -s "$SERIAL" pull "/sdcard/Android/data/$APP_ID/files/evidence/." "$OUT/test-evidence/" \
+    > "$OUT/test-evidence-pull.log" 2>&1 || true
 
 # Raw `am instrument -r` status blocks -> JUnit XML and counts.
 python3 - "$OUT/instrumentation-raw.txt" "$OUT/instrumentation-junit.xml" "$OUT/instrumentation-counts.txt" <<'PY'
