@@ -14,7 +14,7 @@ generated from those numbers. Where it sits is a separate matter of its position
 and rotation.
 
 There can be several bodies at once, and every one of them is drawn. Exactly one
-is **selected**, and only the selected body is tinted; the rest are drawn
+is **selected**, and only the selected body is outlined; the rest are drawn
 normally. Changing a body from one of those shapes to another changes what *that
 body* is — it does not create a second one, and it does not touch any other
 body.
@@ -1941,16 +1941,15 @@ palette you last chose. There is no gizmo handle style to choose, no custom
 workspace layout beyond right- or left-handed, no account, no cloud, and no
 per-project preferences.
 
-**Selection is still a tint over the whole body, not an outline.** It is much
-lighter at rest than it used to be and it announces itself when it changes, but
-nothing draws a line around the selected object, and nothing else marks it.
+**Selection is an outline and nothing more.** There is no x-ray or
+hidden-object reveal, no multi-select, and no setting for the outline's width or
+colour; see *Selection*.
 
 Shading stops where it is. There is **one** MatCap and no way to add, import or
 choose another; there are no materials, no colour or texture you can assign to
 the object, no texture painting, no metalness or roughness, no environment or
-HDRI, no movable or additional lights, no shadows, no ambient occlusion, and no
-outline around the selected object — selection is a tint. A photoreal (PBR)
-preview belongs to later work on materials and export.
+HDRI, no movable or additional lights, no shadows and no ambient occlusion. A
+photoreal (PBR) preview belongs to later work on materials and export.
 
 **No unimplemented control is drawn anywhere.** Export was the last one, and it
 now writes a real `.glb`; everything drawn in the workspace does what it says.
