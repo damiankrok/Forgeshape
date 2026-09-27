@@ -14,6 +14,9 @@ import static org.junit.Assert.assertTrue;
 
 import android.graphics.Bitmap;
 import android.graphics.Color;
+import android.graphics.Point;
+import android.graphics.Rect;
+import android.os.Build;
 import android.os.SystemClock;
 import android.util.Log;
 import android.view.MotionEvent;
@@ -234,33 +237,75 @@ public final class Stage027SculptWorkflowTest {
         assertArrayEquals("un-isolated, the viewport's list is both bodies",
                 new long[] {bodyA, bodyB}, viewSceneIds());
 
+        // A fixed, stated viewpoint, so the two bodies' pixels are a property
+        // of this test rather than of whatever pose a previous test left. At
+        // the product's INITIAL pose (distance 8.2) B's centre projects to
+        // viewport x ~1126 on a 1080-wide portrait surface -- outside the
+        // frame, which is exactly how an earlier form of this test sampled a
+        // region with zero pixels in it. From 12 m on the initial yaw and
+        // pitch, A projects near (540, 1200), B near (915, 1352) and the empty
+        // reference spot near (244, 1080). The camera is presentation, so the
+        // pose is set BEFORE the truth baseline below and restored after.
+        final float[] poseBefore = cameraPose();
+        setCameraPose(0.7f, 0.5f, 12.0f);
+        try {
+            measureIsolateFrames();
+        } finally {
+            setCameraPose(poseBefore[NativeViewport.CAMERA_POSE_YAW],
+                    poseBefore[NativeViewport.CAMERA_POSE_PITCH],
+                    poseBefore[NativeViewport.CAMERA_POSE_DISTANCE]);
+        }
+    }
+
+    /**
+     * The Isolate journey from the frame before to the Resume after, with the
+     * captured-frame proof in the middle. Every sampled square is converted
+     * EXPLICITLY into the captured bitmap's own pixels and must lie wholly
+     * inside it; nothing here clips, and nothing here has a path that passes
+     * without measuring.
+     */
+    private void measureIsolateFrames() {
         final byte[] bytesBefore = NativeViewport.encodeProject();
         final long fingerprintBefore = NativeViewport.projectFingerprint();
         final int sculptUndoBefore = NativeViewport.sculptUndoDepth();
         final double revisionBefore = sculptState()[NativeViewport.SCULPT_REVISION];
 
-        // The frame before: B is drawn at its projected centre.
-        final int[] regionB = region(projected(2.5, 0.0, 0.0));
-        final int[] regionA = region(projected(0.0, 0.0, 0.0));
-        final Bitmap off = captureBareViewport();
+        // Where the three squares stand, in the surface's own pixels (the
+        // space debugProjectWorld answers in). The reference spot is a world
+        // point no body can cover: B stands at +2.5 m and A's radius is 1 m.
+        final float[] atA = projected(0.0, 0.0, 0.0);
+        final float[] atB = projected(2.5, 0.0, 0.0);
+        final float[] atEmpty = projected(-2.5, 0.0, 0.0);
+        final CaptureGeometry geometry = captureGeometry(atA, atB, atEmpty);
 
-        // Probe the seam before trusting it: does a captured frame carry the
-        // Vulkan viewport on THIS device at all? Turning the camera moves B
-        // off its pixel, so a capture that sees the viewport must change
-        // there. (A composed-display capture that omits the SurfaceView layer
-        // would otherwise report "nothing changed" for every assertion below
-        // and prove nothing either way.)
-        final float[] pose = cameraPose();
-        setCameraPose(pose[NativeViewport.CAMERA_POSE_YAW] + 1.2f,
-                pose[NativeViewport.CAMERA_POSE_PITCH], pose[NativeViewport.CAMERA_POSE_DISTANCE]);
-        final Bitmap turned = captureBareViewport();
-        setCameraPose(pose[NativeViewport.CAMERA_POSE_YAW], pose[NativeViewport.CAMERA_POSE_PITCH],
-                pose[NativeViewport.CAMERA_POSE_DISTANCE]);
-        final double probe = changedFraction(off, turned, regionB);
-        final boolean captureSeesViewport = probe > 0.2;
-        Log.i(TAG, "STAGE027_CAPTURE_PROBE changedAtBWhenTurned=" + probe + " meanOffB="
-                + meanRgb(off, regionB) + " meanTurnedB=" + meanRgb(turned, regionB)
-                + " seesViewport=" + captureSeesViewport);
+        final Bitmap off = captureBareViewport();
+        // The controlled differential: the same frame captured twice with
+        // nothing changed. Its per-region change is the noise floor every
+        // "unchanged" claim below is held to.
+        final Bitmap offAgain = captureBareViewport();
+        final Sample offA = geometry.sample(off, geometry.a, "offA");
+        final Sample offB = geometry.sample(off, geometry.b, "offB");
+        final Sample offEmpty = geometry.sample(off, geometry.empty, "offEmpty");
+        final double noiseA = geometry.changedFraction(off, offAgain, geometry.a);
+        final double noiseB = geometry.changedFraction(off, offAgain, geometry.b);
+        final double noiseEmpty = geometry.changedFraction(off, offAgain, geometry.empty);
+        final int contrastOffA = offA.distanceTo(offEmpty);
+        final int contrastOffB = offB.distanceTo(offEmpty);
+        Log.i(TAG, "STAGE027_PIXEL_OFF " + geometry.describe(off) + " meanA=" + offA
+                + " meanB=" + offB + " meanEmpty=" + offEmpty + " contrastA=" + contrastOffA
+                + " contrastB=" + contrastOffB + " noiseA=" + noiseA + " noiseB=" + noiseB
+                + " noiseEmpty=" + noiseEmpty);
+        final String offWhere = " [" + geometry.describe(off) + "]";
+        assertTrue("the un-isolated frame is stable: noise " + noiseA + "/" + noiseB + "/"
+                        + noiseEmpty + offWhere,
+                noiseA <= kStableFraction && noiseB <= kStableFraction
+                        && noiseEmpty <= kStableFraction);
+        assertTrue("B is drawn in its square before Isolate: contrast " + contrastOffB
+                + " (B " + offB + ", empty " + offEmpty + ")" + offWhere,
+                contrastOffB >= kBodySignal);
+        assertTrue("A is drawn in its square before Isolate: contrast " + contrastOffA
+                + " (A " + offA + ", empty " + offEmpty + ")" + offWhere,
+                contrastOffA >= kBodySignal);
 
         clickIsolate();
         assertTrue("native reports the viewport isolated", NativeViewport.sculptIsolated());
@@ -269,21 +314,37 @@ public final class Stage027SculptWorkflowTest {
                 new long[] {bodyA}, viewSceneIds());
 
         final Bitmap on = captureBareViewport();
-        final double changedAtB = changedFraction(off, on, regionB);
-        final double changedAtA = changedFraction(off, on, regionA);
-        Log.i(TAG, "STAGE027_ISOLATE_FRAME changedAtB=" + changedAtB + " changedAtA=" + changedAtA
-                + " meanOffB=" + meanRgb(off, regionB) + " meanOnB=" + meanRgb(on, regionB)
-                + " seesViewport=" + captureSeesViewport);
-        if (captureSeesViewport) {
-            assertTrue("B is no longer drawn where it stood: " + changedAtB, changedAtB > 0.5);
-            assertTrue("A is still drawn where it stood: " + changedAtA, changedAtA < 0.2);
-        } else {
-            // Stated, never silently passed: on a device whose display capture
-            // does not carry the Vulkan layer, the evidence is the exact list
-            // the renderer is handed, asserted above as {A}.
-            Log.i(TAG, "STAGE027_CAPTURE_SEAM_UNAVAILABLE the captured frame did not change when "
-                    + "the camera turned (" + probe + "); the viewport-list assertion stands");
-        }
+        final Sample onA = geometry.sample(on, geometry.a, "onA");
+        final Sample onB = geometry.sample(on, geometry.b, "onB");
+        final Sample onEmpty = geometry.sample(on, geometry.empty, "onEmpty");
+        final double changedAtA = geometry.changedFraction(off, on, geometry.a);
+        final double changedAtB = geometry.changedFraction(off, on, geometry.b);
+        final double changedAtEmpty = geometry.changedFraction(off, on, geometry.empty);
+        final int contrastOnA = onA.distanceTo(onEmpty);
+        final int contrastOnB = onB.distanceTo(onEmpty);
+        Log.i(TAG, "STAGE027_PIXEL_ON " + geometry.describe(on) + " meanA=" + onA
+                + " meanB=" + onB + " meanEmpty=" + onEmpty + " contrastA=" + contrastOnA
+                + " contrastB=" + contrastOnB + " changedA=" + changedAtA + " changedB="
+                + changedAtB + " changedEmpty=" + changedAtEmpty);
+        final String onWhere = " [" + geometry.describe(on) + "]";
+        // B: its square changed almost everywhere, and what is there now reads
+        // as the empty ground rather than as a body.
+        assertTrue("B is no longer drawn in its square: changed " + changedAtB + onWhere,
+                changedAtB >= kGoneFraction);
+        assertTrue("B's square now reads as empty ground: contrast " + contrastOnB
+                        + " against " + contrastOffB + " before (B " + onB + ", empty "
+                        + onEmpty + ")" + onWhere,
+                contrastOnB * kGoneContrastRatio <= contrastOffB);
+        // A: unchanged to within the measured noise, and still a body -- so a
+        // frame in which everything vanished cannot pass.
+        assertTrue("A is still drawn exactly as before: changed " + changedAtA + ", noise "
+                + noiseA + onWhere, changedAtA <= noiseA + kStableFraction);
+        assertTrue("A is still drawn in its square: contrast " + contrastOnA + " (A " + onA
+                + ", empty " + onEmpty + ")" + onWhere, contrastOnA >= kBodySignal);
+        // The empty spot is the control: Isolate does not repaint the ground.
+        assertTrue("the empty ground is unchanged: changed " + changedAtEmpty + ", noise "
+                        + noiseEmpty + onWhere,
+                changedAtEmpty <= noiseEmpty + kStableFraction);
 
         // A view decision, not truth: no byte, no fingerprint, no step, no
         // revision, no visibility write.
@@ -536,23 +597,6 @@ public final class Stage027SculptWorkflowTest {
         settleLayout();
     }
 
-    private static String meanRgb(Bitmap bitmap, int[] r) {
-        long red = 0;
-        long green = 0;
-        long blue = 0;
-        int n = 0;
-        for (int y = Math.max(0, r[1]); y < Math.min(bitmap.getHeight(), r[3]); ++y) {
-            for (int x = Math.max(0, r[0]); x < Math.min(bitmap.getWidth(), r[2]); ++x) {
-                final int p = bitmap.getPixel(x, y);
-                red += Color.red(p);
-                green += Color.green(p);
-                blue += Color.blue(p);
-                n++;
-            }
-        }
-        return n == 0 ? "none" : (red / n) + "/" + (green / n) + "/" + (blue / n);
-    }
-
     private static float[] cameraPose() {
         final float[] pose = new float[NativeViewport.CAMERA_POSE_SIZE];
         NativeViewport.debugCameraPose(pose);
@@ -621,45 +665,228 @@ public final class Stage027SculptWorkflowTest {
 
     // --- captured-frame measurement -------------------------------------------
 
-    /** A small square around a viewport pixel, in SCREEN pixels. */
-    private int[] region(final float[] viewportPixel) {
+    /** Half the side of every sampled square, in BITMAP pixels: 24 x 24 = 576. */
+    private static final int kSampleHalf = 12;
+    /** Per-pixel change tolerance: the summed |dR| + |dG| + |dB|. */
+    private static final int kPixelTolerance = 24;
+    /** A body in its square differs from the empty ground by at least this mean distance. */
+    private static final int kBodySignal = 2 * kPixelTolerance;
+    /** Allowed changed fraction above the measured noise floor for "unchanged". */
+    private static final double kStableFraction = 0.05;
+    /** A square whose body left must have changed at least this much. */
+    private static final double kGoneFraction = 0.90;
+    /** ...and must now sit at least this many times closer to the empty ground. */
+    private static final int kGoneContrastRatio = 4;
+
+    /**
+     * Everything needed to turn a viewport pixel into a captured-bitmap pixel,
+     * read once from the live views: the surface's size and screen origin, and
+     * the display's real size in the same logical screen space
+     * {@code getLocationOnScreen} answers in.
+     */
+    private CaptureGeometry captureGeometry(final float[] atA, final float[] atB,
+                                            final float[] atEmpty) {
         return onWorkspace(rule.getScenario(), (activity, workspace) -> {
-            final int[] at = new int[2];
-            workspace.findViewById(R.id.viewport_surface).getLocationOnScreen(at);
-            final int half = 16;
-            final int cx = at[0] + Math.round(viewportPixel[0]);
-            final int cy = at[1] + Math.round(viewportPixel[1]);
-            return new int[] {cx - half, cy - half, cx + half, cy + half};
+            final View viewport = workspace.findViewById(R.id.viewport_surface);
+            final int[] origin = new int[2];
+            viewport.getLocationOnScreen(origin);
+            final int displayW;
+            final int displayH;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                final Rect bounds =
+                        activity.getWindowManager().getMaximumWindowMetrics().getBounds();
+                displayW = bounds.width();
+                displayH = bounds.height();
+            } else {
+                final Point size = new Point();
+                activity.getWindowManager().getDefaultDisplay().getRealSize(size);
+                displayW = size.x;
+                displayH = size.y;
+            }
+            return new CaptureGeometry(viewport.getWidth(), viewport.getHeight(), origin[0],
+                    origin[1], displayW, displayH, atA, atB, atEmpty);
         });
     }
 
-    /** The composed display, Vulkan viewport included, after frames settle. */
+    /**
+     * The explicit conversion from the surface's own pixels to the captured
+     * bitmap's, and the sampling that refuses anything it cannot measure in
+     * full. The bitmap's size is never assumed: it is read from each capture,
+     * and the screen-to-bitmap scale is bitmap size over display size per
+     * axis, so a scaled or letterboxed capture is converted rather than
+     * misread. A square that is not wholly inside the bitmap FAILS, with every
+     * number that went into it -- it is never clipped to what happens to fit.
+     */
+    static final class CaptureGeometry {
+        final int viewW;
+        final int viewH;
+        final int viewLeft;
+        final int viewTop;
+        final int displayW;
+        final int displayH;
+        final float[] a;
+        final float[] b;
+        final float[] empty;
+
+        CaptureGeometry(int viewW, int viewH, int viewLeft, int viewTop, int displayW,
+                        int displayH, float[] a, float[] b, float[] empty) {
+            this.viewW = viewW;
+            this.viewH = viewH;
+            this.viewLeft = viewLeft;
+            this.viewTop = viewTop;
+            this.displayW = displayW;
+            this.displayH = displayH;
+            this.a = a;
+            this.b = b;
+            this.empty = empty;
+        }
+
+        /**
+         * The square around a viewport pixel, as {left, top, right, bottom} in
+         * the bitmap's pixels (right and bottom exclusive). Pure arithmetic.
+         */
+        static int[] bitmapSquare(int bitmapW, int bitmapH, int displayW, int displayH,
+                                  int viewLeft, int viewTop, float[] viewportPixel, int half) {
+            final double scaleX = (double) bitmapW / displayW;
+            final double scaleY = (double) bitmapH / displayH;
+            final int cx = (int) Math.round((viewLeft + viewportPixel[0]) * scaleX);
+            final int cy = (int) Math.round((viewTop + viewportPixel[1]) * scaleY);
+            return new int[] {cx - half, cy - half, cx + half, cy + half};
+        }
+
+        int[] square(Bitmap bitmap, float[] viewportPixel) {
+            return bitmapSquare(bitmap.getWidth(), bitmap.getHeight(), displayW, displayH,
+                    viewLeft, viewTop, viewportPixel, kSampleHalf);
+        }
+
+        String describe(Bitmap bitmap) {
+            return "bitmap=" + bitmap.getWidth() + "x" + bitmap.getHeight()
+                    + " config=" + bitmap.getConfig()
+                    + " display=" + displayW + "x" + displayH
+                    + " scale=" + ((double) bitmap.getWidth() / displayW) + "/"
+                    + ((double) bitmap.getHeight() / displayH)
+                    + " viewport=" + viewW + "x" + viewH + "@" + viewLeft + "," + viewTop
+                    + " projA=" + point(a) + " projB=" + point(b)
+                    + " projEmpty=" + point(empty)
+                    + " rectA=" + rect(square(bitmap, a)) + " rectB=" + rect(square(bitmap, b))
+                    + " rectEmpty=" + rect(square(bitmap, empty))
+                    + " pixelsPerRect=" + (4 * kSampleHalf * kSampleHalf);
+        }
+
+        /** Fails loudly unless the whole square is inside both the viewport and the bitmap. */
+        int[] checkedSquare(Bitmap bitmap, float[] viewportPixel, String what) {
+            final String where = what + " [" + describe(bitmap) + "]";
+            assertTrue("the capture has pixels: " + where,
+                    bitmap.getWidth() > 0 && bitmap.getHeight() > 0);
+            assertTrue("the display has a size: " + where, displayW > 0 && displayH > 0);
+            assertTrue("the projected point is finite and inside the viewport: " + where,
+                    Float.isFinite(viewportPixel[0]) && Float.isFinite(viewportPixel[1])
+                            && viewportPixel[0] - kSampleHalf >= 0
+                            && viewportPixel[1] - kSampleHalf >= 0
+                            && viewportPixel[0] + kSampleHalf <= viewW
+                            && viewportPixel[1] + kSampleHalf <= viewH);
+            final int[] r = square(bitmap, viewportPixel);
+            final int count = (r[2] - r[0]) * (r[3] - r[1]);
+            assertTrue("the square is non-empty and wholly inside the bitmap (" + count
+                            + " pixels): " + where,
+                    r[2] > r[0] && r[3] > r[1] && r[0] >= 0 && r[1] >= 0
+                            && r[2] <= bitmap.getWidth() && r[3] <= bitmap.getHeight());
+            return r;
+        }
+
+        Sample sample(Bitmap bitmap, float[] viewportPixel, String what) {
+            final int[] r = checkedSquare(bitmap, viewportPixel, what);
+            long red = 0;
+            long green = 0;
+            long blue = 0;
+            int n = 0;
+            for (int y = r[1]; y < r[3]; ++y) {
+                for (int x = r[0]; x < r[2]; ++x) {
+                    final int p = bitmap.getPixel(x, y);
+                    red += Color.red(p);
+                    green += Color.green(p);
+                    blue += Color.blue(p);
+                    n++;
+                }
+            }
+            assertEquals("every pixel of the square was measured: " + what,
+                    4 * kSampleHalf * kSampleHalf, n);
+            return new Sample((int) (red / n), (int) (green / n), (int) (blue / n));
+        }
+
+        /** Fraction of the square's pixels that changed by more than the tolerance. */
+        double changedFraction(Bitmap before, Bitmap after, float[] viewportPixel) {
+            assertEquals("both captures have one size", before.getWidth(), after.getWidth());
+            assertEquals("both captures have one size", before.getHeight(), after.getHeight());
+            final int[] r = checkedSquare(before, viewportPixel, "changed");
+            int changed = 0;
+            int total = 0;
+            for (int y = r[1]; y < r[3]; ++y) {
+                for (int x = r[0]; x < r[2]; ++x) {
+                    final int p = before.getPixel(x, y);
+                    final int q = after.getPixel(x, y);
+                    final int d = Math.abs(Color.red(p) - Color.red(q))
+                            + Math.abs(Color.green(p) - Color.green(q))
+                            + Math.abs(Color.blue(p) - Color.blue(q));
+                    if (d > kPixelTolerance) {
+                        changed++;
+                    }
+                    total++;
+                }
+            }
+            assertEquals("every pixel of the square was compared",
+                    4 * kSampleHalf * kSampleHalf, total);
+            return (double) changed / total;
+        }
+
+        private static String point(float[] p) {
+            return "(" + p[0] + "," + p[1] + ")";
+        }
+
+        private static String rect(int[] r) {
+            return "[" + r[0] + "," + r[1] + "-" + r[2] + "," + r[3] + "]";
+        }
+    }
+
+    /** One square's mean colour. */
+    static final class Sample {
+        final int red;
+        final int green;
+        final int blue;
+
+        Sample(int red, int green, int blue) {
+            this.red = red;
+            this.green = green;
+            this.blue = blue;
+        }
+
+        /** Summed per-channel distance between two means. */
+        int distanceTo(Sample other) {
+            return Math.abs(red - other.red) + Math.abs(green - other.green)
+                    + Math.abs(blue - other.blue);
+        }
+
+        @Override
+        public String toString() {
+            return red + "/" + green + "/" + blue;
+        }
+    }
+
+    /**
+     * The composed display, Vulkan viewport included, after frames settle, as
+     * a software bitmap whose pixels can be read.
+     */
     private static Bitmap capture() {
         SystemClock.sleep(600);
         final Bitmap shot =
                 InstrumentationRegistry.getInstrumentation().getUiAutomation().takeScreenshot();
         assertNotNull("the display can be captured", shot);
-        return shot;
-    }
-
-    /** Fraction of the region's pixels that changed by more than a small tolerance. */
-    private static double changedFraction(Bitmap a, Bitmap b, int[] r) {
-        int changed = 0;
-        int total = 0;
-        for (int y = Math.max(0, r[1]); y < Math.min(a.getHeight(), r[3]); ++y) {
-            for (int x = Math.max(0, r[0]); x < Math.min(a.getWidth(), r[2]); ++x) {
-                final int p = a.getPixel(x, y);
-                final int q = b.getPixel(x, y);
-                final int d = Math.abs(Color.red(p) - Color.red(q))
-                        + Math.abs(Color.green(p) - Color.green(q))
-                        + Math.abs(Color.blue(p) - Color.blue(q));
-                if (d > 24) {
-                    changed++;
-                }
-                total++;
-            }
+        if (shot.getConfig() == Bitmap.Config.ARGB_8888) {
+            return shot;
         }
-        return total == 0 ? 0.0 : (double) changed / total;
+        final Bitmap readable = shot.copy(Bitmap.Config.ARGB_8888, false);
+        assertNotNull("the capture converts to a readable bitmap", readable);
+        return readable;
     }
 
     private static void assertTransform(int status) {
