@@ -1,18 +1,53 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.78.0
+**Status Version:** 0.79.0
 **Updated:** 2026-09-27
-**Result:** **`CI-CLOUD-R1-C1` — `PASS-CI-CLOUD-R1-C1`** (2026-09-27), closing
-`CI-CLOUD-R1`. Infrastructure only; no product behaviour, source, schema or
-fixture moved. GitHub Actions builds and tests ForgeShape on GitHub-hosted VMs:
-`main` = `fd88db89f0bbf39525561f76d10dbc8138519822` is **green in `CI FAST`
-(run `36313530697`) and `CI DEVICE` (run `36313532238`)** — a fresh API 36
-x86_64 emulator, Vulkan up, 22/22 startup tokens in order,
-`FORGESHAPE_NATIVE_VIEWPORT_OK`, 0 failure lines and `Ui3dStateCorrectionTest`
-**OK (12 tests)**. Emulator CI closes no physical-device gate. Details under
-*Cloud CI (`CI-CLOUD-R1`)* in *Environment and toolchain*.
+**Result:** **`STAGE027-SCULPT-ISOLATE-R1` — COMPLETE, closed by
+`PASS-STAGE027-C1-PIXEL-EVIDENCE`** (2026-09-27). `main` carries the tested
+candidate `3d1dfdfe6bfb4d19d809aaf7991280b14e988316`, green in **`CI FAST`
+run `36323367178`** and **`CI DEVICE` run `36323368778`** (fresh API 36
+x86_64 AVD `ForgeShape_CI_API36` on `emulator-5580`, SwiftShader Vulkan,
+22/22 startup tokens in order, `FORGESHAPE_NATIVE_VIEWPORT_OK`, 0 failure
+lines, `Stage027SculptWorkflowTest` + `Ui3dStateCorrectionTest` **OK (16
+tests)**). Owner matrix: **UI-1 = b, HIDE-1 = a, PREVIEW-1 = P0, LIFE-1 = a,
+GUARD-1 = a, GUARD-2 = a**.
 
-**Product status, unchanged by `CI-CLOUD-R1`:** **`UI-3D-STATE-C2` — TECHNICALLY
+- **Sculpt Isolate** is one two-state control in the Sculpt Property Inspector
+  (`sculpt_isolate`): a session-only `ObjectId` in `SculptSession`, handed to
+  `ConstructionScene::snapshot` as a `SceneViewRestriction`, so the one list
+  the renderer draws and `pickScene` casts against is the Sculpt target alone.
+  Not project truth: no `.forge` byte, fingerprint, history step, checkpoint,
+  visibility write or preference; every Sculpt entry and exit clears it.
+- **GUARD-1** (`FINDING-A`, reproduced on the unfixed product in DEVICE run
+  `36318528002`): in Sculpt a viewport tap that starts no stroke changes neither
+  the active body, the Sculpt target nor the selection
+  (`FORGESHAPE_SCENE_SELECT_REFUSED:in_sculpt_mode:viewport_tap`).
+- **GUARD-2** (`FINDING-B`, reproduced in the same run): Start Sculpting and
+  Resume Sculpt are absent over a hidden active body and refused below JNI
+  (`SCULPT_REFUSED_HIDDEN_BODY`).
+- **Captured-pixel evidence** (the C1 correction, test-only): the earlier Isolate
+  frame check sampled B at the product's initial pose, where B (2.5, 0, 0)
+  projects to viewport x ≈ 1126 on a 1080-wide surface, so its square held zero
+  pixels and a fallback passed without measuring. The test now states its pose
+  (initial yaw/pitch, 12 m), converts viewport pixels to bitmap pixels
+  explicitly and hard-fails any square not wholly inside the bitmap. Measured in
+  run `36323368778` on a 1080×2400 ARGB_8888 capture (scale 1.0), three
+  576-pixel squares: before Isolate B's mean `146/142/138` against the empty
+  ground's `48/46/43` (contrast 289) and A's contrast 415; after Isolate B reads
+  `52/48/44` against the ground's `51/48/44` (contrast 1) with **100 %** of its
+  square changed, while A (0.036) and the empty ground (0.045) changed no more
+  than their own two-capture noise floor. The native list is `{A, B}` off and
+  `{A}` on.
+
+The scene self-test suite grew from 155 to 175 checks (`s027_01..20`); the
+startup total is **3616**. No format, section, version or corpus fixture moved;
+no renderer, shader, pipeline or device feature changed.
+**Previous result:** `PASS-CI-CLOUD-R1-C1` (2026-09-27): `main` =
+`fd88db8` green in `CI FAST` run `36313530697` and `CI DEVICE` run
+`36313532238`; details under *Cloud CI (`CI-CLOUD-R1`)*. Emulator CI closes no
+physical-device gate.
+
+**Product status before Stage027:** **`UI-3D-STATE-C2` — TECHNICALLY
 COMPLETE, OWNER LATER READY** (2026-09-08), with **`UI-3D-STATE-C1`** and **`CAD-EXT-R1`** still technically
 complete beside it. **All seven** findings `UI-3D-STATE-AUDIT-R1` recorded are
 now closed: C1 took the six shell and read-path ones, and C2 takes the last,
@@ -2512,7 +2547,10 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 ## Self-test suite
 
 Twenty-two debug-only native suites run once from `NativeViewport.start()` —
-never per frame — and total **3374 checks, zero failures**. `SCULPT-H1` moved
+never per frame — and total **3616 checks, zero failures** (the table below is
+read from the startup log of `CI DEVICE` run `36323368778`). Stage027 moved the
+scene suite from 155 to 175: twenty `s027_*` checks over the view restriction,
+the isolate lifecycle, the Sculpt tap refusal and the hidden-body entry refusal. `SCULPT-H1` moved
 the sculpt suite from 494 to 533: thirty-nine `SCHNAV-01..12` checks over the
 History navigator's cursor model and its jump, which adds no storage of its own
 and so re-tests neither capacity nor either budget. `MIRROR-01` added
@@ -2535,19 +2573,19 @@ asserted a resting selection tint, which is now zero.
 | `FORGESHAPE_CONSTRUCTION_PRIMITIVE_SELFTEST_OK` | 126 |
 | `FORGESHAPE_CONSTRUCTION_SPHERE_SELFTEST_OK` | 105 |
 | `FORGESHAPE_CONE_CAPSULE_SELFTEST_OK` | 163 |
-| `FORGESHAPE_SCULPT_BRUSH_KERNEL_SELFTEST_OK` | 533 |
+| `FORGESHAPE_SCULPT_BRUSH_KERNEL_SELFTEST_OK` | 655 |
 | `FORGESHAPE_RENDER_SHADING_SELFTEST_OK` | 412 |
-| `FORGESHAPE_SCENE_SELFTEST_OK` | 155 |
+| `FORGESHAPE_SCENE_SELFTEST_OK` | 175 |
 | `FORGESHAPE_CONSTRUCTION_HISTORY_SELFTEST_OK` | 147 |
-| `FORGESHAPE_GIZMO_SELFTEST_OK` | 167 |
+| `FORGESHAPE_GIZMO_SELFTEST_OK` | 176 |
 | `FORGESHAPE_PROJECT_SELFTEST_OK` | 256 |
 | `FORGESHAPE_RENDER_RECOVERY_SELFTEST_OK` | 24 |
 | `FORGESHAPE_GLTF_EXPORT_SELFTEST_OK` | 93 |
 | `FORGESHAPE_GLTF_IMPORT_SELFTEST_OK` | 189 |
-| `FORGESHAPE_CAD_SELFTEST_OK` | 122 |
+| `FORGESHAPE_CAD_SELFTEST_OK` | 155 |
 | `FORGESHAPE_CAD_A3_SELFTEST_OK` | 66 |
-| `FORGESHAPE_SKETCH_UX_SELFTEST_OK` | 92 |
-| `FORGESHAPE_BODY_DIMENSIONS_SELFTEST_OK` | 97 |
+| `FORGESHAPE_SKETCH_UX_SELFTEST_OK` | 105 |
+| `FORGESHAPE_BODY_DIMENSIONS_SELFTEST_OK` | 102 |
 | `FORGESHAPE_MIRROR_SELFTEST_OK` | 62 |
 
 The body-dimension suite (`forgeshape_body_dimensions_selftest.cpp`,
@@ -3641,6 +3679,18 @@ or cutout window has not been measured.
 Durable constraints and known-but-accepted costs. Narrative for how each was
 found lives in Git history.
 
+**Stage027, recorded as bounded debt and not fixed by it:**
+
+- **GUARD-2 guards the two Sculpt ENTRY points, not the load path.** A project
+  whose persisted state leaves a hidden active body with a Frozen Sculpt Mesh
+  can still be reopened into Sculpt through the load path, which does not ask
+  `freezeToSculpt`/`enterSculptMode`'s hidden-body question. Source-level
+  finding; not reproduced on a device and not in Stage027's scope.
+- **CI actions run on the Node 20 runtime.** The `@v4` actions used by
+  `CI FAST` and `CI DEVICE` draw GitHub's Node 20 deprecation annotation. The
+  runs are green; moving to Node 24 action versions is infrastructure work for
+  its own task.
+
 **CAD-R0-A1A2, recorded as bounded debt with timing LATER:**
 
 - **CAD → Sculpt is refused by name, not offered.** `buildSculptSourceMesh`
@@ -4218,8 +4268,11 @@ carries the combined OWNER review.** `CI-CLOUD-R1` is closed by
 `PASS-CI-CLOUD-R1-C1`; from here, work starts from `origin/main` on a task branch
 and is tested by `CI FAST` and `CI DEVICE` (`docs/CI_CLOUD.md`). Emulator CI
 closes neither `STYLUS-G1` nor any physical-device or performance gate.
-**Stage027 is not started.** Every `UI-3D-STATE-AUDIT-R1` finding is closed;
-there is no correction backlog left to group.
+**Stage027 is complete** (`STAGE027-SCULPT-ISOLATE-R1`, closed by
+`PASS-STAGE027-C1-PIXEL-EVIDENCE`, integrated into `main` by fast-forward).
+Every `UI-3D-STATE-AUDIT-R1` finding is closed; there is no correction backlog
+left to group. Do not start Stage028, Stage026, `STYLUS-G1` or any other
+feature from this status: the next step is the coordinator's.
 
 `UI-3D-STATE-C1` closed on 2026-09-08 as `PASS-UI-3D-STATE-C1-OWNER-LATER`. It
 implemented no feature: it corrected six of the seven findings
@@ -4454,25 +4507,9 @@ one fact rather than becoming two predicates, and rejects the
 durable-visibility alternative on source grounds. Six forks are left explicitly
 to the OWNER and none is resolved by preference.
 
-**That audit also reports two UNVERIFIED source-level findings about the CURRENT
-build, and the coordinator should treat both as open.** Neither was reproduced
-on a device in that run, and neither is fixed. First, the rule that the Sculpt
-target is fixed for the duration of Sculpt Mode is enforced on the Objects-row
-path (`sceneSelectBody` refuses `in_sculpt_mode`) but appears NOT to be enforced
-on the viewport-tap path, which resolves a tap into
-`constructionScene().setActiveBody(hit.objectId)` directly; because
-`sculptSession()` re-binds to the active body on every access, the session would
-follow. Second, neither `freezeToSculpt` nor `enterSculptMode` consults
-`SceneObject::visible()`, and above JNI visibility is read in exactly two places,
-both in the Objects row — so Start Sculpting over a HIDDEN body appears to be
-reachable, with strokes landing and the fingerprint moving while nothing is
-drawn. Both are recorded as `FINDING-A` and `FINDING-B` in
-`artifacts/stage-027-r0/CURRENT_TRUTH.md`, and the first step of any Stage027
-work is to REPRODUCE them rather than to fix them: if either does not reproduce,
-there is a guard the audit did not find and its analysis must be corrected first.
-The audit additionally notes that `PRODUCT.md` is stale where it still says
-selection is a tint with no outline (`SEL-OUT-R1` delivered it); that correction
-was deliberately NOT made there, because the audit's docs mandate was narrow and
-the staleness did not prevent truthful reporting. The next step is the
-coordinator's, not this repository's, and **Stage027 implementation is not
-started.**
+**Both findings that audit reported are now reproduced and closed.**
+`FINDING-A` (a Sculpt viewport tap re-targeting the session) and `FINDING-B`
+(Start Sculpting over a hidden body) were reproduced on the unfixed product
+(DEVICE run `36318528002`, commit `3de71ee`) and fixed as GUARD-1 and GUARD-2
+of Stage027. The audit's separate note about `PRODUCT.md`'s selection wording
+was outside Stage027's scope and was not re-examined by it.
