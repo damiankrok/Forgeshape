@@ -5,7 +5,7 @@
     Everything here is PURE. No adb call, no Gradle call, no device contact and
     no file outside the run directory it is handed. That is deliberate and it is
     what makes `test-instrumented-runtime.ps1` able to prove the whole of
-    TESTRUNTIME-01..24 in seconds against synthetic fixtures, with the shard
+    TESTRUNTIME-01..26 in seconds against synthetic fixtures, with the shard
     executor injected as a scriptblock, instead of needing a five-shard
     aggregate on a device.
 
@@ -35,6 +35,49 @@ $script:InstrumentedDefaultHardStopMinutes = 120
 # The most automatic full aggregate attempts allowed per tested fingerprint.
 # A third needs an explicit, logged owner override.
 $script:InstrumentedMaxAggregateAttempts = 2
+
+<#
+    Whether this host is Windows.
+
+    Windows PowerShell 5.1 (the Desktop edition) runs only on Windows and has no
+    `$IsWindows`, which under strict mode is an error to read, so the edition
+    decides first and the variable is only looked up on PowerShell 7.
+#>
+function Test-InstrumentedHostIsWindows {
+    if ($PSVersionTable.PSEdition -eq 'Desktop') { return $true }
+    return [bool](Get-Variable -Name IsWindows -ValueOnly -ErrorAction SilentlyContinue)
+}
+
+<#
+    The Gradle wrapper call that builds the two APKs.
+
+    The runner's one platform difference, and nothing else: Windows runs
+    `gradlew.bat`; everywhere else the POSIX wrapper runs through `bash`,
+    because the checked-in `gradlew` carries no executable bit. The tasks are
+    the same two on both, so the APKs a run describes are built the same way.
+#>
+function Get-InstrumentedGradleInvocation {
+    param([Parameter(Mandatory = $true)][bool]$OnWindows)
+    $tasks = @(':app:assembleDebug', ':app:assembleDebugAndroidTest')
+    if ($OnWindows) {
+        return [pscustomobject]@{ Command = '.\gradlew.bat'; Arguments = $tasks }
+    }
+    return [pscustomobject]@{ Command = 'bash'; Arguments = @('./gradlew') + $tasks }
+}
+
+<#
+    Where the build leaves the two APKs, relative to the repository root.
+
+    Built with the host's own separator because both paths are handed to
+    `adb install` as native arguments, which no PowerShell provider rewrites:
+    on Windows they are exactly the backslash paths the runner always used.
+#>
+function Get-InstrumentedApkPaths {
+    [pscustomobject]@{
+        App = [System.IO.Path]::Combine('app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk')
+        Test = [System.IO.Path]::Combine('app', 'build', 'outputs', 'apk', 'androidTest', 'debug', 'app-debug-androidTest.apk')
+    }
+}
 
 function Get-InstrumentedSha256OfText {
     param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Text)

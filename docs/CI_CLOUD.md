@@ -21,9 +21,10 @@ the runs that were actually verified.
 | --- | --- | --- | --- |
 | `CI FAST` | `.github/workflows/ci-fast.yml` | `ubuntu-24.04`, JDK 17 (Temurin) | **Yes** — every push to `main`, every PR to `main` |
 | `CI DEVICE` | `.github/workflows/ci-device.yml` | `ubuntu-24.04` + KVM, fresh API 36 x86_64 emulator | **Yes** — every push to `main`, every PR to `main` |
+| `CI FULL SHARDED` | `.github/workflows/ci-full-sharded.yml` | the same VM, emulator and pins as `CI DEVICE` | **No** — manual only (`workflow_dispatch`), for a milestone aggregate |
 
-Both also trigger on pushes to `infra/ci-cloud-r1` (the branch that bootstrapped
-them) and on `workflow_dispatch`. Both use a read-only token, no secrets, and
+The first two also trigger on pushes to `infra/ci-cloud-r1` (the branch that
+bootstrapped them) and on `workflow_dispatch`. Both use a read-only token, no secrets, and
 `pull_request` (never `pull_request_target`).
 
 The toolchain is resolved explicitly by `sdkmanager` in each job, held to
@@ -97,6 +98,47 @@ GitHub → **Actions** → `CI FAST` or `CI DEVICE` → **Run workflow**, pick t
 branch. `CI DEVICE` takes an optional `test_class` input for a different
 focused class; it is still focused evidence.
 
+### FULL SHARDED — the milestone aggregate, in the cloud
+
+`CI FULL SHARDED` runs `scripts/run-instrumented-tests.ps1 -FullSharded`, the
+same runner a Windows workstation runs, under PowerShell 7 on the Linux VM.
+Everything that makes an aggregate authoritative stays the runner's:
+
+- live AndroidJUnitRunner discovery and the exhaustive class-atomic partition;
+- the fingerprint (both APK hashes, inventory, partition, shard count, device);
+- the checkpoint after every shard;
+- the attempt count and the 90/120-minute budgets;
+- the `FULL_SHARDED_SUITE_PASS` marker.
+
+The workflow only supplies the device. It boots it with
+`FORGESHAPE_CI_BOOT_ONLY=1 scripts/ci-device-smoke.sh`, which provides the same
+AVD, the explicit `emulator-5580` and the `emu avd name` identity check, plus
+the 23 startup tokens. It then maps its `mode` input to one runner switch:
+
+| `mode` | runner switch | aggregate attempt |
+| --- | --- | --- |
+| `plan` | `-PlanOnly` | none; no instrumentation runs |
+| `fresh` | `-Fresh` | counted |
+| `shard` (with `shard`) | `-ShardOnly <n>` | none; subset evidence only |
+| `resume` (with `previous_run_id`) | `-Resume` | continues the checkpoint's attempt |
+
+**Run a `plan` first.** Every run uploads its run directory (checkpoint and
+shard logs) as `ci-full-sharded-run-directory`, and `previous_run_id` restores
+one into the next run unchanged.
+
+**Resume across runs in practice.** A fresh VM generates a new debug signing
+key, so the rebuilt APKs usually differ by their signature. The fingerprint
+then differs too, and the runner refuses the resume by name
+(`RESUME_INVALID_APP_APK_CHANGED`). This is the runner working as designed. The
+honest way on after a failure is:
+
+1. run the failing shard focused (`mode=shard`);
+2. fix what it shows;
+3. use a second `fresh` attempt, within the two-attempt rule.
+
+The runner cannot see attempts made on another VM, so the two-attempt limit
+across runs is the operator's to keep. Record each attempt's run id.
+
 ## Where the evidence is
 
 Each run's page → **Artifacts** (kept 14 days):
@@ -118,9 +160,11 @@ The job summary on the run page repeats the key numbers.
 
 ## What cloud CI does not replace
 
-- **FullSharded is not the default** and is not run by CI. The exhaustive
-  gate stays `scripts\run-instrumented-tests.ps1 -Serial <serial> -FullSharded`
-  on a ForgeShape-owned AVD, run deliberately.
+- **FullSharded is not the default** and never runs on a push or a pull
+  request. The exhaustive gate is still
+  `scripts\run-instrumented-tests.ps1 -Serial <serial> -FullSharded`, run
+  deliberately. It runs either on a ForgeShape-owned AVD or, by hand, through
+  `CI FULL SHARDED` on the CI emulator. Both paths use the same runner.
 - **Emulator evidence closes no physical-device gate**: stylus, pressure,
   hover, palm rejection, real hardware GPUs, 16 KB-page devices and real-device
   performance all still need a physical device. The CI emulator renders

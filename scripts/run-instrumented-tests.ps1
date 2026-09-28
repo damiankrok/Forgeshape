@@ -181,11 +181,14 @@ if ($LASTEXITCODE -ne 0 -or $state -ne 'device') {
 Write-Output "OK: '$Serial' is attached."
 
 Write-Output 'Building debug app and androidTest APKs...'
-& .\gradlew.bat ':app:assembleDebug' ':app:assembleDebugAndroidTest'
+$gradle = Get-InstrumentedGradleInvocation -OnWindows (Test-InstrumentedHostIsWindows)
+$gradleArguments = $gradle.Arguments
+& $gradle.Command @gradleArguments
 if ($LASTEXITCODE -ne 0) { Stop-InstrumentedRun "Build failed; nothing was installed on '$Serial'." $LASTEXITCODE }
 
-$appApk = 'app\build\outputs\apk\debug\app-debug.apk'
-$testApk = 'app\build\outputs\apk\androidTest\debug\app-debug-androidTest.apk'
+$apkPaths = Get-InstrumentedApkPaths
+$appApk = $apkPaths.App
+$testApk = $apkPaths.Test
 if (-not (Test-Path $appApk)) { Stop-InstrumentedRun "Missing $appApk after build." }
 if (-not (Test-Path $testApk)) { Stop-InstrumentedRun "Missing $testApk after build." }
 

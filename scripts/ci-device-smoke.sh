@@ -19,6 +19,11 @@
 # native-only run for the device: if the emulator cannot give ForgeShape a
 # usable Vulkan path, the result says so by name.
 #
+# With FORGESHAPE_CI_BOOT_ONLY=1 it stops after the startup evidence and leaves
+# the emulator RUNNING, for `scripts/run-instrumented-tests.ps1 -FullSharded`
+# (CI FULL SHARDED), which installs, discovers and runs the suite itself. The
+# default is 0, and with it this script does exactly what it always did.
+#
 # Inputs (environment): ANDROID_HOME, plus the optional FORGESHAPE_CI_* below.
 # Expects app-debug.apk and app-debug-androidTest.apk already built.
 # Output: $FORGESHAPE_CI_OUT (default ci-device-evidence/) with summary.json,
@@ -39,6 +44,7 @@ TEST_TIMEOUT_S="${FORGESHAPE_CI_TEST_TIMEOUT_S:-2700}"
 SETTLE_TIMEOUT_S="${FORGESHAPE_CI_SETTLE_TIMEOUT_S:-180}"
 SETTLE_LOAD="${FORGESHAPE_CI_SETTLE_LOAD:-2.5}"
 STARTUP_CAPTURES="${FORGESHAPE_CI_STARTUP_CAPTURES:-3}"
+BOOT_ONLY="${FORGESHAPE_CI_BOOT_ONLY:-0}"
 
 APP_ID="com.forgeshape.app"
 ACTIVITY="$APP_ID/.ForgeShapeActivity"
@@ -381,6 +387,19 @@ grep -iE 'Vulkan|Physical device selected|Queue families|swapchain' "$OUT/startu
     sed 's/^/  /' "$OUT/vulkan-evidence.txt"
 } >> "$OUT/environment-manifest.txt"
 adb -s "$SERIAL" shell am force-stop "$APP_ID" > /dev/null 2>&1 || true
+
+# Boot-only: the device is proven (identity, 23 tokens, first frame) and is
+# handed on still running. `finish` is not called because it kills the
+# emulator; the job's own cleanup reaps it.
+if [ "$BOOT_ONLY" = "1" ]; then
+    PHASE="booted"
+    RESULT="BOOTED"
+    TEST_CLASS="(none: boot only)"
+    DETAIL="23/23 startup tokens in order, NATIVE_VIEWPORT_OK, 0 failure tokens; $SERIAL left running for the runner"
+    write_summary
+    echo "FORGESHAPE_CI_DEVICE_RESULT=$RESULT"
+    exit 0
+fi
 
 # ---------------------------------------------------------------------------
 # 6. ONE focused instrumentation class. Never the full suite by default.

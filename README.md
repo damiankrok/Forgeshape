@@ -122,7 +122,7 @@ attempt on one fingerprint needs `-OwnerOverrideAttemptLimit`.
 The runner's own logic is covered without a device by:
 
 ```
-scripts\test-instrumented-runtime.ps1     # TESTRUNTIME-01..24, about 5 seconds
+scripts\test-instrumented-runtime.ps1     # TESTRUNTIME-01..26, about 5 seconds
 scripts\test-instrumented-sharding.ps1    # THR1-01..10
 ```
 
