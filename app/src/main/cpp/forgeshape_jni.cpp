@@ -182,6 +182,12 @@ std::atomic<int> g_rendererLifecycle{0};
 // renderer that never noticed the loss would also report.
 std::atomic<int> g_rendererDeviceRebuilds{0};
 
+// How many frames the renderer has PRESENTED, mirrored out of the render thread
+// on the same terms. Debug introspection: an evidence capture waits on it, so a
+// screenshot shows a state the renderer has really drawn and presented rather
+// than whatever a fixed delay happened to catch.
+std::atomic<long long> g_rendererFramesPresented{0};
+
 // The selection outline's bounded diagnostics (`SEL-OUT-R1` §12/§13), mirrored
 // out of the render thread beside the two above and for the same reason.
 //
@@ -1904,6 +1910,8 @@ void renderThreadMain() {
                                       std::memory_order_relaxed);
             g_rendererDeviceRebuilds.store(renderer.deviceRebuildsCompleted(),
                                            std::memory_order_relaxed);
+            g_rendererFramesPresented.store(static_cast<long long>(renderer.framesPresented()),
+                                            std::memory_order_relaxed);
             // The outline counters, mirrored on the same terms: relaxed stores
             // every frame, so the UI thread's answer is never more than one
             // frame stale whichever path the renderer took.
@@ -6840,6 +6848,11 @@ JNIEXPORT jint JNICALL Java_com_forgeshape_app_NativeViewport_rendererLifecycle(
 JNIEXPORT jint JNICALL
 Java_com_forgeshape_app_NativeViewport_debugRendererDeviceRebuilds(JNIEnv*, jclass) {
     return g_rendererDeviceRebuilds.load(std::memory_order_relaxed);
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_forgeshape_app_NativeViewport_debugRendererFramesPresented(JNIEnv*, jclass) {
+    return static_cast<jlong>(g_rendererFramesPresented.load(std::memory_order_relaxed));
 }
 
 // The selection outline's renderer diagnostics (`SEL-OUT-R1` §12/§13).

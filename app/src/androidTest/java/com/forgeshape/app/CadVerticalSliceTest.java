@@ -1128,7 +1128,7 @@ public final class CadVerticalSliceTest {
 
     private void capture(String name) {
         settleLayout();
-        SystemClock.sleep(400);
+        fact("capture." + name + ".presented_frames", awaitPresentedFrames());
         final Bitmap frame =
                 InstrumentationRegistry.getInstrumentation().getUiAutomation().takeScreenshot();
         if (frame == null) {
@@ -1143,6 +1143,42 @@ public final class CadVerticalSliceTest {
             return;
         }
         fact("capture." + name, png.getName() + " " + frame.getWidth() + "x" + frame.getHeight());
+    }
+
+    /**
+     * Frames that must be presented after a state change before the display
+     * can be trusted to show it: the frame that may have been recorded just
+     * before the change, the first one recorded after it, and the four-image
+     * FIFO swapchain's depth behind that.
+     */
+    private static final int CAPTURE_PRESENTED_FRAMES = 6;
+    private static final long CAPTURE_FRAME_TIMEOUT_MS = 15000;
+
+    /**
+     * Waits until the renderer has presented {@link #CAPTURE_PRESENTED_FRAMES}
+     * more frames, and returns how many it saw and how long it took.
+     *
+     * <p>A fixed delay is not enough on the CI emulator: SwiftShader presents
+     * about three frames a second there, so a screenshot taken 400 ms after a
+     * change showed a frame recorded BEFORE it (the first Cut-preview capture
+     * showed the pre-Cut New Body state while native already held the Cut).
+     * A timeout is recorded rather than asserted — the capture is evidence,
+     * and every behavioural claim is asserted from native state elsewhere.
+     */
+    private static String awaitPresentedFrames() {
+        final long start = NativeViewport.debugRendererFramesPresented();
+        final long began = SystemClock.uptimeMillis();
+        long seen = 0;
+        while (SystemClock.uptimeMillis() - began < CAPTURE_FRAME_TIMEOUT_MS) {
+            final long now = NativeViewport.debugRendererFramesPresented();
+            // A restarted render thread counts from zero again.
+            seen = now >= start ? now - start : now;
+            if (seen >= CAPTURE_PRESENTED_FRAMES) {
+                return seen + " in " + (SystemClock.uptimeMillis() - began) + "ms";
+            }
+            SystemClock.sleep(50);
+        }
+        return "timeout " + seen + " in " + CAPTURE_FRAME_TIMEOUT_MS + "ms";
     }
 
     private void fact(String key, Object value) {

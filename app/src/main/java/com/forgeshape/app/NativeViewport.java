@@ -1499,6 +1499,18 @@ final class NativeViewport {
     static native int debugRendererDeviceRebuilds();
 
     /**
+     * How many frames the renderer has presented since its render thread
+     * started.
+     *
+     * <p>Introspection for evidence captures: a screenshot taken after a state
+     * change should show that state, and on a software rasteriser a frame can
+     * take hundreds of milliseconds while the swapchain holds several more in
+     * flight. Waiting for presented frames is a measurement where a fixed delay
+     * is a guess. Carries a count and nothing else.
+     */
+    static native long debugRendererFramesPresented();
+
+    /**
      * Opens the production session-initialization boundary.
      *
      * <p>Seeding a session is not something the user did. Answering the start
