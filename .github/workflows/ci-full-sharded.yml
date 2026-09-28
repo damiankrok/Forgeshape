@@ -130,7 +130,10 @@ jobs:
             "ndk;$ANDROID_NDK_VERSION" \
             "cmake;$ANDROID_CMAKE_VERSION" \
             "$FORGESHAPE_CI_SYSTEM_IMAGE" \
-            > "$RUNNER_TEMP/sdkmanager-install.log" 2>&1
+            > "$RUNNER_TEMP/sdkmanager-install.log" 2>&1 || {
+            # Say why, rather than exiting with the reason hidden in a file.
+            tr '\r' '\n' < "$RUNNER_TEMP/sdkmanager-install.log" | grep -v '^\s*$' | tail -n 40
+            echo "::error::DEVICE_INFRASTRUCTURE_FAILURE: sdkmanager --install failed"; exit 1; }
           tr '\r' '\n' < "$RUNNER_TEMP/sdkmanager-install.log" | tail -n 5
           image_dir="$ANDROID_HOME/system-images/android-36/google_apis/x86_64"
           test -f "$image_dir/source.properties" || {
