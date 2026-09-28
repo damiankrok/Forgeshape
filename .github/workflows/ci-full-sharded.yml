@@ -12,13 +12,6 @@
 name: CI FULL SHARDED
 
 on:
-  # REGISTRATION ONLY, removed by the next commit: GitHub cannot dispatch a
-  # workflow it has never seen run, and this file is not on the default
-  # branch yet. The job below is skipped for this event, so the push run does
-  # nothing at all.
-  push:
-    branches: [feature/cad-vertical-slice-r1]
-    paths: [.github/workflows/ci-full-sharded.yml]
   workflow_dispatch:
     inputs:
       mode:
@@ -71,6 +64,7 @@ env:
 jobs:
   full-sharded:
     name: FULL SHARDED (API 36 x86_64 emulator, repository runner)
+    # Belt and braces: only a dispatch ever runs this job.
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     # The runner's own hard stop is 120 minutes of shards; this leaves room for
