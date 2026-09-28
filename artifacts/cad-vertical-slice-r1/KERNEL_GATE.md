@@ -110,18 +110,19 @@ proven again at the chain level:
 
 | | Baseline `2380623` | Candidate | Delta |
 | --- | ---: | ---: | ---: |
-| `lib/arm64-v8a/libforgeshape_native.so` | 1 282 240 B | 2 009 752 B | **+727 512 B (+56.7 %)** |
-| `lib/x86_64/libforgeshape_native.so` | 1 363 264 B | 2 215 536 B | **+852 272 B (+62.5 %)** |
-| `app-release-unsigned.apk` | 2 904 907 B | 4 507 691 B | **+1 602 784 B (+55.2 %)** |
+| `lib/arm64-v8a/libforgeshape_native.so` | 1 282 240 B | 2 009 912 B | **+727 672 B (+56.8 %)** |
+| `lib/x86_64/libforgeshape_native.so` | 1 363 264 B | 2 215 664 B | **+852 400 B (+62.5 %)** |
+| `app-release-unsigned.apk` | 2 904 907 B | 4 511 935 B | **+1 607 028 B (+55.3 %)** |
 
 - **Method.** The baseline was built locally from `2380623` in a detached
-  worktree. The candidate is this change's working tree. Both used
-  `:app:assembleRelease` on the same machine and toolchain.
+  worktree. The candidate is `5fe9841`. Both used `:app:assembleRelease` on the
+  same machine and toolchain.
 - **What the delta includes.** Almost all of it is the kernel's core. It also
-  includes the chain, region and HUD code and the 11 KiB licence asset.
+  includes the chain, region and HUD code and the 11 357-byte licence asset
+  (`assets/licenses/manifold-3.5.4-LICENSE.txt`, in the APK only).
 - **Why it was not trimmed.** It was not traded against speed in this slice:
   Manifold is built at `-O2`. Building it with `-Os`, or stripping unused
-  Manifold entry points, is a recorded follow-up (POST_AUDIT §16), not done
+  Manifold entry points, is a recorded follow-up (`POST_AUDIT.md`), not done
   here.
 
 ## 6. What the kernel is NOT allowed to do

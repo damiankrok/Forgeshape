@@ -1,8 +1,65 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.79.0
-**Updated:** 2026-09-27
-**Result:** **`STAGE027-SCULPT-ISOLATE-R1` — COMPLETE, closed by
+**Status Version:** 0.80.0
+**Updated:** 2026-09-28
+**Result:** **`CAD-VERTICAL-SLICE-R1` — `PARTIAL-CAD-VERTICAL-SLICE-R1-TEST-BUDGET`**
+(2026-09-28). The slice is implemented, and its focused cloud gate is green on
+the tested candidate (pending) on branch `feature/cad-vertical-slice-r1`:
+
+- **`CI FAST` run (pending):** debug, release and androidTest builds; the JVM
+  suites; the release guard; corpus parity for all 44 fixtures.
+- **`CI DEVICE` runs (pending):** a fresh API 36 x86_64 AVD
+  with SwiftShader, 23/23 startup tokens in order,
+  `FORGESHAPE_NATIVE_VIEWPORT_OK` and 0 failure lines. `CadVerticalSliceTest`
+  and nine regression classes: pending.
+
+**Why the result is PARTIAL rather than PASS.** The milestone aggregate
+(`-FullSharded`) is a Windows PowerShell runner driving a local AVD. It could
+not run in the cloud session, it is reported as BLOCKED by an unavailable
+harness, and it was not self-waived. `main` was therefore **not** merged. The
+full record is in `artifacts/cad-vertical-slice-r1/` (start with `SUMMARY.md`;
+the runs are in `TEST_EVIDENCE.md`).
+
+What the owner asked for, and what now stands, measured on the CI emulator:
+
+- **Compact HUD.** The extrude HUD is one icon row at the arrow: the extent
+  control with its three-icon palette, the value centred on the shaft, the
+  operation badge and Flip. Each control has a 48 dp hit area and a 24–32 dp
+  glyph. The row covers **2.70 %** of the viewport, down from 6.78 %, and the
+  value stands **0.18 dp** from the shaft, down from 99.5 dp.
+- **Tool Labels.** A preference (Settings → Interface, default OFF) that adds
+  captions to the HUD icons.
+- **Ready withdraws the drawing chrome.** The Tool Rail, the orientation
+  navigator and the Line dimension are absent. The precision surface no longer
+  opens over 28.8 % of the screen by itself.
+- **Regions.** A loop cleanly inside another is a HOLE of the region around it.
+  A rectangle around a circle offers two regions and chooses neither. A tap
+  toggles one, and the hatch leaves a hole empty. The ring's preview measures
+  ring area × depth.
+- **Same-body Add and Cut.** Manifold 3.5.4 (Apache-2.0) is vendored unmodified
+  behind `forgeshape_cad_kernel.h`, the ONE approved third-party library
+  (`KERNEL_GATE.md`, PASS). A CAD Body is a retained, ordered feature chain:
+  the base New Body, then up to 15 Add or Cut features on planar faces of its
+  own earlier features. Each lands on the SAME `SceneObject` as one Undo. On
+  the device, Add took a body from 4 to 4.32 m³ and Cut from 4 to 3.68 m³, and
+  an upstream depth edit carried the Add to the moved face (6.16 m³).
+- **Preview.** The preview IS the candidate the commit will apply. It is
+  evaluated latest-only, tinted by operation, and an invalid one is named with
+  Extrude withdrawn.
+- **Feature list.** The features are listed in the body's Shape panel and
+  reopen in place.
+- **`CADB` v5.** It is written only when a body needs it. There are 8 new
+  fixtures, and the 36 older ones are byte-identical. The independent
+  PowerShell encoder agrees byte for byte.
+
+Startup: **23** self-test suites, **3757** checks. The new suite
+`FORGESHAPE_CAD_FEATURE_SELFTEST_OK` has 141 checks. The release APK grows
++1.61 MB with the kernel. Emulator CI closes no physical-device gate.
+
+**Previous result:** `STAGE027-SCULPT-ISOLATE-R1` — COMPLETE, closed by
+`PASS-STAGE027-C1-PIXEL-EVIDENCE` (2026-09-27); its record follows.
+
+**Stage027 result:** **`STAGE027-SCULPT-ISOLATE-R1` — COMPLETE, closed by
 `PASS-STAGE027-C1-PIXEL-EVIDENCE`** (2026-09-27). `main` carries the tested
 candidate `3d1dfdfe6bfb4d19d809aaf7991280b14e988316`, green in **`CI FAST`
 run `36323367178`** and **`CI DEVICE` run `36323368778`** (fresh API 36
@@ -1558,7 +1615,9 @@ A standalone Android application (`com.forgeshape.app`) that owns its own Vulkan
 viewport: a Java shell owning no domain truth, a plain `SurfaceView`, a JNI
 boundary carrying whole sections and semantic pointer samples, and a
 platform-neutral C++17 domain beneath a native renderer that owns no geometry
-truth. No Compose, no AndroidX, no third-party runtime library, no engine.
+truth. No Compose, no AndroidX, no engine, and no third-party runtime library
+but ONE approved exception: the vendored Manifold 3.5.4 boolean kernel behind
+`forgeshape_cad_kernel.h` (`CAD-VERTICAL-SLICE-R1`, GATE-KERNEL).
 
 A scene holds several bodies, each with a nine-value placement — double-meter
 Position, double-degree Rotation and a unitless positive Scale — and one of
@@ -1571,9 +1630,12 @@ can be sculpted, seeded from its own geometry, and it is moved, rotated, scaled,
 saved, undone and reopened exactly like anything else. A **CAD Body**
 (`CAD-R0-A1A2`, `CAD-A3`, `SKETCH-UX-R1`) is a sketch of lines, polylines,
 rectangles, circles, arcs and splines on a principal plane or on a planar face
-of another CAD body, plus one linear extrusion; its mesh is regenerated from
-that truth, its sizes, depth and sketch stay editable, and it does not sculpt
-yet. A body owns one SOURCE representation for its whole life, nothing converts
+of another CAD body, extruding one or more REGIONS (a closed loop minus the
+loops cleanly inside it) as a New Body, and then up to fifteen later **Add** or
+**Cut** features on planar faces of its own earlier features, all on the SAME
+body (`CAD-VERTICAL-SLICE-R1`); its mesh is regenerated from that ordered chain
+through the one boolean kernel, every feature stays editable, and it does not
+sculpt yet. A body owns one SOURCE representation for its whole life, nothing converts
 between them, and a Construction Body or an Imported Mesh may additionally own a
 Frozen Sculpt Mesh. Any body but the last can be DELETED from the Objects
 list (`UI-OWNER-45`), as exactly one Undo. Sculpt strokes have their own Undo and
@@ -2546,9 +2608,15 @@ real Android touch path, most recently `ForgeShape_Stage006` / `emulator-5580`.
 
 ## Self-test suite
 
-Twenty-two debug-only native suites run once from `NativeViewport.start()` —
-never per frame — and total **3616 checks, zero failures** (the table below is
-read from the startup log of `CI DEVICE` run `36323368778`). Stage027 moved the
+Twenty-three debug-only native suites run once from `NativeViewport.start()` —
+never per frame — and total **3757 checks, zero failures** (the table below is
+read from the startup log of the `CAD-VERTICAL-SLICE-R1` `CI DEVICE` runs, and
+`bash scripts/host-native-selftests.sh` reads the same total on the host).
+`CAD-VERTICAL-SLICE-R1` added the 141-check CAD-feature suite (the kernel
+capability corpus, regions, extrusion of regions with holes, the operations, the
+feature chain, session flows, `CADB` v5 and a bounded performance report) and
+restated two older checks whose premise it replaced (`CADR0_21`,
+`CADUXS1_09_d`; `artifacts/cad-vertical-slice-r1/TEST_PLAN.md` §1). Stage027 moved the
 scene suite from 155 to 175: twenty `s027_*` checks over the view restriction,
 the isolate lifecycle, the Sculpt tap refusal and the hidden-body entry refusal. `SCULPT-H1` moved
 the sculpt suite from 494 to 533: thirty-nine `SCHNAV-01..12` checks over the
@@ -2587,6 +2655,7 @@ asserted a resting selection tint, which is now zero.
 | `FORGESHAPE_SKETCH_UX_SELFTEST_OK` | 105 |
 | `FORGESHAPE_BODY_DIMENSIONS_SELFTEST_OK` | 102 |
 | `FORGESHAPE_MIRROR_SELFTEST_OK` | 62 |
+| `FORGESHAPE_CAD_FEATURE_SELFTEST_OK` | 141 |
 
 The body-dimension suite (`forgeshape_body_dimensions_selftest.cpp`,
 `DIM020M-01..16`) builds its own scene and history, and covers the derived
@@ -4148,7 +4217,13 @@ regenerated per stage.
 | `app/src/main/java/.../CadStatusMessages.java` | The one place a `CAD_*` refusal becomes a status-line sentence |
 | `app/src/main/cpp/forgeshape_workplane.{h,cpp}` | The three principal workplanes and the one right-handed `(u, v)` ↔ body-local mapping. No camera, no pixel |
 | `app/src/main/cpp/forgeshape_sketch.{h,cpp}` | Sketch entities and per-sketch ids, validation, closed-profile extraction (chaining, loop rules, nesting), bounded ear clipping, and the one `CadStatus` vocabulary |
-| `app/src/main/cpp/forgeshape_cad_body.{h,cpp}` | `CadBodyState` (one sketch, one linear extrusion), `generateCadMesh` (the one regeneration path), `CadBody::applyState` (atomic) and the typed rectangle / circle / extrude edits |
+| `app/src/main/cpp/forgeshape_cad_body.{h,cpp}` | `CadBodyState` (the base sketch and extrusion, then up to fifteen later Add/Cut features), `regenerateCadBody` (the one ordered, atomic regeneration path; `generateCadMesh` wraps it), the operation rules measured on the kernel's result, `CadBody::applyState` (atomic) and the typed rectangle / circle / extrude edits |
+| `app/src/main/cpp/forgeshape_cad_feature.{h,cpp}` | One feature's derived geometry: its prism per selected region, its semantic face table and tags, and a later feature's placement derived from an earlier feature's face in double precision |
+| `app/src/main/cpp/forgeshape_cad_kernel.{h,cpp}` | The boolean seam: ForgeShape types only in the header; the ONE file that includes a Manifold header. Validates input, canonicalises output, carries one face tag per triangle, refuses by name |
+| `app/src/main/cpp/forgeshape_sketch_region.{h,cpp}` | `extractSketchRegions`: every closed loop becomes one region minus its direct clean children; `ProfileRegionRef` selections by semantic anchor; the region bounds |
+| `app/src/main/cpp/third_party/manifold/` | Manifold 3.5.4, vendored unmodified (46 files), reproducible with `scripts/vendor-manifold.sh --verify` |
+| `app/src/main/cpp/forgeshape_cad_feature_selftest.{h,cpp}` | The `CADVS_*` suite and `FORGESHAPE_CAD_FEATURE_PERFORMANCE` |
+| `app/src/main/java/.../SketchChromePolicy.java` | The one statement of which sketch chrome is shown while drawing and in Ready. Pure Java, JVM tested |
 | `app/src/main/cpp/forgeshape_sketch_session.{h,cpp}`, `forgeshape_sketch_overlay.h` | The volatile sketch edit session: tools, the one owned pointer, snapping, placement, selection, finish, profile choice, depth, the one-transaction commit, and the world-space overlay the renderer draws |
 | `app/src/main/cpp/forgeshape_sketch_overlay.cpp` | `UI-3D-STATE-C2`: the ONE mapping from a `SketchOverlayStyle` to the two scalars that differ between styles — the grey a hue-less vertex takes and the alpha the whole range draws at. A pure function over values with no renderer, no device and no frame in it, so an unmapped style is a self-test failure instead of an invisible range; its switch has no `default:`, and a code outside the enum is refused rather than given a weight |
 | `app/src/main/cpp/forgeshape_cad_selftest.{h,cpp}` | The `CADR0-*` suite and its performance report |
@@ -4263,71 +4338,30 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Exactly one next step: return this status to the ForgeShape coordinator, which
-carries the combined OWNER review.** `CI-CLOUD-R1` is closed by
-`PASS-CI-CLOUD-R1-C1`; from here, work starts from `origin/main` on a task branch
-and is tested by `CI FAST` and `CI DEVICE` (`docs/CI_CLOUD.md`). Emulator CI
-closes neither `STYLUS-G1` nor any physical-device or performance gate.
-**Stage027 is complete** (`STAGE027-SCULPT-ISOLATE-R1`, closed by
-`PASS-STAGE027-C1-PIXEL-EVIDENCE`, integrated into `main` by fast-forward).
-Every `UI-3D-STATE-AUDIT-R1` finding is closed; there is no correction backlog
-left to group. Do not start Stage028, Stage026, `STYLUS-G1` or any other
-feature from this status: the next step is the coordinator's.
+**Exactly one next step: return this status to the ForgeShape coordinator for
+the `CAD-VERTICAL-SLICE-R1` milestone aggregate and the OWNER review.** The
+slice is implemented and its focused cloud gate is green on the tested
+candidate (head of this status). What it still needs is not code:
 
-`UI-3D-STATE-C1` closed on 2026-09-08 as `PASS-UI-3D-STATE-C1-OWNER-LATER`. It
-implemented no feature: it corrected six of the seven findings
-`UI-3D-STATE-AUDIT-R1` recorded, in the Android shell and in two read paths below
-JNI, and changed no domain semantic, no format and no contract.
-`UI-3D-STATE-C2` closed the seventh the same day as
-`PASS-UI-3D-STATE-C2-OWNER-LATER`: one renderer style mapping, no feature, no
-format and no contract. **Do not start a third correction family** — the exact
-colour, weight and contrast of the dimension annotation are an OWNER LATER
-question and not a correction task's.
+1. **The milestone aggregate.** `scripts\run-instrumented-tests.ps1 -Serial
+   <serial> -FullSharded` on the isolated `ForgeShape_Stage006` AVD, on the
+   tested candidate. It is a Windows PowerShell runner driving a local AVD, and
+   it could not run in the cloud session that built the slice. It is BLOCKED by
+   an unavailable harness and was **not self-waived**. The coordinator either
+   runs it or authorises an exception.
+2. **The merge.** Only after (1), as a fast-forward of `main` to the tested
+   candidate, per `CI-CLOUD-R1`. The branch was deliberately not merged.
+3. **The OWNER review** of the aesthetics `artifacts/cad-vertical-slice-r1/
+   POST_AUDIT.md` §3 lists as OWNER-LATER (the glyph size, the Cut icon, the
+   preview tints, the hatch, the caption size), and of the three proposed next
+   tasks in §4 (Through All, Revolve on the same region and operation model,
+   projected edges plus inference snapping). None of those three is authorised
+   by this status.
 
-What the correction is, in one sentence each. **One coordinate contract**:
-`ViewportAnchorSpace` converts a viewport-content anchor into an Android
-translation from runtime geometry alone and clamps against the real viewport, and
-all three placing views use it rather than each writing the arithmetic.
-**One refresh path**: `refreshWorldAnchoredUi()` recomputes ownership and
-placement for every anchored surface, driven by both viewport-gesture callbacks
-as well as by the existing chrome events, and deliberately cheaper than
-`syncFromNative()` so a pointer sample discards no draft. **One truth for the
-anchors**: they are derived when asked instead of read from a frame-old cache,
-that cache is deleted, and the measurability predicate is named once and shared
-by the render thread and every reader.
-
-Two coverage gaps stated rather than papered over, unchanged from the audit:
-**Activity recreation was not exercised** (`LIFECYCLE_RECREATE` is unaudited and
-uncorrected), and only **compact portrait** was measured. The conversion carries
-no constant and is written to absorb an arbitrary left or right inset, but that
-is a property of the code and not a measurement.
-
-One implementation detail worth knowing before touching this area: a surface made
-visible in the same pass that first lays it out cannot know its container's
-position, because a `GONE` view is skipped by its parent's layout and still
-reports position 0. The refresh places the best answer available and repeats once
-after layout, capped at three and reset by any settled pass. That is layout
-readiness, not a poll, and it is the one place the correction depends on Android
-layout timing.
-
-`CAD-EXT-R1` is technical/repository complete and
-carries no open blocker; what is left is the owner's own reading of the extent
-selector's wording, of `Each side`, and of two arrows sharing one profile,
-listed in `artifacts/cad-ext-r1/OWNER_LATER_TEST_PACK.md`.
-
-`CAD-EXT-R1` is closed on the technical side. An extrusion now reaches a stated
-distance on each side of its sketch plane, authored as **One Side**,
-**Symmetric** or **Two Sides** at the geometry, through the canvas cluster
-`CAD-UX-S1` already put there. Nothing about the arrow, the camera-attached
-scale, the drag contract, the feature-preview view or the retained-sketch chip
-was rebuilt: the cluster gained a selector and, in Two Sides, a second value,
-and the manipulator gained a side.
-
-**Do not start `GATE-KERNEL`, Stage024, `CAD-A4` or Stage 026.** Do not
-implement Add, Cut, Join, Intersect, any boolean, a feature list, `CADB` v5,
-Revolve, To Object, Through All, taper/draft or a Hole feature. The visual
-constants named in `artifacts/cad-ext-r1/OWNER_LATER_TEST_PACK.md` are
-provisional and none is approved.
+Do not start Revolve, Through All, To Object, Intersect, a Hole feature,
+fillet, chamfer, shell, a pattern, a constraint solver, CAD → Sculpt, Stage024,
+`CAD-A4` or Stage 026 from this status. A second third-party library needs its
+own gate.
 
 ---
 
@@ -4478,8 +4512,8 @@ and `scripts/build-forge-corpus.ps1`. The audit also records the trap that a
 face-supported sketch produces a SECOND body that follows its producer and must
 never be presented as Add. Extrude Add and Cut remain exactly what `UI-OWNER-04`
 already said they were: **required integration after boolean infrastructure
-exists**, and still not implemented. The next step for the audit is the
-coordinator's, not this repository's.
+exists**. `CAD-VERTICAL-SLICE-R1` has since delivered that infrastructure and
+both operations on the same body (see the head of this status).
 
 **A second audit landed beside this status and changed nothing in the product**
 (`STAGE027-R0`, 2026-09-11). A source-backed resolution of the historical

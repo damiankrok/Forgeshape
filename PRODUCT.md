@@ -639,31 +639,59 @@ negative number and anything that is not a number are refused, the field stays
 open so you can correct it, and nothing you drew moves.
 
 **Finish Sketch** is the one way forward. ForgeShape checks the sketch and
-finds every closed profile — a rectangle, a circle, a closed polyline, or a
-loop of lines whose ends meet — and refuses, saying why, when there is none: an
-open polyline, a chain with a free end or a fork, a loop that crosses itself, a
-loop with no area. Nothing is repaired for you, and the sketch stays editable.
-A profile that lies inside another is refused too — holes are not supported yet
-— while the inner one can still be extruded on its own.
+finds every closed loop — a rectangle, a circle, a closed polyline, or a loop
+of lines and curves whose ends meet — and refuses, saying why, when there is
+none: an open polyline, a chain with a free end or a fork, a loop that crosses
+itself, a loop with no area. Nothing is repaired for you, and the sketch stays
+editable.
 
-Once a profile is ready the toolbar reads **Extrude**, *Sketch values* opens on
-the profile and the depth, and *Back to Sketch* under the rail returns to
-drawing. If the sketch closed several profiles, choose the one to extrude; the
-choice is drawn in the viewport, together with a preview of the extrusion.
+**What you extrude is a region, and a loop inside another is a hole.** Each
+closed loop encloses one region: the area inside it, minus any loop drawn
+cleanly inside it. A rectangle with a circle in the middle therefore offers
+two regions — the disk, and the rectangle with a round hole — and extruding the
+second makes a block with a real hole through it. When the sketch has exactly
+one region it is chosen for you; when it has more, **none is chosen**: the
+status line says how many were found and Extrude is not offered until you tap
+the region you want. A tap chooses it, a second tap lets it go, and tapping the
+disk after the ring switches to it (two regions that share a loop cannot both
+be chosen). The chosen region is hatched, and a hole stays empty. The first
+region you choose also turns the view to one the arrow can be dragged in.
+Loops that touch or cross each other are never holes of each other; each stays
+its own region.
 
-**The extrusion is now controlled at the geometry itself.** An **arrow** is
-drawn along the direction the solid will grow, standing in the middle of the
-chosen profile, and its length is the distance it grows. Beside it, anchored to
-that same place, sit the **extent selector**, the **exact distance** — tap it to
-type one — and a small badge reading **New Body**, because that is what this
-extrusion does. The cluster belongs to the work rather than to the screen: it
-gets smaller as you pull the camera back and larger as you come in, within
-limits, so it never becomes unreadable and never covers the profile it measures.
-A distance typed here and the same number typed in the panel are the same thing;
-there is one extrusion, and both places show it.
+Once a region is chosen the toolbar reads **Extrude**, *Back to Sketch* under
+the rail returns to drawing, and the drawing tools, the plane navigator and a
+selected line's dimension step out of the way — the question now is the
+extrusion. The exact-value panel no longer opens by itself: its toggle opens it
+on the regions (each with its hole count), the operation and the depth.
 
-The cluster **follows** the arrow through a drag, an orbit and a zoom, and so
-does the **Edit Sketch** chip below — measured on the device by
+**The extrusion is controlled at the geometry itself.** An **arrow** is drawn
+along the direction the solid will grow, standing on the chosen region, and its
+length is the distance it grows. Beside it is one compact row of icons: the
+**extent** (one icon for the current choice; tap it for One Side, Symmetric or
+Two Sides), the **exact distance** — standing on the arrow's shaft; tap it to
+type one — the **operation** (a separate box for New Body, a solid with a plus
+for Add, a solid with a notch for Cut) and, for a One Side extrusion,
+**Flip**. The icons are small; the places you tap are not — each is a full
+fingertip wide. With **Tool labels** turned on in *Settings → Interface*, each
+icon also carries a one-word caption. A distance typed at the arrow and the same
+number typed in the panel are the same thing; there is one extrusion, and both
+places show it.
+
+**New Body, Add or Cut.** A sketch on one of the three planes makes a new body —
+New Body is the only operation there, and the badge simply says so. A sketch on
+a flat face of a CAD body offers all three: **Add** grows material onto *that
+same body* and **Cut** takes material out of it, and neither creates another
+object — the Objects list does not change, the body keeps its name and its
+place, and one Undo takes the feature back. Choosing Cut points the extrusion
+into the body; Flip still turns it round. The viewport previews exactly what
+Extrude will make — tinted green for Add, red for Cut, blue for a new body, and
+each also recognisable by its icon — and when the result would not make sense
+(an Add that does not touch the body, a Cut that misses it or would remove all
+of it) the operation badge says so by name and Extrude is not offered.
+
+The row **follows** the arrow through a drag, an orbit and a zoom, and so
+does the **Edit Sketch** control below — measured on the device by
 `UI-3D-STATE-AUDIT-R1` and, since `UI-3D-STATE-C1` corrected where anchored
 chrome stands, sitting on the point it is anchored to. Near a window edge the
 cluster is held inside the viewport so it stays readable and tappable, and it
@@ -713,7 +741,7 @@ panel: type the **depth**, choose **Along normal** or **Against normal**, and
 press **Extrude** — from the toolbar or from the panel; they are the same act.
 The side chips are absent for a Symmetric or Two Sides extrusion, because there
 is no side to choose there; the extent itself is set at the geometry, where both
-arrows can be seen. The
+arrows can be seen. With New Body the
 sketch becomes one new **CAD Body**: an ordinary object in the Objects list,
 selected, with the ordinary Move, Rotate and Scale handles, and one Undo takes
 the whole of it back. **Cancel Sketch**, under the rail, discards the sketch and
@@ -747,6 +775,14 @@ whole edit as **one Undo step**, and Undo puts the entire previous sketch back.
 If another body is sketched on one of this body's faces, an edit that would
 take that face away is refused and says so — the dependent is never quietly
 broken.
+
+**Every feature stays editable.** A CAD body built from several features lists
+them in its *Shape* panel in order — the first extrusion, then each Add and Cut.
+Tap one to reopen it: an Add or a Cut opens on its own extrusion, with its
+operation and distance in the same compact row, and *Back to Sketch* reaches its
+drawing. Finishing applies the edit as one Undo step, and everything after it
+is rebuilt in order — deepen the first extrusion and an Add standing on its top
+face rises with it. Saving and reopening keep the whole chain.
 
 What a CAD Body does **not** offer yet: *Start Sculpting*. It is absent for one,
 because the way back from Sculpt over a sketch needs its own design; every other
@@ -1559,7 +1595,7 @@ foot of Home and from **Settings…** at the bottom of the Project surface, and
 same body selected and the same tool in hand. While it stands the viewport is
 not reachable, and nothing behind it can be touched.
 
-Three groups. **Appearance** is the five palettes above. **Workspace** is
+Four groups. **Appearance** is the five palettes above. **Workspace** is
 **Handedness**: *Right-handed (default)* keeps the tool rail on the right edge;
 *Left-handed* moves the rail — and the exact-value panel, the sculpt sliders
 and, on a wide window, the Objects column — to the left edge, the same 8 dp off
@@ -1574,6 +1610,8 @@ three — *Thin*, *Regular (default)*, *Bold*. Both are presentation only: the
 handle you can grab is always at least 48 dp across whatever the size, and the
 same drag moves, turns or stretches the body by the same amount at every size
 and weight. There is no handle-style choice: the gizmo has one style.
+**Interface** is **Tool labels**: *Off (default)* shows the extrusion controls
+as icons alone; *On* adds a short one-word caption under each.
 
 Every row shows which option is chosen with a filled row, a check mark and,
 to a screen reader, the word "selected" — never colour alone. Choosing an
@@ -1897,14 +1935,16 @@ of a project.
 Standard named views (Front, Top, Right and the rest), a view cube, a
 focus-on-selection command and any camera animation are not implemented — the
 projection can be switched, but the camera is aimed only by hand. An editable
-tessellation and booleans are not implemented, and **shape is still edited only
+tessellation is not implemented, and **shape is still edited only
 by typing exact values and pressing Apply**: there are no handles that change a
 body's *dimensions*. A sketch is lines, polylines, rectangles, circles, arcs
 and splines on one of the three principal planes or on a flat face of a CAD
-body, one linear New-Body extrusion, later edits to a rectangle's or a circle's
-sizes and the depth, and Edit Sketch for everything else. There is no hole,
-boolean, fillet, chamfer, shell, revolve, sweep, loft, pattern, mirror, offset,
-trim or constraint solver, no custom construction plane and no sketch on a
+body; its regions may have holes; a CAD body is a first New Body extrusion plus
+up to fifteen Add and Cut extrusions on its own flat faces, each reopenable. There
+is no Through All or Up To Face extent, no Intersect, no deleting or reordering
+a feature, and no fillet, chamfer, shell, revolve, sweep, loft, pattern, feature
+mirror, offset, trim or constraint solver, no custom construction plane, no
+sketch on the inside of a Cut, and no sketch on a
 curved or imported surface; a polygon profile's points are not numerically
 editable, a spline's points are edited by redrawing it, and a CAD Body does not
 sculpt. The Scale handles change how large it is drawn, which is a

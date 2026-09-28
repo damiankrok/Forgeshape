@@ -76,6 +76,16 @@ Each case writes its facts and captures to
 `files/evidence/cad-vertical-slice-r1-after/`. `CI DEVICE` pulls them into
 `test-evidence/`.
 
+**A capture waits for presented frames, not for a delay.** Before a screenshot
+the test waits until the renderer has presented six more frames
+(`NativeViewport.debugRendererFramesPresented`, a count mirrored out of the
+render thread like `debugRendererDeviceRebuilds`). It records how many it saw
+and how long that took as `capture.<name>.presented_frames`. The reason is
+measured: the CI emulator presents about three frames a second through a
+four-image FIFO swapchain, and the first Cut-preview capture, taken after a
+fixed 400 ms, showed a frame recorded before the Cut was chosen
+(`TEST_EVIDENCE.md` §3).
+
 ## 4. Existing regressions kept (prompt §17.4)
 
 These classes were kept, and updated only where this milestone deliberately

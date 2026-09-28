@@ -1,0 +1,55 @@
+capture.04_compact_hud_one_side=04_compact_hud_one_side.png 1080x2400
+hud.cluster=[261,1180][775,1316] w_dp=195.80952 h_dp=51.809525 viewport_pct=2.6969135802469135
+hud.cad_extrude_extent=[266,1185][392,1311] hit_dp=48.0x48.0 glyph_dp=26.666666
+hud.cad_extrude_operation=[518,1185][644,1311] hit_dp=48.0x48.0 glyph_dp=26.666666
+hud.cad_extrude_flip=[644,1185][770,1311] hit_dp=48.0x48.0 glyph_dp=26.666666
+hud.value_to_shaft_dp=0.1802604557014645
+hud.value_to_shaft_after_orbit_dp=0.15169668614248313
+hud.cad_extrude_extent_one_side=[120,1320][246,1446] hit_dp=48.0x48.0 glyph_dp=24.380953
+hud.cad_extrude_extent_symmetric=[246,1320][372,1446] hit_dp=48.0x48.0 glyph_dp=24.380953
+hud.cad_extrude_extent_two_sides=[372,1320][498,1446] hit_dp=48.0x48.0 glyph_dp=24.380953
+capture.05_compact_hud_extent_palette=05_compact_hud_extent_palette.png 1080x2400
+capture.06_compact_hud_symmetric=06_compact_hud_symmetric.png 1080x2400
+hud.cluster_labels_on=[198,1158][663,1294] w_dp=177.14285
+capture.07_compact_hud_labels_on=07_compact_hud_labels_on.png 1080x2400
+rectangle_m=4.0 x 2.8000000000000003
+capture.01_rectangle_circle_two_regions=01_rectangle_circle_two_regions.png 1080x2400
+regions=2.0
+ring_area_m2=9.202275102554847
+ring_preview_volume_m3=9.202275102554834
+perf.ring_preview_us=438.688
+capture.02_ring_selected_hatched=02_ring_selected_hatched.png 1080x2400
+capture.02b_disk_selected=02b_disk_selected.png 1080x2400
+ring_body_volume_m3=4.601137551277417
+ring_body_triangles=144.0
+capture.03_ring_extruded=03_ring_extruded.png 1080x2400
+capture.15_ready_chrome=15_ready_chrome.png 1080x2400
+ready.trailing_host=[880,231][1059,668] viewport_pct=3.0178626543209877
+ready.hud=[261,1180][775,1316] viewport_pct=2.6969135802469135
+capture.16_ready_precision_on_request=16_ready_precision_on_request.png 1080x2400
+face_sketch.area_m2=0.6400000000000001
+refusal.badge_description=Operation: Cut. Change operation. Cannot extrude: Cut misses the body — nothing would be removed.
+capture.12_cut_misses_preview=12_cut_misses_preview.png 1080x2400
+face_sketch.area_m2=0.1599999999999997
+face_sketch.area_m2=0.6400000000000001
+feature_list.rows=2
+capture.13_feature_edit_open=13_feature_edit_open.png 1080x2400
+upstream_edit.volume_m3=6.16
+capture.13b_upstream_edit_carries_the_add=13b_upstream_edit_carries_the_add.png 1080x2400
+feature_chain_project_bytes=592
+capture.14_feature_chain_reopened=14_feature_chain_reopened.png 1080x2400
+face_sketch.area_m2=0.6400000000000001
+perf.cut_preview_us=1291.35
+perf.cut_drag_preview_us=643.691
+cut.drag_depth_m=1.0 -> 1.2679189443588257
+capture.10_cut_preview=10_cut_preview.png 1080x2400
+cut.volume_m3=3.6799999999999997
+capture.11_cut_committed=11_cut_committed.png 1080x2400
+face_sketch.area_m2=0.6400000000000001
+face_sketch.operations_available=7
+perf.add_preview_us=804.231
+perf.add_drag_preview_us=509.892
+add.drag_depth_m=1.0 -> 1.2311801314353943
+capture.08_add_preview=08_add_preview.png 1080x2400
+add.volume_m3=4.32
+capture.09_add_committed=09_add_committed.png 1080x2400
