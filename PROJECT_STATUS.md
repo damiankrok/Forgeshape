@@ -4,14 +4,14 @@
 **Updated:** 2026-09-28
 **Result:** **`CAD-VERTICAL-SLICE-R1` — `PARTIAL-CAD-VERTICAL-SLICE-R1-TEST-BUDGET`**
 (2026-09-28). The slice is implemented, and its focused cloud gate is green on
-the tested candidate (pending) on branch `feature/cad-vertical-slice-r1`:
+the tested candidate `759ed91` on branch `feature/cad-vertical-slice-r1`:
 
-- **`CI FAST` run (pending):** debug, release and androidTest builds; the JVM
+- **`CI FAST` run `36462358823`:** debug, release and androidTest builds; the JVM
   suites; the release guard; corpus parity for all 44 fixtures.
-- **`CI DEVICE` runs (pending):** a fresh API 36 x86_64 AVD
+- **`CI DEVICE` runs `36462677660` and `36465122847`:** a fresh API 36 x86_64 AVD
   with SwiftShader, 23/23 startup tokens in order,
   `FORGESHAPE_NATIVE_VIEWPORT_OK` and 0 failure lines. `CadVerticalSliceTest`
-  and nine regression classes: pending.
+  and nine regression classes: **OK (57 + 43 = 100 tests)**.
 
 **Why the result is PARTIAL rather than PASS.** The milestone aggregate
 (`-FullSharded`) is a Windows PowerShell runner driving a local AVD. It could

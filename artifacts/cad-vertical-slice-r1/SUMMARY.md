@@ -1,8 +1,11 @@
 # CAD Vertical Slice R1 — summary
 
 What the milestone set out to do, what it delivered, and where the proof lives.
-The result token and the gate state are in `TEST_EVIDENCE.md` §5 and in
-`PROJECT_STATUS.md`.
+The result token and the gate state are in `TEST_EVIDENCE.md` §6 and in
+`PROJECT_STATUS.md`: **`PARTIAL-CAD-VERTICAL-SLICE-R1-TEST-BUDGET`**. Every
+cloud gate is green on the tested candidate `759ed91` (`CI FAST` plus 100
+device tests); the Windows-only milestone aggregate is owed, and `main` was not
+merged.
 
 ## 1. The owner's problem, in one paragraph
 
