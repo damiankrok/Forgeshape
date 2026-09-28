@@ -1720,6 +1720,25 @@ void renderThreadMain() {
         return;
     }
 
+    // The diagnostic counters below are PROCESS-lifetime counts — the outline
+    // allocation slot is documented "for the life of the process" — but this
+    // Renderer is new, and its own counters start at zero. Every Activity that
+    // finishes for real stops this thread and the next one starts another, so
+    // copying the renderer's count straight into a mirror would leave the dead
+    // renderer's total standing until this renderer's first frame and then
+    // drop it to 1: a reader that took a baseline in that window would wait for
+    // a count the live renderer cannot reach. Each mirror therefore continues
+    // from the value the previous thread left, which `stop()` joined before
+    // this thread was started, so nothing else writes it meanwhile.
+    const int rebuildsBase = g_rendererDeviceRebuilds.load(std::memory_order_relaxed);
+    const long long framesPresentedBase =
+        g_rendererFramesPresented.load(std::memory_order_relaxed);
+    const long long outlineAllocationsBase =
+        g_outlineMaskAllocations.load(std::memory_order_relaxed);
+    const long long outlineMaskPassBase = g_outlineMaskPassFrames.load(std::memory_order_relaxed);
+    const long long outlineCompositeBase =
+        g_outlineCompositeDraws.load(std::memory_order_relaxed);
+
     for (;;) {
         ANativeWindow* windowToAttach = nullptr;
         bool doDetach = false;
@@ -1908,22 +1927,26 @@ void renderThreadMain() {
             // for longer than a frame no matter which path the renderer took.
             g_rendererLifecycle.store(static_cast<int>(renderer.lifecycle()),
                                       std::memory_order_relaxed);
-            g_rendererDeviceRebuilds.store(renderer.deviceRebuildsCompleted(),
+            g_rendererDeviceRebuilds.store(rebuildsBase + renderer.deviceRebuildsCompleted(),
                                            std::memory_order_relaxed);
-            g_rendererFramesPresented.store(static_cast<long long>(renderer.framesPresented()),
-                                            std::memory_order_relaxed);
+            g_rendererFramesPresented.store(
+                framesPresentedBase + static_cast<long long>(renderer.framesPresented()),
+                std::memory_order_relaxed);
             // The outline counters, mirrored on the same terms: relaxed stores
             // every frame, so the UI thread's answer is never more than one
             // frame stale whichever path the renderer took.
             {
                 const forgeshape::Renderer::SelectionOutlineStats outline =
                     renderer.selectionOutlineStats();
-                g_outlineMaskAllocations.store(static_cast<long long>(outline.maskAllocations),
-                                               std::memory_order_relaxed);
-                g_outlineMaskPassFrames.store(static_cast<long long>(outline.maskPassFrames),
-                                              std::memory_order_relaxed);
-                g_outlineCompositeDraws.store(static_cast<long long>(outline.compositeDraws),
-                                              std::memory_order_relaxed);
+                g_outlineMaskAllocations.store(
+                    outlineAllocationsBase + static_cast<long long>(outline.maskAllocations),
+                    std::memory_order_relaxed);
+                g_outlineMaskPassFrames.store(
+                    outlineMaskPassBase + static_cast<long long>(outline.maskPassFrames),
+                    std::memory_order_relaxed);
+                g_outlineCompositeDraws.store(
+                    outlineCompositeBase + static_cast<long long>(outline.compositeDraws),
+                    std::memory_order_relaxed);
                 g_outlineMaskWidth.store(static_cast<int>(outline.maskWidth),
                                          std::memory_order_relaxed);
                 g_outlineMaskHeight.store(static_cast<int>(outline.maskHeight),

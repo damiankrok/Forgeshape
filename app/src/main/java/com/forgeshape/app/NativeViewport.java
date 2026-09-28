@@ -1499,8 +1499,11 @@ final class NativeViewport {
     static native int debugRendererDeviceRebuilds();
 
     /**
-     * How many frames the renderer has presented since its render thread
-     * started.
+     * How many frames the renderer has presented in this process.
+     *
+     * <p>A process-lifetime count: a render thread restart continues it rather
+     * than starting it again from zero, so a later read is never below an
+     * earlier one.
      *
      * <p>Introspection for evidence captures: a screenshot taken after a state
      * change should show that state, and on a software rasteriser a frame can

@@ -1171,7 +1171,8 @@ public final class CadVerticalSliceTest {
         long seen = 0;
         while (SystemClock.uptimeMillis() - began < CAPTURE_FRAME_TIMEOUT_MS) {
             final long now = NativeViewport.debugRendererFramesPresented();
-            // A restarted render thread counts from zero again.
+            // The mirror continues across a render thread restart; the second
+            // branch only keeps this helper honest on a build where it did not.
             seen = now >= start ? now - start : now;
             if (seen >= CAPTURE_PRESENTED_FRAMES) {
                 return seen + " in " + (SystemClock.uptimeMillis() - began) + "ms";

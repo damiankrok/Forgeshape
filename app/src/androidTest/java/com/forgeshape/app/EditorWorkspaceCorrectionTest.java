@@ -17,6 +17,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 import android.graphics.drawable.Drawable;
@@ -598,15 +599,28 @@ public final class EditorWorkspaceCorrectionTest {
      * one a deliberate act, because a surface that reached the workspace without
      * anyone measuring it against this contract is exactly the defect UIR4B-08
      * was written for. It moved from four to five at E2E-R1A, when the project
-     * actions surface joined; that surface takes the shared contract like the
-     * rest and owns no motion of its own.
+     * actions surface joined, and from five to six at `SCULPT-H1`, when the
+     * History navigator joined; each takes the shared contract like the rest and
+     * owns no motion of its own. The surfaces are asserted by IDENTITY and in
+     * order as well as by count, so swapping one surface for another cannot
+     * pass by keeping the total.
      */
     @Test
     public void uir4b08_everyAnchoredSurfaceSharesOneMotionContract() {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             final AnchoredSurfaceView[] surfaces = workspace.anchoredSurfaces();
-            assertEquals("the five surfaces that grow out of a control",
-                    5, surfaces.length);
+            final AnchoredSurfaceView[] expected = {
+                    workspace.objectsPopover(), workspace.addPrimitivePalette(),
+                    workspace.propertyInspector(), workspace.displayPopover(),
+                    workspace.projectPopover(), workspace.historyNavigator()};
+            assertEquals("the six surfaces that grow out of a control",
+                    expected.length, surfaces.length);
+            for (int i = 0; i < expected.length; i++) {
+                assertNotNull("anchored surface " + i + " exists", expected[i]);
+                assertSame("anchored surface " + i + " is "
+                                + expected[i].getClass().getSimpleName(),
+                        expected[i], surfaces[i]);
+            }
             for (AnchoredSurfaceView surface : surfaces) {
                 assertNotNull(surface);
                 assertTrue("a resting anchored surface is settled: "
