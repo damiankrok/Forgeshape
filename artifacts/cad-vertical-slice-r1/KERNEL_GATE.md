@@ -110,12 +110,13 @@ proven again at the chain level:
 
 | | Baseline `2380623` | Candidate | Delta |
 | --- | ---: | ---: | ---: |
-| `lib/arm64-v8a/libforgeshape_native.so` | 1 282 240 B | 2 009 912 B | **+727 672 B (+56.8 %)** |
-| `lib/x86_64/libforgeshape_native.so` | 1 363 264 B | 2 215 664 B | **+852 400 B (+62.5 %)** |
-| `app-release-unsigned.apk` | 2 904 907 B | 4 511 935 B | **+1 607 028 B (+55.3 %)** |
+| `lib/arm64-v8a/libforgeshape_native.so` | 1 282 240 B | 2 010 088 B | **+727 848 B (+56.8 %)** |
+| `lib/x86_64/libforgeshape_native.so` | 1 363 264 B | 2 215 824 B | **+852 560 B (+62.5 %)** |
+| `app-release-unsigned.apk` | 2 904 907 B | 4 512 095 B | **+1 607 188 B (+55.3 %)** |
 
 - **Method.** The baseline was built locally from `2380623` in a detached
-  worktree. The candidate is `5fe9841`. Both used `:app:assembleRelease` on the
+  worktree. The candidate is the tested code (`db8ff6b`, identical to
+  `759ed91`). Both used `:app:assembleRelease` on the
   same machine and toolchain.
 - **What the delta includes.** Almost all of it is the kernel's core. It also
   includes the chain, region and HUD code and the 11 357-byte licence asset

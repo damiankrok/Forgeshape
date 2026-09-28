@@ -8,8 +8,8 @@
   "system_image": "system-images;android-36;google_apis;x86_64",
   "device_profile": "medium_phone",
   "gpu_mode": "swiftshader_indirect",
-  "boot_seconds": "56",
-  "startup_seconds": "8",
+  "boot_seconds": "50",
+  "startup_seconds": "9",
   "startup_capture_used": "1",
   "selftest_tokens_expected": 23,
   "selftest_tokens_found": 23,
@@ -19,5 +19,5 @@
   "test_class": "com.forgeshape.app.CadVerticalSliceTest,com.forgeshape.app.CadCanvasExtrudeTest,com.forgeshape.app.CadExtrudeExtentTest,com.forgeshape.app.SketchExtrudeTest,com.forgeshape.app.SettingsPreferencesTest,com.forgeshape.app.Ui3dStateCorrectionTest",
   "tests_run": 57,
   "tests_failed": 0,
-  "test_seconds": "551"
+  "test_seconds": "628"
 }

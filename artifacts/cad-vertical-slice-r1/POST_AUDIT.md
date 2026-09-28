@@ -13,14 +13,14 @@ All evidence is from the cloud CI emulator: API 36 x86_64, SwiftShader,
 
 | # | Required | Where | Verdict |
 | ---: | --- | --- | --- |
-| 1 | Before/after at comparable camera and size | `before/01_ready_one_side` ↔ `after/04_compact_hud_one_side` (same 2 × 1 m One Side, same phone) | shown |
+| 1 | Before/after at comparable camera and size | `before/01_ready_one_side` ↔ `after/04_compact_hud_one_side` (same 2 × 1 m One Side, same emulator) | shown |
 | 2 | Measured overlay area | cluster 6.78 % → **2.70 %**; precision panel 28.79 % auto-opened → collapsed; navigator 5.71 % → absent; drawing rail 9.29 % → absent (the host is 3.02 % with three actions) | measured |
 | 3 | Labels OFF | `after/04`, `05`, `06` | shown |
 | 4 | Labels ON | `after/07_compact_hud_labels_on`, cluster 177 dp wide | shown |
 | 5 | Rectangle-with-hole region selection | `after/01` (2 regions, none chosen), `after/02` (ring hatched, hole empty), `after/02b` (disk) | shown and measured (preview volume = ring area × depth) |
 | 6 | New Body preview | `after/04`, `after/15` | shown |
 | 7 | Add preview and same-body result | `after/08`, `after/09` (same id, volume 4 → 4.32) | shown and measured |
-| 8 | Cut preview and committed void | `after/10`, `after/11` (volume 4 → 3.68, bounds unchanged) | measured; see finding A2 on the preview frame |
+| 8 | Cut preview and committed void | `after/10` (the body tinted Cut with the through-pocket, the arrow into the body), `after/11` (volume 4 → 3.68, bounds unchanged) | shown and measured (finding A2 was the capture, and is fixed) |
 | 9 | Feature edit after commit | `after/13` (Add reopened), `after/13b` (upstream depth carries the Add: 6.16 m³, top 1.75 m) | shown and measured |
 | 10 | No hidden or extra bodies | body count unchanged across Add, Cut and the edit; the Objects capsule names the same body; `operation_refusal` compares project bytes | asserted |
 | 11 | Save/reopen | `after/14`: same volume, same triangles, byte-identical re-encode | asserted |
