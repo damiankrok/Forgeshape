@@ -822,7 +822,8 @@ public final class SelectionOutlineTest {
                 NativeViewport.constructionUndoDepth());
         // SELOUTR1-24. Selection fell to the surviving body by the EXISTING
         // fallback; the outline follows it and decides nothing.
-        assertEquals("SELOUTR1-24: selection fell to the surviving body by the existing rule",
+        assertEquals("SELOUTR1-24: selection fell to the surviving body by the existing rule"
+                        + " (the scene held " + bodiesBefore + " bodies before the Delete)",
                 first, NativeViewport.sceneActiveBodyId());
         // SELOUTR1-23. No stale resource from the deleted body: the count is
         // flat, and the outline is drawing the FALLBACK body rather than a
@@ -947,15 +948,29 @@ public final class SelectionOutlineTest {
         final double[] before = outlineStats();
         assertTrue(what + ": the outline must be enabled for this to mean anything",
                 before[NativeViewport.OUTLINE_STAT_ENABLED] == 1.0);
-        assertTrue(what + ": the renderer records the composite draw",
-                awaitOutlineFrames(2));
+        final boolean arrived = awaitOutlineFrames(2);
         final double[] after = outlineStats();
-        assertTrue(what + ": the renderer records the mask pass",
+        // The counter values travel with a failure, so a report says what the
+        // renderer did rather than only that the wait ran out.
+        assertTrue(what + ": the renderer records the composite draw"
+                        + describeOutlineCounters(before, after),
+                arrived);
+        assertTrue(what + ": the renderer records the mask pass"
+                        + describeOutlineCounters(before, after),
                 after[NativeViewport.OUTLINE_STAT_MASK_PASS_FRAMES]
                         > before[NativeViewport.OUTLINE_STAT_MASK_PASS_FRAMES]);
         assertEquals(what + ": one mask pass per composite draw",
                 after[NativeViewport.OUTLINE_STAT_MASK_PASS_FRAMES],
                 after[NativeViewport.OUTLINE_STAT_COMPOSITE_DRAWS], 0.0);
+    }
+
+    private static String describeOutlineCounters(double[] before, double[] after) {
+        return " (composite " + (long) before[NativeViewport.OUTLINE_STAT_COMPOSITE_DRAWS]
+                + " -> " + (long) after[NativeViewport.OUTLINE_STAT_COMPOSITE_DRAWS]
+                + ", mask pass " + (long) before[NativeViewport.OUTLINE_STAT_MASK_PASS_FRAMES]
+                + " -> " + (long) after[NativeViewport.OUTLINE_STAT_MASK_PASS_FRAMES]
+                + ", allocations " + (long) before[NativeViewport.OUTLINE_STAT_MASK_ALLOCATIONS]
+                + " -> " + (long) after[NativeViewport.OUTLINE_STAT_MASK_ALLOCATIONS] + ")";
     }
 
     /**
