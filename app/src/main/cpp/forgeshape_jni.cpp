@@ -348,6 +348,25 @@ forgeshape::CadFeatureViewSource beginExtrudeFeatureView() {
     return source;
 }
 
+// Whether Ready was entered with NO region chosen (`CAD-VERTICAL-SLICE-R1`):
+// a sketch of several regions selects none, so there are no anchors and the
+// tilt above is refused. The view is then still the aligned one, from which
+// the arrow points at the eye and cannot be dragged, so the FIRST region the
+// user chooses -- by a tap or from the panel -- takes the tilt Finish could
+// not. Presentation only, like the view itself. Guarded by g_stateMutex.
+bool g_featureViewPending = false;
+
+// Installs the pending tilt once anchors exist. The caller holds g_stateMutex.
+void beginPendingExtrudeFeatureView() {
+    if (!g_featureViewPending
+        || forgeshape::sketchSession().state() != forgeshape::SketchSessionState::Ready) {
+        return;
+    }
+    if (beginExtrudeFeatureView() != forgeshape::CadFeatureViewSource::Unavailable) {
+        g_featureViewPending = false;
+    }
+}
+
 // The last touch event's platform-neutral pointer data, kept for the DEBUG-ONLY
 // read-back hook further down. It is a diagnostic mirror and never a source of
 // truth: nothing in the product reads it, and it does not exist at all in a
@@ -4225,6 +4244,7 @@ JNIEXPORT jint JNICALL Java_com_forgeshape_app_NativeViewport_sketchFinish(JNIEn
             // one moment, and a frame taken between the two would draw an
             // arrow nobody could grab.
             view = beginExtrudeFeatureView();
+            g_featureViewPending = view == forgeshape::CadFeatureViewSource::Unavailable;
         }
     }
     if (status != forgeshape::CadStatus::Ok) {
@@ -4256,6 +4276,7 @@ Java_com_forgeshape_app_NativeViewport_sketchSelectProfile(JNIEnv*, jclass, jlon
         std::lock_guard<std::mutex> lock(g_stateMutex);
         status = forgeshape::sketchSession().selectProfile(
             static_cast<forgeshape::SketchEntityId>(anchorId));
+        beginPendingExtrudeFeatureView();
     }
     FS_LOGI("FORGESHAPE_SKETCH_PROFILE:%lld %s", (long long)anchorId,
             forgeshape::cadStatusName(status));
@@ -4599,6 +4620,7 @@ Java_com_forgeshape_app_NativeViewport_sketchToggleRegion(JNIEnv*, jclass, jlong
         std::lock_guard<std::mutex> lock(g_stateMutex);
         status = forgeshape::sketchSession().toggleRegion(
             static_cast<forgeshape::SketchEntityId>(anchorId));
+        beginPendingExtrudeFeatureView();
         selected = forgeshape::extrudeRegions(forgeshape::sketchSession().extrude()).size();
     }
     FS_LOGI("FORGESHAPE_SKETCH_REGION_TOGGLE anchor=%lld selected=%d %s", (long long)anchorId,
@@ -5417,7 +5439,8 @@ Java_com_forgeshape_app_NativeViewport_sketchBeginEditFeature(JNIEnv*, jclass, j
             beginSketchView();
             if (startReady == JNI_TRUE) {
                 // Straight to the extrusion: the same tilt Finish Sketch takes.
-                beginExtrudeFeatureView();
+                g_featureViewPending = beginExtrudeFeatureView()
+                        == forgeshape::CadFeatureViewSource::Unavailable;
             }
         }
     }
@@ -7552,6 +7575,10 @@ Java_com_forgeshape_app_NativeViewport_touchEvent(JNIEnv* env, jclass, jint acti
                 if (sketch.gestureActive() || translated == forgeshape::TouchAction::Up
                     || translated == forgeshape::TouchAction::Cancel) {
                     sketchLogPending = true;
+                }
+                if (translated == forgeshape::TouchAction::Up && navigable) {
+                    // A Ready tap may have chosen the first region.
+                    beginPendingExtrudeFeatureView();
                 }
             }
         }

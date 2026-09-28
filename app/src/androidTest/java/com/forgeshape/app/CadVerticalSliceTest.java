@@ -198,6 +198,16 @@ public final class CadVerticalSliceTest {
         assertEquals("one region in the extrusion", 1.0,
                 toolState()[NativeViewport.CAD_EXTRUDE_SELECTED_REGIONS], 0.0);
         assertEquals("the arrow is up", 1.0, toolState()[NativeViewport.CAD_EXTRUDE_ACTIVE], 0.0);
+        // Finish could not tilt the view with nothing chosen; the FIRST region
+        // does, so the arrow has a screen extent it can be dragged along
+        // rather than pointing at the eye.
+        final double[] tilted = toolState();
+        final double halfShaft = Math.hypot(
+                tilted[NativeViewport.CAD_EXTRUDE_TIP_X] - tilted[NativeViewport.CAD_EXTRUDE_LABEL_X],
+                tilted[NativeViewport.CAD_EXTRUDE_TIP_Y] - tilted[NativeViewport.CAD_EXTRUDE_LABEL_Y]);
+        fact("ring_arrow_half_shaft_px", halfShaft);
+        assertTrue("the first region tilts the view to one the arrow can be dragged in: "
+                + halfShaft, halfShaft > 20.0);
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             assertTrue("and Extrude is drawn now that it can succeed",
                     workspace.findViewById(R.id.extrude_sketch).isShown());

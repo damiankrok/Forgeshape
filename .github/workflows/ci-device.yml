@@ -1,5 +1,5 @@
 # DEVICE: a fresh headless Android API 36 x86_64 emulator on a GitHub-hosted
-# Linux VM, ForgeShape's own startup evidence (22 self-test tokens, then the
+# Linux VM, ForgeShape's own startup evidence (23 self-test tokens, then the
 # first presented Vulkan frame), and ONE focused instrumentation class.
 #
 # This is focused evidence, never the full suite: FullSharded stays a
