@@ -1,7 +1,28 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.80.0
+**Status Version:** 0.81.0
 **Updated:** 2026-09-28
+**Latest closeout:** **`CAD-VS-FULLSHARDED-C1` — `FAIL-CAD-VS-FULLSHARDED-C1`**
+(2026-09-28). The repository's own `-FullSharded` runner now runs in GitHub
+Actions (`CI FULL SHARDED`, manual only):
+
+- **Plan.** Run `36470848992` is valid: 56 classes / 628 tests, 5 shards,
+  missing / duplicates / unexpected 0.
+- **Attempt 1.** Fresh attempt 1, run `36472045843`, ended
+  `FULL_SHARDED_SUITE_FAIL` at shard 2: 7 of 126 tests failed, classified
+  `PRODUCT_TEST_FAILURE`, 33.5 of 120 minutes. The shard reproduced identically
+  on its own (run `36478586309`).
+- **Five of the seven also fail on `main` without the vertical slice.** Run
+  `36478589747` shows this. Two are stale tests (`uiar110` expects 4 Sculpt
+  tools, `uir4b08` expects 5 anchored surfaces). The other three are
+  `SelectionOutlineTest` failures on the CI emulator.
+- **One is unresolved:** `seloutr1_02` fails on the candidate and passed on
+  `main` once.
+- **Not merged, attempt 2 not spent:** `main` was **not** merged, and fresh
+  attempt 2 was not spent on a deterministic failure.
+
+The record is `artifacts/cad-vertical-slice-r1/FULLSHARDED_C1.md`.
+
 **Result:** **`CAD-VERTICAL-SLICE-R1` — `PARTIAL-CAD-VERTICAL-SLICE-R1-TEST-BUDGET`**
 (2026-09-28). The slice is implemented, and its focused cloud gate is green on
 the tested candidate `759ed91` on branch `feature/cad-vertical-slice-r1`:
@@ -4338,25 +4359,23 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Exactly one next step: return this status to the ForgeShape coordinator for
-the `CAD-VERTICAL-SLICE-R1` milestone aggregate and the OWNER review.** The
-slice is implemented and its focused cloud gate is green on the tested
-candidate (head of this status). What it still needs is not code:
+**Exactly one next step: return this status to the ForgeShape coordinator,
+which decides the correction the milestone aggregate needs.** The aggregate now
+runs in the cloud (`CI FULL SHARDED`, `docs/CI_CLOUD.md`). Attempt 1 on the
+vertical-slice candidate failed on 7 tests (`FAIL-CAD-VS-FULLSHARDED-C1`), five
+of which fail on `main` too. The closeout was not allowed to fix them.
+`artifacts/cad-vertical-slice-r1/FULLSHARDED_C1.md` §6 lists what unblocks it:
 
-1. **The milestone aggregate.** `scripts\run-instrumented-tests.ps1 -Serial
-   <serial> -FullSharded` on the isolated `ForgeShape_Stage006` AVD, on the
-   tested candidate. It is a Windows PowerShell runner driving a local AVD, and
-   it could not run in the cloud session that built the slice. It is BLOCKED by
-   an unavailable harness and was **not self-waived**. The coordinator either
-   runs it or authorises an exception.
-2. **The merge.** Only after (1), as a fast-forward of `main` to the tested
-   candidate, per `CI-CLOUD-R1`. The branch was deliberately not merged.
-3. **The OWNER review** of the aesthetics `artifacts/cad-vertical-slice-r1/
-   POST_AUDIT.md` §3 lists as OWNER-LATER (the glyph size, the Cut icon, the
-   preview tints, the hatch, the caption size), and of the three proposed next
-   tasks in §4 (Through All, Revolve on the same region and operation model,
-   projected edges plus inference snapping). None of those three is authorised
-   by this status.
+1. **Update the two stale tests,** test-only (`uiar110`: seven Sculpt tools;
+   `uir4b08`: six anchored surfaces).
+2. **Root-cause the `SelectionOutlineTest` failures on the CI emulator,**
+   including the unresolved `seloutr1_02`.
+3. **Run one fresh aggregate.** `main` may then be fast-forwarded only on
+   `FULL_SHARDED_SUITE_PASS`.
+
+The OWNER review of `POST_AUDIT.md` §3 (OWNER-LATER aesthetics) and §4 (the
+three proposed next tasks) still stands. None of those tasks is authorised by
+this status.
 
 Do not start Revolve, Through All, To Object, Intersect, a Hole feature,
 fillet, chamfer, shell, a pattern, a constraint solver, CAD → Sculpt, Stage024,

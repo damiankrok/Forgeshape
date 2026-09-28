@@ -86,7 +86,12 @@ the Android HUD in the same frame had already moved to the disk.
 - `after/10_cut_preview` now shows the body tinted Cut, with the through-pocket
   and the arrow into the body. `after/02b` shows the disk's cylinder.
 
-## 4. The milestone aggregate: BLOCKED, not waived
+## 4. The milestone aggregate: BLOCKED at first, then FAILED
+
+**Update (`CAD-VS-FULLSHARDED-C1`).** The runner was made to run in the cloud,
+and attempt 1 ran. It failed on 7 tests, five of which fail on `main` without
+this slice. See `FULLSHARDED_C1.md`. The text below records the state before
+that closeout.
 
 `scripts\run-instrumented-tests.ps1 -Serial <serial> -FullSharded` is the
 authoritative exhaustive run. Here is why it did not run:
