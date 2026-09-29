@@ -1,40 +1,41 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.83.0
+**Status Version:** 0.84.0
 **Updated:** 2026-09-29
-**Latest closeout:** **`CAD-VS-FULLSHARDED-C3` — `FAIL-CAD-VS-FULLSHARDED-C3`**
-(2026-09-29).
+**Latest closeout:** **`CAD-VS-FULLSHARDED-C4` — `PASS-CAD-VS-FULLSHARDED-C4`**
+(2026-09-29). **`CAD-VERTICAL-SLICE-R1` is integrated into `main`.**
 
-- **Mirror isolation corrected.** `MirrorSmokeTest` inherited body 1 with a
-  Frozen Sculpt Mesh, which `MIRROR-01` correctly withdraws Mirror for. It now
-  opens its own one-body Construction project and asserts the preconditions
-  from native truth: one active Construction body, no Frozen Sculpt Mesh, and
-  `sceneBodyCanMirror`.
-- **Test-only.** The tested candidate is `899986d`. `app/src/main` is
-  unchanged since `5f1eccf`.
-- **Focused gates green.** `CI FAST` `36547144378`; `MirrorSmokeTest` alone,
-  `36547148093` (OK 1); the exact C2 shard-4 sequence, `36548109667` (OK 126).
-- **Fresh aggregate attempt 1: `36567175533`, fingerprint `84de3b50ff25`,
-  57 classes / 629 tests.** Shard 1 passed. Shard 2 failed on
-  **`SelectionOutlineVisualEvidenceTest.e2eSelOutR1Vis`**
-  (`09_warm_light: a band must be present`), and the runner printed
-  `FULL_SHARDED_SUITE_FAIL`.
-- **That failure is nondeterministic.** The same shard-2 sequence passed in
-  C2, and passed again as a diagnostic replay on this candidate
-  (`36571016620`, OK 126). The capture takes its screenshot after a fixed
-  500 ms sleep, which the ~3 fps SwiftShader presenter can outrun. That is
-  the A2 mechanism `db8ff6b` fixed for `CadVerticalSliceTest`. Classified
-  `TEST_OBSERVATION_SEAM_DEFECT`, pre-existing, and not fixed here.
-- **One infrastructure run first.** An earlier dispatch, `36550524879`,
-  never reached the runner (boot proof `DEVICE_STARTUP_UNRESOLVED`). Its
-  cleanup step then hung on `adb logcat` until it was cancelled.
-- **Not merged, attempt 2 not spent:** `main` was **not** merged, and fresh
-  attempt 2 was not spent.
+- **The capture race is corrected, test-only.** Every
+  `SelectionOutlineVisualEvidenceTest` capture now waits for six newly
+  presented renderer frames. It polls `debugRendererFramesPresented`, with a
+  15 s bound, instead of `SystemClock.sleep(500)`. A timeout FAILS the case
+  before the screenshot and names the counts. The frame-wait facts are in
+  `facts.txt`. No pixel assertion changed.
+- **Tested candidate `fa0b6b4`.** `app/src/main` is unchanged since `5f1eccf`.
+- **Focused gates green.**
+  - `CI FAST` `36603387133`.
+  - The class alone, `36603390799` (OK 1). All twelve captures waited 6
+    frames, 09 in 1.69 s and 10 in 1.48 s, and both measured the 3 px
+    light-family band.
+  - The exact C3 shard-2 sequence, `36604540195` (OK 126).
+- **Fresh aggregate attempt 1: `36607747079`, fingerprint `e387ad721be4`.**
+  - Discovery: 57 classes / 629 tests.
+  - All five shards PASS, including shard 5 in a cloud aggregate for the first
+    time.
+  - Missing, duplicates, unexpected and execution missing: all 0.
+  - 65.65 min.
+  - **`FULL_SHARDED_SUITE_PASS`.**
+- **`main` fast-forwarded** from `103aa22` to the C4 docs closeout. No force
+  and no rebase.
 
-The record is `artifacts/cad-vertical-slice-r1/FULLSHARDED_C3.md`.
+The record is `artifacts/cad-vertical-slice-r1/FULLSHARDED_C4.md`.
 
 **Previous closeouts:**
 
+- **`CAD-VS-FULLSHARDED-C3` — `FAIL-CAD-VS-FULLSHARDED-C3`.** It corrected the
+  `MirrorSmokeTest` isolation defect on `899986d`. Its aggregate then stopped
+  at shard 2 on the fixed-delay capture race C4 corrects
+  (`FULLSHARDED_C3.md`).
 - **`CAD-VS-FULLSHARDED-C2` — `FAIL-CAD-VS-FULLSHARDED-C2`.** It corrected the
   seven C1 failures on `5f1eccf` (two stale tests, one isolation defect, and a
   renderer counter mirror that ran backwards across a render-thread restart).
@@ -55,12 +56,18 @@ the tested candidate `759ed91` on branch `feature/cad-vertical-slice-r1`:
   `FORGESHAPE_NATIVE_VIEWPORT_OK` and 0 failure lines. `CadVerticalSliceTest`
   and nine regression classes: **OK (57 + 43 = 100 tests)**.
 
-**Why the result is PARTIAL rather than PASS.** The milestone aggregate
-(`-FullSharded`) is a Windows PowerShell runner driving a local AVD. It could
-not run in the cloud session, it is reported as BLOCKED by an unavailable
-harness, and it was not self-waived. `main` was therefore **not** merged. The
-full record is in `artifacts/cad-vertical-slice-r1/` (start with `SUMMARY.md`;
-the runs are in `TEST_EVIDENCE.md`).
+**The gate that result was waiting on is now closed.** It was PARTIAL only
+because the milestone aggregate (`-FullSharded`) could not run in that
+session, and it was not self-waived.
+
+- **C1** moved the runner into the cloud.
+- **C2 and C3** corrected the failures it found. None was a slice product
+  defect; the one product-source change was a diagnostic counter mirror.
+- **C4** closed the aggregate with `FULL_SHARDED_SUITE_PASS` on `fa0b6b4`, and
+  `main` was fast-forwarded.
+
+The full record is in `artifacts/cad-vertical-slice-r1/`: start with
+`SUMMARY.md`; the runs are in `TEST_EVIDENCE.md` and `FULLSHARDED_C1..C4.md`.
 
 What the owner asked for, and what now stands, measured on the CI emulator:
 
@@ -4381,26 +4388,13 @@ was added and no marketing claim is made.
 ## Next Stage
 
 **Exactly one next step: return this status to the ForgeShape coordinator,
-which decides how the aggregate is closed.**
+which creates the OWNER-review APK task for the integrated CAD vertical slice.**
 
-- **Where it stands.** The Mirror isolation defect is corrected on `899986d`.
-  The fresh aggregate (`36567175533`) passed shard 1 and stopped at shard 2 on
-  `SelectionOutlineVisualEvidenceTest.e2eSelOutR1Vis`
-  (`FAIL-CAD-VS-FULLSHARDED-C3`). That is a nondeterministic fixed-delay
-  capture race: it passed in C2 and passed again on replay.
-- **The proposed correction** is `artifacts/cad-vertical-slice-r1/FULLSHARDED_C3.md`
-  §7. It is test-only: `capture()` waits for the renderer to present frames
-  (`debugRendererFramesPresented`, as `db8ff6b` did for
-  `CadVerticalSliceTest`) instead of `SystemClock.sleep(500)`. It rebuilds
-  the test APK, so the next authoritative run is a new fingerprint's fresh
-  attempt 1.
-- **The alternative** is fresh attempt 2 on fingerprint `84de3b50ff25`. The
-  runner allows it, but it would pass only if the race happened to go the
-  other way, so it was not spent without a decision.
-- **Either way,** `main` may be fast-forwarded only on
-  `FULL_SHARDED_SUITE_PASS`.
-- **Shards 3–5 were not reached by this aggregate.** Shard 5 (125 tests) has
-  still never run in a cloud aggregate.
+- **Where it stands.** `CAD-VERTICAL-SLICE-R1` passed its milestone aggregate
+  (`36607747079`, `FULL_SHARDED_SUITE_PASS`, 629/629 on `fa0b6b4`) and is on
+  `main`.
+- **No handoff APK is issued by this closeout.** The OWNER-review build is the
+  coordinator's separate task.
 
 The OWNER review of `POST_AUDIT.md` §3 (OWNER-LATER aesthetics) and §4 (the
 three proposed next tasks) still stands. None of those tasks is authorised by

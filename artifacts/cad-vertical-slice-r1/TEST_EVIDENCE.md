@@ -88,6 +88,20 @@ the Android HUD in the same frame had already moved to the disk.
 
 ## 4. The milestone aggregate: BLOCKED at first, then FAILED
 
+**Update (`CAD-VS-FULLSHARDED-C4`).** The capture race was corrected on
+`fa0b6b4` (test-only). `SelectionOutlineVisualEvidenceTest` now waits for six
+presented frames before each of its twelve captures, and FAILS rather than
+capture on a 15 s timeout.
+
+- **Focused gates:** `CI FAST` `36603387133`; the class alone, `36603390799`
+  (1/1, twelve 6-frame waits); the exact shard-2 sequence, `36604540195`
+  (126/126).
+- **The fresh aggregate** (`36607747079`, fingerprint `e387ad721be4`,
+  attempt 1) PASSED: 57 classes / 629 tests, all five shards, 0 missing,
+  duplicate, unexpected or execution-missing, 65.65 min.
+- **Result: `PASS-CAD-VS-FULLSHARDED-C4`,** with `FULL_SHARDED_SUITE_PASS`.
+  `main` was fast-forwarded. See `FULLSHARDED_C4.md`.
+
 **Update (`CAD-VS-FULLSHARDED-C3`).** The `MirrorSmokeTest` isolation defect
 was corrected on `899986d` (test-only).
 

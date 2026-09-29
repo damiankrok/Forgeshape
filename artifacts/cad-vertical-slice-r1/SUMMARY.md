@@ -17,8 +17,12 @@ device tests). The milestone aggregate has since run in the cloud twice:
   shard 2 on a nondeterministic screenshot race in
   `SelectionOutlineVisualEvidenceTest`, which passed on replay
   (`FULLSHARDED_C3.md`).
+- **C4** replaced that fixed delay with a fail-closed wait for six presented
+  frames (test-only, `fa0b6b4`). The fresh aggregate `36607747079` then PASSED:
+  629/629 tests, all five shards, `FULL_SHARDED_SUITE_PASS`
+  (`FULLSHARDED_C4.md`).
 
-`main` was not merged.
+`main` was fast-forwarded to the C4 closeout: no force, no rebase.
 
 ## 1. The owner's problem, in one paragraph
 
