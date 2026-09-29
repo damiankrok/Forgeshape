@@ -1849,6 +1849,14 @@ stays **one** object rather than becoming several rows.
 **The whole import is one Undo.** However many objects arrive together, one Undo
 removes all of them and one Redo brings all of them back exactly as they were.
 
+**Importing is not offered while you sculpt.** While you sculpt, the Project
+surface has no *Import a mesh* group, because an import would put a different
+object under your brush. It is back as soon as you go Back to Construction. If
+you had already picked a file before you started sculpting, it is not imported
+when the picker returns: the status line says *Import is not available while
+sculpting. Your project is unchanged.*, and nothing about your sculpt or your
+project moves.
+
 **An imported object is not a shape you can re-dimension.** It came in as a
 mesh, not as a box or a sphere with numbers behind it, so *Shape* is not offered
 while one is selected — there are no dimensions to type. Move, Rotate and Scale

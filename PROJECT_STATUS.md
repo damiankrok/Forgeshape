@@ -1,8 +1,57 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.84.0
+**Status Version:** 0.85.0
 **Updated:** 2026-09-29
-**Latest closeout:** **`CAD-VS-FULLSHARDED-C4` — `PASS-CAD-VS-FULLSHARDED-C4`**
+**Latest closeout:** **`FUNCTION-COUNCIL-C1` (D1) — `PASS-FUNCTION-COUNCIL-C1-D1`**
+(2026-09-29). **Import GLB is refused in Sculpt.** Record:
+`artifacts/function-council-c1-d1/SUMMARY.md`.
+
+- **Reproduced before the fix.** On `a1b50f2` plus the new test only
+  (`CI DEVICE` `36641798987`, 3/3 red), an import in Sculpt did four things
+  while the mode stayed Sculpt:
+  - created six bodies and made the first one active;
+  - dropped the sculpt target, revision and undo to 0;
+  - recorded a Construction step;
+  - left the project unencodable (`UnresolvedReference`).
+- **Fixed in three layers on `f29f482`.**
+  - The import row is absent in Sculpt.
+  - A late picker result is refused before the file is read.
+  - `importGlbDurable` refuses `RefusedInSculpt` under the commit's lock.
+  - There is no Java mode flag.
+- **Neutrality asserted, format unchanged.** A refusal leaves the mode, the
+  active body, the sculpt target, the ids, the sculpt revision and both
+  undo depths unchanged. The same holds for the fingerprint, the project
+  bytes and the active body's flags. No format changed.
+- **Legal import unchanged.** After Back to Construction, the same file
+  imports as before.
+- **Gates on `f29f482`:**
+  - `CI FAST` `36643103708` green, 44/44 corpus parity.
+  - `CI DEVICE` `36643101662` attempt 2 green: 23/23 tokens,
+    `OK (31 tests)`, D1 class first. Attempt 1 was a dropped startup capture
+    before any test, classified as infrastructure in `TEST_EVIDENCE.md`.
+  - Host `GLTF` 282, `SCENE` 175 and `PROJECT` 256 checks, 0 failed.
+  - **FullSharded NOT RUN.**
+
+**Latest audit:** **`FUNCTION-COUNCIL-R1` — `PASS-FUNCTION-COUNCIL-R1`**
+(2026-09-29). A read-only function, ownership and test-cost audit of `a1b50f2`.
+Its eight artifacts are in `artifacts/function-council-r1/`, copied by content
+from the audit commit `fdc3818` without that branch's history.
+
+- **Seven source-confirmed defects.**
+  - **D1 is closed** (above).
+  - **D2–D7 are open debt** (see *Technical Debt*). D2: the sketch navigator's
+    Flip and ±90° never move the camera. D3: a palette change makes a
+    just-saved project read unsaved.
+- **Its lean test tiers are ADOPTED** as `TEST-OWNER-04`
+  (`LEAN_VALIDATION_POLICY.md`). The artifact still reads "PROPOSAL", as it
+  did when written; the adoption is recorded here and in *Owner Decision
+  Baseline*.
+- **Caveats stand.**
+  - The audit ran about 65 minutes against a 35-minute hard stop.
+  - Four of its six seats (CAD, Sculpt, Android and renderer) stopped
+    partway. Their load-bearing claims were verified in source.
+
+**Previous closeout:** **`CAD-VS-FULLSHARDED-C4` — `PASS-CAD-VS-FULLSHARDED-C4`**
 (2026-09-29). **`CAD-VERTICAL-SLICE-R1` is integrated into `main`.**
 
 - **The capture race is corrected, test-only.** Every
@@ -2130,6 +2179,26 @@ clean restart; broad unrelated suites are not run to "check". It governs
 future test budgets and does not retroactively excuse any earlier stage's
 evidence.
 
+**TEST-OWNER-04 — lean validation tiers, ADOPTED.** Recorded 2026-09-29 with
+`FUNCTION-COUNCIL-C1`; the policy text is
+`artifacts/function-council-r1/LEAN_VALIDATION_POLICY.md`.
+
+- **Ordinary task path:**
+  - Tier 0: static checks.
+  - Tier 1: the touched subsystem's host native filters and JVM classes.
+  - Tier 2: ONE focused `CI DEVICE` dispatch with a union list, the class
+    under test first. Budget 15 minutes preferred, 20 target, 30 hard stop.
+  - Tier 3: `CI FAST`, in parallel with Tier 2.
+  - Tier 4: OWNER hands-on review for anything visual or ergonomic.
+- **FullSharded (Tier 5) is no longer a per-feature gate.** It runs only on
+  one of the seven named triggers, with explicit coordinator authorization.
+- **A red focused class is diagnosed, never retried to green.**
+- **Attempts:** at most two complete focused attempts. One re-run is allowed
+  only for a job that died before a test body ran.
+- **The `FUNCTION-COUNCIL-*` defect numbers** are written `D1`–`D7` inside
+  those artifacts and their correction tasks only. The retirement rule below
+  is about the old decision numbers and still stands.
+
 Bare `D1`–`D6` decision numbers are retired and non-authoritative. No stage gate,
 acceptance table or preflight may cite a bare `D` number.
 
@@ -3797,6 +3866,36 @@ or cutout window has not been measured.
 Durable constraints and known-but-accepted costs. Narrative for how each was
 found lives in Git history.
 
+**FUNCTION-COUNCIL-R1 defects still open** (source-confirmed; the evidence is
+in `artifacts/function-council-r1/COUNCIL_FINDINGS.md` §1). D1 was closed by
+`FUNCTION-COUNCIL-C1`; none of these was touched by it.
+
+- **D2 (medium).** The sketch navigator's Flip and ±90° never move the camera:
+  `beginSketchView` reads the authoring frame and `viewFrame()` has no
+  production caller.
+- **D3 (medium).** A palette change makes a just-saved project read unsaved,
+  because `persistedFingerprint`/`everPersisted` are view fields that
+  `recreate()` loses.
+- **D4 (low–medium).** Undo after an over-cap sculpt stroke can land on a state
+  that was never on the branch.
+- **D5 (low–medium).** The sketch overlay can stay stale after a pinch zoom:
+  `overlayRevision_` is not bumped on a `worldPerUnit` rebuild.
+- **D6 (low).** Clear Mask can be drawn and then refused, because
+  `canClearMask` omits the size test.
+- **D7 (low).** `closeProject` does not refuse an open Construction edit, while
+  load does.
+
+**FUNCTION-COUNCIL-C1, recorded and not fixed:**
+
+- **Import GLB during an open sketch** (source-level, NOT runtime-verified).
+  In an open project the Project button stays drawn while a sketch is open.
+  Creation is withdrawn there and `sceneAddBody` refuses `in_sketch`, but
+  `importGlbDurable` has no sketch question. It is the same shape as D1 for
+  another mode, and it needs its own reproduction and task.
+- **The focused DEVICE run keeps one end-of-run logcat dump.** With four
+  classes, the first class's lines can fall outside the dump window, which is
+  why the D1 candidate's per-field values are asserted but not printed.
+
 **Stage027, recorded as bounded debt and not fixed by it:**
 
 - **GUARD-2 guards the two Sculpt ENTRY points, not the load path.** A project
@@ -4388,7 +4487,25 @@ was added and no marketing claim is made.
 ## Next Stage
 
 **Exactly one next step: return this status to the ForgeShape coordinator,
-which creates the OWNER-review APK task for the integrated CAD vertical slice.**
+which creates the OWNER-review APK task for the integrated CAD vertical slice
+plus Sculpt, now including the D1 correction.** The next product slice is
+chosen afterwards from three inputs:
+
+- the Council findings;
+- this D1 closeout;
+- the OWNER's feedback from the app.
+
+`FUNCTION-COUNCIL-C1` (D1) is closed and starts nothing. D2–D7 and the
+import-during-sketch observation are recorded debt, not authorised work.
+
+The Council's other OWNER decisions are still open (`COUNCIL_FINDINGS.md` §5,
+`NEXT_VERTICAL_SLICE_OPTIONS.md`):
+
+- whether a test-only JVM layout dependency is allowed;
+- what a sketch on ANOTHER body's face should make;
+- the next vertical slice.
+
+The lean tiers are no longer open: they are adopted as `TEST-OWNER-04`.
 
 - **Where it stands.** `CAD-VERTICAL-SLICE-R1` passed its milestone aggregate
   (`36607747079`, `FULL_SHARDED_SUITE_PASS`, 629/629 on `fa0b6b4`) and is on
