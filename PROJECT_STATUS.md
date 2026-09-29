@@ -1,8 +1,39 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.81.0
-**Updated:** 2026-09-28
-**Latest closeout:** **`CAD-VS-FULLSHARDED-C1` — `FAIL-CAD-VS-FULLSHARDED-C1`**
+**Status Version:** 0.82.0
+**Updated:** 2026-09-29
+**Latest closeout:** **`CAD-VS-FULLSHARDED-C2` — `FAIL-CAD-VS-FULLSHARDED-C2`**
+(2026-09-29). The seven C1 failures are corrected, and each was classified on
+its own with evidence from `main` and the candidate:
+
+- **Two stale tests.** `uiar110` now asserts the seven Sculpt brushes by
+  ordered id. `uir4b08` now asserts the six anchored surfaces by identity.
+- **One test isolation defect.** `seloutr1_23_24_25_36` assumed a two-body
+  scene. It now opens a fresh one and keeps its exact expectation.
+- **One diagnostic-seam defect, the other four.** The renderer counter mirrors
+  ran backwards across a render-thread restart, so the outline tests' baselines
+  were stale. The mirrors now continue from the joined thread's value, as their
+  "life of the process" contract says (`forgeshape_jni.cpp`). The new
+  `RendererCounterContinuityTest` failed on the unfixed code on both `main` and
+  the candidate. No rendering, project truth or release behaviour changed, and
+  the release guard reports 0/0.
+- **The new tested candidate is `5f1eccf`.** `CI FAST` `36488851113` is green.
+  `CI DEVICE` `36490257169` passed 69/69, and the exact C1 shard-2 sequence
+  (`36491864271`) passed 126/126.
+- **Fresh aggregate attempt 1: `36494252771`, fingerprint `a65aa729b477`,
+  57 classes / 629 tests.** Shards 1–3 passed, including C1's failing shard 2.
+  Shard 4 then failed on **`MirrorSmokeTest.e2eMirror0101`**, and the runner
+  printed `FULL_SHARDED_SUITE_FAIL`.
+- **That test fails the same way on `main` `103aa22`** (`36499785366`). An
+  earlier class leaves body 1 with a Frozen Sculpt Mesh, and `MIRROR-01`
+  correctly withdraws Mirror for such a body. It is a pre-existing test
+  isolation defect, outside C2's scope, and was not fixed here.
+- **Not merged, attempt 2 not spent:** `main` was **not** merged, and fresh
+  attempt 2 was not spent.
+
+The record is `artifacts/cad-vertical-slice-r1/FULLSHARDED_C2.md`.
+
+**Previous closeout:** **`CAD-VS-FULLSHARDED-C1` — `FAIL-CAD-VS-FULLSHARDED-C1`**
 (2026-09-28). The repository's own `-FullSharded` runner now runs in GitHub
 Actions (`CI FULL SHARDED`, manual only):
 
@@ -4360,18 +4391,20 @@ was added and no marketing claim is made.
 ## Next Stage
 
 **Exactly one next step: return this status to the ForgeShape coordinator,
-which decides the correction the milestone aggregate needs.** The aggregate now
-runs in the cloud (`CI FULL SHARDED`, `docs/CI_CLOUD.md`). Attempt 1 on the
-vertical-slice candidate failed on 7 tests (`FAIL-CAD-VS-FULLSHARDED-C1`), five
-of which fail on `main` too. The closeout was not allowed to fix them.
-`artifacts/cad-vertical-slice-r1/FULLSHARDED_C1.md` §6 lists what unblocks it:
+which decides whether to authorise the one remaining correction.**
 
-1. **Update the two stale tests,** test-only (`uiar110`: seven Sculpt tools;
-   `uir4b08`: six anchored surfaces).
-2. **Root-cause the `SelectionOutlineTest` failures on the CI emulator,**
-   including the unresolved `seloutr1_02`.
-3. **Run one fresh aggregate.** `main` may then be fast-forwarded only on
-   `FULL_SHARDED_SUITE_PASS`.
+- **Where it stands.** The cloud aggregate on the corrected candidate `5f1eccf`
+  passed shards 1–3. It stopped at shard 4 on
+  `MirrorSmokeTest.e2eMirror0101` (`FAIL-CAD-VS-FULLSHARDED-C2`), a test
+  isolation defect that fails on `main` too.
+- **The proposed correction** is `artifacts/cad-vertical-slice-r1/FULLSHARDED_C2.md`
+  §8a. It is test-only: `MirrorSmokeTest.setUp` opens a fresh one-body
+  Construction project, and the case asserts its source body carries no Frozen
+  Sculpt Mesh.
+- **After that,** one fresh aggregate runs on the new fingerprint. `main` may
+  be fast-forwarded only on `FULL_SHARDED_SUITE_PASS`.
+- **Shard 5 (125 tests) has never run** in a cloud aggregate. It may expose
+  further failures of the same kind.
 
 The OWNER review of `POST_AUDIT.md` §3 (OWNER-LATER aesthetics) and §4 (the
 three proposed next tasks) still stands. None of those tasks is authorised by

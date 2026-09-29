@@ -88,6 +88,17 @@ the Android HUD in the same frame had already moved to the disk.
 
 ## 4. The milestone aggregate: BLOCKED at first, then FAILED
 
+**Update (`CAD-VS-FULLSHARDED-C2`).** All seven C1 failures were corrected
+on the new candidate `5f1eccf`:
+
+- **The corrections.** Two stale tests, one test isolation defect, and a
+  counter mirror that ran backwards across a render-thread restart.
+- **Focused gates:** `CI FAST` `36488851113`; `CI DEVICE` `36490257169`
+  (69/69); the exact C1 shard-2 sequence, `36491864271` (126/126).
+- **The fresh aggregate** (`36494252771`) passed shards 1–3, then stopped at
+  shard 4 on `MirrorSmokeTest.e2eMirror0101`, which also fails on `main`.
+- **Result: `FAIL-CAD-VS-FULLSHARDED-C2`.** See `FULLSHARDED_C2.md`.
+
 **Update (`CAD-VS-FULLSHARDED-C1`).** The runner was made to run in the cloud,
 and attempt 1 ran. It failed on 7 tests, five of which fail on `main` without
 this slice. See `FULLSHARDED_C1.md`. The text below records the state before

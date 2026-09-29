@@ -1,7 +1,15 @@
 # The milestone aggregate, corrected (CAD-VS-FULLSHARDED-C2)
 
-**Result: PENDING.** The fresh aggregate, run `36494252771` on `5f1eccf`, is
-in progress. This record is finished when it ends.
+**Result: `FAIL-CAD-VS-FULLSHARDED-C2`.**
+
+- **All seven C1 failures are corrected.** Shard 2, where C1 stopped, passed
+  126/126 inside the fresh aggregate.
+- **The aggregate then stopped at shard 4** on an eighth test that C1 never
+  reached: `MirrorSmokeTest.e2eMirror0101` (§8).
+- **That failure is deterministic and pre-existing.** It fails the same way on
+  `main` without the slice. It is a test isolation defect outside this
+  correction's scope, so it was diagnosed, not fixed (prompt §1).
+- **Not merged:** `main` was **not** merged, and fresh attempt 2 was not spent.
 
 C1 stopped the cloud aggregate at shard 2 on seven failing tests
 (`FULLSHARDED_C1.md`). C2 found one cause per failure and corrected each at its
@@ -17,6 +25,7 @@ One fresh aggregate then ran on the corrected candidate.
 | Tested CAD product candidate before C2 | `759ed9192b03a0d35d3f3e938fdb210ed39e4aa7` |
 | C2 diagnostic commit (tests only) | `01f24836d515cb167ae149ed6734b48188fcffee` |
 | **C2 corrected, tested candidate** | **`5f1eccf8c336d51343aaa62fa11b9f516252acfb`** |
+| `main` + the same diagnostic diff, on the session branch `claude/new-session-g87rge` (diagnostic only, never merged) | `05f2f8cbbf528c96ce8357c458ee114d84f99197` |
 
 **Preflight.** The tree was clean and every ref matched. Between `759ed91` and
 `5f6ed11`, `git diff --name-status` over `app/`, `testdata/`,
@@ -211,15 +220,88 @@ below.
 
 ## 8. The authoritative aggregate
 
-PENDING: `CI FULL SHARDED` run `36494252771`, `mode=fresh`, attempt 1 on
-`5f1eccf`.
+**Fresh attempt 1: `CI FULL SHARDED` run `36494252771`, `mode=fresh`, on
+`5f1eccf`.** 52.6 of 120 minutes.
+
+| Field | Value |
+| --- | --- |
+| Discovery | `DISCOVERY_PASS`, 57 classes / 629 tests, missing 0, duplicates 0, unexpected 0 |
+| Inventory change | +1 class, +1 test against C1's 56 / 628: `RendererCounterContinuityTest` (§4). Nothing else moved |
+| Fingerprint | `a65aa729b477` (inventory `06ecaec7c14b`, partition `a4a0b57ed4b7`) |
+| App APK SHA-256 | `61a43af1b5ecb31bc45b7cc388d1adc0d7cb45825cc51be679117aab44a76def` |
+| Test APK SHA-256 | `d69cacd19e88593cc98ceab07146c51b07de15c433ab81d07e43e3f0eab01a8e` |
+| Attempt | 1 of 2 for this fingerprint, counted |
+
+| Shard | Classes / tests | Result | Duration |
+| --- | --- | --- | --- |
+| 1 | 11 / 126 (includes `RendererCounterContinuityTest`) | **PASS** 126/126 | 713.9 s |
+| 2 | 10 / 126 (the C1 failure shard: `SelectionOutlineTest`, both stale tests) | **PASS** 126/126 | 890.9 s |
+| 3 | 12 / 126 | **PASS** 126/126 | 807.8 s |
+| 4 | 12 / 126 | **`ASSERTION_FAILURE`**, `PRODUCT_TEST_FAILURE`: 1 of 126 | 740.1 s |
+| 5 | 12 / 125 | NOT_RUN (the runner stops at a failed shard) | — |
+
+- **Union counts:** assigned union 629, executed union 378, execution missing
+  251, failed shards 2 (the runner counts shard 4 and the unrun shard 5),
+  aborted 0.
+- **Marker: `FULL_SHARDED_SUITE_FAIL`.** No `FULL_SHARDED_SUITE_PASS` exists
+  for this candidate, and none is claimed.
+
+### 8a. The new failure: `MirrorSmokeTest.e2eMirror0101_theRowMirrorsThroughTheRealControls`
+
+**What fails.** `clickRowControl(source, R.id.object_row_mirror, "Mirror")`
+finds no Mirror control in the source body's row command strip
+(`MirrorSmokeTest.java:188`).
+
+**Why.** `MIRROR-01` refuses Mirror for a body carrying a Frozen Sculpt Mesh,
+and the control is ABSENT for one (`CLAUDE.md`, "A control that cannot succeed
+is not drawn"). The body the test mirrors carries one:
+
+- **Where it came from.** In the shard's process, `EditorWorkspaceControlsTest.ui06`
+  (the second class in shard 4) runs Start Sculpting on body 1 (`FORGESHAPE_SCULPT_STATE:freeze … objectId=1`).
+- **Why it survives.** The scene is process-scoped, and nothing before
+  `MirrorSmokeTest` clears it.
+- **Why the setup keeps it.** `MirrorSmokeTest.setUp` calls
+  `resetToBaselineConstruction`. That helper selects the first Construction body
+  and applies the baseline box, but it keeps the body's Frozen Sculpt Mesh. The
+  log at the test's start reads `frozen=1 … stale=1 objectId=1`.
+
+**The product obeys its contract here.** The case never establishes a body
+Mirror can act on.
+
+**Classification: `TEST_ISOLATION_DEFECT`, pre-existing and not the slice's:**
+
+| Run | Side | Result |
+| --- | --- | --- |
+| `36494252771` | candidate `5f1eccf`, the aggregate | FAIL, "Mirror is offered" |
+| `36499781424` | candidate (`0bba580`, the same `app/` bytes), `mode=shard shard=4`, subset evidence, no attempt counted, fingerprint `b9ba43233704` | FAIL, the same assertion, 1 of 126 |
+| `36499785366` | **`main` `103aa22`**, the same 12 classes in the same order through `CI DEVICE` | **FAIL**, the same assertion, 1 of 126 |
+
+**Why no earlier aggregate saw it.** C1's plan put `MirrorSmokeTest` in shard
+4 after the same classes. C1 stopped at shard 2, so this is the first aggregate
+that reached it. The slice changed neither `MirrorSmokeTest`,
+`WorkspaceTestSupport`, `ImportedMeshDurableTest` nor any Mirror or Sculpt path.
+
+**Proposed correction, not applied here.** A test-only fix, like §5:
+
+- **The fix.** `MirrorSmokeTest.setUp` opens a fresh one-body Construction
+  project before it encodes its baseline. That is `SelectionOutlineTest`'s
+  `freshProject()`: close the project, `ensureConstructionProjectForTest`, then
+  reset.
+- **The guard.** Assert the source body has no Frozen Sculpt Mesh before the
+  journey.
+
+That rebuilds the test APK, so the next authoritative run is a new fingerprint's
+fresh attempt 1.
 
 ## 9. Cloud resume
 
 A fresh VM still signs with a new debug key, so a cross-run `-Resume` would
 still be refused by fingerprint (`FULLSHARDED_C1.md` §4).
 
-PENDING the aggregate's outcome.
+The fresh aggregate did not pass, so no resume was needed and none was
+attempted. The CI-only fix prompt §12 allows was not built: a resume could not
+complete this aggregate in any case, because shard 4 fails deterministically.
+This stays infrastructure debt.
 
 ## 10. Scope
 
