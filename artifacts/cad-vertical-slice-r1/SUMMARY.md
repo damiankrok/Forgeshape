@@ -12,6 +12,11 @@ device tests). The milestone aggregate has since run in the cloud twice:
   product-source change is a diagnostic counter mirror. The aggregate then
   stopped at shard 4 on a pre-existing test isolation defect,
   `MirrorSmokeTest`, which fails on `main` too (`FULLSHARDED_C2.md`).
+- **C3** corrected that Mirror isolation with a test-only change (`899986d`),
+  green alone and in the exact shard-4 sequence. The aggregate then stopped at
+  shard 2 on a nondeterministic screenshot race in
+  `SelectionOutlineVisualEvidenceTest`, which passed on replay
+  (`FULLSHARDED_C3.md`).
 
 `main` was not merged.
 

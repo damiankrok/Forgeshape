@@ -88,6 +88,17 @@ the Android HUD in the same frame had already moved to the disk.
 
 ## 4. The milestone aggregate: BLOCKED at first, then FAILED
 
+**Update (`CAD-VS-FULLSHARDED-C3`).** The `MirrorSmokeTest` isolation defect
+was corrected on `899986d` (test-only).
+
+- **Focused gates:** `CI FAST` `36547144378`; Mirror alone, `36547148093`
+  (1/1); the exact shard-4 sequence, `36548109667` (126/126).
+- **The fresh aggregate** (`36567175533`, fingerprint `84de3b50ff25`) passed
+  shard 1, then stopped at shard 2 on
+  `SelectionOutlineVisualEvidenceTest.e2eSelOutR1Vis`. That is a fixed-delay
+  capture race: the same shard passed on replay (`36571016620`, 126/126).
+- **Result: `FAIL-CAD-VS-FULLSHARDED-C3`.** See `FULLSHARDED_C3.md`.
+
 **Update (`CAD-VS-FULLSHARDED-C2`).** All seven C1 failures were corrected
 on the new candidate `5f1eccf`:
 

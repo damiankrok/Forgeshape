@@ -213,10 +213,13 @@ java.lang.AssertionError: 09_warm_light: a band must be present in this frame, a
   light family's colour means.
 
 **Diagnostic replay of the shard-2 sequence** (subset evidence, no attempt
-counted): see §7a.
+counted): it **passed**, so the failure does not reproduce on demand (§7a).
 
-**Classification: `TEST_OBSERVATION_SEAM_DEFECT`, pre-existing.** The capture
-waits a fixed time instead of an observable event.
+**Classification: `TEST_OBSERVATION_SEAM_DEFECT`, pre-existing and
+nondeterministic.** The capture waits a fixed time instead of an observable
+event. Neither Mirror nor the slice is involved, and no product defect is
+indicated: native confirmed the ground change, and the neighbouring captures
+measured the band.
 
 **Proposed correction, not applied here (C3-15).** A test-only fix, like
 `db8ff6b`: `SelectionOutlineVisualEvidenceTest.capture` should wait for the
@@ -225,14 +228,42 @@ renderer to present a bounded number of frames after each state change
 `SystemClock.sleep(500)`. It rebuilds the test APK, so the next authoritative
 run is a new fingerprint's fresh attempt 1.
 
-**Why attempt 2 was not spent.** A second run of the same bytes could pass only
-by losing the same race, which is retry-until-green (prompt §7). The failing
-shard is not repaired by a resume either, because a fresh VM signs with a new
-debug key (`FULLSHARDED_C1.md` §4).
+**Why attempt 2 was not spent.** The runner would allow a second fresh attempt
+on this fingerprint. That attempt would test the same bytes, so it could pass
+only by the race going the other way:
+
+- **It would prove nothing new.** §7a already shows the race can go either
+  way.
+- **Passing it is not a fix.** Integrating `main` on that pass would be
+  retry-until-green (prompt §7), with the defect still in place.
+- **A resume would not repair the shard either,** because a fresh VM signs
+  with a new debug key (`FULLSHARDED_C1.md` §4).
+
+Whether to spend attempt 2 anyway, or to authorise the test-only capture fix
+first, is the coordinator's decision.
 
 ### 7a. Diagnostic replay
 
-PENDING
+`CI DEVICE` `36571016620` ran the exact shard-2 filter from the runner's plan
+on `899986d`. These are the 10 classes in the runner's order:
+
+`CadVerticalSliceTest`, `EditorWorkspaceArchitectureTest`,
+`EditorWorkspaceCorrectionTest`, `GlbImportExternalR1Test`,
+`JniBoundaryHardeningTest`, `SculptUndoTest`, `SelectionOutlineTest`,
+`SelectionOutlineVisualEvidenceTest`, `Ui3dStateAuditTest`,
+`Ui3dStateCorrectionTest`.
+
+- **Attempt 1 is infrastructure.** It failed in "Install the pinned SDK
+  components" 11 s in, before any build or test ran. That is the transient
+  `sdkmanager` failure C1 and C2 already recorded, so it was re-run once.
+- **Attempt 2 passed:** 23/23 startup tokens, 0 failure lines, **OK (126
+  tests)**, 1097 s. `SelectionOutlineVisualEvidenceTest` passed with it.
+
+**Three runs, one test, identical code.** Across C2, the C3 aggregate and this
+replay, the test code is identical, the product source is identical, and the
+order is the same. Capture 09 passed, then failed, then passed. The failure is
+**not deterministic**, which is what a fixed-delay screenshot racing a
+three-frames-a-second presenter predicts.
 
 ## 8. APK
 
