@@ -2516,6 +2516,9 @@ final class EditorWorkspaceView extends FrameLayout
         // bootstrap is open the project and export controls are withdrawn and
         // Back to Home is drawn.
         toolbar.showBootstrap(bootstrap);
+        // Import creates bodies and makes one active, which Sculpt cannot
+        // allow, so it is ABSENT there rather than drawn and then refused.
+        projectPopover.showImportAvailable(!sculpting);
         // Stage027 GUARD-2: whether the ACTIVE body is hidden, read from the
         // durable visibility itself. Start/Resume Sculpt are withdrawn over one.
         final boolean activeHidden = projectOpen
@@ -4714,6 +4717,9 @@ final class EditorWorkspaceView extends FrameLayout
     @Override
     public void onImportGlbRequested() {
         setProjectPanelOpen(false);
+        if (importRefusedWhileSculpting()) {
+            return;
+        }
         if (transferHost == null || !transferHost.requestOpenGlbDocument()) {
             showStatus(getContext().getString(R.string.status_glb_import_failed, "no picker"),
                     R.attr.fsTextError);
@@ -4725,6 +4731,12 @@ final class EditorWorkspaceView extends FrameLayout
         if (source == null) {
             // Cancel. Nothing was read, nothing was created, nothing changed.
             Diagnostics.info(DiagnosticLog.CAT_TRANSFER, "GLB_IMPORT_CANCELLED", null);
+            return;
+        }
+        // The picker is another app and answers whenever it answers: the user
+        // may have started sculpting since they asked. Refused before the file
+        // is even read, because nothing it holds could be used.
+        if (importRefusedWhileSculpting()) {
             return;
         }
         final byte[] bytes = ProjectTransfer.readFrom(getContext(), source);
@@ -4751,6 +4763,12 @@ final class EditorWorkspaceView extends FrameLayout
         // the call rather than about the file.
         final int before = NativeViewport.sceneBodyCount();
         final int status = NativeViewport.importGlbDurable(bytes);
+        if (status == NativeViewport.IMPORT_REFUSED_IN_SCULPT) {
+            // Native refused from its own mode, under the commit's lock, for a
+            // caller that got here without the picker guard above.
+            reportImportRefusedInSculpt();
+            return;
+        }
         if (status != NativeViewport.IMPORT_OK) {
             // Fail closed and say so. The project is untouched by construction:
             // a refused file never reaches the scene, and a refused commit
@@ -4774,6 +4792,32 @@ final class EditorWorkspaceView extends FrameLayout
         // A real project change: the Objects list, the inspector and the
         // autosave fingerprint all have to see the new bodies.
         onNativeStateChanged();
+    }
+
+    /**
+     * Refuses an import while the product is in Sculpt, and says so.
+     *
+     * <p>An import makes its first body active and records a Construction
+     * step; in Sculpt the active body is the sculpt target and Construction
+     * history is refused, so an import there would swap the target out from
+     * under the session. The answer is read from native on every call —
+     * never remembered here — and native refuses on its own as well.
+     *
+     * @return true when the import was refused and nothing was done
+     */
+    private boolean importRefusedWhileSculpting() {
+        if (NativeViewport.productMode() != NativeViewport.MODE_SCULPT) {
+            return false;
+        }
+        reportImportRefusedInSculpt();
+        return true;
+    }
+
+    private void reportImportRefusedInSculpt() {
+        Diagnostics.warn(DiagnosticLog.CAT_TRANSFER, "GLB_IMPORT_REFUSED",
+                NativeViewport.glbCommitStatusToken(NativeViewport.IMPORT_REFUSED_IN_SCULPT));
+        showStatus(getContext().getString(R.string.status_glb_import_refused_in_sculpt),
+                R.attr.fsTextError);
     }
 
     /**

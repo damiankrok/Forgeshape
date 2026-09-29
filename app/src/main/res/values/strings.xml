@@ -190,6 +190,7 @@
     <string name="import_glb">Import GLB…</string>
     <string name="status_glb_imported">Imported %1$s.</string>
     <string name="status_glb_import_failed">Could not import that file — %1$s. Your project is unchanged.</string>
+    <string name="status_glb_import_refused_in_sculpt">Import is not available while sculpting. Your project is unchanged.</string>
     <!--
       The three bounded refusal categories. The precise reason is a stable
       token in the log; these are the three things a person can actually do
