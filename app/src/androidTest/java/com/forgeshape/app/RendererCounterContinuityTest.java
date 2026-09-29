@@ -34,7 +34,8 @@ import org.junit.runner.RunWith;
  * outlined frames, finishes the Activity so the thread stops, starts a new one,
  * and reads the counters from the first instant until the live renderer has
  * drawn past the dead one's total. Every read must be at least the one before
- * it. The Activities are launched by hand rather than through an
+ * it — for the three outline counters, and for the presented-frame and
+ * device-rebuild counts that are mirrored on the same terms. The Activities are launched by hand rather than through an
  * {@code ActivityScenarioRule}, because the restart between them IS the
  * subject.
  */
@@ -51,6 +52,10 @@ public final class RendererCounterContinuityTest {
             NativeViewport.OUTLINE_STAT_MASK_PASS_FRAMES,
             NativeViewport.OUTLINE_STAT_COMPOSITE_DRAWS,
     };
+    /** Two more renderer counters mirrored on the same terms, read beside them. */
+    private static final int FRAMES_PRESENTED = 0;
+    private static final int DEVICE_REBUILDS = 1;
+    private static final String[] RENDERER_COUNTER_NAMES = {"framesPresented", "deviceRebuilds"};
 
     @Test
     public void outlineCountersNeverRunBackwardsAcrossARenderThreadRestart() {
@@ -70,11 +75,13 @@ public final class RendererCounterContinuityTest {
         // change, NativeViewport.stop() has joined the render thread. Nothing
         // writes the mirrors now, so this is the dead renderer's last word.
         final double[] stopped = outlineStats();
+        final long[] rendererStopped = rendererCounters();
 
         // --- A new render thread ---------------------------------------------
         try (ActivityScenario<ForgeShapeActivity> second =
                      ActivityScenario.launch(ForgeShapeActivity.class)) {
             double[] previous = stopped;
+            long[] rendererPrevious = rendererStopped;
             final double target = stopped[NativeViewport.OUTLINE_STAT_COMPOSITE_DRAWS] + 3.0;
             boolean projectReady = false;
             final long began = SystemClock.uptimeMillis();
@@ -88,7 +95,16 @@ public final class RendererCounterContinuityTest {
                                     + " ms after the relaunch)",
                             now[slot] >= previous[slot]);
                 }
+                final long[] rendererNow = rendererCounters();
+                for (int i = 0; i < rendererNow.length; i++) {
+                    assertTrue("renderer counter " + RENDERER_COUNTER_NAMES[i] + " ran backwards"
+                                    + " across a render thread restart: " + rendererPrevious[i]
+                                    + " -> " + rendererNow[i] + " (the stopped renderer's last"
+                                    + " value was " + rendererStopped[i] + ")",
+                            rendererNow[i] >= rendererPrevious[i]);
+                }
                 previous = now;
+                rendererPrevious = rendererNow;
                 if (now[NativeViewport.OUTLINE_STAT_COMPOSITE_DRAWS] >= target) {
                     break;
                 }
@@ -108,7 +124,9 @@ public final class RendererCounterContinuityTest {
                     + " stoppedMaskPass=" + (long) stopped[NativeViewport.OUTLINE_STAT_MASK_PASS_FRAMES]
                     + " liveMaskPass=" + (long) previous[NativeViewport.OUTLINE_STAT_MASK_PASS_FRAMES]
                     + " stoppedAllocations=" + (long) stopped[NativeViewport.OUTLINE_STAT_MASK_ALLOCATIONS]
-                    + " liveAllocations=" + (long) previous[NativeViewport.OUTLINE_STAT_MASK_ALLOCATIONS]);
+                    + " liveAllocations=" + (long) previous[NativeViewport.OUTLINE_STAT_MASK_ALLOCATIONS]
+                    + " stoppedFramesPresented=" + rendererStopped[FRAMES_PRESENTED]
+                    + " liveFramesPresented=" + rendererPrevious[FRAMES_PRESENTED]);
             assertTrue("the live renderer drew past the stopped renderer's total within "
                             + EVENT_BOUND_MS + " ms: stopped="
                             + stopped[NativeViewport.OUTLINE_STAT_COMPOSITE_DRAWS] + " live="
@@ -141,6 +159,13 @@ public final class RendererCounterContinuityTest {
             last = now;
         }
         return increases;
+    }
+
+    private static long[] rendererCounters() {
+        final long[] counters = new long[RENDERER_COUNTER_NAMES.length];
+        counters[FRAMES_PRESENTED] = NativeViewport.debugRendererFramesPresented();
+        counters[DEVICE_REBUILDS] = NativeViewport.debugRendererDeviceRebuilds();
+        return counters;
     }
 
     private static double[] outlineStats() {

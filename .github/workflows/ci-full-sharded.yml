@@ -1,0 +1,227 @@
+# CI FULL SHARDED: the milestone aggregate, on demand only.
+#
+# This runs `scripts/run-instrumented-tests.ps1 -FullSharded` -- the SAME
+# runner a Windows workstation runs -- against a fresh API 36 x86_64 emulator
+# on a GitHub-hosted Linux VM. Discovery, the partition, the fingerprint, the
+# checkpoint, the attempt count, the 90/120-minute budgets and the
+# FULL_SHARDED_SUITE_PASS marker are all the runner's; this file only provides
+# the device and maps a mode to the runner's own switches.
+#
+# It never runs on a push or a pull request. Emulator evidence closes no
+# physical-device, stylus, hardware or performance gate (docs/CI_CLOUD.md).
+name: CI FULL SHARDED
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'plan (-PlanOnly), fresh (-Fresh), resume (-Resume) or shard (-ShardOnly)'
+        required: true
+        type: choice
+        options: [plan, fresh, resume, shard]
+        default: plan
+      shard:
+        description: Shard to run when mode=shard (1..shard_count); ignored otherwise
+        required: false
+        default: '0'
+      shard_count:
+        description: Number of class-atomic shards
+        required: false
+        default: '5'
+      previous_run_id:
+        description: >-
+          A CI FULL SHARDED run whose run directory (checkpoint and shard logs)
+          is restored first. Required for resume. The runner itself decides
+          whether that checkpoint is usable.
+        required: false
+        default: ''
+
+# Read-only token. `actions: read` is only for downloading a previous run's
+# run-directory artifact; no secret is used.
+permissions:
+  contents: read
+  actions: read
+
+# Never cancel an aggregate in flight: a second dispatch waits for it.
+concurrency:
+  group: ci-full-sharded-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # Held exactly to app/build.gradle, CLAUDE.md and ci-device.yml. Do not bump here.
+  ANDROID_PLATFORM: android-36
+  ANDROID_BUILD_TOOLS: 36.1.0
+  ANDROID_NDK_VERSION: 29.0.14206865
+  ANDROID_CMAKE_VERSION: 3.22.1
+  # The CI-only AVD, on the one explicit port. Never 5554.
+  FORGESHAPE_CI_AVD: ForgeShape_CI_API36
+  FORGESHAPE_CI_PORT: '5580'
+  FORGESHAPE_CI_SYSTEM_IMAGE: system-images;android-36;google_apis;x86_64
+  FORGESHAPE_CI_DEVICE_PROFILE: medium_phone
+  FORGESHAPE_CI_GPU: swiftshader_indirect
+  SERIAL: emulator-5580
+
+jobs:
+  full-sharded:
+    name: FULL SHARDED (API 36 x86_64 emulator, repository runner)
+    # Belt and braces: only a dispatch ever runs this job.
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    # The runner's own hard stop is 120 minutes of shards; this leaves room for
+    # the SDK, the build, the boot and the uploads around it.
+    timeout-minutes: 180
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Validate the inputs
+        env:
+          MODE: ${{ inputs.mode }}
+          SHARD: ${{ inputs.shard }}
+          SHARD_COUNT: ${{ inputs.shard_count }}
+          PREVIOUS_RUN_ID: ${{ inputs.previous_run_id }}
+        run: |
+          set -euo pipefail
+          case "$MODE" in plan|fresh|resume|shard) ;; *) echo "::error::unknown mode '$MODE'"; exit 1;; esac
+          [[ "$SHARD_COUNT" =~ ^[0-9]+$ ]] && [ "$SHARD_COUNT" -ge 1 ] && [ "$SHARD_COUNT" -le 64 ] \
+            || { echo "::error::shard_count must be 1..64, got '$SHARD_COUNT'"; exit 1; }
+          if [ "$MODE" = shard ]; then
+            [[ "$SHARD" =~ ^[0-9]+$ ]] && [ "$SHARD" -ge 1 ] && [ "$SHARD" -le "$SHARD_COUNT" ] \
+              || { echo "::error::mode=shard needs shard 1..$SHARD_COUNT, got '$SHARD'"; exit 1; }
+          fi
+          if [ -n "$PREVIOUS_RUN_ID" ] && ! [[ "$PREVIOUS_RUN_ID" =~ ^[0-9]+$ ]]; then
+            echo "::error::previous_run_id must be a run number, got '$PREVIOUS_RUN_ID'"; exit 1
+          fi
+          if [ "$MODE" = resume ] && [ -z "$PREVIOUS_RUN_ID" ]; then
+            echo "::error::mode=resume needs previous_run_id: a fresh VM has no checkpoint of its own"; exit 1
+          fi
+          echo "mode=$MODE shard=$SHARD shard_count=$SHARD_COUNT previous_run_id=${PREVIOUS_RUN_ID:-none}"
+
+      - name: Validate the Gradle wrapper checksum
+        uses: gradle/actions/wrapper-validation@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle (cache only; the checked-in wrapper runs the build)
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Enable KVM for the emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules > /dev/null
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          ls -l /dev/kvm
+
+      - name: Install the pinned SDK components, the emulator and the API 36 image
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+          "$SDKMANAGER" --install \
+            "platform-tools" \
+            "emulator" \
+            "platforms;$ANDROID_PLATFORM" \
+            "build-tools;$ANDROID_BUILD_TOOLS" \
+            "ndk;$ANDROID_NDK_VERSION" \
+            "cmake;$ANDROID_CMAKE_VERSION" \
+            "$FORGESHAPE_CI_SYSTEM_IMAGE" \
+            > "$RUNNER_TEMP/sdkmanager-install.log" 2>&1 || {
+            # Say why, rather than exiting with the reason hidden in a file.
+            tr '\r' '\n' < "$RUNNER_TEMP/sdkmanager-install.log" | grep -v '^\s*$' | tail -n 40
+            echo "::error::DEVICE_INFRASTRUCTURE_FAILURE: sdkmanager --install failed"; exit 1; }
+          tr '\r' '\n' < "$RUNNER_TEMP/sdkmanager-install.log" | tail -n 5
+          image_dir="$ANDROID_HOME/system-images/android-36/google_apis/x86_64"
+          test -f "$image_dir/source.properties" || {
+            echo "::error::BLOCKED: $FORGESHAPE_CI_SYSTEM_IMAGE did not install"; exit 1; }
+          grep -E 'Pkg.Revision|AndroidVersion.ApiLevel|SystemImage.Abi|SystemImage.TagId' "$image_dir/source.properties"
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
+
+      # The boot step below installs the app for its startup evidence, so the
+      # APKs are built first; the runner's own Gradle call then finds them up
+      # to date and hashes exactly these bytes.
+      - name: Build debug and androidTest APKs
+        run: bash ./gradlew --stacktrace :app:assembleDebug :app:assembleDebugAndroidTest
+
+      - name: Restore the previous run directory
+        if: inputs.previous_run_id != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: ci-full-sharded-run-directory
+          path: artifacts/instrumented-runs
+          run-id: ${{ inputs.previous_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Boot the emulator and prove it (identity, 23 startup tokens, first frame)
+        env:
+          FORGESHAPE_CI_BOOT_ONLY: '1'
+          FORGESHAPE_CI_OUT: ci-full-sharded-evidence/boot
+        run: bash scripts/ci-device-smoke.sh
+
+      - name: Run the repository FullSharded runner
+        env:
+          MODE: ${{ inputs.mode }}
+          SHARD: ${{ inputs.shard }}
+          SHARD_COUNT: ${{ inputs.shard_count }}
+        run: |
+          set -o pipefail
+          mkdir -p ci-full-sharded-evidence
+          args=(-Serial "$SERIAL" -FullSharded -ShardCount "$SHARD_COUNT" -TargetMinutes 90 -HardStopMinutes 120)
+          case "$MODE" in
+            plan) args+=(-PlanOnly) ;;
+            fresh) args+=(-Fresh) ;;
+            resume) args+=(-Resume) ;;
+            shard) args+=(-ShardOnly "$SHARD") ;;
+          esac
+          echo "pwsh -NoProfile -File scripts/run-instrumented-tests.ps1 ${args[*]}" \
+            | tee ci-full-sharded-evidence/runner-command.txt
+          pwsh -NoProfile -File scripts/run-instrumented-tests.ps1 "${args[@]}" 2>&1 \
+            | tee ci-full-sharded-evidence/runner-output.txt
+
+      - name: Capture the device log and stop the emulator
+        if: always()
+        run: |
+          mkdir -p ci-full-sharded-evidence
+          if [ "$(adb -s "$SERIAL" get-state 2>/dev/null | tr -d '\r')" = "device" ]; then
+            adb -s "$SERIAL" logcat -d -v threadtime > ci-full-sharded-evidence/logcat-final.txt 2>/dev/null || true
+            adb -s "$SERIAL" emu kill > /dev/null 2>&1 || true
+          fi
+
+      - name: Job summary
+        if: always()
+        run: |
+          out=ci-full-sharded-evidence/runner-output.txt
+          {
+            echo "## CI FULL SHARDED (${{ inputs.mode }})"
+            echo '```'
+            cat ci-full-sharded-evidence/runner-command.txt 2>/dev/null || true
+            grep -E '^(DISCOVERY_PASS|FINGERPRINT|MODE=|AGGREGATE_ATTEMPT|PLAN \||PLAN_ONLY_COMPLETE|RESUME_|SHARD_RESULT|TIME_BUDGET_WARNING|FAILED_SHARD|FULL_SUITE|FULL_SHARDED_SUITE|RUN_ABORTED)' "$out" 2>/dev/null || true
+            sed -n '/^FULL_SHARDED_SUMMARY_BEGIN$/,/^FULL_SHARDED_SUMMARY_END$/p;/^SHARD_ONLY_SUMMARY_BEGIN$/,/^SHARD_ONLY_SUMMARY_END$/p' "$out" 2>/dev/null || true
+            echo '```'
+            echo '```json'
+            cat ci-full-sharded-evidence/boot/summary.json 2>/dev/null || echo '{"result": "NO_BOOT_SUMMARY"}'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the run directory (checkpoint and shard logs)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-full-sharded-run-directory
+          retention-days: 30
+          if-no-files-found: warn
+          include-hidden-files: true
+          path: artifacts/instrumented-runs/
+
+      - name: Upload FULL SHARDED evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-full-sharded-evidence
+          retention-days: 30
+          if-no-files-found: warn
+          path: ci-full-sharded-evidence/

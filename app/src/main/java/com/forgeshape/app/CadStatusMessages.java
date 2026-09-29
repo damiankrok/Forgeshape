@@ -47,6 +47,36 @@ final class CadStatusMessages {
                 return context.getString(R.string.status_cad_invalid_extent);
             case NativeViewport.CAD_ZERO_LENGTH_LINE:
                 return context.getString(R.string.status_cad_zero_length);
+            // `CAD-VERTICAL-SLICE-R1`: regions, the feature chain and the
+            // operations. Each names what the user can change, never the kernel.
+            case NativeViewport.CAD_PROFILE_REGION_MISMATCH:
+                return context.getString(R.string.status_cad_region_mismatch);
+            case NativeViewport.CAD_OVERLAPPING_REGIONS:
+                return context.getString(R.string.status_cad_overlapping_regions);
+            case NativeViewport.CAD_OVERLAPPING_HOLES:
+                return context.getString(R.string.status_cad_overlapping_holes);
+            case NativeViewport.CAD_TOO_MANY_REGIONS:
+                return context.getString(R.string.status_cad_too_many_regions);
+            case NativeViewport.CAD_INVALID_FEATURE_OPERATION:
+                return context.getString(R.string.status_cad_invalid_operation);
+            case NativeViewport.CAD_TOO_MANY_FEATURES:
+                return context.getString(R.string.status_cad_too_many_features);
+            case NativeViewport.CAD_FEATURE_SUPPORT_INVALID:
+                return context.getString(R.string.status_cad_feature_support_invalid);
+            case NativeViewport.CAD_SUPPORT_FACE_LOST:
+                return context.getString(R.string.status_cad_support_face_lost);
+            case NativeViewport.CAD_OPERATION_NEEDS_TARGET:
+                return context.getString(R.string.status_cad_operation_needs_target);
+            case NativeViewport.CAD_ADD_DISJOINT:
+                return context.getString(R.string.status_cad_add_disjoint);
+            case NativeViewport.CAD_ADD_NO_EFFECT:
+                return context.getString(R.string.status_cad_add_no_effect);
+            case NativeViewport.CAD_CUT_NO_INTERSECTION:
+                return context.getString(R.string.status_cad_cut_no_intersection);
+            case NativeViewport.CAD_CUT_REMOVES_BODY:
+                return context.getString(R.string.status_cad_cut_removes_body);
+            case NativeViewport.CAD_KERNEL_FAILED:
+                return context.getString(R.string.status_cad_kernel_failed);
             default:
                 return context.getString(R.string.status_cad_refused,
                         NativeViewport.cadStatusToken(code));

@@ -10,6 +10,11 @@ namespace forgeshape {
 // Status
 // ---------------------------------------------------------------------------
 
+// The count is a literal in the header so Java can mirror it; this is what
+// keeps the literal honest when an enumerator is appended.
+static_assert(static_cast<int>(CadStatus::KernelFailed) + 1 == kCadStatusCount,
+              "kCadStatusCount must equal the number of CadStatus enumerators");
+
 const char* cadStatusName(CadStatus status) {
     switch (status) {
         case CadStatus::Ok: return "Ok";
@@ -43,6 +48,20 @@ const char* cadStatusName(CadStatus status) {
         case CadStatus::SketchNotEmpty: return "SketchNotEmpty";
         case CadStatus::DependentFaceLost: return "DependentFaceLost";
         case CadStatus::InvalidExtrudeExtent: return "InvalidExtrudeExtent";
+        case CadStatus::ProfileRegionMismatch: return "ProfileRegionMismatch";
+        case CadStatus::OverlappingRegions: return "OverlappingRegions";
+        case CadStatus::OverlappingHoles: return "OverlappingHoles";
+        case CadStatus::TooManyRegions: return "TooManyRegions";
+        case CadStatus::InvalidFeatureOperation: return "InvalidFeatureOperation";
+        case CadStatus::TooManyFeatures: return "TooManyFeatures";
+        case CadStatus::FeatureSupportInvalid: return "FeatureSupportInvalid";
+        case CadStatus::SupportFaceLost: return "SupportFaceLost";
+        case CadStatus::OperationNeedsTarget: return "OperationNeedsTarget";
+        case CadStatus::AddDisjoint: return "AddDisjoint";
+        case CadStatus::AddNoEffect: return "AddNoEffect";
+        case CadStatus::CutNoIntersection: return "CutNoIntersection";
+        case CadStatus::CutRemovesBody: return "CutRemovesBody";
+        case CadStatus::KernelFailed: return "KernelFailed";
     }
     return "unknown";
 }
@@ -613,11 +632,13 @@ CadStatus validateCadSketch(const CadSketch& sketch) {
     // A face-supported sketch authors on the canonical XY in its own local
     // space; the support frame does the placing. Anything else would be two
     // answers to what the sketch's basis is. The TopoRef's own resolution
-    // against a producer is checked where a scene exists, not here.
+    // against a producer is checked where a scene exists, not here -- and
+    // since `CAD-VERTICAL-SLICE-R1` that includes whether the named feature
+    // exists, because a producer may now carry more than its first feature.
     if (sketch.hasFaceSupport) {
         if (sketch.plane != Workplane::XY
             || sketch.faceSupport.producerObjectId == kNoObject
-            || sketch.faceSupport.producerLocalFeatureId != kCadFeatureId) {
+            || sketch.faceSupport.producerLocalFeatureId == 0u) {
             return CadStatus::InvalidWorkplane;
         }
     }
@@ -1115,51 +1136,6 @@ ProfileExtraction extractClosedProfiles(const CadSketch& sketch) {
         profile.edgeCurved = std::move(candidate.edgeCurved);
         out.profiles.push_back(std::move(profile));
     }
-
-    // Nesting. A profile that contains another is a solid with a hole, and a
-    // hole is not R0: the OUTER one is refused by name and the inner one stays
-    // extrudable on its own. Containment is "a vertex strictly inside and no
-    // edge crossing"; two profiles that merely overlap are each still a
-    // simple solid and are both kept.
-    std::vector<bool> outer(out.profiles.size(), false);
-    for (size_t a = 0; a < out.profiles.size(); ++a) {
-        for (size_t b = 0; b < out.profiles.size(); ++b) {
-            if (a == b) continue;
-            const std::vector<SketchPoint>& pa = out.profiles[a].polygon;
-            const std::vector<SketchPoint>& pb = out.profiles[b].polygon;
-            bool inside = false;
-            for (const SketchPoint& p : pb) {
-                if (pointStrictlyInside(p, pa)) {
-                    inside = true;
-                    break;
-                }
-            }
-            if (!inside) continue;
-            bool crosses = false;
-            for (size_t i = 0; i < pa.size() && !crosses; ++i) {
-                for (size_t j = 0; j < pb.size(); ++j) {
-                    if (sketchSegmentsIntersect(pa[i], pa[(i + 1) % pa.size()], pb[j],
-                                                pb[(j + 1) % pb.size()])) {
-                        crosses = true;
-                        break;
-                    }
-                }
-            }
-            if (!crosses) {
-                outer[a] = true;
-            }
-        }
-    }
-    std::vector<ClosedProfile> kept;
-    for (size_t a = 0; a < out.profiles.size(); ++a) {
-        if (outer[a]) {
-            out.rejections.push_back(ProfileRejection{out.profiles[a].anchorEntityId,
-                                                      CadStatus::NestedProfileUnsupported});
-        } else {
-            kept.push_back(std::move(out.profiles[a]));
-        }
-    }
-    out.profiles = std::move(kept);
 
     std::sort(out.profiles.begin(), out.profiles.end(),
               [](const ClosedProfile& l, const ClosedProfile& r) {

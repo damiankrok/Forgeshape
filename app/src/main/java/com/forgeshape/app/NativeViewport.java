@@ -1499,6 +1499,21 @@ final class NativeViewport {
     static native int debugRendererDeviceRebuilds();
 
     /**
+     * How many frames the renderer has presented in this process.
+     *
+     * <p>A process-lifetime count: a render thread restart continues it rather
+     * than starting it again from zero, so a later read is never below an
+     * earlier one.
+     *
+     * <p>Introspection for evidence captures: a screenshot taken after a state
+     * change should show that state, and on a software rasteriser a frame can
+     * take hundreds of milliseconds while the swapchain holds several more in
+     * flight. Waiting for presented frames is a measurement where a fixed delay
+     * is a guess. Carries a count and nothing else.
+     */
+    static native long debugRendererFramesPresented();
+
+    /**
      * Opens the production session-initialization boundary.
      *
      * <p>Seeding a session is not something the user did. Answering the start
@@ -2209,6 +2224,35 @@ final class NativeViewport {
     static final int CAD_SKETCH_NOT_EMPTY = 28;
     static final int CAD_DEPENDENT_FACE_LOST = 29;
     static final int CAD_INVALID_EXTRUDE_EXTENT = 30;
+    // `CAD-VERTICAL-SLICE-R1`: regions, the feature chain and the operations,
+    // APPENDED in the native enum's order so no code above moves.
+    static final int CAD_PROFILE_REGION_MISMATCH = 31;
+    static final int CAD_OVERLAPPING_REGIONS = 32;
+    static final int CAD_OVERLAPPING_HOLES = 33;
+    static final int CAD_TOO_MANY_REGIONS = 34;
+    static final int CAD_INVALID_FEATURE_OPERATION = 35;
+    static final int CAD_TOO_MANY_FEATURES = 36;
+    static final int CAD_FEATURE_SUPPORT_INVALID = 37;
+    static final int CAD_SUPPORT_FACE_LOST = 38;
+    static final int CAD_OPERATION_NEEDS_TARGET = 39;
+    static final int CAD_ADD_DISJOINT = 40;
+    static final int CAD_ADD_NO_EFFECT = 41;
+    static final int CAD_CUT_NO_INTERSECTION = 42;
+    static final int CAD_CUT_REMOVES_BODY = 43;
+    static final int CAD_KERNEL_FAILED = 44;
+
+    /**
+     * What an extrusion does to material (`CAD-VERTICAL-SLICE-R1`), in the
+     * native enum's order: New Body makes a new body; Add and Cut change the
+     * body the sketch stands on, in place.
+     */
+    static final int OPERATION_NEW_BODY = 0;
+    static final int OPERATION_ADD = 1;
+    static final int OPERATION_CUT = 2;
+    /** Bits of {@link #CAD_EXTRUDE_OPERATIONS_AVAILABLE}. */
+    static final int OPERATION_BIT_NEW_BODY = 1;
+    static final int OPERATION_BIT_ADD = 2;
+    static final int OPERATION_BIT_CUT = 4;
 
     /** The three principal workplanes, as the native Workplane index. */
     static final int WORKPLANE_XY = 0;
@@ -2286,7 +2330,7 @@ final class NativeViewport {
      * land between two of them. Every slot is DERIVED below JNI on every read —
      * the shell stores no depth, no direction and no anchor.
      */
-    static final int CAD_EXTRUDE_SIZE = 21;
+    static final int CAD_EXTRUDE_SIZE = 32;
     /** 1 when the canvas manipulator is live; 0 is the whole reason it is absent. */
     static final int CAD_EXTRUDE_ACTIVE = 0;
     /** The PRIMARY side's distance: the whole depth of a One Side extrusion. */
@@ -2325,6 +2369,31 @@ final class NativeViewport {
     /** Which side a live drag captured: 0 none, 1 the +N side, 2 the -N side. */
     static final int CAD_EXTRUDE_DRAG_SIDE = 20;
 
+    // `CAD-VERTICAL-SLICE-R1`. Valid whenever a session is open -- including in
+    // Ready before any region is chosen, when CAD_EXTRUDE_ACTIVE is 0.
+    /** 1 when the session is in Ready (the extrusion stage). */
+    static final int CAD_EXTRUDE_READY = 21;
+    /** The operation: {@link #OPERATION_NEW_BODY}, {@code _ADD}, {@code _CUT}. */
+    static final int CAD_EXTRUDE_OPERATION = 22;
+    /** Which operations can be chosen now, as {@code OPERATION_BIT_*}. */
+    static final int CAD_EXTRUDE_OPERATIONS_AVAILABLE = 23;
+    /**
+     * The candidate's CAD status: {@link #CAD_OK} when the preview IS what the
+     * commit will make, otherwise the named reason the commit would refuse.
+     */
+    static final int CAD_EXTRUDE_CANDIDATE_STATUS = 24;
+    /** The later feature that refused, or 0. */
+    static final int CAD_EXTRUDE_FAILED_FEATURE = 25;
+    /** The body an Add/Cut changes or an edit rewrites; 0 for a New Body. */
+    static final int CAD_EXTRUDE_TARGET_BODY = 26;
+    /** The last candidate regeneration, in microseconds. */
+    static final int CAD_EXTRUDE_PREVIEW_MICROS = 27;
+    static final int CAD_EXTRUDE_REGION_COUNT = 28;
+    static final int CAD_EXTRUDE_SELECTED_REGIONS = 29;
+    /** The feature an edit session edits, or 0 for a new one. */
+    static final int CAD_EXTRUDE_EDITING_FEATURE = 30;
+    static final int CAD_EXTRUDE_CANDIDATE_REVISION = 31;
+
     /** Extent modes, in the native enum's own order. */
     static final int EXTENT_ONE_SIDE = 0;
     static final int EXTENT_SYMMETRIC = 1;
@@ -2334,8 +2403,25 @@ final class NativeViewport {
     static final int EXTRUDE_SIDE_POSITIVE = 1;
     static final int EXTRUDE_SIDE_NEGATIVE = 2;
 
-    /** Slots of {@link #sketchProfileInfo}. */
+    /**
+     * Slots of {@link #sketchProfileInfo}. Since `CAD-VERTICAL-SLICE-R1` a
+     * "profile" is a REGION (an outer loop minus its holes); a 3-slot array
+     * still reads the first three, a {@link #SKETCH_REGION_INFO_SIZE} one the
+     * rest.
+     */
     static final int SKETCH_PROFILE_INFO_SIZE = 3;
+    static final int SKETCH_REGION_INFO_SIZE = 11;
+    static final int SKETCH_REGION_KIND = 0;
+    static final int SKETCH_REGION_VERTICES = 1;
+    static final int SKETCH_REGION_AREA = 2;
+    static final int SKETCH_REGION_HOLES = 3;
+    static final int SKETCH_REGION_SELECTED = 4;
+    static final int SKETCH_REGION_SELECTABLE = 5;
+    static final int SKETCH_REGION_STATUS = 6;
+    static final int SKETCH_REGION_ON_SCREEN = 7;
+    static final int SKETCH_REGION_SCREEN_X = 8;
+    static final int SKETCH_REGION_SCREEN_Y = 9;
+    static final int SKETCH_REGION_DEPTH = 10;
     static final int SKETCH_PROFILE_KIND_RECTANGLE = 1;
     static final int SKETCH_PROFILE_KIND_CIRCLE = 2;
     static final int SKETCH_PROFILE_KIND_POLYGON = 3;
@@ -2438,6 +2524,16 @@ final class NativeViewport {
     static native int sketchProfiles(long[] out);
 
     static native boolean sketchProfileInfo(long anchorEntityId, double[] out);
+
+    /**
+     * Adds the region to the selection, or removes it when it is selected.
+     * Adding replaces any selected region it would overlap or share a loop
+     * with. Returns a {@code CAD_*} code.
+     */
+    static native int sketchToggleRegion(long outerAnchorEntityId);
+
+    /** Chooses New Body, Add or Cut. Returns a {@code CAD_*} code. */
+    static native int sketchSetOperation(int operation);
 
     /**
      * Where a sketch point is on screen, in view-local pixels. Verification
@@ -2550,6 +2646,67 @@ final class NativeViewport {
 
     /** Which body the open session edits, or 0 when it authors a new one. */
     static native long sketchEditingBodyId();
+
+    /**
+     * Opens a staged edit of ONE feature of a CAD body's chain: feature 1 is the
+     * body's first sketch and extrusion, a later id an Add or a Cut. With
+     * {@code startReady} the session opens on the extrusion. Returns a
+     * {@code CAD_*} code.
+     */
+    static native int sketchBeginEditFeature(long bodyId, long featureId, boolean startReady);
+
+    /** The feature an open edit session edits, or 0. */
+    static native long sketchEditingFeatureId();
+
+    /** How many features a CAD body's chain carries, the first included. */
+    static native int cadFeatureCount(long bodyId);
+
+    /** Slots of {@link #cadFeatureInfo}. */
+    static final int CAD_FEATURE_INFO_SIZE = 9;
+    static final int CAD_FEATURE_ID = 0;
+    static final int CAD_FEATURE_OPERATION = 1;
+    static final int CAD_FEATURE_EXTENT = 2;
+    static final int CAD_FEATURE_POSITIVE = 3;
+    static final int CAD_FEATURE_NEGATIVE = 4;
+    static final int CAD_FEATURE_REGIONS = 5;
+    static final int CAD_FEATURE_HOLES = 6;
+    static final int CAD_FEATURE_SUPPORT = 7;
+    static final int CAD_FEATURE_ENTITIES = 8;
+
+    /** One feature of a CAD body's chain, by chain position. False past the end. */
+    static native boolean cadFeatureInfo(long bodyId, int index, double[] out);
+
+    /** Slots of {@link #cadBodyMeasure}. */
+    static final int CAD_MEASURE_SIZE = 9;
+    static final int CAD_MEASURE_VOLUME = 0;
+    static final int CAD_MEASURE_COMPONENTS = 1;
+    static final int CAD_MEASURE_TRIANGLES = 2;
+    static final int CAD_MEASURE_MIN_X = 3;
+    static final int CAD_MEASURE_MAX_X = 6;
+
+    /**
+     * A CAD body's regenerated solid, measured in its own local space: volume,
+     * shells, triangles and bounds. What a test asserts an Add or a Cut
+     * changed, by geometry. False for a body that is not a CAD body.
+     */
+    static native boolean cadBodyMeasure(long bodyId, double[] out);
+
+    /** Slots of {@link #sketchCandidateMeasure}. */
+    static final int CANDIDATE_MEASURE_SIZE = 11;
+    static final int CANDIDATE_MEASURE_STATUS = 0;
+    static final int CANDIDATE_MEASURE_VOLUME = 1;
+    static final int CANDIDATE_MEASURE_COMPONENTS = 2;
+    static final int CANDIDATE_MEASURE_TRIANGLES = 3;
+    static final int CANDIDATE_MEASURE_MIN_X = 4;
+    static final int CANDIDATE_MEASURE_MAX_X = 7;
+    static final int CANDIDATE_MEASURE_REVISION = 10;
+
+    /**
+     * The staged candidate — the evaluation the preview draws and a commit
+     * would apply — measured like {@link #cadBodyMeasure}. Verification
+     * infrastructure; false unless a sketch is Ready.
+     */
+    static native boolean sketchCandidateMeasure(double[] out);
 
     /** Finishes a staged sketch edit: one transaction, one Undo. */
     static native int sketchCommitEdit();

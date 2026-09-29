@@ -1,7 +1,8 @@
 <#
 .SYNOPSIS
-    TESTRUNTIME-01..24: the runner's fingerprint, checkpoint, resume, budget,
-    attempt and classification logic, proved without a device.
+    TESTRUNTIME-01..26: the runner's fingerprint, checkpoint, resume, budget,
+    attempt and classification logic, and its two host-dependent choices (the
+    Gradle wrapper and the APK paths), proved without a device.
 
 .DESCRIPTION
     Every case here runs against synthetic fixtures with the shard executor and
@@ -510,6 +511,31 @@ Invoke-RuntimeCheck 'TESTRUNTIME-24' 'ambiguous evidence fails closed' {
     Assert-True ($unknown -eq 'RUNNER_ERROR') "an unknown status classified as $unknown"
 }
 
+Invoke-RuntimeCheck 'TESTRUNTIME-25' 'the Gradle call differs by host only in the wrapper' {
+    $windows = Get-InstrumentedGradleInvocation -OnWindows $true
+    Assert-True ($windows.Command -eq '.\gradlew.bat') "Windows ran '$($windows.Command)' instead of gradlew.bat"
+    Assert-True ((@($windows.Arguments) -join ' ') -eq ':app:assembleDebug :app:assembleDebugAndroidTest') `
+        "Windows built '$(@($windows.Arguments) -join ' ')'"
+    $posix = Get-InstrumentedGradleInvocation -OnWindows $false
+    Assert-True ($posix.Command -eq 'bash') "a POSIX host ran '$($posix.Command)' instead of bash"
+    Assert-True ((@($posix.Arguments) -join ' ') -eq './gradlew :app:assembleDebug :app:assembleDebugAndroidTest') `
+        "a POSIX host built '$(@($posix.Arguments) -join ' ')'"
+    # The host answer agrees with the platform's own path separator, so the
+    # runner never picks the Windows wrapper on a POSIX host or the reverse.
+    $hostIsWindows = Test-InstrumentedHostIsWindows
+    Assert-True ($hostIsWindows -eq ([System.IO.Path]::DirectorySeparatorChar -eq '\')) `
+        "host detection said Windows=$hostIsWindows on a '$([System.IO.Path]::DirectorySeparatorChar)' host"
+}
+
+Invoke-RuntimeCheck 'TESTRUNTIME-26' 'the APK paths are the historical ones in the host separator' {
+    $paths = Get-InstrumentedApkPaths
+    $separator = [string][System.IO.Path]::DirectorySeparatorChar
+    $expectedApp = 'app\build\outputs\apk\debug\app-debug.apk'.Replace('\', $separator)
+    $expectedTest = 'app\build\outputs\apk\androidTest\debug\app-debug-androidTest.apk'.Replace('\', $separator)
+    Assert-True ($paths.App -eq $expectedApp) "app APK path was '$($paths.App)', expected '$expectedApp'"
+    Assert-True ($paths.Test -eq $expectedTest) "test APK path was '$($paths.Test)', expected '$expectedTest'"
+}
+
 $results | ForEach-Object {
     $status = if ($_.Pass) { 'PASS' } else { 'FAIL' }
     Write-Output "$($_.Id) | $status | $($_.Name) | $($_.Evidence)"
@@ -519,5 +545,5 @@ if ($failed.Count -ne 0) {
     Write-Error -Message "$($failed.Count) TESTRUNTIME check(s) failed." -ErrorAction Continue
     exit 1
 }
-Write-Output "TESTRUNTIME-01..24 PASS ($($results.Count) checks)."
+Write-Output "TESTRUNTIME-01..26 PASS ($($results.Count) checks)."
 exit 0

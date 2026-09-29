@@ -1,5 +1,7 @@
 #include "forgeshape_sketch_session.h"
 
+#include <algorithm>
+#include <chrono>
 #include <cmath>
 
 #include "forgeshape_cad_face.h"
@@ -118,7 +120,8 @@ double adaptiveSketchGridStep(double worldPerPixel) {
     return step;
 }
 
-CadStatus SketchSession::beginOnFace(const SketchFrame& worldFrame, const TopoRef& support) {
+CadStatus SketchSession::beginOnFace(const SketchFrame& worldFrame, const TopoRef& support,
+                                     const CadBodyState* producerState) {
     if (state_ != SketchSessionState::Inactive) {
         return fail(CadStatus::NotSketching);
     }
@@ -133,7 +136,15 @@ CadStatus SketchSession::beginOnFace(const SketchFrame& worldFrame, const TopoRe
     sketch_.hasFaceSupport = true;
     sketch_.faceSupport = support;
     frame_ = worldFrame;
-    touchOverlay();
+    // The producer is also the body an Add or a Cut would modify. Its state is
+    // staged now, so the candidate is a pure function of what the session
+    // holds; the commit refuses if the body changed underneath.
+    if (producerState != nullptr) {
+        targetBodyId_ = support.producerObjectId;
+        targetBaseState_ = *producerState;
+        hasTargetState_ = true;
+    }
+    touchCandidate();
     return fail(CadStatus::Ok);
 }
 
@@ -152,9 +163,17 @@ CadStatus SketchSession::begin(Workplane plane) {
     frame_ = SketchFrame{Vec3{0.0f, 0.0f, 0.0f}, wf.uAxis, wf.vAxis, wf.normal};
     gridStep_ = kSketchGridSpacingMeters;
     selectedEntityId_ = kNoSketchEntity;
-    profiles_ = ProfileExtraction{};
+    regions_ = SketchRegionExtraction{};
     extrude_ = ExtrudeFeature{};
     oneSideDirection_ = ExtrudeDirection::AlongNormal;
+    operation_ = CadFeatureOperation::NewBody;
+    targetBodyId_ = kNoObject;
+    targetBaseState_ = CadBodyState{};
+    hasTargetState_ = false;
+    editingFeatureId_ = 0;
+    editingSupport_ = CadFeatureSupport{};
+    evaluation_ = CadCandidateEvaluation{};
+    regionTapArmed_ = false;
     tool_ = SketchTool::Rectangle;
     resetGesture();
     polylineInProgress_ = false;
@@ -169,7 +188,7 @@ CadStatus SketchSession::begin(Workplane plane) {
     entitiesPlaced_ = 0;
     lastSnapKind_ = SketchSnapKind::None;
     state_ = SketchSessionState::Editing;
-    touchOverlay();
+    touchCandidate();
     return fail(CadStatus::Ok);
 }
 
@@ -180,11 +199,20 @@ void SketchSession::cancel() {
     arcPending_ = false;
     sketch_ = CadSketch{};
     selectedEntityId_ = kNoSketchEntity;
-    profiles_ = ProfileExtraction{};
+    regions_ = SketchRegionExtraction{};
     extrude_ = ExtrudeFeature{};
     // An edit session that is cancelled has, by construction, written nothing
     // to the body: the staged copy simply goes away with the session.
     editingBodyId_ = kNoObject;
+    editingFeatureId_ = 0;
+    editingSupport_ = CadFeatureSupport{};
+    operation_ = CadFeatureOperation::NewBody;
+    targetBodyId_ = kNoObject;
+    targetBaseState_ = CadBodyState{};
+    hasTargetState_ = false;
+    evaluation_ = CadCandidateEvaluation{};
+    regionTapArmed_ = false;
+    ++candidateRevision_;
     viewFlipped_ = false;
     viewQuarterTurns_ = 0;
     state_ = SketchSessionState::Inactive;
@@ -197,6 +225,12 @@ void SketchSession::cancel() {
 
 CadStatus SketchSession::beginEdit(ObjectId bodyId, const CadBodyState& state,
                                    const SketchFrame& worldFrame) {
+    return beginEditFeature(bodyId, state, kCadFeatureId, worldFrame, /*startReady=*/false);
+}
+
+CadStatus SketchSession::beginEditFeature(ObjectId bodyId, const CadBodyState& state,
+                                          uint32_t featureId, const SketchFrame& worldFrame,
+                                          bool startReady) {
     if (state_ != SketchSessionState::Inactive) {
         return fail(CadStatus::NotSketching);
     }
@@ -210,15 +244,25 @@ CadStatus SketchSession::beginEdit(ObjectId bodyId, const CadBodyState& state,
     if (valid != CadStatus::Ok) {
         return fail(valid);
     }
-    const CadStatus started = begin(state.sketch.plane);
+    CadFeatureView view;
+    if (!findCadFeature(state, featureId, &view)) {
+        return fail(CadStatus::ProfileNotFound);
+    }
+    const CadStatus started = begin(view.sketch->plane);
     if (started != CadStatus::Ok) {
         return started;
     }
-    // The STAGED copy. Everything the body knows about itself, including its
-    // face support and its extrusion, so Finish can regenerate the whole body
-    // rather than a sketch with a guessed depth.
-    sketch_ = state.sketch;
-    extrude_ = state.extrude;
+    // The STAGED copy. Everything the feature knows about itself, including a
+    // base's face support and every extrusion field, so Finish can regenerate
+    // the whole chain rather than a sketch with a guessed depth. The rest of
+    // the chain is staged with it: an edit to feature i is applied to the SAME
+    // body and regenerates i..end.
+    sketch_ = *view.sketch;
+    extrude_ = *view.extrude;
+    operation_ = view.operation;
+    if (view.support != nullptr) {
+        editingSupport_ = *view.support;
+    }
     // The staged extent comes back with the body, and so does the One Side
     // memory a mode round trip needs: for a One Side body it is the side the
     // solid is on, and for a two-sided one the canonical `AlongNormal`.
@@ -227,8 +271,47 @@ CadStatus SketchSession::beginEdit(ObjectId bodyId, const CadBodyState& state,
                                 : ExtrudeDirection::AlongNormal;
     frame_ = worldFrame;
     editingBodyId_ = bodyId;
-    touchOverlay();
+    editingFeatureId_ = featureId;
+    targetBodyId_ = bodyId;
+    targetBaseState_ = state;
+    hasTargetState_ = true;
+    touchCandidate();
+    if (startReady) {
+        const CadStatus finished = finish();
+        if (finished != CadStatus::Ok) {
+            cancel();
+            return fail(finished);
+        }
+    }
     return fail(CadStatus::Ok);
+}
+
+CadStatus SketchSession::checkDependentsKeepTheirFaces(const ConstructionScene& scene,
+                                                       ObjectId producerId,
+                                                       const CadBodyState& candidate,
+                                                       const CadBodyMesh& candidateMesh) const {
+    // An edit -- or an Add or a Cut -- that would strip a planar face another
+    // body's sketch is standing on is REFUSED, checked against the CANDIDATE
+    // before anything is written. A size-only edit keeps the face SET and so
+    // keeps every reference valid; one that removes a profile edge, or a Cut
+    // that carves the face away entirely, does not, and the answer is a refusal
+    // by name rather than a dependent that quietly stops being drawn.
+    for (const ObjectId dependentId : scene.cadDependentsOf(producerId)) {
+        const SceneObject* dependent = scene.findBody(dependentId);
+        const CadBody* dependentCad = dependent != nullptr ? dependent->cadOrNull() : nullptr;
+        if (dependentCad == nullptr || !dependentCad->sketch().hasFaceSupport) {
+            continue;
+        }
+        const TopoRef& ref = dependentCad->sketch().faceSupport;
+        CadFace face;
+        if (cadFeatureTopologySignature(candidate, ref.producerLocalFeatureId) != ref.lineageToken
+            || resolveCadFeatureFace(candidate, ref.producerLocalFeatureId, ref.face, &face)
+                       != CadStatus::Ok
+            || !face.eligible || !cadMeshCarriesFace(candidateMesh, face)) {
+            return CadStatus::DependentFaceLost;
+        }
+    }
+    return CadStatus::Ok;
 }
 
 CadStatus SketchSession::commitEdit(ConstructionScene& scene, ConstructionHistory& history) {
@@ -239,8 +322,8 @@ CadStatus SketchSession::commitEdit(ConstructionScene& scene, ConstructionHistor
         return fail(CadStatus::RefusedEditInProgress);
     }
     if (extrude_.profileEntityId == kNoSketchEntity) {
-        return fail(profiles_.profiles.size() > 1 ? CadStatus::AmbiguousProfile
-                                                  : CadStatus::ProfileNotFound);
+        return fail(regions_.regions.size() > 1 ? CadStatus::AmbiguousProfile
+                                                : CadStatus::ProfileNotFound);
     }
     SceneObject* object = scene.findBody(editingBodyId_);
     CadBody* body = object != nullptr ? object->cadOrNull() : nullptr;
@@ -249,30 +332,19 @@ CadStatus SketchSession::commitEdit(ConstructionScene& scene, ConstructionHistor
         // replaced. The staged sketch is not applied to anything else.
         return fail(CadStatus::NotCadBody);
     }
-    const CadBodyState candidate = candidateState();
-    // Validated BEFORE the transaction opens, so a refusal never opens an edit
-    // the history would then have to discard.
-    const CadStatus valid = validateCadBodyState(candidate);
-    if (valid != CadStatus::Ok) {
-        return fail(valid);
+    // The whole chain, regenerated from the candidate, BEFORE the transaction
+    // opens: an edit to feature i that makes a later feature impossible is
+    // refused here by that feature's own reason, and nothing is written.
+    const CadCandidateEvaluation& evaluation = evaluateCandidate();
+    if (evaluation.status != CadStatus::Ok || evaluation.mesh == nullptr) {
+        return fail(evaluation.status == CadStatus::Ok ? CadStatus::RegenerationFailed
+                                                       : evaluation.status);
     }
-    // An edit that would strip a planar face another body's sketch is standing
-    // on is REFUSED, checked against the CANDIDATE before anything is written.
-    // A size-only edit keeps the face SET and so keeps every reference valid;
-    // an edit that removes a profile edge does not, and the answer is a refusal
-    // by name rather than a dependent that quietly stops being drawn.
-    for (const ObjectId dependentId : scene.cadDependentsOf(editingBodyId_)) {
-        const SceneObject* dependent = scene.findBody(dependentId);
-        const CadBody* dependentCad = dependent != nullptr ? dependent->cadOrNull() : nullptr;
-        if (dependentCad == nullptr || !dependentCad->sketch().hasFaceSupport) {
-            continue;
-        }
-        const TopoRef& ref = dependentCad->sketch().faceSupport;
-        CadFace face;
-        if (cadTopologySignature(candidate) != ref.lineageToken
-            || resolveCadFace(candidate, ref.face, &face) != CadStatus::Ok || !face.eligible) {
-            return fail(CadStatus::DependentFaceLost);
-        }
+    const CadBodyState candidate = candidateState();
+    const CadStatus dependents =
+            checkDependentsKeepTheirFaces(scene, editingBodyId_, candidate, *evaluation.mesh);
+    if (dependents != CadStatus::Ok) {
+        return fail(dependents);
     }
     CadStatus why = CadStatus::Ok;
     {
@@ -704,7 +776,7 @@ bool SketchSession::restoreCancelledExtrudeDrag() {
     // value the extrusion HAD a moment ago, so it needs no re-validation, and
     // routing it through one would let a refusal strand the gesture's undo.
     extrude_ = extrudeFeatureWithSide(extrude_, positiveSide, restore);
-    touchOverlay();
+    touchCandidate();
     return true;
 }
 
@@ -713,6 +785,7 @@ bool SketchSession::onExtrudeTouch(TouchAction action, int32_t actionPointerId,
                                    const CameraSnapshot& camera, int viewportWidth,
                                    int viewportHeight) {
     if (count > 1 || action == TouchAction::PointerDown) {
+        regionTapArmed_ = false;
         restoreCancelledExtrudeDrag();
         return false;  // the gesture belongs to the camera
     }
@@ -721,6 +794,14 @@ bool SketchSession::onExtrudeTouch(TouchAction action, int32_t actionPointerId,
             if (count != 1 || pointers == nullptr) {
                 return false;
             }
+            // A single finger that misses the arrow still NAVIGATES (the
+            // camera gets every event), and if it lifts without travelling it
+            // was a TAP that picks a region (`CAD-VERTICAL-SLICE-R1`). Armed
+            // here, decided on Up; a drag or a second finger disarms it.
+            regionTapArmed_ = true;
+            regionTapPointer_ = pointers[0].id;
+            regionTapX_ = pointers[0].x;
+            regionTapY_ = pointers[0].y;
             CadExtrudeAnchors anchors;
             if (!extrudeAnchors(&anchors)) {
                 return false;
@@ -733,6 +814,7 @@ bool SketchSession::onExtrudeTouch(TouchAction action, int32_t actionPointerId,
                                       viewportHeight, &positiveSide)) {
                 return false;  // off the arrow: orbit, pan and tap are untouched
             }
+            regionTapArmed_ = false;
             if (!extrudeDrag_.beginDrag(pointers[0].id, anchors, positiveSide, camera,
                                         pointers[0].x, pointers[0].y, viewportWidth,
                                         viewportHeight)) {
@@ -742,6 +824,12 @@ bool SketchSession::onExtrudeTouch(TouchAction action, int32_t actionPointerId,
             return true;
         }
         case TouchAction::Move: {
+            if (regionTapArmed_ && count == 1 && pointers != nullptr
+                && pointers[0].id == regionTapPointer_
+                && std::hypot(pointers[0].x - regionTapX_, pointers[0].y - regionTapY_)
+                           > kSketchTapSlopPixels) {
+                regionTapArmed_ = false;  // it became an orbit
+            }
             if (!extrudeDrag_.capturing() || count != 1 || pointers == nullptr
                 || pointers[0].id != extrudeDrag_.capturedPointerId()) {
                 return extrudeDrag_.capturing();
@@ -760,6 +848,17 @@ bool SketchSession::onExtrudeTouch(TouchAction action, int32_t actionPointerId,
         case TouchAction::Up:
         case TouchAction::PointerUp: {
             if (!extrudeDrag_.capturing()) {
+                if (regionTapArmed_ && action == TouchAction::Up
+                    && (actionPointerId < 0 || actionPointerId == regionTapPointer_)) {
+                    const float x = count >= 1 && pointers != nullptr ? pointers[0].x : regionTapX_;
+                    const float y = count >= 1 && pointers != nullptr ? pointers[0].y : regionTapY_;
+                    if (std::hypot(x - regionTapX_, y - regionTapY_) <= kSketchTapSlopPixels) {
+                        toggleRegionAt(camera, regionTapX_, regionTapY_, viewportWidth,
+                                       viewportHeight);
+                    }
+                }
+                regionTapArmed_ = false;
+                // Never consumed: the camera saw the Down and must see the Up.
                 return false;
             }
             if (actionPointerId >= 0 && actionPointerId != extrudeDrag_.capturedPointerId()) {
@@ -771,6 +870,7 @@ bool SketchSession::onExtrudeTouch(TouchAction action, int32_t actionPointerId,
             return true;
         }
         case TouchAction::Cancel: {
+            regionTapArmed_ = false;
             return restoreCancelledExtrudeDrag();
         }
         default:
@@ -1118,44 +1218,135 @@ CadStatus SketchSession::finish() {
     if (sketchWhy != CadStatus::Ok) {
         return fail(sketchWhy);
     }
-    ProfileExtraction extraction = extractClosedProfiles(sketch_);
-    if (extraction.profiles.empty()) {
+    SketchRegionExtraction extraction = extractSketchRegions(sketch_);
+    if (extraction.loops.profiles.empty()) {
         // The FIRST rejection is the most useful thing to say: "your polyline
         // is open" beats "no closed profile".
-        const CadStatus why = extraction.rejections.empty() ? CadStatus::NoClosedProfile
-                                                            : extraction.rejections.front().why;
+        const CadStatus why = extraction.loops.rejections.empty()
+                                      ? CadStatus::NoClosedProfile
+                                      : extraction.loops.rejections.front().why;
         return fail(why);
     }
-    profiles_ = std::move(extraction);
-    if (profiles_.profiles.size() == 1) {
-        extrude_.profileEntityId = profiles_.profiles.front().anchorEntityId;
-    } else if (findClosedProfile(profiles_, extrude_.profileEntityId) == nullptr) {
-        extrude_.profileEntityId = kNoSketchEntity;
-    }
+    regions_ = std::move(extraction);
+    reconcileRegionSelection();
     state_ = SketchSessionState::Ready;
-    touchOverlay();
+    touchCandidate();
     return fail(CadStatus::Ok);
+}
+
+void SketchSession::reconcileRegionSelection() {
+    // A selection the sketch still derives -- same outer loops, same holes --
+    // survives a Back to Sketch and an Edit Sketch untouched.
+    if (extrude_.profileEntityId != kNoSketchEntity
+        && validateRegionSelection(regions_, extrudeRegions(extrude_)) == CadStatus::Ok) {
+        return;
+    }
+    // Otherwise: exactly ONE region that can be selected is chosen for the
+    // user, and with more than one NOTHING is chosen. A rectangle around a
+    // circle offers the disk and the ring, and picking either on the user's
+    // behalf is exactly the guess `CAD-VERTICAL-SLICE-R1` exists to remove.
+    const SketchRegion* only = nullptr;
+    uint32_t selectable = 0;
+    for (const SketchRegion& region : regions_.regions) {
+        if (region.status == CadStatus::Ok) {
+            ++selectable;
+            only = &region;
+        }
+    }
+    if (selectable == 1u && regions_.regions.size() == 1u) {
+        setExtrudeRegions(&extrude_, {sketchRegionRef(*only)});
+    } else {
+        setExtrudeRegions(&extrude_, {});
+    }
 }
 
 void SketchSession::backToEditing() {
     if (state_ != SketchSessionState::Ready) {
         return;
     }
-    profiles_ = ProfileExtraction{};
+    regions_ = SketchRegionExtraction{};
+    regionTapArmed_ = false;
     state_ = SketchSessionState::Editing;
-    touchOverlay();
+    touchCandidate();
 }
 
 CadStatus SketchSession::selectProfile(SketchEntityId anchorEntityId) {
     if (state_ != SketchSessionState::Ready) {
         return fail(CadStatus::NotSketching);
     }
-    if (findClosedProfile(profiles_, anchorEntityId) == nullptr) {
+    const SketchRegion* region = findSketchRegion(regions_, anchorEntityId);
+    if (region == nullptr) {
         return fail(CadStatus::ProfileNotFound);
     }
-    extrude_.profileEntityId = anchorEntityId;
-    touchOverlay();
+    if (region->status != CadStatus::Ok) {
+        return fail(region->status);
+    }
+    setExtrudeRegions(&extrude_, {sketchRegionRef(*region)});
+    touchCandidate();
     return fail(CadStatus::Ok);
+}
+
+bool SketchSession::regionSelected(SketchEntityId outerAnchorId) const {
+    for (const ProfileRegionRef& ref : extrudeRegions(extrude_)) {
+        if (ref.outerAnchorId == outerAnchorId) {
+            return true;
+        }
+    }
+    return false;
+}
+
+CadStatus SketchSession::toggleRegion(SketchEntityId outerAnchorId) {
+    if (state_ != SketchSessionState::Ready) {
+        return fail(CadStatus::NotSketching);
+    }
+    const SketchRegion* region = findSketchRegion(regions_, outerAnchorId);
+    if (region == nullptr) {
+        return fail(CadStatus::ProfileNotFound);
+    }
+    std::vector<ProfileRegionRef> current = extrudeRegions(extrude_);
+    if (regionSelected(outerAnchorId)) {
+        setExtrudeRegions(&extrude_, toggleRegionSelection(current, *region));
+        touchCandidate();
+        return fail(CadStatus::Ok);
+    }
+    if (region->status != CadStatus::Ok) {
+        return fail(region->status);
+    }
+    // Keep only the selected regions this one can stand beside: a region it
+    // overlaps, touches or shares a loop with is replaced by it.
+    std::vector<ProfileRegionRef> next;
+    for (const ProfileRegionRef& ref : current) {
+        std::vector<ProfileRegionRef> pair = {ref, sketchRegionRef(*region)};
+        std::sort(pair.begin(), pair.end(), [](const ProfileRegionRef& a, const ProfileRegionRef& b) {
+            return a.outerAnchorId < b.outerAnchorId;
+        });
+        if (validateRegionSelection(regions_, pair) == CadStatus::Ok) {
+            next.push_back(ref);
+        }
+    }
+    next.push_back(sketchRegionRef(*region));
+    if (next.size() > kMaxProfileRegions) {
+        return fail(CadStatus::TooManyRegions);
+    }
+    setExtrudeRegions(&extrude_, std::move(next));
+    touchCandidate();
+    return fail(CadStatus::Ok);
+}
+
+bool SketchSession::toggleRegionAt(const CameraSnapshot& camera, float x, float y,
+                                   int viewportWidth, int viewportHeight) {
+    if (state_ != SketchSessionState::Ready) {
+        return false;
+    }
+    SketchPoint point;
+    if (!screenToSketch(camera, x, y, viewportWidth, viewportHeight, &point)) {
+        return false;
+    }
+    SketchEntityId anchor = kNoSketchEntity;
+    if (!sketchRegionAt(regions_, point, &anchor)) {
+        return false;
+    }
+    return toggleRegion(anchor) == CadStatus::Ok;
 }
 
 // THE one writer of the extrusion. Every typed value, every drag sample, every
@@ -1194,15 +1385,16 @@ CadStatus SketchSession::applyExtrudeFeature(const ExtrudeFeature& requested) {
     if (!sidesOk) {
         return fail(CadStatus::InvalidExtrudeDepth);
     }
-    const SketchEntityId profile = extrude_.profileEntityId;
+    // The regions are chosen elsewhere, never here: only the extent moves.
+    const std::vector<ProfileRegionRef> regions = extrudeRegions(extrude_);
     extrude_ = requested;
-    extrude_.profileEntityId = profile;  // the profile is chosen elsewhere, never here
+    setExtrudeRegions(&extrude_, regions);
     if (extrude_.extent == ExtrudeExtentMode::OneSide) {
         // The user's live One Side choice IS the transition memory; nothing
         // else writes it, so the two can never disagree.
         oneSideDirection_ = extrude_.direction;
     }
-    touchOverlay();
+    touchCandidate();
     return fail(CadStatus::Ok);
 }
 
@@ -1241,15 +1433,19 @@ CadStatus SketchSession::setExtrudeSide(bool positiveSide, Meters distance) {
 // The canvas extrude manipulator (`CAD-UX-S1`)
 // ---------------------------------------------------------------------------
 
+bool SketchSession::selectionAnchorPoint(SketchPoint* out) const {
+    return extrudeSelectionAnchorPoint(regions_, extrude_, out);
+}
+
 bool SketchSession::extrudeAnchors(CadExtrudeAnchors* out) const {
     if (out == nullptr || state_ != SketchSessionState::Ready) {
         return false;
     }
-    const ClosedProfile* chosen = findClosedProfile(profiles_, extrude_.profileEntityId);
-    if (chosen == nullptr) {
-        return false;  // several profiles and none chosen yet: nothing to point at
+    SketchPoint base;
+    if (!selectionAnchorPoint(&base)) {
+        return false;
     }
-    return cadExtrudeAnchors(frame_, *chosen, extrude_, out);
+    return cadExtrudeAnchorsAt(frame_, base, extrude_, out);
 }
 
 CadStatus SketchSession::flipExtrudeDirection() {
@@ -1272,10 +1468,165 @@ CadStatus SketchSession::flipExtrudeDirection() {
 }
 
 CadBodyState SketchSession::candidateState() const {
-    CadBodyState state;
-    state.sketch = sketch_;
-    state.extrude = extrude_;
+    // A new body: the sketch and its extrusion, exactly what R0 built.
+    if (editingFeatureId_ == 0 && operation_ == CadFeatureOperation::NewBody) {
+        CadBodyState state;
+        state.sketch = sketch_;
+        state.extrude = extrude_;
+        return state;
+    }
+    // Everything else is the TARGET body's chain with one feature appended or
+    // replaced -- the same SceneObject, never a copy of it.
+    CadBodyState state = targetBaseState_;
+    if (editingFeatureId_ == kCadFeatureId) {
+        state.sketch = sketch_;
+        state.extrude = extrude_;
+        return state;
+    }
+    CadFeature feature;
+    feature.operation = operation_;
+    feature.sketch = sketch_;
+    // A later feature's sketch is placed by its support alone; the TopoRef the
+    // session authored against (a face of this very body) is not carried into
+    // the chain, where it would be a cycle.
+    feature.sketch.plane = Workplane::XY;
+    feature.sketch.hasFaceSupport = false;
+    feature.sketch.faceSupport = TopoRef{};
+    feature.extrude = extrude_;
+    if (editingFeatureId_ > kCadFeatureId) {
+        feature.featureId = editingFeatureId_;
+        feature.support = editingSupport_;
+        for (CadFeature& existing : state.laterFeatures) {
+            if (existing.featureId == editingFeatureId_) {
+                existing = feature;
+            }
+        }
+        return state;
+    }
+    feature.featureId = nextCadFeatureId(state);
+    feature.support.featureId = sketch_.faceSupport.producerLocalFeatureId;
+    feature.support.face = sketch_.faceSupport.face;
+    feature.support.lineageToken = sketch_.faceSupport.lineageToken;
+    state.laterFeatures.push_back(std::move(feature));
     return state;
+}
+
+bool SketchSession::operationAvailable(CadFeatureOperation operation) const {
+    if (!active()) {
+        return false;
+    }
+    const bool addOrCut = operation == CadFeatureOperation::Add
+                          || operation == CadFeatureOperation::Cut;
+    if (editingFeatureId_ == kCadFeatureId) {
+        return operation == CadFeatureOperation::NewBody;
+    }
+    if (editingFeatureId_ > kCadFeatureId) {
+        return addOrCut;
+    }
+    if (operation == CadFeatureOperation::NewBody) {
+        return true;
+    }
+    // Add and Cut need a body to act on: the CAD body this sketch stands on,
+    // whose chain is staged. A world-plane sketch has none.
+    return addOrCut && hasTargetState_ && sketch_.hasFaceSupport
+           && cadFeatureCount(targetBaseState_) < kMaxCadFeatures;
+}
+
+CadStatus SketchSession::setOperation(CadFeatureOperation operation) {
+    if (!active()) {
+        return fail(CadStatus::NotSketching);
+    }
+    const int index = cadFeatureOperationIndex(operation);
+    if (index < 0 || index >= kCadFeatureOperationCount) {
+        return fail(CadStatus::InvalidFeatureOperation);
+    }
+    if (!operationAvailable(operation)) {
+        const bool addOrCut = operation != CadFeatureOperation::NewBody;
+        return fail(addOrCut && editingFeatureId_ == 0 ? CadStatus::OperationNeedsTarget
+                                                       : CadStatus::InvalidFeatureOperation);
+    }
+    if (operation_ != operation) {
+        operation_ = operation;
+        touchCandidate();
+        // A NEW feature on a face starts facing the way its operation works:
+        // every face frame's normal points OUT of the producer, so a Cut grows
+        // INTO the body and an Add or a New Body grows out of it. Only for One
+        // Side, where the direction is the one side there is; only for a new
+        // feature, because an edit keeps the side the user already chose; and
+        // through the one writer, so it is a direction change and never a
+        // negative depth. Flip still reverses it afterwards.
+        if (editingFeatureId_ == 0 && sketch_.hasFaceSupport
+            && extrude_.extent == ExtrudeExtentMode::OneSide) {
+            const ExtrudeDirection wanted = operation == CadFeatureOperation::Cut
+                                                    ? ExtrudeDirection::AgainstNormal
+                                                    : ExtrudeDirection::AlongNormal;
+            if (extrude_.direction != wanted) {
+                const CadStatus turned = setExtrude(extrude_.depth, wanted);
+                if (turned != CadStatus::Ok) {
+                    return turned;
+                }
+            }
+        }
+    }
+    return fail(CadStatus::Ok);
+}
+
+ObjectId SketchSession::operationTargetId() const {
+    if (editingFeatureId_ != 0) {
+        return editingBodyId_;
+    }
+    return operation_ == CadFeatureOperation::NewBody ? kNoObject : targetBodyId_;
+}
+
+const CadCandidateEvaluation& SketchSession::evaluateCandidate() {
+    if (evaluation_.valid && evaluation_.revision == candidateRevision_) {
+        return evaluation_;
+    }
+    CadCandidateEvaluation next;
+    next.revision = candidateRevision_;
+    next.valid = true;
+    next.operation = operation_;
+    next.targetBodyId = operationTargetId();
+    if (state_ != SketchSessionState::Ready) {
+        next.status = CadStatus::NotSketching;
+        evaluation_ = next;
+        return evaluation_;
+    }
+    if (extrude_.profileEntityId == kNoSketchEntity) {
+        next.status = regions_.regions.size() > 1 ? CadStatus::AmbiguousProfile
+                                                  : CadStatus::ProfileNotFound;
+        evaluation_ = next;
+        return evaluation_;
+    }
+    const auto t0 = std::chrono::steady_clock::now();
+    auto mesh = std::make_shared<CadBodyMesh>();
+    CadRegenerationReport report;
+    next.status = regenerateCadBody(candidateState(), mesh.get(), &report);
+    next.failedFeatureId = report.failedFeatureId;
+    next.kernelMicros = report.kernelMicros;
+    next.micros = std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - t0)
+                          .count();
+    if (next.status == CadStatus::Ok) {
+        next.mesh = std::move(mesh);
+    }
+    evaluation_ = std::move(next);
+    return evaluation_;
+}
+
+bool SketchSession::candidateWorldModel(ConstructionScene& scene, Mat4* out) const {
+    if (out == nullptr || !active()) {
+        return false;
+    }
+    const ObjectId target = operationTargetId();
+    if (target != kNoObject) {
+        return scene.resolveWorldModel(target, out);
+    }
+    if (sketch_.hasFaceSupport) {
+        *out = mat4FromBasis(frame_.u, frame_.v, frame_.n, frame_.origin);
+        return mat4Finite(*out);
+    }
+    *out = mat4Identity();
+    return true;
 }
 
 CadStatus SketchSession::commit(ConstructionScene& scene, ConstructionHistory& history,
@@ -1286,12 +1637,21 @@ CadStatus SketchSession::commit(ConstructionScene& scene, ConstructionHistory& h
     if (state_ != SketchSessionState::Ready) {
         return fail(CadStatus::NotSketching);
     }
+    // An edit session commits through `commitEdit`, into the body it edits;
+    // letting `commit` run over one would create the second body an edit must
+    // never create.
+    if (editingBodyId_ != kNoObject) {
+        return fail(CadStatus::NotSketching);
+    }
     if (history.editInProgress()) {
         return fail(CadStatus::RefusedEditInProgress);
     }
     if (extrude_.profileEntityId == kNoSketchEntity) {
-        return fail(profiles_.profiles.size() > 1 ? CadStatus::AmbiguousProfile
-                                                  : CadStatus::ProfileNotFound);
+        return fail(regions_.regions.size() > 1 ? CadStatus::AmbiguousProfile
+                                                : CadStatus::ProfileNotFound);
+    }
+    if (operation_ != CadFeatureOperation::NewBody) {
+        return commitIntoTarget(scene, history, outId);
     }
     const CadBodyState state = candidateState();
     CadStatus why = CadStatus::Ok;
@@ -1315,6 +1675,53 @@ CadStatus SketchSession::commit(ConstructionScene& scene, ConstructionHistory& h
         *outId = body->objectId();
     }
     cancel();  // the session is over; the truth is now the scene's
+    return fail(CadStatus::Ok);
+}
+
+CadStatus SketchSession::commitIntoTarget(ConstructionScene& scene, ConstructionHistory& history,
+                                          ObjectId* outId) {
+    SceneObject* object = scene.findBody(targetBodyId_);
+    CadBody* body = object != nullptr ? object->cadOrNull() : nullptr;
+    if (body == nullptr || !hasTargetState_) {
+        return fail(CadStatus::OperationNeedsTarget);
+    }
+    // The staged target must still be the body's truth: the candidate was
+    // built on it. Nothing can change a body while a sketch is open, so this is
+    // a guard, not a behaviour.
+    if (!sameCadBodyState(body->state(), targetBaseState_)) {
+        return fail(CadStatus::FeatureSupportInvalid);
+    }
+    // THE preview's own result, so what was seen is what is committed: a
+    // disjoint Add, a Cut that misses and a Cut that would remove everything
+    // are refused here by those names and never become a new body.
+    const CadCandidateEvaluation& evaluation = evaluateCandidate();
+    if (evaluation.status != CadStatus::Ok || evaluation.mesh == nullptr) {
+        return fail(evaluation.status == CadStatus::Ok ? CadStatus::RegenerationFailed
+                                                       : evaluation.status);
+    }
+    const CadBodyState candidate = candidateState();
+    const CadStatus dependents =
+            checkDependentsKeepTheirFaces(scene, targetBodyId_, candidate, *evaluation.mesh);
+    if (dependents != CadStatus::Ok) {
+        return fail(dependents);
+    }
+    CadStatus why = CadStatus::Ok;
+    {
+        // ONE transaction into the SAME body: the id, the transform and the
+        // Objects list do not move, and one Undo removes exactly this feature.
+        ScopedConstructionEdit edit(history);
+        why = body->applyState(candidate);
+        if (why == CadStatus::Ok) {
+            publishSceneObject(*object);
+        }
+    }
+    if (why != CadStatus::Ok) {
+        return fail(why);
+    }
+    if (outId != nullptr) {
+        *outId = targetBodyId_;
+    }
+    cancel();
     return fail(CadStatus::Ok);
 }
 
@@ -1377,12 +1784,17 @@ void SketchSession::buildOverlay(float worldPerUnit) {
     const double extent = step * kSketchGridLinesPerSide;
     const int lines = kSketchGridLinesPerSide;
 
-    // Grid, minor then major, as two ranges so they take two weights.
+    // Grid, minor then major, as two ranges so they take two weights. In
+    // Ready the drawing is done and the grid is withdrawn (`CAD-VERTICAL-
+    // SLICE-R1`): the viewport answers one question at a time, and the
+    // question now is the extrusion. The two ranges stay, empty, so every
+    // range keeps its index.
+    const bool drawGrid = state_ != SketchSessionState::Ready;
     for (int pass = 0; pass < 2; ++pass) {
         const bool major = pass == 1;
         SketchOverlayRange range;
         range.firstVertex = static_cast<uint32_t>(v.size());
-        for (int i = -lines; i <= lines; ++i) {
+        for (int i = -lines; drawGrid && i <= lines; ++i) {
             const bool isMajor = (i % kSketchGridMajorEveryNMinor) == 0;
             if (isMajor != major || i == 0) {
                 continue;  // the two axes are their own range
@@ -1407,19 +1819,43 @@ void SketchSession::buildOverlay(float worldPerUnit) {
         built->ranges.push_back(range);
     }
 
-    // Entities. The selected one, the one being drawn and the profile about
-    // to be extruded are emphasised; everything else is neutral.
+    // Entities. The selected one, the one being drawn and every loop of the
+    // regions about to be extruded -- outer boundaries AND holes -- are
+    // emphasised; everything else is neutral.
     SketchOverlayRange entities;
     entities.firstVertex = static_cast<uint32_t>(v.size());
-    const ClosedProfile* chosen = (state_ == SketchSessionState::Ready)
-                                      ? findClosedProfile(profiles_, extrude_.profileEntityId)
-                                      : nullptr;
+    std::vector<const SketchRegion*> chosenRegions;
+    if (state_ == SketchSessionState::Ready) {
+        for (const ProfileRegionRef& ref : extrudeRegions(extrude_)) {
+            if (const SketchRegion* region = findSketchRegion(regions_, ref.outerAnchorId)) {
+                chosenRegions.push_back(region);
+            }
+        }
+    }
+    std::vector<SketchEntityId> emphasisedMembers;
+    for (const SketchRegion* region : chosenRegions) {
+        const std::vector<ClosedProfile>& loops = regions_.loops.profiles;
+        std::vector<uint32_t> loopIndices = region->holeLoops;
+        loopIndices.push_back(region->outerLoop);
+        for (uint32_t l : loopIndices) {
+            if (l < loops.size()) {
+                emphasisedMembers.insert(emphasisedMembers.end(), loops[l].memberEntityIds.begin(),
+                                         loops[l].memberEntityIds.end());
+            }
+        }
+    }
+    // What the extrusion does, as colour AND as the lines themselves: a Cut's
+    // tool is drawn in the destructive (X) red, an Add's in the positive (Y)
+    // green, a New Body's in the neutral highlight. Colour is never the only
+    // carrier -- the HUD badge names the operation by shape and by label.
+    const float opAxis = operation_ == CadFeatureOperation::Cut   ? 1.0f
+                         : operation_ == CadFeatureOperation::Add ? 2.0f
+                                                                  : 0.0f;
+    const float opHandle = operation_ == CadFeatureOperation::NewBody ? 1.0f : 0.0f;
     for (const SketchEntity& entity : sketch_.entities) {
         bool emphasised = entity.id() == selectedEntityId_;
-        if (chosen != nullptr) {
-            for (SketchEntityId member : chosen->memberEntityIds) {
-                if (member == entity.id()) emphasised = true;
-            }
+        for (SketchEntityId member : emphasisedMembers) {
+            if (member == entity.id()) emphasised = true;
         }
         const float handle = emphasised ? 1.0f : 0.0f;
         if (const SketchLine* line = entity.line()) {
@@ -1529,21 +1965,39 @@ void SketchSession::buildOverlay(float worldPerUnit) {
                      local(SketchPoint{cursor_.u, cursor_.v + half}), 0.0f, 1.0f);
         }
     }
-    // The extrude preview: the chosen profile's far cap and its edges.
-    if (chosen != nullptr) {
+    // The chosen regions' hatch: lines clipped to each region by the even-odd
+    // rule, so a hole reads as EMPTY rather than as selected material. A few
+    // reference units apart at any zoom, bounded per region.
+    if (!chosenRegions.empty() && worldPerUnit > 0.0f) {
+        const double spacing = 14.0 * static_cast<double>(worldPerUnit);
+        for (const SketchRegion* region : chosenRegions) {
+            const std::vector<SketchPoint> hatch = sketchRegionHatch(regions_, *region, spacing);
+            for (size_t i = 0; i + 1 < hatch.size(); i += 2) {
+                pushLine(&v, local(hatch[i]), local(hatch[i + 1]), opAxis, opHandle);
+            }
+        }
+    }
+    // The extrude preview: every chosen loop's far cap, near cap and edges --
+    // holes included, so the preview of a ring shows its bore.
+    if (!chosenRegions.empty()) {
         // The SAME two offsets `generateCadMesh` extrudes between, so the
         // preview and the solid it previews cannot disagree about where the
         // caps are in any extent mode.
         const double nearOffset = -extrudeNegativeDistance(extrude_);
         const double farOffset = extrudePositiveDistance(extrude_);
-        const size_t n = chosen->polygon.size();
-        for (size_t i = 0; i < n; ++i) {
-            const SketchPoint& a = chosen->polygon[i];
-            const SketchPoint& b = chosen->polygon[(i + 1) % n];
-            pushLine(&v, localAt(a, farOffset), localAt(b, farOffset), 0.0f, 1.0f);
-            pushLine(&v, localAt(a, nearOffset), localAt(a, farOffset), 0.0f, 1.0f);
-            if (nearOffset != 0.0) {
-                pushLine(&v, localAt(a, nearOffset), localAt(b, nearOffset), 0.0f, 1.0f);
+        for (const SketchRegion* region : chosenRegions) {
+            for (const std::vector<SketchPoint>& loop : sketchRegionLoops(regions_, *region)) {
+                const size_t n = loop.size();
+                for (size_t i = 0; i < n; ++i) {
+                    const SketchPoint& a = loop[i];
+                    const SketchPoint& b = loop[(i + 1) % n];
+                    pushLine(&v, localAt(a, farOffset), localAt(b, farOffset), opAxis, opHandle);
+                    pushLine(&v, localAt(a, nearOffset), localAt(a, farOffset), opAxis, opHandle);
+                    if (nearOffset != 0.0) {
+                        pushLine(&v, localAt(a, nearOffset), localAt(b, nearOffset), opAxis,
+                                 opHandle);
+                    }
+                }
             }
         }
         // The canvas manipulator (`CAD-UX-S1`): one arrow along the extrusion

@@ -803,8 +803,18 @@ public final class SelectionOutlineTest {
      */
     @Test
     public void seloutr1_23_24_25_36_deleteUndoAndRedoAreUnchangedAndTheOutlineFollows() {
+        // EXACTLY two bodies, for the reason the two E2E cases give. The
+        // existing rule (`deleteSceneBody`, UI-OWNER-45) moves the selection to
+        // the NEXT body in scene order, or the PREVIOUS one when the deleted
+        // body was last. The body added below is appended, so it IS last, and
+        // "the surviving body" is `first` only when nothing else stands before
+        // it — a scene an earlier case left populated would hand the selection
+        // to whatever body that case appended, which is the rule working.
+        freshProject();
         final long first = firstBodyId();
         final long second = addASecondBody();
+        assertEquals("the Delete case starts from exactly two bodies", 2,
+                NativeViewport.sceneBodyCount());
         NativeViewport.sceneSelectBody(second);
         settleLayout();
         assertOutlineIsBeingDrawn("the second body is outlined before the Delete");

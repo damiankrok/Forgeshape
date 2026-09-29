@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Stable semantic ids for the compact CAD extrude HUD and the Tool Labels
+  preference. Kept in their own file so the HUD's test contract can be read in
+  one place; every id names what the control DOES, never where it sits or what
+  its caption says (see ids.xml for why).
+
+  The HUD's older ids — cad_extrude_canvas, cad_extrude_depth_value, the
+  editors, cad_extrude_flip, cad_extrude_operation, the three
+  cad_extrude_extent_* choices and cad_canvas_edit_sketch — stay in ids.xml and
+  keep naming the same acts.
+-->
+<resources>
+    <!-- The primary cluster: extent button, exact value, operation badge, Flip. -->
+    <item name="cad_extrude_cluster" type="id" />
+    <!-- The ONE extent button, showing the mode currently in force. -->
+    <item name="cad_extrude_extent" type="id" />
+    <!-- The palette the extent button opens: One Side, Symmetric, Two Sides. -->
+    <item name="cad_extrude_extent_palette" type="id" />
+    <!-- The palette the operation badge opens, holding only what can be chosen. -->
+    <item name="cad_extrude_operation_palette" type="id" />
+    <item name="cad_extrude_operation_new_body" type="id" />
+    <item name="cad_extrude_operation_add" type="id" />
+    <item name="cad_extrude_operation_cut" type="id" />
+
+    <!-- Settings page, Interface group: whether icon controls carry captions. -->
+    <item name="tool_labels_off" type="id" />
+    <item name="tool_labels_on" type="id" />
+</resources>

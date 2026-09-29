@@ -162,6 +162,11 @@ public:
     RendererLifecycle lifecycle() const { return recovery_.state(); }
     int deviceRebuildAttempts() const { return recovery_.deviceRebuildAttempts(); }
     int deviceRebuildsCompleted() const { return recovery_.deviceRebuildsCompleted(); }
+    // Images actually handed to the presentation engine by this renderer. A
+    // diagnostic count and nothing else: it lets a test wait for frames that
+    // really reached the display instead of guessing a delay, which on a
+    // software rasteriser with a four-image FIFO swapchain is seconds.
+    uint64_t framesPresented() const { return frameIndex_; }
 
 #ifndef NDEBUG
     // DEBUG-ONLY: makes the NEXT frame behave exactly as though the device had

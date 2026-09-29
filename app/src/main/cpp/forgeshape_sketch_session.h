@@ -54,8 +54,38 @@
 #include "forgeshape_scene.h"
 #include "forgeshape_sketch.h"
 #include "forgeshape_sketch_overlay.h"
+#include "forgeshape_sketch_region.h"
 
 namespace forgeshape {
+
+// What the session's current candidate WOULD produce, evaluated on demand and
+// only for the newest authored state (`CAD-VERTICAL-SLICE-R1`).
+//
+// It is the preview and the commit's proof at once: the same candidate state a
+// commit would apply, regenerated through the same path. It is never project
+// truth -- no history step, no fingerprint, no `.forge` byte, no publish -- and
+// it is LATEST-ONLY by construction: it is keyed by the candidate revision, so a
+// result computed for an older set of parameters is simply never the answer to
+// a newer question, and a drag that moves forty times between two frames costs
+// at most one regeneration per frame, never one per MotionEvent.
+struct CadCandidateEvaluation {
+    uint64_t revision = 0;
+    // False until an evaluation for `revision` exists.
+    bool valid = false;
+    CadStatus status = CadStatus::NotSketching;
+    // The later feature that refused, when the refusal is one's (an edit to an
+    // earlier feature that makes a later Add disjoint, say); 0 otherwise.
+    uint32_t failedFeatureId = 0;
+    CadFeatureOperation operation = CadFeatureOperation::NewBody;
+    // The body whose drawn mesh the preview REPLACES (Add, Cut, or an edit), or
+    // kNoObject for a New Body, which is drawn beside the scene.
+    ObjectId targetBodyId = kNoObject;
+    // The regenerated candidate, when `status` is Ok.
+    std::shared_ptr<const CadBodyMesh> mesh;
+    // Microseconds the regeneration took, and how much of it was the kernel.
+    double micros = 0.0;
+    double kernelMicros = 0.0;
+};
 
 enum class SketchSessionState : uint8_t {
     Inactive,
@@ -182,7 +212,14 @@ public:
     // body carries. The sketch authors on that frame -- exactly as a world
     // plane, but placed on the face -- and its canonical basis is XY. Refused
     // (NotSketching) while a session is open; the caller cancels first.
-    CadStatus beginOnFace(const SketchFrame& worldFrame, const TopoRef& support);
+    //
+    // `producerState` (`CAD-VERTICAL-SLICE-R1`): the producer body's current
+    // authored state. When it is given the sketch may also be applied to that
+    // body as an Add or a Cut -- the SAME SceneObject grows or loses material --
+    // instead of becoming a new face-supported body. Held as a staged copy;
+    // nothing is written until the one commit.
+    CadStatus beginOnFace(const SketchFrame& worldFrame, const TopoRef& support,
+                          const CadBodyState* producerState = nullptr);
 
     // Opens a session that EDITS an existing CAD body's sketch
     // (`SKETCH-UX-R1` F).
@@ -196,6 +233,22 @@ public:
     //
     // Refused (`NotSketching`) while a session is already open.
     CadStatus beginEdit(ObjectId bodyId, const CadBodyState& state, const SketchFrame& worldFrame);
+
+    // Opens a session that EDITS one feature of a CAD body's chain
+    // (`CAD-VERTICAL-SLICE-R1`). `featureId` kCadFeatureId is the base (what
+    // `beginEdit` does); a later feature stages ITS sketch, extrusion and
+    // operation. `worldFrame` is where that feature's sketch stands in the
+    // world. With `startReady` the session opens directly on the extrusion
+    // (the "edit the Extrude step" act); without it, on the sketch.
+    //
+    // Refused (`NotSketching`) while a session is open, `ProfileNotFound` for a
+    // feature the chain does not have, and whatever the state's own validation
+    // says when it could not be regenerated.
+    CadStatus beginEditFeature(ObjectId bodyId, const CadBodyState& state, uint32_t featureId,
+                               const SketchFrame& worldFrame, bool startReady);
+
+    // The feature an edit session edits, or 0 when it authors a new one.
+    uint32_t editingFeatureId() const { return editingFeatureId_; }
 
     // Which body this session is editing, or `kNoObject` when it is authoring a
     // new one. The ONE answer to "is this an edit?" -- no shell flag mirrors it.
@@ -345,9 +398,63 @@ public:
     // Ready -> Editing, keeping the sketch, so a profile problem can be fixed.
     void backToEditing();
 
-    const ProfileExtraction& profiles() const { return profiles_; }
+    const ProfileExtraction& profiles() const { return regions_.loops; }
+    // The REGIONS the finished sketch encloses (`CAD-VERTICAL-SLICE-R1`): one
+    // per closed loop, an outer boundary minus its direct holes. Valid in Ready.
+    const SketchRegionExtraction& regions() const { return regions_; }
+
+    // Selects exactly the region whose outer loop is `anchorEntityId`,
+    // replacing any other selection: the panel's list row.
     CadStatus selectProfile(SketchEntityId anchorEntityId);
     SketchEntityId selectedProfileId() const { return extrude_.profileEntityId; }
+
+    // Adds the region to the selection or, when it is selected, removes it.
+    // Adding a region DROPS every selected region it would overlap, touch or
+    // share a loop with -- so one tap on the disk while the ring around it is
+    // selected SWITCHES to the disk -- while disjoint regions accumulate.
+    // Refused (`OverlappingHoles`) for a region that cannot be selected.
+    CadStatus toggleRegion(SketchEntityId outerAnchorId);
+
+    // The tap in the canvas: the region under the pixel, toggled. False,
+    // changing nothing, when the tap lands in no region.
+    bool toggleRegionAt(const CameraSnapshot& camera, float x, float y, int viewportWidth,
+                        int viewportHeight);
+
+    // Whether the region is part of the current selection.
+    bool regionSelected(SketchEntityId outerAnchorId) const;
+
+    // --- the operation (`CAD-VERTICAL-SLICE-R1`) --------------------------
+    //
+    // New Body, Add or Cut: what the extrusion does to material. New Body makes
+    // a new SceneObject; Add and Cut modify the body the sketch stands on, in
+    // place, as one more feature of its chain.
+
+    // Whether an operation can be chosen now. New Body: a new sketch or an
+    // edit of a body's first feature. Add and Cut: a sketch standing on a face
+    // of a CAD body (its target), or an edit of a later feature.
+    bool operationAvailable(CadFeatureOperation operation) const;
+
+    // Refused, changing nothing: `OperationNeedsTarget` for Add/Cut with no
+    // body to apply them to, `InvalidFeatureOperation` for New Body over a later
+    // feature or Add/Cut over a first one.
+    CadStatus setOperation(CadFeatureOperation operation);
+    CadFeatureOperation operation() const { return operation_; }
+
+    // The body an Add or a Cut modifies, or an edit rewrites; kNoObject when
+    // the candidate is a new body.
+    ObjectId operationTargetId() const;
+
+    // THE evaluation of the current candidate, computed at most once per
+    // candidate revision (see `CadCandidateEvaluation`). Only in Ready with a
+    // selection; otherwise an invalid evaluation.
+    const CadCandidateEvaluation& evaluateCandidate();
+
+    // Where the candidate stands in the world: the target body's own derived
+    // model for an Add, a Cut or an edit; for a New Body the placement the
+    // committed body will have -- identity on a world plane, the support face's
+    // frame on a face. Presentation for the preview; never stored.
+    bool candidateWorldModel(ConstructionScene& scene, Mat4* out) const;
+    uint64_t candidateRevision() const { return candidateRevision_; }
 
     // Writes the PRIMARY distance, and in One Side alone the side it is on.
     // The extent MODE is preserved.
@@ -409,6 +516,13 @@ public:
 
     // THE commit. Ready -> Inactive on success, with the new body's id in
     // `outId`. One transaction; a refusal changes nothing and stays in Ready.
+    //
+    // For Add and Cut (`CAD-VERTICAL-SLICE-R1`) no body is created: the
+    // feature is appended to the TARGET body's chain inside ONE
+    // `ScopedConstructionEdit`, its id is written to `outId`, and the
+    // Objects list does not grow. A candidate the evaluation refused -- a
+    // disjoint Add, a Cut that misses, a Cut that would remove everything -- is
+    // refused by that name and never falls back to a New Body.
     CadStatus commit(ConstructionScene& scene, ConstructionHistory& history, ObjectId* outId);
 
     // The state a commit WOULD build, for the extrude preview and the tests.
@@ -484,6 +598,21 @@ private:
     void placeArcThrough(const SketchPoint& through);
     void placePolylineVertex(const SnapResult& at);
     void touchOverlay() { ++overlayRevision_; overlayDirty_ = true; }
+    // An authored change: the overlay AND the candidate are stale.
+    void touchCandidate() {
+        ++candidateRevision_;
+        touchOverlay();
+    }
+    // The selection, finished: keep a still-valid one, otherwise auto-select
+    // the single selectable region, otherwise none.
+    void reconcileRegionSelection();
+    // The base point of the arrow for the current selection, in sketch (u, v).
+    bool selectionAnchorPoint(SketchPoint* out) const;
+    CadStatus commitIntoTarget(ConstructionScene& scene, ConstructionHistory& history,
+                               ObjectId* outId);
+    CadStatus checkDependentsKeepTheirFaces(const ConstructionScene& scene, ObjectId producerId,
+                                            const CadBodyState& candidate,
+                                            const CadBodyMesh& candidateMesh) const;
     CadStatus fail(CadStatus why) { lastStatus_ = why; return why; }
     void buildOverlay(float worldPerUnit);
 
@@ -497,8 +626,28 @@ private:
     double gridStep_ = kSketchGridSpacingMeters;
     SketchEntityId selectedEntityId_ = kNoSketchEntity;
 
-    ProfileExtraction profiles_;
+    SketchRegionExtraction regions_;
     ExtrudeFeature extrude_;
+    // `CAD-VERTICAL-SLICE-R1`. What the extrusion does; see `setOperation`.
+    CadFeatureOperation operation_ = CadFeatureOperation::NewBody;
+    // The body an Add/Cut applies to (a new face sketch's producer) or an edit
+    // rewrites, and its authored state as staged when the session opened.
+    ObjectId targetBodyId_ = kNoObject;
+    CadBodyState targetBaseState_;
+    bool hasTargetState_ = false;
+    // An edit session's feature (0 when authoring a new one) and, for a later
+    // feature, the support it keeps.
+    uint32_t editingFeatureId_ = 0;
+    CadFeatureSupport editingSupport_{};
+    // Bumped by every authored change that could change the candidate.
+    uint64_t candidateRevision_ = 1;
+    CadCandidateEvaluation evaluation_;
+    // A Ready-state tap that may pick a region: armed on a single-pointer Down
+    // that misses the arrow, disarmed by travel or a second pointer.
+    bool regionTapArmed_ = false;
+    int32_t regionTapPointer_ = -1;
+    float regionTapX_ = 0.0f;
+    float regionTapY_ = 0.0f;
     // Volatile transition intent (`CAD-EXT-R1`). See the accessor.
     ExtrudeDirection oneSideDirection_ = ExtrudeDirection::AlongNormal;
     // The canvas manipulator (`CAD-UX-S1`). Volatile like everything else here,

@@ -961,6 +961,364 @@ function New-CadBadTwoSidesFile {
     $cadb = New-Section 'CADB' 4 $true (New-CadPayloadV4 @($body))
     return New-ForgeFile 1 @($scne, $cadb) 8
 }
+
+# ---------------------------------------------------------------------------
+# CADB v5 (CAD-VERTICAL-SLICE-R1): regions with holes and the retained feature
+# chain
+# ---------------------------------------------------------------------------
+#
+# The v5 record is the v4 record with a TAIL after the first feature's
+# entities: the first feature's REGIONS block, then laterFeatureCount (0..15)
+# and that many LATER features in chain (application) order -- see
+# DATA_PACKAGE_SPEC.md 7f. v5 ALWAYS writes the v2 support block and the v4
+# extent fields and understands the v3 entity kinds, because a version is a
+# superset of the one below it.
+#
+#   REGIONS    holeCount and the FIRST chosen region's hole anchors, then
+#              additionalRegionCount and, per further region, its outer-loop
+#              anchor with its own hole count and hole anchors
+#   operation  2 Add (union), 3 Cut (difference). 1 New Body is what the first
+#              feature IS, and is never stored as a later one
+#
+# A later feature has NO workplane code and NO support block of its own: its
+# sketch is authored on its own local XY and placed by a face of an EARLIER
+# feature of the SAME body, named by feature id, face token and that feature's
+# lineage token. Nothing derived is stored -- no loop, no region polygon, and
+# nothing the boolean kernel produces.
+#
+# These writers encode EXACTLY what the objects handed to them say and validate
+# nothing, so a corrupt v5 fixture is CONSTRUCTED by building its body with the
+# bad value in place, never by patching bytes afterwards.
+
+# entityCount, then every entity as 7b and 7d lay it out. Shared by the first
+# feature and every later one, which carry the same entity list shape.
+function Add-CadEntityList {
+    param($Buffer, $Entities)
+    $list = @(if ($null -ne $Entities) { $Entities })
+    Add-U32 $Buffer ([uint32] $list.Count)
+    foreach ($entity in $list) {
+        Add-U32 $Buffer ([uint32] $entity.Id)
+        Add-U8  $Buffer $entity.KindCode
+        switch ($entity.KindCode) {
+            1 { foreach ($value in $entity.Values) { Add-F64 $Buffer $value } }
+            2 {
+                Add-U8  $Buffer $(if ($entity.Closed) { 1 } else { 0 })
+                Add-U32 $Buffer ([uint32] ($entity.Values.Count / 2))
+                foreach ($value in $entity.Values) { Add-F64 $Buffer $value }
+            }
+            3 { foreach ($value in $entity.Values) { Add-F64 $Buffer $value } }
+            4 { foreach ($value in $entity.Values) { Add-F64 $Buffer $value } }
+            5 { foreach ($value in $entity.Values) { Add-F64 $Buffer $value } }
+            6 {
+                Add-U32 $Buffer ([uint32] ($entity.Values.Count / 2))
+                foreach ($value in $entity.Values) { Add-F64 $Buffer $value }
+            }
+        }
+    }
+}
+
+# The REGIONS block. A selection of one region without holes -- the R0 profile,
+# which profileEntityId has named since v1 -- is two zero counts, 8 bytes.
+#
+# Every list is re-wrapped with @(if ...) rather than @(...): @($null) is an
+# array holding ONE null, which would write a count of 1 beside no anchor.
+function Add-CadRegions {
+    param($Buffer, $Regions)
+    $holes = @(if ($null -ne $Regions -and $null -ne $Regions.Holes) { $Regions.Holes })
+    $additional = @(if ($null -ne $Regions -and $null -ne $Regions.Additional) { $Regions.Additional })
+    Add-U32 $Buffer ([uint32] $holes.Count)
+    foreach ($anchor in $holes) { Add-U32 $Buffer ([uint32] $anchor) }
+    Add-U32 $Buffer ([uint32] $additional.Count)
+    foreach ($region in $additional) {
+        Add-U32 $Buffer ([uint32] $region.OuterAnchorId)
+        $regionHoles = @(if ($null -ne $region.Holes) { $region.Holes })
+        Add-U32 $Buffer ([uint32] $regionHoles.Count)
+        foreach ($anchor in $regionHoles) { Add-U32 $Buffer ([uint32] $anchor) }
+    }
+}
+
+# One later feature: the 56-byte fixed record, its entities and its REGIONS.
+function Add-CadLaterFeature {
+    param($Buffer, $Feature)
+    Add-U32 $Buffer ([uint32] $Feature.FeatureId)
+    Add-U8  $Buffer $Feature.OperationCode
+    Add-U32 $Buffer ([uint32] $Feature.SupportFeatureId)
+    Add-U8  $Buffer $Feature.FaceKindCode
+    Add-U32 $Buffer ([uint32] $Feature.EdgeEntityId)
+    Add-U32 $Buffer ([uint32] $Feature.EdgeLocalIndex)
+    Add-U64 $Buffer ([uint64] $Feature.LineageToken)
+    Add-U32 $Buffer ([uint32] $Feature.NextEntityId)
+    Add-U32 $Buffer ([uint32] $Feature.ProfileEntityId)
+    Add-U8  $Buffer $Feature.ExtentCode
+    Add-U8  $Buffer $Feature.DirectionCode
+    Add-F64 $Buffer $Feature.Depth
+    Add-F64 $Buffer $Feature.Second
+    Add-CadEntityList $Buffer $Feature.Entities
+    Add-CadRegions $Buffer $Feature.Regions
+}
+
+function New-CadPayloadV5 {
+    param($Bodies)
+    $p = New-ByteBuffer
+    $bodyList = @($Bodies)
+    Add-U32 $p ([uint32] $bodyList.Count)
+    foreach ($body in $bodyList) {
+        Add-U64 $p ([uint64] $body.ObjectId)
+        Add-U8  $p $body.PlaneCode
+        if ($null -ne $body.Support) {
+            Add-U8  $p 1
+            Add-U64 $p ([uint64] $body.Support.ProducerObjectId)
+            Add-U32 $p ([uint32] $body.Support.FeatureId)
+            Add-U8  $p $body.Support.FaceKindCode
+            Add-U32 $p ([uint32] $body.Support.EdgeEntityId)
+            Add-U32 $p ([uint32] $body.Support.EdgeLocalIndex)
+            Add-U64 $p ([uint64] $body.Support.LineageToken)
+        } else {
+            Add-U8  $p 0
+        }
+        Add-U32 $p ([uint32] $body.NextEntityId)
+        Add-U32 $p ([uint32] $body.ProfileEntityId)
+        Add-U8  $p $body.ExtentCode
+        Add-U8  $p $body.DirectionCode
+        Add-F64 $p $body.Depth
+        Add-F64 $p $body.Second
+        Add-CadEntityList $p $body.Entities
+        # --- the v5 tail ---
+        Add-CadRegions $p $body.Regions
+        $later = @(if ($null -ne $body.LaterFeatures) { $body.LaterFeatures })
+        Add-U32 $p ([uint32] $later.Count)
+        foreach ($feature in $later) { Add-CadLaterFeature $p $feature }
+    }
+    return $p.ToArray()
+}
+
+# The side faces one sketch loop contributes to a signature, in the loop's
+# counter-clockwise polygon order: one per polygon edge, numbered by the entity
+# that edge came from and its 0-based local index there. For a single-entity
+# loop that is a rectangle's four planar edges from its (-w/2, -h/2) corner, or
+# a circle's 32 curved ones (kSketchCircleSegments) from +U. $Curved marks an
+# edge that facets a curved surface, which is never eligible.
+function New-CadLoopSides {
+    param([uint32] $EntityId, [int] $EdgeCount, [bool] $Curved)
+    $sides = New-Object System.Collections.Generic.List[object]
+    for ($k = 0; $k -lt $EdgeCount; $k++) {
+        $sides.Add([pscustomobject]@{
+            EdgeEntityId = $EntityId; EdgeLocalIndex = [uint32] $k; Eligible = (-not $Curved) })
+    }
+    return , $sides.ToArray()
+}
+
+# One chosen region as the signature sees it: its outer loop's anchor and
+# sides, and each hole's anchor and sides.
+function New-CadRegionFaces {
+    param([uint32] $OuterAnchorId, $OuterSides, $Holes)
+    return [pscustomobject]@{
+        OuterAnchorId = $OuterAnchorId
+        OuterSides    = @(if ($null -ne $OuterSides) { $OuterSides })
+        Holes         = @(if ($null -ne $Holes) { $Holes })
+    }
+}
+
+function New-CadHoleFaces {
+    param([uint32] $AnchorId, $Sides)
+    return [pscustomobject]@{ AnchorId = $AnchorId; Sides = @(if ($null -ne $Sides) { $Sides }) }
+}
+
+# The lineage token GENERALIZED to regions, as DATA_PACKAGE_SPEC.md 7f states
+# it: the 7c signature of a feature's own face topology, whose face list is
+#
+#   CapPlane, CapFar,
+#   then for each chosen region in ascending outer-anchor order: one Side per
+#   edge of its OUTER loop, then for each of its holes in ascending anchor
+#   order, one Side per edge of that HOLE loop -- each in its loop's polygon
+#   order.
+#
+# Code and mix are exactly 7c's (Get-CadFaceTokenCode, Add-Fnv64), and so is
+# the zero guard. Eligibility is the side's own answer, and 0 for EVERY face --
+# the caps included -- when the feature is a Cut, because a Cut leaves its faces
+# behind as the inside of a pocket. For one region without holes this reduces to
+# 7c exactly, which the fixture section below asserts against
+# Get-CadTopologySignature before it writes a byte.
+function Get-CadFeatureTopologySignature {
+    param([uint32] $ProfileEntityId, $Regions, [switch] $Cut)
+    $faces = New-Object System.Collections.Generic.List[object]
+    $faces.Add([pscustomobject]@{ Kind = 0; EdgeEntityId = [uint32] 0; EdgeLocalIndex = [uint32] 0; Eligible = $true })
+    $faces.Add([pscustomobject]@{ Kind = 1; EdgeEntityId = [uint32] 0; EdgeLocalIndex = [uint32] 0; Eligible = $true })
+    $regionList = @(if ($null -ne $Regions) { $Regions })
+    foreach ($region in @($regionList | Sort-Object { [uint32] $_.OuterAnchorId })) {
+        foreach ($side in @($region.OuterSides)) {
+            $faces.Add([pscustomobject]@{ Kind = 2; EdgeEntityId = [uint32] $side.EdgeEntityId
+                                          EdgeLocalIndex = [uint32] $side.EdgeLocalIndex
+                                          Eligible = [bool] $side.Eligible })
+        }
+        $holeList = @(if ($null -ne $region.Holes) { $region.Holes })
+        foreach ($hole in @($holeList | Sort-Object { [uint32] $_.AnchorId })) {
+            foreach ($side in @($hole.Sides)) {
+                $faces.Add([pscustomobject]@{ Kind = 2; EdgeEntityId = [uint32] $side.EdgeEntityId
+                                              EdgeLocalIndex = [uint32] $side.EdgeLocalIndex
+                                              Eligible = [bool] $side.Eligible })
+            }
+        }
+    }
+    $hash = [System.Numerics.BigInteger]::Parse('14695981039346656037')
+    $hash = Add-Fnv64 $hash ([System.Numerics.BigInteger] $ProfileEntityId)
+    $hash = Add-Fnv64 $hash ([System.Numerics.BigInteger] $faces.Count)
+    foreach ($face in $faces) {
+        $hash = Add-Fnv64 $hash (Get-CadFaceTokenCode $face.Kind $face.EdgeEntityId $face.EdgeLocalIndex)
+        $eligible = $face.Eligible -and (-not $Cut)
+        $hash = Add-Fnv64 $hash ([System.Numerics.BigInteger] $(if ($eligible) { 1 } else { 0 }))
+    }
+    if ($hash.IsZero) { $hash = [System.Numerics.BigInteger]::One }
+    return [uint64]::Parse($hash.ToString())
+}
+
+# The two producer signatures the v5 corpus stands on. The plain rectangle
+# (entity 1, no hole) is the 7c six-face signature; the holed one adds the
+# circle hole's 32 curved, ineligible sides (entity 2) after the rectangle's
+# four -- 38 faces.
+function Get-CadPlainRectangleLineage {
+    return Get-CadFeatureTopologySignature 1 @(
+        New-CadRegionFaces 1 (New-CadLoopSides 1 4 $false) @())
+}
+
+function Get-CadHoledRectangleLineage {
+    return Get-CadFeatureTopologySignature 1 @(
+        New-CadRegionFaces 1 (New-CadLoopSides 1 4 $false) @(
+            New-CadHoleFaces 2 (New-CadLoopSides 2 32 $true)))
+}
+
+function New-CadRectangleEntity {
+    param([uint32] $Id, [double] $CentreU, [double] $CentreV, [double] $Width, [double] $Height)
+    return [pscustomobject]@{ Id = $Id; KindCode = 3; Values = @($CentreU, $CentreV, $Width, $Height) }
+}
+
+function New-CadCircleEntity {
+    param([uint32] $Id, [double] $CentreU, [double] $CentreV, [double] $Radius)
+    return [pscustomobject]@{ Id = $Id; KindCode = 4; Values = @($CentreU, $CentreV, $Radius) }
+}
+
+# A region selection: the FIRST chosen region's hole anchors, and any further
+# chosen regions as { OuterAnchorId; Holes }.
+function New-CadRegionSelection {
+    param($Holes, $Additional)
+    return [pscustomobject]@{
+        Holes      = @(if ($null -ne $Holes) { $Holes })
+        Additional = @(if ($null -ne $Additional) { $Additional })
+    }
+}
+
+# A world-supported first feature carrying the v5 tail.
+function New-CadV5Body {
+    param([int] $ObjectId, [int] $PlaneCode, [uint32] $NextEntityId, [uint32] $ProfileEntityId,
+          [int] $ExtentCode, [int] $DirectionCode, [double] $Depth, [double] $Second,
+          $Entities, $Regions, $LaterFeatures)
+    return [pscustomobject]@{
+        ObjectId = $ObjectId; PlaneCode = $PlaneCode; Support = $null
+        NextEntityId = $NextEntityId; ProfileEntityId = $ProfileEntityId
+        ExtentCode = $ExtentCode; DirectionCode = $DirectionCode; Depth = $Depth; Second = $Second
+        Entities = @(if ($null -ne $Entities) { $Entities })
+        Regions = $Regions
+        LaterFeatures = @(if ($null -ne $LaterFeatures) { $LaterFeatures })
+    }
+}
+
+function New-CadLaterFeature {
+    param([uint32] $FeatureId, [int] $OperationCode, [uint32] $SupportFeatureId,
+          [int] $FaceKindCode, [uint32] $EdgeEntityId, [uint32] $EdgeLocalIndex,
+          [uint64] $LineageToken, [uint32] $NextEntityId, [uint32] $ProfileEntityId,
+          [int] $ExtentCode, [int] $DirectionCode, [double] $Depth, [double] $Second,
+          $Entities, $Regions)
+    return [pscustomobject]@{
+        FeatureId = $FeatureId; OperationCode = $OperationCode; SupportFeatureId = $SupportFeatureId
+        FaceKindCode = $FaceKindCode; EdgeEntityId = $EdgeEntityId; EdgeLocalIndex = $EdgeLocalIndex
+        LineageToken = $LineageToken; NextEntityId = $NextEntityId; ProfileEntityId = $ProfileEntityId
+        ExtentCode = $ExtentCode; DirectionCode = $DirectionCode; Depth = $Depth; Second = $Second
+        Entities = @(if ($null -ne $Entities) { $Entities })
+        Regions = $Regions
+    }
+}
+
+# Every v5 fixture is one world-supported CAD body in a Construction project,
+# with the SCNE record the single-body v4 fixtures write: ObjectId 1 at the
+# identity placement, allocator high-water mark 2, SCNE v1.
+function New-CadV5File {
+    param($Body)
+    $sceneBodies = @([pscustomobject]@{ ObjectId = 1; Transform = $script:IdentityPlacement })
+    $scne = New-Section 'SCNE' 1 $true (New-ScenePayload $sceneBodies 2 1)
+    $cadb = New-Section 'CADB' 5 $true (New-CadPayloadV5 @($Body))
+    return New-ForgeFile 1 @($scne, $cadb) 8
+}
+
+# The holed base: a 4 x 3 m rectangle (entity 1) around a 0.8 m-radius circle
+# (entity 2) on XY, extruded One Side 1 m along +Z as the region BETWEEN them.
+# $HoleAnchors is the stored hole list: [2] is the one the sketch derives.
+function New-CadHoledBaseBody {
+    param($HoleAnchors, $LaterFeatures)
+    return New-CadV5Body -ObjectId 1 -PlaneCode 1 -NextEntityId 3 -ProfileEntityId 1 `
+        -ExtentCode 1 -DirectionCode 1 -Depth 1.0 -Second 0.0 `
+        -Entities @((New-CadRectangleEntity 1 0.0 0.0 4.0 3.0), (New-CadCircleEntity 2 0.0 0.0 0.8)) `
+        -Regions (New-CadRegionSelection -Holes $HoleAnchors) -LaterFeatures $LaterFeatures
+}
+
+# CAD REGION HOLE: the holed base and nothing else -- the selection is one
+# region WITH a hole, which no earlier version can say.
+function New-CadRegionHoleFile {
+    param($HoleAnchors = @(2))
+    return New-CadV5File (New-CadHoledBaseBody -HoleAnchors $HoleAnchors)
+}
+
+# CAD FEATURE ADD: a 2 x 2 m block extruded 1 m along +Z, and ONE later Add --
+# a 0.8 m square on the block's far cap (feature 1, CapFar) extruded 0.5 m along
+# the face normal. The three identity fields are parameters so each corrupt
+# fixture below is CONSTRUCTED with its bad value in place.
+function New-CadFeatureAddFile {
+    param([uint32] $FeatureId = 2, [int] $OperationCode = 2, [uint32] $SupportFeatureId = 1)
+    $add = New-CadLaterFeature -FeatureId $FeatureId -OperationCode $OperationCode `
+        -SupportFeatureId $SupportFeatureId -FaceKindCode 2 -EdgeEntityId 0 -EdgeLocalIndex 0 `
+        -LineageToken (Get-CadPlainRectangleLineage) -NextEntityId 2 -ProfileEntityId 1 `
+        -ExtentCode 1 -DirectionCode 1 -Depth 0.5 -Second 0.0 `
+        -Entities @(New-CadRectangleEntity 1 0.0 0.0 0.8 0.8) -Regions (New-CadRegionSelection)
+    $body = New-CadV5Body -ObjectId 1 -PlaneCode 1 -NextEntityId 2 -ProfileEntityId 1 `
+        -ExtentCode 1 -DirectionCode 1 -Depth 1.0 -Second 0.0 `
+        -Entities @(New-CadRectangleEntity 1 0.0 0.0 2.0 2.0) `
+        -Regions (New-CadRegionSelection) -LaterFeatures @($add)
+    return New-CadV5File $body
+}
+
+# CAD FEATURE CUT: the same block and ONE later Cut -- a 0.3 m-radius circle on
+# the far cap, extruded 0.5 m AGAINST the face normal, into the block.
+function New-CadFeatureCutFile {
+    $cut = New-CadLaterFeature -FeatureId 2 -OperationCode 3 -SupportFeatureId 1 `
+        -FaceKindCode 2 -EdgeEntityId 0 -EdgeLocalIndex 0 `
+        -LineageToken (Get-CadPlainRectangleLineage) -NextEntityId 2 -ProfileEntityId 1 `
+        -ExtentCode 1 -DirectionCode 2 -Depth 0.5 -Second 0.0 `
+        -Entities @(New-CadCircleEntity 1 0.0 0.0 0.3) -Regions (New-CadRegionSelection)
+    $body = New-CadV5Body -ObjectId 1 -PlaneCode 1 -NextEntityId 2 -ProfileEntityId 1 `
+        -ExtentCode 1 -DirectionCode 1 -Depth 1.0 -Second 0.0 `
+        -Entities @(New-CadRectangleEntity 1 0.0 0.0 2.0 2.0) `
+        -Regions (New-CadRegionSelection) -LaterFeatures @($cut)
+    return New-CadV5File $body
+}
+
+# CAD FEATURE CHAIN: the holed base, then an Add and a Cut, both standing on
+# feature 1's far cap at the 38-face holed signature -- a Symmetric 0.6 m square
+# boss at (1.4, 0), 0.25 m each side of the cap, and then a 0.3 m-radius pocket
+# at (-1.4, 0), 0.5 m against the face normal. Applied in chain order.
+function New-CadFeatureChainFile {
+    $lineage = Get-CadHoledRectangleLineage
+    $add = New-CadLaterFeature -FeatureId 2 -OperationCode 2 -SupportFeatureId 1 `
+        -FaceKindCode 2 -EdgeEntityId 0 -EdgeLocalIndex 0 `
+        -LineageToken $lineage -NextEntityId 2 -ProfileEntityId 1 `
+        -ExtentCode 2 -DirectionCode 1 -Depth 0.25 -Second 0.0 `
+        -Entities @(New-CadRectangleEntity 1 1.4 0.0 0.6 0.6) -Regions (New-CadRegionSelection)
+    $cut = New-CadLaterFeature -FeatureId 3 -OperationCode 3 -SupportFeatureId 1 `
+        -FaceKindCode 2 -EdgeEntityId 0 -EdgeLocalIndex 0 `
+        -LineageToken $lineage -NextEntityId 2 -ProfileEntityId 1 `
+        -ExtentCode 1 -DirectionCode 2 -Depth 0.5 -Second 0.0 `
+        -Entities @(New-CadCircleEntity 1 -1.4 0.0 0.3) -Regions (New-CadRegionSelection)
+    return New-CadV5File (New-CadHoledBaseBody -HoleAnchors @(2) -LaterFeatures @($add, $cut))
+}
+
 # The one Imported Mesh every imported fixture carries.
 #
 # Four vertices, two submeshes with DIFFERENT doubleSided answers, and every
@@ -1494,6 +1852,16 @@ function New-ObjectStateBadFlagsFile {
     return New-ForgeFile 1 @($scne, $cons) 1
 }
 
+# DATA_PACKAGE_SPEC.md 7f promises that the generalized signature IS the 7c one
+# for a feature selecting one region without holes, so no stored token of an
+# earlier fixture moves. Hold the two implementations here to that before a
+# single v5 byte is written.
+$cadPlainRectangleLineage = Get-CadPlainRectangleLineage
+$cadHoledRectangleLineage = Get-CadHoledRectangleLineage
+if ($cadPlainRectangleLineage -ne (Get-CadTopologySignature 1 4 $false)) {
+    throw 'The 7f signature of a one-rectangle region disagrees with the 7c signature.'
+}
+
 $fixtures = [ordered]@{
     'construction_multibody_v1.forge' = $construction
     'sculpt_mixed_v1.forge'           = $sculpt
@@ -1531,6 +1899,14 @@ $fixtures = [ordered]@{
     'cad_bad_two_sides_v4.forge'      = (New-CadBadTwoSidesFile)
     'object_state_v2.forge'           = (New-ObjectStateFile)
     'object_state_bad_flags_v2.forge' = (New-ObjectStateBadFlagsFile)
+    'cad_region_hole_v5.forge'        = (New-CadRegionHoleFile)
+    'cad_feature_add_v5.forge'        = (New-CadFeatureAddFile)
+    'cad_feature_cut_v5.forge'        = (New-CadFeatureCutFile)
+    'cad_feature_chain_v5.forge'      = (New-CadFeatureChainFile)
+    'cad_bad_operation_v5.forge'      = (New-CadFeatureAddFile -OperationCode 9)
+    'cad_bad_feature_ref_v5.forge'    = (New-CadFeatureAddFile -SupportFeatureId 7)
+    'cad_bad_feature_order_v5.forge'  = (New-CadFeatureAddFile -FeatureId 1)
+    'cad_bad_region_v5.forge'         = (New-CadRegionHoleFile -HoleAnchors @(7))
 }
 
 $rows = New-Object System.Collections.Generic.List[object]
@@ -1588,3 +1964,15 @@ Write-Host ("  cad_bad_two_sides:     {0}" -f ($rows | Where-Object Fixture -eq 
 Write-Host 'Digests the C++ self-test (OBJ018A-15/16) must assert:'
 Write-Host ("  object_state:          {0}" -f ($rows | Where-Object Fixture -eq 'object_state_v2.forge').Sha256)
 Write-Host ("  object_state_bad_flags:{0}" -f ($rows | Where-Object Fixture -eq 'object_state_bad_flags_v2.forge').Sha256)
+Write-Host 'Digests of the CADB v5 fixtures (CAD-VERTICAL-SLICE-R1):'
+Write-Host ("  cad_region_hole:       {0}" -f ($rows | Where-Object Fixture -eq 'cad_region_hole_v5.forge').Sha256)
+Write-Host ("  cad_feature_add:       {0}" -f ($rows | Where-Object Fixture -eq 'cad_feature_add_v5.forge').Sha256)
+Write-Host ("  cad_feature_cut:       {0}" -f ($rows | Where-Object Fixture -eq 'cad_feature_cut_v5.forge').Sha256)
+Write-Host ("  cad_feature_chain:     {0}" -f ($rows | Where-Object Fixture -eq 'cad_feature_chain_v5.forge').Sha256)
+Write-Host ("  cad_bad_operation:     {0}" -f ($rows | Where-Object Fixture -eq 'cad_bad_operation_v5.forge').Sha256)
+Write-Host ("  cad_bad_feature_ref:   {0}" -f ($rows | Where-Object Fixture -eq 'cad_bad_feature_ref_v5.forge').Sha256)
+Write-Host ("  cad_bad_feature_order: {0}" -f ($rows | Where-Object Fixture -eq 'cad_bad_feature_order_v5.forge').Sha256)
+Write-Host ("  cad_bad_region:        {0}" -f ($rows | Where-Object Fixture -eq 'cad_bad_region_v5.forge').Sha256)
+Write-Host 'Lineage tokens the v5 fixtures carry (7c / 7f signature):'
+Write-Host ("  plain rectangle (6 faces): 0x{0:X16}" -f $cadPlainRectangleLineage)
+Write-Host ("  holed rectangle (38 faces): 0x{0:X16}" -f $cadHoledRectangleLineage)

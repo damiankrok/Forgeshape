@@ -91,7 +91,9 @@ enum class CadStatus : uint8_t {
     AmbiguousProfile,
     // The chosen profile identity names no closed profile.
     ProfileNotFound,
-    // A closed profile lies inside another. Holes are not R0.
+    // A closed profile lies inside another. Holes were not R0. No longer
+    // produced since `CAD-VERTICAL-SLICE-R1` (a nested loop is a hole of its
+    // container's region); the code is kept so no later code moves.
     NestedProfileUnsupported,
     // The extrusion depth is not a usable length.
     InvalidExtrudeDepth,
@@ -129,11 +131,54 @@ enum class CadStatus : uint8_t {
     // second distance stored by a mode that has only one. Refused rather than
     // masked or repaired, so one solid has exactly one encoding (`CAD-EXT-R1`).
     InvalidExtrudeExtent,
+    // --- `CAD-VERTICAL-SLICE-R1`: regions, the feature chain, operations. ---
+    // APPENDED, so every code above keeps its number across JNI and in Java.
+    //
+    // A stored region selection is not the one the sketch derives: its holes
+    // differ (a loop was added inside it or one of its holes is gone), or it is
+    // not in canonical order. Refused rather than re-read as another area.
+    ProfileRegionMismatch,
+    // Two chosen regions overlap, touch, or share a boundary loop (a region and
+    // its own hole). Nothing is merged for the user.
+    OverlappingRegions,
+    // A region whose holes touch or cross each other: undefined without a
+    // planar arrangement this build does not compute. Listed, not selectable.
+    OverlappingHoles,
+    // More regions than one feature may select, or more holes than one region
+    // may carry.
+    TooManyRegions,
+    // An operation code outside New Body / Add / Cut, New Body on a later
+    // feature, or Add/Cut on a body's first feature.
+    InvalidFeatureOperation,
+    // More features than one CAD body may carry, or feature ids that are not
+    // strictly ascending above the base feature's.
+    TooManyFeatures,
+    // A later feature's support names no earlier feature of the same body, no
+    // face of it, a face that is not eligible, or a stale lineage.
+    FeatureSupportInvalid,
+    // The support face no longer carries material at the point in the chain
+    // where the feature is applied: an earlier Cut removed it.
+    SupportFaceLost,
+    // Add or Cut was requested for a sketch that is not on a face of a CAD
+    // body, so there is no body to add to or cut from. New Body only.
+    OperationNeedsTarget,
+    // An Add whose tool neither touches nor overlaps the target: it would
+    // create a disconnected lump. Refused; New Body is the act that does that.
+    AddDisjoint,
+    // An Add that adds no volume (the tool lies wholly inside the target).
+    AddNoEffect,
+    // A Cut whose tool does not intersect the target: nothing would be removed.
+    CutNoIntersection,
+    // A Cut that would remove the whole target. R1 refuses rather than delete
+    // the body through a feature.
+    CutRemovesBody,
+    // The boolean kernel refused an input or produced no valid solid.
+    KernelFailed,
 };
 
 // The count is the number of enumerators, so `cadStatusFromCode` accepts
 // exactly the codes that exist.
-constexpr int kCadStatusCount = 31;
+constexpr int kCadStatusCount = 45;
 
 const char* cadStatusName(CadStatus status);
 int cadStatusCode(CadStatus status);
@@ -540,9 +585,11 @@ struct ProfileExtraction {
 // Every loop is then held to the same rules: at least three vertices, no
 // duplicate consecutive edge, non-zero area, and no crossing between
 // non-adjacent edges. A loop that fails is listed under `rejections` with the
-// reason, never repaired. A profile that CONTAINS another profile is rejected
-// as `NestedProfileUnsupported` -- a hole this stage will not fill silently --
-// while the inner one stays extrudable on its own.
+// reason, never repaired. Nesting is NOT decided here: a loop that contains
+// another is still a loop, and what the two ENCLOSE -- a region with a hole and
+// the island inside it -- is `extractSketchRegions`'s answer
+// (forgeshape_sketch_region.h, `CAD-VERTICAL-SLICE-R1`). `NestedProfileUnsupported`
+// keeps its code and is no longer produced.
 //
 // Bounded: at most kMaxSketchEntities loops, each at most kMaxProfileVertices
 // long, and the crossing test is a plain O(n^2) over a bounded n.

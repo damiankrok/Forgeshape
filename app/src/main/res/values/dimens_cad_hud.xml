@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The compact CAD extrude HUD's metrics.
+
+  The glyph size is NOT here: it follows the camera-attached multiplier native
+  reports and is computed by CadHudPresentation (clamp(28 x scale, 24, 32) dp),
+  where a JVM case holds it. What is here is what does not move with the camera.
+  The touch target is the 48 dp floor at every scale, so the floor is the HIT
+  AREA and never the glyph — the rule dimens.xml states for the whole product.
+-->
+<resources>
+    <!-- The HUD's capsules: 2 dp around their 48 dp members, rather than the
+         toolbar's 4 dp, and no gap between members. The members are
+         borderless at rest, so adjacent 48 dp hit rectangles still read as
+         separate glyphs, and every dp saved here is canvas the HUD does not
+         cover: the cluster is 52 dp tall and, in One Side, four targets wide. -->
+    <dimen name="cad_hud_capsule_padding">2dp</dimen>
+    <!-- A member's corner, concentric with the capsule: the capsule's 26 dp
+         corner minus the 2 dp between the two edges — inner = outer - gap. -->
+    <dimen name="cad_hud_member_radius">24dp</dimen>
+    <!-- The exact value's visible pill. 32 dp tall inside a 48 dp hit row, so
+         the inset above and below is (48 - 32) / 2. -->
+    <dimen name="cad_hud_value_pill_inset">8dp</dimen>
+    <!-- Concentric with the capsule the value stands in: the capsule's 26 dp
+         corner minus the 10 dp between the two edges (2 dp capsule padding plus
+         the 8 dp pill inset) — inner = outer - gap, which on a 32 dp pill is a
+         full stadium. -->
+    <dimen name="cad_hud_value_pill_radius">16dp</dimen>
+    <!-- The second side's capsule holds the pill alone, so its horizontal
+         padding matches the pill's 10 dp vertical gap and the corners stay
+         concentric on all four sides. -->
+    <dimen name="cad_hud_value_capsule_padding_horizontal">10dp</dimen>
+    <!-- Horizontal breathing room around a caption, when Tool Labels is on. -->
+    <dimen name="cad_hud_caption_padding_horizontal">6dp</dimen>
+    <!-- Between a glyph and the caption under it. -->
+    <dimen name="cad_hud_caption_gap">1dp</dimen>
+    <!-- The smallest vertical padding a captioned control keeps, top and bottom. -->
+    <dimen name="cad_hud_caption_padding_vertical_min">2dp</dimen>
+    <!-- The numeric editors' surface padding. 8 dp so a 10 dp field corner is
+         concentric with the 18 dp context surface around it. -->
+    <dimen name="cad_hud_editor_padding">8dp</dimen>
+</resources>

@@ -274,6 +274,14 @@ struct SceneDrawItem {
     // Equal to the model's rotation for every unscaled body.
     Mat4 normalModel;
     bool selected = false;
+    // A PRESENTATION-ONLY tint for a CAD operation preview
+    // (`CAD-VERTICAL-SLICE-R1`): rgb and a mix weight, zero weight for every
+    // item the scene itself produces. Set only on the renderer's own copy of
+    // the list by the preview hand-off, never by `snapshot()`, so picking,
+    // export and the project never see one. When non-zero it takes the
+    // selection pulse's slot in the push block -- a previewed body is not
+    // being selected, it is being shown what an Add or a Cut will make it.
+    float previewTint[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 };
 
 using SceneSnapshot = std::vector<SceneDrawItem>;

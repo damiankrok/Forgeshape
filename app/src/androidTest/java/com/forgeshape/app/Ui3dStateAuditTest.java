@@ -136,8 +136,14 @@ public final class Ui3dStateAuditTest {
         assertEquals("Finish Sketch reached Ready", NativeViewport.SKETCH_READY, sketchState());
         record("UI3D-03", "sketch_ready", "S35 cad_extrude cluster", MUST_SHOW,
                 shown(R.id.cad_extrude_depth_value));
-        record("UI3D-03", "sketch_ready", "S35 extent_one_side", MUST_SHOW,
-                shown(R.id.cad_extrude_extent_one_side));
+        // `CAD-VERTICAL-SLICE-R1`: ONE extent control stands at rest and opens
+        // the three choices; Ready withdraws the drawing chrome.
+        record("UI3D-03", "sketch_ready", "S35 cad_extrude_extent", MUST_SHOW,
+                shown(R.id.cad_extrude_extent));
+        record("UI3D-03", "sketch_ready", "S30 sketch_orientation_navigator", MUST_HIDE,
+                shown(R.id.sketch_orientation_navigator));
+        record("UI3D-03", "sketch_ready", "S07 tool_rail_rectangle", MUST_HIDE,
+                shown(R.id.tool_rail_rectangle));
         record("UI3D-03", "sketch_ready", "S35 cad_extrude_flip", MUST_SHOW,
                 shown(R.id.cad_extrude_flip));
         record("UI3D-03", "sketch_ready", "S36 cad_extrude_second_value", MUST_HIDE,
@@ -932,8 +938,13 @@ public final class Ui3dStateAuditTest {
             }
             final View placed = Ui3dAuditRecorder.placedAncestor(leaf,
                     workspace.findViewById(R.id.cad_extrude_canvas));
-            final float[] centre = Ui3dAuditRecorder.centreOf(placed, viewport);
-            final boolean clamp = Ui3dAuditRecorder.wouldClamp(placed, viewport, expectX, expectY);
+            // The HUD stands its VALUE on the anchor (`CAD-VERTICAL-SLICE-R1`),
+            // so the value's centre is what is measured; the row is clamped
+            // where the value's offset inside it puts it.
+            final float[] box = Ui3dAuditRecorder.centreOf(placed, viewport);
+            final float[] centre = Ui3dAuditRecorder.centreOf(leaf, viewport);
+            final boolean clamp = Ui3dAuditRecorder.wouldClamp(placed, viewport,
+                    expectX - (centre[0] - box[0]), expectY - (centre[1] - box[1]));
             return new float[]{centre[0], centre[1], clamp ? 1f : 0f};
         });
         if (measured == null) {

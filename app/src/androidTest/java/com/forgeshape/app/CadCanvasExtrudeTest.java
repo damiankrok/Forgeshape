@@ -4,6 +4,7 @@ import static com.forgeshape.app.SketchTestSupport.dragSketch;
 import static com.forgeshape.app.SketchTestSupport.selectTool;
 import static com.forgeshape.app.SketchTestSupport.sketchState;
 import static com.forgeshape.app.WorkspaceTestSupport.doOnWorkspace;
+import static com.forgeshape.app.WorkspaceTestSupport.onWorkspace;
 import static com.forgeshape.app.WorkspaceTestSupport.resetToBaselineConstruction;
 import static com.forgeshape.app.WorkspaceTestSupport.settleLayout;
 import static org.junit.Assert.assertArrayEquals;
@@ -41,8 +42,8 @@ import org.junit.runner.RunWith;
  * geometry, that typing an exact value lands the same authored depth, that
  * Cancel leaves the durable project untouched, that Apply is the existing
  * one-transaction New Body path, that the retained sketch is then reachable in
- * ONE tap from the body itself, and that Add, Cut, Symmetric and Two Sides are
- * nowhere to be found.
+ * ONE tap from the body itself, and that on a world-plane sketch — where there
+ * is no body to act on — Add and Cut are absent rather than drawn.
  *
  * <p>Since `CAD-UX-S1-C1` it also covers the two views a sketch is seen
  * through — the exact support-normal one it is AUTHORED in, and the feature
@@ -125,20 +126,24 @@ public final class CadCanvasExtrudeTest {
             assertNotNull("with the exact value", value);
             assertNotNull("a direct Flip", flip);
             assertNotNull("and the operation badge", badge);
-            assertEquals("which reads New Body",
-                    activity.getString(R.string.extrude_operation_new_body),
-                    ((android.widget.TextView) badge).getText().toString());
-            // E2E-CADUXS1-09 in part: the 48 dp floor holds for the SMALLEST
-            // the cluster can be drawn, which is the authored size times the
-            // scale rule's own floor.
+            final CharSequence operation = badge.getContentDescription();
+            assertTrue("which says New Body: " + operation, operation != null
+                    && operation.toString().toLowerCase().contains("new body"));
+            // E2E-CADUXS1-09 in part, restated by `CAD-VERTICAL-SLICE-R1`: the
+            // glyph takes the control scale and the HIT AREA does not, so the
+            // 48 dp floor holds at every scale by construction rather than by
+            // an authored size times the scale rule's floor.
             final float density = activity.getResources().getDisplayMetrics().density;
             final int floor = Math.round(48f * density);
-            final int authored = activity.getResources()
-                    .getDimensionPixelSize(R.dimen.cad_canvas_control);
-            assertTrue("the authored control times the minimum scale clears 48 dp",
-                    Math.round(authored * 0.80f) >= floor - 1);
+            for (View control : new View[]{value, flip, badge}) {
+                assertEquals("a control's hit area is never scaled", 1.0f,
+                        control.getScaleX() * control.getScaleY(), 0.0f);
+            }
             assertTrue("the value control is a real target", value.getHeight() >= floor - 1);
-            assertTrue("and so is Flip", flip.getHeight() >= floor - 1);
+            assertTrue("and so is Flip", flip.getHeight() >= floor - 1
+                    && flip.getWidth() >= floor - 1);
+            assertTrue("and so is the badge", badge.getHeight() >= floor - 1
+                    && badge.getWidth() >= floor - 1);
             return null;
         });
     }
@@ -554,13 +559,14 @@ public final class CadCanvasExtrudeTest {
     // -----------------------------------------------------------------------
 
     /**
-     * The OPERATION is still New Body and nothing else.
+     * On a WORLD-PLANE sketch the operation is New Body and nothing else.
      *
-     * <p>`CAD-EXT-R1` superseded half of this case's original premise:
-     * Symmetric and Two Sides are real now, and the selector that offers them
-     * is expected to name them. What has not changed at all is the operation —
-     * an extrusion creates a new body, there is nothing to choose, and Add, Cut
-     * and every boolean stay absent rather than inert.
+     * <p>`CAD-VERTICAL-SLICE-R1` made Add and Cut real, and superseded this
+     * case's original premise that no operation could ever be chosen. What it
+     * still pins is the rule for where they CANNOT succeed: a sketch on a world
+     * plane has no body to add to or cut, so there Add and Cut — and every
+     * boolean this product does not have — are ABSENT rather than drawn and
+     * then refused, and native refuses the act by name all the same.
      */
     @Test
     public void e2eCaduxs1_08_addAndCutAreNowhereToBeFound() {
@@ -568,16 +574,30 @@ public final class CadCanvasExtrudeTest {
         drawRectangle(2.0, 1.0);
         finishSketch();
 
+        final double[] offered = toolState();
+        assertEquals("only New Body is offered on a world plane",
+                NativeViewport.OPERATION_BIT_NEW_BODY,
+                (int) offered[NativeViewport.CAD_EXTRUDE_OPERATIONS_AVAILABLE]);
+        assertEquals("and it is the operation", NativeViewport.OPERATION_NEW_BODY,
+                (int) offered[NativeViewport.CAD_EXTRUDE_OPERATION]);
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             final View canvas = workspace.cadExtrudeCanvas();
-            // The badge STATES the operation; there is nothing to choose, so
-            // nothing that could not succeed is drawn.
-            final String badge = ((android.widget.TextView)
-                    canvas.findViewById(R.id.cad_extrude_operation)).getText().toString();
-            assertEquals("only New Body is named",
-                    activity.getString(R.string.extrude_operation_new_body), badge);
-            for (String forbidden : new String[]{"Add", "Cut", "Join", "Boolean", "Union",
-                    "Subtract", "Intersect", "Revolve"}) {
+            // The badge STATES the operation, by its description as well as by
+            // its glyph; with nothing else to choose, nothing else is drawn.
+            final CharSequence badge =
+                    canvas.findViewById(R.id.cad_extrude_operation).getContentDescription();
+            assertNotNull("the badge says what the extrusion does", badge);
+            assertTrue("and it says New Body: " + badge,
+                    badge.toString().toLowerCase().contains("new body"));
+            for (int id : new int[]{R.id.cad_extrude_operation_add,
+                    R.id.cad_extrude_operation_cut, R.id.sketch_operation_add,
+                    R.id.sketch_operation_cut}) {
+                final View control = workspace.findViewById(id);
+                assertTrue("E2E-CADUXS1-08: no Add or Cut control is drawn here: " + id,
+                        control == null || !control.isShown());
+            }
+            for (String forbidden : new String[]{"Join", "Boolean", "Union", "Subtract",
+                    "Intersect", "Revolve"}) {
                 assertFalse("E2E-CADUXS1-08: the cluster never names " + forbidden,
                         containsText(canvas, forbidden));
                 assertFalse("nor does the sketch panel", containsText(workspace.sketchEditor(),
@@ -585,6 +605,12 @@ public final class CadCanvasExtrudeTest {
             }
             return null;
         });
+        final int refused = onWorkspace(rule.getScenario(), (activity, workspace) ->
+                NativeViewport.sketchSetOperation(NativeViewport.OPERATION_ADD));
+        assertEquals("and native refuses Add by name", NativeViewport.CAD_OPERATION_NEEDS_TARGET,
+                refused);
+        assertEquals("the refusal changed nothing", NativeViewport.OPERATION_NEW_BODY,
+                (int) toolState()[NativeViewport.CAD_EXTRUDE_OPERATION]);
 
         // And the domain cannot express one either: the direction is two-valued
         // and the extent is one of exactly three.

@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Copy for the compact CAD extrude HUD and the Tool Labels preference.
+
+  Captions are ONE short name each, because they sit under a 24-32 dp glyph
+  inside a 48 dp control and must not turn the row back into wide pills. The
+  descriptions are the accessible names: each says what the control is AND the
+  value it currently shows, so a screen reader never has to infer either from
+  an icon.
+-->
+<resources>
+    <!-- Captions, shown under the glyph only while Tool Labels is on. -->
+    <string name="cad_hud_caption_one_side">One side</string>
+    <string name="cad_hud_caption_symmetric">Symmetric</string>
+    <string name="cad_hud_caption_two_sides">Two sides</string>
+    <string name="cad_hud_caption_new_body">New body</string>
+    <string name="cad_hud_caption_add">Add</string>
+    <string name="cad_hud_caption_cut">Cut</string>
+    <string name="cad_hud_caption_flip">Flip</string>
+    <string name="cad_hud_caption_edit_sketch">Edit sketch</string>
+
+    <!-- The extent button and its palette. %1$s is a caption above. -->
+    <string name="cad_hud_extent_button_description">Extent: %1$s. Change extent</string>
+    <!-- A palette choice: %1$s the caption, %2$s what it does. -->
+    <string name="cad_hud_choice_description">%1$s. %2$s</string>
+    <string name="cad_hud_choice_selected_description">%1$s, selected. %2$s</string>
+
+    <!-- The operation badge and its palette. -->
+    <string name="cad_hud_operation_button_description">Operation: %1$s. Change operation</string>
+    <!-- The badge when there is nothing else to choose: a statement, not a control. -->
+    <string name="cad_hud_operation_fixed_description">Operation: %1$s</string>
+    <!-- %1$s the description above, %2$s the reason the commit would be refused. -->
+    <string name="cad_hud_operation_invalid_description">%1$s. Cannot extrude: %2$s</string>
+    <string name="cad_hud_operation_new_body_description">Make a new body from this extrusion.</string>
+    <string name="cad_hud_operation_add_description">Add this extrusion to the body the sketch stands on.</string>
+    <string name="cad_hud_operation_cut_description">Cut this extrusion out of the body the sketch stands on.</string>
+
+    <string name="cad_hud_flip_description">Flip direction. Grow the solid out of the other side of the sketch; the depth is unchanged.</string>
+
+    <!-- Settings page: the Interface group. -->
+    <string name="settings_interface">Interface</string>
+    <string name="tool_labels_description">Whether the icon controls on the canvas also show a short name.</string>
+    <string name="tool_labels_off">Tool labels: Off</string>
+    <string name="tool_labels_on">Tool labels: On</string>
+</resources>

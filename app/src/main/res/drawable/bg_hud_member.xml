@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  A control at rest INSIDE one of the CAD extrude HUD's capsules: the extent
+  button, the operation badge, Flip, a palette choice.
+
+  bg_capsule_control's rule at the HUD's own spacing. The HUD's capsules stand
+  2 dp off their members rather than 4 dp (see cad_hud_capsule_padding), so a
+  concentric member corner is 24 dp rather than radius_control_inset's 22 dp —
+  a 22 dp member there would show the crescent that rule exists to prevent.
+  Borderless at rest; pressed feedback kept.
+-->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_pressed="true">
+        <shape android:shape="rectangle">
+            <solid android:color="?attr/fsControlSurfacePressed" />
+            <corners android:radius="@dimen/cad_hud_member_radius" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@android:color/transparent" />
+            <corners android:radius="@dimen/cad_hud_member_radius" />
+        </shape>
+    </item>
+</selector>

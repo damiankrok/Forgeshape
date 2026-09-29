@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Edit Sketch: a pencil resting on a workplane — the body's own sketch,
+     reopened for drawing. The plane is the same parallelogram New Sketch
+     uses, so the two read as one family. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M2,21 L5.5,16.5 L22,16.5 L18.5,21 Z M9,16.5 L10,12.5 L18,4.5 L21,7.5 L13,15.5 Z M16,6.5 L19,9.5" />
+</vector>

@@ -1,7 +1,13 @@
 #include "forgeshape_cad_body.h"
 
+#include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstring>
+#include <numeric>
+
+#include "forgeshape_cad_feature.h"
+#include "forgeshape_cad_kernel.h"
 
 namespace forgeshape {
 
@@ -214,42 +220,178 @@ ExtrudeFeature extrudeFeatureWithPrimary(const ExtrudeFeature& from, Meters dist
     return out;
 }
 
-bool sameCadBodyState(const CadBodyState& a, const CadBodyState& b) {
-    return sameCadSketch(a.sketch, b.sketch)
-           && a.extrude.profileEntityId == b.extrude.profileEntityId
-           && sameBits(a.extrude.depth, b.extrude.depth)
-           && a.extrude.direction == b.extrude.direction
-           && a.extrude.extent == b.extrude.extent
-           && sameBits(a.extrude.secondDistance, b.extrude.secondDistance);
+// ---------------------------------------------------------------------------
+// Region selection (`CAD-VERTICAL-SLICE-R1`)
+// ---------------------------------------------------------------------------
+
+std::vector<ProfileRegionRef> extrudeRegions(const ExtrudeFeature& extrude) {
+    std::vector<ProfileRegionRef> regions;
+    if (extrude.profileEntityId == kNoSketchEntity) {
+        return regions;
+    }
+    regions.push_back(ProfileRegionRef{extrude.profileEntityId, extrude.profileHoleIds});
+    regions.insert(regions.end(), extrude.additionalRegions.begin(), extrude.additionalRegions.end());
+    return regions;
 }
 
-CadStatus validateCadBodyState(const CadBodyState& state, ProfileExtraction* outProfiles) {
-    const CadStatus sketchWhy = validateCadSketch(state.sketch);
+void setExtrudeRegions(ExtrudeFeature* extrude, std::vector<ProfileRegionRef> regions) {
+    if (extrude == nullptr) {
+        return;
+    }
+    std::sort(regions.begin(), regions.end(), [](const ProfileRegionRef& a, const ProfileRegionRef& b) {
+        return a.outerAnchorId < b.outerAnchorId;
+    });
+    for (ProfileRegionRef& region : regions) {
+        std::sort(region.holeAnchorIds.begin(), region.holeAnchorIds.end());
+    }
+    extrude->additionalRegions.clear();
+    if (regions.empty()) {
+        extrude->profileEntityId = kNoSketchEntity;
+        extrude->profileHoleIds.clear();
+        return;
+    }
+    extrude->profileEntityId = regions.front().outerAnchorId;
+    extrude->profileHoleIds = regions.front().holeAnchorIds;
+    extrude->additionalRegions.assign(regions.begin() + 1, regions.end());
+}
+
+bool extrudeSelectsSingleSimpleProfile(const ExtrudeFeature& extrude) {
+    return extrude.profileEntityId != kNoSketchEntity && extrude.profileHoleIds.empty()
+           && extrude.additionalRegions.empty();
+}
+
+// ---------------------------------------------------------------------------
+// The feature chain
+// ---------------------------------------------------------------------------
+
+const char* cadFeatureOperationName(CadFeatureOperation operation) {
+    switch (operation) {
+        case CadFeatureOperation::NewBody: return "NewBody";
+        case CadFeatureOperation::Add: return "Add";
+        case CadFeatureOperation::Cut: return "Cut";
+    }
+    return "unknown";
+}
+
+bool cadFeatureOperationFromIndex(int index, CadFeatureOperation* out) {
+    if (out == nullptr) {
+        return false;
+    }
+    switch (index) {
+        case 0: *out = CadFeatureOperation::NewBody; return true;
+        case 1: *out = CadFeatureOperation::Add; return true;
+        case 2: *out = CadFeatureOperation::Cut; return true;
+        default: return false;
+    }
+}
+
+int cadFeatureOperationIndex(CadFeatureOperation operation) { return static_cast<int>(operation); }
+
+bool sameCadFeatureSupport(const CadFeatureSupport& a, const CadFeatureSupport& b) {
+    return a.featureId == b.featureId && sameCadFaceToken(a.face, b.face)
+           && a.lineageToken == b.lineageToken;
+}
+
+namespace {
+
+bool sameExtrudeFeature(const ExtrudeFeature& a, const ExtrudeFeature& b) {
+    if (a.profileEntityId != b.profileEntityId || a.profileHoleIds != b.profileHoleIds
+        || a.additionalRegions.size() != b.additionalRegions.size()) {
+        return false;
+    }
+    for (size_t i = 0; i < a.additionalRegions.size(); ++i) {
+        if (!sameProfileRegionRef(a.additionalRegions[i], b.additionalRegions[i])) {
+            return false;
+        }
+    }
+    return sameBits(a.depth, b.depth) && a.direction == b.direction && a.extent == b.extent
+           && sameBits(a.secondDistance, b.secondDistance);
+}
+
+}  // namespace
+
+bool sameCadFeature(const CadFeature& a, const CadFeature& b) {
+    return a.featureId == b.featureId && a.operation == b.operation
+           && sameCadFeatureSupport(a.support, b.support) && sameCadSketch(a.sketch, b.sketch)
+           && sameExtrudeFeature(a.extrude, b.extrude);
+}
+
+bool cadFeatureAt(const CadBodyState& state, uint32_t index, CadFeatureView* out) {
+    if (out == nullptr || index >= cadFeatureCount(state)) {
+        return false;
+    }
+    if (index == 0) {
+        *out = CadFeatureView{kCadFeatureId, CadFeatureOperation::NewBody, &state.sketch,
+                              &state.extrude, nullptr};
+        return true;
+    }
+    const CadFeature& feature = state.laterFeatures[index - 1u];
+    *out = CadFeatureView{feature.featureId, feature.operation, &feature.sketch, &feature.extrude,
+                          &feature.support};
+    return true;
+}
+
+bool findCadFeature(const CadBodyState& state, uint32_t featureId, CadFeatureView* out) {
+    const uint32_t count = cadFeatureCount(state);
+    for (uint32_t i = 0; i < count; ++i) {
+        CadFeatureView view;
+        cadFeatureAt(state, i, &view);
+        if (view.featureId == featureId) {
+            if (out != nullptr) {
+                *out = view;
+            }
+            return true;
+        }
+    }
+    return false;
+}
+
+uint32_t nextCadFeatureId(const CadBodyState& state) {
+    return state.laterFeatures.empty() ? kCadFeatureId + 1u
+                                       : state.laterFeatures.back().featureId + 1u;
+}
+
+bool sameCadBodyState(const CadBodyState& a, const CadBodyState& b) {
+    if (!sameCadSketch(a.sketch, b.sketch) || !sameExtrudeFeature(a.extrude, b.extrude)
+        || a.laterFeatures.size() != b.laterFeatures.size()) {
+        return false;
+    }
+    for (size_t i = 0; i < a.laterFeatures.size(); ++i) {
+        if (!sameCadFeature(a.laterFeatures[i], b.laterFeatures[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+CadStatus validateCadFeatureGeometry(const CadSketch& sketch, const ExtrudeFeature& extrude,
+                                     SketchRegionExtraction* outRegions) {
+    const CadStatus sketchWhy = validateCadSketch(sketch);
     if (sketchWhy != CadStatus::Ok) {
         return sketchWhy;
     }
-    if (!std::isfinite(state.extrude.depth) || !std::isfinite(state.extrude.secondDistance)) {
+    if (!std::isfinite(extrude.depth) || !std::isfinite(extrude.secondDistance)) {
         return CadStatus::NonFinite;
     }
-    if (!directionValid(state.extrude.direction)) {
+    if (!directionValid(extrude.direction)) {
         return CadStatus::InvalidExtrudeDirection;
     }
     // The extent mode, and the ONE canonical form it allows. Refused by name
     // rather than repaired, so a file, a history step and a live edit can never
     // disagree about which of two encodings of one solid is the real one.
-    if (!extentValid(state.extrude.extent) || !extrudeFeatureCanonical(state.extrude)) {
+    if (!extentValid(extrude.extent) || !extrudeFeatureCanonical(extrude)) {
         return CadStatus::InvalidExtrudeExtent;
     }
-    const Meters positive = extrudePositiveDistance(state.extrude);
-    const Meters negative = extrudeNegativeDistance(state.extrude);
+    const Meters positive = extrudePositiveDistance(extrude);
+    const Meters negative = extrudeNegativeDistance(extrude);
     if (!sideDistanceValid(positive) || !sideDistanceValid(negative)) {
         return CadStatus::InvalidExtrudeDepth;
     }
     // A side may be zero only in Two Sides, where the other side carries the
     // extent. One Side and Symmetric both state a length, and a length of zero
     // is refused exactly as it always was -- never clamped.
-    if (state.extrude.extent != ExtrudeExtentMode::TwoSides
-        && validateDimensionMeters(state.extrude.depth) != DimensionValidation::Ok) {
+    if (extrude.extent != ExtrudeExtentMode::TwoSides
+        && validateDimensionMeters(extrude.depth) != DimensionValidation::Ok) {
         return CadStatus::InvalidExtrudeDepth;
     }
     // The SOLID's own rule: whatever the mode, the total span is a usable
@@ -260,40 +402,63 @@ CadStatus validateCadBodyState(const CadBodyState& state, ProfileExtraction* out
         || span > kMaxSketchCoordinateMeters) {
         return CadStatus::InvalidExtrudeDepth;
     }
-    ProfileExtraction extraction = extractClosedProfiles(state.sketch);
-    if (extraction.profiles.empty()) {
+    SketchRegionExtraction regions = extractSketchRegions(sketch);
+    if (regions.loops.profiles.empty()) {
         return CadStatus::NoClosedProfile;
     }
-    if (findClosedProfile(extraction, state.extrude.profileEntityId) == nullptr) {
-        return CadStatus::ProfileNotFound;
+    // Nothing chosen is `ProfileNotFound`, as it always was; telling "choose
+    // one" apart from "the one you chose is gone" is the session's business.
+    if (extrude.profileEntityId == kNoSketchEntity) {
+        return extrude.profileHoleIds.empty() && extrude.additionalRegions.empty()
+                       ? CadStatus::ProfileNotFound
+                       : CadStatus::ProfileRegionMismatch;
     }
-    if (outProfiles != nullptr) {
-        *outProfiles = std::move(extraction);
+    const CadStatus regionWhy = validateRegionSelection(regions, extrudeRegions(extrude));
+    if (regionWhy != CadStatus::Ok) {
+        return regionWhy;
+    }
+    if (outRegions != nullptr) {
+        *outRegions = std::move(regions);
     }
     return CadStatus::Ok;
 }
 
-CadStatus generateCadMesh(const CadBodyState& state, ConstructionMesh* out) {
-    if (out == nullptr) {
-        return CadStatus::RegenerationFailed;
+CadStatus validateCadBodyState(const CadBodyState& state, ProfileExtraction* outProfiles) {
+    SketchRegionExtraction baseRegions;
+    const CadStatus baseWhy = validateCadFeatureGeometry(state.sketch, state.extrude, &baseRegions);
+    if (baseWhy != CadStatus::Ok) {
+        return baseWhy;
     }
-    ProfileExtraction extraction;
-    const CadStatus why = validateCadBodyState(state, &extraction);
-    if (why != CadStatus::Ok) {
-        return why;
+    if (!state.laterFeatures.empty()) {
+        // The chain's own rules: bounds, ids, operations, and every support
+        // resolving to an eligible face of an earlier feature at its lineage.
+        std::vector<CadFeatureGeometry> chain;
+        const CadStatus chainWhy = buildCadChainGeometry(state, &chain);
+        if (chainWhy != CadStatus::Ok) {
+            return chainWhy;
+        }
     }
-    const ClosedProfile* profile = findClosedProfile(extraction, state.extrude.profileEntityId);
-    if (profile == nullptr) {
-        return CadStatus::ProfileNotFound;  // proven above; re-checked before the deref
+    if (outProfiles != nullptr) {
+        *outProfiles = std::move(baseRegions.loops);
     }
+    return CadStatus::Ok;
+}
 
+namespace {
+
+// R0's regeneration, UNCHANGED: one simple profile, one prism, float
+// throughout. Every body any earlier version created takes this path, so its
+// published mesh is bit-identical to what it always was.
+CadStatus generateSimpleProfileMesh(const CadBodyState& state, const ClosedProfile& profile,
+                                    ConstructionMesh* out) {
+    const ClosedProfile* chosen = &profile;
     std::vector<uint32_t> capIndices;
-    const CadStatus triWhy = triangulateSimplePolygon(profile->polygon, &capIndices);
+    const CadStatus triWhy = triangulateSimplePolygon(chosen->polygon, &capIndices);
     if (triWhy != CadStatus::Ok) {
         return triWhy;
     }
 
-    const uint32_t n = static_cast<uint32_t>(profile->polygon.size());
+    const uint32_t n = static_cast<uint32_t>(chosen->polygon.size());
     const Workplane plane = state.sketch.plane;
     // The solid always spans from its -N face to its +N face, and the two
     // DISTANCES say how far each reaches. Building it this way means the
@@ -307,8 +472,8 @@ CadStatus generateCadMesh(const CadBodyState& state, ConstructionMesh* out) {
     ConstructionMesh mesh;
     mesh.vertices.resize(static_cast<size_t>(cadExtrusionVertexCount(n)));
     for (uint32_t i = 0; i < n; ++i) {
-        const Vec3 nearPoint = workplaneToLocalAtOffset(plane, profile->polygon[i], nearOffset);
-        const Vec3 farPoint = workplaneToLocalAtOffset(plane, profile->polygon[i], farOffset);
+        const Vec3 nearPoint = workplaneToLocalAtOffset(plane, chosen->polygon[i], nearOffset);
+        const Vec3 farPoint = workplaneToLocalAtOffset(plane, chosen->polygon[i], farOffset);
         MeshVertex& lower = mesh.vertices[i];
         MeshVertex& upper = mesh.vertices[n + i];
         lower.position[0] = nearPoint.x;
@@ -361,9 +526,256 @@ CadStatus generateCadMesh(const CadBodyState& state, ConstructionMesh* out) {
     return CadStatus::Ok;
 }
 
+// The derived solid, as the float render mesh plus its per-triangle faces.
+CadStatus solidToBodyMesh(const CadSolid& solid, std::vector<CadMeshFace> faces, CadBodyMesh* out) {
+    CadBodyMesh result;
+    const uint32_t vertexCount = solid.vertexCount();
+    result.mesh.vertices.resize(vertexCount);
+    for (uint32_t i = 0; i < vertexCount; ++i) {
+        MeshVertex& v = result.mesh.vertices[i];
+        for (int c = 0; c < 3; ++c) {
+            v.position[c] = static_cast<float>(solid.positions[i * 3u + static_cast<uint32_t>(c)]);
+            if (!std::isfinite(v.position[c])) {
+                return CadStatus::RegenerationFailed;
+            }
+            v.color[c] = kCadBodyVertexColor[c];
+        }
+    }
+    result.mesh.indices = solid.indices;
+    result.mesh.renderBothSides = false;
+    result.triangleFace = solid.faceTags;
+    for (uint32_t tag : result.triangleFace) {
+        if (tag >= faces.size()) {
+            return CadStatus::RegenerationFailed;
+        }
+    }
+    result.faces = std::move(faces);
+    *out = std::move(result);
+    return CadStatus::Ok;
+}
+
+// Triangles grouped by ascending face tag, stable within a tag: the canonical
+// order a region prism publishes in, so every face is one contiguous range.
+void sortSolidByTag(CadSolid* solid) {
+    const size_t triangles = solid->faceTags.size();
+    std::vector<uint32_t> order(triangles);
+    std::iota(order.begin(), order.end(), 0u);
+    std::stable_sort(order.begin(), order.end(), [solid](uint32_t a, uint32_t b) {
+        return solid->faceTags[a] < solid->faceTags[b];
+    });
+    std::vector<uint32_t> indices;
+    std::vector<uint32_t> tags;
+    indices.reserve(solid->indices.size());
+    tags.reserve(triangles);
+    for (uint32_t t : order) {
+        indices.insert(indices.end(), {solid->indices[t * 3u], solid->indices[t * 3u + 1u],
+                                       solid->indices[t * 3u + 2u]});
+        tags.push_back(solid->faceTags[t]);
+    }
+    solid->indices = std::move(indices);
+    solid->faceTags = std::move(tags);
+}
+
+// An Add or a Cut may not be a silent no-op: an effect smaller than this share
+// of the tool's own volume is "no effect". Relative, so it means the same for
+// a millimetre part and a metre one; far above the kernel's own rounding.
+constexpr double kCadOperationEffectFraction = 1.0e-9;
+
+}  // namespace
+
+CadStatus regenerateCadBody(const CadBodyState& state, CadBodyMesh* out,
+                            CadRegenerationReport* report) {
+    CadRegenerationReport local;
+    auto finish = [&local, report](CadStatus why, uint32_t featureId) {
+        local.status = why;
+        local.failedFeatureId = why == CadStatus::Ok ? 0u : featureId;
+        if (report != nullptr) {
+            *report = local;
+        }
+        return why;
+    };
+    if (out == nullptr) {
+        return finish(CadStatus::RegenerationFailed, 0u);
+    }
+    std::vector<CadFeatureGeometry> chain;
+    uint32_t failedFeature = 0;
+    const CadStatus chainWhy = buildCadChainGeometry(state, &chain, &failedFeature);
+    if (chainWhy != CadStatus::Ok) {
+        return finish(chainWhy, failedFeature);
+    }
+    const CadFeatureGeometry& base = chain.front();
+
+    // The face table: every feature's own faces, in chain order.
+    std::vector<CadMeshFace> faces;
+    std::vector<uint32_t> tagOffset;
+    for (const CadFeatureGeometry& g : chain) {
+        tagOffset.push_back(static_cast<uint32_t>(faces.size()));
+        for (const CadFeatureFace& face : g.faces) {
+            faces.push_back(CadMeshFace{g.featureId, face.token, face.eligible});
+        }
+    }
+
+    // Every body any earlier version created: R0's path, bit for bit.
+    if (chain.size() == 1u && extrudeSelectsSingleSimpleProfile(base.extrude)) {
+        const SketchRegion& region = base.regions.regions[base.chosen.front()];
+        const ClosedProfile& profile = base.regions.loops.profiles[region.outerLoop];
+        CadBodyMesh result;
+        const CadStatus why = generateSimpleProfileMesh(state, profile, &result.mesh);
+        if (why != CadStatus::Ok) {
+            return finish(why, kCadFeatureId);
+        }
+        // R0's emission order: +N cap, -N cap, then one quad per edge.
+        const uint32_t n = static_cast<uint32_t>(profile.polygon.size());
+        const uint32_t capTriangles = n - 2u;
+        const bool upperIsPlaneCap = state.extrude.direction == ExtrudeDirection::AgainstNormal;
+        result.triangleFace.reserve(result.mesh.indices.size() / 3u);
+        for (uint32_t t = 0; t < capTriangles; ++t) {
+            result.triangleFace.push_back(upperIsPlaneCap ? 0u : 1u);
+        }
+        for (uint32_t t = 0; t < capTriangles; ++t) {
+            result.triangleFace.push_back(upperIsPlaneCap ? 1u : 0u);
+        }
+        for (uint32_t k = 0; k < n; ++k) {
+            result.triangleFace.push_back(2u + k);
+            result.triangleFace.push_back(2u + k);
+        }
+        result.faces = std::move(faces);
+        result.volume = region.area * (base.farOffset - base.nearOffset);
+        result.components = 1u;
+        *out = std::move(result);
+        return finish(CadStatus::Ok, 0u);
+    }
+
+    CadSolid body;
+    CadStatus why = appendCadFeatureSolid(base, tagOffset[0], &body);
+    if (why != CadStatus::Ok) {
+        return finish(why, kCadFeatureId);
+    }
+    uint32_t components = static_cast<uint32_t>(base.chosen.size());
+    double volume = cadSolidVolume(body);
+    if (chain.size() > 1u) {
+        const auto t0 = std::chrono::steady_clock::now();
+        CadSolidMeasure measure;
+        if (cadKernelValidateSolid(body, &measure) != CadKernelStatus::Ok) {
+            return finish(CadStatus::KernelFailed, kCadFeatureId);
+        }
+        components = measure.components;
+        volume = measure.volume;
+        for (size_t i = 1; i < chain.size(); ++i) {
+            const CadFeatureGeometry& feature = chain[i];
+            // The support must still carry material where this feature stands:
+            // an earlier Cut that removed the whole face refuses by name rather
+            // than leave a sketch floating in empty space.
+            if (!cadSolidHasFaceOn(body, feature.placement)) {
+                return finish(CadStatus::SupportFaceLost, feature.featureId);
+            }
+            CadSolid tool;
+            why = appendCadFeatureSolid(feature, tagOffset[i], &tool);
+            if (why != CadStatus::Ok) {
+                return finish(why, feature.featureId);
+            }
+            CadSolidMeasure toolMeasure;
+            if (cadKernelValidateSolid(tool, &toolMeasure) != CadKernelStatus::Ok) {
+                return finish(CadStatus::KernelFailed, feature.featureId);
+            }
+            const bool add = feature.operation == CadFeatureOperation::Add;
+            CadSolid result;
+            if (cadKernelBoolean(body, tool, add ? CadBooleanOp::Union : CadBooleanOp::Difference,
+                                 &result)
+                != CadKernelStatus::Ok) {
+                return finish(CadStatus::KernelFailed, feature.featureId);
+            }
+            CadSolidMeasure resultMeasure;
+            if (cadKernelMeasure(result, &resultMeasure) != CadKernelStatus::Ok) {
+                return finish(CadStatus::KernelFailed, feature.featureId);
+            }
+            const double effectFloor = kCadOperationEffectFraction * toolMeasure.volume;
+            if (add) {
+                // Contact is required: a union that ADDS a shell would be a
+                // disconnected lump, which is what New Body is for.
+                if (resultMeasure.components > components) {
+                    return finish(CadStatus::AddDisjoint, feature.featureId);
+                }
+                if (resultMeasure.volume - volume <= effectFloor) {
+                    return finish(CadStatus::AddNoEffect, feature.featureId);
+                }
+            } else {
+                if (result.empty()) {
+                    return finish(CadStatus::CutRemovesBody, feature.featureId);
+                }
+                if (volume - resultMeasure.volume <= effectFloor) {
+                    return finish(CadStatus::CutNoIntersection, feature.featureId);
+                }
+            }
+            body = std::move(result);
+            components = resultMeasure.components;
+            volume = resultMeasure.volume;
+        }
+        local.kernelMicros = std::chrono::duration<double, std::micro>(
+                                     std::chrono::steady_clock::now() - t0)
+                                     .count();
+    } else {
+        sortSolidByTag(&body);
+    }
+    CadBodyMesh result;
+    why = solidToBodyMesh(body, std::move(faces), &result);
+    if (why != CadStatus::Ok) {
+        return finish(why, 0u);
+    }
+    result.volume = volume;
+    result.components = components;
+    *out = std::move(result);
+    return finish(CadStatus::Ok, 0u);
+}
+
+CadStatus generateCadMesh(const CadBodyState& state, ConstructionMesh* out) {
+    if (out == nullptr) {
+        return CadStatus::RegenerationFailed;
+    }
+    CadBodyMesh result;
+    const CadStatus why = regenerateCadBody(state, &result);
+    if (why != CadStatus::Ok) {
+        return why;
+    }
+    *out = std::move(result.mesh);
+    return CadStatus::Ok;
+}
+
 // ---------------------------------------------------------------------------
 // The body
 // ---------------------------------------------------------------------------
+
+CadStatus CadBody::generateMesh(ConstructionMesh* out) const {
+    if (out == nullptr) {
+        return CadStatus::RegenerationFailed;
+    }
+    std::shared_ptr<const CadBodyMesh> mesh;
+    const CadStatus why = regenerated(&mesh);
+    if (why != CadStatus::Ok) {
+        return why;
+    }
+    *out = mesh->mesh;
+    return CadStatus::Ok;
+}
+
+CadStatus CadBody::regenerated(std::shared_ptr<const CadBodyMesh>* out) const {
+    if (out == nullptr) {
+        return CadStatus::RegenerationFailed;
+    }
+    if (cache_ != nullptr && sameCadBodyState(cacheState_, state_)) {
+        *out = cache_;
+        return CadStatus::Ok;
+    }
+    auto fresh = std::make_shared<CadBodyMesh>();
+    const CadStatus why = regenerateCadBody(state_, fresh.get());
+    if (why != CadStatus::Ok) {
+        return why;
+    }
+    cache_ = fresh;
+    cacheState_ = state_;
+    *out = cache_;
+    return CadStatus::Ok;
+}
 
 CadStatus CadBody::applyState(const CadBodyState& requested, bool* outChanged) {
     if (outChanged != nullptr) {
@@ -372,8 +784,8 @@ CadStatus CadBody::applyState(const CadBodyState& requested, bool* outChanged) {
     // Regenerate ONCE into a scratch mesh: the only proof a state is usable is
     // that the whole path runs, and running it here is what makes the refusal
     // land before a byte of the body has moved.
-    ConstructionMesh scratch;
-    const CadStatus why = generateCadMesh(requested, &scratch);
+    auto scratch = std::make_shared<CadBodyMesh>();
+    const CadStatus why = regenerateCadBody(requested, scratch.get());
     if (why != CadStatus::Ok) {
         ++rejectedUpdates_;
         return why;
@@ -382,6 +794,10 @@ CadStatus CadBody::applyState(const CadBodyState& requested, bool* outChanged) {
         return CadStatus::Ok;  // identical: nothing written, nothing counted
     }
     state_ = requested;
+    // The proof that the state regenerates IS its mesh: keep it, so the
+    // publish that follows does no kernel work twice.
+    cache_ = scratch;
+    cacheState_ = state_;
     ++updateCount_;
     if (outChanged != nullptr) {
         *outChanged = true;

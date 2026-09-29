@@ -229,7 +229,16 @@ public final class EditorWorkspaceArchitectureTest {
         });
     }
 
-    /** UIAR1-10. Sculpt uses the same host with four semantic brush entries. */
+    /**
+     * UIAR1-10. Sculpt uses the same host with its seven semantic brush entries,
+     * in the rail's reading order.
+     *
+     * <p>Seven since `SCULPT-FCM-R1` added Flatten, Crease and Mask, which is
+     * the count and the order `CLAUDE.md` states (Grab, Clay, Smooth, Flatten,
+     * Inflate, Crease, Mask). Asserted as an ordered list of ids rather than as
+     * a count, so a replaced or reordered entry fails even when the total
+     * happens to match.
+     */
     @Test
     public void uiar110_sculptRailParity() {
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
@@ -243,13 +252,22 @@ public final class EditorWorkspaceArchitectureTest {
             }
             workspace.syncFromNative();
             assertEquals(NativeViewport.MODE_SCULPT, NativeViewport.productMode());
-            for (int id : new int[]{R.id.tool_rail_grab, R.id.tool_rail_clay,
-                    R.id.tool_rail_smooth, R.id.tool_rail_inflate}) {
+            final int[] brushes = {R.id.tool_rail_grab, R.id.tool_rail_clay,
+                    R.id.tool_rail_smooth, R.id.tool_rail_flatten, R.id.tool_rail_inflate,
+                    R.id.tool_rail_crease, R.id.tool_rail_mask};
+            for (int id : brushes) {
                 final View entry = workspace.findViewById(id);
                 assertNotNull(entry);
                 assertTrue(isDescendantOf(entry, trailingHost(workspace)));
             }
-            assertEquals(4, toolRail(workspace).getChildCount());
+            assertEquals("the Sculpt rail holds the seven brushes and nothing else",
+                    brushes.length, toolRail(workspace).getChildCount());
+            for (int i = 0; i < brushes.length; i++) {
+                assertEquals("Sculpt rail entry " + i + " in the rail's reading order",
+                        workspace.getResources().getResourceEntryName(brushes[i]),
+                        workspace.getResources().getResourceEntryName(
+                                toolRail(workspace).getChildAt(i).getId()));
+            }
             assertEquals(View.GONE, transformModeGroup(workspace).getVisibility());
             return null;
         });

@@ -110,12 +110,16 @@ public final class CadExtrudeExtentTest {
                     canvas.findViewById(R.id.cad_extrude_extent_one_side).isActivated());
             assertEquals("and Flip is offered, because there is a side to choose", View.VISIBLE,
                     canvas.findViewById(R.id.cad_extrude_flip).getVisibility());
-            // The 48 dp interactive floor holds for the new controls too.
+            // The 48 dp interactive floor holds for the new controls too. Since
+            // `CAD-VERTICAL-SLICE-R1` the three choices stand in a palette the
+            // ONE extent control opens, so that control is the target drawn at
+            // rest; the choices' own floor is asserted with the palette open by
+            // CadVerticalSliceTest.compact_extrude_hud.
             final float density = activity.getResources().getDisplayMetrics().density;
             final int floor = Math.round(48f * density);
-            assertTrue("the selector chips are real targets",
-                    canvas.findViewById(R.id.cad_extrude_extent_symmetric).getHeight()
-                            >= floor - 1);
+            final View extent = canvas.findViewById(R.id.cad_extrude_extent);
+            assertTrue("the extent control is a real target",
+                    extent.getHeight() >= floor - 1 && extent.getWidth() >= floor - 1);
             return null;
         });
 

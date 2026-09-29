@@ -387,9 +387,16 @@ final class WorkspaceTrailingHostView extends FrameLayout
         ensureEntries(state.sculpting, state.shapeOffered, sketching);
         toolRail.setCompactEntries(state.compactRail);
         toolRail.showActive(state.activeTool);
-        sketchGroup.setVisibility(sketching ? VISIBLE : GONE);
+        // In Ready the drawing is done and the extrusion is what is looked at
+        // (CAD-VERTICAL-SLICE-R1): the seven drawing tools have nothing left to
+        // draw on, so the rail is withdrawn and Back to Sketch is the way back
+        // to it. The sketch group and the precision toggle stay.
+        toolRail.setVisibility(SketchChromePolicy.toolRailShown(state.sketchState)
+                ? VISIBLE : GONE);
+        sketchGroup.setVisibility(SketchChromePolicy.cancelSketchShown(state.sketchState)
+                ? VISIBLE : GONE);
         backToSketchAction.setVisibility(
-                state.sketchState == NativeViewport.SKETCH_READY ? VISIBLE : GONE);
+                SketchChromePolicy.backToSketchShown(state.sketchState) ? VISIBLE : GONE);
 
         precisionToggle.setContentDescription(getContext().getString(
                 state.precisionOpen ? R.string.precision_close : R.string.precision_open,

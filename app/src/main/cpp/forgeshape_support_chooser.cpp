@@ -133,8 +133,13 @@ ChosenSupport SupportChooser::resolve(const CameraSnapshot& camera, float x, flo
         if (sceneHit.hit && sceneHit.triangleIndex >= 0) {
             const SceneObject* body = scene.findBody(sceneHit.objectId);
             if (body != nullptr && body->cadOrNull() != nullptr) {
+                // The ranges of the mesh the body actually PUBLISHED -- its
+                // cached regeneration -- so a triangle index from the pick
+                // means the same triangle here, boolean result or prism.
                 std::vector<CadFaceRange> ranges;
-                if (cadFaceRanges(body->cadOrNull()->state(), &ranges) == CadStatus::Ok) {
+                std::shared_ptr<const CadBodyMesh> published;
+                if (body->cadOrNull()->regenerated(&published) == CadStatus::Ok
+                    && cadFaceRangesFromMesh(*published, &ranges) == CadStatus::Ok) {
                     const uint32_t firstIndex =
                         static_cast<uint32_t>(sceneHit.triangleIndex) * 3u;
                     for (const CadFaceRange& rg : ranges) {
@@ -145,7 +150,8 @@ ChosenSupport SupportChooser::resolve(const CameraSnapshot& camera, float x, flo
                             break;  // a cylindrical side: not a valid support
                         }
                         CadFace face;
-                        if (resolveCadFace(body->cadOrNull()->state(), rg.token, &face)
+                        if (resolveCadFeatureFace(body->cadOrNull()->state(), rg.featureId,
+                                                  rg.token, &face)
                             != CadStatus::Ok) {
                             break;
                         }
@@ -163,10 +169,10 @@ ChosenSupport SupportChooser::resolve(const CameraSnapshot& camera, float x, flo
                             best.kind = ChosenSupport::Kind::Face;
                             best.plane = Workplane::XY;
                             best.faceRef.producerObjectId = body->objectId();
-                            best.faceRef.producerLocalFeatureId = kCadFeatureId;
+                            best.faceRef.producerLocalFeatureId = rg.featureId;
                             best.faceRef.face = rg.token;
-                            best.faceRef.lineageToken =
-                                cadTopologySignature(body->cadOrNull()->state());
+                            best.faceRef.lineageToken = cadFeatureTopologySignature(
+                                    body->cadOrNull()->state(), rg.featureId);
                             best.worldFrame.origin = mat4TransformPoint(faceWorld, Vec3{0, 0, 0});
                             best.worldFrame.u =
                                 vec3Normalize(mat4TransformDirection(faceWorld, Vec3{1, 0, 0}));

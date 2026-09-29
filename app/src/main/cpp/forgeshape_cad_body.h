@@ -37,17 +37,36 @@
 // refused by name and the last valid state stands. There is no half-regenerated
 // body.
 //
-// R0 is one sketch and one linear New-Body extrusion. The state is a struct
-// rather than a list so nothing pretends a feature tree exists; when a second
-// feature kind arrives it takes a new `CADB` section version rather than a
-// discriminator inside this one.
+// The retained feature chain (`CAD-VERTICAL-SLICE-R1`)
+// ----------------------------------------------------
+// R0 was one sketch and one linear New-Body extrusion, and that pair is still
+// the body's FIRST feature, field for field -- which is what keeps every v1..v4
+// `CADB` record meaning exactly what it meant. After it the body may carry a
+// bounded, ordered list of LATER features, each a retained sketch on a planar
+// face of an EARLIER feature of the same body, extruded, and applied as an Add
+// (union) or a Cut (difference) through the boolean kernel
+// (forgeshape_cad_kernel.h). A later feature never creates a body: New Body is
+// the act that does, and it stays a separate `SceneObject`.
+//
+//     CadBodyState
+//         sketch + extrude         feature 1: the base New Body extrusion
+//         laterFeatures[]          features 2..n: support, sketch, extrude, Add|Cut
+//
+// Regeneration is ORDERED and ATOMIC: the base, then every later feature in
+// order, and a mesh is published only when the whole requested chain is valid.
+// Editing feature i regenerates i..end; a later feature that becomes impossible
+// refuses the edit by name and the previous state stands. Nothing derived --
+// no intermediate solid, no kernel output, no face tag -- is ever stored.
 #pragma once
 
 #include <cstdint>
+#include <memory>
+#include <vector>
 
 #include "forgeshape_construction.h"
 #include "forgeshape_object_id.h"
 #include "forgeshape_sketch.h"
+#include "forgeshape_sketch_region.h"
 #include "forgeshape_workplane.h"
 
 namespace forgeshape {
@@ -102,9 +121,22 @@ int extrudeExtentModeIndex(ExtrudeExtentMode mode);
 constexpr Meters kDefaultExtrudeDepthMeters = 1.0;
 
 struct ExtrudeFeature {
-    // The anchor entity of the profile to extrude. Must name one closed
-    // profile of the sketch; never an index.
+    // WHAT is extruded: a selection of sketch REGIONS (forgeshape_sketch_region.h),
+    // stored by semantic identity and in canonical order. The first region is
+    // held in the two fields every earlier version already had -- its outer
+    // loop's anchor in `profileEntityId`, its holes in `profileHoleIds` -- and
+    // any further region in `additionalRegions`, so a single region without
+    // holes IS the R0 profile, byte for byte, and never an index.
+    //
+    // The anchor of the first selected region's OUTER loop. Canonically the
+    // smallest outer anchor of the selection.
     SketchEntityId profileEntityId = kNoSketchEntity;
+    // That region's holes, ascending (`CAD-VERTICAL-SLICE-R1`). Empty for a
+    // region without holes, which is every region any earlier version stored.
+    std::vector<SketchEntityId> profileHoleIds;
+    // Further selected regions, ascending by outer anchor, every one above
+    // `profileEntityId` (`CAD-VERTICAL-SLICE-R1`).
+    std::vector<ProfileRegionRef> additionalRegions;
     // The PRIMARY authored distance, always positive, never signed:
     //   OneSide    the length on `direction`'s side;
     //   Symmetric  the length on EACH side;
@@ -122,6 +154,18 @@ struct ExtrudeFeature {
     // every other mode, for the reason `direction` is canonical there.
     Meters secondDistance = 0.0;
 };
+
+// The selection as ONE canonical list: the first region, then the additional
+// ones. Empty when nothing is chosen.
+std::vector<ProfileRegionRef> extrudeRegions(const ExtrudeFeature& extrude);
+
+// Writes a whole selection into the three fields, canonically sorted. An empty
+// selection clears them.
+void setExtrudeRegions(ExtrudeFeature* extrude, std::vector<ProfileRegionRef> regions);
+
+// Whether the selection is exactly one region without holes: the R0 profile,
+// which regenerates through the unchanged R0 path.
+bool extrudeSelectsSingleSimpleProfile(const ExtrudeFeature& extrude);
 
 // The two durable distances, whatever the mode. THE reduction: every consumer
 // that needs to know how far the solid reaches asks these two and never the
@@ -168,24 +212,118 @@ ExtrudeFeature extrudeFeatureWithSide(const ExtrudeFeature& from, bool positiveS
 ExtrudeFeature extrudeFeatureWithPrimary(const ExtrudeFeature& from, Meters distance,
                                          ExtrudeDirection direction);
 
-// The whole authored truth of one CAD Body. Plain, copyable, comparable,
-// BOUNDED (the sketch caps its entities and every polyline's vertices), and
-// carrying nothing derived.
-struct CadBodyState {
+// ---------------------------------------------------------------------------
+// The feature chain (`CAD-VERTICAL-SLICE-R1`)
+// ---------------------------------------------------------------------------
+
+// What an extrusion does to material. The FIRST feature of a body is always
+// NewBody -- it is the body -- and every later feature is Add or Cut: a later
+// feature never creates a body, and an Add or a Cut that cannot apply is
+// refused by name rather than falling back to a new one.
+enum class CadFeatureOperation : uint8_t {
+    NewBody,
+    Add,
+    Cut,
+};
+
+constexpr int kCadFeatureOperationCount = 3;
+
+const char* cadFeatureOperationName(CadFeatureOperation operation);
+bool cadFeatureOperationFromIndex(int index, CadFeatureOperation* out);
+int cadFeatureOperationIndex(CadFeatureOperation operation);
+
+// How many features one CAD body may carry, the base included. Bounded so a
+// history step, a `.forge` record and a regeneration stay finite; far above
+// what a phone session builds on one part.
+constexpr uint32_t kMaxCadFeatures = 16;
+
+// Where a LATER feature's sketch stands: a planar face of an EARLIER feature of
+// the SAME body, by semantic identity. Deliberately not a `TopoRef`: that names
+// another body and derives this body's world placement from it, while this
+// names a face in the body's own local space and places only the feature's
+// sketch. A body that supported itself through a `TopoRef` would be a cycle.
+struct CadFeatureSupport {
+    // An earlier feature of this body: the base (kCadFeatureId) or a later one
+    // with a smaller id.
+    uint32_t featureId = kCadFeatureId;
+    CadFaceToken face{};
+    // That feature's topology signature when the sketch was placed, on the
+    // `TopoRef` rule: a face-structure change fails closed, a size edit keeps
+    // it attached.
+    uint64_t lineageToken = 0;
+};
+
+bool sameCadFeatureSupport(const CadFeatureSupport& a, const CadFeatureSupport& b);
+
+// One later feature: a retained sketch on a supporting face, its extrusion and
+// what the extrusion does.
+struct CadFeature {
+    // Stable within the body, strictly ascending along the chain, above the
+    // base's kCadFeatureId. Never an index.
+    uint32_t featureId = 0;
+    CadFeatureOperation operation = CadFeatureOperation::Add;
+    CadFeatureSupport support{};
+    // Authored on its own canonical local XY (`plane` XY, no `TopoRef`): the
+    // support face's frame places it in the body.
     CadSketch sketch;
     ExtrudeFeature extrude;
 };
 
+bool sameCadFeature(const CadFeature& a, const CadFeature& b);
+
+// The whole authored truth of one CAD Body. Plain, copyable, comparable,
+// BOUNDED (the sketch caps its entities and every polyline's vertices, and the
+// chain caps its features), and carrying nothing derived.
+struct CadBodyState {
+    // Feature 1: the base New Body extrusion, exactly what R0 stored.
+    CadSketch sketch;
+    ExtrudeFeature extrude;
+    // Features 2..n, in application order. Empty for every body any earlier
+    // version created.
+    std::vector<CadFeature> laterFeatures;
+};
+
+// The number of features in the chain, the base included.
+inline uint32_t cadFeatureCount(const CadBodyState& state) {
+    return 1u + static_cast<uint32_t>(state.laterFeatures.size());
+}
+
+// A read-only view of one feature, base or later, so a caller can walk the
+// chain without asking which kind of slot a feature lives in.
+struct CadFeatureView {
+    uint32_t featureId = kCadFeatureId;
+    CadFeatureOperation operation = CadFeatureOperation::NewBody;
+    const CadSketch* sketch = nullptr;
+    const ExtrudeFeature* extrude = nullptr;
+    // Null for the base, whose support is its sketch's own plane or TopoRef.
+    const CadFeatureSupport* support = nullptr;
+};
+
+// The feature at chain position `index` (0 = base). False past the end.
+bool cadFeatureAt(const CadBodyState& state, uint32_t index, CadFeatureView* out);
+// The feature with `featureId`. False when the chain has none.
+bool findCadFeature(const CadBodyState& state, uint32_t featureId, CadFeatureView* out);
+// The id the next appended feature takes.
+uint32_t nextCadFeatureId(const CadBodyState& state);
+
 // Bit-exact, for the history and the codec.
 bool sameCadBodyState(const CadBodyState& a, const CadBodyState& b);
 
-// The whole rule for whether a state describes a body this build can
-// regenerate: a valid sketch, a valid depth and direction, and a chosen
-// profile the sketch actually closes. `outProfiles` receives the extraction
-// when the sketch is valid, so a caller that needs the polygon does not run it
-// twice.
+// The whole STRUCTURAL rule for whether a state describes a body this build
+// can regenerate: every feature's sketch, depth, direction and extent, a region
+// selection its sketch actually derives, the chain's bounds, ids and
+// operations, and every later feature's support resolving to an eligible face
+// of an earlier feature at the stored lineage. It does NOT run the kernel: an
+// Add that would not touch, or a Cut that would remove everything, is only
+// known by regenerating (`generateCadMesh`). `outProfiles` receives the BASE
+// feature's loop extraction when its sketch is valid.
 CadStatus validateCadBodyState(const CadBodyState& state,
                                ProfileExtraction* outProfiles = nullptr);
+
+// One feature's own rule, without the chain: sketch, extent, regions.
+// `outRegions` receives the region extraction on success.
+CadStatus validateCadFeatureGeometry(const CadSketch& sketch, const ExtrudeFeature& extrude,
+                                     SketchRegionExtraction* outRegions = nullptr);
 
 // THE regeneration path. Validates, extracts, triangulates, extrudes.
 //
@@ -197,7 +335,48 @@ CadStatus validateCadBodyState(const CadBodyState& state,
 // business, exactly as they are for a box.
 //
 // Writes nothing and reports why on any refusal.
+//
+// Since `CAD-VERTICAL-SLICE-R1` it regenerates the WHOLE chain: a single
+// region without holes and no later feature takes exactly the path above (so
+// every existing body's mesh is bit-identical); a region with holes or several
+// regions build their prisms with inner walls; later features apply through the
+// kernel in order.
 CadStatus generateCadMesh(const CadBodyState& state, ConstructionMesh* out);
+
+// One semantic face a regenerated mesh carries triangles of.
+struct CadMeshFace {
+    uint32_t featureId = kCadFeatureId;
+    CadFaceToken token{};
+    // Whether a sketch may stand on it: a planar face of a New Body or Add
+    // feature. A curved side, and every face a Cut leaves behind, is not.
+    bool eligible = true;
+};
+
+// The full regeneration result: the mesh, and per TRIANGLE the semantic face it
+// came from. Derived, transient, never persisted; the face table is what lets a
+// tap on a triangle of a boolean result resolve to a stable (feature, face).
+struct CadBodyMesh {
+    ConstructionMesh mesh;
+    std::vector<uint32_t> triangleFace;  // one per triangle, into `faces`
+    std::vector<CadMeshFace> faces;
+    // Measured on the double-precision solid before it became floats.
+    double volume = 0.0;
+    uint32_t components = 0;
+};
+
+// Why a regeneration stopped, and where.
+struct CadRegenerationReport {
+    CadStatus status = CadStatus::Ok;
+    // The feature that refused, or 0 when the refusal is not a feature's.
+    uint32_t failedFeatureId = 0;
+    // Microseconds spent in the kernel, for the performance evidence.
+    double kernelMicros = 0.0;
+};
+
+// THE regeneration, with its derived face table. `generateCadMesh` is this
+// without the table.
+CadStatus regenerateCadBody(const CadBodyState& state, CadBodyMesh* out,
+                            CadRegenerationReport* report = nullptr);
 
 // The neutral colour every CAD vertex carries. Presentation only: it feeds the
 // debug-only source-colour shading mode and nothing else.
@@ -238,17 +417,29 @@ public:
     // The regenerated mesh for the current state. The current state was
     // validated when it was applied, so this cannot fail for a body that was
     // built through `applyState` or a validated load.
-    CadStatus generateMesh(ConstructionMesh* out) const { return generateCadMesh(state_, out); }
+    CadStatus generateMesh(ConstructionMesh* out) const;
+
+    // The full regeneration of the current state, face table included, from
+    // the runtime cache when the state has not changed since it was built.
+    // The cache is derived, never persisted and never compared.
+    CadStatus regenerated(std::shared_ptr<const CadBodyMesh>* out) const;
 
     // History support, on the same terms as ConstructionObject's pair: a
     // restore writes a state that was authoritative when captured and advances
     // no counter.
     CadBodyState captureState() const { return state_; }
-    void restoreState(const CadBodyState& state) { state_ = state; }
+    void restoreState(const CadBodyState& state) {
+        state_ = state;
+        cache_.reset();
+    }
 
 private:
     const ObjectId objectId_;
     CadBodyState state_;
+    // Runtime-only: the last regeneration and the state it was built from, so
+    // a publish after an apply, and every redraw, does no kernel work twice.
+    mutable std::shared_ptr<const CadBodyMesh> cache_;
+    mutable CadBodyState cacheState_;
     uint64_t updateCount_ = 0;
     uint64_t rejectedUpdates_ = 0;
 };

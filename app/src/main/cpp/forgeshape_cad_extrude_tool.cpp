@@ -116,7 +116,55 @@ bool sketchPolygonCentroid(const std::vector<SketchPoint>& polygon, SketchPoint*
 
 bool cadExtrudeAnchors(const SketchFrame& frame, const ClosedProfile& profile,
                        const ExtrudeFeature& extrude, CadExtrudeAnchors* out) {
+    SketchPoint centroid;
+    if (!sketchPolygonCentroid(profile.polygon, &centroid)) {
+        return false;
+    }
+    return cadExtrudeAnchorsAt(frame, centroid, extrude, out);
+}
+
+void cadOperationPreviewTint(CadFeatureOperation operation, float out[4]) {
+    switch (operation) {
+        case CadFeatureOperation::Add:
+            out[0] = 0.30f; out[1] = 0.80f; out[2] = 0.42f; out[3] = 0.30f;
+            return;
+        case CadFeatureOperation::Cut:
+            out[0] = 0.95f; out[1] = 0.24f; out[2] = 0.20f; out[3] = 0.34f;
+            return;
+        case CadFeatureOperation::NewBody:
+            out[0] = 0.42f; out[1] = 0.66f; out[2] = 0.98f; out[3] = 0.22f;
+            return;
+    }
+    out[0] = out[1] = out[2] = out[3] = 0.0f;
+}
+
+bool extrudeSelectionAnchorPoint(const SketchRegionExtraction& regions,
+                                 const ExtrudeFeature& extrude, SketchPoint* out) {
     if (out == nullptr) {
+        return false;
+    }
+    const SketchRegion* region = findSketchRegion(regions, extrude.profileEntityId);
+    if (region == nullptr) {
+        return false;
+    }
+    const std::vector<std::vector<SketchPoint>> loops = sketchRegionLoops(regions, *region);
+    if (loops.empty()) {
+        return false;
+    }
+    if (region->holeLoops.empty()) {
+        return sketchPolygonCentroid(loops[0], out);
+    }
+    bool onMaterial = sketchPointStrictlyInside(region->centroid, loops[0]);
+    for (size_t h = 1; onMaterial && h < loops.size(); ++h) {
+        onMaterial = !sketchPointStrictlyInside(region->centroid, loops[h]);
+    }
+    *out = onMaterial ? region->centroid : region->interiorPoint;
+    return true;
+}
+
+bool cadExtrudeAnchorsAt(const SketchFrame& frame, const SketchPoint& centroid,
+                         const ExtrudeFeature& extrude, CadExtrudeAnchors* out) {
+    if (out == nullptr || !std::isfinite(centroid.u) || !std::isfinite(centroid.v)) {
         return false;
     }
     const Meters positive = extrudePositiveDistance(extrude);
@@ -132,10 +180,6 @@ bool cadExtrudeAnchors(const SketchFrame& frame, const ClosedProfile& profile,
     const Vec3 normal = vec3Normalize(frame.n);
     if (std::fabs(vec3Dot(normal, normal) - 1.0f) > 1.0e-3f) {
         return false;  // a degenerate normal is refused rather than invented
-    }
-    SketchPoint centroid;
-    if (!sketchPolygonCentroid(profile.polygon, &centroid)) {
-        return false;
     }
     CadExtrudeAnchors built;
     built.normal = normal;

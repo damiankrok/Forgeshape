@@ -158,6 +158,15 @@ constexpr uint16_t kCadSectionVersionV3 = 3;
 // refuses v4 -- a required section at an unknown version -- rather than opening
 // a body with half its extent silently missing.
 constexpr uint16_t kCadSectionVersionV4 = 4;
+// CAD-VERTICAL-SLICE-R1: version 5 adds the REGION selection (a chosen region's
+// holes and any further chosen regions) and the retained FEATURE CHAIN (later
+// Add/Cut features standing on the same body's own faces), as a tail after the
+// first feature's entities (DATA_PACKAGE_SPEC.md §7f). Written only when a body
+// selects anything but one region without holes or carries a later feature; a
+// project that does neither keeps v1..v4 and stays byte-identical. An older
+// build refuses v5 rather than opening a body with its holes silently filled or
+// its Add and Cut features silently missing.
+constexpr uint16_t kCadSectionVersionV5 = 5;
 
 // CADB v1 file codes. FILE-owned, 1-based, and deliberately not a cast of any
 // C++ enum, on the same terms as the primitive codes.
@@ -173,6 +182,9 @@ bool sketchEntityKindFromFileCode(uint8_t code, SketchEntityKind* out);
 
 // CADB v2 face-kind file codes (`CAD-A3`), file-owned and 1-based like the rest.
 uint8_t cadFaceKindFileCode(CadFaceKind kind);
+// CADB v5 operation codes: 1 New Body, 2 Add, 3 Cut.
+uint8_t cadFeatureOperationFileCode(CadFeatureOperation operation);
+bool cadFeatureOperationFromFileCode(uint8_t code, CadFeatureOperation* out);
 bool cadFaceKindFromFileCode(uint8_t code, CadFaceKind* out);
 
 // v1 feature-graph codes. FILE-owned and independent of any C++ enum's ABI.

@@ -640,7 +640,7 @@ public final class SelectionOutlineVisualEvidenceTest {
      */
     private void capture(String name, boolean expectBand) {
         settleLayout();
-        SystemClock.sleep(500);  // a few more frames, so the viewport has drawn the state
+        awaitPresentedFrames(name);
         final Bitmap frame =
                 InstrumentationRegistry.getInstrumentation().getUiAutomation().takeScreenshot();
         assertNotNull("the display could be captured", frame);
@@ -663,6 +663,66 @@ public final class SelectionOutlineVisualEvidenceTest {
         facts.add("capture=" + name + ".png width=" + frame.getWidth() + " height="
                 + frame.getHeight());
         facts.add("");
+    }
+
+    /**
+     * Frames that must be presented after a state change before the display
+     * can be trusted to show it: the frame that may have been recorded just
+     * before the change, the first one recorded after it, and the four-image
+     * FIFO swapchain's depth behind that. The number `CadVerticalSliceTest`
+     * already waits for, for the same reason.
+     */
+    private static final int CAPTURE_PRESENTED_FRAMES = 6;
+    private static final long CAPTURE_FRAME_TIMEOUT_MS = 15000;
+    private static final long CAPTURE_FRAME_POLL_MS = 25;
+
+    /**
+     * Waits until the renderer has presented {@link #CAPTURE_PRESENTED_FRAMES}
+     * more frames, and FAILS the test when it does not within
+     * {@link #CAPTURE_FRAME_TIMEOUT_MS}.
+     *
+     * <p>A fixed delay is not a synchronisation: SwiftShader on the CI emulator
+     * presents about three frames a second, so a screenshot taken 500 ms after
+     * the Warm Light ground was set could show a frame recorded before it, and
+     * the scan then found no light-family band in a frame that was simply
+     * stale. The presented-frame count is process-monotonic, so the delta read
+     * here is frames the renderer really presented after the state change.
+     *
+     * <p>Unlike `CadVerticalSliceTest`, whose captures are illustration and
+     * which records a timeout, this class ASSERTS pixels, so a frame the wait
+     * cannot vouch for is never taken: the case fails before the screenshot,
+     * with the counts that say why.
+     */
+    private void awaitPresentedFrames(String name) {
+        final long start = NativeViewport.debugRendererFramesPresented();
+        final long began = SystemClock.uptimeMillis();
+        long latest = start;
+        long elapsed = 0;
+        while (elapsed < CAPTURE_FRAME_TIMEOUT_MS) {
+            latest = NativeViewport.debugRendererFramesPresented();
+            elapsed = SystemClock.uptimeMillis() - began;
+            if (latest < start) {
+                break;  // the count is monotonic; a smaller one is not a delta
+            }
+            if (latest - start >= CAPTURE_PRESENTED_FRAMES) {
+                fact("presented_frames_start", start);
+                fact("presented_frames_final", latest);
+                fact("presented_frames_delta", latest - start);
+                fact("presented_frames_wait_ms", elapsed);
+                return;
+            }
+            SystemClock.sleep(CAPTURE_FRAME_POLL_MS);
+        }
+        final String diagnosis = name + ": the renderer did not present "
+                + CAPTURE_PRESENTED_FRAMES + " frames after the state change, so no frame"
+                + " can be trusted to show it; start=" + start + " latest=" + latest
+                + " delta=" + (latest - start) + " required=" + CAPTURE_PRESENTED_FRAMES
+                + " elapsed_ms=" + elapsed + " timeout_ms=" + CAPTURE_FRAME_TIMEOUT_MS
+                + " renderer_lifecycle=" + NativeViewport.rendererLifecycle()
+                + " viewport_background_index=" + NativeViewport.viewportBackground()
+                + " selected_object_id=" + NativeViewport.sceneActiveBodyId();
+        fact("presented_frames_wait", "FAILED " + diagnosis);
+        throw new AssertionError(diagnosis);
     }
 
     private void fact(String key, Object value) {

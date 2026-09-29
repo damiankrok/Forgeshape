@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  CAD-VERTICAL-SLICE-R1: regions with holes, the feature chain and the three
+  operations. The canvas HUD's own captions live in strings_cad_hud.xml; these
+  are the precision surface's rows, the status line's verdicts and the named
+  refusals below JNI. Every refusal names what the user can change, never the
+  kernel that found it.
+-->
+<resources>
+    <!-- Refusals (CadStatus 31..44). -->
+    <string name="status_cad_region_mismatch">That region is no longer in the sketch — choose it again.</string>
+    <string name="status_cad_overlapping_regions">Those regions overlap — one extrusion cannot use both.</string>
+    <string name="status_cad_overlapping_holes">Holes in one region may not overlap.</string>
+    <string name="status_cad_too_many_regions">Too many regions in one extrusion.</string>
+    <string name="status_cad_invalid_operation">That operation is not available here.</string>
+    <string name="status_cad_too_many_features">This body has as many features as it can hold.</string>
+    <string name="status_cad_feature_support_invalid">The face this feature stands on no longer exists.</string>
+    <string name="status_cad_support_face_lost">That change would remove the face a later feature stands on.</string>
+    <string name="status_cad_operation_needs_target">Add and Cut need a sketch on a body\'s face.</string>
+    <string name="status_cad_add_disjoint">Add does not touch the body — it would make a separate piece.</string>
+    <string name="status_cad_add_no_effect">Add changes nothing — the new material is already inside the body.</string>
+    <string name="status_cad_cut_no_intersection">Cut misses the body — nothing would be removed.</string>
+    <string name="status_cad_cut_removes_body">Cut would remove the whole body.</string>
+    <string name="status_cad_kernel_failed">The solid could not be computed from this feature.</string>
+
+    <!-- The precision surface in Ready. -->
+    <string name="sketch_operation_section">Operation</string>
+    <string name="sketch_operation_new_body">New Body</string>
+    <string name="sketch_operation_add">Add</string>
+    <string name="sketch_operation_cut">Cut</string>
+    <string name="sketch_region_one_hole">%1$s, 1 hole</string>
+    <string name="sketch_region_holes">%1$s, %2$d holes</string>
+    <string name="sketch_region_description">Region: %1$s. Not selected.</string>
+    <string name="sketch_region_unselectable">%1$s — cannot be extruded: %2$s</string>
+    <string name="sketch_region_selected_description">Region: %1$s. Selected.</string>
+
+    <!-- The CAD Body's feature list. -->
+    <string name="cad_features_section">Features</string>
+    <string name="cad_feature_row">%1$d. Extrude — %2$s</string>
+    <string name="cad_feature_row_description">%1$s. Edit this feature.</string>
+
+    <!-- Status verdicts. -->
+    <string name="status_sketch_finished_region">Sketch finished — the region is ready to extrude.</string>
+    <string name="status_sketch_finished_tap_region">%1$d regions found — none chosen yet; tap one.</string>
+    <string name="status_regions_selected">Regions in the extrusion: %1$d.</string>
+    <string name="status_operation_chosen">Operation: %1$s.</string>
+    <string name="status_feature_added">Added to %1$s — one step to undo.</string>
+    <string name="status_feature_cut">Cut from %1$s — one step to undo.</string>
+    <string name="status_feature_edit_begun">Editing feature %1$d of %2$s.</string>
+</resources>

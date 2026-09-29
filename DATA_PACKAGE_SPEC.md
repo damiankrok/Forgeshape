@@ -707,6 +707,166 @@ any of this, so the §7c lineage signature is unchanged too, and a
 face-supported dependent stays attached across an extent edit — while its
 derived world placement follows the cap that moved, which is correct.
 
+## 7f. `CADB` v5 — regions with holes and the retained feature chain (`CAD-VERTICAL-SLICE-R1`)
+
+Two authored facts arrive together, and no rule could recreate either, so both
+are stored — as a **section version 5** of `CADB`, written **only** when at least
+one CAD body needs it:
+
+* **a region selection that is not the R0 profile.** A sketch's closed loops
+  enclose REGIONS: every loop's interior minus the interiors of the loops it
+  directly and cleanly contains (its holes). A rectangle around a circle
+  therefore offers two regions — the disk, and the rectangle minus the disk —
+  and the extrusion stores WHICH it chose, by semantic identity: the anchor of
+  each chosen region's OUTER loop and the anchors of that region's HOLES. A
+  selection of exactly one region without holes is the R0 profile, carried by
+  `profileEntityId` since v1, and needs nothing new.
+* **a retained feature chain.** After its first (New Body) extrusion a CAD body
+  may carry up to fifteen LATER features, each a sketch standing on a planar
+  face of an EARLIER feature of the SAME body, extruded, and applied as an
+  **Add** (union) or a **Cut** (difference). A later feature never creates a
+  body; New Body is the act that does, and it is a separate `SCNE` body.
+
+A project whose every CAD body selects one region without holes and carries no
+later feature still writes v1, v2, v3 or v4 exactly as before and is
+**byte-identical** to what the earlier stages wrote; the thirty-six fixtures
+that predate this stage prove it. An older build refuses a required `CADB` at an
+unknown version rather than opening a body with its holes silently filled or its
+Add and Cut features silently missing.
+
+v5 is v4's record with a **tail** after the first feature's entities. **v5
+always writes the v2 support block and the v4 extent fields and understands the
+v3 entity kinds**, because a version is a superset of the one below it.
+
+```
+u64  objectId
+u8   workplaneCode
+u8   supportKind  (+ the TopoRef for a face support)     ← v2
+u32  nextEntityId
+u32  profileEntityId           the FIRST chosen region's outer-loop anchor
+u8   extentCode                                           ← v4
+u8   directionCode
+f64  depth
+f64  secondDistance                                       ← v4
+u32  entityCount … then the entities, exactly as §7b and §7d
+— the v5 tail —
+REGIONS   the first feature's region selection (below)
+u32  laterFeatureCount         0 .. 15
+repeat laterFeatureCount times, in chain (application) order:
+  u32  featureId               strictly ascending, every one > 1
+  u8   operationCode           2 Add, 3 Cut   (1 New Body is refused here)
+  u32  supportFeatureId        an EARLIER feature of this body: 1, or a
+                               smaller later featureId
+  u8   faceKind                1 CapPlane, 2 CapFar, 3 Side
+  u32  faceEdgeEntityId        0 for a cap
+  u32  faceEdgeLocalIndex      0 for a cap
+  u64  lineageToken            the supporting feature's signature (below)
+  u32  nextEntityId
+  u32  profileEntityId
+  u8   extentCode
+  u8   directionCode
+  f64  depth
+  f64  secondDistance
+  u32  entityCount … then the entities, exactly as §7b and §7d
+  REGIONS                       this feature's region selection
+```
+
+and `REGIONS` is
+
+```
+u32  holeCount                 holes of the FIRST chosen region, 0 .. 64
+u32  holeAnchorId × holeCount  strictly ascending
+u32  additionalRegionCount     further chosen regions, 0 .. 15
+repeat additionalRegionCount times:
+  u32  outerAnchorId           strictly ascending, every one > profileEntityId
+  u32  holeCount               0 .. 64
+  u32  holeAnchorId × holeCount   strictly ascending
+```
+
+A later feature's sketch is authored on its own canonical local XY — it has no
+workplane code and no support block of its own — and is placed in the body by
+its support face's frame alone: `(u, v)` on the sketch at offset `w` along the
+normal is `origin + U·u + V·v + N·w` of the frame the named face of the named
+earlier feature has in the body's local space (the same frame a face-supported
+body of §7c is placed by, but composed inside ONE body rather than across two).
+A world placement is never involved, so a later feature moves with its body and
+with the face it stands on.
+
+The codes are file-owned:
+
+| CAD feature operation | code |
+| --- | ---: |
+| New Body (the first feature only; never stored — the first feature IS the body) | 1 |
+| Add (union) | 2 |
+| Cut (difference) | 3 |
+
+Per later feature the fixed record is 4 + 1 + 4 + 1 + 4 + 4 + 8 + 4 + 4 + 1 +
+1 + 8 + 8 + 4 = **56 bytes**, plus its entities and its `REGIONS` block of
+8 + 4 × (holes) + Σ(8 + 4 × holes) bytes. A v5 body with no later feature and a
+one-region selection costs 12 bytes more than its v4 record.
+
+### The canonical form, and what is refused
+
+One solid has exactly one encoding, and the decoder enforces it: anchors and
+feature ids strictly ascending as stated, `operationCode` 2 or 3,
+`supportFeatureId` an earlier feature of the same body, every count within its
+bound — `ImpossibleCount` for a count out of range, **before** anything is
+allocated for it; `InvalidSemanticValue` for an unknown operation or face code,
+for ids out of order, for a support that names no earlier feature, for a stored
+hole set that is not EXACTLY the one the sketch derives for that outer loop, for
+two chosen regions that overlap, touch or share a loop, and for anything the
+domain's own `validateCadBodyState` refuses. A body carrying later features is
+then **regenerated** through the boolean kernel as part of the check — an Add
+whose tool does not touch the body (`AddDisjoint`), an Add that adds nothing, a
+Cut that removes nothing (`CutNoIntersection`) or everything (`CutRemovesBody`),
+a support face an earlier Cut carved away (`SupportFaceLost`) — so a file is
+refused rather than opened as a body the editor could never have produced.
+Nothing about the kernel's result is stored: no vertex, no triangle, no tag.
+
+### Regions, stated so a second implementation derives the same ones
+
+The loops are exactly what `extractClosedProfiles` reads (§7b, §7d), and loops no
+longer refuse each other for nesting. Loop B is CLEANLY INSIDE loop A when no
+edge of one touches or crosses an edge of the other and B's first vertex lies
+strictly inside A by the even-odd rule. B's PARENT is the smallest-area loop B is
+cleanly inside (ties by the smaller anchor). The region of loop L is L minus its
+children. A loop that touches or crosses another is never anyone's hole — each
+such loop stays its own region, exactly as every earlier version read it — and a
+region whose holes touch or cross each other cannot be selected. There is no
+planar arrangement: loops never split each other.
+
+### The lineage token, generalized
+
+`lineageToken` is §7c's signature of the SUPPORTING feature's own face topology,
+with the face list generalized to regions:
+
+```
+faces = [CapPlane, CapFar]
+        then for each chosen region in ascending outer-anchor order:
+          one Side per edge of its OUTER loop, in the loop's polygon order
+          then for each hole in ascending anchor order:
+            one Side per edge of the HOLE loop, in that loop's polygon order
+mix(profileEntityId); mix(faces.count)
+for each face: mix(code); mix(eligible ? 1 : 0)
+```
+
+with `code` and `mix` exactly as §7c. A loop's polygon order is the
+counter-clockwise order the extraction produces: a rectangle from its
+`(-w/2, -h/2)` corner (edges 0..3), a circle from `+U` (32 curved edges), and
+a polyline or chain in its stored order when that order is counter-clockwise;
+when it is clockwise the vertex sequence is reversed and edge `j` of the result
+is stored edge `(n − 2 − j) mod n` of the `n` edges. Eligibility is 0 for a
+curved side (a circle's, an arc's or a spline's) and 0 for EVERY face of a Cut
+feature — a Cut leaves its faces behind as the inside of a pocket, facing the
+other way, and R1 does not let a sketch stand there — and 1 otherwise. For a
+first feature that selects one region without holes this is §7c exactly, so no
+stored token of any earlier fixture changes.
+
+A `TopoRef` of §7c may now name a LATER feature of its producer
+(`producerFeatureId` > 1): the dependent then stands on that feature's face, at
+that feature's signature, and — because a Cut can carve a face away entirely —
+the face must still carry material in the producer's regenerated body.
+
 ## 8. Validation and compatibility
 
 Decoding happens entirely into temporary document structures. **No live project
@@ -901,21 +1061,38 @@ debug launch as `FORGESHAPE_PROJECT_GOLDEN_SHA256`.
 | `mixed_cad_face_v2.forge` | 923 | `4b20f3c8ea05876850043dff28591f19855efa4c0566bebd43df11f1c0ff1529` | A Construction Box, an Imported Mesh, a CAD producer and a face-supported dependent: `SCNE`, `CONS`, `IMPT` and a v2 `CADB` side by side |
 | `cad_bad_face_ref_v2.forge` | 425 | `2f728f27393ff19b9dfa327be8b6598f26eb595dfe9a8c399a0db5e8cd50f564` | The side fixture naming side **7** of a rectangle that has sides 0..3; producer present, lineage right, CRC right — refused `InvalidSemanticValue` by face resolution alone |
 | `cad_dependency_cycle_v2.forge` | 594 | `88072d355efa54f95e6d68c10d15c81a9cfebc0e2ed1f231255ebe5a42b117f0` | The chain with B on C's far cap and C on B's, B's lineage set to C's own signature — refused `UnresolvedReference` by the cycle alone |
-
 | `cad_arc_profile_v3.forge` | 301 | `580a47dcfa305ddec34c2ed7831ba88b7a05659008e7944285ca2a70fc02b8cd` | **`CADB` v3.** One body whose profile is a semicircular Arc closed by a Line — the smallest v3 file there is, and the one that pins the three-point arc encoding |
 | `cad_spline_profile_v3.forge` | 321 | `e3ff4f7be2529a30f040bd3d699b46df9792473b88755494144c15697b19261a` | One body whose profile is a four-point Spline closed by a Line; the authored points and nothing derived |
 | `cad_mixed_curve_profile_v3.forge` | 892 | `3e2fa16f05e353f1745a36e165aedadbb5d5378db0c039167293aececad7078d` | An Arc body, a Spline body and a Rectangle body in one v3 `CADB`, with a **sparse** `CONS` beside them |
 | `cad_face_curve_v3.forge` | 478 | `0a8218f0aa86cfb7cdcf7781c72864e76e9065e2f7a788d5b2cf4e6fc1250ad0` | A curve profile supported by a producer's far cap: v3 carrying a v2 support block, which is what makes a version a superset rather than a variant |
 | `cad_bad_arc_v3.forge` | 301 | `628d74fdbf3cf9082ef4869f9b948acef81c6a14517703b707896602e7c4b418` | The arc fixture with its three points made **collinear**; no circle passes through them, and only the semantic check can refuse it |
 | `cad_bad_spline_v3.forge` | 321 | `f5437366d894032e97b2e49d3027726fa2bc739bda747f05f3b1eaf8c9ed714d` | The spline fixture whose two **ends coincide** — a loop the one chain walker cannot read; every length, count and CRC is correct |
+| `cad_symmetric_v4.forge` | 257 | `6674e7225933ee2195292b6e43a091d3e327b7189ebd35fa1519191ecf92ab5a` | **`CADB` v4.** One rectangle body reaching 0.75 m each side of its XY sketch plane — the smallest v4 file there is |
+| `cad_two_sides_v4.forge` | 249 | `8c49e09cca8133b81ef9bbfab75549ed111dc08b4057777ed077191cf25cab47` | One circle body on XZ with two **unequal** distances: 1.25 m along the normal (A) and 0.5 m against it (B) |
+| `cad_face_extent_v4.forge` | 629 | `73739a226a30f8d015fe19663cd06062eeab7dab541f90795282ab5660510673` | A One Side producer with a Symmetric dependent on its far cap and a Two Sides dependent on one of its sides: v4 carrying a v2 support block |
+| `mixed_cad_extent_v4.forge` | 785 | `32ee99fccc5be71ed15003dc5b6856f7ed9c57b764c1032394b2c0b2f814f076` | A One Side body beside a Symmetric and a Two Sides one, on the three world planes, with a **sparse** `CONS` beside them — the One Side pair carried unchanged inside v4 |
+| `cad_bad_extent_v4.forge` | 257 | `15f1cecae31287643467d4b127e92918aca9677c5a1016b1def41a30d493b995` | The symmetric fixture with `extentCode` **9**; every length, count and CRC is correct — refused `InvalidSemanticValue` by the extent code alone |
+| `cad_bad_two_sides_v4.forge` | 249 | `aeb1b6784c546dde05a8e3227227aa19f2b396bee5d0f40981ad1e115414ea39` | A Two Sides body whose **both** distances are zero — an extrusion that reaches nowhere, refused `InvalidSemanticValue` rather than clamped |
 | `object_state_v2.forge` | 698 | `3c9bcd6305bcdc26ac2f6ad5db72d0f8a163acb26236a4e48f2afe12905ba608` | **`SCNE` v2.** Three Construction Bodies carrying between them every piece of per-body state v2 adds — the first named `housing` and **locked**, the second **hidden**, the third plain so the file also pins an unmarked body at v2 |
 | `object_state_bad_flags_v2.forge` | 494 | `b2cc2bf2eac579361111565cd9de24e535387928e1cbe916cc4aec1f118fd159` | The same shape with a **reserved** flag bit (`0x04`) on the first body; every length, count and CRC is correct, so only the reserved-bit rule can refuse it |
+| `cad_region_hole_v5.forge` | 302 | `c6d269425cfa02d749e00b6fe922edf1d6896e6d488a1bad52efbfb59ece91f5` | **`CADB` v5.** A 4 × 3 m rectangle (entity 1) around a 0.8 m-radius circle (entity 2) on XY, extruded One Side 1 m as the region **between** them — hole list `[2]`, no later feature; the smallest v5 fixture |
+| `cad_feature_add_v5.forge` | 370 | `2cb25af694e26a1d186374ec7e691d500201068eeb0606e08dc486c2d637f264` | A 2 × 2 m block 1 m deep carrying ONE later **Add**: a 0.8 m square on feature 1's far cap, 0.5 m along the face normal, at the six-face rectangle signature `0x958F78AF1C70BAA1` |
+| `cad_feature_cut_v5.forge` | 362 | `9f4efdb626fea351790a0063308b422954aa49f1162e199027d5d04b43b66cbc` | The same block carrying ONE later **Cut**: a 0.3 m-radius circle on the far cap, 0.5 m **against** the face normal |
+| `cad_feature_chain_v5.forge` | 496 | `a4a65681d08c093a9179d5c6be22a56fe2d7b2347670d2231229c2ef0230f10f` | The holed base of `cad_region_hole_v5` carrying an Add (a 0.6 m square at `(1.4, 0)`, **Symmetric** 0.25 m) and then a Cut (a 0.3 m-radius circle at `(-1.4, 0)`, 0.5 m against the normal), both on feature 1's far cap at the 38-face holed signature `0x937BA1514FAF7381` — a chain a reader must apply in order |
+| `cad_bad_operation_v5.forge` | 370 | `b04b776b29189ffe7262b5ba95f9d106e5a5f37fa6f6c8a8566a5b31de002a23` | The Add fixture with `operationCode` **9** — refused `InvalidSemanticValue` by the operation code alone |
+| `cad_bad_feature_ref_v5.forge` | 370 | `79436a25e7177fa818b7ac4dac1476254658c9e09f1c3a49b0f042f560b738cd` | The Add fixture whose support names feature **7**, which the body does not have — refused `InvalidSemanticValue` |
+| `cad_bad_feature_order_v5.forge` | 370 | `7d50931ddf3f7a734454beaed51576225aae0cc1d990b94ba5bc3ab8d7c4e951` | The Add fixture whose later feature id is **1**, which is not above the first feature's — refused `InvalidSemanticValue` |
+| `cad_bad_region_v5.forge` | 302 | `17d27c5c46b9b9f7d606d278d524aff6cfbc48647504497825c8438f2493f7a0` | The hole fixture storing the hole list `[7]` instead of the `[2]` the sketch derives — refused `InvalidSemanticValue` |
 
-The five corrupt v2 and v3 fixtures are **constructed** by the PowerShell
-builder with the bad value in place, never generated and then mutated; the C++
-self-test reaches the same bytes by patching the valid parent's one field and
-its CRC, and the digests agreeing is what proves the two routes describe one
-file.
+The eleven corrupt fixtures written since `CADB` v2 — two each for `CADB` v2, v3
+and v4, four for `CADB` v5 and one for `SCNE` v2 — are **constructed** by the
+PowerShell builder with the bad value in place, never generated and then
+mutated; for the seven that predate `CADB` v5 the C++ self-test reaches the same
+bytes by patching the valid parent's one field and its CRC, and the digests
+agreeing is what proves the two routes describe one file (UNVERIFIED for the
+four v5 ones until a C++ self-test asserts them). The envelope fixtures and
+`cad_bad_plane_v1` predate the rule and are still derived from their canonical
+parent.
 
 Every fixture written before Stage 018A is **byte-for-byte unchanged** by the
 `SCNE` v2 bump, because none of them hides, locks or names a body and v2 is
@@ -930,15 +1107,21 @@ the two matched could not tell a decoder that confused them apart. Every number
 is an exact binary fraction, so the two implementations agree byte for byte or
 not at all.
 
-The sixteen v1 fixtures were **unchanged** by `CAD-A3`, and all twenty-two are
-**unchanged** by `SKETCH-UX-R1`: a world-only CAD project still writes `CADB`
-v1 and a curveless one still writes v1 or v2, so each of these features costs a
-project that does not use it exactly nothing — exactly as the imported branch
-and the generalized `SCUL` cost the files before them nothing. Twenty-eight
-fixtures in all, verified on device by `FSR1A-12`, `IMP01A-19`, `IMP01B-11/12`,
-`CADR0-33..36`, `CADA3-46..51` and `CADUXR1-38`, and printed on every debug
-launch as `FORGESHAPE_PROJECT_GOLDEN_SHA256`, `…_IMPORTED`,
-`…_IMPORTED_SCULPT`, `…_CAD` and `…_CAD_V2`.
+No section version has moved an older fixture: `CADB` v2, v3, v4 and v5 are
+each written only when a body needs what they add — a face support, a curve, an
+extent that is not One Side, a hole or a later feature — so a world-only CAD
+project still writes `CADB` v1, a curveless one v1 or v2, a One Side one v1..v3
+and a one-region single-feature one v1..v4. Each of these features costs a
+project that does not use it exactly nothing, exactly as the imported branch
+and the generalized `SCUL` cost the files before them nothing.
+
+**Forty-four fixtures in all.** The thirty-six that predate `CADB` v5 are
+verified by `FSR1A-12`, `IMP01A-19`, `IMP01B-11/12`, `CADR0-33..36`,
+`CADA3-46..51`, `CADUXR1-38`, `CADEXT-10` and `OBJ018A-15/16`, and printed on
+every debug launch as `FORGESHAPE_PROJECT_GOLDEN_SHA256`, `…_IMPORTED`,
+`…_IMPORTED_SCULPT`, `…_CAD` and `…_CAD_V2`. The eight `CADB` v5 fixtures are
+written by the builder and held byte-identical by CI FAST's corpus parity step;
+a C++ self-test asserting their digests is UNVERIFIED.
 
 Regenerate and re-verify with:
 

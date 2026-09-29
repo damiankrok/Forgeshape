@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- CAD-VERTICAL-SLICE-R1: the precision surface's operation chips and the
+     CAD Body's feature list. Ids name the act, never the label. -->
+<resources>
+    <item name="sketch_operation_row" type="id" />
+    <item name="sketch_operation_new_body" type="id" />
+    <item name="sketch_operation_add" type="id" />
+    <item name="sketch_operation_cut" type="id" />
+    <item name="cad_feature_list" type="id" />
+    <item name="cad_feature_row" type="id" />
+</resources>

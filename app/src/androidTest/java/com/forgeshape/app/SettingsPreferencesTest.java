@@ -223,12 +223,12 @@ public final class SettingsPreferencesTest {
     public void uiprefr1_07_08_unknownAndInvalidStoredValuesFallBackSafely() {
         doOn(rule, (activity, workspace) -> {
             AppPreferencesStore.plantForVerification(activity, "NEON_PINK", "AMBIDEXTROUS",
-                    Float.NaN, "HAIRLINE", 42);
+                    Float.NaN, "HAIRLINE", false, 42);
             assertEquals("unknown names and a NaN are the exact defaults",
                     AppPreferences.defaults(), AppPreferencesStore.current(activity));
 
             AppPreferencesStore.plantForVerification(activity, "COOL_LIGHT", "LEFT", 9.0f,
-                    "THIN", AppPreferences.SCHEMA_VERSION);
+                    "THIN", false, AppPreferences.SCHEMA_VERSION);
             final AppPreferences clamped = AppPreferencesStore.current(activity);
             assertSame(AppTheme.COOL_LIGHT, clamped.palette());
             assertSame(Handedness.LEFT, clamped.handedness());
@@ -237,7 +237,7 @@ public final class SettingsPreferencesTest {
             assertSame(GizmoStrokeWeight.THIN, clamped.gizmoStrokeWeight());
 
             AppPreferencesStore.plantForVerification(activity, "WARM_LIGHT", "RIGHT", -3.0f,
-                    "BOLD", AppPreferences.SCHEMA_VERSION);
+                    "BOLD", false, AppPreferences.SCHEMA_VERSION);
             assertEquals(AppPreferences.GIZMO_VISUAL_SCALE_MIN,
                     AppPreferencesStore.current(activity).gizmoVisualScale(), 0.0f);
             // Applying a clamped store to the live workspace pushes an
@@ -661,7 +661,8 @@ public final class SettingsPreferencesTest {
                     R.id.appearance_cool_light, R.id.handedness_right, R.id.handedness_left,
                     R.id.gizmo_size_small, R.id.gizmo_size_default, R.id.gizmo_size_large,
                     R.id.gizmo_size_largest, R.id.gizmo_weight_thin, R.id.gizmo_weight_regular,
-                    R.id.gizmo_weight_bold, R.id.settings_back};
+                    R.id.gizmo_weight_bold, R.id.tool_labels_off, R.id.tool_labels_on,
+                    R.id.settings_back};
             for (int id : rows) {
                 final View row = page.findViewById(id);
                 final String name = activity.getResources().getResourceEntryName(id);
@@ -673,13 +674,17 @@ public final class SettingsPreferencesTest {
                 assertTrue(name + " is " + row.getHeight() + " px tall, floor " + floor,
                         row.getHeight() >= floor);
             }
-            assertEquals("fourteen preference rows and Back, and nothing else is pressable",
+            // `CAD-VERTICAL-SLICE-R1` added Interface's two Tool Labels rows.
+            assertEquals("sixteen preference rows and Back, and nothing else is pressable",
                     rows.length, countClickable(workspace.findViewById(R.id.settings_panel)));
             // The chosen rows say so in more than colour.
             assertTrue(workspace.settingsPage().optionChosen(R.id.handedness_right));
             assertTrue(((android.widget.TextView) page.findViewById(R.id.handedness_right))
                     .getText().toString().startsWith("✓"));
             assertFalse(workspace.settingsPage().optionChosen(R.id.handedness_left));
+            assertTrue("Tool Labels is OFF by default",
+                    workspace.settingsPage().optionChosen(R.id.tool_labels_off));
+            assertFalse(workspace.settingsPage().optionChosen(R.id.tool_labels_on));
             assertNull("no Handle Style row is drawn: the variant is deferred, not faked",
                     page.findViewWithTag("handle_style"));
         });

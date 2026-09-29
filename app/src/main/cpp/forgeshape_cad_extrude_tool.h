@@ -43,6 +43,7 @@
 #include "forgeshape_gizmo.h"
 #include "forgeshape_math.h"
 #include "forgeshape_sketch.h"
+#include "forgeshape_sketch_region.h"
 
 namespace forgeshape {
 
@@ -129,6 +130,21 @@ struct CadExtrudeAnchors {
 bool cadExtrudeAnchors(const SketchFrame& frame, const ClosedProfile& profile,
                        const ExtrudeFeature& extrude, CadExtrudeAnchors* out);
 
+// The same anchors from an explicit base point in sketch (u, v)
+// (`CAD-VERTICAL-SLICE-R1`): a region with a hole stands its arrow on its own
+// material -- its area centroid when that is not in a hole, otherwise a point
+// strictly inside it -- rather than on a centroid a centred hole would swallow.
+bool cadExtrudeAnchorsAt(const SketchFrame& frame, const SketchPoint& base,
+                         const ExtrudeFeature& extrude, CadExtrudeAnchors* out);
+
+// THE rule for where the arrow of a region selection stands, in sketch (u, v):
+// the first chosen region's area centroid -- R0's anchor exactly, for a region
+// without holes -- unless a hole swallows it, when a point strictly inside the
+// material stands in. One function, so the live session and a committed body's
+// retained-sketch chip cannot disagree. False when nothing is chosen.
+bool extrudeSelectionAnchorPoint(const SketchRegionExtraction& regions,
+                                 const ExtrudeFeature& extrude, SketchPoint* out);
+
 // ---------------------------------------------------------------------------
 // 2. How big the control is
 // ---------------------------------------------------------------------------
@@ -158,10 +174,11 @@ bool cadExtrudeAnchors(const SketchFrame& frame, const ClosedProfile& profile,
 //     rings are 156 reference units across at the default visual scale), so
 //     the extrude cluster never dominates the instrument the user places
 //     bodies with.
-//   * The MINIMUM is 0.80 and it is arithmetic rather than taste: the Android
-//     cluster controls are authored at `R.dimen.cad_canvas_control` 60 dp, and
-//     60 x 0.80 is exactly the 48 dp interactive floor. Lowering it without
-//     raising that dimension would put a control under the floor.
+//   * The MINIMUM is 0.80. Since `CAD-VERTICAL-SLICE-R1` the Android HUD
+//     scales only its GLYPHS by this multiplier -- `clamp(28 dp x scale, 24,
+//     32)` -- and never its hit areas, which stay at least 48 dp at every
+//     scale; so 0.80 is where the glyph reaches its 24 dp floor, and the
+//     interactive floor no longer depends on this number at all.
 //   * The MAXIMUM is 1.60, so the whole visible range is a factor of two --
 //     enough that the attenuation reads, bounded enough that a close camera
 //     cannot cover the profile being extruded.
@@ -424,6 +441,12 @@ CadFeatureViewSource cadFeatureViewPose(const CameraController::Pose& current,
 // carries, so this needs no renderer change and no new overlay style; it is
 // applied to `grabbedSide` alone, so the side under the finger is the side that
 // lights up.
+// The operation preview's tint, rgb and mix weight (`CAD-VERTICAL-SLICE-R1`):
+// Add a positive green, Cut a destructive red, New Body a neutral cool accent.
+// Presentation policy, never a preference and never truth -- and never the only
+// carrier of what the operation is: the HUD names it by shape and by label.
+void cadOperationPreviewTint(CadFeatureOperation operation, float out[4]);
+
 void appendCadExtrudeArrow(std::vector<GizmoVertex>* out, const CadExtrudeAnchors& anchors,
                            double controlWorld, bool grabbed, bool grabbedSide = true);
 

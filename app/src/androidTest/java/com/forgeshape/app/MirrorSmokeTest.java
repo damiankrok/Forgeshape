@@ -54,11 +54,86 @@ public final class MirrorSmokeTest {
 
     private byte[] baselineProject;
 
+    /**
+     * A fresh project holding exactly one Mirror-eligible Construction body.
+     *
+     * <p>The scene is process-scoped, so this class otherwise inherits whatever
+     * the classes before it left — in the full suite that is a body carrying a
+     * Frozen Sculpt Mesh, which `MIRROR-01` refuses by name and whose row
+     * therefore has no Mirror control. {@code resetToBaselineConstruction}
+     * cannot help there: it applies a box and a placement, and neither
+     * un-freezes (nothing does; see its own comment). The honest start is the
+     * one {@code SelectionOutlineTest.freshProject} already uses — close the
+     * project, which writes nothing and is what Back to Home does, and let the
+     * test seam open a new one-body Construction project — and then to ASSERT
+     * the preconditions the journey needs rather than assume them.
+     */
     @Before
     public void setUp() {
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            logStartingState("inherited");
+            NativeViewport.sketchCancel();
+            NativeViewport.supportChooserCancel();
+            NativeViewport.enterConstructionMode();
+            NativeViewport.closeProject();
+            workspace.ensureConstructionProjectForTest();
+            NativeViewport.debugResetConstructionHistory();
+            workspace.syncFromNative();
+            return null;
+        });
+        settleLayout();
         resetToBaselineConstruction(rule.getScenario());
+        assertTheJourneyCanStart();
         baselineProject = onWorkspace(rule.getScenario(),
                 (activity, workspace) -> NativeViewport.encodeProject());
+    }
+
+    /**
+     * What `MIRROR-01` requires of the body the journey mirrors, asked of
+     * native truth: one body, active, with a Construction Source, no Frozen
+     * Sculpt Mesh, and the same eligibility answer that decides whether the
+     * row draws Mirror at all.
+     */
+    private void assertTheJourneyCanStart() {
+        doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+            logStartingState("fresh");
+            assertTrue("a project is open", NativeViewport.projectOpen());
+            assertEquals("the project holds exactly one body", 1,
+                    NativeViewport.sceneBodyCount());
+            final long[] ids = new long[1];
+            assertEquals("and names it", 1, NativeViewport.sceneBodyIds(ids));
+            final long body = ids[0];
+            assertEquals("that body is the active one", body, NativeViewport.sceneActiveBodyId());
+            assertEquals("it is a Construction Body",
+                    NativeViewport.REPRESENTATION_CONSTRUCTION,
+                    NativeViewport.sceneBodyRepresentation(body));
+            final double[] sculpt = new double[NativeViewport.SCULPT_STATE_SIZE];
+            NativeViewport.sculptState(sculpt);
+            assertEquals("the product is in Construction", NativeViewport.MODE_CONSTRUCTION,
+                    (int) sculpt[NativeViewport.SCULPT_MODE]);
+            assertEquals("the body carries no Frozen Sculpt Mesh", 0.0,
+                    sculpt[NativeViewport.SCULPT_HAS_MESH], 0.0);
+            assertTrue("so MIRROR-01 finds it eligible", NativeViewport.sceneBodyCanMirror(body));
+            assertEquals("and the setup left no history step", 0,
+                    NativeViewport.constructionUndoDepth());
+            return null;
+        });
+    }
+
+    /** One diagnostic line, so a log shows what the case inherited and replaced. */
+    private static void logStartingState(String when) {
+        final boolean open = NativeViewport.projectOpen();
+        final long active = open ? NativeViewport.sceneActiveBodyId() : NativeViewport.NO_OBJECT;
+        final double[] sculpt = new double[NativeViewport.SCULPT_STATE_SIZE];
+        NativeViewport.sculptState(sculpt);
+        android.util.Log.i("ForgeShape", String.format(java.util.Locale.US,
+                "FORGESHAPE_TEST_MIRROR_START %s open=%b bodies=%d active=%d representation=%d"
+                        + " mode=%d frozen=%d canMirror=%b",
+                when, open, open ? NativeViewport.sceneBodyCount() : 0, active,
+                open ? NativeViewport.sceneBodyRepresentation(active) : 0,
+                (int) sculpt[NativeViewport.SCULPT_MODE],
+                (int) sculpt[NativeViewport.SCULPT_HAS_MESH],
+                open && NativeViewport.sceneBodyCanMirror(active)));
     }
 
     @After

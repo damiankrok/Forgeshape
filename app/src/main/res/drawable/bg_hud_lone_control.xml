@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  A HUD control standing ALONE on the model: the retained-sketch Edit Sketch
+  control over a committed CAD Body.
+
+  It has no capsule around it, so it wears the Tier 1 floating tone itself —
+  a borderless glyph on the model would be a glyph nobody can find. The corner
+  is the capsule's, which on a 48 dp control is a circle and with a caption a
+  pill: a lone round-ish control should be a pill anyway. Stateful, so a press
+  answers before native code does.
+-->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_pressed="true">
+        <shape android:shape="rectangle">
+            <solid android:color="?attr/fsControlSurfacePressed" />
+            <corners android:radius="@dimen/radius_capsule" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="?attr/fsSurfaceFloating" />
+            <corners android:radius="@dimen/radius_capsule" />
+        </shape>
+    </item>
+</selector>

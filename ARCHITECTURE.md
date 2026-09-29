@@ -602,7 +602,10 @@ the row they chose. A real process kill returns to the stored palette.
 ### Application preferences and the Settings page (`UI-PREF-R1`)
 
 **`AppPreferences` is one immutable, versioned value** — the palette, the
-handedness, the gizmo's visual scale and its stroke weight — and it is
+handedness, the gizmo's visual scale, its stroke weight and, since
+`CAD-VERTICAL-SLICE-R1`, Tool Labels (default off; key `tool_labels`, a missing
+or wrong-typed value reads as off, and `SCHEMA_VERSION` is unchanged because a
+missing key IS the default) — and it is
 **application truth, never project truth**: it enters no `.forge` byte, moves
 no fingerprint, dirties no project, records no history step and never reaches a
 checkpoint. `SettingsPreferencesTest.uiprefr1_09_10_11_37` serialises a
@@ -633,7 +636,10 @@ which used to live there, moved because it is now persistent. Every option is a
 full-width list row carrying the selected fill, a check mark, `isSelected()` and
 a "selected" content description, so the choice is never colour alone. The page
 owns no state: each row reports a request, the workspace writes the store,
-applies the change and repaints the page from what is in force. Whether the page
+applies the change and repaints the page from what is in force. Tool Labels
+has its own Interface group (`tool_labels_off`, `tool_labels_on`); the workspace
+hands the flag to `CadExtrudeCanvasView.setToolLabelsVisible` at construction
+and on every change, and the next anchored refresh draws it. Whether the page
 stands is `EditorUiState.settingsOpen`, carried across the recreation a palette
 change performs. There is no Handle Style row: the gizmo is a one-pixel line
 list by renderer contract and no second style shares its hit semantics, so the
@@ -685,6 +691,37 @@ re-placed once afterwards — a `GONE` view is skipped by its parent's layout an
 still reports position 0, so there is nothing better to read at that instant;
 the repeat is capped and reset by any settled pass, which is what keeps it layout
 readiness rather than a poll.
+
+**The canvas CAD HUD** (`CadExtrudeCanvasView`, `CAD-VERTICAL-SLICE-R1`) is
+one compact row — the extent control, the exact value, the operation badge and
+Flip — with the extent and operation palettes opening directly beneath it, the
+Two Sides value at its own anchor, and the retained-sketch Edit Sketch control
+at `cadBodySketchAnchor`. Every icon control is a `LinearLayout` holding a glyph
+`ImageView` and an optional caption; the container carries the id, the click,
+the selected/activated state and the content description. `CadHudPresentation`
+is its pure-Java arithmetic, proven on the JVM: the glyph is
+`clamp(28 dp × CAD_EXTRUDE_SCALE, 24, 32)`, the hit area is never below 48 dp
+and is never `setScale`d, which extent and operation icon and caption belong to
+which mode, and which operations a bitmask offers. The cluster is measured
+first and then placed so the VALUE's centre lands on the shaft-midpoint anchor
+(`ViewportAnchorSpace.measureUnderParent` + `measureAndPlace`), still clamped
+into the viewport. An open palette is centred under the control that opened it;
+a closed one is `INVISIBLE`, so it is already laid out when it opens, and takes
+no touch.
+
+**What a sketch shows is one statement** (`SketchChromePolicy`,
+`CAD-VERTICAL-SLICE-R1`): in Editing the Tool Rail carries the drawing tools and
+the orientation navigator and the Line dimension stand; in Ready all three are
+absent (`WorkspaceTrailingHostView.render`,
+`EditorWorkspaceView.refreshSketchViewportSurfaces`), Back to Sketch and Cancel
+stay, and Finish Sketch does not open the precision surface. The toolbar's
+Extrude is withdrawn while native's candidate status is not `CAD_OK`
+(`GlobalToolbarView.showExtrudeReadiness`), and the named reason is on the
+canvas operation badge; the precision surface's pinned Extrude stays, because
+it submits a typed depth before it commits. A precision-surface act that
+changes the candidate (a region row, a side chip) ends in
+`InspectorHost.onSketchCandidateChanged`, which brings the toolbar and the HUD
+to the same candidate without a full re-read.
 
 **One refresh path owns every world-anchored surface.**
 `EditorWorkspaceView.refreshWorldAnchoredUi()` recomputes ownership AND placement
@@ -2347,10 +2384,13 @@ with no second collision representation to keep in sync.
 
 ## CAD domain (`CAD-R0-A1A2`)
 
-A **CAD Body** is a body's third representation: one sketch on a principal
-workplane, and one linear **New Body** extrusion of one of the sketch's closed
-profiles. Like the other two domains it is platform-neutral C++ with no JNI,
-Android, Vulkan, renderer or UI type, and it holds no GPU resource.
+A **CAD Body** is a body's third representation: a bounded, ordered FEATURE
+CHAIN whose first feature is one sketch on a principal workplane and one linear
+**New Body** extrusion of the regions it selects, and whose later features are
+Add and Cut extrusions of retained sketches standing on the body's own planar
+faces (`CAD-VERTICAL-SLICE-R1`). Like the other two domains it is
+platform-neutral C++ with no JNI, Android, Vulkan, renderer or UI type, and it
+holds no GPU resource.
 
 ### Why a third representation
 
@@ -2370,9 +2410,19 @@ the `.forge` document carries it in its own required section (`CADB`) on
 ```
 forgeshape_workplane      (u, v) <-> body-local 3D; three fixed right-handed frames
         ^
-forgeshape_sketch         entities, ids, validation, closed profiles, triangulation
+forgeshape_sketch         entities, ids, validation, closed loops, triangulation
         ^
-forgeshape_cad_body       CadBodyState = sketch + ExtrudeFeature; generateCadMesh
+forgeshape_sketch_region  loops -> regions (outer minus direct children), the
+        ^                 semantic selection, hatch, tap resolution
+forgeshape_cad_kernel     THE boolean seam: CadSolid (binary64, one face tag per
+        ^                 triangle) -> Union / Difference; the only TU that
+        |                 includes vendored Manifold (third_party/manifold)
+forgeshape_cad_feature    one feature's geometry: support frame, faces, prism,
+        ^                 lineage signature; builds the chain's geometry
+forgeshape_cad_body       CadBodyState = base (sketch + ExtrudeFeature) +
+        ^                 laterFeatures[]; regenerateCadBody / generateCadMesh
+forgeshape_cad_face       semantic faces of any feature, from the regenerated
+        ^                 mesh's face table; resolve, signature, carries-face
         ^
 forgeshape_scene          SceneObject owns a CadBody; addCadBody; publishSceneObject
         ^                                                    ^
@@ -2567,14 +2617,102 @@ non-adjacent edges (checked BEFORE area, because a bow tie's lobes cancel to
 zero area and "it crosses itself" is the reason the user can act on), non-zero
 area, and orientation normalised to counter-clockwise.
 
-A profile is identified by its **anchor entity id** — the rectangle, the circle
+A loop is identified by its **anchor entity id** — the rectangle, the circle
 or the polyline itself, or the smallest id among a chain of lines — never by an
-index, which would move when an unrelated entity was deleted. Profiles are
+index, which would move when an unrelated entity was deleted. Loops are
 reported ascending by anchor, which is the deterministic order every caller
-sees. A profile that CONTAINS another is refused as `NestedProfileUnsupported`
-— a hole this stage will not fill silently — while the inner one stays
-extrudable; two profiles that merely overlap are both kept. Every refusal is a
-named `CadStatus`, and nothing is repaired.
+sees. Loops no longer refuse each other for nesting (`NestedProfileUnsupported`
+stays in the enum for ABI stability and is no longer produced by extraction):
+what a loop inside another MEANS is the region layer's answer, below. Two loops
+that merely overlap are both kept. Every refusal is a named `CadStatus`, and
+nothing is repaired.
+
+### Regions (`CAD-VERTICAL-SLICE-R1`)
+
+`extractSketchRegions` (`forgeshape_sketch_region`) turns every loop into
+exactly one region: its interior minus its DIRECT children, where B is L's
+child when L is the smallest loop that cleanly contains B (strictly inside and
+no edge touching or crossing). A rectangle around a circle is the disk and the
+rectangle-with-a-hole; deeper nesting is even/odd from the same sentence. It is
+nesting, not a planar arrangement, so a touching or crossing loop is never a
+hole and stays its own region exactly as v1..v4 read it — which is what keeps
+every earlier `CADB` record meaning what it meant. An `ExtrudeFeature` selects
+regions by `ProfileRegionRef` (outer anchor plus the hole anchors it was chosen
+with): the first region's outer anchor stays in `profileEntityId`, its holes in
+`profileHoleIds`, and further disjoint regions in `additionalRegions`, so a
+one-region, no-hole selection is the R0 field set, bit for bit.
+`validateRegionSelection` refuses a mismatch against the derived holes, overlap
+or a shared loop, and the caps, by name; `sketchRegionAt` resolves a tap to the
+innermost region under it; `sketchRegionHatch` is the bounded even/odd hatch
+that leaves a hole empty.
+
+### The feature chain and the boolean kernel (`CAD-VERTICAL-SLICE-R1`)
+
+`CadBodyState` is the base (`sketch` + `extrude`, feature id 1, always New
+Body) plus `laterFeatures`, each `{featureId, operation (Add|Cut), support,
+sketch, extrude}` with `featureId` strictly ascending and at most
+`kMaxCadFeatures` (16) in all. A later feature's `support` names a planar face
+of an EARLIER feature of the same body by `(featureId, CadFaceToken,
+lineageToken)` — deliberately not a `TopoRef`, which places ANOTHER body in the
+world; this places one feature's sketch inside its own body. Its sketch is
+canonical XY with no support block, and its placement is the named face's frame
+from `buildCadChainGeometry`, computed from the earlier feature's OWN prism in
+binary64 and never from a boolean result.
+
+`regenerateCadBody` is THE regeneration path, with three branches chosen by the
+state alone: a base-only, single-simple-region body takes the unchanged R0
+float path (`generateSimpleProfileMesh`), so every pre-existing body's mesh is
+bit-identical; a base-only body with holes or several regions uses the
+binary64 prism generator (`appendCadFeatureSolid`, holes through the kernel's
+region triangulator) with no boolean; and a body with later features builds the
+base solid and applies each later feature in order through ONE
+`cadKernelBoolean` (`Union` for Add, `Difference` for Cut), checking each result
+against the operation rules — a new shell is `AddDisjoint`, a gain below 1e-9 of
+the tool is `AddNoEffect`, an empty result is `CutRemovesBody`, a loss below
+1e-9 of the tool is `CutNoIntersection`, a support face the solid built so far
+no longer carries is `SupportFaceLost` — and naming the failing `featureId` in
+`CadRegenerationReport`. Every input triangle carries a face tag indexing a
+`CadMeshFace {featureId, token, eligible}` table; the kernel carries tags
+through the boolean and canonicalises its output (triangles by ascending tag,
+vertices renumbered in first use), so the published `CadBodyMesh` pairs the
+mesh with a per-triangle face table and the result is a pure function of the
+chain. `forgeshape_cad_face`, the support chooser, the dependents check and
+`cadMeshCarriesFace` all read faces through that table; a triangle index is
+never identity. `CadBody` caches its last regeneration (`regenerated()`), reset
+by every state change.
+
+`forgeshape_cad_kernel.{h,cpp}` is the seam. Its types (`CadSolid`,
+`CadKernelStatus`, `CadBooleanOp`, `CadSolidMeasure`) are ForgeShape's own; the
+`.cpp` is the ONLY file that includes a Manifold header, so replacing the kernel
+is a one-file change. Inputs must be finite, closed, 2-manifold and positively
+oriented — an inward-wound solid is `InvertedInput`, because the kernel would
+silently subtract it — and the result is bounded by `kMaxCadKernelTriangles`.
+Manifold 3.5.4 is vendored unmodified (`third_party/manifold`, Apache-2.0, see
+its `FORGESHAPE_VENDOR.md`) and built as the static `forgeshape_manifold`
+target: single-threaded (`MANIFOLD_PAR=-1`), no iostream or filesystem API, no
+`MANIFOLD_DEBUG`, `-O2` in every variant. Nothing is fetched at build or run
+time. Why this kernel and the evidence it had to pass are in
+`artifacts/cad-vertical-slice-r1/KERNEL_GATE.md`.
+
+### Operations, staging and the preview (`CAD-VERTICAL-SLICE-R1`)
+
+The support chooser stages a face sketch's producer chain into the session
+(`beginOnFace(frame, TopoRef, producerState)`), which is what makes Add and Cut
+available there; a world-plane sketch has no target and offers New Body alone.
+`SketchSession::candidateState` builds the ONE candidate: a new body, the
+target's chain with a feature appended, or a staged edit of one feature
+(`beginEditFeature`). `evaluateCandidate` regenerates it latest-only, keyed by
+`candidateRevision_`, which every authoring act bumps (`touchCandidate`); the
+JNI render loop (`applyCadOperationPreviewLocked`) substitutes that evaluation
+for the target's draw item — same key, a revision from a space no published
+revision reaches — or adds one item for a New Body, and sets
+`SceneDrawItem::previewTint`, which `recordBodyDraw` feeds through the existing
+selection-tint push slot. `commitIntoTarget` applies that same evaluation as
+ONE `ScopedConstructionEdit` around ONE `applyState` on the same `SceneObject`;
+`commitEdit` does the same for a staged feature edit after the dependents check
+(`checkDependentsKeepTheirFaces`: signature, resolution, eligibility and
+`cadMeshCarriesFace` on the new mesh). Nothing in the preview is truth: no
+published revision, history step, fingerprint or autosave moves for it.
 
 ### Triangulation
 
@@ -2588,8 +2726,10 @@ reversed, because orientation was decided upstream once.
 
 ### The extrusion
 
-`generateCadMesh` is THE regeneration path: validate the whole state, extract,
-find the chosen profile, triangulate, extrude. The solid always spans from its
+For a base-only, single-simple-region body (every body before
+`CAD-VERTICAL-SLICE-R1`), `generateCadMesh` validates the whole state, extracts,
+finds the chosen profile, triangulates and extrudes exactly as follows; the
+other two branches are in "The feature chain and the boolean kernel" above. The solid always spans from its
 −N face to its +N face; which of the two sits ON the sketch plane is the
 direction, so the winding rule never asks which way the user chose. The mesh
 shares the 2n profile vertices between the two caps and the n side quads, so
@@ -2632,7 +2772,10 @@ and `backToEditing` from Ready. Nothing before `commit` is project truth: the
 scene, the history, the fingerprint and the codec know nothing of a half-drawn
 line, so `cancel` costs the project nothing and process death loses the sketch
 and nothing else. `commit` is one `ScopedConstructionEdit` around one
-`addCadBody`; a refusal mints no `ObjectId` and stays in Ready.
+`addCadBody` (New Body) or one `applyState` on the target (Add, Cut, or a staged
+feature edit); a refusal mints no `ObjectId` and stays in Ready. In Ready a
+single pointer that does not travel past the tap slop toggles the region under
+it on Up; one that does is the arrow drag or the camera, as before.
 
 Pointer samples arrive as the same `TouchPointer` the camera and the gizmo
 consume. The session owns ONE pointer by id; a second pointer cancels the
@@ -2694,10 +2837,11 @@ refuses by name (`CadBodyNotSculptable`), *Start Sculpting* is absent for one,
 and a `SCUL` entry over a `CADB` body is refused by the codec. Enabling it needs
 three decisions this stage does not make — the wording of the way back out of
 Sculpt over a CAD Body, the stale-source rule over a CAD edit, and the
-`CADB`+`SCUL` file combination — and each deserves its own approval. Holes,
-booleans, fillets, chamfers, shells, revolves, sweeps, lofts, patterns, mirrors,
-offsets, trims, constraints, arcs, splines and face-based planes are absent and
-are not drawn anywhere.
+`CADB`+`SCUL` file combination — and each deserves its own approval. Since
+`CAD-VERTICAL-SLICE-R1` holes, face-supported sketches, arcs, splines and the
+Add / Cut booleans exist; fillets, chamfers, shells, revolves, sweeps, lofts,
+patterns, sketch mirrors, offsets, trims, constraints, Intersect, feature
+delete/reorder and suppression are absent and are not drawn anywhere.
 
 ## Sculpt domain
 

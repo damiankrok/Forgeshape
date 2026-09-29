@@ -31,6 +31,16 @@ NDK (`$ANDROID_NDK/shader-tools/<host>/glslc`), invoked from CMake with
 `-mfmt=c`; the emitted C initializer lists are `#include`d into the renderer.
 No shader compiler is bundled at runtime and no SPIR-V asset is loaded.
 
+The CAD boolean kernel, Manifold 3.5.4 (Apache-2.0), is vendored unmodified in
+`app/src/main/cpp/third_party/manifold/` and built by the same CMake run; there
+is nothing to install and nothing is fetched at build time. To audit the
+vendored tree against the pinned upstream archive (this one command needs
+network access, to PyPI):
+
+```
+bash scripts/vendor-manifold.sh --verify   # prints VENDOR_MANIFOLD_VERIFY_OK
+```
+
 ## Build
 
 ```
@@ -112,7 +122,7 @@ attempt on one fingerprint needs `-OwnerOverrideAttemptLimit`.
 The runner's own logic is covered without a device by:
 
 ```
-scripts\test-instrumented-runtime.ps1     # TESTRUNTIME-01..24, about 5 seconds
+scripts\test-instrumented-runtime.ps1     # TESTRUNTIME-01..26, about 5 seconds
 scripts\test-instrumented-sharding.ps1    # THR1-01..10
 ```
 
@@ -167,17 +177,19 @@ That script is a second, independent implementation of the `.forge` v1 encoder,
 written from `DATA_PACKAGE_SPEC.md`. It needs no device and no Android tooling.
 Its digests must match the ones the native `FSR1A-12`, `IMP01A-19`,
 `IMP01B-11`/`IMP01B-12`, `CADR0-33`/`34`/`36`, `CADA3-46..51` and
-`CADEXT-10 c..h` cases assert and the ones a debug launch prints as
-`FORGESHAPE_PROJECT_GOLDEN_SHA256`, `..._IMPORTED`, `..._IMPORTED_SCULPT`,
-`..._CAD`, `..._CAD_V2`, `FORGESHAPE_CAD_GOLDEN_SHA256_V4` and
-`..._OBJECT_STATE`; a mismatch
+`CADEXT-10 c..h` and `CADVS_IO_22` cases assert and the ones a debug launch
+prints as `FORGESHAPE_PROJECT_GOLDEN_SHA256`, `..._IMPORTED`,
+`..._IMPORTED_SCULPT`, `..._CAD`, `..._CAD_V2`,
+`FORGESHAPE_CAD_GOLDEN_SHA256_V4`, `..._OBJECT_STATE` and
+`FORGESHAPE_CAD_GOLDEN_SHA256_V5`; a mismatch
 means the encoder and the specification have parted company. The six `CADB` v2
 fixtures include the lineage token, which the script computes from the rule
 `DATA_PACKAGE_SPEC.md` §7c states rather than from the C++ — that parity is
 what found the mistyped FNV basis in `CAD-A3-C1`. The six `CADB` v3 curve
 fixtures and the six `CADB` v4 extent fixtures are pinned the same way, by
-`CADUXR1-38` and `CADEXT-10`. Seven of the thirty-six
-fixtures are packaged into the test APK's assets as well, so
+`CADUXR1-38` and `CADEXT-10`, and the eight `CADB` v5 region and feature-chain
+fixtures by `CADVS_IO_22` (with both lineage tokens by `CADVS_IO_23`). Seven
+of the forty-four fixtures are packaged into the test APK's assets as well, so
 `ImportedMeshDurableTest` can prove the independent encoder's bytes actually LOAD
 on a device rather than only hashing the same.
 
@@ -399,7 +411,7 @@ emit several hundred lines in a few milliseconds and the default buffer silently
 drops the tail, which reads exactly like a self-test that stopped partway
 through. That is a logging limit, not an app failure.
 
-A clean debug launch emits **twenty-two** `*_SELFTEST_OK` tokens, in this order, then
+A clean debug launch emits **twenty-three** `*_SELFTEST_OK` tokens, in this order, then
 `FORGESHAPE_NATIVE_VIEWPORT_OK` once the first frame is presented:
 
 ```
@@ -425,7 +437,21 @@ FORGESHAPE_CAD_A3_SELFTEST_OK
 FORGESHAPE_SKETCH_UX_SELFTEST_OK
 FORGESHAPE_BODY_DIMENSIONS_SELFTEST_OK
 FORGESHAPE_MIRROR_SELFTEST_OK
+FORGESHAPE_CAD_FEATURE_SELFTEST_OK
 ```
+
+The same twenty-three suites run on the host, with no device and no Android
+tooling beyond a C++17 compiler, through
+
+```
+bash scripts/host-native-selftests.sh            # every suite
+bash scripts/host-native-selftests.sh CAD_FEATURE  # one suite
+```
+
+which builds the vendored boolean kernel once, compiles every platform-neutral
+`forgeshape_*.cpp` (never the JNI or the renderer) and prints
+`HOST_SELFTESTS_OK (<n> checks, 0 failed)`. It is the fast native loop; the
+device launch above stays the startup evidence.
 
 Each suite reports `(<n> checks)` and fails as `<SUITE>_CASE_FAIL:<name>` plus
 `<SUITE>_FAIL`; the viewport fails as `FORGESHAPE_NATIVE_VIEWPORT_FAIL:<reason>`.

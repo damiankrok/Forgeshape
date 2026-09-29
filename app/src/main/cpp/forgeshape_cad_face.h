@@ -67,11 +67,20 @@ inline Mat4 cadFaceFrameMatrix(const CadFace& face) {
     return mat4FromBasis(face.u, face.v, face.n, face.origin);
 }
 
-// Enumerates every planar face of the body's current extrusion, in a
+// Enumerates every planar face of the body's FIRST feature's extrusion, in a
 // deterministic order: `CapPlane`, `CapFar`, then one `Side` per profile edge in
-// profile-edge order. Returns the CAD status of the underlying validation
-// (`Ok` and a filled list on success), and nothing on any refusal.
+// profile-edge order (and, since `CAD-VERTICAL-SLICE-R1`, region by region with
+// each hole's inner walls after its outer loop). Returns the CAD status of the
+// underlying validation (`Ok` and a filled list on success), and nothing on any
+// refusal.
 CadStatus enumerateCadFaces(const CadBodyState& state, std::vector<CadFace>* out);
+
+// The same for any feature of the chain, in the body's local space
+// (`CAD-VERTICAL-SLICE-R1`). A later feature's faces are placed by its support,
+// so they move with the feature they stand on; every face of a Cut is reported
+// but never eligible, because it is the inside of a pocket.
+CadStatus enumerateCadFeatureFaces(const CadBodyState& state, uint32_t featureId,
+                                   std::vector<CadFace>* out);
 
 // The triangle-index RANGES of the body's generated mesh, each tagged with the
 // semantic face token it belongs to, in the exact order `generateCadMesh`
@@ -82,19 +91,41 @@ struct CadFaceRange {
     uint32_t indexCount = 0;
     CadFaceToken token{};
     bool eligible = true;
+    // Which feature of the chain the face belongs to (`CAD-VERTICAL-SLICE-R1`).
+    // A face token alone is unique only within one feature's sketch.
+    uint32_t featureId = kCadFeatureId;
 };
 
+// Since `CAD-VERTICAL-SLICE-R1` the ranges are read off the regenerated mesh's
+// per-triangle face tags, so they hold for a boolean result as they do for a
+// single prism: consecutive triangles of one semantic face are one range.
 CadStatus cadFaceRanges(const CadBodyState& state, std::vector<CadFaceRange>* out);
+
+// The same ranges read off a regeneration already in hand -- a body's cached
+// one -- so a pick does no kernel work.
+CadStatus cadFaceRangesFromMesh(const CadBodyMesh& mesh, std::vector<CadFaceRange>* out);
 
 // Resolves one semantic token to its current face frame. Fails closed
 // (`ProfileNotFound`) when the token names no face of the current topology --
 // which is what makes a stale reference refuse rather than retarget.
 CadStatus resolveCadFace(const CadBodyState& state, const CadFaceToken& token, CadFace* out);
+CadStatus resolveCadFeatureFace(const CadBodyState& state, uint32_t featureId,
+                                const CadFaceToken& token, CadFace* out);
 
 // A deterministic signature of the body's face TOPOLOGY (the set of tokens),
 // independent of the sizes, the depth and the direction. Two states with the
 // same set of faces share it; a state whose profile changed structure does not.
 // Zero when the state has no closed profile.
 uint64_t cadTopologySignature(const CadBodyState& state);
+
+// Whether a regenerated body still carries material on a face's plane, facing
+// along its normal (`CAD-VERTICAL-SLICE-R1`): what a dependent standing on that
+// face needs, and what a Cut that carves the face away entirely takes from it.
+bool cadMeshCarriesFace(const CadBodyMesh& mesh, const CadFace& face);
+
+// The same signature for any feature of the chain: the lineage a support on
+// that feature's faces records. For the first feature it IS
+// `cadTopologySignature`. Zero when the feature does not resolve.
+uint64_t cadFeatureTopologySignature(const CadBodyState& state, uint32_t featureId);
 
 }  // namespace forgeshape

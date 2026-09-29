@@ -170,11 +170,13 @@ CadStatus ConstructionScene::validateCadFaceSupport(const TopoRef& support) cons
     }
     // The producer's topology must be the one the reference was made against,
     // and the named face must resolve now.
-    if (cadTopologySignature(producer->cadOrNull()->state()) != support.lineageToken) {
+    if (cadFeatureTopologySignature(producer->cadOrNull()->state(), support.producerLocalFeatureId)
+        != support.lineageToken) {
         return CadStatus::ProfileNotFound;
     }
     CadFace face;
-    const CadStatus why = resolveCadFace(producer->cadOrNull()->state(), support.face, &face);
+    const CadStatus why = resolveCadFeatureFace(producer->cadOrNull()->state(),
+                                                support.producerLocalFeatureId, support.face, &face);
     if (why != CadStatus::Ok) {
         return why;
     }
@@ -243,11 +245,14 @@ bool ConstructionScene::resolveWorldModelDepth(ObjectId id, Mat4* outModel, int 
     // The lineage check: the producer's face topology must still be the one the
     // reference was made against, or the reference has gone stale and must not
     // silently retarget to whatever face is nearest now (`ARCH-OWNER-13`).
-    if (cadTopologySignature(producer->cadOrNull()->state()) != support->lineageToken) {
+    if (cadFeatureTopologySignature(producer->cadOrNull()->state(), support->producerLocalFeatureId)
+        != support->lineageToken) {
         return false;
     }
     CadFace face;
-    if (resolveCadFace(producer->cadOrNull()->state(), support->face, &face) != CadStatus::Ok) {
+    if (resolveCadFeatureFace(producer->cadOrNull()->state(), support->producerLocalFeatureId,
+                              support->face, &face)
+        != CadStatus::Ok) {
         return false;
     }
     Mat4 producerModel;
