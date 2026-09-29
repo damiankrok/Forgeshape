@@ -4281,6 +4281,21 @@ step carries a body's identity, representation and placement and never its
 vertices — an imported mesh could not be copied into a step cheaply and must not
 try.
 
+**Import is a Construction act, and Sculpt refuses it** (`FUNCTION-COUNCIL-C1`
+D1). The commit makes its first body ACTIVE and records a Construction step,
+and in Sculpt the active body is the sculpt target and Construction history is
+refused. `commitImportedGlbScene` is platform-neutral and cannot see the mode,
+which lives in the Sculpt session. So `importGlbDurable` asks
+`sculptSession().inSculptMode()` under the same lock as the commit and answers
+`ImportCommitStatus::RefusedInSculpt` (appended, ordinal 5) without touching the
+scene or either history. The same pattern guards add, delete and the object
+commands. Above JNI the import row is ABSENT in Sculpt
+(`ProjectActionsPopoverView.showImportAvailable`, from native `productMode` on
+every refresh). `onImportGlbRequested` and a picker result that arrives in
+Sculpt refuse before the file is read, and no Java mode flag exists. There is
+no automatic exit from Sculpt and no repair after the fact: the import does
+not happen.
+
 ### The transform split
 
 `Model = T · L`. glTF states a node transform this product cannot store: its
