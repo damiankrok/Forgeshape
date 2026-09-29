@@ -1,0 +1,23 @@
+{
+  "result": "FAIL-CI-CLOUD-DEVICE-PRODUCT",
+  "detail": "3 of 3 test(s) in com.forgeshape.app.ImportGlbSculptGuardTest failed after ForgeShape initialised correctly",
+  "phase": "instrumentation",
+  "serial": "emulator-5580",
+  "avd": "ForgeShape_CI_API36",
+  "avd_name_confirmed": "ForgeShape_CI_API36",
+  "system_image": "system-images;android-36;google_apis;x86_64",
+  "device_profile": "medium_phone",
+  "gpu_mode": "swiftshader_indirect",
+  "boot_seconds": "45",
+  "startup_seconds": "3",
+  "startup_capture_used": "3",
+  "selftest_tokens_expected": 23,
+  "selftest_tokens_found": 23,
+  "selftest_tokens_in_order": true,
+  "native_viewport_ok": true,
+  "failure_token_lines": 0,
+  "test_class": "com.forgeshape.app.ImportGlbSculptGuardTest",
+  "tests_run": 3,
+  "tests_failed": 3,
+  "test_seconds": "25"
+}
