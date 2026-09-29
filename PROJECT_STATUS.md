@@ -1,7 +1,22 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.84.0
+**Status Version:** 0.84.1
 **Updated:** 2026-09-29
+**Latest audit:** **`FUNCTION-COUNCIL-R1` — `PASS-FUNCTION-COUNCIL-R1`**
+(2026-09-29). A read-only function, ownership and test-cost audit of
+`a1b50f2`; no product, test, script, workflow or format byte changed. Record:
+`artifacts/function-council-r1/SUMMARY.md`.
+
+- **Three source-confirmed defects, not fixed, runtime unverified:** Import GLB
+  is reachable and unguarded in Sculpt (D1); the sketch navigator's Flip and
+  ±90° never move the camera (D2, `beginSketchView` reads the authoring frame at
+  `forgeshape_jni.cpp:311`); a palette change makes a just-saved project read
+  unsaved (D3). Four smaller ones (D4–D7) are in `COUNCIL_FINDINGS.md`.
+- **Measured test cost:** the aggregate is 629 device tests at ~6.2 s each, run
+  one after another; 45 % of it is chrome-geometry classes and 13 % is
+  OWNER-review frames or a diagnostic path. A lean policy (Tier 0–5) is
+  PROPOSED in `LEAN_VALIDATION_POLICY.md`; nothing in the gates changed.
+
 **Latest closeout:** **`CAD-VS-FULLSHARDED-C4` — `PASS-CAD-VS-FULLSHARDED-C4`**
 (2026-09-29). **`CAD-VERTICAL-SLICE-R1` is integrated into `main`.**
 
@@ -4389,6 +4404,13 @@ was added and no marketing claim is made.
 
 **Exactly one next step: return this status to the ForgeShape coordinator,
 which creates the OWNER-review APK task for the integrated CAD vertical slice.**
+
+`FUNCTION-COUNCIL-R1` (2026-09-29) adds OWNER decisions to that hand-off and
+starts nothing: adopting the lean validation tiers, a test-only layout
+dependency, what a sketch on ANOTHER body's face should make, and the next
+vertical slice (`artifacts/function-council-r1/COUNCIL_FINDINGS.md` §5,
+`NEXT_VERTICAL_SLICE_OPTIONS.md`). Its defects D1–D3 are prerequisites for the
+options that touch their paths.
 
 - **Where it stands.** `CAD-VERTICAL-SLICE-R1` passed its milestone aggregate
   (`36607747079`, `FULL_SHARDED_SUITE_PASS`, 629/629 on `fa0b6b4`) and is on
