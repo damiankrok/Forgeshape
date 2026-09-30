@@ -204,9 +204,29 @@ struct CadExtrudeControlScale {
 bool cadExtrudeControlScaleFor(float metersPerPixel, CadExtrudeControlScale* out);
 
 // The same rule with the camera quantity read from the camera, at the depth of
-// `anchor`. Draw and hit test both come through here, so they cannot disagree.
+// `anchor`.
 bool cadExtrudeControlScale(const CameraSnapshot& camera, const Vec3& anchor, int viewportHeight,
                             CadExtrudeControlScale* out);
+
+// THE one camera scale fact of the manipulator (`CAD-FOUNDATION-C1`): the rule
+// above with `metersPerPixel` read at the manipulator's own BASE anchor. The
+// drawn head and leader, the arrow hit test, the HUD's visual scale and the
+// retained-sketch chip all come through here, so in perspective none of them
+// can be sized at a different depth than another -- which is exactly what
+// happened while the overlay read the scale at the world origin.
+bool cadExtrudeManipulatorScale(const CadExtrudeAnchors& anchors, const CameraSnapshot& camera,
+                                int viewportHeight, CadExtrudeControlScale* out);
+
+// Everything camera-derived the manipulator's DRAWING needs for one frame,
+// read once and handed to the overlay builder. Presentation only: none of it
+// is authored truth, and an invalid value draws no manipulator rather than one
+// sized by a guess.
+struct CadExtrudeViewFacts {
+    bool valid = false;
+    CadExtrudeControlScale scale{};
+};
+
+bool sameCadExtrudeViewFacts(const CadExtrudeViewFacts& a, const CadExtrudeViewFacts& b);
 
 // ---------------------------------------------------------------------------
 // The arrow proportions

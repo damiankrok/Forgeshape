@@ -1898,8 +1898,15 @@ void renderThreadMain() {
                             renderer.setSketchOverlay(forgeshape::SketchOverlayPtr{});
                         }
                     } else {
-                        renderer.setSketchOverlay(
-                            forgeshape::sketchSession().overlay(worldPerUnit));
+                        // The manipulator's ONE scale fact for this frame, read
+                        // at its own base anchor rather than at the origin the
+                        // grid and the snap marker are sized from, so the drawn
+                        // head is the head the hit test grabs.
+                        forgeshape::SketchSession& session = forgeshape::sketchSession();
+                        forgeshape::CadExtrudeViewFacts view;
+                        session.extrudeViewFacts(g_camera.snapshot(), g_camera.viewportHeight(),
+                                                 &view);
+                        renderer.setSketchOverlay(session.overlay(worldPerUnit, view));
                     }
                 }
             }
@@ -4860,10 +4867,12 @@ Java_com_forgeshape_app_NativeViewport_cadExtrudeToolState(JNIEnv* env, jclass,
                                  : 0.0;
             const int w = g_camera.viewportWidth();
             const int h = g_camera.viewportHeight();
-            forgeshape::CadExtrudeControlScale scale;
-            if (forgeshape::cadExtrudeControlScale(g_camera.snapshot(), anchors.base, h, &scale)) {
-                values[10] = scale.scale;
-                values[11] = scale.clampedLow ? 1.0 : (scale.clampedHigh ? 2.0 : 0.0);
+            // The SAME scale fact the frame draws the head with and the hit
+            // test grabs with (`extrudeViewFacts`), never a second read.
+            forgeshape::CadExtrudeViewFacts view;
+            if (session.extrudeViewFacts(g_camera.snapshot(), h, &view)) {
+                values[10] = view.scale.scale;
+                values[11] = view.scale.clampedLow ? 1.0 : (view.scale.clampedHigh ? 2.0 : 0.0);
             }
             // The two sides, projected through the same camera and by the same
             // rule, so neither cluster can be placed by a different arithmetic
@@ -5183,8 +5192,9 @@ Java_com_forgeshape_app_NativeViewport_cadBodySketchAnchor(JNIEnv* env, jclass, 
                                                              &point[0], &point[1]);
                     forgeshape::CadExtrudeControlScale scale;
                     if (found
-                        && forgeshape::cadExtrudeControlScale(g_camera.snapshot(), anchors.base,
-                                                              g_camera.viewportHeight(), &scale)) {
+                        && forgeshape::cadExtrudeManipulatorScale(anchors, g_camera.snapshot(),
+                                                                  g_camera.viewportHeight(),
+                                                                  &scale)) {
                         point[2] = scale.scale;
                     }
                 }

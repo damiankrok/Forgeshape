@@ -265,6 +265,21 @@ bool cadExtrudeControlScale(const CameraSnapshot& camera, const Vec3& anchor, in
     return cadExtrudeControlScaleFor(perPixel, out);
 }
 
+bool cadExtrudeManipulatorScale(const CadExtrudeAnchors& anchors, const CameraSnapshot& camera,
+                                int viewportHeight, CadExtrudeControlScale* out) {
+    if (!anchors.valid) {
+        return false;
+    }
+    return cadExtrudeControlScale(camera, anchors.base, viewportHeight, out);
+}
+
+bool sameCadExtrudeViewFacts(const CadExtrudeViewFacts& a, const CadExtrudeViewFacts& b) {
+    if (a.valid != b.valid) {
+        return false;
+    }
+    return !a.valid || a.scale.metersPerPixel == b.scale.metersPerPixel;
+}
+
 // ---------------------------------------------------------------------------
 // The manipulator
 // ---------------------------------------------------------------------------
@@ -301,7 +316,7 @@ bool CadExtrudeManipulator::hitTestSide(const CadExtrudeAnchors& anchors, bool p
         return false;  // a side with no extent has no arrow to have been hit
     }
     CadExtrudeControlScale scale;
-    if (!cadExtrudeControlScale(camera, anchors.base, viewportHeight, &scale)) {
+    if (!cadExtrudeManipulatorScale(anchors, camera, viewportHeight, &scale)) {
         return false;
     }
     // The head is drawn past the tip at the SHARED scale, so the grabbable

@@ -1338,6 +1338,108 @@ void testCanvasExtrudeScale(Recorder& r) {
     }
 }
 
+// `CAD-FOUNDATION-C1` S3 and S4: ONE manipulator scale fact at the arrow's own
+// base, and a camera-caused overlay rebuild is a new overlay revision.
+bool overlayHasPointNear(const SketchOverlay& overlay, const Vec3& p, float tolerance) {
+    for (const GizmoVertex& v : overlay.vertices) {
+        if (std::fabs(v.position[0] - p.x) <= tolerance && std::fabs(v.position[1] - p.y) <= tolerance
+            && std::fabs(v.position[2] - p.z) <= tolerance) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void testCadFoundationOneScale(Recorder& r) {
+    // A profile far from the world origin, under a perspective camera: the
+    // configuration where the origin and the anchor are at different depths,
+    // so a second read of metersPerPixel would give a second number.
+    SketchSession session;
+    readyRectangleSession(&session, Workplane::XY, 2.0, 1.0, 1.0, 6.0, 4.0);
+    CadExtrudeAnchors anchors;
+    const bool haveAnchors = session.extrudeAnchors(&anchors);
+    const int h = 2000;
+    const CameraSnapshot camera =
+            uxPerspectiveCamera(Vec3{6.0f, 3.0f, 6.0f}, Vec3{0.0f, 0.0f, 0.0f}, 1080, h);
+    CadExtrudeViewFacts facts;
+    const bool haveFacts = session.extrudeViewFacts(camera, h, &facts);
+    // What the hit test grabs with and what the HUD slot reports: the one
+    // function, at the anchor.
+    CadExtrudeControlScale hit;
+    const bool haveHit = cadExtrudeManipulatorScale(anchors, camera, h, &hit);
+    // What the overlay USED to be sized by: the world origin.
+    float originPerUnit = 0.0f;
+    const bool haveOrigin = gizmoWorldScale(camera, Vec3{0.0f, 0.0f, 0.0f}, h, &originPerUnit);
+    const float originPerPixel = originPerUnit / gizmoPixelsPerReferenceUnit();
+    r.check("CADFC1_S3_a_one_scale_fact_at_the_anchor_feeds_hit_test_and_hud",
+            haveAnchors && haveFacts && haveHit && facts.valid
+                    && facts.scale.metersPerPixel == hit.metersPerPixel
+                    && facts.scale.world == hit.world && facts.scale.scale == hit.scale);
+    r.check("CADFC1_S3_b_the_origin_and_the_anchor_really_are_two_depths_here",
+            haveOrigin && originPerPixel > 0.0f
+                    && std::fabs(originPerPixel - hit.metersPerPixel)
+                               > 0.05f * hit.metersPerPixel);
+    // The DRAWN head: the overlay built from the frame's facts puts the arrow
+    // point exactly where the hit test extends the grab to.
+    const SketchOverlayPtr drawn = session.overlay(originPerUnit, facts);
+    const Vec3 headPoint = vec3Add(
+            anchors.tip,
+            vec3Scale(anchors.axis, static_cast<float>(hit.world * kCadExtrudeArrowHeadLengthFraction)));
+    r.check("CADFC1_S3_c_the_drawn_head_is_sized_by_the_same_fact_the_hit_test_uses",
+            drawn && overlayHasPointNear(*drawn, headPoint, 1.0e-4f)
+                    && sameCadExtrudeViewFacts(session.overlayViewFacts(), facts)
+                    && session.overlayViewFacts().scale.metersPerPixel == hit.metersPerPixel);
+    // Without the frame's facts there is no arrow at all, rather than one
+    // sized by some other number.
+    SketchSession bare;
+    readyRectangleSession(&bare, Workplane::XY, 2.0, 1.0, 1.0, 6.0, 4.0);
+    const SketchOverlayPtr unsized = bare.overlay(originPerUnit);
+    r.check("CADFC1_S3_d_no_camera_fact_means_no_arrow_rather_than_a_guessed_one",
+            unsized && !overlayHasPointNear(*unsized, headPoint, 1.0e-4f)
+                    && !bare.overlayViewFacts().valid);
+
+    // S4: a zoom that rebuilds the overlay advances its revision, the result
+    // is publishable, and an unchanged camera reuses it untouched.
+    {
+        const uint64_t r0 = drawn->revision;
+        const SketchOverlayPtr same = session.overlay(originPerUnit, facts);
+        const bool cached = same.get() == drawn.get() && same->revision == r0;
+        const SketchOverlayPtr zoomed = session.overlay(originPerUnit * 1.5f, facts);
+        const bool zoomBumped = zoomed.get() != drawn.get() && zoomed->revision > r0
+                                && zoomed->revision == session.overlayRevision();
+        const bool publishable = !zoomed->vertices.empty()
+                                 && zoomed->vertices.size() <= kMaxSketchOverlayVertices
+                                 && zoomed->ranges.size() == 5;
+        r.check("CADFC1_S4_a_a_zoom_rebuild_advances_the_overlay_revision",
+                cached && zoomBumped && publishable);
+        // The manipulator's own fact changing alone (the camera moved the
+        // anchor's depth) is a camera rebuild too.
+        CadExtrudeViewFacts closer = facts;
+        const CameraSnapshot near =
+                uxPerspectiveCamera(Vec3{2.0f, 3.0f, 4.0f}, Vec3{6.0f, 4.0f, 0.0f}, 1080, h);
+        session.extrudeViewFacts(near, h, &closer);
+        const uint64_t r1 = zoomed->revision;
+        const SketchOverlayPtr moved = session.overlay(originPerUnit * 1.5f, closer);
+        r.check("CADFC1_S4_b_a_manipulator_scale_change_alone_advances_the_revision",
+                closer.valid && !sameCadExtrudeViewFacts(closer, facts) && moved->revision > r1
+                        && overlayHasPointNear(
+                                   *moved,
+                                   vec3Add(anchors.tip,
+                                           vec3Scale(anchors.axis,
+                                                     static_cast<float>(
+                                                             closer.scale.world
+                                                             * kCadExtrudeArrowHeadLengthFraction))),
+                                   1.0e-4f));
+        // An authored change bumps once, not twice.
+        const uint64_t r2 = session.overlayRevision();
+        session.setExtrude(1.25, ExtrudeDirection::AlongNormal);
+        const uint64_t r3 = session.overlayRevision();
+        const SketchOverlayPtr edited = session.overlay(originPerUnit * 1.5f, closer);
+        r.check("CADFC1_S4_c_an_authored_change_is_published_at_its_own_revision",
+                r3 > r2 && edited->revision == r3);
+    }
+}
+
 void testCanvasExtrudeDrag(Recorder& r) {
     // CADUXS1-04: a drag along the axis changes the depth deterministically,
     // and the SAME world displacement is the same depth change under two very
@@ -2486,6 +2588,7 @@ int runSketchUxSelfTests(SketchUxSelfTestResult* out, int maxOut) {
     testCanvasExtrudeAnchors(r);
     testCanvasExtrudeFlip(r);
     testCanvasExtrudeScale(r);
+    testCadFoundationOneScale(r);
     testCanvasExtrudeDrag(r);
     testCanvasExtrudeSessionGesture(r);
     testCanvasExtrudeParityAndPurity(r);

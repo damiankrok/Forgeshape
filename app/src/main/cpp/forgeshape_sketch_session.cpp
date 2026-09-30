@@ -1746,6 +1746,10 @@ float hueForWorldAxis(const Vec3& direction) {
 }  // namespace
 
 SketchOverlayPtr SketchSession::overlay(float worldPerUnit) {
+    return overlay(worldPerUnit, CadExtrudeViewFacts{});
+}
+
+SketchOverlayPtr SketchSession::overlay(float worldPerUnit, const CadExtrudeViewFacts& view) {
     if (!active()) {
         if (overlay_ && !overlay_->vertices.empty()) {
             overlay_ = std::make_shared<SketchOverlay>();
@@ -1756,13 +1760,43 @@ SketchOverlayPtr SketchSession::overlay(float worldPerUnit) {
         }
         return overlay_;
     }
-    if (overlayDirty_ || !overlay_ || overlayWorldPerUnit_ != worldPerUnit) {
-        buildOverlay(worldPerUnit);
+    const bool cameraChanged = overlay_
+                               && (overlayWorldPerUnit_ != worldPerUnit
+                                   || !sameCadExtrudeViewFacts(overlayView_, view));
+    if (overlayDirty_ || !overlay_ || cameraChanged) {
+        // An authored change already advanced the revision (`touchOverlay`).
+        // A rebuild the camera alone caused moves vertex POSITIONS -- the
+        // snap marker, the hatch, the head, the dimension -- often at an
+        // unchanged vertex count, so it must be a new revision too or the
+        // renderer's upload gate would keep drawing the previous zoom.
+        if (!overlayDirty_ && cameraChanged) {
+            ++overlayRevision_;
+        }
+        buildOverlay(worldPerUnit, view);
     }
     return overlay_;
 }
 
-void SketchSession::buildOverlay(float worldPerUnit) {
+bool SketchSession::extrudeViewFacts(const CameraSnapshot& camera, int viewportHeight,
+                                     CadExtrudeViewFacts* out) const {
+    if (out == nullptr) {
+        return false;
+    }
+    *out = CadExtrudeViewFacts{};
+    CadExtrudeAnchors anchors;
+    if (!extrudeAnchors(&anchors)) {
+        return false;
+    }
+    CadExtrudeViewFacts built;
+    if (!cadExtrudeManipulatorScale(anchors, camera, viewportHeight, &built.scale)) {
+        return false;
+    }
+    built.valid = true;
+    *out = built;
+    return true;
+}
+
+void SketchSession::buildOverlay(float worldPerUnit, const CadExtrudeViewFacts& view) {
     auto built = std::make_shared<SketchOverlay>();
     built->revision = overlayRevision_;
     std::vector<GizmoVertex>& v = built->vertices;
@@ -2004,15 +2038,12 @@ void SketchSession::buildOverlay(float worldPerUnit) {
         // axis, in the SAME range and at the same weight as the preview it
         // belongs to, so the renderer needed no new style and no new case. Its
         // shaft is the depth; only its head and base tick take the camera-
-        // attached control scale, and that scale is derived from the caller
-        // worldPerUnit rather than from a second camera read, so what is drawn
-        // and what is hit-tested are one number.
+        // attached control scale -- the frame's ONE manipulator scale fact,
+        // read at the arrow's own base (`cadExtrudeManipulatorScale`), which
+        // is exactly the number the hit test grabs with. No facts, no arrow.
         CadExtrudeAnchors anchors;
-        CadExtrudeControlScale controlScale;
-        if (extrudeAnchors(&anchors)
-            && cadExtrudeControlScaleFor(perPixel > 0.0 ? static_cast<float>(perPixel) : 0.0f,
-                                         &controlScale)) {
-            appendCadExtrudeArrow(&v, anchors, controlScale.world, extrudeDrag_.capturing(),
+        if (view.valid && extrudeAnchors(&anchors)) {
+            appendCadExtrudeArrow(&v, anchors, view.scale.world, extrudeDrag_.capturing(),
                                   extrudeDrag_.capturedPositiveSide());
         }
     }
@@ -2070,6 +2101,7 @@ void SketchSession::buildOverlay(float worldPerUnit) {
     overlay_ = built;
     overlayDirty_ = false;
     overlayWorldPerUnit_ = worldPerUnit;
+    overlayView_ = view;
 }
 
 SketchSession& sketchSession() {

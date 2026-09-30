@@ -497,6 +497,15 @@ public:
     // chosen profile, or when the geometry cannot produce anchors.
     bool extrudeAnchors(CadExtrudeAnchors* out) const;
 
+    // The camera-derived facts the manipulator is DRAWN with for one frame
+    // (`CAD-FOUNDATION-C1`), read once through `cadExtrudeManipulatorScale` at
+    // the manipulator's own base. The frame hands the SAME value to
+    // `overlay`, and the chrome reads it through here too, so the drawn head,
+    // the hit test and the HUD glyphs are one number. Invalid (and false)
+    // whenever there are no anchors.
+    bool extrudeViewFacts(const CameraSnapshot& camera, int viewportHeight,
+                          CadExtrudeViewFacts* out) const;
+
     // Reverses which side of the sketch plane the solid grows on, keeping the
     // exact depth and the same profile. A One Side control ALONE: Symmetric
     // reaches both sides already, and Two Sides states both explicitly, so in
@@ -534,8 +543,18 @@ public:
     // inactive. `worldPerUnit` sizes the snap marker; it is the world length
     // of one reference unit at the plane, which the caller derives from the
     // camera exactly as the gizmo does.
+    //
+    // `view` is the manipulator's camera facts for this frame
+    // (`extrudeViewFacts`); without them no arrow is drawn, because an arrow
+    // sized by any other scale would disagree with what the hit test grabs.
+    // A rebuild the CAMERA causes -- another `worldPerUnit` or other view
+    // facts -- is a new overlay revision, so the renderer's revision-gated
+    // upload can never keep the previous zoom's vertices.
     SketchOverlayPtr overlay(float worldPerUnit);
+    SketchOverlayPtr overlay(float worldPerUnit, const CadExtrudeViewFacts& view);
     uint64_t overlayRevision() const { return overlayRevision_; }
+    // The manipulator facts the current overlay was BUILT with; verification.
+    const CadExtrudeViewFacts& overlayViewFacts() const { return overlayView_; }
 
     // --- mapping, for the shell's verification --------------------------
 
@@ -614,7 +633,7 @@ private:
                                             const CadBodyState& candidate,
                                             const CadBodyMesh& candidateMesh) const;
     CadStatus fail(CadStatus why) { lastStatus_ = why; return why; }
-    void buildOverlay(float worldPerUnit);
+    void buildOverlay(float worldPerUnit, const CadExtrudeViewFacts& view);
 
     SketchSessionState state_ = SketchSessionState::Inactive;
     SketchTool tool_ = SketchTool::Rectangle;
@@ -699,6 +718,7 @@ private:
     uint64_t overlayRevision_ = 0;
     bool overlayDirty_ = true;
     float overlayWorldPerUnit_ = 0.0f;
+    CadExtrudeViewFacts overlayView_{};
     std::shared_ptr<SketchOverlay> overlay_;
 };
 
