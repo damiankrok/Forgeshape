@@ -10,6 +10,7 @@
 #include <numeric>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "forgeshape_cad_body.h"
@@ -2782,6 +2783,216 @@ void measurePerformance(Recorder& r) {
             ok && triangles > 0u && std::isfinite(medianOf(chainUs)) && medianOf(chainUs) >= 0.0);
 }
 
+// ---------------------------------------------------------------------------
+// `CAD-V6-S1-C1`: how long a CadFeatureId and a CadSketchId live
+// ---------------------------------------------------------------------------
+//
+// Every case drives the product's own paths -- a face sketch through the
+// session, one commit inside one `ScopedConstructionEdit`, and the one
+// `ConstructionHistory` -- over a scene of its own, opened the way Open opens
+// a project: one body and an EMPTY history.
+
+struct IdLifetimeRig {
+    ConstructionScene scene{NoProjectTag{}};
+    ConstructionHistory history{scene};
+    ObjectId bodyId = kNoObject;
+
+    bool open(const CadBodyState& state) {
+        SceneObject* body = scene.addCadBody(state);
+        if (body == nullptr) {
+            return false;
+        }
+        publishSceneObject(*body);
+        bodyId = body->objectId();
+        history.clear();
+        return true;
+    }
+    CadBodyState state() const { return bodyStateOf(scene, bodyId); }
+    uint64_t fingerprint() const {
+        return projectSemanticFingerprint(scene, ProjectKind::Construction);
+    }
+    std::vector<uint8_t> bytes() const {
+        return encodeProjectV1(captureProjectDocument(scene, ProjectKind::Construction));
+    }
+    // One later feature through the product path: a sketch on `onFeature`'s
+    // far cap, ONE entity typed exactly, Finish, the operation, the depth, one
+    // commit. `out` receives the session's candidate just before the commit.
+    CadStatus feature(uint32_t onFeature, CadFeatureOperation operation,
+                      SketchEntity::Payload exact, double depth, ExtrudeDirection direction,
+                      bool cancelInsteadOfCommit = false, CadBodyState* outCandidate = nullptr) {
+        SketchFrame frame;
+        TopoRef ref;
+        if (!worldCapFrame(scene, bodyId, onFeature, CadFaceKind::CapFar, &frame, &ref)) {
+            return CadStatus::ProfileNotFound;
+        }
+        const CadBodyState producer = state();
+        SessionDriver s;
+        if (!s.beginFace(frame, ref, &producer)) {
+            return CadStatus::NotSketching;
+        }
+        const SketchTool tool = std::holds_alternative<SketchCircle>(exact) ? SketchTool::Circle
+                                                                           : SketchTool::Rectangle;
+        const SketchEntityId id =
+                s.place(tool, SketchPoint{0.0, 0.0}, SketchPoint{0.5, 0.5}, std::move(exact));
+        CadStatus why = id == kNoSketchEntity ? CadStatus::ProfileNotFound : s.sketch.finish();
+        if (why == CadStatus::Ok) why = s.sketch.setOperation(operation);
+        if (why == CadStatus::Ok) why = s.sketch.setExtrude(depth, direction);
+        if (why == CadStatus::Ok && outCandidate != nullptr) {
+            *outCandidate = s.sketch.candidateState();
+        }
+        if (why == CadStatus::Ok && cancelInsteadOfCommit) {
+            s.sketch.cancel();
+            return s.sketch.active() ? CadStatus::NotSketching : CadStatus::Ok;
+        }
+        if (why == CadStatus::Ok) {
+            ObjectId out = kNoObject;
+            why = s.sketch.commit(scene, history, &out);
+        }
+        if (s.sketch.active()) {
+            s.sketch.cancel();
+        }
+        return why;
+    }
+    CadStatus add(uint32_t onFeature, SketchEntity::Payload exact, double depth = 0.25) {
+        return feature(onFeature, CadFeatureOperation::Add, std::move(exact), depth,
+                       ExtrudeDirection::AlongNormal);
+    }
+    CadStatus cut(uint32_t onFeature, SketchEntity::Payload exact, double depth = 0.5) {
+        return feature(onFeature, CadFeatureOperation::Cut, std::move(exact), depth,
+                       ExtrudeDirection::AgainstNormal);
+    }
+    // A domain edit as ONE transaction -- what `commitEdit` does with a
+    // staged candidate.
+    CadStatus apply(const CadBodyState& requested) {
+        SceneObject* object = scene.findBody(bodyId);
+        CadBody* body = object != nullptr ? object->cadOrNull() : nullptr;
+        if (body == nullptr) {
+            return CadStatus::NotCadBody;
+        }
+        CadStatus why = CadStatus::Ok;
+        {
+            ScopedConstructionEdit edit(history);
+            why = body->applyState(requested);
+            if (why == CadStatus::Ok) {
+                publishSceneObject(*object);
+            }
+        }
+        return why;
+    }
+};
+
+// The later feature `k` (0-based) of `state`, or a zero record.
+CadFeature laterAt(const CadBodyState& state, size_t k) {
+    return k < state.laterFeatures.size() ? state.laterFeatures[k] : CadFeature{};
+}
+
+void testIdLifetimeBefore(Recorder& r) {
+    // IDL-B01..B03 on one rig: Add, Undo, look at the redo side, new branch.
+    IdLifetimeRig rig;
+    const bool opened = rig.open(blockState());
+    const CadBodyState s0 = rig.state();
+    const size_t undo0 = rig.history.undoDepth();
+    const CadStatus added = opened ? rig.add(kCadFeatureId, rectangleAt(0.0, 0.0, 0.5, 0.5))
+                                   : CadStatus::NotCadBody;
+    const CadBodyState s1 = rig.state();
+    const bool addMinted2 = added == CadStatus::Ok && s1.laterFeatures.size() == 1u
+                            && laterAt(s1, 0).featureId == 2u && laterAt(s1, 0).sketchId == 2u
+                            && s1.nextFeatureId == 3u && s1.nextSketchId == 3u
+                            && rig.history.undoDepth() == undo0 + 1u;
+    const bool undone = rig.history.undo();
+    const CadBodyState afterUndo = rig.state();
+    const bool rewound = undone && sameCadBodyState(afterUndo, s0) && afterUndo.nextFeatureId == 2u
+                         && afterUndo.nextSketchId == 2u && afterUndo.laterFeatures.empty()
+                         && afterUndo.sketches.size() == 1u;
+    // IDL-B02: the redo side still holds feature 2 / sketch 2 -- a Redo puts
+    // back exactly that identity -- so "nothing can still point at the undone
+    // feature" was not true while the redo step stands.
+    const bool redoStands = rig.history.canRedo() && rig.history.redoDepth() == 1u;
+    const bool redone = rig.history.redo();
+    const bool redoIsTheSameIdentity = redone && sameCadBodyState(rig.state(), s1);
+    const bool undoneAgain = rig.history.undo() && sameCadBodyState(rig.state(), s0)
+                             && rig.history.redoDepth() == 1u;
+    r.check("CADV6C1_IDL_B02_BEFORE_after_undo_the_redo_step_still_holds_feature_2_and_sketch_2",
+            addMinted2 && redoStands && redoIsTheSameIdentity && undoneAgain);
+    // IDL-B01: a new edit after Undo is handed the SAME ids again.
+    const CadStatus branched = rig.cut(kCadFeatureId, circleAt(0.0, 0.0, 0.3));
+    const CadBodyState s2 = rig.state();
+    const bool reminted = branched == CadStatus::Ok && s2.laterFeatures.size() == 1u
+                          && laterAt(s2, 0).featureId == 2u && laterAt(s2, 0).sketchId == 2u
+                          && laterAt(s2, 0).operation == CadFeatureOperation::Cut
+                          && s2.nextFeatureId == 3u && s2.nextSketchId == 3u
+                          && !sameCadBodyState(s2, s1);
+    r.check("CADV6C1_IDL_B01_BEFORE_undo_rewinds_both_high_water_marks_and_the_next_feature_re_mints_2",
+            addMinted2 && rewound && reminted);
+    // IDL-B03: that commit empties the redo stack, and no walk of the history
+    // reaches the abandoned Add again.
+    const bool redoCleared = rig.history.redoDepth() == 0u && !rig.history.canRedo()
+                             && !rig.history.redo() && sameCadBodyState(rig.state(), s2);
+    bool abandonedUnreachable = true;
+    while (rig.history.undo()) {
+        abandonedUnreachable &= !sameCadBodyState(rig.state(), s1);
+    }
+    const bool backAtStart = sameCadBodyState(rig.state(), s0);
+    while (rig.history.redo()) {
+        abandonedUnreachable &= !sameCadBodyState(rig.state(), s1);
+    }
+    r.check("CADV6C1_IDL_B03_BEFORE_the_new_branch_commit_clears_redo_and_the_old_add_is_unreachable",
+            reminted && redoCleared && abandonedUnreachable && backAtStart
+                    && sameCadBodyState(rig.state(), s2));
+
+    // IDL-B04: a cancelled edit. The session's candidate mints ids of its own;
+    // cancelling it writes nothing to the body and records nothing. And an
+    // open Construction edit that applied a minted state and was cancelled
+    // puts the high-water marks back, leaving the redo side alone.
+    {
+        IdLifetimeRig c;
+        const bool cOpened = c.open(blockState());
+        const CadBodyState before = c.state();
+        CadBodyState candidate;
+        const CadStatus cancelled =
+                cOpened ? c.feature(kCadFeatureId, CadFeatureOperation::Add,
+                                    rectangleAt(0.0, 0.0, 0.5, 0.5), 0.25,
+                                    ExtrudeDirection::AlongNormal, /*cancel=*/true, &candidate)
+                        : CadStatus::NotCadBody;
+        const bool sessionCancel = cancelled == CadStatus::Ok
+                                   && laterAt(candidate, 0).featureId == 2u
+                                   && candidate.nextFeatureId == 3u && candidate.nextSketchId == 3u
+                                   && sameCadBodyState(c.state(), before)
+                                   && c.history.undoDepth() == 0u && c.history.redoDepth() == 0u;
+        // A redo step to protect, then an edit opened, used and cancelled.
+        const bool redoArmed = c.add(kCadFeatureId, rectangleAt(0.0, 0.0, 0.5, 0.5)) == CadStatus::Ok
+                               && c.history.undo() && c.history.redoDepth() == 1u;
+        CadBody* body = c.scene.findBody(c.bodyId)->cadOrNull();
+        const bool opened2 = c.history.beginEdit();
+        const bool applied = body->applyState(candidate) == CadStatus::Ok
+                             && body->state().nextFeatureId == 3u;
+        c.history.cancelEdit();
+        const bool editCancel = redoArmed && opened2 && applied
+                                && sameCadBodyState(c.state(), before)
+                                && c.state().nextFeatureId == 2u && c.state().nextSketchId == 2u
+                                && c.history.undoDepth() == 0u && c.history.redoDepth() == 1u;
+        r.check("CADV6C1_IDL_B04_BEFORE_a_cancelled_edit_burns_no_id_and_records_no_step",
+                sessionCancel && editCancel);
+    }
+
+    // IDL-B05: the saved bytes and the fingerprint after Add then Undo.
+    {
+        IdLifetimeRig f;
+        const bool fOpened = f.open(blockState());
+        const std::vector<uint8_t> saved = f.bytes();
+        const uint64_t savedFingerprint = f.fingerprint();
+        uint16_t savedVersion = 0;
+        const bool legacy = cadbSectionVersion(saved, &savedVersion) && savedVersion == 1u;
+        const bool addOk = fOpened && f.add(kCadFeatureId, rectangleAt(0.0, 0.0, 0.5, 0.5))
+                                              == CadStatus::Ok;
+        const bool moved = f.fingerprint() != savedFingerprint && f.bytes() != saved;
+        const bool undoOk = f.history.undo();
+        r.check("CADV6C1_IDL_B05_BEFORE_undo_back_to_the_saved_state_is_byte_and_fingerprint_equal",
+                legacy && addOk && moved && undoOk && f.fingerprint() == savedFingerprint
+                        && f.bytes() == saved);
+    }
+}
+
 }  // namespace
 
 // ---------------------------------------------------------------------------
@@ -3037,6 +3248,7 @@ int runCadFeatureSelfTests(CadFeatureSelfTestResult* out, int maxOut) {
     testChain(r);
     testSession(r);
     testPersistence(r);
+    testIdLifetimeBefore(r);
     measurePerformance(r);
     // The planar arrangement (`CAD-PLANAR-FACE-PF-S1`): derived-only, wired to
     // nothing yet, so it rides in this suite rather than a startup token of
