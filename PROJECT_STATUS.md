@@ -1,41 +1,40 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.87.0
+**Status Version:** 0.88.0
 **Updated:** 2026-09-30
-**Latest closeout:** **`CAD-FOUNDATION-C2` — `PASS-CAD-FOUNDATION-C2-HUD-PLANAR-BLOCKED`**
-(2026-09-30). **The extrude HUD's controls are one compact action panel at the
-arrow tip, and a label is written at the display precision; planar faces are
-blocked on a new identity.** Record: `artifacts/cad-foundation-c2/SUMMARY.md`.
-Visual feel is **OWNER REVIEW REQUIRED** on a physical device.
+**Latest closeout:** **`CAD-PLANAR-FACE-PF-S1-ARRANGEMENT-R1` — `PASS-CAD-PLANAR-FACE-PF-S1`**
+(2026-09-30). **The planar-arrangement engine exists and is not wired to
+anything.** `forgeshape_sketch_arrangement` derives, from line, polyline,
+rectangle, circle and arc curves, analytic intersections and T-junctions,
+fragments, a half-edge graph, the bounded atomic faces and a canonical
+`PlanarFaceRef` per face (entity ids, edge-local indices, per-pair ordinals —
+no coordinate or index), resolved by exact equality. Record:
+`artifacts/cad-planar-face-pf-s1/SUMMARY.md` (BEFORE.md, REFERENCE_FACES.txt).
 
-- **One panel.** Extent, operation and (One Side) Flip are one rigid plate at
-  reference size, scaled as a unit, anchored past the arrow's drawn point
-  (`cadExtrudeArrowPoint`, tool-state slots 42..44), beside it when that does
-  not fit, hidden whole otherwise. One unscaled ≥ 48 dp group proxy opens one
-  action palette. The value follows the same scale (`clamp(14 sp × s, 9, 18)`),
-  and the annotation collapses whole at the scale floor when the value would
-  outgrow its leader. `EditorWorkspaceView` unchanged.
-- **Display precision.** `LengthUnit.formatWithUnit` uses the area label's
-  rule, 3 decimals in the display unit (`2.3593521118164062 m` → `2.359 m`);
-  editors keep every digit.
-- **Planar faces: Class B.** The region model is loop nesting; crossings are
-  never split, and `ProfileRegionRef` cannot name a lens or a protrusion
-  without reinterpreting v1–v5 records. PF-01..04 BEFORE checks in CAD_FEATURE;
-  the proposal is ONE `CADB` v6 with `CAD-SKETCH-IDENTITY-R1`
-  (`PLANAR_FACE_MODEL_PROPOSAL.md`).
-- **No format change.** Corpus 44/44 byte-identical.
-- **Gates.**
-  - Host: `HOST_SELFTESTS_OK (3813 checks, 0 failed)`; JVM 116/116.
-  - `CI FAST` `36742635591` (`f69f24e`) and `36744733518` (`cc99400`) green.
-  - `CI DEVICE` `36742639778` on `f69f24e`: 3/46 failed on one real defect
-    (proxy sized from the dp sum, 2 px short of the pixel-rounded plate),
-    fixed in `cc99400`.
-  - `CI DEVICE` `36744737415` on `cc99400`: **PASS**, 23/23 tokens,
-    `OK (46 tests)`, five-class union list; close/normal/far/very-far recorded.
-  - **FullSharded NOT RUN.**
-- **OWNER APK:** `CI FAST` `36744733518` artifact `11112660566`,
-  `app-debug.apk` 10,910,129 bytes, SHA-256
-  `81f5cd73195e4c59af11d89161a3881b30d9916ba8844fb693a148dcb4882b9e`.
+- OWNER cases: circle crossing rectangle → 3 faces (lens from both
+  entities); line protrusion → 2 faces (T-junctions split the side); two
+  crossing circles → lens + 2 crescents; the nested case equals the v5
+  regions exactly. Splines refused (`UnsupportedCurve`); overlaps refused
+  (`AmbiguousOverlap`); caps 1024 edges / 4096 contacts (`CapExceeded`).
+- Deterministic under input order and 100 repetitions; an edit keeping the
+  same partners and ordinals keeps every ref; losing an intersection loses
+  the ref with no fallback.
+- At-cap 64×64 grid (3969 faces): 22.2 ms median at `-O2`, 20 runs.
+- **No format change**: no codec, spec, fixture, encoder, JNI or Android
+  byte. C2 is integrated (`main` `3872120 → f751773`).
+- **Gates.** Host `HOST_SELFTESTS_OK (3852 checks, 0 failed)` (CAD_FEATURE
+  184 → 223); NDK debug + release build; `CI FAST` on the final candidate
+  (run recorded in the summary's closing commit). **CI DEVICE NOT RUN**
+  (nothing reaches a device). **FullSharded NOT RUN.**
+
+**Previous closeout:** **`CAD-FOUNDATION-C2` — `PASS-CAD-FOUNDATION-C2-HUD-PLANAR-BLOCKED`**
+(2026-09-30). One action panel at the extrude arrow tip; labels at the display
+precision; planar faces classified Class B. Record:
+`artifacts/cad-foundation-c2/SUMMARY.md`. Gates: `CI DEVICE` `36744737415`
+`OK (46 tests)`; OWNER APK `CI FAST` `36744733518` artifact `11112660566`,
+10,910,129 bytes, SHA-256
+`81f5cd73195e4c59af11d89161a3881b30d9916ba8844fb693a148dcb4882b9e`. Its
+physical-device review is still OWNER REVIEW REQUIRED.
 
 **Previous closeout:** **`CAD-FOUNDATION-C1-UNION-HUD-R1` — `PASS-CAD-FOUNDATION-C1`**
 (2026-09-30). A region selection is the union of its atomic regions; the
@@ -4528,18 +4527,15 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Exactly one next step: the OWNER reviews `CAD-FOUNDATION-C2` on a physical
-device** with the APK above and the checklist in
-`artifacts/cad-foundation-c2/SUMMARY.md`, returns the panel's final sizes
-(band, plate, value text, collapse point), and decides the two questions in
-`PLANAR_FACE_MODEL_PROPOSAL.md` §8 (one combined `CADB` v6; splines as face
-boundaries). The sizes are presentation constants in `CadHudPresentation`;
-tuning them is a bounded follow-up, not a redesign.
-
-After that review the next major task is ONE `CADB` v6 design covering
-`CAD-SKETCH-IDENTITY-R1` and planar faces, starting with the format-free slice
-PF-S1 (the derived arrangement). None of it is started; it needs its own
-authorisation.
+**Exactly one next step: PF-S2 — ONE `CADB` v6 combining stable sketch
+identity (`CAD-SKETCH-IDENTITY-R1`) with planar-face selection**, per
+`artifacts/cad-foundation-c2/PLANAR_FACE_MODEL_PROPOSAL.md` §6–§8 and the
+OWNER decisions already given (one combined v6; no splines in the first
+planar-face release). It persists `PlanarFaceRef` exactly as PF-S1 derives it
+and wires faces into the session's tap, preview and commit. It needs its own
+authorisation. The C2 physical-device review (APK above, checklist in
+`artifacts/cad-foundation-c2/SUMMARY.md`) can happen in parallel and only
+tunes presentation constants.
 
 `FUNCTION-COUNCIL-R1`'s D2–D7 and the import-during-sketch observation stay
 recorded debt, not authorised work. The Council's other OWNER decisions are

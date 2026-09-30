@@ -76,7 +76,8 @@ regeneration timings for its four sizes, and the sketch-UX suite prints
 `FORGESHAPE_SKETCH_UX_PERFORMANCE`, the arc and spline tessellation and
 curve-profile timings. The CAD-feature suite prints
 `FORGESHAPE_CAD_FEATURE_PERFORMANCE` (the region, Add, Add + Cut and codec
-round-trip timings of the acceptance model) and `FORGESHAPE_CAD_GOLDEN_SHA256_V5`
+round-trip timings of the acceptance model, and the planar arrangement's
+at-cap median/max over 20 derivations) and `FORGESHAPE_CAD_GOLDEN_SHA256_V5`
 (the eight `CADB` v5 fixture digests as this build encodes them).
 `bash scripts/host-native-selftests.sh [filter]` runs all twenty-three suites
 on the host, with no device, and is the fast native loop.
@@ -532,7 +533,15 @@ on the host, with no device, and is the fast native loop.
   be merged is refused by name with the selection standing as it was. The
   union is hatched; a hole it leaves open stays EMPTY. A single simple region
   still extrudes through the unchanged R0 float path, bit-identical to every
-  earlier build.
+  earlier build. **The planar arrangement is DERIVED and not yet wired**
+  (`CAD-PLANAR-FACE-PF-S1`): `forgeshape_sketch_arrangement` splits the
+  supported curves (line, polyline, rectangle, circle, arc — never a spline,
+  refused by name) at analytic intersections and T-junctions into atomic faces
+  named by a canonical `PlanarFaceRef` built only from entity ids, edge-local
+  indices and per-pair intersection ordinals — never a coordinate, index,
+  tessellation or triangle — and resolved by exact equality with no fallback.
+  Nothing in the session, JNI, UI, feature chain or `.forge` reads it until a
+  combined `CADB` v6 (sketch identity + planar-face selection) is authorised.
 - **An Add or a Cut changes the SAME body, through a retained feature chain**
   (`CAD-VERTICAL-SLICE-R1`, `forgeshape_cad_body.{h,cpp}`,
   `forgeshape_cad_feature.{h,cpp}`). After its first New Body feature a CAD

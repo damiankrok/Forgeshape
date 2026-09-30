@@ -25,6 +25,7 @@
 #include "forgeshape_project_state.h"
 #include "forgeshape_scene.h"
 #include "forgeshape_sketch.h"
+#include "forgeshape_sketch_arrangement_selftest.h"
 #include "forgeshape_sketch_region.h"
 #include "forgeshape_sketch_session.h"
 
@@ -3029,6 +3030,16 @@ int runCadFeatureSelfTests(CadFeatureSelfTestResult* out, int maxOut) {
     testSession(r);
     testPersistence(r);
     measurePerformance(r);
+    // The planar arrangement (`CAD-PLANAR-FACE-PF-S1`): derived-only, wired to
+    // nothing yet, so it rides in this suite rather than a startup token of
+    // its own. Its cap-sketch timing joins this suite's performance line.
+    std::vector<ArrangementSelfTestCheck> arrangement;
+    std::string arrangementPerformance;
+    runSketchArrangementSelfTests(&arrangement, &arrangementPerformance);
+    for (const ArrangementSelfTestCheck& check : arrangement) {
+        r.check(check.name, check.passed);
+    }
+    g_performance += " " + arrangementPerformance;
     return r.n;
 }
 

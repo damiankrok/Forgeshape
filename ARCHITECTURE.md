@@ -2426,6 +2426,10 @@ forgeshape_sketch         entities, ids, validation, closed loops, triangulation
         ^
 forgeshape_sketch_region  loops -> regions (outer minus direct children), the
         ^                 semantic selection, hatch, tap resolution
+        |  forgeshape_sketch_arrangement  (beside it, reading forgeshape_sketch
+        |                 only) curves -> planar arrangement -> atomic faces
+        |                 and their canonical PlanarFaceRef; DERIVED, consumed
+        |                 by nothing in the product yet (PF-S1)
 forgeshape_cad_kernel     THE boolean seam: CadSolid (binary64, one face tag per
         ^                 triangle) -> Union / Difference; the only TU that
         |                 includes vendored Manifold (third_party/manifold)
@@ -2674,6 +2678,43 @@ preview hatch and edges (`sketchComponentHatch`, `sketchComponentLoops`) and
 selection with no region beside its own hole unions to exactly its regions, in
 order, so every earlier face, token and mesh is unchanged; the stored form is
 unchanged too (`CADB` v5, no new version).
+
+### The planar arrangement (`CAD-PLANAR-FACE-PF-S1`)
+
+`deriveSketchArrangement` (`forgeshape_sketch_arrangement`) is the engine the
+planar-face selections of a later stage will stand on, and today NOTHING in the
+product calls it: no session, JNI, Android, render, codec or feature path. It
+reads a `CadSketch` and returns derived values only. Supported source edges are
+analytic — a line, a polyline segment `k`, a rectangle side `0..3` in
+`rectangleProfilePolygon` order, a whole circle (edge 0, parameter = angle from
+its own `+u`, counter-clockwise, closed) and an arc (edge 0, `arcGeometry`'s
+centre, start and signed sweep, authored endpoints exact); any Spline refuses
+the whole arrangement (`UnsupportedCurve`) because a tessellation index is not
+an identity. Pairwise contacts are analytic (segment/segment, segment/circle-
+or-arc, circle-or-arc/circle-or-arc) with sweep filtering, plus endpoint
+proximity at `kSketchCoincidenceMeters` (a T-junction splits the touched curve;
+an endpoint on an endpoint splits nothing). Tangency makes NO node, so a tangent
+circle never grows a zero-area lens; a shared stretch longer than the tolerance
+is `AmbiguousOverlap`. Points within the tolerance are one node (connected
+components of the relation, order-free). Each source edge is cut at its interior
+contacts — a cut named by `(partner entity, partner edge, ordinal along THIS
+edge)`, the smallest name winning where several curves meet — into fragments;
+a closed circle with no cut is one fragment from its origin to itself. Two
+half-edges per fragment, sorted counter-clockwise at each node by tangent angle
+(quantized), then signed curvature, then semantic identity; `next` is the
+half-edge immediately clockwise of the twin, so every face lies on the LEFT.
+Dangling fragments and bridges are pruned until neither remains. A cycle's
+exact signed area (arcs by Green's theorem) separates bounded faces (positive)
+from component outlines (negative); an outline is a hole of the smallest
+positive cycle of ANOTHER component whose winding number contains a sample on
+it (winding exact for arcs, samples at golden-ratio fractions so a tangency
+cannot hide them all), else of the unbounded exterior, which is never emitted.
+A face's identity is its `PlanarFaceRef` — outer cycle CCW, holes CW, each
+rotated to its smallest `FragmentRef`, holes sorted — and `resolvePlanarFaceRef`
+is exact tuple equality with no nearest-face fallback. Caps of its own
+(`kMaxArrangementSourceEdges` 1024, `kMaxArrangementContacts` 4096) bound the
+quadratic work the sketch caps would otherwise allow, refused as `CapExceeded`.
+Its status enum is module-local and never crosses JNI.
 
 ### The feature chain and the boolean kernel (`CAD-VERTICAL-SLICE-R1`)
 
