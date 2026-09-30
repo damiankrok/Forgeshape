@@ -60,6 +60,13 @@ enum class ArrangementStatus : uint8_t {
     DegenerateFace,
     // More source edges or intersections than the caps below.
     CapExceeded,
+    // `mergePlanarFaces` (`CAD-V6-S2`): a face index that names no face, or a
+    // repeat.
+    InvalidSelection,
+    // `mergePlanarFaces`: the union's boundary passes one node twice -- two
+    // chosen faces touch at a single point -- so no simple loop bounds it.
+    // Refused rather than extruded as a pinched solid.
+    PinchedSelection,
 };
 
 const char* arrangementStatusName(ArrangementStatus status);
@@ -75,24 +82,10 @@ constexpr uint32_t kMaxArrangementContacts = 4096;
 // Semantic identity
 // ---------------------------------------------------------------------------
 
-enum class ArrangementCutKind : uint8_t {
-    SourceStart = 0,
-    Intersection = 1,
-    SourceEnd = 2,
-};
-
-// Where a fragment of a source edge starts or ends. For an Intersection:
-// the partner edge, and `ordinal` = this contact's place among the contacts
-// with that partner edge that fall INSIDE this edge (its own ends are
-// `SourceStart`/`SourceEnd`), counted in this edge's own parameter order.
-// Where several curves meet at one point the cut is named by the smallest of
-// their refs. No coordinate is part of it.
-struct ArrangementCut {
-    ArrangementCutKind kind = ArrangementCutKind::SourceStart;
-    SketchEntityId partnerEntityId = kNoSketchEntity;
-    uint32_t partnerEdgeLocalIndex = 0;
-    uint32_t ordinal = 0;
-};
+// `ArrangementCutKind` and `ArrangementCut` -- where a fragment of a source
+// edge starts or ends -- are declared in forgeshape_sketch.h, beside the face
+// token that names a fragment side by two of them (`CAD-V6-S2`). Where several
+// curves meet at one point the cut is named by the smallest of their refs.
 
 // One fragment of one source edge, and the direction a cycle walks it.
 // `reversed` is false for the source's own parameter direction.
@@ -144,6 +137,14 @@ struct ArrangementFragment {
     uint32_t endNode = 0;
     bool curved = false;      // a piece of a circle or an arc
     bool boundsFace = false;  // false when pruned as dangling or a bridge
+    // The fragment's DERIVED geometry (`CAD-V6-S2`), in the source's own
+    // direction from `nodes[startNode]` to `nodes[endNode]` inclusive -- those
+    // two points EXACTLY, so neighbouring fragments share their end vertex
+    // bit for bit. A straight piece is those two points; a piece of a circle
+    // or arc is clipped to its own sweep and tessellated at the density an
+    // authored arc gets (`sketchArcSegmentCount`). Never identity: a denser
+    // tessellation changes these points and no ref.
+    std::vector<SketchPoint> points;
 };
 
 struct AtomicPlanarFace {
@@ -175,5 +176,57 @@ SketchArrangement deriveSketchArrangement(const CadSketch& sketch);
 // untouched) when the boundary no longer exists -- no nearest-face search.
 bool resolvePlanarFaceRef(const SketchArrangement& arrangement, const PlanarFaceRef& ref,
                           size_t* outIndex);
+
+// ---------------------------------------------------------------------------
+// The union of chosen faces (`CAD-V6-S2`)
+// ---------------------------------------------------------------------------
+//
+// What an extrusion of several atomic faces extrudes is their UNION, and it is
+// derived here, on the arrangement's own half-edges, never on a second graph:
+//
+//   every chosen face contributes its boundary cycles, each walked with the
+//   face on the LEFT (outer counter-clockwise, holes clockwise);
+//   a fragment walked BOTH ways by chosen faces separates two of them and is
+//   interior to the union: it cancels;
+//   what remains is walked into cycles by the same rotation the faces were --
+//   from a half-edge, its own face's successor, and past every cancelled one
+//   to the next chosen face around the node -- so no angle is recomputed;
+//   a positive cycle is an outer boundary, a negative one a hole, owned by the
+//   smallest outer that contains it.
+//
+// Each loop keeps its FRAGMENTS (identity) and a polygon (geometry) built from
+// the fragments' derived points; the two are joined per polygon edge, so every
+// wall of the extruded solid knows the fragment it stands on.
+
+struct PlanarProfileLoop {
+    // The loop's fragments in walk order (union on the left), rotated to start
+    // at the smallest. `reversed` is the walk direction against the source's.
+    FragmentCycle fragments;
+    // Parallel to `fragments`: whether that fragment is a piece of a curve.
+    std::vector<uint8_t> fragmentCurved;
+    // Counter-clockwise, with no repeated closing vertex -- a HOLE is stored
+    // re-oriented, so every loop reads the way an extracted profile does.
+    std::vector<SketchPoint> polygon;
+    // Per polygon edge k (polygon[k] -> polygon[(k + 1) % n]): the index into
+    // `fragments` of the fragment it lies on.
+    std::vector<uint32_t> edgeFragment;
+    // The polygon's area, positive, square metres.
+    double area = 0.0;
+};
+
+struct PlanarProfileComponent {
+    PlanarProfileLoop outer;
+    // Ascending by their fragment cycles.
+    std::vector<PlanarProfileLoop> holes;
+    // Outer minus holes, polygon areas.
+    double area = 0.0;
+};
+
+// The union of `faceIndices` (indices into `arrangement.faces`, any order, no
+// repeats), as its connected components in canonical order (by the outer
+// cycle), each with its holes. Deterministic; derived, never stored.
+ArrangementStatus mergePlanarFaces(const SketchArrangement& arrangement,
+                                   const std::vector<size_t>& faceIndices,
+                                   std::vector<PlanarProfileComponent>* out);
 
 }  // namespace forgeshape

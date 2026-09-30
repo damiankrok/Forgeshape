@@ -544,6 +544,27 @@ CadStatus validatePlanarFaceRefForm(const PlanarFaceRef& ref);
 // No nearest face is ever substituted.
 CadStatus validatePlanarFaceSelection(const CadSketch& sketch, const ExtrudeFeature& extrude);
 
+// The same rule, keeping what it derived (`CAD-V6-S2`): the sketch's
+// arrangement and, per stored face in stored order, its index in
+// `arrangement.faces`. What regeneration and the session read, so a selection
+// is resolved by exactly one rule wherever it is used.
+CadStatus resolvePlanarFaceSelection(const CadSketch& sketch, const ExtrudeFeature& extrude,
+                                     SketchArrangement* outArrangement,
+                                     std::vector<size_t>* outFaceIndices);
+
+// The union of a resolved PlanarFaces selection (`mergePlanarFaces`), with the
+// arrangement's refusals mapped to their `CadStatus` names: a pinch is
+// `OverlappingRegions`, a union loop over `kMaxProfileVertices` is
+// `TooManyEntities` (the profile cap's existing name), a degenerate one
+// `PlanarFaceDegenerate`.
+CadStatus mergePlanarFaceSelection(const SketchArrangement& arrangement,
+                                   const std::vector<size_t>& faceIndices,
+                                   std::vector<PlanarProfileComponent>* out);
+
+// The arrangement status as a `CadStatus` (`UnsupportedCurve` ->
+// `PlanarFaceUnsupportedCurve`, ...). Deterministic; `Ok` maps to `Ok`.
+CadStatus cadStatusForArrangement(ArrangementStatus status);
+
 // THE regeneration path. Validates, extracts, triangulates, extrudes.
 //
 // The mesh is closed: a front cap, a back cap and one quad per profile edge,

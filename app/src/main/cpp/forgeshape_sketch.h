@@ -301,6 +301,12 @@ constexpr uint32_t kMaxArcSegments = 64;
 // bound the triangulation pass and every O(n^2) check here are held to.
 constexpr uint32_t kMaxProfileVertices = 1024;
 
+// How many straight segments a circular arc of this signed sweep becomes: the
+// SAME angular density a full circle gets, clamped to
+// [kMinArcSegments, kMaxArcSegments]. A pure function of the sweep, shared by
+// an authored Arc and a fragment of a circle or arc (`CAD-V6-S2`).
+uint32_t sketchArcSegmentCount(double sweep);
+
 // ---------------------------------------------------------------------------
 // Entities
 // ---------------------------------------------------------------------------
@@ -336,20 +342,67 @@ enum class CadFaceKind : uint8_t {
 
 const char* cadFaceKindName(CadFaceKind kind);
 
+// Where a fragment of a source edge starts or ends, by AUTHORED identity
+// (`CAD-PLANAR-FACE-PF-S1`; the planar arrangement, forgeshape_sketch_
+// arrangement.h, derives it). For an Intersection: the partner edge, and
+// `ordinal` = this contact's place among the contacts with that partner edge
+// that fall INSIDE this edge (its own ends are SourceStart/SourceEnd), counted
+// in this edge's own parameter order. No coordinate is part of it. It lives
+// here, beside the face token, because a side face standing on a fragment is
+// named by two of them.
+enum class ArrangementCutKind : uint8_t {
+    SourceStart = 0,
+    Intersection = 1,
+    SourceEnd = 2,
+};
+
+struct ArrangementCut {
+    ArrangementCutKind kind = ArrangementCutKind::SourceStart;
+    SketchEntityId partnerEntityId = kNoSketchEntity;
+    uint32_t partnerEdgeLocalIndex = 0;
+    uint32_t ordinal = 0;
+};
+
+bool sameArrangementCut(const ArrangementCut& a, const ArrangementCut& b);
+
 // A compact, stable identity of one face within a producer feature's topology.
 //
 // For a Side, `edgeEntityId` is the sketch entity that owns the profile edge
 // and `edgeLocalIndex` is which of that entity's edges it is (0..3 for a
 // rectangle, 0..n-1 for a polyline, 0 for a chained line). For a cap both are
 // zero. It is NEVER a triangle index.
+//
+// A FRAGMENT side (`CAD-V6-S2`). A feature that extrudes planar-arrangement
+// faces (`CadSelectionKind::PlanarFaces`) has side walls standing on PIECES of
+// source edges: a rectangle side a circle crosses twice is three pieces, and
+// two of them may bound one union. Such a side names its piece by the two cuts
+// that bound it, in the source edge's own parameter order -- the same semantic
+// tuple a `FragmentRef` carries, never a coordinate, a polygon or tessellation
+// index or a triangle. A piece that IS its whole source edge (both cuts at the
+// source's own ends) is not a fragment: it wears the whole-edge token, byte for
+// byte, so every whole-edge side keeps meaning what it always meant. A fragment
+// token exists only on a PlanarFaces feature and is written only by `CADB` v6.
 struct CadFaceToken {
     CadFaceKind kind = CadFaceKind::CapPlane;
     SketchEntityId edgeEntityId = kNoSketchEntity;
     uint32_t edgeLocalIndex = 0;
+    // Only for a Side: true when the face stands on a proper fragment of the
+    // source edge, bounded by the two cuts below.
+    bool fragment = false;
+    ArrangementCut fragmentStart{};
+    ArrangementCut fragmentEnd{};
 };
 
+// Field equality: the kind, the edge, and -- for a fragment -- both cuts. A
+// fragment token's identity does not fit a 64-bit code, so equality is never
+// judged by `cadFaceTokenCode`.
 bool sameCadFaceToken(const CadFaceToken& a, const CadFaceToken& b);
-// A stable u64 encoding, used to build a lineage signature and to compare.
+// A stable u64 encoding, used to build a lineage signature. For a whole-edge
+// token or a cap it is the packing every earlier build used, bit for bit
+// (`kind << 56 | entity << 16 | local`). For a fragment it is
+// `0x03 << 56 | (FNV-1a 64 of the token's CADB v6 bytes after its kind & 2^56-1)`
+// (DATA_PACKAGE_SPEC.md §7g), which no whole-edge code can equal because its
+// top byte is a kind (0..2).
 uint64_t cadFaceTokenCode(const CadFaceToken& token);
 
 // The v1 CAD feature id every CAD body's single Sketch+Extrude feature has,

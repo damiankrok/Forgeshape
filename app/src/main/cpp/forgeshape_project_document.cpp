@@ -311,6 +311,9 @@ bool cadFeatureOperationFromFileCode(uint8_t code, CadFeatureOperation* out) {
 constexpr uint8_t kCadSketchPlacementWorkplane = 1;
 constexpr uint8_t kCadSketchPlacementBodyFace = 2;
 constexpr uint8_t kCadSketchPlacementFeatureFace = 3;
+// A fragment side face token (`CAD-V6-S2`, §7g `FACE`): v6 only. Every v1..v5
+// reader refuses it as an unknown face kind, which is the point.
+constexpr uint8_t kCadFaceFragmentSideFileCode = 4;
 
 uint8_t cadSelectionKindFileCode(CadSelectionKind kind) {
     switch (kind) {
@@ -1050,11 +1053,42 @@ void writeCadRegions(ByteWriter& out, const ExtrudeFeature& extrude) {
     }
 }
 
+// A v6 CUT (§7g): its kind, and for an intersection the partner and ordinal.
+void writeArrangementCut(ByteWriter& out, const ArrangementCut& cut) {
+    out.u8(arrangementCutKindFileCode(cut.kind));
+    if (cut.kind == ArrangementCutKind::Intersection) {
+        out.u32(cut.partnerEntityId);
+        out.u32(cut.partnerEdgeLocalIndex);
+        out.u32(cut.ordinal);
+    }
+}
+
+// A face token as v6 writes it (§7g `FACE`): codes 1..3 are exactly the v2..v5
+// bytes; code 4 is a fragment side (`CAD-V6-S2`) and carries its two cuts.
+void writeCadFaceTokenV6(ByteWriter& out, const CadFaceToken& face) {
+    const bool fragment = face.kind == CadFaceKind::Side && face.fragment;
+    out.u8(fragment ? kCadFaceFragmentSideFileCode : cadFaceKindFileCode(face.kind));
+    out.u32(face.edgeEntityId);
+    out.u32(face.edgeLocalIndex);
+    if (fragment) {
+        writeArrangementCut(out, face.fragmentStart);
+        writeArrangementCut(out, face.fragmentEnd);
+    }
+}
+
+// v5's later-feature support: codes 1..3 only (a v5 record never names a
+// fragment -- `cadBodyStateLegacyRepresentable` keeps every such state v6).
 void writeCadFeatureSupport(ByteWriter& out, const CadFeatureSupport& support) {
     out.u32(support.featureId);
     out.u8(cadFaceKindFileCode(support.face.kind));
     out.u32(support.face.edgeEntityId);
     out.u32(support.face.edgeLocalIndex);
+    out.u64(support.lineageToken);
+}
+
+void writeCadFeatureSupportV6(ByteWriter& out, const CadFeatureSupport& support) {
+    out.u32(support.featureId);
+    writeCadFaceTokenV6(out, support.face);
     out.u64(support.lineageToken);
 }
 
@@ -1066,14 +1100,8 @@ void writePlanarFaceCycle(ByteWriter& out, const FragmentCycle& cycle) {
     for (const FragmentRef& fragment : cycle) {
         out.u32(fragment.sourceEntityId);
         out.u32(fragment.sourceEdgeLocalIndex);
-        for (const ArrangementCut* cut : {&fragment.startCut, &fragment.endCut}) {
-            out.u8(arrangementCutKindFileCode(cut->kind));
-            if (cut->kind == ArrangementCutKind::Intersection) {
-                out.u32(cut->partnerEntityId);
-                out.u32(cut->partnerEdgeLocalIndex);
-                out.u32(cut->ordinal);
-            }
-        }
+        writeArrangementCut(out, fragment.startCut);
+        writeArrangementCut(out, fragment.endCut);
         out.u8(fragment.reversed ? 0x01u : 0x00u);
     }
 }
@@ -1090,15 +1118,13 @@ void writeCadBodyV6(ByteWriter& out, const ProjectCadBody& body) {
         out.u32(record.sketchId);
         if (record.hasFeatureSupport) {
             out.u8(kCadSketchPlacementFeatureFace);
-            writeCadFeatureSupport(out, record.featureSupport);
+            writeCadFeatureSupportV6(out, record.featureSupport);
         } else if (record.sketch.hasFaceSupport) {
             const TopoRef& ref = record.sketch.faceSupport;
             out.u8(kCadSketchPlacementBodyFace);
             out.u64(ref.producerObjectId);
             out.u32(ref.producerLocalFeatureId);
-            out.u8(cadFaceKindFileCode(ref.face.kind));
-            out.u32(ref.face.edgeEntityId);
-            out.u32(ref.face.edgeLocalIndex);
+            writeCadFaceTokenV6(out, ref.face);
             out.u64(ref.lineageToken);
         } else {
             out.u8(kCadSketchPlacementWorkplane);
@@ -1848,6 +1874,70 @@ ProjectCodecStatus readCadRegions(ByteReader& in, ExtrudeFeature* extrude) {
 // One boundary cycle (§7g `CYCLE`). Counts refused before allocation; a cut
 // kind outside the three is a semantic value, a `reversed` byte other than 0/1
 // a reserved bit. Order, rotation and resolution are the domain's to judge.
+// One v6 CUT (§7g), refused by name when its kind is unknown.
+ProjectCodecStatus readArrangementCut(ByteReader& in, ArrangementCut* cut) {
+    uint8_t kindCode = 0;
+    if (!in.u8(&kindCode)) {
+        return ProjectCodecStatus::Truncated;
+    }
+    if (!arrangementCutKindFromFileCode(kindCode, &cut->kind)) {
+        return ProjectCodecStatus::InvalidSemanticValue;
+    }
+    if (cut->kind == ArrangementCutKind::Intersection
+        && (!in.u32(&cut->partnerEntityId) || !in.u32(&cut->partnerEdgeLocalIndex)
+            || !in.u32(&cut->ordinal))) {
+        return ProjectCodecStatus::Truncated;
+    }
+    return ProjectCodecStatus::Ok;
+}
+
+// A v6 face token (§7g `FACE`). A fragment side (code 4) must be a PROPER
+// fragment in canonical form: a start cut that is not a source end, an end cut
+// that is not a source start, not both source ends (that is the whole edge,
+// whose one encoding is code 3), and an intersection naming a partner. Anything
+// else is refused, never normalized.
+ProjectCodecStatus readCadFaceTokenV6(ByteReader& in, CadFaceToken* face) {
+    uint8_t code = 0;
+    if (!in.u8(&code) || !in.u32(&face->edgeEntityId) || !in.u32(&face->edgeLocalIndex)) {
+        return ProjectCodecStatus::Truncated;
+    }
+    face->fragment = false;
+    face->fragmentStart = ArrangementCut{};
+    face->fragmentEnd = ArrangementCut{};
+    if (code != kCadFaceFragmentSideFileCode) {
+        return cadFaceKindFromFileCode(code, &face->kind) ? ProjectCodecStatus::Ok
+                                                          : ProjectCodecStatus::InvalidSemanticValue;
+    }
+    face->kind = CadFaceKind::Side;
+    face->fragment = true;
+    for (ArrangementCut* cut : {&face->fragmentStart, &face->fragmentEnd}) {
+        const ProjectCodecStatus why = readArrangementCut(in, cut);
+        if (why != ProjectCodecStatus::Ok) {
+            return why;
+        }
+    }
+    const auto endpointClean = [](const ArrangementCut& cut) {
+        return cut.partnerEntityId == kNoSketchEntity && cut.partnerEdgeLocalIndex == 0u
+               && cut.ordinal == 0u;
+    };
+    const ArrangementCut& a = face->fragmentStart;
+    const ArrangementCut& b = face->fragmentEnd;
+    const bool startOk = a.kind == ArrangementCutKind::SourceStart
+                                 ? endpointClean(a)
+                                 : a.kind == ArrangementCutKind::Intersection
+                                           && a.partnerEntityId != kNoSketchEntity;
+    const bool endOk = b.kind == ArrangementCutKind::SourceEnd
+                               ? endpointClean(b)
+                               : b.kind == ArrangementCutKind::Intersection
+                                         && b.partnerEntityId != kNoSketchEntity;
+    const bool whole = a.kind == ArrangementCutKind::SourceStart
+                       && b.kind == ArrangementCutKind::SourceEnd;
+    if (!startOk || !endOk || whole || face->edgeEntityId == kNoSketchEntity) {
+        return ProjectCodecStatus::InvalidSemanticValue;
+    }
+    return ProjectCodecStatus::Ok;
+}
+
 ProjectCodecStatus readPlanarFaceCycle(ByteReader& in, FragmentCycle* cycle) {
     uint32_t count = 0;
     if (!in.u32(&count)) {
@@ -1866,17 +1956,9 @@ ProjectCodecStatus readPlanarFaceCycle(ByteReader& in, FragmentCycle* cycle) {
             return ProjectCodecStatus::Truncated;
         }
         for (ArrangementCut* cut : {&fragment.startCut, &fragment.endCut}) {
-            uint8_t kindCode = 0;
-            if (!in.u8(&kindCode)) {
-                return ProjectCodecStatus::Truncated;
-            }
-            if (!arrangementCutKindFromFileCode(kindCode, &cut->kind)) {
-                return ProjectCodecStatus::InvalidSemanticValue;
-            }
-            if (cut->kind == ArrangementCutKind::Intersection
-                && (!in.u32(&cut->partnerEntityId) || !in.u32(&cut->partnerEdgeLocalIndex)
-                    || !in.u32(&cut->ordinal))) {
-                return ProjectCodecStatus::Truncated;
+            const ProjectCodecStatus why = readArrangementCut(in, cut);
+            if (why != ProjectCodecStatus::Ok) {
+                return why;
             }
         }
         uint8_t reversed = 0;
@@ -1931,27 +2013,29 @@ ProjectCodecStatus decodeCadBodyV6(ByteReader& in, ProjectCadBody* body) {
             sketch.plane = Workplane::XY;
             sketch.hasFaceSupport = true;
             TopoRef& ref = sketch.faceSupport;
-            uint8_t faceKindCode = 0;
-            if (!in.u64(&ref.producerObjectId) || !in.u32(&ref.producerLocalFeatureId)
-                || !in.u8(&faceKindCode) || !in.u32(&ref.face.edgeEntityId)
-                || !in.u32(&ref.face.edgeLocalIndex) || !in.u64(&ref.lineageToken)) {
+            if (!in.u64(&ref.producerObjectId) || !in.u32(&ref.producerLocalFeatureId)) {
                 return ProjectCodecStatus::Truncated;
             }
-            if (!cadFaceKindFromFileCode(faceKindCode, &ref.face.kind)) {
-                return ProjectCodecStatus::InvalidSemanticValue;
+            const ProjectCodecStatus faceWhy = readCadFaceTokenV6(in, &ref.face);
+            if (faceWhy != ProjectCodecStatus::Ok) {
+                return faceWhy;
+            }
+            if (!in.u64(&ref.lineageToken)) {
+                return ProjectCodecStatus::Truncated;
             }
         } else if (placement == kCadSketchPlacementFeatureFace) {
             sketch.plane = Workplane::XY;
             record.hasFeatureSupport = true;
             CadFeatureSupport& support = record.featureSupport;
-            uint8_t faceKindCode = 0;
-            if (!in.u32(&support.featureId) || !in.u8(&faceKindCode)
-                || !in.u32(&support.face.edgeEntityId) || !in.u32(&support.face.edgeLocalIndex)
-                || !in.u64(&support.lineageToken)) {
+            if (!in.u32(&support.featureId)) {
                 return ProjectCodecStatus::Truncated;
             }
-            if (!cadFaceKindFromFileCode(faceKindCode, &support.face.kind)) {
-                return ProjectCodecStatus::InvalidSemanticValue;
+            const ProjectCodecStatus faceWhy = readCadFaceTokenV6(in, &support.face);
+            if (faceWhy != ProjectCodecStatus::Ok) {
+                return faceWhy;
+            }
+            if (!in.u64(&support.lineageToken)) {
+                return ProjectCodecStatus::Truncated;
             }
         } else {
             return ProjectCodecStatus::InvalidSemanticValue;

@@ -34,6 +34,20 @@ struct ChosenSupport {
     SketchFrame worldFrame{};          // when Face: the resolved world frame
 };
 
+// Re-resolves a chosen support against the scene AS IT IS NOW (`CAD-V6-S2`).
+//
+// A selection is made at a tap and confirmed later; an Undo or a Redo between
+// the two can move, reshape or remove the producer face it names. The stored
+// world frame is therefore never trusted: a face support must still validate
+// exactly as a committed one does (`ConstructionScene::validateCadFaceSupport`:
+// the producer exists and is a CAD body, the feature's lineage is the one the
+// tap recorded, the token resolves and is eligible), and its world frame is
+// recomputed from the producer's current world model and face frame. A world
+// plane is returned as it is. On a refusal nothing is written and the caller
+// begins no sketch.
+CadStatus refreshChosenSupport(const ConstructionScene& scene, const ChosenSupport& chosen,
+                               ChosenSupport* out);
+
 // The half-size of a drawn world-plane target square, in metres.
 constexpr float kSupportPlaneHalfMeters = 3.0f;
 

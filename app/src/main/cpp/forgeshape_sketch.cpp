@@ -516,6 +516,10 @@ SketchPoint bezierAt(const SketchPoint& p0, const SketchPoint& p1, const SketchP
 
 }  // namespace
 
+uint32_t sketchArcSegmentCount(double sweep) {
+    return arcSegmentCount(sweep);
+}
+
 CadStatus tessellateSketchCurve(const SketchEntity& entity, std::vector<SketchPoint>* out) {
     if (out == nullptr) {
         return CadStatus::UnknownEntity;
@@ -601,17 +605,70 @@ const char* cadFaceKindName(CadFaceKind kind) {
     return "unknown";
 }
 
+bool sameArrangementCut(const ArrangementCut& a, const ArrangementCut& b) {
+    return a.kind == b.kind && a.partnerEntityId == b.partnerEntityId
+           && a.partnerEdgeLocalIndex == b.partnerEdgeLocalIndex && a.ordinal == b.ordinal;
+}
+
+namespace {
+
+void fnvByte(uint64_t& h, uint8_t byte) {
+    h ^= byte;
+    h *= 1099511628211ull;
+}
+
+void fnvU32(uint64_t& h, uint32_t v) {
+    for (int i = 0; i < 4; ++i) fnvByte(h, static_cast<uint8_t>((v >> (i * 8)) & 0xFFu));
+}
+
+// One cut exactly as `CADB` v6 writes it (§7g `CUT`): its kind code, and for
+// an intersection the partner edge and the ordinal.
+void fnvCut(uint64_t& h, const ArrangementCut& cut) {
+    fnvByte(h, static_cast<uint8_t>(static_cast<uint8_t>(cut.kind) + 1u));
+    if (cut.kind == ArrangementCutKind::Intersection) {
+        fnvU32(h, cut.partnerEntityId);
+        fnvU32(h, cut.partnerEdgeLocalIndex);
+        fnvU32(h, cut.ordinal);
+    }
+}
+
+}  // namespace
+
 uint64_t cadFaceTokenCode(const CadFaceToken& token) {
+    if (token.kind == CadFaceKind::Side && token.fragment) {
+        // The fragment side's v6 bytes after its kind, hashed: a code that
+        // folds in both cuts, under a top byte no whole-edge code has.
+        uint64_t h = 14695981039346656037ull;
+        fnvU32(h, token.edgeEntityId);
+        fnvU32(h, token.edgeLocalIndex);
+        fnvCut(h, token.fragmentStart);
+        fnvCut(h, token.fragmentEnd);
+        return (0x03ull << 56) | (h & 0x00FFFFFFFFFFFFFFull);
+    }
     // kind in the high byte, entity id in the middle, local index in the low
     // bits: a stable, order-independent code that two equal tokens share and
-    // two different ones do not, for the lineage signature and for comparison.
+    // two different ones do not, for the lineage signature.
     return (static_cast<uint64_t>(token.kind) << 56)
            | (static_cast<uint64_t>(token.edgeEntityId) << 16)
            | static_cast<uint64_t>(token.edgeLocalIndex & 0xFFFFu);
 }
 
 bool sameCadFaceToken(const CadFaceToken& a, const CadFaceToken& b) {
-    return cadFaceTokenCode(a) == cadFaceTokenCode(b);
+    // The whole-edge comparison keeps its historical meaning: what the packed
+    // code compared (the local index's low 16 bits), and nothing more.
+    if (a.kind != b.kind || a.edgeEntityId != b.edgeEntityId
+        || (a.edgeLocalIndex & 0xFFFFu) != (b.edgeLocalIndex & 0xFFFFu)) {
+        return false;
+    }
+    const bool aFragment = a.kind == CadFaceKind::Side && a.fragment;
+    const bool bFragment = b.kind == CadFaceKind::Side && b.fragment;
+    if (aFragment != bFragment) {
+        return false;
+    }
+    return !aFragment
+           || (a.edgeLocalIndex == b.edgeLocalIndex
+               && sameArrangementCut(a.fragmentStart, b.fragmentStart)
+               && sameArrangementCut(a.fragmentEnd, b.fragmentEnd));
 }
 
 bool sameTopoRef(const TopoRef& a, const TopoRef& b) {

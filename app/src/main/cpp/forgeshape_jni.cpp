@@ -4042,7 +4042,17 @@ namespace {
 // exactly on it. The caller holds g_stateMutex. Shared by the JNI confirm and
 // the confirm-on-reselect tap. Returns the CadStatus.
 forgeshape::CadStatus confirmChosenSupportLocked() {
-    const forgeshape::ChosenSupport& c = forgeshape::supportChooser().selected();
+    // Never the frame stored at the tap (`CAD-V6-S2`): the support is
+    // re-validated against the scene as it is now and its frame recomputed,
+    // so a producer an Undo or a Redo moved or removed cannot open a sketch on
+    // where its face used to be. A stale support begins nothing.
+    forgeshape::ChosenSupport c;
+    const forgeshape::CadStatus fresh = forgeshape::refreshChosenSupport(
+            forgeshape::constructionScene(), forgeshape::supportChooser().selected(), &c);
+    if (fresh != forgeshape::CadStatus::Ok) {
+        FS_LOGI("FORGESHAPE_SUPPORT_CHOOSER_STALE:%s", forgeshape::cadStatusName(fresh));
+        return fresh;
+    }
     forgeshape::CadStatus status = forgeshape::CadStatus::NotSketching;
     if (c.kind == forgeshape::ChosenSupport::Kind::WorldPlane) {
         status = forgeshape::sketchSession().begin(c.plane);
@@ -5952,6 +5962,12 @@ static jint runHistoryStep(const char* label, bool forward) {
         }
         forgeshape::ConstructionHistory& history = forgeshape::constructionHistory();
         moved = forward ? history.redo(&report) : history.undo(&report);
+        if (moved) {
+            // A support chosen before the step names a scene that no longer
+            // stands (`CAD-V6-S2`): the chooser is closed rather than left to
+            // confirm a face the step may have moved, reshaped or removed.
+            forgeshape::supportChooser().cancel();
+        }
         undoDepth = history.undoDepth();
         redoDepth = history.redoDepth();
         bodyCount = forgeshape::constructionScene().bodyCount();

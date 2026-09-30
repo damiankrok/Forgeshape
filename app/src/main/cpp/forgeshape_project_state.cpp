@@ -97,16 +97,10 @@ bool runtimeCanEvaluateProject(const ProjectDocument& document) {
             return false;
         }
     }
-    // `CAD-V6-S1`: the FORMAT carries planar-face selections and the codec
-    // validates them exactly, but this build cannot yet regenerate a solid from
-    // one. Opening such a body would mean drawing nothing or guessing, so the
-    // runtime refuses the whole project -- on the same terms as a body with no
-    // geometry branch -- and the recovery check never offers one.
-    for (const ProjectCadBody& body : document.cad.bodies) {
-        if (cadBodyStateUsesPlanarFaces(body.state)) {
-            return false;
-        }
-    }
+    // A planar-face selection (`CADB` v6) is regenerated like any other since
+    // `CAD-V6-S2`, so it no longer stands in the way: the load validates and
+    // regenerates the whole document before it becomes the live scene, and a
+    // body that does not regenerate is refused all-or-nothing there.
     return true;
 }
 

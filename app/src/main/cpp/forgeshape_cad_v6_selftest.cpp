@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <utility>
 
@@ -528,20 +529,32 @@ void testPlanarFaces(Checks& c) {
         ConstructionScene scene((NoProjectTag()));
         CadStatus why = CadStatus::Ok;
         const SceneObject* added = scene.addCadBody(lens, &why);
-        c.check("CADV6_F03_a_face_selection_is_validated_but_never_regenerated_in_S1",
-                regenerateCadBody(lens, &mesh) == CadStatus::PlanarFaceRegenerationUnavailable
-                        && regenerateCadBody(mixed, &mesh) == CadStatus::PlanarFaceRegenerationUnavailable
-                        && body.applyState(lens) == CadStatus::PlanarFaceRegenerationUnavailable
-                        && added == nullptr && why == CadStatus::PlanarFaceRegenerationUnavailable
-                        && !scene.hasProject());
+        CadBodyMesh mixedMesh;
+        const CadStatus lensWhy = regenerateCadBody(lens, &mesh);
+        const CadStatus mixedWhy = regenerateCadBody(mixed, &mixedMesh);
+        // `CAD-V6-S2` retires the S1 limitation by name: the lens IS extruded,
+        // to its tessellated area x 1 m (inscribed chords: just under the analytic
+        // lens, within 1%), and the mixed body's face-selected Add
+        // unions onto the block.
+        c.check("CADV6_F03_S2_a_face_selection_regenerates_the_lens_and_the_mixed_add",
+                lensWhy == CadStatus::Ok && mesh.volume < kLensArea
+                        && mesh.volume > 0.99 * kLensArea
+                        && mesh.components == 1u && mixedWhy == CadStatus::Ok
+                        && mixedMesh.volume > 4.0 && mixedMesh.components == 1u
+                        && body.applyState(lens) == CadStatus::Ok && added != nullptr
+                        && why == CadStatus::Ok && scene.hasProject());
         CadBodyState onFaces = lens;
         CadFeatureSupport support;
         support.featureId = 1;
         support.face.kind = CadFaceKind::CapFar;
+        support.lineageToken = cadFeatureTopologySignature(lens, 1u);
         appendCadLaterFeatureWithSketch(&onFaces, CadFeatureOperation::Add, support,
                                         rectSketch(0.0, 0.0, 0.1, 0.1), loopExtrude(1, {}, {}, 0.1));
-        c.check("CADV6_F04_a_sketch_on_a_face_selection_s_faces_is_refused_by_name",
-                validateCadBodyState(onFaces) == CadStatus::PlanarFaceRegenerationUnavailable);
+        CadBodyMesh onFacesMesh;
+        c.check("CADV6_F04_S2_a_sketch_on_a_face_selection_s_cap_stands_and_regenerates",
+                support.lineageToken != 0u && validateCadBodyState(onFaces) == CadStatus::Ok
+                        && regenerateCadBody(onFaces, &onFacesMesh) == CadStatus::Ok
+                        && near(onFacesMesh.volume, mesh.volume + 0.001, 1e-6));
     }
     {
         CadBodyState rotated = lens;
@@ -927,14 +940,18 @@ void testPersistence(Checks& c, std::string* digests) {
                              && decodeStatus(bytes[4], &mixedDocument) == ProjectCodecStatus::Ok;
         const ProjectCodecStatus lensLoad = loadProjectDocument(lensDocument, scene, session, history);
         const ProjectCodecStatus mixedLoad = loadProjectDocument(mixedDocument, scene, session, history);
-        c.check("CADV6_P13_a_face_selection_project_is_refused_on_load_and_changes_nothing",
-                existing != nullptr && decoded && !runtimeCanEvaluateProject(lensDocument)
-                        && !runtimeCanEvaluateProject(mixedDocument)
-                        && lensLoad == ProjectCodecStatus::MissingRequiredSection
-                        && mixedLoad == ProjectCodecStatus::MissingRequiredSection
-                        && scene.bodyCount() == 1u && scene.bodyAt(0).isCad()
-                        && sameCadBodyState(scene.bodyAt(0).cadOrNull()->state(), blockState())
-                        && projectSemanticFingerprint(scene, ProjectKind::Construction) == before
+        // `CAD-V6-S2` lifts the S1 load refusal by name: both face-selection
+        // projects load, publish and re-capture byte-identically.
+        const bool mixedRecaptured =
+                mixedLoad == ProjectCodecStatus::Ok
+                && encodeProjectV1(captureProjectDocument(scene, ProjectKind::Construction)) == bytes[4];
+        c.check("CADV6_P13_S2_a_face_selection_project_loads_publishes_and_re_captures",
+                existing != nullptr && decoded && runtimeCanEvaluateProject(lensDocument)
+                        && runtimeCanEvaluateProject(mixedDocument)
+                        && lensLoad == ProjectCodecStatus::Ok && mixedLoad == ProjectCodecStatus::Ok
+                        && mixedRecaptured && scene.bodyCount() == 1u && scene.bodyAt(0).isCad()
+                        && scene.bodyAt(0).meshStore().currentRevision() != kNoMeshRevision
+                        && projectSemanticFingerprint(scene, ProjectKind::Construction) != before
                         && history.undoDepth() == 0u);
         ProjectDocument sharedDocument;
         const bool sharedDecoded = decodeStatus(bytes[0], &sharedDocument) == ProjectCodecStatus::Ok;

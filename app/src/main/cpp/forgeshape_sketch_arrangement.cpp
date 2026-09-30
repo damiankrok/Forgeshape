@@ -688,6 +688,8 @@ const char* arrangementStatusName(ArrangementStatus status) {
         case ArrangementStatus::AmbiguousOverlap: return "AmbiguousOverlap";
         case ArrangementStatus::DegenerateFace: return "DegenerateFace";
         case ArrangementStatus::CapExceeded: return "CapExceeded";
+        case ArrangementStatus::InvalidSelection: return "InvalidSelection";
+        case ArrangementStatus::PinchedSelection: return "PinchedSelection";
     }
     return "Unknown";
 }
@@ -1187,11 +1189,285 @@ SketchArrangement deriveSketchArrangement(const CadSketch& sketch) {
         af.endNode = f.node1;
         af.curved = edges[f.edge].round();
         af.boundsFace = f.live;
+        const SourceEdge& e = edges[f.edge];
+        af.points.push_back(out.nodes[f.node0]);
+        if (e.round()) {
+            // Clipped to the fragment's own sweep, at an authored arc's
+            // density; the two ends are the NODES, never re-evaluated.
+            const double sweep = (f.t1 - f.t0) * e.sweep;
+            const uint32_t segments = sketchArcSegmentCount(sweep);
+            for (uint32_t i = 1; i < segments; ++i) {
+                const double t = f.t0 + (f.t1 - f.t0) * (static_cast<double>(i) / segments);
+                const double angle = e.start + t * e.sweep;
+                af.points.push_back(SketchPoint{e.center.u + e.radius * std::cos(angle),
+                                                e.center.v + e.radius * std::sin(angle)});
+            }
+        }
+        af.points.push_back(out.nodes[f.node1]);
         out.fragments.push_back(af);
     }
     out.stats = stats;
     out.status = ArrangementStatus::Ok;
     return out;
+}
+
+// ---------------------------------------------------------------------------
+// The union of chosen faces (`CAD-V6-S2`)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// Half-edge id over the PUBLIC fragment list: 2k walks fragment k forward,
+// 2k+1 against it.
+uint32_t halfOf(uint32_t fragment, bool reversed) { return fragment * 2u + (reversed ? 1u : 0u); }
+
+bool fragmentIndexOf(const SketchArrangement& arrangement, const FragmentRef& ref, uint32_t* out) {
+    FragmentRef key = ref;
+    key.reversed = false;
+    const auto it = std::lower_bound(
+            arrangement.fragments.begin(), arrangement.fragments.end(), key,
+            [](const ArrangementFragment& f, const FragmentRef& k) {
+                return compareFragmentRef(f.ref, k) < 0;
+            });
+    if (it == arrangement.fragments.end() || compareFragmentRef(it->ref, key) != 0) {
+        return false;
+    }
+    *out = static_cast<uint32_t>(it - arrangement.fragments.begin());
+    return true;
+}
+
+double polygonArea(const std::vector<SketchPoint>& polygon) {
+    double twice = 0.0;
+    const size_t n = polygon.size();
+    for (size_t i = 0; i < n; ++i) {
+        const SketchPoint& a = polygon[i];
+        const SketchPoint& b = polygon[(i + 1) % n];
+        twice += crossUV(a.u, a.v, b.u, b.v);
+    }
+    return 0.5 * twice;
+}
+
+bool strictlyInside(const SketchPoint& p, const std::vector<SketchPoint>& polygon) {
+    bool inside = false;
+    const size_t n = polygon.size();
+    for (size_t i = 0, j = n - 1; i < n; j = i++) {
+        const SketchPoint& a = polygon[i];
+        const SketchPoint& b = polygon[j];
+        if ((a.v > p.v) != (b.v > p.v)) {
+            const double u = (b.u - a.u) * (p.v - a.v) / (b.v - a.v) + a.u;
+            if (p.u < u) inside = !inside;
+        }
+    }
+    return inside;
+}
+
+double distanceToPolygon(const SketchPoint& p, const std::vector<SketchPoint>& polygon) {
+    double best = INFINITY;
+    const size_t n = polygon.size();
+    for (size_t i = 0; i < n; ++i) {
+        const SketchPoint& a = polygon[i];
+        const SketchPoint& b = polygon[(i + 1) % n];
+        const double ru = b.u - a.u, rv = b.v - a.v;
+        const double len2 = ru * ru + rv * rv;
+        double t = len2 > 0.0 ? ((p.u - a.u) * ru + (p.v - a.v) * rv) / len2 : 0.0;
+        t = std::fmax(0.0, std::fmin(1.0, t));
+        best = std::fmin(best, dist(p, lerp(a, b, t)));
+    }
+    return best;
+}
+
+}  // namespace
+
+ArrangementStatus mergePlanarFaces(const SketchArrangement& arrangement,
+                                   const std::vector<size_t>& faceIndices,
+                                   std::vector<PlanarProfileComponent>* out) {
+    if (out == nullptr || arrangement.status != ArrangementStatus::Ok || faceIndices.empty()) {
+        return arrangement.status != ArrangementStatus::Ok ? arrangement.status
+                                                           : ArrangementStatus::InvalidSelection;
+    }
+    // Every chosen face's boundary cycles as half-edge ids, and where each
+    // half-edge sits: (cycle, position). A directed half-edge bounds exactly
+    // one face, so a repeat is a repeated face.
+    std::vector<std::vector<uint32_t>> cycles;
+    const uint32_t halfCount = static_cast<uint32_t>(arrangement.fragments.size() * 2u);
+    std::vector<int64_t> cycleOf(halfCount, -1);
+    std::vector<uint32_t> positionOf(halfCount, 0);
+    std::vector<size_t> seen;
+    for (size_t index : faceIndices) {
+        if (index >= arrangement.faces.size()
+            || std::find(seen.begin(), seen.end(), index) != seen.end()) {
+            return ArrangementStatus::InvalidSelection;
+        }
+        seen.push_back(index);
+        const PlanarFaceRef& ref = arrangement.faces[index].ref;
+        std::vector<const FragmentCycle*> boundary{&ref.outer};
+        for (const FragmentCycle& hole : ref.holes) boundary.push_back(&hole);
+        for (const FragmentCycle* cycle : boundary) {
+            std::vector<uint32_t> halves;
+            for (const FragmentRef& fragment : *cycle) {
+                uint32_t k = 0;
+                if (!fragmentIndexOf(arrangement, fragment, &k)) {
+                    return ArrangementStatus::InvalidSelection;
+                }
+                const uint32_t h = halfOf(k, fragment.reversed);
+                if (cycleOf[h] >= 0) {
+                    return ArrangementStatus::InvalidSelection;
+                }
+                cycleOf[h] = static_cast<int64_t>(cycles.size());
+                positionOf[h] = static_cast<uint32_t>(halves.size());
+                halves.push_back(h);
+            }
+            cycles.push_back(std::move(halves));
+        }
+    }
+    const auto chosen = [&](uint32_t h) { return cycleOf[h] >= 0; };
+    // A half-edge bounds the union exactly when its twin does not.
+    const auto remains = [&](uint32_t h) { return chosen(h) && !chosen(h ^ 1u); };
+    const auto successor = [&](uint32_t h) {
+        const std::vector<uint32_t>& cycle = cycles[static_cast<size_t>(cycleOf[h])];
+        return cycle[(positionOf[h] + 1u) % cycle.size()];
+    };
+    // From h, its own face's successor; past a cancelled one, to the next
+    // chosen face around the same node. Bounded by the half-edge count.
+    const auto nextOnUnion = [&](uint32_t h, uint32_t* outNext) {
+        uint32_t s = successor(h);
+        for (uint32_t guard = 0; guard <= halfCount; ++guard) {
+            if (remains(s)) {
+                *outNext = s;
+                return true;
+            }
+            s = successor(s ^ 1u);
+        }
+        return false;
+    };
+    const auto originNode = [&](uint32_t h) {
+        const ArrangementFragment& f = arrangement.fragments[h >> 1];
+        return (h & 1u) == 0u ? f.startNode : f.endNode;
+    };
+
+    std::vector<PlanarProfileLoop> outers;
+    std::vector<PlanarProfileLoop> holes;
+    std::vector<uint8_t> walked(halfCount, 0);
+    for (uint32_t start = 0; start < halfCount; ++start) {
+        if (!remains(start) || walked[start] != 0u) continue;
+        std::vector<uint32_t> loop;
+        std::vector<uint32_t> nodesSeen;
+        uint32_t h = start;
+        for (uint32_t guard = 0; guard <= halfCount; ++guard) {
+            walked[h] = 1u;
+            const uint32_t node = originNode(h);
+            if (std::find(nodesSeen.begin(), nodesSeen.end(), node) != nodesSeen.end()) {
+                return ArrangementStatus::PinchedSelection;
+            }
+            nodesSeen.push_back(node);
+            loop.push_back(h);
+            uint32_t next = 0;
+            if (!nextOnUnion(h, &next)) {
+                return ArrangementStatus::InvalidSelection;
+            }
+            h = next;
+            if (h == start) break;
+        }
+        if (h != start) {
+            return ArrangementStatus::InvalidSelection;
+        }
+        // Canonical rotation: start at the smallest fragment ref.
+        size_t best = 0;
+        const auto refOf = [&](uint32_t half) {
+            FragmentRef ref = arrangement.fragments[half >> 1].ref;
+            ref.reversed = (half & 1u) != 0u;
+            return ref;
+        };
+        for (size_t i = 1; i < loop.size(); ++i) {
+            if (compareFragmentRef(refOf(loop[i]), refOf(loop[best])) < 0) best = i;
+        }
+        std::rotate(loop.begin(), loop.begin() + static_cast<std::ptrdiff_t>(best), loop.end());
+        PlanarProfileLoop result;
+        for (uint32_t k = 0; k < loop.size(); ++k) {
+            const uint32_t half = loop[k];
+            const ArrangementFragment& f = arrangement.fragments[half >> 1];
+            result.fragments.push_back(refOf(half));
+            result.fragmentCurved.push_back(f.curved ? 1u : 0u);
+            std::vector<SketchPoint> points = f.points;
+            if ((half & 1u) != 0u) std::reverse(points.begin(), points.end());
+            // Every point but the last: the next fragment starts there.
+            for (size_t i = 0; i + 1 < points.size(); ++i) {
+                result.polygon.push_back(points[i]);
+                result.edgeFragment.push_back(k);
+            }
+        }
+        const double signedArea = polygonArea(result.polygon);
+        if (!(std::fabs(signedArea) >= kMinProfileAreaSquareMeters)) {
+            return ArrangementStatus::DegenerateFace;
+        }
+        if (signedArea < 0.0) {
+            // A hole, walked clockwise: stored counter-clockwise, every edge
+            // keeping the fragment it lies on.
+            const size_t n = result.polygon.size();
+            std::vector<SketchPoint> polygon(n);
+            std::vector<uint32_t> edges(n);
+            for (size_t i = 0; i < n; ++i) {
+                polygon[i] = result.polygon[(n - i) % n];
+                // Reversed edge i runs polygon'[i] -> polygon'[i+1], i.e. the
+                // original edge (n - 1 - i).
+                edges[i] = result.edgeFragment[n - 1 - i];
+            }
+            result.polygon = std::move(polygon);
+            result.edgeFragment = std::move(edges);
+            result.area = -signedArea;
+            holes.push_back(std::move(result));
+        } else {
+            result.area = signedArea;
+            outers.push_back(std::move(result));
+        }
+    }
+    if (outers.empty()) {
+        return ArrangementStatus::InvalidSelection;
+    }
+    std::vector<PlanarProfileComponent> components(outers.size());
+    for (size_t i = 0; i < outers.size(); ++i) {
+        components[i].outer = std::move(outers[i]);
+    }
+    for (PlanarProfileLoop& hole : holes) {
+        // A point on the hole's boundary clear of every outer boundary decides
+        // which outer contains it; the smallest such outer owns it.
+        int64_t owner = -1;
+        for (size_t c = 0; c < components.size(); ++c) {
+            const std::vector<SketchPoint>& outer = components[c].outer.polygon;
+            bool decided = false;
+            bool inside = false;
+            const size_t n = hole.polygon.size();
+            for (size_t k = 0; k < n && !decided; ++k) {
+                const SketchPoint mid = lerp(hole.polygon[k], hole.polygon[(k + 1) % n], 0.5);
+                if (distanceToPolygon(mid, outer) <= kTol) continue;
+                inside = strictlyInside(mid, outer);
+                decided = true;
+            }
+            if (decided && inside
+                && (owner < 0 || components[c].outer.area
+                                         < components[static_cast<size_t>(owner)].outer.area)) {
+                owner = static_cast<int64_t>(c);
+            }
+        }
+        if (owner < 0) {
+            return ArrangementStatus::DegenerateFace;
+        }
+        components[static_cast<size_t>(owner)].holes.push_back(std::move(hole));
+    }
+    for (PlanarProfileComponent& component : components) {
+        std::sort(component.holes.begin(), component.holes.end(),
+                  [](const PlanarProfileLoop& x, const PlanarProfileLoop& y) {
+                      return compareCycle(x.fragments, y.fragments) < 0;
+                  });
+        component.area = component.outer.area;
+        for (const PlanarProfileLoop& hole : component.holes) component.area -= hole.area;
+    }
+    std::sort(components.begin(), components.end(),
+              [](const PlanarProfileComponent& x, const PlanarProfileComponent& y) {
+                  return compareCycle(x.outer.fragments, y.outer.fragments) < 0;
+              });
+    *out = std::move(components);
+    return ArrangementStatus::Ok;
 }
 
 }  // namespace forgeshape

@@ -63,6 +63,11 @@ struct CadFeatureGeometry {
     // For every selection that does not choose a region beside its own hole it
     // is exactly the chosen regions, in the same order, with the same holes.
     std::vector<SketchRegionComponent> components;
+    // A PlanarFaces feature (`CAD-V6-S2`): the UNION of the chosen atomic
+    // faces, component by component (`mergePlanarFaces`), each loop keeping
+    // the fragments it stands on. Empty for a LoopRegions feature, whose
+    // `regions`/`chosen`/`components` are then the empty ones.
+    std::vector<PlanarProfileComponent> planarComponents;
     // Sketch (u, v) at offset w along the normal -> body-local.
     CadFrame64 placement;
     // The solid spans nearOffset (-B) .. farOffset (+A) along the normal.
@@ -76,12 +81,28 @@ struct CadFeatureGeometry {
     // (ascending outer anchor), the outer loop in polygon order and then each
     // hole (ascending anchor) in its own polygon order. A loop absorbed into
     // the union bounds nothing and so exposes no face.
+    //
+    // A PlanarFaces feature (`CAD-V6-S2`) has one Side per union-boundary
+    // FRAGMENT rather than per polygon edge -- component by component in
+    // canonical order, the outer loop's fragments in its canonical walk and
+    // then each hole's -- because a curved fragment is ONE semantic face however
+    // many facets its tessellation has, and a tessellation count must never be
+    // part of a lineage. A fragment that is its whole source edge wears the
+    // whole-edge token; a proper piece wears a fragment token (`CadFaceToken`).
     std::vector<CadFeatureFace> faces;
     // The `.forge` lineage signature of this feature's face topology
-    // (DATA_PACKAGE_SPEC.md §7c, generalized in §7f). For a single region
-    // without holes it is bit-identical to what `cadTopologySignature` always
-    // computed.
+    // (DATA_PACKAGE_SPEC.md §7c, generalized in §7f, and for a PlanarFaces
+    // feature §7g: the same FNV-1a over `profileEntityId` (0), the face count
+    // and each face's code and eligibility, over the fragment-per-face list).
+    // For a single region without holes it is bit-identical to what
+    // `cadTopologySignature` always computed.
     uint64_t signature = 0;
+
+    // How many connected pieces the feature's own extrusion has.
+    uint32_t componentCount() const {
+        return static_cast<uint32_t>(planarComponents.empty() ? components.size()
+                                                              : planarComponents.size());
+    }
 };
 
 // Derives the chain's geometry in order, through `throughFeatureId` (every
@@ -89,8 +110,7 @@ struct CadFeatureGeometry {
 // placement against the features before it. A feature's placement is its
 // SKETCH's (`CAD-V6-S1`): the root sketch on its workplane, any other on the
 // named face of an earlier feature -- so two features sharing a sketch stand in
-// one place. A PlanarFaces feature refuses as
-// `PlanarFaceRegenerationUnavailable`: this build does not regenerate faces.
+// one place. A PlanarFaces feature is derived like any other since `CAD-V6-S2`.
 // Writes nothing on a refusal; `outFailedFeatureId` names the feature that
 // refused.
 CadStatus buildCadChainGeometry(const CadBodyState& state, std::vector<CadFeatureGeometry>* out,
@@ -98,12 +118,9 @@ CadStatus buildCadChainGeometry(const CadBodyState& state, std::vector<CadFeatur
                                 uint32_t throughFeatureId = 0xFFFFFFFFu);
 
 // The chain's own validation (what `validateCadBodyState` runs after the table
-// and the base): every LoopRegions feature's geometry and placement, every
-// PlanarFaces feature's selection (`validatePlanarFaceSelection`) and
-// placement, and every UNCONSUMED sketch's own rule and support against the
-// whole chain. Unlike `buildCadChainGeometry` it does not stop at a PlanarFaces
-// feature -- that feature is validated, not regenerated -- and refuses only
-// what would need its faces (`PlanarFaceRegenerationUnavailable`).
+// and the base): every feature's geometry and placement, whichever kind of
+// selection it makes, and every UNCONSUMED sketch's own rule and support
+// against the whole chain.
 CadStatus validateCadChain(const CadBodyState& state, uint32_t* outFailedFeatureId = nullptr);
 
 // The geometry of the one feature named, and only what it needs before it.

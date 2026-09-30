@@ -264,7 +264,8 @@ void setExtrudeRegions(ExtrudeFeature* extrude, std::vector<ProfileRegionRef> re
 }
 
 bool extrudeSelectsSingleSimpleProfile(const ExtrudeFeature& extrude) {
-    return extrude.profileEntityId != kNoSketchEntity && extrude.profileHoleIds.empty()
+    return extrude.selection == CadSelectionKind::LoopRegions
+           && extrude.profileEntityId != kNoSketchEntity && extrude.profileHoleIds.empty()
            && extrude.additionalRegions.empty();
 }
 
@@ -473,6 +474,15 @@ uint32_t appendCadLaterFeatureWithSketch(CadBodyState* state, CadFeatureOperatio
 
 bool cadBodyStateLegacyRepresentable(const CadBodyState& state) {
     const size_t later = state.laterFeatures.size();
+    // A fragment side token (`CAD-V6-S2`) has no v1..v5 encoding: a body whose
+    // base stands on one -- through a TopoRef to ANOTHER body's face-selected
+    // feature -- or any of whose sketches does, is written v6.
+    for (const CadSketchRecord& record : state.sketches) {
+        if ((record.sketch.hasFaceSupport && record.sketch.faceSupport.face.fragment)
+            || (record.hasFeatureSupport && record.featureSupport.face.fragment)) {
+            return false;
+        }
+    }
     // One sketch per feature, ids 1..n in chain order, and the high-water marks
     // a legacy read derives: nothing a v1..v5 record would lose.
     if (state.baseSketchId != kBaseCadSketchId || state.sketches.size() != later + 1u
@@ -686,7 +696,9 @@ CadStatus validateCycleForm(const FragmentCycle& cycle) {
     return CadStatus::Ok;
 }
 
-CadStatus planarFaceStatusFor(ArrangementStatus status) {
+}  // namespace
+
+CadStatus cadStatusForArrangement(ArrangementStatus status) {
     switch (status) {
         case ArrangementStatus::Ok: return CadStatus::Ok;
         case ArrangementStatus::InvalidSketch: return CadStatus::RegenerationFailed;
@@ -694,11 +706,11 @@ CadStatus planarFaceStatusFor(ArrangementStatus status) {
         case ArrangementStatus::AmbiguousOverlap: return CadStatus::PlanarFaceAmbiguousOverlap;
         case ArrangementStatus::DegenerateFace: return CadStatus::PlanarFaceDegenerate;
         case ArrangementStatus::CapExceeded: return CadStatus::PlanarFaceCapExceeded;
+        case ArrangementStatus::InvalidSelection: return CadStatus::PlanarFaceUnresolved;
+        case ArrangementStatus::PinchedSelection: return CadStatus::OverlappingRegions;
     }
     return CadStatus::RegenerationFailed;
 }
-
-}  // namespace
 
 CadStatus validatePlanarFaceRefForm(const PlanarFaceRef& ref) {
     if (ref.holes.size() > kMaxPlanarFaceHoles) {
@@ -721,6 +733,12 @@ CadStatus validatePlanarFaceRefForm(const PlanarFaceRef& ref) {
 }
 
 CadStatus validatePlanarFaceSelection(const CadSketch& sketch, const ExtrudeFeature& extrude) {
+    return resolvePlanarFaceSelection(sketch, extrude, nullptr, nullptr);
+}
+
+CadStatus resolvePlanarFaceSelection(const CadSketch& sketch, const ExtrudeFeature& extrude,
+                                     SketchArrangement* outArrangement,
+                                     std::vector<size_t>* outFaceIndices) {
     const CadStatus sketchWhy = validateCadSketch(sketch);
     if (sketchWhy != CadStatus::Ok) {
         return sketchWhy;
@@ -758,15 +776,49 @@ CadStatus validatePlanarFaceSelection(const CadSketch& sketch, const ExtrudeFeat
     }
     // The arrangement is DERIVED from the sketch every time; the selection
     // resolves against it by exact tuple equality or not at all.
-    const SketchArrangement arrangement = deriveSketchArrangement(sketch);
-    const CadStatus arrangementWhy = planarFaceStatusFor(arrangement.status);
+    SketchArrangement arrangement = deriveSketchArrangement(sketch);
+    const CadStatus arrangementWhy = cadStatusForArrangement(arrangement.status);
     if (arrangementWhy != CadStatus::Ok) {
         return arrangementWhy;
     }
+    std::vector<size_t> indices;
     for (const PlanarFaceRef& face : faces) {
-        if (!resolvePlanarFaceRef(arrangement, face, nullptr)) {
+        size_t index = 0;
+        if (!resolvePlanarFaceRef(arrangement, face, &index)) {
             return CadStatus::PlanarFaceUnresolved;
         }
+        indices.push_back(index);
+    }
+    if (outArrangement != nullptr) {
+        *outArrangement = std::move(arrangement);
+    }
+    if (outFaceIndices != nullptr) {
+        *outFaceIndices = std::move(indices);
+    }
+    return CadStatus::Ok;
+}
+
+CadStatus mergePlanarFaceSelection(const SketchArrangement& arrangement,
+                                   const std::vector<size_t>& faceIndices,
+                                   std::vector<PlanarProfileComponent>* out) {
+    std::vector<PlanarProfileComponent> components;
+    const CadStatus why =
+            cadStatusForArrangement(mergePlanarFaces(arrangement, faceIndices, &components));
+    if (why != CadStatus::Ok) {
+        return why;
+    }
+    for (const PlanarProfileComponent& component : components) {
+        if (component.outer.polygon.size() > kMaxProfileVertices) {
+            return CadStatus::TooManyEntities;
+        }
+        for (const PlanarProfileLoop& hole : component.holes) {
+            if (hole.polygon.size() > kMaxProfileVertices) {
+                return CadStatus::TooManyEntities;
+            }
+        }
+    }
+    if (out != nullptr) {
+        *out = std::move(components);
     }
     return CadStatus::Ok;
 }
@@ -785,7 +837,15 @@ CadStatus validateCadFeatureGeometry(const CadSketch& sketch, const ExtrudeFeatu
         return CadStatus::InvalidSelectionKind;
     }
     if (extrude.selection == CadSelectionKind::PlanarFaces) {
-        return CadStatus::PlanarFaceRegenerationUnavailable;
+        // The ONE rule for a face selection; and since `CAD-V6-S2` a resolved
+        // one is also a buildable one only when its union merges.
+        SketchArrangement arrangement;
+        std::vector<size_t> faces;
+        const CadStatus why = resolvePlanarFaceSelection(sketch, extrude, &arrangement, &faces);
+        if (why != CadStatus::Ok) {
+            return why;
+        }
+        return mergePlanarFaceSelection(arrangement, faces, nullptr);
     }
     if (!extrude.planarFaces.empty()) {
         return CadStatus::InvalidSelectionKind;
@@ -885,9 +945,7 @@ CadStatus validateCadBodyState(const CadBodyState& state, ProfileExtraction* out
     }
     SketchRegionExtraction baseRegions;
     const CadStatus baseWhy =
-            state.extrude.selection == CadSelectionKind::PlanarFaces
-                    ? validatePlanarFaceSelection(cadBaseSketch(state), state.extrude)
-                    : validateCadFeatureGeometry(cadBaseSketch(state), state.extrude, &baseRegions);
+            validateCadFeatureGeometry(cadBaseSketch(state), state.extrude, &baseRegions);
     if (baseWhy != CadStatus::Ok) {
         return baseWhy;
     }
@@ -1113,7 +1171,7 @@ CadStatus regenerateCadBody(const CadBodyState& state, CadBodyMesh* out,
     if (why != CadStatus::Ok) {
         return finish(why, kCadFeatureId);
     }
-    uint32_t components = static_cast<uint32_t>(base.components.size());
+    uint32_t components = base.componentCount();
     double volume = cadSolidVolume(body);
     if (chain.size() > 1u) {
         const auto t0 = std::chrono::steady_clock::now();
