@@ -651,7 +651,7 @@ CadStatus regenerateCadBody(const CadBodyState& state, CadBodyMesh* out,
     if (why != CadStatus::Ok) {
         return finish(why, kCadFeatureId);
     }
-    uint32_t components = static_cast<uint32_t>(base.chosen.size());
+    uint32_t components = static_cast<uint32_t>(base.components.size());
     double volume = cadSolidVolume(body);
     if (chain.size() > 1u) {
         const auto t0 = std::chrono::steady_clock::now();

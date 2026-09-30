@@ -821,11 +821,17 @@ void testRegions(Recorder& r) {
         }
         r.check("CADVS_REG_05_ring_label_point_is_on_material_while_its_centroid_is_in_the_hole",
                 labelOnMaterial);
-        r.check("CADVS_REG_06_ring_or_disk_alone_is_valid_both_together_refused",
+        // `CAD-FOUNDATION-C1`: the ring and its own disk together are legal and
+        // mean their union -- one solid rectangle -- rather than a refusal.
+        const std::vector<SketchRegionComponent> both =
+                mergeSelectedRegions(x, {regionRef(1, {2}), regionRef(2)});
+        r.check("CADVS_REG_06_ring_or_disk_alone_is_valid_and_both_together_mean_their_union",
                 two && validateRegionSelection(x, {regionRef(1, {2})}) == CadStatus::Ok
                         && validateRegionSelection(x, {regionRef(2)}) == CadStatus::Ok
                         && validateRegionSelection(x, {regionRef(1, {2}), regionRef(2)})
-                                   == CadStatus::OverlappingRegions
+                                   == CadStatus::Ok
+                        && both.size() == 1u && both[0].outerAnchorId == 1u
+                        && both[0].holeLoops.empty() && nearRel(both[0].area, 12.0, 1e-12)
                         && validateRegionSelection(x, {}) == CadStatus::AmbiguousProfile);
         r.check("CADVS_REG_07_nested_loops_are_no_longer_refused_as_nested",
                 extractClosedProfiles(s).rejections.empty()
@@ -858,14 +864,33 @@ void testRegions(Recorder& r) {
                         && x.parent[1] == 0 && x.parent[2] == 1 && x.regions[2].depth == 2u
                         && nearRel(x.regions[0].area, 12.0 - circleArea(1.2), 1e-12)
                         && nearRel(x.regions[1].area, circleArea(1.2) - circleArea(0.5), 1e-12));
-        r.check("CADVS_REG_10_outer_ring_with_island_valid_ring_with_its_own_hole_refused",
+        // Even/odd through the union: the outer ring with the island is two
+        // components; the outer ring with its own middle ring is one ring
+        // whose hole is the innermost disk; the middle ring with its own disk
+        // is one solid disk.
+        const std::vector<SketchRegionComponent> island =
+                mergeSelectedRegions(x, {regionRef(1, {2}), regionRef(3)});
+        const std::vector<SketchRegionComponent> outerTwo =
+                mergeSelectedRegions(x, {regionRef(1, {2}), regionRef(2, {3})});
+        const std::vector<SketchRegionComponent> innerTwo =
+                mergeSelectedRegions(x, {regionRef(2, {3}), regionRef(3)});
+        r.check("CADVS_REG_10_nested_selections_union_by_even_odd_over_the_nesting_tree",
                 three
                         && validateRegionSelection(x, {regionRef(1, {2}), regionRef(3)})
                                    == CadStatus::Ok
                         && validateRegionSelection(x, {regionRef(1, {2}), regionRef(2, {3})})
-                                   == CadStatus::OverlappingRegions
+                                   == CadStatus::Ok
                         && validateRegionSelection(x, {regionRef(2, {3}), regionRef(3)})
-                                   == CadStatus::OverlappingRegions);
+                                   == CadStatus::Ok
+                        && island.size() == 2u && island[0].outerAnchorId == 1u
+                        && island[0].holeAnchorIds == std::vector<SketchEntityId>{2u}
+                        && island[1].outerAnchorId == 3u && island[1].holeLoops.empty()
+                        && outerTwo.size() == 1u && outerTwo[0].outerAnchorId == 1u
+                        && outerTwo[0].holeAnchorIds == std::vector<SketchEntityId>{3u}
+                        && nearRel(outerTwo[0].area, 12.0 - circleArea(0.5), 1e-12)
+                        && innerTwo.size() == 1u && innerTwo[0].outerAnchorId == 2u
+                        && innerTwo[0].holeLoops.empty()
+                        && nearRel(innerTwo[0].area, circleArea(1.2), 1e-12));
     }
     {
         const std::vector<SketchPoint> ccw = {{0.0, 0.0}, {2.0, 0.0}, {2.0, 1.0},
@@ -1768,6 +1793,275 @@ double bodyVolumeOf(const ConstructionScene& scene, ObjectId id) {
     return mesh->volume;
 }
 
+// ---------------------------------------------------------------------------
+// `CAD-FOUNDATION-C1`: a selection is the UNION of its atomic regions
+// ---------------------------------------------------------------------------
+
+// The owner's case: rectangle O (id 1) holding two disjoint circles A (id 2)
+// and B (id 3). Atomic regions: O minus A minus B, disk A, disk B.
+CadSketch unionSketch() {
+    CadSketch sketch;
+    addRect(&sketch, 0.0, 0.0, 4.0, 3.0);
+    addCircle(&sketch, -1.0, 0.0, 0.4);
+    addCircle(&sketch, 1.0, 0.0, 0.4);
+    return sketch;
+}
+
+std::vector<ProfileRegionRef> unionSelection(bool o, bool a, bool b) {
+    std::vector<ProfileRegionRef> selection;
+    if (o) selection.push_back(regionRef(1, {2, 3}));
+    if (a) selection.push_back(regionRef(2));
+    if (b) selection.push_back(regionRef(3));
+    return selection;
+}
+
+CadBodyState unionState(bool o, bool a, bool b, double depth = 1.0) {
+    CadBodyState state;
+    state.sketch = unionSketch();
+    state.extrude = oneSide(depth);
+    setExtrudeRegions(&state.extrude, unionSelection(o, a, b));
+    return state;
+}
+
+bool componentIs(const SketchRegionComponent& c, SketchEntityId outer,
+                 std::vector<SketchEntityId> holes) {
+    return c.outerAnchorId == outer && c.holeAnchorIds == holes
+           && c.holeLoops.size() == c.holeAnchorIds.size();
+}
+
+// Whether any face of the body is a wall of the loop anchored at `entity`.
+bool bodyHasSideOf(const CadBodyMesh& m, SketchEntityId entity) {
+    for (const CadMeshFace& face : m.faces) {
+        if (face.token.kind == CadFaceKind::Side && face.token.edgeEntityId == entity) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void testRegionUnion(Recorder& r) {
+    const double disk = circleArea(0.4);
+    const CadSketch sketch = unionSketch();
+    const SketchRegionExtraction x = extractSketchRegions(sketch);
+    const bool shaped = x.regions.size() == 3u && x.parent[0] == -1 && x.parent[1] == 0
+                        && x.parent[2] == 0
+                        && x.regions[0].holeAnchorIds == std::vector<SketchEntityId>({2u, 3u});
+    r.check("CADFC1_REG_00_rectangle_and_two_circles_are_three_atomic_regions", shaped);
+
+    // The whole truth table: every non-empty subset validates, and merges into
+    // exactly the canonical components, in ascending outer-anchor order.
+    struct Row {
+        const char* name;
+        bool o, a, b;
+        std::vector<std::pair<SketchEntityId, std::vector<SketchEntityId>>> expect;
+        double area;
+    };
+    const Row rows[] = {
+            {"CADFC1_REG_01_O_is_the_rectangle_with_holes_A_and_B", true, false, false,
+             {{1u, {2u, 3u}}}, 12.0 - 2.0 * disk},
+            {"CADFC1_REG_02_A_is_disk_A", false, true, false, {{2u, {}}}, disk},
+            {"CADFC1_REG_03_B_is_disk_B", false, false, true, {{3u, {}}}, disk},
+            {"CADFC1_REG_04_O_plus_A_is_the_rectangle_with_only_hole_B", true, true, false,
+             {{1u, {3u}}}, 12.0 - disk},
+            {"CADFC1_REG_05_O_plus_B_is_the_rectangle_with_only_hole_A", true, false, true,
+             {{1u, {2u}}}, 12.0 - disk},
+            {"CADFC1_REG_06_A_plus_B_is_two_disjoint_disks", false, true, true,
+             {{2u, {}}, {3u, {}}}, 2.0 * disk},
+            {"CADFC1_REG_07_O_plus_A_plus_B_is_the_solid_rectangle", true, true, true,
+             {{1u, {}}}, 12.0},
+    };
+    for (const Row& row : rows) {
+        const std::vector<ProfileRegionRef> selection = unionSelection(row.o, row.a, row.b);
+        const std::vector<SketchRegionComponent> merged = mergeSelectedRegions(x, selection);
+        bool same = shaped && validateRegionSelection(x, selection) == CadStatus::Ok
+                    && merged.size() == row.expect.size();
+        double area = 0.0;
+        for (size_t i = 0; same && i < merged.size(); ++i) {
+            same = componentIs(merged[i], row.expect[i].first, row.expect[i].second);
+            area += merged[i].area;
+        }
+        r.check(row.name, same && nearRel(area, row.area, 1e-12));
+    }
+
+    // Geometry: the merged components are what is extruded -- exact volumes,
+    // one closed shell per component, and no wall left on an absorbed loop.
+    {
+        const Regen oa = regen(unionState(true, true, false));
+        const Regen ob = regen(unionState(true, false, true));
+        const Regen all = regen(unionState(true, true, true));
+        const Regen ab = regen(unionState(false, true, true));
+        const Regen o = regen(unionState(true, false, false));
+        r.check("CADFC1_GEO_01_O_plus_A_extrudes_to_the_exact_volume_with_one_hole",
+                solidOk(oa, 12.0 - disk) && !bodyHasSideOf(oa.mesh, 2u)
+                        && bodyHasSideOf(oa.mesh, 3u) && oa.mesh.faces.size() == 2u + 4u + 32u);
+        r.check("CADFC1_GEO_02_O_plus_B_extrudes_to_the_exact_volume_with_one_hole",
+                solidOk(ob, 12.0 - disk) && !bodyHasSideOf(ob.mesh, 3u)
+                        && bodyHasSideOf(ob.mesh, 2u) && ob.mesh.faces.size() == 2u + 4u + 32u);
+        r.check("CADFC1_GEO_03_all_three_extrude_to_the_solid_rectangle_volume",
+                solidOk(all, 12.0) && !bodyHasSideOf(all.mesh, 2u) && !bodyHasSideOf(all.mesh, 3u)
+                        && all.mesh.faces.size() == 2u + 4u);
+        r.check("CADFC1_GEO_04_A_plus_B_stays_two_disjoint_components_in_one_body",
+                ab.why == CadStatus::Ok && ab.mesh.components == 2u
+                        && nearRel(ab.mesh.volume, 2.0 * disk) && watertight(ab.mesh.mesh)
+                        && meshComponents(ab.mesh.mesh) == 2u);
+        r.check("CADFC1_GEO_05_O_alone_is_unchanged_the_ring_with_two_holes",
+                solidOk(o, 12.0 - 2.0 * disk) && bodyHasSideOf(o.mesh, 2u)
+                        && bodyHasSideOf(o.mesh, 3u));
+        // The kernel sees ONE closed shell for a merged component: no internal
+        // double wall that a later boolean would have to reconcile.
+        CadFeatureGeometry g;
+        CadSolid solid;
+        CadSolidMeasure measure;
+        const CadBodyState oaState = unionState(true, true, false);
+        const bool built = buildCadFeatureGeometry(oaState, kCadFeatureId, &g) == CadStatus::Ok
+                           && appendCadFeatureSolid(g, 0u, &solid) == CadStatus::Ok;
+        r.check("CADFC1_GEO_06_a_merged_component_is_one_kernel_valid_shell_with_no_shared_wall",
+                built && g.components.size() == 1u && g.chosen.size() == 2u
+                        && cadKernelValidateSolid(solid, &measure) == CadKernelStatus::Ok
+                        && measure.components == 1u && nearRel(measure.volume, 12.0 - disk, 1e-9));
+    }
+
+    // Persistence: the durable form is unchanged -- the atomic list -- and it
+    // still refuses by name when the nesting under it changes.
+    {
+        CadBodyState edited = unionState(true, true, false);
+        addCircle(&edited.sketch, 0.0, 1.0, 0.3);  // a new loop inside O
+        r.check("CADFC1_PER_01_a_nesting_edit_under_a_union_selection_is_ProfileRegionMismatch",
+                validateCadBodyState(unionState(true, true, false)) == CadStatus::Ok
+                        && validateCadBodyState(edited) == CadStatus::ProfileRegionMismatch);
+        const CadBodyState stored = unionState(true, true, false);
+        r.check("CADFC1_PER_02_the_stored_selection_is_the_atomic_list_not_a_merged_boundary",
+                stored.extrude.profileEntityId == 1u
+                        && stored.extrude.profileHoleIds == std::vector<SketchEntityId>({2u, 3u})
+                        && stored.extrude.additionalRegions.size() == 1u
+                        && stored.extrude.additionalRegions[0].outerAnchorId == 2u
+                        && stored.extrude.additionalRegions[0].holeAnchorIds.empty());
+    }
+
+    // Touching and crossing loops are still refused by the existing rule: a
+    // circle straddling the rectangle's edge is its own region, and choosing
+    // both cannot be merged without guessing.
+    {
+        CadSketch crossing;
+        addRect(&crossing, 0.0, 0.0, 4.0, 3.0);
+        addCircle(&crossing, 2.0, 0.0, 0.5);
+        const SketchRegionExtraction cx = extractSketchRegions(crossing);
+        r.check("CADFC1_REG_08_touching_or_crossing_loops_stay_refused_OverlappingRegions",
+                cx.regions.size() == 2u && cx.loopsConflict(0, 1)
+                        && validateRegionSelection(cx, {regionRef(1), regionRef(2)})
+                                   == CadStatus::OverlappingRegions);
+    }
+
+    // Add and Cut read the SAME merged semantics: a later feature whose sketch
+    // is a square around a circle, with the square AND the disk chosen, adds or
+    // removes the whole square.
+    {
+        CadSketch tool;
+        addRect(&tool, 0.0, 0.0, 0.8, 0.8);
+        addCircle(&tool, 0.0, 0.0, 0.2);
+        ExtrudeFeature merged = oneSide(0.5);
+        setExtrudeRegions(&merged, {regionRef(1, {2}), regionRef(2)});
+        ExtrudeFeature ringOnly = oneSide(0.5);
+        setExtrudeRegions(&ringOnly, {regionRef(1, {2})});
+        ExtrudeFeature mergedCut = oneSide(0.5, ExtrudeDirection::AgainstNormal);
+        setExtrudeRegions(&mergedCut, {regionRef(1, {2}), regionRef(2)});
+        const Regen add = regen(withFeature(blockState(), CadFeatureOperation::Add, kCadFeatureId,
+                                            tool, merged));
+        const Regen addRing = regen(withFeature(blockState(), CadFeatureOperation::Add,
+                                                kCadFeatureId, tool, ringOnly));
+        const Regen cut = regen(withFeature(blockState(), CadFeatureOperation::Cut, kCadFeatureId,
+                                            tool, mergedCut));
+        r.check("CADFC1_OPS_01_a_merged_selection_feeds_Add_the_whole_square",
+                solidOk(add, 4.0 + 0.64 * 0.5)
+                        && solidOk(addRing, 4.0 + (0.64 - circleArea(0.2)) * 0.5));
+        r.check("CADFC1_OPS_02_a_merged_selection_feeds_Cut_the_whole_square",
+                cut.why == CadStatus::Ok && nearRel(cut.mesh.volume, 4.0 - 0.64 * 0.5, 1e-9));
+    }
+
+    // The session: nothing is guessed, every tap toggles exactly the region
+    // under the finger, the preview IS the commit, and reopening the sketch
+    // finds the same atomic selection.
+    {
+        ConstructionScene scene;
+        ConstructionHistory history(scene);
+        SessionDriver s;
+        const bool began = s.beginWorld(Workplane::XY);
+        const SketchEntityId o =
+                began ? s.place(SketchTool::Rectangle, SketchPoint{0.0, 0.0}, SketchPoint{1.0, 1.0},
+                                rectangleAt(0.0, 0.0, 4.0, 3.0))
+                      : kNoSketchEntity;
+        const SketchEntityId a = s.place(SketchTool::Circle, SketchPoint{-1.0, 0.0},
+                                         SketchPoint{-0.6, 0.0}, circleAt(-1.0, 0.0, 0.4));
+        const SketchEntityId b = s.place(SketchTool::Circle, SketchPoint{1.0, 0.0},
+                                         SketchPoint{1.4, 0.0}, circleAt(1.0, 0.0, 0.4));
+        const bool finished = s.sketch.finish() == CadStatus::Ok;
+        r.check("CADFC1_SES_01_three_regions_and_nothing_chosen_when_ambiguous",
+                o == 1u && a == 2u && b == 3u && finished
+                        && s.sketch.regions().regions.size() == 3u
+                        && s.sketch.extrude().profileEntityId == kNoSketchEntity);
+        const bool tapO = s.toggleAt(SketchPoint{0.0, 1.0});
+        const bool onlyO = tapO && s.sketch.regionSelected(o) && !s.sketch.regionSelected(a)
+                           && !s.sketch.regionSelected(b);
+        const bool tapA = s.toggleAt(SketchPoint{-1.0, 0.0});
+        const bool oPlusA = tapA && s.sketch.regionSelected(o) && s.sketch.regionSelected(a)
+                            && !s.sketch.regionSelected(b);
+        r.check("CADFC1_SES_02_tap_O_then_tap_A_keeps_O_and_adds_A",
+                onlyO && oPlusA
+                        && s.sketch.extrude().profileHoleIds == std::vector<SketchEntityId>({a, b}));
+        const CadCandidateEvaluation preview = s.sketch.evaluateCandidate();
+        r.check("CADFC1_SES_03_the_preview_is_the_rectangle_with_only_hole_B",
+                preview.valid && preview.status == CadStatus::Ok && preview.mesh != nullptr
+                        && preview.mesh->components == 1u
+                        && nearRel(preview.mesh->volume, 12.0 - disk)
+                        && !bodyHasSideOf(*preview.mesh, a) && bodyHasSideOf(*preview.mesh, b));
+        // J3: a tap on A again removes A and ONLY A.
+        const bool tapAOff = s.toggleAt(SketchPoint{-1.0, 0.0});
+        const bool backToO = tapAOff && s.sketch.regionSelected(o) && !s.sketch.regionSelected(a);
+        const bool tapAOn = s.toggleAt(SketchPoint{-1.0, 0.0});
+        r.check("CADFC1_SES_04_deselect_then_reselect_changes_only_the_tapped_region",
+                backToO && tapAOn && s.sketch.regionSelected(o) && s.sketch.regionSelected(a));
+        const SketchFrame frame = s.sketch.frame();
+        const CadCandidateEvaluation before = s.sketch.evaluateCandidate();
+        ObjectId id = kNoObject;
+        const bool committed = s.sketch.commit(scene, history, &id) == CadStatus::Ok;
+        const CadBodyState stored = committed ? bodyStateOf(scene, id) : CadBodyState{};
+        const Regen again = regen(stored);
+        r.check("CADFC1_SES_05_commit_is_the_previewed_union_in_one_body_one_step",
+                committed && before.mesh != nullptr && again.why == CadStatus::Ok
+                        && sameBodyMesh(*before.mesh, again.mesh) && history.undoDepth() == 1u
+                        && nearRel(bodyVolumeOf(scene, id), 12.0 - disk)
+                        && stored.extrude.additionalRegions.size() == 1u
+                        && stored.extrude.additionalRegions[0].outerAnchorId == a);
+        SessionDriver reopened;
+        const bool reopenedOk = committed
+                                && reopened.sketch.beginEdit(id, stored, frame) == CadStatus::Ok
+                                && reopened.sketch.finish() == CadStatus::Ok;
+        r.check("CADFC1_SES_06_reopening_the_sketch_keeps_O_plus_A",
+                reopenedOk && reopened.sketch.regionSelected(o) && reopened.sketch.regionSelected(a)
+                        && !reopened.sketch.regionSelected(b));
+        reopened.sketch.cancel();
+    }
+    // A tap that cannot be merged is refused BY NAME and drops nothing.
+    {
+        SessionDriver s;
+        const bool began = s.beginWorld(Workplane::XY);
+        const SketchEntityId rect =
+                began ? s.place(SketchTool::Rectangle, SketchPoint{0.0, 0.0}, SketchPoint{1.0, 1.0},
+                                rectangleAt(0.0, 0.0, 4.0, 3.0))
+                      : kNoSketchEntity;
+        const SketchEntityId straddle = s.place(SketchTool::Circle, SketchPoint{2.0, 0.0},
+                                                SketchPoint{2.5, 0.0}, circleAt(2.0, 0.0, 0.5));
+        const bool finished = s.sketch.finish() == CadStatus::Ok;
+        const CadStatus first = s.sketch.toggleRegion(rect);
+        const CadStatus second = s.sketch.toggleRegion(straddle);
+        r.check("CADFC1_SES_07_an_unmergeable_tap_is_refused_by_name_and_drops_nothing",
+                finished && first == CadStatus::Ok && second == CadStatus::OverlappingRegions
+                        && s.sketch.lastStatus() == CadStatus::OverlappingRegions
+                        && s.sketch.regionSelected(rect) && !s.sketch.regionSelected(straddle));
+        s.sketch.cancel();
+    }
+}
+
 void testSession(Recorder& r) {
     const double ringArea = 12.0 - circleArea(0.8);
     const double pocket = circleArea(0.3);
@@ -1813,14 +2107,27 @@ void testSession(Recorder& r) {
                     && world.sketch.extrude().profileHoleIds == std::vector<SketchEntityId>{circleId}
                     && world.sketch.extrude().additionalRegions.empty()
                     && world.sketch.regionSelected(rectId) && !world.sketch.regionSelected(circleId));
+    // `CAD-FOUNDATION-C1`: the tap is a PURE toggle. The disk joins the ring
+    // and the ring stays; the candidate is their union, the solid rectangle.
     const CadStatus pickDisk = world.sketch.toggleRegion(circleId);
-    r.check("CADVS_SES_05_toggling_the_circle_switches_to_the_disk_and_drops_the_ring",
-            pickDisk == CadStatus::Ok && world.sketch.extrude().profileEntityId == circleId
-                    && world.sketch.extrude().profileHoleIds.empty()
-                    && world.sketch.extrude().additionalRegions.empty()
-                    && !world.sketch.regionSelected(rectId) && world.sketch.regionSelected(circleId));
-    const CadStatus drop = world.sketch.toggleRegion(circleId);
-    const bool cleared = drop == CadStatus::Ok
+    const CadCandidateEvaluation unionEval = world.sketch.evaluateCandidate();
+    r.check("CADVS_SES_05_toggling_the_circle_adds_the_disk_and_keeps_the_ring",
+            pickDisk == CadStatus::Ok && world.sketch.extrude().profileEntityId == rectId
+                    && world.sketch.extrude().profileHoleIds == std::vector<SketchEntityId>{circleId}
+                    && world.sketch.extrude().additionalRegions.size() == 1u
+                    && world.sketch.extrude().additionalRegions[0].outerAnchorId == circleId
+                    && world.sketch.regionSelected(rectId) && world.sketch.regionSelected(circleId)
+                    && unionEval.valid && unionEval.status == CadStatus::Ok
+                    && unionEval.mesh != nullptr && unionEval.mesh->components == 1u
+                    && nearRel(unionEval.mesh->volume, 12.0));
+    const CadStatus dropDisk = world.sketch.toggleRegion(circleId);
+    const bool ringOnly = dropDisk == CadStatus::Ok
+                          && world.sketch.extrude().profileEntityId == rectId
+                          && world.sketch.extrude().additionalRegions.empty()
+                          && world.sketch.regionSelected(rectId)
+                          && !world.sketch.regionSelected(circleId);
+    const CadStatus drop = world.sketch.toggleRegion(rectId);
+    const bool cleared = ringOnly && drop == CadStatus::Ok
                          && world.sketch.extrude().profileEntityId == kNoSketchEntity;
     const bool tappedRing = world.toggleAt(SketchPoint{1.5, 0.0});
     r.check("CADVS_SES_06_toggling_off_then_tapping_the_ring_in_the_canvas_selects_it",
@@ -2361,6 +2668,22 @@ void testPersistence(Recorder& r) {
                     && legacyVersion == kCadSectionVersion && !diskBytes.empty()
                     && cadbSectionVersion(diskBytes, &diskVersion)
                     && diskVersion == kCadSectionVersion);
+    // `CAD-FOUNDATION-C1`: a union selection is the SAME v5 record the codec
+    // always wrote -- the atomic list -- and it round-trips byte-identically.
+    {
+        const CadBodyState unionBody = unionState(true, true, false);
+        uint16_t unionVersion = 0;
+        const std::vector<uint8_t> unionBytes = encodeProjectV1(cadDocumentFor(unionBody));
+        ProjectDocument back;
+        const bool decoded = !unionBytes.empty()
+                             && decodeProject(unionBytes.data(), unionBytes.size(), &back)
+                                        == ProjectCodecStatus::Ok
+                             && back.hasCad && back.cad.bodies.size() == 1u;
+        r.check("CADFC1_PER_03_a_union_selection_round_trips_as_the_unchanged_v5_record",
+                decoded && cadbSectionVersion(unionBytes, &unionVersion) && unionVersion == 5u
+                        && sameCadBodyState(back.cad.bodies[0].state, unionBody)
+                        && encodeProjectV1(back) == unionBytes);
+    }
     const uint64_t baseFingerprint = fingerprintOf(blockState());
     const uint64_t addFingerprint = fingerprintOf(featureAddState());
     r.check("CADVS_IO_20_a_later_feature_moves_the_project_fingerprint",
@@ -2457,6 +2780,7 @@ int runCadFeatureSelfTests(CadFeatureSelfTestResult* out, int maxOut) {
     // The kernel gate first: nothing below may rely on the seam before it passed.
     runKernelGate(r);
     testRegions(r);
+    testRegionUnion(r);
     testExtrusion(r);
     testChain(r);
     testSession(r);

@@ -1312,21 +1312,19 @@ CadStatus SketchSession::toggleRegion(SketchEntityId outerAnchorId) {
     if (region->status != CadStatus::Ok) {
         return fail(region->status);
     }
-    // Keep only the selected regions this one can stand beside: a region it
-    // overlaps, touches or shares a loop with is replaced by it.
-    std::vector<ProfileRegionRef> next;
-    for (const ProfileRegionRef& ref : current) {
-        std::vector<ProfileRegionRef> pair = {ref, sketchRegionRef(*region)};
-        std::sort(pair.begin(), pair.end(), [](const ProfileRegionRef& a, const ProfileRegionRef& b) {
-            return a.outerAnchorId < b.outerAnchorId;
-        });
-        if (validateRegionSelection(regions_, pair) == CadStatus::Ok) {
-            next.push_back(ref);
-        }
-    }
-    next.push_back(sketchRegionRef(*region));
+    // A PURE toggle (`CAD-FOUNDATION-C1`): the tapped region joins the
+    // selection and no other region changes. A region beside its own hole is
+    // legal -- the selection means their union -- so the only additions left
+    // to refuse are the ones no rule can merge without guessing (loops that
+    // touch or cross) and the bound; those are refused BY NAME and the
+    // selection stands exactly as it was. Nothing is ever dropped silently.
+    std::vector<ProfileRegionRef> next = toggleRegionSelection(current, *region);
     if (next.size() > kMaxProfileRegions) {
         return fail(CadStatus::TooManyRegions);
+    }
+    const CadStatus why = validateRegionSelection(regions_, next);
+    if (why != CadStatus::Ok) {
+        return fail(why);
     }
     setExtrudeRegions(&extrude_, std::move(next));
     touchCandidate();
@@ -1858,19 +1856,19 @@ void SketchSession::buildOverlay(float worldPerUnit, const CadExtrudeViewFacts& 
     // emphasised; everything else is neutral.
     SketchOverlayRange entities;
     entities.firstVertex = static_cast<uint32_t>(v.size());
-    std::vector<const SketchRegion*> chosenRegions;
+    // What is drawn as chosen is the UNION the extrusion will make
+    // (`CAD-FOUNDATION-C1`), so a hole the selection filled is hatched as
+    // material and its loop is not emphasised as a boundary, while a hole the
+    // selection left open stays empty and emphasised.
+    std::vector<SketchRegionComponent> chosenComponents;
     if (state_ == SketchSessionState::Ready) {
-        for (const ProfileRegionRef& ref : extrudeRegions(extrude_)) {
-            if (const SketchRegion* region = findSketchRegion(regions_, ref.outerAnchorId)) {
-                chosenRegions.push_back(region);
-            }
-        }
+        chosenComponents = mergeSelectedRegions(regions_, extrudeRegions(extrude_));
     }
     std::vector<SketchEntityId> emphasisedMembers;
-    for (const SketchRegion* region : chosenRegions) {
+    for (const SketchRegionComponent& component : chosenComponents) {
         const std::vector<ClosedProfile>& loops = regions_.loops.profiles;
-        std::vector<uint32_t> loopIndices = region->holeLoops;
-        loopIndices.push_back(region->outerLoop);
+        std::vector<uint32_t> loopIndices = component.holeLoops;
+        loopIndices.push_back(component.outerLoop);
         for (uint32_t l : loopIndices) {
             if (l < loops.size()) {
                 emphasisedMembers.insert(emphasisedMembers.end(), loops[l].memberEntityIds.begin(),
@@ -1999,28 +1997,31 @@ void SketchSession::buildOverlay(float worldPerUnit, const CadExtrudeViewFacts& 
                      local(SketchPoint{cursor_.u, cursor_.v + half}), 0.0f, 1.0f);
         }
     }
-    // The chosen regions' hatch: lines clipped to each region by the even-odd
-    // rule, so a hole reads as EMPTY rather than as selected material. A few
-    // reference units apart at any zoom, bounded per region.
-    if (!chosenRegions.empty() && worldPerUnit > 0.0f) {
+    // The union's hatch: lines clipped to each component by the even-odd
+    // rule, so a hole left open reads as EMPTY rather than as selected
+    // material and a filled one reads as material. A few
+    // reference units apart at any zoom, bounded per component.
+    if (!chosenComponents.empty() && worldPerUnit > 0.0f) {
         const double spacing = 14.0 * static_cast<double>(worldPerUnit);
-        for (const SketchRegion* region : chosenRegions) {
-            const std::vector<SketchPoint> hatch = sketchRegionHatch(regions_, *region, spacing);
+        for (const SketchRegionComponent& component : chosenComponents) {
+            const std::vector<SketchPoint> hatch =
+                    sketchComponentHatch(regions_, component, spacing);
             for (size_t i = 0; i + 1 < hatch.size(); i += 2) {
                 pushLine(&v, local(hatch[i]), local(hatch[i + 1]), opAxis, opHandle);
             }
         }
     }
-    // The extrude preview: every chosen loop's far cap, near cap and edges --
+    // The extrude preview: every union loop's far cap, near cap and edges --
     // holes included, so the preview of a ring shows its bore.
-    if (!chosenRegions.empty()) {
+    if (!chosenComponents.empty()) {
         // The SAME two offsets `generateCadMesh` extrudes between, so the
         // preview and the solid it previews cannot disagree about where the
         // caps are in any extent mode.
         const double nearOffset = -extrudeNegativeDistance(extrude_);
         const double farOffset = extrudePositiveDistance(extrude_);
-        for (const SketchRegion* region : chosenRegions) {
-            for (const std::vector<SketchPoint>& loop : sketchRegionLoops(regions_, *region)) {
+        for (const SketchRegionComponent& component : chosenComponents) {
+            for (const std::vector<SketchPoint>& loop :
+                 sketchComponentLoops(regions_, component)) {
                 const size_t n = loop.size();
                 for (size_t i = 0; i < n; ++i) {
                     const SketchPoint& a = loop[i];

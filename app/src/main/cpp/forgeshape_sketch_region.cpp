@@ -131,6 +131,47 @@ SketchPoint regionInteriorPoint(const std::vector<std::vector<SketchPoint>>& loo
     return outer[0];
 }
 
+// The loops of an outer loop and its holes, outer first.
+std::vector<std::vector<SketchPoint>> loopsOf(const SketchRegionExtraction& extraction,
+                                              uint32_t outerLoop,
+                                              const std::vector<uint32_t>& holeLoops) {
+    std::vector<std::vector<SketchPoint>> out;
+    const std::vector<ClosedProfile>& loops = extraction.loops.profiles;
+    if (outerLoop >= loops.size()) {
+        return out;
+    }
+    out.push_back(loops[outerLoop].polygon);
+    for (uint32_t h : holeLoops) {
+        if (h < loops.size()) {
+            out.push_back(loops[h].polygon);
+        }
+    }
+    return out;
+}
+
+// The interior point and the area centroid of an outer loop minus its holes:
+// ONE computation for a region and a union component, so the two can never
+// stand an arrow on different arithmetic.
+void shapePoints(const std::vector<std::vector<SketchPoint>>& polys, SketchPoint* interior,
+                 SketchPoint* centroid) {
+    *interior = regionInteriorPoint(polys);
+    double twiceOuter = 0.0;
+    const SketchPoint co = polygonCentroid(polys[0], &twiceOuter);
+    double su = co.u * twiceOuter;
+    double sv = co.v * twiceOuter;
+    double total = twiceOuter;
+    for (size_t h = 1; h < polys.size(); ++h) {
+        double twiceHole = 0.0;
+        const SketchPoint ch = polygonCentroid(polys[h], &twiceHole);
+        su -= ch.u * twiceHole;
+        sv -= ch.v * twiceHole;
+        total -= twiceHole;
+    }
+    *centroid = std::fabs(total) > 1e-300 ? SketchPoint{su / total, sv / total} : co;
+}
+
+std::vector<SketchPoint> hatchOf(const std::vector<std::vector<SketchPoint>>& loops, double spacing);
+
 bool ascendingUnique(const std::vector<SketchEntityId>& ids) {
     for (size_t i = 1; i < ids.size(); ++i) {
         if (!(ids[i - 1] < ids[i])) {
@@ -240,21 +281,7 @@ SketchRegionExtraction extractSketchRegions(const CadSketch& sketch) {
         if (region.holeLoops.size() > kMaxRegionHoles) {
             region.status = CadStatus::TooManyRegions;
         }
-        const std::vector<std::vector<SketchPoint>> polys = sketchRegionLoops(out, region);
-        region.interiorPoint = regionInteriorPoint(polys);
-        double twiceOuter = 0.0;
-        const SketchPoint co = polygonCentroid(polys[0], &twiceOuter);
-        double su = co.u * twiceOuter;
-        double sv = co.v * twiceOuter;
-        double total = twiceOuter;
-        for (size_t h = 1; h < polys.size(); ++h) {
-            double twiceHole = 0.0;
-            const SketchPoint ch = polygonCentroid(polys[h], &twiceHole);
-            su -= ch.u * twiceHole;
-            sv -= ch.v * twiceHole;
-            total -= twiceHole;
-        }
-        region.centroid = std::fabs(total) > 1e-300 ? SketchPoint{su / total, sv / total} : co;
+        shapePoints(sketchRegionLoops(out, region), &region.interiorPoint, &region.centroid);
     }
     return out;
 }
@@ -309,8 +336,10 @@ CadStatus validateRegionSelection(const SketchRegionExtraction& extraction,
     }
     // Two chosen regions must be disjoint and must not touch: their outer loops
     // may not touch or cross, and when one outer loop lies inside the other it
-    // must lie inside one of that region's HOLES -- strictly inside, because a
-    // region and its own hole share the hole's loop as a boundary.
+    // must be that region's OWN direct hole (`CAD-FOUNDATION-C1`: the two share
+    // the hole's loop, and choosing both means their union, which
+    // `mergeSelectedRegions` derives) or lie strictly inside another of its
+    // holes. Anything else stands inside the other region's material.
     auto insideAHole = [&extraction](const SketchRegion& container, uint32_t loop) {
         for (uint32_t h : container.holeLoops) {
             if (h != loop && extraction.loopContains(h, loop)) {
@@ -326,10 +355,12 @@ CadStatus validateRegionSelection(const SketchRegionExtraction& extraction,
             if (extraction.loopsConflict(a, b)) {
                 return CadStatus::OverlappingRegions;
             }
-            if (extraction.loopContains(a, b) && !insideAHole(*chosen[i], b)) {
+            if (extraction.loopContains(a, b) && extraction.parent[b] != static_cast<int32_t>(a)
+                && !insideAHole(*chosen[i], b)) {
                 return CadStatus::OverlappingRegions;
             }
-            if (extraction.loopContains(b, a) && !insideAHole(*chosen[j], a)) {
+            if (extraction.loopContains(b, a) && extraction.parent[a] != static_cast<int32_t>(b)
+                && !insideAHole(*chosen[j], a)) {
                 return CadStatus::OverlappingRegions;
             }
             // A hole of one that touches the other's outer loop overlaps too.
@@ -391,24 +422,87 @@ std::vector<ProfileRegionRef> toggleRegionSelection(const std::vector<ProfileReg
 
 std::vector<std::vector<SketchPoint>> sketchRegionLoops(const SketchRegionExtraction& extraction,
                                                         const SketchRegion& region) {
-    std::vector<std::vector<SketchPoint>> out;
-    const std::vector<ClosedProfile>& loops = extraction.loops.profiles;
-    if (region.outerLoop >= loops.size()) {
-        return out;
-    }
-    out.push_back(loops[region.outerLoop].polygon);
-    for (uint32_t h : region.holeLoops) {
-        if (h < loops.size()) {
-            out.push_back(loops[h].polygon);
+    return loopsOf(extraction, region.outerLoop, region.holeLoops);
+}
+
+std::vector<SketchRegionComponent> mergeSelectedRegions(
+        const SketchRegionExtraction& extraction, const std::vector<ProfileRegionRef>& selection) {
+    const size_t n = extraction.regions.size();
+    std::vector<uint8_t> selected(n, 0u);
+    for (const ProfileRegionRef& ref : selection) {
+        for (size_t l = 0; l < n; ++l) {
+            if (extraction.regions[l].outerAnchorId == ref.outerAnchorId) {
+                selected[l] = 1u;
+                break;
+            }
         }
+    }
+    std::vector<SketchRegionComponent> out;
+    // Loops are in ascending anchor order, so the components come out in
+    // ascending outer anchor order with no sort.
+    for (size_t l = 0; l < n; ++l) {
+        const int32_t parent = extraction.parent[l];
+        // The parity sentence: L bounds the union from outside exactly when it
+        // is selected and what lies directly around it is not.
+        if (selected[l] == 0u || (parent >= 0 && selected[static_cast<size_t>(parent)] != 0u)) {
+            continue;
+        }
+        SketchRegionComponent component;
+        component.outerLoop = static_cast<uint32_t>(l);
+        component.outerAnchorId = extraction.regions[l].outerAnchorId;
+        // Down the nesting tree through selected regions: a selected child
+        // continues the material, an unselected one is a hole. Bounded by the
+        // loop count; the tree has no cycle because a parent is strictly
+        // larger than its child.
+        std::vector<uint32_t> frontier = extraction.regions[l].holeLoops;
+        while (!frontier.empty()) {
+            const uint32_t c = frontier.back();
+            frontier.pop_back();
+            if (c >= n) {
+                continue;
+            }
+            if (selected[c] != 0u) {
+                frontier.insert(frontier.end(), extraction.regions[c].holeLoops.begin(),
+                                extraction.regions[c].holeLoops.end());
+            } else {
+                component.holeLoops.push_back(c);
+            }
+        }
+        std::sort(component.holeLoops.begin(), component.holeLoops.end());
+        double area = extraction.loops.profiles[l].area;
+        for (uint32_t h : component.holeLoops) {
+            component.holeAnchorIds.push_back(extraction.regions[h].outerAnchorId);
+            area -= extraction.loops.profiles[h].area;
+        }
+        component.area = area;
+        shapePoints(sketchComponentLoops(extraction, component), &component.interiorPoint,
+                    &component.centroid);
+        out.push_back(std::move(component));
     }
     return out;
 }
 
+std::vector<std::vector<SketchPoint>> sketchComponentLoops(const SketchRegionExtraction& extraction,
+                                                           const SketchRegionComponent& component) {
+    return loopsOf(extraction, component.outerLoop, component.holeLoops);
+}
+
 std::vector<SketchPoint> sketchRegionHatch(const SketchRegionExtraction& extraction,
                                            const SketchRegion& region, double spacing) {
+    return hatchOf(sketchRegionLoops(extraction, region), spacing);
+}
+
+std::vector<SketchPoint> sketchComponentHatch(const SketchRegionExtraction& extraction,
+                                              const SketchRegionComponent& component,
+                                              double spacing) {
+    return hatchOf(sketchComponentLoops(extraction, component), spacing);
+}
+
+namespace {
+
+std::vector<SketchPoint> hatchOf(const std::vector<std::vector<SketchPoint>>& loops,
+                                 double spacing) {
     std::vector<SketchPoint> segments;
-    const std::vector<std::vector<SketchPoint>> loops = sketchRegionLoops(extraction, region);
     if (loops.empty() || !(spacing > 0.0) || !std::isfinite(spacing)) {
         return segments;
     }
@@ -440,5 +534,7 @@ std::vector<SketchPoint> sketchRegionHatch(const SketchRegionExtraction& extract
     }
     return segments;
 }
+
+}  // namespace
 
 }  // namespace forgeshape

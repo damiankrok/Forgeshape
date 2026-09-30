@@ -124,6 +124,10 @@ CadStatus deriveFeature(uint32_t featureId, CadFeatureOperation operation, const
     if (g.chosen.empty()) {
         return CadStatus::ProfileNotFound;
     }
+    g.components = mergeSelectedRegions(g.regions, extrudeRegions(g.extrude));
+    if (g.components.empty()) {
+        return CadStatus::ProfileNotFound;
+    }
     const double positive = extrudePositiveDistance(g.extrude);
     const double negative = extrudeNegativeDistance(g.extrude);
     g.nearOffset = -negative;
@@ -143,16 +147,15 @@ CadStatus deriveFeature(uint32_t featureId, CadFeatureOperation operation, const
     // other way; none of them may carry a sketch in R1.
     const bool featureEligible = operation != CadFeatureOperation::Cut;
     const std::vector<ClosedProfile>& loops = g.regions.loops.profiles;
-    const ClosedProfile& primaryOuter = loops[g.regions.regions[g.chosen[0]].outerLoop];
+    const ClosedProfile& primaryOuter = loops[g.components.front().outerLoop];
     g.faces.push_back(capFace(g, primaryOuter, /*onPlane=*/true, featureEligible));
     g.faces.push_back(capFace(g, primaryOuter, /*onPlane=*/false, featureEligible));
-    for (uint32_t r : g.chosen) {
-        const SketchRegion& region = g.regions.regions[r];
-        const ClosedProfile& outer = loops[region.outerLoop];
+    for (const SketchRegionComponent& component : g.components) {
+        const ClosedProfile& outer = loops[component.outerLoop];
         for (uint32_t k = 0; k < outer.polygon.size(); ++k) {
             g.faces.push_back(sideFace(g, outer, k, /*hole=*/false, featureEligible));
         }
-        for (uint32_t h : region.holeLoops) {
+        for (uint32_t h : component.holeLoops) {
             const ClosedProfile& hole = loops[h];
             for (uint32_t k = 0; k < hole.polygon.size(); ++k) {
                 g.faces.push_back(sideFace(g, hole, k, /*hole=*/true, featureEligible));
@@ -292,7 +295,6 @@ CadStatus appendCadFeatureSolid(const CadFeatureGeometry& g, uint32_t tagOffset,
         return CadStatus::RegenerationFailed;
     }
     CadSolid out = *solid;
-    const std::vector<ClosedProfile>& loops = g.regions.loops.profiles;
     // The two caps are the table's first two entries; which one the +N set of
     // vertices forms depends on the side the solid grows on, exactly as R0's
     // mesh and face ranges always decided it.
@@ -302,9 +304,8 @@ CadStatus appendCadFeatureSolid(const CadFeatureGeometry& g, uint32_t tagOffset,
     const uint32_t upperTag = upperIsPlaneCap ? tagPlane : tagFar;
     const uint32_t lowerTag = upperIsPlaneCap ? tagFar : tagPlane;
     uint32_t sideTag = tagOffset + 2u;
-    for (uint32_t r : g.chosen) {
-        const SketchRegion& region = g.regions.regions[r];
-        std::vector<std::vector<SketchPoint>> polys = sketchRegionLoops(g.regions, region);
+    for (const SketchRegionComponent& component : g.components) {
+        std::vector<std::vector<SketchPoint>> polys = sketchComponentLoops(g.regions, component);
         std::vector<uint32_t> cap;
         if (polys.size() == 1u) {
             if (triangulateSimplePolygon(polys[0], &cap) != CadStatus::Ok) {
@@ -362,7 +363,6 @@ CadStatus appendCadFeatureSolid(const CadFeatureGeometry& g, uint32_t tagOffset,
             }
             offset += n;
         }
-        (void)loops;
     }
     for (double value : out.positions) {
         if (!std::isfinite(value)) {

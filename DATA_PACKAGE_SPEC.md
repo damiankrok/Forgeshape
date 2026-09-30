@@ -814,7 +814,8 @@ bound — `ImpossibleCount` for a count out of range, **before** anything is
 allocated for it; `InvalidSemanticValue` for an unknown operation or face code,
 for ids out of order, for a support that names no earlier feature, for a stored
 hole set that is not EXACTLY the one the sketch derives for that outer loop, for
-two chosen regions that overlap, touch or share a loop, and for anything the
+two chosen regions whose loops touch or cross or one of which stands inside the
+other's material without being its own direct hole, and for anything the
 domain's own `validateCadBodyState` refuses. A body carrying later features is
 then **regenerated** through the boolean kernel as part of the check — an Add
 whose tool does not touch the body (`AddDisjoint`), an Add that adds nothing, a
@@ -835,14 +836,31 @@ such loop stays its own region, exactly as every earlier version read it — and
 region whose holes touch or cross each other cannot be selected. There is no
 planar arrangement: loops never split each other.
 
+**A selection means the UNION of the regions it lists** (`CAD-FOUNDATION-C1`).
+The stored list is unchanged — the chosen atomic regions, each with the holes
+it was chosen with — and a region may now be listed beside its own direct hole
+(a ring and its disk). What is extruded is derived by one parity rule over the
+parent tree: loop L bounds the union exactly when L's region is chosen and its
+parent's region is not (or L has no parent) — L is then a component's OUTER
+loop — or when L's region is not chosen and its parent's region is, walking down
+from such an outer loop through chosen regions — L is then one of that
+component's HOLES. Components are taken in ascending outer anchor, holes in
+ascending anchor. A list that chooses no region beside its own hole (every list
+an earlier build could write) unions to exactly its own regions, in the same
+order, with the same holes, so no stored byte, token or fixture changes. No
+section version changed either: an earlier build reading a list with a region
+beside its own hole refuses it by name (`InvalidSemanticValue` through
+`OverlappingRegions`), which is fail-closed.
+
 ### The lineage token, generalized
 
 `lineageToken` is §7c's signature of the SUPPORTING feature's own face topology,
-with the face list generalized to regions:
+with the face list generalized to the union components of the selection (for a
+list with no region beside its own hole these are exactly the chosen regions):
 
 ```
 faces = [CapPlane, CapFar]
-        then for each chosen region in ascending outer-anchor order:
+        then for each union component in ascending outer-anchor order:
           one Side per edge of its OUTER loop, in the loop's polygon order
           then for each hole in ascending anchor order:
             one Side per edge of the HOLE loop, in that loop's polygon order

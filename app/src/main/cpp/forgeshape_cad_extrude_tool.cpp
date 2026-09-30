@@ -143,22 +143,30 @@ bool extrudeSelectionAnchorPoint(const SketchRegionExtraction& regions,
     if (out == nullptr) {
         return false;
     }
-    const SketchRegion* region = findSketchRegion(regions, extrude.profileEntityId);
-    if (region == nullptr) {
+    if (findSketchRegion(regions, extrude.profileEntityId) == nullptr) {
         return false;
     }
-    const std::vector<std::vector<SketchPoint>> loops = sketchRegionLoops(regions, *region);
+    // The FIRST union component (`CAD-FOUNDATION-C1`), which for any selection
+    // that does not choose a region beside its own hole is the first chosen
+    // region exactly -- so every earlier anchor stands where it stood.
+    const std::vector<SketchRegionComponent> components =
+            mergeSelectedRegions(regions, extrudeRegions(extrude));
+    if (components.empty()) {
+        return false;
+    }
+    const SketchRegionComponent& first = components.front();
+    const std::vector<std::vector<SketchPoint>> loops = sketchComponentLoops(regions, first);
     if (loops.empty()) {
         return false;
     }
-    if (region->holeLoops.empty()) {
+    if (first.holeLoops.empty()) {
         return sketchPolygonCentroid(loops[0], out);
     }
-    bool onMaterial = sketchPointStrictlyInside(region->centroid, loops[0]);
+    bool onMaterial = sketchPointStrictlyInside(first.centroid, loops[0]);
     for (size_t h = 1; onMaterial && h < loops.size(); ++h) {
-        onMaterial = !sketchPointStrictlyInside(region->centroid, loops[h]);
+        onMaterial = !sketchPointStrictlyInside(first.centroid, loops[h]);
     }
-    *out = onMaterial ? region->centroid : region->interiorPoint;
+    *out = onMaterial ? first.centroid : first.interiorPoint;
     return true;
 }
 

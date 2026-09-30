@@ -58,6 +58,11 @@ struct CadFeatureGeometry {
     SketchRegionExtraction regions;
     // Indices into `regions.regions`, in selection (ascending anchor) order.
     std::vector<uint32_t> chosen;
+    // The UNION of the chosen regions (`mergeSelectedRegions`,
+    // `CAD-FOUNDATION-C1`): what is actually extruded, component by component.
+    // For every selection that does not choose a region beside its own hole it
+    // is exactly the chosen regions, in the same order, with the same holes.
+    std::vector<SketchRegionComponent> components;
     // Sketch (u, v) at offset w along the normal -> body-local.
     CadFrame64 placement;
     // The solid spans nearOffset (-B) .. farOffset (+A) along the normal.
@@ -67,9 +72,10 @@ struct CadFeatureGeometry {
     double planeCapOffset = 0.0;
     double farCapOffset = 0.0;
     double extrudeSign = 1.0;
-    // CapPlane, CapFar, then one Side per edge: region by region (ascending
-    // outer anchor), the outer loop in polygon order and then each hole
-    // (ascending anchor) in its own polygon order.
+    // CapPlane, CapFar, then one Side per edge: union component by component
+    // (ascending outer anchor), the outer loop in polygon order and then each
+    // hole (ascending anchor) in its own polygon order. A loop absorbed into
+    // the union bounds nothing and so exposes no face.
     std::vector<CadFeatureFace> faces;
     // The `.forge` lineage signature of this feature's face topology
     // (DATA_PACKAGE_SPEC.md §7c, generalized in §7f). For a single region
@@ -90,8 +96,9 @@ CadStatus buildCadChainGeometry(const CadBodyState& state, std::vector<CadFeatur
 CadStatus buildCadFeatureGeometry(const CadBodyState& state, uint32_t featureId,
                                   CadFeatureGeometry* out);
 
-// Appends one feature's extrusion -- every selected region, holes as inner
-// walls -- as a closed, outward-wound solid whose face tags are
+// Appends one feature's extrusion -- every union component of the selected
+// regions, holes as inner walls, one prism per component so no shared wall is
+// ever emitted twice -- as a closed, outward-wound solid whose face tags are
 // `tagOffset + index into geometry.faces`.
 CadStatus appendCadFeatureSolid(const CadFeatureGeometry& geometry, uint32_t tagOffset,
                                 CadSolid* solid);
