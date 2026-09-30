@@ -411,14 +411,15 @@ public final class Ui3dStateCorrectionTest {
         assertExtrudeClusterAttached("sketch_ready");
         final float restingScale = extrudeScale();
         assertTrue("the camera-attached scale is inside its authored band: " + restingScale,
-                restingScale >= 0.7999f && restingScale <= 1.6001f);
+                restingScale >= 0.3999f && restingScale <= 1.6001f);
 
         orbitViewport();
         assertExtrudeClusterAttached("after_orbit");
         pinchViewport(true);
         assertExtrudeClusterAttached("after_zoom_out");
-        assertTrue("the scale saturates at the authored 0.800 floor and never below it",
-                extrudeScale() >= 0.7999f);
+        assertTrue("the scale saturates at the authored 0.40 floor and never below it"
+                        + " (CAD-FOUNDATION-C1 lowered it from 0.80)",
+                extrudeScale() >= 0.3999f);
         pinchViewport(false);
         assertExtrudeClusterAttached("after_zoom_in");
 

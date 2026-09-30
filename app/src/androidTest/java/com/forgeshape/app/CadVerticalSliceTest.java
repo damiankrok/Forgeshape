@@ -233,7 +233,7 @@ public final class CadVerticalSliceTest {
         // Tap the DISK with the ring selected (`CAD-FOUNDATION-C1`): a pure
         // toggle ADDS it and keeps the ring, and the preview is their union --
         // the solid rectangle -- rather than a silent switch to the disk.
-        tapSketch(rule.getScenario(), 0.0, 0.0);
+        tapAwayFromArrow(DISK_POINTS);
         assertTrue(NativeViewport.sketchProfileInfo(disk, info));
         assertEquals("the disk is selected", 1.0, info[NativeViewport.SKETCH_REGION_SELECTED], 0.0);
         assertTrue(NativeViewport.sketchProfileInfo(ring, info));
@@ -250,8 +250,11 @@ public final class CadVerticalSliceTest {
                 unionPreview[NativeViewport.CANDIDATE_MEASURE_COMPONENTS], 0.0);
         capture("02b_ring_plus_disk_union");
 
-        // A second tap on the disk removes the disk and ONLY the disk.
-        tapSketch(rule.getScenario(), 0.0, 0.0);
+        // A second tap on the disk removes the disk and ONLY the disk. The
+        // union's arrow now stands at the rectangle's centre -- ON the disk --
+        // and a press on the arrow is a drag, so the tap is made on the disk's
+        // own material away from the arrow, as a user would.
+        tapAwayFromArrow(DISK_POINTS);
         assertTrue(NativeViewport.sketchProfileInfo(ring, info));
         assertEquals("the ring stays", 1.0, info[NativeViewport.SKETCH_REGION_SELECTED], 0.0);
         assertTrue(NativeViewport.sketchProfileInfo(disk, info));
@@ -309,6 +312,7 @@ public final class CadVerticalSliceTest {
         final double[] info = new double[NativeViewport.SKETCH_REGION_INFO_SIZE];
         long o = NativeViewport.NO_OBJECT;
         final List<Long> disks = new ArrayList<>();
+        fact("union.entities", sketchStateArray()[NativeViewport.SKETCH_ENTITY_COUNT]);
         for (long anchor : anchors) {
             assertTrue(NativeViewport.sketchProfileInfo(anchor, info));
             if (info[NativeViewport.SKETCH_REGION_HOLES] == 2.0) {
@@ -329,14 +333,14 @@ public final class CadVerticalSliceTest {
         fact("union.areas_m2", "rect=" + rectArea + " A=" + areaA + " B=" + areaB);
 
         // Tap O: O alone.
-        tapSketch(rule.getScenario(), 0.0, 1.0);
+        tapAwayFromArrow(O_POINTS);
         assertSelected("tap O", o, true, a, false, b, false);
         final double depth = toolState()[NativeViewport.CAD_EXTRUDE_DEPTH];
         assertEquals("O is the rectangle minus both disks", (rectArea - areaA - areaB) * depth,
                 candidate()[NativeViewport.CANDIDATE_MEASURE_VOLUME],
                 rectArea * depth * VOLUME_TOLERANCE);
         // Tap A: A JOINS, O stays -- the rectangle with only B as a hole.
-        tapSketch(rule.getScenario(), -1.0, 0.0);
+        tapAwayFromArrow(A_POINTS);
         assertSelected("tap A", o, true, a, true, b, false);
         final double[] oa = candidate();
         assertEquals("O+A is the rectangle with only hole B", (rectArea - areaB) * depth,
@@ -345,18 +349,18 @@ public final class CadVerticalSliceTest {
         capture("16_union_o_plus_a");
 
         // J3: tap A again -- A leaves and ONLY A.
-        tapSketch(rule.getScenario(), -1.0, 0.0);
+        tapAwayFromArrow(A_POINTS);
         assertSelected("tap A again", o, true, a, false, b, false);
         // J2: all three are the solid rectangle.
-        tapSketch(rule.getScenario(), -1.0, 0.0);
-        tapSketch(rule.getScenario(), 1.0, 0.0);
+        tapAwayFromArrow(A_POINTS);
+        tapAwayFromArrow(B_POINTS);
         assertSelected("all three", o, true, a, true, b, true);
         assertEquals("O+A+B is the solid rectangle", rectArea * depth,
                 candidate()[NativeViewport.CANDIDATE_MEASURE_VOLUME],
                 rectArea * depth * VOLUME_TOLERANCE);
         capture("17_union_all_three");
         // Back to O+A for the commit.
-        tapSketch(rule.getScenario(), 1.0, 0.0);
+        tapAwayFromArrow(B_POINTS);
         assertSelected("O+A again", o, true, a, true, b, false);
 
         final long body = extrudeWithDepth("0.5");
@@ -389,6 +393,67 @@ public final class CadVerticalSliceTest {
         settleLayout();
     }
 
+    // Candidate tap points, in sketch (u, v), inside each region and outside
+    // its holes. A press on the extrude ARROW is a drag, and a union's arrow can
+    // stand on a region the test must still tap, so each tap takes the
+    // candidate whose pixel is farthest from the arrow's projected shaft.
+    private static final double[][] DISK_POINTS = {{0.5, 0.0}, {-0.5, 0.0}, {0.0, 0.5},
+            {0.0, -0.5}, {0.35, 0.35}, {-0.35, -0.35}, {0.35, -0.35}, {-0.35, 0.35}};
+    private static final double[][] O_POINTS = {{0.0, 1.0}, {0.0, -1.0}, {1.7, 1.0},
+            {-1.7, -1.0}, {1.7, -1.0}, {-1.7, 1.0}};
+    private static final double[][] A_POINTS = {{-1.0, 0.0}, {-1.25, 0.0}, {-0.75, 0.0},
+            {-1.0, 0.25}, {-1.0, -0.25}};
+    private static final double[][] B_POINTS = {{1.0, 0.0}, {1.25, 0.0}, {0.75, 0.0},
+            {1.0, 0.25}, {1.0, -0.25}};
+    private static final double[][] FACE_RING_POINTS = {{0.5, 0.0}, {-0.5, 0.0}, {0.0, 0.5},
+            {0.0, -0.5}, {0.5, 0.5}, {-0.5, -0.5}};
+    private static final double[][] FACE_DISK_POINTS = {{0.0, 0.0}, {0.15, 0.0}, {-0.15, 0.0},
+            {0.0, 0.15}, {0.0, -0.15}};
+
+    /**
+     * Taps the candidate sketch point that projects farthest from the extrude
+     * arrow's shaft (or the first one when there is no arrow yet).
+     */
+    private void tapAwayFromArrow(double[][] candidates) {
+        final double[] tool = toolState();
+        double[] best = candidates[0];
+        if (tool[NativeViewport.CAD_EXTRUDE_ACTIVE] != 0.0
+                && tool[NativeViewport.CAD_EXTRUDE_ON_SCREEN] != 0.0) {
+            final double lx = tool[NativeViewport.CAD_EXTRUDE_LABEL_X];
+            final double ly = tool[NativeViewport.CAD_EXTRUDE_LABEL_Y];
+            final double tx = tool[NativeViewport.CAD_EXTRUDE_TIP_X];
+            final double ty = tool[NativeViewport.CAD_EXTRUDE_TIP_Y];
+            // The base is the shaft's other end: label is its midpoint.
+            final double bx = 2.0 * lx - tx;
+            final double by = 2.0 * ly - ty;
+            final double ex = tx + (tx - lx) * 0.5;
+            final double ey = ty + (ty - ly) * 0.5;
+            double bestDistance = -1.0;
+            final float[] at = new float[2];
+            for (double[] c : candidates) {
+                if (!NativeViewport.sketchScreenPoint(c[0], c[1], at)) {
+                    continue;
+                }
+                final double d = distanceToSegment(at[0], at[1], bx, by, ex, ey);
+                if (d > bestDistance) {
+                    bestDistance = d;
+                    best = c;
+                }
+            }
+        }
+        tapSketch(rule.getScenario(), best[0], best[1]);
+    }
+
+    private static double distanceToSegment(double px, double py, double ax, double ay,
+                                            double bx, double by) {
+        final double dx = bx - ax;
+        final double dy = by - ay;
+        final double lengthSq = dx * dx + dy * dy;
+        double t = lengthSq > 1e-9 ? ((px - ax) * dx + (py - ay) * dy) / lengthSq : 0.0;
+        t = Math.max(0.0, Math.min(1.0, t));
+        return Math.hypot(px - (ax + dx * t), py - (ay + dy * t));
+    }
+
     /** Asserts which of three regions are selected, by anchor. */
     private static void assertSelected(String where, long o, boolean oOn, long a, boolean aOn,
                                        long b, boolean bOn) {
@@ -411,11 +476,11 @@ public final class CadVerticalSliceTest {
     public void merged_selection_feeds_same_body_add_and_cut() {
         final long base = baseBodyOnXz();
         final int bodies = NativeViewport.sceneBodyCount();
-        final double[] areas = faceSketchSquareAroundDisk(0.8, 0.2);
+        final double[] areas = faceSketchSquareAroundDisk(1.2, 0.35);
         final double full = areas[0] + areas[1];
         // Ring and disk both chosen: the union is the whole square.
-        tapSketch(rule.getScenario(), 0.3, 0.0);
-        tapSketch(rule.getScenario(), 0.0, 0.0);
+        tapAwayFromArrow(FACE_RING_POINTS);
+        tapAwayFromArrow(FACE_DISK_POINTS);
         assertEquals("both regions", 2.0, toolState()[NativeViewport.CAD_EXTRUDE_SELECTED_REGIONS],
                 0.0);
         chooseOperationOnCanvas(R.id.cad_extrude_operation_add);
@@ -430,9 +495,9 @@ public final class CadVerticalSliceTest {
         undo();
         assertEquals(4.0, measure(base)[NativeViewport.CAD_MEASURE_VOLUME], 4.0 * VOLUME_TOLERANCE);
 
-        faceSketchSquareAroundDisk(0.8, 0.2);
-        tapSketch(rule.getScenario(), 0.3, 0.0);
-        tapSketch(rule.getScenario(), 0.0, 0.0);
+        faceSketchSquareAroundDisk(1.2, 0.35);
+        tapAwayFromArrow(FACE_RING_POINTS);
+        tapAwayFromArrow(FACE_DISK_POINTS);
         chooseOperationOnCanvas(R.id.cad_extrude_operation_cut);
         assertEquals("the merged Cut is valid", NativeViewport.CAD_OK,
                 (int) toolState()[NativeViewport.CAD_EXTRUDE_CANDIDATE_STATUS]);
@@ -465,6 +530,8 @@ public final class CadVerticalSliceTest {
         dragSketch(rule.getScenario(), -side / 2, -side / 2, side / 2, side / 2);
         selectTool(rule.getScenario(), R.id.tool_rail_circle);
         dragSketch(rule.getScenario(), 0.0, 0.0, radius, 0.0);
+        assertEquals("a square and a circle", 2.0,
+                sketchStateArray()[NativeViewport.SKETCH_ENTITY_COUNT], 0.0);
         finishSketch();
         final long[] anchors = regionAnchors();
         assertEquals("the ring and the disk", 2, anchors.length);
