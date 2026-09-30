@@ -23,8 +23,8 @@ no coordinate or index), resolved by exact equality. Record:
 - **No format change**: no codec, spec, fixture, encoder, JNI or Android
   byte. C2 is integrated (`main` `3872120 → f751773`).
 - **Gates.** Host `HOST_SELFTESTS_OK (3852 checks, 0 failed)` (CAD_FEATURE
-  184 → 223); NDK debug + release build; `CI FAST` on the final candidate
-  (run recorded in the summary's closing commit). **CI DEVICE NOT RUN**
+  184 → 223); NDK debug + release build; `CI FAST` `36754276652` on the
+  tested candidate `7d09e4a`: success. **CI DEVICE NOT RUN**
   (nothing reaches a device). **FullSharded NOT RUN.**
 
 **Previous closeout:** **`CAD-FOUNDATION-C2` — `PASS-CAD-FOUNDATION-C2-HUD-PLANAR-BLOCKED`**

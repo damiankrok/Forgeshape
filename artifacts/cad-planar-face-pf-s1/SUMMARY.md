@@ -1,7 +1,8 @@
 # CAD-PLANAR-FACE-PF-S1 — the planar arrangement engine
 
-Result: **`PASS-CAD-PLANAR-FACE-PF-S1`** (pending the one CI FAST on the final
-candidate, recorded in `PROJECT_STATUS.md`). Not user-visible by design.
+Result: **`PASS-CAD-PLANAR-FACE-PF-S1`**. Tested candidate `7d09e4a`;
+`CI FAST` `36754276652`: success (the one run, on that commit). Not
+user-visible by design.
 
 ## Refs
 
