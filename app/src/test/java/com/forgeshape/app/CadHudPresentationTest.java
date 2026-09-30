@@ -214,8 +214,17 @@ public final class CadHudPresentationTest {
 
     private static CadHudPresentation.PanelLayout panel(float hx, float hy, float ax, float ay,
                                                         int icons, double scale) {
-        return CadHudPresentation.layoutPanel(true, hx, hy, ax, ay, Float.NaN, Float.NaN, icons,
-                scale, DENSITY, 1080.0f, 2000.0f);
+        return CadHudPresentation.layoutPanel(true, hx, hy, ax, ay, Float.NaN, Float.NaN,
+                refW(icons), refH(), scale, DENSITY, 1080.0f, 2000.0f);
+    }
+
+    /** The plate's reference box in px, as a view would measure it. */
+    private static float refW(int icons) {
+        return CadHudPresentation.panelReferenceWidthDp(icons) * DENSITY;
+    }
+
+    private static float refH() {
+        return CadHudPresentation.panelReferenceHeightDp() * DENSITY;
     }
 
     @Test
@@ -281,18 +290,35 @@ public final class CadHudPresentationTest {
     public void thePanelIsShownWholeOrNotAtAllAndNeverClampedAwayFromTheArrow() {
         // Past the point would leave the viewport: beside it, away from the leader.
         final CadHudPresentation.PanelLayout beside = CadHudPresentation.layoutPanel(true, 900,
-                1000, 1, 0, 800, 900, 3, 1.0, DENSITY, 1080, 2000);
+                1000, 1, 0, 800, 900, refW(3), refH(), 1.0, DENSITY, 1080, 2000);
         assertTrue(beside.visible);
         assertEquals(CadHudPresentation.PANEL_AWAY, beside.placement);
         assertTrue("away from the leader, which stands above", beside.centreY > 1000.0f);
         assertInside(beside);
+        // The point at the LEFT edge with the arrow pointing left (the close
+        // zoom the device showed): neither past it nor centred beside it fits,
+        // so the box slides back along the shaft -- never further than its own
+        // length, never into the arrow's corridor.
+        final CadHudPresentation.PanelLayout edge = CadHudPresentation.layoutPanel(true, 30,
+                1300, -300, 120, 300, 1200, refW(3) * 1.6f, refH() * 1.6f, 1.0, DENSITY, 1080,
+                2000);
+        assertTrue(edge.visible);
+        assertTrue(edge.placement == CadHudPresentation.PANEL_AWAY
+                || edge.placement == CadHudPresentation.PANEL_TOWARD);
+        assertInside(edge);
+        assertTrue("clear of the arrow's corridor", CadHudPresentation.panelClearance(edge)
+                >= CadHudPresentation.ARROW_CORRIDOR_DP * DENSITY);
+        final float len = (float) Math.hypot(-300, 120);
+        final float back = -((edge.centreX - 30) * (-300 / len) + (edge.centreY - 1300) * (120 / len));
+        assertTrue("slid back no further than its own extent along the arrow: " + back,
+                back <= edge.hitWidth * 300 / len + edge.hitHeight * 120 / len + 0.5f);
         // Nowhere a whole panel fits (a corner): hidden WHOLE, never partial.
         final CadHudPresentation.PanelLayout corner = CadHudPresentation.layoutPanel(true, 1075,
-                5, 1, -1, Float.NaN, Float.NaN, 3, 1.0, DENSITY, 1080, 2000);
+                5, 1, -1, Float.NaN, Float.NaN, refW(3), refH(), 1.0, DENSITY, 1080, 2000);
         assertFalse(corner.visible);
         // The point behind the camera or off screen: hidden, not guessed.
         assertFalse(CadHudPresentation.layoutPanel(false, 540, 1000, 1, 0, Float.NaN, Float.NaN,
-                3, 1.0, DENSITY, 1080, 2000).visible);
+                refW(3), refH(), 1.0, DENSITY, 1080, 2000).visible);
         assertFalse(panel(-20, 1000, 1, 0, 3, 1.0).visible);
         // Every visible placement over a sweep is wholly inside the viewport.
         for (int x = 0; x <= 1080; x += 60) {
@@ -330,6 +356,14 @@ public final class CadHudPresentationTest {
             assertTrue("at least 48 dp each way", p.hitWidth >= hit && p.hitHeight >= hit);
             assertTrue("covering the whole drawn plate",
                     p.hitWidth >= p.plateWidth && p.hitHeight >= p.plateHeight);
+            assertEquals("in whole pixels", Math.rint(p.hitWidth), p.hitWidth, 0.0);
+            // A plate measured a pixel or two wider than the dp sum (per-child
+            // rounding) is still covered: the box reasoned about is the box drawn.
+            final CadHudPresentation.PanelLayout wide = CadHudPresentation.layoutPanel(true, 300,
+                    1000, 80, 0, Float.NaN, Float.NaN, refW(3) + 2.0f, refH() + 1.0f, scale,
+                    DENSITY, 1080, 2000);
+            assertTrue(wide.hitWidth >= (refW(3) + 2.0f) * wide.scale
+                    && wide.hitHeight >= (refH() + 1.0f) * wide.scale);
             // Every drawn glyph centre is owned by the ONE proxy, whatever the zoom.
             for (int i = 0; i < 3; i++) {
                 final float gx = p.centreX

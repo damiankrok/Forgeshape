@@ -797,7 +797,7 @@ final class CadExtrudeCanvasView extends FrameLayout {
                 NativeViewport.CAD_EXTRUDE_LEADER_ON_SCREEN,
                 NativeViewport.CAD_EXTRUDE_LEADER_START_X);
         lastLayout = layout;
-        final CadHudPresentation.PanelLayout panel = layoutPanel(iconCount, scale);
+        final CadHudPresentation.PanelLayout panel = layoutPanel(scale);
         // The whole annotation collapses together or not at all: the value
         // never outlives the panel beside it, nor the panel the value.
         lastCollapsed = CadHudPresentation.annotationCollapsed(
@@ -897,18 +897,22 @@ final class CadExtrudeCanvasView extends FrameLayout {
      * the shaft's middle (the label anchor) to that point, and the leader's end
      * tells which side of the shaft the leader stands on.
      */
-    private CadHudPresentation.PanelLayout layoutPanel(int iconCount, double scale) {
+    private CadHudPresentation.PanelLayout layoutPanel(double scale) {
         final boolean head = tool[NativeViewport.CAD_EXTRUDE_HEAD_ON_SCREEN] != 0.0;
         final float headX = (float) tool[NativeViewport.CAD_EXTRUDE_HEAD_X];
         final float headY = (float) tool[NativeViewport.CAD_EXTRUDE_HEAD_Y];
         final boolean leader = tool[NativeViewport.CAD_EXTRUDE_LEADER_ON_SCREEN] != 0.0;
+        // The plate's OWN measured reference box (its glyph count already
+        // bound): per-child pixel rounding makes it differ from the dp sum by
+        // a pixel or two, and the proxy must cover what is actually drawn.
+        anchorSpace.measureUnderParent(plate);
         return CadHudPresentation.layoutPanel(head, headX, headY,
                 headX - (float) tool[NativeViewport.CAD_EXTRUDE_LABEL_X],
                 headY - (float) tool[NativeViewport.CAD_EXTRUDE_LABEL_Y],
                 leader ? (float) tool[NativeViewport.CAD_EXTRUDE_LEADER_END_X] : Float.NaN,
                 leader ? (float) tool[NativeViewport.CAD_EXTRUDE_LEADER_END_Y] : Float.NaN,
-                iconCount, scale, density, anchorSpace.viewportWidth(),
-                anchorSpace.viewportHeight());
+                plate.getMeasuredWidth(), plate.getMeasuredHeight(), scale, density,
+                anchorSpace.viewportWidth(), anchorSpace.viewportHeight());
     }
 
     /**
@@ -1064,7 +1068,6 @@ final class CadExtrudeCanvasView extends FrameLayout {
         }
         plate.setVisibility(VISIBLE);
         panelProxy.setVisibility(VISIBLE);
-        anchorSpace.measureUnderParent(plate);
         if (plate.getScaleX() != panel.scale) {
             plate.setScaleX(panel.scale);
             plate.setScaleY(panel.scale);
@@ -1073,8 +1076,8 @@ final class CadExtrudeCanvasView extends FrameLayout {
         // what the shared placement writes for a box of the scaled size.
         anchorSpace.place(plate, panel.centreX, panel.centreY,
                 plate.getMeasuredWidth() * panel.scale, plate.getMeasuredHeight() * panel.scale);
-        final int hitW = Math.round(panel.hitWidth);
-        final int hitH = Math.round(panel.hitHeight);
+        final int hitW = (int) panel.hitWidth;
+        final int hitH = (int) panel.hitHeight;
         if (hitW != appliedHitWidth || hitH != appliedHitHeight) {
             final ViewGroup.LayoutParams params = panelProxy.getLayoutParams();
             params.width = hitW;

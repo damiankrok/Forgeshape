@@ -568,9 +568,11 @@ final class CadHudPresentation {
      * point along the arrow's screen direction, with the proxy's near edge a
      * clear corridor away from the point; if that box would leave the viewport
      * it tries beside the point, away from the leader first, then on the
-     * leader's side; if no whole box fits, the panel is hidden WHOLE. It is
-     * never clamped onto the screen away from the arrow and never loses an
-     * icon to an edge.
+     * leader's side, each allowed to slide back along the shaft by at most its
+     * own length (so it still stands level with the point, and still a clear
+     * corridor off the arrow); if no whole box fits, the panel is hidden
+     * WHOLE. It is never clamped onto the screen away from the arrow and never
+     * loses an icon to an edge.
      *
      * @param headOnScreen whether native projected the arrow's point
      * @param headX        the arrow's drawn point, viewport px
@@ -579,23 +581,29 @@ final class CadHudPresentation {
      * @param axisY        the same, y; a near-zero direction reads as screen right
      * @param leaderX      a point on the leader, to tell its side; NaN if none
      * @param leaderY      the same, vertically
-     * @param iconCount    the panel's glyph count ({@link #panelIconCount})
+     * @param plateWidth   the plate's MEASURED width at scale 1.0, px — the view's
+     *                     own pixel-rounded box, so the box reasoned about here
+     *                     is the box drawn ({@link #panelReferenceWidthDp} x
+     *                     density up to rounding)
+     * @param plateHeight  the same, vertically
      * @param scale        native's camera-attached multiplier
      * @param density      display density, px per dp
      * @param viewportW    the viewport width, px
      * @param viewportH    the viewport height, px
      */
     static PanelLayout layoutPanel(boolean headOnScreen, float headX, float headY, float axisX,
-                                   float axisY, float leaderX, float leaderY, int iconCount,
-                                   double scale, float density, float viewportW,
-                                   float viewportH) {
+                                   float axisY, float leaderX, float leaderY, float plateWidth,
+                                   float plateHeight, double scale, float density,
+                                   float viewportW, float viewportH) {
         final PanelLayout out = new PanelLayout();
         out.scale = visualScale(scale);
-        out.plateWidth = panelReferenceWidthDp(iconCount) * out.scale * density;
-        out.plateHeight = panelReferenceHeightDp() * out.scale * density;
+        out.plateWidth = plateWidth * out.scale;
+        out.plateHeight = plateHeight * out.scale;
+        // Whole pixels, rounded UP: the proxy is a view with an integer box,
+        // and it must never be a pixel short of the plate it covers.
         final float hit = HIT_DP * density;
-        out.hitWidth = Math.max(hit, out.plateWidth);
-        out.hitHeight = Math.max(hit, out.plateHeight);
+        out.hitWidth = (float) Math.ceil(Math.max(hit, out.plateWidth));
+        out.hitHeight = (float) Math.ceil(Math.max(hit, out.plateHeight));
         out.anchorX = headX;
         out.anchorY = headY;
         if (!headOnScreen || Float.isNaN(headX) || Float.isNaN(headY)
@@ -624,25 +632,43 @@ final class CadHudPresentation {
         final float clear = (ARROW_CORRIDOR_DP + PANEL_CLEAR_DP) * density;
         final float[][] candidates = {{dx, dy}, {px, py}, {-px, -py}};
         final int[] names = {PANEL_BEYOND, PANEL_AWAY, PANEL_TOWARD};
+        // How far a BESIDE placement may slide back along the shaft: at most
+        // the box's own extent along the arrow, so some of it still stands
+        // level with the point and it reads as belonging to the tip. Sliding
+        // along the arrow keeps the perpendicular clearance, so the box never
+        // enters the arrow's grab corridor.
+        final float alongExtent = out.hitWidth * Math.abs(dx) + out.hitHeight * Math.abs(dy);
         for (int i = 0; i < candidates.length; i++) {
             final float ux = candidates[i][0];
             final float uy = candidates[i][1];
             // Half the proxy box's extent along u: its support in that direction.
             final float half = 0.5f * (out.hitWidth * Math.abs(ux) + out.hitHeight * Math.abs(uy));
-            final float cx = headX + ux * (clear + half);
-            final float cy = headY + uy * (clear + half);
-            if (cx - out.hitWidth * 0.5f >= 0.0f && cy - out.hitHeight * 0.5f >= 0.0f
-                    && cx + out.hitWidth * 0.5f <= viewportW
-                    && cy + out.hitHeight * 0.5f <= viewportH) {
-                out.visible = true;
-                out.placement = names[i];
-                out.centreX = cx;
-                out.centreY = cy;
-                return out;
+            final float baseX = headX + ux * (clear + half);
+            final float baseY = headY + uy * (clear + half);
+            final int slides = i == 0 ? 0 : PANEL_SLIDE_STEPS;
+            for (int step = 0; step <= slides; step++) {
+                final float back = slides == 0 ? 0.0f : alongExtent * step / slides;
+                final float cx = baseX - dx * back;
+                final float cy = baseY - dy * back;
+                if (cx - out.hitWidth * 0.5f >= 0.0f && cy - out.hitHeight * 0.5f >= 0.0f
+                        && cx + out.hitWidth * 0.5f <= viewportW
+                        && cy + out.hitHeight * 0.5f <= viewportH) {
+                    out.visible = true;
+                    out.placement = names[i];
+                    out.centreX = cx;
+                    out.centreY = cy;
+                    return out;
+                }
             }
         }
         return out;
     }
+
+    /**
+     * The deterministic steps a beside placement tries while sliding back along
+     * the shaft: 0, 1/4, 1/2, 3/4 and all of the box's extent along the arrow.
+     */
+    static final int PANEL_SLIDE_STEPS = 4;
 
     /**
      * Who owns a touch at {@code (x, y)}: the panel's ONE group proxy, or
