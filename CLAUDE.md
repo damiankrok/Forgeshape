@@ -533,16 +533,30 @@ on the host, with no device, and is the fast native loop.
   be merged is refused by name with the selection standing as it was. The
   union is hatched; a hole it leaves open stays EMPTY. A single simple region
   still extrudes through the unchanged R0 float path, bit-identical to every
-  earlier build. **The planar arrangement is DERIVED and not yet wired**
-  (`CAD-PLANAR-FACE-PF-S1`): `forgeshape_sketch_arrangement` splits the
-  supported curves (line, polyline, rectangle, circle, arc — never a spline,
-  refused by name) at analytic intersections and T-junctions into atomic faces
-  named by a canonical `PlanarFaceRef` built only from entity ids, edge-local
-  indices and per-pair intersection ordinals — never a coordinate, index,
-  tessellation or triangle — and resolved by exact equality with no fallback.
-  Since `CAD-V6-S1` its one reader is the validation of a STORED `PlanarFaces`
-  selection (below); nothing in the session, JNI or UI reads it, and no
-  regeneration path does.
+  earlier build. **The planar arrangement is DERIVED, and a sketch whose
+  curves cross is extruded by its atomic FACES** (`CAD-PLANAR-FACE-PF-S1`,
+  `CAD-V6-S2`): `forgeshape_sketch_arrangement` splits the supported curves
+  (line, polyline, rectangle, circle, arc — never a spline, refused by name) at
+  analytic intersections and T-junctions into atomic faces named by a canonical
+  `PlanarFaceRef` built only from entity ids, edge-local indices and per-pair
+  intersection ordinals — never a coordinate, index, tessellation or triangle —
+  and resolved by exact equality with no fallback. `sketchRequiresPlanarFaces`
+  is the ONE predicate that chooses the mode at Finish (the arrangement is Ok,
+  some face is bounded by a proper fragment, and the face count differs from
+  the loop-region count); a sketch it does not choose stays `LoopRegions`,
+  bit-identical to every earlier build. In PlanarFaces mode a tap toggles the
+  face under the finger, rows are TRANSIENT handles (never stored), and an
+  exact loop region maps to its one identical face or is refused
+  (`PlanarFaceUnresolved`). `mergePlanarFaces` unions the chosen faces on the
+  arrangement's own half-edges — a shared fragment cancels, a node reused
+  across or within loops is `PinchedSelection` (refused as
+  `OverlappingRegions`) — and the union is extruded by the same prism
+  generator, previewed as the candidate, hatched cell by cell, and fed to New
+  Body, Add or Cut. A union-boundary fragment is ONE side face: a fragment
+  that is its whole source edge keeps the legacy token, a proper piece wears a
+  FRAGMENT token (`CadFaceToken` with its two `ArrangementCut`s, file code 4,
+  `CADB` v6 only), and a curved one is never eligible. A topology edit that
+  loses a stored face is refused, never retargeted.
 - **A CAD Body's sketches are a TABLE, and a feature references one BY ID**
   (`CAD-V6-S1`, `CADB` v6). `CadBodyState::sketches` holds every retained
   sketch as a `CadSketchRecord` with a body-local, non-zero `CadSketchId`
@@ -562,16 +576,15 @@ on the host, with no device, and is the fast native loop.
   implicit id 1 and New Body, the two facts every v1..v5 record implies. A
   selection states its kind explicitly — `LoopRegions` or `PlanarFaces` — and
   a `PlanarFaces` selection is VALIDATED (canonical form, then exact
-  resolution against the sketch's arrangement, no fallback) but NOT yet
-  regenerated (`PlanarFaceRegenerationUnavailable`), created by no product
-  path, and refused on load by `runtimeCanEvaluateProject`. The codec writes
+  resolution against the sketch's arrangement, no fallback) and, since
+  `CAD-V6-S2`, regenerated, created by the sketch session and loaded like any
+  other. The codec writes
   `CADB` v6 ONLY when `cadBodyStateLegacyRepresentable` is false, reads
   v1..v5 into the table as one sketch per feature (ids 1..n in chain order;
   two identical inline sketches stay two), and the fingerprint mixes a v6
   block only outside that predicate — so every legacy project keeps its bytes
   and its fingerprint. **Not this stage:** creating, sharing, deleting or
-  browsing sketches from the UI, session tapping of planar faces, and
-  regeneration, preview or Add/Cut from them.
+  browsing sketches from the UI (retained-sketch mobile UX, `CAD-V6-S3`).
 - **An Add or a Cut changes the SAME body, through a retained feature chain**
   (`CAD-VERTICAL-SLICE-R1`, `forgeshape_cad_body.{h,cpp}`,
   `forgeshape_cad_feature.{h,cpp}`). After its first New Body feature a CAD

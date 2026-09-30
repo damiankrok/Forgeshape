@@ -471,9 +471,9 @@ uint32_t appendCadLaterFeatureWithSketch(CadBodyState* state, CadFeatureOperatio
 // v6, so an unchanged legacy project keeps its bytes.
 bool cadBodyStateLegacyRepresentable(const CadBodyState& state);
 
-// Whether any feature selects PlanarFaces. Such a state is valid truth and
-// round-trips through `CADB` v6, but this build cannot regenerate it
-// (`PlanarFaceRegenerationUnavailable`), so the runtime refuses to LOAD it.
+// Whether any feature selects PlanarFaces. Such a state is valid truth, is
+// regenerated like any other since `CAD-V6-S2`, and round-trips only through
+// `CADB` v6.
 bool cadBodyStateUsesPlanarFaces(const CadBodyState& state);
 
 // The number of features in the chain, the base included.
@@ -520,9 +520,8 @@ CadStatus validateCadBodyState(const CadBodyState& state,
                                ProfileExtraction* outProfiles = nullptr);
 
 // One feature's own rule, without the chain: sketch, extent, regions.
-// `outRegions` receives the region extraction on success. A PlanarFaces
-// selection is refused here as `PlanarFaceRegenerationUnavailable`: this is the
-// rule for a feature that is REGENERATED, and faces are not yet.
+// `outRegions` receives the region extraction on success (empty for a
+// PlanarFaces selection, which is resolved and merged here instead).
 CadStatus validateCadFeatureGeometry(const CadSketch& sketch, const ExtrudeFeature& extrude,
                                      SketchRegionExtraction* outRegions = nullptr);
 

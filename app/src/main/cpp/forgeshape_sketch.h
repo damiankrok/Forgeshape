@@ -225,9 +225,8 @@ enum class CadStatus : uint8_t {
     PlanarFaceCapExceeded,
     // The arrangement found a degenerate cycle (`ArrangementStatus::DegenerateFace`).
     PlanarFaceDegenerate,
-    // The selection is valid, but this build does not yet regenerate a solid
-    // from planar faces, nor place a sketch on a face of such a feature.
-    // Refused by name rather than approximated (`CAD-V6-S1`; wired in S2).
+    // Retired by `CAD-V6-S2`, which regenerates planar faces: no path returns
+    // it any more. Kept so every later code keeps its number across JNI.
     PlanarFaceRegenerationUnavailable,
 };
 

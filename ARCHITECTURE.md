@@ -2769,11 +2769,43 @@ are the doors; `CadFeatureView` points INTO the table. `ExtrudeFeature` carries
 an explicit `CadSelectionKind`: `LoopRegions` (the v5 region fields) or
 `PlanarFaces` (canonical `PlanarFaceRef`s). `validatePlanarFaceSelection`
 checks the canonical form structurally and resolves every face by exact
-equality against `deriveSketchArrangement` of the named sketch; a face selection
-is NOT regenerated yet (`PlanarFaceRegenerationUnavailable`), nothing in the
-session or JNI creates one, and `runtimeCanEvaluateProject` refuses to load one.
-`validateCadChain` is the chain walk in validating mode — a face feature is
-validated and stepped over, and only what would need its faces refuses.
+equality against `deriveSketchArrangement` of the named sketch, then merges
+the chosen faces (below). `validateCadChain` is the chain walk in validating
+mode.
+
+**Planar-face runtime (`CAD-V6-S2`).** A PlanarFaces feature is derived and
+regenerated like a LoopRegions one; nothing refuses it any more
+(`PlanarFaceRegenerationUnavailable` is retired but keeps its number).
+- *Mode.* `sketchRequiresPlanarFaces` (`forgeshape_cad_body`) is the one
+  predicate: the arrangement is Ok, some face is bounded by a proper fragment,
+  and the face count differs from the loop-region count. `SketchSession::finish`
+  asks it; otherwise the session stays in LoopRegions, bit-identical to before.
+  In PlanarFaces mode the session holds the arrangement (`arrangement_`) and
+  each face's polygon (`faceShapes_`); a tap hit-tests those, JNI lists faces
+  by TRANSIENT handle (`index + 1`, never stored), and a loop region maps to
+  its one identical face (`regionAsPlanarFace`) or is refused
+  (`PlanarFaceUnresolved`). A reopen or an edit re-resolves the stored refs
+  exactly; one that no longer resolves clears the selection and says so
+  (`selectionLost`), never retargets.
+- *Union.* `mergePlanarFaces` (`forgeshape_sketch_arrangement`) walks the
+  arrangement's own half-edges: a half-edge whose twin is also chosen is
+  interior and cancels, the rest chain by successor into loops, holes are
+  re-oriented and owned by the smallest containing outer loop, and a node
+  reused across or within loops is `PinchedSelection` (refused as
+  `OverlappingRegions`). Each loop keeps the fragments it stands on.
+- *Faces and lineage.* `derivePlanarFeature` (`forgeshape_cad_feature`) emits
+  CapPlane, CapFar, then ONE Side per union-boundary FRAGMENT — never per
+  facet, so a tessellation count never enters a lineage. A fragment that is its
+  whole source edge keeps the legacy token; a proper piece wears a fragment
+  token (`CadFaceToken::fragment` with its two `ArrangementCut`s; code
+  `0x03 << 56 | FNV-1a64(...)`, file code 4, `CADB` v6 only — so a fragment
+  token anywhere makes a state not legacy-representable). A curved fragment
+  and every face of a Cut are ineligible. `appendPrism` builds the solid for
+  both kinds of selection.
+- *Chooser.* `refreshChosenSupport` (`forgeshape_support_chooser`) re-validates
+  an aimed support against the scene at confirm time and recomputes its frame;
+  a support that went stale is refused (`FORGESHAPE_SUPPORT_CHOOSER_STALE`),
+  and a Construction Undo/Redo that changed the scene cancels the chooser.
 `cadBodyStateLegacyRepresentable` is the ONE statement of which states a
 `CADB` v1..v5 record can hold; the codec writes v6 only outside it, reads
 v1..v5 into the table as one sketch per feature (ids 1..n), and the fingerprint
