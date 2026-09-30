@@ -2745,9 +2745,24 @@ carry a copy, so two features may extrude one sketch (an edit to it is what
 both read) and a sketch no feature extrudes may be retained (held to its own
 rule and its support against the whole chain). Exactly one sketch is the ROOT —
 the base's — and every other stands on a face of one of the body's own
-features. `nextFeatureId` is a stored high-water mark beside it, so neither a
-deleted feature's id nor its sketch's is ever minted again within a state
-lineage (a history restore returns to a state in which it was never minted).
+features. `nextFeatureId` is a stored high-water mark beside it.
+
+**Id lifetime (`CAD-V6-S1-C1`; the one definition is the `CadSketchId`
+comment in `forgeshape_cad_body.h`).** A feature id and a sketch id are unique
+along ONE FORWARD HISTORY BRANCH. `CadBody::applyState` — the one door every
+committed edit takes — refuses to LOWER either mark (`HighWaterInvalid`), so an
+id a committed deletion freed is never minted again. Undo restores the whole
+snapshot, marks included, so the next edit after an Undo may mint an id that
+only the redo step held; that edit's `commitEdit` is the same call that clears
+the redo stack, and every Undo-reachable state holds only ids below the current
+marks. Cancelled and refused edits burn nothing. It is deliberately not "for
+the body's lifetime": the marks live in the snapshot, so Undo to a saved
+project is byte- and fingerprint-equal to the save, where a floor outside the
+snapshot would make it read unsaved and write `CADB` v6 for invisible
+metadata. It is safe because nothing outside a snapshot holds one of these ids
+across an Undo — the sketch session is exclusive with Undo/Redo, the feature
+list re-reads on every refresh, no renderer or picking state names one, and no
+`CadSketchId` crosses JNI.
 `cadBaseSketch`, `findCadSketchRecord`, `cadFeatureSketchRecord`,
 `makeCadBodyState`, `addCadSketchRecord` and `appendCadLaterFeature[WithSketch]`
 are the doors; `CadFeatureView` points INTO the table. `ExtrudeFeature` carries

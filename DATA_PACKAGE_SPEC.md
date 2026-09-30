@@ -903,7 +903,11 @@ is one migration and not two:
 
 Plus the two id high-water marks, `nextSketchId` and `nextFeatureId`, so an id
 a deleted feature or sketch wore is never minted again (the feature-id reuse
-the CAD architecture audit flagged).
+the CAD architecture audit flagged). A file states the marks of the state it
+was written from and nothing else: they describe the forward history branch
+that reached that state (`ARCHITECTURE.md`, id lifetime), and a reopened
+project continues from them. No history, redo branch or runtime floor is
+stored.
 
 ### When v6 is written, and what an older reader does
 

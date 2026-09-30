@@ -188,7 +188,8 @@ enum class CadStatus : uint8_t {
     // table carries no sketch at all.
     SketchNotFound,
     // A stored high-water mark (`nextSketchId`, `nextFeatureId`) is not above
-    // every id it has minted, so the next allocation could collide.
+    // every id it has minted, so the next allocation could collide -- or an
+    // edit would LOWER one, handing a freed id on (`CadBody::applyState`).
     HighWaterInvalid,
     // More retained sketches than one body may carry.
     TooManySketches,

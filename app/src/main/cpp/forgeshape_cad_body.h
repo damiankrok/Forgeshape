@@ -307,10 +307,39 @@ bool sameCadFeatureSupport(const CadFeatureSupport& a, const CadFeatureSupport& 
 // ---------------------------------------------------------------------------
 
 // A retained sketch's identity: body-local, non-zero, minted from the body's
-// `nextSketchId` and never reused within one state lineage -- deleting a
-// feature does not hand its sketch's id to the next sketch. It is a semantic
-// id: never an index into the table, never renderer-derived, never a hash of
-// the sketch's content (two sketches with identical entities are two sketches).
+// `nextSketchId`. It is a semantic id: never an index into the table, never
+// renderer-derived, never a hash of the sketch's content (two sketches with
+// identical entities are two sketches).
+//
+// How long a CadSketchId and a CadFeatureId live (`CAD-V6-S1-C1`) -- the ONE
+// definition; every other comment and document points here.
+//
+//   * An id is unique along ONE FORWARD HISTORY BRANCH: the body's states from
+//     its creation, or from the Open that loaded it, to the current one,
+//     through committed edits. A committed edit never LOWERS `nextSketchId` or
+//     `nextFeatureId` (`CadBody::applyState` refuses it by name), so an id a
+//     committed deletion freed is never minted again on that branch.
+//   * Undo restores the whole snapshot, the high-water marks with it, and Redo
+//     restores the forward one exactly. So the next edit after an Undo may
+//     mint an id that only the undone (redo) step held -- and the commit that
+//     mints it is the same `ConstructionHistory::commitEdit` call that clears
+//     the redo stack, so the two meanings never both exist in reachable
+//     history. Every Undo-reachable state of a body is its creation state or
+//     was reached from it through `applyState`, so every id it holds is below
+//     the current marks.
+//   * A cancelled or refused edit burns nothing: the session mints into its
+//     own candidate, and a cancelled Construction edit restores the marks.
+//   * The marks are persisted only where a legacy read would not derive them
+//     (`CADB` v6), so a reopened project continues from what its file states,
+//     and a project Undone back to its saved state is byte- and
+//     fingerprint-equal to that save.
+//
+// Deliberately NOT "for the body's lifetime": that needs an allocator outside
+// the snapshot, and then an Undo to a saved project would read unsaved and
+// write `CADB` v6 for invisible metadata. What makes the branch rule safe is
+// that nothing outside a snapshot holds one of these ids across an Undo: the
+// sketch session is exclusive with Undo/Redo, the feature list re-reads on
+// every refresh, and nothing above JNI sees a CadSketchId at all.
 using CadSketchId = uint32_t;
 constexpr CadSketchId kNoCadSketch = 0;
 
@@ -356,7 +385,7 @@ inline CadSketchRecord emptyRootCadSketchRecord() {
 struct CadFeature {
     // Stable within the body, strictly ascending along the chain, above the
     // base's kCadFeatureId, minted from `CadBodyState::nextFeatureId`. Never an
-    // index.
+    // index. Lifetime: see `CadSketchId`.
     uint32_t featureId = 0;
     CadFeatureOperation operation = CadFeatureOperation::Add;
     CadSketchId sketchId = kNoCadSketch;
@@ -379,7 +408,8 @@ struct CadBodyState {
     // THE sketch table, strictly ascending by id. The only owner of authored
     // sketch truth in the body. A default state carries one empty root sketch.
     std::vector<CadSketchRecord> sketches{emptyRootCadSketchRecord()};
-    // The id the next retained sketch takes: above every id in the table.
+    // The id the next retained sketch takes: above every id in the table, and
+    // never lowered by a committed edit (lifetime: see `CadSketchId`).
     CadSketchId nextSketchId = kBaseCadSketchId + 1u;
     // Feature 1: the base New Body extrusion of the root sketch.
     CadSketchId baseSketchId = kBaseCadSketchId;
@@ -387,9 +417,10 @@ struct CadBodyState {
     // Features 2..n, in application order. Empty for every body any earlier
     // version created.
     std::vector<CadFeature> laterFeatures;
-    // The id the next appended feature takes: above every feature id ever
-    // minted in this lineage, so a deleted feature's id is not handed on
-    // (the audit's id-reuse finding). Derived as `last + 1` for v1..v5.
+    // The id the next appended feature takes: above every feature id minted on
+    // this forward history branch, so a deleted feature's id is not handed on
+    // (the audit's id-reuse finding; lifetime: see `CadSketchId`). Derived as
+    // `last + 1` for v1..v5.
     uint32_t nextFeatureId = kCadFeatureId + 1u;
 };
 
@@ -601,6 +632,10 @@ public:
     // FAILS CLOSED: the whole state is validated through `validateCadBodyState`
     // AND regenerated once, and nothing is written unless both pass. An
     // identical request reports Ok with `outChanged` false and counts nothing.
+    // A request that would LOWER either id high-water mark is refused
+    // (`HighWaterInvalid`): this is the one door every forward edit takes, and
+    // that refusal is what keeps an id unique along the forward branch (see
+    // `CadSketchId`). History restores use `restoreState` instead.
     CadStatus applyState(const CadBodyState& requested, bool* outChanged = nullptr);
 
     // The regenerated mesh for the current state. The current state was

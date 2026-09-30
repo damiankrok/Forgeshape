@@ -1248,6 +1248,20 @@ CadStatus CadBody::applyState(const CadBodyState& requested, bool* outChanged) {
     if (outChanged != nullptr) {
         *outChanged = false;
     }
+    // A forward edit never LOWERS a high-water mark. This is what makes an id
+    // unique along the forward branch: every state the Undo stack can return
+    // to is the body's creation state or was reached from it through this
+    // door, so every id it holds is below the current marks, and the only
+    // states that can hold an id the next mint re-uses are on the REDO side --
+    // which the commit that mints it clears (`CadSketchId`,
+    // forgeshape_cad_body.h). A history restore is not an edit and goes
+    // through `restoreState`, which moves the marks back with the rest of the
+    // snapshot.
+    if (requested.nextFeatureId < state_.nextFeatureId
+        || requested.nextSketchId < state_.nextSketchId) {
+        ++rejectedUpdates_;
+        return CadStatus::HighWaterInvalid;
+    }
     // Regenerate ONCE into a scratch mesh: the only proof a state is usable is
     // that the whole path runs, and running it here is what makes the refusal
     // land before a byte of the body has moved.

@@ -1,36 +1,41 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.89.0
+**Status Version:** 0.90.0
 **Updated:** 2026-09-30
-**Latest closeout:** **`CAD-V6-S1-MODEL-CODEC-R1` — `PASS-CAD-V6-S1-MODEL-CODEC`**
-(2026-09-30), **TECH PASS / INTERMEDIATE BRANCH / NOT MERGED.** On
-`feature/cad-v6-sketch-face-r1` only; `main` is unchanged at `6c9f156` and
-describes the product as it ships. **A CAD Body's sketches are a TABLE and a
-feature references one by id; `CADB` v6 persists that and planar-face
-selections.** Record: `artifacts/cad-v6-s1/SUMMARY.md` (BEFORE.md written first).
+**Latest closeout:** **`CAD-V6-S1-C1-ID-LIFETIME-R1` — `PASS-CAD-V6-S1-C1-ID-LIFETIME`**
+(2026-09-30), **TECH PASS / V6 INTERMEDIATE BRANCH / NOT MERGED.** On
+`feature/cad-v6-sketch-face-r1` only; `main` is unchanged at `6c9f156`.
+**A feature id and a sketch id are unique along ONE FORWARD HISTORY BRANCH,
+and that is now enforced, not incidental.** Record:
+`artifacts/cad-v6-s1-c1/SUMMARY.md` (BEFORE.md and five BEFORE checks first).
 
-- **Model.** `CadBodyState` owns `CadSketchRecord`s (body-local, non-zero
-  `CadSketchId`, placement, authored sketch) with `nextSketchId`, and a stored
-  `nextFeatureId`; no feature carries a sketch copy, two features may extrude
-  one sketch, and a sketch no feature extrudes may be retained. Placement moved
-  onto the sketch record. The base keeps its implicit id 1 / New Body.
-- **Selection variant.** `LoopRegions` (v5) or `PlanarFaces` (PF-S1
-  `PlanarFaceRef`, canonical, resolved by exact equality). A face selection is
-  validated and persisted but NOT regenerated
-  (`PlanarFaceRegenerationUnavailable`), created by no product path, and
-  refused on load by `runtimeCanEvaluateProject`.
-- **Format.** `CADB` v6 (`DATA_PACKAGE_SPEC.md` §7g), written ONLY when a body
-  says something v1..v5 cannot. v1..v5 read into the table one sketch per
-  feature. 12 new fixtures (5 valid, 7 refusals), production = independent
-  PowerShell = checked-in bytes (`CADV6_P11`); the 44 older fixtures
-  byte-identical; the fingerprint of every legacy-shaped state unchanged.
-- **Scope held.** No session, JNI, Android, renderer or UI change for faces.
-- **Gates.** Host `HOST_SELFTESTS_OK (3892 checks, 0 failed)` (CAD_FEATURE
-  223 → 263); NDK debug + release build; `CI FAST` `36765133987` on the
-  tested candidate `b42a5ab`: **success** (clean build of 124 tasks, JVM
-  tests, release guard 0/0, `FORGE_CORPUS_PARITY=PASS (56/56
-  byte-identical)`, device-free guards). **CI DEVICE NOT RUN. FullSharded NOT
-  RUN** — reserved, once, for the completed v6 migration.
+- **Measured before.** Undo rewinds both high-water marks with the snapshot and
+  the next Add re-mints feature 2 / sketch 2; the redo step holds the undone
+  identity until the minting commit clears it; cancelled edits burn nothing;
+  Undo to a saved v1 state is byte- and fingerprint-equal.
+- **Decision: Model A (history-branch identity), made structural.**
+  `CadBody::applyState`, the one door every committed CAD edit takes, refuses to
+  LOWER either mark (`HighWaterInvalid`), so every Undo-reachable state holds
+  only ids below the current marks and a re-mint can collide only with the redo
+  side its own commit clears. Model B was rejected on measurement: a floor kept
+  in the state makes Undo-to-saved read unsaved and write `CADB` v6
+  (`CADV6C1_IDL_08`); a floor outside it is a second allocator truth. Nothing
+  outside a snapshot holds one of these ids across an Undo (inventory in
+  `BEFORE.md`). The one definition is the `CadSketchId` comment.
+- **Tests.** `CADV6C1_IDL_B01..B05` and `IDL_01..10` (forward delete, Undo,
+  Redo, Undo + new branch, two-level Undo, cancel, save/reopen, Undo-to-saved,
+  shared sketch, feature-face and cross-body `TopoRef` support).
+- **Format.** No `CADB` layout, version or fixture change; 56/56 corpus parity.
+- **Gates.** Host `HOST_SELFTESTS_OK (3907 checks, 0 failed)` (CAD_FEATURE
+  263 → 278). `CI FAST`: recorded below when it reports. **CI DEVICE NOT RUN.
+  FullSharded NOT RUN.** S2 not started.
+
+**Previous closeout:** **`CAD-V6-S1-MODEL-CODEC-R1` — `PASS-CAD-V6-S1-MODEL-CODEC`**
+(2026-09-30), TECH PASS / INTERMEDIATE BRANCH / NOT MERGED. A CAD Body's
+sketches are a TABLE and a feature references one by id; `CADB` v6 persists
+that and planar-face selections (validated, not yet regenerated, refused on
+load). 12 v6 fixtures; the 44 older byte-identical. Record:
+`artifacts/cad-v6-s1/SUMMARY.md`. Gates: `CI FAST` `36765133987` on `b42a5ab`.
 
 **Previous closeout:** **`CAD-PLANAR-FACE-PF-S1-ARRANGEMENT-R1` — `PASS-CAD-PLANAR-FACE-PF-S1`**
 (2026-09-30). The planar-arrangement engine (`forgeshape_sketch_arrangement`):
@@ -3929,11 +3934,15 @@ found lives in Git history.
   (mapped to "damaged" above JNI), the `runtimeCanEvaluateProject` code, not a
   dedicated one. S2 lifts the refusal by regenerating faces; until then the
   name is imprecise.
-- **A history restore returns a body to a state whose high-water marks were
-  never advanced**, so after Undo of an append the next append mints the same
-  feature and sketch id again. Nothing references an undone feature (its redo
-  step is dropped by the next act), so no reference can be retargeted; a
-  delete-feature or delete-sketch command must keep that true.
+- **A support-chooser selection survives an Undo and is not re-resolved at
+  confirm** (`confirmChosenSupportLocked` → `beginOnFace` trusts the stored
+  `TopoRef` and world frame). Found by `CAD-V6-S1-C1`; not an id-lifetime
+  defect. Worst case: a staged sketch framed on a face that has moved or gone.
+  Every commit re-validates the support, so it cannot land on the wrong face,
+  and it can never see a re-minted id (only a session commit mints, and every
+  session begin cancels the chooser). Id lifetime itself is settled (the
+  `CadSketchId` comment); a delete-feature or delete-sketch command inherits
+  it through `CadBody::applyState`.
 
 **FUNCTION-COUNCIL-R1 defects still open** (source-confirmed; the evidence is
 in `artifacts/function-council-r1/COUNCIL_FINDINGS.md` §1). D1 was closed by

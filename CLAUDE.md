@@ -552,7 +552,13 @@ on the host, with no device, and is the fast native loop.
   retained. Placement belongs to the sketch record: exactly one ROOT sketch
   (the base's, on its workplane or `TopoRef`), every other on a face of one of
   the body's own features. `nextFeatureId` is a stored high-water mark, so a
-  deleted feature's or sketch's id is never minted again. The base keeps its
+  deleted feature's or sketch's id is never minted again. **An id is unique
+  along ONE FORWARD HISTORY BRANCH** (`CAD-V6-S1-C1`; the one definition is
+  the `CadSketchId` comment): `CadBody::applyState` refuses to lower either
+  mark, Undo restores them with the snapshot, and an edit after Undo may
+  re-mint an id only the redo step held — in the same commit that clears
+  redo. Nothing outside a snapshot may hold one of these ids across an Undo.
+  The base keeps its
   implicit id 1 and New Body, the two facts every v1..v5 record implies. A
   selection states its kind explicitly — `LoopRegions` or `PlanarFaces` — and
   a `PlanarFaces` selection is VALIDATED (canonical form, then exact
