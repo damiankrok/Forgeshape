@@ -75,3 +75,16 @@ browser. `regenerateCadBody` refuses a face selection by name; the runtime
 refuses to load one (`runtimeCanEvaluateProject`). The one regeneration change:
 the `SupportFaceLost` check now runs only for a sketch that stands on a feature
 face, because a later feature re-extruding the ROOT sketch stands on none.
+
+## Gates
+
+| Gate | Result |
+| --- | --- |
+| Host self-tests | `HOST_SELFTESTS_OK (3892 checks, 0 failed)`; CAD_FEATURE 223 → 263 (40 `CADV6_*`) |
+| NDK debug + release (local, pinned 29.0.14206865) | built |
+| Release self-test guard (local and CI) | PASS — release 0 symbols / 0 strings on both ABIs |
+| Corpus parity | 56/56 byte-identical (44 legacy unchanged + 12 v6) |
+| `CI FAST` `36765133987` on tested candidate `b42a5ab` | **success** |
+| `CI DEVICE` | NOT RUN (no device-reachable change) |
+| FullSharded | NOT RUN (reserved for the completed v6 migration) |
+| Merge to `main` | NOT MERGED, by design |

@@ -26,9 +26,11 @@ selections.** Record: `artifacts/cad-v6-s1/SUMMARY.md` (BEFORE.md written first)
   byte-identical; the fingerprint of every legacy-shaped state unchanged.
 - **Scope held.** No session, JNI, Android, renderer or UI change for faces.
 - **Gates.** Host `HOST_SELFTESTS_OK (3892 checks, 0 failed)` (CAD_FEATURE
-  223 → 263); NDK debug + release build; `CI FAST` on the tested candidate:
-  see the S1 record. **CI DEVICE NOT RUN. FullSharded NOT RUN** — reserved,
-  once, for the completed v6 migration.
+  223 → 263); NDK debug + release build; `CI FAST` `36765133987` on the
+  tested candidate `b42a5ab`: **success** (clean build of 124 tasks, JVM
+  tests, release guard 0/0, `FORGE_CORPUS_PARITY=PASS (56/56
+  byte-identical)`, device-free guards). **CI DEVICE NOT RUN. FullSharded NOT
+  RUN** — reserved, once, for the completed v6 migration.
 
 **Previous closeout:** **`CAD-PLANAR-FACE-PF-S1-ARRANGEMENT-R1` — `PASS-CAD-PLANAR-FACE-PF-S1`**
 (2026-09-30). The planar-arrangement engine (`forgeshape_sketch_arrangement`):
