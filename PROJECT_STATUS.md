@@ -27,8 +27,10 @@ and that is now enforced, not incidental.** Record:
   shared sketch, feature-face and cross-body `TopoRef` support).
 - **Format.** No `CADB` layout, version or fixture change; 56/56 corpus parity.
 - **Gates.** Host `HOST_SELFTESTS_OK (3907 checks, 0 failed)` (CAD_FEATURE
-  263 → 278). `CI FAST`: recorded below when it reports. **CI DEVICE NOT RUN.
-  FullSharded NOT RUN.** S2 not started.
+  263 → 278); NDK debug + release built locally; release guard 0/0. `CI FAST`
+  `36775468595` on the tested candidate `ab5e071`: **success** (build, JVM
+  tests, release guard, `FORGE_CORPUS_PARITY` 56/56, device-free guards).
+  **CI DEVICE NOT RUN. FullSharded NOT RUN.** S2 not started.
 
 **Previous closeout:** **`CAD-V6-S1-MODEL-CODEC-R1` — `PASS-CAD-V6-S1-MODEL-CODEC`**
 (2026-09-30), TECH PASS / INTERMEDIATE BRANCH / NOT MERGED. A CAD Body's

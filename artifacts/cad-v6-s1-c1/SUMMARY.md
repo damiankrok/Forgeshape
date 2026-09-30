@@ -143,7 +143,7 @@ wrong face, and it cannot observe a re-minted id. Recorded as debt.
 | Corpus parity (local, pwsh) | 56/56 byte-identical; `testdata/forge/v1` unchanged |
 | NDK debug + release (local, pinned 29.0.14206865) | built (`GRADLE_EXIT=0`) |
 | Release self-test guard (local) | `RELEASE_SELFTEST_GUARD=PASS` — release 0 symbols / 0 strings on both ABIs |
-| `CI FAST` | see `PROJECT_STATUS.md` |
+| `CI FAST` `36775468595` on tested candidate `ab5e071` | **success** (build, JVM tests, release guard, corpus parity 56/56, device-free guards) |
 | `CI DEVICE` | NOT RUN |
 | FullSharded | NOT RUN |
 | Merge to `main` | NOT MERGED — **TECH PASS / V6 INTERMEDIATE BRANCH / NOT MERGED** |
