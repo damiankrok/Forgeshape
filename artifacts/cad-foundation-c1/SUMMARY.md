@@ -1,8 +1,8 @@
 # CAD-FOUNDATION-C1 — union of regions and a technical-leader extrude HUD
 
 Baseline `origin/main = 509de02`. Branch `feature/cad-foundation-c1-union-hud-r1`.
-Tested product candidate: `__PRODUCT_SHA__` (product `262cfc1` + the test-only
-correction `1fa1bec`). BEFORE evidence: `BEFORE.md` in this directory.
+Tested product candidate: `1fa1bec` (product `262cfc1` + the test-only
+correction `1fa1bec`; docs-only commits follow it). BEFORE evidence: `BEFORE.md` in this directory.
 
 ## What changed
 
@@ -42,7 +42,59 @@ reading and that an older build refuses a region-beside-its-hole list by name.
 
 ## Evidence
 
-__EVIDENCE__
+| Gate | Where | Result |
+| --- | --- | --- |
+| Tier 0 | `git diff --check` over every commit | clean |
+| Tier 1 native | `scripts/host-native-selftests.sh` (all 23 suites on the host) | `HOST_SELFTESTS_OK (3797 checks, 0 failed)`; `CAD_FEATURE` 168, `SKETCH_UX` 118, `CAD` 155, `CAD_A3` 66, `PROJECT` 256. Baseline was 3757. |
+| Tier 1 JVM | `:app:testDebugUnitTest` | 112 tests, 0 failures; `CadHudPresentationTest` 24 |
+| Compile | `:app:compileDebugAndroidTestJavaWithJavac`, `:app:assembleDebug` | green |
+| Corpus | `build-forge-corpus.ps1` regenerated locally and in CI | 44/44 byte-identical |
+| `CI FAST` | `36725810385` on `262cfc1`; `36728188104` on `1fa1bec` | success, success (`FORGE_CORPUS_PARITY=PASS (44/44)`) |
+| `CI DEVICE` attempt 1 | `36725813941` on `262cfc1`, union list of five classes | `FAIL-CI-CLOUD-DEVICE-PRODUCT`: 45 run, 3 failed, 480 s — all three test-side (below) |
+| `CI DEVICE` attempt 2 | `36728183647` on `1fa1bec`, the same union list | **PASS**: 23/23 startup tokens in order (capture 2; capture 1 had a proven liblog drop of 262 lines and was relaunched by policy), `OK (45 tests)`, 507 s instrumentation, about 16.5 min wall |
+
+Union list, feature under test first: `CadVerticalSliceTest`,
+`CadCanvasExtrudeTest`, `SketchExtrudeTest`, `CadExtrudeExtentTest`,
+`Ui3dStateCorrectionTest`. `JniBoundaryHardeningTest` was not added: no JNI
+signature changed (`cadExtrudeToolState` takes the same `double[]`, now read to
+42 slots). `Ui3dStateAuditTest` (a recorder that asserts only its harness) was
+updated and compiled but not run.
+
+Attempt 1's three failures, each root-caused and fixed in the TEST (`1fa1bec`),
+none in the product:
+
+1. `owner_rectangle_circle_region` — with the ring and the disk chosen, the
+   union's arrow stands at the rectangle's centre, on the disk; the test's tap
+   at (0,0) pressed the arrow (a drag), not the disk. Taps now pick the region
+   point farthest from the projected shaft.
+2. `merged_selection_feeds_same_body_add_and_cut` — a 0.2 m circle on the face
+   sketch's framing placed nothing (`entities` stayed 1). Larger geometry, and
+   the entity count is asserted before Finish.
+3. `Ui3dStateCorrectionTest.ui3dc1_11` still pinned the old 0.80 floor.
+
+Device measurements from attempt 1 (the same product bytes; attempt 2's
+markers were dropped by liblog, its assertions passed):
+
+- J1 `owner_rectangle_two_circles_union`: rectangle 11.2 m², A = B = 0.4994 m²;
+  committed O+A body 5.350284 m³ = (11.2 − 0.4994) × 0.5.
+- J5 `cadFoundationC1_theLeaderHudShrinksWithZoomAndKeepsItsProxies`
+  (Perspective, distances 5/9/16/30): scale 1.559 / 0.866 / 0.487 / 0.400,
+  glyph 115 / 64 / 36 / 29 px, value 18 / 12.1 / 11 / 11 sp; every proxy
+  ≥ 48 dp; the value on its leader at each step.
+- `compact_extrude_hud`: extent, operation and Flip proxies 126 × 126 px
+  (48 dp at 420 dpi) on the leader's line; the value rotated −28.1°, 13.3 sp.
+
+**FullSharded NOT RUN** (TEST-OWNER-04: focused evidence only).
+
+## OWNER review APK
+
+- Built by `CI FAST` `36728188104` from `1fa1bec` (the tested product candidate;
+  `1fa1bec` differs from `262cfc1` in androidTest sources only).
+- `app/build/outputs/apk/debug/app-debug.apk`, **10,879,410 bytes**,
+  SHA-256 **`a600d784e4ed422a4ee92f3e3c7a50f683e9bcb7a837b7d552a767f44316d35b`**.
+- Durable copies: the `ci-fast-evidence` artifact `11103603365` of that run
+  (expires 2026-10-14), and the file handed to the OWNER in the session.
+- This is emulator evidence only; it closes no physical-device gate.
 
 ## OWNER review (physical device) — OWNER REVIEW REQUIRED
 

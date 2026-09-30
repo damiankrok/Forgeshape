@@ -1,36 +1,49 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.85.0
+**Status Version:** 0.86.0
 **Updated:** 2026-09-30
-**Latest closeout:** **`FUNCTION-COUNCIL-C1` (D1) — `PASS-FUNCTION-COUNCIL-C1-D1`**
-(2026-09-29). **Import GLB is refused in Sculpt.** Record:
-`artifacts/function-council-c1-d1/SUMMARY.md`.
+**Latest closeout:** **`CAD-FOUNDATION-C1-UNION-HUD-R1` — `PASS-CAD-FOUNDATION-C1`**
+(2026-09-30). **A region selection is the union of its atomic regions, and the
+extrude HUD is a technical-drawing leader.** Record:
+`artifacts/cad-foundation-c1/SUMMARY.md` (BEFORE evidence beside it).
+**Visual feel is OWNER REVIEW REQUIRED** on a physical device.
 
-- **Reproduced before the fix.** On `a1b50f2` plus the new test only
-  (`CI DEVICE` `36641798987`, 3/3 red), an import in Sculpt did four things
-  while the mode stayed Sculpt:
-  - created six bodies and made the first one active;
-  - dropped the sculpt target, revision and undo to 0;
-  - recorded a Construction step;
-  - left the project unencodable (`UnresolvedReference`).
-- **Fixed in three layers on `f29f482`.**
-  - The import row is absent in Sculpt.
-  - A late picker result is refused before the file is read.
-  - `importGlbDurable` refuses `RefusedInSculpt` under the commit's lock.
-  - There is no Java mode flag.
-- **Neutrality asserted, format unchanged.** A refusal leaves the mode, the
-  active body, the sculpt target, the ids, the sculpt revision and both
-  undo depths unchanged. The same holds for the fingerprint, the project
-  bytes and the active body's flags. No format changed.
-- **Legal import unchanged.** After Back to Construction, the same file
-  imports as before.
-- **Gates on `f29f482`:**
-  - `CI FAST` `36643103708` green, 44/44 corpus parity.
-  - `CI DEVICE` `36643101662` attempt 2 green: 23/23 tokens,
-    `OK (31 tests)`, D1 class first. Attempt 1 was a dropped startup capture
-    before any test, classified as infrastructure in `TEST_EVIDENCE.md`.
-  - Host `GLTF` 282, `SCENE` 175 and `PROJECT` 256 checks, 0 failed.
+- **Union of regions.** A tap toggles exactly the region under the finger; a
+  region beside its own hole is legal and means their union
+  (`mergeSelectedRegions`, one parity rule over the nesting tree, one prism per
+  component). Rectangle O + circles A, B: O+A is the rectangle with only B's
+  hole, O+A+B the solid rectangle, A+B two disks — native truth table
+  `CADFC1_REG_01..07`, device J1–J4. Touching/crossing loops stay refused by
+  name; nothing is dropped silently.
+- **No format change.** The stored selection is still the atomic
+  `ProfileRegionRef` list in `CADB` v5; no section, version, codec or fixture
+  byte moved; the independent corpus regenerates 44/44 byte-identical. An
+  older build refuses a region-beside-its-hole list by name.
+- **One scale fact, one revision rule.** The extrude overlay read
+  `metersPerPixel` at the world origin while the hit test and HUD read it at the
+  arrow's base; `cadExtrudeManipulatorScale` is now the one read, at the base.
+  A camera-caused overlay rebuild now advances the overlay revision.
+- **Leader HUD.** A dimension leader in the overlay's `Dimension` range; the
+  value stands above it, rotated and upright; glyphs stand on its line; every
+  control is an invisible, unscaled ≥ 48 dp proxy; visual band 0.40..1.60,
+  glyph `28 dp × clamp(scale)`, value `clamp(14 sp × scale, 11, 18)` — all
+  OWNER-TUNABLE. `EditorWorkspaceView` unchanged.
+- **Gates.**
+  - Host: `HOST_SELFTESTS_OK (3797 checks, 0 failed)`; JVM 112/112.
+  - `CI FAST` `36725810385` (`262cfc1`) and `36728188104` (`1fa1bec`) green.
+  - `CI DEVICE` `36725813941` on `262cfc1`: 3/45 failed, all test-side,
+    root-caused in `SUMMARY.md` and fixed in `1fa1bec` (tests only).
+  - `CI DEVICE` `36728183647` on `1fa1bec`: **PASS**, 23/23 tokens,
+    `OK (45 tests)`, union list of five classes.
   - **FullSharded NOT RUN.**
+- **OWNER APK:** `CI FAST` `36728188104` artifact `11103603365`,
+  `app-debug.apk` 10,879,410 bytes, SHA-256
+  `a600d784e4ed422a4ee92f3e3c7a50f683e9bcb7a837b7d552a767f44316d35b`.
+
+**Previous closeout:** **`FUNCTION-COUNCIL-C1` (D1) — `PASS-FUNCTION-COUNCIL-C1-D1`**
+(2026-09-29). **Import GLB is refused in Sculpt.** Record:
+`artifacts/function-council-c1-d1/SUMMARY.md`. Gates on `f29f482`: `CI FAST`
+`36643103708`, `CI DEVICE` `36643101662` (`OK (31 tests)`); FullSharded not run.
 
 **Latest audit:** **`FABLE-CAD-ARCHITECTURE-AUDIT-R1` —
 `PASS-FABLE-CAD-ARCHITECTURE-AUDIT-R1`** (2026-09-30). A read-only CAD
@@ -148,7 +161,9 @@ What the owner asked for, and what now stands, measured on the CI emulator:
   control with its three-icon palette, the value centred on the shaft, the
   operation badge and Flip. Each control has a 48 dp hit area and a 24–32 dp
   glyph. The row covers **2.70 %** of the viewport, down from 6.78 %, and the
-  value stands **0.18 dp** from the shaft, down from 99.5 dp.
+  value stands **0.18 dp** from the shaft, down from 99.5 dp. *(Superseded by
+  `CAD-FOUNDATION-C1`: the row became a technical-drawing leader with the value
+  above it and 0.40..1.60 visual glyphs; see the latest closeout.)*
 - **Tool Labels.** A preference (Settings → Interface, default OFF) that adds
   captions to the HUD icons.
 - **Ready withdraws the drawing chrome.** The Tool Rail, the orientation
@@ -4510,36 +4525,20 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Exactly one next step: return this status to the ForgeShape coordinator,
-which creates the OWNER-review APK task for the integrated CAD vertical slice
-plus Sculpt, now including the D1 correction.** The next product slice is
-chosen afterwards from three inputs:
+**Exactly one next step: the OWNER reviews `CAD-FOUNDATION-C1` on a physical
+device** with the APK above and the nine-point checklist in
+`artifacts/cad-foundation-c1/SUMMARY.md`, and returns the HUD's final sizes
+(band, glyph, value text, leader offsets). Those are presentation constants in
+`CadHudPresentation` and `forgeshape_cad_extrude_tool.h`; tuning them is a
+bounded follow-up, not a redesign.
 
-- the Council findings;
-- this D1 closeout;
-- the OWNER's feedback from the app.
+After that review the next major task is `CAD-SKETCH-IDENTITY-R1` (sketch ids,
+a body sketch table, feature → sketch references, sketch reuse, `CADB` v6),
+which this closeout deliberately did NOT start. It needs its own authorisation.
 
-`FUNCTION-COUNCIL-C1` (D1) is closed and starts nothing. D2–D7 and the
-import-during-sketch observation are recorded debt, not authorised work.
-
-The Council's other OWNER decisions are still open (`COUNCIL_FINDINGS.md` §5,
-`NEXT_VERTICAL_SLICE_OPTIONS.md`):
-
-- whether a test-only JVM layout dependency is allowed;
-- what a sketch on ANOTHER body's face should make;
-- the next vertical slice.
-
-The lean tiers are no longer open: they are adopted as `TEST-OWNER-04`.
-
-- **Where it stands.** `CAD-VERTICAL-SLICE-R1` passed its milestone aggregate
-  (`36607747079`, `FULL_SHARDED_SUITE_PASS`, 629/629 on `fa0b6b4`) and is on
-  `main`.
-- **No handoff APK is issued by this closeout.** The OWNER-review build is the
-  coordinator's separate task.
-
-The OWNER review of `POST_AUDIT.md` §3 (OWNER-LATER aesthetics) and §4 (the
-three proposed next tasks) still stands. None of those tasks is authorised by
-this status.
+`FUNCTION-COUNCIL-R1`'s D2–D7 and the import-during-sketch observation stay
+recorded debt, not authorised work. The Council's other OWNER decisions are
+still open (`COUNCIL_FINDINGS.md` §5, `NEXT_VERTICAL_SLICE_OPTIONS.md`).
 
 Do not start Revolve, Through All, To Object, Intersect, a Hole feature,
 fillet, chamfer, shell, a pattern, a constraint solver, CAD → Sculpt, Stage024,
@@ -4556,8 +4555,9 @@ anchored to it, a `New Body` badge that names what the act does without
 suggesting an Add or a Cut that do not exist, and the retained sketch reachable
 in one tap from the committed body instead of three. The camera-attached size
 rule is a new function beside
-`gizmoWorldScale`, never a change to it, and its 0.80 floor is the arithmetic
-that keeps the smallest live control at exactly 48 dp.
+`gizmoWorldScale`, never a change to it. (Its floor was 0.80 then;
+`CAD-FOUNDATION-C1` lowered it to 0.40, because the 48 dp floor is now an
+invisible proxy that does not depend on the band.)
 
 **`OQ-CAD-UX-01` is CLOSED by `CAD-UX-S1-C1`, and the answer was not to unlock
 the sketch view.** A sketch is AUTHORED through the exact support-normal view
