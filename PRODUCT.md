@@ -652,9 +652,15 @@ two regions — the disk, and the rectangle with a round hole — and extruding 
 second makes a block with a real hole through it. When the sketch has exactly
 one region it is chosen for you; when it has more, **none is chosen**: the
 status line says how many were found and Extrude is not offered until you tap
-the region you want. A tap chooses it, a second tap lets it go, and tapping the
-disk after the ring switches to it (two regions that share a loop cannot both
-be chosen). The chosen region is hatched, and a hole stays empty. The first
+the region you want. A tap chooses it, a second tap lets it go, and **a tap
+never changes any region but the one under your finger**. Choosing several
+regions extrudes them **together, as one shape**: with the ring and its disk
+both chosen the hole is filled, so a rectangle holding circles A and B, with
+the rectangle and A chosen, becomes a block with only B's hole, and all three
+chosen make a solid block. Regions whose loops touch or cross cannot be
+combined; tapping the second one says so and leaves your choice as it was.
+What is chosen is hatched as one shape, and a hole it leaves open stays
+empty. The first
 region you choose also turns the view to one the arrow can be dragged in.
 Loops that touch or cross each other are never holes of each other; each stays
 its own region.
@@ -667,16 +673,25 @@ on the regions (each with its hole count), the operation and the depth.
 
 **The extrusion is controlled at the geometry itself.** An **arrow** is drawn
 along the direction the solid will grow, standing on the chosen region, and its
-length is the distance it grows. Beside it is one compact row of icons: the
-**extent** (one icon for the current choice; tap it for One Side, Symmetric or
-Two Sides), the **exact distance** — standing on the arrow's shaft; tap it to
-type one — the **operation** (a separate box for New Body, a solid with a plus
-for Add, a solid with a notch for Cut) and, for a One Side extrusion,
-**Flip**. The icons are small; the places you tap are not — each is a full
-fingertip wide. With **Tool labels** turned on in *Settings → Interface*, each
-icon also carries a one-word caption. A distance typed at the arrow and the same
-number typed in the panel are the same thing; there is one extrusion, and both
-places show it.
+length is the distance it grows. Beside it runs a **dimension line**, the way a
+technical drawing measures a length: two short extension lines out of the
+arrow's base and tip, the line between them and a tick at each end. The **exact
+distance** stands just above that line, turned to run along it and never upside
+down; tap it to type one (the field opens level, where it is easy to type). On
+the same line stand small round icons: the **extent** past the base end (one
+icon for the current choice; tap it for One Side, Symmetric or Two Sides), and
+past the tip end the **operation** (a separate box for New Body, a solid with a
+plus for Add, a solid with a notch for Cut) and, for a One Side extrusion,
+**Flip**. Nothing forms a toolbar row. Zooming out makes the arrow head, the
+line, the icons and the number smaller with the model, and zooming in makes
+them larger, both within limits; the places you tap do not shrink — each is
+still a full fingertip wide, and the extra room is invisible. An icon whose
+place is off the screen is not shown rather than pushed to the edge. The
+choices the extent and operation icons open are an ordinary, readable panel;
+with **Tool labels** turned on in *Settings → Interface*, those choices carry a
+one-word caption. A distance typed at the arrow and the same number typed in
+the panel are the same thing; there is one extrusion, and both places show it.
+These sizes are provisional and are being tuned on a physical phone.
 
 **New Body, Add or Cut.** A sketch on one of the three planes makes a new body —
 New Body is the only operation there, and the badge simply says so. A sketch on
@@ -690,12 +705,10 @@ each also recognisable by its icon — and when the result would not make sense
 (an Add that does not touch the body, a Cut that misses it or would remove all
 of it) the operation badge says so by name and Extrude is not offered.
 
-The row **follows** the arrow through a drag, an orbit and a zoom, and so
-does the **Edit Sketch** control below — measured on the device by
-`UI-3D-STATE-AUDIT-R1` and, since `UI-3D-STATE-C1` corrected where anchored
-chrome stands, sitting on the point it is anchored to. Near a window edge the
-cluster is held inside the viewport so it stays readable and tappable, and it
-reaches that edge where the window requires rather than an inset early.
+The dimension line, its number and its icons **follow** the arrow through a
+drag, an orbit and a zoom, and so does the **Edit Sketch** control below. When
+the line runs off the screen, the number stands on the part of it that is still
+visible.
 
 **Three ways for a solid to reach out of its sketch.** The extent selector
 offers exactly three:
@@ -711,7 +724,8 @@ offers exactly three:
   choose.
 * **Two Sides** grows it a different distance out of each side. There are two
   arrows and two numbers, **Side A** along the sketch's normal and **Side B**
-  against it, and each moves only its own side — dragging one never disturbs the
+  against it, each above its own side's dimension line, and each moves only its
+  own side — dragging one never disturbs the
   other. Flip is not offered here either; both sides are stated outright.
 
 Switching between the three never loses a number and never invents one. Going
