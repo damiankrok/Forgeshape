@@ -1382,7 +1382,10 @@ int runGltfImportSelfTests(GltfImportSelfTestResult* out, int maxOut) {
                                 == "RejectedGeometry"
                         && std::string(importCommitStatusName(
                                    ImportCommitStatus::RefusedEditInProgress))
-                                == "RefusedEditInProgress");
+                                == "RefusedEditInProgress"
+                        && std::string(importCommitStatusName(
+                                   ImportCommitStatus::RefusedInSculpt))
+                                == "RefusedInSculpt");
     }
 
     // IMP01A-11/12/13: an imported body takes the ORDINARY transform path, and

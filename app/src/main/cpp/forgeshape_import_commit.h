@@ -57,6 +57,13 @@ enum class ImportCommitStatus {
     // user act would leave that act's captured pre-state describing a scene it
     // never saw.
     RefusedEditInProgress,
+    // The product is in Sculpt. An import creates bodies, makes the first one
+    // ACTIVE and records a Construction step, and in Sculpt the active body is
+    // the sculpt target and Construction history is refused. This function
+    // cannot see the mode, which lives in the Sculpt session, so the JNI
+    // boundary asks it under the same lock as the commit and answers with this
+    // name. Appended, so the ordinals above keep their meaning.
+    RefusedInSculpt,
 };
 
 const char* importCommitStatusName(ImportCommitStatus status);

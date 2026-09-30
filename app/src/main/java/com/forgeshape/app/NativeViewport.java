@@ -1223,13 +1223,24 @@ final class NativeViewport {
     static final int IMPORT_COMMIT_BASE = 1000;
 
     /**
+     * The project refused an import because the product is in Sculpt
+     * ({@code ImportCommitStatus::RefusedInSculpt}, appended as ordinal 5).
+     *
+     * <p>Native code decides it, from its own mode, under the same lock as the
+     * commit: an import would make its first body active and record a
+     * Construction step, and in Sculpt the active body is the sculpt target
+     * and Construction history is refused. Nothing changes on this answer.
+     */
+    static final int IMPORT_REFUSED_IN_SCULPT = IMPORT_COMMIT_BASE + 5;
+
+    /**
      * Reads GLB bytes and creates durable Imported Mesh bodies from them.
      *
      * <p>Atomic: every object is built and validated before any of them reaches
      * the scene, so a refusal creates no body, mints no ObjectId, records no
      * history step and does not move the project fingerprint. On success the
      * whole import is exactly one Undo, and the first object it created is
-     * selected.
+     * selected. Refused in Sculpt with {@link #IMPORT_REFUSED_IN_SCULPT}.
      *
      * @return {@link #IMPORT_OK}, a {@code GlbImportStatus} ordinal when the
      *         file was refused, or {@link #IMPORT_COMMIT_BASE} plus an

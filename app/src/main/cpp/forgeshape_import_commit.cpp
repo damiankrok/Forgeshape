@@ -42,6 +42,7 @@ const char* importCommitStatusName(ImportCommitStatus status) {
         case ImportCommitStatus::TooManyObjects: return "TooManyObjects";
         case ImportCommitStatus::RejectedGeometry: return "RejectedGeometry";
         case ImportCommitStatus::RefusedEditInProgress: return "RefusedEditInProgress";
+        case ImportCommitStatus::RefusedInSculpt: return "RefusedInSculpt";
     }
     return "unknown";
 }

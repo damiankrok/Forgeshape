@@ -1,0 +1,3 @@
+capture=1 tokens=22/23 in_order=false viewport_ok=true failure_lines=0 liblog_dropped=27 pid=4997 (4s)
+capture=2 tokens=17/23 in_order=false viewport_ok=true failure_lines=0 liblog_dropped=952 pid=5088 (9s)
+capture=3 tokens=22/23 in_order=false viewport_ok=true failure_lines=0 liblog_dropped=51 pid=5199 (8s)

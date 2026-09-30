@@ -1,0 +1,42 @@
+09-29 22:57:15.977  5352  5365 I TestRunner: started: d1_02_importGlbIsWithdrawnInSculptAndReturnsInConstruction(com.forgeshape.app.ImportGlbSculptGuardTest)
+09-29 22:57:16.825  5352  5352 I ForgeShape: FORGESHAPE_CONSTRUCTION_HISTORY_SELFTEST_OK (147 checks)
+09-29 22:57:18.219  5352  5352 I ForgeShape: FORGESHAPE_SCULPT_MODE:construction meshRev=2
+09-29 22:57:18.906  5352  5352 I ForgeShape: FORGESHAPE_PROJECT_ENCODED:294 kind=Construction bodies=1
+09-29 22:57:20.852  5352  5352 I ForgeShape: FORGESHAPE_SCULPT_MODE:sculpt meshRev=4
+09-29 22:57:22.323  5352  5372 I ForgeShape: FORGESHAPE_PROJECT_ENCODED:17643 kind=Sculpt bodies=1
+09-29 22:57:22.812  5352  5365 I ForgeShapeD1: D1_OBSERVED_UI importOfferedInSculpt=true importLabelShownInSculpt=true
+09-29 22:57:22.815  5352  5352 I ForgeShape: FORGESHAPE_SCULPT_MODE:construction meshRev=12
+09-29 22:57:22.893  5352  5352 I ForgeShape: FORGESHAPE_SCULPT_MODE:construction meshRev=2
+09-29 22:57:23.766  5352  5372 I ForgeShape: FORGESHAPE_PROJECT_ENCODED:294 kind=Construction bodies=1
+09-29 22:57:25.479  5352  5365 E TestRunner: failed: d1_02_importGlbIsWithdrawnInSculptAndReturnsInConstruction(com.forgeshape.app.ImportGlbSculptGuardTest)
+09-29 22:57:25.489  5352  5365 I TestRunner: finished: d1_02_importGlbIsWithdrawnInSculptAndReturnsInConstruction(com.forgeshape.app.ImportGlbSculptGuardTest)
+09-29 22:57:25.515  5352  5365 I TestRunner: started: d1_03_aPickerResultArrivingInSculptIsRefusedNeutrallyThenImportsInConstruction(com.forgeshape.app.ImportGlbSculptGuardTest)
+09-29 22:57:26.415  5352  5352 I ForgeShape: FORGESHAPE_CONSTRUCTION_HISTORY_SELFTEST_OK (147 checks)
+09-29 22:57:27.958  5352  5352 I ForgeShape: FORGESHAPE_SCULPT_MODE:construction meshRev=4
+09-29 22:57:27.989  5352  5352 I ForgeShape: FORGESHAPE_PROJECT_ENCODED:294 kind=Construction bodies=1
+09-29 22:57:28.377  5352  5352 I ForgeShape: FORGESHAPE_SCULPT_MODE:sculpt meshRev=6
+09-29 22:57:29.032  5352  5352 I ForgeShape: FORGESHAPE_PROJECT_ENCODED:17643 kind=Sculpt bodies=1
+09-29 22:57:29.068  5352  5352 I ForgeShape: FORGESHAPE_IMPORTED:59884 objects=6 vertices=1220 triangles=2190 batches=6 firstObjectId=2 activeObjectId=2
+09-29 22:57:29.758  5352  5352 E ForgeShape: FORGESHAPE_PROJECT_ENCODE_FAIL:UnresolvedReference
+09-29 22:57:29.762  5352  5365 I ForgeShapeD1: D1_OBSERVED_PICKER before={mode=1 active=1 sculptTarget=1 ids=[1] sculptRevision=8 sculptHasEdits=1 sculptUndo=1 constructionUndo=1 fingerprint=ff200df59bcfa549 project=17643:eb48fc482ae3fceb activeVisible=true activeLocked=false} after={mode=1 active=2 sculptTarget=0 ids=[1, 2, 3, 4, 5, 6, 7] sculptRevision=0 sculptHasEdits=0 sculptUndo=0 constructionUndo=2 fingerprint=8fca7db6c72043a6 project=null activeVisible=true activeLocked=false}
+09-29 22:57:29.767  5352  5352 I ForgeShape: FORGESHAPE_SCULPT_MODE:construction meshRev=2
+09-29 22:57:29.864  5352  5352 I ForgeShape: FORGESHAPE_SCULPT_MODE:construction meshRev=2
+09-29 22:57:30.671  5352  5408 I ForgeShape: FORGESHAPE_PROJECT_ENCODED:294 kind=Construction bodies=1
+09-29 22:57:32.296  5352  5365 E TestRunner: failed: d1_03_aPickerResultArrivingInSculptIsRefusedNeutrallyThenImportsInConstruction(com.forgeshape.app.ImportGlbSculptGuardTest)
+09-29 22:57:32.298  5352  5365 I TestRunner: finished: d1_03_aPickerResultArrivingInSculptIsRefusedNeutrallyThenImportsInConstruction(com.forgeshape.app.ImportGlbSculptGuardTest)
+09-29 22:57:32.303  5352  5365 I TestRunner: started: d1_04_theNativeImportRefusesInSculptByNameAndChangesNothing(com.forgeshape.app.ImportGlbSculptGuardTest)
+09-29 22:57:33.357  5352  5352 I ForgeShape: FORGESHAPE_CONSTRUCTION_HISTORY_SELFTEST_OK (147 checks)
+09-29 22:57:34.667  5352  5352 I ForgeShape: FORGESHAPE_SCULPT_MODE:construction meshRev=4
+09-29 22:57:34.687  5352  5352 I ForgeShape: FORGESHAPE_PROJECT_ENCODED:294 kind=Construction bodies=1
+09-29 22:57:35.069  5352  5352 I ForgeShape: FORGESHAPE_SCULPT_MODE:sculpt meshRev=6
+09-29 22:57:35.722  5352  5352 I ForgeShape: FORGESHAPE_PROJECT_ENCODED:17643 kind=Sculpt bodies=1
+09-29 22:57:35.734  5352  5352 I ForgeShape: FORGESHAPE_IMPORTED:59884 objects=6 vertices=1220 triangles=2190 batches=6 firstObjectId=8 activeObjectId=8
+09-29 22:57:36.067  5352  5352 E ForgeShape: FORGESHAPE_PROJECT_ENCODE_FAIL:UnresolvedReference
+09-29 22:57:36.077  5352  5352 I ForgeShape: FORGESHAPE_IMPORTED:59884 objects=6 vertices=1220 triangles=2190 batches=6 firstObjectId=14 activeObjectId=14
+09-29 22:57:36.336  5352  5352 E ForgeShape: FORGESHAPE_PROJECT_ENCODE_FAIL:UnresolvedReference
+09-29 22:57:36.336  5352  5365 I ForgeShapeD1: D1_OBSERVED_NATIVE status=0 token=Ok before={mode=1 active=1 sculptTarget=1 ids=[1] sculptRevision=8 sculptHasEdits=1 sculptUndo=1 constructionUndo=1 fingerprint=8e98b9f9329d5147 project=17643:af17a83855c60bb9 activeVisible=true activeLocked=false} afterBytes={mode=1 active=8 sculptTarget=0 ids=[1, 8, 9, 10, 11, 12, 13] sculptRevision=0 sculptHasEdits=0 sculptUndo=0 constructionUndo=2 fingerprint=d221bdc50dd84c2 project=null activeVisible=true activeLocked=false} afterJni={mode=1 active=14 sculptTarget=0 ids=[1, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19] sculptRevision=0 sculptHasEdits=0 sculptUndo=0 constructionUndo=3 fingerprint=1cc091d0411bbed4 project=null activeVisible=true activeLocked=false}
+09-29 22:57:36.339  5352  5352 I ForgeShape: FORGESHAPE_SCULPT_MODE:construction meshRev=2
+09-29 22:57:36.416  5352  5352 I ForgeShape: FORGESHAPE_SCULPT_MODE:construction meshRev=2
+09-29 22:57:37.247  5352  5421 I ForgeShape: FORGESHAPE_PROJECT_ENCODED:294 kind=Construction bodies=1
+09-29 22:57:38.845  5352  5365 E TestRunner: failed: d1_04_theNativeImportRefusesInSculptByNameAndChangesNothing(com.forgeshape.app.ImportGlbSculptGuardTest)
+09-29 22:57:38.847  5352  5365 I TestRunner: finished: d1_04_theNativeImportRefusesInSculptByNameAndChangesNothing(com.forgeshape.app.ImportGlbSculptGuardTest)

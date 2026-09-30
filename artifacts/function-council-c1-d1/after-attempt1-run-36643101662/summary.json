@@ -1,0 +1,23 @@
+{
+  "result": "DEVICE_STARTUP_UNRESOLVED",
+  "detail": "3 captures were each incomplete with zero failure lines and liblog-reported drops; see startup-captures.txt",
+  "phase": "startup",
+  "serial": "emulator-5580",
+  "avd": "ForgeShape_CI_API36",
+  "avd_name_confirmed": "ForgeShape_CI_API36",
+  "system_image": "system-images;android-36;google_apis;x86_64",
+  "device_profile": "medium_phone",
+  "gpu_mode": "swiftshader_indirect",
+  "boot_seconds": "56",
+  "startup_seconds": "8",
+  "startup_capture_used": "",
+  "selftest_tokens_expected": 23,
+  "selftest_tokens_found": 22,
+  "selftest_tokens_in_order": false,
+  "native_viewport_ok": true,
+  "failure_token_lines": 0,
+  "test_class": "com.forgeshape.app.ImportGlbSculptGuardTest,com.forgeshape.app.ImportedMeshSculptTest,com.forgeshape.app.GlbImportExternalR1Test,com.forgeshape.app.JniBoundaryHardeningTest",
+  "tests_run": 0,
+  "tests_failed": 0,
+  "test_seconds": ""
+}

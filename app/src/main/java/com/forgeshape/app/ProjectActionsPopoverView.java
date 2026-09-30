@@ -36,9 +36,10 @@ import android.widget.TextView;
  * the workspace, exactly as the display popover states it.
  *
  * <p><b>Owns no state.</b> Each row reports a request; the workspace performs it
- * and writes the outcome to the one status line. The only thing this view is
- * told is whether there is a saved project to open at all, which decides whether
- * Open is a working control or the recessed, inert row it honestly is.
+ * and writes the outcome to the one status line. The only things this view is
+ * told are whether there is a saved project to open at all, which decides
+ * whether Open is a working control or the recessed, inert row it honestly is,
+ * and whether an import is possible, which it is not in Sculpt.
  */
 final class ProjectActionsPopoverView extends AnchoredSurfaceView {
 
@@ -233,6 +234,21 @@ final class ProjectActionsPopoverView extends AnchoredSurfaceView {
         applyTouchFloor(context, diagnosticsRow);
         applyTouchFloor(context, importRow);
         applyTouchFloor(context, settingsRow);
+    }
+
+    /**
+     * Draws or withdraws the import group.
+     *
+     * <p>Import is not a Sculpt act: it creates bodies and makes the first one
+     * active, and in Sculpt the active body is the sculpt target. So the row
+     * and the label that exists only to introduce it are ABSENT there, not
+     * drawn and then refused. The workspace passes native's answer on every
+     * refresh; this view remembers nothing, and the guards below it stay.
+     */
+    void showImportAvailable(boolean available) {
+        final int visibility = available ? VISIBLE : GONE;
+        importSectionLabel.setVisibility(visibility);
+        importRow.setVisibility(visibility);
     }
 
     /** The import section label, so a layout test can find it by reference. */

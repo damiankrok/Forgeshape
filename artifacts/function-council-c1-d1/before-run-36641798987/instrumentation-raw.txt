@@ -1,0 +1,98 @@
+INSTRUMENTATION_STATUS: class=com.forgeshape.app.ImportGlbSculptGuardTest
+INSTRUMENTATION_STATUS: current=1
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=3
+INSTRUMENTATION_STATUS: stream=
+com.forgeshape.app.ImportGlbSculptGuardTest:
+INSTRUMENTATION_STATUS: test=d1_02_importGlbIsWithdrawnInSculptAndReturnsInConstruction
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=com.forgeshape.app.ImportGlbSculptGuardTest
+INSTRUMENTATION_STATUS: current=1
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=3
+INSTRUMENTATION_STATUS: stack=java.lang.AssertionError: D1-02: Import GLB is not offered while sculpting
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.assertTrue(Assert.java:42)
+	at org.junit.Assert.assertFalse(Assert.java:65)
+	at com.forgeshape.app.ImportGlbSculptGuardTest.d1_02_importGlbIsWithdrawnInSculptAndReturnsInConstruction(ImportGlbSculptGuardTest.java:122)
+
+INSTRUMENTATION_STATUS: stream=
+Error in d1_02_importGlbIsWithdrawnInSculptAndReturnsInConstruction(com.forgeshape.app.ImportGlbSculptGuardTest):
+java.lang.AssertionError: D1-02: Import GLB is not offered while sculpting
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.assertTrue(Assert.java:42)
+	at org.junit.Assert.assertFalse(Assert.java:65)
+	at com.forgeshape.app.ImportGlbSculptGuardTest.d1_02_importGlbIsWithdrawnInSculptAndReturnsInConstruction(ImportGlbSculptGuardTest.java:122)
+
+INSTRUMENTATION_STATUS: test=d1_02_importGlbIsWithdrawnInSculptAndReturnsInConstruction
+INSTRUMENTATION_STATUS_CODE: -2
+INSTRUMENTATION_STATUS: class=com.forgeshape.app.ImportGlbSculptGuardTest
+INSTRUMENTATION_STATUS: current=2
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=3
+INSTRUMENTATION_STATUS: stream=
+INSTRUMENTATION_STATUS: test=d1_03_aPickerResultArrivingInSculptIsRefusedNeutrallyThenImportsInConstruction
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=com.forgeshape.app.ImportGlbSculptGuardTest
+INSTRUMENTATION_STATUS: current=2
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=3
+INSTRUMENTATION_STATUS: stack=org.junit.ComparisonFailure: D1-03/05..09: a picker result in Sculpt changes nothing at all expected:<{mode=1 active=[1 sculptTarget=1 ids=[1] sculptRevision=8 sculptHasEdits=1 sculptUndo=1 constructionUndo=1 fingerprint=ff200df59bcfa549 project=17643:eb48fc482ae3fceb] activeVisible=true ...> but was:<{mode=1 active=[2 sculptTarget=0 ids=[1, 2, 3, 4, 5, 6, 7] sculptRevision=0 sculptHasEdits=0 sculptUndo=0 constructionUndo=2 fingerprint=8fca7db6c72043a6 project=null] activeVisible=true ...>
+	at org.junit.Assert.assertEquals(Assert.java:117)
+	at com.forgeshape.app.ImportGlbSculptGuardTest.d1_03_aPickerResultArrivingInSculptIsRefusedNeutrallyThenImportsInConstruction(ImportGlbSculptGuardTest.java:150)
+
+INSTRUMENTATION_STATUS: stream=
+Error in d1_03_aPickerResultArrivingInSculptIsRefusedNeutrallyThenImportsInConstruction(com.forgeshape.app.ImportGlbSculptGuardTest):
+org.junit.ComparisonFailure: D1-03/05..09: a picker result in Sculpt changes nothing at all expected:<{mode=1 active=[1 sculptTarget=1 ids=[1] sculptRevision=8 sculptHasEdits=1 sculptUndo=1 constructionUndo=1 fingerprint=ff200df59bcfa549 project=17643:eb48fc482ae3fceb] activeVisible=true ...> but was:<{mode=1 active=[2 sculptTarget=0 ids=[1, 2, 3, 4, 5, 6, 7] sculptRevision=0 sculptHasEdits=0 sculptUndo=0 constructionUndo=2 fingerprint=8fca7db6c72043a6 project=null] activeVisible=true ...>
+	at org.junit.Assert.assertEquals(Assert.java:117)
+	at com.forgeshape.app.ImportGlbSculptGuardTest.d1_03_aPickerResultArrivingInSculptIsRefusedNeutrallyThenImportsInConstruction(ImportGlbSculptGuardTest.java:150)
+
+INSTRUMENTATION_STATUS: test=d1_03_aPickerResultArrivingInSculptIsRefusedNeutrallyThenImportsInConstruction
+INSTRUMENTATION_STATUS_CODE: -2
+INSTRUMENTATION_STATUS: class=com.forgeshape.app.ImportGlbSculptGuardTest
+INSTRUMENTATION_STATUS: current=3
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=3
+INSTRUMENTATION_STATUS: stream=
+INSTRUMENTATION_STATUS: test=d1_04_theNativeImportRefusesInSculptByNameAndChangesNothing
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=com.forgeshape.app.ImportGlbSculptGuardTest
+INSTRUMENTATION_STATUS: current=3
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=3
+INSTRUMENTATION_STATUS: stack=org.junit.ComparisonFailure: D1-04: the bytes entry changes nothing in Sculpt expected:<{mode=1 active=[1 sculptTarget=1 ids=[1] sculptRevision=8 sculptHasEdits=1 sculptUndo=1 constructionUndo=1 fingerprint=8e98b9f9329d5147 project=17643:af17a83855c60bb9] activeVisible=true ...> but was:<{mode=1 active=[8 sculptTarget=0 ids=[1, 8, 9, 10, 11, 12, 13] sculptRevision=0 sculptHasEdits=0 sculptUndo=0 constructionUndo=2 fingerprint=d221bdc50dd84c2 project=null] activeVisible=true ...>
+	at org.junit.Assert.assertEquals(Assert.java:117)
+	at com.forgeshape.app.ImportGlbSculptGuardTest.d1_04_theNativeImportRefusesInSculptByNameAndChangesNothing(ImportGlbSculptGuardTest.java:188)
+
+INSTRUMENTATION_STATUS: stream=
+Error in d1_04_theNativeImportRefusesInSculptByNameAndChangesNothing(com.forgeshape.app.ImportGlbSculptGuardTest):
+org.junit.ComparisonFailure: D1-04: the bytes entry changes nothing in Sculpt expected:<{mode=1 active=[1 sculptTarget=1 ids=[1] sculptRevision=8 sculptHasEdits=1 sculptUndo=1 constructionUndo=1 fingerprint=8e98b9f9329d5147 project=17643:af17a83855c60bb9] activeVisible=true ...> but was:<{mode=1 active=[8 sculptTarget=0 ids=[1, 8, 9, 10, 11, 12, 13] sculptRevision=0 sculptHasEdits=0 sculptUndo=0 constructionUndo=2 fingerprint=d221bdc50dd84c2 project=null] activeVisible=true ...>
+	at org.junit.Assert.assertEquals(Assert.java:117)
+	at com.forgeshape.app.ImportGlbSculptGuardTest.d1_04_theNativeImportRefusesInSculptByNameAndChangesNothing(ImportGlbSculptGuardTest.java:188)
+
+INSTRUMENTATION_STATUS: test=d1_04_theNativeImportRefusesInSculptByNameAndChangesNothing
+INSTRUMENTATION_STATUS_CODE: -2
+INSTRUMENTATION_RESULT: stream=
+
+Time: 22.886
+There were 3 failures:
+1) d1_02_importGlbIsWithdrawnInSculptAndReturnsInConstruction(com.forgeshape.app.ImportGlbSculptGuardTest)
+java.lang.AssertionError: D1-02: Import GLB is not offered while sculpting
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.assertTrue(Assert.java:42)
+	at org.junit.Assert.assertFalse(Assert.java:65)
+	at com.forgeshape.app.ImportGlbSculptGuardTest.d1_02_importGlbIsWithdrawnInSculptAndReturnsInConstruction(ImportGlbSculptGuardTest.java:122)
+2) d1_03_aPickerResultArrivingInSculptIsRefusedNeutrallyThenImportsInConstruction(com.forgeshape.app.ImportGlbSculptGuardTest)
+org.junit.ComparisonFailure: D1-03/05..09: a picker result in Sculpt changes nothing at all expected:<{mode=1 active=[1 sculptTarget=1 ids=[1] sculptRevision=8 sculptHasEdits=1 sculptUndo=1 constructionUndo=1 fingerprint=ff200df59bcfa549 project=17643:eb48fc482ae3fceb] activeVisible=true ...> but was:<{mode=1 active=[2 sculptTarget=0 ids=[1, 2, 3, 4, 5, 6, 7] sculptRevision=0 sculptHasEdits=0 sculptUndo=0 constructionUndo=2 fingerprint=8fca7db6c72043a6 project=null] activeVisible=true ...>
+	at org.junit.Assert.assertEquals(Assert.java:117)
+	at com.forgeshape.app.ImportGlbSculptGuardTest.d1_03_aPickerResultArrivingInSculptIsRefusedNeutrallyThenImportsInConstruction(ImportGlbSculptGuardTest.java:150)
+3) d1_04_theNativeImportRefusesInSculptByNameAndChangesNothing(com.forgeshape.app.ImportGlbSculptGuardTest)
+org.junit.ComparisonFailure: D1-04: the bytes entry changes nothing in Sculpt expected:<{mode=1 active=[1 sculptTarget=1 ids=[1] sculptRevision=8 sculptHasEdits=1 sculptUndo=1 constructionUndo=1 fingerprint=8e98b9f9329d5147 project=17643:af17a83855c60bb9] activeVisible=true ...> but was:<{mode=1 active=[8 sculptTarget=0 ids=[1, 8, 9, 10, 11, 12, 13] sculptRevision=0 sculptHasEdits=0 sculptUndo=0 constructionUndo=2 fingerprint=d221bdc50dd84c2 project=null] activeVisible=true ...>
+	at org.junit.Assert.assertEquals(Assert.java:117)
+	at com.forgeshape.app.ImportGlbSculptGuardTest.d1_04_theNativeImportRefusesInSculptByNameAndChangesNothing(ImportGlbSculptGuardTest.java:188)
+
+FAILURES!!!
+Tests run: 3,  Failures: 3
+
+
+INSTRUMENTATION_CODE: -1

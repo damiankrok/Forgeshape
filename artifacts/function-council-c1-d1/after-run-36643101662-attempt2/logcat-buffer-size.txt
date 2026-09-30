@@ -1,0 +1,4 @@
+main: ring buffer is 64 MiB (253 KiB consumed, 917 KiB readable), max entry is 5120 B, max payload is 4068 B
+system: ring buffer is 64 MiB (222 KiB consumed, 957 KiB readable), max entry is 5120 B, max payload is 4068 B
+crash: ring buffer is 64 MiB (0 B consumed, 0 B readable), max entry is 5120 B, max payload is 4068 B
+kernel: ring buffer is 64 MiB (123 KiB consumed, 311 KiB readable), max entry is 5120 B, max payload is 4068 B
