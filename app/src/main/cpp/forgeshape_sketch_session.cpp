@@ -1775,8 +1775,8 @@ SketchOverlayPtr SketchSession::overlay(float worldPerUnit, const CadExtrudeView
     return overlay_;
 }
 
-bool SketchSession::extrudeViewFacts(const CameraSnapshot& camera, int viewportHeight,
-                                     CadExtrudeViewFacts* out) const {
+bool SketchSession::extrudeViewFacts(const CameraSnapshot& camera, int viewportWidth,
+                                     int viewportHeight, CadExtrudeViewFacts* out) const {
     if (out == nullptr) {
         return false;
     }
@@ -1789,6 +1789,8 @@ bool SketchSession::extrudeViewFacts(const CameraSnapshot& camera, int viewportH
     if (!cadExtrudeManipulatorScale(anchors, camera, viewportHeight, &built.scale)) {
         return false;
     }
+    built.leaderValid =
+            cadExtrudeLeaderSide(anchors, camera, viewportWidth, viewportHeight, &built.leaderSide);
     built.valid = true;
     *out = built;
     return true;
@@ -2087,6 +2089,16 @@ void SketchSession::buildOverlay(float worldPerUnit, const CadExtrudeViewFacts& 
                 pushLine(&v, local(offsetBy(at, su, sv, -tick)),
                          local(offsetBy(at, su, sv, tick)), 0.0f, 1.0f);
             }
+        }
+        // The extrusion's own technical-drawing leader (`CAD-FOUNDATION-C1`),
+        // in the same annotation range and drawing language, sized by the
+        // frame's one manipulator scale fact so it cannot disagree with the
+        // head beside it.
+        CadExtrudeAnchors leaderAnchors;
+        CadExtrudeLeader leader;
+        if (view.valid && view.leaderValid && extrudeAnchors(&leaderAnchors)
+            && cadExtrudeLeaderFor(leaderAnchors, view.leaderSide, view.scale.world, &leader)) {
+            appendCadExtrudeLeader(&v, leaderAnchors, leader, view.scale.world);
         }
         dimension.vertexCount = static_cast<uint32_t>(v.size()) - dimension.firstVertex;
         dimension.style = SketchOverlayStyle::Dimension;

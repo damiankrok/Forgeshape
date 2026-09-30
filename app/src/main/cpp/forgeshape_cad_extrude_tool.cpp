@@ -285,7 +285,131 @@ bool sameCadExtrudeViewFacts(const CadExtrudeViewFacts& a, const CadExtrudeViewF
     if (a.valid != b.valid) {
         return false;
     }
-    return !a.valid || a.scale.metersPerPixel == b.scale.metersPerPixel;
+    if (!a.valid) {
+        return true;
+    }
+    return a.scale.metersPerPixel == b.scale.metersPerPixel && a.leaderValid == b.leaderValid
+           && (!a.leaderValid
+               || (a.leaderSide.x == b.leaderSide.x && a.leaderSide.y == b.leaderSide.y
+                   && a.leaderSide.z == b.leaderSide.z));
+}
+
+// ---------------------------------------------------------------------------
+// The technical-drawing leader
+// ---------------------------------------------------------------------------
+
+bool cadExtrudeLeaderSide(const CadExtrudeAnchors& anchors, const CameraSnapshot& camera,
+                          int viewportWidth, int viewportHeight, Vec3* out) {
+    if (out == nullptr || !anchors.valid || viewportWidth <= 0 || viewportHeight <= 0) {
+        return false;
+    }
+    // The view direction AT the anchor: along the eye ray in perspective, the
+    // camera's own direction in orthographic.
+    const Vec3 toward = camera.projection == ProjectionMode::Perspective
+                                ? vec3Sub(anchors.base, camera.eye)
+                                : vec3Sub(camera.target, camera.eye);
+    const Vec3 view = vec3Normalize(toward);
+    Vec3 side = vec3Cross(anchors.normal, view);
+    if (!unitLength(view) || vec3Dot(side, side) < 1.0e-6f) {
+        // Looking straight down the axis: any perpendicular is as good as any
+        // other on screen, so take the deterministic one.
+        Vec3 q;
+        perpendicularBasis(anchors.normal, &side, &q);
+    } else {
+        side = vec3Normalize(side);
+    }
+    if (!unitLength(side)) {
+        return false;
+    }
+    // Sign it to the reading-up side of the projected shaft. The reading
+    // direction of a screen vector (dx, dy) is the one with dx > 0 (or, for a
+    // vertical line, dy < 0 -- read bottom to top), and "up" for upright text
+    // along it is (dy, -dx) in y-down screen coordinates. The Android value
+    // rotation follows the SAME rule, so the value above its leader is on the
+    // side away from the shaft.
+    float bx = 0.0f, by = 0.0f, nx = 0.0f, ny = 0.0f, sx = 0.0f, sy = 0.0f;
+    const Vec3 alongNormal = vec3Add(anchors.base, anchors.normal);
+    const Vec3 alongSide = vec3Add(anchors.base, side);
+    if (projectWorldToScreen(camera, anchors.base, viewportWidth, viewportHeight, &bx, &by)
+        && projectWorldToScreen(camera, alongNormal, viewportWidth, viewportHeight, &nx, &ny)
+        && projectWorldToScreen(camera, alongSide, viewportWidth, viewportHeight, &sx, &sy)) {
+        float dx = nx - bx;
+        float dy = ny - by;
+        if (dx < 0.0f || (dx == 0.0f && dy > 0.0f)) {
+            dx = -dx;
+            dy = -dy;
+        }
+        const float upX = dy;
+        const float upY = -dx;
+        if ((sx - bx) * upX + (sy - by) * upY < 0.0f) {
+            side = vec3Scale(side, -1.0f);
+        }
+    }
+    *out = side;
+    return true;
+}
+
+bool cadExtrudeLeaderFor(const CadExtrudeAnchors& anchors, const Vec3& side, double controlWorld,
+                         CadExtrudeLeader* out) {
+    if (out == nullptr || !anchors.valid || !unitLength(side) || !std::isfinite(controlWorld)
+        || controlWorld <= 0.0) {
+        return false;
+    }
+    CadExtrudeLeader built;
+    built.side = side;
+    const Vec3 offset = vec3Scale(side, static_cast<float>(controlWorld
+                                                          * kCadExtrudeLeaderOffsetFraction));
+    const CadExtrudeSideAnchor* sides[2] = {&anchors.positive, &anchors.negative};
+    CadExtrudeLeaderSide* leaders[2] = {&built.positive, &built.negative};
+    for (int i = 0; i < 2; ++i) {
+        leaders[i]->present = sides[i]->present;
+        leaders[i]->start = vec3Add(anchors.base, offset);
+        leaders[i]->end = vec3Add(sides[i]->tip, offset);
+        if (!vec3Finite(leaders[i]->start) || !vec3Finite(leaders[i]->end)) {
+            return false;
+        }
+    }
+    built.valid = true;
+    *out = built;
+    return true;
+}
+
+void appendCadExtrudeLeader(std::vector<GizmoVertex>* out, const CadExtrudeAnchors& anchors,
+                            const CadExtrudeLeader& leader, double controlWorld) {
+    if (out == nullptr || !anchors.valid || !leader.valid || !std::isfinite(controlWorld)
+        || controlWorld <= 0.0) {
+        return;
+    }
+    const float gap = static_cast<float>(controlWorld * kCadExtrudeLeaderGapFraction);
+    const float reach = static_cast<float>(
+            controlWorld * (kCadExtrudeLeaderOffsetFraction + kCadExtrudeLeaderOvershootFraction));
+    const float tick = static_cast<float>(controlWorld * kCadExtrudeLeaderTickFraction);
+    const CadExtrudeSideAnchor* sides[2] = {&anchors.positive, &anchors.negative};
+    const CadExtrudeLeaderSide* leaders[2] = {&leader.positive, &leader.negative};
+    bool baseExtensionDrawn = false;
+    for (int i = 0; i < 2; ++i) {
+        if (!leaders[i]->present) {
+            continue;
+        }
+        // Extension lines: clear of the geometry by a gap, past the dimension
+        // line by an overshoot -- the draughting convention. The base one is
+        // shared by both sides and drawn once.
+        if (!baseExtensionDrawn) {
+            pushLine(out, vec3Add(anchors.base, vec3Scale(leader.side, gap)),
+                     vec3Add(anchors.base, vec3Scale(leader.side, reach)), 1.0f);
+            baseExtensionDrawn = true;
+        }
+        pushLine(out, vec3Add(sides[i]->tip, vec3Scale(leader.side, gap)),
+                 vec3Add(sides[i]->tip, vec3Scale(leader.side, reach)), 1.0f);
+        // The dimension line, then a 45-degree tick at each end in the plane
+        // of the axis and the leader side.
+        pushLine(out, leaders[i]->start, leaders[i]->end, 1.0f);
+        const Vec3 slash = vec3Normalize(vec3Add(sides[i]->axis, leader.side));
+        for (const Vec3& at : {leaders[i]->start, leaders[i]->end}) {
+            pushLine(out, vec3Add(at, vec3Scale(slash, -tick)), vec3Add(at, vec3Scale(slash, tick)),
+                     1.0f);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

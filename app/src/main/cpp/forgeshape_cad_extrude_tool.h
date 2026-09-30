@@ -19,8 +19,8 @@
 //      derived from the sketch authoring frame, the chosen profile polygon and
 //      the extrusion. No camera, no viewport and no zoom enters it, so the
 //      solid cannot depend on how the sketch was looked at.
-//   2. HOW BIG the control is drawn and grabbed      -- `CadExtrudeControlScale`,
-//      a world reference size clamped into a screen band. Deliberately NOT the
+//   2. HOW BIG the control is DRAWN                  -- `CadExtrudeControlScale`,
+//      a world reference size clamped into a screen band (never a hit area). Deliberately NOT the
 //      gizmo rule: `gizmoWorldScale` holds a constant number of PIXELS at
 //      every distance, which is right for a placement instrument and is the
 //      opposite of what a control attached to the work should do.
@@ -32,7 +32,8 @@
 // Nothing here is truth. No value in this file is serialized, reaches a
 // `.forge` byte, a checkpoint, the project fingerprint or a history step; the
 // depth and the direction a drag produces are written back through
-// `SketchSession::setExtrude`, the one door they already had.
+// `SketchSession::applyExtrudeFeature`, the one writer every typed value
+// already lands through.
 #pragma once
 
 #include <cstdint>
@@ -160,9 +161,10 @@ bool extrudeSelectionAnchorPoint(const SketchRegionExtraction& regions,
 //     s       = S * metersPerPixel          that size back in world metres
 //
 // `scale` is one dimensionless number, and it is the ONE number the drawing
-// and the presentation share: the arrow head is built at `s` world metres and
-// the Android cluster is drawn at `scale`. The hit CORRIDOR is deliberately
-// not in it -- see kCadExtrudeGrabRadiusUnits.
+// and the presentation share: the arrow head and the leader are built at `s`
+// world metres and the Android glyphs and value text are drawn at `scale`. No
+// hit area is in it: neither the arrow's CORRIDOR (see
+// kCadExtrudeGrabRadiusUnits) nor any Android control's 48 dp proxy.
 //
 // PROVISIONAL VALUES. These are a starting point with stated arithmetic, not
 // an approved look, exactly as the two `SCULPT-FCM-R1` feel constants were:
@@ -174,17 +176,21 @@ bool extrudeSelectionAnchorPoint(const SketchRegionExtraction& regions,
 //     rings are 156 reference units across at the default visual scale), so
 //     the extrude cluster never dominates the instrument the user places
 //     bodies with.
-//   * The MINIMUM is 0.80. Since `CAD-VERTICAL-SLICE-R1` the Android HUD
-//     scales only its GLYPHS by this multiplier -- `clamp(28 dp x scale, 24,
-//     32)` -- and never its hit areas, which stay at least 48 dp at every
-//     scale; so 0.80 is where the glyph reaches its 24 dp floor, and the
-//     interactive floor no longer depends on this number at all.
-//   * The MAXIMUM is 1.60, so the whole visible range is a factor of two --
-//     enough that the attenuation reads, bounded enough that a close camera
-//     cannot cover the profile being extruded.
+//   * The MINIMUM is 0.40 (`CAD-FOUNDATION-C1`; it was 0.80). The Android HUD
+//     sizes only what it DRAWS by this multiplier -- the glyphs, the value
+//     text inside its legibility band -- and never a hit area, which is an
+//     invisible proxy of at least 48 dp at every scale; so the floor is free
+//     to be low enough that pulling the camera back visibly shrinks the head,
+//     the leader and the glyphs with the work, as a drawing annotation does.
+//   * The MAXIMUM is 1.60, so the whole visible range is a factor of four --
+//     bounded enough that a close camera cannot cover the profile being
+//     extruded.
+//
+// OWNER-TUNABLE: the band is presentation policy, not architecture; the
+// physical-device review decides its final values.
 constexpr float kCadExtrudeControlWorldMeters = 0.45f;
 constexpr float kCadExtrudeControlReferencePixels = 120.0f;
-constexpr float kCadExtrudeControlMinScale = 0.80f;
+constexpr float kCadExtrudeControlMinScale = 0.40f;
 constexpr float kCadExtrudeControlMaxScale = 1.60f;
 
 struct CadExtrudeControlScale {
@@ -224,6 +230,10 @@ bool cadExtrudeManipulatorScale(const CadExtrudeAnchors& anchors, const CameraSn
 struct CadExtrudeViewFacts {
     bool valid = false;
     CadExtrudeControlScale scale{};
+    // The side of the shaft the technical-drawing leader stands on
+    // (`cadExtrudeLeaderSide`); meaningful only when `leaderValid`.
+    Vec3 leaderSide{};
+    bool leaderValid = false;
 };
 
 bool sameCadExtrudeViewFacts(const CadExtrudeViewFacts& a, const CadExtrudeViewFacts& b);
@@ -265,6 +275,67 @@ constexpr float kCadExtrudeGrabRadiusUnits = 24.0f;
 // keeps the body valid and keeps the control under the finger; refusing
 // mid-drag would strand the gesture with nothing to grab.
 constexpr Meters kCadExtrudeMinDragDepthMeters = 1.0e-3;
+
+// ---------------------------------------------------------------------------
+// The technical-drawing leader (`CAD-FOUNDATION-C1`)
+// ---------------------------------------------------------------------------
+//
+// The exact value belongs BESIDE the measurement, the way a drawing dimensions
+// a length: two extension lines out of the base and the tip, a dimension line
+// parallel to the axis between them, and a tick at each end. The value is
+// Android text standing above that dimension line (the renderer has no text
+// path and gets none); the lines are world geometry in the sketch overlay's
+// existing `Dimension` range, exactly the drawing language the selected-Line
+// dimension already speaks, so the renderer needed no change.
+//
+// WHICH side of the shaft it stands on is the one camera-derived choice: the
+// perpendicular to the axis that lies in the screen plane, signed so the
+// leader stands on the READING-UP side of the shaft -- the side upright text
+// along the leader reads above -- so the value, above its leader, never sits on
+// the shaft it measures. Presentation only, like the scale beside it.
+//
+// PROVISIONAL, OWNER-TUNABLE fractions of the control world size `s` (the same
+// `CadExtrudeControlScale::world` the head is drawn at), so the whole
+// annotation shrinks and grows with the arrow head inside the band.
+constexpr double kCadExtrudeLeaderOffsetFraction = 0.55;      // shaft -> dimension line
+constexpr double kCadExtrudeLeaderGapFraction = 0.12;         // shaft -> extension start
+constexpr double kCadExtrudeLeaderOvershootFraction = 0.12;   // past the dimension line
+constexpr double kCadExtrudeLeaderTickFraction = 0.10;        // half a 45-degree tick
+
+// One side's dimension line in WORLD space: `start` stands beside the base,
+// `end` beside that side's tip. `present` follows the side's own extent.
+struct CadExtrudeLeaderSide {
+    bool present = false;
+    Vec3 start{};
+    Vec3 end{};
+};
+
+struct CadExtrudeLeader {
+    bool valid = false;
+    // Unit, perpendicular to the normal: the side the dimension lines stand on.
+    Vec3 side{};
+    CadExtrudeLeaderSide positive{};
+    CadExtrudeLeaderSide negative{};
+    const CadExtrudeLeaderSide& of(bool positiveSide) const {
+        return positiveSide ? positive : negative;
+    }
+};
+
+// The leader side for a camera: `normal x view`, signed to the reading-up side
+// of the projected shaft. Falls back to a deterministic perpendicular of the
+// normal when the view looks straight down the axis. False, writing nothing,
+// for invalid anchors or a degenerate camera.
+bool cadExtrudeLeaderSide(const CadExtrudeAnchors& anchors, const CameraSnapshot& camera,
+                          int viewportWidth, int viewportHeight, Vec3* out);
+
+// The dimension lines for a leader side and a control world size. Pure.
+bool cadExtrudeLeaderFor(const CadExtrudeAnchors& anchors, const Vec3& side, double controlWorld,
+                         CadExtrudeLeader* out);
+
+// Appends the leader's world line list -- per present side two extension
+// lines, the dimension line and its two ticks -- tagged as annotation.
+void appendCadExtrudeLeader(std::vector<GizmoVertex>* out, const CadExtrudeAnchors& anchors,
+                            const CadExtrudeLeader& leader, double controlWorld);
 
 // ---------------------------------------------------------------------------
 // 3. What a drag means

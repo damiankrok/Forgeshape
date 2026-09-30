@@ -503,7 +503,7 @@ public:
     // `overlay`, and the chrome reads it through here too, so the drawn head,
     // the hit test and the HUD glyphs are one number. Invalid (and false)
     // whenever there are no anchors.
-    bool extrudeViewFacts(const CameraSnapshot& camera, int viewportHeight,
+    bool extrudeViewFacts(const CameraSnapshot& camera, int viewportWidth, int viewportHeight,
                           CadExtrudeViewFacts* out) const;
 
     // Reverses which side of the sketch plane the solid grows on, keeping the

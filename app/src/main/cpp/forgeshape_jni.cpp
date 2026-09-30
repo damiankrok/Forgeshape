@@ -1904,8 +1904,8 @@ void renderThreadMain() {
                         // head is the head the hit test grabs.
                         forgeshape::SketchSession& session = forgeshape::sketchSession();
                         forgeshape::CadExtrudeViewFacts view;
-                        session.extrudeViewFacts(g_camera.snapshot(), g_camera.viewportHeight(),
-                                                 &view);
+                        session.extrudeViewFacts(g_camera.snapshot(), g_camera.viewportWidth(),
+                                                 g_camera.viewportHeight(), &view);
                         renderer.setSketchOverlay(session.overlay(worldPerUnit, view));
                     }
                 }
@@ -4814,11 +4814,21 @@ bool resolveCadSketchWorldFrame(forgeshape::ConstructionScene& scene, forgeshape
 //   [29] how many of them are chosen
 //   [30] the feature an edit session edits, or 0
 //   [31] the candidate revision the evaluation answered
+//
+// `CAD-FOUNDATION-C1` added the technical-drawing LEADER each value stands
+// beside -- the dimension line the frame draws in the overlay's `Dimension`
+// range, projected through the same camera and read from the same one
+// manipulator scale fact. Written only when the caller's array reaches them:
+//   [32] 1 when the PRIMARY side's leader projects; 33..36 meaningless otherwise
+//   [33] leader start x (beside the base)  [34] y
+//   [35] leader end x (beside the tip)     [36] y
+//   [37] 1 when the SECOND side's leader projects; 38..41 meaningless otherwise
+//   [38] start x  [39] y  [40] end x  [41] y
 JNIEXPORT void JNICALL
 Java_com_forgeshape_app_NativeViewport_cadExtrudeToolState(JNIEnv* env, jclass,
                                                            jdoubleArray out) {
     constexpr jsize kLegacySlots = 21;
-    constexpr jsize kMaxSlots = 32;
+    constexpr jsize kMaxSlots = 42;
     if (out == nullptr || env->GetArrayLength(out) < kLegacySlots) {
         return;
     }
@@ -4870,9 +4880,35 @@ Java_com_forgeshape_app_NativeViewport_cadExtrudeToolState(JNIEnv* env, jclass,
             // The SAME scale fact the frame draws the head with and the hit
             // test grabs with (`extrudeViewFacts`), never a second read.
             forgeshape::CadExtrudeViewFacts view;
-            if (session.extrudeViewFacts(g_camera.snapshot(), h, &view)) {
+            if (session.extrudeViewFacts(g_camera.snapshot(), w, h, &view)) {
                 values[10] = view.scale.scale;
                 values[11] = view.scale.clampedLow ? 1.0 : (view.scale.clampedHigh ? 2.0 : 0.0);
+                forgeshape::CadExtrudeLeader leader;
+                if (view.leaderValid
+                    && forgeshape::cadExtrudeLeaderFor(anchors, view.leaderSide, view.scale.world,
+                                                       &leader)) {
+                    const forgeshape::CadExtrudeLeaderSide* leaderSides[2] = {
+                        &leader.of(anchors.primaryIsPositive),
+                        &leader.of(!anchors.primaryIsPositive)};
+                    const int leaderBase[2] = {32, 37};
+                    for (int s = 0; s < 2; ++s) {
+                        float ax = 0.0f;
+                        float ay = 0.0f;
+                        float bx = 0.0f;
+                        float by = 0.0f;
+                        if (forgeshape::projectWorldToScreen(g_camera.snapshot(),
+                                                             leaderSides[s]->start, w, h, &ax, &ay)
+                            && forgeshape::projectWorldToScreen(g_camera.snapshot(),
+                                                                leaderSides[s]->end, w, h, &bx,
+                                                                &by)) {
+                            values[leaderBase[s] + 0] = 1.0;
+                            values[leaderBase[s] + 1] = ax;
+                            values[leaderBase[s] + 2] = ay;
+                            values[leaderBase[s] + 3] = bx;
+                            values[leaderBase[s] + 4] = by;
+                        }
+                    }
+                }
             }
             // The two sides, projected through the same camera and by the same
             // rule, so neither cluster can be placed by a different arithmetic

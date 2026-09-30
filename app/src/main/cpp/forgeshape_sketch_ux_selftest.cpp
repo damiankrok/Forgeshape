@@ -1288,15 +1288,16 @@ void testCanvasExtrudeScale(Recorder& r) {
                         && veryFar.unclampedScale < kCadExtrudeControlMinScale
                         && veryNear.unclampedScale > kCadExtrudeControlMaxScale);
     }
-    // The band is pinned by value. Since `CAD-VERTICAL-SLICE-R1` the HUD scales
-    // only its glyphs by it and never its 48 dp hit areas (CadHudPresentationTest
-    // asserts that floor at every scale on the JVM), so what is left to pin here
-    // is the band itself: 0.80 .. 1.60, a factor of exactly two.
+    // The band is pinned by value. The HUD sizes only what it draws by it and
+    // never a hit area (CadHudPresentationTest asserts the 48 dp proxy at every
+    // scale on the JVM), so what is left to pin here is the band itself:
+    // `CAD-FOUNDATION-C1` widened it to 0.40 .. 1.60, a factor of four, so a
+    // pulled-back camera visibly shrinks the manipulator with the work.
     {
-        r.check("CADUXS1_09_d_the_scale_band_is_0_80_to_1_60_a_factor_of_two",
-                near2(kCadExtrudeControlMinScale, 0.80, 1e-6)
+        r.check("CADUXS1_09_d_the_scale_band_is_0_40_to_1_60_a_factor_of_four",
+                near2(kCadExtrudeControlMinScale, 0.40, 1e-6)
                         && near2(kCadExtrudeControlMaxScale, 1.60, 1e-6)
-                        && near2(kCadExtrudeControlMaxScale / kCadExtrudeControlMinScale, 2.0,
+                        && near2(kCadExtrudeControlMaxScale / kCadExtrudeControlMinScale, 4.0,
                                  1e-6));
     }
     // A degenerate camera quantity produces nothing rather than a guess.
@@ -1362,7 +1363,7 @@ void testCadFoundationOneScale(Recorder& r) {
     const CameraSnapshot camera =
             uxPerspectiveCamera(Vec3{6.0f, 3.0f, 6.0f}, Vec3{0.0f, 0.0f, 0.0f}, 1080, h);
     CadExtrudeViewFacts facts;
-    const bool haveFacts = session.extrudeViewFacts(camera, h, &facts);
+    const bool haveFacts = session.extrudeViewFacts(camera, 1080, h, &facts);
     // What the hit test grabs with and what the HUD slot reports: the one
     // function, at the anchor.
     CadExtrudeControlScale hit;
@@ -1417,7 +1418,7 @@ void testCadFoundationOneScale(Recorder& r) {
         CadExtrudeViewFacts closer = facts;
         const CameraSnapshot near =
                 uxPerspectiveCamera(Vec3{2.0f, 3.0f, 4.0f}, Vec3{6.0f, 4.0f, 0.0f}, 1080, h);
-        session.extrudeViewFacts(near, h, &closer);
+        session.extrudeViewFacts(near, 1080, h, &closer);
         const uint64_t r1 = zoomed->revision;
         const SketchOverlayPtr moved = session.overlay(originPerUnit * 1.5f, closer);
         r.check("CADFC1_S4_b_a_manipulator_scale_change_alone_advances_the_revision",
@@ -1437,6 +1438,114 @@ void testCadFoundationOneScale(Recorder& r) {
         const SketchOverlayPtr edited = session.overlay(originPerUnit * 1.5f, closer);
         r.check("CADFC1_S4_c_an_authored_change_is_published_at_its_own_revision",
                 r3 > r2 && edited->revision == r3);
+    }
+}
+
+// `CAD-FOUNDATION-C1` E: the technical-drawing leader.
+double lengthOf(const Vec3& v) { return std::sqrt(static_cast<double>(vec3Dot(v, v))); }
+
+void testCadFoundationLeader(Recorder& r) {
+    const int w = 1080;
+    const int h = 2000;
+    SketchSession session;
+    readyRectangleSession(&session, Workplane::XY, 2.0, 1.0, 1.0, 1.0, 0.5);
+    CadExtrudeAnchors anchors;
+    session.extrudeAnchors(&anchors);
+    const CameraSnapshot camera =
+            uxPerspectiveCamera(Vec3{5.0f, 4.0f, 6.0f}, Vec3{1.0f, 0.5f, 0.5f}, w, h);
+    CadExtrudeViewFacts facts;
+    const bool got = session.extrudeViewFacts(camera, w, h, &facts);
+    CadExtrudeLeader leader;
+    const bool built =
+            got && facts.leaderValid
+            && cadExtrudeLeaderFor(anchors, facts.leaderSide, facts.scale.world, &leader);
+    const double offset = facts.scale.world * kCadExtrudeLeaderOffsetFraction;
+    const Vec3 dim = vec3Sub(leader.positive.end, leader.positive.start);
+    const Vec3 shaft = vec3Sub(anchors.positive.tip, anchors.base);
+    r.check("CADFC1_E_a_the_leader_is_a_dimension_line_parallel_to_the_axis_beside_the_shaft",
+            built && std::fabs(vec3Dot(facts.leaderSide, anchors.normal)) < 1e-5f
+                    && near2(lengthOf(vec3Sub(leader.positive.start, anchors.base)), offset, 1e-5)
+                    && near2(lengthOf(vec3Sub(leader.positive.end, anchors.positive.tip)), offset,
+                             1e-5)
+                    && near2(lengthOf(dim), lengthOf(shaft), 1e-5)
+                    && vec3Dot(vec3Normalize(dim), anchors.normal) > 0.99999f);
+    // On screen the leader stands on the READING-UP side of the shaft: the
+    // side upright text along it reads above, so the value never sits on the
+    // shaft it measures.
+    float bx, by, tx, ty, lx, ly;
+    const bool projected =
+            projectWorldToScreen(camera, anchors.base, w, h, &bx, &by)
+            && projectWorldToScreen(camera, anchors.positive.tip, w, h, &tx, &ty)
+            && projectWorldToScreen(camera, leader.positive.start, w, h, &lx, &ly);
+    float dx = tx - bx;
+    float dy = ty - by;
+    if (dx < 0.0f || (dx == 0.0f && dy > 0.0f)) {
+        dx = -dx;
+        dy = -dy;
+    }
+    r.check("CADFC1_E_b_the_leader_stands_on_the_reading_up_side_of_the_shaft",
+            projected && ((lx - bx) * dy + (ly - by) * -dx) > 0.0f);
+    // It is in the overlay's Dimension range with the frame's facts, and absent
+    // without them.
+    const SketchOverlayPtr withFacts = session.overlay(0.01f, facts);
+    const uint32_t dimensionWith = withFacts->ranges.size() == 5 ? withFacts->ranges[4].vertexCount : 0u;
+    SketchSession bare;
+    readyRectangleSession(&bare, Workplane::XY, 2.0, 1.0, 1.0, 1.0, 0.5);
+    const SketchOverlayPtr without = bare.overlay(0.01f);
+    r.check("CADFC1_E_c_the_leader_is_drawn_in_the_Dimension_range_only_with_the_frame_facts",
+            withFacts->ranges.size() == 5
+                    && withFacts->ranges[4].style == SketchOverlayStyle::Dimension
+                    && dimensionWith == 2u * (2u + 1u + 2u)
+                    && overlayHasPointNear(*withFacts, leader.positive.start, 1e-4f)
+                    && without->ranges.size() == 5 && without->ranges[4].vertexCount == 0u);
+    // Symmetric: a leader per side, and the base extension is shared.
+    {
+        SketchSession sym;
+        readyRectangleSession(&sym, Workplane::XY, 2.0, 1.0, 1.0, 1.0, 0.5);
+        sym.setExtrudeExtent(ExtrudeExtentMode::Symmetric);
+        CadExtrudeViewFacts sf;
+        sym.extrudeViewFacts(camera, w, h, &sf);
+        const SketchOverlayPtr o = sym.overlay(0.01f, sf);
+        r.check("CADFC1_E_d_symmetric_draws_one_leader_per_side_with_one_shared_base_extension",
+                sf.leaderValid && o->ranges.size() == 5
+                        && o->ranges[4].vertexCount == 2u * (1u + 2u * (1u + 1u + 2u)));
+    }
+    // Looking straight down the axis still names a perpendicular, never NaN.
+    {
+        const CameraSnapshot down =
+                uxPerspectiveCamera(Vec3{1.0f, 0.5f, 9.0f}, Vec3{1.0f, 0.5f, 0.0f}, w, h);
+        Vec3 side{};
+        const bool ok = cadExtrudeLeaderSide(anchors, down, w, h, &side);
+        r.check("CADFC1_E_e_a_view_down_the_axis_falls_back_to_a_deterministic_perpendicular",
+                ok && vec3Finite(side) && std::fabs(vec3Dot(side, anchors.normal)) < 1e-5f
+                        && near2(lengthOf(side), 1.0, 1e-5));
+    }
+    // The leader shrinks with the camera like the head: a farther camera gives
+    // a smaller offset, monotonically, inside the band.
+    {
+        bool monotonic = true;
+        double previous = 1.0e9;
+        for (int i = 0; i < 12; ++i) {
+            const float distance = 3.0f + 1.5f * static_cast<float>(i);
+            const Vec3 eye{1.0f + distance * 0.5f, 0.5f + distance * 0.4f, distance * 0.75f};
+            const CameraSnapshot c = uxPerspectiveCamera(eye, Vec3{1.0f, 0.5f, 0.5f}, w, h);
+            CadExtrudeViewFacts f;
+            if (!session.extrudeViewFacts(c, w, h, &f)) {
+                monotonic = false;
+                break;
+            }
+            // The on-screen offset in pixels is scale * reference pixels.
+            const double pixels = f.scale.pixels;
+            if (!f.scale.clampedLow && !f.scale.clampedHigh) {
+                if (pixels >= previous) {
+                    monotonic = false;
+                    break;
+                }
+                previous = pixels;
+            }
+        }
+        r.check("CADFC1_E_f_the_annotation_shrinks_monotonically_as_the_camera_pulls_back",
+                monotonic && previous < 1.0e9);
     }
 }
 
@@ -2589,6 +2698,7 @@ int runSketchUxSelfTests(SketchUxSelfTestResult* out, int maxOut) {
     testCanvasExtrudeFlip(r);
     testCanvasExtrudeScale(r);
     testCadFoundationOneScale(r);
+    testCadFoundationLeader(r);
     testCanvasExtrudeDrag(r);
     testCanvasExtrudeSessionGesture(r);
     testCanvasExtrudeParityAndPurity(r);

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The operation badge's glyph while the candidate would be REFUSED
+  (`CAD-FOUNDATION-C1`): bg_hud_glyph with an error-coloured ring. Never the
+  only carrier: the badge's accessible description names the reason, and the
+  status line names it again when the user commits.
+-->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_pressed="true">
+        <shape android:shape="oval">
+            <solid android:color="?attr/fsControlSurfacePressed" />
+            <stroke
+                android:width="@dimen/control_border_active_width"
+                android:color="?attr/fsTextError" />
+        </shape>
+    </item>
+    <item android:state_activated="true">
+        <shape android:shape="oval">
+            <solid android:color="?attr/fsAccentFill" />
+            <stroke
+                android:width="@dimen/control_border_active_width"
+                android:color="?attr/fsTextError" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="oval">
+            <solid android:color="?attr/fsSurfaceFloating" />
+            <stroke
+                android:width="@dimen/control_border_active_width"
+                android:color="?attr/fsTextError" />
+        </shape>
+    </item>
+</selector>

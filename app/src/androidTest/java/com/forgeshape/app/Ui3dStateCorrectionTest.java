@@ -502,61 +502,32 @@ public final class Ui3dStateCorrectionTest {
         assertFalse(where + ": the dimension editor survives", shown(R.id.body_dimension_editor));
     }
 
-    /** The CAD extrude cluster stands on the anchor native reports for it. */
+    /**
+     * The CAD extrude value stands on the leader native reports for it
+     * (`CAD-FOUNDATION-C1`): rotated to the leader, above it, along its visible
+     * part, as an unscaled 48 dp proxy.
+     */
     private void assertExtrudeClusterAttached(String where) {
         settleLayout();
         final double[] tool = new double[NativeViewport.CAD_EXTRUDE_SIZE];
         NativeViewport.cadExtrudeToolState(tool);
         if (tool[NativeViewport.CAD_EXTRUDE_ACTIVE] == 0.0
-                || tool[NativeViewport.CAD_EXTRUDE_ON_SCREEN] == 0.0) {
+                || tool[NativeViewport.CAD_EXTRUDE_ON_SCREEN] == 0.0
+                || CadLeaderHudChecks.leader(tool, false) == null) {
             return;
         }
-        final float expectX = (float) tool[NativeViewport.CAD_EXTRUDE_LABEL_X];
-        final float expectY = (float) tool[NativeViewport.CAD_EXTRUDE_LABEL_Y];
-        final float[] placed = onWorkspace(rule.getScenario(), (activity, workspace) -> {
-            final View leaf = workspace.findViewById(R.id.cad_extrude_depth_value);
-            final View container = workspace.findViewById(R.id.cad_extrude_canvas);
+        final String why = onWorkspace(rule.getScenario(), (activity, workspace) -> {
+            final android.widget.TextView value =
+                    workspace.findViewById(R.id.cad_extrude_depth_value);
             final View viewport = workspace.findViewById(R.id.viewport_surface);
-            if (leaf == null || !leaf.isShown() || container == null) {
-                return null;
+            final float[] l = CadLeaderHudChecks.leader(tool, false);
+            if (CadHudPresentation.clipToViewport(l[0], l[1], l[2], l[3], viewport.getWidth(),
+                    viewport.getHeight()) == null) {
+                return value.isShown() ? "a value is shown for a leader wholly off screen" : null;
             }
-            final View placedView = Ui3dAuditRecorder.placedAncestor(leaf, container);
-            final float[] box = Ui3dAuditRecorder.centreOf(placedView, viewport);
-            // Since `CAD-VERTICAL-SLICE-R1` the HUD stands its VALUE -- not the
-            // whole row -- on the shaft's anchor, so the value's own centre is
-            // what is measured, and the row is where the value's offset inside
-            // it puts it.
-            final float[] centre = Ui3dAuditRecorder.centreOf(leaf, viewport);
-            final float w = placedView.getWidth() * placedView.getScaleX();
-            final float h = placedView.getHeight() * placedView.getScaleY();
-            // Whether the clamp bites is decided from the ANCHOR, exactly as the
-            // audit decides it: a box that does not fit at its anchor is held
-            // inside the viewport, and the distance that leaves is correct.
-            final boolean clamped = Ui3dAuditRecorder.wouldClamp(placedView, viewport,
-                    expectX - (centre[0] - box[0]), expectY - (centre[1] - box[1]));
-            // A clamped control still has to be INSIDE, which is the whole of
-            // UI3D-F-006: the bound is the viewport and not a padded container.
-            final boolean inside = box[0] - w * 0.5f >= -1.0f && box[1] - h * 0.5f >= -1.0f
-                    && (box[0] + w * 0.5f <= viewport.getWidth() + 1.0f || w > viewport.getWidth())
-                    && (box[1] + h * 0.5f <= viewport.getHeight() + 1.0f
-                            || h > viewport.getHeight());
-            return new float[]{centre[0], centre[1], clamped ? 1f : 0f, inside ? 1f : 0f};
+            return CadLeaderHudChecks.valueOnLeader(tool, value, viewport, density, false);
         });
-        if (placed == null) {
-            return;
-        }
-        assertTrue(where + ": the extrude cluster stays inside the viewport rectangle",
-                placed[3] != 0f);
-        if (placed[2] != 0f) {
-            return;
-        }
-        final float dx = placed[0] - expectX;
-        final float dy = placed[1] - expectY;
-        final float dp = (float) Math.sqrt(dx * dx + dy * dy) / density;
-        assertTrue(where + ": the extrude value stands " + dp + " dp from its anchor"
-                        + " (expected " + expectX + "," + expectY + " actual " + placed[0] + ","
-                        + placed[1] + ")",
-                dp <= TOLERANCE_DP);
+        assertTrue(where + ": the extrude value stands on its leader: " + why, why == null);
     }
 
     // =======================================================================

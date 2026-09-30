@@ -11,6 +11,7 @@ import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import android.os.SystemClock;
@@ -627,6 +628,82 @@ public final class CadCanvasExtrudeTest {
     }
 
     // -----------------------------------------------------------------------
+    // CAD-FOUNDATION-C1 J5: the leader HUD follows a deterministic zoom
+    // -----------------------------------------------------------------------
+
+    @Test
+    public void cadFoundationC1_theLeaderHudShrinksWithZoomAndKeepsItsProxies() {
+        beginSketchXy();
+        drawRectangle(2.0, 1.0);
+        finishSketch();
+        // The Ready view keeps the sketch's orthographic projection, where the
+        // camera distance changes nothing on screen; Perspective -- a state the
+        // user reaches from the Display popover -- makes the distance the zoom,
+        // so a placed pose is a deterministic zoom sequence.
+        final int projectionBefore = NativeViewport.projectionMode();
+        assertEquals(NativeViewport.PROJECTION_PERSPECTIVE,
+                NativeViewport.setProjectionMode(NativeViewport.PROJECTION_PERSPECTIVE));
+        try {
+            zoomSequence();
+        } finally {
+            NativeViewport.setProjectionMode(projectionBefore);
+        }
+    }
+
+    private void zoomSequence() {
+        final float[] distances = {5.0f, 9.0f, 16.0f, 30.0f};
+        final int[] glyphPx = new int[distances.length];
+        final float[] textSp = new float[distances.length];
+        for (int i = 0; i < distances.length; i++) {
+            final float distance = distances[i];
+            doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+                assertTrue(NativeViewport.debugSetCameraPose(0.8f, 0.55f, distance));
+                workspace.onNativeStateChanged();
+                return null;
+            });
+            settleLayout();
+            final double[] tool = toolState();
+            final int index = i;
+            final String where = "distance " + distance;
+            doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
+                final float density = activity.getResources().getDisplayMetrics().density;
+                final CadExtrudeCanvasView canvas = workspace.cadExtrudeCanvas();
+                final View viewport = workspace.findViewById(R.id.viewport_surface);
+                glyphPx[index] = canvas.lastGlyphPx();
+                textSp[index] = canvas.lastValueTextSp();
+                assertEquals(where + ": the glyph is the camera-attached size",
+                        CadHudPresentation.glyphPx(tool[NativeViewport.CAD_EXTRUDE_SCALE], density),
+                        glyphPx[index]);
+                final String value = CadLeaderHudChecks.valueOnLeader(tool,
+                        canvas.findViewById(R.id.cad_extrude_depth_value), viewport, density,
+                        false);
+                assertNull(where + ": the value stays on its leader: " + value, value);
+                for (int id : new int[]{R.id.cad_extrude_extent, R.id.cad_extrude_operation,
+                        R.id.cad_extrude_flip}) {
+                    final View control = canvas.findViewById(id);
+                    if (!control.isShown()) {
+                        continue;  // its point is off screen: hidden, never clamped
+                    }
+                    final String proxy = CadLeaderHudChecks.glyphOnLeader(tool, control, viewport,
+                            density, id != R.id.cad_extrude_extent);
+                    assertNull(where + ": " + proxy, proxy);
+                }
+                return null;
+            });
+            android.util.Log.i("ForgeShape", "CADFC1_J5 distance=" + distance + " scale="
+                    + tool[NativeViewport.CAD_EXTRUDE_SCALE] + " glyph_px=" + glyphPx[i]
+                    + " value_sp=" + textSp[i]);
+        }
+        for (int i = 1; i < distances.length; i++) {
+            assertTrue("a farther camera never draws a larger glyph",
+                    glyphPx[i] <= glyphPx[i - 1]);
+            assertTrue("nor larger value text", textSp[i] <= textSp[i - 1] + 1e-4f);
+        }
+        assertTrue("and the zoom-out visibly shrinks it: " + glyphPx[0] + " -> "
+                + glyphPx[distances.length - 1], glyphPx[distances.length - 1] < glyphPx[0]);
+    }
+
+    // -----------------------------------------------------------------------
     // E2E-CADUXS1-09: camera-attached presentation
     // -----------------------------------------------------------------------
 
@@ -638,7 +715,7 @@ public final class CadCanvasExtrudeTest {
 
         final double[] near = toolState();
         assertTrue("the scale is inside the bounded band",
-                near[NativeViewport.CAD_EXTRUDE_SCALE] >= 0.80 - 1e-6
+                near[NativeViewport.CAD_EXTRUDE_SCALE] >= 0.40 - 1e-6
                         && near[NativeViewport.CAD_EXTRUDE_SCALE] <= 1.60 + 1e-6);
 
         // Pull the camera back with a real two-finger pinch and read the scale
@@ -650,7 +727,7 @@ public final class CadCanvasExtrudeTest {
         assertEquals("E2E-CADUXS1-09: zooming changes no authored value", depthBefore,
                 far[NativeViewport.CAD_EXTRUDE_DEPTH], 0.0);
         assertTrue("and the scale stays inside the band",
-                far[NativeViewport.CAD_EXTRUDE_SCALE] >= 0.80 - 1e-6
+                far[NativeViewport.CAD_EXTRUDE_SCALE] >= 0.40 - 1e-6
                         && far[NativeViewport.CAD_EXTRUDE_SCALE] <= 1.60 + 1e-6);
         assertTrue("a farther camera never draws the cluster larger",
                 far[NativeViewport.CAD_EXTRUDE_SCALE] <= near[NativeViewport.CAD_EXTRUDE_SCALE]

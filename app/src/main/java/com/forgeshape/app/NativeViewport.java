@@ -2341,7 +2341,7 @@ final class NativeViewport {
      * land between two of them. Every slot is DERIVED below JNI on every read —
      * the shell stores no depth, no direction and no anchor.
      */
-    static final int CAD_EXTRUDE_SIZE = 32;
+    static final int CAD_EXTRUDE_SIZE = 42;
     /** 1 when the canvas manipulator is live; 0 is the whole reason it is absent. */
     static final int CAD_EXTRUDE_ACTIVE = 0;
     /** The PRIMARY side's distance: the whole depth of a One Side extrusion. */
@@ -2355,7 +2355,10 @@ final class NativeViewport {
     static final int CAD_EXTRUDE_LABEL_Y = 7;
     static final int CAD_EXTRUDE_TIP_X = 8;
     static final int CAD_EXTRUDE_TIP_Y = 9;
-    /** The camera-attached visual multiplier the cluster is drawn at. */
+    /**
+     * The camera-attached VISUAL multiplier (0.40..1.60) the glyphs and the
+     * value text are drawn at. Never a hit area.
+     */
     static final int CAD_EXTRUDE_SCALE = 10;
     /** 0 unclamped, 1 clamped at the minimum, 2 at the maximum. */
     static final int CAD_EXTRUDE_CLAMP = 11;
@@ -2404,6 +2407,22 @@ final class NativeViewport {
     /** The feature an edit session edits, or 0 for a new one. */
     static final int CAD_EXTRUDE_EDITING_FEATURE = 30;
     static final int CAD_EXTRUDE_CANDIDATE_REVISION = 31;
+
+    // `CAD-FOUNDATION-C1`. The technical-drawing leader each value stands
+    // beside: the dimension line the frame draws next to the shaft, projected
+    // below JNI. Start is beside the base, end beside the tip.
+    /** 1 when the PRIMARY leader projects; 0 means HIDE, never guess a spot. */
+    static final int CAD_EXTRUDE_LEADER_ON_SCREEN = 32;
+    static final int CAD_EXTRUDE_LEADER_START_X = 33;
+    static final int CAD_EXTRUDE_LEADER_START_Y = 34;
+    static final int CAD_EXTRUDE_LEADER_END_X = 35;
+    static final int CAD_EXTRUDE_LEADER_END_Y = 36;
+    /** 1 when the SECOND side's leader projects. */
+    static final int CAD_EXTRUDE_SECOND_LEADER_ON_SCREEN = 37;
+    static final int CAD_EXTRUDE_SECOND_LEADER_START_X = 38;
+    static final int CAD_EXTRUDE_SECOND_LEADER_START_Y = 39;
+    static final int CAD_EXTRUDE_SECOND_LEADER_END_X = 40;
+    static final int CAD_EXTRUDE_SECOND_LEADER_END_Y = 41;
 
     /** Extent modes, in the native enum's own order. */
     static final int EXTENT_ONE_SIDE = 0;

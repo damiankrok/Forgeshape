@@ -1,46 +1,70 @@
 package com.forgeshape.app;
 
 /**
- * The compact CAD extrude HUD's presentation rules, as plain values
- * (`CAD-VERTICAL-SLICE-R1`).
+ * The CAD extrude HUD's presentation rules, as plain values
+ * (`CAD-VERTICAL-SLICE-R1`, reshaped as a technical-drawing annotation by
+ * `CAD-FOUNDATION-C1`).
  *
  * <p><b>Why a separate class.</b> {@link CadExtrudeCanvasView} is a view and
  * can only be argued about on a device. The decisions it makes — how big a
- * glyph is drawn at a camera scale, how big the touch target is, which icon
- * and caption name a mode or an operation, which operations the badge offers,
- * where the cluster must stand so its VALUE lands on the arrow — are
- * arithmetic and lookup, and holding them here lets a JVM case pin every one
- * of them. The view asks; this answers; neither holds a domain value.
+ * glyph and the value text are drawn at a camera scale, how big the invisible
+ * touch proxy is, where along the projected leader each control stands, which
+ * way the value reads, which icon and caption name a mode or an operation,
+ * which operations the badge offers — are arithmetic and lookup, and holding
+ * them here lets a JVM case pin every one of them. The view asks; this answers;
+ * neither holds a domain value, and nothing here projects: every screen point
+ * it reasons about was projected below JNI.
  *
- * <p><b>The glyph and the touch target are two different facts.</b> The glyph
- * follows the camera-attached multiplier native reports ({@code
- * CAD_EXTRUDE_SCALE}, 0.80..1.60), so the cluster still reads as belonging to
- * the work: {@code clamp(28 x scale, 24, 32)} dp. The hit area does NOT follow
- * it: every control is 48 dp at every scale. The previous cluster scaled whole
- * views by the multiplier, which scaled the hit area down with the glyph and
- * forced every control to be authored at 60 dp just so the smallest scale
- * still cleared the floor — a 60 dp text pill is what made the old cluster
- * span a phone's whole viewport.
+ * <p><b>What is drawn and what is touched are two facts.</b> The visible glyph
+ * and the value's text follow the camera-attached multiplier native reports
+ * ({@code CAD_EXTRUDE_SCALE}, 0.40..1.60): {@code 28 dp x scale} for a glyph and
+ * {@code clamp(14 sp x scale, 11, 18)} for the value. The touch target never
+ * follows it: every control is an INVISIBLE proxy of at least 48 dp, centred on
+ * the drawn glyph, and it paints nothing, so a pulled-back camera shows a small
+ * annotation on the work rather than a row of 48 dp capsules.
+ *
+ * <p><b>The value belongs to its leader.</b> Native projects the dimension line
+ * the frame draws beside the shaft; the value stands ABOVE that line, rotated to
+ * it and kept upright, at the middle of the part of the line that is actually on
+ * screen. The extent control stands on the leader's line past its base end, the
+ * operation badge and Flip past its tip end, each far enough along that no two
+ * proxies overlap.
+ *
+ * <p><b>OWNER-TUNABLE.</b> Every size constant below is a provisional
+ * presentation choice with stated arithmetic, not architecture; the
+ * physical-device review decides the final values.
  *
  * <p>Holds no Android type and reads no state; the {@code R} ids it returns
  * are plain integers.
  */
 final class CadHudPresentation {
 
-    /** The interactive floor, in dp: every HUD control's hit rectangle. */
+    /** The interactive floor, in dp: every HUD control's invisible touch proxy. */
     static final int HIT_DP = 48;
-    /** The glyph at scale 1.0, in dp. */
+    /** The drawn glyph at scale 1.0, in dp. OWNER-TUNABLE. */
     static final float GLYPH_BASE_DP = 28.0f;
-    /** The smallest glyph, in dp: still legible on a pulled-back camera. */
-    static final float GLYPH_MIN_DP = 24.0f;
     /**
-     * The largest glyph, in dp. Below the 48 dp hit rectangle with room for
-     * the pressed shape around it, so a close camera never grows a glyph into
-     * its own control's edge.
+     * The visual scale band the glyph and the value text follow — the native
+     * band, restated so a JVM case can hold it: 0.40 is a glyph of about 11 dp
+     * on a pulled-back camera, 1.60 one of about 45 dp up close. OWNER-TUNABLE.
      */
-    static final float GLYPH_MAX_DP = 32.0f;
-    /** The visible height of the exact value's pill, in dp (inside 48 dp). */
-    static final int VALUE_PILL_DP = 32;
+    static final float VISUAL_SCALE_MIN = 0.40f;
+    static final float VISUAL_SCALE_MAX = 1.60f;
+    /** The value text at scale 1.0, and its legibility band, in sp. OWNER-TUNABLE. */
+    static final float VALUE_TEXT_BASE_SP = 14.0f;
+    static final float VALUE_TEXT_MIN_SP = 11.0f;
+    static final float VALUE_TEXT_MAX_SP = 18.0f;
+    /** How far the value's text stands above its leader, in dp. */
+    static final float VALUE_GAP_DP = 3.0f;
+    /** The gap between a glyph and the end of the leader it stands past, in dp. */
+    static final float GLYPH_GAP_DP = 4.0f;
+    /**
+     * The retained-sketch chip's glyph band, in dp. That chip is a lone control
+     * standing on a committed body, not a drawing annotation, and it keeps the
+     * compact band it was approved with.
+     */
+    static final float LONE_GLYPH_MIN_DP = 24.0f;
+    static final float LONE_GLYPH_MAX_DP = 32.0f;
 
     /** The operations, in the native enum's order and the palette's order. */
     static final int[] OPERATIONS = {
@@ -71,10 +95,15 @@ final class CadHudPresentation {
         return (float) scale;
     }
 
-    /** The drawn glyph, in dp: {@code clamp(28 x scale, 24, 32)}. */
+    /** The multiplier clamped into the visual band. */
+    static float visualScale(double scale) {
+        final float s = effectiveScale(scale);
+        return Math.max(VISUAL_SCALE_MIN, Math.min(VISUAL_SCALE_MAX, s));
+    }
+
+    /** The drawn glyph, in dp: {@code 28 x clamp(scale, 0.40, 1.60)}. */
     static float glyphDp(double scale) {
-        final float wanted = GLYPH_BASE_DP * effectiveScale(scale);
-        return Math.max(GLYPH_MIN_DP, Math.min(GLYPH_MAX_DP, wanted));
+        return GLYPH_BASE_DP * visualScale(scale);
     }
 
     /** The drawn glyph in pixels at a display density. At least one pixel. */
@@ -82,15 +111,41 @@ final class CadHudPresentation {
         return Math.max(1, Math.round(glyphDp(scale) * density));
     }
 
+    /** The lone retained-sketch chip's glyph, in dp: {@code clamp(28 x scale, 24, 32)}. */
+    static float loneGlyphDp(double scale) {
+        final float wanted = GLYPH_BASE_DP * effectiveScale(scale);
+        return Math.max(LONE_GLYPH_MIN_DP, Math.min(LONE_GLYPH_MAX_DP, wanted));
+    }
+
+    static int loneGlyphPx(double scale, float density) {
+        return Math.max(1, Math.round(loneGlyphDp(scale) * density));
+    }
+
+    /** The value's text size, in sp: {@code clamp(14 x scale, 11, 18)}. */
+    static float valueTextSp(double scale) {
+        final float wanted = VALUE_TEXT_BASE_SP * effectiveScale(scale);
+        return Math.max(VALUE_TEXT_MIN_SP, Math.min(VALUE_TEXT_MAX_SP, wanted));
+    }
+
     /**
-     * The hit rectangle's side, in dp. Deliberately takes the scale and
-     * ignores it: that is the whole rule, stated where a case can hold it.
+     * Whether a control shows its Tool Labels caption. A palette choice does
+     * when the preference is on; a glyph attached to the leader never does,
+     * because it shrinks with the work and a fixed-size word under a shrinking
+     * mark would be neither drawing nor chrome.
+     */
+    static boolean captionShown(boolean toolLabels, boolean attached) {
+        return toolLabels && !attached;
+    }
+
+    /**
+     * The touch proxy's side, in dp. Deliberately takes the scale and ignores
+     * it: that is the whole rule, stated where a case can hold it.
      */
     static int hitDp(double scale) {
         return HIT_DP;
     }
 
-    /** The hit rectangle's side in pixels at a display density. */
+    /** The touch proxy's side in pixels at a display density. */
     static int hitPx(float density) {
         return Math.round(HIT_DP * density);
     }
@@ -274,23 +329,198 @@ final class CadHudPresentation {
     // -----------------------------------------------------------------------
 
     /**
-     * How far the cluster's centre must stand from the anchor so that the
-     * VALUE's centre lands on it.
-     *
-     * <p>{@link ViewportAnchorSpace} centres whatever box it is given on the
-     * anchor. The anchor is the arrow shaft's midpoint and the value is the
-     * number that measures that shaft, so it is the value — not the cluster —
-     * that belongs there; the extent button stands to its left and the badge
-     * and Flip to its right. Passing {@code anchor + offset} to the shared
-     * placement puts the value's centre exactly on the anchor, and the shared
-     * clamp still keeps the whole cluster inside the viewport.
-     *
-     * @param clusterWidth the cluster's measured width
-     * @param valueStart   the value's left edge inside the cluster
-     * @param valueWidth   the value's measured width
+     * The upright reading angle of a screen direction, in degrees within
+     * {@code [-90, 90)}: the direction itself when it points right (or, when
+     * exactly vertical, up the screen), otherwise the reverse. Text rotated by it
+     * never reads upside down, and a vertical leader reads bottom to top — the
+     * drawing convention. Native signs the leader's side with the SAME rule, so
+     * "above the leader" is always away from the shaft. A zero vector reads 0.
      */
-    static float valueCentreOffset(int clusterWidth, int valueStart, int valueWidth) {
-        return clusterWidth * 0.5f - (valueStart + valueWidth * 0.5f);
+    static float readingAngleDegrees(float dx, float dy) {
+        if (dx == 0.0f && dy == 0.0f) {
+            return 0.0f;
+        }
+        if (dx < 0.0f || (dx == 0.0f && dy > 0.0f)) {
+            dx = -dx;
+            dy = -dy;
+        }
+        final float degrees = (float) Math.toDegrees(Math.atan2(dy, dx));
+        return degrees >= 90.0f ? degrees - 180.0f : degrees;
+    }
+
+    /**
+     * The part of the segment {@code (x0,y0)-(x1,y1)} inside {@code [0,w] x
+     * [0,h]} (Liang–Barsky), as {@code {x0, y0, x1, y1}}, or null when none of it
+     * is. The value stands on the visible part of its leader, so a leader running
+     * off the screen still has its value where the user can read and tap it —
+     * and a leader wholly off screen has no value at all rather than one clamped
+     * to an edge at a guess.
+     */
+    static float[] clipToViewport(float x0, float y0, float x1, float y1, float w, float h) {
+        if (!(w > 0.0f) || !(h > 0.0f) || Float.isNaN(x0) || Float.isNaN(y0)
+                || Float.isNaN(x1) || Float.isNaN(y1)) {
+            return null;
+        }
+        final float dx = x1 - x0;
+        final float dy = y1 - y0;
+        final float[] p = {-dx, dx, -dy, dy};
+        final float[] q = {x0, w - x0, y0, h - y0};
+        float t0 = 0.0f;
+        float t1 = 1.0f;
+        for (int i = 0; i < 4; i++) {
+            if (p[i] == 0.0f) {
+                if (q[i] < 0.0f) {
+                    return null;
+                }
+                continue;
+            }
+            final float t = q[i] / p[i];
+            if (p[i] < 0.0f) {
+                if (t > t1) {
+                    return null;
+                }
+                t0 = Math.max(t0, t);
+            } else {
+                if (t < t0) {
+                    return null;
+                }
+                t1 = Math.min(t1, t);
+            }
+        }
+        return new float[]{x0 + dx * t0, y0 + dy * t0, x0 + dx * t1, y0 + dy * t1};
+    }
+
+    /**
+     * Where everything attached to one leader stands, in viewport pixels.
+     *
+     * <p>{@code valueVisible} false means the leader is wholly off screen and
+     * every attached control is hidden with it. A glyph whose own centre falls
+     * outside the viewport is hidden alone, never clamped back onto the screen
+     * away from the leader it belongs to.
+     */
+    static final class LeaderLayout {
+        boolean valueVisible;
+        float valueX;
+        float valueY;
+        /** The value's rotation, degrees, upright. */
+        float rotation;
+        boolean extentVisible;
+        float extentX;
+        float extentY;
+        boolean operationVisible;
+        float operationX;
+        float operationY;
+        boolean flipVisible;
+        float flipX;
+        float flipY;
+    }
+
+    /**
+     * Lays one leader's controls out.
+     *
+     * @param sx          the leader's start (beside the base), viewport px
+     * @param sy          the same, vertically
+     * @param ex          the leader's end (beside the tip), viewport px
+     * @param ey          the same, vertically
+     * @param viewportW   the viewport width, px
+     * @param viewportH   the viewport height, px
+     * @param valueW      the value proxy's measured width, px (at least the hit side)
+     * @param valueH      the value proxy's measured height, px
+     * @param textH       the value TEXT's own height, px (what stands above the line)
+     * @param glyphPx     the drawn glyph side, px
+     * @param hitPx       the touch proxy side, px
+     * @param gapPx       the glyph gap, px
+     * @param valueGapPx  the gap between the leader and the value text, px
+     * @param withGlyphs  whether the extent and operation controls stand here
+     * @param flipPresent whether Flip stands here (One Side only)
+     * @param extentPastTip whether the extent control stands past the TIP end,
+     *                    in Flip's place, rather than past the base end — true
+     *                    whenever the extrusion reaches the other side too
+     *                    (Symmetric, Two Sides), because past the base end is
+     *                    then the OTHER side's leader
+     */
+    static LeaderLayout layoutLeader(float sx, float sy, float ex, float ey, float viewportW,
+                                     float viewportH, float valueW, float valueH, float textH,
+                                     float glyphPx, float hitPx, float gapPx, float valueGapPx,
+                                     boolean withGlyphs, boolean flipPresent,
+                                     boolean extentPastTip) {
+        final LeaderLayout out = new LeaderLayout();
+        final float[] visible = clipToViewport(sx, sy, ex, ey, viewportW, viewportH);
+        if (visible == null) {
+            return out;
+        }
+        float dx = ex - sx;
+        float dy = ey - sy;
+        final float length = (float) Math.hypot(dx, dy);
+        if (length > 1.0e-3f) {
+            dx /= length;
+            dy /= length;
+        } else {
+            // Seen end-on: the leader is a point. Lay out horizontally about it.
+            dx = 1.0f;
+            dy = 0.0f;
+        }
+        out.rotation = readingAngleDegrees(dx, dy);
+        final double radians = Math.toRadians(out.rotation);
+        final float rx = (float) Math.cos(radians);
+        final float ry = (float) Math.sin(radians);
+        // "Up" for upright text along the reading direction, y-down screen.
+        final float ux = ry;
+        final float uy = -rx;
+        final float mx = (visible[0] + visible[2]) * 0.5f;
+        final float my = (visible[1] + visible[3]) * 0.5f;
+        final float above = textH * 0.5f + valueGapPx;
+        out.valueX = mx + ux * above;
+        out.valueY = my + uy * above;
+        out.valueVisible = true;
+        if (!withGlyphs) {
+            return out;
+        }
+        // Along the leader, measured from the VISIBLE midpoint: far enough past
+        // each end to clear the drawn line, and far enough from the value that
+        // two proxies never overlap -- the value's rotated box projects half its
+        // width along the line, a hit square at most `hit/2 x (|rx| + |ry|)`.
+        final float squareHalfAlong = hitPx * 0.5f * (Math.abs(rx) + Math.abs(ry));
+        final float half = (float) Math.hypot(visible[2] - visible[0], visible[3] - visible[1])
+                * 0.5f;
+        final float clearOfLine = half + gapPx + glyphPx * 0.5f;
+        final float clearOfValue = valueW * 0.5f + squareHalfAlong;
+        final float reach = Math.max(clearOfLine, clearOfValue);
+        // Two squares side by side along a direction clear each other once the
+        // larger of their x and y separations reaches the side.
+        final float step = Math.max(glyphPx + gapPx,
+                hitPx / Math.max(Math.abs(dx), Math.abs(dy)));
+        out.operationX = mx + dx * reach;
+        out.operationY = my + dy * reach;
+        out.flipX = out.operationX + dx * step;
+        out.flipY = out.operationY + dy * step;
+        if (extentPastTip) {
+            out.extentX = out.flipX;
+            out.extentY = out.flipY;
+        } else {
+            out.extentX = mx - dx * reach;
+            out.extentY = my - dy * reach;
+        }
+        out.extentVisible = inside(out.extentX, out.extentY, viewportW, viewportH);
+        out.operationVisible = inside(out.operationX, out.operationY, viewportW, viewportH);
+        out.flipVisible = flipPresent && inside(out.flipX, out.flipY, viewportW, viewportH);
+        return out;
+    }
+
+    private static boolean inside(float x, float y, float w, float h) {
+        return x >= 0.0f && y >= 0.0f && x <= w && y <= h;
+    }
+
+    /**
+     * The axis-aligned box a {@code w x h} box rotated by {@code degrees}
+     * occupies, as {@code {width, height}} — what a rotated value covers on
+     * screen, for the clamp that keeps it inside the viewport.
+     */
+    static float[] rotatedBounds(float w, float h, float degrees) {
+        final double r = Math.toRadians(degrees);
+        final float c = (float) Math.abs(Math.cos(r));
+        final float s = (float) Math.abs(Math.sin(r));
+        return new float[]{w * c + h * s, w * s + h * c};
     }
 
     /**

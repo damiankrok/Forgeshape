@@ -10,6 +10,7 @@ import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import android.os.SystemClock;
@@ -157,12 +158,23 @@ public final class CadExtrudeExtentTest {
                 (int) state[NativeViewport.CAD_EXTRUDE_EXTENT]);
         assertEquals("A carries across", depth, state[NativeViewport.CAD_EXTRUDE_POSITIVE], 1e-9);
         assertEquals("and so does B", depth, state[NativeViewport.CAD_EXTRUDE_NEGATIVE], 1e-9);
+        final double[] twoSides = state;
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             final View canvas = workspace.cadExtrudeCanvas();
             assertTrue("Two Sides states BOTH distances",
                     canvas.findViewById(R.id.cad_extrude_second_value).isShown());
             assertEquals("and still offers no Flip", View.GONE,
                     canvas.findViewById(R.id.cad_extrude_flip).getVisibility());
+            // `CAD-FOUNDATION-C1` E7: each value stands above its OWN side's
+            // leader, so neither number is ambiguous about which side it states.
+            final float density = activity.getResources().getDisplayMetrics().density;
+            final View viewport = workspace.findViewById(R.id.viewport_surface);
+            final String a = CadLeaderHudChecks.valueOnLeader(twoSides,
+                    canvas.findViewById(R.id.cad_extrude_depth_value), viewport, density, false);
+            final String b = CadLeaderHudChecks.valueOnLeader(twoSides,
+                    canvas.findViewById(R.id.cad_extrude_second_value), viewport, density, true);
+            assertNull("Side A on the +N leader: " + a, a);
+            assertNull("Side B on the -N leader: " + b, b);
             return null;
         });
 

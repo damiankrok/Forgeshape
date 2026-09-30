@@ -11,9 +11,9 @@
   keep naming the same acts.
 -->
 <resources>
-    <!-- The primary cluster: extent button, exact value, operation badge, Flip. -->
-    <item name="cad_extrude_cluster" type="id" />
-    <!-- The ONE extent button, showing the mode currently in force. -->
+    <!-- The ONE extent button, showing the mode currently in force. Since
+         CAD-FOUNDATION-C1 it and every other HUD control stands on its own on
+         the extrude leader; there is no cluster row and no cluster id. -->
     <item name="cad_extrude_extent" type="id" />
     <!-- The palette the extent button opens: One Side, Symmetric, Two Sides. -->
     <item name="cad_extrude_extent_palette" type="id" />
