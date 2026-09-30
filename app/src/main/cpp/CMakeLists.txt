@@ -114,6 +114,7 @@ set(FORGESHAPE_SELFTEST_SOURCES
     forgeshape_cad_a3_selftest.cpp
     forgeshape_cad_feature_selftest.cpp
     forgeshape_sketch_arrangement_selftest.cpp
+    forgeshape_cad_v6_selftest.cpp
     forgeshape_sketch_ux_selftest.cpp
     forgeshape_construction_selftest.cpp
     forgeshape_cone_capsule_selftest.cpp

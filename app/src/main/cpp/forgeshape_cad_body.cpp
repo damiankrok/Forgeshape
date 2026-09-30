@@ -1127,8 +1127,13 @@ CadStatus regenerateCadBody(const CadBodyState& state, CadBodyMesh* out,
             const CadFeatureGeometry& feature = chain[i];
             // The support must still carry material where this feature stands:
             // an earlier Cut that removed the whole face refuses by name rather
-            // than leave a sketch floating in empty space.
-            if (!cadSolidHasFaceOn(body, feature.placement)) {
+            // than leave a sketch floating in empty space. A feature extruding
+            // the ROOT sketch (`CAD-V6-S1`, a sketch the base also extrudes)
+            // stands on no face of the body, so there is no face to have lost.
+            CadFeatureView view;
+            const bool onFeatureFace = cadFeatureAt(state, static_cast<uint32_t>(i), &view)
+                                       && view.support != nullptr;
+            if (onFeatureFace && !cadSolidHasFaceOn(body, feature.placement)) {
                 return finish(CadStatus::SupportFaceLost, feature.featureId);
             }
             CadSolid tool;

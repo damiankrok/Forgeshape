@@ -540,8 +540,32 @@ on the host, with no device, and is the fast native loop.
   named by a canonical `PlanarFaceRef` built only from entity ids, edge-local
   indices and per-pair intersection ordinals — never a coordinate, index,
   tessellation or triangle — and resolved by exact equality with no fallback.
-  Nothing in the session, JNI, UI, feature chain or `.forge` reads it until a
-  combined `CADB` v6 (sketch identity + planar-face selection) is authorised.
+  Since `CAD-V6-S1` its one reader is the validation of a STORED `PlanarFaces`
+  selection (below); nothing in the session, JNI or UI reads it, and no
+  regeneration path does.
+- **A CAD Body's sketches are a TABLE, and a feature references one BY ID**
+  (`CAD-V6-S1`, `CADB` v6). `CadBodyState::sketches` holds every retained
+  sketch as a `CadSketchRecord` with a body-local, non-zero `CadSketchId`
+  minted from `nextSketchId`; the base names its sketch by `baseSketchId` and
+  every later feature by `sketchId`, and NO feature carries a sketch copy —
+  two features may extrude one sketch, and a sketch no feature extrudes may be
+  retained. Placement belongs to the sketch record: exactly one ROOT sketch
+  (the base's, on its workplane or `TopoRef`), every other on a face of one of
+  the body's own features. `nextFeatureId` is a stored high-water mark, so a
+  deleted feature's or sketch's id is never minted again. The base keeps its
+  implicit id 1 and New Body, the two facts every v1..v5 record implies. A
+  selection states its kind explicitly — `LoopRegions` or `PlanarFaces` — and
+  a `PlanarFaces` selection is VALIDATED (canonical form, then exact
+  resolution against the sketch's arrangement, no fallback) but NOT yet
+  regenerated (`PlanarFaceRegenerationUnavailable`), created by no product
+  path, and refused on load by `runtimeCanEvaluateProject`. The codec writes
+  `CADB` v6 ONLY when `cadBodyStateLegacyRepresentable` is false, reads
+  v1..v5 into the table as one sketch per feature (ids 1..n in chain order;
+  two identical inline sketches stay two), and the fingerprint mixes a v6
+  block only outside that predicate — so every legacy project keeps its bytes
+  and its fingerprint. **Not this stage:** creating, sharing, deleting or
+  browsing sketches from the UI, session tapping of planar faces, and
+  regeneration, preview or Add/Cut from them.
 - **An Add or a Cut changes the SAME body, through a retained feature chain**
   (`CAD-VERTICAL-SLICE-R1`, `forgeshape_cad_body.{h,cpp}`,
   `forgeshape_cad_feature.{h,cpp}`). After its first New Body feature a CAD
@@ -829,8 +853,13 @@ on the host, with no device, and is the fast native loop.
   v5** fixtures (`cad_region_hole`, `cad_feature_add`, `cad_feature_cut`,
   `cad_feature_chain`, and the four the decoder must refuse,
   `cad_bad_operation`, `cad_bad_feature_ref`, `cad_bad_feature_order` and
-  `cad_bad_region`) — a **forty-four**-fixture corpus in which every older
-  fixture is byte-for-byte unchanged. Every corrupt fixture is CONSTRUCTED
+  `cad_bad_region`); `CAD-V6-S1` added the twelve **`CADB` v6** fixtures
+  (`cad_sketch_shared`, `cad_face_lens`, `cad_face_protrusion`,
+  `cad_face_two_circles`, `cad_mixed_selection`, and the seven the decoder must
+  refuse, `cad_bad_sketch_ref`, `cad_duplicate_sketch_id`,
+  `cad_bad_selection_kind`, `cad_noncanonical_face`, `cad_unresolved_face`,
+  `cad_spline_face` and `cad_overlap_face`) — a **fifty-six**-fixture corpus in
+  which every older fixture is byte-for-byte unchanged. Every corrupt fixture is CONSTRUCTED
   by the PowerShell builder with the bad value in place, never generated and
   then mutated.
   `DATA_PACKAGE_SPEC.md` owns the layout, and `scripts/build-forge-corpus.ps1`

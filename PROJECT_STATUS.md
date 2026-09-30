@@ -1,31 +1,41 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.88.0
+**Status Version:** 0.89.0
 **Updated:** 2026-09-30
-**Latest closeout:** **`CAD-PLANAR-FACE-PF-S1-ARRANGEMENT-R1` — `PASS-CAD-PLANAR-FACE-PF-S1`**
-(2026-09-30). **The planar-arrangement engine exists and is not wired to
-anything.** `forgeshape_sketch_arrangement` derives, from line, polyline,
-rectangle, circle and arc curves, analytic intersections and T-junctions,
-fragments, a half-edge graph, the bounded atomic faces and a canonical
-`PlanarFaceRef` per face (entity ids, edge-local indices, per-pair ordinals —
-no coordinate or index), resolved by exact equality. Record:
-`artifacts/cad-planar-face-pf-s1/SUMMARY.md` (BEFORE.md, REFERENCE_FACES.txt).
+**Latest closeout:** **`CAD-V6-S1-MODEL-CODEC-R1` — `PASS-CAD-V6-S1-MODEL-CODEC`**
+(2026-09-30), **TECH PASS / INTERMEDIATE BRANCH / NOT MERGED.** On
+`feature/cad-v6-sketch-face-r1` only; `main` is unchanged at `6c9f156` and
+describes the product as it ships. **A CAD Body's sketches are a TABLE and a
+feature references one by id; `CADB` v6 persists that and planar-face
+selections.** Record: `artifacts/cad-v6-s1/SUMMARY.md` (BEFORE.md written first).
 
-- OWNER cases: circle crossing rectangle → 3 faces (lens from both
-  entities); line protrusion → 2 faces (T-junctions split the side); two
-  crossing circles → lens + 2 crescents; the nested case equals the v5
-  regions exactly. Splines refused (`UnsupportedCurve`); overlaps refused
-  (`AmbiguousOverlap`); caps 1024 edges / 4096 contacts (`CapExceeded`).
-- Deterministic under input order and 100 repetitions; an edit keeping the
-  same partners and ordinals keeps every ref; losing an intersection loses
-  the ref with no fallback.
-- At-cap 64×64 grid (3969 faces): 22.2 ms median at `-O2`, 20 runs.
-- **No format change**: no codec, spec, fixture, encoder, JNI or Android
-  byte. C2 is integrated (`main` `3872120 → f751773`).
-- **Gates.** Host `HOST_SELFTESTS_OK (3852 checks, 0 failed)` (CAD_FEATURE
-  184 → 223); NDK debug + release build; `CI FAST` `36754276652` on the
-  tested candidate `7d09e4a`: success. **CI DEVICE NOT RUN**
-  (nothing reaches a device). **FullSharded NOT RUN.**
+- **Model.** `CadBodyState` owns `CadSketchRecord`s (body-local, non-zero
+  `CadSketchId`, placement, authored sketch) with `nextSketchId`, and a stored
+  `nextFeatureId`; no feature carries a sketch copy, two features may extrude
+  one sketch, and a sketch no feature extrudes may be retained. Placement moved
+  onto the sketch record. The base keeps its implicit id 1 / New Body.
+- **Selection variant.** `LoopRegions` (v5) or `PlanarFaces` (PF-S1
+  `PlanarFaceRef`, canonical, resolved by exact equality). A face selection is
+  validated and persisted but NOT regenerated
+  (`PlanarFaceRegenerationUnavailable`), created by no product path, and
+  refused on load by `runtimeCanEvaluateProject`.
+- **Format.** `CADB` v6 (`DATA_PACKAGE_SPEC.md` §7g), written ONLY when a body
+  says something v1..v5 cannot. v1..v5 read into the table one sketch per
+  feature. 12 new fixtures (5 valid, 7 refusals), production = independent
+  PowerShell = checked-in bytes (`CADV6_P11`); the 44 older fixtures
+  byte-identical; the fingerprint of every legacy-shaped state unchanged.
+- **Scope held.** No session, JNI, Android, renderer or UI change for faces.
+- **Gates.** Host `HOST_SELFTESTS_OK (3892 checks, 0 failed)` (CAD_FEATURE
+  223 → 263); NDK debug + release build; `CI FAST` on the tested candidate:
+  see the S1 record. **CI DEVICE NOT RUN. FullSharded NOT RUN** — reserved,
+  once, for the completed v6 migration.
+
+**Previous closeout:** **`CAD-PLANAR-FACE-PF-S1-ARRANGEMENT-R1` — `PASS-CAD-PLANAR-FACE-PF-S1`**
+(2026-09-30). The planar-arrangement engine (`forgeshape_sketch_arrangement`):
+analytic intersections and T-junctions, fragments, a half-edge graph, bounded
+atomic faces and a canonical `PlanarFaceRef` per face, resolved by exact
+equality. Record: `artifacts/cad-planar-face-pf-s1/SUMMARY.md`. Gates:
+`CI FAST` `36754276652` on `7d09e4a`; CI DEVICE and FullSharded not run.
 
 **Previous closeout:** **`CAD-FOUNDATION-C2` — `PASS-CAD-FOUNDATION-C2-HUD-PLANAR-BLOCKED`**
 (2026-09-30). One action panel at the extrude arrow tip; labels at the display
@@ -3907,6 +3917,22 @@ or cutout window has not been measured.
 Durable constraints and known-but-accepted costs. Narrative for how each was
 found lives in Git history.
 
+**`CAD-V6-S1` debt (branch `feature/cad-v6-sketch-face-r1`).**
+
+- **The PF-S1 at-cap arrangement benchmark still runs on every debug start**
+  (20 derivations of a 64 × 64 grid inside CAD_FEATURE, ~0.5–0.7 s on the host
+  `-O1` build). S1 deliberately did not multiply it and did not add another;
+  it should move off the startup path when the suite is next reorganised.
+- **A face-selection project refused on load reports `MissingRequiredSection`**
+  (mapped to "damaged" above JNI), the `runtimeCanEvaluateProject` code, not a
+  dedicated one. S2 lifts the refusal by regenerating faces; until then the
+  name is imprecise.
+- **A history restore returns a body to a state whose high-water marks were
+  never advanced**, so after Undo of an append the next append mints the same
+  feature and sketch id again. Nothing references an undone feature (its redo
+  step is dropped by the next act), so no reference can be retargeted; a
+  delete-feature or delete-sketch command must keep that true.
+
 **FUNCTION-COUNCIL-R1 defects still open** (source-confirmed; the evidence is
 in `artifacts/function-council-r1/COUNCIL_FINDINGS.md` §1). D1 was closed by
 `FUNCTION-COUNCIL-C1`; none of these was touched by it.
@@ -4527,15 +4553,16 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Exactly one next step: PF-S2 — ONE `CADB` v6 combining stable sketch
-identity (`CAD-SKETCH-IDENTITY-R1`) with planar-face selection**, per
-`artifacts/cad-foundation-c2/PLANAR_FACE_MODEL_PROPOSAL.md` §6–§8 and the
-OWNER decisions already given (one combined v6; no splines in the first
-planar-face release). It persists `PlanarFaceRef` exactly as PF-S1 derives it
-and wires faces into the session's tap, preview and commit. It needs its own
-authorisation. The C2 physical-device review (APK above, checklist in
-`artifacts/cad-foundation-c2/SUMMARY.md`) can happen in parallel and only
-tunes presentation constants.
+**Exactly one next step: `CAD-V6-S2` — runtime wiring of `CADB` v6 on the same
+branch `feature/cad-v6-sketch-face-r1`**: regenerate a solid from a
+`PlanarFaces` selection (a face boundary → polygon with holes → prism, fragment
+side-face tokens and the extended lineage rule), lift the load refusal, and
+switch the session's tap, preview and commit to faces for a sketch with a
+crossing, touching or T-junction (loop regions otherwise), with the JNI it
+needs. It needs its own authorisation. The branch merges to `main` only after
+the completed v6 migration passes the Tier-5 aggregate once. No spline-bounded
+face in the first release (OWNER). The C2 physical-device review can happen in
+parallel and only tunes presentation constants.
 
 `FUNCTION-COUNCIL-R1`'s D2–D7 and the import-during-sketch observation stay
 recorded debt, not authorised work. The Council's other OWNER decisions are

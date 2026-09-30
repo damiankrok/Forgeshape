@@ -16,6 +16,7 @@
 #include "forgeshape_cad_face.h"
 #include "forgeshape_cad_feature.h"
 #include "forgeshape_cad_kernel.h"
+#include "forgeshape_cad_v6_selftest.h"
 #include "forgeshape_camera.h"
 #include "forgeshape_history.h"
 #include "forgeshape_math.h"
@@ -3047,6 +3048,16 @@ int runCadFeatureSelfTests(CadFeatureSelfTestResult* out, int maxOut) {
         r.check(check.name, check.passed);
     }
     g_performance += " " + arrangementPerformance;
+    // The retained sketch table, the selection variant and `CADB` v6
+    // (`CAD-V6-S1`): model and persistence only, wired to no session, JNI or
+    // UI path, so -- like the arrangement -- they ride in this suite.
+    std::vector<CadV6SelfTestCheck> v6;
+    std::string v6Digests;
+    runCadV6SelfTests(&v6, &v6Digests);
+    for (const CadV6SelfTestCheck& check : v6) {
+        r.check(check.name, check.passed);
+    }
+    g_digests += " " + v6Digests;
     return r.n;
 }
 

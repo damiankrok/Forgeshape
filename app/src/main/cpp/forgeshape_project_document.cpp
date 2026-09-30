@@ -1973,9 +1973,9 @@ ProjectCodecStatus decodeCadBodyV6(ByteReader& in, ProjectCadBody* body) {
     if (featureCount == 0 || featureCount > kMaxCadFeatures) {
         return ProjectCodecStatus::ImpossibleCount;
     }
-    // Smallest feature: its 32 fixed bytes, a selection kind and an empty
-    // LoopRegions block (profile + two zero counts).
-    if (static_cast<uint64_t>(featureCount) * (32ull + 1ull + 12ull) > in.remaining()) {
+    // Smallest feature: its 27 fixed bytes, a selection kind and an empty
+    // LoopRegions block (profile + two zero counts) -- 40 bytes.
+    if (static_cast<uint64_t>(featureCount) * (27ull + 1ull + 12ull) > in.remaining()) {
         return ProjectCodecStatus::Truncated;
     }
     state.laterFeatures.resize(featureCount - 1u);
@@ -2077,9 +2077,10 @@ ProjectCodecStatus decodeCadPayload(ByteReader& in, ProjectCadRecord* record, ui
         if (bodyCount == 0 || bodyCount > kMaxProjectBodies) {
             return ProjectCodecStatus::ImpossibleCount;
         }
-        // Smallest v6 body: identity, two high-water marks, one smallest
-        // sketch, one smallest feature.
-        if (static_cast<uint64_t>(bodyCount) * (8ull + 12ull + 43ull + 4ull + 45ull)
+        // Smallest v6 body: identity, two high-water marks and the sketch
+        // count, one smallest sketch (43), the feature count, one smallest
+        // feature (40) -- 107 bytes.
+        if (static_cast<uint64_t>(bodyCount) * (8ull + 12ull + 43ull + 4ull + 40ull)
             > in.remaining()) {
             return ProjectCodecStatus::Truncated;
         }
@@ -2214,6 +2215,8 @@ ProjectCodecStatus decodeCadPayload(ByteReader& in, ProjectCadRecord* record, ui
                 return ProjectCodecStatus::Truncated;
             }
             state.laterFeatures.resize(laterCount);
+            // `baseSketch` is not used past this point: appending to the
+            // table may move the record it refers to.
             state.sketches.reserve(1u + laterCount);
             CadSketchId nextLegacySketchId = kBaseCadSketchId + 1u;
             for (CadFeature& feature : state.laterFeatures) {

@@ -2428,15 +2428,17 @@ forgeshape_sketch_region  loops -> regions (outer minus direct children), the
         ^                 semantic selection, hatch, tap resolution
         |  forgeshape_sketch_arrangement  (beside it, reading forgeshape_sketch
         |                 only) curves -> planar arrangement -> atomic faces
-        |                 and their canonical PlanarFaceRef; DERIVED, consumed
-        |                 by nothing in the product yet (PF-S1)
+        |                 and their canonical PlanarFaceRef; DERIVED; read
+        |                 only by CAD validation of a stored face selection
+        |                 (CAD-V6-S1), never by the session, JNI or UI
 forgeshape_cad_kernel     THE boolean seam: CadSolid (binary64, one face tag per
         ^                 triangle) -> Union / Difference; the only TU that
         |                 includes vendored Manifold (third_party/manifold)
 forgeshape_cad_feature    one feature's geometry: support frame, faces, prism,
         ^                 lineage signature; builds the chain's geometry
-forgeshape_cad_body       CadBodyState = base (sketch + ExtrudeFeature) +
-        ^                 laterFeatures[]; regenerateCadBody / generateCadMesh
+forgeshape_cad_body       CadBodyState = sketch TABLE (CadSketchRecord by id) +
+        ^                 base (baseSketchId + ExtrudeFeature) + laterFeatures[]
+        |                 (sketchId + ExtrudeFeature); regenerateCadBody
 forgeshape_cad_face       semantic faces of any feature, from the regenerated
         ^                 mesh's face table; resolve, signature, carries-face
         ^
@@ -2444,7 +2446,9 @@ forgeshape_scene          SceneObject owns a CadBody; addCadBody; publishSceneOb
         ^                                                    ^
 forgeshape_history        a step copies CadBodyState;         |
                           rebuilds a CAD body it never held    |
-forgeshape_project_*      CADB record <-> CadBodyState; regenerate on load
+forgeshape_project_*      CADB record <-> CadBodyState (v1..v5 read into the
+                          sketch table; v6 only when legacy cannot say it);
+                          regenerate on load
 forgeshape_gltf_export    re-evaluates generateCadMesh, never a buffer
         ^
 forgeshape_sketch_session the volatile edit session; touch -> entities; overlay
@@ -2681,9 +2685,10 @@ unchanged too (`CADB` v5, no new version).
 
 ### The planar arrangement (`CAD-PLANAR-FACE-PF-S1`)
 
-`deriveSketchArrangement` (`forgeshape_sketch_arrangement`) is the engine the
-planar-face selections of a later stage will stand on, and today NOTHING in the
-product calls it: no session, JNI, Android, render, codec or feature path. It
+`deriveSketchArrangement` (`forgeshape_sketch_arrangement`) is the engine
+planar-face selections stand on. Since `CAD-V6-S1` its ONE caller is
+`validatePlanarFaceSelection` (a stored `PlanarFaces` selection resolves against
+it); no session, JNI, Android, render or regeneration path calls it. It
 reads a `CadSketch` and returns derived values only. Supported source edges are
 analytic — a line, a polyline segment `k`, a rectangle side `0..3` in
 `rectangleProfilePolygon` order, a whole circle (edge 0, parameter = angle from
@@ -2718,16 +2723,47 @@ Its status enum is module-local and never crosses JNI.
 
 ### The feature chain and the boolean kernel (`CAD-VERTICAL-SLICE-R1`)
 
-`CadBodyState` is the base (`sketch` + `extrude`, feature id 1, always New
-Body) plus `laterFeatures`, each `{featureId, operation (Add|Cut), support,
-sketch, extrude}` with `featureId` strictly ascending and at most
-`kMaxCadFeatures` (16) in all. A later feature's `support` names a planar face
-of an EARLIER feature of the same body by `(featureId, CadFaceToken,
-lineageToken)` — deliberately not a `TopoRef`, which places ANOTHER body in the
-world; this places one feature's sketch inside its own body. Its sketch is
-canonical XY with no support block, and its placement is the named face's frame
-from `buildCadChainGeometry`, computed from the earlier feature's OWN prism in
-binary64 and never from a boolean result.
+`CadBodyState` is a retained SKETCH TABLE (`CAD-V6-S1`, below), the base
+(`baseSketchId` + `extrude`, feature id 1, always New Body) and
+`laterFeatures`, each `{featureId, operation (Add|Cut), sketchId, extrude}` with
+`featureId` strictly ascending and at most `kMaxCadFeatures` (16) in all. A
+feature's placement is its SKETCH's: the root sketch stands on its workplane
+(and, for the whole body, its `TopoRef`); every other sketch record carries a
+`CadFeatureSupport` naming a planar face of an EARLIER feature of the same body
+by `(featureId, CadFaceToken, lineageToken)` — deliberately not a `TopoRef`,
+which places ANOTHER body in the world; this places one sketch inside its own
+body. Such a sketch is canonical XY with no support block, and its placement is
+the named face's frame from `buildCadChainGeometry`, computed from the earlier
+feature's OWN prism in binary64 and never from a boolean result.
+
+### The retained sketch table and the selection kind (`CAD-V6-S1`)
+
+A sketch is a RECORD in its body's table, `CadSketchRecord {sketchId,
+hasFeatureSupport, featureSupport, sketch}`, strictly ascending by a body-local,
+non-zero `CadSketchId` minted from `nextSketchId`; features name it and never
+carry a copy, so two features may extrude one sketch (an edit to it is what
+both read) and a sketch no feature extrudes may be retained (held to its own
+rule and its support against the whole chain). Exactly one sketch is the ROOT —
+the base's — and every other stands on a face of one of the body's own
+features. `nextFeatureId` is a stored high-water mark beside it, so neither a
+deleted feature's id nor its sketch's is ever minted again within a state
+lineage (a history restore returns to a state in which it was never minted).
+`cadBaseSketch`, `findCadSketchRecord`, `cadFeatureSketchRecord`,
+`makeCadBodyState`, `addCadSketchRecord` and `appendCadLaterFeature[WithSketch]`
+are the doors; `CadFeatureView` points INTO the table. `ExtrudeFeature` carries
+an explicit `CadSelectionKind`: `LoopRegions` (the v5 region fields) or
+`PlanarFaces` (canonical `PlanarFaceRef`s). `validatePlanarFaceSelection`
+checks the canonical form structurally and resolves every face by exact
+equality against `deriveSketchArrangement` of the named sketch; a face selection
+is NOT regenerated yet (`PlanarFaceRegenerationUnavailable`), nothing in the
+session or JNI creates one, and `runtimeCanEvaluateProject` refuses to load one.
+`validateCadChain` is the chain walk in validating mode — a face feature is
+validated and stepped over, and only what would need its faces refuses.
+`cadBodyStateLegacyRepresentable` is the ONE statement of which states a
+`CADB` v1..v5 record can hold; the codec writes v6 only outside it, reads
+v1..v5 into the table as one sketch per feature (ids 1..n), and the fingerprint
+mixes a v6 block only outside it, so every legacy project keeps its bytes and
+its fingerprint (`DATA_PACKAGE_SPEC.md` §7g).
 
 `regenerateCadBody` is THE regeneration path, with three branches chosen by the
 state alone: a base-only, single-simple-region body takes the unchanged R0
