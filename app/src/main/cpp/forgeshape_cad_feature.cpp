@@ -188,8 +188,65 @@ DVec3 cadFramePoint(const CadFrame64& frame, double a, double b, double c) {
     return dvec3Add(frame.origin, frameDirection(frame, a, b, c));
 }
 
-CadStatus buildCadChainGeometry(const CadBodyState& state, std::vector<CadFeatureGeometry>* out,
-                                uint32_t* outFailedFeatureId, uint32_t throughFeatureId) {
+namespace {
+
+// Where a sketch's (u, v, w) stands in the body, and whether it may stand
+// there: the root sketch on its workplane, any other on the named face of a
+// feature already in `chain`. `planarFeatureIds` lists the features whose
+// faces this build cannot derive yet.
+CadStatus sketchPlacement(const CadBodyState& state, CadSketchId sketchId, const CadSketch& sketch,
+                          const CadFeatureSupport* support,
+                          const std::vector<CadFeatureGeometry>& chain,
+                          const std::vector<uint32_t>& planarFeatureIds, CadFrame64* out) {
+    if (support == nullptr) {
+        // Only the base's sketch is placed by its own workplane (and, for the
+        // whole body, its TopoRef); any other root sketch is a second answer
+        // to where the body is.
+        if (sketchId != state.baseSketchId) {
+            return CadStatus::SketchSupportInvalid;
+        }
+        *out = workplaneFrame64(sketch.plane);
+        return CadStatus::Ok;
+    }
+    // A sketch on one of the body's own faces is authored on its canonical
+    // local XY and placed by its support alone; a TopoRef there would be a
+    // second, cross-body answer to where it stands.
+    if (sketch.plane != Workplane::XY || sketch.hasFaceSupport) {
+        return CadStatus::FeatureSupportInvalid;
+    }
+    if (std::find(planarFeatureIds.begin(), planarFeatureIds.end(), support->featureId)
+        != planarFeatureIds.end()) {
+        return CadStatus::PlanarFaceRegenerationUnavailable;
+    }
+    const CadFeatureGeometry* supporting = nullptr;
+    for (const CadFeatureGeometry& earlier : chain) {
+        if (earlier.featureId == support->featureId) {
+            supporting = &earlier;
+            break;
+        }
+    }
+    const CadFeatureFace* face = nullptr;
+    if (supporting != nullptr && supporting->signature == support->lineageToken) {
+        for (const CadFeatureFace& candidate : supporting->faces) {
+            if (sameCadFaceToken(candidate.token, support->face)) {
+                face = &candidate;
+                break;
+            }
+        }
+    }
+    if (face == nullptr || !face->eligible) {
+        return CadStatus::FeatureSupportInvalid;
+    }
+    *out = face->frame;
+    return CadStatus::Ok;
+}
+
+// The one walk behind both entry points. `validating` validates a PlanarFaces
+// feature's selection and steps over it; otherwise such a feature refuses,
+// because a caller that wants GEOMETRY cannot be given any for it.
+CadStatus walkCadChain(const CadBodyState& state, std::vector<CadFeatureGeometry>* out,
+                       uint32_t* outFailedFeatureId, uint32_t throughFeatureId, bool validating,
+                       std::vector<uint32_t>* outPlanarFeatureIds) {
     if (outFailedFeatureId != nullptr) {
         *outFailedFeatureId = 0;
     }
@@ -201,14 +258,18 @@ CadStatus buildCadChainGeometry(const CadBodyState& state, std::vector<CadFeatur
         return CadStatus::TooManyFeatures;
     }
     std::vector<CadFeatureGeometry> chain;
+    std::vector<uint32_t> planarFeatureIds;
     chain.reserve(count);
     uint32_t previousId = 0;
+    const auto refuse = [outFailedFeatureId](CadStatus why, uint32_t featureId) {
+        if (outFailedFeatureId != nullptr) *outFailedFeatureId = featureId;
+        return why;
+    };
     for (uint32_t index = 0; index < count; ++index) {
         CadFeatureView view;
         cadFeatureAt(state, index, &view);
         if (!(view.featureId > previousId)) {
-            if (outFailedFeatureId != nullptr) *outFailedFeatureId = view.featureId;
-            return CadStatus::TooManyFeatures;
+            return refuse(CadStatus::TooManyFeatures, view.featureId);
         }
         previousId = view.featureId;
         if (previousId > throughFeatureId) {
@@ -219,51 +280,84 @@ CadStatus buildCadChainGeometry(const CadBodyState& state, std::vector<CadFeatur
         // features and only later features.
         if (base != (view.operation == CadFeatureOperation::NewBody)
             || static_cast<int>(view.operation) >= kCadFeatureOperationCount) {
-            if (outFailedFeatureId != nullptr) *outFailedFeatureId = view.featureId;
-            return CadStatus::InvalidFeatureOperation;
+            return refuse(CadStatus::InvalidFeatureOperation, view.featureId);
         }
-        CadFrame64 placement = workplaneFrame64(view.sketch->plane);
-        if (!base) {
-            // A later feature's sketch is authored on its canonical local XY
-            // and placed by its support alone; a TopoRef there would be a
-            // second, cross-body answer to where it stands.
-            if (view.sketch->plane != Workplane::XY || view.sketch->hasFaceSupport) {
-                if (outFailedFeatureId != nullptr) *outFailedFeatureId = view.featureId;
-                return CadStatus::FeatureSupportInvalid;
+        if (view.sketch == nullptr) {
+            return refuse(CadStatus::SketchNotFound, view.featureId);
+        }
+        CadFrame64 placement;
+        const CadStatus placed = sketchPlacement(state, view.sketchId, *view.sketch, view.support,
+                                                 chain, planarFeatureIds, &placement);
+        if (placed != CadStatus::Ok) {
+            return refuse(placed, view.featureId);
+        }
+        if (view.extrude->selection == CadSelectionKind::PlanarFaces) {
+            if (!validating) {
+                return refuse(CadStatus::PlanarFaceRegenerationUnavailable, view.featureId);
             }
-            const CadFeatureSupport& support = *view.support;
-            const CadFeatureGeometry* supporting = nullptr;
-            for (const CadFeatureGeometry& earlier : chain) {
-                if (earlier.featureId == support.featureId) {
-                    supporting = &earlier;
-                    break;
-                }
+            const CadStatus faces = validatePlanarFaceSelection(*view.sketch, *view.extrude);
+            if (faces != CadStatus::Ok) {
+                return refuse(faces, view.featureId);
             }
-            const CadFeatureFace* face = nullptr;
-            if (supporting != nullptr && supporting->signature == support.lineageToken) {
-                for (const CadFeatureFace& candidate : supporting->faces) {
-                    if (sameCadFaceToken(candidate.token, support.face)) {
-                        face = &candidate;
-                        break;
-                    }
-                }
-            }
-            if (face == nullptr || !face->eligible) {
-                if (outFailedFeatureId != nullptr) *outFailedFeatureId = view.featureId;
-                return CadStatus::FeatureSupportInvalid;
-            }
-            placement = face->frame;
+            planarFeatureIds.push_back(view.featureId);
+            continue;
         }
         CadFeatureGeometry g;
         const CadStatus why =
                 deriveFeature(view.featureId, view.operation, *view.sketch, *view.extrude, placement, &g);
         if (why != CadStatus::Ok) {
-            if (outFailedFeatureId != nullptr) *outFailedFeatureId = view.featureId;
-            return why;
+            return refuse(why, view.featureId);
         }
         chain.push_back(std::move(g));
     }
     *out = std::move(chain);
+    if (outPlanarFeatureIds != nullptr) {
+        *outPlanarFeatureIds = std::move(planarFeatureIds);
+    }
+    return CadStatus::Ok;
+}
+
+}  // namespace
+
+CadStatus buildCadChainGeometry(const CadBodyState& state, std::vector<CadFeatureGeometry>* out,
+                                uint32_t* outFailedFeatureId, uint32_t throughFeatureId) {
+    return walkCadChain(state, out, outFailedFeatureId, throughFeatureId, /*validating=*/false,
+                        nullptr);
+}
+
+CadStatus validateCadChain(const CadBodyState& state, uint32_t* outFailedFeatureId) {
+    std::vector<CadFeatureGeometry> chain;
+    std::vector<uint32_t> planarFeatureIds;
+    const CadStatus why = walkCadChain(state, &chain, outFailedFeatureId, 0xFFFFFFFFu,
+                                       /*validating=*/true, &planarFeatureIds);
+    if (why != CadStatus::Ok) {
+        return why;
+    }
+    // A retained sketch no feature extrudes is still truth: its entities hold
+    // to the sketch's own rule and its placement must resolve against the
+    // chain as it stands, so an upstream edit that strips its face is refused
+    // on the terms a consumed sketch's is.
+    for (const CadSketchRecord& record : state.sketches) {
+        bool consumed = record.sketchId == state.baseSketchId;
+        for (const CadFeature& feature : state.laterFeatures) {
+            consumed = consumed || feature.sketchId == record.sketchId;
+        }
+        if (consumed) {
+            continue;
+        }
+        const CadStatus sketchWhy = validateCadSketch(record.sketch);
+        if (sketchWhy != CadStatus::Ok) {
+            return sketchWhy;
+        }
+        CadFrame64 placement;
+        const CadStatus placed =
+                sketchPlacement(state, record.sketchId, record.sketch,
+                                record.hasFeatureSupport ? &record.featureSupport : nullptr, chain,
+                                planarFeatureIds, &placement);
+        if (placed != CadStatus::Ok) {
+            return placed;
+        }
+    }
     return CadStatus::Ok;
 }
 

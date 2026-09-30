@@ -167,6 +167,17 @@ constexpr uint16_t kCadSectionVersionV4 = 4;
 // build refuses v5 rather than opening a body with its holes silently filled or
 // its Add and Cut features silently missing.
 constexpr uint16_t kCadSectionVersionV5 = 5;
+// CAD-V6-S1: version 6 is ONE combined migration for two things that both
+// change what a feature's input is (DATA_PACKAGE_SPEC.md §7g): a body's
+// retained SKETCH TABLE, which features reference by `sketchId` instead of
+// carrying a sketch inline -- so two features may extrude one sketch -- with
+// the sketch and feature id high-water marks; and an explicit per-feature
+// SELECTION KIND, LoopRegions (the v5 REGIONS block) or PlanarFaces (canonical
+// `PlanarFaceRef`s). Written only when a body says something v1..v5 cannot
+// (`cadBodyStateLegacyRepresentable` false); every other project keeps its
+// bytes. An older build refuses v6 rather than opening a body with a shared
+// sketch duplicated or a face selection silently read as something else.
+constexpr uint16_t kCadSectionVersionV6 = 6;
 
 // CADB v1 file codes. FILE-owned, 1-based, and deliberately not a cast of any
 // C++ enum, on the same terms as the primitive codes.
@@ -458,6 +469,13 @@ ProjectCodecStatus validateProjectDocument(const ProjectDocument& document);
 // then SCUL), bodies in scene order, features by ascending LocalFeatureId.
 std::vector<uint8_t> encodeProjectV1(const ProjectDocument& document,
                                      ProjectCodecStatus* outWhy = nullptr);
+
+// The same deterministic writer WITHOUT the semantic validation: the bytes a
+// document says, whether or not a reader will accept them. It exists so a
+// refusal fixture can be CONSTRUCTED from a document with its bad value in
+// place -- exactly as `scripts/build-forge-corpus.ps1` constructs it -- rather
+// than patched afterwards. Never used to save a project.
+std::vector<uint8_t> encodeProjectV1Unchecked(const ProjectDocument& document);
 
 // Reads any supported version into `out`, writing nothing on failure.
 //

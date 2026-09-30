@@ -55,6 +55,14 @@ bool extrudeExtentModeFromIndex(int index, ExtrudeExtentMode* out) {
 
 int extrudeExtentModeIndex(ExtrudeExtentMode mode) { return static_cast<int>(mode); }
 
+const char* cadSelectionKindName(CadSelectionKind kind) {
+    switch (kind) {
+        case CadSelectionKind::LoopRegions: return "LoopRegions";
+        case CadSelectionKind::PlanarFaces: return "PlanarFaces";
+    }
+    return "unknown";
+}
+
 // ---------------------------------------------------------------------------
 // The two durable distances
 // ---------------------------------------------------------------------------
@@ -292,8 +300,6 @@ bool sameCadFeatureSupport(const CadFeatureSupport& a, const CadFeatureSupport& 
            && a.lineageToken == b.lineageToken;
 }
 
-namespace {
-
 bool sameExtrudeFeature(const ExtrudeFeature& a, const ExtrudeFeature& b) {
     if (a.profileEntityId != b.profileEntityId || a.profileHoleIds != b.profileHoleIds
         || a.additionalRegions.size() != b.additionalRegions.size()) {
@@ -304,30 +310,242 @@ bool sameExtrudeFeature(const ExtrudeFeature& a, const ExtrudeFeature& b) {
             return false;
         }
     }
+    if (a.selection != b.selection || a.planarFaces.size() != b.planarFaces.size()) {
+        return false;
+    }
+    for (size_t i = 0; i < a.planarFaces.size(); ++i) {
+        if (!samePlanarFaceRef(a.planarFaces[i], b.planarFaces[i])) {
+            return false;
+        }
+    }
     return sameBits(a.depth, b.depth) && a.direction == b.direction && a.extent == b.extent
            && sameBits(a.secondDistance, b.secondDistance);
 }
 
-}  // namespace
+bool sameCadSketchRecord(const CadSketchRecord& a, const CadSketchRecord& b) {
+    return a.sketchId == b.sketchId && a.hasFeatureSupport == b.hasFeatureSupport
+           && sameCadFeatureSupport(a.featureSupport, b.featureSupport)
+           && sameCadSketch(a.sketch, b.sketch);
+}
 
 bool sameCadFeature(const CadFeature& a, const CadFeature& b) {
-    return a.featureId == b.featureId && a.operation == b.operation
-           && sameCadFeatureSupport(a.support, b.support) && sameCadSketch(a.sketch, b.sketch)
+    return a.featureId == b.featureId && a.operation == b.operation && a.sketchId == b.sketchId
            && sameExtrudeFeature(a.extrude, b.extrude);
+}
+
+// ---------------------------------------------------------------------------
+// The retained sketch table (`CAD-V6-S1`)
+// ---------------------------------------------------------------------------
+
+const CadSketchRecord* findCadSketchRecord(const CadBodyState& state, CadSketchId sketchId) {
+    if (sketchId == kNoCadSketch) {
+        return nullptr;
+    }
+    for (const CadSketchRecord& record : state.sketches) {
+        if (record.sketchId == sketchId) {
+            return &record;
+        }
+    }
+    return nullptr;
+}
+
+CadSketchRecord* findCadSketchRecord(CadBodyState& state, CadSketchId sketchId) {
+    return const_cast<CadSketchRecord*>(
+            findCadSketchRecord(static_cast<const CadBodyState&>(state), sketchId));
+}
+
+const CadSketch& cadBaseSketch(const CadBodyState& state) {
+    const CadSketchRecord* record = findCadSketchRecord(state, state.baseSketchId);
+    if (record != nullptr) {
+        return record->sketch;
+    }
+    static const CadSketch kEmpty{};
+    return kEmpty;
+}
+
+CadSketch& cadBaseSketch(CadBodyState& state) {
+    if (CadSketchRecord* record = findCadSketchRecord(state, state.baseSketchId)) {
+        return record->sketch;
+    }
+    // Never on a validated state. The record the state already names is
+    // restored in id order, so this door can never mint a second base sketch
+    // beside the one the state points at.
+    if (state.baseSketchId == kNoCadSketch) {
+        state.baseSketchId = state.nextSketchId == kNoCadSketch ? kBaseCadSketchId
+                                                                : state.nextSketchId;
+    }
+    CadSketchRecord record;
+    record.sketchId = state.baseSketchId;
+    auto at = std::find_if(state.sketches.begin(), state.sketches.end(),
+                           [&record](const CadSketchRecord& r) { return r.sketchId > record.sketchId; });
+    at = state.sketches.insert(at, std::move(record));
+    if (state.nextSketchId <= state.baseSketchId) {
+        state.nextSketchId = state.baseSketchId + 1u;
+    }
+    return at->sketch;
+}
+
+const CadSketchRecord* cadFeatureSketchRecord(const CadBodyState& state, uint32_t featureId) {
+    if (featureId == kCadFeatureId) {
+        return findCadSketchRecord(state, state.baseSketchId);
+    }
+    for (const CadFeature& feature : state.laterFeatures) {
+        if (feature.featureId == featureId) {
+            return findCadSketchRecord(state, feature.sketchId);
+        }
+    }
+    return nullptr;
+}
+
+CadSketchRecord* cadFeatureSketchRecord(CadBodyState& state, uint32_t featureId) {
+    return const_cast<CadSketchRecord*>(
+            cadFeatureSketchRecord(static_cast<const CadBodyState&>(state), featureId));
+}
+
+CadBodyState makeCadBodyState(CadSketch sketch, ExtrudeFeature extrude) {
+    CadBodyState state;
+    state.sketches.front().sketch = std::move(sketch);
+    state.extrude = std::move(extrude);
+    return state;
+}
+
+CadSketchId addCadSketchRecord(CadBodyState* state, CadSketch sketch,
+                               const CadFeatureSupport* support) {
+    if (state == nullptr || state->sketches.size() >= kMaxCadSketches
+        || state->nextSketchId == kNoCadSketch || state->nextSketchId == 0xFFFFFFFFu) {
+        return kNoCadSketch;
+    }
+    for (const CadSketchRecord& existing : state->sketches) {
+        if (existing.sketchId >= state->nextSketchId) {
+            return kNoCadSketch;  // the high-water mark would mint a collision
+        }
+    }
+    CadSketchRecord record;
+    record.sketchId = state->nextSketchId++;
+    record.hasFeatureSupport = support != nullptr;
+    if (support != nullptr) {
+        record.featureSupport = *support;
+    }
+    record.sketch = std::move(sketch);
+    // Appending keeps the table ascending: every existing id is below the one
+    // just minted.
+    state->sketches.push_back(std::move(record));
+    return state->sketches.back().sketchId;
+}
+
+uint32_t appendCadLaterFeature(CadBodyState* state, CadFeatureOperation operation,
+                               CadSketchId sketchId, ExtrudeFeature extrude) {
+    if (state == nullptr || cadFeatureCount(*state) >= kMaxCadFeatures
+        || state->nextFeatureId <= kCadFeatureId || state->nextFeatureId == 0xFFFFFFFFu) {
+        return 0;
+    }
+    if (!state->laterFeatures.empty() && state->laterFeatures.back().featureId >= state->nextFeatureId) {
+        return 0;
+    }
+    CadFeature feature;
+    feature.featureId = state->nextFeatureId++;
+    feature.operation = operation;
+    feature.sketchId = sketchId;
+    feature.extrude = std::move(extrude);
+    state->laterFeatures.push_back(std::move(feature));
+    return state->laterFeatures.back().featureId;
+}
+
+uint32_t appendCadLaterFeatureWithSketch(CadBodyState* state, CadFeatureOperation operation,
+                                         const CadFeatureSupport& support, CadSketch sketch,
+                                         ExtrudeFeature extrude) {
+    if (state == nullptr || cadFeatureCount(*state) >= kMaxCadFeatures) {
+        return 0;
+    }
+    CadBodyState candidate = *state;
+    const CadSketchId sketchId = addCadSketchRecord(&candidate, std::move(sketch), &support);
+    if (sketchId == kNoCadSketch) {
+        return 0;
+    }
+    const uint32_t featureId =
+            appendCadLaterFeature(&candidate, operation, sketchId, std::move(extrude));
+    if (featureId == 0) {
+        return 0;
+    }
+    *state = std::move(candidate);
+    return featureId;
+}
+
+bool cadBodyStateLegacyRepresentable(const CadBodyState& state) {
+    const size_t later = state.laterFeatures.size();
+    // One sketch per feature, ids 1..n in chain order, and the high-water marks
+    // a legacy read derives: nothing a v1..v5 record would lose.
+    if (state.baseSketchId != kBaseCadSketchId || state.sketches.size() != later + 1u
+        || state.nextSketchId != static_cast<CadSketchId>(later + 2u)) {
+        return false;
+    }
+    const uint32_t derivedNextFeature =
+            later == 0 ? kCadFeatureId + 1u : state.laterFeatures.back().featureId + 1u;
+    if (state.nextFeatureId != derivedNextFeature) {
+        return false;
+    }
+    if (state.extrude.selection != CadSelectionKind::LoopRegions
+        || !state.extrude.planarFaces.empty()) {
+        return false;
+    }
+    for (size_t i = 0; i < state.sketches.size(); ++i) {
+        const CadSketchRecord& record = state.sketches[i];
+        if (record.sketchId != static_cast<CadSketchId>(i + 1u)) {
+            return false;
+        }
+        // v1..v5 carry the base's placement in its own plane and TopoRef, and a
+        // later feature's ONLY as a face of an earlier feature on local XY.
+        const bool base = i == 0;
+        if (record.hasFeatureSupport == base) {
+            return false;
+        }
+        if (!base && (record.sketch.plane != Workplane::XY || record.sketch.hasFaceSupport)) {
+            return false;
+        }
+    }
+    for (size_t k = 0; k < later; ++k) {
+        const CadFeature& feature = state.laterFeatures[k];
+        if (feature.sketchId != static_cast<CadSketchId>(k + 2u)
+            || feature.extrude.selection != CadSelectionKind::LoopRegions
+            || !feature.extrude.planarFaces.empty()) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool cadBodyStateUsesPlanarFaces(const CadBodyState& state) {
+    if (state.extrude.selection == CadSelectionKind::PlanarFaces) {
+        return true;
+    }
+    for (const CadFeature& feature : state.laterFeatures) {
+        if (feature.extrude.selection == CadSelectionKind::PlanarFaces) {
+            return true;
+        }
+    }
+    return false;
 }
 
 bool cadFeatureAt(const CadBodyState& state, uint32_t index, CadFeatureView* out) {
     if (out == nullptr || index >= cadFeatureCount(state)) {
         return false;
     }
-    if (index == 0) {
-        *out = CadFeatureView{kCadFeatureId, CadFeatureOperation::NewBody, &state.sketch,
-                              &state.extrude, nullptr};
-        return true;
-    }
-    const CadFeature& feature = state.laterFeatures[index - 1u];
-    *out = CadFeatureView{feature.featureId, feature.operation, &feature.sketch, &feature.extrude,
-                          &feature.support};
+    const uint32_t featureId =
+            index == 0 ? kCadFeatureId : state.laterFeatures[index - 1u].featureId;
+    const CadFeatureOperation operation =
+            index == 0 ? CadFeatureOperation::NewBody : state.laterFeatures[index - 1u].operation;
+    const CadSketchId sketchId =
+            index == 0 ? state.baseSketchId : state.laterFeatures[index - 1u].sketchId;
+    const ExtrudeFeature* extrude =
+            index == 0 ? &state.extrude : &state.laterFeatures[index - 1u].extrude;
+    const CadSketchRecord* record = findCadSketchRecord(state, sketchId);
+    *out = CadFeatureView{featureId,
+                          operation,
+                          sketchId,
+                          record != nullptr ? &record->sketch : nullptr,
+                          extrude,
+                          record != nullptr && record->hasFeatureSupport ? &record->featureSupport
+                                                                         : nullptr};
     return true;
 }
 
@@ -346,15 +564,19 @@ bool findCadFeature(const CadBodyState& state, uint32_t featureId, CadFeatureVie
     return false;
 }
 
-uint32_t nextCadFeatureId(const CadBodyState& state) {
-    return state.laterFeatures.empty() ? kCadFeatureId + 1u
-                                       : state.laterFeatures.back().featureId + 1u;
-}
+uint32_t nextCadFeatureId(const CadBodyState& state) { return state.nextFeatureId; }
 
 bool sameCadBodyState(const CadBodyState& a, const CadBodyState& b) {
-    if (!sameCadSketch(a.sketch, b.sketch) || !sameExtrudeFeature(a.extrude, b.extrude)
+    if (a.sketches.size() != b.sketches.size() || a.nextSketchId != b.nextSketchId
+        || a.baseSketchId != b.baseSketchId || a.nextFeatureId != b.nextFeatureId
+        || !sameExtrudeFeature(a.extrude, b.extrude)
         || a.laterFeatures.size() != b.laterFeatures.size()) {
         return false;
+    }
+    for (size_t i = 0; i < a.sketches.size(); ++i) {
+        if (!sameCadSketchRecord(a.sketches[i], b.sketches[i])) {
+            return false;
+        }
     }
     for (size_t i = 0; i < a.laterFeatures.size(); ++i) {
         if (!sameCadFeature(a.laterFeatures[i], b.laterFeatures[i])) {
@@ -364,12 +586,7 @@ bool sameCadBodyState(const CadBodyState& a, const CadBodyState& b) {
     return true;
 }
 
-CadStatus validateCadFeatureGeometry(const CadSketch& sketch, const ExtrudeFeature& extrude,
-                                     SketchRegionExtraction* outRegions) {
-    const CadStatus sketchWhy = validateCadSketch(sketch);
-    if (sketchWhy != CadStatus::Ok) {
-        return sketchWhy;
-    }
+CadStatus validateExtrudeExtent(const ExtrudeFeature& extrude) {
     if (!std::isfinite(extrude.depth) || !std::isfinite(extrude.secondDistance)) {
         return CadStatus::NonFinite;
     }
@@ -402,6 +619,177 @@ CadStatus validateCadFeatureGeometry(const CadSketch& sketch, const ExtrudeFeatu
         || span > kMaxSketchCoordinateMeters) {
         return CadStatus::InvalidExtrudeDepth;
     }
+    return CadStatus::Ok;
+}
+
+namespace {
+
+bool selectionKindValid(CadSelectionKind kind) {
+    const int index = static_cast<int>(kind);
+    return index >= 0 && index < kCadSelectionKindCount;
+}
+
+bool hasLoopRegionPayload(const ExtrudeFeature& extrude) {
+    return extrude.profileEntityId != kNoSketchEntity || !extrude.profileHoleIds.empty()
+           || !extrude.additionalRegions.empty();
+}
+
+int compareFragmentCycle(const FragmentCycle& a, const FragmentCycle& b) {
+    const size_t n = std::min(a.size(), b.size());
+    for (size_t i = 0; i < n; ++i) {
+        if (const int c = compareFragmentRef(a[i], b[i])) {
+            return c;
+        }
+    }
+    return a.size() < b.size() ? -1 : (b.size() < a.size() ? 1 : 0);
+}
+
+bool cutWellFormed(const ArrangementCut& cut, bool isStart) {
+    switch (cut.kind) {
+        case ArrangementCutKind::SourceStart:
+        case ArrangementCutKind::SourceEnd:
+            // A source end is only ever the start (resp. end) of a fragment,
+            // and names nothing but itself.
+            if ((cut.kind == ArrangementCutKind::SourceStart) != isStart) {
+                return false;
+            }
+            return cut.partnerEntityId == kNoSketchEntity && cut.partnerEdgeLocalIndex == 0u
+                   && cut.ordinal == 0u;
+        case ArrangementCutKind::Intersection:
+            return cut.partnerEntityId != kNoSketchEntity;
+    }
+    return false;
+}
+
+CadStatus validateCycleForm(const FragmentCycle& cycle) {
+    if (cycle.empty() || cycle.size() > kMaxPlanarFaceCycleFragments) {
+        return CadStatus::PlanarFaceRefMalformed;
+    }
+    for (const FragmentRef& fragment : cycle) {
+        if (fragment.sourceEntityId == kNoSketchEntity || !cutWellFormed(fragment.startCut, true)
+            || !cutWellFormed(fragment.endCut, false)) {
+            return CadStatus::PlanarFaceRefMalformed;
+        }
+    }
+    // Rotated to its smallest fragment, which is unique: a fragment appears at
+    // most once in a cycle, so the first must be STRICTLY below every other.
+    for (size_t i = 1; i < cycle.size(); ++i) {
+        if (compareFragmentRef(cycle.front(), cycle[i]) >= 0) {
+            return CadStatus::PlanarFaceRefNotCanonical;
+        }
+        for (size_t j = i + 1; j < cycle.size(); ++j) {
+            if (compareFragmentRef(cycle[i], cycle[j]) == 0) {
+                return CadStatus::PlanarFaceRefNotCanonical;
+            }
+        }
+    }
+    return CadStatus::Ok;
+}
+
+CadStatus planarFaceStatusFor(ArrangementStatus status) {
+    switch (status) {
+        case ArrangementStatus::Ok: return CadStatus::Ok;
+        case ArrangementStatus::InvalidSketch: return CadStatus::RegenerationFailed;
+        case ArrangementStatus::UnsupportedCurve: return CadStatus::PlanarFaceUnsupportedCurve;
+        case ArrangementStatus::AmbiguousOverlap: return CadStatus::PlanarFaceAmbiguousOverlap;
+        case ArrangementStatus::DegenerateFace: return CadStatus::PlanarFaceDegenerate;
+        case ArrangementStatus::CapExceeded: return CadStatus::PlanarFaceCapExceeded;
+    }
+    return CadStatus::RegenerationFailed;
+}
+
+}  // namespace
+
+CadStatus validatePlanarFaceRefForm(const PlanarFaceRef& ref) {
+    if (ref.holes.size() > kMaxPlanarFaceHoles) {
+        return CadStatus::PlanarFaceRefMalformed;
+    }
+    CadStatus why = validateCycleForm(ref.outer);
+    if (why != CadStatus::Ok) {
+        return why;
+    }
+    for (size_t h = 0; h < ref.holes.size(); ++h) {
+        why = validateCycleForm(ref.holes[h]);
+        if (why != CadStatus::Ok) {
+            return why;
+        }
+        if (h > 0 && compareFragmentCycle(ref.holes[h - 1], ref.holes[h]) >= 0) {
+            return CadStatus::PlanarFaceRefNotCanonical;
+        }
+    }
+    return CadStatus::Ok;
+}
+
+CadStatus validatePlanarFaceSelection(const CadSketch& sketch, const ExtrudeFeature& extrude) {
+    const CadStatus sketchWhy = validateCadSketch(sketch);
+    if (sketchWhy != CadStatus::Ok) {
+        return sketchWhy;
+    }
+    const CadStatus extentWhy = validateExtrudeExtent(extrude);
+    if (extentWhy != CadStatus::Ok) {
+        return extentWhy;
+    }
+    if (extrude.selection != CadSelectionKind::PlanarFaces || hasLoopRegionPayload(extrude)) {
+        return CadStatus::InvalidSelectionKind;
+    }
+    const std::vector<PlanarFaceRef>& faces = extrude.planarFaces;
+    if (faces.empty()) {
+        return CadStatus::ProfileNotFound;
+    }
+    if (faces.size() > kMaxPlanarFaceSelection) {
+        return CadStatus::TooManyRegions;
+    }
+    for (const PlanarFaceRef& face : faces) {
+        const CadStatus formWhy = validatePlanarFaceRefForm(face);
+        if (formWhy != CadStatus::Ok) {
+            return formWhy;
+        }
+    }
+    // A repeat anywhere is named as a repeat before the order is judged.
+    for (size_t i = 0; i < faces.size(); ++i) {
+        for (size_t j = i + 1; j < faces.size(); ++j) {
+            if (samePlanarFaceRef(faces[i], faces[j])) {
+                return CadStatus::DuplicatePlanarFace;
+            }
+        }
+        if (i > 0 && comparePlanarFaceRef(faces[i - 1], faces[i]) >= 0) {
+            return CadStatus::PlanarFaceRefNotCanonical;
+        }
+    }
+    // The arrangement is DERIVED from the sketch every time; the selection
+    // resolves against it by exact tuple equality or not at all.
+    const SketchArrangement arrangement = deriveSketchArrangement(sketch);
+    const CadStatus arrangementWhy = planarFaceStatusFor(arrangement.status);
+    if (arrangementWhy != CadStatus::Ok) {
+        return arrangementWhy;
+    }
+    for (const PlanarFaceRef& face : faces) {
+        if (!resolvePlanarFaceRef(arrangement, face, nullptr)) {
+            return CadStatus::PlanarFaceUnresolved;
+        }
+    }
+    return CadStatus::Ok;
+}
+
+CadStatus validateCadFeatureGeometry(const CadSketch& sketch, const ExtrudeFeature& extrude,
+                                     SketchRegionExtraction* outRegions) {
+    const CadStatus sketchWhy = validateCadSketch(sketch);
+    if (sketchWhy != CadStatus::Ok) {
+        return sketchWhy;
+    }
+    const CadStatus extentWhy = validateExtrudeExtent(extrude);
+    if (extentWhy != CadStatus::Ok) {
+        return extentWhy;
+    }
+    if (!selectionKindValid(extrude.selection)) {
+        return CadStatus::InvalidSelectionKind;
+    }
+    if (extrude.selection == CadSelectionKind::PlanarFaces) {
+        return CadStatus::PlanarFaceRegenerationUnavailable;
+    }
+    if (!extrude.planarFaces.empty()) {
+        return CadStatus::InvalidSelectionKind;
+    }
     SketchRegionExtraction regions = extractSketchRegions(sketch);
     if (regions.loops.profiles.empty()) {
         return CadStatus::NoClosedProfile;
@@ -423,17 +811,91 @@ CadStatus validateCadFeatureGeometry(const CadSketch& sketch, const ExtrudeFeatu
     return CadStatus::Ok;
 }
 
+namespace {
+
+// The table's own rules, before any geometry: ids, order, high-water marks,
+// references and which sketch may be placed how.
+CadStatus validateCadSketchTable(const CadBodyState& state) {
+    const std::vector<CadSketchRecord>& table = state.sketches;
+    if (table.empty()) {
+        return CadStatus::SketchNotFound;
+    }
+    if (table.size() > kMaxCadSketches) {
+        return CadStatus::TooManySketches;
+    }
+    for (size_t i = 0; i < table.size(); ++i) {
+        if (table[i].sketchId == kNoCadSketch) {
+            return CadStatus::SketchIdInvalid;
+        }
+        for (size_t j = i + 1; j < table.size(); ++j) {
+            if (table[i].sketchId == table[j].sketchId) {
+                return CadStatus::DuplicateSketchId;
+            }
+        }
+    }
+    for (size_t i = 1; i < table.size(); ++i) {
+        if (table[i].sketchId <= table[i - 1].sketchId) {
+            return CadStatus::SketchIdInvalid;  // canonical order, never re-sorted
+        }
+    }
+    if (state.nextSketchId <= table.back().sketchId) {
+        return CadStatus::HighWaterInvalid;
+    }
+    if (cadFeatureCount(state) > kMaxCadFeatures) {
+        return CadStatus::TooManyFeatures;
+    }
+    uint32_t previous = kCadFeatureId;
+    for (const CadFeature& feature : state.laterFeatures) {
+        if (feature.featureId <= previous) {
+            return CadStatus::TooManyFeatures;  // the chain's id rule, as it always was
+        }
+        previous = feature.featureId;
+    }
+    if (state.nextFeatureId <= previous) {
+        return CadStatus::HighWaterInvalid;
+    }
+    const CadSketchRecord* base = findCadSketchRecord(state, state.baseSketchId);
+    if (base == nullptr) {
+        return CadStatus::SketchNotFound;
+    }
+    if (base->hasFeatureSupport) {
+        return CadStatus::SketchSupportInvalid;  // there is no earlier feature to stand on
+    }
+    for (const CadFeature& feature : state.laterFeatures) {
+        if (findCadSketchRecord(state, feature.sketchId) == nullptr) {
+            return CadStatus::SketchNotFound;
+        }
+    }
+    // Exactly ONE root sketch: the base's. A second sketch on a workplane or on
+    // another body's face would be a second answer to where the body is.
+    for (const CadSketchRecord& record : table) {
+        if (!record.hasFeatureSupport && record.sketchId != state.baseSketchId) {
+            return CadStatus::SketchSupportInvalid;
+        }
+    }
+    return CadStatus::Ok;
+}
+
+}  // namespace
+
 CadStatus validateCadBodyState(const CadBodyState& state, ProfileExtraction* outProfiles) {
+    const CadStatus tableWhy = validateCadSketchTable(state);
+    if (tableWhy != CadStatus::Ok) {
+        return tableWhy;
+    }
     SketchRegionExtraction baseRegions;
-    const CadStatus baseWhy = validateCadFeatureGeometry(state.sketch, state.extrude, &baseRegions);
+    const CadStatus baseWhy =
+            state.extrude.selection == CadSelectionKind::PlanarFaces
+                    ? validatePlanarFaceSelection(cadBaseSketch(state), state.extrude)
+                    : validateCadFeatureGeometry(cadBaseSketch(state), state.extrude, &baseRegions);
     if (baseWhy != CadStatus::Ok) {
         return baseWhy;
     }
-    if (!state.laterFeatures.empty()) {
-        // The chain's own rules: bounds, ids, operations, and every support
-        // resolving to an eligible face of an earlier feature at its lineage.
-        std::vector<CadFeatureGeometry> chain;
-        const CadStatus chainWhy = buildCadChainGeometry(state, &chain);
+    if (!state.laterFeatures.empty() || state.sketches.size() > 1u) {
+        // The chain's own rules: operations, every LoopRegions feature's
+        // geometry and support, every PlanarFaces feature's selection, and
+        // every unconsumed sketch's own rule and support.
+        const CadStatus chainWhy = validateCadChain(state);
         if (chainWhy != CadStatus::Ok) {
             return chainWhy;
         }
@@ -459,7 +921,7 @@ CadStatus generateSimpleProfileMesh(const CadBodyState& state, const ClosedProfi
     }
 
     const uint32_t n = static_cast<uint32_t>(chosen->polygon.size());
-    const Workplane plane = state.sketch.plane;
+    const Workplane plane = cadBaseSketch(state).plane;
     // The solid always spans from its -N face to its +N face, and the two
     // DISTANCES say how far each reaches. Building it this way means the
     // winding rule below never has to ask which mode or which side the user
@@ -821,14 +1283,14 @@ CadStatus applyCadRectangle(CadBody& body, Meters width, Meters height, bool* ou
     }
     CadBodyState candidate = body.state();
     const SketchEntity* anchor =
-            findSketchEntity(candidate.sketch, candidate.extrude.profileEntityId);
+            findSketchEntity(cadBaseSketch(candidate), candidate.extrude.profileEntityId);
     if (anchor == nullptr || anchor->rectangle() == nullptr) {
         return CadStatus::ProfileNotFound;
     }
     SketchRectangle rectangle = *anchor->rectangle();
     rectangle.width = width;
     rectangle.height = height;
-    const CadStatus why = replaceSketchEntity(&candidate.sketch, anchor->id(), rectangle);
+    const CadStatus why = replaceSketchEntity(&cadBaseSketch(candidate), anchor->id(), rectangle);
     if (why != CadStatus::Ok) {
         return why;
     }
@@ -841,13 +1303,13 @@ CadStatus applyCadCircle(CadBody& body, Meters radius, bool* outChanged) {
     }
     CadBodyState candidate = body.state();
     const SketchEntity* anchor =
-            findSketchEntity(candidate.sketch, candidate.extrude.profileEntityId);
+            findSketchEntity(cadBaseSketch(candidate), candidate.extrude.profileEntityId);
     if (anchor == nullptr || anchor->circle() == nullptr) {
         return CadStatus::ProfileNotFound;
     }
     SketchCircle circle = *anchor->circle();
     circle.radius = radius;
-    const CadStatus why = replaceSketchEntity(&candidate.sketch, anchor->id(), circle);
+    const CadStatus why = replaceSketchEntity(&cadBaseSketch(candidate), anchor->id(), circle);
     if (why != CadStatus::Ok) {
         return why;
     }
@@ -855,7 +1317,7 @@ CadStatus applyCadCircle(CadBody& body, Meters radius, bool* outChanged) {
 }
 
 CadProfileKind cadProfileKind(const CadBodyState& state) {
-    const SketchEntity* anchor = findSketchEntity(state.sketch, state.extrude.profileEntityId);
+    const SketchEntity* anchor = findSketchEntity(cadBaseSketch(state), state.extrude.profileEntityId);
     if (anchor == nullptr) {
         return CadProfileKind::None;
     }

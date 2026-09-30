@@ -238,12 +238,12 @@ ImportedMesh triangleMesh() {
 
 CadBodyState rectCadBody() {
     CadBodyState state;
-    state.sketch.plane = Workplane::XY;
+    cadBaseSketch(state).plane = Workplane::XY;
     SketchRectangle rect;
     rect.center = SketchPoint{0.0, 0.0};
     rect.width = 2.0;
     rect.height = 1.0;
-    addSketchEntity(&state.sketch, rect);
+    addSketchEntity(&cadBaseSketch(state), rect);
     state.extrude.profileEntityId = 1;
     state.extrude.depth = 1.5;
     state.extrude.direction = ExtrudeDirection::AlongNormal;

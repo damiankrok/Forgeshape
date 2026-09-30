@@ -654,10 +654,10 @@ private:
     ObjectId targetBodyId_ = kNoObject;
     CadBodyState targetBaseState_;
     bool hasTargetState_ = false;
-    // An edit session's feature (0 when authoring a new one) and, for a later
-    // feature, the support it keeps.
+    // An edit session's feature (0 when authoring a new one). The sketch's
+    // placement is not staged here: it belongs to the sketch RECORD in the
+    // staged state, which an edit rewrites the entities of and nothing else.
     uint32_t editingFeatureId_ = 0;
-    CadFeatureSupport editingSupport_{};
     // Bumped by every authored change that could change the candidate.
     uint64_t candidateRevision_ = 1;
     CadCandidateEvaluation evaluation_;

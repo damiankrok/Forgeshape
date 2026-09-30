@@ -12,7 +12,7 @@ namespace forgeshape {
 
 // The count is a literal in the header so Java can mirror it; this is what
 // keeps the literal honest when an enumerator is appended.
-static_assert(static_cast<int>(CadStatus::KernelFailed) + 1 == kCadStatusCount,
+static_assert(static_cast<int>(CadStatus::PlanarFaceRegenerationUnavailable) + 1 == kCadStatusCount,
               "kCadStatusCount must equal the number of CadStatus enumerators");
 
 const char* cadStatusName(CadStatus status) {
@@ -62,6 +62,22 @@ const char* cadStatusName(CadStatus status) {
         case CadStatus::CutNoIntersection: return "CutNoIntersection";
         case CadStatus::CutRemovesBody: return "CutRemovesBody";
         case CadStatus::KernelFailed: return "KernelFailed";
+        case CadStatus::SketchIdInvalid: return "SketchIdInvalid";
+        case CadStatus::DuplicateSketchId: return "DuplicateSketchId";
+        case CadStatus::SketchNotFound: return "SketchNotFound";
+        case CadStatus::HighWaterInvalid: return "HighWaterInvalid";
+        case CadStatus::TooManySketches: return "TooManySketches";
+        case CadStatus::SketchSupportInvalid: return "SketchSupportInvalid";
+        case CadStatus::InvalidSelectionKind: return "InvalidSelectionKind";
+        case CadStatus::PlanarFaceRefMalformed: return "PlanarFaceRefMalformed";
+        case CadStatus::PlanarFaceRefNotCanonical: return "PlanarFaceRefNotCanonical";
+        case CadStatus::DuplicatePlanarFace: return "DuplicatePlanarFace";
+        case CadStatus::PlanarFaceUnresolved: return "PlanarFaceUnresolved";
+        case CadStatus::PlanarFaceUnsupportedCurve: return "PlanarFaceUnsupportedCurve";
+        case CadStatus::PlanarFaceAmbiguousOverlap: return "PlanarFaceAmbiguousOverlap";
+        case CadStatus::PlanarFaceCapExceeded: return "PlanarFaceCapExceeded";
+        case CadStatus::PlanarFaceDegenerate: return "PlanarFaceDegenerate";
+        case CadStatus::PlanarFaceRegenerationUnavailable: return "PlanarFaceRegenerationUnavailable";
     }
     return "unknown";
 }

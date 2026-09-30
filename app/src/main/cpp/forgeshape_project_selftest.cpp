@@ -764,13 +764,13 @@ ProjectDocument canonicalCadRectangleDocument() {
     document.hasCad = true;
     ProjectCadBody cad;
     cad.objectId = 1;
-    cad.state.sketch.plane = Workplane::XZ;
+    cadBaseSketch(cad.state).plane = Workplane::XZ;
     SketchRectangle rectangle;
     rectangle.center = SketchPoint{0.5, 0.25};
     rectangle.width = 2.0;
     rectangle.height = 1.0;
-    cad.state.sketch.entities.emplace_back(1, rectangle);
-    cad.state.sketch.nextEntityId = 2;
+    cadBaseSketch(cad.state).entities.emplace_back(1, rectangle);
+    cadBaseSketch(cad.state).nextEntityId = 2;
     cad.state.extrude.profileEntityId = 1;
     cad.state.extrude.depth = 1.5;
     cad.state.extrude.direction = ExtrudeDirection::AlongNormal;
@@ -793,12 +793,12 @@ ProjectDocument canonicalCadCircleDocument() {
     document.hasCad = true;
     ProjectCadBody cad;
     cad.objectId = 1;
-    cad.state.sketch.plane = Workplane::YZ;
+    cadBaseSketch(cad.state).plane = Workplane::YZ;
     SketchCircle circle;
     circle.center = SketchPoint{-0.5, 0.5};
     circle.radius = 0.75;
-    cad.state.sketch.entities.emplace_back(1, circle);
-    cad.state.sketch.nextEntityId = 2;
+    cadBaseSketch(cad.state).entities.emplace_back(1, circle);
+    cadBaseSketch(cad.state).nextEntityId = 2;
     cad.state.extrude.profileEntityId = 1;
     cad.state.extrude.depth = 0.5;
     cad.state.extrude.direction = ExtrudeDirection::AgainstNormal;
@@ -840,15 +840,15 @@ ProjectDocument canonicalMixedCadDocument() {
     {
         ProjectCadBody cad;
         cad.objectId = 2;
-        cad.state.sketch.plane = Workplane::XY;
+        cadBaseSketch(cad.state).plane = Workplane::XY;
         SketchPolyline polyline;
         polyline.vertices = {SketchPoint{0.0, 0.0}, SketchPoint{2.0, 0.0}, SketchPoint{2.0, 1.0},
                              SketchPoint{1.0, 2.0}, SketchPoint{0.0, 1.0}};
         polyline.closed = true;
-        cad.state.sketch.entities.emplace_back(1, polyline);
-        cad.state.sketch.entities.emplace_back(
+        cadBaseSketch(cad.state).entities.emplace_back(1, polyline);
+        cadBaseSketch(cad.state).entities.emplace_back(
                 2, SketchLine{SketchPoint{3.0, 3.0}, SketchPoint{4.0, 4.5}});
-        cad.state.sketch.nextEntityId = 3;
+        cadBaseSketch(cad.state).nextEntityId = 3;
         cad.state.extrude.profileEntityId = 1;
         cad.state.extrude.depth = 2.0;
         cad.state.extrude.direction = ExtrudeDirection::AlongNormal;
@@ -857,14 +857,14 @@ ProjectDocument canonicalMixedCadDocument() {
     {
         ProjectCadBody cad;
         cad.objectId = 3;
-        cad.state.sketch.plane = Workplane::XZ;
-        cad.state.sketch.entities.emplace_back(
+        cadBaseSketch(cad.state).plane = Workplane::XZ;
+        cadBaseSketch(cad.state).entities.emplace_back(
                 1, SketchLine{SketchPoint{0.0, 0.0}, SketchPoint{2.0, 0.0}});
-        cad.state.sketch.entities.emplace_back(
+        cadBaseSketch(cad.state).entities.emplace_back(
                 2, SketchLine{SketchPoint{2.0, 0.0}, SketchPoint{0.0, 2.0}});
-        cad.state.sketch.entities.emplace_back(
+        cadBaseSketch(cad.state).entities.emplace_back(
                 3, SketchLine{SketchPoint{0.0, 2.0}, SketchPoint{0.0, 0.0}});
-        cad.state.sketch.nextEntityId = 4;
+        cadBaseSketch(cad.state).nextEntityId = 4;
         cad.state.extrude.profileEntityId = 1;
         cad.state.extrude.depth = 0.25;
         cad.state.extrude.direction = ExtrudeDirection::AlongNormal;
@@ -889,13 +889,13 @@ ProjectCadBody canonicalCadRectangleBody(ObjectId objectId, Workplane plane, dou
                                          double depth, ExtrudeDirection direction) {
     ProjectCadBody cad;
     cad.objectId = objectId;
-    cad.state.sketch.plane = plane;
+    cadBaseSketch(cad.state).plane = plane;
     SketchRectangle rectangle;
     rectangle.center = SketchPoint{centreU, centreV};
     rectangle.width = width;
     rectangle.height = height;
-    cad.state.sketch.entities.emplace_back(1, rectangle);
-    cad.state.sketch.nextEntityId = 2;
+    cadBaseSketch(cad.state).entities.emplace_back(1, rectangle);
+    cadBaseSketch(cad.state).nextEntityId = 2;
     cad.state.extrude.profileEntityId = 1;
     cad.state.extrude.depth = depth;
     cad.state.extrude.direction = direction;
@@ -906,12 +906,12 @@ ProjectCadBody canonicalCadRectangleBody(ObjectId objectId, Workplane plane, dou
 // producer's current topology carries.
 void supportOn(ProjectCadBody* dependent, const ProjectCadBody& producer,
                const CadFaceToken& token) {
-    dependent->state.sketch.plane = Workplane::XY;
-    dependent->state.sketch.hasFaceSupport = true;
-    dependent->state.sketch.faceSupport.producerObjectId = producer.objectId;
-    dependent->state.sketch.faceSupport.producerLocalFeatureId = kCadFeatureId;
-    dependent->state.sketch.faceSupport.face = token;
-    dependent->state.sketch.faceSupport.lineageToken = cadTopologySignature(producer.state);
+    cadBaseSketch(dependent->state).plane = Workplane::XY;
+    cadBaseSketch(dependent->state).hasFaceSupport = true;
+    cadBaseSketch(dependent->state).faceSupport.producerObjectId = producer.objectId;
+    cadBaseSketch(dependent->state).faceSupport.producerLocalFeatureId = kCadFeatureId;
+    cadBaseSketch(dependent->state).faceSupport.face = token;
+    cadBaseSketch(dependent->state).faceSupport.lineageToken = cadTopologySignature(producer.state);
 }
 
 ProjectBodyPlacement placementOf(ObjectId objectId, const TransformValues& values) {
@@ -986,8 +986,8 @@ ProjectDocument canonicalCadFaceChainDocument() {
     SketchCircle circle;
     circle.center = SketchPoint{0.0, 0.0};
     circle.radius = 0.5;
-    c.state.sketch.entities.emplace_back(1, circle);
-    c.state.sketch.nextEntityId = 2;
+    cadBaseSketch(c.state).entities.emplace_back(1, circle);
+    cadBaseSketch(c.state).nextEntityId = 2;
     c.state.extrude.profileEntityId = 1;
     c.state.extrude.depth = 0.25;
     c.state.extrude.direction = ExtrudeDirection::AlongNormal;
@@ -1505,24 +1505,24 @@ int runProjectSelfTests(ProjectSelfTestResult* out, int maxOut) {
                 decodeProject(cadFaceCapBytes.data(), cadFaceCapBytes.size(), &back)
                                 == ProjectCodecStatus::Ok
                         && sameProjectDocument(canonicalCadFaceSketchCapDocument(), back)
-                        && back.cad.bodies[1].state.sketch.hasFaceSupport
-                        && back.cad.bodies[1].state.sketch.faceSupport.face.kind
+                        && cadBaseSketch(back.cad.bodies[1].state).hasFaceSupport
+                        && cadBaseSketch(back.cad.bodies[1].state).faceSupport.face.kind
                                    == CadFaceKind::CapFar
                         && encodeProjectV1(back) == cadFaceCapBytes);
         r.check("CADA3_47_the_cad_face_side_fixture_roundtrips_bit_for_bit",
                 decodeProject(cadFaceSideBytes.data(), cadFaceSideBytes.size(), &back)
                                 == ProjectCodecStatus::Ok
                         && sameProjectDocument(canonicalCadFaceSketchSideDocument(), back)
-                        && back.cad.bodies[1].state.sketch.faceSupport.face.kind
+                        && cadBaseSketch(back.cad.bodies[1].state).faceSupport.face.kind
                                    == CadFaceKind::Side
-                        && back.cad.bodies[1].state.sketch.faceSupport.face.edgeLocalIndex == 1
+                        && cadBaseSketch(back.cad.bodies[1].state).faceSupport.face.edgeLocalIndex == 1
                         && encodeProjectV1(back) == cadFaceSideBytes);
         r.check("CADA3_48_the_cad_face_chain_fixture_roundtrips_bit_for_bit",
                 decodeProject(cadFaceChainBytes.data(), cadFaceChainBytes.size(), &back)
                                 == ProjectCodecStatus::Ok
                         && sameProjectDocument(canonicalCadFaceChainDocument(), back)
                         && back.cad.bodies.size() == 3
-                        && back.cad.bodies[2].state.sketch.faceSupport.producerObjectId == 2
+                        && cadBaseSketch(back.cad.bodies[2].state).faceSupport.producerObjectId == 2
                         && encodeProjectV1(back) == cadFaceChainBytes);
         r.check("CADA3_49_the_mixed_cad_face_fixture_roundtrips_bit_for_bit",
                 decodeProject(mixedCadFaceBytes.data(), mixedCadFaceBytes.size(), &back)

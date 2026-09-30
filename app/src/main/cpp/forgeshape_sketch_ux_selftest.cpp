@@ -84,9 +84,9 @@ SketchArc unitSemicircle() {
 // stage has to extrude.
 CadBodyState arcAndLineBody(double depth = 1.0) {
     CadBodyState state;
-    state.sketch.plane = Workplane::XY;
-    addSketchEntity(&state.sketch, unitSemicircle());
-    addSketchEntity(&state.sketch, SketchLine{SketchPoint{-1.0, 0.0}, SketchPoint{1.0, 0.0}});
+    cadBaseSketch(state).plane = Workplane::XY;
+    addSketchEntity(&cadBaseSketch(state), unitSemicircle());
+    addSketchEntity(&cadBaseSketch(state), SketchLine{SketchPoint{-1.0, 0.0}, SketchPoint{1.0, 0.0}});
     state.extrude.profileEntityId = 1;  // the chain's smallest member id
     state.extrude.depth = depth;
     state.extrude.direction = ExtrudeDirection::AlongNormal;
@@ -101,12 +101,12 @@ CadBodyState arcAndLineBody(double depth = 1.0) {
 // waiting to happen.
 CadBodyState splineAndLineBody() {
     CadBodyState state;
-    state.sketch.plane = Workplane::XY;
+    cadBaseSketch(state).plane = Workplane::XY;
     SketchSpline spline;
     spline.points = {SketchPoint{-1.0, 0.0}, SketchPoint{-0.5, 0.75}, SketchPoint{0.5, 0.75},
                      SketchPoint{1.0, 0.0}};
-    addSketchEntity(&state.sketch, spline);
-    addSketchEntity(&state.sketch, SketchLine{SketchPoint{1.0, 0.0}, SketchPoint{-1.0, 0.0}});
+    addSketchEntity(&cadBaseSketch(state), spline);
+    addSketchEntity(&cadBaseSketch(state), SketchLine{SketchPoint{1.0, 0.0}, SketchPoint{-1.0, 0.0}});
     state.extrude.profileEntityId = 1;
     state.extrude.depth = 0.5;
     state.extrude.direction = ExtrudeDirection::AlongNormal;
@@ -116,12 +116,12 @@ CadBodyState splineAndLineBody() {
 // A plain rectangle body, for the edit-session and dependency cases.
 CadBodyState rectBody(double w, double h, double depth) {
     CadBodyState state;
-    state.sketch.plane = Workplane::XY;
+    cadBaseSketch(state).plane = Workplane::XY;
     SketchRectangle r;
     r.center = SketchPoint{0.0, 0.0};
     r.width = w;
     r.height = h;
-    addSketchEntity(&state.sketch, r);
+    addSketchEntity(&cadBaseSketch(state), r);
     state.extrude.profileEntityId = 1;
     state.extrude.depth = depth;
     state.extrude.direction = ExtrudeDirection::AlongNormal;
@@ -283,7 +283,7 @@ void testCurveProfiles(Recorder& r) {
     // An arc and a line closing one profile, and it extrudes.
     {
         const CadBodyState state = arcAndLineBody();
-        const ProfileExtraction extraction = extractClosedProfiles(state.sketch);
+        const ProfileExtraction extraction = extractClosedProfiles(cadBaseSketch(state));
         const ClosedProfile* profile = extraction.profiles.empty()
                                            ? nullptr
                                            : &extraction.profiles.front();
@@ -300,7 +300,7 @@ void testCurveProfiles(Recorder& r) {
     // A spline and a line likewise.
     {
         const CadBodyState state = splineAndLineBody();
-        const ProfileExtraction extraction = extractClosedProfiles(state.sketch);
+        const ProfileExtraction extraction = extractClosedProfiles(cadBaseSketch(state));
         ConstructionMesh mesh;
         r.check("CADUXR1_30_a_spline_and_a_line_close_one_profile_and_extrude",
                 extraction.profiles.size() == 1
@@ -342,8 +342,8 @@ void testCurveProfiles(Recorder& r) {
     // the same polygon, twice, value for value.
     {
         const CadBodyState state = arcAndLineBody();
-        const ProfileExtraction a = extractClosedProfiles(state.sketch);
-        const ProfileExtraction b = extractClosedProfiles(state.sketch);
+        const ProfileExtraction a = extractClosedProfiles(cadBaseSketch(state));
+        const ProfileExtraction b = extractClosedProfiles(cadBaseSketch(state));
         bool same = a.profiles.size() == 1 && b.profiles.size() == 1
                     && a.profiles[0].polygon.size() == b.profiles[0].polygon.size();
         for (size_t i = 0; same && i < a.profiles[0].polygon.size(); ++i) {
@@ -673,10 +673,10 @@ void testEditSketch(Recorder& r) {
     // one that changes sizes but not the set of faces.
     {
         CadBodyState child = rectBody(0.5, 0.5, 0.25);
-        child.sketch.hasFaceSupport = true;
-        child.sketch.faceSupport.producerObjectId = bodyId;
-        child.sketch.faceSupport.face.kind = CadFaceKind::CapFar;
-        child.sketch.faceSupport.lineageToken =
+        cadBaseSketch(child).hasFaceSupport = true;
+        cadBaseSketch(child).faceSupport.producerObjectId = bodyId;
+        cadBaseSketch(child).faceSupport.face.kind = CadFaceKind::CapFar;
+        cadBaseSketch(child).faceSupport.lineageToken =
                 cadTopologySignature(object->cadOrNull()->state());
         CadStatus childWhy = CadStatus::Ok;
         SceneObject* childObject = scene.addCadBody(child, &childWhy);
@@ -920,11 +920,11 @@ ProjectDocument cadFaceCurveDocument() {
     document.hasCad = true;
     const ProjectCadBody producer = rectangleProfileBody(1, 4.0, 4.0, 1.0);
     ProjectCadBody dependent = arcProfileBody(2, 0.5);
-    dependent.state.sketch.hasFaceSupport = true;
-    dependent.state.sketch.faceSupport.producerObjectId = producer.objectId;
-    dependent.state.sketch.faceSupport.producerLocalFeatureId = kCadFeatureId;
-    dependent.state.sketch.faceSupport.face = CadFaceToken{CadFaceKind::CapFar, 0, 0};
-    dependent.state.sketch.faceSupport.lineageToken = cadTopologySignature(producer.state);
+    cadBaseSketch(dependent.state).hasFaceSupport = true;
+    cadBaseSketch(dependent.state).faceSupport.producerObjectId = producer.objectId;
+    cadBaseSketch(dependent.state).faceSupport.producerLocalFeatureId = kCadFeatureId;
+    cadBaseSketch(dependent.state).faceSupport.face = CadFaceToken{CadFaceKind::CapFar, 0, 0};
+    cadBaseSketch(dependent.state).faceSupport.lineageToken = cadTopologySignature(producer.state);
     document.cad.bodies.push_back(producer);
     document.cad.bodies.push_back(dependent);
     return document;
@@ -1042,12 +1042,12 @@ bool firstProfileOf(const CadSketch& sketch, SketchEntityId anchor, ClosedProfil
 void readyRectangleSession(SketchSession* session, Workplane plane, double w, double h,
                            double depth, double centreU = 0.0, double centreV = 0.0) {
     CadBodyState state;
-    state.sketch.plane = plane;
+    cadBaseSketch(state).plane = plane;
     SketchRectangle rect;
     rect.center = SketchPoint{centreU, centreV};
     rect.width = w;
     rect.height = h;
-    addSketchEntity(&state.sketch, rect);
+    addSketchEntity(&cadBaseSketch(state), rect);
     state.extrude.profileEntityId = 1;
     state.extrude.depth = depth;
     state.extrude.direction = ExtrudeDirection::AlongNormal;
@@ -1111,12 +1111,12 @@ void testCanvasExtrudeAnchors(Recorder& r) {
         face.v = Vec3{0.0f, 0.0f, -1.0f};
         face.n = Vec3{0.0f, 1.0f, 0.0f};
         CadBodyState state;
-        state.sketch.plane = Workplane::XY;  // a face sketch canonical basis
+        cadBaseSketch(state).plane = Workplane::XY;  // a face sketch canonical basis
         SketchRectangle rect;
         rect.center = SketchPoint{0.0, 0.0};
         rect.width = 1.0;
         rect.height = 1.0;
-        addSketchEntity(&state.sketch, rect);
+        addSketchEntity(&cadBaseSketch(state), rect);
         state.extrude.profileEntityId = 1;
         state.extrude.depth = 2.0;
         state.extrude.direction = ExtrudeDirection::AlongNormal;
@@ -2556,7 +2556,7 @@ void testDataContract(Recorder& r) {
     // A file whose sketch closes no profile is refused, curve or not.
     {
         CadBodyState open = arcAndLineBody();
-        open.sketch.entities.pop_back();  // drop the closing line
+        cadBaseSketch(open).entities.pop_back();  // drop the closing line
         ProjectDocument document = documentFor(rectBody(1.0, 1.0, 1.0));
         if (!document.cad.bodies.empty()) {
             document.cad.bodies[0].state = open;
@@ -2660,7 +2660,7 @@ void measurePerformance() {
     auto t2 = Clock::now();
     const CadBodyState mixed = arcAndLineBody();
     for (int i = 0; i < 50; ++i) {
-        extractClosedProfiles(mixed.sketch);
+        extractClosedProfiles(cadBaseSketch(mixed));
     }
     auto t3 = Clock::now();
     ConstructionMesh mesh;

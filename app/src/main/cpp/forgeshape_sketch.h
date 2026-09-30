@@ -174,11 +174,65 @@ enum class CadStatus : uint8_t {
     CutRemovesBody,
     // The boolean kernel refused an input or produced no valid solid.
     KernelFailed,
+    // --- `CAD-V6-S1`: the sketch table and the selection variant. ---
+    // APPENDED, so every code above keeps its number across JNI and in Java.
+    // None of these is produced by a product path today: they are what a
+    // `CADB` v6 record, or a state a later stage builds, is refused by.
+    //
+    // A sketch id that is zero, or a sketch table that is not in strictly
+    // ascending id order.
+    SketchIdInvalid,
+    // Two sketches in one body wear the same id.
+    DuplicateSketchId,
+    // A feature names a sketch id the body's table does not carry, or the
+    // table carries no sketch at all.
+    SketchNotFound,
+    // A stored high-water mark (`nextSketchId`, `nextFeatureId`) is not above
+    // every id it has minted, so the next allocation could collide.
+    HighWaterInvalid,
+    // More retained sketches than one body may carry.
+    TooManySketches,
+    // A sketch's placement contradicts how it is used: the base feature on a
+    // sketch that stands on one of the body's own features, a second sketch
+    // placed on a workplane or another body's face, or a later feature on such
+    // a sketch that is not the base's own.
+    SketchSupportInvalid,
+    // A selection kind outside LoopRegions / PlanarFaces, or a selection that
+    // carries the other kind's payload beside its own.
+    InvalidSelectionKind,
+    // A PlanarFaceRef whose structure no derivation can produce: an empty or
+    // over-long cycle, too many holes, a cut kind in the wrong position, an
+    // endpoint cut carrying a partner, an intersection naming no partner.
+    PlanarFaceRefMalformed,
+    // A PlanarFaceRef, or a selection of them, not in its ONE canonical form:
+    // a cycle not rotated to its smallest fragment, a fragment repeated in a
+    // cycle, holes or faces out of order. Refused, never re-sorted.
+    PlanarFaceRefNotCanonical,
+    // The same face listed twice in one selection.
+    DuplicatePlanarFace,
+    // A PlanarFaceRef that names no face of its sketch's arrangement. There is
+    // no nearest-face fallback.
+    PlanarFaceUnresolved,
+    // A planar-face selection over a sketch carrying a Spline, whose
+    // tessellation is not an identity (`ArrangementStatus::UnsupportedCurve`).
+    PlanarFaceUnsupportedCurve,
+    // The sketch's curves share a stretch, so it has no arrangement
+    // (`ArrangementStatus::AmbiguousOverlap`).
+    PlanarFaceAmbiguousOverlap,
+    // The sketch exceeds the arrangement's own caps
+    // (`ArrangementStatus::CapExceeded`).
+    PlanarFaceCapExceeded,
+    // The arrangement found a degenerate cycle (`ArrangementStatus::DegenerateFace`).
+    PlanarFaceDegenerate,
+    // The selection is valid, but this build does not yet regenerate a solid
+    // from planar faces, nor place a sketch on a face of such a feature.
+    // Refused by name rather than approximated (`CAD-V6-S1`; wired in S2).
+    PlanarFaceRegenerationUnavailable,
 };
 
 // The count is the number of enumerators, so `cadStatusFromCode` accepts
 // exactly the codes that exist.
-constexpr int kCadStatusCount = 45;
+constexpr int kCadStatusCount = 61;
 
 const char* cadStatusName(CadStatus status);
 int cadStatusCode(CadStatus status);

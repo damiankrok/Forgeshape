@@ -49,8 +49,18 @@
 // the act that does, and it stays a separate `SceneObject`.
 //
 //     CadBodyState
-//         sketch + extrude         feature 1: the base New Body extrusion
-//         laterFeatures[]          features 2..n: support, sketch, extrude, Add|Cut
+//         sketches[]               the retained SKETCH TABLE (`CAD-V6-S1`)
+//         baseSketchId + extrude   feature 1: the base New Body extrusion
+//         laterFeatures[]          features 2..n: sketchId, extrude, Add|Cut
+//
+// Sketches are a TABLE, not a field of a feature (`CAD-V6-S1`). Each retained
+// sketch has a stable, body-local `CadSketchId` and owns its authored entities
+// and its placement; a feature REFERENCES a sketch by id and never carries a
+// copy of it, so two features may extrude one sketch and an edit to that sketch
+// is what both of them read. A v1..v5 record has one inline sketch per feature
+// and is read into the table as exactly that -- one sketch per feature, ids
+// 1..n in chain order -- and written back byte-identically while it stays that
+// shape.
 //
 // Regeneration is ORDERED and ATOMIC: the base, then every later feature in
 // order, and a mesh is published only when the whole requested chain is valid.
@@ -66,6 +76,7 @@
 #include "forgeshape_construction.h"
 #include "forgeshape_object_id.h"
 #include "forgeshape_sketch.h"
+#include "forgeshape_sketch_arrangement.h"
 #include "forgeshape_sketch_region.h"
 #include "forgeshape_workplane.h"
 
@@ -120,6 +131,33 @@ int extrudeExtentModeIndex(ExtrudeExtentMode mode);
 // The depth a new extrusion is offered at before the user types one.
 constexpr Meters kDefaultExtrudeDepthMeters = 1.0;
 
+// WHICH kind of thing a feature's selection names (`CAD-V6-S1`). An explicit
+// discriminator, never inferred from which payload happens to be non-empty.
+enum class CadSelectionKind : uint8_t {
+    // v1..v5: closed LOOPS and their nesting (`forgeshape_sketch_region.h`),
+    // stored as `ProfileRegionRef`s. Every body any earlier version wrote.
+    LoopRegions,
+    // Atomic faces of the sketch's planar ARRANGEMENT
+    // (`forgeshape_sketch_arrangement.h`), stored as canonical `PlanarFaceRef`s.
+    // Validated and persisted since `CAD-V6-S1`; not yet regenerated into a
+    // solid, and no product path creates one yet.
+    PlanarFaces,
+};
+
+constexpr int kCadSelectionKindCount = 2;
+
+const char* cadSelectionKindName(CadSelectionKind kind);
+
+// How many planar faces one feature may select, how many holes one face may
+// carry, and how many fragments one boundary cycle may have. The first two are
+// the region caps, for the same reason; the third is the largest polygon a
+// profile may become (`kMaxProfileVertices`): every fragment contributes at
+// least one polygon vertex when a face is extruded, so a longer cycle could
+// never be regenerated, and bounding it here bounds a history step and a file.
+constexpr uint32_t kMaxPlanarFaceSelection = kMaxProfileRegions;
+constexpr uint32_t kMaxPlanarFaceHoles = kMaxRegionHoles;
+constexpr uint32_t kMaxPlanarFaceCycleFragments = kMaxProfileVertices;
+
 struct ExtrudeFeature {
     // WHAT is extruded: a selection of sketch REGIONS (forgeshape_sketch_region.h),
     // stored by semantic identity and in canonical order. The first region is
@@ -153,7 +191,16 @@ struct ExtrudeFeature {
     // The `-N` distance (B), in TwoSides ALONE; canonically exactly 0.0 in
     // every other mode, for the reason `direction` is canonical there.
     Meters secondDistance = 0.0;
+    // `CAD-V6-S1`. Which payload the selection is. LoopRegions is the three
+    // region fields above and `planarFaces` is empty; PlanarFaces is
+    // `planarFaces` (canonical: strictly ascending by `comparePlanarFaceRef`)
+    // and the region fields are empty. A selection carrying the other kind's
+    // payload is refused, never read as either.
+    CadSelectionKind selection = CadSelectionKind::LoopRegions;
+    std::vector<PlanarFaceRef> planarFaces;
 };
+
+bool sameExtrudeFeature(const ExtrudeFeature& a, const ExtrudeFeature& b);
 
 // The selection as ONE canonical list: the first region, then the additional
 // ones. Empty when nothing is chosen.
@@ -255,33 +302,148 @@ struct CadFeatureSupport {
 
 bool sameCadFeatureSupport(const CadFeatureSupport& a, const CadFeatureSupport& b);
 
-// One later feature: a retained sketch on a supporting face, its extrusion and
-// what the extrusion does.
+// ---------------------------------------------------------------------------
+// The retained sketch table (`CAD-V6-S1`)
+// ---------------------------------------------------------------------------
+
+// A retained sketch's identity: body-local, non-zero, minted from the body's
+// `nextSketchId` and never reused within one state lineage -- deleting a
+// feature does not hand its sketch's id to the next sketch. It is a semantic
+// id: never an index into the table, never renderer-derived, never a hash of
+// the sketch's content (two sketches with identical entities are two sketches).
+using CadSketchId = uint32_t;
+constexpr CadSketchId kNoCadSketch = 0;
+
+// The id the base sketch of a new body is given, and the id a v1..v5 record's
+// base sketch is read as. Later features' sketches read from v5 take 2..n in
+// chain order.
+constexpr CadSketchId kBaseCadSketchId = 1;
+
+// How many retained sketches one body may carry. The feature cap, because a
+// sketch nothing extrudes is legal but a body that is mostly unconsumed
+// sketches is not a shape a phone session builds; bounded so a history step
+// and a `.forge` record stay finite.
+constexpr uint32_t kMaxCadSketches = kMaxCadFeatures;
+
+// One retained sketch: its identity, WHERE it stands, and its authored truth.
+//
+// Placement belongs to the sketch and not to the features that extrude it,
+// because a sketch two features share must stand in one place. It is one of:
+//   * the body's ROOT sketch -- `hasFeatureSupport` false -- on its workplane at
+//     the body origin, or (through `sketch.faceSupport`, `CAD-A3`) on another
+//     body's face. Exactly one root sketch exists, and the base feature
+//     extrudes it.
+//   * a sketch on a planar face of one of the body's OWN features --
+//     `hasFeatureSupport` true, `sketch.plane` canonically XY and no TopoRef.
+struct CadSketchRecord {
+    CadSketchId sketchId = kNoCadSketch;
+    bool hasFeatureSupport = false;
+    CadFeatureSupport featureSupport{};
+    CadSketch sketch;
+};
+
+bool sameCadSketchRecord(const CadSketchRecord& a, const CadSketchRecord& b);
+
+// The empty root sketch a new body starts with.
+inline CadSketchRecord emptyRootCadSketchRecord() {
+    CadSketchRecord record;
+    record.sketchId = kBaseCadSketchId;
+    return record;
+}
+
+// One later feature: the sketch it extrudes, BY ID, its extrusion and what the
+// extrusion does. It holds no sketch and no placement of its own.
 struct CadFeature {
     // Stable within the body, strictly ascending along the chain, above the
-    // base's kCadFeatureId. Never an index.
+    // base's kCadFeatureId, minted from `CadBodyState::nextFeatureId`. Never an
+    // index.
     uint32_t featureId = 0;
     CadFeatureOperation operation = CadFeatureOperation::Add;
-    CadFeatureSupport support{};
-    // Authored on its own canonical local XY (`plane` XY, no `TopoRef`): the
-    // support face's frame places it in the body.
-    CadSketch sketch;
+    CadSketchId sketchId = kNoCadSketch;
     ExtrudeFeature extrude;
 };
 
 bool sameCadFeature(const CadFeature& a, const CadFeature& b);
 
 // The whole authored truth of one CAD Body. Plain, copyable, comparable,
-// BOUNDED (the sketch caps its entities and every polyline's vertices, and the
-// chain caps its features), and carrying nothing derived.
+// BOUNDED (the sketch caps its entities and every polyline's vertices, the
+// table caps its sketches and the chain caps its features), and carrying
+// nothing derived.
+//
+// The base feature is not a `CadFeature` record: its id is always
+// kCadFeatureId and its operation always New Body -- the two facts every v1..v5
+// record implies -- so a slot for them would be two fields whose only legal
+// values are constants. What IS stored for it is what varies: the sketch it
+// extrudes (by id, in the one table) and its extrusion.
 struct CadBodyState {
-    // Feature 1: the base New Body extrusion, exactly what R0 stored.
-    CadSketch sketch;
+    // THE sketch table, strictly ascending by id. The only owner of authored
+    // sketch truth in the body. A default state carries one empty root sketch.
+    std::vector<CadSketchRecord> sketches{emptyRootCadSketchRecord()};
+    // The id the next retained sketch takes: above every id in the table.
+    CadSketchId nextSketchId = kBaseCadSketchId + 1u;
+    // Feature 1: the base New Body extrusion of the root sketch.
+    CadSketchId baseSketchId = kBaseCadSketchId;
     ExtrudeFeature extrude;
     // Features 2..n, in application order. Empty for every body any earlier
     // version created.
     std::vector<CadFeature> laterFeatures;
+    // The id the next appended feature takes: above every feature id ever
+    // minted in this lineage, so a deleted feature's id is not handed on
+    // (the audit's id-reuse finding). Derived as `last + 1` for v1..v5.
+    uint32_t nextFeatureId = kCadFeatureId + 1u;
 };
+
+// The record with `sketchId`, or null.
+const CadSketchRecord* findCadSketchRecord(const CadBodyState& state, CadSketchId sketchId);
+CadSketchRecord* findCadSketchRecord(CadBodyState& state, CadSketchId sketchId);
+
+// The base feature's sketch, read through the table. On a state whose base
+// sketch does not resolve (never a validated one) the const form answers an
+// empty sketch and the mutable form restores the record it names -- the one
+// narrow door authoring code that wrote the base sketch keeps, so there is no
+// second copy of it anywhere.
+const CadSketch& cadBaseSketch(const CadBodyState& state);
+CadSketch& cadBaseSketch(CadBodyState& state);
+
+// The sketch record the feature with `featureId` extrudes, or null.
+const CadSketchRecord* cadFeatureSketchRecord(const CadBodyState& state, uint32_t featureId);
+CadSketchRecord* cadFeatureSketchRecord(CadBodyState& state, uint32_t featureId);
+
+// A one-feature state: `sketch` as the root sketch (id kBaseCadSketchId) and
+// `extrude` as the base feature. What every body starts as.
+CadBodyState makeCadBodyState(CadSketch sketch, ExtrudeFeature extrude);
+
+// Adds a retained sketch to the table, minting its id from `nextSketchId`.
+// `support` null makes it a root sketch; otherwise it stands on that face of
+// one of the body's features. Returns kNoCadSketch, adding nothing, when the
+// table is full or the high-water mark cannot mint another id. Validates
+// nothing else: `validateCadBodyState` is the one judge.
+CadSketchId addCadSketchRecord(CadBodyState* state, CadSketch sketch,
+                               const CadFeatureSupport* support);
+
+// Appends a later feature extruding the existing sketch `sketchId`, minting its
+// id from `nextFeatureId`. Returns 0, adding nothing, when the chain is full.
+uint32_t appendCadLaterFeature(CadBodyState* state, CadFeatureOperation operation,
+                               CadSketchId sketchId, ExtrudeFeature extrude);
+
+// What an Add or a Cut commit does: a NEW sketch on `support` and a new feature
+// extruding it. Returns the feature id, or 0 with nothing added.
+uint32_t appendCadLaterFeatureWithSketch(CadBodyState* state, CadFeatureOperation operation,
+                                         const CadFeatureSupport& support, CadSketch sketch,
+                                         ExtrudeFeature extrude);
+
+// Whether the state says nothing a `CADB` v1..v5 record cannot: one sketch per
+// feature with the ids a legacy read synthesizes (base 1, later features 2..n
+// in chain order), the root sketch the base's and every later sketch on a
+// feature face, the two high-water marks exactly what a legacy read derives,
+// and every selection LoopRegions. Exactly the states the codec writes below
+// v6, so an unchanged legacy project keeps its bytes.
+bool cadBodyStateLegacyRepresentable(const CadBodyState& state);
+
+// Whether any feature selects PlanarFaces. Such a state is valid truth and
+// round-trips through `CADB` v6, but this build cannot regenerate it
+// (`PlanarFaceRegenerationUnavailable`), so the runtime refuses to LOAD it.
+bool cadBodyStateUsesPlanarFaces(const CadBodyState& state);
 
 // The number of features in the chain, the base included.
 inline uint32_t cadFeatureCount(const CadBodyState& state) {
@@ -289,13 +451,19 @@ inline uint32_t cadFeatureCount(const CadBodyState& state) {
 }
 
 // A read-only view of one feature, base or later, so a caller can walk the
-// chain without asking which kind of slot a feature lives in.
+// chain without asking which kind of slot a feature lives in. `sketch` and
+// `support` point INTO the sketch table -- they are the record the feature
+// references, never a copy -- and are null when the reference does not
+// resolve (never on a validated state).
 struct CadFeatureView {
     uint32_t featureId = kCadFeatureId;
     CadFeatureOperation operation = CadFeatureOperation::NewBody;
+    CadSketchId sketchId = kNoCadSketch;
     const CadSketch* sketch = nullptr;
     const ExtrudeFeature* extrude = nullptr;
-    // Null for the base, whose support is its sketch's own plane or TopoRef.
+    // The sketch's placement on one of the body's own features. Null for the
+    // root sketch, whose support is its own plane or TopoRef -- the base's, and
+    // any later feature's that extrudes the base's sketch.
     const CadFeatureSupport* support = nullptr;
 };
 
@@ -303,7 +471,7 @@ struct CadFeatureView {
 bool cadFeatureAt(const CadBodyState& state, uint32_t index, CadFeatureView* out);
 // The feature with `featureId`. False when the chain has none.
 bool findCadFeature(const CadBodyState& state, uint32_t featureId, CadFeatureView* out);
-// The id the next appended feature takes.
+// The id the next appended feature takes: the stored high-water mark.
 uint32_t nextCadFeatureId(const CadBodyState& state);
 
 // Bit-exact, for the history and the codec.
@@ -321,9 +489,29 @@ CadStatus validateCadBodyState(const CadBodyState& state,
                                ProfileExtraction* outProfiles = nullptr);
 
 // One feature's own rule, without the chain: sketch, extent, regions.
-// `outRegions` receives the region extraction on success.
+// `outRegions` receives the region extraction on success. A PlanarFaces
+// selection is refused here as `PlanarFaceRegenerationUnavailable`: this is the
+// rule for a feature that is REGENERATED, and faces are not yet.
 CadStatus validateCadFeatureGeometry(const CadSketch& sketch, const ExtrudeFeature& extrude,
                                      SketchRegionExtraction* outRegions = nullptr);
+
+// The extrusion's own rule -- extent code, canonical form, distances -- which a
+// feature satisfies whatever it selects.
+CadStatus validateExtrudeExtent(const ExtrudeFeature& extrude);
+
+// The canonical STRUCTURE of one PlanarFaceRef, without any geometry: non-empty
+// cycles within the caps, cut kinds in their positions, endpoint cuts carrying
+// no partner, every cycle rotated to its unique smallest fragment, holes
+// strictly ascending. Orientation is not structural; exact resolution decides it.
+CadStatus validatePlanarFaceRefForm(const PlanarFaceRef& ref);
+
+// A PlanarFaces selection over `sketch` (`CAD-V6-S1`): the sketch, the extent,
+// no LoopRegions payload beside it, 1..kMaxPlanarFaceSelection faces each in
+// canonical form, strictly ascending and distinct, and every one resolving by
+// EXACT equality against the sketch's derived arrangement. An arrangement that
+// cannot be derived is refused by its own name (a spline, an overlap, a cap).
+// No nearest face is ever substituted.
+CadStatus validatePlanarFaceSelection(const CadSketch& sketch, const ExtrudeFeature& extrude);
 
 // THE regeneration path. Validates, extracts, triangulates, extrudes.
 //
@@ -400,7 +588,8 @@ public:
 
     ObjectId objectId() const { return objectId_; }
     const CadBodyState& state() const { return state_; }
-    const CadSketch& sketch() const { return state_.sketch; }
+    // The base feature's sketch (the root of the table).
+    const CadSketch& sketch() const { return cadBaseSketch(state_); }
     const ExtrudeFeature& extrude() const { return state_.extrude; }
 
     // How many times the state actually changed. Diagnostics only.

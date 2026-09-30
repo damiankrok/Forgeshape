@@ -48,12 +48,12 @@ bool near3(const Vec3& a, const Vec3& b, float tol = 1e-4f) {
 CadBodyState rectBody(Workplane plane, double w, double h, double depth,
                       ExtrudeDirection dir = ExtrudeDirection::AlongNormal) {
     CadBodyState state;
-    state.sketch.plane = plane;
+    cadBaseSketch(state).plane = plane;
     SketchRectangle r;
     r.center = SketchPoint{0.0, 0.0};
     r.width = w;
     r.height = h;
-    addSketchEntity(&state.sketch, r);
+    addSketchEntity(&cadBaseSketch(state), r);
     state.extrude.profileEntityId = 1;
     state.extrude.depth = depth;
     state.extrude.direction = dir;
@@ -62,11 +62,11 @@ CadBodyState rectBody(Workplane plane, double w, double h, double depth,
 
 CadBodyState circleBody(Workplane plane, double radius, double depth) {
     CadBodyState state;
-    state.sketch.plane = plane;
+    cadBaseSketch(state).plane = plane;
     SketchCircle c;
     c.center = SketchPoint{0.0, 0.0};
     c.radius = radius;
-    addSketchEntity(&state.sketch, c);
+    addSketchEntity(&cadBaseSketch(state), c);
     state.extrude.profileEntityId = 1;
     state.extrude.depth = depth;
     state.extrude.direction = ExtrudeDirection::AlongNormal;
@@ -77,11 +77,11 @@ CadBodyState circleBody(Workplane plane, double radius, double depth) {
 CadBodyState childOn(const CadBodyState& producer, ObjectId producerId, const CadFaceToken& token,
                      double w, double h, double depth) {
     CadBodyState state = rectBody(Workplane::XY, w, h, depth);
-    state.sketch.hasFaceSupport = true;
-    state.sketch.faceSupport.producerObjectId = producerId;
-    state.sketch.faceSupport.producerLocalFeatureId = kCadFeatureId;
-    state.sketch.faceSupport.face = token;
-    state.sketch.faceSupport.lineageToken = cadTopologySignature(producer);
+    cadBaseSketch(state).hasFaceSupport = true;
+    cadBaseSketch(state).faceSupport.producerObjectId = producerId;
+    cadBaseSketch(state).faceSupport.producerLocalFeatureId = kCadFeatureId;
+    cadBaseSketch(state).faceSupport.face = token;
+    cadBaseSketch(state).faceSupport.lineageToken = cadTopologySignature(producer);
     return state;
 }
 
@@ -315,7 +315,7 @@ int runCadA3SelfTests(CadA3SelfTestResult* out, int maxOut) {
         // A ref to a producer whose lineage no longer matches.
         const CadFaceToken cap = tokenFor(a->cadOrNull()->state(), CadFaceKind::CapFar);
         CadBodyState stale = childOn(a->cadOrNull()->state(), a->objectId(), cap, 1.0, 1.0, 0.5);
-        stale.sketch.faceSupport.lineageToken ^= 0x1234u;  // corrupt the token
+        cadBaseSketch(stale).faceSupport.lineageToken ^= 0x1234u;  // corrupt the token
         SceneObject* c = scene.addCadBody(stale, &why);
         r.check("CADA3_37_a_stale_lineage_ref_is_refused",
                 c == nullptr && why == CadStatus::ProfileNotFound);
@@ -394,7 +394,7 @@ int runCadA3SelfTests(CadA3SelfTestResult* out, int maxOut) {
                           && decodeProject(v1bytes.data(), v1bytes.size(), &v1back)
                                  == ProjectCodecStatus::Ok
                           && !v1back.cad.bodies.empty()
-                          && !v1back.cad.bodies[0].state.sketch.hasFaceSupport
+                          && !cadBaseSketch(v1back.cad.bodies[0].state).hasFaceSupport
                           && encodeProjectV1(v1back) == v1bytes;
         r.check("CADA3_40_world_only_cad_project_round_trips_at_v1", v1ok);
 
@@ -415,8 +415,8 @@ int runCadA3SelfTests(CadA3SelfTestResult* out, int maxOut) {
                                == ProjectCodecStatus::Ok
                         && validateProjectDocument(back) == ProjectCodecStatus::Ok
                         && back.cad.bodies.size() == 2
-                        && back.cad.bodies[1].state.sketch.hasFaceSupport
-                        && sameTopoRef(back.cad.bodies[1].state.sketch.faceSupport,
+                        && cadBaseSketch(back.cad.bodies[1].state).hasFaceSupport
+                        && sameTopoRef(cadBaseSketch(back.cad.bodies[1].state).faceSupport,
                                        pb->cadOrNull()->sketch().faceSupport)
                         && encodeProjectV1(back) == bytes;
         r.check("CADA3_41_42_face_supported_project_round_trips_at_v2", ok);
@@ -432,20 +432,20 @@ int runCadA3SelfTests(CadA3SelfTestResult* out, int maxOut) {
         // Corruption: a document whose child names a nonexistent producer is
         // refused; a cycle is refused.
         ProjectDocument badRef = doc;
-        badRef.cad.bodies[1].state.sketch.faceSupport.producerObjectId = 9999;
+        cadBaseSketch(badRef.cad.bodies[1].state).faceSupport.producerObjectId = 9999;
         r.check("CADA3_37_bad_producer_ref_document_is_refused",
                 validateProjectDocument(badRef) != ProjectCodecStatus::Ok);
 
         ProjectDocument cycle = doc;
         // Make A depend on B and B depend on A: a 2-cycle.
-        cycle.cad.bodies[0].state.sketch.hasFaceSupport = true;
-        cycle.cad.bodies[0].state.sketch.plane = Workplane::XY;
-        cycle.cad.bodies[0].state.sketch.faceSupport.producerObjectId =
+        cadBaseSketch(cycle.cad.bodies[0].state).hasFaceSupport = true;
+        cadBaseSketch(cycle.cad.bodies[0].state).plane = Workplane::XY;
+        cadBaseSketch(cycle.cad.bodies[0].state).faceSupport.producerObjectId =
             cycle.cad.bodies[1].objectId;
-        cycle.cad.bodies[0].state.sketch.faceSupport.producerLocalFeatureId = kCadFeatureId;
-        cycle.cad.bodies[0].state.sketch.faceSupport.face =
+        cadBaseSketch(cycle.cad.bodies[0].state).faceSupport.producerLocalFeatureId = kCadFeatureId;
+        cadBaseSketch(cycle.cad.bodies[0].state).faceSupport.face =
             CadFaceToken{CadFaceKind::CapFar, 0, 0};
-        cycle.cad.bodies[0].state.sketch.faceSupport.lineageToken =
+        cadBaseSketch(cycle.cad.bodies[0].state).faceSupport.lineageToken =
             cadTopologySignature(cycle.cad.bodies[1].state);
         r.check("CADA3_36_dependency_cycle_document_is_refused",
                 validateProjectDocument(cycle) != ProjectCodecStatus::Ok);
@@ -490,7 +490,7 @@ int runCadA3SelfTests(CadA3SelfTestResult* out, int maxOut) {
                         && sameTopoRef(scene.findBody(childId)->cadFaceSupportOrNull()
                                            ? *scene.findBody(childId)->cadFaceSupportOrNull()
                                            : TopoRef{},
-                                       childState.sketch.faceSupport));
+                                       cadBaseSketch(childState).faceSupport));
     }
 
     // -----------------------------------------------------------------------
@@ -746,7 +746,7 @@ int runCadA3SelfTests(CadA3SelfTestResult* out, int maxOut) {
             r.check("CADA3_BOOT_07_the_first_project_is_an_ordinary_cad_project_document",
                     why == ProjectCodecStatus::Ok && !bytes.empty() && doc.hasCad
                             && doc.cad.bodies.size() == 1 && !doc.hasConstruction
-                            && !doc.cad.bodies[0].state.sketch.hasFaceSupport
+                            && !cadBaseSketch(doc.cad.bodies[0].state).hasFaceSupport
                             && doc.scene.activeObjectId == report.bodyId);
             // A second first-commit is refused now that a project is open, and
             // the project is untouched.

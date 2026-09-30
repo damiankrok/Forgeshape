@@ -85,12 +85,26 @@ struct CadFeatureGeometry {
 };
 
 // Derives the chain's geometry in order, through `throughFeatureId` (every
-// feature when omitted), validating each feature's own rule and each later
-// feature's support against the features before it. Writes nothing on a
-// refusal; `outFailedFeatureId` names the feature that refused.
+// feature when omitted), validating each feature's own rule and each sketch's
+// placement against the features before it. A feature's placement is its
+// SKETCH's (`CAD-V6-S1`): the root sketch on its workplane, any other on the
+// named face of an earlier feature -- so two features sharing a sketch stand in
+// one place. A PlanarFaces feature refuses as
+// `PlanarFaceRegenerationUnavailable`: this build does not regenerate faces.
+// Writes nothing on a refusal; `outFailedFeatureId` names the feature that
+// refused.
 CadStatus buildCadChainGeometry(const CadBodyState& state, std::vector<CadFeatureGeometry>* out,
                                 uint32_t* outFailedFeatureId = nullptr,
                                 uint32_t throughFeatureId = 0xFFFFFFFFu);
+
+// The chain's own validation (what `validateCadBodyState` runs after the table
+// and the base): every LoopRegions feature's geometry and placement, every
+// PlanarFaces feature's selection (`validatePlanarFaceSelection`) and
+// placement, and every UNCONSUMED sketch's own rule and support against the
+// whole chain. Unlike `buildCadChainGeometry` it does not stop at a PlanarFaces
+// feature -- that feature is validated, not regenerated -- and refuses only
+// what would need its faces (`PlanarFaceRegenerationUnavailable`).
+CadStatus validateCadChain(const CadBodyState& state, uint32_t* outFailedFeatureId = nullptr);
 
 // The geometry of the one feature named, and only what it needs before it.
 CadStatus buildCadFeatureGeometry(const CadBodyState& state, uint32_t featureId,

@@ -92,7 +92,7 @@ CadSketch polygonSketch(uint32_t n, bool closed, double radius = 1.0) {
 CadBodyState bodyState(const CadSketch& sketch, SketchEntityId profile, double depth = 1.5,
                        ExtrudeDirection direction = ExtrudeDirection::AlongNormal) {
     CadBodyState state;
-    state.sketch = sketch;
+    cadBaseSketch(state) = sketch;
     state.extrude.profileEntityId = profile;
     state.extrude.depth = depth;
     state.extrude.direction = direction;
@@ -769,12 +769,12 @@ ProjectBodyPlacement corpusSceneBody(ObjectId id, const TransformValues& transfo
 
 CadBodyState corpusRectangleState(double w, double h, Workplane plane) {
     CadBodyState state;
-    state.sketch.plane = plane;
+    cadBaseSketch(state).plane = plane;
     SketchRectangle rect;
     rect.center = SketchPoint{0.0, 0.0};
     rect.width = w;
     rect.height = h;
-    addSketchEntity(&state.sketch, rect);
+    addSketchEntity(&cadBaseSketch(state), rect);
     state.extrude.profileEntityId = 1;
     state.extrude.depth = 1.0;
     return state;
@@ -782,11 +782,11 @@ CadBodyState corpusRectangleState(double w, double h, Workplane plane) {
 
 CadBodyState corpusCircleState(double radius, Workplane plane) {
     CadBodyState state;
-    state.sketch.plane = plane;
+    cadBaseSketch(state).plane = plane;
     SketchCircle circle;
     circle.center = SketchPoint{0.0, 0.0};
     circle.radius = radius;
-    addSketchEntity(&state.sketch, circle);
+    addSketchEntity(&cadBaseSketch(state), circle);
     state.extrude.profileEntityId = 1;
     state.extrude.depth = 1.0;
     return state;
@@ -858,18 +858,18 @@ ProjectDocument cadFaceExtentDocument() {
     const uint64_t lineage = cadTopologySignature(producer);
 
     CadBodyState onCap = withSymmetric(corpusRectangleState(1.0, 1.0, Workplane::XY), 0.25);
-    onCap.sketch.hasFaceSupport = true;
-    onCap.sketch.faceSupport.producerObjectId = 1;
-    onCap.sketch.faceSupport.producerLocalFeatureId = kCadFeatureId;
-    onCap.sketch.faceSupport.face = CadFaceToken{CadFaceKind::CapFar, 0, 0};
-    onCap.sketch.faceSupport.lineageToken = lineage;
+    cadBaseSketch(onCap).hasFaceSupport = true;
+    cadBaseSketch(onCap).faceSupport.producerObjectId = 1;
+    cadBaseSketch(onCap).faceSupport.producerLocalFeatureId = kCadFeatureId;
+    cadBaseSketch(onCap).faceSupport.face = CadFaceToken{CadFaceKind::CapFar, 0, 0};
+    cadBaseSketch(onCap).faceSupport.lineageToken = lineage;
 
     CadBodyState onSide = withTwoSides(corpusRectangleState(0.5, 0.5, Workplane::XY), 0.375, 0.125);
-    onSide.sketch.hasFaceSupport = true;
-    onSide.sketch.faceSupport.producerObjectId = 1;
-    onSide.sketch.faceSupport.producerLocalFeatureId = kCadFeatureId;
-    onSide.sketch.faceSupport.face = CadFaceToken{CadFaceKind::Side, 1, 1};
-    onSide.sketch.faceSupport.lineageToken = lineage;
+    cadBaseSketch(onSide).hasFaceSupport = true;
+    cadBaseSketch(onSide).faceSupport.producerObjectId = 1;
+    cadBaseSketch(onSide).faceSupport.producerLocalFeatureId = kCadFeatureId;
+    cadBaseSketch(onSide).faceSupport.face = CadFaceToken{CadFaceKind::Side, 1, 1};
+    cadBaseSketch(onSide).faceSupport.lineageToken = lineage;
 
     document.cad.bodies.push_back(corpusCadBody(1, producer));
     document.cad.bodies.push_back(corpusCadBody(2, onCap));
@@ -1020,8 +1020,8 @@ void testExtentCorpus(Recorder& r) {
                 decodeProject(faceExtent.data(), faceExtent.size(), &faceDecoded)
                         == ProjectCodecStatus::Ok
                 && faceDecoded.cad.bodies.size() == 3
-                && faceDecoded.cad.bodies[1].state.sketch.hasFaceSupport
-                && faceDecoded.cad.bodies[2].state.sketch.hasFaceSupport;
+                && cadBaseSketch(faceDecoded.cad.bodies[1].state).hasFaceSupport
+                && cadBaseSketch(faceDecoded.cad.bodies[2].state).hasFaceSupport;
         ProjectDocument mixedDecoded;
         const bool mixedOpens =
                 decodeProject(mixed.data(), mixed.size(), &mixedDecoded) == ProjectCodecStatus::Ok
@@ -1729,10 +1729,10 @@ int runCadSelfTests(CadSelfTestResult* out, int maxOut) {
         // Fail closed: a document with an open profile encodes to nothing.
         {
             ProjectDocument broken = document;
-            broken.cad.bodies[0].state.sketch.entities.clear();
+            cadBaseSketch(broken.cad.bodies[0].state).entities.clear();
             SketchPolyline open;
             open.vertices = {{0.0, 0.0}, {1.0, 0.0}, {1.0, 1.0}};
-            broken.cad.bodies[0].state.sketch.entities.emplace_back(1, open);
+            cadBaseSketch(broken.cad.bodies[0].state).entities.emplace_back(1, open);
             ProjectCodecStatus encodeWhy = ProjectCodecStatus::Ok;
             r.check("CADR0_36_a_document_with_an_open_profile_is_refused",
                     encodeProjectV1(broken, &encodeWhy).empty()

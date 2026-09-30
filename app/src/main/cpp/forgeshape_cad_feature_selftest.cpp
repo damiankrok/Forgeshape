@@ -479,8 +479,8 @@ ExtrudeFeature twoSidesExtent(double a, double b) {
 // circle of radius 0.8 (id 2), the RING chosen -- the rectangle with its hole.
 CadBodyState regionHoleState(ExtrudeFeature extrude = oneSide(1.0)) {
     CadBodyState state;
-    addRect(&state.sketch, 0.0, 0.0, 4.0, 3.0);
-    addCircle(&state.sketch, 0.0, 0.0, 0.8);
+    addRect(&cadBaseSketch(state), 0.0, 0.0, 4.0, 3.0);
+    addCircle(&cadBaseSketch(state), 0.0, 0.0, 0.8);
     state.extrude = extrude;
     setExtrudeRegions(&state.extrude, {regionRef(1, {2})});
     return state;
@@ -489,7 +489,7 @@ CadBodyState regionHoleState(ExtrudeFeature extrude = oneSide(1.0)) {
 // A 2 x 2 x depth block on XY, the chain cases' base.
 CadBodyState blockState(double depth = 1.0) {
     CadBodyState state;
-    addRect(&state.sketch, 0.0, 0.0, 2.0, 2.0);
+    addRect(&cadBaseSketch(state), 0.0, 0.0, 2.0, 2.0);
     state.extrude = oneSide(depth);
     return state;
 }
@@ -506,18 +506,22 @@ CadFeatureSupport capSupport(const CadBodyState& state, uint32_t featureId,
 }
 
 // Appends one later feature, standing on a cap of `supportFeatureId`, with the
-// next feature id.
+// next feature id -- a new retained sketch in the table and a feature naming it.
 CadBodyState withFeature(CadBodyState state, CadFeatureOperation operation,
                          uint32_t supportFeatureId, CadSketch sketch, ExtrudeFeature extrude,
                          CadFaceKind kind = CadFaceKind::CapFar) {
-    CadFeature feature;
-    feature.featureId = nextCadFeatureId(state);
-    feature.operation = operation;
-    feature.support = capSupport(state, supportFeatureId, kind);
-    feature.sketch = std::move(sketch);
-    feature.extrude = std::move(extrude);
-    state.laterFeatures.push_back(std::move(feature));
+    appendCadLaterFeatureWithSketch(&state, operation, capSupport(state, supportFeatureId, kind),
+                                    std::move(sketch), std::move(extrude));
     return state;
+}
+
+// The sketch record the i-th LATER feature extrudes (`CAD-V6-S1`): where its
+// support and its entities now live.
+CadSketchRecord& laterRecord(CadBodyState& state, size_t i) {
+    return *findCadSketchRecord(state, state.laterFeatures[i].sketchId);
+}
+const CadSketchRecord& laterRecord(const CadBodyState& state, size_t i) {
+    return *findCadSketchRecord(state, state.laterFeatures[i].sketchId);
 }
 
 // The three chain fixtures the codec cases also persist.
@@ -925,10 +929,10 @@ void testRegions(Recorder& r) {
         }
         r.check("CADVS_REG_11_clockwise_and_counter_clockwise_polylines_are_one_region", same);
         CadBodyState sa;
-        sa.sketch = a;
+        cadBaseSketch(sa) = a;
         sa.extrude = oneSide(1.0);
         CadBodyState sb;
-        sb.sketch = b;
+        cadBaseSketch(sb) = b;
         sb.extrude = oneSide(1.0);
         const Regen ga = regen(sa);
         const Regen gb = regen(sb);
@@ -1025,7 +1029,7 @@ void testRegions(Recorder& r) {
         addCircle(&holes, 1.0, 0.0, 0.4);
         const SketchRegionExtraction xh = extractSketchRegions(holes);
         CadBodyState backwards;
-        backwards.sketch = pair;
+        cadBaseSketch(backwards) = pair;
         backwards.extrude = oneSide(1.0);
         backwards.extrude.profileEntityId = 2;
         backwards.extrude.additionalRegions = {regionRef(1)};
@@ -1178,12 +1182,12 @@ void testRegions(Recorder& r) {
         CadBodyState orphanHoles = regionHoleState();
         orphanHoles.extrude.profileEntityId = kNoSketchEntity;
         r.check("CADVS_REG_26_feature_rule_accepts_the_ring_and_names_what_is_missing",
-                validateCadFeatureGeometry(regionHoleState().sketch, regionHoleState().extrude, &out)
+                validateCadFeatureGeometry(cadBaseSketch(regionHoleState()), regionHoleState().extrude, &out)
                                 == CadStatus::Ok
                         && out.regions.size() == 2u
-                        && validateCadFeatureGeometry(unchosen.sketch, unchosen.extrude)
+                        && validateCadFeatureGeometry(cadBaseSketch(unchosen), unchosen.extrude)
                                    == CadStatus::ProfileNotFound
-                        && validateCadFeatureGeometry(orphanHoles.sketch, orphanHoles.extrude)
+                        && validateCadFeatureGeometry(cadBaseSketch(orphanHoles), orphanHoles.extrude)
                                    == CadStatus::ProfileRegionMismatch);
     }
 }
@@ -1350,7 +1354,7 @@ void testExtrusion(Recorder& r) {
         CadBodyState disk = regionHoleState();
         setExtrudeRegions(&disk.extrude, {regionRef(2)});
         CadBodyState lone;
-        addCircle(&lone.sketch, 0.0, 0.0, 0.8);
+        addCircle(&cadBaseSketch(lone), 0.0, 0.0, 0.8);
         lone.extrude = oneSide(1.0);
         const Regen gd = regen(disk);
         const Regen gl = regen(lone);
@@ -1363,8 +1367,8 @@ void testExtrusion(Recorder& r) {
     }
     {
         CadBodyState two;
-        addRect(&two.sketch, -2.0, 0.0, 1.0, 1.0);
-        addRect(&two.sketch, 2.0, 0.0, 1.0, 1.0);
+        addRect(&cadBaseSketch(two), -2.0, 0.0, 1.0, 1.0);
+        addRect(&cadBaseSketch(two), 2.0, 0.0, 1.0, 1.0);
         two.extrude = oneSide(1.0);
         setExtrudeRegions(&two.extrude, {regionRef(1), regionRef(2)});
         const Regen g = regen(two);
@@ -1475,9 +1479,9 @@ void testChain(Recorder& r) {
     }
     {
         CadBodyState seven = add;
-        seven.laterFeatures[0].support.featureId = 7;
+        laterRecord(seven, 0).featureSupport.featureId = 7;
         CadBodyState itself = add;
-        itself.laterFeatures[0].support.featureId = 2;
+        laterRecord(itself, 0).featureSupport.featureId = 2;
         r.check("CADVS_OPS_11_support_naming_no_earlier_feature_is_refused",
                 validateCadBodyState(seven) == CadStatus::FeatureSupportInvalid
                         && refusedBy(seven, CadStatus::FeatureSupportInvalid, 2u)
@@ -1485,30 +1489,30 @@ void testChain(Recorder& r) {
     }
     {
         CadBodyState stale = add;
-        stale.laterFeatures[0].support.lineageToken ^= 1u;
+        laterRecord(stale, 0).featureSupport.lineageToken ^= 1u;
         r.check("CADVS_OPS_12_stale_lineage_is_refused_never_retargeted",
                 validateCadBodyState(stale) == CadStatus::FeatureSupportInvalid
                         && refusedBy(stale, CadStatus::FeatureSupportInvalid, 2u));
     }
     {
         CadBodyState noSuchFace = add;
-        noSuchFace.laterFeatures[0].support.face = CadFaceToken{CadFaceKind::Side, 9u, 0u};
+        laterRecord(noSuchFace, 0).featureSupport.face = CadFaceToken{CadFaceKind::Side, 9u, 0u};
         CadBodyState cylinder;
-        addCircle(&cylinder.sketch, 0.0, 0.0, 1.0);
+        addCircle(&cadBaseSketch(cylinder), 0.0, 0.0, 1.0);
         cylinder.extrude = oneSide(1.0);
         CadBodyState onCurve = withFeature(cylinder, CadFeatureOperation::Add, 1u,
                                            rectSketch(0.0, 0.0, 0.1, 0.1), oneSide(0.1));
-        onCurve.laterFeatures[0].support.face = CadFaceToken{CadFaceKind::Side, 1u, 0u};
+        laterRecord(onCurve, 0).featureSupport.face = CadFaceToken{CadFaceKind::Side, 1u, 0u};
         r.check("CADVS_OPS_13_unknown_face_and_curved_side_supports_are_refused",
                 validateCadBodyState(noSuchFace) == CadStatus::FeatureSupportInvalid
                         && validateCadBodyState(onCurve) == CadStatus::FeatureSupportInvalid);
     }
     {
         CadBodyState tilted = add;
-        tilted.laterFeatures[0].sketch.plane = Workplane::XZ;
+        laterRecord(tilted, 0).sketch.plane = Workplane::XZ;
         CadBodyState crossBody = add;
-        crossBody.laterFeatures[0].sketch.hasFaceSupport = true;
-        crossBody.laterFeatures[0].sketch.faceSupport.producerObjectId = 5;
+        laterRecord(crossBody, 0).sketch.hasFaceSupport = true;
+        laterRecord(crossBody, 0).sketch.faceSupport.producerObjectId = 5;
         r.check("CADVS_OPS_14_a_later_sketch_is_canonical_xy_with_no_topo_ref",
                 validateCadBodyState(tilted) == CadStatus::FeatureSupportInvalid
                         && validateCadBodyState(crossBody) == CadStatus::FeatureSupportInvalid);
@@ -1552,7 +1556,7 @@ void testChain(Recorder& r) {
         CadBodyState deeper = add;
         deeper.extrude.depth = 2.0;
         CadBodyState wider = add;
-        const bool widened = replaceSketchEntity(&wider.sketch, 1, rectangleAt(0.0, 0.0, 3.0, 3.0))
+        const bool widened = replaceSketchEntity(&cadBaseSketch(wider), 1, rectangleAt(0.0, 0.0, 3.0, 3.0))
                              == CadStatus::Ok;
         const Regen g = regen(deeper);
         float lo[3];
@@ -1570,7 +1574,7 @@ void testChain(Recorder& r) {
     }
     {
         CadBodyState reshaped = add;
-        const bool replaced = replaceSketchEntity(&reshaped.sketch, 1, circleAt(0.0, 0.0, 1.0))
+        const bool replaced = replaceSketchEntity(&cadBaseSketch(reshaped), 1, circleAt(0.0, 0.0, 1.0))
                               == CadStatus::Ok;
         CadBody body(ObjectId{42});
         const bool applied = body.applyState(add) == CadStatus::Ok;
@@ -1598,7 +1602,7 @@ void testChain(Recorder& r) {
         const uint64_t updates = body.updateCount();
         const uint64_t rejected = body.rejectedUpdateCount();
         CadBodyState lump = add;
-        lump.laterFeatures[0].sketch = rectSketch(5.0, 0.0, 0.8, 0.8);
+        laterRecord(lump, 0).sketch = rectSketch(5.0, 0.0, 0.8, 0.8);
         bool lumpChanged = true;
         const CadStatus why = body.applyState(lump, &lumpChanged);
         std::shared_ptr<const CadBodyMesh> after;
@@ -1631,7 +1635,7 @@ void testChain(Recorder& r) {
         CadBodyState crowded = add;
         while (cadFeatureCount(crowded) <= kMaxCadFeatures) {
             CadFeature extra = crowded.laterFeatures[0];
-            extra.featureId = nextCadFeatureId(crowded);
+            extra.featureId = crowded.nextFeatureId++;
             crowded.laterFeatures.push_back(extra);
         }
         r.check("CADVS_OPS_25_more_than_the_feature_bound_is_too_many_features",
@@ -1818,7 +1822,7 @@ std::vector<ProfileRegionRef> unionSelection(bool o, bool a, bool b) {
 
 CadBodyState unionState(bool o, bool a, bool b, double depth = 1.0) {
     CadBodyState state;
-    state.sketch = unionSketch();
+    cadBaseSketch(state) = unionSketch();
     state.extrude = oneSide(depth);
     setExtrudeRegions(&state.extrude, unionSelection(o, a, b));
     return state;
@@ -1926,7 +1930,7 @@ void testRegionUnion(Recorder& r) {
     // still refuses by name when the nesting under it changes.
     {
         CadBodyState edited = unionState(true, true, false);
-        addCircle(&edited.sketch, 0.0, 1.0, 0.3);  // a new loop inside O
+        addCircle(&cadBaseSketch(edited), 0.0, 1.0, 0.3);  // a new loop inside O
         r.check("CADFC1_PER_01_a_nesting_edit_under_a_union_selection_is_ProfileRegionMismatch",
                 validateCadBodyState(unionState(true, true, false)) == CadStatus::Ok
                         && validateCadBodyState(edited) == CadStatus::ProfileRegionMismatch);
@@ -2228,14 +2232,17 @@ void testSession(Recorder& r) {
     const CadBodyState afterAdd = bodyStateOf(scene, bodyId);
     CadBodyState baseOfAdd = afterAdd;
     baseOfAdd.laterFeatures.clear();
+    baseOfAdd.sketches.resize(1);
+    baseOfAdd.nextSketchId = kBaseCadSketchId + 1u;
+    baseOfAdd.nextFeatureId = kCadFeatureId + 1u;
     const bool addShape = afterAdd.laterFeatures.size() == 1u
                           && afterAdd.laterFeatures[0].featureId == 2u
                           && afterAdd.laterFeatures[0].operation == CadFeatureOperation::Add
-                          && afterAdd.laterFeatures[0].support.featureId == kCadFeatureId
-                          && afterAdd.laterFeatures[0].support.face.kind == CadFaceKind::CapFar
-                          && afterAdd.laterFeatures[0].support.lineageToken == capRef.lineageToken
-                          && afterAdd.laterFeatures[0].sketch.plane == Workplane::XY
-                          && !afterAdd.laterFeatures[0].sketch.hasFaceSupport
+                          && laterRecord(afterAdd, 0).featureSupport.featureId == kCadFeatureId
+                          && laterRecord(afterAdd, 0).featureSupport.face.kind == CadFaceKind::CapFar
+                          && laterRecord(afterAdd, 0).featureSupport.lineageToken == capRef.lineageToken
+                          && laterRecord(afterAdd, 0).sketch.plane == Workplane::XY
+                          && !laterRecord(afterAdd, 0).sketch.hasFaceSupport
                           && afterAdd.laterFeatures[0].extrude.depth == 0.5
                           && sameCadBodyState(baseOfAdd, ringState);
     r.check("CADVS_SES_16_the_add_commit_grows_the_same_body_in_place",

@@ -5648,20 +5648,21 @@ Java_com_forgeshape_app_NativeViewport_cadState(JNIEnv* env, jclass, jdoubleArra
         if (cad != nullptr) {
             found = true;
             const forgeshape::CadBodyState& state = cad->state();
-            values[0] = static_cast<double>(forgeshape::workplaneIndex(state.sketch.plane));
+            const forgeshape::CadSketch& baseSketch = forgeshape::cadBaseSketch(state);
+            values[0] = static_cast<double>(forgeshape::workplaneIndex(baseSketch.plane));
             values[1] = state.extrude.depth;
             values[2] = static_cast<double>(
                 forgeshape::extrudeDirectionIndex(state.extrude.direction));
             values[3] = static_cast<double>(static_cast<int>(forgeshape::cadProfileKind(state)));
             const forgeshape::SketchEntity* anchor =
-                forgeshape::findSketchEntity(state.sketch, state.extrude.profileEntityId);
+                forgeshape::findSketchEntity(baseSketch, state.extrude.profileEntityId);
             if (anchor != nullptr && anchor->rectangle() != nullptr) {
                 values[4] = anchor->rectangle()->width;
                 values[5] = anchor->rectangle()->height;
             } else if (anchor != nullptr && anchor->circle() != nullptr) {
                 values[4] = anchor->circle()->radius;
             }
-            values[6] = static_cast<double>(state.sketch.entities.size());
+            values[6] = static_cast<double>(baseSketch.entities.size());
             values[8] = static_cast<double>(
                 forgeshape::extrudeExtentModeIndex(state.extrude.extent));
             forgeshape::ProfileExtraction extraction;
@@ -5763,7 +5764,7 @@ static forgeshape::CadBodyState buildExtrudeCandidate(const forgeshape::CadBodyS
 static forgeshape::CadBodyState buildRectangleCandidate(const forgeshape::CadBodyState& current,
                                                         const double* values, int direction) {
     forgeshape::CadBodyState candidate = buildExtrudeCandidate(current, values + 2, direction);
-    for (forgeshape::SketchEntity& entity : candidate.sketch.entities) {
+    for (forgeshape::SketchEntity& entity : forgeshape::cadBaseSketch(candidate).entities) {
         if (entity.id() != candidate.extrude.profileEntityId) continue;
         if (const forgeshape::SketchRectangle* rectangle = entity.rectangle()) {
             forgeshape::SketchRectangle edited = *rectangle;
@@ -5778,7 +5779,7 @@ static forgeshape::CadBodyState buildRectangleCandidate(const forgeshape::CadBod
 static forgeshape::CadBodyState buildCircleCandidate(const forgeshape::CadBodyState& current,
                                                      const double* values, int direction) {
     forgeshape::CadBodyState candidate = buildExtrudeCandidate(current, values + 1, direction);
-    for (forgeshape::SketchEntity& entity : candidate.sketch.entities) {
+    for (forgeshape::SketchEntity& entity : forgeshape::cadBaseSketch(candidate).entities) {
         if (entity.id() != candidate.extrude.profileEntityId) continue;
         if (const forgeshape::SketchCircle* circle = entity.circle()) {
             forgeshape::SketchCircle edited = *circle;

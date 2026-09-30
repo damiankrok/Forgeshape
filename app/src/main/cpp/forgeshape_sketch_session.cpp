@@ -171,7 +171,6 @@ CadStatus SketchSession::begin(Workplane plane) {
     targetBaseState_ = CadBodyState{};
     hasTargetState_ = false;
     editingFeatureId_ = 0;
-    editingSupport_ = CadFeatureSupport{};
     evaluation_ = CadCandidateEvaluation{};
     regionTapArmed_ = false;
     tool_ = SketchTool::Rectangle;
@@ -205,7 +204,6 @@ void SketchSession::cancel() {
     // to the body: the staged copy simply goes away with the session.
     editingBodyId_ = kNoObject;
     editingFeatureId_ = 0;
-    editingSupport_ = CadFeatureSupport{};
     operation_ = CadFeatureOperation::NewBody;
     targetBodyId_ = kNoObject;
     targetBaseState_ = CadBodyState{};
@@ -260,9 +258,6 @@ CadStatus SketchSession::beginEditFeature(ObjectId bodyId, const CadBodyState& s
     sketch_ = *view.sketch;
     extrude_ = *view.extrude;
     operation_ = view.operation;
-    if (view.support != nullptr) {
-        editingSupport_ = *view.support;
-    }
     // The staged extent comes back with the body, and so does the One Side
     // memory a mode round trip needs: for a One Side body it is the side the
     // solid is on, and for a two-sided one the canonical `AlongNormal`.
@@ -1468,44 +1463,62 @@ CadStatus SketchSession::flipExtrudeDirection() {
 CadBodyState SketchSession::candidateState() const {
     // A new body: the sketch and its extrusion, exactly what R0 built.
     if (editingFeatureId_ == 0 && operation_ == CadFeatureOperation::NewBody) {
-        CadBodyState state;
-        state.sketch = sketch_;
-        state.extrude = extrude_;
-        return state;
+        return makeCadBodyState(sketch_, extrude_);
     }
     // Everything else is the TARGET body's chain with one feature appended or
     // replaced -- the same SceneObject, never a copy of it.
     CadBodyState state = targetBaseState_;
     if (editingFeatureId_ == kCadFeatureId) {
-        state.sketch = sketch_;
+        cadBaseSketch(state) = sketch_;
         state.extrude = extrude_;
         return state;
     }
-    CadFeature feature;
-    feature.operation = operation_;
-    feature.sketch = sketch_;
-    // A later feature's sketch is placed by its support alone; the TopoRef the
-    // session authored against (a face of this very body) is not carried into
-    // the chain, where it would be a cycle.
-    feature.sketch.plane = Workplane::XY;
-    feature.sketch.hasFaceSupport = false;
-    feature.sketch.faceSupport = TopoRef{};
-    feature.extrude = extrude_;
     if (editingFeatureId_ > kCadFeatureId) {
-        feature.featureId = editingFeatureId_;
-        feature.support = editingSupport_;
+        // The feature's sketch is edited IN THE TABLE, where every feature
+        // that extrudes it reads it; its placement stays the record's own. A
+        // sketch on one of the body's faces is authored on its canonical XY
+        // with no TopoRef, which is exactly what was staged from it.
+        CadSketchRecord* record = cadFeatureSketchRecord(state, editingFeatureId_);
+        if (record != nullptr) {
+            record->sketch = sketch_;
+            if (record->hasFeatureSupport) {
+                record->sketch.plane = Workplane::XY;
+                record->sketch.hasFaceSupport = false;
+                record->sketch.faceSupport = TopoRef{};
+            }
+        }
         for (CadFeature& existing : state.laterFeatures) {
             if (existing.featureId == editingFeatureId_) {
-                existing = feature;
+                existing.operation = operation_;
+                existing.extrude = extrude_;
             }
         }
         return state;
     }
-    feature.featureId = nextCadFeatureId(state);
-    feature.support.featureId = sketch_.faceSupport.producerLocalFeatureId;
-    feature.support.face = sketch_.faceSupport.face;
-    feature.support.lineageToken = sketch_.faceSupport.lineageToken;
-    state.laterFeatures.push_back(std::move(feature));
+    // A NEW Add or Cut: a new retained sketch on the face the session authored
+    // against, and a new feature extruding it. The TopoRef the session used (a
+    // face of this very body) becomes the record's own-feature support; carried
+    // into the chain as a TopoRef it would be a cycle.
+    CadSketch sketch = sketch_;
+    sketch.plane = Workplane::XY;
+    sketch.hasFaceSupport = false;
+    sketch.faceSupport = TopoRef{};
+    CadFeatureSupport support;
+    support.featureId = sketch_.faceSupport.producerLocalFeatureId;
+    support.face = sketch_.faceSupport.face;
+    support.lineageToken = sketch_.faceSupport.lineageToken;
+    if (appendCadLaterFeatureWithSketch(&state, operation_, support, std::move(sketch), extrude_)
+        == 0) {
+        // A full chain or table cannot take another feature. The candidate
+        // still carries the attempt -- a feature naming no sketch -- so the
+        // evaluation refuses it by name (`TooManyFeatures`/`SketchNotFound`)
+        // rather than committing the unchanged target as if it had worked.
+        CadFeature refused;
+        refused.featureId = state.nextFeatureId;
+        refused.operation = operation_;
+        refused.extrude = extrude_;
+        state.laterFeatures.push_back(std::move(refused));
+    }
     return state;
 }
 
