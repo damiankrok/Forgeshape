@@ -21,71 +21,56 @@ import android.widget.TextView;
 import java.math.BigDecimal;
 
 /**
- * The compact, world-anchored extrude HUD (`CAD-UX-S1`, `CAD-EXT-R1`,
- * `CAD-VERTICAL-SLICE-R1`).
+ * The world-anchored extrude HUD (`CAD-UX-S1`, `CAD-EXT-R1`,
+ * `CAD-VERTICAL-SLICE-R1`, `CAD-FOUNDATION-C1`, `CAD-FOUNDATION-C2`).
  *
- * <p>The <b>arrow</b> along the extrusion normal is drawn by the renderer from
- * the sketch overlay's own line list, because it is geometry-shaped and belongs
- * in the same space as the profile it grows out of. What is <b>not</b>
- * geometry-shaped is this: the exact distance, which has to be legible at any
- * zoom and editable by typing; which extent is being authored; what the
- * extrusion does to material; and the Flip that reverses which side the solid
- * grows on. Those are chrome, positioned over the viewport at the anchor native
- * reports — the pattern {@link SketchDimensionLabelView} and
- * {@link BodyDimensionLabelsView} already use.
+ * <p>The <b>arrow</b> along the extrusion normal and the <b>dimension leader</b>
+ * beside its shaft are drawn by the renderer from the sketch overlay's own line
+ * list, because they are geometry-shaped. What is <b>not</b> geometry-shaped is
+ * this: the exact distance, which has to be legible and editable by typing;
+ * which extent is being authored; what the extrusion does to material; and the
+ * Flip that reverses which side the solid grows on. Those are chrome,
+ * positioned over the viewport at the points native projects.
  *
- * <p><b>It reads as a technical drawing</b> (`CAD-FOUNDATION-C1`). The frame
- * draws a dimension LEADER beside the shaft — extension lines out of the base
- * and the tip, a dimension line between them, a tick at each end — in the
- * overlay's own {@code Dimension} range, and native projects that line. The
- * exact value stands ABOVE the line, rotated to it and kept upright
- * ({@link CadHudPresentation#readingAngleDegrees}); the extent control stands on
- * the line past its base end, the operation badge and, in One Side, Flip past
- * its tip end. Nothing forms a row or a capsule, so the controls read as
- * annotation on the work, and they follow the leader as the camera orbits.
+ * <p><b>Two annotations</b> (`CAD-FOUNDATION-C2`). The exact VALUE stands ABOVE
+ * its leader, rotated to it and kept upright
+ * ({@link CadHudPresentation#layoutLeader}). The extent, the operation and, in
+ * One Side, Flip are ONE ACTION PANEL: a rigid plate of glyphs built once at its
+ * reference size and scaled as a unit by the camera-attached multiplier,
+ * anchored just past the arrow's drawn point and shown WHOLE or not at all
+ * ({@link CadHudPresentation#layoutPanel}). Its icons never drift apart, never
+ * disappear one by one, and never shrink independently.
  *
- * <p><b>What is drawn and what is touched are two facts.</b> Every control is
- * an INVISIBLE touch proxy of at least 48 dp — no background, never
- * {@code setScale}d — and inside it only the GLYPH (with a disc exactly its own
- * size) follows the camera-attached multiplier, {@code 28 dp x clamp(scale,
- * 0.40, 1.60)}. The value is a transparent, rotated 48 dp proxy whose TEXT size
- * follows the same multiplier inside a legibility band. A pulled-back camera
- * therefore shows a small annotation while every control stays as easy to tap
- * as it was. The palettes the extent control and the badge open are ordinary,
- * readable screen chrome, and with Tool Labels on they are where captions
- * appear; a glyph on the drawing never carries one.
+ * <p><b>What is drawn and what is touched are two facts.</b> The plate is a
+ * drawing: it is not clickable and its {@code setScale} therefore scales
+ * nothing a finger aims at. The panel's touch target is ONE invisible group
+ * proxy — never scaled, at least 48 dp each way and covering the plate — which
+ * opens the ACTION PALETTE: ordinary, readable screen chrome holding the extent
+ * choices, the operations native offers now, and Flip, each a full 48 dp
+ * target, with Tool Labels captions when that preference is on. Three 48 dp
+ * proxies centred on three shrunken glyphs would overlap and make a touch
+ * choose between icons by distance; one proxy never has to.
  *
  * <p><b>Holds no semantics.</b> The depth, the extent, the operation, which
- * operations can be chosen, whether the candidate would be refused, and the
- * anchor are all read back from native on every refresh, and every act here is
- * submitted whole. There is no draft direction, no draft depth, no draft
- * operation and no cached anchor. The only state this class keeps is which of
- * its OWN palettes is open and whether captions are drawn — presentation, which
- * a desktop adapter would replace along with this file without anything below
- * JNI noticing.
+ * operations can be chosen, whether the candidate would be refused, and every
+ * anchor are read back from native on every refresh, and every act here is
+ * submitted whole. The only state this class keeps is whether its palette is
+ * open, which editor is open and whether captions are drawn — presentation,
+ * which a desktop adapter would replace along with this file without anything
+ * below JNI noticing.
  *
- * <p><b>Three operations, and only what can be chosen is offered.</b> New Body
- * makes a new body; Add and Cut change the body the sketch stands on. The
- * operation palette holds exactly the operations native says are available now
- * and the others are ABSENT, not disabled. When only New Body is available the
- * badge still stands, because it says what this extrusion does, but it is a
- * statement and not a control. When the candidate would be refused the badge
- * wears an error outline and its accessible name says why; colour is never the
- * only carrier — each operation's glyph is a different SHAPE.
- *
- * <p><b>Three extents, one model.</b> One Side, Symmetric and Two Sides are
- * three ways of authoring the same two distances. Flip belongs to One Side
- * alone and is ABSENT in the other two. Symmetric draws a leader per side and
- * ONE value (Each side); Two Sides draws a leader per side and each side's own
- * value above its own leader, so no number is ever ambiguous about which
- * distance it states.
+ * <p><b>Three operations, and only what can be chosen is offered.</b> The
+ * palette's operation row holds exactly the operations native says are
+ * available now, and is absent when there is nothing else to choose; the
+ * panel's operation glyph always states the operation in force, in its colour
+ * AND its shape, and wears an error ring when the candidate would be refused.
  *
  * <p><b>Two states, and only one is ever shown.</b> While a sketch is in its
- * Ready state the extrude HUD stands at the arrow; over a committed CAD Body
+ * Ready state the extrude HUD stands on the arrow; over a committed CAD Body
  * with no session open, a single <i>Edit Sketch</i> control stands on the
- * body's own sketch, because a sketch survives its extrusion. Neither is drawn
- * when native says its anchor does not project on screen — a control with
- * nowhere honest to stand is hidden rather than placed at a guess.
+ * body's own sketch. Neither is drawn when native says its anchor does not
+ * project on screen — a control with nowhere honest to stand is hidden rather
+ * than placed at a guess.
  */
 final class CadExtrudeCanvasView extends FrameLayout {
 
@@ -112,11 +97,6 @@ final class CadExtrudeCanvasView extends FrameLayout {
         void onCanvasEditSketchRequested(long bodyId);
     }
 
-    /** Which of this view's own palettes is open: at most one, never with an editor. */
-    private static final int PALETTE_NONE = 0;
-    private static final int PALETTE_EXTENT = 1;
-    private static final int PALETTE_OPERATION = 2;
-
     /** The extent choices, in {@link CadHudPresentation#EXTENTS} order. */
     private static final int[] EXTENT_CHOICE_IDS = {
             R.id.cad_extrude_extent_one_side, R.id.cad_extrude_extent_symmetric,
@@ -127,28 +107,21 @@ final class CadExtrudeCanvasView extends FrameLayout {
             R.id.cad_extrude_operation_cut};
 
     /**
-     * One icon control: a container whose box is the 48 dp hit rectangle,
-     * holding the glyph and, with Tool Labels on, a one-word caption under it.
+     * One palette control: a container whose box is at least the 48 dp hit
+     * rectangle, holding the glyph and, with Tool Labels on, a one-word caption
+     * under it.
      *
      * <p>The CONTAINER is the control — it carries the id, the click, the
      * selected and activated state, the background and the accessible name —
      * and its two children only draw, duplicating its state so the tint follows
-     * without anything walking them. The glyph is its own {@code ImageView}
-     * sized exactly to the glyph, so what is drawn and what is measured are the
-     * same box. What was last applied is remembered only so a refresh on every
-     * gesture sample re-lays nothing out unless the glyph, the caption or the
-     * tint actually changed.
+     * without anything walking them. What was last applied is remembered only
+     * so a refresh on every gesture sample re-lays nothing out unless the
+     * glyph, the caption or the tint actually changed.
      */
     private static final class IconControl {
         final LinearLayout view;
         final ImageView glyph;
         final TextView caption;
-        /**
-         * True for a control standing on the leader: its box is an invisible
-         * touch proxy, its glyph wears the disc, and it never shows a caption.
-         * False for a palette choice, which is ordinary screen chrome.
-         */
-        final boolean attached;
         int iconRes;
         int captionRes;
         /** A fixed tint (an operation's colour), or null for the shared content tint. */
@@ -156,17 +129,15 @@ final class CadExtrudeCanvasView extends FrameLayout {
 
         int appliedIcon;
         int appliedCaption;
-        int appliedGlyph = -1;
         boolean appliedLabels;
         ColorStateList appliedTint;
         int appliedBackground;
 
         IconControl(LinearLayout view, ImageView glyph, TextView caption, int iconRes,
-                    int captionRes, boolean attached) {
+                    int captionRes) {
             this.view = view;
             this.glyph = glyph;
             this.caption = caption;
-            this.attached = attached;
             this.iconRes = iconRes;
             this.captionRes = captionRes;
         }
@@ -190,22 +161,31 @@ final class CadExtrudeCanvasView extends FrameLayout {
     private final ColorStateList[] operationTints =
             new ColorStateList[CadHudPresentation.OPERATIONS.length];
 
-    /** The value text's gap above its leader, and the glyph gap along it, px. */
+    /** The value text's gap above its leader, px. */
     private final float valueGapPx;
-    private final float glyphGapPx;
-    /** The palette choices' fixed glyph, px: palettes are screen chrome. */
-    private final int paletteGlyphPx;
+    /** The glyph at scale 1.0, px: the panel's reference glyph and every palette glyph. */
+    private final int referenceGlyphPx;
 
-    /** The controls on the primary leader: the extent control, the value, the badge, Flip. */
-    private final IconControl extentButton;
+    /** The primary value, above its leader. */
     private final TextView reading;
-    private final IconControl operation;
-    private final IconControl flip;
 
-    private final LinearLayout extentPalette;
+    /**
+     * The action panel's plate: a DRAWING, built at its reference size and
+     * scaled as one unit. Not clickable, so its scale is never a hit area.
+     */
+    private final LinearLayout plate;
+    private final ImageView extentGlyph;
+    private final ImageView operationGlyph;
+    private final ImageView flipGlyph;
+    /** The panel's ONE touch target: invisible, unscaled, at least 48 dp each way. */
+    private final View panelProxy;
+
+    /** The action palette: the extent row, the operation row and Flip. */
+    private final LinearLayout actionsPalette;
+    private final LinearLayout operationRow;
     private final IconControl[] extentChoices = new IconControl[EXTENT_CHOICE_IDS.length];
-    private final LinearLayout operationPalette;
     private final IconControl[] operationChoices = new IconControl[OPERATION_CHOICE_IDS.length];
+    private final IconControl flip;
 
     private final LinearLayout editor;
     private final EditText field;
@@ -224,18 +204,28 @@ final class CadExtrudeCanvasView extends FrameLayout {
     /** The retained-sketch control, shown over a committed CAD Body instead. */
     private final IconControl editSketch;
 
-    /** Which palette is open. Presentation only; never a domain value. */
-    private int openPalette = PALETTE_NONE;
-    /** Whether icon controls draw their caption. Application preference; default off. */
+    /** Whether the action palette is open. Presentation only; never a domain value. */
+    private boolean paletteOpen;
+    /** Whether palette controls draw their caption. Application preference; default off. */
     private boolean toolLabels;
-    /** Whether the operation badge is a control at the last refresh. */
-    private boolean operationHasChoice;
-    /** The glyph size last applied to the extrude HUD, in pixels. Verification. */
+    /** How many glyphs the plate currently holds, or -1 before the first refresh. */
+    private int appliedPanelIcons = -1;
+    /** The operation glyph's applied tint and refusal ring, for change detection. */
+    private ColorStateList appliedOperationTint;
+    private boolean appliedOperationRefused;
+    /** The proxy size last applied, px. */
+    private int appliedHitWidth;
+    private int appliedHitHeight;
+    /** The panel glyph's drawn size last refresh, px. Verification. */
     private int lastGlyphPx;
     /** The value text size last applied, in sp. Verification and change detection. */
     private float lastValueTextSp;
-    /** The primary leader's layout at the last refresh. Verification. */
+    /** The primary leader's value layout at the last refresh. Verification. */
     private CadHudPresentation.LeaderLayout lastLayout = new CadHudPresentation.LeaderLayout();
+    /** The panel layout at the last refresh. Verification. */
+    private CadHudPresentation.PanelLayout lastPanel = new CadHudPresentation.PanelLayout();
+    /** Whether the whole annotation collapsed at the last refresh. Verification. */
+    private boolean lastCollapsed;
 
     /** The body the Edit Sketch control currently stands on, or 0. */
     private long sketchBodyId;
@@ -248,7 +238,7 @@ final class CadExtrudeCanvasView extends FrameLayout {
     private float secondAnchorX;
     private float secondAnchorY;
 
-    /** The refusal last described on the badge, so a steady one is not re-worded per frame. */
+    /** The refusal last described, so a steady one is not re-worded per frame. */
     private int describedStatus = NativeViewport.CAD_OK;
     private String describedReason = "";
 
@@ -275,26 +265,11 @@ final class CadExtrudeCanvasView extends FrameLayout {
                     CadHudPresentation.operationColorAttr(CadHudPresentation.OPERATIONS[i])));
         }
         valueGapPx = CadHudPresentation.VALUE_GAP_DP * density;
-        glyphGapPx = CadHudPresentation.GLYPH_GAP_DP * density;
-        paletteGlyphPx = CadHudPresentation.glyphPx(1.0, density);
+        referenceGlyphPx = CadHudPresentation.glyphPx(1.0, density);
         // The editors keep the ordinary gap between a field and its Apply.
         final int editorGap = EditorControlStyles.dimen(context, R.dimen.toolbar_gap);
 
-        // --- The controls on the primary leader ----------------------------
-        // Each one is its own child, placed at its own point along the
-        // projected leader: there is no row and no capsule to hold them.
-        extentButton = iconControl(context, R.id.cad_extrude_extent,
-                CadHudPresentation.extentIcon(NativeViewport.EXTENT_ONE_SIDE),
-                CadHudPresentation.extentCaption(NativeViewport.EXTENT_ONE_SIDE),
-                R.drawable.bg_hud_member, true);
-        extentButton.view.setOnClickListener(new OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                togglePalette(PALETTE_EXTENT);
-            }
-        });
-        addView(extentButton.view, wrapParams());
-
+        // --- The primary value, above its leader ---------------------------
         reading = valueText(context, R.id.cad_extrude_depth_value);
         reading.setOnClickListener(new OnClickListener() {
             @Override
@@ -304,80 +279,116 @@ final class CadExtrudeCanvasView extends FrameLayout {
         });
         addView(reading, wrapParams());
 
-        operation = iconControl(context, R.id.cad_extrude_operation,
-                CadHudPresentation.operationIcon(NativeViewport.OPERATION_NEW_BODY),
-                CadHudPresentation.operationCaption(NativeViewport.OPERATION_NEW_BODY),
-                R.drawable.bg_hud_member, true);
-        operation.view.setOnClickListener(new OnClickListener() {
+        // --- The action panel: one plate, one proxy -------------------------
+        // The plate is laid out ONCE at its reference size (glyphs, gaps and
+        // padding in fixed dp) and only ever scaled as a whole, about its
+        // top-left corner so the shared placement arithmetic centres the scaled
+        // box. Nothing inside it is ever re-laid out by zoom, so its internal
+        // spacing cannot drift.
+        plate = new LinearLayout(context);
+        plate.setId(R.id.cad_extrude_panel_plate);
+        plate.setOrientation(LinearLayout.HORIZONTAL);
+        plate.setGravity(Gravity.CENTER_VERTICAL);
+        plate.setBackgroundResource(R.drawable.bg_hud_panel);
+        final int platePad = Math.round(CadHudPresentation.PANEL_PAD_DP * density);
+        plate.setPadding(platePad, platePad, platePad, platePad);
+        plate.setPivotX(0.0f);
+        plate.setPivotY(0.0f);
+        plate.setClickable(false);
+        plate.setFocusable(false);
+        // The proxy is the one accessible thing; the plate is how it is drawn.
+        plate.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+        final int plateGap = Math.round(CadHudPresentation.PANEL_GAP_DP * density);
+        extentGlyph = plateGlyph(context, R.id.cad_extrude_extent,
+                CadHudPresentation.extentIcon(NativeViewport.EXTENT_ONE_SIDE), 0);
+        operationGlyph = plateGlyph(context, R.id.cad_extrude_operation,
+                CadHudPresentation.operationIcon(NativeViewport.OPERATION_NEW_BODY), plateGap);
+        flipGlyph = plateGlyph(context, R.id.cad_extrude_flip_glyph, R.drawable.ic_extrude_flip,
+                plateGap);
+        extentGlyph.setImageTintList(contentTint);
+        flipGlyph.setImageTintList(contentTint);
+        addView(plate, wrapParams());
+
+        panelProxy = new View(context);
+        panelProxy.setId(R.id.cad_extrude_panel);
+        panelProxy.setClickable(true);
+        panelProxy.setFocusable(true);
+        panelProxy.setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View v) {
-                // performClick reaches a listener whether or not the view is
-                // clickable, so the badge checks for itself that there is a
-                // choice to open rather than trusting its clickable flag.
-                if (operationHasChoice) {
-                    togglePalette(PALETTE_OPERATION);
-                }
+                togglePalette();
             }
         });
-        addView(operation.view, wrapParams());
+        addView(panelProxy, new LayoutParams(hitPx, hitPx));
 
-        // Flip is ONE tap next to the geometry, which is the whole point of it
-        // being here: the same act exists as a chip in the precision panel, and
-        // both write exactly the same native direction.
-        flip = iconControl(context, R.id.cad_extrude_flip, R.drawable.ic_extrude_flip,
-                R.string.cad_hud_caption_flip, R.drawable.bg_hud_member, true);
-        flip.view.setContentDescription(context.getString(R.string.cad_hud_flip_description));
-        flip.view.setOnClickListener(new OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                closePalettes();
-                CadExtrudeCanvasView.this.actions.onExtrudeFlipRequested();
-            }
-        });
-        addView(flip.view, wrapParams());
+        // --- The action palette ---------------------------------------------
+        // Ordinary screen chrome, grown out of the panel that opens it, and
+        // added AFTER the panel so it draws over it where they meet. Three rows,
+        // one per question: how far (extent), what to material (operation), and
+        // which side (Flip, One Side only).
+        actionsPalette = new LinearLayout(context);
+        actionsPalette.setId(R.id.cad_extrude_actions_palette);
+        actionsPalette.setOrientation(LinearLayout.VERTICAL);
+        EditorControlStyles.applyFloatingSurface(actionsPalette);
+        final int pad = EditorControlStyles.dimen(context, R.dimen.cad_hud_capsule_padding);
+        actionsPalette.setPadding(pad, pad, pad, pad);
+        // Clickable with no listener, so a touch between two controls is
+        // consumed rather than orbiting the camera under the palette.
+        actionsPalette.setClickable(true);
 
-        // --- The two palettes ----------------------------------------------
-        // Ordinary screen chrome, grown out of the control that opens them, and
-        // added AFTER the attached controls so they draw over them where they
-        // meet.
-        extentPalette = capsule(context, R.id.cad_extrude_extent_palette);
+        final LinearLayout extentRow = paletteRow(context, R.id.cad_extrude_extent_palette);
         for (int i = 0; i < EXTENT_CHOICE_IDS.length; i++) {
             final int mode = CadHudPresentation.EXTENTS[i];
             extentChoices[i] = iconControl(context, EXTENT_CHOICE_IDS[i],
                     CadHudPresentation.extentIcon(mode), CadHudPresentation.extentCaption(mode),
-                    R.drawable.bg_hud_member, false);
+                    R.drawable.bg_hud_member);
             extentChoices[i].view.setOnClickListener(new OnClickListener() {
                 @Override
                 public void onClick(View v) {
                     closeEditor();
                     closeSecondEditor();
-                    closePalettes();
-                    actions.onExtrudeExtentRequested(mode);
+                    closePalette();
+                    CadExtrudeCanvasView.this.actions.onExtrudeExtentRequested(mode);
                 }
             });
-            extentPalette.addView(extentChoices[i].view, EditorControlStyles.wrap(0));
+            extentRow.addView(extentChoices[i].view, EditorControlStyles.wrap(0));
         }
-        closedPalette(extentPalette);
-        addView(extentPalette, wrapParams());
+        actionsPalette.addView(extentRow, rowParams(0));
 
-        operationPalette = capsule(context, R.id.cad_extrude_operation_palette);
+        operationRow = paletteRow(context, R.id.cad_extrude_operation_palette);
         for (int i = 0; i < OPERATION_CHOICE_IDS.length; i++) {
             final int chosen = CadHudPresentation.OPERATIONS[i];
             operationChoices[i] = iconControl(context, OPERATION_CHOICE_IDS[i],
                     CadHudPresentation.operationIcon(chosen),
-                    CadHudPresentation.operationCaption(chosen), R.drawable.bg_hud_member, false);
+                    CadHudPresentation.operationCaption(chosen), R.drawable.bg_hud_member);
             operationChoices[i].tint = operationTints[i];
             operationChoices[i].view.setOnClickListener(new OnClickListener() {
                 @Override
                 public void onClick(View v) {
-                    closePalettes();
-                    actions.onExtrudeOperationRequested(chosen);
+                    closePalette();
+                    CadExtrudeCanvasView.this.actions.onExtrudeOperationRequested(chosen);
                 }
             });
-            operationPalette.addView(operationChoices[i].view, EditorControlStyles.wrap(0));
+            operationRow.addView(operationChoices[i].view, EditorControlStyles.wrap(0));
         }
-        closedPalette(operationPalette);
-        addView(operationPalette, wrapParams());
+        actionsPalette.addView(operationRow, rowParams(pad));
+
+        // Flip is an ACT, not a choice: one tap reverses the side and closes
+        // the palette. The same act exists as a chip in the precision panel,
+        // and both write exactly the same native direction.
+        flip = iconControl(context, R.id.cad_extrude_flip, R.drawable.ic_extrude_flip,
+                R.string.cad_hud_caption_flip, R.drawable.bg_hud_member);
+        flip.view.setContentDescription(context.getString(R.string.cad_hud_flip_description));
+        flip.view.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                closePalette();
+                CadExtrudeCanvasView.this.actions.onExtrudeFlipRequested();
+            }
+        });
+        actionsPalette.addView(flip.view, rowParams(pad));
+        closedPalette(actionsPalette);
+        addView(actionsPalette, wrapParams());
 
         // --- The primary value's editor ------------------------------------
         // Screen-aligned and readable, at the value's own anchor: typing is not
@@ -406,8 +417,6 @@ final class CadExtrudeCanvasView extends FrameLayout {
         addView(editor, wrapParams());
 
         // --- The SECOND side, above its own leader -------------------------
-        // Its own anchor, its own editor, and exactly one value: Two Sides is
-        // the only mode with a second distance to state.
         secondReading = valueText(context, R.id.cad_extrude_second_value);
         secondReading.setVisibility(GONE);
         secondReading.setOnClickListener(new OnClickListener() {
@@ -444,7 +453,7 @@ final class CadExtrudeCanvasView extends FrameLayout {
         // --- The retained-sketch control -----------------------------------
         // Standing ALONE on the model, so it wears its own floating surface.
         editSketch = iconControl(context, R.id.cad_canvas_edit_sketch, R.drawable.ic_edit_sketch,
-                R.string.cad_hud_caption_edit_sketch, R.drawable.bg_hud_lone_control, false);
+                R.string.cad_hud_caption_edit_sketch, R.drawable.bg_hud_lone_control);
         editSketch.view.setElevation(EditorControlStyles.dimen(context,
                 R.dimen.elevation_floating));
         editSketch.view.setVisibility(GONE);
@@ -457,7 +466,7 @@ final class CadExtrudeCanvasView extends FrameLayout {
             }
         });
         addView(editSketch.view, wrapParams());
-        setAttachedVisible(false);
+        setAnnotationVisible(false, false);
     }
 
     // -----------------------------------------------------------------------
@@ -469,35 +478,43 @@ final class CadExtrudeCanvasView extends FrameLayout {
                 ViewGroup.LayoutParams.WRAP_CONTENT);
     }
 
-    /**
-     * A floating capsule holding a palette's choices: the Tier 1 surface, 2 dp
-     * off its members so their
-     * {@code cad_hud_member_radius} corners are concentric with its own. Its
-     * members stand edge to edge: they are borderless at rest, so adjacent
-     * 48 dp targets still read as separate glyphs, and the HUD covers that much
-     * less of the work.
-     *
-     * <p>Clickable with no listener, so a touch that lands on the capsule
-     * between two controls is consumed rather than orbiting the camera under
-     * the HUD; the transparent container around the capsules deliberately does
-     * not consume, so the model stays reachable everywhere else.
-     */
-    private static LinearLayout capsule(Context context, int id) {
-        final LinearLayout capsule = new LinearLayout(context);
-        if (id != View.NO_ID) {
-            capsule.setId(id);
-        }
-        capsule.setOrientation(LinearLayout.HORIZONTAL);
-        capsule.setGravity(Gravity.CENTER_VERTICAL);
-        EditorControlStyles.applyFloatingSurface(capsule);
-        final int pad = EditorControlStyles.dimen(context, R.dimen.cad_hud_capsule_padding);
-        capsule.setPadding(pad, pad, pad, pad);
-        capsule.setClickable(true);
-        return capsule;
+    private static LinearLayout.LayoutParams rowParams(int topMargin) {
+        final LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        params.topMargin = topMargin;
+        return params;
+    }
+
+    /** One row of the action palette: its members stand edge to edge. */
+    private static LinearLayout paletteRow(Context context, int id) {
+        final LinearLayout row = new LinearLayout(context);
+        row.setId(id);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        return row;
     }
 
     /**
-     * Withdraws a palette while keeping it laid out.
+     * One glyph on the plate at its REFERENCE size, with the reference gap
+     * before it. Only the plate's scale ever changes what it measures on screen.
+     */
+    private ImageView plateGlyph(Context context, int id, int iconRes, int leftMargin) {
+        final ImageView glyph = new ImageView(context);
+        glyph.setId(id);
+        glyph.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        glyph.setImageResource(iconRes);
+        final int inset = Math.round(referenceGlyphPx * 0.12f);
+        glyph.setPadding(inset, inset, inset, inset);
+        glyph.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
+        final LinearLayout.LayoutParams params =
+                new LinearLayout.LayoutParams(referenceGlyphPx, referenceGlyphPx);
+        params.leftMargin = leftMargin;
+        plate.addView(glyph, params);
+        return glyph;
+    }
+
+    /**
+     * Withdraws the palette while keeping it laid out.
      *
      * <p>{@code INVISIBLE} rather than {@code GONE}: a closed palette takes no
      * touch and is not in the accessibility tree, exactly like an absent one,
@@ -509,25 +526,15 @@ final class CadExtrudeCanvasView extends FrameLayout {
         palette.setVisibility(INVISIBLE);
     }
 
-    /**
-     * One icon control. Its glyph size and caption are applied on refresh.
-     *
-     * <p>An ATTACHED control's box is an invisible touch proxy: no background at
-     * all, so nothing 48 dp is ever drawn on the model, and the state shapes a
-     * palette member wears on its box are worn by the glyph's own disc instead.
-     */
+    /** One palette control. Its caption is applied on refresh. */
     private IconControl iconControl(Context context, int id, int iconRes, int captionRes,
-                                    int background, boolean attached) {
+                                    int background) {
         final LinearLayout view = new LinearLayout(context);
         view.setId(id);
         view.setOrientation(LinearLayout.VERTICAL);
         view.setGravity(Gravity.CENTER);
-        if (!attached) {
-            view.setBackgroundResource(background);
-        }
-        // The HIT rectangle, at every camera scale, reached by the box and never
-        // by the glyph: the glyph inside it is what follows the camera, and the
-        // gravity centres it (with its caption, when there is one) in the box.
+        view.setBackgroundResource(background);
+        // The HIT rectangle, reached by the box and never by the glyph.
         view.setMinimumWidth(hitPx);
         view.setMinimumHeight(hitPx);
         view.setClickable(true);
@@ -536,14 +543,10 @@ final class CadExtrudeCanvasView extends FrameLayout {
         final ImageView glyph = new ImageView(context);
         glyph.setScaleType(ImageView.ScaleType.FIT_CENTER);
         glyph.setDuplicateParentStateEnabled(true);
-        if (attached) {
-            glyph.setBackgroundResource(glyphBackground(background));
-        }
         // The container is the one accessible thing; the glyph and caption are
         // how it is drawn, not further things to announce.
         glyph.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
-        final int reference = CadHudPresentation.glyphPx(1.0, density);
-        view.addView(glyph, new LinearLayout.LayoutParams(reference, reference));
+        view.addView(glyph, new LinearLayout.LayoutParams(referenceGlyphPx, referenceGlyphPx));
 
         final TextView caption = new TextView(context);
         caption.setGravity(Gravity.CENTER);
@@ -559,10 +562,9 @@ final class CadExtrudeCanvasView extends FrameLayout {
         captionParams.topMargin = captionGap;
         view.addView(caption, captionParams);
 
-        final IconControl control =
-                new IconControl(view, glyph, caption, iconRes, captionRes, attached);
+        final IconControl control = new IconControl(view, glyph, caption, iconRes, captionRes);
         control.appliedBackground = background;
-        applyIcon(control, reference);
+        applyIcon(control);
         return control;
     }
 
@@ -574,8 +576,6 @@ final class CadExtrudeCanvasView extends FrameLayout {
      * with the leader so it covers the text it holds, and it paints nothing but
      * the text. A soft halo in the floating tone keeps the digits readable over
      * the model the way a drawing's dimension text is set clear of its lines.
-     * Primary text in the medium weight, because it is the one exact value on
-     * the HUD and the weight is reserved for type that states one.
      */
     private TextView valueText(Context context, int id) {
         final TextView text = new TextView(context);
@@ -654,21 +654,15 @@ final class CadExtrudeCanvasView extends FrameLayout {
     // -----------------------------------------------------------------------
 
     /**
-     * Draws one control's glyph at {@code glyphPx}, with or without its
-     * caption, inside the unchanged 48 dp hit rectangle.
-     *
-     * <p>Only the glyph's own box changes size; the control's box is the hit
-     * rectangle at every scale. With a caption the one short word sits UNDER
-     * the glyph — beside it would put the row back toward the wide pills this
-     * HUD replaced — and the pair is centred in the box by its gravity.
+     * Draws one palette control's glyph, with or without its caption, inside
+     * its unchanged 48 dp hit rectangle. With a caption the one short word sits
+     * UNDER the glyph and the pair is centred in the box by its gravity.
      */
-    private void applyIcon(IconControl control, int glyphPx) {
+    private void applyIcon(IconControl control) {
         final ColorStateList tint = control.tint != null ? control.tint : contentTint;
-        if (control.appliedIcon == control.iconRes && control.appliedGlyph == glyphPx
-                && control.appliedLabels
-                        == CadHudPresentation.captionShown(toolLabels, control.attached)
-                && control.appliedTint == tint
-                && control.appliedCaption == control.captionRes) {
+        final boolean captioned = CadHudPresentation.captionShown(toolLabels, false);
+        if (control.appliedIcon == control.iconRes && control.appliedLabels == captioned
+                && control.appliedTint == tint && control.appliedCaption == control.captionRes) {
             return;
         }
         if (control.appliedIcon != control.iconRes) {
@@ -680,23 +674,6 @@ final class CadExtrudeCanvasView extends FrameLayout {
             control.caption.setTextColor(tint);
             control.appliedTint = tint;
         }
-        if (control.appliedGlyph != glyphPx) {
-            final ViewGroup.LayoutParams params = control.glyph.getLayoutParams();
-            params.width = glyphPx;
-            params.height = glyphPx;
-            control.glyph.setLayoutParams(params);
-            if (control.attached) {
-                // The icon sits inside its own disc, so the disc is the glyph's
-                // size and never the proxy's.
-                final int inset = Math.round(glyphPx * 0.16f);
-                control.glyph.setPadding(inset, inset, inset, inset);
-            }
-            control.appliedGlyph = glyphPx;
-        }
-        // A glyph on the drawing never carries a caption: it shrinks with the
-        // work, and a fixed-size word under a shrinking mark is neither. Tool
-        // Labels captions the palettes, where the choice is made.
-        final boolean captioned = CadHudPresentation.captionShown(toolLabels, control.attached);
         if (control.appliedLabels != captioned || control.appliedCaption != control.captionRes) {
             if (captioned) {
                 control.caption.setText(control.captionRes);
@@ -714,34 +691,18 @@ final class CadExtrudeCanvasView extends FrameLayout {
         }
     }
 
-    /**
-     * Swaps a control's state shape only when it actually changes: on the box
-     * for a palette member, on the glyph's own disc for an attached control.
-     */
+    /** Swaps a palette control's state shape only when it actually changes. */
     private static void setControlBackground(IconControl control, int background) {
         if (control.appliedBackground != background) {
-            if (control.attached) {
-                control.glyph.setBackgroundResource(glyphBackground(background));
-            } else {
-                control.view.setBackgroundResource(background);
-            }
+            control.view.setBackgroundResource(background);
             control.appliedBackground = background;
         }
-    }
-
-    /** The glyph-disc form of a member state shape. */
-    private static int glyphBackground(int memberBackground) {
-        if (memberBackground == R.drawable.bg_hud_invalid) {
-            return R.drawable.bg_hud_glyph_invalid;
-        }
-        // The open/chosen shape is carried by the disc's own activated state.
-        return R.drawable.bg_hud_glyph;
     }
 
     /**
      * Marks one palette choice chosen or not, in every channel at once.
      *
-     * <p>The chosen one is the only item in its palette wearing a SHAPE — the
+     * <p>The chosen one is the only item in its row wearing a SHAPE — the
      * selected fill — so the choice reads without its colour; {@code
      * setSelected}/{@code setActivated} and the accessible name carry it for a
      * screen reader and for verification.
@@ -759,12 +720,12 @@ final class CadExtrudeCanvasView extends FrameLayout {
     }
 
     /**
-     * Shows or hides captions on every icon control (Tool Labels).
+     * Shows or hides captions on every palette control (Tool Labels).
      *
      * <p>An application preference the workspace reads from
      * {@link AppPreferencesStore} and hands over; this view stores the answer
-     * only to draw with it. Nothing is re-read or re-placed here: the next
-     * refresh applies it, which the caller triggers.
+     * only to draw with it. The next refresh applies it, which the caller
+     * triggers.
      */
     void setToolLabelsVisible(boolean visible) {
         toolLabels = visible;
@@ -784,8 +745,8 @@ final class CadExtrudeCanvasView extends FrameLayout {
      * or neither.
      *
      * <p>Called on every state change and on every viewport gesture sample, so
-     * the value follows a live arrow drag, the anchor follows an orbit and the
-     * glyphs follow the camera-attached scale.
+     * the value follows a live arrow drag, the panel follows an orbit and both
+     * follow the camera-attached scale.
      */
     void refreshFromNative() {
         NativeViewport.cadExtrudeToolState(tool);
@@ -797,12 +758,9 @@ final class CadExtrudeCanvasView extends FrameLayout {
     }
 
     private void showExtrudeCluster() {
-        if (tool[NativeViewport.CAD_EXTRUDE_ON_SCREEN] == 0.0
-                || tool[NativeViewport.CAD_EXTRUDE_LEADER_ON_SCREEN] == 0.0
-                || !anchorSpace.ready()) {
-            // Behind the camera, or no leader to stand on: hidden,
-            // deterministically. A control for an anchor nobody can see would
-            // be a control pointing at nothing.
+        if (tool[NativeViewport.CAD_EXTRUDE_ON_SCREEN] == 0.0 || !anchorSpace.ready()) {
+            // Behind the camera: hidden, deterministically. A control for an
+            // anchor nobody can see would be a control pointing at nothing.
             hide();
             return;
         }
@@ -812,24 +770,18 @@ final class CadExtrudeCanvasView extends FrameLayout {
         final LengthUnit unit = host.uiState().displayUnit();
         final int extent = extentMode();
         final double scale = tool[NativeViewport.CAD_EXTRUDE_SCALE];
-        final int glyph = CadHudPresentation.glyphPx(scale, density);
-        lastGlyphPx = glyph;
+        lastGlyphPx = CadHudPresentation.glyphPx(scale, density);
         applyValueTextSize(CadHudPresentation.valueTextSp(scale));
-        // A live drag rewrites the value under the user; an editor or a palette
-        // open over it would act on a state the arrow has already left behind.
+        // A live drag rewrites the value under the user; an editor or the
+        // palette open over it would act on a state the arrow has already left.
         if (tool[NativeViewport.CAD_EXTRUDE_DRAGGING] != 0.0) {
             closeEditor();
             closeSecondEditor();
-            closePalettes();
+            closePalette();
         }
 
-        bindExtent(context, extent, glyph);
-        bindOperation(context, glyph);
-
-        // Flip belongs to One Side alone: the other two reach both sides
-        // already, so there is no side left for it to choose. Absent rather
-        // than shown and refused.
-        applyIcon(flip, glyph);
+        final int iconCount = CadHudPresentation.panelIconCount(extent);
+        bindPanel(context, extent, iconCount);
 
         shownDepth = tool[NativeViewport.CAD_EXTRUDE_DEPTH];
         reading.setText(unit.formatWithUnit(shownDepth));
@@ -842,28 +794,48 @@ final class CadExtrudeCanvasView extends FrameLayout {
 
         setVisibility(VISIBLE);
         final CadHudPresentation.LeaderLayout layout = layoutOn(reading,
-                NativeViewport.CAD_EXTRUDE_LEADER_START_X, true,
-                CadHudPresentation.flipPresent(extent),
-                extent != NativeViewport.EXTENT_ONE_SIDE);
+                NativeViewport.CAD_EXTRUDE_LEADER_ON_SCREEN,
+                NativeViewport.CAD_EXTRUDE_LEADER_START_X);
         lastLayout = layout;
-        if (!layout.valueVisible) {
+        final CadHudPresentation.PanelLayout panel = layoutPanel(iconCount, scale);
+        // The whole annotation collapses together or not at all: the value
+        // never outlives the panel beside it, nor the panel the value.
+        lastCollapsed = CadHudPresentation.annotationCollapsed(
+                tool[NativeViewport.CAD_EXTRUDE_CLAMP] == NativeViewport.CAD_EXTRUDE_CLAMP_LOW,
+                layout.valueVisible ? layout.visibleLength : 0.0f,
+                reading.getPaint().measureText(reading.getText().toString()));
+        if (lastCollapsed) {
+            panel.visible = false;
+            layout.valueVisible = false;
+        }
+        lastPanel = panel;
+        if (!layout.valueVisible && !panel.visible) {
             hide();
             return;
         }
-        anchorX = layout.valueX;
-        anchorY = layout.valueY;
+        if (layout.valueVisible) {
+            anchorX = layout.valueX;
+            anchorY = layout.valueY;
+        } else {
+            closeEditor();
+        }
         if (editorOpen()) {
-            setAttachedVisible(false);
+            setAnnotationVisible(false, false);
+            closePalette();
             placeAt(editor, anchorX, anchorY);
         } else {
-            placeAttached(layout);
+            reading.setVisibility(layout.valueVisible ? VISIBLE : GONE);
+            if (layout.valueVisible) {
+                placeValue(reading, layout);
+            }
+            placePanel(panel);
         }
 
         // The second value exists in Two Sides alone, above its OWN leader, and
         // only where native says that leader projects.
-        final boolean secondShown = CadHudPresentation.secondValuePresent(extent)
-                && tool[NativeViewport.CAD_EXTRUDE_SECOND_ON_SCREEN] != 0.0
-                && tool[NativeViewport.CAD_EXTRUDE_SECOND_LEADER_ON_SCREEN] != 0.0;
+        final boolean secondShown = !lastCollapsed
+                && CadHudPresentation.secondValuePresent(extent)
+                && tool[NativeViewport.CAD_EXTRUDE_SECOND_ON_SCREEN] != 0.0;
         if (!secondShown) {
             closeSecondEditor();
             secondReading.setVisibility(GONE);
@@ -874,7 +846,8 @@ final class CadExtrudeCanvasView extends FrameLayout {
         secondReading.setContentDescription(context.getString(
                 R.string.extrude_side_b_description, unit.formatWithUnit(shownSecond)));
         final CadHudPresentation.LeaderLayout second = layoutOn(secondReading,
-                NativeViewport.CAD_EXTRUDE_SECOND_LEADER_START_X, false, false, false);
+                NativeViewport.CAD_EXTRUDE_SECOND_LEADER_ON_SCREEN,
+                NativeViewport.CAD_EXTRUDE_SECOND_LEADER_START_X);
         if (!second.valueVisible) {
             closeSecondEditor();
             secondReading.setVisibility(GONE);
@@ -902,91 +875,122 @@ final class CadExtrudeCanvasView extends FrameLayout {
     }
 
     /**
-     * Lays one leader's controls out from the leader native projected, starting
-     * at slot {@code startX} ({@code startX..startX+3} are start x, y and end
-     * x, y). The value is measured first, because how far the glyphs stand
-     * along the line depends on how long the value is.
+     * Lays one value out above the leader native projected: slot {@code onScreen}
+     * says whether it projects, {@code startX..startX+3} are its start x, y and
+     * end x, y.
      */
-    private CadHudPresentation.LeaderLayout layoutOn(TextView value, int startX,
-                                                      boolean withGlyphs, boolean flipPresent,
-                                                      boolean extentPastTip) {
+    private CadHudPresentation.LeaderLayout layoutOn(TextView value, int onScreen, int startX) {
+        if (tool[onScreen] == 0.0) {
+            return new CadHudPresentation.LeaderLayout();
+        }
         anchorSpace.measureUnderParent(value);
         final Paint.FontMetrics metrics = value.getPaint().getFontMetrics();
         final float textH = metrics.descent - metrics.ascent;
         return CadHudPresentation.layoutLeader(
                 (float) tool[startX], (float) tool[startX + 1],
                 (float) tool[startX + 2], (float) tool[startX + 3],
-                anchorSpace.viewportWidth(), anchorSpace.viewportHeight(),
-                value.getMeasuredWidth(), value.getMeasuredHeight(), textH, lastGlyphPx, hitPx,
-                glyphGapPx, valueGapPx, withGlyphs, flipPresent, extentPastTip);
+                anchorSpace.viewportWidth(), anchorSpace.viewportHeight(), textH, valueGapPx);
     }
 
-    /** The extent button shows the mode in force; the palette marks it chosen. */
-    private void bindExtent(Context context, int extent, int glyph) {
-        extentButton.iconRes = CadHudPresentation.extentIcon(extent);
-        extentButton.captionRes = CadHudPresentation.extentCaption(extent);
-        applyIcon(extentButton, glyph);
-        final boolean open = openPalette == PALETTE_EXTENT;
-        extentButton.view.setActivated(open);
-        setControlBackground(extentButton, open ? R.drawable.bg_hud_member_active
-                                         : R.drawable.bg_hud_member);
-        extentButton.view.setContentDescription(context.getString(
-                R.string.cad_hud_extent_button_description,
-                context.getString(extentButton.captionRes)));
+    /**
+     * The panel against the arrow's drawn point: its screen direction is from
+     * the shaft's middle (the label anchor) to that point, and the leader's end
+     * tells which side of the shaft the leader stands on.
+     */
+    private CadHudPresentation.PanelLayout layoutPanel(int iconCount, double scale) {
+        final boolean head = tool[NativeViewport.CAD_EXTRUDE_HEAD_ON_SCREEN] != 0.0;
+        final float headX = (float) tool[NativeViewport.CAD_EXTRUDE_HEAD_X];
+        final float headY = (float) tool[NativeViewport.CAD_EXTRUDE_HEAD_Y];
+        final boolean leader = tool[NativeViewport.CAD_EXTRUDE_LEADER_ON_SCREEN] != 0.0;
+        return CadHudPresentation.layoutPanel(head, headX, headY,
+                headX - (float) tool[NativeViewport.CAD_EXTRUDE_LABEL_X],
+                headY - (float) tool[NativeViewport.CAD_EXTRUDE_LABEL_Y],
+                leader ? (float) tool[NativeViewport.CAD_EXTRUDE_LEADER_END_X] : Float.NaN,
+                leader ? (float) tool[NativeViewport.CAD_EXTRUDE_LEADER_END_Y] : Float.NaN,
+                iconCount, scale, density, anchorSpace.viewportWidth(),
+                anchorSpace.viewportHeight());
+    }
+
+    /**
+     * Binds the panel's glyphs and the palette's rows to what native says now:
+     * the extent in force, the operation in force (colour AND shape, with an
+     * error ring when the candidate would be refused), Flip in One Side alone,
+     * and in the palette exactly the operations that can be chosen.
+     */
+    private void bindPanel(Context context, int extent, int iconCount) {
+        final int current = (int) tool[NativeViewport.CAD_EXTRUDE_OPERATION];
+        final int available = (int) tool[NativeViewport.CAD_EXTRUDE_OPERATIONS_AVAILABLE];
+        final int status = (int) tool[NativeViewport.CAD_EXTRUDE_CANDIDATE_STATUS];
+        final boolean refused = status != NativeViewport.CAD_OK;
+
+        // The plate. Its glyph count is its only layout-changing fact.
+        if (appliedPanelIcons != iconCount) {
+            flipGlyph.setVisibility(iconCount == 3 ? VISIBLE : GONE);
+            appliedPanelIcons = iconCount;
+        }
+        final int extentCaption = CadHudPresentation.extentCaption(extent);
+        extentGlyph.setImageResource(CadHudPresentation.extentIcon(extent));
+        extentGlyph.setContentDescription(context.getString(
+                R.string.cad_hud_extent_state_description, context.getString(extentCaption)));
+        final int operationCaption = CadHudPresentation.operationCaption(current);
+        operationGlyph.setImageResource(CadHudPresentation.operationIcon(current));
+        final ColorStateList operationTint = operationTints[operationIndex(current)];
+        if (appliedOperationTint != operationTint) {
+            operationGlyph.setImageTintList(operationTint);
+            appliedOperationTint = operationTint;
+        }
+        if (appliedOperationRefused != refused) {
+            // Colour is never the only carrier: the ring is a SHAPE, and the
+            // accessible name says why.
+            if (refused) {
+                operationGlyph.setBackgroundResource(R.drawable.bg_hud_glyph_invalid);
+            } else {
+                operationGlyph.setBackground(null);
+            }
+            appliedOperationRefused = refused;
+        }
+        String operationDescription = context.getString(
+                R.string.cad_hud_operation_fixed_description, context.getString(operationCaption));
+        if (refused) {
+            operationDescription = context.getString(R.string.cad_hud_operation_invalid_description,
+                    operationDescription, refusalReason(context, status));
+        }
+        operationGlyph.setContentDescription(operationDescription);
+        plate.setActivated(paletteOpen);
+        panelProxy.setActivated(paletteOpen);
+        String panelDescription = context.getString(R.string.cad_hud_panel_description,
+                context.getString(extentCaption), context.getString(operationCaption));
+        if (refused) {
+            panelDescription = context.getString(R.string.cad_hud_operation_invalid_description,
+                    panelDescription, refusalReason(context, status));
+        }
+        panelProxy.setContentDescription(panelDescription);
+
+        // The palette.
         for (int i = 0; i < extentChoices.length; i++) {
             final int mode = CadHudPresentation.EXTENTS[i];
             markChoice(extentChoices[i], mode == extent,
                     CadHudPresentation.extentDescription(mode));
-            applyIcon(extentChoices[i], paletteGlyphPx);
+            applyIcon(extentChoices[i]);
         }
-    }
-
-    /**
-     * The badge shows the operation in force, in its colour and its shape; the
-     * palette holds only what native offers now, and the badge is a control
-     * only when that is more than the current answer.
-     */
-    private void bindOperation(Context context, int glyph) {
-        final int current = (int) tool[NativeViewport.CAD_EXTRUDE_OPERATION];
-        final int available = (int) tool[NativeViewport.CAD_EXTRUDE_OPERATIONS_AVAILABLE];
-        final int status = (int) tool[NativeViewport.CAD_EXTRUDE_CANDIDATE_STATUS];
-        operationHasChoice = CadHudPresentation.operationBadgeHasChoice(current, available);
-        if (!operationHasChoice && openPalette == PALETTE_OPERATION) {
-            closePalettes();
-        }
-        operation.iconRes = CadHudPresentation.operationIcon(current);
-        operation.captionRes = CadHudPresentation.operationCaption(current);
-        operation.tint = operationTints[operationIndex(current)];
-        applyIcon(operation, glyph);
-        // A statement when there is nothing else to choose: not clickable, not
-        // focusable, still read aloud through its description.
-        operation.view.setClickable(operationHasChoice);
-        operation.view.setFocusable(operationHasChoice);
-        final boolean open = openPalette == PALETTE_OPERATION;
-        final boolean refused = status != NativeViewport.CAD_OK;
-        operation.view.setActivated(open);
-        setControlBackground(operation, refused ? R.drawable.bg_hud_invalid
-                : open ? R.drawable.bg_hud_member_active : R.drawable.bg_hud_member);
-        String description = context.getString(operationHasChoice
-                        ? R.string.cad_hud_operation_button_description
-                        : R.string.cad_hud_operation_fixed_description,
-                context.getString(operation.captionRes));
-        if (refused) {
-            description = context.getString(R.string.cad_hud_operation_invalid_description,
-                    description, refusalReason(context, status));
-        }
-        operation.view.setContentDescription(description);
-
+        // Only what can be chosen NOW is in the row; the rest is absent, not
+        // disabled — and with nothing else to choose the row itself is absent,
+        // because a row offering exactly the current answer chooses nothing.
+        operationRow.setVisibility(CadHudPresentation.operationBadgeHasChoice(current, available)
+                ? VISIBLE : GONE);
         for (int i = 0; i < operationChoices.length; i++) {
             final int offered = CadHudPresentation.OPERATIONS[i];
-            // Only what can be chosen NOW is in the palette; the rest is
-            // absent, not disabled.
             operationChoices[i].view.setVisibility(
                     CadHudPresentation.operationOffered(offered, available) ? VISIBLE : GONE);
             markChoice(operationChoices[i], offered == current,
                     CadHudPresentation.operationDescription(offered));
-            applyIcon(operationChoices[i], paletteGlyphPx);
+            applyIcon(operationChoices[i]);
         }
+        // Flip belongs to One Side alone: the other two reach both sides
+        // already, so there is no side left for it to choose. Absent rather
+        // than shown and refused.
+        flip.view.setVisibility(CadHudPresentation.flipPresent(extent) ? VISIBLE : GONE);
+        applyIcon(flip);
     }
 
     /** The index of an operation in {@link CadHudPresentation#OPERATIONS}; New Body if unknown. */
@@ -1011,8 +1015,8 @@ final class CadExtrudeCanvasView extends FrameLayout {
     private void showRetainedSketchChip() {
         closeEditor();
         closeSecondEditor();
-        closePalettes();
-        setAttachedVisible(false);
+        closePalette();
+        setAnnotationVisible(false, false);
         secondReading.setVisibility(GONE);
         // The control belongs to a committed CAD Body with no session open, and
         // to nothing else. Every condition below is one `sketchBeginEdit` would
@@ -1025,7 +1029,14 @@ final class CadExtrudeCanvasView extends FrameLayout {
         }
         sketchBodyId = body;
         final Context context = getContext();
-        applyIcon(editSketch, CadHudPresentation.loneGlyphPx(bodyAnchor[2], density));
+        final int glyphPx = CadHudPresentation.loneGlyphPx(bodyAnchor[2], density);
+        final ViewGroup.LayoutParams params = editSketch.glyph.getLayoutParams();
+        if (params.width != glyphPx) {
+            params.width = glyphPx;
+            params.height = glyphPx;
+            editSketch.glyph.setLayoutParams(params);
+        }
+        applyIcon(editSketch);
         editSketch.view.setContentDescription(context.getString(
                 R.string.edit_sketch_canvas_description, BodyLabels.of(context, body)));
         editSketch.view.setVisibility(VISIBLE);
@@ -1040,42 +1051,50 @@ final class CadExtrudeCanvasView extends FrameLayout {
     // -----------------------------------------------------------------------
 
     /**
-     * Stands every control of the primary leader where the layout says, then
-     * hangs the open palette, if any, from the control that opened it.
-     *
-     * <p>Each control is its own box: the value is rotated to its leader and
-     * placed centred on its point above the line, and each glyph proxy is placed
-     * centred on its point along the line. A glyph whose point is off screen is
-     * ABSENT rather than clamped onto the screen away from the leader.
+     * Stands the panel WHOLE where the layout says — the plate scaled as one
+     * unit, the proxy unscaled on the same centre — or withdraws both; then
+     * hangs the open palette, if any, from the panel.
      */
-    private void placeAttached(CadHudPresentation.LeaderLayout layout) {
-        reading.setVisibility(VISIBLE);
-        placeValue(reading, layout);
-        placeGlyph(extentButton, layout.extentVisible, layout.extentX, layout.extentY);
-        placeGlyph(operation, layout.operationVisible, layout.operationX, layout.operationY);
-        placeGlyph(flip, layout.flipVisible, layout.flipX, layout.flipY);
-        if (openPalette == PALETTE_NONE) {
+    private void placePanel(CadHudPresentation.PanelLayout panel) {
+        if (!panel.visible) {
+            plate.setVisibility(GONE);
+            panelProxy.setVisibility(GONE);
+            closePalette();
             return;
         }
-        final IconControl opener = openPalette == PALETTE_EXTENT ? extentButton : operation;
-        if (opener.view.getVisibility() != VISIBLE) {
-            // The control that opened it has left the screen: so does the
-            // palette, rather than hanging from nothing.
-            closePalettes();
+        plate.setVisibility(VISIBLE);
+        panelProxy.setVisibility(VISIBLE);
+        anchorSpace.measureUnderParent(plate);
+        if (plate.getScaleX() != panel.scale) {
+            plate.setScaleX(panel.scale);
+            plate.setScaleY(panel.scale);
+        }
+        // Pivot (0, 0): the scaled box starts at the translation, which is
+        // what the shared placement writes for a box of the scaled size.
+        anchorSpace.place(plate, panel.centreX, panel.centreY,
+                plate.getMeasuredWidth() * panel.scale, plate.getMeasuredHeight() * panel.scale);
+        final int hitW = Math.round(panel.hitWidth);
+        final int hitH = Math.round(panel.hitHeight);
+        if (hitW != appliedHitWidth || hitH != appliedHitHeight) {
+            final ViewGroup.LayoutParams params = panelProxy.getLayoutParams();
+            params.width = hitW;
+            params.height = hitH;
+            panelProxy.setLayoutParams(params);
+            appliedHitWidth = hitW;
+            appliedHitHeight = hitH;
+        }
+        anchorSpace.place(panelProxy, panel.centreX, panel.centreY, hitW, hitH);
+        if (!paletteOpen) {
             return;
         }
-        final float openerX = openPalette == PALETTE_EXTENT ? layout.extentX : layout.operationX;
-        final float openerY = openPalette == PALETTE_EXTENT ? layout.extentY : layout.operationY;
-        final LinearLayout palette =
-                openPalette == PALETTE_EXTENT ? extentPalette : operationPalette;
-        anchorSpace.measureUnderParent(palette);
-        final float top = openerY - hitPx * 0.5f;
-        final float centreY = CadHudPresentation.paletteCentreY(top, hitPx,
-                palette.getMeasuredHeight(), paletteGap, anchorSpace.viewportHeight());
-        // Centred under the control that opened it: an anchored surface grows
-        // out of its invoking control. The shared clamp keeps it on screen.
-        anchorSpace.place(palette, openerX, centreY, palette.getMeasuredWidth(),
-                palette.getMeasuredHeight());
+        anchorSpace.measureUnderParent(actionsPalette);
+        final float top = panel.centreY - panel.hitHeight * 0.5f;
+        final float centreY = CadHudPresentation.paletteCentreY(top, panel.hitHeight,
+                actionsPalette.getMeasuredHeight(), paletteGap, anchorSpace.viewportHeight());
+        // Centred on the panel that opened it: an anchored surface grows out of
+        // its invoking control. The shared clamp keeps it on screen.
+        anchorSpace.place(actionsPalette, panel.centreX, centreY,
+                actionsPalette.getMeasuredWidth(), actionsPalette.getMeasuredHeight());
     }
 
     /** Rotates a value to its leader and centres its proxy on the layout's point. */
@@ -1088,30 +1107,26 @@ final class CadExtrudeCanvasView extends FrameLayout {
                 value.getMeasuredHeight());
     }
 
-    /** Centres one glyph proxy on its point, or withdraws it. */
-    private void placeGlyph(IconControl control, boolean visible, float x, float y) {
-        final boolean shown = visible && (control != flip
-                || CadHudPresentation.flipPresent(extentMode()));
-        if (!shown) {
-            control.view.setVisibility(GONE);
-            return;
-        }
-        control.view.setVisibility(VISIBLE);
-        anchorSpace.measureAndPlace(control.view, x, y, 1.0f);
+    /** Shows or withdraws the primary value and the panel. */
+    private void setAnnotationVisible(boolean value, boolean panel) {
+        reading.setVisibility(value ? VISIBLE : GONE);
+        plate.setVisibility(panel ? VISIBLE : GONE);
+        panelProxy.setVisibility(panel ? VISIBLE : GONE);
     }
 
-    /** Shows or withdraws every control that stands on the primary leader. */
-    private void setAttachedVisible(boolean visible) {
-        final int state = visible ? VISIBLE : GONE;
-        extentButton.view.setVisibility(state);
-        reading.setVisibility(state);
-        operation.view.setVisibility(state);
-        flip.view.setVisibility(state);
-    }
-
-    /** The primary leader's layout at the last refresh; verification. */
+    /** The primary leader's value layout at the last refresh; verification. */
     CadHudPresentation.LeaderLayout lastLeaderLayout() {
         return lastLayout;
+    }
+
+    /** The action panel's layout at the last refresh; verification. */
+    CadHudPresentation.PanelLayout lastPanelLayout() {
+        return lastPanel;
+    }
+
+    /** Whether the whole annotation collapsed at the last refresh; verification. */
+    boolean lastAnnotationCollapsed() {
+        return lastCollapsed;
     }
 
     /** The value text size last applied, in sp; verification. */
@@ -1120,62 +1135,48 @@ final class CadExtrudeCanvasView extends FrameLayout {
     }
 
     /**
-     * Centres one child on an anchor at its natural size.
-     *
-     * <p>No scale: the camera-attached multiplier sizes glyphs, never boxes.
-     * The conversion from the viewport pixels native reports into this
-     * container's own translation space, and the clamp against the real
-     * viewport rather than this padded container, are the shared contract in
-     * {@link ViewportAnchorSpace}.
+     * Centres one child on an anchor at its natural size. The conversion from
+     * the viewport pixels native reports into this container's own translation
+     * space, and the clamp against the real viewport, are the shared contract
+     * in {@link ViewportAnchorSpace}.
      */
     private void placeAt(View shown, float x, float y) {
         anchorSpace.measureAndPlace(shown, x, y, 1.0f);
     }
 
     // -----------------------------------------------------------------------
-    // Palettes
+    // Palette
     // -----------------------------------------------------------------------
 
-    /** Opens one palette, closing the other and any editor, or closes it again. */
-    private void togglePalette(int which) {
+    /** Opens the action palette, closing any editor, or closes it again. */
+    private void togglePalette() {
         if (tool[NativeViewport.CAD_EXTRUDE_ACTIVE] == 0.0) {
             return;
         }
         closeEditor();
         closeSecondEditor();
-        openPalette = openPalette == which ? PALETTE_NONE : which;
-        extentPalette.setVisibility(openPalette == PALETTE_EXTENT ? VISIBLE : INVISIBLE);
-        operationPalette.setVisibility(openPalette == PALETTE_OPERATION ? VISIBLE : INVISIBLE);
+        paletteOpen = !paletteOpen;
+        actionsPalette.setVisibility(paletteOpen ? VISIBLE : INVISIBLE);
         refreshFromNative();
     }
 
-    /** Closes whichever palette is open. Changes nothing but what is drawn. */
-    private void closePalettes() {
-        if (openPalette == PALETTE_NONE) {
+    /** Closes the action palette. Changes nothing but what is drawn. */
+    private void closePalette() {
+        if (!paletteOpen) {
             return;
         }
-        openPalette = PALETTE_NONE;
-        closedPalette(extentPalette);
-        closedPalette(operationPalette);
-        extentButton.view.setActivated(false);
-        setControlBackground(extentButton, R.drawable.bg_hud_member);
-        operation.view.setActivated(false);
-        if (operation.appliedBackground == R.drawable.bg_hud_member_active) {
-            setControlBackground(operation, R.drawable.bg_hud_member);
-        }
+        paletteOpen = false;
+        closedPalette(actionsPalette);
+        plate.setActivated(false);
+        panelProxy.setActivated(false);
     }
 
-    /** Whether the extent palette is open; verification. */
-    boolean extentPaletteOpen() {
-        return openPalette == PALETTE_EXTENT;
+    /** Whether the action palette is open; verification. */
+    boolean actionPaletteOpen() {
+        return paletteOpen;
     }
 
-    /** Whether the operation palette is open; verification. */
-    boolean operationPaletteOpen() {
-        return openPalette == PALETTE_OPERATION;
-    }
-
-    /** The glyph size the extrude HUD last drew, in pixels; verification. */
+    /** The panel glyph's drawn size at the last refresh, in pixels; verification. */
     int lastGlyphPx() {
         return lastGlyphPx;
     }
@@ -1208,14 +1209,14 @@ final class CadExtrudeCanvasView extends FrameLayout {
         if (tool[NativeViewport.CAD_EXTRUDE_ACTIVE] == 0.0) {
             return;
         }
-        closePalettes();
+        closePalette();
         final LengthUnit unit = host.uiState().displayUnit();
         // Seeded with the CURRENT depth and selected whole, so the first
         // keystroke replaces rather than appends — the rule every exact-value
         // field in the product follows.
         field.setText(unit.format(shownDepth));
         field.selectAll();
-        setAttachedVisible(false);
+        setAnnotationVisible(false, false);
         editor.setVisibility(VISIBLE);
         placeAt(editor, anchorX, anchorY);
         field.requestFocus();
@@ -1232,7 +1233,7 @@ final class CadExtrudeCanvasView extends FrameLayout {
                 || !CadHudPresentation.secondValuePresent(extentMode())) {
             return;
         }
-        closePalettes();
+        closePalette();
         final LengthUnit unit = host.uiState().displayUnit();
         secondField.setText(unit.format(shownSecond));
         secondField.selectAll();
@@ -1279,8 +1280,8 @@ final class CadExtrudeCanvasView extends FrameLayout {
     void hide() {
         closeEditor();
         closeSecondEditor();
-        closePalettes();
-        setAttachedVisible(false);
+        closePalette();
+        setAnnotationVisible(false, false);
         secondReading.setVisibility(GONE);
         editSketch.view.setVisibility(GONE);
         sketchBodyId = NativeViewport.NO_OBJECT;

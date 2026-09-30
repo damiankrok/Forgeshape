@@ -4828,7 +4828,7 @@ JNIEXPORT void JNICALL
 Java_com_forgeshape_app_NativeViewport_cadExtrudeToolState(JNIEnv* env, jclass,
                                                            jdoubleArray out) {
     constexpr jsize kLegacySlots = 21;
-    constexpr jsize kMaxSlots = 42;
+    constexpr jsize kMaxSlots = 45;
     if (out == nullptr || env->GetArrayLength(out) < kLegacySlots) {
         return;
     }
@@ -4883,6 +4883,22 @@ Java_com_forgeshape_app_NativeViewport_cadExtrudeToolState(JNIEnv* env, jclass,
             if (session.extrudeViewFacts(g_camera.snapshot(), w, h, &view)) {
                 values[10] = view.scale.scale;
                 values[11] = view.scale.clampedLow ? 1.0 : (view.scale.clampedHigh ? 2.0 : 0.0);
+                // The PRIMARY arrow's drawn point (`CAD-FOUNDATION-C2`): the
+                // one spot the Android action panel is anchored to, from the
+                // SAME function the drawing and the hit test end the head at.
+                const forgeshape::CadExtrudeSideAnchor& primary =
+                        anchors.side(anchors.primaryIsPositive);
+                float px = 0.0f;
+                float py = 0.0f;
+                if (primary.present
+                    && forgeshape::projectWorldToScreen(
+                               g_camera.snapshot(),
+                               forgeshape::cadExtrudeArrowPoint(primary, view.scale.world), w, h,
+                               &px, &py)) {
+                    values[42] = 1.0;
+                    values[43] = px;
+                    values[44] = py;
+                }
                 forgeshape::CadExtrudeLeader leader;
                 if (view.leaderValid
                     && forgeshape::cadExtrudeLeaderFor(anchors, view.leaderSide, view.scale.world,

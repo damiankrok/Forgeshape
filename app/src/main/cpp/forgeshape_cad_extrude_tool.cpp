@@ -453,10 +453,7 @@ bool CadExtrudeManipulator::hitTestSide(const CadExtrudeAnchors& anchors, bool p
     }
     // The head is drawn past the tip at the SHARED scale, so the grabbable
     // extent past the tip is exactly what was drawn there.
-    const Vec3 headEnd = vec3Add(
-            side.tip,
-            vec3Scale(side.axis,
-                      static_cast<float>(scale.world * kCadExtrudeArrowHeadLengthFraction)));
+    const Vec3 headEnd = cadExtrudeArrowPoint(side, scale.world);
     float baseX = 0.0f;
     float baseY = 0.0f;
     float endX = 0.0f;
@@ -591,7 +588,7 @@ void appendOneArrow(std::vector<GizmoVertex>* out, const Vec3& base,
     // ring itself, so it reads as a cone rather than as a flat chevron.
     const Vec3 headBase =
             vec3Add(side.tip, vec3Scale(side.axis, -static_cast<float>(headLength)));
-    const Vec3 point = vec3Add(side.tip, vec3Scale(side.axis, static_cast<float>(headLength)));
+    const Vec3 point = cadExtrudeArrowPoint(side, controlWorld);
     Vec3 previous{};
     Vec3 first{};
     for (int i = 0; i < kCadExtrudeArrowBarbs; ++i) {
@@ -612,6 +609,12 @@ void appendOneArrow(std::vector<GizmoVertex>* out, const Vec3& base,
 }
 
 }  // namespace
+
+Vec3 cadExtrudeArrowPoint(const CadExtrudeSideAnchor& side, double controlWorld) {
+    return vec3Add(side.tip, vec3Scale(side.axis, static_cast<float>(
+                                                          controlWorld
+                                                          * kCadExtrudeArrowHeadLengthFraction)));
+}
 
 void appendCadExtrudeArrow(std::vector<GizmoVertex>* out, const CadExtrudeAnchors& anchors,
                            double controlWorld, bool grabbed, bool grabbedSide) {

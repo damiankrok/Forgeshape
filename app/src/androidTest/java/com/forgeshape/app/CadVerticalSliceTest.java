@@ -570,23 +570,28 @@ public final class CadVerticalSliceTest {
             final double[] tool = new double[NativeViewport.CAD_EXTRUDE_SIZE];
             NativeViewport.cadExtrudeToolState(tool);
             assertTrue("the leader projects", tool[NativeViewport.CAD_EXTRUDE_LEADER_ON_SCREEN] != 0);
-            // `CAD-FOUNDATION-C1`: no row and no capsule. Each control is an
-            // invisible 48 dp proxy standing on the leader's line; the extent
-            // control past the base end, the badge and Flip past the tip end.
-            final int[] ids = {R.id.cad_extrude_extent, R.id.cad_extrude_operation,
-                    R.id.cad_extrude_flip};
-            final boolean[] pastTip = {false, true, true};
-            for (int i = 0; i < ids.length; i++) {
-                final View control = canvas.findViewById(ids[i]);
-                assertNotNull("control " + ids[i], control);
-                assertTrue("shown " + name(activity, ids[i]), control.isShown());
-                final String why = CadLeaderHudChecks.glyphOnLeader(tool, control, viewport,
-                        density, pastTip[i]);
-                fact("hud." + name(activity, ids[i]), screenRect(control).toShortString()
-                        + " glyph_px=" + CadLeaderHudChecks.firstImage(control).getWidth());
-                assertNull(name(activity, ids[i]) + ": " + why, why);
-                assertTrue("described", control.getContentDescription() != null
-                        && control.getContentDescription().length() > 0);
+            // `CAD-FOUNDATION-C2`: ONE action panel -- extent, operation and
+            // Flip on one plate scaled as a unit -- standing just past the
+            // arrow's point, with ONE unscaled >= 48 dp proxy over it.
+            final String panel = CadLeaderHudChecks.panelAtArrow(tool, canvas, viewport, density,
+                    3);
+            final View plate = canvas.findViewById(R.id.cad_extrude_panel_plate);
+            final View proxy = canvas.findViewById(R.id.cad_extrude_panel);
+            fact("hud.panel_plate", screenRect(plate).toShortString() + " scale="
+                    + plate.getScaleX());
+            fact("hud.panel_proxy", screenRect(proxy).toShortString());
+            fact("hud.panel_reach_dp",
+                    CadLeaderHudChecks.panelReachDp(tool, canvas, viewport, density));
+            assertNull("the panel: " + panel, panel);
+            assertTrue("the panel is described", proxy.getContentDescription() != null
+                    && proxy.getContentDescription().toString().toLowerCase(Locale.ROOT)
+                            .contains("one side"));
+            for (int id : new int[]{R.id.cad_extrude_extent, R.id.cad_extrude_operation,
+                    R.id.cad_extrude_flip_glyph}) {
+                final View glyph = canvas.findViewById(id);
+                assertTrue("glyph shown " + name(activity, id), glyph.isShown());
+                assertFalse("and it takes no touch of its own " + name(activity, id),
+                        glyph.isClickable());
             }
             // The exact value stands ABOVE the leader, reading along it.
             final TextView value = canvas.findViewById(R.id.cad_extrude_depth_value);
@@ -625,8 +630,8 @@ public final class CadVerticalSliceTest {
             return null;
         });
 
-        // The extent palette opens from the one extent control and closes on a choice.
-        clickCanvas(R.id.cad_extrude_extent);
+        // The action palette opens from the one panel and closes on a choice.
+        clickCanvas(R.id.cad_extrude_panel);
         doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
             final View canvas = workspace.cadExtrudeCanvas();
             assertTrue("the extent palette is open",
@@ -650,6 +655,8 @@ public final class CadVerticalSliceTest {
                     canvas.findViewById(R.id.cad_extrude_extent_palette).isShown());
             assertFalse("Flip is absent outside One Side",
                     canvas.findViewById(R.id.cad_extrude_flip).isShown());
+            assertEquals("and so is its glyph on the panel", View.GONE,
+                    canvas.findViewById(R.id.cad_extrude_flip_glyph).getVisibility());
             return null;
         });
         capture("06_compact_hud_symmetric");
@@ -665,7 +672,7 @@ public final class CadVerticalSliceTest {
         });
         settleLayout();
         try {
-            clickCanvas(R.id.cad_extrude_extent);
+            clickCanvas(R.id.cad_extrude_panel);
             doOnWorkspace(rule.getScenario(), (activity, workspace) -> {
                 final View canvas = workspace.cadExtrudeCanvas();
                 final View palette = canvas.findViewById(R.id.cad_extrude_extent_palette);
@@ -681,7 +688,7 @@ public final class CadVerticalSliceTest {
                 return null;
             });
             capture("07_compact_hud_labels_on");
-            clickCanvas(R.id.cad_extrude_extent);
+            clickCanvas(R.id.cad_extrude_panel);
 
             // The preference is application state: it survives the Activity
             // being rebuilt, and it never touched the project.
@@ -1119,7 +1126,8 @@ public final class CadVerticalSliceTest {
             final View canvas = workspace.cadExtrudeCanvas();
             final View badge = canvas.findViewById(R.id.cad_extrude_operation);
             assertTrue("the operation badge is shown", badge.isShown());
-            badge.performClick();
+            // The badge is a glyph on the panel; the panel opens the palette.
+            canvas.findViewById(R.id.cad_extrude_panel).performClick();
             return null;
         });
         settleLayout();

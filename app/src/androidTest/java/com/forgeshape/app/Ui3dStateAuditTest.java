@@ -145,7 +145,7 @@ public final class Ui3dStateAuditTest {
         record("UI3D-03", "sketch_ready", "S07 tool_rail_rectangle", MUST_HIDE,
                 shown(R.id.tool_rail_rectangle));
         record("UI3D-03", "sketch_ready", "S35 cad_extrude_flip", MUST_SHOW,
-                shown(R.id.cad_extrude_flip));
+                shown(R.id.cad_extrude_flip_glyph));
         record("UI3D-03", "sketch_ready", "S36 cad_extrude_second_value", MUST_HIDE,
                 shown(R.id.cad_extrude_second_value));
         record("UI3D-03", "sketch_ready", "S38 cad_canvas_edit_sketch", MUST_HIDE,
@@ -157,7 +157,7 @@ public final class Ui3dStateAuditTest {
         // --- One Side -> Symmetric -> Two Sides ---------------------------
         press(R.id.cad_extrude_extent_symmetric);
         record("UI3D-03", "extent_symmetric", "S35 cad_extrude_flip", MUST_HIDE,
-                shown(R.id.cad_extrude_flip));
+                shown(R.id.cad_extrude_flip_glyph));
         record("UI3D-03", "extent_symmetric", "S36 cad_extrude_second_value", MUST_HIDE,
                 shown(R.id.cad_extrude_second_value));
         Ui3dAuditRecorder.capture("ui3d03_05_symmetric");
@@ -166,14 +166,14 @@ public final class Ui3dStateAuditTest {
         record("UI3D-03", "extent_two_sides", "S36 cad_extrude_second_value", MUST_SHOW,
                 shown(R.id.cad_extrude_second_value));
         record("UI3D-03", "extent_two_sides", "S35 cad_extrude_flip", MUST_HIDE,
-                shown(R.id.cad_extrude_flip));
+                shown(R.id.cad_extrude_flip_glyph));
         Ui3dAuditRecorder.capture("ui3d03_06_two_sides");
 
         press(R.id.cad_extrude_extent_one_side);
         record("UI3D-03", "extent_back_to_one_side", "S36 cad_extrude_second_value", MUST_HIDE,
                 shown(R.id.cad_extrude_second_value));
         record("UI3D-03", "extent_back_to_one_side", "S35 cad_extrude_flip", MUST_SHOW,
-                shown(R.id.cad_extrude_flip));
+                shown(R.id.cad_extrude_flip_glyph));
 
         // --- Apply Extrude -> a committed body ----------------------------
         commitExtrude("0.4");

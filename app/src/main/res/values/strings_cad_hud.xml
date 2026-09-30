@@ -19,15 +19,16 @@
     <string name="cad_hud_caption_flip">Flip</string>
     <string name="cad_hud_caption_edit_sketch">Edit sketch</string>
 
-    <!-- The extent button and its palette. %1$s is a caption above. -->
-    <string name="cad_hud_extent_button_description">Extent: %1$s. Change extent</string>
+    <!-- The action panel (CAD-FOUNDATION-C2): %1$s the extent caption, %2$s the
+         operation caption. One control; it opens the action palette. -->
+    <string name="cad_hud_panel_description">Extrude options: %1$s, %2$s. Change extent, operation or direction</string>
+    <!-- The panel's extent glyph: a statement of the mode in force. -->
+    <string name="cad_hud_extent_state_description">Extent: %1$s</string>
     <!-- A palette choice: %1$s the caption, %2$s what it does. -->
     <string name="cad_hud_choice_description">%1$s. %2$s</string>
     <string name="cad_hud_choice_selected_description">%1$s, selected. %2$s</string>
 
-    <!-- The operation badge and its palette. -->
-    <string name="cad_hud_operation_button_description">Operation: %1$s. Change operation</string>
-    <!-- The badge when there is nothing else to choose: a statement, not a control. -->
+    <!-- The panel's operation glyph: a statement of the operation in force. -->
     <string name="cad_hud_operation_fixed_description">Operation: %1$s</string>
     <!-- %1$s the description above, %2$s the reason the commit would be refused. -->
     <string name="cad_hud_operation_invalid_description">%1$s. Cannot extrude: %2$s</string>

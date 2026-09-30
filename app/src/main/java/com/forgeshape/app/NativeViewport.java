@@ -2341,7 +2341,7 @@ final class NativeViewport {
      * land between two of them. Every slot is DERIVED below JNI on every read —
      * the shell stores no depth, no direction and no anchor.
      */
-    static final int CAD_EXTRUDE_SIZE = 42;
+    static final int CAD_EXTRUDE_SIZE = 45;
     /** 1 when the canvas manipulator is live; 0 is the whole reason it is absent. */
     static final int CAD_EXTRUDE_ACTIVE = 0;
     /** The PRIMARY side's distance: the whole depth of a One Side extrusion. */
@@ -2423,6 +2423,13 @@ final class NativeViewport {
     static final int CAD_EXTRUDE_SECOND_LEADER_START_Y = 39;
     static final int CAD_EXTRUDE_SECOND_LEADER_END_X = 40;
     static final int CAD_EXTRUDE_SECOND_LEADER_END_Y = 41;
+    // `CAD-FOUNDATION-C2`. The PRIMARY arrow's drawn point -- the far end of
+    // its head, from the same native function the drawing and the hit test
+    // end the head at. The action panel is anchored just past it.
+    /** 1 when the primary arrow exists and its point projects; 0 means HIDE the panel. */
+    static final int CAD_EXTRUDE_HEAD_ON_SCREEN = 42;
+    static final int CAD_EXTRUDE_HEAD_X = 43;
+    static final int CAD_EXTRUDE_HEAD_Y = 44;
 
     /** Extent modes, in the native enum's own order. */
     static final int EXTENT_ONE_SIDE = 0;

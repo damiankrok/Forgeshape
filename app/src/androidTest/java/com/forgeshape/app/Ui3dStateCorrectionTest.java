@@ -424,8 +424,9 @@ public final class Ui3dStateCorrectionTest {
         assertExtrudeClusterAttached("after_zoom_in");
 
         // Two Sides, so the SECOND value's own anchor is exercised too. The
-        // three choices stand in the palette the one extent control opens.
-        press(R.id.cad_extrude_extent);
+        // three choices stand in the action palette the one panel opens
+        // (`CAD-FOUNDATION-C2`).
+        press(R.id.cad_extrude_panel);
         press(R.id.cad_extrude_extent_two_sides);
         settleLayout();
         assertExtrudeClusterAttached("two_sides");
@@ -521,6 +522,26 @@ public final class Ui3dStateCorrectionTest {
             final android.widget.TextView value =
                     workspace.findViewById(R.id.cad_extrude_depth_value);
             final View viewport = workspace.findViewById(R.id.viewport_surface);
+            final CadExtrudeCanvasView canvas = workspace.cadExtrudeCanvas();
+            final View plate = canvas.findViewById(R.id.cad_extrude_panel_plate);
+            // `CAD-FOUNDATION-C2`: the annotation collapses WHOLE at the scale
+            // floor when the value would outgrow its leader -- value and panel
+            // together, never one without the other.
+            if (canvas.lastAnnotationCollapsed()) {
+                return value.isShown() || plate.isShown()
+                        ? "a collapsed annotation still shows part of itself" : null;
+            }
+            // The action panel, when it stands, stands WHOLE at the arrow's point.
+            if (canvas.lastPanelLayout().visible) {
+                final String panel = CadLeaderHudChecks.panelAtArrow(tool, canvas, viewport,
+                        density, CadHudPresentation.panelIconCount(
+                                (int) tool[NativeViewport.CAD_EXTRUDE_EXTENT]));
+                if (panel != null) {
+                    return panel;
+                }
+            } else if (plate.isShown()) {
+                return "the panel's plate is shown while its layout is hidden";
+            }
             final float[] l = CadLeaderHudChecks.leader(tool, false);
             if (CadHudPresentation.clipToViewport(l[0], l[1], l[2], l[3], viewport.getWidth(),
                     viewport.getHeight()) == null) {

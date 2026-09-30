@@ -84,18 +84,25 @@ public final class CadHudPresentationTest {
     }
 
     @Test
-    public void theValueTextFollowsTheScaleInsideItsLegibilityBand() {
+    public void theValueTextFollowsThePanelsScaleInsideItsLegibilityBand() {
         assertEquals(14.0f, CadHudPresentation.valueTextSp(1.0), 1e-6f);
-        assertEquals("the floor keeps it readable", 11.0f,
+        assertEquals("the floor keeps it readable", 9.0f,
                 CadHudPresentation.valueTextSp(SCALE_MIN), 0.0f);
         assertEquals("the ceiling keeps it an annotation", 18.0f,
                 CadHudPresentation.valueTextSp(SCALE_MAX), 0.0f);
+        assertEquals("the SAME saturating multiplier as the panel, not its own",
+                CadHudPresentation.valueTextSp(SCALE_MIN), CadHudPresentation.valueTextSp(0.05),
+                0.0f);
         float previous = 0.0f;
         for (int step = 0; step <= 60; step++) {
             final double scale = SCALE_MIN + (SCALE_MAX - SCALE_MIN) * step / 60.0;
             final float sp = CadHudPresentation.valueTextSp(scale);
             assertTrue("monotonic", sp >= previous);
-            assertTrue("banded", sp >= 11.0f && sp <= 18.0f);
+            assertTrue("banded", sp >= 9.0f && sp <= 18.0f);
+            // Inside the band the text and the glyph keep one ratio: one policy.
+            if (sp > 9.0f && sp < 18.0f) {
+                assertEquals(14.0f / 28.0f, sp / CadHudPresentation.glyphDp(scale), 1e-4f);
+            }
             previous = sp;
         }
     }
@@ -119,7 +126,7 @@ public final class CadHudPresentationTest {
     }
 
     @Test
-    public void captionsBelongToPalettesAndNeverToAnAttachedGlyph() {
+    public void captionsBelongToPalettesAndNeverToAPanelGlyph() {
         assertTrue(CadHudPresentation.captionShown(true, false));
         assertFalse(CadHudPresentation.captionShown(true, true));
         assertFalse(CadHudPresentation.captionShown(false, false));
@@ -164,102 +171,191 @@ public final class CadHudPresentationTest {
         assertEquals(null, CadHudPresentation.clipToViewport(Float.NaN, 0, 1, 1, 100, 100));
     }
 
-    private static CadHudPresentation.LeaderLayout layout(float sx, float sy, float ex, float ey,
-                                                          boolean flip) {
-        // A 2.625-density phone: 48 dp = 126 px, glyph 28 dp = 74 px.
-        return CadHudPresentation.layoutLeader(sx, sy, ex, ey, 1080.0f, 2000.0f,
-                180.0f, 126.0f, 40.0f, 74.0f, 126.0f, 10.0f, 8.0f, true, flip, false);
+    private static CadHudPresentation.LeaderLayout layout(float sx, float sy, float ex,
+                                                          float ey) {
+        return CadHudPresentation.layoutLeader(sx, sy, ex, ey, 1080.0f, 2000.0f, 40.0f, 8.0f);
     }
 
     @Test
     public void theValueStandsAboveTheMiddleOfItsLeaderAndReadsAlongIt() {
-        final CadHudPresentation.LeaderLayout l = layout(300, 1000, 700, 1000, true);
+        final CadHudPresentation.LeaderLayout l = layout(300, 1000, 700, 1000);
         assertTrue(l.valueVisible);
         assertEquals(0.0f, l.rotation, 1e-4f);
         assertEquals("centred along the line", 500.0f, l.valueX, 1e-3f);
         assertEquals("above it by half the text and the gap", 1000.0f - 20.0f - 8.0f, l.valueY,
                 1e-3f);
+        assertEquals(400.0f, l.visibleLength, 1e-3f);
         // A steep leader drawn from bottom to top still reads upright, above.
-        final CadHudPresentation.LeaderLayout steep = layout(500, 1400, 500, 600, false);
+        final CadHudPresentation.LeaderLayout steep = layout(500, 1400, 500, 600);
         assertEquals(-90.0f, steep.rotation, 1e-4f);
         assertTrue("above a vertical line is to its left", steep.valueX < 500.0f);
         assertEquals(1000.0f, steep.valueY, 1e-3f);
         // The same leader drawn the other way gives the same reading.
-        final CadHudPresentation.LeaderLayout reversed = layout(500, 600, 500, 1400, false);
+        final CadHudPresentation.LeaderLayout reversed = layout(500, 600, 500, 1400);
         assertEquals(steep.rotation, reversed.rotation, 1e-4f);
         assertEquals(steep.valueX, reversed.valueX, 1e-3f);
     }
 
     @Test
-    public void theGlyphsStandOnTheLeaderPastItsEndsWithoutOverlappingProxies() {
-        final float hit = 126.0f;
-        for (int degrees = 0; degrees < 360; degrees += 15) {
+    public void aValueStandsOnTheVisiblePartAndAWhollyHiddenLeaderHasNone() {
+        final CadHudPresentation.LeaderLayout l = layout(700, 1000, 1400, 1000);
+        assertTrue(l.valueVisible);
+        assertEquals((700.0f + 1080.0f) * 0.5f, l.valueX, 1e-3f);
+        assertEquals(380.0f, l.visibleLength, 1e-3f);
+        assertFalse(layout(1200, 100, 1500, 100).valueVisible);
+    }
+
+    // -----------------------------------------------------------------------
+    // The action panel (CAD-FOUNDATION-C2)
+    // -----------------------------------------------------------------------
+
+    /** A 2.625-density phone, 1080 x 2000 px: 48 dp = 126 px. */
+    private static final float DENSITY = 2.625f;
+
+    private static CadHudPresentation.PanelLayout panel(float hx, float hy, float ax, float ay,
+                                                        int icons, double scale) {
+        return CadHudPresentation.layoutPanel(true, hx, hy, ax, ay, Float.NaN, Float.NaN, icons,
+                scale, DENSITY, 1080.0f, 2000.0f);
+    }
+
+    @Test
+    public void thePanelIsOneRigidPlateWhoseInternalSpacingNeverChangesWithZoom() {
+        assertEquals(3, CadHudPresentation.panelIconCount(NativeViewport.EXTENT_ONE_SIDE));
+        assertEquals(2, CadHudPresentation.panelIconCount(NativeViewport.EXTENT_SYMMETRIC));
+        assertEquals(2, CadHudPresentation.panelIconCount(NativeViewport.EXTENT_TWO_SIDES));
+        // Reference plate: 3 x 28 + 2 x 2 + 2 x 4 = 96 x 36 dp.
+        assertEquals(96.0f, CadHudPresentation.panelReferenceWidthDp(3), 1e-4f);
+        assertEquals(66.0f, CadHudPresentation.panelReferenceWidthDp(2), 1e-4f);
+        assertEquals(36.0f, CadHudPresentation.panelReferenceHeightDp(), 1e-4f);
+        for (int step = 0; step <= 24; step++) {
+            final double scale = SCALE_MIN + (SCALE_MAX - SCALE_MIN) * step / 24.0;
+            final float s = CadHudPresentation.visualScale(scale);
+            final float glyph = CadHudPresentation.glyphDp(scale);
+            final float first = CadHudPresentation.panelIconOffsetDp(0, 3, scale);
+            final float middle = CadHudPresentation.panelIconOffsetDp(1, 3, scale);
+            final float last = CadHudPresentation.panelIconOffsetDp(2, 3, scale);
+            assertEquals("the middle glyph is the plate's centre", 0.0f, middle, 1e-4f);
+            assertEquals("evenly pitched", middle - first, last - middle, 1e-4f);
+            assertEquals("the pitch is one fixed multiple of the glyph at every zoom",
+                    30.0f / 28.0f, (middle - first) / glyph, 1e-4f);
+            final CadHudPresentation.PanelLayout p = panel(540, 1000, 80, 0, 3, scale);
+            assertEquals("the plate scales as ONE unit",
+                    96.0f / 36.0f, p.plateWidth / p.plateHeight, 1e-4f);
+            assertEquals(96.0f * s * DENSITY, p.plateWidth, 1e-2f);
+            assertEquals(s, p.scale, 0.0f);
+        }
+    }
+
+    @Test
+    public void thePanelStandsJustPastTheArrowsPointAlongTheArrow() {
+        for (double scale : new double[]{SCALE_MIN, 1.0, SCALE_MAX}) {
+            final CadHudPresentation.PanelLayout p = panel(540, 1000, 80, 0, 3, scale);
+            assertTrue(p.visible);
+            assertEquals(CadHudPresentation.PANEL_BEYOND, p.placement);
+            assertEquals("on the arrow's line", 1000.0f, p.centreY, 1e-3f);
+            assertTrue("past the point", p.centreX > 540.0f);
+            final float clear = (CadHudPresentation.ARROW_CORRIDOR_DP
+                    + CadHudPresentation.PANEL_CLEAR_DP) * DENSITY;
+            assertEquals("its proxy's near edge exactly one clear corridor from the point",
+                    clear, CadHudPresentation.panelClearance(p), 1e-2f);
+            assertEquals(540.0f + clear + p.hitWidth * 0.5f, p.centreX, 1e-2f);
+        }
+        // Any direction: the box follows the arrow, and never nears the point.
+        for (int degrees = 0; degrees < 360; degrees += 10) {
             final double r = Math.toRadians(degrees);
-            final float cx = 540.0f;
-            final float cy = 1000.0f;
-            final float half = 60.0f;
-            final float dx = (float) Math.cos(r) * half;
-            final float dy = (float) Math.sin(r) * half;
-            final CadHudPresentation.LeaderLayout l = layout(cx - dx, cy - dy, cx + dx, cy + dy,
-                    true);
-            assertTrue(l.valueVisible && l.extentVisible && l.operationVisible && l.flipVisible);
-            // Every glyph centre lies ON the leader's line.
-            for (float[] p : new float[][]{{l.extentX, l.extentY}, {l.operationX, l.operationY},
-                    {l.flipX, l.flipY}}) {
-                final float cross = (p[0] - cx) * dy - (p[1] - cy) * dx;
-                assertEquals("on the line at " + degrees, 0.0f, cross / half, 0.05f);
-            }
-            // The extent is past the base end, the operation past the tip end.
-            final float extentAlong = ((l.extentX - cx) * dx + (l.extentY - cy) * dy) / half;
-            final float operationAlong = ((l.operationX - cx) * dx + (l.operationY - cy) * dy)
-                    / half;
-            assertTrue(extentAlong < -half && operationAlong > half);
-            // No two hit squares overlap.
-            final float[][] squares = {{l.extentX, l.extentY}, {l.operationX, l.operationY},
-                    {l.flipX, l.flipY}};
-            for (int i = 0; i < squares.length; i++) {
-                for (int j = i + 1; j < squares.length; j++) {
-                    final boolean apart = Math.abs(squares[i][0] - squares[j][0]) >= hit - 0.01f
-                            || Math.abs(squares[i][1] - squares[j][1]) >= hit - 0.01f;
-                    assertTrue("proxies " + i + "," + j + " apart at " + degrees, apart);
+            // A screen direction in PIXELS, as native's points give it.
+            final CadHudPresentation.PanelLayout p = panel(540, 1000,
+                    (float) (Math.cos(r) * 80.0), (float) (Math.sin(r) * 80.0), 3, 1.0);
+            assertTrue(p.visible);
+            assertEquals(CadHudPresentation.PANEL_BEYOND, p.placement);
+            final float along = (float) ((p.centreX - 540) * Math.cos(r)
+                    + (p.centreY - 1000) * Math.sin(r));
+            assertTrue("past the point at " + degrees, along > 0.0f);
+            assertTrue("clear of the arrow's grab corridor at " + degrees,
+                    CadHudPresentation.panelClearance(p)
+                            >= CadHudPresentation.ARROW_CORRIDOR_DP * DENSITY);
+        }
+    }
+
+    @Test
+    public void thePanelIsShownWholeOrNotAtAllAndNeverClampedAwayFromTheArrow() {
+        // Past the point would leave the viewport: beside it, away from the leader.
+        final CadHudPresentation.PanelLayout beside = CadHudPresentation.layoutPanel(true, 900,
+                1000, 1, 0, 800, 900, 3, 1.0, DENSITY, 1080, 2000);
+        assertTrue(beside.visible);
+        assertEquals(CadHudPresentation.PANEL_AWAY, beside.placement);
+        assertTrue("away from the leader, which stands above", beside.centreY > 1000.0f);
+        assertInside(beside);
+        // Nowhere a whole panel fits (a corner): hidden WHOLE, never partial.
+        final CadHudPresentation.PanelLayout corner = CadHudPresentation.layoutPanel(true, 1075,
+                5, 1, -1, Float.NaN, Float.NaN, 3, 1.0, DENSITY, 1080, 2000);
+        assertFalse(corner.visible);
+        // The point behind the camera or off screen: hidden, not guessed.
+        assertFalse(CadHudPresentation.layoutPanel(false, 540, 1000, 1, 0, Float.NaN, Float.NaN,
+                3, 1.0, DENSITY, 1080, 2000).visible);
+        assertFalse(panel(-20, 1000, 1, 0, 3, 1.0).visible);
+        // Every visible placement over a sweep is wholly inside the viewport.
+        for (int x = 0; x <= 1080; x += 60) {
+            for (int y = 0; y <= 2000; y += 100) {
+                final CadHudPresentation.PanelLayout p = panel(x, y, 60, 60, 3, 1.3);
+                if (p.visible) {
+                    assertInside(p);
                 }
             }
         }
     }
 
-    @Test
-    public void aGlyphWhosePointIsOffScreenIsHiddenNeverClamped() {
-        // The leader runs off the right edge: the operation badge and Flip, past
-        // its tip end, would stand outside the viewport.
-        final CadHudPresentation.LeaderLayout l = layout(700, 1000, 1400, 1000, true);
-        assertTrue(l.valueVisible);
-        assertTrue("the value stands on the VISIBLE part", l.valueX <= 1080.0f);
-        assertEquals((700.0f + 1080.0f) * 0.5f, l.valueX, 1e-3f);
-        assertFalse(l.flipVisible);
-        // Wholly off screen: nothing is shown, nothing guessed.
-        final CadHudPresentation.LeaderLayout gone = layout(1200, 100, 1500, 100, true);
-        assertFalse(gone.valueVisible || gone.extentVisible || gone.operationVisible
-                || gone.flipVisible);
+    private static void assertInside(CadHudPresentation.PanelLayout p) {
+        assertTrue(p.centreX - p.hitWidth * 0.5f >= 0.0f);
+        assertTrue(p.centreY - p.hitHeight * 0.5f >= 0.0f);
+        assertTrue(p.centreX + p.hitWidth * 0.5f <= 1080.0f);
+        assertTrue(p.centreY + p.hitHeight * 0.5f <= 2000.0f);
     }
 
     @Test
-    public void flipIsLaidOutOnlyInOneSideAndTheSecondLeaderCarriesOnlyItsValue() {
-        assertFalse(layout(300, 1000, 700, 1000, false).flipVisible);
-        final CadHudPresentation.LeaderLayout second = CadHudPresentation.layoutLeader(300, 1000,
-                700, 1000, 1080, 2000, 180, 126, 40, 74, 126, 10, 8, false, false, false);
-        assertTrue(second.valueVisible);
-        assertFalse(second.extentVisible || second.operationVisible || second.flipVisible);
+    public void anArrowSeenEndOnStillPlacesThePanelDeterministically() {
+        final CadHudPresentation.PanelLayout a = panel(540, 1000, 0.2f, 0.1f, 2, 1.0);
+        final CadHudPresentation.PanelLayout b = panel(540, 1000, 0.0f, 0.0f, 2, 1.0);
+        assertTrue(a.visible && b.visible);
+        assertEquals("a sub-pixel direction reads as screen right", a.centreX, b.centreX, 0.0f);
+        assertEquals(1000.0f, b.centreY, 0.0f);
     }
 
     @Test
-    public void inATwoSidedModeTheExtentStandsPastTheTipNotOnTheOtherSidesLeader() {
-        final CadHudPresentation.LeaderLayout l = CadHudPresentation.layoutLeader(300, 1000,
-                700, 1000, 1080, 2000, 180, 126, 40, 74, 126, 10, 8, true, false, true);
-        assertTrue(l.extentVisible && l.operationVisible);
-        assertFalse(l.flipVisible);
-        assertTrue("past the tip end", l.extentX > 700.0f);
-        assertTrue("beyond the badge, in Flip's slot", l.extentX > l.operationX);
-        assertTrue("with the proxies apart", l.extentX - l.operationX >= 126.0f - 0.01f);
+    public void theHitAreaIsOneGroupProxyIndependentOfTheDrawnSize() {
+        final float hit = CadHudPresentation.HIT_DP * DENSITY;
+        for (int step = 0; step <= 24; step++) {
+            final double scale = SCALE_MIN + (SCALE_MAX - SCALE_MIN) * step / 24.0;
+            final CadHudPresentation.PanelLayout p = panel(300, 1000, 80, 0, 3, scale);
+            assertTrue("at least 48 dp each way", p.hitWidth >= hit && p.hitHeight >= hit);
+            assertTrue("covering the whole drawn plate",
+                    p.hitWidth >= p.plateWidth && p.hitHeight >= p.plateHeight);
+            // Every drawn glyph centre is owned by the ONE proxy, whatever the zoom.
+            for (int i = 0; i < 3; i++) {
+                final float gx = p.centreX
+                        + CadHudPresentation.panelIconOffsetDp(i, 3, scale) * DENSITY;
+                assertTrue(CadHudPresentation.panelOwnsTouch(p, gx, p.centreY));
+            }
+            assertFalse("the arrow's point is never the panel's",
+                    CadHudPresentation.panelOwnsTouch(p, 300, 1000));
+        }
+        // At the scale the drawn pitch would put three 48 dp proxies on top of
+        // each other: the reason there is one proxy, stated as numbers.
+        final float pitchDp = CadHudPresentation.panelIconOffsetDp(1, 3, 1.0)
+                - CadHudPresentation.panelIconOffsetDp(0, 3, 1.0);
+        assertTrue(pitchDp < CadHudPresentation.HIT_DP);
+        assertFalse(CadHudPresentation.panelOwnsTouch(new CadHudPresentation.PanelLayout(), 0, 0));
+    }
+
+    @Test
+    public void theAnnotationCollapsesWholeOnlyAtTheFloorAndWhenTheValueOutgrowsItsLeader() {
+        assertTrue("at the floor, a leader shorter than its value",
+                CadHudPresentation.annotationCollapsed(true, 40.0f, 90.0f));
+        assertFalse("at the floor, a long leader: a big model still reads",
+                CadHudPresentation.annotationCollapsed(true, 400.0f, 90.0f));
+        assertFalse("a short leader still shrinking with the camera: a thin extrusion up close",
+                CadHudPresentation.annotationCollapsed(false, 10.0f, 90.0f));
+        assertFalse(CadHudPresentation.annotationCollapsed(false, 400.0f, 90.0f));
     }
 
     @Test

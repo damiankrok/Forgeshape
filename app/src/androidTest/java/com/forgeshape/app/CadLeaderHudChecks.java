@@ -7,13 +7,14 @@ import android.widget.TextView;
 
 /**
  * Device-side checks of the extrude HUD's technical-drawing leader
- * (`CAD-FOUNDATION-C1`), shared by every class that used to assert the old
- * "value centred on the shaft" rule.
+ * (`CAD-FOUNDATION-C1`) and its one action panel (`CAD-FOUNDATION-C2`), shared
+ * by every class that asserts where the HUD stands.
  *
  * <p>Each check states a GEOMETRIC property of what is on screen against what
  * native projected — the value reads along its leader and stands on its
- * reading-up side, a glyph stands on the leader's line past an end, every
- * control is an unscaled, invisible touch proxy of at least 48 dp — rather than
+ * reading-up side; the action panel is ONE plate scaled as a unit, standing
+ * just past the arrow's drawn point and clear of its grab corridor, with ONE
+ * unscaled touch proxy of at least 48 dp covering it — rather than
  * re-running {@link CadHudPresentation}'s arithmetic and comparing it with
  * itself. Every method returns null when the property holds, or a message that
  * names the numbers when it does not, so a caller can assert or record it.
@@ -132,52 +133,104 @@ final class CadLeaderHudChecks {
     }
 
     /**
-     * An attached glyph: an invisible, unscaled proxy of >= 48 dp whose drawn
-     * glyph is the camera-attached size, standing ON the leader's line past
-     * the end named ({@code pastTip} true: past the tip end).
+     * The action panel (`CAD-FOUNDATION-C2`): the plate and its one proxy share
+     * a centre; the plate is scaled as ONE unit by the camera-attached visual
+     * scale and holds {@code icons} shown glyphs at their reference size; the
+     * proxy is unscaled, at least 48 dp each way and covers the plate; and the
+     * proxy stands clear of the arrow's grab corridor around native's projected
+     * arrow point. Null when all of that holds.
      */
-    static String glyphOnLeader(double[] tool, View control, View viewport, float density,
-                                boolean pastTip) {
-        final float[] l = leader(tool, false);
-        if (l == null) {
-            return "the leader does not project";
+    static String panelAtArrow(double[] tool, View canvas, View viewport, float density,
+                               int icons) {
+        if (tool[NativeViewport.CAD_EXTRUDE_HEAD_ON_SCREEN] == 0.0) {
+            return "the arrow's point does not project";
         }
-        final String proxy = proxy(control, density);
-        if (proxy != null) {
-            return proxy;
+        final View plate = canvas.findViewById(R.id.cad_extrude_panel_plate);
+        final View proxy = canvas.findViewById(R.id.cad_extrude_panel);
+        if (!plate.isShown() || !proxy.isShown()) {
+            return "the panel is not shown (plate " + plate.isShown() + ", proxy "
+                    + proxy.isShown() + ")";
         }
-        if (control.getBackground() != null) {
+        final String floor = proxy(proxy, density);
+        if (floor != null) {
+            return "panel " + floor;
+        }
+        if (proxy.getBackground() != null) {
             return "the touch proxy paints a background";
         }
-        final ImageView glyph = firstImage(control);
-        if (glyph == null) {
-            return "no glyph";
+        if (plate.isClickable()) {
+            return "the scaled plate takes touches";
         }
-        final int expected = CadHudPresentation.glyphPx(tool[NativeViewport.CAD_EXTRUDE_SCALE],
-                density);
-        if (Math.abs(glyph.getWidth() - expected) > 1 || Math.abs(glyph.getHeight() - expected) > 1) {
-            return "glyph " + glyph.getWidth() + "x" + glyph.getHeight() + " px, expected "
-                    + expected;
+        final float expected = CadHudPresentation.visualScale(
+                tool[NativeViewport.CAD_EXTRUDE_SCALE]);
+        if (Math.abs(plate.getScaleX() - expected) > 1e-4f
+                || plate.getScaleX() != plate.getScaleY()) {
+            return "plate scale " + plate.getScaleX() + "x" + plate.getScaleY() + ", expected "
+                    + expected + " both ways";
         }
-        final float[] c = centreIn(control, viewport);
-        float dx = l[2] - l[0];
-        float dy = l[3] - l[1];
-        final float length = (float) Math.hypot(dx, dy);
-        if (length < 1.0f) {
-            return null;  // seen end-on: nothing to be on
+        int shown = 0;
+        final int reference = CadHudPresentation.glyphPx(1.0, density);
+        final ViewGroup group = (ViewGroup) plate;
+        for (int i = 0; i < group.getChildCount(); i++) {
+            final View glyph = group.getChildAt(i);
+            if (glyph.getVisibility() != View.VISIBLE) {
+                continue;
+            }
+            shown++;
+            if (Math.abs(glyph.getWidth() - reference) > 1) {
+                return "a plate glyph is " + glyph.getWidth() + " px, not the reference "
+                        + reference + ": it was resized alone";
+            }
         }
-        dx /= length;
-        dy /= length;
-        final float off = Math.abs((c[0] - l[0]) * dy - (c[1] - l[1]) * dx) / density;
-        if (off > TOLERANCE_DP) {
-            return "glyph stands " + off + " dp off its leader's line";
+        if (shown != icons) {
+            return shown + " glyphs on the plate, expected " + icons;
         }
-        final float along = (c[0] - l[0]) * dx + (c[1] - l[1]) * dy;
-        if (pastTip ? along <= length : along >= 0.0f) {
-            return "glyph is not past the " + (pastTip ? "tip" : "base") + " end (along=" + along
-                    + ", length=" + length + ")";
+        // The plate's visual box, from its layout box, translation and scale
+        // about the (0, 0) pivot.
+        final int[] parent = new int[2];
+        final int[] port = new int[2];
+        ((View) plate.getParent()).getLocationInWindow(parent);
+        viewport.getLocationInWindow(port);
+        final float plateLeft = parent[0] + plate.getLeft() + plate.getTranslationX() - port[0];
+        final float plateTop = parent[1] + plate.getTop() + plate.getTranslationY() - port[1];
+        final float plateW = plate.getWidth() * plate.getScaleX();
+        final float plateH = plate.getHeight() * plate.getScaleY();
+        final float[] c = centreIn(proxy, viewport);
+        if (Math.abs(plateLeft + plateW * 0.5f - c[0]) > TOLERANCE_DP * density
+                || Math.abs(plateTop + plateH * 0.5f - c[1]) > TOLERANCE_DP * density) {
+            return "the plate is not centred on its proxy";
+        }
+        if (proxy.getWidth() + 1 < plateW || proxy.getHeight() + 1 < plateH) {
+            return "the proxy does not cover the plate";
+        }
+        if (plateLeft < -1 || plateTop < -1 || plateLeft + plateW > viewport.getWidth() + 1
+                || plateTop + plateH > viewport.getHeight() + 1) {
+            return "the plate is not wholly on screen";
+        }
+        final float hx = (float) tool[NativeViewport.CAD_EXTRUDE_HEAD_X];
+        final float hy = (float) tool[NativeViewport.CAD_EXTRUDE_HEAD_Y];
+        final float dx = Math.max(0.0f, Math.abs(hx - c[0]) - proxy.getWidth() * 0.5f);
+        final float dy = Math.max(0.0f, Math.abs(hy - c[1]) - proxy.getHeight() * 0.5f);
+        final float clearance = (float) Math.hypot(dx, dy) / density;
+        if (clearance < CadHudPresentation.ARROW_CORRIDOR_DP - TOLERANCE_DP) {
+            return "the proxy stands " + clearance + " dp from the arrow's point, inside its "
+                    + "grab corridor";
+        }
+        final float reach = (float) Math.hypot(hx - c[0], hy - c[1]) / density;
+        final float farthest = (CadHudPresentation.ARROW_CORRIDOR_DP
+                + CadHudPresentation.PANEL_CLEAR_DP + TOLERANCE_DP) / 1.0f
+                + Math.max(proxy.getWidth(), proxy.getHeight()) / density;
+        if (reach > farthest) {
+            return "the panel stands " + reach + " dp from the arrow's point: detached";
         }
         return null;
+    }
+
+    /** The panel's distance from the arrow's point to its centre, in dp; for records. */
+    static float panelReachDp(double[] tool, View canvas, View viewport, float density) {
+        final float[] c = centreIn(canvas.findViewById(R.id.cad_extrude_panel), viewport);
+        return (float) Math.hypot(tool[NativeViewport.CAD_EXTRUDE_HEAD_X] - c[0],
+                tool[NativeViewport.CAD_EXTRUDE_HEAD_Y] - c[1]) / density;
     }
 
     /** An unscaled touch proxy of at least 48 dp each way. */

@@ -2775,12 +2775,255 @@ void measurePerformance(Recorder& r) {
 
 }  // namespace
 
+// ---------------------------------------------------------------------------
+// CAD-FOUNDATION-C2 planar-face preflight: BEFORE reproductions
+// ---------------------------------------------------------------------------
+//
+// These cases ENCODE THE CURRENT BEHAVIOUR of the region model for the OWNER's
+// two sketches -- a circle crossing a rectangle, and a line-built protrusion
+// closed against a rectangle's edge -- plus two crossing circles and the
+// supported nested case. They are labelled BEFORE on purpose: the region model
+// is loop NESTING, not a planar arrangement (`forgeshape_sketch_region.h`), so
+// a crossing never splits a loop and a bounded cell whose boundary is made of
+// pieces of two source curves is not a region at all. A later planar-face
+// stage (artifacts/cad-foundation-c2/PLANAR_FACE_MODEL_PROPOSAL.md) is
+// expected to flip the BEFORE checks it supersedes -- deliberately, by name --
+// and keep PF-04 exactly as it is.
+
+namespace {
+
+SketchEntityId addLine(CadSketch* sketch, SketchPoint a, SketchPoint b) {
+    SketchLine line;
+    line.start = a;
+    line.end = b;
+    SketchEntityId id = kNoSketchEntity;
+    addSketchEntity(sketch, line, &id);
+    return id;
+}
+
+// Every edge of the loop comes from its own anchor entity: the loop is ONE
+// source curve, never pieces of two.
+bool loopIsOneSourceCurve(const ClosedProfile& loop) {
+    for (SketchEntityId owner : loop.edgeEntityId) {
+        if (owner != loop.anchorEntityId) {
+            return false;
+        }
+    }
+    return !loop.edgeEntityId.empty();
+}
+
+const ClosedProfile* loopOf(const SketchRegionExtraction& x, SketchEntityId anchor) {
+    for (const ClosedProfile& loop : x.loops.profiles) {
+        if (loop.anchorEntityId == anchor) {
+            return &loop;
+        }
+    }
+    return nullptr;
+}
+
+SketchEntityId regionAt(const SketchRegionExtraction& x, double u, double v) {
+    SketchEntityId id = kNoSketchEntity;
+    return sketchRegionAt(x, SketchPoint{u, v}, &id) ? id : kNoSketchEntity;
+}
+
+bool hasRejection(const SketchRegionExtraction& x, SketchEntityId anchor, CadStatus why) {
+    for (const ProfileRejection& rejection : x.loops.rejections) {
+        if (rejection.anchorEntityId == anchor && rejection.why == why) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void testPlanarFaceBefore(Recorder& r) {
+    // --- PF-01: a rectangle crossed by one circle ------------------------
+    // Rectangle 4 x 3 about the origin; circle r = 0.5 at (2, 0) straddles the
+    // right edge x = 2 at (2, +-0.5). A planar arrangement has THREE bounded
+    // faces: the rectangle minus the lens, the lens, the cap outside.
+    {
+        CadSketch sketch;
+        const SketchEntityId rect = addRect(&sketch, 0.0, 0.0, 4.0, 3.0);
+        const SketchEntityId circle = addCircle(&sketch, 2.0, 0.0, 0.5);
+        const SketchRegionExtraction x = extractSketchRegions(sketch);
+        const bool eachValidAlone =
+                validateCadSketch(sketch) == CadStatus::Ok
+                && extractSketchRegions(rectSketch(0.0, 0.0, 4.0, 3.0)).regions.size() == 1u
+                && extractSketchRegions(circleSketch(2.0, 0.0, 0.5)).regions.size() == 1u;
+        r.check("CADFC2_PF_01a_BEFORE_rectangle_and_crossing_circle_are_each_valid", eachValidAlone);
+        // The crossings are derivable (x = 2, y = +-sqrt(0.5^2 - 0^2)) but never
+        // computed: the rectangle is still its 4 corners, the circle its own
+        // 32-gon, and each loop is ONE source curve.
+        const ClosedProfile* rl = loopOf(x, rect);
+        const ClosedProfile* cl = loopOf(x, circle);
+        const bool unsplit = rl != nullptr && cl != nullptr && rl->polygon.size() == 4u
+                             && cl->polygon.size() == static_cast<size_t>(kSketchCircleSegments)
+                             && loopIsOneSourceCurve(*rl) && loopIsOneSourceCurve(*cl);
+        r.check("CADFC2_PF_01b_BEFORE_no_intersection_splits_either_loop", unsplit);
+        const bool twoRegions = x.regions.size() == 2u && x.loopsConflict(0, 1)
+                                && x.regions[0].status == CadStatus::Ok
+                                && x.regions[1].status == CadStatus::Ok
+                                && x.regions[0].holeAnchorIds.empty()
+                                && x.regions[1].holeAnchorIds.empty();
+        r.check("CADFC2_PF_01c_BEFORE_two_whole_loop_regions_not_three_faces", twoRegions);
+        // A tap resolves to the smallest WHOLE loop around the point: the lens
+        // and the cap outside the rectangle are both "the circle", so neither
+        // cell can be chosen on its own.
+        const bool taps = regionAt(x, -1.0, 0.0) == rect && regionAt(x, 1.8, 0.0) == circle
+                          && regionAt(x, 2.3, 0.0) == circle;
+        r.check("CADFC2_PF_01d_BEFORE_lens_and_outer_cap_both_tap_to_the_whole_circle", taps);
+        const bool refusal = validateRegionSelection(x, {regionRef(rect), regionRef(circle)})
+                                     == CadStatus::OverlappingRegions
+                             && validateRegionSelection(x, {regionRef(rect)}) == CadStatus::Ok
+                             && std::fabs(x.regions[0].area - 12.0) < 1e-9;
+        r.check("CADFC2_PF_01e_BEFORE_both_is_OverlappingRegions_rectangle_alone_ignores_circle",
+                refusal);
+        // Through the session: Finish succeeds, nothing is chosen (two
+        // regions), a lens tap selects the whole circle.
+        SessionDriver s;
+        const bool began = s.beginWorld(Workplane::XY);
+        const SketchEntityId sr =
+                began ? s.place(SketchTool::Rectangle, SketchPoint{0.0, 0.0}, SketchPoint{1.0, 1.0},
+                                rectangleAt(0.0, 0.0, 4.0, 3.0))
+                      : kNoSketchEntity;
+        const SketchEntityId sc = s.place(SketchTool::Circle, SketchPoint{2.0, 0.0},
+                                          SketchPoint{2.5, 0.0}, circleAt(2.0, 0.0, 0.5));
+        const bool finished = s.sketch.finish() == CadStatus::Ok;
+        const bool ambiguous = s.sketch.evaluateCandidate().status == CadStatus::AmbiguousProfile;
+        s.toggleAt(SketchPoint{1.8, 0.0});
+        r.check("CADFC2_PF_01f_BEFORE_session_finishes_ambiguous_and_a_lens_tap_takes_the_circle",
+                sr != kNoSketchEntity && sc != kNoSketchEntity && finished && ambiguous
+                        && s.sketch.regionSelected(sc) && !s.sketch.regionSelected(sr));
+        s.sketch.cancel();
+    }
+
+    // --- PF-02: a line-built protrusion closed against the rectangle ------
+    // Three lines (2,-0.5)->(3,-0.5)->(3,0.5)->(2,0.5) whose ends lie ON the
+    // rectangle's right edge, mid-edge. A planar arrangement has TWO faces:
+    // the rectangle and the 1 x 1 protrusion.
+    {
+        CadSketch sketch;
+        const SketchEntityId rect = addRect(&sketch, 0.0, 0.0, 4.0, 3.0);
+        const SketchEntityId l0 = addLine(&sketch, SketchPoint{2.0, -0.5}, SketchPoint{3.0, -0.5});
+        addLine(&sketch, SketchPoint{3.0, -0.5}, SketchPoint{3.0, 0.5});
+        addLine(&sketch, SketchPoint{3.0, 0.5}, SketchPoint{2.0, 0.5});
+        const SketchRegionExtraction x = extractSketchRegions(sketch);
+        // A rectangle edge is never a chain node, so the chain's two ends have
+        // degree 1: OpenProfile, anchored by its smallest line.
+        r.check("CADFC2_PF_02a_BEFORE_protrusion_chain_is_OpenProfile_T_junction_not_a_node",
+                validateCadSketch(sketch) == CadStatus::Ok && x.regions.size() == 1u
+                        && x.regions[0].outerAnchorId == rect
+                        && hasRejection(x, l0, CadStatus::OpenProfile));
+        r.check("CADFC2_PF_02b_BEFORE_protrusion_is_not_tappable",
+                regionAt(x, 2.5, 0.0) == kNoSketchEntity && regionAt(x, 1.0, 0.0) == rect);
+        // The variant whose end segments CROSS the edge is open the same way.
+        CadSketch crossing;
+        addRect(&crossing, 0.0, 0.0, 4.0, 3.0);
+        const SketchEntityId c0 =
+                addLine(&crossing, SketchPoint{1.5, -0.5}, SketchPoint{3.0, -0.5});
+        addLine(&crossing, SketchPoint{3.0, -0.5}, SketchPoint{3.0, 0.5});
+        addLine(&crossing, SketchPoint{3.0, 0.5}, SketchPoint{1.5, 0.5});
+        const SketchRegionExtraction cx = extractSketchRegions(crossing);
+        r.check("CADFC2_PF_02c_BEFORE_crossing_protrusion_chain_is_OpenProfile_too",
+                cx.regions.size() == 1u && hasRejection(cx, c0, CadStatus::OpenProfile));
+        // Drawn CLOSED as one polyline through the edge, it is a whole loop
+        // that conflicts with the rectangle: PF-01's behaviour, not a face.
+        CadSketch closed;
+        const SketchEntityId cr = addRect(&closed, 0.0, 0.0, 4.0, 3.0);
+        const SketchEntityId cp = addClosedPolyline(
+                &closed, {SketchPoint{1.5, -0.5}, SketchPoint{3.0, -0.5}, SketchPoint{3.0, 0.5},
+                          SketchPoint{1.5, 0.5}});
+        const SketchRegionExtraction px = extractSketchRegions(closed);
+        r.check("CADFC2_PF_02d_BEFORE_a_closed_crossing_polyline_is_a_conflicting_whole_loop",
+                px.regions.size() == 2u && px.loopsConflict(0, 1)
+                        && regionAt(px, 1.8, 0.0) == cp
+                        && validateRegionSelection(px, {regionRef(cr), regionRef(cp)})
+                                   == CadStatus::OverlappingRegions);
+        // Through the session: Finish succeeds on the rectangle ALONE and
+        // auto-selects it; the open protrusion is reported only as a
+        // rejection, so the user sees one region and no reason.
+        SessionDriver s;
+        const bool began = s.beginWorld(Workplane::XY);
+        const SketchEntityId sr =
+                began ? s.place(SketchTool::Rectangle, SketchPoint{0.0, 0.0}, SketchPoint{1.0, 1.0},
+                                rectangleAt(0.0, 0.0, 4.0, 3.0))
+                      : kNoSketchEntity;
+        SketchLine a;
+        a.start = SketchPoint{2.0, -0.5};
+        a.end = SketchPoint{3.0, -0.5};
+        SketchLine b;
+        b.start = SketchPoint{3.0, -0.5};
+        b.end = SketchPoint{3.0, 0.5};
+        SketchLine c;
+        c.start = SketchPoint{3.0, 0.5};
+        c.end = SketchPoint{2.0, 0.5};
+        const bool lines =
+                s.place(SketchTool::Line, SketchPoint{2.2, -0.5}, SketchPoint{2.8, -0.5}, a)
+                        != kNoSketchEntity
+                && s.place(SketchTool::Line, SketchPoint{3.0, -0.3}, SketchPoint{3.0, 0.3}, b)
+                           != kNoSketchEntity
+                && s.place(SketchTool::Line, SketchPoint{2.8, 0.5}, SketchPoint{2.2, 0.5}, c)
+                           != kNoSketchEntity;
+        const bool finished = s.sketch.finish() == CadStatus::Ok;
+        const size_t regions = s.sketch.regions().regions.size();
+        const bool tapped = s.toggleAt(SketchPoint{2.5, 0.0});
+        r.check("CADFC2_PF_02e_BEFORE_session_finishes_on_the_rectangle_alone",
+                sr != kNoSketchEntity && lines && s.sketch.sketch().entities.size() == 4u
+                        && finished && regions == 1u && s.sketch.regionSelected(sr) && !tapped);
+        s.sketch.cancel();
+    }
+
+    // --- PF-03: two crossing circles ---------------------------------------
+    // r = 1 at (-0.4, 0) and (0.4, 0). A planar arrangement has THREE bounded
+    // faces: two crescents and the lens.
+    {
+        CadSketch sketch;
+        const SketchEntityId a = addCircle(&sketch, -0.4, 0.0, 1.0);
+        const SketchEntityId b = addCircle(&sketch, 0.4, 0.0, 1.0);
+        const SketchRegionExtraction x = extractSketchRegions(sketch);
+        r.check("CADFC2_PF_03a_BEFORE_two_crossing_circles_are_two_conflicting_loops",
+                x.regions.size() == 2u && x.loopsConflict(0, 1)
+                        && loopIsOneSourceCurve(*loopOf(x, a))
+                        && loopIsOneSourceCurve(*loopOf(x, b)));
+        // Equal areas: the lens resolves to the first loop by anchor order --
+        // an ordering accident, not a face.
+        r.check("CADFC2_PF_03b_BEFORE_the_lens_taps_to_a_whole_circle_by_anchor_order",
+                regionAt(x, 0.0, 0.0) == a && regionAt(x, -1.2, 0.0) == a
+                        && regionAt(x, 1.2, 0.0) == b);
+        r.check("CADFC2_PF_03c_BEFORE_both_circles_is_OverlappingRegions",
+                validateRegionSelection(x, {regionRef(a), regionRef(b)})
+                        == CadStatus::OverlappingRegions);
+    }
+
+    // --- PF-04: the supported nested case stays exactly as it is ------------
+    {
+        CadSketch sketch;
+        const SketchEntityId o = addRect(&sketch, 0.0, 0.0, 4.0, 3.0);
+        const SketchEntityId a = addCircle(&sketch, -1.0, 0.0, 0.5);
+        const SketchEntityId b = addCircle(&sketch, 1.0, 0.0, 0.5);
+        const SketchRegionExtraction x = extractSketchRegions(sketch);
+        const SketchRegion* outer = findSketchRegion(x, o);
+        const bool nested = x.regions.size() == 3u && outer != nullptr
+                            && outer->holeAnchorIds == std::vector<SketchEntityId>{a, b}
+                            && !x.loopsConflict(0, 1) && !x.loopsConflict(0, 2)
+                            && regionAt(x, 0.0, 0.0) == o && regionAt(x, -1.0, 0.0) == a
+                            && regionAt(x, 1.0, 0.0) == b;
+        r.check("CADFC2_PF_04a_nested_rectangle_and_two_circles_is_three_regions", nested);
+        const bool union3 =
+                validateRegionSelection(x, {regionRef(o, {a, b}), regionRef(a), regionRef(b)})
+                == CadStatus::Ok;
+        r.check("CADFC2_PF_04b_nested_union_of_all_three_is_still_valid", union3);
+    }
+}
+
+}  // namespace
+
 int runCadFeatureSelfTests(CadFeatureSelfTestResult* out, int maxOut) {
     Recorder r{out, maxOut};
     // The kernel gate first: nothing below may rely on the seam before it passed.
     runKernelGate(r);
     testRegions(r);
     testRegionUnion(r);
+    testPlanarFaceBefore(r);
     testExtrusion(r);
     testChain(r);
     testSession(r);

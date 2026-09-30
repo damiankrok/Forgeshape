@@ -256,6 +256,14 @@ constexpr int kCadExtrudeArrowBarbs = 6;
 // annotations use, so the arrow reads as a measurement rather than as geometry.
 constexpr double kCadExtrudeArrowBaseTickFraction = 0.18;
 
+// The drawn arrow POINT of one side: `tip + axis * s * kCadExtrudeArrowHeadLengthFraction`,
+// the far end of the head, where `s` is the control world size
+// (`CadExtrudeControlScale::world`). The drawing ends the head there, the hit
+// test's corridor reaches exactly there, and the Android action panel
+// (`CAD-FOUNDATION-C2`) is anchored just past it -- one function, so the three
+// can never describe different arrows. Presentation only, like the scale.
+Vec3 cadExtrudeArrowPoint(const CadExtrudeSideAnchor& side, double controlWorld);
+
 // How far off the drawn arrow a pointer may land and still take it, in gizmo
 // REFERENCE units (dp).
 //
