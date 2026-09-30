@@ -1,44 +1,47 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.86.0
+**Status Version:** 0.87.0
 **Updated:** 2026-09-30
-**Latest closeout:** **`CAD-FOUNDATION-C1-UNION-HUD-R1` — `PASS-CAD-FOUNDATION-C1`**
-(2026-09-30). **A region selection is the union of its atomic regions, and the
-extrude HUD is a technical-drawing leader.** Record:
-`artifacts/cad-foundation-c1/SUMMARY.md` (BEFORE evidence beside it).
-**Visual feel is OWNER REVIEW REQUIRED** on a physical device.
+**Latest closeout:** **`CAD-FOUNDATION-C2` — `PASS-CAD-FOUNDATION-C2-HUD-PLANAR-BLOCKED`**
+(2026-09-30). **The extrude HUD's controls are one compact action panel at the
+arrow tip, and a label is written at the display precision; planar faces are
+blocked on a new identity.** Record: `artifacts/cad-foundation-c2/SUMMARY.md`.
+Visual feel is **OWNER REVIEW REQUIRED** on a physical device.
 
-- **Union of regions.** A tap toggles exactly the region under the finger; a
-  region beside its own hole is legal and means their union
-  (`mergeSelectedRegions`, one parity rule over the nesting tree, one prism per
-  component). Rectangle O + circles A, B: O+A is the rectangle with only B's
-  hole, O+A+B the solid rectangle, A+B two disks — native truth table
-  `CADFC1_REG_01..07`, device J1–J4. Touching/crossing loops stay refused by
-  name; nothing is dropped silently.
-- **No format change.** The stored selection is still the atomic
-  `ProfileRegionRef` list in `CADB` v5; no section, version, codec or fixture
-  byte moved; the independent corpus regenerates 44/44 byte-identical. An
-  older build refuses a region-beside-its-hole list by name.
-- **One scale fact, one revision rule.** The extrude overlay read
-  `metersPerPixel` at the world origin while the hit test and HUD read it at the
-  arrow's base; `cadExtrudeManipulatorScale` is now the one read, at the base.
-  A camera-caused overlay rebuild now advances the overlay revision.
-- **Leader HUD.** A dimension leader in the overlay's `Dimension` range; the
-  value stands above it, rotated and upright; glyphs stand on its line; every
-  control is an invisible, unscaled ≥ 48 dp proxy; visual band 0.40..1.60,
-  glyph `28 dp × clamp(scale)`, value `clamp(14 sp × scale, 11, 18)` — all
-  OWNER-TUNABLE. `EditorWorkspaceView` unchanged.
+- **One panel.** Extent, operation and (One Side) Flip are one rigid plate at
+  reference size, scaled as a unit, anchored past the arrow's drawn point
+  (`cadExtrudeArrowPoint`, tool-state slots 42..44), beside it when that does
+  not fit, hidden whole otherwise. One unscaled ≥ 48 dp group proxy opens one
+  action palette. The value follows the same scale (`clamp(14 sp × s, 9, 18)`),
+  and the annotation collapses whole at the scale floor when the value would
+  outgrow its leader. `EditorWorkspaceView` unchanged.
+- **Display precision.** `LengthUnit.formatWithUnit` uses the area label's
+  rule, 3 decimals in the display unit (`2.3593521118164062 m` → `2.359 m`);
+  editors keep every digit.
+- **Planar faces: Class B.** The region model is loop nesting; crossings are
+  never split, and `ProfileRegionRef` cannot name a lens or a protrusion
+  without reinterpreting v1–v5 records. PF-01..04 BEFORE checks in CAD_FEATURE;
+  the proposal is ONE `CADB` v6 with `CAD-SKETCH-IDENTITY-R1`
+  (`PLANAR_FACE_MODEL_PROPOSAL.md`).
+- **No format change.** Corpus 44/44 byte-identical.
 - **Gates.**
-  - Host: `HOST_SELFTESTS_OK (3797 checks, 0 failed)`; JVM 112/112.
-  - `CI FAST` `36725810385` (`262cfc1`) and `36728188104` (`1fa1bec`) green.
-  - `CI DEVICE` `36725813941` on `262cfc1`: 3/45 failed, all test-side,
-    root-caused in `SUMMARY.md` and fixed in `1fa1bec` (tests only).
-  - `CI DEVICE` `36728183647` on `1fa1bec`: **PASS**, 23/23 tokens,
-    `OK (45 tests)`, union list of five classes.
+  - Host: `HOST_SELFTESTS_OK (3813 checks, 0 failed)`; JVM 116/116.
+  - `CI FAST` `36742635591` (`f69f24e`) and `36744733518` (`cc99400`) green.
+  - `CI DEVICE` `36742639778` on `f69f24e`: 3/46 failed on one real defect
+    (proxy sized from the dp sum, 2 px short of the pixel-rounded plate),
+    fixed in `cc99400`.
+  - `CI DEVICE` `36744737415` on `cc99400`: **PASS**, 23/23 tokens,
+    `OK (46 tests)`, five-class union list; close/normal/far/very-far recorded.
   - **FullSharded NOT RUN.**
-- **OWNER APK:** `CI FAST` `36728188104` artifact `11103603365`,
-  `app-debug.apk` 10,879,410 bytes, SHA-256
-  `a600d784e4ed422a4ee92f3e3c7a50f683e9bcb7a837b7d552a767f44316d35b`.
+- **OWNER APK:** `CI FAST` `36744733518` artifact `11112660566`,
+  `app-debug.apk` 10,910,129 bytes, SHA-256
+  `81f5cd73195e4c59af11d89161a3881b30d9916ba8844fb693a148dcb4882b9e`.
+
+**Previous closeout:** **`CAD-FOUNDATION-C1-UNION-HUD-R1` — `PASS-CAD-FOUNDATION-C1`**
+(2026-09-30). A region selection is the union of its atomic regions; the
+extrude HUD became a technical-drawing leader (its glyph placement is
+superseded by C2). Record: `artifacts/cad-foundation-c1/SUMMARY.md`. Gates:
+`CI DEVICE` `36728183647` `OK (45 tests)`; FullSharded not run.
 
 **Previous closeout:** **`FUNCTION-COUNCIL-C1` (D1) — `PASS-FUNCTION-COUNCIL-C1-D1`**
 (2026-09-29). **Import GLB is refused in Sculpt.** Record:
@@ -4525,16 +4528,18 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Exactly one next step: the OWNER reviews `CAD-FOUNDATION-C1` on a physical
-device** with the APK above and the nine-point checklist in
-`artifacts/cad-foundation-c1/SUMMARY.md`, and returns the HUD's final sizes
-(band, glyph, value text, leader offsets). Those are presentation constants in
-`CadHudPresentation` and `forgeshape_cad_extrude_tool.h`; tuning them is a
-bounded follow-up, not a redesign.
+**Exactly one next step: the OWNER reviews `CAD-FOUNDATION-C2` on a physical
+device** with the APK above and the checklist in
+`artifacts/cad-foundation-c2/SUMMARY.md`, returns the panel's final sizes
+(band, plate, value text, collapse point), and decides the two questions in
+`PLANAR_FACE_MODEL_PROPOSAL.md` §8 (one combined `CADB` v6; splines as face
+boundaries). The sizes are presentation constants in `CadHudPresentation`;
+tuning them is a bounded follow-up, not a redesign.
 
-After that review the next major task is `CAD-SKETCH-IDENTITY-R1` (sketch ids,
-a body sketch table, feature → sketch references, sketch reuse, `CADB` v6),
-which this closeout deliberately did NOT start. It needs its own authorisation.
+After that review the next major task is ONE `CADB` v6 design covering
+`CAD-SKETCH-IDENTITY-R1` and planar faces, starting with the format-free slice
+PF-S1 (the derived arrangement). None of it is started; it needs its own
+authorisation.
 
 `FUNCTION-COUNCIL-R1`'s D2–D7 and the import-during-sketch observation stay
 recorded debt, not authorised work. The Council's other OWNER decisions are
