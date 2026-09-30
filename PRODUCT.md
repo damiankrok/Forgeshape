@@ -677,21 +677,28 @@ length is the distance it grows. Beside it runs a **dimension line**, the way a
 technical drawing measures a length: two short extension lines out of the
 arrow's base and tip, the line between them and a tick at each end. The **exact
 distance** stands just above that line, turned to run along it and never upside
-down; tap it to type one (the field opens level, where it is easy to type). On
-the same line stand small round icons: the **extent** past the base end (one
-icon for the current choice; tap it for One Side, Symmetric or Two Sides), and
-past the tip end the **operation** (a separate box for New Body, a solid with a
+down; tap it to type one (the field opens level, where it is easy to type). It
+is written to three decimals in the display unit — `2.359 m`, never a long
+string of binary digits — while the field it opens still holds every digit.
+The **extent**, the **operation** (a separate box for New Body, a solid with a
 plus for Add, a solid with a notch for Cut) and, for a One Side extrusion,
-**Flip**. Nothing forms a toolbar row. Zooming out makes the arrow head, the
-line, the icons and the number smaller with the model, and zooming in makes
-them larger, both within limits; the places you tap do not shrink — each is
-still a full fingertip wide, and the extra room is invisible. An icon whose
-place is off the screen is not shown rather than pushed to the edge. The
-choices the extent and operation icons open are an ordinary, readable panel;
-with **Tool labels** turned on in *Settings → Interface*, those choices carry a
-one-word caption. A distance typed at the arrow and the same number typed in
-the panel are the same thing; there is one extrusion, and both places show it.
-These sizes are provisional and are being tuned on a physical phone.
+**Flip** are one small **panel** just past the arrow's point: one plate, its
+icons always together and always the same distance apart. Tap anywhere on it
+and one readable panel opens with every choice at full size — One Side,
+Symmetric or Two Sides; the operations this sketch can make; Flip. Zooming out
+makes the arrow head, the line, the panel and the number smaller with the
+model, and zooming in makes them larger, both within limits; the place you tap
+does not shrink — the panel is always at least a full fingertip wide, and the
+extra room is invisible. When the panel does not fit past the arrow's point it
+stands beside it; when it cannot stand whole anywhere near the arrow it is not
+shown at all, never cut in half or pushed away from the arrow. Far enough out
+that the number would be wider than the line it measures, the number and the
+panel step aside together, and the exact fields stay one tap away on the
+panel toggle. With **Tool labels** turned on in *Settings → Interface*, the
+choices carry a one-word caption. A distance typed at the arrow and the same
+number typed in the panel are the same thing; there is one extrusion, and both
+places show it. These sizes are provisional and are being tuned on a physical
+phone.
 
 **New Body, Add or Cut.** A sketch on one of the three planes makes a new body —
 New Body is the only operation there, and the badge simply says so. A sketch on
@@ -705,7 +712,7 @@ each also recognisable by its icon — and when the result would not make sense
 (an Add that does not touch the body, a Cut that misses it or would remove all
 of it) the operation badge says so by name and Extrude is not offered.
 
-The dimension line, its number and its icons **follow** the arrow through a
+The dimension line, its number and the panel **follow** the arrow through a
 drag, an orbit and a zoom, and so does the **Edit Sketch** control below. When
 the line runs off the screen, the number stands on the part of it that is still
 visible.

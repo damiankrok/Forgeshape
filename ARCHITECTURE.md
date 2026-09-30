@@ -693,26 +693,33 @@ the repeat is capped and reset by any settled pass, which is what keeps it layou
 readiness rather than a poll.
 
 **The canvas CAD HUD** (`CadExtrudeCanvasView`, `CAD-VERTICAL-SLICE-R1`,
-reshaped by `CAD-FOUNDATION-C1`) is a technical-drawing annotation on the
-leader native draws and projects (`cadExtrudeToolState` slots 32..41), not a
-row. Each control is its own child of the full-overlay container: the extent
-control, the operation badge and Flip are `LinearLayout` touch PROXIES of at
-least 48 dp with no background, holding a glyph `ImageView` whose own disc
-(`bg_hud_glyph`, `bg_hud_glyph_invalid`) is the only thing drawn; the value is
-a transparent 48 dp `TextView` rotated to its leader. `CadHudPresentation` is
-the pure-Java policy, proven on the JVM: the glyph is `28 dp × clamp(scale,
-0.40, 1.60)`, the value `clamp(14 sp × scale, 11, 18)`, the proxy 48 dp at
-every scale; `readingAngleDegrees` keeps the value upright; `clipToViewport`
-stands it on the VISIBLE part of its leader; `layoutLeader` places the value
-above the line and each glyph on the line past an end, spaced so proxies never
-overlap, and hides — never clamps — a glyph whose point is off screen;
+reshaped by `CAD-FOUNDATION-C1` and `CAD-FOUNDATION-C2`) is two things over
+the viewport. The VALUE is a transparent 48 dp `TextView` rotated to the
+leader native draws and projects (`cadExtrudeToolState` slots 32..41), written
+by `LengthUnit.formatWithUnit` at the display precision. The ACTION PANEL is
+one plate (`cad_extrude_panel_plate`, `bg_hud_panel`) holding the extent,
+operation and (One Side) Flip glyphs at their REFERENCE size, scaled as one
+unit about its (0, 0) pivot and never clickable, plus one invisible, unscaled
+group proxy (`cad_extrude_panel`, ≥ 48 dp, covering the plate) that opens one
+action palette (`cad_extrude_actions_palette`: the extent row, the operation
+row of what native offers, Flip). The panel is anchored to the arrow's drawn
+point (slots 42..44, from `cadExtrudeArrowPoint` — the same point the drawing
+ends the head at and the hit test grabs to). `CadHudPresentation` is the
+pure-Java policy, proven on the JVM: `visualScale` is the one multiplier
+(0.40..1.60); `panelReferenceWidthDp`/`panelIconOffsetDp` fix the plate's
+internal layout; `layoutPanel` stands the proxy one arrow corridor (24 dp +
+4 dp) past the point along the arrow, else beside it away from the leader,
+else toward it, else hides it whole; `panelOwnsTouch` states that the one
+proxy owns every glyph; `valueTextSp` is `clamp(14 sp × visualScale, 9, 18)`;
+`annotationCollapsed` hides values and panel together at the scale floor when
+the value outgrows its leader; `readingAngleDegrees`, `clipToViewport` and
+`layoutLeader` stand the value above the VISIBLE part of its leader;
 `captionShown` gives Tool Labels captions to palette choices only. The view
 measures, asks, and places through `ViewportAnchorSpace`; it projects nothing.
-The Two Sides value stands above its own leader; the retained-sketch Edit
-Sketch control stays a lone capsule at `cadBodySketchAnchor` with its compact
-24..32 dp glyph (`loneGlyphDp`). An open palette is centred under the proxy
-that opened it; a closed one is `INVISIBLE`, so it is already laid out when it
-opens, and takes no touch.
+The retained-sketch Edit Sketch control stays a lone capsule at
+`cadBodySketchAnchor` with its compact 24..32 dp glyph (`loneGlyphDp`). The
+open palette is centred under the panel; a closed one is `INVISIBLE`, so it is
+already laid out when it opens, and takes no touch.
 
 **What a sketch shows is one statement** (`SketchChromePolicy`,
 `CAD-VERTICAL-SLICE-R1`): in Editing the Tool Rail carries the drawing tools and

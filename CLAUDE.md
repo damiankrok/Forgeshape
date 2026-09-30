@@ -381,13 +381,15 @@ on the host, with no device, and is the fast native loop.
   camera pulls back and saturates at both ends. `metersPerPixel` is read ONCE
   per frame, at the manipulator's own BASE anchor (`cadExtrudeManipulatorScale`
   through `SketchSession::extrudeViewFacts`), and that ONE fact sizes the drawn
-  arrowhead, the leader, the hit test's head extension and the Android glyphs
-  and value text alike — never at the world origin, never read twice — and
-  never a HIT AREA: a glyph is `28 dp × clamp(scale, 0.40, 1.60)` and the value
-  `clamp(14 sp × scale, 11, 18)` while every control is an INVISIBLE touch
-  proxy of at least 48 dp that paints nothing and is never `setScale`d, so the
-  interactive floor does not depend on the band at all
-  (`CadHudPresentationTest` pins both on the JVM). A camera-caused overlay
+  arrowhead, the leader, the hit test's head extension and the Android action
+  panel and value text alike — never at the world origin, never read twice —
+  and never a HIT AREA: the panel's plate is its reference size ×
+  `clamp(scale, 0.40, 1.60)` and the value `clamp(14 sp × that, 9, 18)` while
+  every control is an INVISIBLE touch proxy of at least 48 dp that paints
+  nothing and is never `setScale`d, so the interactive floor does not depend on
+  the band at all (`CadHudPresentationTest` pins both on the JVM). The arrow's
+  drawn POINT is one function (`cadExtrudeArrowPoint`) shared by the drawing,
+  the hit test and the panel's anchor (tool-state slots 42..44). A camera-caused overlay
   rebuild (another `worldPerUnit` or other view facts) advances the overlay
   revision, so the renderer's revision-gated upload never keeps a previous
   zoom's vertices. The hit
@@ -576,28 +578,37 @@ on the host, with no device, and is the fast native loop.
   badge, and the toolbar's Extrude is WITHDRAWN (a control that cannot succeed
   is not drawn); the precision surface's pinned Extrude stays, because it
   submits a typed depth first, and native still refuses an invalid commit.
-- **The canvas CAD HUD is a technical-drawing annotation, and Ready withdraws
-  the drawing chrome** (`CAD-VERTICAL-SLICE-R1`, reshaped by
-  `CAD-FOUNDATION-C1`). The frame draws a dimension LEADER beside the shaft —
-  extension lines, a dimension line, 45° ticks — in the overlay's existing
-  `Dimension` range, standing on the reading-up side of the shaft
-  (`cadExtrudeLeaderSide`, camera-derived presentation); native projects it
-  (`cadExtrudeToolState` slots 32..41). There is NO row and no capsule: the
+- **The canvas CAD HUD is a technical-drawing annotation plus ONE action
+  panel, and Ready withdraws the drawing chrome** (`CAD-VERTICAL-SLICE-R1`,
+  reshaped by `CAD-FOUNDATION-C1` and `CAD-FOUNDATION-C2`). The frame draws a
+  dimension LEADER beside the shaft — extension lines, a dimension line, 45°
+  ticks — in the overlay's existing `Dimension` range, standing on the
+  reading-up side of the shaft (`cadExtrudeLeaderSide`, camera-derived
+  presentation); native projects it (`cadExtrudeToolState` slots 32..41). The
   exact value is text standing ABOVE its leader on the visible part of the
   line, rotated to it and kept upright (`readingAngleDegrees`: `[-90°, 90°)`,
-  a vertical line reads bottom to top); the extent control stands on the
-  leader's line past its base end (past its tip in Symmetric and Two Sides,
-  where past the base is the other side's leader), the operation badge
-  (New Body / Add / Cut — only what native offers) and Flip (One Side only)
-  past its tip end, spaced so no two 48 dp proxies overlap. Two Sides puts each
-  value above its OWN leader. All placement arithmetic is the pure
-  `CadHudPresentation` (JVM-pinned); the view only places proxies. Meaning is
-  carried by icon SHAPE, selected state and content description, with colour
-  (Add success, Cut error) only as a second carrier. The palettes are ordinary
-  readable screen chrome, and Tool Labels captions THEM — never a glyph
-  attached to the drawing. The typed-value editor opens screen-aligned at the
-  value's point. All sizes are OWNER-TUNABLE presentation, decided on a
-  physical device. `SketchChromePolicy` is the one
+  a vertical line reads bottom to top), written at the display precision
+  (`LengthUnit.formatWithUnit`: 3 decimals in the display unit, the rule the
+  area label already used — never the double's round-trip expansion; editors
+  keep every digit). Two Sides puts each value above its OWN leader. The
+  extent, the operation (New Body / Add / Cut) and Flip (One Side only) are ONE
+  compact ACTION PANEL (`CAD-FOUNDATION-C2`): a rigid plate laid out once at
+  its reference size and scaled as ONE unit, anchored just past the arrow's
+  drawn point with its proxy clear of the arrow's grab corridor, beside the
+  point when past it does not fit, and shown WHOLE or not at all — never an
+  icon scattered, clamped away or hidden alone. The plate takes no touch; ONE
+  unscaled ≥ 48 dp group proxy covers it and opens ONE action palette (extent
+  choices, the operations native offers, Flip) of ordinary readable screen
+  chrome, because three 48 dp proxies on shrunken glyphs would overlap. The
+  whole annotation — values and panel together — collapses only when native
+  reports the scale clamped at its floor AND the value is wider than its
+  leader (`annotationCollapsed`). All placement arithmetic is the pure
+  `CadHudPresentation` (JVM-pinned); the view only places. Meaning is carried
+  by icon SHAPE, selected state and content description, with colour (Add
+  success, Cut error) only as a second carrier; Tool Labels captions the
+  palette — never a glyph on the plate. The typed-value editor opens
+  screen-aligned at the value's point. All sizes are OWNER-TUNABLE
+  presentation, decided on a physical device. `SketchChromePolicy` is the one
   statement of what a sketch shows: in Ready the Tool Rail, the orientation
   navigator and the Line dimension are ABSENT, Back to Sketch and Cancel stay,
   and Finish Sketch no longer opens the precision surface — the exact fields
