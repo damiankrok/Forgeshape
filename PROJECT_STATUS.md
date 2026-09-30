@@ -1,36 +1,40 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.90.0
+**Status Version:** 0.91.0
 **Updated:** 2026-09-30
-**Latest closeout:** **`CAD-V6-S1-C1-ID-LIFETIME-R1` — `PASS-CAD-V6-S1-C1-ID-LIFETIME`**
-(2026-09-30), **TECH PASS / V6 INTERMEDIATE BRANCH / NOT MERGED.** On
-`feature/cad-v6-sketch-face-r1` only; `main` is unchanged at `6c9f156`.
-**A feature id and a sketch id are unique along ONE FORWARD HISTORY BRANCH,
-and that is now enforced, not incidental.** Record:
-`artifacts/cad-v6-s1-c1/SUMMARY.md` (BEFORE.md and five BEFORE checks first).
+**Latest closeout:** **`CAD-V6-S2-PLANAR-RUNTIME-R1` — `PASS-CAD-V6-S2-PLANAR-RUNTIME`**
+(2026-09-30), **TECH PASS / INTERMEDIATE V6 BRANCH / NOT MERGED / OWNER REVIEW
+APK READY.** On `feature/cad-v6-sketch-face-r1` only; `main` is unchanged at
+`6c9f156`. **A sketch whose curves cross is extruded by the atomic faces the
+user taps**, for New Body, Add and Cut, and a PlanarFaces project opens.
+Record: `artifacts/cad-v6-s2/SUMMARY.md` (BEFORE.md first).
 
-- **Measured before.** Undo rewinds both high-water marks with the snapshot and
-  the next Add re-mints feature 2 / sketch 2; the redo step holds the undone
-  identity until the minting commit clears it; cancelled edits burn nothing;
-  Undo to a saved v1 state is byte- and fingerprint-equal.
-- **Decision: Model A (history-branch identity), made structural.**
-  `CadBody::applyState`, the one door every committed CAD edit takes, refuses to
-  LOWER either mark (`HighWaterInvalid`), so every Undo-reachable state holds
-  only ids below the current marks and a re-mint can collide only with the redo
-  side its own commit clears. Model B was rejected on measurement: a floor kept
-  in the state makes Undo-to-saved read unsaved and write `CADB` v6
-  (`CADV6C1_IDL_08`); a floor outside it is a second allocator truth. Nothing
-  outside a snapshot holds one of these ids across an Undo (inventory in
-  `BEFORE.md`). The one definition is the `CadSketchId` comment.
-- **Tests.** `CADV6C1_IDL_B01..B05` and `IDL_01..10` (forward delete, Undo,
-  Redo, Undo + new branch, two-level Undo, cancel, save/reopen, Undo-to-saved,
-  shared sketch, feature-face and cross-body `TopoRef` support).
-- **Format.** No `CADB` layout, version or fixture change; 56/56 corpus parity.
-- **Gates.** Host `HOST_SELFTESTS_OK (3907 checks, 0 failed)` (CAD_FEATURE
-  263 → 278); NDK debug + release built locally; release guard 0/0. `CI FAST`
-  `36775468595` on the tested candidate `ab5e071`: **success** (build, JVM
-  tests, release guard, `FORGE_CORPUS_PARITY` 56/56, device-free guards).
-  **CI DEVICE NOT RUN. FullSharded NOT RUN.** S2 not started.
+- **Fragment side tokens.** A union-boundary piece of a source edge is its own
+  side face with its own token (`CadFaceToken` + two `ArrangementCut`s); a
+  whole edge keeps the legacy token. `CADB` v6 FACE code 4, v6-only; codes
+  1..3 and all 56 earlier fixtures unchanged; `cad_fragment_support_v6` makes
+  57/57. No v7.
+- **Runtime.** `mergePlanarFaces` → `derivePlanarFeature` → `appendPrism`;
+  `sketchRequiresPlanarFaces` chooses the mode at Finish; tap, preview, commit,
+  reopen and Edit Sketch all work on faces; a topology edit that loses a face
+  is refused by name; `runtimeCanEvaluateProject` no longer refuses faces.
+- **Stale support chooser fixed.** `refreshChosenSupport` re-validates at
+  confirm; a scene-changing Undo/Redo cancels the chooser.
+- **Gates.** Host `HOST_SELFTESTS_OK (3934 checks, 0 failed)`; release guard
+  PASS; JVM tests pass; corpus 57/57. `CI DEVICE` `36790265291` on `67f4962`
+  (CadPlanarFaceRuntimeTest, CadVerticalSliceTest, SketchExtrudeTest,
+  JniBoundaryHardeningTest): 27/29 — the two failures were the new test's own
+  1% bound against a measured 1.03% chord deficit, fixed test-only in
+  `10a4e4d`; `CI DEVICE` `36792102052` on `10a4e4d`
+  (CadPlanarFaceRuntimeTest): **PASS 6/6**. `CI FAST`: see the SUMMARY.
+  **FullSharded NOT RUN.** S3 not started.
+
+**Previous closeout:** **`CAD-V6-S1-C1-ID-LIFETIME-R1` — `PASS-CAD-V6-S1-C1-ID-LIFETIME`**
+(2026-09-30), TECH PASS / V6 INTERMEDIATE BRANCH / NOT MERGED. A feature id and
+a sketch id are unique along ONE FORWARD HISTORY BRANCH (Model A, made
+structural: `CadBody::applyState` refuses to lower either high-water mark).
+Record: `artifacts/cad-v6-s1-c1/SUMMARY.md`. Gates: `CI FAST` `36775468595` on
+`ab5e071`.
 
 **Previous closeout:** **`CAD-V6-S1-MODEL-CODEC-R1` — `PASS-CAD-V6-S1-MODEL-CODEC`**
 (2026-09-30), TECH PASS / INTERMEDIATE BRANCH / NOT MERGED. A CAD Body's
@@ -3932,19 +3936,11 @@ found lives in Git history.
   (20 derivations of a 64 × 64 grid inside CAD_FEATURE, ~0.5–0.7 s on the host
   `-O1` build). S1 deliberately did not multiply it and did not add another;
   it should move off the startup path when the suite is next reorganised.
-- **A face-selection project refused on load reports `MissingRequiredSection`**
-  (mapped to "damaged" above JNI), the `runtimeCanEvaluateProject` code, not a
-  dedicated one. S2 lifts the refusal by regenerating faces; until then the
-  name is imprecise.
-- **A support-chooser selection survives an Undo and is not re-resolved at
-  confirm** (`confirmChosenSupportLocked` → `beginOnFace` trusts the stored
-  `TopoRef` and world frame). Found by `CAD-V6-S1-C1`; not an id-lifetime
-  defect. Worst case: a staged sketch framed on a face that has moved or gone.
-  Every commit re-validates the support, so it cannot land on the wrong face,
-  and it can never see a re-minted id (only a session commit mints, and every
-  session begin cancels the chooser). Id lifetime itself is settled (the
-  `CadSketchId` comment); a delete-feature or delete-sketch command inherits
-  it through `CadBody::applyState`.
+- **A curved face's solid is its chord polygon** (`CAD-V6-S2`). A face row's
+  area is exact (the arrangement integrates arcs), while the extruded solid is
+  short of it by the chord deficit — measured 0.50%–1.03% of the curved part
+  on CI DEVICE `36792102052`. That is the existing tessellation rule, not a new
+  one; it is recorded because the two numbers the user can read differ.
 
 **FUNCTION-COUNCIL-R1 defects still open** (source-confirmed; the evidence is
 in `artifacts/function-council-r1/COUNCIL_FINDINGS.md` §1). D1 was closed by
@@ -4566,16 +4562,13 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Exactly one next step: `CAD-V6-S2` — runtime wiring of `CADB` v6 on the same
-branch `feature/cad-v6-sketch-face-r1`**: regenerate a solid from a
-`PlanarFaces` selection (a face boundary → polygon with holes → prism, fragment
-side-face tokens and the extended lineage rule), lift the load refusal, and
-switch the session's tap, preview and commit to faces for a sketch with a
-crossing, touching or T-junction (loop regions otherwise), with the JNI it
-needs. It needs its own authorisation. The branch merges to `main` only after
-the completed v6 migration passes the Tier-5 aggregate once. No spline-bounded
-face in the first release (OWNER). The C2 physical-device review can happen in
-parallel and only tunes presentation constants.
+**Exactly one next step: `CAD-V6-S3` — retained-sketch mobile UX on the same
+branch `feature/cad-v6-sketch-face-r1`**: creating, sharing, deleting and
+browsing a CAD Body's retained sketches from the UI. It needs its own
+authorisation. The branch merges to `main` only after the completed v6
+migration passes the Tier-5 aggregate once. No spline-bounded face in the first
+release (OWNER). The C2 physical-device review and the S2 OWNER APK review can
+happen in parallel and only tune presentation constants.
 
 `FUNCTION-COUNCIL-R1`'s D2–D7 and the import-during-sketch observation stay
 recorded debt, not authorised work. The Council's other OWNER decisions are

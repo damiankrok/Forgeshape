@@ -101,8 +101,30 @@ the stored selection kind and the regenerated solid's volume and shell count:
   - JVM unit tests pass;
   - androidTest compiles;
   - corpus 57/57.
-- **CI DEVICE** (focused: CadPlanarFaceRuntimeTest, CadVerticalSliceTest,
-  SketchExtrudeTest, JniBoundaryHardeningTest): _pending_.
+- **CI DEVICE, first run** — `36790265291` on `67f4962`, focused on
+  CadPlanarFaceRuntimeTest, CadVerticalSliceTest, SketchExtrudeTest and
+  JniBoundaryHardeningTest: **27 of 29 passed.**
+  - Startup was clean: 23/23 self-test tokens and 0 failure lines.
+  - The two failures were J1 and J3. Each lens volume was 1.03% short of the
+    exact circle segment, against the new test's own two-sided 1% bound.
+  - A face row's area is exact because the arcs are integrated. The solid is
+    built from chords, and a chord lies inside a convex arc, so the shortfall
+    is expected geometry and not a product fault.
+  - Fixed test-only in `10a4e4d`. The volume must sit on the chord side of the
+    exact value, and within 2% of the curved part only.
+  - Every other class passed on this product code.
+- **CI DEVICE, re-run** — `36792102052` on `10a4e4d`, CadPlanarFaceRuntimeTest
+  only: **PASS, 6 of 6, 83 s**, with 23/23 tokens.
+  - Measured chord deficits as a fraction of the curved part:
+
+    | Solid | Deficit |
+    | --- | --- |
+    | Lens (J1, J3) | 1.028% |
+    | Disk (J4) | 0.603% |
+    | Protrusion bump (J2) | 0.500% |
+    | Face-sketch lens, Add and Cut (J6) | 0.888% each, on opposite sides |
+
+  - The J5 project is 616 bytes.
 - **CI FAST** (the one final run): _pending_.
 - **OWNER APK:** _pending_.
 - **FullSharded: NOT RUN** (out of S2 scope).
