@@ -1,7 +1,7 @@
 # ForgeShape — Project Status
 
 **Status Version:** 0.85.0
-**Updated:** 2026-09-29
+**Updated:** 2026-09-30
 **Latest closeout:** **`FUNCTION-COUNCIL-C1` (D1) — `PASS-FUNCTION-COUNCIL-C1-D1`**
 (2026-09-29). **Import GLB is refused in Sculpt.** Record:
 `artifacts/function-council-c1-d1/SUMMARY.md`.
@@ -32,7 +32,31 @@
   - Host `GLTF` 282, `SCENE` 175 and `PROJECT` 256 checks, 0 failed.
   - **FullSharded NOT RUN.**
 
-**Latest audit:** **`FUNCTION-COUNCIL-R1` — `PASS-FUNCTION-COUNCIL-R1`**
+**Latest audit:** **`FABLE-CAD-ARCHITECTURE-AUDIT-R1` —
+`PASS-FABLE-CAD-ARCHITECTURE-AUDIT-R1`** (2026-09-30). A read-only CAD
+workflow and architecture audit of `509de02`; no product, test, script,
+workflow, build or format byte changed, no emulator suite ran. Record:
+`artifacts/fable-cad-architecture-audit-r1/EXECUTIVE_SUMMARY.md` (twelve
+files).
+
+- **The CAD truth model is sound; three sentences around it are wrong.** A
+  selection may not stand beside its own hole (`forgeshape_sketch_region.cpp:329-334`)
+  and a viewport tap silently DROPS the conflicting region
+  (`forgeshape_sketch_session.cpp:1318-1327`), so rectangle + one circle cannot
+  be expressed; the extrude HUD's 48 dp hit box IS its drawn box, so six floors
+  hold it at screen size; a sketch is a value inside its feature with no
+  identity, so it can be neither shown after commit nor reused. Recommended
+  (not implemented): a union-of-atomic-regions rule with no `CADB` byte
+  change, a `Dimension`-leader HUD with drawn ≠ hit, and a sketch identity
+  (`CADB` v6). Five OWNER decisions are in `OWNER_DECISIONS.md`.
+- **One comment is contradicted by code:** the extrude overlay reads
+  `metersPerPixel` at the world origin (`forgeshape_jni.cpp:1859-1862`) while
+  the hit test and HUD read it at the anchor (`:4854`); `sketch_session.cpp:2004-2010`
+  says they are one number. Runtime magnitude unverified (gap G1).
+- Council D2, D3, D5, D6 are still in source; D1 is fixed. Six dead exports
+  and 18 unguarded test-only exports still ship.
+
+**Previous audit:** **`FUNCTION-COUNCIL-R1` — `PASS-FUNCTION-COUNCIL-R1`**
 (2026-09-29). A read-only function, ownership and test-cost audit of `a1b50f2`.
 Its eight artifacts are in `artifacts/function-council-r1/`, copied by content
 from the audit commit `fdc3818` without that branch's history.
