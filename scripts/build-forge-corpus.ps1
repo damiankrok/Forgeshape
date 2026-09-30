@@ -1380,6 +1380,19 @@ function Add-CadFragmentCycle {
     }
 }
 
+# A v6 FACE (7g): the kind code, the edge, and -- for code 4, a FRAGMENT side
+# (CAD-V6-S2) -- the two cuts that bound the piece, in the source's order.
+function Add-CadFaceV6 {
+    param($Buffer, $Support)
+    Add-U8  $Buffer $Support.FaceKindCode
+    Add-U32 $Buffer ([uint32] $Support.EdgeEntityId)
+    Add-U32 $Buffer ([uint32] $Support.EdgeLocalIndex)
+    if ($Support.FaceKindCode -eq 4) {
+        Add-CadCut $Buffer $Support.FragmentStart
+        Add-CadCut $Buffer $Support.FragmentEnd
+    }
+}
+
 function Add-CadSketchV6 {
     param($Buffer, $Sketch)
     Add-U32 $Buffer ([uint32] $Sketch.SketchId)
@@ -1389,16 +1402,12 @@ function Add-CadSketchV6 {
         2 {
             Add-U64 $Buffer ([uint64] $Sketch.Support.ProducerObjectId)
             Add-U32 $Buffer ([uint32] $Sketch.Support.FeatureId)
-            Add-U8  $Buffer $Sketch.Support.FaceKindCode
-            Add-U32 $Buffer ([uint32] $Sketch.Support.EdgeEntityId)
-            Add-U32 $Buffer ([uint32] $Sketch.Support.EdgeLocalIndex)
+            Add-CadFaceV6 $Buffer $Sketch.Support
             Add-U64 $Buffer ([uint64] $Sketch.Support.LineageToken)
         }
         3 {
             Add-U32 $Buffer ([uint32] $Sketch.Support.FeatureId)
-            Add-U8  $Buffer $Sketch.Support.FaceKindCode
-            Add-U32 $Buffer ([uint32] $Sketch.Support.EdgeEntityId)
-            Add-U32 $Buffer ([uint32] $Sketch.Support.EdgeLocalIndex)
+            Add-CadFaceV6 $Buffer $Sketch.Support
             Add-U64 $Buffer ([uint64] $Sketch.Support.LineageToken)
         }
     }
@@ -1639,6 +1648,86 @@ function New-CadMixedSelectionFile {
         -DirectionCode 1 -Depth 0.25 -Second 0.0 -SelectionKind 2 -Faces @(New-CadTwoCircleLensFace)
     return New-CadV6File (New-CadV6Body -NextSketchId 3 -NextFeatureId 3 -Sketches @($root, $onCap) `
         -Features @($base, $lens))
+}
+
+# ---------------------------------------------------------------------------
+# CAD-V6-S2: a FRAGMENT side face (7g FACE code 4) and the PlanarFaces lineage
+# ---------------------------------------------------------------------------
+#
+# A PlanarFaces feature's face list is: CapPlane, CapFar, then ONE Side per
+# fragment of its union's boundary -- component by component in canonical
+# order, the outer cycle's fragments in its canonical walk, then each hole's.
+# For a selection of ONE face that union is the face itself, so its side list
+# is exactly the stored outer cycle, fragment for fragment. A fragment that is
+# its whole source edge wears the 7c whole-edge code; a proper piece wears
+#
+#   0x03 << 56 | (FNV-1a 64 over its v6 FACE bytes after the kind: edge entity
+#                 u32, edge local u32, CUT start, CUT end) & (2^56 - 1)
+#
+# and the feature's signature is 7c's rule over that list with the selection's
+# anchor 0 (a face selection has none).
+
+function Add-FnvBytes {
+    param([System.Numerics.BigInteger] $Hash, [byte[]] $Bytes)
+    $prime = [System.Numerics.BigInteger]::Parse('1099511628211')
+    foreach ($b in $Bytes) {
+        $Hash = [System.Numerics.BigInteger]::op_ExclusiveOr($Hash, [System.Numerics.BigInteger] $b)
+        $Hash = [System.Numerics.BigInteger]::op_BitwiseAnd(
+            [System.Numerics.BigInteger]::Multiply($Hash, $prime), $script:Fnv64Mask)
+    }
+    return $Hash
+}
+
+function Get-CadFragmentTokenCode {
+    param([uint32] $EdgeEntityId, [uint32] $EdgeLocalIndex, $Start, $End)
+    $buffer = New-ByteBuffer
+    Add-U32 $buffer $EdgeEntityId
+    Add-U32 $buffer $EdgeLocalIndex
+    Add-CadCut $buffer $Start
+    Add-CadCut $buffer $End
+    $hash = Add-FnvBytes ([System.Numerics.BigInteger]::Parse('14695981039346656037')) $buffer.ToArray()
+    $low = [System.Numerics.BigInteger]::op_BitwiseAnd($hash,
+        [System.Numerics.BigInteger]::Pow(2, 56) - 1)
+    return [System.Numerics.BigInteger]::op_BitwiseOr(
+        [System.Numerics.BigInteger]::op_LeftShift([System.Numerics.BigInteger] 3, 56), $low)
+}
+
+# The lens base feature's signature: two caps, then its two sides -- the
+# rectangle's right side between the crossings (straight, eligible) and the
+# circle's arc between them (curved, never eligible) -- both proper pieces.
+function Get-CadLensLineage {
+    $hash = [System.Numerics.BigInteger]::Parse('14695981039346656037')
+    $hash = Add-Fnv64 $hash ([System.Numerics.BigInteger] 0)
+    $hash = Add-Fnv64 $hash ([System.Numerics.BigInteger] 4)
+    $hash = Add-Fnv64 $hash (Get-CadFaceTokenCode 0 0 0)
+    $hash = Add-Fnv64 $hash ([System.Numerics.BigInteger] 1)
+    $hash = Add-Fnv64 $hash (Get-CadFaceTokenCode 1 0 0)
+    $hash = Add-Fnv64 $hash ([System.Numerics.BigInteger] 1)
+    $hash = Add-Fnv64 $hash (Get-CadFragmentTokenCode 1 1 (New-CadCrossing 2 0 0) (New-CadCrossing 2 0 1))
+    $hash = Add-Fnv64 $hash ([System.Numerics.BigInteger] 1)
+    $hash = Add-Fnv64 $hash (Get-CadFragmentTokenCode 2 0 (New-CadCrossing 1 1 0) (New-CadCrossing 1 1 1))
+    $hash = Add-Fnv64 $hash ([System.Numerics.BigInteger] 0)
+    if ($hash.IsZero) { $hash = [System.Numerics.BigInteger]::One }
+    return [uint64]::Parse($hash.ToString())
+}
+
+# CAD FRAGMENT SUPPORT: the lens body, and a second retained sketch standing
+# on the lens's STRAIGHT side -- a fragment of the rectangle's right side
+# (placement 3, FACE code 4) -- with a 0.3 m square Added 0.2 m out of it.
+function New-CadFragmentSupportFile {
+    $support = [pscustomobject]@{ FeatureId = 1; FaceKindCode = 4; EdgeEntityId = 1
+                                  EdgeLocalIndex = 1
+                                  FragmentStart = (New-CadCrossing 2 0 0)
+                                  FragmentEnd = (New-CadCrossing 2 0 1)
+                                  LineageToken = (Get-CadLensLineage) }
+    $onSide = New-CadSketchV6 -SketchId 2 -PlacementCode 3 -Support $support -NextEntityId 2 `
+        -Entities @(New-CadRectangleEntity 1 0.0 0.0 0.3 0.3)
+    $base = New-CadV6Base -SelectionKind 2 -Faces @(New-CadLensFace)
+    $boss = New-CadFeatureV6 -FeatureId 2 -OperationCode 2 -SketchId 2 -ExtentCode 1 `
+        -DirectionCode 1 -Depth 0.2 -Second 0.0 -SelectionKind 1 -ProfileEntityId 1 `
+        -Regions (New-CadRegionSelection)
+    return New-CadV6File (New-CadV6Body -NextSketchId 3 -NextFeatureId 3 `
+        -Sketches @((New-CadLensSketch), $onSide) -Features @($base, $boss))
 }
 
 # CAD SPLINE FACE: the lens fixture with a Spline (entity 3) added to its
@@ -2266,6 +2355,7 @@ $fixtures = [ordered]@{
     'cad_unresolved_face_v6.forge'    = (New-CadFaceLensFile -Face (New-CadLensFace -CircleEndOrdinal 2))
     'cad_spline_face_v6.forge'        = (New-CadSplineFaceFile)
     'cad_overlap_face_v6.forge'       = (New-CadOverlapFaceFile)
+    'cad_fragment_support_v6.forge'   = (New-CadFragmentSupportFile)
 }
 
 $rows = New-Object System.Collections.Generic.List[object]
@@ -2337,9 +2427,10 @@ foreach ($name in @('cad_sketch_shared_v6', 'cad_face_lens_v6', 'cad_face_protru
                     'cad_face_two_circles_v6', 'cad_mixed_selection_v6', 'cad_bad_sketch_ref_v6',
                     'cad_duplicate_sketch_id_v6', 'cad_bad_selection_kind_v6',
                     'cad_noncanonical_face_v6', 'cad_unresolved_face_v6', 'cad_spline_face_v6',
-                    'cad_overlap_face_v6')) {
+                    'cad_overlap_face_v6', 'cad_fragment_support_v6')) {
     Write-Host ("  {0,-27}{1}" -f ($name + ':'), ($rows | Where-Object Fixture -eq ($name + '.forge')).Sha256)
 }
 Write-Host 'Lineage tokens the v5 fixtures carry (7c / 7f signature):'
 Write-Host ("  plain rectangle (6 faces): 0x{0:X16}" -f $cadPlainRectangleLineage)
 Write-Host ("  holed rectangle (38 faces): 0x{0:X16}" -f $cadHoledRectangleLineage)
+Write-Host ("  lens face (CAD-V6-S2, 4 faces): 0x{0:X16}" -f (Get-CadLensLineage))

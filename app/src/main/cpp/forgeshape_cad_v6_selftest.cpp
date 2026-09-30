@@ -858,6 +858,47 @@ void testPersistence(Checks& c, std::string* digests) {
     }
     c.check("CADV6_P11_every_v6_fixture_matches_the_independent_corpus_digest", corpus);
 
+    // `CAD-V6-S2`: a sketch on a FRAGMENT side (FACE code 4). The production
+    // derivation names the lens's straight side and computes the lineage; the
+    // independent builder computes both from DATA_PACKAGE_SPEC.md §7g's text.
+    {
+        CadBodyState state = lensState();
+        CadFeatureGeometry base;
+        const CadStatus built = buildCadFeatureGeometry(state, 1u, &base);
+        CadFeatureSupport support;
+        support.featureId = 1u;
+        for (size_t i = 2; i < base.faces.size(); ++i) {
+            if (base.faces[i].token.edgeEntityId == 1u) support.face = base.faces[i].token;
+        }
+        support.lineageToken = base.signature;
+        appendCadLaterFeatureWithSketch(&state, CadFeatureOperation::Add, support,
+                                        rectSketch(0.0, 0.0, 0.3, 0.3), loopExtrude(1, {}, {}, 0.2));
+        const std::vector<uint8_t> fragmentBytes = encodeProjectV1(documentFor(state));
+        ProjectDocument back;
+        CadBodyMesh mesh;
+        const bool decoded = decodeStatus(fragmentBytes, &back) == ProjectCodecStatus::Ok
+                             && back.cad.bodies.size() == 1u
+                             && sameCadBodyState(back.cad.bodies[0].state, state)
+                             && encodeProjectV1(back) == fragmentBytes
+                             && regenerateCadBody(back.cad.bodies[0].state, &mesh) == CadStatus::Ok;
+        *digests += std::string(" fragment_support=") + sha(fragmentBytes);
+        c.check("CADV6S2_P16_a_fragment_side_support_matches_the_independent_fixture_and_regenerates",
+                built == CadStatus::Ok && support.face.fragment
+                        && support.lineageToken == 0x9873F7F20DED4004ull && decoded
+                        && cadVersionOf(fragmentBytes) == kCadSectionVersionV6
+                        && sha(fragmentBytes)
+                                   == "e1726cb5cbf0504ee0e50f457d8490ab410d12e41e426fdfe631dbb1e8c0acb6");
+        // A code-4 FACE that names a WHOLE edge (both source ends) is not a
+        // fragment: its one encoding is code 3, so code 4 with S/E is refused.
+        CadBodyState whole = state;
+        CadFeatureSupport& onSide = findCadSketchRecord(whole, 2u)->featureSupport;
+        onSide.face.fragmentStart = ArrangementCut{};
+        onSide.face.fragmentEnd = ArrangementCut{ArrangementCutKind::SourceEnd, 0u, 0u, 0u};
+        c.check("CADV6S2_P17_a_code_4_face_naming_a_whole_edge_is_refused_by_the_codec",
+                refusedAs(encodeProjectV1Unchecked(documentFor(whole)),
+                          ProjectCodecStatus::InvalidSemanticValue));
+    }
+
     // --- structural refusals the codec makes before the domain sees anything
     {
         const uint8_t zero = 0;

@@ -914,7 +914,9 @@ stored.
 v6 is written **only** when a body says something v1..v5 cannot: a sketch two
 features name, a sketch no feature names, sketch ids other than the ones a
 legacy read synthesizes (below), a high-water mark other than the one it
-derives, or a `PlanarFaces` selection. Every other project writes v1..v5 exactly
+derives, a `PlanarFaces` selection, or a FRAGMENT face token (code 4) anywhere
+-- including a `TopoRef` naming another body's fragment side. Every other
+project writes v1..v5 exactly
 as before and is **byte-identical**; the forty-four fixtures that predate this
 stage prove it. An older build refuses v6 as a required section at an unknown
 version rather than opening a body with a shared sketch silently duplicated or a
@@ -941,14 +943,10 @@ repeat bodyCount times, in ascending SCENE ORDER:
       1:  u8   workplaneCode     §4
       2:  u64  producerObjectId  the §7c TopoRef; the sketch is on local XY
           u32  producerFeatureId
-          u8   faceKind          1 CapPlane, 2 CapFar, 3 Side
-          u32  faceEdgeEntityId
-          u32  faceEdgeLocalIndex
+          FACE
           u64  lineageToken
       3:  u32  supportFeatureId  the §7f support; the sketch is on local XY
-          u8   faceKind
-          u32  faceEdgeEntityId
-          u32  faceEdgeLocalIndex
+          FACE
           u64  lineageToken
     u32  nextEntityId
     u32  entityCount … then the entities, exactly as §7b and §7d (codes 1..6)
@@ -969,6 +967,13 @@ repeat bodyCount times, in ascending SCENE ORDER:
 and
 
 ```
+FACE      u8  faceKind                1 CapPlane, 2 CapFar, 3 Side (a WHOLE source
+                                      edge), 4 fragment Side (`CAD-V6-S2`)
+          u32 faceEdgeEntityId
+          u32 faceEdgeLocalIndex
+          faceKind 4 only:
+          CUT start                   the piece's two bounding cuts, in the
+          CUT end                     source edge's own parameter order
 FACES     u32 faceCount 1 .. 16
           repeat faceCount: CYCLE outer, u32 holeCount 0 .. 64, CYCLE × holeCount
 CYCLE     u32 fragmentCount 1 .. 1024, then FRAGMENT × fragmentCount
@@ -987,7 +992,8 @@ CUT       u8  cutKind                 1 SourceStart, 2 Intersection, 3 SourceEnd
 ```
 
 A body record is 20 bytes, then per sketch 14 bytes (placement 1), 42 (placement
-2) or 34 (placement 3) plus its entities, then 4 bytes and per feature 28 bytes
+2) or 34 (placement 3) plus its entities -- and for a code-4 FACE its two cuts
+(1 byte for a source end, 13 for an intersection) -- then 4 bytes and per feature 28 bytes
 plus its selection: 4 + `REGIONS` for loop regions, and for faces 4 + per face
 4 + its cycles, per cycle 4 + per fragment 9 + its two cuts (1 byte for a source
 end, 13 for an intersection). Nothing in a face selection is a coordinate, a
@@ -1042,7 +1048,15 @@ Everything else is the domain's `validateCadBodyState`, surfaced as
 | over a sketch whose curves share a stretch | `PlanarFaceAmbiguousOverlap` |
 | over a sketch past the arrangement's caps | `PlanarFaceCapExceeded` |
 | an arrangement cycle below the area floor | `PlanarFaceDegenerate` |
-| a sketch placed on a face of a `PlanarFaces` feature | `PlanarFaceRegenerationUnavailable` |
+| a face selection whose UNION pinches -- two chosen faces meeting at one point | `OverlappingRegions` |
+| a union loop longer than `kMaxProfileVertices` | `TooManyEntities` |
+
+A code-4 FACE is refused by the CODEC (`InvalidSemanticValue`) unless it is a
+proper fragment in canonical form: its start cut is not a source end, its end
+cut not a source start, the two are not both source ends (that is the whole
+edge, whose one encoding is code 3), an intersection names a partner, and the
+edge entity is not 0. Code 4 exists only in v6: every v1..v5 reader refuses it
+as an unknown face kind.
 
 The ORDER of fragments, holes and faces is the canonical order the arrangement
 produces, stated as a total order on the tuples: a cut by (kind code − 1,
@@ -1066,17 +1080,40 @@ one `CAD-PLANAR-FACE-PF-S1` defines (`artifacts/cad-planar-face-pf-s1/SUMMARY.md
 a Spline is never intersected, so a Spline anywhere in the sketch refuses a face
 selection over it.
 
-### One thing this FORMAT allows and this RUNTIME does not (yet)
+### Regenerating a face selection, and its faces (`CAD-V6-S2`)
 
-A body with a `PlanarFaces` selection is a valid document: it decodes, every
-face resolves, and it round-trips byte for byte. This build does not yet
-regenerate a solid from planar faces (`PlanarFaceRegenerationUnavailable`), so it
-does not run the kernel check of §7f on such a body, and the runtime REFUSES TO
-LOAD a project containing one (`runtimeCanEvaluateProject` false, reported as
-`MissingRequiredSection`) — the recovery check never offers one either. That is
-the §8 rule for a body this build cannot evaluate, applied once more; it is lifted
-when regeneration from faces lands. A `LoopRegions` v6 body — a shared or a
-retained sketch — loads and regenerates normally.
+A `PlanarFaces` feature is regenerated like any other: its stored faces resolve
+EXACTLY against the sketch's arrangement; their UNION is derived on the
+arrangement's own half-edges (a fragment both chosen faces walk cancels; the
+rest walks into loops; a positive loop is an outer boundary and a negative one
+a hole of the smallest outer that contains it); each loop becomes a polygon
+from its fragments' derived points (a straight fragment is its two nodes, a
+piece of a circle or arc is tessellated between its nodes at an authored arc's
+angular density, `sketchArcSegmentCount`); and the prisms go through the §7f
+chain exactly as regions do. Nothing derived is stored. A project containing
+one loads, and a body that does not regenerate is refused all-or-nothing.
+
+**Its faces, and its lineage.** Its face list is `CapPlane`, `CapFar`, then ONE
+`Side` per FRAGMENT of the union's boundary -- component by component in
+canonical order (by outer cycle), the outer cycle's fragments in its canonical
+walk, then each hole's. A curved fragment is one face however many facets its
+tessellation has, so no tessellation count reaches a lineage. A fragment that
+IS its whole source edge wears the whole-edge token (code 3, §7c code) byte for
+byte; a proper piece wears a fragment token, whose §7c token code is
+
+```
+0x03 << 56  |  ( FNV-1a 64 over the FACE bytes after faceKind:
+                 u32 edge entity, u32 edge local, CUT start, CUT end )  &  (2^56 - 1)
+```
+
+(offset basis `0xCBF29CE484222325`, prime `0x100000001B3`, byte by byte), a code
+no whole-edge token can have because its top byte is a face kind 0..2. A
+straight fragment's side is eligible to carry a sketch; a curved one never is;
+every face of a Cut is ineligible. The feature's signature is §7c's rule over
+this list with the selection anchor `0`. For a ONE-face selection the side list
+is the stored outer cycle fragment for fragment, so the lens of
+`cad_face_lens_v6` has the lineage `0x9873F7F20DED4004`
+(`cad_fragment_support_v6`).
 
 ## 8. Validation and compatibility
 
@@ -1314,6 +1351,7 @@ debug launch as `FORGESHAPE_PROJECT_GOLDEN_SHA256`.
 | `cad_unresolved_face_v6.forge` | 394 | `9602fc4a281e4d6b7bf79fedf766d76ad2e2e2d142e9917d5b44635c65d05b4b` | The lens fixture whose circle fragment ends at crossing ordinal **2** of a side the circle crosses twice — well formed, canonical, and derived by no arrangement; refused `InvalidSemanticValue` (`PlanarFaceUnresolved`), no nearest face |
 | `cad_spline_face_v6.forge` | 451 | `d85f98db59968bbe6c47f1842f59bb2f93f167f61deba67f5f846e98651cd800` | The lens fixture with a three-point **Spline** (entity 3) added to its sketch — refused `InvalidSemanticValue` (`PlanarFaceUnsupportedCurve`) |
 | `cad_overlap_face_v6.forge` | 376 | `313652c95c14d3ebfd5e451447b8b46d0890fbed35b7c680911fb94426e118f9` | The rectangle with a line lying **along** its bottom side, selecting the rectangle's whole boundary — refused `InvalidSemanticValue` (`PlanarFaceAmbiguousOverlap`) |
+| `cad_fragment_support_v6.forge` | 531 | `e1726cb5cbf0504ee0e50f457d8490ab410d12e41e426fdfe631dbb1e8c0acb6` | `CAD-V6-S2`: the `cad_face_lens_v6` body, and a second retained sketch on the lens's STRAIGHT side -- a fragment of the rectangle's right side, placement 3, FACE code 4 with cuts `X(2.0#0) > X(2.0#1)`, lineage `0x9873F7F20DED4004` -- holding a 0.3 m square Added 0.2 m out of it |
 
 The eighteen corrupt fixtures written since `CADB` v2 — two each for `CADB` v2,
 v3 and v4, four for `CADB` v5, seven for `CADB` v6 and one for `SCNE` v2 — are
@@ -1357,8 +1395,11 @@ the production encoder reaches every one of those digests from a state built in
 C++ — the five valid ones through the ordinary writer, deriving each planar face
 from its sketch's arrangement rather than copying it; the refusals through the
 same writer without its validation (`encodeProjectV1Unchecked`), and the one bad
-code by patching the valid parent's byte. CI FAST's corpus parity step holds all
-fifty-six byte-identical between the builder and the repository. The twelve v6
+code by patching the valid parent's byte; `cad_fragment_support_v6`
+(`CAD-V6-S2`, `CADV6S2_P16`) through the ordinary writer, its fragment token and
+lineage derived by the production face enumeration while the builder computes
+both from the text above. CI FAST's corpus parity step holds all
+fifty-seven byte-identical between the builder and the repository. The thirteen v6
 fixtures are single-body Construction projects with the `SCNE` record of the
 v4/v5 ones, and every one of the forty-four before them is byte-for-byte
 unchanged: none needs what v6 adds.

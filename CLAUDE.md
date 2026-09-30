@@ -864,7 +864,9 @@ on the host, with no device, and is the fast native loop.
   `cad_face_two_circles`, `cad_mixed_selection`, and the seven the decoder must
   refuse, `cad_bad_sketch_ref`, `cad_duplicate_sketch_id`,
   `cad_bad_selection_kind`, `cad_noncanonical_face`, `cad_unresolved_face`,
-  `cad_spline_face` and `cad_overlap_face`) — a **fifty-six**-fixture corpus in
+  `cad_spline_face` and `cad_overlap_face`); `CAD-V6-S2` added
+  `cad_fragment_support` (a sketch on a FRAGMENT side, v6 FACE code 4) — a
+  **fifty-seven**-fixture corpus in
   which every older fixture is byte-for-byte unchanged. Every corrupt fixture is CONSTRUCTED
   by the PowerShell builder with the bad value in place, never generated and
   then mutated.

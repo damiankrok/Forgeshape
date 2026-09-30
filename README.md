@@ -189,8 +189,9 @@ what found the mistyped FNV basis in `CAD-A3-C1`. The six `CADB` v3 curve
 fixtures and the six `CADB` v4 extent fixtures are pinned the same way, by
 `CADUXR1-38` and `CADEXT-10`, and the eight `CADB` v5 region and feature-chain
 fixtures by `CADVS_IO_22` (with both lineage tokens by `CADVS_IO_23`), and the
-twelve `CADB` v6 sketch-table and planar-face fixtures by `CADV6_P11`. Seven
-of the fifty-six fixtures are packaged into the test APK's assets as well, so
+twelve `CADB` v6 sketch-table and planar-face fixtures by `CADV6_P11` and the
+fragment-side support fixture by `CADV6S2_P16`. Seven
+of the fifty-seven fixtures are packaged into the test APK's assets as well, so
 `ImportedMeshDurableTest` can prove the independent encoder's bytes actually LOAD
 on a device rather than only hashing the same.
 
