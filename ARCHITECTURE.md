@@ -161,7 +161,7 @@ forgeshape_jni.cpp            render thread, ANativeWindow, MotionEvent ->
 | The sketch edit session: the entity being placed, the selection, snapping, the pointer it owns, the profile choice and the depth BEFORE the one commit | `SketchSession` (`forgeshape_sketch_session.{h,cpp}`) | volatile: nothing in it is project truth, the scene, the history, the fingerprint and the codec never see it, and `commit` is ONE `ScopedConstructionEdit` around ONE `addCadBody`. Java holds no sketch: not an entity, not a profile, not a depth |
 | The sketch overlay the renderer draws: the plane grid, the axes, the entities, the drag and the extrude preview, as world-space lines | `SketchOverlay` (`forgeshape_sketch_overlay.h`), built by `SketchSession::overlay` | presentation on the gizmo's terms: no `ObjectId`, no revision, never published, never picked, never exported, never a `.forge` byte. The renderer re-uploads it only when its revision changes and draws it through the gizmo's line pipeline |
 | How ONE overlay style is weighted — the grey a hue-less vertex takes and the alpha the whole range draws at | `sketchOverlayStyleWeights` (`forgeshape_sketch_overlay.{h,cpp}`) | a pure function over values (`UI-3D-STATE-C2`): no renderer, no device, no frame, so "is this style drawn at all" is a self-test rather than a screenshot. Extracted from the renderer's switch because a style with no case draws at alpha 0 — invisible, with nothing failing, which is what `UI3D-F-005` was. Its own switch has no `default:`, and it refuses a code outside the enum rather than inventing a weight for it. The renderer still owns everything a range does NOT vary: the matrix, the three axis hues, the highlight colour and the emphasis tag |
-| Where the extrude manipulator stands in world space, how big it is drawn and grabbed, what a drag along the extrusion axis means, and which view that axis can be dragged in | `forgeshape_cad_extrude_tool.{h,cpp}` (`CadExtrudeAnchors`, `CadExtrudeControlScale`, `CadExtrudeManipulator`, `cadFeatureViewPose`) | **not** a second model of the extrusion: `SketchSession` still owns the profile, the depth and the direction and is still the only writer, and a dragged distance lands through `setExtrudeSide`, the one door a typed value already used. Since `CAD-EXT-R1` the anchors carry one `CadExtrudeSideAnchor` per side and the manipulator freezes WHICH side at pointer-down with the basis. The anchors carry no camera; the size rule is a new function BESIDE `gizmoWorldScale` (which holds a constant pixel size) and produces the ONE number drawing and hit testing share; the drag is the gizmo's contract verbatim; the view policy is a pure function over a pose, a frame and the anchors that answers another pose. Nothing here is serialized or reaches a history step |
+| Where the extrude manipulator stands in world space, how big it is drawn and grabbed, what a drag along the extrusion axis means, and which view that axis can be dragged in | `forgeshape_cad_extrude_tool.{h,cpp}` (`CadExtrudeAnchors`, `CadExtrudeControlScale`, `CadExtrudeManipulator`, `cadFeatureViewPose`) | **not** a second model of the extrusion: `SketchSession` still owns the profile, the depth and the direction and is still the only writer, and a dragged distance lands through `setExtrudeSide`, the one door a typed value already used. Since `CAD-EXT-R1` the anchors carry one `CadExtrudeSideAnchor` per side and the manipulator freezes WHICH side at pointer-down with the basis. The anchors carry no camera; the size rule is a new function BESIDE `gizmoWorldScale` (which holds a constant pixel size) and, read once per frame at the manipulator's BASE through `cadExtrudeManipulatorScale` / `SketchSession::extrudeViewFacts` (`CAD-FOUNDATION-C1`), produces the ONE number the drawn head and leader, the hit test and the Android glyphs share; the technical-drawing leader (`cadExtrudeLeaderSide`, `cadExtrudeLeaderFor`, `appendCadExtrudeLeader`) is drawn in the overlay's `Dimension` range; a camera-caused overlay rebuild advances the overlay revision; the drag is the gizmo's contract verbatim; the view policy is a pure function over a pose, a frame and the anchors that answers another pose. Nothing here is serialized or reaches a history step |
 | The views a sketch borrows — the exact support-normal one it is AUTHORED through, the feature-preview one the staged extrusion is adjusted through, and the user's own pose kept for the way back | `beginSketchView` / `beginExtrudeFeatureView` / `endSketchView` in `forgeshape_jni.cpp` over `CameraController::frameSketchView` / `capturePose` / `restorePose`, with `cadFeatureViewPose` deciding the second | the sketch stores no camera. The authoring view comes from the frame's own axes; the preview is installed on the `finish()` that reaches `Ready` and withdrawn by every path back to Editing; `g_sketchSavedPose` is the pre-sketch view and is restored on commit and on cancel alike, unconsumed by the preview |
 | Whether a one-finger gesture while sketching draws, selects, is swallowed, or navigates — and that two fingers always pan and pinch | the sketch arbitration block in `forgeshape_jni.cpp`, using `SketchSession::onTouch` and `state()` | a single finger never orbits while the sketch is being DRAWN; in `Ready` one that misses the arrow navigates, because the drawing is done and there is no aligned view left to protect. The gizmo and the sculpt arbitration are already out of the picture, because the gizmo is withdrawn at begin and a sketch cannot start in Sculpt |
 | Removing one body from the project | `forgeshape_body_delete.{h,cpp}` | one representation-neutral operation over the scene and the history. One Delete is one transaction; the removed body is HELD by the history rather than destroyed, so an Undo restores that object with its Imported Mesh and its Frozen Sculpt Mesh intact; the replacement selection and the last-body refusal are stated here and nowhere else |
@@ -692,22 +692,27 @@ still reports position 0, so there is nothing better to read at that instant;
 the repeat is capped and reset by any settled pass, which is what keeps it layout
 readiness rather than a poll.
 
-**The canvas CAD HUD** (`CadExtrudeCanvasView`, `CAD-VERTICAL-SLICE-R1`) is
-one compact row — the extent control, the exact value, the operation badge and
-Flip — with the extent and operation palettes opening directly beneath it, the
-Two Sides value at its own anchor, and the retained-sketch Edit Sketch control
-at `cadBodySketchAnchor`. Every icon control is a `LinearLayout` holding a glyph
-`ImageView` and an optional caption; the container carries the id, the click,
-the selected/activated state and the content description. `CadHudPresentation`
-is its pure-Java arithmetic, proven on the JVM: the glyph is
-`clamp(28 dp × CAD_EXTRUDE_SCALE, 24, 32)`, the hit area is never below 48 dp
-and is never `setScale`d, which extent and operation icon and caption belong to
-which mode, and which operations a bitmask offers. The cluster is measured
-first and then placed so the VALUE's centre lands on the shaft-midpoint anchor
-(`ViewportAnchorSpace.measureUnderParent` + `measureAndPlace`), still clamped
-into the viewport. An open palette is centred under the control that opened it;
-a closed one is `INVISIBLE`, so it is already laid out when it opens, and takes
-no touch.
+**The canvas CAD HUD** (`CadExtrudeCanvasView`, `CAD-VERTICAL-SLICE-R1`,
+reshaped by `CAD-FOUNDATION-C1`) is a technical-drawing annotation on the
+leader native draws and projects (`cadExtrudeToolState` slots 32..41), not a
+row. Each control is its own child of the full-overlay container: the extent
+control, the operation badge and Flip are `LinearLayout` touch PROXIES of at
+least 48 dp with no background, holding a glyph `ImageView` whose own disc
+(`bg_hud_glyph`, `bg_hud_glyph_invalid`) is the only thing drawn; the value is
+a transparent 48 dp `TextView` rotated to its leader. `CadHudPresentation` is
+the pure-Java policy, proven on the JVM: the glyph is `28 dp × clamp(scale,
+0.40, 1.60)`, the value `clamp(14 sp × scale, 11, 18)`, the proxy 48 dp at
+every scale; `readingAngleDegrees` keeps the value upright; `clipToViewport`
+stands it on the VISIBLE part of its leader; `layoutLeader` places the value
+above the line and each glyph on the line past an end, spaced so proxies never
+overlap, and hides — never clamps — a glyph whose point is off screen;
+`captionShown` gives Tool Labels captions to palette choices only. The view
+measures, asks, and places through `ViewportAnchorSpace`; it projects nothing.
+The Two Sides value stands above its own leader; the retained-sketch Edit
+Sketch control stays a lone capsule at `cadBodySketchAnchor` with its compact
+24..32 dp glyph (`loneGlyphDp`). An open palette is centred under the proxy
+that opened it; a closed one is `INVISIBLE`, so it is already laid out when it
+opens, and takes no touch.
 
 **What a sketch shows is one statement** (`SketchChromePolicy`,
 `CAD-VERTICAL-SLICE-R1`): in Editing the Tool Rail carries the drawing tools and
@@ -2641,10 +2646,27 @@ regions by `ProfileRegionRef` (outer anchor plus the hole anchors it was chosen
 with): the first region's outer anchor stays in `profileEntityId`, its holes in
 `profileHoleIds`, and further disjoint regions in `additionalRegions`, so a
 one-region, no-hole selection is the R0 field set, bit for bit.
-`validateRegionSelection` refuses a mismatch against the derived holes, overlap
-or a shared loop, and the caps, by name; `sketchRegionAt` resolves a tap to the
-innermost region under it; `sketchRegionHatch` is the bounded even/odd hatch
-that leaves a hole empty.
+`validateRegionSelection` refuses a mismatch against the derived holes,
+touching or crossing loops, a region standing inside another's material
+without being its own direct hole, and the caps, by name; `sketchRegionAt`
+resolves a tap to the innermost region under it, and
+`SketchSession::toggleRegion` is a PURE toggle of exactly that region
+(`CAD-FOUNDATION-C1`), refusing an unmergeable addition by name rather than
+dropping anything.
+
+**A selection is the union of its atomic regions** (`CAD-FOUNDATION-C1`).
+`mergeSelectedRegions` derives it from the stored list by one parity rule over
+the parent tree — a loop bounds the union exactly when selection membership
+differs across it — as `SketchRegionComponent`s (a real outer loop plus real
+hole loops, ascending anchors), with no 2D boolean and no arrangement, because
+nesting regions are disjoint by construction. `CadFeatureGeometry::components`
+carries it; the face table, the lineage token, `appendCadFeatureSolid` (one
+prism per component, so no shared wall), the body's component count, the
+preview hatch and edges (`sketchComponentHatch`, `sketchComponentLoops`) and
+`extrudeSelectionAnchorPoint` all read components, never the raw regions. A
+selection with no region beside its own hole unions to exactly its regions, in
+order, so every earlier face, token and mesh is unchanged; the stored form is
+unchanged too (`CADB` v5, no new version).
 
 ### The feature chain and the boolean kernel (`CAD-VERTICAL-SLICE-R1`)
 

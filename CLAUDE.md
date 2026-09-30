@@ -376,13 +376,21 @@ on the host, with no device, and is the fast native loop.
   distance, which is right for a placement instrument and the opposite of a
   control that belongs to the work. The cluster is a world object of reference
   size `W` whose screen size is clamped into a band —
-  `scale = clamp(W / metersPerPixel / S_ref, 0.80, 1.60)` — so it shrinks as
-  the camera pulls back and saturates at both ends, and that ONE `scale` sizes
-  the drawn arrowhead and the Android HUD's GLYPHS alike — and never a HIT
-  AREA (`CAD-VERTICAL-SLICE-R1`): a glyph is `clamp(28 dp × scale, 24, 32)`
-  while every control's touch rectangle stays at least 48 dp at every scale
-  and is never `setScale`d, so the interactive floor does not depend on the
-  band at all (`CadHudPresentationTest` pins both on the JVM). The hit
+  `scale = clamp(W / metersPerPixel / S_ref, 0.40, 1.60)` (OWNER-TUNABLE;
+  `CAD-FOUNDATION-C1` lowered the floor from 0.80) — so it shrinks as the
+  camera pulls back and saturates at both ends. `metersPerPixel` is read ONCE
+  per frame, at the manipulator's own BASE anchor (`cadExtrudeManipulatorScale`
+  through `SketchSession::extrudeViewFacts`), and that ONE fact sizes the drawn
+  arrowhead, the leader, the hit test's head extension and the Android glyphs
+  and value text alike — never at the world origin, never read twice — and
+  never a HIT AREA: a glyph is `28 dp × clamp(scale, 0.40, 1.60)` and the value
+  `clamp(14 sp × scale, 11, 18)` while every control is an INVISIBLE touch
+  proxy of at least 48 dp that paints nothing and is never `setScale`d, so the
+  interactive floor does not depend on the band at all
+  (`CadHudPresentationTest` pins both on the JVM). A camera-caused overlay
+  rebuild (another `worldPerUnit` or other view facts) advances the overlay
+  revision, so the renderer's revision-gated upload never keeps a previous
+  zoom's vertices. The hit
   CORRIDOR is 24 reference units and is deliberately NOT
   scaled, for the reason the gizmo's own corridors are not scaled by its visual
   size preference. **The drag is the gizmo's contract restated**: one captured
@@ -398,10 +406,9 @@ on the host, with no device, and is the fast native loop.
   no new style and no new pipeline; its SHAFT is the depth and only its head
   takes the control scale. The exact value, the extent control, the operation
   badge, Flip and the retained-sketch `Edit Sketch` control are Android chrome
-  positioned from a projected native anchor — the `bodyDimensionLabelPoint`
-  pattern a third time — with the VALUE's centre on the shaft's midpoint
-  anchor, and an anchor that does not project is HIDDEN, never placed at a
-  guess.
+  positioned from projected native points — the `bodyDimensionLabelPoint`
+  pattern a third time — and anything whose point does not project, or whose
+  own point falls off the viewport, is HIDDEN, never placed at a guess.
   **The sketch's view and the extrusion's are TWO views of one authored truth,
   and Finish Sketch is where the second begins** (`CAD-UX-S1-C1`, closing
   `OQ-CAD-UX-01`). A sketch is AUTHORED through the exact support-normal view —
@@ -500,16 +507,30 @@ on the host, with no device, and is the fast native loop.
   loop's anchor plus the hole anchors it was chosen with (`ProfileRegionRef`),
   never a triangle, tessellation or list index; stored holes that no longer
   equal the derived ones are refused (`ProfileRegionMismatch`), never re-read as
-  another area. Overlapping holes (`OverlappingHoles`), a selection whose
-  regions overlap, touch or share a loop (`OverlappingRegions`) and more than
-  `kMaxProfileRegions` (16) regions or `kMaxRegionHoles` (64) holes
-  (`TooManyRegions`) are refused by name. **Finish Sketch auto-selects ONLY
-  when exactly one region is selectable**; with more, nothing is chosen, there
-  is no arrow, the toolbar's Extrude is absent and a commit is refused
-  (`AmbiguousProfile`), and a Ready
-  tap toggles the region under the finger. A selected region is hatched and a
-  hole stays EMPTY. A single simple region still extrudes through the unchanged
-  R0 float path, bit-identical to every earlier build.
+  another area. **A selection is the UNION of the atomic regions it names**
+  (`CAD-FOUNDATION-C1`): a region beside its own direct hole (a ring and its
+  disk) is legal, and `mergeSelectedRegions` derives what is extruded by one
+  parity sentence over the nesting tree — a loop bounds the union exactly when
+  selection membership differs across it — into components (a real outer loop
+  and real hole loops), ONE prism per component so no shared wall is ever
+  emitted twice. Faces, the lineage token, the preview, the hatch, the arrow
+  anchor, New Body, Add and Cut all read the union; a selection that chooses no
+  region beside its own hole unions to exactly its own regions, so every
+  earlier face, token, mesh and fixture is unchanged. The stored form did NOT
+  change (still the atomic `ProfileRegionRef` list, still `CADB` v5, no new
+  version): a merged boundary is never stored. Overlapping holes
+  (`OverlappingHoles`), two chosen regions whose loops touch or cross or one of
+  which stands inside the other's material without being its own direct hole
+  (`OverlappingRegions`), and more than `kMaxProfileRegions` (16) regions or
+  `kMaxRegionHoles` (64) holes (`TooManyRegions`) are refused by name. **Finish
+  Sketch auto-selects ONLY when exactly one region exists**; with more, nothing
+  is chosen, there is no arrow, the toolbar's Extrude is absent and a commit is
+  refused (`AmbiguousProfile`). A Ready tap is a PURE toggle of the region
+  under the finger — no other region ever changes, and an addition that cannot
+  be merged is refused by name with the selection standing as it was. The
+  union is hatched; a hole it leaves open stays EMPTY. A single simple region
+  still extrudes through the unchanged R0 float path, bit-identical to every
+  earlier build.
 - **An Add or a Cut changes the SAME body, through a retained feature chain**
   (`CAD-VERTICAL-SLICE-R1`, `forgeshape_cad_body.{h,cpp}`,
   `forgeshape_cad_feature.{h,cpp}`). After its first New Body feature a CAD
@@ -555,15 +576,28 @@ on the host, with no device, and is the fast native loop.
   badge, and the toolbar's Extrude is WITHDRAWN (a control that cannot succeed
   is not drawn); the precision surface's pinned Extrude stays, because it
   submits a typed depth first, and native still refuses an invalid commit.
-- **The canvas CAD HUD is compact and icon-first, and Ready withdraws the
-  drawing chrome** (`CAD-VERTICAL-SLICE-R1`). One row at the arrow: the extent
-  control (opening a three-icon palette), the exact value whose CENTRE stands on
-  the shaft's midpoint anchor, the operation badge (opening New Body / Add /
-  Cut — only the operations native offers) and Flip (One Side only). Glyphs
-  are 24–32 dp; hit areas are ≥ 48 dp and never scaled; meaning is carried by
-  icon SHAPE, selected state and content description, with colour (Add
-  success, Cut error) only as a second carrier. Tool Labels adds 11 sp
-  captions without widening the row into pills. `SketchChromePolicy` is the one
+- **The canvas CAD HUD is a technical-drawing annotation, and Ready withdraws
+  the drawing chrome** (`CAD-VERTICAL-SLICE-R1`, reshaped by
+  `CAD-FOUNDATION-C1`). The frame draws a dimension LEADER beside the shaft —
+  extension lines, a dimension line, 45° ticks — in the overlay's existing
+  `Dimension` range, standing on the reading-up side of the shaft
+  (`cadExtrudeLeaderSide`, camera-derived presentation); native projects it
+  (`cadExtrudeToolState` slots 32..41). There is NO row and no capsule: the
+  exact value is text standing ABOVE its leader on the visible part of the
+  line, rotated to it and kept upright (`readingAngleDegrees`: `[-90°, 90°)`,
+  a vertical line reads bottom to top); the extent control stands on the
+  leader's line past its base end (past its tip in Symmetric and Two Sides,
+  where past the base is the other side's leader), the operation badge
+  (New Body / Add / Cut — only what native offers) and Flip (One Side only)
+  past its tip end, spaced so no two 48 dp proxies overlap. Two Sides puts each
+  value above its OWN leader. All placement arithmetic is the pure
+  `CadHudPresentation` (JVM-pinned); the view only places proxies. Meaning is
+  carried by icon SHAPE, selected state and content description, with colour
+  (Add success, Cut error) only as a second carrier. The palettes are ordinary
+  readable screen chrome, and Tool Labels captions THEM — never a glyph
+  attached to the drawing. The typed-value editor opens screen-aligned at the
+  value's point. All sizes are OWNER-TUNABLE presentation, decided on a
+  physical device. `SketchChromePolicy` is the one
   statement of what a sketch shows: in Ready the Tool Rail, the orientation
   navigator and the Line dimension are ABSENT, Back to Sketch and Cancel stay,
   and Finish Sketch no longer opens the precision surface — the exact fields
