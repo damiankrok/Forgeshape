@@ -798,6 +798,25 @@ CadStatus resolvePlanarFaceSelection(const CadSketch& sketch, const ExtrudeFeatu
     return CadStatus::Ok;
 }
 
+bool sketchRequiresPlanarFaces(const SketchArrangement& arrangement,
+                               const SketchRegionExtraction& regions) {
+    if (arrangement.status != ArrangementStatus::Ok || arrangement.faces.empty()) {
+        return false;
+    }
+    const auto proper = [](const FragmentRef& f) {
+        return !(f.startCut.kind == ArrangementCutKind::SourceStart
+                 && f.endCut.kind == ArrangementCutKind::SourceEnd);
+    };
+    bool split = false;
+    for (const AtomicPlanarFace& face : arrangement.faces) {
+        for (const FragmentRef& f : face.ref.outer) split = split || proper(f);
+        for (const FragmentCycle& hole : face.ref.holes) {
+            for (const FragmentRef& f : hole) split = split || proper(f);
+        }
+    }
+    return split && arrangement.faces.size() != regions.regions.size();
+}
+
 CadStatus mergePlanarFaceSelection(const SketchArrangement& arrangement,
                                    const std::vector<size_t>& faceIndices,
                                    std::vector<PlanarProfileComponent>* out) {

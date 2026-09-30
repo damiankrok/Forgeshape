@@ -561,6 +561,18 @@ CadStatus mergePlanarFaceSelection(const SketchArrangement& arrangement,
                                    const std::vector<size_t>& faceIndices,
                                    std::vector<PlanarProfileComponent>* out);
 
+// Whether a finished sketch's areas NEED planar faces (`CAD-V6-S2`): the one
+// predicate that decides a session's selection kind. True exactly when the
+// arrangement derives (a Spline, an overlap or a cap keeps the sketch on loop
+// regions), at least one bounded face is bounded by a PROPER fragment (a source
+// edge split at a crossing or a T-junction), and the arrangement's face count
+// differs from the loop-region count -- i.e. a crossing or a T-junction actually
+// CUT an area the region model cannot name. A sketch whose loops only nest (a
+// rectangle around two circles), or whose only contact is a dangling line
+// touching a rectangle, stays `LoopRegions` and keeps its legacy writer.
+bool sketchRequiresPlanarFaces(const SketchArrangement& arrangement,
+                               const SketchRegionExtraction& regions);
+
 // The arrangement status as a `CadStatus` (`UnsupportedCurve` ->
 // `PlanarFaceUnsupportedCurve`, ...). Deterministic; `Ok` maps to `Ok`.
 CadStatus cadStatusForArrangement(ArrangementStatus status);

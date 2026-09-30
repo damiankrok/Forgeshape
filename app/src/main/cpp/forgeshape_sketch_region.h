@@ -229,6 +229,18 @@ std::vector<SketchPoint> sketchComponentHatch(const SketchRegionExtraction& extr
                                               const SketchRegionComponent& component,
                                               double spacing);
 
+// The same hatch over any loops -- the first the outer boundary, the rest holes
+// -- by the even-odd rule: what a PlanarFaces union component (`CAD-V6-S2`),
+// whose loops are fragment polygons rather than extracted profiles, is hatched
+// with. Presentation only.
+std::vector<SketchPoint> sketchLoopsHatch(const std::vector<std::vector<SketchPoint>>& loops,
+                                          double spacing);
+
+// Where an arrow or a label stands on loops (outer first, then holes): the
+// area centroid when it lies on material, else a scanned interior point -- the
+// one rule a region's and a union component's anchor follow. False for no loop.
+bool sketchLoopsInteriorPoint(const std::vector<std::vector<SketchPoint>>& loops, SketchPoint* out);
+
 // Point strictly inside a polygon by the even-odd rule; a point ON an edge is
 // not strictly inside.
 bool sketchPointStrictlyInside(const SketchPoint& point, const std::vector<SketchPoint>& polygon);

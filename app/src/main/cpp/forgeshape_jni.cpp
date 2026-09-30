@@ -4263,7 +4263,9 @@ Java_com_forgeshape_app_NativeViewport_sketchState(JNIEnv* env, jclass, jdoubleA
         values[2] = static_cast<double>(forgeshape::sketchToolIndex(s.tool()));
         values[3] = static_cast<double>(s.sketch().entities.size());
         values[4] = static_cast<double>(s.selectedEntityId());
-        values[5] = static_cast<double>(s.regions().regions.size());
+        // Regions, or -- in PlanarFaces mode (`CAD-V6-S2`) -- atomic faces.
+        values[5] = static_cast<double>(s.planarFaceCount() > 0 ? s.planarFaceCount()
+                                                                : s.regions().regions.size());
         values[6] = static_cast<double>(s.selectedProfileId());
         values[7] = s.extrude().depth;
         values[8] = static_cast<double>(forgeshape::extrudeDirectionIndex(s.extrude().direction));
@@ -4322,8 +4324,11 @@ Java_com_forgeshape_app_NativeViewport_sketchSelectProfile(JNIEnv*, jclass, jlon
     forgeshape::CadStatus status;
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
-        status = forgeshape::sketchSession().selectProfile(
-            static_cast<forgeshape::SketchEntityId>(anchorId));
+        forgeshape::SketchSession& session = forgeshape::sketchSession();
+        status = session.planarFaceCount() > 0
+                         ? (anchorId >= 1 ? session.selectPlanarFace(static_cast<size_t>(anchorId - 1))
+                                          : forgeshape::CadStatus::ProfileNotFound)
+                         : session.selectProfile(static_cast<forgeshape::SketchEntityId>(anchorId));
         beginPendingExtrudeFeatureView();
     }
     FS_LOGI("FORGESHAPE_SKETCH_PROFILE:%lld %s", (long long)anchorId,
@@ -4586,10 +4591,20 @@ Java_com_forgeshape_app_NativeViewport_sketchProfiles(JNIEnv* env, jclass, jlong
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
         // Since `CAD-VERTICAL-SLICE-R1` a "profile" the user chooses is a
-        // REGION, named by its outer loop's anchor; one per closed loop.
-        for (const forgeshape::SketchRegion& region :
-             forgeshape::sketchSession().regions().regions) {
-            ids.push_back(static_cast<jlong>(region.outerAnchorId));
+        // REGION, named by its outer loop's anchor; one per closed loop. In
+        // PlanarFaces mode (`CAD-V6-S2`) the rows are the ATOMIC FACES, and a
+        // row's handle is its face index + 1 -- a TRANSIENT row handle into
+        // the arrangement derived at Finish, re-read on every refresh and
+        // never stored, because a face's identity is its canonical ref.
+        const forgeshape::SketchSession& session = forgeshape::sketchSession();
+        if (session.planarFaceCount() > 0) {
+            for (size_t i = 0; i < session.planarFaceCount(); ++i) {
+                ids.push_back(static_cast<jlong>(i + 1));
+            }
+        } else {
+            for (const forgeshape::SketchRegion& region : session.regions().regions) {
+                ids.push_back(static_cast<jlong>(region.outerAnchorId));
+            }
         }
     }
     if (out != nullptr && !ids.empty()) {
@@ -4622,8 +4637,36 @@ Java_com_forgeshape_app_NativeViewport_sketchProfileInfo(JNIEnv* env, jclass, jl
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
         const forgeshape::SketchSession& s = forgeshape::sketchSession();
-        const forgeshape::SketchRegion* region = forgeshape::findSketchRegion(
-            s.regions(), static_cast<forgeshape::SketchEntityId>(anchorId));
+        const forgeshape::SketchRegion* region =
+            s.planarFaceCount() > 0 ? nullptr
+                                    : forgeshape::findSketchRegion(
+                                          s.regions(), static_cast<forgeshape::SketchEntityId>(anchorId));
+        forgeshape::SketchPoint interior;
+        double area = 0.0;
+        if (s.planarFaceCount() > 0 && anchorId >= 1
+            && s.planarFaceInfo(static_cast<size_t>(anchorId - 1), &interior, &area)) {
+            // A PlanarFaces row (`CAD-V6-S2`): a polygon-kind cell, always
+            // selectable, standing at its own interior point.
+            const size_t index = static_cast<size_t>(anchorId - 1);
+            const forgeshape::PlanarFaceRef& ref = s.arrangement().faces[index].ref;
+            found = true;
+            values[0] = 3;
+            values[1] = static_cast<double>(ref.outer.size());
+            values[2] = area;
+            values[3] = static_cast<double>(ref.holes.size());
+            values[4] = s.planarFaceSelected(index) ? 1.0 : 0.0;
+            values[5] = 1.0;
+            values[6] = 0.0;
+            float x = 0.0f;
+            float y = 0.0f;
+            if (s.sketchToScreen(g_camera.snapshot(), interior, g_camera.viewportWidth(),
+                                 g_camera.viewportHeight(), &x, &y)) {
+                values[7] = 1.0;
+                values[8] = x;
+                values[9] = y;
+            }
+            values[10] = 0.0;
+        }
         if (region != nullptr) {
             found = true;
             const forgeshape::ClosedProfile& outer = s.regions().loops.profiles[region->outerLoop];
@@ -4666,14 +4709,47 @@ Java_com_forgeshape_app_NativeViewport_sketchToggleRegion(JNIEnv*, jclass, jlong
     size_t selected = 0;
     {
         std::lock_guard<std::mutex> lock(g_stateMutex);
-        status = forgeshape::sketchSession().toggleRegion(
-            static_cast<forgeshape::SketchEntityId>(anchorId));
+        forgeshape::SketchSession& session = forgeshape::sketchSession();
+        status = session.planarFaceCount() > 0
+                         ? (anchorId >= 1 ? session.togglePlanarFace(static_cast<size_t>(anchorId - 1))
+                                          : forgeshape::CadStatus::ProfileNotFound)
+                         : session.toggleRegion(static_cast<forgeshape::SketchEntityId>(anchorId));
         beginPendingExtrudeFeatureView();
-        selected = forgeshape::extrudeRegions(forgeshape::sketchSession().extrude()).size();
+        selected = session.selectedAreaCount();
     }
     FS_LOGI("FORGESHAPE_SKETCH_REGION_TOGGLE anchor=%lld selected=%d %s", (long long)anchorId,
             (int)selected, forgeshape::cadStatusName(status));
     return cadCode(status);
+}
+
+// Which kind of selection the open session makes (`CAD-V6-S2`): 0 loop
+// regions, 1 planar faces. Read on demand; -1 when no sketch is Ready.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_sketchSelectionKind(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    const forgeshape::SketchSession& session = forgeshape::sketchSession();
+    if (session.state() != forgeshape::SketchSessionState::Ready) {
+        return -1;
+    }
+    return session.selectionKind() == forgeshape::CadSelectionKind::PlanarFaces ? 1 : 0;
+}
+
+// Which kind of selection feature `index` (0 = base) of a CAD body stores
+// (`CAD-V6-S2`): 0 loop regions, 1 planar faces, -1 when there is none. A
+// verification read of committed truth; nothing is cached above JNI.
+JNIEXPORT jint JNICALL
+Java_com_forgeshape_app_NativeViewport_cadFeatureSelectionKind(JNIEnv*, jclass, jlong bodyId,
+                                                                jint index) {
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    const forgeshape::SceneObject* object =
+        forgeshape::constructionScene().findBody(static_cast<forgeshape::ObjectId>(bodyId));
+    const forgeshape::CadBody* body = object != nullptr ? object->cadOrNull() : nullptr;
+    forgeshape::CadFeatureView view;
+    if (body == nullptr || index < 0
+        || !forgeshape::cadFeatureAt(body->state(), static_cast<uint32_t>(index), &view)) {
+        return -1;
+    }
+    return view.extrude->selection == forgeshape::CadSelectionKind::PlanarFaces ? 1 : 0;
 }
 
 // What the extrusion does (`CAD-VERTICAL-SLICE-R1`): 0 New Body, 1 Add, 2 Cut.
@@ -4859,7 +4935,7 @@ Java_com_forgeshape_app_NativeViewport_cadExtrudeToolState(JNIEnv* env, jclass,
             values[26] = static_cast<double>(session.operationTargetId());
             values[28] = static_cast<double>(session.regions().regions.size());
             values[29] = static_cast<double>(
-                    forgeshape::extrudeRegions(session.extrude()).size());
+                    session.selectedAreaCount());
             values[30] = static_cast<double>(session.editingFeatureId());
             if (ready) {
                 // The SAME evaluation the render thread draws and the commit

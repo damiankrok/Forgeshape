@@ -1567,6 +1567,19 @@ final class NativeViewport {
     /** @return one of the {@code HISTORY_*} constants */
     static native int constructionUndo();
 
+    /**
+     * Which kind of selection the Ready sketch makes (`CAD-V6-S2`): 0 loop
+     * regions, 1 planar faces, -1 when no sketch is Ready. In planar-faces mode
+     * {@link #sketchProfiles} lists atomic faces by TRANSIENT row handle.
+     */
+    static native int sketchSelectionKind();
+
+    /**
+     * Which kind of selection feature {@code index} (0 = base) of a CAD body
+     * stores: 0 loop regions, 1 planar faces, -1 when there is none.
+     */
+    static native int cadFeatureSelectionKind(long bodyId, int index);
+
     /** @return one of the {@code HISTORY_*} constants */
     static native int constructionRedo();
 

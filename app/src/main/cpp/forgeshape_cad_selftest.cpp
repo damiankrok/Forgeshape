@@ -2040,10 +2040,16 @@ int runCadSelfTests(CadSelfTestResult* out, int maxOut) {
                 session.commit(scene, history, &created) == CadStatus::AmbiguousProfile
                         && created == kNoObject && scene.bodyCount() == 1
                         && history.undoDepth() == 0 && session.state() == SketchSessionState::Ready);
-        r.check("CADR0_21_a_profile_is_chosen_by_anchor_and_a_bad_one_refused",
+        // `CAD-V6-S2`: the snapped line runs through the first rectangle and
+        // cuts it, so this sketch now selects PLANAR FACES; rectangle 2 is
+        // untouched and is exactly one atomic face, which its anchor still
+        // chooses -- as a face, not as a region.
+        r.check("CADR0_21_S2_a_profile_is_chosen_by_anchor_as_its_face_and_a_bad_one_refused",
                 session.selectProfile(99) == CadStatus::ProfileNotFound
+                        && session.selectionKind() == CadSelectionKind::PlanarFaces
                         && session.selectProfile(2) == CadStatus::Ok
-                        && session.selectedProfileId() == 2);
+                        && session.selectedAreaCount() == 1u
+                        && session.selectedProfileId() == kNoSketchEntity);
         r.check("CADR0_30_extrude_depth_is_typed_exactly_and_validated",
                 session.setExtrude(0.0, ExtrudeDirection::AlongNormal)
                                 == CadStatus::InvalidExtrudeDepth

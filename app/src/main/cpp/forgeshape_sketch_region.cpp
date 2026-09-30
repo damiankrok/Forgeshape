@@ -498,6 +498,26 @@ std::vector<SketchPoint> sketchComponentHatch(const SketchRegionExtraction& extr
     return hatchOf(sketchComponentLoops(extraction, component), spacing);
 }
 
+std::vector<SketchPoint> sketchLoopsHatch(const std::vector<std::vector<SketchPoint>>& loops,
+                                          double spacing) {
+    return hatchOf(loops, spacing);
+}
+
+bool sketchLoopsInteriorPoint(const std::vector<std::vector<SketchPoint>>& loops, SketchPoint* out) {
+    if (out == nullptr || loops.empty() || loops[0].size() < 3) {
+        return false;
+    }
+    SketchPoint interior{};
+    SketchPoint centroid{};
+    shapePoints(loops, &interior, &centroid);
+    bool onMaterial = sketchPointStrictlyInside(centroid, loops[0]);
+    for (size_t h = 1; onMaterial && h < loops.size(); ++h) {
+        onMaterial = !sketchPointStrictlyInside(centroid, loops[h]);
+    }
+    *out = onMaterial ? centroid : interior;
+    return std::isfinite(out->u) && std::isfinite(out->v);
+}
+
 namespace {
 
 std::vector<SketchPoint> hatchOf(const std::vector<std::vector<SketchPoint>>& loops,

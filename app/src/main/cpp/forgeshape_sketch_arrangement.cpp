@@ -1348,6 +1348,10 @@ ArrangementStatus mergePlanarFaces(const SketchArrangement& arrangement,
     std::vector<PlanarProfileLoop> outers;
     std::vector<PlanarProfileLoop> holes;
     std::vector<uint8_t> walked(halfCount, 0);
+    // Every node a union loop passes, across ALL loops: two loops meeting at
+    // one node (two chosen faces touching only at a corner) pinch the union
+    // exactly as one loop revisiting a node does.
+    std::vector<uint8_t> nodeUsed(arrangement.nodes.size(), 0);
     for (uint32_t start = 0; start < halfCount; ++start) {
         if (!remains(start) || walked[start] != 0u) continue;
         std::vector<uint32_t> loop;
@@ -1356,9 +1360,10 @@ ArrangementStatus mergePlanarFaces(const SketchArrangement& arrangement,
         for (uint32_t guard = 0; guard <= halfCount; ++guard) {
             walked[h] = 1u;
             const uint32_t node = originNode(h);
-            if (std::find(nodesSeen.begin(), nodesSeen.end(), node) != nodesSeen.end()) {
+            if (node >= nodeUsed.size() || nodeUsed[node] != 0u) {
                 return ArrangementStatus::PinchedSelection;
             }
+            nodeUsed[node] = 1u;
             nodesSeen.push_back(node);
             loop.push_back(h);
             uint32_t next = 0;

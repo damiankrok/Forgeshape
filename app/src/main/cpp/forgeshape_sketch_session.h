@@ -423,6 +423,38 @@ public:
     // Whether the region is part of the current selection.
     bool regionSelected(SketchEntityId outerAnchorId) const;
 
+    // --- planar faces (`CAD-V6-S2`) ---------------------------------------
+    //
+    // When a finished sketch's areas need the planar arrangement
+    // (`sketchRequiresPlanarFaces`: a crossing or T-junction cut an area the
+    // loop-region model cannot name), the session selects ATOMIC FACES instead
+    // of regions: `extrude().selection` is `PlanarFaces`, a tap toggles exactly
+    // the face under the finger, several faces extrude as their union, and the
+    // stored selection is the canonical `PlanarFaceRef` list -- never an index.
+    // Every other sketch stays on `LoopRegions`, byte for byte as before. The
+    // indices below are TRANSIENT (into the arrangement derived at Finish, in
+    // its canonical face order) and are re-read on every refresh.
+    CadSelectionKind selectionKind() const { return extrude_.selection; }
+    const SketchArrangement& arrangement() const { return arrangement_; }
+    size_t planarFaceCount() const { return faceShapes_.size(); }
+    bool planarFaceSelected(size_t index) const;
+    // A point strictly inside the face and outside its holes, and its area.
+    bool planarFaceInfo(size_t index, SketchPoint* outInterior, double* outArea) const;
+    // Adds the face or, when selected, removes it. Refused by name, the
+    // selection standing as it was, when the union would pinch
+    // (`OverlappingRegions`) or exceed `kMaxPlanarFaceSelection`.
+    CadStatus togglePlanarFace(size_t index);
+    // Selects exactly this face: the panel's list row.
+    CadStatus selectPlanarFace(size_t index);
+    // Whether anything is chosen, whichever the selection kind.
+    bool selectionChosen() const;
+    // How many regions or faces are chosen.
+    size_t selectedAreaCount() const;
+    // True after Finish found that a stored face selection (an edited feature)
+    // no longer resolves exactly: nothing is re-bound, the candidate reports
+    // `PlanarFaceUnresolved`, and the user chooses again or cancels.
+    bool selectionLost() const { return selectionLost_; }
+
     // --- the operation (`CAD-VERTICAL-SLICE-R1`) --------------------------
     //
     // New Body, Add or Cut: what the extrusion does to material. New Body makes
@@ -633,6 +665,12 @@ private:
                                             const CadBodyState& candidate,
                                             const CadBodyMesh& candidateMesh) const;
     CadStatus fail(CadStatus why) { lastStatus_ = why; return why; }
+    void reconcilePlanarSelection();
+    CadStatus unchosenStatus() const;
+    void setPlanarSelection(std::vector<PlanarFaceRef> faces);
+    void clearPlanarSelection();
+    std::vector<size_t> selectedPlanarFaceIndices() const;
+    bool planarSelectionAnchor(SketchPoint* out) const;
     void buildOverlay(float worldPerUnit, const CadExtrudeViewFacts& view);
 
     SketchSessionState state_ = SketchSessionState::Inactive;
@@ -646,6 +684,12 @@ private:
     SketchEntityId selectedEntityId_ = kNoSketchEntity;
 
     SketchRegionExtraction regions_;
+    // `CAD-V6-S2`: the arrangement derived at Finish and, when the session is
+    // selecting planar faces, one shape per atomic face (its own one-face union)
+    // for hit testing, labels and the hatch. Derived; cleared with `regions_`.
+    SketchArrangement arrangement_;
+    std::vector<PlanarProfileComponent> faceShapes_;
+    bool selectionLost_ = false;
     ExtrudeFeature extrude_;
     // `CAD-VERTICAL-SLICE-R1`. What the extrusion does; see `setOperation`.
     CadFeatureOperation operation_ = CadFeatureOperation::NewBody;

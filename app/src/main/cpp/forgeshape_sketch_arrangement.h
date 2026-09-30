@@ -64,8 +64,9 @@ enum class ArrangementStatus : uint8_t {
     // repeat.
     InvalidSelection,
     // `mergePlanarFaces`: the union's boundary passes one node twice -- two
-    // chosen faces touch at a single point -- so no simple loop bounds it.
-    // Refused rather than extruded as a pinched solid.
+    // chosen faces touch at a single point, whether that makes one loop
+    // revisit a node or two loops share one -- so no simple, disjoint set of
+    // loops bounds it. Refused rather than extruded as a non-manifold solid.
     PinchedSelection,
 };
 
