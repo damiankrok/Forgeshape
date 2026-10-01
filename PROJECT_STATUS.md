@@ -1,8 +1,39 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.91.0
-**Updated:** 2026-09-30
-**Latest closeout:** **`CAD-V6-S2-PLANAR-RUNTIME-R1` — `PASS-CAD-V6-S2-PLANAR-RUNTIME`**
+**Status Version:** 0.92.0
+**Updated:** 2026-10-01
+**Latest closeout:** **`CAD-V6-S2-CORRECTION-FILL-HUD-R1` — `PASS-CAD-V6-S2-CORRECTION-FILL-HUD`**
+(2026-10-01), **TECH PASS / OWNER RE-REVIEW REQUIRED / INTERMEDIATE V6 BRANCH /
+NOT MERGED.** On `feature/cad-v6-sketch-face-r1` only; `main` unchanged at
+`6c9f156`. The OWNER's two S2 blockers from the physical-device review are
+corrected. Record: `artifacts/cad-v6-s2-correction/SUMMARY.md` (BEFORE.md first).
+
+- **Fill bucket.** Every bounded cell of a sketch's curves is one selectable
+  planar face — **splines included**: one source edge per authored span, the
+  exact Bezier `sketchSplineSpan` states (shared with the profile
+  tessellation), intersected on the curve against lines, circles, arcs and
+  other spans. The OWNER-style mixed sketch derives 8 cells; no valid cell
+  selection returns `OverlappingRegions`/`OverlappingHoles`. A pinch is the new
+  `PlanarFacesTouchAtPoint` (code 61). `decideSketchSelectionMode` refuses an
+  arrangement failure over crossing loops by name — no silent legacy fallback;
+  legacy-exact sketches stay `LoopRegions`. A still tap in the extrude arrow's
+  grab corridor, off the drawn arrow, toggles the cell under it. No `CADB` v7,
+  no layout change; corpus 57/57 byte-identical, `cad_spline_face_v6` now a
+  valid file with unchanged bytes.
+- **Action panel.** One continuous function of the projected arrow: on the
+  arrow's line past its point, sliding back along it (to the shaft's base) at
+  an edge, turned by 0.35 × the leader's reading angle (capped 25°, tapered to
+  level before vertical). No candidate sides.
+- **Gates.** Host `HOST_SELFTESTS_OK (3971 checks, 0 failed)`; JVM 121/121;
+  release guard PASS; corpus 57/57. `CI DEVICE` `36848559518` on `7c4849a`:
+  16/22 (test grid precondition ×5, close-zoom panel hidden ×1 — both fixed in
+  `130b6e2`); `CI DEVICE` `36851090923` on `130b6e2`
+  (CadPlanarFaceOwnerCorrectionTest, CadPlanarFaceRuntimeTest,
+  CadCanvasExtrudeTest): **PASS 22/22**. CI FAST and the OWNER APK: see the
+  closing record in `artifacts/cad-v6-s2-correction/SUMMARY.md`.
+  **FullSharded NOT RUN.** S3 not started.
+
+**Previous closeout:** **`CAD-V6-S2-PLANAR-RUNTIME-R1` — `PASS-CAD-V6-S2-PLANAR-RUNTIME`**
 (2026-09-30), **TECH PASS / INTERMEDIATE V6 BRANCH / NOT MERGED / OWNER REVIEW
 APK READY.** On `feature/cad-v6-sketch-face-r1` only; `main` is unchanged at
 `6c9f156`. **A sketch whose curves cross is extruded by the atomic faces the
@@ -4570,9 +4601,11 @@ was added and no marketing claim is made.
 branch `feature/cad-v6-sketch-face-r1`**: creating, sharing, deleting and
 browsing a CAD Body's retained sketches from the UI. It needs its own
 authorisation. The branch merges to `main` only after the completed v6
-migration passes the Tier-5 aggregate once. No spline-bounded face in the first
-release (OWNER). The C2 physical-device review and the S2 OWNER APK review can
-happen in parallel and only tune presentation constants.
+migration passes the Tier-5 aggregate once. S3 starts only after the OWNER
+re-reviews the `CAD-V6-S2-CORRECTION-FILL-HUD-R1` APK on a physical device
+(spline-bounded cells are now in scope, by the OWNER's correction); that review
+and the C2 one may tune presentation constants (the panel's follow fraction,
+cap and taper among them).
 
 `FUNCTION-COUNCIL-R1`'s D2–D7 and the import-during-sketch observation stay
 recorded debt, not authorised work. The Council's other OWNER decisions are
