@@ -731,7 +731,8 @@ public final class CadCanvasExtrudeTest {
                         + " clamp=" + (int) tool[NativeViewport.CAD_EXTRUDE_CLAMP]
                         + " model_dp=" + modelDp
                         + " panel_visible=" + panel.visible
-                        + " panel_placement=" + panel.placement
+                        + " panel_rotation=" + panel.rotation
+                        + " panel_slide_dp=" + panel.slide / density
                         + " panel_dp=" + panel.plateWidth / density + "x"
                         + panel.plateHeight / density
                         + " proxy_dp=" + panel.hitWidth / density + "x"

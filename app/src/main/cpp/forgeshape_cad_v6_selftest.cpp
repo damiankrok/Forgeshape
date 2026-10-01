@@ -662,11 +662,16 @@ void testPlanarFaces(Checks& c) {
         }
         FragmentCycle oneLine{FragmentRef{1u, 0u, {}, {ArrangementCutKind::SourceEnd, 0u, 0u, 0u}, false}};
         const CadBodyState capped = makeCadBodyState(grid, faceExtrude({PlanarFaceRef{oneLine, {}}}, 1.0));
-        c.check("CADV6_F10_a_spline_an_overlap_and_the_arrangement_cap_are_refused_by_name",
-                validateCadBodyState(spline) == CadStatus::PlanarFaceUnsupportedCurve
+        // `CAD-V6-S2-CORRECTION-FILL-HUD-R1`: a spline is intersected on its
+        // spans now. This one stands clear of the rectangle and the circle, so
+        // it is a dangling curve that bounds no face and the lens resolves
+        // exactly as it did without it; the overlap and the cap are still
+        // refused by name.
+        c.check("CADV6_F10_a_free_spline_resolves_an_overlap_and_the_arrangement_cap_are_refused",
+                validateCadBodyState(spline) == CadStatus::Ok
                         && validateCadBodyState(overlap) == CadStatus::PlanarFaceAmbiguousOverlap
                         && validateCadBodyState(capped) == CadStatus::PlanarFaceCapExceeded);
-        c.check("CADV6_F11_the_three_arrangement_refusals_are_deterministic",
+        c.check("CADV6_F11_the_three_arrangement_answers_are_deterministic",
                 validateCadBodyState(spline) == validateCadBodyState(spline)
                         && validateCadBodyState(overlap) == validateCadBodyState(overlap)
                         && validateCadBodyState(capped) == validateCadBodyState(capped));
@@ -780,6 +785,9 @@ void testPersistence(Checks& c, std::string* digests) {
                 noncanonical.extrude.planarFaces[0].outer.end());
     CadBodyState unresolved = lensState();
     unresolved.extrude.planarFaces[0].outer[1].endCut.ordinal = 2u;
+    // `cad_spline_face_v6` was the lens with a free spline added, refused while
+    // a spline disabled the arrangement. Its BYTES are unchanged, and since
+    // `CAD-V6-S2-CORRECTION-FILL-HUD-R1` it is a valid file: checked below.
     CadBodyState spline = lensState();
     SketchSpline curve;
     curve.points = {SketchPoint{-1.0, -1.0}, SketchPoint{0.0, -0.5}, SketchPoint{1.0, -1.0}};
@@ -798,22 +806,21 @@ void testPersistence(Checks& c, std::string* digests) {
     // feature count, and the feature's 27 fixed bytes.
     const uint8_t badKind = 9;
     const std::vector<uint8_t> badSelection = patchedCad(bytes[1], 135, &badKind, 1);
-    const CadBodyState* const negativeStates[7] = {&badRef, &duplicate, nullptr, &noncanonical,
-                                                   &unresolved, &spline, &overlap};
-    const char* const negativeNames[7] = {"bad_sketch_ref", "duplicate_sketch_id",
+    const CadBodyState* const negativeStates[6] = {&badRef, &duplicate, nullptr, &noncanonical,
+                                                   &unresolved, &overlap};
+    const char* const negativeNames[6] = {"bad_sketch_ref", "duplicate_sketch_id",
                                           "bad_selection_kind", "noncanonical_face",
-                                          "unresolved_face", "spline_face", "overlap_face"};
-    const CadStatus domainWhy[7] = {CadStatus::SketchNotFound,
+                                          "unresolved_face", "overlap_face"};
+    const CadStatus domainWhy[6] = {CadStatus::SketchNotFound,
                                     CadStatus::DuplicateSketchId,
                                     CadStatus::Ok,
                                     CadStatus::PlanarFaceRefNotCanonical,
                                     CadStatus::PlanarFaceUnresolved,
-                                    CadStatus::PlanarFaceUnsupportedCurve,
                                     CadStatus::PlanarFaceAmbiguousOverlap};
-    std::vector<uint8_t> negative[7];
+    std::vector<uint8_t> negative[6];
     bool named = bytes[1].size() > 135u && bytes[1][cadPayloadAt(bytes[1]) + 135] == 2u;
     bool refused = true;
-    for (int i = 0; i < 7; ++i) {
+    for (int i = 0; i < 6; ++i) {
         if (negativeStates[i] != nullptr) {
             named = named && validateCadBodyState(*negativeStates[i]) == domainWhy[i];
             // The checked writer refuses to produce a file for any of them.
@@ -832,6 +839,27 @@ void testPersistence(Checks& c, std::string* digests) {
             named);
     c.check("CADV6_P10_each_refusal_fixture_decodes_to_InvalidSemanticValue_writing_nothing",
             refused);
+    // The spline fixture: the checked writer now produces it, byte for byte
+    // the file the independent builder constructed, and it decodes, re-encodes
+    // identically and regenerates the lens.
+    std::vector<uint8_t> splineBytes;
+    {
+        ProjectCodecStatus why = ProjectCodecStatus::Ok;
+        splineBytes = encodeProjectV1(documentFor(spline), &why);
+        ProjectDocument back;
+        CadBodyMesh mesh;
+        const bool ok = why == ProjectCodecStatus::Ok && !splineBytes.empty()
+                        && splineBytes == encodeProjectV1Unchecked(documentFor(spline))
+                        && decodeStatus(splineBytes, &back) == ProjectCodecStatus::Ok
+                        && back.cad.bodies.size() == 1u
+                        && sameCadBodyState(back.cad.bodies[0].state, spline)
+                        && encodeProjectV1(back) == splineBytes
+                        && regenerateCadBody(back.cad.bodies[0].state, &mesh) == CadStatus::Ok
+                        && cadVersionOf(splineBytes) == kCadSectionVersionV6;
+        *digests += std::string(" spline_face=") + sha(splineBytes);
+        c.check("CADV6S2C_P12_the_spline_face_fixture_is_now_a_valid_file_with_unchanged_bytes",
+                ok);
+    }
 
     // The corpus `scripts/build-forge-corpus.ps1` CONSTRUCTS from
     // DATA_PACKAGE_SPEC.md §7g, sharing no line with this codec.
@@ -853,9 +881,10 @@ void testPersistence(Checks& c, std::string* digests) {
     for (int i = 0; i < 5; ++i) {
         corpus = corpus && sha(bytes[i]) == committed[i];
     }
-    for (int i = 0; i < 7; ++i) {
+    for (int i = 0; i < 5; ++i) {
         corpus = corpus && sha(negative[i]) == committed[5 + i];
     }
+    corpus = corpus && sha(splineBytes) == committed[10] && sha(negative[5]) == committed[11];
     c.check("CADV6_P11_every_v6_fixture_matches_the_independent_corpus_digest", corpus);
 
     // `CAD-V6-S2`: a sketch on a FRAGMENT side (FACE code 4). The production

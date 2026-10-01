@@ -707,7 +707,8 @@ CadStatus cadStatusForArrangement(ArrangementStatus status) {
         case ArrangementStatus::DegenerateFace: return CadStatus::PlanarFaceDegenerate;
         case ArrangementStatus::CapExceeded: return CadStatus::PlanarFaceCapExceeded;
         case ArrangementStatus::InvalidSelection: return CadStatus::PlanarFaceUnresolved;
-        case ArrangementStatus::PinchedSelection: return CadStatus::OverlappingRegions;
+        case ArrangementStatus::PinchedSelection: return CadStatus::PlanarFacesTouchAtPoint;
+        case ArrangementStatus::SelfIntersectingCurve: return CadStatus::SelfIntersectingProfile;
     }
     return CadStatus::RegenerationFailed;
 }
@@ -815,6 +816,42 @@ bool sketchRequiresPlanarFaces(const SketchArrangement& arrangement,
         }
     }
     return split && arrangement.faces.size() != regions.regions.size();
+}
+
+bool sketchLoopsAreExact(const SketchRegionExtraction& regions) {
+    const size_t n = regions.loops.profiles.size();
+    for (size_t a = 0; a < n; ++a) {
+        for (size_t b = a + 1; b < n; ++b) {
+            if (regions.loopsConflict(static_cast<uint32_t>(a), static_cast<uint32_t>(b))) {
+                return false;
+            }
+        }
+    }
+    for (const ProfileRejection& rejection : regions.loops.rejections) {
+        if (rejection.why == CadStatus::SelfIntersectingProfile
+            || rejection.why == CadStatus::BranchingChain) {
+            return false;
+        }
+    }
+    return true;
+}
+
+SketchSelectionModeDecision decideSketchSelectionMode(const SketchArrangement& arrangement,
+                                                      const SketchRegionExtraction& regions) {
+    SketchSelectionModeDecision decision;
+    if (arrangement.status == ArrangementStatus::Ok) {
+        decision.kind = sketchRequiresPlanarFaces(arrangement, regions)
+                                ? CadSelectionKind::PlanarFaces
+                                : CadSelectionKind::LoopRegions;
+        return decision;
+    }
+    if (sketchLoopsAreExact(regions)) {
+        decision.kind = CadSelectionKind::LoopRegions;
+        return decision;
+    }
+    decision.kind = CadSelectionKind::PlanarFaces;
+    decision.status = cadStatusForArrangement(arrangement.status);
+    return decision;
 }
 
 CadStatus mergePlanarFaceSelection(const SketchArrangement& arrangement,

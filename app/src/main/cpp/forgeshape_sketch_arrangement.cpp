@@ -20,25 +20,33 @@ constexpr double kTol = kSketchCoincidenceMeters;
 // Every supported curve becomes one or more SOURCE EDGES with one parameter
 // t: a segment runs a -> b over [0, 1]; a circle runs counter-clockwise from
 // its own +u point over [0, 1) (closed); an arc runs from its authored start
-// through its authored end over [0, 1], angle = start + t * sweep. Endpoints
-// are the AUTHORED points, never evaluated ones.
+// through its authored end over [0, 1], angle = start + t * sweep; a spline
+// span runs from authored point i to authored point i + 1 over [0, 1] along
+// the cubic Bezier `sketchSplineSpan` states. Endpoints are the AUTHORED
+// points, never evaluated ones.
 
-enum class EdgeShape : uint8_t { Segment, Circle, Arc };
+enum class EdgeShape : uint8_t { Segment, Circle, Arc, Bezier };
 
 struct SourceEdge {
     SketchEntityId entity = kNoSketchEntity;
     uint32_t local = 0;
     EdgeShape shape = EdgeShape::Segment;
-    SketchPoint a{};  // segment start / authored arc start
-    SketchPoint b{};  // segment end / authored arc end
+    SketchPoint a{};  // segment start / authored arc start / authored span start
+    SketchPoint b{};  // segment end / authored arc end / authored span end
     SketchPoint center{};
     double radius = 0.0;
     double start = 0.0;  // angle at t = 0
     double sweep = 0.0;  // signed; 2*pi for a circle
+    // A spline span's Bezier control points; ctrl[0] == a and ctrl[3] == b
+    // exactly.
+    SketchPoint ctrl[4]{};
     double minU = 0.0, minV = 0.0, maxU = 0.0, maxV = 0.0;
 
     bool closed() const { return shape == EdgeShape::Circle; }
-    bool round() const { return shape != EdgeShape::Segment; }
+    bool round() const { return shape == EdgeShape::Circle || shape == EdgeShape::Arc; }
+    bool bezier() const { return shape == EdgeShape::Bezier; }
+    // A piece of a curve rather than an exact straight edge.
+    bool curved() const { return shape != EdgeShape::Segment; }
 };
 
 SketchPoint lerp(const SketchPoint& a, const SketchPoint& b, double t) {
@@ -61,15 +69,151 @@ double wrapAngle(double angle) {
     return w;
 }
 
+// ---------------------------------------------------------------------------
+// Polynomials over a parameter interval
+// ---------------------------------------------------------------------------
+//
+// The contact condition of a spline span with a line (degree 3), a circle
+// (degree 6) or a horizontal ray (degree 3) is a polynomial in the span's
+// parameter. Its real roots are isolated between the roots of its derivative
+// -- on each such interval it is monotone, so it has at most one root there --
+// and bisected to the last representable bit. Deterministic: no seed, no
+// iteration count that depends on anything but the coefficients.
+
+constexpr int kMaxPolyDegree = 6;
+
+double polyEval(const double* c, int degree, double t) {
+    double value = c[degree];
+    for (int k = degree - 1; k >= 0; --k) value = value * t + c[k];
+    return value;
+}
+
+double bisectRoot(const double* c, int degree, double lo, double hi, double fLo) {
+    for (int i = 0; i < 200; ++i) {
+        const double mid = 0.5 * (lo + hi);
+        if (!(mid > lo && mid < hi)) break;
+        const double fm = polyEval(c, degree, mid);
+        if (fm == 0.0) return mid;
+        if ((fm < 0.0) == (fLo < 0.0)) {
+            lo = mid;
+            fLo = fm;
+        } else {
+            hi = mid;
+        }
+    }
+    return 0.5 * (lo + hi);
+}
+
+// Real roots in [lo, hi], ascending, each a sign change or an exact zero.
+void polyRoots(const double* c, int degree, double lo, double hi, std::vector<double>* roots) {
+    while (degree > 0 && c[degree] == 0.0) --degree;
+    if (degree <= 0) return;
+    std::vector<double> breaks{lo};
+    if (degree >= 2) {
+        double d[kMaxPolyDegree];
+        for (int k = 1; k <= degree; ++k) d[k - 1] = c[k] * k;
+        std::vector<double> critical;
+        polyRoots(d, degree - 1, lo, hi, &critical);
+        for (double r : critical) {
+            if (r > breaks.back() && r < hi) breaks.push_back(r);
+        }
+    }
+    breaks.push_back(hi);
+    const auto add = [roots](double r) {
+        if (roots->empty() || roots->back() != r) roots->push_back(r);
+    };
+    for (size_t k = 0; k + 1 < breaks.size(); ++k) {
+        const double a = breaks[k];
+        const double b = breaks[k + 1];
+        const double fa = polyEval(c, degree, a);
+        const double fb = polyEval(c, degree, b);
+        if (fa == 0.0) {
+            add(a);
+        } else if (fb != 0.0 && (fa < 0.0) != (fb < 0.0)) {
+            add(bisectRoot(c, degree, a, b, fa));
+        }
+    }
+    if (polyEval(c, degree, hi) == 0.0) add(hi);
+}
+
+// The derivative's roots strictly inside (lo, hi): where the polynomial turns.
+void polyCritical(const double* c, int degree, double lo, double hi, std::vector<double>* out) {
+    while (degree > 0 && c[degree] == 0.0) --degree;
+    if (degree < 2) return;
+    double d[kMaxPolyDegree];
+    for (int k = 1; k <= degree; ++k) d[k - 1] = c[k] * k;
+    std::vector<double> roots;
+    polyRoots(d, degree - 1, lo, hi, &roots);
+    for (double r : roots) {
+        if (r > lo && r < hi) out->push_back(r);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// One spline span as a curve
+// ---------------------------------------------------------------------------
+
+// The span's power-basis coefficients per coordinate: B(t) = sum c[k] t^k.
+void bezierPower(const SourceEdge& e, double cu[4], double cv[4]) {
+    const SketchPoint* p = e.ctrl;
+    cu[0] = p[0].u;
+    cu[1] = 3.0 * (p[1].u - p[0].u);
+    cu[2] = 3.0 * (p[0].u - 2.0 * p[1].u + p[2].u);
+    cu[3] = p[3].u - 3.0 * p[2].u + 3.0 * p[1].u - p[0].u;
+    cv[0] = p[0].v;
+    cv[1] = 3.0 * (p[1].v - p[0].v);
+    cv[2] = 3.0 * (p[0].v - 2.0 * p[1].v + p[2].v);
+    cv[3] = p[3].v - 3.0 * p[2].v + 3.0 * p[1].v - p[0].v;
+}
+
+SketchBezierSpan spanOf(const SourceEdge& e) {
+    return SketchBezierSpan{e.ctrl[0], e.ctrl[1], e.ctrl[2], e.ctrl[3]};
+}
+
+// First derivative, along increasing t.
+SketchPoint bezierDerivative(const SourceEdge& e, double t) {
+    const SketchPoint* p = e.ctrl;
+    const double s = 1.0 - t;
+    const double w0 = 3.0 * s * s;
+    const double w1 = 6.0 * s * t;
+    const double w2 = 3.0 * t * t;
+    return SketchPoint{w0 * (p[1].u - p[0].u) + w1 * (p[2].u - p[1].u) + w2 * (p[3].u - p[2].u),
+                       w0 * (p[1].v - p[0].v) + w1 * (p[2].v - p[1].v) + w2 * (p[3].v - p[2].v)};
+}
+
+SketchPoint bezierSecond(const SourceEdge& e, double t) {
+    const SketchPoint* p = e.ctrl;
+    const double s = 1.0 - t;
+    return SketchPoint{6.0 * (s * (p[2].u - 2.0 * p[1].u + p[0].u) + t * (p[3].u - 2.0 * p[2].u + p[1].u)),
+                       6.0 * (s * (p[2].v - 2.0 * p[1].v + p[0].v) + t * (p[3].v - 2.0 * p[2].v + p[1].v))};
+}
+
+// The direction of travel along increasing t. Where the first derivative
+// vanishes (a span whose handle sits on its end) the curve leaves along the
+// second derivative, and arrives against it.
+SketchPoint bezierDirection(const SourceEdge& e, double t) {
+    SketchPoint d = bezierDerivative(e, t);
+    const double scale = std::fmax(dist(e.ctrl[0], e.ctrl[3]), 1.0e-30);
+    if (std::hypot(d.u, d.v) <= 1.0e-12 * scale) {
+        const SketchPoint dd = bezierSecond(e, t);
+        const double sign = t < 0.5 ? 1.0 : -1.0;
+        d = SketchPoint{sign * dd.u, sign * dd.v};
+    }
+    return d;
+}
+
 SketchPoint edgePoint(const SourceEdge& e, double t) {
     if (e.shape == EdgeShape::Segment) {
         if (t <= 0.0) return e.a;
         if (t >= 1.0) return e.b;
         return lerp(e.a, e.b, t);
     }
-    if (e.shape == EdgeShape::Arc) {
+    if (e.shape == EdgeShape::Arc || e.shape == EdgeShape::Bezier) {
         if (t <= 0.0) return e.a;
         if (t >= 1.0) return e.b;
+    }
+    if (e.shape == EdgeShape::Bezier) {
+        return sketchBezierPoint(spanOf(e), t);
     }
     const double angle = e.start + t * e.sweep;
     return SketchPoint{e.center.u + e.radius * std::cos(angle),
@@ -101,15 +245,29 @@ void edgeTangent(const SourceEdge& e, double t, double* du, double* dv) {
         *dv = (e.b.v - e.a.v) / len;
         return;
     }
+    if (e.shape == EdgeShape::Bezier) {
+        const SketchPoint d = bezierDirection(e, t);
+        const double len = std::hypot(d.u, d.v);
+        *du = len > 0.0 ? d.u / len : 1.0;
+        *dv = len > 0.0 ? d.v / len : 0.0;
+        return;
+    }
     const double angle = e.start + t * e.sweep;
     const double s = e.sweep > 0.0 ? 1.0 : -1.0;
     *du = -std::sin(angle) * s;
     *dv = std::cos(angle) * s;
 }
 
-// Signed curvature along increasing t: + turning left.
-double edgeCurvature(const SourceEdge& e) {
+// Signed curvature at t along increasing t: + turning left.
+double edgeCurvature(const SourceEdge& e, double t) {
     if (e.shape == EdgeShape::Segment) return 0.0;
+    if (e.shape == EdgeShape::Bezier) {
+        const SketchPoint d = bezierDerivative(e, t);
+        const SketchPoint dd = bezierSecond(e, t);
+        const double speed = std::hypot(d.u, d.v);
+        if (!(speed > 0.0)) return 0.0;
+        return crossUV(d.u, d.v, dd.u, dd.v) / (speed * speed * speed);
+    }
     return (e.sweep > 0.0 ? 1.0 : -1.0) / e.radius;
 }
 
@@ -119,6 +277,16 @@ void setBounds(SourceEdge* e) {
         e->maxU = std::fmax(e->a.u, e->b.u);
         e->minV = std::fmin(e->a.v, e->b.v);
         e->maxV = std::fmax(e->a.v, e->b.v);
+    } else if (e->shape == EdgeShape::Bezier) {
+        // The control polygon's box contains the curve.
+        e->minU = e->maxU = e->ctrl[0].u;
+        e->minV = e->maxV = e->ctrl[0].v;
+        for (int k = 1; k < 4; ++k) {
+            e->minU = std::fmin(e->minU, e->ctrl[k].u);
+            e->maxU = std::fmax(e->maxU, e->ctrl[k].u);
+            e->minV = std::fmin(e->minV, e->ctrl[k].v);
+            e->maxV = std::fmax(e->maxV, e->ctrl[k].v);
+        }
     } else {
         // The whole circle bounds an arc too: conservative and exact enough
         // for a pre-filter.
@@ -145,9 +313,6 @@ ArrangementStatus collectSourceEdges(const CadSketch& sketch, std::vector<Source
     std::vector<const SketchEntity*> entities;
     entities.reserve(sketch.entities.size());
     for (const SketchEntity& entity : sketch.entities) {
-        if (entity.kind() == SketchEntityKind::Spline) {
-            return ArrangementStatus::UnsupportedCurve;
-        }
         entities.push_back(&entity);
     }
     // Semantic order: nothing downstream may depend on the vector's order.
@@ -196,6 +361,33 @@ ArrangementStatus collectSourceEdges(const CadSketch& sketch, std::vector<Source
             e.b = arc->end;
             setBounds(&e);
             out->push_back(e);
+        } else if (const SketchSpline* spline = entity->spline()) {
+            // One source edge per authored span: span i is edge-local index i,
+            // the semantic name its fragments carry.
+            const size_t spans = spline->points.size() - 1u;
+            for (size_t i = 0; i < spans; ++i) {
+                SketchBezierSpan span;
+                if (!sketchSplineSpan(*spline, static_cast<uint32_t>(i), &span)) {
+                    return ArrangementStatus::InvalidSketch;
+                }
+                SourceEdge e;
+                e.entity = id;
+                e.local = static_cast<uint32_t>(i);
+                e.shape = EdgeShape::Bezier;
+                e.ctrl[0] = span.p0;
+                e.ctrl[1] = span.c1;
+                e.ctrl[2] = span.c2;
+                e.ctrl[3] = span.p3;
+                e.a = span.p0;
+                e.b = span.p3;
+                setBounds(&e);
+                out->push_back(e);
+                if (out->size() > kMaxArrangementSourceEdges) {
+                    return ArrangementStatus::CapExceeded;
+                }
+            }
+        } else {
+            return ArrangementStatus::UnsupportedCurve;
         }
         if (out->size() > kMaxArrangementSourceEdges) {
             return ArrangementStatus::CapExceeded;
@@ -216,8 +408,50 @@ struct Contact {
     uint8_t end[2] = {0, 0};
 };
 
+// The parameter in [lo, hi] of the span point nearest p: the best of a fixed
+// sampling, polished by Newton on the squared distance and kept only when it is
+// better. Deterministic; the distance it returns is measured on the curve.
+double nearestOnBezier(const SourceEdge& e, const SketchPoint& p, double lo, double hi,
+                       double* outT) {
+    constexpr int kSamples = 32;
+    double bestT = lo;
+    double best = dist(p, edgePoint(e, lo));
+    for (int k = 1; k <= kSamples; ++k) {
+        const double t = lo + (hi - lo) * static_cast<double>(k) / kSamples;
+        const double d = dist(p, edgePoint(e, t));
+        if (d < best) {
+            best = d;
+            bestT = t;
+        }
+    }
+    double t = bestT;
+    for (int iteration = 0; iteration < 32; ++iteration) {
+        const SketchPoint q = edgePoint(e, t);
+        const SketchPoint d1 = bezierDerivative(e, t);
+        const SketchPoint d2 = bezierSecond(e, t);
+        const double ru = q.u - p.u;
+        const double rv = q.v - p.v;
+        const double f = ru * d1.u + rv * d1.v;
+        const double fp = d1.u * d1.u + d1.v * d1.v + ru * d2.u + rv * d2.v;
+        if (!(fp > 0.0)) break;
+        const double next = std::fmax(lo, std::fmin(hi, t - f / fp));
+        if (next == t) break;
+        t = next;
+    }
+    const double d = dist(p, edgePoint(e, t));
+    if (d < best) {
+        best = d;
+        bestT = t;
+    }
+    *outT = bestT;
+    return best;
+}
+
 // Distance from p to the edge, and the parameter of the nearest point.
 double distanceToEdge(const SourceEdge& e, const SketchPoint& p, double* outT) {
+    if (e.shape == EdgeShape::Bezier) {
+        return nearestOnBezier(e, p, 0.0, 1.0, outT);
+    }
     if (e.shape == EdgeShape::Segment) {
         const double ru = e.b.u - e.a.u;
         const double rv = e.b.v - e.a.v;
@@ -437,6 +671,511 @@ ArrangementStatus roundRound(const SourceEdge& e0, const SourceEdge& e1,
     return ArrangementStatus::Ok;
 }
 
+// ---------------------------------------------------------------------------
+// Spline spans against everything (`CAD-V6-S2-CORRECTION-FILL-HUD-R1`)
+// ---------------------------------------------------------------------------
+
+// Roots of a contact function along a span that are really one TOUCH.
+//
+// `breaks` is 0, the function's turning points ascending, 1; `roots` its
+// roots. At a turning point where the curve comes within the coincidence
+// tolerance of the other curve, the curves touch: if the curve dips across and
+// back -- a root on each side of the turning point -- both roots are that one
+// touch and are dropped, exactly as a line within a tolerance of a circle has
+// always been tangent rather than two crossings a micrometre apart. A lone root
+// beside such a turning point is a crossing that happens to turn right after,
+// and is kept. Every touch's parameter is reported for the tangent count.
+void dropTouchingRoots(const std::vector<double>& breaks, const std::vector<double>& roots,
+                       const std::vector<double>& turningDistance, std::vector<uint8_t>* drop,
+                       std::vector<double>* touches) {
+    drop->assign(roots.size(), 0u);
+    for (size_t j = 1; j + 1 < breaks.size(); ++j) {
+        if (turningDistance[j] > kTol) continue;
+        const double tc = breaks[j];
+        int64_t left = -1;
+        int64_t right = -1;
+        for (size_t i = 0; i < roots.size(); ++i) {
+            if ((*drop)[i] != 0u) continue;
+            if (roots[i] >= breaks[j - 1] && roots[i] <= tc) left = static_cast<int64_t>(i);
+            if (right < 0 && roots[i] >= tc && roots[i] <= breaks[j + 1]) {
+                right = static_cast<int64_t>(i);
+            }
+        }
+        if (left >= 0 && right >= 0) {
+            (*drop)[static_cast<size_t>(left)] = 1u;
+            (*drop)[static_cast<size_t>(right)] = 1u;
+            touches->push_back(tc);
+        } else if (left < 0 && right < 0) {
+            touches->push_back(tc);
+        }
+    }
+}
+
+// The span's breakpoints for a contact polynomial: 0, its turning points, 1.
+std::vector<double> spanBreaks(const double* g, int degree) {
+    std::vector<double> breaks{0.0};
+    polyCritical(g, degree, 0.0, 1.0, &breaks);
+    breaks.push_back(1.0);
+    return breaks;
+}
+
+// A spline span and a straight segment: the span's signed distance to the
+// segment's line is a cubic in t.
+ArrangementStatus bezierSegment(const SourceEdge& bez, const SourceEdge& seg, bool bezFirst,
+                                std::vector<Contact>* out, uint32_t* tangents) {
+    const double ru = seg.b.u - seg.a.u;
+    const double rv = seg.b.v - seg.a.v;
+    const double len = std::hypot(ru, rv);
+    const double nu = -rv / len;
+    const double nv = ru / len;
+    double cu[4];
+    double cv[4];
+    bezierPower(bez, cu, cv);
+    double g[4];
+    for (int k = 0; k < 4; ++k) g[k] = nu * cu[k] + nv * cv[k];
+    g[0] -= nu * seg.a.u + nv * seg.a.v;
+    const auto segParam = [&](const SketchPoint& p) {
+        return ((p.u - seg.a.u) * ru + (p.v - seg.a.v) * rv) / (len * len);
+    };
+    const auto lineDistance = [&](double t) {
+        const SketchPoint p = edgePoint(bez, t);
+        return nu * (p.u - seg.a.u) + nv * (p.v - seg.a.v);
+    };
+    const std::vector<double> breaks = spanBreaks(g, 3);
+    std::vector<double> turning(breaks.size(), 0.0);
+    double farthest = 0.0;
+    for (size_t j = 0; j < breaks.size(); ++j) {
+        turning[j] = std::fabs(lineDistance(breaks[j]));
+        farthest = std::fmax(farthest, turning[j]);
+    }
+    const int si = bezFirst ? 1 : 0;
+    const int bi = 1 - si;
+    std::vector<Contact> local;
+    if (farthest <= kTol) {
+        // The whole span lies along the line (a two-point spline is a straight
+        // span): sharing more than a tolerance of the segment is an overlap.
+        double lo = INFINITY;
+        double hi = -INFINITY;
+        for (int k = 0; k <= 16; ++k) {
+            const double s = segParam(edgePoint(bez, k / 16.0));
+            lo = std::fmin(lo, s);
+            hi = std::fmax(hi, s);
+        }
+        if ((std::fmin(1.0, hi) - std::fmax(0.0, lo)) * len > kTol) {
+            return ArrangementStatus::AmbiguousOverlap;
+        }
+    } else {
+        std::vector<double> roots;
+        polyRoots(g, 3, 0.0, 1.0, &roots);
+        std::vector<uint8_t> drop;
+        std::vector<double> touches;
+        dropTouchingRoots(breaks, roots, turning, &drop, &touches);
+        for (double tc : touches) {
+            const double s = segParam(edgePoint(bez, tc));
+            if (s >= 0.0 && s <= 1.0) ++*tangents;
+        }
+        for (size_t i = 0; i < roots.size(); ++i) {
+            if (drop[i] != 0u) continue;
+            const SketchPoint p = edgePoint(bez, roots[i]);
+            const double s = segParam(p);
+            if (s < 0.0 || s > 1.0) continue;
+            Contact c;
+            c.point = p;
+            c.t[bi] = roots[i];
+            c.t[si] = s;
+            addContact(&local, c);
+        }
+    }
+    endpointContacts(bezFirst ? bez : seg, bezFirst ? seg : bez, &local);
+    for (const Contact& c : local) addContact(out, c);
+    return ArrangementStatus::Ok;
+}
+
+// A spline span and a circle or arc: |B(t) - c|^2 - r^2 is a sextic in t.
+ArrangementStatus bezierRound(const SourceEdge& bez, const SourceEdge& round, bool bezFirst,
+                              std::vector<Contact>* out, uint32_t* tangents) {
+    double cu[4];
+    double cv[4];
+    bezierPower(bez, cu, cv);
+    cu[0] -= round.center.u;
+    cv[0] -= round.center.v;
+    double g[7] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+    for (int i = 0; i < 4; ++i) {
+        for (int j = 0; j < 4; ++j) g[i + j] += cu[i] * cu[j] + cv[i] * cv[j];
+    }
+    g[0] -= round.radius * round.radius;
+    const auto radial = [&](double t) {
+        return dist(edgePoint(bez, t), round.center) - round.radius;
+    };
+    const std::vector<double> breaks = spanBreaks(g, 6);
+    std::vector<double> turning(breaks.size(), 0.0);
+    double farthest = 0.0;
+    for (size_t j = 0; j < breaks.size(); ++j) {
+        turning[j] = std::fabs(radial(breaks[j]));
+        farthest = std::fmax(farthest, turning[j]);
+    }
+    const int ri = bezFirst ? 1 : 0;
+    const int bi = 1 - ri;
+    std::vector<Contact> local;
+    if (farthest <= kTol) {
+        // The whole span lies on the circle: an overlap wherever it lies on
+        // the edge's own span.
+        for (int k = 0; k <= 16; ++k) {
+            double rt = 0.0;
+            if (roundParam(round, edgePoint(bez, k / 16.0), &rt)) {
+                return ArrangementStatus::AmbiguousOverlap;
+            }
+        }
+    } else {
+        std::vector<double> roots;
+        polyRoots(g, 6, 0.0, 1.0, &roots);
+        std::vector<uint8_t> drop;
+        std::vector<double> touches;
+        dropTouchingRoots(breaks, roots, turning, &drop, &touches);
+        for (double tc : touches) {
+            double rt = 0.0;
+            if (roundParam(round, edgePoint(bez, tc), &rt)) ++*tangents;
+        }
+        for (size_t i = 0; i < roots.size(); ++i) {
+            if (drop[i] != 0u) continue;
+            const SketchPoint p = edgePoint(bez, roots[i]);
+            double rt = 0.0;
+            if (!roundParam(round, p, &rt)) continue;
+            Contact c;
+            c.point = p;
+            c.t[bi] = roots[i];
+            c.t[ri] = rt;
+            addContact(&local, c);
+        }
+    }
+    endpointContacts(bezFirst ? bez : round, bezFirst ? round : bez, &local);
+    for (const Contact& c : local) addContact(out, c);
+    return ArrangementStatus::Ok;
+}
+
+// --- span against span: subdivision, then Newton on the exact curves -------
+
+// A piece of one span over [t0, t1] of the SPAN's parameter, as its own Bezier.
+struct BezierPiece {
+    SketchPoint p[4];
+    double t0 = 0.0;
+    double t1 = 1.0;
+};
+
+BezierPiece wholePiece(const SourceEdge& e) {
+    BezierPiece piece;
+    for (int k = 0; k < 4; ++k) piece.p[k] = e.ctrl[k];
+    return piece;
+}
+
+// de Casteljau at the middle.
+void splitPiece(const BezierPiece& in, BezierPiece* left, BezierPiece* right) {
+    const SketchPoint a = lerp(in.p[0], in.p[1], 0.5);
+    const SketchPoint b = lerp(in.p[1], in.p[2], 0.5);
+    const SketchPoint c = lerp(in.p[2], in.p[3], 0.5);
+    const SketchPoint d = lerp(a, b, 0.5);
+    const SketchPoint e = lerp(b, c, 0.5);
+    const SketchPoint m = lerp(d, e, 0.5);
+    const double tm = 0.5 * (in.t0 + in.t1);
+    *left = BezierPiece{{in.p[0], a, d, m}, in.t0, tm};
+    *right = BezierPiece{{m, e, c, in.p[3]}, tm, in.t1};
+}
+
+void pieceBox(const BezierPiece& q, double box[4]) {
+    box[0] = box[2] = q.p[0].u;
+    box[1] = box[3] = q.p[0].v;
+    for (int k = 1; k < 4; ++k) {
+        box[0] = std::fmin(box[0], q.p[k].u);
+        box[1] = std::fmin(box[1], q.p[k].v);
+        box[2] = std::fmax(box[2], q.p[k].u);
+        box[3] = std::fmax(box[3], q.p[k].v);
+    }
+}
+
+// How far the handles stand off the chord's line: the most the curve can.
+double pieceFlatness(const BezierPiece& q) {
+    const double cu = q.p[3].u - q.p[0].u;
+    const double cv = q.p[3].v - q.p[0].v;
+    const double len = std::hypot(cu, cv);
+    if (!(len > 0.0)) {
+        return std::fmax(dist(q.p[1], q.p[0]), dist(q.p[2], q.p[0]));
+    }
+    const double d1 = std::fabs(crossUV(cu, cv, q.p[1].u - q.p[0].u, q.p[1].v - q.p[0].v)) / len;
+    const double d2 = std::fabs(crossUV(cu, cv, q.p[2].u - q.p[0].u, q.p[2].v - q.p[0].v)) / len;
+    return std::fmax(d1, d2);
+}
+
+// Subdivision stops when both pieces are flat to a twentieth of the coincidence
+// tolerance or at this depth; the visits are bounded per span pair, and a pair
+// that exhausts them shares a stretch no finite node set splits.
+constexpr double kBezierFlatness = 0.05 * kTol;
+constexpr int kMaxBezierDepth = 40;
+constexpr uint32_t kMaxBezierPairVisits = 1u << 15;
+// How far either side of a contact the two curves are compared to tell a
+// crossing from a touch: twenty coincidence tolerances along the curve.
+constexpr double kSideProbeMeters = 20.0 * kTol;
+
+struct BezierSearch {
+    // (sA, tB) parameter pairs to refine, in discovery order.
+    std::vector<std::pair<double, double>> candidates;
+    uint32_t visits = 0;
+    bool exhausted = false;
+};
+
+// Where two flat pieces' chords meet (or, parallel, come within tolerance),
+// as span parameters.
+void chordCandidate(const BezierPiece& a, const BezierPiece& b, BezierSearch* search) {
+    const double ru = a.p[3].u - a.p[0].u, rv = a.p[3].v - a.p[0].v;
+    const double qu = b.p[3].u - b.p[0].u, qv = b.p[3].v - b.p[0].v;
+    const double wu = b.p[0].u - a.p[0].u, wv = b.p[0].v - a.p[0].v;
+    const double rLen = std::hypot(ru, rv);
+    const double qLen = std::hypot(qu, qv);
+    const double rxq = crossUV(ru, rv, qu, qv);
+    constexpr double kMargin = 0.1;
+    double sigma = 0.0;
+    double tau = 0.0;
+    if (rLen > 0.0 && qLen > 0.0 && std::fabs(rxq) > 1.0e-12 * rLen * qLen) {
+        sigma = crossUV(wu, wv, qu, qv) / rxq;
+        tau = crossUV(wu, wv, ru, rv) / rxq;
+        if (sigma < -kMargin || sigma > 1.0 + kMargin || tau < -kMargin || tau > 1.0 + kMargin) {
+            return;
+        }
+    } else {
+        // Parallel (or a point): the nearest approach, if within tolerance.
+        const double r2 = rLen * rLen;
+        sigma = r2 > 0.0 ? ((wu + 0.5 * qu) * ru + (wv + 0.5 * qv) * rv) / r2 : 0.0;
+        sigma = std::fmax(0.0, std::fmin(1.0, sigma));
+        const SketchPoint pa = lerp(a.p[0], a.p[3], sigma);
+        const double q2 = qLen * qLen;
+        tau = q2 > 0.0 ? ((pa.u - b.p[0].u) * qu + (pa.v - b.p[0].v) * qv) / q2 : 0.0;
+        tau = std::fmax(0.0, std::fmin(1.0, tau));
+        if (dist(pa, lerp(b.p[0], b.p[3], tau)) > kTol) return;
+    }
+    sigma = std::fmax(0.0, std::fmin(1.0, sigma));
+    tau = std::fmax(0.0, std::fmin(1.0, tau));
+    search->candidates.emplace_back(a.t0 + (a.t1 - a.t0) * sigma, b.t0 + (b.t1 - b.t0) * tau);
+}
+
+void searchPieces(const BezierPiece& a, const BezierPiece& b, int depth, BezierSearch* search) {
+    if (search->exhausted) return;
+    if (++search->visits > kMaxBezierPairVisits) {
+        search->exhausted = true;
+        return;
+    }
+    double ba[4];
+    double bb[4];
+    pieceBox(a, ba);
+    pieceBox(b, bb);
+    if (ba[0] > bb[2] + kTol || bb[0] > ba[2] + kTol || ba[1] > bb[3] + kTol
+        || bb[1] > ba[3] + kTol) {
+        return;
+    }
+    const bool flatA = pieceFlatness(a) <= kBezierFlatness;
+    const bool flatB = pieceFlatness(b) <= kBezierFlatness;
+    if ((flatA && flatB) || depth >= kMaxBezierDepth) {
+        chordCandidate(a, b, search);
+        return;
+    }
+    const double sizeA = std::fmax(ba[2] - ba[0], ba[3] - ba[1]);
+    const double sizeB = std::fmax(bb[2] - bb[0], bb[3] - bb[1]);
+    BezierPiece left;
+    BezierPiece right;
+    if (!flatA && (flatB || sizeA >= sizeB)) {
+        splitPiece(a, &left, &right);
+        searchPieces(left, b, depth + 1, search);
+        searchPieces(right, b, depth + 1, search);
+    } else {
+        splitPiece(b, &left, &right);
+        searchPieces(a, left, depth + 1, search);
+        searchPieces(a, right, depth + 1, search);
+    }
+}
+
+// Newton on A(s) - B(t) = 0 from a chord estimate, parameters held in [0, 1].
+// True when the refined point lies within tolerance on both curves.
+bool refineSpanContact(const SourceEdge& ea, const SourceEdge& eb, double* s, double* t) {
+    for (int iteration = 0; iteration < 48; ++iteration) {
+        const SketchPoint pa = edgePoint(ea, *s);
+        const SketchPoint pb = edgePoint(eb, *t);
+        const double fu = pa.u - pb.u;
+        const double fv = pa.v - pb.v;
+        const SketchPoint da = bezierDerivative(ea, *s);
+        const SketchPoint db = bezierDerivative(eb, *t);
+        // J = [da, -db]; solve J * (ds, dt) = -F.
+        const double det = crossUV(da.u, da.v, -db.u, -db.v);
+        if (!(std::fabs(det) > 0.0)) break;
+        const double ds = crossUV(-fu, -fv, -db.u, -db.v) / det;
+        const double dt = crossUV(da.u, da.v, -fu, -fv) / det;
+        const double ns = std::fmax(0.0, std::fmin(1.0, *s + ds));
+        const double nt = std::fmax(0.0, std::fmin(1.0, *t + dt));
+        if (ns == *s && nt == *t) break;
+        *s = ns;
+        *t = nt;
+    }
+    return dist(edgePoint(ea, *s), edgePoint(eb, *t)) <= kTol;
+}
+
+// Signed distance from q to span e near parameter s (+ on e's left).
+double signedDistanceToSpan(const SourceEdge& e, double s, const SketchPoint& q) {
+    double t = s;
+    nearestOnBezier(e, q, std::fmax(0.0, s - 0.25), std::fmin(1.0, s + 0.25), &t);
+    const SketchPoint p = edgePoint(e, t);
+    const SketchPoint d = bezierDirection(e, t);
+    const double len = std::hypot(d.u, d.v);
+    if (!(len > 0.0)) return 0.0;
+    return crossUV(d.u, d.v, q.u - p.u, q.v - p.v) / len;
+}
+
+enum class SpanContactKind : uint8_t { Crossing, Touch, Shared };
+
+// Whether span b passes from one side of span a to the other at (s, t): b is
+// probed a few tolerances either side along its own length and each probe's
+// signed distance to a is measured on a's exact curve. Both probes still ON a
+// (to the noise of the arithmetic) is a shared stretch.
+SpanContactKind classifySpanContact(const SourceEdge& a, const SourceEdge& b, double s, double t) {
+    const SketchPoint db = bezierDirection(b, t);
+    const double speed = std::hypot(db.u, db.v);
+    const double step = speed > 0.0 ? kSideProbeMeters / speed : 0.0;
+    const double minus = signedDistanceToSpan(a, s, edgePoint(b, std::fmax(0.0, t - step)));
+    const double plus = signedDistanceToSpan(a, s, edgePoint(b, std::fmin(1.0, t + step)));
+    double scale = 1.0;
+    for (int k = 0; k < 4; ++k) {
+        scale = std::fmax(scale, std::fmax(std::fabs(a.ctrl[k].u), std::fabs(a.ctrl[k].v)));
+    }
+    const double noise = 1.0e-12 * scale;
+    if (std::fabs(minus) <= noise && std::fabs(plus) <= noise) {
+        return SpanContactKind::Shared;
+    }
+    if (std::fabs(minus) > noise && std::fabs(plus) > noise && (minus > 0.0) != (plus > 0.0)) {
+        return SpanContactKind::Crossing;
+    }
+    return SpanContactKind::Touch;
+}
+
+bool nearSpanEnd(const SourceEdge& e, const SketchPoint& p) {
+    return dist(p, e.a) <= kTol || dist(p, e.b) <= kTol;
+}
+
+ArrangementStatus bezierBezier(const SourceEdge& e0, const SourceEdge& e1,
+                               std::vector<Contact>* out, uint32_t* tangents) {
+    // The same span twice (two splines through the same points, either way
+    // round) shares its whole length.
+    const bool same = e0.ctrl[0].u == e1.ctrl[0].u && e0.ctrl[0].v == e1.ctrl[0].v
+                      && e0.ctrl[1].u == e1.ctrl[1].u && e0.ctrl[1].v == e1.ctrl[1].v
+                      && e0.ctrl[2].u == e1.ctrl[2].u && e0.ctrl[2].v == e1.ctrl[2].v
+                      && e0.ctrl[3].u == e1.ctrl[3].u && e0.ctrl[3].v == e1.ctrl[3].v;
+    const bool reversed = e0.ctrl[0].u == e1.ctrl[3].u && e0.ctrl[0].v == e1.ctrl[3].v
+                          && e0.ctrl[1].u == e1.ctrl[2].u && e0.ctrl[1].v == e1.ctrl[2].v
+                          && e0.ctrl[2].u == e1.ctrl[1].u && e0.ctrl[2].v == e1.ctrl[1].v
+                          && e0.ctrl[3].u == e1.ctrl[0].u && e0.ctrl[3].v == e1.ctrl[0].v;
+    if (same || reversed) {
+        return ArrangementStatus::AmbiguousOverlap;
+    }
+    BezierSearch search;
+    searchPieces(wholePiece(e0), wholePiece(e1), 0, &search);
+    if (search.exhausted) {
+        return ArrangementStatus::AmbiguousOverlap;
+    }
+    std::vector<Contact> local;
+    std::vector<SketchPoint> decided;
+    for (const std::pair<double, double>& candidate : search.candidates) {
+        double s = candidate.first;
+        double t = candidate.second;
+        if (!refineSpanContact(e0, e1, &s, &t)) continue;
+        const SketchPoint p = edgePoint(e0, s);
+        // An authored end is the endpoint contacts' business, and a point
+        // already decided is not decided twice.
+        if (nearSpanEnd(e0, p) || nearSpanEnd(e1, p)) continue;
+        bool seen = false;
+        for (const SketchPoint& q : decided) seen = seen || dist(p, q) <= kTol;
+        if (seen) continue;
+        decided.push_back(p);
+        switch (classifySpanContact(e0, e1, s, t)) {
+            case SpanContactKind::Shared:
+                return ArrangementStatus::AmbiguousOverlap;
+            case SpanContactKind::Touch:
+                ++*tangents;
+                break;
+            case SpanContactKind::Crossing: {
+                Contact c;
+                c.point = p;
+                c.t[0] = s;
+                c.t[1] = t;
+                addContact(&local, c);
+                break;
+            }
+        }
+    }
+    endpointContacts(e0, e1, &local);
+    for (const Contact& c : local) addContact(out, c);
+    return ArrangementStatus::Ok;
+}
+
+// How far a piece's control polygon turns, radians.
+double pieceTurning(const BezierPiece& q) {
+    double total = 0.0;
+    double pu = 0.0;
+    double pv = 0.0;
+    bool have = false;
+    for (int k = 0; k < 3; ++k) {
+        const double du = q.p[k + 1].u - q.p[k].u;
+        const double dv = q.p[k + 1].v - q.p[k].v;
+        if (!(std::hypot(du, dv) > 0.0)) continue;
+        if (have) total += std::fabs(std::atan2(crossUV(pu, pv, du, dv), pu * du + pv * dv));
+        pu = du;
+        pv = dv;
+        have = true;
+    }
+    return total;
+}
+
+// A span cannot cross itself where its control polygon turns by less than a
+// quarter turn, so it is cut into such pieces (bounded depth) and every two
+// pieces are searched against each other; a contact anywhere but the joint two
+// neighbouring pieces share is the span meeting itself.
+ArrangementStatus spanSelfIntersection(const SourceEdge& e) {
+    std::vector<BezierPiece> pieces;
+    std::vector<std::pair<BezierPiece, int>> stack{{wholePiece(e), 0}};
+    while (!stack.empty()) {
+        const std::pair<BezierPiece, int> top = stack.back();
+        stack.pop_back();
+        if (pieceTurning(top.first) < 0.5 * kPi || top.second >= 12) {
+            pieces.push_back(top.first);
+            continue;
+        }
+        BezierPiece left;
+        BezierPiece right;
+        splitPiece(top.first, &left, &right);
+        // Right first, so the left half is processed (and appended) first.
+        stack.push_back({right, top.second + 1});
+        stack.push_back({left, top.second + 1});
+    }
+    for (size_t i = 0; i < pieces.size(); ++i) {
+        for (size_t j = i + 1; j < pieces.size(); ++j) {
+            BezierSearch search;
+            searchPieces(pieces[i], pieces[j], 0, &search);
+            if (search.exhausted) {
+                return ArrangementStatus::SelfIntersectingCurve;
+            }
+            for (const std::pair<double, double>& candidate : search.candidates) {
+                double s = candidate.first;
+                double t = candidate.second;
+                if (!refineSpanContact(e, e, &s, &t)) continue;
+                const SketchPoint p = edgePoint(e, s);
+                const SketchPoint q = edgePoint(e, t);
+                // Two parameters within tolerance along the curve itself are one
+                // place on it, not a meeting.
+                const double between = std::fabs(s - t);
+                const SketchPoint mid = edgePoint(e, 0.5 * (s + t));
+                if (between < 1.0e-9 || (dist(p, mid) <= kTol && dist(q, mid) <= kTol)) continue;
+                if (j == i + 1 && dist(p, pieces[i].p[3]) <= kTol) continue;
+                return ArrangementStatus::SelfIntersectingCurve;
+            }
+        }
+    }
+    return ArrangementStatus::Ok;
+}
+
 bool boundsOverlap(const SourceEdge& a, const SourceEdge& b) {
     return a.minU <= b.maxU + kTol && b.minU <= a.maxU + kTol && a.minV <= b.maxV + kTol
            && b.minV <= a.maxV + kTol;
@@ -457,7 +1196,15 @@ ArrangementStatus collectContacts(const std::vector<SourceEdge>& edges,
             if (!boundsOverlap(a, b)) continue;
             std::vector<Contact> contacts;
             ArrangementStatus why = ArrangementStatus::Ok;
-            if (!a.round() && !b.round()) {
+            if (a.bezier() && b.bezier()) {
+                why = bezierBezier(a, b, &contacts, &stats->tangents);
+            } else if (a.bezier()) {
+                why = b.round() ? bezierRound(a, b, true, &contacts, &stats->tangents)
+                                : bezierSegment(a, b, true, &contacts, &stats->tangents);
+            } else if (b.bezier()) {
+                why = a.round() ? bezierRound(b, a, false, &contacts, &stats->tangents)
+                                : bezierSegment(b, a, false, &contacts, &stats->tangents);
+            } else if (!a.round() && !b.round()) {
                 why = segmentSegment(a, b, &contacts);
             } else if (!a.round()) {
                 why = segmentRound(a, b, true, &contacts, &stats->tangents);
@@ -587,6 +1334,23 @@ struct Fragment {
 // Signed area contribution (Green) of walking fragment f forward or reversed.
 double fragmentArea(const SourceEdge& e, const Fragment& f, bool reversed) {
     double value = 0.0;
+    if (e.shape == EdgeShape::Bezier) {
+        // u v' - v u' along a cubic is a polynomial of degree 5 in t, which
+        // three Gauss-Legendre nodes integrate exactly.
+        static const double kNodes[3] = {-0.7745966692414834, 0.0, 0.7745966692414834};
+        static const double kWeights[3] = {5.0 / 9.0, 8.0 / 9.0, 5.0 / 9.0};
+        const double half = 0.5 * (f.t1 - f.t0);
+        const double mid = 0.5 * (f.t1 + f.t0);
+        double sum = 0.0;
+        for (int k = 0; k < 3; ++k) {
+            const double t = mid + half * kNodes[k];
+            const SketchPoint p = sketchBezierPoint(spanOf(e), t);
+            const SketchPoint d = bezierDerivative(e, t);
+            sum += kWeights[k] * (p.u * d.v - p.v * d.u);
+        }
+        value = 0.5 * half * sum;
+        return reversed ? -value : value;
+    }
     if (e.shape == EdgeShape::Segment) {
         const SketchPoint p = edgePoint(e, f.t0);
         const SketchPoint q = edgePoint(e, f.t1);
@@ -610,8 +1374,65 @@ double angleBetween(const SketchPoint& p, const SketchPoint& a, const SketchPoin
 // cut into pieces of at most a quarter turn; a piece whose circular segment
 // (between its chord and itself) contains p subtends its chord angle plus a
 // full turn in its own direction.
+// Signed crossings of the ray from p towards +u by the span over [t0, t1]: +1
+// where the curve passes upward. The class at the two ends is read off
+// `edgePoint`, the evaluation the chord uses, so a ray through an end is judged
+// the same way for the curve and for its chord.
+int bezierRayCrossings(const SourceEdge& e, double t0, double t1, const SketchPoint& p) {
+    double cu[4];
+    double cv[4];
+    bezierPower(e, cu, cv);
+    const double g[4] = {cv[0] - p.v, cv[1], cv[2], cv[3]};
+    std::vector<double> breaks{t0};
+    polyCritical(g, 3, t0, t1, &breaks);
+    breaks.push_back(t1);
+    const size_t last = breaks.size() - 1;
+    const auto above = [&](size_t k) {
+        if (k == 0) return edgePoint(e, t0).v >= p.v;
+        if (k == last) return edgePoint(e, t1).v >= p.v;
+        return polyEval(g, 3, breaks[k]) >= 0.0;
+    };
+    int count = 0;
+    for (size_t k = 0; k < last; ++k) {
+        const bool from = above(k);
+        const bool to = above(k + 1);
+        if (from == to) continue;
+        double lo = breaks[k];
+        double hi = breaks[k + 1];
+        for (int i = 0; i < 200; ++i) {
+            const double mid = 0.5 * (lo + hi);
+            if (!(mid > lo && mid < hi)) break;
+            if ((polyEval(g, 3, mid) >= 0.0) == from) {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+        }
+        if (edgePoint(e, 0.5 * (lo + hi)).u > p.u) count += to ? 1 : -1;
+    }
+    return count;
+}
+
+int chordRayCrossings(const SketchPoint& a, const SketchPoint& b, const SketchPoint& p) {
+    const bool from = a.v >= p.v;
+    const bool to = b.v >= p.v;
+    if (from == to) return 0;
+    const double t = (p.v - a.v) / (b.v - a.v);
+    return a.u + (b.u - a.u) * t > p.u ? (to ? 1 : -1) : 0;
+}
+
 double fragmentWinding(const SourceEdge& e, const Fragment& f, bool reversed, const SketchPoint& p) {
     double total = 0.0;
+    if (e.shape == EdgeShape::Bezier) {
+        // The chord's angle, corrected by the whole turns the closed loop
+        // (the piece, then its chord backwards) makes around p -- that loop's
+        // winding is its signed ray crossings. Exact, with no tessellation.
+        const SketchPoint a = edgePoint(e, f.t0);
+        const SketchPoint b = edgePoint(e, f.t1);
+        const int turns = bezierRayCrossings(e, f.t0, f.t1, p) - chordRayCrossings(a, b, p);
+        total = angleBetween(p, a, b) + kTwoPi * turns;
+        return reversed ? -total : total;
+    }
     if (e.shape == EdgeShape::Segment) {
         total = angleBetween(p, edgePoint(e, f.t0), edgePoint(e, f.t1));
     } else {
@@ -643,6 +1464,10 @@ double fragmentWinding(const SourceEdge& e, const Fragment& f, bool reversed, co
 }
 
 double fragmentDistance(const SourceEdge& e, const Fragment& f, const SketchPoint& p) {
+    if (e.shape == EdgeShape::Bezier) {
+        double t = 0.0;
+        return nearestOnBezier(e, p, f.t0, f.t1, &t);
+    }
     if (e.shape == EdgeShape::Segment) {
         const SketchPoint a = edgePoint(e, f.t0), b = edgePoint(e, f.t1);
         const double ru = b.u - a.u, rv = b.v - a.v;
@@ -690,6 +1515,7 @@ const char* arrangementStatusName(ArrangementStatus status) {
         case ArrangementStatus::CapExceeded: return "CapExceeded";
         case ArrangementStatus::InvalidSelection: return "InvalidSelection";
         case ArrangementStatus::PinchedSelection: return "PinchedSelection";
+        case ArrangementStatus::SelfIntersectingCurve: return "SelfIntersectingCurve";
     }
     return "Unknown";
 }
@@ -853,6 +1679,14 @@ SketchArrangement deriveSketchArrangement(const CadSketch& sketch) {
         return failed(why, stats);
     }
     stats.sourceEdges = static_cast<uint32_t>(edges.size());
+    // A span is one source edge: one that meets itself has no node to be
+    // split at, so the cells it would make are refused rather than guessed.
+    for (const SourceEdge& edge : edges) {
+        if (!edge.bezier()) continue;
+        if (const ArrangementStatus why = spanSelfIntersection(edge); why != ArrangementStatus::Ok) {
+            return failed(why, stats);
+        }
+    }
 
     std::vector<PairContact> contacts;
     if (const ArrangementStatus why = collectContacts(edges, &contacts, &stats);
@@ -980,7 +1814,8 @@ SketchArrangement deriveSketchArrangement(const CadSketch& sketch) {
                 dv = -dv;
             }
             h.angle = std::atan2(dv, du);
-            h.curvature = r == 0 ? edgeCurvature(e) : -edgeCurvature(e);
+            h.curvature = r == 0 ? edgeCurvature(e, fragments[f].t0)
+                                 : -edgeCurvature(e, fragments[f].t1);
         }
     }
 
@@ -1187,11 +2022,22 @@ SketchArrangement deriveSketchArrangement(const CadSketch& sketch) {
         af.ref = f.ref;
         af.startNode = f.node0;
         af.endNode = f.node1;
-        af.curved = edges[f.edge].round();
+        af.curved = edges[f.edge].curved();
         af.boundsFace = f.live;
         const SourceEdge& e = edges[f.edge];
         af.points.push_back(out.nodes[f.node0]);
-        if (e.round()) {
+        if (e.bezier()) {
+            // On the span's own parameter, at the density the profile
+            // tessellation gives a whole span: a whole span reproduces its
+            // interior points exactly. The ends are the NODES.
+            const double wanted =
+                    std::ceil(static_cast<double>(kSplineSegmentsPerSpan) * (f.t1 - f.t0) - 1.0e-9);
+            const uint32_t segments = static_cast<uint32_t>(std::fmax(2.0, wanted));
+            for (uint32_t i = 1; i < segments; ++i) {
+                const double t = f.t0 + (f.t1 - f.t0) * (static_cast<double>(i) / segments);
+                af.points.push_back(sketchBezierPoint(spanOf(e), t));
+            }
+        } else if (e.round()) {
             // Clipped to the fragment's own sweep, at an authored arc's
             // density; the two ends are the NODES, never re-evaluated.
             const double sweep = (f.t1 - f.t0) * e.sweep;

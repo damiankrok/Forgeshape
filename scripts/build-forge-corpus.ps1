@@ -1731,8 +1731,10 @@ function New-CadFragmentSupportFile {
 }
 
 # CAD SPLINE FACE: the lens fixture with a Spline (entity 3) added to its
-# sketch. The selection is well formed, but a spline has no analytic
-# intersection and its tessellation is not an identity: UnsupportedCurve.
+# sketch. Built while a spline disabled the arrangement, and refused then
+# (UnsupportedCurve). Since CAD-V6-S2-CORRECTION-FILL-HUD-R1 a spline is
+# intersected span by span; this one stands clear of both curves, bounds no
+# face, and the lens resolves: the SAME bytes are now a valid file.
 function New-CadSplineFaceFile {
     $spline = [pscustomobject]@{ Id = 3; KindCode = 6; Values = @(-1.0, -1.0, 0.0, -0.5, 1.0, -1.0) }
     return New-CadFaceLensFile -ExtraEntities @($spline) -NextEntityId 4

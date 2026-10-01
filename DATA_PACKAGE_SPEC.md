@@ -1044,11 +1044,12 @@ Everything else is the domain's `validateCadBodyState`, surfaced as
 | a cycle not rotated to its smallest fragment, a fragment twice in a cycle, holes or faces not strictly ascending | `PlanarFaceRefNotCanonical` |
 | one face twice in a selection | `DuplicatePlanarFace` |
 | a face the sketch's arrangement does not derive | `PlanarFaceUnresolved` |
-| a face selection over a sketch holding a Spline | `PlanarFaceUnsupportedCurve` |
+| a face selection over a sketch holding a curve kind the arrangement has no source edge for (none since `CAD-V6-S2-CORRECTION-FILL-HUD-R1`: a Spline is intersected span by span) | `PlanarFaceUnsupportedCurve` |
+| over a sketch with a spline span that crosses or touches itself | `SelfIntersectingProfile` |
 | over a sketch whose curves share a stretch | `PlanarFaceAmbiguousOverlap` |
 | over a sketch past the arrangement's caps | `PlanarFaceCapExceeded` |
 | an arrangement cycle below the area floor | `PlanarFaceDegenerate` |
-| a face selection whose UNION pinches -- two chosen faces meeting at one point | `OverlappingRegions` |
+| a face selection whose UNION pinches -- two chosen faces meeting at one point | `PlanarFacesTouchAtPoint` (`CAD-V6-S2-CORRECTION-FILL-HUD-R1`; it was `OverlappingRegions`, the loop model's name for a different thing) |
 | a union loop longer than `kMaxProfileVertices` | `TooManyEntities` |
 
 A code-4 FACE is refused by the CODEC (`InvalidSemanticValue`) unless it is a
@@ -1076,9 +1077,22 @@ resolves. The arrangement itself — analytic intersections of lines, polyline
 segments, rectangle sides, circles and arcs in binary64 sketch coordinates,
 T-junctions and endpoint coincidences within `kSketchCoincidenceMeters`, cuts
 named by partner and ordinal, the half-edge walk and the bounded faces — is the
-one `CAD-PLANAR-FACE-PF-S1` defines (`artifacts/cad-planar-face-pf-s1/SUMMARY.md`);
-a Spline is never intersected, so a Spline anywhere in the sketch refuses a face
-selection over it.
+one `CAD-PLANAR-FACE-PF-S1` defines (`artifacts/cad-planar-face-pf-s1/SUMMARY.md`).
+
+**A Spline is one source edge per authored span** (`CAD-V6-S2-CORRECTION-FILL-HUD-R1`).
+Span `i` — the curve between authored points `i` and `i + 1`, the exact cubic
+Bezier the profile tessellation samples (`sketchSplineSpan`) — is the fragment
+tuple's `sourceEdgeLocalIndex` `i`, and its cuts are the same semantic cuts
+every edge carries: the span's own start or end, or the k-th crossing with a
+named partner edge, counted along the span's parameter. It is intersected on the
+curve, never on its tessellation (a polynomial root isolation against a line or
+a circle, a bounded subdivision with Newton refinement against another span), a
+touch without a crossing makes no node, a shared stretch is
+`PlanarFaceAmbiguousOverlap`, and a span meeting itself is
+`SelfIntersectingProfile`. No sample index, tessellation index or coordinate is
+identity, so **no byte layout changed**: a spline fragment is written exactly as
+any other fragment. A Spline whose spans cross nothing (the `cad_spline_face_v6`
+spline) bounds no face and leaves every other ref resolving as before.
 
 ### Regenerating a face selection, and its faces (`CAD-V6-S2`)
 
@@ -1349,16 +1363,16 @@ debug launch as `FORGESHAPE_PROJECT_GOLDEN_SHA256`.
 | `cad_bad_selection_kind_v6.forge` | 394 | `cf3b0c64e066b6b809a5744e4b9d32d46864ae7d690b89c4bc5abd6785517e27` | The lens fixture with `selectionKind` **9** — refused `InvalidSemanticValue` by the code alone |
 | `cad_noncanonical_face_v6.forge` | 394 | `2aed2f15bb5437286906a3352af39d3d8dd29c40b876a18d65d14b0aac8ca2a3` | The lens fixture with its outer cycle **rotated** to start at the circle fragment — the same boundary, not the canonical encoding; refused `InvalidSemanticValue` (`PlanarFaceRefNotCanonical`), never re-rotated |
 | `cad_unresolved_face_v6.forge` | 394 | `9602fc4a281e4d6b7bf79fedf766d76ad2e2e2d142e9917d5b44635c65d05b4b` | The lens fixture whose circle fragment ends at crossing ordinal **2** of a side the circle crosses twice — well formed, canonical, and derived by no arrangement; refused `InvalidSemanticValue` (`PlanarFaceUnresolved`), no nearest face |
-| `cad_spline_face_v6.forge` | 451 | `d85f98db59968bbe6c47f1842f59bb2f93f167f61deba67f5f846e98651cd800` | The lens fixture with a three-point **Spline** (entity 3) added to its sketch — refused `InvalidSemanticValue` (`PlanarFaceUnsupportedCurve`) |
+| `cad_spline_face_v6.forge` | 451 | `d85f98db59968bbe6c47f1842f59bb2f93f167f61deba67f5f846e98651cd800` | The lens fixture with a three-point **Spline** (entity 3) added to its sketch, clear of both curves. Refused (`PlanarFaceUnsupportedCurve`) while a Spline disabled the arrangement; since `CAD-V6-S2-CORRECTION-FILL-HUD-R1` the **same bytes** are a VALID file — the spline bounds no face and the lens resolves |
 | `cad_overlap_face_v6.forge` | 376 | `313652c95c14d3ebfd5e451447b8b46d0890fbed35b7c680911fb94426e118f9` | The rectangle with a line lying **along** its bottom side, selecting the rectangle's whole boundary — refused `InvalidSemanticValue` (`PlanarFaceAmbiguousOverlap`) |
 | `cad_fragment_support_v6.forge` | 531 | `e1726cb5cbf0504ee0e50f457d8490ab410d12e41e426fdfe631dbb1e8c0acb6` | `CAD-V6-S2`: the `cad_face_lens_v6` body, and a second retained sketch on the lens's STRAIGHT side -- a fragment of the rectangle's right side, placement 3, FACE code 4 with cuts `X(2.0#0) > X(2.0#1)`, lineage `0x9873F7F20DED4004` -- holding a 0.3 m square Added 0.2 m out of it |
 
-The eighteen corrupt fixtures written since `CADB` v2 — two each for `CADB` v2,
-v3 and v4, four for `CADB` v5, seven for `CADB` v6 and one for `SCNE` v2 — are
+The seventeen corrupt fixtures written since `CADB` v2 — two each for `CADB` v2,
+v3 and v4, four for `CADB` v5, six for `CADB` v6 and one for `SCNE` v2 — are
 **constructed** by the PowerShell builder with the bad value in place, never
 generated and then mutated; the C++ self-test reaches the same bytes by its own
-route (patching the valid parent's one field and its CRC, or — for six of the
-seven v6 ones — writing the bad STATE through `encodeProjectV1Unchecked`), and
+route (patching the valid parent's one field and its CRC, or — for five of the
+six v6 ones — writing the bad STATE through `encodeProjectV1Unchecked`), and
 the digests agreeing is what proves the two routes describe one file. The
 envelope fixtures and `cad_bad_plane_v1` predate the rule and are still derived
 from their canonical parent.

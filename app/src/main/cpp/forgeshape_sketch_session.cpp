@@ -814,7 +814,16 @@ bool SketchSession::onExtrudeTouch(TouchAction action, int32_t actionPointerId,
                                       viewportHeight, &positiveSide)) {
                 return false;  // off the arrow: orbit, pan and tap are untouched
             }
-            regionTapArmed_ = false;
+            // ON the drawn arrow the finger means the arrow, at once. Merely in
+            // its grab corridor the gesture is captured -- a drag still takes
+            // the arrow -- but the tap stays armed, because the corridor
+            // crosses the cells around the chosen area and a still tap there
+            // is a fill-bucket tap on the cell under the finger
+            // (`CAD-V6-S2-CORRECTION-FILL-HUD-R1`).
+            if (extrudeDrag_.onDrawnArrow(anchors, camera, pointers[0].x, pointers[0].y,
+                                          viewportWidth, viewportHeight)) {
+                regionTapArmed_ = false;
+            }
             if (!extrudeDrag_.beginDrag(pointers[0].id, anchors, positiveSide, camera,
                                         pointers[0].x, pointers[0].y, viewportWidth,
                                         viewportHeight)) {
@@ -833,6 +842,11 @@ bool SketchSession::onExtrudeTouch(TouchAction action, int32_t actionPointerId,
             if (!extrudeDrag_.capturing() || count != 1 || pointers == nullptr
                 || pointers[0].id != extrudeDrag_.capturedPointerId()) {
                 return extrudeDrag_.capturing();
+            }
+            if (regionTapArmed_) {
+                // Still possibly a tap: the depth holds until the finger has
+                // travelled past the tap slop, so a tap leaves nothing behind.
+                return true;
             }
             Meters distance = 0.0;
             if (extrudeDrag_.updateDrag(pointers[0].id, camera, pointers[0].x, pointers[0].y,
@@ -862,9 +876,20 @@ bool SketchSession::onExtrudeTouch(TouchAction action, int32_t actionPointerId,
                 return false;
             }
             if (actionPointerId >= 0 && actionPointerId != extrudeDrag_.capturedPointerId()) {
+                regionTapArmed_ = false;
                 restoreCancelledExtrudeDrag();
                 return false;
             }
+            if (regionTapArmed_ && action == TouchAction::Up) {
+                // A still tap in the corridor, off the drawn arrow: it never
+                // moved the depth, so the capture ends with nothing written and
+                // the cell under the finger toggles.
+                regionTapArmed_ = false;
+                restoreCancelledExtrudeDrag();
+                toggleRegionAt(camera, regionTapX_, regionTapY_, viewportWidth, viewportHeight);
+                return true;
+            }
+            regionTapArmed_ = false;
             extrudeDrag_.endDrag();
             touchOverlay();
             return true;
@@ -1278,7 +1303,15 @@ CadStatus SketchSession::finish() {
     // planar faces. It is derived every Finish from the authored entities and
     // stored nowhere.
     SketchArrangement arrangement = deriveSketchArrangement(sketch_);
-    const bool planar = sketchRequiresPlanarFaces(arrangement, extraction);
+    // ONE decision (`CAD-V6-S2-CORRECTION-FILL-HUD-R1`): a sketch whose loops
+    // cross but whose arrangement cannot be derived is refused by the
+    // arrangement's own name, never handed to the loop model to be read as
+    // whole overlapping loops.
+    const SketchSelectionModeDecision mode = decideSketchSelectionMode(arrangement, extraction);
+    if (mode.status != CadStatus::Ok) {
+        return fail(mode.status);
+    }
+    const bool planar = mode.kind == CadSelectionKind::PlanarFaces;
     if (!planar && extraction.loops.profiles.empty()) {
         // The FIRST rejection is the most useful thing to say: "your polyline
         // is open" beats "no closed profile".

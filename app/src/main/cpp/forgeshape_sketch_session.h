@@ -442,7 +442,7 @@ public:
     bool planarFaceInfo(size_t index, SketchPoint* outInterior, double* outArea) const;
     // Adds the face or, when selected, removes it. Refused by name, the
     // selection standing as it was, when the union would pinch
-    // (`OverlappingRegions`) or exceed `kMaxPlanarFaceSelection`.
+    // (`PlanarFacesTouchAtPoint`) or exceed `kMaxPlanarFaceSelection`.
     CadStatus togglePlanarFace(size_t index);
     // Selects exactly this face: the panel's list row.
     CadStatus selectPlanarFace(size_t index);

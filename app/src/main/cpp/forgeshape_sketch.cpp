@@ -12,7 +12,7 @@ namespace forgeshape {
 
 // The count is a literal in the header so Java can mirror it; this is what
 // keeps the literal honest when an enumerator is appended.
-static_assert(static_cast<int>(CadStatus::PlanarFaceRegenerationUnavailable) + 1 == kCadStatusCount,
+static_assert(static_cast<int>(CadStatus::PlanarFacesTouchAtPoint) + 1 == kCadStatusCount,
               "kCadStatusCount must equal the number of CadStatus enumerators");
 
 const char* cadStatusName(CadStatus status) {
@@ -78,6 +78,7 @@ const char* cadStatusName(CadStatus status) {
         case CadStatus::PlanarFaceCapExceeded: return "PlanarFaceCapExceeded";
         case CadStatus::PlanarFaceDegenerate: return "PlanarFaceDegenerate";
         case CadStatus::PlanarFaceRegenerationUnavailable: return "PlanarFaceRegenerationUnavailable";
+        case CadStatus::PlanarFacesTouchAtPoint: return "PlanarFacesTouchAtPoint";
     }
     return "unknown";
 }
@@ -520,6 +521,32 @@ uint32_t sketchArcSegmentCount(double sweep) {
     return arcSegmentCount(sweep);
 }
 
+bool sketchSplineSpan(const SketchSpline& spline, uint32_t spanIndex, SketchBezierSpan* out) {
+    const std::vector<SketchPoint>& p = spline.points;
+    const size_t n = p.size();
+    if (out == nullptr || n < 2 || static_cast<size_t>(spanIndex) + 1u >= n) {
+        return false;
+    }
+    const size_t i = spanIndex;
+    // Catmull-Rom tangents, with the end spans reflecting their one neighbour
+    // so the curve still passes through the endpoint with a defined direction.
+    // Converted to the equivalent cubic Bezier: the curve INTERPOLATES p[i] and
+    // p[i+1] exactly.
+    const SketchPoint& p1 = p[i];
+    const SketchPoint& p2 = p[i + 1];
+    const SketchPoint p0 = (i == 0) ? SketchPoint{2.0 * p1.u - p2.u, 2.0 * p1.v - p2.v} : p[i - 1];
+    const SketchPoint p3 = (i + 2 < n) ? p[i + 2] : SketchPoint{2.0 * p2.u - p1.u, 2.0 * p2.v - p1.v};
+    out->p0 = p1;
+    out->c1 = SketchPoint{p1.u + (p2.u - p0.u) / 6.0, p1.v + (p2.v - p0.v) / 6.0};
+    out->c2 = SketchPoint{p2.u - (p3.u - p1.u) / 6.0, p2.v - (p3.v - p1.v) / 6.0};
+    out->p3 = p2;
+    return true;
+}
+
+SketchPoint sketchBezierPoint(const SketchBezierSpan& span, double t) {
+    return bezierAt(span.p0, span.c1, span.c2, span.p3, t);
+}
+
 CadStatus tessellateSketchCurve(const SketchEntity& entity, std::vector<SketchPoint>* out) {
     if (out == nullptr) {
         return CadStatus::UnknownEntity;
@@ -564,27 +591,19 @@ CadStatus tessellateSketchCurve(const SketchEntity& entity, std::vector<SketchPo
         out->reserve((n - 1) * kSplineSegmentsPerSpan + 1u);
         out->push_back(p.front());
         for (size_t i = 0; i + 1 < n; ++i) {
-            // Catmull-Rom tangents, with the end spans reflecting their one
-            // neighbour so the curve still passes through the endpoint with a
-            // defined direction. Converted to the equivalent cubic Bezier: the
-            // curve INTERPOLATES p[i] and p[i+1] exactly.
-            const SketchPoint& p1 = p[i];
-            const SketchPoint& p2 = p[i + 1];
-            const SketchPoint p0 = (i == 0) ? SketchPoint{2.0 * p1.u - p2.u, 2.0 * p1.v - p2.v}
-                                            : p[i - 1];
-            const SketchPoint p3 = (i + 2 < n) ? p[i + 2]
-                                               : SketchPoint{2.0 * p2.u - p1.u, 2.0 * p2.v - p1.v};
-            const SketchPoint c1{p1.u + (p2.u - p0.u) / 6.0, p1.v + (p2.v - p0.v) / 6.0};
-            const SketchPoint c2{p2.u - (p3.u - p1.u) / 6.0, p2.v - (p3.v - p1.v) / 6.0};
+            // The span's geometry has ONE statement (`sketchSplineSpan`), which
+            // the planar arrangement intersects too.
+            SketchBezierSpan span;
+            sketchSplineSpan(*spline, static_cast<uint32_t>(i), &span);
             for (uint32_t s = 1; s <= kSplineSegmentsPerSpan; ++s) {
                 if (s == kSplineSegmentsPerSpan) {
                     // The span's last point is the authored point itself, for
                     // the same reason an arc's ends are: exact, not evaluated.
-                    out->push_back(p2);
+                    out->push_back(span.p3);
                     break;
                 }
                 const double t = static_cast<double>(s) / static_cast<double>(kSplineSegmentsPerSpan);
-                out->push_back(bezierAt(p1, c1, c2, p2, t));
+                out->push_back(sketchBezierPoint(span, t));
             }
         }
         return CadStatus::Ok;

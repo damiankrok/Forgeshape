@@ -274,6 +274,17 @@ Vec3 cadExtrudeArrowPoint(const CadExtrudeSideAnchor& side, double controlWorld)
 // minimum scale.
 constexpr float kCadExtrudeGrabRadiusUnits = 24.0f;
 
+// How close to the DRAWN arrow -- its shaft and head, not the grab corridor
+// around them -- a still tap must land to count as a tap on the arrow, in the
+// same reference units (`CAD-V6-S2-CORRECTION-FILL-HUD-R1`).
+//
+// Inside the corridor but farther than this, a tap that does not travel is a
+// fill-bucket tap on the sketch cell under it: the shaft stands on the chosen
+// area and, in the oblique feature view, its corridor crosses neighbouring
+// cells that must stay reachable by a direct tap. A DRAG from anywhere in the
+// corridor still takes the arrow, exactly as before.
+constexpr float kCadExtrudeTapOnArrowUnits = 10.0f;
+
 // The smallest depth a DRAG may produce.
 //
 // A drag is clamped where a typed value is refused, and the difference is not
@@ -379,6 +390,12 @@ public:
                      const CameraSnapshot& camera, float x, float y, int viewportWidth,
                      int viewportHeight) const;
 
+    // Whether (x, y) lands on the DRAWN arrow of either side -- within
+    // `kCadExtrudeTapOnArrowUnits` of its shaft or head -- rather than merely
+    // in its grab corridor.
+    bool onDrawnArrow(const CadExtrudeAnchors& anchors, const CameraSnapshot& camera, float x,
+                      float y, int viewportWidth, int viewportHeight) const;
+
     // Which side (x, y) takes, preferring the PRIMARY one when both corridors
     // contain the point -- a Symmetric extrusion seen almost edge-on can
     // overlap both, and a deterministic answer beats a nearest-pixel race.
@@ -414,6 +431,11 @@ public:
     uint32_t dragCount() const { return dragCount_; }
 
 private:
+    // The one projected-arrow distance test both radii above use.
+    bool arrowWithin(const CadExtrudeAnchors& anchors, bool positiveSide,
+                     const CameraSnapshot& camera, float x, float y, int viewportWidth,
+                     int viewportHeight, float radiusUnits) const;
+
     int32_t pointerId_ = -1;
     // The basis, frozen at pointer-down and untouched for the life of the drag.
     Vec3 base_{};

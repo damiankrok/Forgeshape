@@ -185,43 +185,78 @@ final class CadLeaderHudChecks {
         if (shown != icons) {
             return shown + " glyphs on the plate, expected " + icons;
         }
-        // The plate's visual box, from its layout box, translation and scale
-        // about the (0, 0) pivot.
+        // The plate's visual centre: it is scaled and turned about its OWN
+        // centre (`CAD-V6-S2-CORRECTION-FILL-HUD-R1`), so that centre is the
+        // layout box's, wherever the translation put it.
         final int[] parent = new int[2];
         final int[] port = new int[2];
         ((View) plate.getParent()).getLocationInWindow(parent);
         viewport.getLocationInWindow(port);
-        final float plateLeft = parent[0] + plate.getLeft() + plate.getTranslationX() - port[0];
-        final float plateTop = parent[1] + plate.getTop() + plate.getTranslationY() - port[1];
-        final float plateW = plate.getWidth() * plate.getScaleX();
-        final float plateH = plate.getHeight() * plate.getScaleY();
+        if (Math.abs(plate.getPivotX() - plate.getWidth() * 0.5f) > 1.0f
+                || Math.abs(plate.getPivotY() - plate.getHeight() * 0.5f) > 1.0f) {
+            return "the plate does not turn and scale about its own centre";
+        }
+        final float plateCX = parent[0] + plate.getLeft() + plate.getTranslationX()
+                + plate.getWidth() * 0.5f - port[0];
+        final float plateCY = parent[1] + plate.getTop() + plate.getTranslationY()
+                + plate.getHeight() * 0.5f - port[1];
+        final float[] turned = CadHudPresentation.rotatedBounds(
+                plate.getWidth() * plate.getScaleX(), plate.getHeight() * plate.getScaleY(),
+                plate.getRotation());
         final float[] c = centreIn(proxy, viewport);
-        if (Math.abs(plateLeft + plateW * 0.5f - c[0]) > TOLERANCE_DP * density
-                || Math.abs(plateTop + plateH * 0.5f - c[1]) > TOLERANCE_DP * density) {
+        if (Math.abs(plateCX - c[0]) > TOLERANCE_DP * density
+                || Math.abs(plateCY - c[1]) > TOLERANCE_DP * density) {
             return "the plate is not centred on its proxy";
         }
-        if (proxy.getWidth() + 1 < plateW || proxy.getHeight() + 1 < plateH) {
-            return "the proxy does not cover the plate";
+        if (proxy.getWidth() + 1 < turned[0] || proxy.getHeight() + 1 < turned[1]) {
+            return "the proxy does not cover the turned plate";
         }
-        if (plateLeft < -1 || plateTop < -1 || plateLeft + plateW > viewport.getWidth() + 1
-                || plateTop + plateH > viewport.getHeight() + 1) {
+        if (plateCX - turned[0] * 0.5f < -1 || plateCY - turned[1] * 0.5f < -1
+                || plateCX + turned[0] * 0.5f > viewport.getWidth() + 1
+                || plateCY + turned[1] * 0.5f > viewport.getHeight() + 1) {
             return "the plate is not wholly on screen";
         }
+        if (Math.abs(plate.getRotation()) > CadHudPresentation.PANEL_ROTATION_MAX_DEGREES + 0.01f) {
+            return "the plate turns " + plate.getRotation() + " degrees, past the cap";
+        }
+        // Attached: the centre stands ON the arrow's screen line, between the
+        // point and the attached offset past it -- never beside the shaft.
         final float hx = (float) tool[NativeViewport.CAD_EXTRUDE_HEAD_X];
         final float hy = (float) tool[NativeViewport.CAD_EXTRUDE_HEAD_Y];
+        float ax = hx - (float) tool[NativeViewport.CAD_EXTRUDE_LABEL_X];
+        float ay = hy - (float) tool[NativeViewport.CAD_EXTRUDE_LABEL_Y];
+        final float axisLength = (float) Math.hypot(ax, ay);
+        if (axisLength > 1.0f) {
+            ax /= axisLength;
+            ay /= axisLength;
+        } else {
+            ax = 1.0f;
+            ay = 0.0f;
+        }
+        final float along = (c[0] - hx) * ax + (c[1] - hy) * ay;
+        final float across = Math.abs(-(c[0] - hx) * ay + (c[1] - hy) * ax);
+        if (across > TOLERANCE_DP * density) {
+            return "the panel stands " + across / density + " dp off the arrow's line: beside "
+                    + "the shaft, not attached at its point";
+        }
+        final float attached = (CadHudPresentation.ARROW_CORRIDOR_DP
+                + CadHudPresentation.PANEL_CLEAR_DP) * density
+                + 0.5f * (proxy.getWidth() * Math.abs(ax) + proxy.getHeight() * Math.abs(ay));
+        if (along < -TOLERANCE_DP * density || along > attached + TOLERANCE_DP * density) {
+            return "the panel stands " + along / density + " dp along the arrow from its point, "
+                    + "outside [0, " + attached / density + "]";
+        }
+        // Clear of the corridor unless an edge made it slide back.
         final float dx = Math.max(0.0f, Math.abs(hx - c[0]) - proxy.getWidth() * 0.5f);
         final float dy = Math.max(0.0f, Math.abs(hy - c[1]) - proxy.getHeight() * 0.5f);
         final float clearance = (float) Math.hypot(dx, dy) / density;
-        if (clearance < CadHudPresentation.ARROW_CORRIDOR_DP - TOLERANCE_DP) {
+        final boolean atEdge = c[0] - proxy.getWidth() * 0.5f <= 2.0f
+                || c[1] - proxy.getHeight() * 0.5f <= 2.0f
+                || c[0] + proxy.getWidth() * 0.5f >= viewport.getWidth() - 2.0f
+                || c[1] + proxy.getHeight() * 0.5f >= viewport.getHeight() - 2.0f;
+        if (!atEdge && clearance < CadHudPresentation.ARROW_CORRIDOR_DP - TOLERANCE_DP) {
             return "the proxy stands " + clearance + " dp from the arrow's point, inside its "
-                    + "grab corridor";
-        }
-        final float reach = (float) Math.hypot(hx - c[0], hy - c[1]) / density;
-        final float farthest = (CadHudPresentation.ARROW_CORRIDOR_DP
-                + CadHudPresentation.PANEL_CLEAR_DP + TOLERANCE_DP) / 1.0f
-                + Math.max(proxy.getWidth(), proxy.getHeight()) / density;
-        if (reach > farthest) {
-            return "the panel stands " + reach + " dp from the arrow's point: detached";
+                    + "grab corridor, with no edge to explain it";
         }
         return null;
     }

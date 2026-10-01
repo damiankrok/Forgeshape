@@ -228,11 +228,19 @@ enum class CadStatus : uint8_t {
     // Retired by `CAD-V6-S2`, which regenerates planar faces: no path returns
     // it any more. Kept so every later code keeps its number across JNI.
     PlanarFaceRegenerationUnavailable,
+    // --- `CAD-V6-S2-CORRECTION-FILL-HUD-R1`. APPENDED. ---
+    // Two chosen planar faces meet at a single point and nowhere else (the two
+    // crescents of crossing circles meet at the crossings), so their union is
+    // pinched there and no manifold solid extrudes it
+    // (`ArrangementStatus::PinchedSelection`). Its own name, because the loop
+    // model's `OverlappingRegions` describes a different thing: these faces do
+    // not overlap at all.
+    PlanarFacesTouchAtPoint,
 };
 
 // The count is the number of enumerators, so `cadStatusFromCode` accepts
 // exactly the codes that exist.
-constexpr int kCadStatusCount = 61;
+constexpr int kCadStatusCount = 62;
 
 const char* cadStatusName(CadStatus status);
 int cadStatusCode(CadStatus status);
@@ -574,6 +582,28 @@ CadStatus tessellateSketchCurve(const SketchEntity& entity, std::vector<SketchPo
 // start to end through mid, in radians, in (-2*pi, 2*pi) and never zero.
 CadStatus arcGeometry(const SketchArc& arc, SketchPoint* outCenter, double* outRadius,
                       double* outStartAngle, double* outSweep);
+
+// One span of a spline -- the curve between authored points `i` and `i + 1` --
+// as the cubic Bezier it IS (`CAD-V6-S2-CORRECTION-FILL-HUD-R1`). `p0` and `p3`
+// are those two authored points exactly; `c1` and `c2` are the Catmull-Rom
+// tangents converted to Bezier handles, the end spans reflecting their one
+// neighbour. The ONE statement of a spline's geometry: the profile
+// tessellation samples it and the planar arrangement intersects it, so the
+// cells a spline cuts and the solid it bounds describe one curve.
+struct SketchBezierSpan {
+    SketchPoint p0;
+    SketchPoint c1;
+    SketchPoint c2;
+    SketchPoint p3;
+};
+
+// False, writing nothing, when `spanIndex` names no span (a spline of n points
+// has n - 1). Pure arithmetic over the authored points; no camera, no zoom.
+bool sketchSplineSpan(const SketchSpline& spline, uint32_t spanIndex, SketchBezierSpan* out);
+
+// The span at parameter t in [0, 1], in Bernstein form -- exactly the
+// arithmetic the tessellation has always used.
+SketchPoint sketchBezierPoint(const SketchBezierSpan& span, double t);
 
 // ---------------------------------------------------------------------------
 // The sketch

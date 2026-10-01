@@ -553,17 +553,18 @@ CadStatus resolvePlanarFaceSelection(const CadSketch& sketch, const ExtrudeFeatu
 
 // The union of a resolved PlanarFaces selection (`mergePlanarFaces`), with the
 // arrangement's refusals mapped to their `CadStatus` names: a pinch is
-// `OverlappingRegions`, a union loop over `kMaxProfileVertices` is
+// `PlanarFacesTouchAtPoint` (`CAD-V6-S2-CORRECTION-FILL-HUD-R1`; it was the
+// loop model's `OverlappingRegions`, which names something these faces never
+// do), a union loop over `kMaxProfileVertices` is
 // `TooManyEntities` (the profile cap's existing name), a degenerate one
 // `PlanarFaceDegenerate`.
 CadStatus mergePlanarFaceSelection(const SketchArrangement& arrangement,
                                    const std::vector<size_t>& faceIndices,
                                    std::vector<PlanarProfileComponent>* out);
 
-// Whether a finished sketch's areas NEED planar faces (`CAD-V6-S2`): the one
-// predicate that decides a session's selection kind. True exactly when the
-// arrangement derives (a Spline, an overlap or a cap keeps the sketch on loop
-// regions), at least one bounded face is bounded by a PROPER fragment (a source
+// Whether a finished sketch's areas NEED planar faces (`CAD-V6-S2`), given an
+// arrangement that derived. True exactly when the arrangement derives (a failed
+// one is `decideSketchSelectionMode`'s business), at least one bounded face is bounded by a PROPER fragment (a source
 // edge split at a crossing or a T-junction), and the arrangement's face count
 // differs from the loop-region count -- i.e. a crossing or a T-junction actually
 // CUT an area the region model cannot name. A sketch whose loops only nest (a
@@ -571,6 +572,35 @@ CadStatus mergePlanarFaceSelection(const SketchArrangement& arrangement,
 // touching a rectangle, stays `LoopRegions` and keeps its legacy writer.
 bool sketchRequiresPlanarFaces(const SketchArrangement& arrangement,
                                const SketchRegionExtraction& regions);
+
+// Whether the loop model READS a sketch faithfully: no two of its closed loops
+// touch or cross, and no chain was refused for crossing itself or forking.
+// When that fails, the loops are not the areas the user sees -- a crossing
+// split them -- and only the arrangement can name them.
+bool sketchLoopsAreExact(const SketchRegionExtraction& regions);
+
+// What Finish makes of a sketch (`CAD-V6-S2-CORRECTION-FILL-HUD-R1`): the one
+// decision between the two selection kinds, and the one place a sketch the
+// arrangement cannot derive is refused rather than quietly handed to the loop
+// model.
+//
+//   arrangement Ok                -> PlanarFaces when `sketchRequiresPlanarFaces`,
+//                                    else LoopRegions (legacy-exact, legacy writer);
+//   arrangement failed, loops exact -> LoopRegions: nothing crosses, so the loops
+//                                    ARE the areas, exactly as every earlier
+//                                    build read them;
+//   arrangement failed, loops not exact -> refused with the arrangement's own name
+//                                    (`cadStatusForArrangement`): the areas need a
+//                                    planar decomposition the sketch cannot have,
+//                                    and the loop model's `OverlappingRegions` /
+//                                    `OverlappingHoles` would describe a model the
+//                                    user is not looking at.
+struct SketchSelectionModeDecision {
+    CadSelectionKind kind = CadSelectionKind::LoopRegions;
+    CadStatus status = CadStatus::Ok;
+};
+SketchSelectionModeDecision decideSketchSelectionMode(const SketchArrangement& arrangement,
+                                                      const SketchRegionExtraction& regions);
 
 // The arrangement status as a `CadStatus` (`UnsupportedCurve` ->
 // `PlanarFaceUnsupportedCurve`, ...). Deterministic; `Ok` maps to `Ok`.

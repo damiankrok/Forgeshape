@@ -28,6 +28,7 @@
 #include "forgeshape_scene.h"
 #include "forgeshape_sketch.h"
 #include "forgeshape_sketch_arrangement_selftest.h"
+#include "forgeshape_sketch_fill_selftest.h"
 #include "forgeshape_sketch_region.h"
 #include "forgeshape_sketch_session.h"
 #include "forgeshape_support_chooser.h"
@@ -2077,6 +2078,174 @@ void testRegionUnion(Recorder& r) {
     }
 }
 
+// `CAD-V6-S2-CORRECTION-FILL-HUD-R1`: fill-bucket taps keep working once the
+// first cell is chosen and the extrude arrow stands on it. In the oblique
+// feature view the product installs, the arrow's grab corridor crosses the
+// neighbouring cell; a still tap there toggles THAT cell, a drag from the same
+// point still takes the arrow, and only a tap on the drawn arrow is the
+// arrow's.
+void testFillTaps(Recorder& r) {
+    SessionDriver s;
+    const bool began = s.beginWorld(Workplane::XY);
+    // A 4 x 3 rectangle crossed on its right side by a 0.5 m circle at
+    // (1.8, 0): the rest of the rectangle, the disk's part inside it, and the
+    // part outside -- three cells of three different sizes.
+    const bool drawn = began
+                       && s.place(SketchTool::Rectangle, SketchPoint{0.0, 0.0}, SketchPoint{1.0, 1.0},
+                                  rectangleAt(0.0, 0.0, 4.0, 3.0))
+                                  != kNoSketchEntity
+                       && s.place(SketchTool::Circle, SketchPoint{1.8, 0.0}, SketchPoint{2.3, 0.0},
+                                  circleAt(1.8, 0.0, 0.5))
+                                  != kNoSketchEntity;
+    const bool finished = drawn && s.sketch.finish() == CadStatus::Ok
+                          && s.sketch.selectionKind() == CadSelectionKind::PlanarFaces
+                          && s.sketch.planarFaceCount() == 3u;
+    // By area: rest (largest), inside part, outside part.
+    std::vector<size_t> byArea{0, 1, 2};
+    std::vector<double> area(3, 0.0);
+    std::vector<SketchPoint> interior(3);
+    for (size_t i = 0; finished && i < 3; ++i) s.sketch.planarFaceInfo(i, &interior[i], &area[i]);
+    std::sort(byArea.begin(), byArea.end(), [&](size_t a, size_t b) { return area[a] > area[b]; });
+    const size_t rest = byArea[0];
+    const size_t inside = byArea[1];
+    const size_t outside = byArea[2];
+    const auto tap = [&](float x, float y) {
+        s.at(TouchAction::Down, x, y);
+        s.at(TouchAction::Up, x, y);
+    };
+    // The first cell, by a real tap in the aligned view.
+    float x = 0.0f;
+    float y = 0.0f;
+    const bool first = finished && s.screenOf(interior[inside], &x, &y);
+    if (first) tap(x, y);
+    const bool insideChosen = first && s.sketch.planarFaceSelected(inside)
+                              && s.sketch.selectedAreaCount() == 1u;
+    // The oblique view Finish leads to: `cadFeatureViewPose`, the product rule.
+    CadExtrudeAnchors anchors;
+    CameraController::Pose pose;
+    const bool tilted = insideChosen && s.sketch.extrudeAnchors(&anchors)
+                        && cadFeatureViewPose(s.camera.capturePose(), nullptr, s.sketch.frame(),
+                                              anchors, &pose)
+                                   != CadFeatureViewSource::Unavailable;
+    if (tilted) s.camera.restorePose(pose);
+    // A point of each cell inside the arrow's grab corridor but off the drawn
+    // arrow, searched over the cell's own derived shape.
+    const CadExtrudeManipulator& arrow = s.sketch.extrudeManipulator();
+    const auto corridorPoint = [&](size_t face, bool inCorridor, float* outX, float* outY) {
+        std::vector<PlanarProfileComponent> shape;
+        if (mergePlanarFaceSelection(s.sketch.arrangement(), {face}, &shape) != CadStatus::Ok
+            || shape.size() != 1u) {
+            return false;
+        }
+        for (int i = 0; i <= 120; ++i) {
+            for (int j = 0; j <= 90; ++j) {
+                const SketchPoint p{-2.0 + 4.6 * i / 120.0, -1.5 + 3.0 * j / 90.0};
+                bool in = sketchPointStrictlyInside(p, shape[0].outer.polygon);
+                for (const PlanarProfileLoop& hole : shape[0].holes) {
+                    in = in && !sketchPointStrictlyInside(p, hole.polygon);
+                }
+                float px = 0.0f;
+                float py = 0.0f;
+                if (!in || !s.screenOf(p, &px, &py)) continue;
+                const CameraSnapshot camera = s.camera.snapshot();
+                const bool corridor = arrow.hitTest(anchors, camera, px, py, SessionDriver::kW,
+                                                    SessionDriver::kH);
+                const bool onArrow = arrow.onDrawnArrow(anchors, camera, px, py, SessionDriver::kW,
+                                                        SessionDriver::kH);
+                if (corridor == inCorridor && !onArrow) {
+                    *outX = px;
+                    *outY = py;
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
+    const Meters depth = s.sketch.extrude().depth;
+    float rx = 0.0f;
+    float ry = 0.0f;
+    const bool restInCorridor = tilted && corridorPoint(rest, true, &rx, &ry);
+    if (restInCorridor) tap(rx, ry);
+    r.check("S2CORR_TAP_01_a_still_tap_in_the_arrows_corridor_toggles_the_cell_under_it",
+            restInCorridor && s.sketch.planarFaceSelected(rest) && s.sketch.planarFaceSelected(inside)
+                    && s.sketch.selectedAreaCount() == 2u && s.sketch.extrude().depth == depth
+                    && !arrow.capturing()
+                    && s.sketch.evaluateCandidate().status == CadStatus::Ok);
+    // A drag from a corridor point still takes the arrow, and toggles nothing.
+    // The union moved the arrow, so the corridor is searched again.
+    bool dragged = false;
+    float cx = 0.0f;
+    float cy = 0.0f;
+    if (restInCorridor && s.sketch.extrudeAnchors(&anchors) && corridorPoint(rest, true, &cx, &cy)) {
+        float bx = 0.0f;
+        float by = 0.0f;
+        float tx = 0.0f;
+        float ty = 0.0f;
+        projectWorldToScreen(s.camera.snapshot(), anchors.base, SessionDriver::kW, SessionDriver::kH,
+                             &bx, &by);
+        projectWorldToScreen(s.camera.snapshot(), anchors.tip, SessionDriver::kW, SessionDriver::kH,
+                             &tx, &ty);
+        const float len = std::hypot(tx - bx, ty - by);
+        const float ux = len > 0.0f ? (tx - bx) / len : 0.0f;
+        const float uy = len > 0.0f ? (ty - by) / len : -1.0f;
+        s.at(TouchAction::Down, cx, cy);
+        const bool captured = arrow.capturing();
+        // Along the shaft's screen direction, well past the tap slop.
+        for (int k = 1; k <= 6; ++k) s.at(TouchAction::Move, cx + ux * 12.0f * k, cy + uy * 12.0f * k);
+        s.at(TouchAction::Up, cx + ux * 72.0f, cy + uy * 72.0f);
+        dragged = captured && s.sketch.extrude().depth != depth && !arrow.capturing()
+                  && s.sketch.selectedAreaCount() == 2u;
+    }
+    r.check("S2CORR_TAP_02_a_drag_from_a_corridor_point_still_takes_the_arrow_and_toggles_nothing",
+            dragged);
+    // A still tap ON the drawn arrow is the arrow's: no cell toggles.
+    const Meters afterDrag = s.sketch.extrude().depth;
+    bool onArrowKept = false;
+    if (s.sketch.extrudeAnchors(&anchors)) {
+        float mx = 0.0f;
+        float my = 0.0f;
+        const Vec3 mid = vec3Add(anchors.base, vec3Scale(anchors.axis,
+                                                         static_cast<float>(0.5 * anchors.depth)));
+        if (projectWorldToScreen(s.camera.snapshot(), mid, SessionDriver::kW, SessionDriver::kH, &mx,
+                                 &my)
+            && arrow.onDrawnArrow(anchors, s.camera.snapshot(), mx, my, SessionDriver::kW,
+                                  SessionDriver::kH)) {
+            tap(mx, my);
+            onArrowKept = s.sketch.selectedAreaCount() == 2u && s.sketch.extrude().depth == afterDrag;
+        }
+    }
+    r.check("S2CORR_TAP_03_a_still_tap_on_the_drawn_arrow_toggles_no_cell", onArrowKept);
+    // One real tap on a cell wherever the arrow now stands: off its corridor
+    // if the cell reaches there, else inside the corridor off the drawn arrow.
+    const auto tapCell = [&](size_t face) {
+        float px = 0.0f;
+        float py = 0.0f;
+        if (!s.sketch.extrudeAnchors(&anchors)
+            || !(corridorPoint(face, false, &px, &py) || corridorPoint(face, true, &px, &py))) {
+            return false;
+        }
+        tap(px, py);
+        return true;
+    };
+    // A, B, A: tapping the first cell again leaves only B.
+    const bool againA = tapCell(inside);
+    r.check("S2CORR_TAP_04_tapping_A_B_A_leaves_only_B",
+            againA && !s.sketch.planarFaceSelected(inside) && s.sketch.planarFaceSelected(rest)
+                    && s.sketch.selectedAreaCount() == 1u);
+    // B and the outside part meet only at the two crossings: the tap is
+    // refused by its OWN name and the selection stands.
+    const bool pinchTap = tapCell(outside);
+    r.check("S2CORR_TAP_05_two_cells_meeting_at_a_point_are_refused_by_their_own_name",
+            pinchTap && !s.sketch.planarFaceSelected(outside) && s.sketch.selectedAreaCount() == 1u
+                    && s.sketch.lastStatus() == CadStatus::PlanarFacesTouchAtPoint);
+    // Three consecutive real taps build A + B + C: the rectangle with its bump.
+    const bool built = tapCell(inside) && s.sketch.selectedAreaCount() == 2u && tapCell(outside);
+    r.check("S2CORR_TAP_06_real_taps_reach_all_three_cells_and_the_union_is_valid",
+            built && s.sketch.selectedAreaCount() == 3u && s.sketch.planarFaceSelected(outside)
+                    && s.sketch.evaluateCandidate().status == CadStatus::Ok);
+    s.sketch.cancel();
+}
+
 void testSession(Recorder& r) {
     const double ringArea = 12.0 - circleArea(0.8);
     const double pocket = circleArea(0.3);
@@ -3684,9 +3853,12 @@ void testPlanarRuntime(Recorder& r) {
         }
         const CadBodyState pinched = makeCadBodyState(pinch, facesExtrude(corner, 1.0));
         r.check("CADV6S2_REG_04_a_pinched_union_is_refused_by_name",
-                corner.size() == 2u && validateCadBodyState(pinched) == CadStatus::OverlappingRegions
-                        && regen(pinched).why == CadStatus::OverlappingRegions);
-        // A spline anywhere keeps the sketch off faces, by name.
+                corner.size() == 2u
+                        && validateCadBodyState(pinched) == CadStatus::PlanarFacesTouchAtPoint
+                        && regen(pinched).why == CadStatus::PlanarFacesTouchAtPoint);
+        // Every arrangement refusal maps to its own v6 name, and a pinch is no
+        // longer read as the loop model's overlap
+        // (`CAD-V6-S2-CORRECTION-FILL-HUD-R1`).
         r.check("CADV6S2_REG_05_the_arrangement_refusals_map_to_their_v6_names",
                 cadStatusForArrangement(ArrangementStatus::UnsupportedCurve)
                                 == CadStatus::PlanarFaceUnsupportedCurve
@@ -3695,7 +3867,9 @@ void testPlanarRuntime(Recorder& r) {
                         && cadStatusForArrangement(ArrangementStatus::CapExceeded)
                                    == CadStatus::PlanarFaceCapExceeded
                         && cadStatusForArrangement(ArrangementStatus::PinchedSelection)
-                                   == CadStatus::OverlappingRegions);
+                                   == CadStatus::PlanarFacesTouchAtPoint
+                        && cadStatusForArrangement(ArrangementStatus::SelfIntersectingCurve)
+                                   == CadStatus::SelfIntersectingProfile);
     }
 
     // --- the requires-PlanarFaces predicate ------------------------------------
@@ -4272,6 +4446,7 @@ int runCadFeatureSelfTests(CadFeatureSelfTestResult* out, int maxOut) {
     testIdLifetimeBefore(r);
     testIdLifetime(r);
     testPlanarRuntime(r);
+    testFillTaps(r);
     measurePerformance(r);
     // The planar arrangement (`CAD-PLANAR-FACE-PF-S1`): derived-only, wired to
     // nothing yet, so it rides in this suite rather than a startup token of
@@ -4283,6 +4458,16 @@ int runCadFeatureSelfTests(CadFeatureSelfTestResult* out, int maxOut) {
         r.check(check.name, check.passed);
     }
     g_performance += " " + arrangementPerformance;
+    // The fill-bucket correction (`CAD-V6-S2-CORRECTION-FILL-HUD-R1`): spline
+    // cells, the mode decision and their bounded timing, beside the
+    // arrangement's own checks.
+    std::vector<ArrangementSelfTestCheck> fill;
+    std::string fillPerformance;
+    runSketchFillSelfTests(&fill, &fillPerformance);
+    for (const ArrangementSelfTestCheck& check : fill) {
+        r.check(check.name, check.passed);
+    }
+    g_performance += " " + fillPerformance;
     // The retained sketch table, the selection variant and `CADB` v6
     // (`CAD-V6-S1`): model and persistence only, wired to no session, JNI or
     // UI path, so -- like the arrangement -- they ride in this suite.

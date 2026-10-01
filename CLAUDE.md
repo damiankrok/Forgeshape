@@ -535,22 +535,36 @@ on the host, with no device, and is the fast native loop.
   still extrudes through the unchanged R0 float path, bit-identical to every
   earlier build. **The planar arrangement is DERIVED, and a sketch whose
   curves cross is extruded by its atomic FACES** (`CAD-PLANAR-FACE-PF-S1`,
-  `CAD-V6-S2`): `forgeshape_sketch_arrangement` splits the supported curves
-  (line, polyline, rectangle, circle, arc — never a spline, refused by name) at
-  analytic intersections and T-junctions into atomic faces named by a canonical
-  `PlanarFaceRef` built only from entity ids, edge-local indices and per-pair
-  intersection ordinals — never a coordinate, index, tessellation or triangle —
-  and resolved by exact equality with no fallback. `sketchRequiresPlanarFaces`
-  is the ONE predicate that chooses the mode at Finish (the arrangement is Ok,
-  some face is bounded by a proper fragment, and the face count differs from
-  the loop-region count); a sketch it does not choose stays `LoopRegions`,
-  bit-identical to every earlier build. In PlanarFaces mode a tap toggles the
-  face under the finger, rows are TRANSIENT handles (never stored), and an
-  exact loop region maps to its one identical face or is refused
-  (`PlanarFaceUnresolved`). `mergePlanarFaces` unions the chosen faces on the
-  arrangement's own half-edges — a shared fragment cancels, a node reused
-  across or within loops is `PinchedSelection` (refused as
-  `OverlappingRegions`) — and the union is extruded by the same prism
+  `CAD-V6-S2`): `forgeshape_sketch_arrangement` splits EVERY curve — line,
+  polyline, rectangle, circle, arc and, since
+  `CAD-V6-S2-CORRECTION-FILL-HUD-R1`, spline — at intersections and
+  T-junctions into atomic faces, the fill-bucket cells the user sees, named by
+  a canonical `PlanarFaceRef` built only from entity ids, edge-local indices
+  and per-pair intersection ordinals — never a coordinate, index, tessellation
+  or triangle — and resolved by exact equality with no fallback. **A spline is
+  one source edge per authored SPAN** (span `i` is edge-local index `i`), the
+  exact cubic Bezier `sketchSplineSpan` states — the ONE statement of spline
+  geometry the profile tessellation also samples — intersected on the curve
+  (polynomial roots against a line or circle, bounded subdivision plus Newton
+  against another span), never on its tessellation; a touch is never a node, a
+  shared stretch is `AmbiguousOverlap`, a span meeting itself
+  `SelfIntersectingCurve`, and no `CADB` layout changed. `decideSketchSelectionMode`
+  is the ONE decision at Finish: an Ok arrangement is PlanarFaces exactly when
+  `sketchRequiresPlanarFaces` holds (some face bounded by a proper fragment, and
+  the face count differs from the loop-region count) and otherwise `LoopRegions`,
+  bit-identical to every earlier build; a FAILED arrangement keeps `LoopRegions`
+  only when the loops are exact (`sketchLoopsAreExact`: no two touch or cross)
+  and is otherwise REFUSED by the arrangement's own name — never silently read
+  as whole overlapping loops. In PlanarFaces mode a tap toggles the face under
+  the finger — also inside the extrude arrow's grab corridor, where only a
+  still tap within `kCadExtrudeTapOnArrowUnits` of the DRAWN arrow is the
+  arrow's and a drag still takes it — rows are TRANSIENT handles (never
+  stored), and an exact loop region maps to its one identical face or is
+  refused (`PlanarFaceUnresolved`). `mergePlanarFaces` unions the chosen faces
+  on the arrangement's own half-edges — a shared fragment cancels, a node
+  reused across or within loops is `PinchedSelection`, refused as
+  `PlanarFacesTouchAtPoint` and never as the loop model's `OverlappingRegions`
+  — and the union is extruded by the same prism
   generator, previewed as the candidate, hatched cell by cell, and fed to New
   Body, Add or Cut. A union-boundary fragment is ONE side face: a fragment
   that is its whole source edge keeps the legacy token, a proper piece wears a
@@ -645,11 +659,17 @@ on the host, with no device, and is the fast native loop.
   keep every digit). Two Sides puts each value above its OWN leader. The
   extent, the operation (New Body / Add / Cut) and Flip (One Side only) are ONE
   compact ACTION PANEL (`CAD-FOUNDATION-C2`): a rigid plate laid out once at
-  its reference size and scaled as ONE unit, anchored just past the arrow's
-  drawn point with its proxy clear of the arrow's grab corridor, beside the
-  point when past it does not fit, and shown WHOLE or not at all — never an
-  icon scattered, clamped away or hidden alone. The plate takes no touch; ONE
-  unscaled ≥ 48 dp group proxy covers it and opens ONE action palette (extent
+  its reference size and scaled as ONE unit, attached past the arrow's drawn
+  point ON the arrow's screen line with its proxy clear of the arrow's grab
+  corridor, and placed by ONE continuous function of the projected arrow
+  (`CAD-V6-S2-CORRECTION-FILL-HUD-R1`): no candidate sides — at a viewport
+  edge it slides back along the SAME line by the least that fits, never to the
+  side of the shaft — and it turns modestly with the leader
+  (`panelRotationDegrees`: 0.35 × the reading angle, capped at 25°, tapered to
+  level before vertical so the wrap never flips it). It is shown WHOLE or not
+  at all — never an icon scattered, clamped away or hidden alone. The plate
+  takes no touch; ONE unscaled, unrotated ≥ 48 dp group proxy covers the
+  turned plate and opens ONE action palette (extent
   choices, the operations native offers, Flip) of ordinary readable screen
   chrome, because three 48 dp proxies on shrunken glyphs would overlap. The
   whole annotation — values and panel together — collapses only when native
@@ -874,10 +894,12 @@ on the host, with no device, and is the fast native loop.
   `cad_bad_operation`, `cad_bad_feature_ref`, `cad_bad_feature_order` and
   `cad_bad_region`); `CAD-V6-S1` added the twelve **`CADB` v6** fixtures
   (`cad_sketch_shared`, `cad_face_lens`, `cad_face_protrusion`,
-  `cad_face_two_circles`, `cad_mixed_selection`, and the seven the decoder must
-  refuse, `cad_bad_sketch_ref`, `cad_duplicate_sketch_id`,
-  `cad_bad_selection_kind`, `cad_noncanonical_face`, `cad_unresolved_face`,
-  `cad_spline_face` and `cad_overlap_face`); `CAD-V6-S2` added
+  `cad_face_two_circles`, `cad_mixed_selection`, `cad_spline_face` — refused
+  until `CAD-V6-S2-CORRECTION-FILL-HUD-R1` made splines intersectable, and
+  since then the same bytes decode as a valid file — and the six the decoder
+  must refuse, `cad_bad_sketch_ref`, `cad_duplicate_sketch_id`,
+  `cad_bad_selection_kind`, `cad_noncanonical_face`, `cad_unresolved_face` and
+  `cad_overlap_face`); `CAD-V6-S2` added
   `cad_fragment_support` (a sketch on a FRAGMENT side, v6 FACE code 4) — a
   **fifty-seven**-fixture corpus in
   which every older fixture is byte-for-byte unchanged. Every corrupt fixture is CONSTRUCTED

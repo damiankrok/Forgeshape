@@ -2264,6 +2264,16 @@ final class NativeViewport {
     static final int CAD_CUT_NO_INTERSECTION = 42;
     static final int CAD_CUT_REMOVES_BODY = 43;
     static final int CAD_KERNEL_FAILED = 44;
+    /**
+     * `CAD-V6-S2-CORRECTION-FILL-HUD-R1`: the planar arrangement's refusals
+     * Finish can now return for a sketch whose curves cross, instead of handing
+     * it to the loop model.
+     */
+    static final int CAD_PLANAR_FACE_AMBIGUOUS_OVERLAP = 57;
+    static final int CAD_PLANAR_FACE_CAP_EXCEEDED = 58;
+    static final int CAD_PLANAR_FACE_DEGENERATE = 59;
+    /** Two chosen areas meet only at a point: their union cannot be extruded. */
+    static final int CAD_PLANAR_FACES_TOUCH_AT_POINT = 61;
 
     /**
      * What an extrusion does to material (`CAD-VERTICAL-SLICE-R1`), in the

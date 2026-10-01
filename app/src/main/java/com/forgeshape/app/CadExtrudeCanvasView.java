@@ -292,8 +292,6 @@ final class CadExtrudeCanvasView extends FrameLayout {
         plate.setBackgroundResource(R.drawable.bg_hud_panel);
         final int platePad = Math.round(CadHudPresentation.PANEL_PAD_DP * density);
         plate.setPadding(platePad, platePad, platePad, platePad);
-        plate.setPivotX(0.0f);
-        plate.setPivotY(0.0f);
         plate.setClickable(false);
         plate.setFocusable(false);
         // The proxy is the one accessible thing; the plate is how it is drawn.
@@ -894,14 +892,13 @@ final class CadExtrudeCanvasView extends FrameLayout {
 
     /**
      * The panel against the arrow's drawn point: its screen direction is from
-     * the shaft's middle (the label anchor) to that point, and the leader's end
-     * tells which side of the shaft the leader stands on.
+     * the shaft's middle (the label anchor) to that point — the line the panel
+     * stands on and turns with.
      */
     private CadHudPresentation.PanelLayout layoutPanel(double scale) {
         final boolean head = tool[NativeViewport.CAD_EXTRUDE_HEAD_ON_SCREEN] != 0.0;
         final float headX = (float) tool[NativeViewport.CAD_EXTRUDE_HEAD_X];
         final float headY = (float) tool[NativeViewport.CAD_EXTRUDE_HEAD_Y];
-        final boolean leader = tool[NativeViewport.CAD_EXTRUDE_LEADER_ON_SCREEN] != 0.0;
         // The plate's OWN measured reference box (its glyph count already
         // bound): per-child pixel rounding makes it differ from the dp sum by
         // a pixel or two, and the proxy must cover what is actually drawn.
@@ -909,8 +906,6 @@ final class CadExtrudeCanvasView extends FrameLayout {
         return CadHudPresentation.layoutPanel(head, headX, headY,
                 headX - (float) tool[NativeViewport.CAD_EXTRUDE_LABEL_X],
                 headY - (float) tool[NativeViewport.CAD_EXTRUDE_LABEL_Y],
-                leader ? (float) tool[NativeViewport.CAD_EXTRUDE_LEADER_END_X] : Float.NaN,
-                leader ? (float) tool[NativeViewport.CAD_EXTRUDE_LEADER_END_Y] : Float.NaN,
                 plate.getMeasuredWidth(), plate.getMeasuredHeight(), scale, density,
                 anchorSpace.viewportWidth(), anchorSpace.viewportHeight());
     }
@@ -1068,14 +1063,27 @@ final class CadExtrudeCanvasView extends FrameLayout {
         }
         plate.setVisibility(VISIBLE);
         panelProxy.setVisibility(VISIBLE);
+        // Pivot at the plate's own centre: scale and rotation then both leave
+        // that centre where the unscaled box's centre is placed, so the drawn
+        // plate is centred on the layout's point at every scale and angle.
+        final float pivotX = plate.getMeasuredWidth() * 0.5f;
+        final float pivotY = plate.getMeasuredHeight() * 0.5f;
+        if (plate.getPivotX() != pivotX || plate.getPivotY() != pivotY) {
+            plate.setPivotX(pivotX);
+            plate.setPivotY(pivotY);
+        }
         if (plate.getScaleX() != panel.scale) {
             plate.setScaleX(panel.scale);
             plate.setScaleY(panel.scale);
         }
-        // Pivot (0, 0): the scaled box starts at the translation, which is
-        // what the shared placement writes for a box of the scaled size.
-        anchorSpace.place(plate, panel.centreX, panel.centreY,
-                plate.getMeasuredWidth() * panel.scale, plate.getMeasuredHeight() * panel.scale);
+        if (plate.getRotation() != panel.rotation) {
+            plate.setRotation(panel.rotation);
+        }
+        // Unclamped: the layout already proved the turned plate's covering box
+        // fits, and a clamp on the UNSCALED box would move a shrunken plate off
+        // the centre its proxy stands on.
+        anchorSpace.placeCentred(plate, panel.centreX, panel.centreY,
+                plate.getMeasuredWidth(), plate.getMeasuredHeight());
         final int hitW = (int) panel.hitWidth;
         final int hitH = (int) panel.hitHeight;
         if (hitW != appliedHitWidth || hitH != appliedHitHeight) {

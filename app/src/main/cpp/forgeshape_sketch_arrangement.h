@@ -30,10 +30,27 @@
 // -- when an edit adds or removes an intersection. Resolution is exact tuple
 // equality; there is no nearest-face or seed-point fallback.
 //
-// Supported curves: Line, Polyline segments, Rectangle sides, Circle, Arc --
-// all intersected analytically in binary64 sketch coordinates. A Spline is
-// refused (`UnsupportedCurve`) rather than intersected on its tessellation,
-// because a tessellation index is not an identity.
+// Supported curves: Line, Polyline segments, Rectangle sides, Circle, Arc and
+// Spline (`CAD-V6-S2-CORRECTION-FILL-HUD-R1`). Lines and circles are
+// intersected analytically in binary64 sketch coordinates. A spline is one
+// SOURCE EDGE PER AUTHORED SPAN -- span i, between authored points i and i + 1,
+// is edge-local index i -- and each span is the exact cubic Bezier
+// `sketchSplineSpan` states, intersected on that curve and never on its
+// tessellation:
+//   * against a line or a circle, the contact condition along the span is a
+//     polynomial in its parameter (degree 3 against a line, 6 against a
+//     circle), whose real roots are isolated between the roots of its
+//     derivative and bisected -- deterministic and bounded;
+//   * against another span, the two curves are subdivided (de Casteljau, at
+//     1/2) until both pieces are flat to a fraction of the coincidence
+//     tolerance, the flat chords are intersected, and every candidate is
+//     refined by Newton on the two exact curves.
+// A contact is a CROSSING when the curves change sides there, measured on the
+// exact curves a few tolerances either side; one that touches without crossing
+// is TANGENT and makes no node, on exactly the terms a line tangent to a circle
+// always made none. So a spline ref is built from the same tuple every other
+// fragment is -- the spline's entity id, the span index, and the semantic cuts
+// -- and no sample, tessellation index or coordinate is ever identity.
 #pragma once
 
 #include <cstddef>
@@ -50,7 +67,9 @@ enum class ArrangementStatus : uint8_t {
     Ok,
     // The sketch fails `validateCadSketch` (or an arc has no circle).
     InvalidSketch,
-    // A Spline is in the sketch. No tessellation-derived identity is made.
+    // An entity kind the arrangement has no source edge for. Since the
+    // correction that made splines intersectable, no sketch entity produces it;
+    // kept so the mapping to `CadStatus` stays total.
     UnsupportedCurve,
     // Two curves share a stretch longer than the coincidence tolerance
     // (collinear overlapping segments, coincident arcs or circles): there is
@@ -68,6 +87,10 @@ enum class ArrangementStatus : uint8_t {
     // revisit a node or two loops share one -- so no simple, disjoint set of
     // loops bounds it. Refused rather than extruded as a non-manifold solid.
     PinchedSelection,
+    // One spline span crosses or touches ITSELF (a cubic loop inside one span).
+    // A span is one source edge and has no node to split it at, so the cells it
+    // would make are refused by name rather than guessed.
+    SelfIntersectingCurve,
 };
 
 const char* arrangementStatusName(ArrangementStatus status);
@@ -136,15 +159,17 @@ struct ArrangementFragment {
     FragmentRef ref;          // `reversed` is always false here
     uint32_t startNode = 0;   // index into `SketchArrangement::nodes`
     uint32_t endNode = 0;
-    bool curved = false;      // a piece of a circle or an arc
+    bool curved = false;      // a piece of a circle, an arc or a spline span
     bool boundsFace = false;  // false when pruned as dangling or a bridge
     // The fragment's DERIVED geometry (`CAD-V6-S2`), in the source's own
     // direction from `nodes[startNode]` to `nodes[endNode]` inclusive -- those
     // two points EXACTLY, so neighbouring fragments share their end vertex
     // bit for bit. A straight piece is those two points; a piece of a circle
     // or arc is clipped to its own sweep and tessellated at the density an
-    // authored arc gets (`sketchArcSegmentCount`). Never identity: a denser
-    // tessellation changes these points and no ref.
+    // authored arc gets (`sketchArcSegmentCount`); a piece of a spline span is
+    // sampled on that span's own parameter at the density the profile
+    // tessellation gives a whole span (`kSplineSegmentsPerSpan`). Never
+    // identity: a denser tessellation changes these points and no ref.
     std::vector<SketchPoint> points;
 };
 

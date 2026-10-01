@@ -440,6 +440,29 @@ bool CadExtrudeManipulator::hitTest(const CadExtrudeAnchors& anchors, const Came
 bool CadExtrudeManipulator::hitTestSide(const CadExtrudeAnchors& anchors, bool positiveSide,
                                         const CameraSnapshot& camera, float x, float y,
                                         int viewportWidth, int viewportHeight) const {
+    return arrowWithin(anchors, positiveSide, camera, x, y, viewportWidth, viewportHeight,
+                       kCadExtrudeGrabRadiusUnits);
+}
+
+bool CadExtrudeManipulator::onDrawnArrow(const CadExtrudeAnchors& anchors,
+                                         const CameraSnapshot& camera, float x, float y,
+                                         int viewportWidth, int viewportHeight) const {
+    if (!anchors.valid) {
+        return false;
+    }
+    for (const bool positiveSide : {true, false}) {
+        if (arrowWithin(anchors, positiveSide, camera, x, y, viewportWidth, viewportHeight,
+                        kCadExtrudeTapOnArrowUnits)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool CadExtrudeManipulator::arrowWithin(const CadExtrudeAnchors& anchors, bool positiveSide,
+                                        const CameraSnapshot& camera, float x, float y,
+                                        int viewportWidth, int viewportHeight,
+                                        float radiusUnits) const {
     if (!anchors.valid || viewportWidth <= 0 || viewportHeight <= 0) {
         return false;
     }
@@ -462,7 +485,7 @@ bool CadExtrudeManipulator::hitTestSide(const CadExtrudeAnchors& anchors, bool p
         || !projectWorldToScreen(camera, headEnd, viewportWidth, viewportHeight, &endX, &endY)) {
         return false;
     }
-    const float corridor = kCadExtrudeGrabRadiusUnits * gizmoPixelsPerReferenceUnit();
+    const float corridor = radiusUnits * gizmoPixelsPerReferenceUnit();
     float param = 0.0f;
     const float distance = distanceToSegment(x, y, baseX, baseY, endX, endY, &param);
     if (!std::isfinite(distance)) {

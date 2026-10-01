@@ -491,9 +491,12 @@ void testRefusals(Checks& c) {
         spline.points = {SketchPoint{-3.0, 0.0}, SketchPoint{0.0, 2.0}, SketchPoint{3.0, 0.0}};
         add(&s, spline);
         const SketchArrangement a = deriveSketchArrangement(s);
-        c.check("PFS1_15a_a_spline_is_UnsupportedCurve_with_nothing_derived",
-                a.status == ArrangementStatus::UnsupportedCurve && a.faces.empty()
-                        && a.fragments.empty() && a.nodes.empty());
+        // `CAD-V6-S2-CORRECTION-FILL-HUD-R1`: no longer refused. The spline's
+        // two spans are source edges 3.0 and 3.1 and are cut where they cross
+        // the rectangle.
+        c.check("PFS1_15a_a_spline_is_intersected_span_by_span_since_the_fill_correction",
+                a.status == ArrangementStatus::Ok && fragmentsOf(a, 2u, 0u) > 1u
+                        && fragmentsOf(a, 2u, 1u) > 1u && !a.faces.empty());
     }
     {
         CadSketch s;

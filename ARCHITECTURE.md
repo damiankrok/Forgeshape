@@ -698,18 +698,26 @@ the viewport. The VALUE is a transparent 48 dp `TextView` rotated to the
 leader native draws and projects (`cadExtrudeToolState` slots 32..41), written
 by `LengthUnit.formatWithUnit` at the display precision. The ACTION PANEL is
 one plate (`cad_extrude_panel_plate`, `bg_hud_panel`) holding the extent,
-operation and (One Side) Flip glyphs at their REFERENCE size, scaled as one
-unit about its (0, 0) pivot and never clickable, plus one invisible, unscaled
-group proxy (`cad_extrude_panel`, ≥ 48 dp, covering the plate) that opens one
+operation and (One Side) Flip glyphs at their REFERENCE size, scaled and turned
+as one unit about its OWN CENTRE and never clickable, plus one invisible,
+unscaled, unrotated group proxy (`cad_extrude_panel`, ≥ 48 dp, covering the
+turned plate's box) that opens one
 action palette (`cad_extrude_actions_palette`: the extent row, the operation
 row of what native offers, Flip). The panel is anchored to the arrow's drawn
 point (slots 42..44, from `cadExtrudeArrowPoint` — the same point the drawing
 ends the head at and the hit test grabs to). `CadHudPresentation` is the
 pure-Java policy, proven on the JVM: `visualScale` is the one multiplier
 (0.40..1.60); `panelReferenceWidthDp`/`panelIconOffsetDp` fix the plate's
-internal layout; `layoutPanel` stands the proxy one arrow corridor (24 dp +
-4 dp) past the point along the arrow, else beside it away from the leader,
-else toward it, else hides it whole; `panelOwnsTouch` states that the one
+internal layout; `layoutPanel` is ONE continuous function of the projected
+arrow (`CAD-V6-S2-CORRECTION-FILL-HUD-R1`, replacing the discrete
+past/beside-away/beside-toward candidates whose switching made the panel jump
+during an orbit): the centre stands ON the arrow's screen line one corridor
+(24 dp + 4 dp) plus half the proxy's extent past the point, slides back along
+that same line by the least that fits at a viewport edge (`slideRange`, at most
+to the point itself), and is otherwise hidden whole; `panelRotationDegrees`
+turns it by 0.35 of the leader's reading angle, capped at 25° and tapered to
+level over the last 20° before vertical so the reading angle's wrap never flips
+it (all OWNER-TUNABLE); `panelOwnsTouch` states that the one
 proxy owns every glyph; `valueTextSp` is `clamp(14 sp × visualScale, 9, 18)`;
 `annotationCollapsed` hides values and panel together at the scale floor when
 the value outgrows its leader; `readingAngleDegrees`, `clipToViewport` and
@@ -2693,10 +2701,19 @@ reads a `CadSketch` and returns derived values only. Supported source edges are
 analytic — a line, a polyline segment `k`, a rectangle side `0..3` in
 `rectangleProfilePolygon` order, a whole circle (edge 0, parameter = angle from
 its own `+u`, counter-clockwise, closed) and an arc (edge 0, `arcGeometry`'s
-centre, start and signed sweep, authored endpoints exact); any Spline refuses
-the whole arrangement (`UnsupportedCurve`) because a tessellation index is not
-an identity. Pairwise contacts are analytic (segment/segment, segment/circle-
-or-arc, circle-or-arc/circle-or-arc) with sweep filtering, plus endpoint
+centre, start and signed sweep, authored endpoints exact) — and, since
+`CAD-V6-S2-CORRECTION-FILL-HUD-R1`, a spline SPAN `i` (edge `i`, the exact cubic
+Bezier `sketchSplineSpan` states between authored points `i` and `i + 1`, the
+same function `tessellateSketchCurve` samples, so the cells a spline cuts and
+the solid it bounds describe one curve). Pairwise contacts are analytic
+(segment/segment, segment/circle-or-arc, circle-or-arc/circle-or-arc) with
+sweep filtering; a span against a line or a circle is a polynomial in the
+span's parameter (degree 3 / 6) whose roots are isolated between its
+derivative's and bisected, and a span against a span is a bounded de Casteljau
+subdivision to flat chords refined by Newton on the two exact curves, classified
+crossing or touch by the side each curve takes a few tolerances either way (a
+span meeting itself is `SelfIntersectingCurve`; spline winding is the chord's
+angle corrected by signed ray crossings, area is exact Gauss-Legendre). Plus endpoint
 proximity at `kSketchCoincidenceMeters` (a T-junction splits the touched curve;
 an endpoint on an endpoint splits nothing). Tangency makes NO node, so a tangent
 circle never grows a zero-area lens; a shared stretch longer than the tolerance
@@ -2776,10 +2793,19 @@ mode.
 **Planar-face runtime (`CAD-V6-S2`).** A PlanarFaces feature is derived and
 regenerated like a LoopRegions one; nothing refuses it any more
 (`PlanarFaceRegenerationUnavailable` is retired but keeps its number).
-- *Mode.* `sketchRequiresPlanarFaces` (`forgeshape_cad_body`) is the one
-  predicate: the arrangement is Ok, some face is bounded by a proper fragment,
-  and the face count differs from the loop-region count. `SketchSession::finish`
-  asks it; otherwise the session stays in LoopRegions, bit-identical to before.
+- *Mode.* `decideSketchSelectionMode` (`forgeshape_cad_body`) is the one
+  decision `SketchSession::finish` asks (`CAD-V6-S2-CORRECTION-FILL-HUD-R1`): an
+  Ok arrangement is PlanarFaces exactly when `sketchRequiresPlanarFaces` holds
+  (some face bounded by a proper fragment, and the face count differs from the
+  loop-region count) and LoopRegions otherwise, bit-identical to before; a
+  FAILED arrangement stays LoopRegions only over exact loops
+  (`sketchLoopsAreExact`: no two touch or cross, no crossing or forked chain)
+  and is otherwise refused by the arrangement's own `CadStatus`, never handed
+  to the loop model as whole overlapping loops. A Ready tap inside the extrude
+  arrow's grab corridor but off the DRAWN arrow (`kCadExtrudeTapOnArrowUnits`)
+  is captured as a possible drag that holds the depth until it travels past the
+  tap slop; lifted still, it releases the capture with nothing written and
+  toggles the cell under it.
   In PlanarFaces mode the session holds the arrangement (`arrangement_`) and
   each face's polygon (`faceShapes_`); a tap hit-tests those, JNI lists faces
   by TRANSIENT handle (`index + 1`, never stored), and a loop region maps to
@@ -2792,7 +2818,7 @@ regenerated like a LoopRegions one; nothing refuses it any more
   interior and cancels, the rest chain by successor into loops, holes are
   re-oriented and owned by the smallest containing outer loop, and a node
   reused across or within loops is `PinchedSelection` (refused as
-  `OverlappingRegions`). Each loop keeps the fragments it stands on.
+  `PlanarFacesTouchAtPoint`). Each loop keeps the fragments it stands on.
 - *Faces and lineage.* `derivePlanarFeature` (`forgeshape_cad_feature`) emits
   CapPlane, CapFar, then ONE Side per union-boundary FRAGMENT — never per
   facet, so a tessellation count never enters a lineage. A fragment that is its
