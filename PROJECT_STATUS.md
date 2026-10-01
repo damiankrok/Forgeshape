@@ -1,8 +1,34 @@
 # ForgeShape — Project Status
 
-**Status Version:** 0.92.0
+**Status Version:** 0.93.0
 **Updated:** 2026-10-01
-**Latest closeout:** **`CAD-V6-S2-CORRECTION-FILL-HUD-R1` — `PASS-CAD-V6-S2-CORRECTION-FILL-HUD`**
+**Latest closeout:** **`CAD-V6-S2-RESEARCH-FILL-PICK-HUD3D-R1` —
+`PASS-CAD-V6-S2-RESEARCH-FILL-PICK-HUD3D`** (2026-10-01). READ-ONLY research
+after the OWNER rejected the second S2 physical review; no product, test, build,
+format or workflow change; no CI, DEVICE or FullSharded; not merged. Record:
+`artifacts/cad-v6-s2-research/` (IMPLEMENTATION_PLAN.md first).
+
+- **Fill selection.** Proven: `togglePlanarFace` merge-validates every ADD
+  (`mergePlanarFaces` keeps one `nodeUsed` set across all loops →
+  `PlanarFacesTouchAtPoint`) while REMOVE is unchecked, so 7 → remove → 6 can
+  leave a pinched set every later add is refused against — the OWNER's exact
+  sequence, reproduced. The vendored kernel accepts point-touching shells with
+  separate vertex rings (Add/Cut one-tool ≡ sequential); a scratch copy without
+  the pinch return merges and regenerates all 127 subsets of the 7-cell sketch.
+  Decision: selection is a set (tap checks the cap only); point-touching faces
+  are separate components; refusals move to preview/commit. No format change.
+- **Picking.** Not native math (front ≡ back, round trip < 3e-5 m, every
+  non-edge-on view). Causes: the camera orbits on sub-slop Moves and the tap is
+  resolved at the Down pixel with the post-orbit camera (physical-only); a still
+  tap on the DRAWN arrow shaft is eaten; Java HUD proxies (≥ 48 dp, invisible)
+  take Downs over cells; plus the selection confound above.
+- **HUD.** Option B chosen: native world-derived dock frame (axial billboard in
+  the leader's plane, anchored past `cadExtrudeArrowPoint`, hidden whole
+  off-viewport or below sin 0.35), drawn by one Android overlay through a
+  4-point homography, ONE operation badge, touch claimed only inside the drawn
+  quad ∪ the 48 dp floor; dimension label unchanged; no renderer change.
+
+**Previous closeout:** **`CAD-V6-S2-CORRECTION-FILL-HUD-R1` — `PASS-CAD-V6-S2-CORRECTION-FILL-HUD`**
 (2026-10-01), **TECH PASS / OWNER RE-REVIEW REQUIRED / INTERMEDIATE V6 BRANCH /
 NOT MERGED.** On `feature/cad-v6-sketch-face-r1` only; `main` unchanged at
 `6c9f156`. The OWNER's two S2 blockers from the physical-device review are
@@ -4601,15 +4627,17 @@ was added and no marketing claim is made.
 
 ## Next Stage
 
-**Exactly one next step: `CAD-V6-S3` — retained-sketch mobile UX on the same
-branch `feature/cad-v6-sketch-face-r1`**: creating, sharing, deleting and
-browsing a CAD Body's retained sketches from the UI. It needs its own
-authorisation. The branch merges to `main` only after the completed v6
-migration passes the Tier-5 aggregate once. S3 starts only after the OWNER
-re-reviews the `CAD-V6-S2-CORRECTION-FILL-HUD-R1` APK on a physical device
-(spline-bounded cells are now in scope, by the OWNER's correction); that review
-and the C2 one may tune presentation constants (the panel's follow fraction,
-cap and taper among them).
+**Exactly one next step: `CAD-V6-S2-CORRECTION-FILL-PICK-R2` on
+`feature/cad-v6-sketch-face-r1`** — Phase 1 of
+`artifacts/cad-v6-s2-research/IMPLEMENTATION_PLAN.md`: selection as a set (the
+tap checks the cap only), point-touching faces as separate components,
+refusals at preview/commit, the Ready tap resolved against the Down camera with
+no orbit while it is armed, only the arrow HEAD claiming a still tap, a stated
+edge-on threshold, and attribution tokens. It needs its own authorisation.
+Phase 2 (`CAD-V6-S2-HUD3D-R1`, the world-attached one-badge dock) follows only
+after the OWNER accepts Phase 1 on a physical device. `CAD-V6-S3` (retained-
+sketch mobile UX) waits for both. The branch merges to `main` only after the
+completed v6 migration passes the Tier-5 aggregate once.
 
 `FUNCTION-COUNCIL-R1`'s D2–D7 and the import-during-sketch observation stay
 recorded debt, not authorised work. The Council's other OWNER decisions are
