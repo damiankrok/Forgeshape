@@ -26,7 +26,11 @@ Record: `artifacts/cad-v6-s2/SUMMARY.md` (BEFORE.md first).
   JniBoundaryHardeningTest): 27/29 — the two failures were the new test's own
   1% bound against a measured 1.03% chord deficit, fixed test-only in
   `10a4e4d`; `CI DEVICE` `36792102052` on `10a4e4d`
-  (CadPlanarFaceRuntimeTest): **PASS 6/6**. `CI FAST`: see the SUMMARY.
+  (CadPlanarFaceRuntimeTest): **PASS 6/6**. `CI FAST` `36793534746` on
+  `973e906` (docs-only beyond `10a4e4d`): **success**, corpus 57/57. OWNER APK:
+  artifact `11133101364`, `app-debug.apk` 12,579,121 bytes, SHA-256
+  `9dc8ea8bd4e82e31c00d034a127f303659f3d3545198880005e9b9af2f076528`;
+  physical-device review OWNER REVIEW REQUIRED.
   **FullSharded NOT RUN.** S3 not started.
 
 **Previous closeout:** **`CAD-V6-S1-C1-ID-LIFETIME-R1` — `PASS-CAD-V6-S1-C1-ID-LIFETIME`**

@@ -125,8 +125,22 @@ the stored selection kind and the regenerated solid's volume and shell count:
     | Face-sketch lens, Add and Cut (J6) | 0.888% each, on opposite sides |
 
   - The J5 project is 616 bytes.
-- **CI FAST** (the one final run): _pending_.
-- **OWNER APK:** _pending_.
+- **CI FAST** — the one final run, `36793534746` on `973e906`: **success**.
+  It covered the build, JVM tests, the release guard
+  (`RELEASE_SELFTEST_GUARD=PASS`), `FORGE_CORPUS_PARITY=PASS (57/57
+  byte-identical)` and the device-free guards. `973e906` differs from the
+  device-tested `10a4e4d` in documentation only: no file under `app/`,
+  `scripts/`, `testdata/` or `.github/` changed.
+- **OWNER APK** — from candidate `973e906`, CI FAST artifact `ci-fast-evidence`
+  id `11133101364`:
+
+  | Field | Value |
+  | --- | --- |
+  | Path | `app/build/outputs/apk/debug/app-debug.apk` |
+  | Size | 12,579,121 bytes |
+  | SHA-256 | `9dc8ea8bd4e82e31c00d034a127f303659f3d3545198880005e9b9af2f076528` |
+
+  Its physical-device review is OWNER REVIEW REQUIRED.
 - **FullSharded: NOT RUN** (out of S2 scope).
 
 ## Not this stage
