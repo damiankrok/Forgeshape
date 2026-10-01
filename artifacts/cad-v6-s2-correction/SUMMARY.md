@@ -41,4 +41,6 @@ v6 branch; `main` untouched at `6c9f156`). Start: `8e87403`. Source findings:
 - JVM 121/121; debug, release, androidTest build; release self-test guard PASS; corpus 57/57 byte-identical, `cad_spline_face_v6` now a VALID file with unchanged bytes.
 - CI DEVICE `36848559518` on `7c4849a`: 16/22 — 5 failures were the new test's own grid precondition (CI grid 0.25 m), 1 a real regression (panel hidden at close zoom because the slide stopped at the tip). Both fixed in `130b6e2`.
 - CI DEVICE `36851090923` on `130b6e2` (CadPlanarFaceOwnerCorrectionTest, CadPlanarFaceRuntimeTest, CadCanvasExtrudeTest): **PASS 22/22**, 321 s, 23/23 startup tokens. J5: 25/25 frames shown, largest offset jump 7.4 dp, largest turn 0.74°; the close-zoom panel now slides 202 dp back along the shaft instead of hiding.
+- CI FAST `36852991198` on `f989114` (product code identical to `130b6e2`; docs only beyond it): **success** — debug, release and androidTest builds, JVM 121/121, release self-test guard PASS, corpus parity 57/57, device guards.
+- OWNER APK: artifact `11156751499` (`ci-fast-evidence`, zip digest `sha256:c5e5ab5c…6cdb1`), path `app/build/outputs/apk/debug/app-debug.apk`, **12,817,709 bytes**, SHA-256 `10572296ddc28dea9eb7c4a4cee7cb149bd2f272e698412248dcafd47dac6c26`.
 - FullSharded NOT RUN. Emulator evidence closes no physical-device gate.

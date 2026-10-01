@@ -29,8 +29,12 @@ corrected. Record: `artifacts/cad-v6-s2-correction/SUMMARY.md` (BEFORE.md first)
   16/22 (test grid precondition ×5, close-zoom panel hidden ×1 — both fixed in
   `130b6e2`); `CI DEVICE` `36851090923` on `130b6e2`
   (CadPlanarFaceOwnerCorrectionTest, CadPlanarFaceRuntimeTest,
-  CadCanvasExtrudeTest): **PASS 22/22**. CI FAST and the OWNER APK: see the
-  closing record in `artifacts/cad-v6-s2-correction/SUMMARY.md`.
+  CadCanvasExtrudeTest): **PASS 22/22**. `CI FAST` `36852991198` on `f989114`
+  (product code identical to `130b6e2`): **success**, JVM 121/121, corpus
+  57/57, release guard PASS. OWNER APK: artifact `11156751499`
+  (`ci-fast-evidence`), `app/build/outputs/apk/debug/app-debug.apk`,
+  12,817,709 bytes, SHA-256
+  `10572296ddc28dea9eb7c4a4cee7cb149bd2f272e698412248dcafd47dac6c26`.
   **FullSharded NOT RUN.** S3 not started.
 
 **Previous closeout:** **`CAD-V6-S2-PLANAR-RUNTIME-R1` — `PASS-CAD-V6-S2-PLANAR-RUNTIME`**
